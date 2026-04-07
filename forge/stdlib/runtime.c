@@ -5830,6 +5830,19 @@ void* forge_llvm_struct_create_named_s(void* ctx, ForgeString name) {
     if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_struct_create_named");
     return fn ? fn(ctx, buf) : NULL;
 }
+// Returns the LLVM struct type's name as a ForgeString. {null,0} for unnamed.
+// Backed by forge_llvm_get_struct_name (which returns a static C-string ptr).
+ForgeString forge_llvm_get_struct_name_s(void* struct_type) {
+    typedef int64_t (*fn_t)(void*);
+    static fn_t fn = NULL;
+    if (!fn) fn = (fn_t)dlsym(RTLD_DEFAULT, "forge_llvm_get_struct_name");
+    if (!fn || !struct_type) return (ForgeString){ NULL, 0 };
+    int64_t name_i = fn(struct_type);
+    if (name_i == 0) return (ForgeString){ NULL, 0 };
+    const char* name = (const char*)(uintptr_t)name_i;
+    int64_t len = (int64_t)strlen(name);
+    return (ForgeString){ (char*)name, len };
+}
 void* forge_llvm_const_string_s(void* module, ForgeString text) {
     typedef void* (*fn_t)(void*, const char*, int64_t);
     static fn_t fn = NULL;

@@ -130,6 +130,13 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     fn compile_mut_var(&mut self, data: &VarDeclData) {
+        // Set type hint from annotation so NullLit / struct literal codegen
+        // can land the value in the right shape (ptr null vs Optional.None).
+        if let Some(ta) = &data.type_ann {
+            let resolved = self.type_checker.resolve_type_expr(ta);
+            self.json_parse_hint = Some(resolved.clone());
+            self.struct_target_type = Some(resolved);
+        }
         // Skip global mutables - they are created in compile_program first pass
         if self.global_mutables.contains_key(&data.name) {
             // Global mutable: compile initializer and store it to the global
@@ -173,14 +180,13 @@ impl<'ctx> Codegen<'ctx> {
         } else {
             self.compile_expr(&data.value)
         };
+        self.json_parse_hint = None;
+        self.struct_target_type = None;
         if let Some(val) = val {
             let ty = data.type_ann
                 .as_ref()
                 .map(|t| self.type_checker.resolve_type_expr(t))
                 .unwrap_or_else(|| self.infer_type(&data.value));
-            if data.name == "statements" || data.name == "tokens" {
-                eprintln!("  [MUT-VAR] {} ty={:?}", data.name, ty);
-            }
             // If declared type is nullable but value is non-nullable, wrap in nullable struct
             let val = self.maybe_wrap_nullable(val, &ty);
             let alloca = self.create_entry_block_alloca(&ty, &data.name);

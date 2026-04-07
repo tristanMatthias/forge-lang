@@ -715,12 +715,17 @@ impl Parser {
         while self.peek_kind_id() != KID_RBRACE && !self.is_at_end() {
             let before = forge_parser_get_pos()
             let stmt = self.parse_statement()
+            forge_trace_i64(9001, forge_parser_get_pos())
             if stmt != null {
+                forge_trace_i64(9002, 1)
                 statements = statements.push(stmt!)
+            } else {
+                forge_trace_i64(9002, 0)
             }
             if forge_parser_get_pos() == before { self.advance() }
             self.skip_newlines()
         }
+        forge_trace_i64(9003, statements.length)
 
         self.expect_id(KID_RBRACE)
 

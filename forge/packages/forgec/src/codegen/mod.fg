@@ -400,32 +400,36 @@ export fn register_enum_variant_fields(enum_name: string, variant_name: string, 
 //
 // This function is the SINGLE SOURCE OF TRUTH for nullable type construction.
 export fn make_nullable_type(inner_ty: ptr) -> ptr {
-    // Only structs can carry a name. For non-struct inners, fall back to an
-    // anonymous {i8, T} (matches what callers expect for primitives etc).
+    // For named struct inners, prefer the existing %Nullable_<T> named
+    // type so values built here match the function-signature types
+    // registered by declare_all_fns. Only fall through to an anonymous
+    // {i8, T} when the inner has no name (primitives, anonymous structs).
     let kind = llvm.get_type_kind(inner_ty)
-    if kind == LLVM_STRUCT_TYPE_KIND {
-        let inner_name = llvm.get_struct_name(inner_ty)
-        if inner_name != "" {
-            let nullable_name = "Nullable_" + inner_name
-            let existing = llvm.get_type_by_name(CG_CTX, nullable_name)
-            if existing != null { return existing }
-            // Create the named Nullable_<T> with body {i8, T}
-            let nf = llvm.type_array_new(2)
-            llvm.type_array_set(nf, 0, CG_I8)
-            llvm.type_array_set(nf, 1, inner_ty)
-            let named = llvm.struct_create_named(CG_CTX, nullable_name)
-            llvm.struct_set_body(named, nf, 2, 0)
-            llvm.type_array_free(nf)
-            return named
-        }
+    let is_struct = kind == LLVM_STRUCT_TYPE_KIND
+    let inner_name = if is_struct { llvm.get_struct_name(inner_ty) } else { "" }
+    let has_name = inner_name.length > 0
+
+    if has_name {
+        let nullable_name = "Nullable_" + inner_name
+        let existing = llvm.get_type_by_name(CG_CTX, nullable_name)
+        if existing != null { return existing }
+        // Create the named Nullable_<T> with body {i8, T}.
+        let nf = llvm.type_array_new(2)
+        llvm.type_array_set(nf, 0, CG_I8)
+        llvm.type_array_set(nf, 1, inner_ty)
+        let named = llvm.struct_create_named(CG_CTX, nullable_name)
+        llvm.struct_set_body(named, nf, 2, 0)
+        llvm.type_array_free(nf)
+        return named
     }
-    // Anonymous fallback for unnamed inner types.
+
+    // Anonymous fallback.
     let fields = llvm.type_array_new(2)
     llvm.type_array_set(fields, 0, CG_I8)
     llvm.type_array_set(fields, 1, inner_ty)
-    let nullable_ty = llvm.struct_type(CG_CTX, fields, 2, 0)
+    let result = llvm.struct_type(CG_CTX, fields, 2, 0)
     llvm.type_array_free(fields)
-    nullable_ty
+    result
 }
 
 export fn wrap_nullable(inner_ty: ptr, value: ptr) -> ptr {
@@ -1993,10 +1997,32 @@ impl Codegen {
                                         self.define_var_typed(bname, bind_type, fsv)
                                     }
                                 } else {
-                                    // Single slot — int, bool, or boxed value
+                                    // Single slot — int, bool, or boxed value.
+                                    // For "p" (boxed pointer) we look up the
+                                    // per-field type name registered by the
+                                    // parser, inttoptr → load the actual
+                                    // struct value, and bind under that type.
                                     let ev = llvm.build_extract_value(CG_B, subj_raw, slot, "b")
                                     if ev != null {
-                                        self.define_var_typed(bname, "int", ev)
+                                        if fcode == "p" {
+                                            let _key = qname + "." + string(field_idx)
+                                            let _tn = forge_enum_variant_fields_get(_key)
+                                            mut _bound = false
+                                            if _tn.length > 0 {
+                                                let _bty = resolve_type_to_llvm(_tn)
+                                                if _bty != null && _bty != CG_I64 {
+                                                    let _hp = llvm.build_inttoptr(CG_B, ev, CG_PTR, "ub")
+                                                    let _val = llvm.build_load(CG_B, _bty, _hp, "uv")
+                                                    self.define_var_typed(bname, _tn, _val)
+                                                    _bound = true
+                                                }
+                                            }
+                                            if !_bound {
+                                                self.define_var_typed(bname, "int", ev)
+                                            }
+                                        } else {
+                                            self.define_var_typed(bname, "int", ev)
+                                        }
                                     }
                                 }
                             }
@@ -2843,34 +2869,62 @@ impl Codegen {
                             // Walk variant fields. For each field we GEP to
                             // its starting i64 slot (field index = slot + 1)
                             // and store the arg value through that pointer.
+                            //
+                            // Field type codes from the parser:
+                            //   i = scalar (1 slot, raw store)
+                            //   s = string (2 slots, ForgeString store)
+                            //   l = list   (2 slots, list struct store)
+                            //   4 = Span   (4 slots, struct store)
+                            //   p = boxed  (1 slot, heap-allocate the value
+                            //               and store the POINTER, so that
+                            //               aggregate-typed fields like
+                            //               nested Expr inside Expr.Call
+                            //               don't overflow into adjacent
+                            //               slots and clobber later fields)
                             let _vf = cg_enum_variant_field_types(ns, f)
                             mut _slot = 0
                             mut _ai = 0
                             while _ai < args.length {
                                 let _av = self.emit_expr(args[_ai])
+                                let _av_ty = llvm.type_of(_av)
+                                let _av_kind = forge_value_type_kind(_av)
+                                mut _aCode = "i"
+                                if _ai < _vf.length { _aCode = _vf[_ai] }
+
                                 // GEP to slot's first i64 (field index = _slot + 1; tag is field 0)
                                 let _gi = llvm.value_array_new(2)
                                 llvm.value_array_set(_gi, 0, llvm.const_int(_i32T, 0, 0))
                                 llvm.value_array_set(_gi, 1, llvm.const_int(_i32T, _slot + 1, 0))
                                 let _slotPtr = llvm.build_gep2(CG_B, _eT, _ealloca, _gi, 2, "esp")
                                 llvm.value_array_free(_gi)
-                                // Store the arg value through the slot pointer.
-                                // build_store accepts the value's actual type
-                                // and writes the full bytes; for aggregates
-                                // they span multiple slots automatically.
+
                                 if _av != null && _av != 0 {
-                                    llvm.build_store(CG_B, _av, _slotPtr)
+                                    if _aCode == "p" && _av_kind == LLVM_STRUCT_TYPE_KIND {
+                                        // Boxed pointer field with aggregate
+                                        // value: heap-alloc and store ptr.
+                                        let _sz = llvm.store_size_of_type(CG_MOD, _av_ty)
+                                        let _ca = llvm.value_array_new(1)
+                                        llvm.value_array_set(_ca, 0, llvm.const_int(CG_I64, _sz, 0))
+                                        let _ft = mft1(CG_PTR, CG_I64)
+                                        let _heap = llvm.build_call(CG_B, _ft, CG_RT_ALLOC, _ca, 1, "ebox")
+                                        llvm.value_array_free(_ca)
+                                        llvm.build_store(CG_B, _av, _heap)
+                                        llvm.build_store(CG_B, _heap, _slotPtr)
+                                    } else {
+                                        // Inline store: scalars go straight,
+                                        // aggregates (s/l/4) span multiple
+                                        // i64 slots automatically because
+                                        // build_store writes the full bytes.
+                                        llvm.build_store(CG_B, _av, _slotPtr)
+                                    }
                                 }
                                 // Advance slot by the field's slot count.
                                 mut _sc = 1
-                                if _ai < _vf.length {
-                                    let _fc = _vf[_ai]
-                                    if _fc == "s" { _sc = 2 }
-                                    if _fc == "l" { _sc = 2 }
-                                    if _fc == "4" { _sc = 4 }
-                                    if _fc == "p" { _sc = 1 }
-                                    if _fc == "i" { _sc = 1 }
-                                }
+                                if _aCode == "s" { _sc = 2 }
+                                if _aCode == "l" { _sc = 2 }
+                                if _aCode == "4" { _sc = 4 }
+                                if _aCode == "p" { _sc = 1 }
+                                if _aCode == "i" { _sc = 1 }
                                 _slot = _slot + _sc
                                 _ai = _ai + 1
                             }
@@ -3159,6 +3213,7 @@ impl Codegen {
         forge_alloca_cache_set_var_type("_stmts", "List:Statement")
         forge_trace_i64(7777, _stmts.length)
         for stmt in _stmts {
+            forge_trace_i64(7778, 1)
             if llvm.block_has_terminator(CG_B) { break }
             last = self.emit_statement(stmt)
         }

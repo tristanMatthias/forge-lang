@@ -7,16 +7,50 @@ impl<'ctx> Codegen<'ctx> {
             Expr::FloatLit(f, _) => Some(self.context.f64_type().const_float(*f).into()),
             Expr::BoolLit(b, _) => Some(self.context.i8_type().const_int(*b as u64, false).into()),
             Expr::NullLit(_) => {
-                let inner_ty = if let Some(Type::Nullable(inner)) = &self.current_fn_return_type {
-                    self.type_to_llvm_basic(inner)
-                } else {
-                    self.context.i64_type().into()
-                };
-                let null_struct = self.context.struct_type(
-                    &[self.context.i8_type().into(), inner_ty.into()],
-                    false,
-                );
-                Some(null_struct.const_zero().into())
+                // The shape of `null` depends on its target context:
+                //  - in a `ptr`-typed slot → an actual null pointer
+                //  - in a `T?` slot       → a `{i8, T}` zero (Optional.None)
+                //  - otherwise            → a `{i8, i64}` zero (legacy fallback)
+                //
+                // The hint comes from the most-specific surrounding target,
+                // checked in priority order:
+                //   1. struct_target_type (when initializing a typed local)
+                //   2. json_parse_hint    (let with explicit type annotation)
+                //   3. current_fn_return_type
+                let target = self
+                    .struct_target_type
+                    .as_ref()
+                    .or(self.json_parse_hint.as_ref())
+                    .cloned()
+                    .or_else(|| self.current_fn_return_type.clone());
+
+                match target {
+                    Some(Type::Ptr) => Some(
+                        self.context
+                            .ptr_type(AddressSpace::default())
+                            .const_null()
+                            .into(),
+                    ),
+                    Some(Type::Nullable(inner)) => {
+                        let inner_ty = self.type_to_llvm_basic(&inner);
+                        let null_struct = self.context.struct_type(
+                            &[self.context.i8_type().into(), inner_ty.into()],
+                            false,
+                        );
+                        Some(null_struct.const_zero().into())
+                    }
+                    _ => {
+                        // Legacy fallback: a generic {i8, i64} null nullable.
+                        let null_struct = self.context.struct_type(
+                            &[
+                                self.context.i8_type().into(),
+                                self.context.i64_type().into(),
+                            ],
+                            false,
+                        );
+                        Some(null_struct.const_zero().into())
+                    }
+                }
             }
             Expr::StringLit(s, _) => Some(self.build_string_literal(s)),
             Expr::TemplateLit { parts, .. } => self.compile_template(parts),

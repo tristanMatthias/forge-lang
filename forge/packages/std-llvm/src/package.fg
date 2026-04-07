@@ -436,6 +436,16 @@ export fn get_type_by_name(ctx: ptr, name: string) -> ptr {
     forge_llvm_get_type_by_name_s(ctx, name)
 }
 
+extern fn forge_llvm_get_struct_name_s(struct_type: ptr) -> string
+
+/// Get the name of a named LLVM struct type, or an empty string for
+/// anonymous structs. Returned ForgeString points into LLVM-owned memory
+/// (do not free). Used by the self-hosted codegen to look up
+/// %Nullable_<T> by deriving T's name from its LLVM type.
+export fn get_struct_name(struct_type: ptr) -> string {
+    forge_llvm_get_struct_name_s(struct_type)
+}
+
 export fn struct_set_body(struct_type: ptr, element_types: ptr, count: int, packed: int) {
     forge_llvm_struct_set_body(struct_type, element_types, count, packed)
 }

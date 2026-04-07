@@ -78,9 +78,11 @@ impl<'ctx> Codegen<'ctx> {
                 if let Some(ta) = type_ann {
                     let resolved = self.type_checker.resolve_type_expr(ta);
                     self.json_parse_hint = Some(resolved.clone());
-                    if matches!(&resolved, Type::Struct { .. }) {
-                        self.struct_target_type = Some(resolved);
-                    }
+                    // Promote any concrete target type so NullLit / struct
+                    // literal codegen can land the value in the right shape
+                    // (previously only Struct{..} got a target, which made
+                    // `let x: ptr = null` produce a {i8, i64} nullable).
+                    self.struct_target_type = Some(resolved);
                 }
                 // Handle `{}` parsed as empty block when type annotation says map
                 let ann_type = type_ann.as_ref().map(|t| self.type_checker.resolve_type_expr(t));

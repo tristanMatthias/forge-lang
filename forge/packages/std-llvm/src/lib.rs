@@ -1334,13 +1334,12 @@ pub extern "C" fn forge_llvm_get_struct_name(struct_type: LLVMPtr) -> i64 {
     unsafe {
         let name = LLVMGetStructName(struct_type);
         if name.is_null() { return 0; }
-        let cstr = std::ffi::CStr::from_ptr(name);
-        let bytes = cstr.to_bytes();
         // Return as i64 pointer to the static LLVM string (no allocation needed)
         // The caller should use this pointer with forge_string_new
         name as i64
     }
 }
+
 
 /// Get the store size of a type in bytes (using module's data layout)
 #[no_mangle]
