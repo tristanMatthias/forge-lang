@@ -12,6 +12,84 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicI64, AtomicBool, Ordering};
 use std::io::Write;
 
+// ─── Tool #4: i64-as-struct load trap ──────────────────────────
+//
+// FORGE_DX_TYPE_TRAP=1 enables runtime detection of "you stored a
+// struct but loaded as i64" — the dominant codegen bug pattern in
+// the self-host. When the LLVM-level alloca type and the loaded
+// type disagree (and the load is i64 from a struct alloca), print
+// a one-line warning to stderr with the alloca pointer + load type
+// kind. The warning fires the FIRST time the bad load happens.
+//
+// Cost: one extra LLVMGetAllocatedType + LLVMGetTypeKind per load
+// (i.e., 2 cheap LLVM C API calls). Negligible compared to the
+// build_load itself. Off by default.
+
+static TYPE_TRAP_INIT: AtomicBool = AtomicBool::new(false);
+static TYPE_TRAP_ON: AtomicBool = AtomicBool::new(false);
+static TYPE_TRAP_COUNT: AtomicI64 = AtomicI64::new(0);
+
+fn type_trap_enabled() -> bool {
+    if !TYPE_TRAP_INIT.load(Ordering::Relaxed) {
+        let on = std::env::var("FORGE_DX_TYPE_TRAP")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
+        TYPE_TRAP_ON.store(on, Ordering::Relaxed);
+        TYPE_TRAP_INIT.store(true, Ordering::Relaxed);
+    }
+    TYPE_TRAP_ON.load(Ordering::Relaxed)
+}
+
+#[inline]
+fn type_trap_check_load(ty: LLVMPtr, ptr: LLVMPtr) {
+    if !type_trap_enabled() { return; }
+    if ty.is_null() || ptr.is_null() { return; }
+    unsafe {
+        // Only check load-from-alloca; skip GEPs and other compound exprs.
+        let opcode: u32 = LLVMGetInstructionOpcode(ptr);
+        if opcode != 26 { return; } // 26 = Alloca
+        let alloca_ty = LLVMGetAllocatedType(ptr);
+        if alloca_ty.is_null() { return; }
+        if alloca_ty == ty { return; } // exact match — fine
+        let alloca_kind = LLVMGetTypeKind(alloca_ty);
+        let load_kind = LLVMGetTypeKind(ty);
+        // Flag: loading i64 (kind 8 with width 64) from a struct (kind 10).
+        if load_kind == 8 && alloca_kind == 10 {
+            let n = TYPE_TRAP_COUNT.fetch_add(1, Ordering::Relaxed);
+            if n < 50 {
+                let struct_name = LLVMGetStructName(alloca_ty);
+                let name_str = if !struct_name.is_null() {
+                    std::ffi::CStr::from_ptr(struct_name).to_string_lossy().into_owned()
+                } else {
+                    String::from("<anon>")
+                };
+                eprintln!(
+                    "[TYPE TRAP #{}] load i64 from %{} alloca (ptr={:p}) — codegen lost the struct type",
+                    n, name_str, ptr
+                );
+            } else if n == 50 {
+                eprintln!("[TYPE TRAP] (suppressing further warnings; total so far: {})", n);
+            }
+        }
+        // Flag: loading struct from i64 alloca (the inverse — equally bad).
+        if load_kind == 10 && alloca_kind == 8 {
+            let n = TYPE_TRAP_COUNT.fetch_add(1, Ordering::Relaxed);
+            if n < 50 {
+                eprintln!(
+                    "[TYPE TRAP #{}] load struct from i64 alloca (ptr={:p}) — alloca was sized as i64",
+                    n, ptr
+                );
+            }
+        }
+    }
+}
+
+/// Tool #4 — query the type-trap counter from Forge / scripts.
+#[no_mangle]
+pub extern "C" fn forge_dx_type_trap_count() -> i64 {
+    TYPE_TRAP_COUNT.load(Ordering::Relaxed)
+}
+
 // ─── Tool #1 + #3: Builder snapshot ring buffer + block provenance ──
 //
 // Every position_at_end and append_basic_block goes through here so we
@@ -217,6 +295,39 @@ const EMPTY_NAME: &[u8] = b"\0";
 
 fn safe_name(_name: *const c_char) -> *const c_char {
     EMPTY_NAME.as_ptr() as *const c_char
+}
+
+// Tool #5 — preserve source-level alloca names so stage 2 IR is
+// readable. Used by build_alloca to validate the incoming `name`
+// pointer (must be a NUL-terminated identifier-like string) and
+// fall back to EMPTY_NAME if it's garbage. Without this, all
+// allocas in stage 2 IR show up as %0, %1, %2 — unreadable.
+//
+// We're conservative about validation: ASCII identifier chars only,
+// max 64 bytes, must start with letter/underscore. The Forge bootstrap
+// has historically passed garbage `name` pointers via
+// pass-by-value-of-ForgeString-corruption, so the validation must
+// be paranoid.
+unsafe fn validate_named(name: *const c_char) -> *const c_char {
+    if name.is_null() {
+        return EMPTY_NAME.as_ptr() as *const c_char;
+    }
+    let bytes = std::ffi::CStr::from_ptr(name).to_bytes();
+    if bytes.is_empty() || bytes.len() >= 64 {
+        return EMPTY_NAME.as_ptr() as *const c_char;
+    }
+    // First char: letter or underscore
+    let c0 = bytes[0];
+    if !(c0.is_ascii_alphabetic() || c0 == b'_') {
+        return EMPTY_NAME.as_ptr() as *const c_char;
+    }
+    // Rest: alphanumeric, underscore, or '.'
+    for &b in &bytes[1..] {
+        if !(b.is_ascii_alphanumeric() || b == b'_' || b == b'.') {
+            return EMPTY_NAME.as_ptr() as *const c_char;
+        }
+    }
+    name
 }
 
 // Pending alloca name: set before build_alloca to ensure the name survives
@@ -1043,7 +1154,11 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
         eprintln!("WARNING: build_alloca with null type, builder={:?}", builder);
         return std::ptr::null_mut();
     }
-    let result = unsafe { LLVMBuildAlloca(builder, ty, safe_name(name)) };
+    // Tool #5: pass the name through to LLVM if it validates as an
+    // identifier. This makes stage 2 IR show `%lhs`, `%rhs`, `%op`
+    // instead of `%47`, `%49`, `%2` — 10x faster IR reading forever.
+    let llvm_name = unsafe { validate_named(name) };
+    let result = unsafe { LLVMBuildAlloca(builder, ty, llvm_name) };
     // Auto-cache: store alloca in C-side cache (bypasses Forge variable clobbering)
     if !result.is_null() {
         extern "C" {
@@ -1181,6 +1296,7 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr {
     bld_trace("build_load", builder, ptr);
+    type_trap_check_load(ty, ptr);  // tool #4
     let ty = ensure_type(ty);
     if ptr.is_null() || ty.is_null() {
         return std::ptr::null_mut();
@@ -2166,6 +2282,23 @@ pub extern "C" fn forge_bb_has_terminator(bb: LLVMPtr) -> i64 {
     unsafe {
         let term = LLVMGetBasicBlockTerminator(bb);
         if term.is_null() { 0 } else { 1 }
+    }
+}
+
+/// Count predecessors of a basic block. Used by emit_match_arms to
+/// detect dead blocks (zero preds = orphan from start_dead_block).
+#[no_mangle]
+pub extern "C" fn forge_bb_has_predecessors(bb: LLVMPtr) -> i64 {
+    if bb.is_null() { return 0; }
+    unsafe {
+        let mut count: i64 = 0;
+        let mut u = LLVMGetFirstUse(bb);
+        while !u.is_null() {
+            count += 1;
+            u = LLVMGetNextUse(u);
+            if count > 9999 { break; }
+        }
+        count
     }
 }
 

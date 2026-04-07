@@ -1136,15 +1136,16 @@ PY
 }
 
 # #3 — "Why is this i64?" reverse lookup. Given a function name and
-# parameter index, traces what type the source declared and what the
-# self-host emit resolved it to. Identifies missing type registrations.
+# parameter name (or index), parses the source signature, identifies
+# the source-level type, then walks resolve_type_to_llvm's actual
+# decision tree against the known registrations and reports which
+# rule the type hits — and whether that rule produces i64 or not.
 run_whyi64() {
     if [ -z "$DIFF_FN" ]; then
-        echo "Usage: diagnose.sh --whyi64 <fn_name> <param_index|param_name>" >&2
+        echo "Usage: diagnose.sh --whyi64 <fn_name> <param_index_or_name>" >&2
         exit 1
     fi
     echo "═══ Why is this i64?  @$DIFF_FN  param=$WHYI64_PARAM ═══"
-    # Step 1: find the function in stage 1 IR (rust-emitted, source of truth)
     local A="${DIFF_A:-/tmp/stage1.ll}"
     local B="${DIFF_B:-/tmp/stage2.ll}"
     if [ ! -f "$A" ] || [ ! -f "$B" ]; then
@@ -1156,28 +1157,154 @@ run_whyi64() {
     echo "  Stage 2 IR signature (self-host emit, what we're debugging):"
     grep "^define .*@${DIFF_FN}\b" "$B" | head -1 | sed 's/^/    /'
     echo ""
-    # Step 2: find the source declaration of the function
+    # Find the source declaration and parse the param type.
+    # Forge naming: free fn → just the name; method → <Class>_<method>.
+    # Try several name forms.
+    local candidates=()
+    candidates+=("$DIFF_FN")
+    if [[ "$DIFF_FN" == *_* ]]; then
+        candidates+=("${DIFF_FN#*_}")  # strip first underscore segment (class name)
+    fi
+    local src_line=""
+    for c in "${candidates[@]}"; do
+        src_line=$(grep -rn --include='*.fg' -E "^\s*(export\s+)?fn ${c}\s*\(" packages/forgec/src/ 2>/dev/null | head -1)
+        if [ -n "$src_line" ]; then break; fi
+    done
+    if [ -z "$src_line" ]; then
+        echo "  no source declaration found for fn (tried: ${candidates[@]})"
+        return 1
+    fi
     echo "  Source declaration:"
-    grep -rn --include='*.fg' "fn ${DIFF_FN##*_}\s*(" packages/forgec/src/ 2>/dev/null \
-        | head -3 | sed 's/^/    /'
+    echo "    $src_line"
     echo ""
-    # Step 3: walk resolve_type_to_llvm and check which registrations exist
-    echo "  Type-resolution checklist (what resolve_type_to_llvm tries):"
-    cat <<'NOTE'
-    The self-host's resolve_type_to_llvm() in mod.fg falls through:
-      1. primitives (string, int, float, bool, ptr) → CG_STR / CG_I64
-      2. List<T>, Map<K,V> → CG_LIST / CG_MAP struct
-      3. forge_get_type_by_name_i64(name) → LLVM named type lookup
-      4. forge_enum_type_exists(name) → enum tagged-union
-      5. forge_struct_type_get_fields(name) → struct
-      6. fall through → CG_I64 (the bug surface)
-    For an enum-typed param to NOT default to i64, ALL of:
-      - Enum is registered via forge_enum_type_register()
-      - Variant fields registered via forge_enum_variant_fields_set()
-      - cg_register_core_types() includes the enum
-    For a struct-typed param to NOT default to i64:
-      - register_struct_type() called (usually from check_type_decl)
-NOTE
+    python3 - "$src_line" "$WHYI64_PARAM" "$DIFF_FN" <<'PY'
+import sys, re, os
+src_line = sys.argv[1]
+param_query = sys.argv[2]
+fn_name = sys.argv[3]
+file_path, _, rest = src_line.partition(':')
+line_no, _, decl = rest.partition(':')
+m = re.search(r'fn\s+\w+\s*\(([^)]*)\)\s*(?:->\s*([^\s{]+))?', decl)
+if not m:
+    print("  could not parse fn signature")
+    sys.exit(1)
+params_raw = m.group(1).strip()
+ret_ty = (m.group(2) or 'void').strip()
+params = []
+if params_raw:
+    for p in params_raw.split(','):
+        p = p.strip()
+        if not p: continue
+        nm, _, ty = p.partition(':')
+        params.append((nm.strip(), ty.strip()))
+
+print(f"  Parsed params:")
+for i, (n, t) in enumerate(params):
+    marker = ""
+    if param_query and (param_query == n or param_query == str(i)):
+        marker = "  ← querying"
+    print(f"    [{i}] {n}: {t}{marker}")
+print(f"  Return type: {ret_ty}")
+print()
+
+# Pick the param to trace
+target = None
+target_idx = -1
+for i, (n, t) in enumerate(params):
+    if param_query == n or param_query == str(i):
+        target = t
+        target_idx = i
+        break
+if target is None and params:
+    print(f"  param '{param_query}' not found; tracing return type instead")
+    target = ret_ty
+
+if target is None:
+    sys.exit(0)
+
+# Strip nullable suffix and List<T>/Map<K,V> wrappers
+print(f"  Type to resolve: '{target}'")
+print()
+
+# Walk resolve_type_to_llvm decision tree
+print(f"  resolve_type_to_llvm('{target}') decision tree:")
+
+primitive = {'string': 'CG_STR (16-byte struct)',
+             'int': 'CG_I64 (8 bytes)',
+             'float': 'CG_I64 (8 bytes — float fallback)',
+             'bool': 'CG_I64 (8 bytes — bool fallback)',
+             'ptr': 'CG_I64 (8 bytes — ptr fallback!)'}
+if target in primitive:
+    print(f"    1. PRIMITIVE → {primitive[target]}")
+    print(f"       This is the expected path. No bug here.")
+    sys.exit(0)
+
+list_match = re.match(r'List(<.*>)?$', target) or target.startswith('List:') or target == 'List' or target == 'list'
+if list_match or target.startswith('list:'):
+    print(f"    2. LIST<T> → CG_LIST (16-byte {{ptr,i64}})")
+    sys.exit(0)
+
+map_match = target.startswith('Map') or target.startswith('map')
+if map_match:
+    print(f"    3. Map<K,V> → CG_MAP (24-byte {{ptr,ptr,i64}})")
+    sys.exit(0)
+
+# Strip the trailing ? for nullable check
+inner = target.rstrip('?')
+
+# At this point: not a primitive, not List, not Map. The source
+# type is some user-defined struct or enum. Check whether it's
+# registered.
+print(f"    4. forge_get_type_by_name_i64('{inner}') — LLVM named type registry")
+print(f"       True if cg_init_str / cg_register_core_types registered it.")
+print()
+print(f"    5. forge_enum_type_exists('{inner}') — C-side enum registry")
+print(f"       True if forge_enum_type_register was called for this enum.")
+
+# Search for the enum declaration in source
+ast_files = []
+for root, dirs, files in os.walk('packages/forgec/src'):
+    for f in files:
+        if f.endswith('.fg'):
+            ast_files.append(os.path.join(root, f))
+enum_line = None
+for f in ast_files:
+    try:
+        with open(f) as fh:
+            for ln, line in enumerate(fh, 1):
+                if re.match(rf'^\s*(export\s+)?enum\s+{re.escape(inner)}\b', line):
+                    enum_line = f"{f}:{ln}: {line.rstrip()}"
+                    break
+    except: pass
+    if enum_line: break
+
+if enum_line:
+    print(f"       FOUND: {enum_line}")
+    print()
+    # Check if it's registered in cg_register_core_types
+    cg_mod = "packages/forgec/src/codegen/mod.fg"
+    if os.path.exists(cg_mod):
+        with open(cg_mod) as fh:
+            content = fh.read()
+        reg_match = re.search(rf'forge_enum_type_register\s*\(\s*"{re.escape(inner)}"', content)
+        if reg_match:
+            print(f"       ✓ {inner} IS registered in mod.fg via forge_enum_type_register")
+            print(f"       → resolve_type_to_llvm returns the enum LLVM type. Param should NOT be i64.")
+            print(f"       → if the IR shows i64, the bug is in declare_all_fns / emit_all_fn_bodies")
+            print(f"         not consulting the enum type when building the function signature.")
+        else:
+            print(f"       ✗ {inner} is NOT registered in mod.fg")
+            print(f"       → resolve_type_to_llvm falls through to step 6 → returns CG_I64")
+            print(f"       → THIS is why the param is i64. Add forge_enum_type_register('{inner}', N)")
+            print(f"         to cg_register_core_types() in mod.fg.")
+else:
+    print(f"       (no enum {inner} found in source)")
+print()
+print(f"    6. forge_struct_type_get_fields('{inner}') — C-side struct registry")
+print(f"       True if check_type_decl was called for the type definition.")
+print()
+print(f"    7. FALLTHROUGH → CG_I64 (the bug surface)")
+PY
 }
 
 # #6 — Regression suite. Saves minimal repros from fuzzer/manual debug
