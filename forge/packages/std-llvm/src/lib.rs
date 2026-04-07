@@ -1255,11 +1255,15 @@ pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, value: LLVMPtr, block: L
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_incoming_one(phi: LLVMPtr, value: LLVMPtr, block: LLVMPtr) {
     unsafe {
-        // Validate block: must belong to same function as the phi's parent
-        // block. Forge List<ptr> occasionally hands back a stale/corrupt
-        // BasicBlockRef; skipping silently is safer than a segfault or
-        // <badref> that pollutes downstream LLVM printing.
         if phi.is_null() || value.is_null() || block.is_null() { return; }
+        // Sanity-check pointer alignment: LLVM objects are at least
+        // 8-byte aligned. Unaligned pointers are almost certainly
+        // corrupt Forge List<ptr> slots holding garbage.
+        if ((phi as usize) & 0x7) != 0 { return; }
+        if ((block as usize) & 0x7) != 0 { return; }
+        // Validate block: must belong to same function as the phi's
+        // parent block. Forge List<ptr> occasionally hands back a
+        // stale/corrupt BasicBlockRef.
         let phi_block = LLVMGetInstructionParent(phi);
         if phi_block.is_null() { return; }
         let phi_fn = LLVMGetBasicBlockParent(phi_block);
