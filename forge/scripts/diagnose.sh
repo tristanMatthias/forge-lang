@@ -143,6 +143,12 @@ case "${1:-}" in
         REGRESS_NAME="${2:-}"
         REGRESS_SRC="${3:-}"
         ;;
+    --bugs)
+        # Unified bug enumeration. Runs every detection method and
+        # produces one ranked list. Use this to answer "what's broken
+        # right now?" without having to remember which sub-tool to run.
+        MODE="bugs"
+        ;;
     --help|-h)
         MODE="help"
         ;;
@@ -1378,6 +1384,239 @@ run_fuzz() {
     bash scripts/forge_fuzz.sh "${FUZZ_COUNT:-30}"
 }
 
+# --bugs — unified bug enumeration. Runs every detection method we
+# have and produces a deduplicated, ranked list. This is the answer
+# to "what's broken right now?" — instead of running 6 sub-tools.
+#
+# Detection methods:
+#   1. Type divergence (--type-diff): function signatures that differ
+#      between rust and self-host emit. The "i64 fallback" infection.
+#   2. Anomaly score (--anomaly): per-function score from orphans,
+#      undef args, ret-undef, etc. Top of list = closest to broken.
+#   3. Verify failures (FORGE_DEBUG_VERIFY=1): functions that fail
+#      LLVMVerifyFunction during stage1_rust execution.
+#   4. Regression failures (--regress): existing minimal repros that
+#      no longer pass.
+#   5. Stage 2 binary smoke test: does stage2_bin compile hello world?
+#   6. Stage 3 binary smoke test: does the stage 3 binary actually run?
+run_bugs() {
+    local A="${DIFF_A:-/tmp/stage1.ll}"
+    local B="${DIFF_B:-/tmp/stage2.ll}"
+    local LLVM_PREFIX="${LLVM_SYS_191_PREFIX:-/opt/homebrew/opt/llvm@19}"
+    echo "═══════════════════════════════════════════════════════════"
+    echo " Forge Pre-existing Bug Report"
+    echo "═══════════════════════════════════════════════════════════"
+
+    # ── Phase 1: ensure both .ll files are fresh ────────────────
+    echo ""
+    echo "── Setting up: rebuild stage 1 + stage 2 IR ──"
+    if [ ! -x ./build/stage1_rust ]; then
+        echo "  ERROR: ./build/stage1_rust not built. Run 'make stage1-rust' first." >&2
+        exit 1
+    fi
+    LLVM_SYS_191_PREFIX="$LLVM_PREFIX" ./target/release/forgec build packages/forgec/src/main.fg --emit-ir 2>/dev/null > "$A" || {
+        echo "  ✗ rust forgec failed to emit stage 1 IR" >&2; exit 1; }
+    ./build/stage1_rust build packages/forgec/src/main.fg >/dev/null 2>&1 || true
+    if [ ! -f output.ll ]; then
+        echo "  ✗ stage1_rust did not produce output.ll" >&2; exit 1
+    fi
+    cp output.ll "$B"
+    echo "  ✓ $A ($(wc -l < $A | tr -d ' ') lines)"
+    echo "  ✓ $B ($(wc -l < $B | tr -d ' ') lines)"
+
+    # ── Phase 2: aggregate bugs from each detection method ─────
+    local report="/tmp/_bugs_report.txt"
+    : > "$report"
+
+    # Method A: type divergence
+    echo ""
+    echo "── A. Function signature divergences (rust vs self-host) ──"
+    python3 - "$A" "$B" "$report" <<'PY'
+import re, sys
+A_path, B_path, report = sys.argv[1], sys.argv[2], sys.argv[3]
+def parse_sigs(path):
+    sigs = {}
+    pat = re.compile(r'^define\s+([^@]*?)\s*@(\w+)\s*\(([^)]*)\)')
+    with open(path) as f:
+        for line in f:
+            m = pat.match(line)
+            if m:
+                ret = m.group(1).strip()
+                name = m.group(2)
+                ps = []
+                if m.group(3).strip():
+                    for p in m.group(3).split(','):
+                        p = p.strip()
+                        m2 = re.match(r'(.*?)\s*%[\w\.]*$', p)
+                        ty = (m2.group(1) if m2 else p).strip()
+                        ty = re.sub(r'^(signext|zeroext|inreg|byval\([^)]*\)|byref\([^)]*\)|nonnull|noundef|nofree|noalias|nocapture|readonly|readnone|sret\([^)]*\)|align\s+\d+)\s+', '', ty)
+                        ps.append(ty)
+                sigs[name] = (ret, ps)
+    return sigs
+A = parse_sigs(A_path)
+B = parse_sigs(B_path)
+diverge = []
+for name in sorted(set(A) & set(B)):
+    if A[name] != B[name]:
+        ra, pa = A[name]
+        rb, pb = B[name]
+        diffs = []
+        if ra != rb: diffs.append(f"ret {ra}→{rb}")
+        for i, (x, y) in enumerate(zip(pa, pb)):
+            if x != y: diffs.append(f"p{i} {x}→{y}")
+        diverge.append((name, diffs))
+print(f"  total divergent: {len(diverge)} / {len(set(A) & set(B))} common")
+print(f"  examples (top 5):")
+for name, diffs in diverge[:5]:
+    print(f"    @{name}  ({', '.join(diffs[:3])})")
+with open(report, 'a') as f:
+    for name, diffs in diverge:
+        f.write(f"TYPE_DIFF\t{name}\t{', '.join(diffs)}\n")
+PY
+
+    # Method B: anomaly score (orphans, undef args, ret undef)
+    echo ""
+    echo "── B. Functions with high anomaly scores ──"
+    python3 - "$B" "$report" <<'PY'
+import re, sys
+B_path, report = sys.argv[1], sys.argv[2]
+funcs = {}
+cur = None
+fn_pat = re.compile(r'^define\s+[^@]*@(\w+)\s*\(')
+with open(B_path) as f:
+    for line in f:
+        m = fn_pat.match(line)
+        if m:
+            cur = m.group(1)
+            funcs[cur] = {'orphans': 0, 'undef_args': 0, 'i64_struct': 0, 'ret_undef': 0}
+            continue
+        if cur is None: continue
+        if 'No predecessors!' in line: funcs[cur]['orphans'] += 1
+        if re.search(r'undef\b.*,', line) and 'call' in line: funcs[cur]['undef_args'] += 1
+        if re.search(r'load\s+i64,\s*ptr.*align\s+8', line): funcs[cur]['i64_struct'] += 1
+        if re.match(r'^\s*ret\s+\S+\s+undef\b', line): funcs[cur]['ret_undef'] += 1
+        if line.startswith('}'): cur = None
+scored = [(c['orphans']*5 + c['undef_args']*3 + c['i64_struct']*5 + c['ret_undef']*10, name, c)
+          for name, c in funcs.items()]
+scored = [s for s in scored if s[0] > 0]
+scored.sort(reverse=True)
+print(f"  total functions with anomalies: {len(scored)} / {len(funcs)}")
+print(f"  top 5 by score:")
+for score, name, c in scored[:5]:
+    print(f"    {score:>4}  @{name}  (orph={c['orphans']} undef={c['undef_args']} ret_undef={c['ret_undef']})")
+with open(report, 'a') as f:
+    for score, name, c in scored:
+        f.write(f"ANOMALY\t{name}\tscore={score} orph={c['orphans']} undef={c['undef_args']} ret_undef={c['ret_undef']}\n")
+PY
+
+    # Method C: in-emit verifier failures
+    echo ""
+    echo "── C. LLVMVerifyFunction failures (mid-emit) ──"
+    local verify_fails=$(FORGE_DEBUG_VERIFY=1 ./build/stage1_rust build packages/forgec/src/main.fg 2>&1 | grep "VERIFY FAIL" | head -50)
+    local verify_count=$(echo "$verify_fails" | grep -c "VERIFY FAIL" || echo 0)
+    echo "  total verify failures: $verify_count"
+    if [ "$verify_count" != "0" ]; then
+        echo "  top 5:"
+        echo "$verify_fails" | head -5 | sed 's/^/    /'
+    fi
+    echo "$verify_fails" | sed -E 's/^.*VERIFY FAIL\] +(\S+).*/VERIFY\t\1\t/' >> "$report"
+
+    # Method D: regression suite
+    echo ""
+    echo "── D. Regression suite ──"
+    if [ -d "$REGRESS_DIR" ]; then
+        local pass=0 fail=0
+        for src in "$REGRESS_DIR"/*.fg; do
+            [ -f "$src" ] || continue
+            local name=$(basename "$src" .fg)
+            local expected="$REGRESS_DIR/$name.expected"
+            rm -f output.ll a.out 2>/dev/null
+            if ! ./build/stage1_rust build "$src" >/dev/null 2>&1; then
+                fail=$((fail + 1))
+                echo "REGRESS\t$name\tcompile-failed" >> "$report"
+                continue
+            fi
+            local got=$(./a.out 2>&1 || true)
+            if [ -f "$expected" ]; then
+                if [ "$got" = "$(cat $expected)" ]; then
+                    pass=$((pass + 1))
+                else
+                    fail=$((fail + 1))
+                    echo "REGRESS\t$name\toutput-mismatch" >> "$report"
+                fi
+            fi
+        done
+        echo "  pass: $pass  fail: $fail"
+    else
+        echo "  (no regression suite at $REGRESS_DIR)"
+    fi
+
+    # Method E: stage 2 binary smoke test
+    echo ""
+    echo "── E. Stage 2 binary smoke test ──"
+    /opt/homebrew/opt/llvm@19/bin/llc -O0 -filetype=obj "$B" -o /tmp/stage2.o 2>/dev/null
+    cc -o /tmp/stage2_bin /tmp/stage2.o build/runtime.o $(/opt/homebrew/opt/llvm@19/bin/llvm-config --ldflags --libs core analysis bitwriter) -lm -Wl,-stack_size,0x10000000 packages/std-llvm/target/release/libforge_llvm.a -lstdc++ -lz -lcurses 2>/dev/null
+    echo 'fn main() { println("hi") }' > /tmp/_bug_hi.fg
+    rm -f output.ll a.out 2>/dev/null
+    /tmp/stage2_bin build /tmp/_bug_hi.fg >/dev/null 2>&1 || true
+    if [ -f a.out ] && [ "$(./a.out 2>&1)" = "hi" ]; then
+        echo "  ✓ stage 2 binary compiles + runs hello world"
+    else
+        echo "  ✗ stage 2 binary BROKEN on hello world"
+        echo "STAGE2_BIN\thello_world\thello-world-broken" >> "$report"
+    fi
+
+    # Method F: stage 3 binary smoke test (stage 2 → stage 3)
+    echo ""
+    echo "── F. Stage 3 binary smoke test ──"
+    rm -f output.ll a.out 2>/dev/null
+    /tmp/stage2_bin build packages/forgec/src/main.fg >/dev/null 2>&1 || true
+    if [ -f output.ll ]; then
+        cp output.ll /tmp/stage3.ll
+        if /opt/homebrew/opt/llvm@19/bin/llc -O0 -filetype=null /tmp/stage3.ll >/dev/null 2>&1; then
+            echo "  ✓ stage 3 IR llc-clean ($(grep -c '^define' /tmp/stage3.ll) functions)"
+        else
+            echo "  ✗ stage 3 IR fails llc"
+            echo "STAGE3_BIN\tllc\tllc-failure" >> "$report"
+        fi
+    else
+        echo "  ✗ stage 2 binary did NOT produce stage 3 IR"
+        echo "STAGE3_BIN\tcompile\tdid-not-emit" >> "$report"
+    fi
+
+    # ── Phase 3: deduplicate and rank ──────────────────────────
+    echo ""
+    echo "═══ Top bugs (deduplicated, ranked) ═══"
+    python3 - "$report" <<'PY'
+import sys
+from collections import defaultdict
+report = sys.argv[1]
+# Aggregate findings per function
+fn_findings = defaultdict(list)
+with open(report) as f:
+    for line in f:
+        parts = line.strip().split('\t')
+        if len(parts) < 2: continue
+        method, name = parts[0], parts[1]
+        detail = parts[2] if len(parts) > 2 else ""
+        fn_findings[name].append((method, detail))
+
+# Rank by number of detection methods that flagged it
+ranked = sorted(fn_findings.items(), key=lambda kv: -len(kv[1]))
+print(f"  {len(fn_findings)} unique buggy functions detected by ≥1 method")
+print()
+print(f"  Most-flagged (likely the worst):")
+for name, findings in ranked[:15]:
+    methods = sorted(set(m for m, _ in findings))
+    print(f"    [{len(methods)} methods] @{name}")
+    for method, detail in findings[:3]:
+        d = detail[:80] + "..." if len(detail) > 80 else detail
+        print(f"      • {method}: {d}")
+print()
+print(f"  Full report: {report}")
+PY
+}
+
 # --help — print everything in one screen
 run_help() {
     cat <<'HELP'
@@ -1407,6 +1646,9 @@ FUZZ + REGRESSION
   --fuzz [count]                 differential fuzzer (rust vs self-host)
   --regress                      run forge_regress/*.fg suite ★
   --regress-add <name> <src.fg>  capture a fix as regression test ★
+
+UNIFIED BUG REPORT
+  --bugs                         run EVERY detection method, ranked list ★
 
 ENVIRONMENT VARIABLES (set before running stage1_rust / stage2_bin)
   FORGE_DEBUG_BUILDER=1            trace every builder call to stderr
@@ -1553,6 +1795,7 @@ case "$MODE" in
     fuzz)     run_fuzz ;;
     regress)  run_regress ;;
     regress-add) run_regress_add ;;
+    bugs)     run_bugs ;;
     help)     run_help ;;
     ir-sanity) run_ir_sanity ;;
     full)     run_full ;;
