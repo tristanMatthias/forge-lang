@@ -202,21 +202,42 @@ When `arm.body` is `if k == "Pipe" { "Pipe" } else { "" }`:
    the orphan merge, sees no terminator, emits `br merge_bb` — but
    `arm_bb` itself stays empty.
 
-### Hypotheses to investigate
+### Hypotheses (CORRECTED 2026-04-07b)
 
-- `compile_if` line 11 `let cond_val = self.compile_expr(condition)?;`
-  uses `?` — if `compile_expr` returns None, compile_if returns None
-  WITHOUT branching from current block. The condition's IR was emitted
-  into current block before the None return. So if compile_expr returns
-  None for the string-eq, you'd see partial IR in arm_bb, not orphan.
-- More likely: something between `position_at_end(arm_bb)` and
-  `compile_expr(if-expr)` is moving the builder. Possibly
-  `bind_pattern_vars` for the integer pattern reads/writes to a
-  different block.
-- Or `compile_expr(StringLit "Pipe")` triggers global string constant
-  creation that internally repositions the builder.
-- Or it's a `last_block_result_type` side effect from a prior arm's
-  Block compile.
+**Initial guess (WRONG)**: that `emit_pattern_bindings`'s internal
+`match pat { ... }` repositioned `CG_B`. **Verified false**: that match
+is compiled into LLVM if-else by the rust compiler at compile time;
+running it doesn't touch `CG_B`. Adding `position_at_end(arm_bb)` after
+`emit_pattern_bindings` had zero effect on the produced IR — the bug
+is NOT there.
+
+**Confirmed observations**:
+- Stage 1 IR (rust-emitted) for `Parser_token_to_binop_key` is
+  CORRECT and clean (no orphans, proper if-then-else, working
+  string equality dispatch).
+- Stage 2 IR (self-host-emitted) for the same function has all arm
+  bodies orphaned — `bb995` (arm 1 body) is empty `br merge`, while
+  the actual `forge_string_eq` for `"Pipe"` lives in `bb998`
+  (No predecessors!).
+- The SECOND arm's dispatch icmp is also in an orphan block
+  (`bb1004: No predecessors!`), meaning the builder lost its
+  position between iterations of the `for arm in _arms` loop in
+  `Codegen_emit_match_arms`.
+
+**Where to look next**:
+- Something between iteration N's `position_at_end(next_bb)` and
+  iteration N+1's `build_icmp(...)` is repositioning `CG_B`. The
+  candidates are: the `for` loop latch (rust-compiled), `cg_reinit_types()`,
+  `append_basic_block` ×2, and `self.pattern_tag(...)`.
+- `pattern_tag` makes string concatenations and calls
+  `match_enum_tag()` — none of these *should* touch `CG_B` directly,
+  but pattern_tag goes through nested matches that may have their
+  own indirect effects via the alloca cache or register state.
+- Worth instrumenting: print `forge_value_type_kind(llvm.get_insert_block(CG_B))`
+  before AND after `self.pattern_tag(...)` to see if it changes.
+- Worth checking: is it possible the `for arm in _arms` for-loop
+  body, when compiled by the rust compiler, allocates per-iteration
+  scratch state in the user's IR by accident?
 
 ### Smallest repro
 
