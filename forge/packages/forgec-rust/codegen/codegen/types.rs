@@ -1,5 +1,19 @@
 use super::*;
 
+/// Check whether a Forge Type references the given struct name
+/// (directly, through Nullable, List, Tuple, Map, or as a struct field).
+/// Used to break self-referential type cycles by substituting `ptr`.
+fn type_references_struct(ty: &Type, target: &str) -> bool {
+    match ty {
+        Type::Struct { name: Some(n), .. } if n == target => true,
+        Type::Nullable(inner) => type_references_struct(inner, target),
+        Type::List(inner) => type_references_struct(inner, target),
+        Type::Map(k, v) => type_references_struct(k, target) || type_references_struct(v, target),
+        Type::Tuple(elems) => elems.iter().any(|e| type_references_struct(e, target)),
+        _ => false,
+    }
+}
+
 impl<'ctx> Codegen<'ctx> {
     pub(crate) fn string_type(&self) -> StructType<'ctx> {
         // Use named type to ensure all ForgeString values have the same LLVM type
@@ -142,8 +156,23 @@ impl<'ctx> Codegen<'ctx> {
                     .into()
             }
             Type::Struct { name, fields, .. } => {
-                let field_types: Vec<BasicTypeEnum<'ctx>> =
-                    fields.iter().map(|(_, t)| self.type_to_llvm_basic(t)).collect();
+                // For named structs, substitute `ptr` for any field that
+                // references the struct itself (directly or via Nullable/List),
+                // to break self-referential cycles that would otherwise produce
+                // unsized LLVM types.
+                let ptr_ty: BasicTypeEnum<'ctx> =
+                    self.context.ptr_type(AddressSpace::default()).into();
+                let field_types: Vec<BasicTypeEnum<'ctx>> = fields
+                    .iter()
+                    .map(|(_, t)| {
+                        if let Some(n) = name {
+                            if type_references_struct(t, n) {
+                                return ptr_ty;
+                            }
+                        }
+                        self.type_to_llvm_basic(t)
+                    })
+                    .collect();
                 // Use named LLVM struct type for named Forge structs
                 if let Some(n) = name {
                     let body: Vec<_> = field_types.iter().map(|t| (*t).into()).collect();
