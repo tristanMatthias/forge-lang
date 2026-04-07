@@ -202,7 +202,46 @@ When `arm.body` is `if k == "Pipe" { "Pipe" } else { "" }`:
    the orphan merge, sees no terminator, emits `br merge_bb` — but
    `arm_bb` itself stays empty.
 
-### Hypotheses (CORRECTED 2026-04-07b)
+### THE REAL ROOT CAUSE (CONFIRMED 2026-04-07c via runtime tracing)
+
+Instrumented `emit_match_arms`'s for-loop with `forge_trace_i64`
+of an `iter_count` (incremented inside the loop). Result: a single
+`emit_match_arms` invocation runs **72 iterations** when the source
+match has at most ~12 arms. Tag values are `1, -1, -2, -1, -1, 2,
+-1, -2, -1, -1, 3, -1, -2, -1, -1, ...` — the source's real arms
+(int literals 1, 2, 3, ...) interleaved with 4 junk arms each
+(`-1, -2, -1, -1`).
+
+**`List<MatchArm>` is corrupted.** The `arms: List<MatchArm>` parameter
+arrives at `emit_match_arms` containing real arms padded with 4 junk
+arms per real arm. The for loop dutifully processes all 72, creating
+72 `arm_bb`/`next_bb` pairs. The first real arm's body lands in the
+first arm_bb correctly (bb995); the remaining 71 iterations process
+garbage and emit dispatch + bodies into blocks that no real edge
+points to → "No predecessors!" orphan blocks.
+
+This is a **list/Statement-stride bug**, not a builder-position bug.
+Per the existing CLAUDE.md "112-byte Statement stride" notes, the
+List<T>.push() implementation has had stride bugs for non-16-byte
+elements. `MatchArm` is also a multi-field struct.
+
+### Where to look next
+
+1. `forge_list_push` in `stdlib/runtime.c` — verify the element-size
+   handling for items larger than 16 bytes (Statement is 112 bytes,
+   MatchArm size is similar).
+2. `Parser_parse_match_arms` (or wherever `MatchArm` lists are built)
+   — print `arms.length` immediately after parsing to confirm the
+   junk inflation happens at parse time, not at codegen time.
+3. The `match X { .Y -> ... }` patterns in `emit_pattern_bindings`
+   and `emit_match_arms` themselves use `MatchArm` lists indirectly
+   via `arm.pattern` extraction. The `MatchArm` struct layout in
+   the rust compiler vs the self-hosted compiler may have a stride
+   mismatch that propagates into List<MatchArm> reads.
+4. Fix the list corruption at the source — once 72 → 12, every
+   `match` in stage 3 IR should immediately become correct.
+
+### (HISTORICAL) Earlier hypotheses
 
 **Initial guess (WRONG)**: that `emit_pattern_bindings`'s internal
 `match pat { ... }` repositioned `CG_B`. **Verified false**: that match
