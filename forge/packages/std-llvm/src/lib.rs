@@ -2094,12 +2094,12 @@ pub extern "C" fn forge_llvm_assert_at(builder: LLVMPtr, expected_bb: LLVMPtr, l
 }
 
 /// #3 — Run LLVMVerifyFunction. Returns 0 on success, non-zero on failure.
-/// Action 0 = AbortProcess, 1 = PrintMessage, 2 = ReturnStatus.
-/// We use 2 (ReturnStatus) so the caller can decide what to do.
+/// Action 1 = PrintMessage (verifier prints the failure to stderr).
+/// We use 1 so callers see WHY verification failed, not just that it did.
 #[no_mangle]
 pub extern "C" fn forge_llvm_verify_function(f: LLVMPtr) -> i64 {
     if f.is_null() { return -1; }
-    unsafe { LLVMVerifyFunction(f, 2) as i64 }
+    unsafe { LLVMVerifyFunction(f, 1) as i64 }
 }
 
 /// #5 — Dump every basic block in `f` to stderr with `(name, term?, instr_count, pred_count)`.

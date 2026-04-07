@@ -518,6 +518,14 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         eprintln("  [TOK] done " + name + " tokens=" + string(body_tokens.length))
         forge_set_token_list(body_tokens)
         forge_parser_set_pos(0)
+        // Clear the per-function pending var-type table BEFORE parsing this
+        // function body. The pending table holds parser-time `let X: T = …`
+        // annotations and is consumed at codegen-time by emit_let. Since
+        // every function body is parsed and emitted in lockstep, the right
+        // scope for these annotations is the current function — clearing
+        // here prevents a stale entry (e.g. `let command: int = 0` in fn A)
+        // from polluting the next function's `let command = args[1]`.
+        forge_pending_var_type_clear()
         mut body_parser = parser_new(body_tokens)
         let body = body_parser.parse_block()
         eprintln("  [BODY] " + name)
@@ -542,6 +550,21 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
             } else {
                 llvm.build_ret(CG_B, coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0)))
             }
+        }
+    }
+
+    // Per-function IR validator hook (#3). When FORGE_DEBUG_VERIFY=1,
+    // run LLVMVerifyFunction immediately after each function body
+    // is fully emitted. The first function that fails to verify is
+    // the one whose codegen path is buggy. Pairs naturally with the
+    // builder trace (#1) which then shows which call produced the
+    // bad IR.
+    let dbg_verify = forge_env_int("FORGE_DEBUG_VERIFY")
+    if dbg_verify == 1 {
+        let rc = forge_llvm_verify_function(fn_val)
+        if rc != 0 {
+            eprintln("[VERIFY FAIL] " + name + " (rc=" + string(rc) + ")")
+            forge_llvm_dump_blocks(fn_val)
         }
     }
 }

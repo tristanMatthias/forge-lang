@@ -20,12 +20,12 @@ export mut LLVM_POINTER_TYPE_KIND  = 12  // ptr
 
 mut CG_CTX: ptr = null
 export mut CG_MOD: ptr = null
-mut CG_B: ptr = null
+export mut CG_B: ptr = null
 mut CG_I64: ptr = null
 mut CG_I32: ptr = null
 mut CG_I8: ptr = null
 mut CG_VOID: ptr = null
-mut CG_PTR: ptr = null
+export mut CG_PTR: ptr = null
 mut CG_F64: ptr = null
 export mut CG_STR: ptr = null
 mut CG_RT_PRINTLN: ptr = null
@@ -42,7 +42,24 @@ mut CG_RT_ALLOC: ptr = null
 mut CG_RT_MEMCPY: ptr = null
 
 // List struct type: {ptr data, i64 count}
-mut CG_LIST: ptr = null
+export mut CG_LIST: ptr = null
+// Map struct type: {ptr keys, ptr values, i64 length}
+// Created lazily by cg_get_map_struct_ty.
+export mut CG_MAP: ptr = null
+
+// Lazily build the Map struct type {ptr, ptr, i64}.
+// Self-hosted Map<K, V> globals need 24-byte allocas; the legacy
+// "all globals are 16-byte ForgeString" path silently truncated them.
+export fn cg_get_map_struct_ty() -> ptr {
+    if CG_MAP != null { return CG_MAP }
+    let mf = llvm.type_array_new(3)
+    llvm.type_array_set(mf, 0, CG_PTR)
+    llvm.type_array_set(mf, 1, CG_PTR)
+    llvm.type_array_set(mf, 2, CG_I64)
+    CG_MAP = llvm.struct_type(CG_CTX, mf, 3, 0)
+    llvm.type_array_free(mf)
+    CG_MAP
+}
 
 // Nullable variable tracking: parallel lists of var name → inner type name
 export mut CG_NULLABLE_VAR_NAMES: List<string> = []
@@ -163,7 +180,15 @@ fn mft6(ret: ptr, p0: ptr, p1: ptr, p2: ptr, p3: ptr, p4: ptr, p5: ptr) -> ptr {
 
 // store_toplevel_source removed (unused)
 
-// Create LLVM globals from the C-side global variable registry
+// Create LLVM globals from the C-side global variable registry.
+//
+// Type resolution:
+//   1. If the global has a registered FULL type name (e.g. "List:Statement",
+//      "Map:string:ListLitData", "Span"), resolve_type_to_llvm gives us the
+//      exact LLVM type. This is necessary for Map<K, V> globals which need
+//      24-byte {ptr,ptr,i64} allocas — the legacy "is_str" flag would have
+//      lowered them to 16-byte ForgeString and silently truncated.
+//   2. Otherwise fall back to the boolean is_str flag (CG_STR or CG_I64).
 export fn create_globals_from_registry() {
     let count = forge_global_var_count()
     mut i = 0
@@ -173,6 +198,15 @@ export fn create_globals_from_registry() {
         cg_reinit_types()
         mut gty = CG_I64
         if is_str == 1 { gty = CG_STR }
+        // Prefer the full type name when available — handles Map<K,V>,
+        // named structs, and List<T> with the correct LLVM type.
+        let full_type = forge_global_var_get_type(name)
+        if full_type.length > 0 {
+            let resolved = resolve_type_to_llvm(full_type)
+            if resolved != null && resolved != CG_I64 {
+                gty = resolved
+            }
+        }
         let gv = llvm.add_global(CG_MOD, gty, name)
         // Use stored initial value if available (for const-like globals)
         if forge_global_var_has_init(i) == 1 && is_str == 0 {
@@ -417,7 +451,17 @@ export fn make_nullable_type(inner_ty: ptr) -> ptr {
     if inner_name.length >= 3 { has_name = true }
 
     if has_name {
-        let nullable_name = "Nullable_" + inner_name
+        // CRITICAL: declare_all_fns names nullable returns with the SOURCE
+        // type name (e.g. `string?` → `%Nullable_string`), NOT the LLVM
+        // type name (`%ForgeString`). Mirror that mapping here so the
+        // codegen-emitted nullable type matches the function-signature
+        // type. Otherwise the verifier sees mismatched named structs:
+        //   alloca %Nullable_string ; store %Nullable_ForgeString
+        // Both Lexer_peek and ~30 other functions on main.fg fail
+        // verification today because of this single divergence.
+        mut canonical = inner_name
+        if inner_name == "ForgeString" { canonical = "string" }
+        let nullable_name = "Nullable_" + canonical
         let existing = llvm.get_type_by_name(CG_CTX, nullable_name)
         if existing != null { return existing }
         // Create the named Nullable_<T> with body {i8, T}.
@@ -589,6 +633,12 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "List" || type_name == "list" || (type_name.length > 5 && (type_name.substring(0, 5) == "List:" || type_name.substring(0, 5) == "list:")) {
         return CG_LIST
     }
+    // Map<K, V> stored as `Map:K:V` in the global type registry. The LLVM
+    // representation is a 3-field struct {ptr keys, ptr values, i64 length}.
+    // Returning CG_LIST (16 bytes) here would silently truncate map globals.
+    if type_name == "map" || type_name == "Map" || (type_name.length > 4 && (type_name.substring(0, 4) == "Map:" || type_name.substring(0, 4) == "map:")) {
+        return cg_get_map_struct_ty()
+    }
     // Use LLVM's named type registry (i64-based to avoid ptr null check issue)
     let named_i = forge_get_type_by_name_i64(type_name)
     if named_i != 0 { return named_i }
@@ -677,6 +727,56 @@ fn cg_init_int_types() {
     CG_I8 = llvm.int8_type(CG_CTX)
 }
 
+// ─── Diagnostic helpers (FORGE_DEBUG_BUILDER=1) ─────────────────
+//
+// All helpers below are no-ops unless the env var is set, so they're
+// cheap to leave in production codegen paths. Wrap any suspect span
+// with `dbg_at(arm_bb, "after pattern_tag")` to assert the builder
+// is where you expect; call `dbg_dump(fn)` to print every block in
+// a function with terminator + predecessor counts; call
+// `dbg_verify(fn)` to run LLVMVerifyFunction (returns 0 if valid).
+
+// Assert the builder is positioned at `expected_bb`. Aborts if not
+// AND if FORGE_DEBUG_BUILDER=1. No-op otherwise. Returns 1 on success.
+export fn dbg_at(expected_bb: ptr, label: string) -> int {
+    forge_llvm_assert_at(CG_B, expected_bb, label)
+}
+
+// Dump every basic block in `f` with (name, terminator, instr count,
+// predecessor count). Always runs (even without env var) — call it
+// only at debugging time.
+export fn dbg_dump(f: ptr) {
+    forge_llvm_dump_blocks(f)
+}
+
+// Verify a function with LLVMVerifyFunction. Returns 0 if valid,
+// non-zero if invalid. Always runs.
+export fn dbg_verify(f: ptr) -> int {
+    forge_llvm_verify_function(f)
+}
+
+// Push/pop call-frame markers for indented call-graph tracing.
+// Use as `dbg_enter("emit_match_arms"); ... ; dbg_exit("emit_match_arms")`.
+// No-op without FORGE_DEBUG_BUILDER=1.
+export fn dbg_enter(name: string) {
+    forge_dbg_enter(name)
+}
+export fn dbg_exit(name: string) {
+    forge_dbg_exit(name)
+}
+
+// Verify the CURRENT function (the one CG_B is positioned in).
+// Pairs well with the per-emit_statement hook that calls this when
+// FORGE_DEBUG_VERIFY=1.
+export fn dbg_verify_current() -> int {
+    if CG_B == null { return 0 }
+    let cur_bb = llvm.get_insert_block(CG_B)
+    if cur_bb == null { return 0 }
+    let f = llvm.get_basic_block_parent(cur_bb)
+    if f == null { return 0 }
+    forge_llvm_verify_function(f)
+}
+
 // Re-init ALL type globals (list pushes corrupt globals in bootstrap compiler)
 export fn cg_reinit_types() {
     CG_I64 = llvm.int64_type(CG_CTX)
@@ -729,6 +829,14 @@ fn cg_register_core_types() {
     forge_enum_type_register("UnaryOp", 0)
     // TokenKind: variants with up to 1 field (TemplateLiteral has List<TemplatePart>)
     forge_enum_type_register("TokenKind", 1)
+    // Pattern: largest variant is EnumVariant(string, List<Pattern>, Span)
+    //   = 2 (string) + 2 (List) + 4 (Span) = 8 i64 slots.
+    // Without this registration, every parameter typed `pat: Pattern`
+    // (e.g. pattern_tag, emit_pattern_bindings) silently lowers to i64,
+    // and field destructuring `.EnumVariant(variant, _, _)` reads from
+    // a non-aggregate — `variant` is then resolved to literal 0 in the
+    // arm body, which collapses every match dispatch to its first arm.
+    forge_enum_type_register("Pattern", 8)
     // Note: Type, TypeExpr NOT registered as named LLVM types because the Rust compiler
     // uses them as branch conditions (if t is .Int) which requires i64, not a struct.
     // They stay as i64 in the self-hosted codegen.
@@ -1204,6 +1312,7 @@ fn cg_init_runtime() {
     // Value introspection
     llvm.add_function(CG_MOD, "forge_value_type_kind", mft1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_value_is_string", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_struct_field_is_i8", mft2(CG_I64, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_trace_i64", mft2(CG_VOID, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_loop_push", mft2(CG_VOID, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_loop_pop", mft0(CG_VOID))
@@ -1213,6 +1322,9 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_phi_push", mft2(CG_VOID, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_phi_wire", mft2(CG_VOID, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_phi_reset_to", mft1(CG_VOID, CG_I64))
+    llvm.add_function(CG_MOD, "forge_phi_count_from", mft1(CG_I64, CG_I64))
+    llvm.add_function(CG_MOD, "forge_phi_get_val", mft1(CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_phi_get_bb", mft1(CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_build_cond_br_trunc", mft4(CG_VOID, CG_PTR, CG_PTR, CG_PTR, CG_PTR))
     // Global variable access (i64-based)
     llvm.add_function(CG_MOD, "forge_get_named_global_i64", mft2(CG_I64, CG_PTR, CG_STR))
@@ -1220,6 +1332,8 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_load_from_global", mft3(CG_I64, CG_PTR, CG_I64, CG_STR))
     // Alloca cache extras
     llvm.add_function(CG_MOD, "forge_alloca_cache_set_type", mft2(CG_VOID, CG_STR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_pending_var_type_get", mft1(CG_STR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_pending_var_type_clear", mft0(CG_VOID))
     // Enum registry
     llvm.add_function(CG_MOD, "forge_enum_type_register", mft2(CG_VOID, CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_enum_type_max_fields", mft1(CG_I64, CG_STR))
@@ -1380,11 +1494,13 @@ impl Codegen {
     // same LLVM name caused the ptr-return version to be shadowed.
 
     fn emit_let(self, name: string, value: Expr) {
-        // Check if type was pre-set by parser (e.g., List<Statement> annotation)
-        let pre_type = forge_alloca_cache_get_var_type(name)
+        // Parser-supplied type annotations live in the pending var-type
+        // table for the duration of this function body. They take precedence
+        // over inferred types because the user wrote them explicitly.
+        let pending_type = forge_pending_var_type_get(name)
         mut val_type = self.expr_type_name(value)
-        if pre_type.length > 0 && (val_type == "int" || val_type == "") {
-            val_type = pre_type
+        if pending_type.length > 0 {
+            val_type = pending_type
         }
         let val = self.emit_expr(value)
         mut var_type = Type.Int
@@ -1803,10 +1919,17 @@ impl Codegen {
                 }
                 let dp = llvm.build_extract_value(CG_B, obj_val, 0, "dp")
                 if dp == null { return llvm.const_int(CG_I64, 0, 0) }
-                // Ensure index is integer (might be ForgeString)
+                // Ensure index is integer. Only extract field 0 when the
+                // index value is actually a struct (e.g. a ForgeString
+                // produced by some upstream lowering). Calling
+                // build_extract_value on a non-aggregate (const i64) is
+                // undefined and can return a poison value, which llc then
+                // folds to 0 — turning every `list[k]` into `list[0]`.
                 mut safe_idx = idx_val
-                let maybe_int = llvm.build_extract_value(CG_B, idx_val, 0, "ix")
-                if maybe_int != null { safe_idx = maybe_int }
+                if forge_value_type_kind(idx_val) == LLVM_STRUCT_TYPE_KIND {
+                    let maybe_int = llvm.build_extract_value(CG_B, idx_val, 0, "ix")
+                    if maybe_int != null { safe_idx = maybe_int }
+                }
                 let gi = llvm.value_array_new(1)
                 llvm.value_array_set(gi, 0, safe_idx)
                 let gp = llvm.build_gep2(CG_B, elem_ty, dp, gi, 1, "ep")
@@ -1979,11 +2102,7 @@ impl Codegen {
                 return llvm.const_int(CG_I64, 0, 0)
             }
             let phi = llvm.build_phi(CG_B, phi_ty, "mv")
-            mut pi = 0
-            while pi < phi_n {
-                llvm.add_incoming(phi, forge_phi_get_val(phi_mark + pi), forge_phi_get_bb(phi_mark + pi))
-                pi = pi + 1
-            }
+            forge_phi_wire(phi, phi_mark)
             forge_phi_reset_to(phi_mark)
             return phi
         }
@@ -2113,8 +2232,11 @@ impl Codegen {
         }
         let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
         let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "me")
-        mut phi_vals: List<ptr> = []
-        mut phi_bbs: List<ptr> = []
+        // Phi (value, predecessor) pairs are tracked via the C-side stack —
+        // Forge `List<ptr>` corrupts BasicBlockRefs across iterations, which
+        // produced phi nodes whose entry count didn't match the merge
+        // block's predecessor count (llc: "PHINode should have one entry
+        // for each predecessor of its parent basic block!").
         let phi_mark = forge_phi_mark()
         let _arms = arms
         for arm in _arms {
@@ -2160,10 +2282,8 @@ impl Codegen {
             av = coerce_to_fn_return(av)
             let ae = llvm.get_insert_block(CG_B)
             let arm_has_term = llvm.block_has_terminator(CG_B)
-            if !arm_has_term { llvm.build_br(CG_B, merge_bb) }
             if !arm_has_term {
-                phi_vals = phi_vals.push(av)
-                phi_bbs = phi_bbs.push(ae)
+                llvm.build_br(CG_B, merge_bb)
                 forge_phi_push(av, ae)
             }
             llvm.position_at_end(CG_B, next_bb)
@@ -2172,24 +2292,20 @@ impl Codegen {
         // return type so the phi stays well-typed.
         let def_val = coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0))
         let def_bb = llvm.get_insert_block(CG_B)
-        phi_vals = phi_vals.push(def_val)
-        phi_bbs = phi_bbs.push(def_bb)
         forge_phi_push(def_val, def_bb)
         llvm.build_br(CG_B, merge_bb)
         llvm.position_at_end(CG_B, merge_bb)
-        if phi_vals.length > 0 {
-            let phi_ty = llvm.type_of(phi_vals[0])
-            let phi_kind = forge_value_type_kind(phi_vals[0])
+        let phi_n = forge_phi_count_from(phi_mark)
+        if phi_n > 0 {
+            let first_val = forge_phi_get_val(phi_mark)
+            let phi_kind = forge_value_type_kind(first_val)
             if phi_kind == 0 {
                 forge_phi_reset_to(phi_mark)
                 return llvm.const_int(CG_I64, 0, 0)
             }
+            let phi_ty = llvm.type_of(first_val)
             let phi = llvm.build_phi(CG_B, phi_ty, "mv")
-            mut pi = 0
-            while pi < phi_vals.length {
-                llvm.add_incoming(phi, phi_vals[pi], phi_bbs[pi])
-                pi = pi + 1
-            }
+            forge_phi_wire(phi, phi_mark)
             forge_phi_reset_to(phi_mark)
             return phi
         }
@@ -2768,6 +2884,34 @@ impl Codegen {
                     return self.emit_match_call(patterns, args)
                 }
                 // Cast functions: string(x), int(x), float(x), bool(x)
+                // int(x): if x is a string, parse it via forge_string_to_int;
+                //         otherwise the value is already i64-shaped, pass through.
+                // Without this branch, `int(text)` falls through to the
+                // generic-call lookup (which fails for the builtin name `int`)
+                // and the function whose body is `int(text)` ends up emitted
+                // as `ret 0`. parse_int is the canonical victim — every
+                // integer literal in the source then parses as 0.
+                if name == "int" && args.length > 0 {
+                    let val = self.emit_expr(args[0])
+                    let val_kind = forge_value_type_kind(val)
+                    if val_kind == LLVM_STRUCT_TYPE_KIND {
+                        // ForgeString → forge_string_to_int
+                        let ca = llvm.value_array_new(1)
+                        llvm.value_array_set(ca, 0, val)
+                        let ft = mft1(CG_I64, CG_STR)
+                        let s2i = llvm.get_named_function(CG_MOD, "forge_string_to_int")
+                        let result = llvm.build_call(CG_B, ft, s2i, ca, 1, "s2i")
+                        llvm.value_array_free(ca)
+                        return result
+                    }
+                    return val
+                }
+                if name == "float" && args.length > 0 {
+                    return self.emit_expr(args[0])
+                }
+                if name == "bool" && args.length > 0 {
+                    return self.emit_expr(args[0])
+                }
                 if name == "string" && args.length > 0 {
                     let val = self.emit_expr(args[0])
                     // Type-aware conversion: if the arg is already a string
@@ -3157,7 +3301,17 @@ impl Codegen {
             .Return(v, s) -> { forge_trace_i64(2, 998)
                 self.emit_return(v) }
             .Let(name, val, s) -> {
-                let val_type = self.expr_type_name(val)
+                // Parser-supplied type annotations live in the pending
+                // var-type table for the duration of this function body.
+                // They take precedence over inferred types because the
+                // user wrote them explicitly — `mut xs: List<Statement> = []`
+                // must alloca a list, not whatever the empty literal happens
+                // to default to.
+                mut val_type = self.expr_type_name(val)
+                let pending_type = forge_pending_var_type_get(name)
+                if pending_type.length > 0 {
+                    val_type = pending_type
+                }
                 // Debug: trace what expr variant the value is
                 match val {
                     .Call(c, _, _) -> {
@@ -3275,7 +3429,22 @@ impl Codegen {
                         let fp = llvm.build_gep2(CG_B, elem_llvm_ty, fd, fg, 1, "ep")
                         llvm.value_array_free(fg)
                         let fe = llvm.build_load(CG_B, elem_llvm_ty, fp, "ev")
+                        // Hoist the loop-variable alloca into the function's
+                        // entry block. Per-iteration allocas placed in the
+                        // body block fail SSA dominance for any successor
+                        // block reached from the loop header (the loop end
+                        // block, in particular), producing
+                        // `Instruction does not dominate all uses!` at llc.
+                        let cur_for_bb = llvm.get_insert_block(CG_B)
+                        let entry_for_bb = llvm.get_entry_basic_block(ffn)
+                        let entry_first = llvm.get_first_instruction(entry_for_bb)
+                        if entry_first != null {
+                            llvm.position_before(CG_B, entry_first)
+                        } else {
+                            llvm.position_at_end(CG_B, entry_for_bb)
+                        }
                         let fv = llvm.build_alloca(CG_B, elem_llvm_ty, "iv")
+                        llvm.position_at_end(CG_B, cur_for_bb)
                         llvm.build_store(CG_B, fe, fv)
                         // Register loop var in alloca cache (always — even without type info)
                         forge_alloca_cache_set(vn, fv)
