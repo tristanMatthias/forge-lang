@@ -28,7 +28,7 @@ Everything for a feature lives in its directory. Don't grep — go to the direct
 ### Rust Compiler (for features, tests, non-self-hosting work)
 ```bash
 cd forge/
-LLVM_SYS_180_PREFIX=/opt/homebrew/opt/llvm@18 cargo build --release
+LLVM_SYS_191_PREFIX=/opt/homebrew/opt/llvm@19 cargo build --release
 ```
 
 ### Self-Hosting Build Pipeline (Makefile)

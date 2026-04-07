@@ -456,6 +456,22 @@ impl<'ctx> Codegen<'ctx> {
             }
         }
 
+        // int -> ptr (for C functions returning handles as i64)
+        if val.is_int_value() && target_type.is_pointer_type() {
+            return self.builder
+                .build_int_to_ptr(val.into_int_value(), target_type.into_pointer_type(), "i2p")
+                .unwrap()
+                .into();
+        }
+
+        // ptr -> int
+        if val.is_pointer_value() && target_type.is_int_type() {
+            return self.builder
+                .build_ptr_to_int(val.into_pointer_value(), target_type.into_int_type(), "p2i")
+                .unwrap()
+                .into();
+        }
+
         // int -> float
         if val.is_int_value() && target_type.is_float_type() {
             return self.builder

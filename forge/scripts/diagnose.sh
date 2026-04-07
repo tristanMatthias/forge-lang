@@ -274,10 +274,10 @@ run_stage2() {
     STAGE2=build/stage2
     if [ ! -f "/tmp/stage2" ] && [ ! -f "$STAGE2" ]; then
         echo "No Stage 2 binary found. Build with:"
-        echo "  /opt/homebrew/opt/llvm@18/bin/llc -O2 -filetype=obj output.ll -o /tmp/stage2.o"
+        echo "  /opt/homebrew/opt/llvm@19/bin/llc -O2 -filetype=obj output.ll -o /tmp/stage2.o"
         echo "  cc -o /tmp/stage2 /tmp/stage2.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \\"
         echo "    packages/std-llvm/target/release/libforge_llvm.a \\"
-        echo "    -L/opt/homebrew/Cellar/llvm@18/18.1.8/lib -lLLVM-18 -lstdc++ -lz -lcurses"
+        echo "    -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses"
         return
     fi
     [ -f "/tmp/stage2" ] && STAGE2="/tmp/stage2"
@@ -582,7 +582,7 @@ run_stage3() {
 
     echo ""
     echo "── Stage 3 Binary Build ──"
-    /opt/homebrew/opt/llvm@18/bin/llc -O2 -filetype=obj /tmp/output.ll -o /tmp/stage3.o 2>/tmp/_s3_llc.log
+    /opt/homebrew/opt/llvm@19/bin/llc -O2 -filetype=obj /tmp/output.ll -o /tmp/stage3.o 2>/tmp/_s3_llc.log
     if [ -f /tmp/stage3.o ]; then
         pass "llc → object file"
     else
@@ -592,7 +592,7 @@ run_stage3() {
 
     cc -o /tmp/stage3 /tmp/stage3.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
         packages/std-llvm/target/release/libforge_llvm.a \
-        -L/opt/homebrew/Cellar/llvm@18/18.1.8/lib -lLLVM-18 -lstdc++ -lz -lcurses 2>/tmp/_s3_link.log
+        -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses 2>/tmp/_s3_link.log
     if [ -x /tmp/stage3 ]; then
         pass "cc → /tmp/stage3 executable"
     else
@@ -632,7 +632,7 @@ run_pipeline() {
     echo ""
     echo "── Stage 1 build (Rust → stage1_rust) ──"
     rm -f build/stage1_rust
-    LLVM_SYS_180_PREFIX=/opt/homebrew/opt/llvm@18 ./target/release/forgec build "$FORGE_SRC/main.fg" --dev -o build/stage1_rust >/tmp/_p1.log 2>&1
+    LLVM_SYS_191_PREFIX=/opt/homebrew/opt/llvm@19 ./target/release/forgec build "$FORGE_SRC/main.fg" --dev -o build/stage1_rust >/tmp/_p1.log 2>&1
     if [ -x build/stage1_rust ]; then
         pass "Stage 1 binary built"
     else
@@ -655,10 +655,10 @@ run_pipeline() {
     echo ""
     echo "── Stage 2 binary build ──"
     cp output.ll /tmp/stage1_output.ll
-    /opt/homebrew/opt/llvm@18/bin/llc -O2 -filetype=obj /tmp/stage1_output.ll -o /tmp/stage2.o 2>/tmp/_p2llc.log
+    /opt/homebrew/opt/llvm@19/bin/llc -O2 -filetype=obj /tmp/stage1_output.ll -o /tmp/stage2.o 2>/tmp/_p2llc.log
     cc -o /tmp/stage2 /tmp/stage2.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
         packages/std-llvm/target/release/libforge_llvm.a \
-        -L/opt/homebrew/Cellar/llvm@18/18.1.8/lib -lLLVM-18 -lstdc++ -lz -lcurses 2>/tmp/_p2link.log
+        -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses 2>/tmp/_p2link.log
     if [ -x /tmp/stage2 ]; then
         pass "Stage 2 binary built"
     else

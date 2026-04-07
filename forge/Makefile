@@ -23,11 +23,11 @@
 #
 # ═══════════════════════════════════════════════════════════════════
 
-LLVM_PREFIX  := /opt/homebrew/opt/llvm@18
+LLVM_PREFIX  := /opt/homebrew/opt/llvm@19
 LLC          := $(LLVM_PREFIX)/bin/llc
 LLVM_CONFIG  := $(LLVM_PREFIX)/bin/llvm-config
 LLVM_LIBS    := $(shell $(LLVM_CONFIG) --ldflags --libs core analysis bitwriter)
-FORGEC       := LLVM_SYS_180_PREFIX=$(LLVM_PREFIX) ./target/release/forgec
+FORGEC       := LLVM_SYS_191_PREFIX=$(LLVM_PREFIX) ./target/release/forgec
 STD_LLVM_LIB := packages/std-llvm/target/release/libforge_llvm.a
 RUNTIME_SRC  := stdlib/runtime.c
 SOURCE       := packages/forgec/src/main.fg
@@ -55,11 +55,11 @@ help:
 
 # Rust compiler (forgec binary)
 target/release/forgec: $(shell find packages/forgec-rust -name '*.rs' 2>/dev/null) Cargo.toml
-	LLVM_SYS_180_PREFIX=$(LLVM_PREFIX) cargo build --release
+	LLVM_SYS_191_PREFIX=$(LLVM_PREFIX) cargo build --release
 
 # LLVM bindings library
 $(STD_LLVM_LIB): packages/std-llvm/src/lib.rs packages/std-llvm/Cargo.toml
-	cd packages/std-llvm && LLVM_SYS_180_PREFIX=$(LLVM_PREFIX) cargo build --release
+	cd packages/std-llvm && LLVM_SYS_191_PREFIX=$(LLVM_PREFIX) cargo build --release
 
 # ─── Step 1: Runtime ─────────────────────────────────────────────
 

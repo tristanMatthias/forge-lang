@@ -600,8 +600,14 @@ impl<'ctx> Codegen<'ctx> {
                         let alloca = self.builder.build_alloca(val.get_type(), "ret_tmp").unwrap();
                         self.builder.build_store(alloca, val).unwrap();
                         self.builder.build_return(Some(&alloca)).unwrap();
+                    } else if fn_ret.is_pointer_type() && val.is_int_value() {
+                        // Integer value (e.g., i64 from C function returning a handle) → ptr
+                        let ptr_val = self.builder
+                            .build_int_to_ptr(val.into_int_value(), fn_ret.into_pointer_type(), "i2p_ret")
+                            .unwrap();
+                        self.builder.build_return(Some(&ptr_val)).unwrap();
                     } else if fn_ret.is_pointer_type() && !val.is_pointer_value() {
-                        // Non-struct value doesn't match ptr return — use null pointer
+                        // Non-struct, non-int value doesn't match ptr return — use null pointer
                         self.builder.build_return(Some(&fn_ret.into_pointer_type().const_null())).unwrap();
                     } else {
                         let coerced = self.coerce_value(val, fn_ret);
