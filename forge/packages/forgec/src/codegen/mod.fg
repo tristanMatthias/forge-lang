@@ -1209,6 +1209,10 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_loop_pop", mft0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_loop_break", mft1(CG_VOID, CG_PTR))
     llvm.add_function(CG_MOD, "forge_loop_continue", mft1(CG_VOID, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_phi_mark", mft0(CG_I64))
+    llvm.add_function(CG_MOD, "forge_phi_push", mft2(CG_VOID, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_phi_wire", mft2(CG_VOID, CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_phi_reset_to", mft1(CG_VOID, CG_I64))
     llvm.add_function(CG_MOD, "forge_build_cond_br_trunc", mft4(CG_VOID, CG_PTR, CG_PTR, CG_PTR, CG_PTR))
     // Global variable access (i64-based)
     llvm.add_function(CG_MOD, "forge_get_named_global_i64", mft2(CG_I64, CG_PTR, CG_STR))
@@ -2111,6 +2115,7 @@ impl Codegen {
         let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "me")
         mut phi_vals: List<ptr> = []
         mut phi_bbs: List<ptr> = []
+        let phi_mark = forge_phi_mark()
         let _arms = arms
         for arm in _arms {
             cg_reinit_types()
@@ -2159,28 +2164,36 @@ impl Codegen {
             if !arm_has_term {
                 phi_vals = phi_vals.push(av)
                 phi_bbs = phi_bbs.push(ae)
+                forge_phi_push(av, ae)
             }
             llvm.position_at_end(CG_B, next_bb)
         }
         // Fallthrough — no arm matched. Use the function's expected
         // return type so the phi stays well-typed.
         let def_val = coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0))
+        let def_bb = llvm.get_insert_block(CG_B)
         phi_vals = phi_vals.push(def_val)
-        phi_bbs = phi_bbs.push(llvm.get_insert_block(CG_B))
+        phi_bbs = phi_bbs.push(def_bb)
+        forge_phi_push(def_val, def_bb)
         llvm.build_br(CG_B, merge_bb)
         llvm.position_at_end(CG_B, merge_bb)
         if phi_vals.length > 0 {
             let phi_ty = llvm.type_of(phi_vals[0])
             let phi_kind = forge_value_type_kind(phi_vals[0])
-            if phi_kind == 0 { return llvm.const_int(CG_I64, 0, 0) }
+            if phi_kind == 0 {
+                forge_phi_reset_to(phi_mark)
+                return llvm.const_int(CG_I64, 0, 0)
+            }
             let phi = llvm.build_phi(CG_B, phi_ty, "mv")
             mut pi = 0
             while pi < phi_vals.length {
                 llvm.add_incoming(phi, phi_vals[pi], phi_bbs[pi])
                 pi = pi + 1
             }
+            forge_phi_reset_to(phi_mark)
             return phi
         }
+        forge_phi_reset_to(phi_mark)
         llvm.const_int(CG_I64, 0, 0)
     }
 

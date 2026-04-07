@@ -4435,6 +4435,23 @@ void forge_phi_reset_to(int64_t mark) {
     if (m <= _phi_depth) _phi_depth = m;
 }
 
+// Wire all phi entries pushed since `mark` into the given phi node.
+// Runs entirely C-side to sidestep rust-compiler miscompilation of
+// certain Forge for/while-loop patterns calling forge_phi_get_bb
+// inside complex functions (emit_match_arms).
+void forge_phi_wire(void* phi, int64_t mark) {
+    if (!phi) return;
+    typedef void (*aone_fn)(void*, void*, void*);
+    static aone_fn aone = NULL;
+    if (!aone) aone = (aone_fn)dlsym(RTLD_DEFAULT, "forge_llvm_add_incoming_one");
+    if (!aone) return;
+    int m = (int)mark;
+    if (m < 0) m = 0;
+    for (int i = m; i < _phi_depth; i++) {
+        aone(phi, _phi_val_stack[i], _phi_bb_stack[i]);
+    }
+}
+
 // ---- Conditional branch with auto-trunc to i1 ----
 // Handles the trunc-to-i1 check entirely in C, eliminating ptr null checks in Forge.
 // If cond is already i1, passes it directly. If i64, truncs to i1 first.

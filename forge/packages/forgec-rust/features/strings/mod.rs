@@ -226,6 +226,7 @@ crate::runtime_fn! { name: "forge_phi_count_from", feature: "strings", params: [
 crate::runtime_fn! { name: "forge_phi_get_val", feature: "strings", params: [I64], ret: Ptr }
 crate::runtime_fn! { name: "forge_phi_get_bb", feature: "strings", params: [I64], ret: Ptr }
 crate::runtime_fn! { name: "forge_phi_reset_to", feature: "strings", params: [I64], ret: Void }
+crate::runtime_fn! { name: "forge_phi_wire", feature: "strings", params: [Ptr, I64], ret: Void }
 crate::runtime_fn! { name: "forge_build_cond_br_trunc", feature: "strings", params: [Ptr, Ptr, Ptr, Ptr], ret: Void }
 crate::runtime_fn! { name: "forge_emit_depth_push", feature: "strings", params: [], ret: I64 }
 crate::runtime_fn! { name: "forge_emit_depth_pop", feature: "strings", params: [], ret: I64 }
