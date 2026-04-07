@@ -1903,11 +1903,12 @@ impl Codegen {
         let fn_val = llvm.get_basic_block_parent(llvm.get_insert_block(CG_B))
         let merge_bb = llvm.append_basic_block(CG_CTX, fn_val, "me")
 
-        // Parse patterns CSV and create arm blocks
+        // Parse patterns CSV and create arm blocks.
+        // phi (value, block) pairs go through a C-side stack because
+        // BasicBlockRefs stored in Forge List<ptr> get corrupted.
+        let phi_mark = forge_phi_mark()
         mut arm_idx = 0
         mut pat_pos = 0
-        mut phi_vals: List<ptr> = []
-        mut phi_bbs: List<ptr> = []
 
         while arm_idx < args.length - 1 {
             // Extract next pattern name
@@ -1954,8 +1955,7 @@ impl Codegen {
                 llvm.build_br(CG_B, merge_bb)
             }
             if !mc_has_term {
-                phi_vals = phi_vals.push(arm_val)
-                phi_bbs = phi_bbs.push(arm_end)
+                forge_phi_push(arm_val, arm_end)
             }
 
             if pat != "_" && arm_idx < args.length - 2 {
@@ -1965,20 +1965,25 @@ impl Codegen {
         }
 
         llvm.position_at_end(CG_B, merge_bb)
-        // Build PHI if multiple arms — use first arm's type (not hardcoded i64)
-        if phi_vals.length > 0 {
-            let phi_ty = llvm.type_of(phi_vals[0])
-            let phi_kind = forge_value_type_kind(phi_vals[0])
-            // Skip PHI for void values
-            if phi_kind == 0 { return llvm.const_int(CG_I64, 0, 0) }
+        let phi_n = forge_phi_count_from(phi_mark)
+        if phi_n > 0 {
+            let first_val = forge_phi_get_val(phi_mark)
+            let phi_ty = llvm.type_of(first_val)
+            let phi_kind = forge_value_type_kind(first_val)
+            if phi_kind == 0 {
+                forge_phi_reset_to(phi_mark)
+                return llvm.const_int(CG_I64, 0, 0)
+            }
             let phi = llvm.build_phi(CG_B, phi_ty, "mv")
             mut pi = 0
-            while pi < phi_vals.length {
-                llvm.add_incoming(phi, phi_vals[pi], phi_bbs[pi])
+            while pi < phi_n {
+                llvm.add_incoming(phi, forge_phi_get_val(phi_mark + pi), forge_phi_get_bb(phi_mark + pi))
                 pi = pi + 1
             }
+            forge_phi_reset_to(phi_mark)
             return phi
         }
+        forge_phi_reset_to(phi_mark)
         llvm.const_int(CG_I64, 0, 0)
     }
 
