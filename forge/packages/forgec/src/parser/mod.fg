@@ -226,11 +226,11 @@ impl Parser {
     }
 
     fn expect_id(self, kid: int) -> Token? {
-        if self.check_id(kid) {
-            self.advance()
-        } else {
-            null
+        if !self.check_id(kid) {
+            return null
         }
+        let tok = self.advance()
+        return tok
     }
 
     fn expect(self, kind: TokenKind) -> Token? {
@@ -705,7 +705,9 @@ impl Parser {
     fn parse_block(self) -> Block {
         let start = self.current_span()
         let empty = Block { statements: [], span: start }
-        if self.expect_id(KID_LBRACE) == null { return empty }
+        if self.expect_id(KID_LBRACE) == null {
+            return empty
+        }
 
         self.skip_newlines()
         mut statements: List<Statement> = []

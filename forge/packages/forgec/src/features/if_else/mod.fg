@@ -8,7 +8,7 @@ use core.ast.{Statement, Expr, Block, NodeRef, FeatureExpr, feature_expr, next_n
 use core.types.Type
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
-use codegen.{Codegen, CG_CTX, CG_I64, CG_PTR, CG_STR, make_nullable_type, wrap_nullable, codegen_new, CG_NULLABLE_VAR_NAMES}
+use codegen.{Codegen, CG_CTX, CG_I64, CG_PTR, CG_STR, make_nullable_type, wrap_nullable, codegen_new, CG_NULLABLE_VAR_NAMES, coerce_to_fn_return}
 use @std.llvm
 
 // ─── Data Types ──────────────────────────────────
@@ -91,12 +91,10 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     // Emit then block
     llvm.position_at_end(CG_B, then_bb)
     mut then_val = cg.emit_block(data.then_block)
-    mut then_is_nullable = false
-    // In nullable function context, wrap non-nullable then value before branching
-    if forge_fn_nullable_get_flag() == 1 {
-        then_val = wrap_nullable(forge_fn_nullable_get_inner(), then_val)
-        then_is_nullable = true
-    }
+    // Normalize to the function's expected return type — handles wrap,
+    // pass-through, or typed-null fallback in one place.
+    then_val = coerce_to_fn_return(then_val)
+    let then_is_nullable = forge_fn_nullable_get_flag() == 1
     let then_end_bb = llvm.get_insert_block(CG_B)
     let then_terminated = llvm.block_has_terminator(CG_B)
     if !then_terminated {
@@ -109,12 +107,10 @@ fn emit_if_expr(cg: Codegen, node: NodeRef) -> ptr {
     if data.has_else {
         else_val = cg.emit_block(data.else_block)
     }
-    mut else_is_nullable = false
-    // In nullable function context, wrap non-nullable else value before branching
-    if data.has_else && forge_fn_nullable_get_flag() == 1 {
-        else_val = wrap_nullable(forge_fn_nullable_get_inner(), else_val)
-        else_is_nullable = true
+    if data.has_else {
+        else_val = coerce_to_fn_return(else_val)
     }
+    let else_is_nullable = forge_fn_nullable_get_flag() == 1
     let else_end_bb = llvm.get_insert_block(CG_B)
     let else_terminated = llvm.block_has_terminator(CG_B)
     if !else_terminated {

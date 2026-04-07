@@ -540,6 +540,15 @@ pub extern "C" fn forge_llvm_dispose_builder(builder: LLVMPtr) {
 pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVMPtr {
     if builder.is_null() { return std::ptr::null_mut(); }
     unsafe {
+        // Skip if the block already has a terminator (defense against
+        // double-terminator bugs from emit_return inside if/match arms).
+        let cur = LLVMGetInsertBlock(builder);
+        if !cur.is_null() {
+            let term = LLVMGetBasicBlockTerminator(cur);
+            if !term.is_null() {
+                return term;
+            }
+        }
         if value.is_null() {
             return LLVMBuildRetVoid(builder);
         }
@@ -966,13 +975,39 @@ pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_br(builder: LLVMPtr, bb: LLVMPtr) -> LLVMPtr {
     if builder.is_null() || bb.is_null() { return std::ptr::null_mut(); }
-    unsafe { LLVMBuildBr(builder, bb) }
+    unsafe {
+        // Skip if the current block already has a terminator (e.g., a ret
+        // emitted by a `return` statement inside a match/if arm). Without
+        // this guard the codegen would emit `ret X; br merge` in the same
+        // block, producing invalid IR — and LLVM would silently drop the
+        // ret, losing the return value. This is the SINGLE place that
+        // protects against double-terminator bugs across the whole
+        // self-hosted codegen.
+        let cur = LLVMGetInsertBlock(builder);
+        if !cur.is_null() {
+            let term = LLVMGetBasicBlockTerminator(cur);
+            if !term.is_null() {
+                return term;
+            }
+        }
+        LLVMBuildBr(builder, bb)
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_cond_br(builder: LLVMPtr, cond: LLVMPtr, then_bb: LLVMPtr, else_bb: LLVMPtr) -> LLVMPtr {
     if builder.is_null() { return std::ptr::null_mut(); }
-    unsafe { LLVMBuildCondBr(builder, cond, then_bb, else_bb) }
+    unsafe {
+        // Same terminator guard as forge_llvm_build_br.
+        let cur = LLVMGetInsertBlock(builder);
+        if !cur.is_null() {
+            let term = LLVMGetBasicBlockTerminator(cur);
+            if !term.is_null() {
+                return term;
+            }
+        }
+        LLVMBuildCondBr(builder, cond, then_bb, else_bb)
+    }
 }
 
 #[no_mangle]
@@ -1113,16 +1148,7 @@ pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: L
         }
         std::alloc::dealloc(verify_tys as *mut u8, param_tys_layout);
         std::alloc::dealloc(param_tys as *mut u8, param_tys_layout);
-        static mut BC2_TRACE: i32 = 200;
-        if BC2_TRACE > 0 {
-            eprintln!("  [BC2] about to LLVMBuildCall2 f={:p} nargs={}", f, num_args);
-            BC2_TRACE -= 1;
-        }
-        let r = LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name));
-        if BC2_TRACE > -1 {
-            eprintln!("  [BC2] done r={:p}", r);
-        }
-        r
+        LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name))
     }
 }
 

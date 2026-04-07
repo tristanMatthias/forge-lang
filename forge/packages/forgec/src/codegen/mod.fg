@@ -385,8 +385,41 @@ export fn register_enum_variant_fields(enum_name: string, variant_name: string, 
 // ─── Nullable Type Helpers ───────────────────────
 
 // Per-function nullable state uses C-side (forge_fn_nullable_set/get_flag/get_inner/get_ret)
+//
+// Build (or retrieve) the LLVM type for `Nullable<T>` given the inner type T.
+//
+// CRITICAL: when T is a NAMED struct (e.g. `%Statement`, `%Expr`, `%Token`),
+// we must use a NAMED `Nullable_<T>` struct here. The Rust compiler and
+// `declare_all_fns` (the place that decides function return signatures)
+// both register these as named types — if `make_nullable_type` returns an
+// anonymous `{i8, T}` instead, every site that wraps a value (`wrap_nullable`,
+// `make_null_value`, `coerce_to_nullable`) produces a value whose LLVM type
+// doesn't match the function's declared return, and `build_ret` falls back to
+// `ret undef`. That single mismatch is what makes ~every nullable-returning
+// parser function silently return null at runtime in stage 3.
+//
+// This function is the SINGLE SOURCE OF TRUTH for nullable type construction.
 export fn make_nullable_type(inner_ty: ptr) -> ptr {
-    // LLVM deduplicates struct types, so no caching needed
+    // Only structs can carry a name. For non-struct inners, fall back to an
+    // anonymous {i8, T} (matches what callers expect for primitives etc).
+    let kind = llvm.get_type_kind(inner_ty)
+    if kind == LLVM_STRUCT_TYPE_KIND {
+        let inner_name = llvm.get_struct_name(inner_ty)
+        if inner_name != "" {
+            let nullable_name = "Nullable_" + inner_name
+            let existing = llvm.get_type_by_name(CG_CTX, nullable_name)
+            if existing != null { return existing }
+            // Create the named Nullable_<T> with body {i8, T}
+            let nf = llvm.type_array_new(2)
+            llvm.type_array_set(nf, 0, CG_I8)
+            llvm.type_array_set(nf, 1, inner_ty)
+            let named = llvm.struct_create_named(CG_CTX, nullable_name)
+            llvm.struct_set_body(named, nf, 2, 0)
+            llvm.type_array_free(nf)
+            return named
+        }
+    }
+    // Anonymous fallback for unnamed inner types.
     let fields = llvm.type_array_new(2)
     llvm.type_array_set(fields, 0, CG_I8)
     llvm.type_array_set(fields, 1, inner_ty)
@@ -407,6 +440,38 @@ export fn make_null_value(inner_ty: ptr) -> ptr {
     let undef = llvm.get_undef(nullable_ty)
     let s1 = llvm.build_insert_value(CG_B, undef, llvm.const_int(CG_I8, 0, 0), 0, "nt")
     llvm.build_insert_value(CG_B, s1, llvm.const_null(inner_ty), 1, "nv")
+}
+
+// ─── Type Coercion (single source of truth) ─────────────────────────
+//
+// The self-hosted codegen mirrors the Rust compiler's coerce_value: any
+// site that produces a value that must match a target LLVM type calls
+// `coerce_value` to convert between scalar/struct/pointer kinds.
+//
+// In particular, `coerce_to_nullable` is the SINGLE place that knows how
+// to land an arbitrary value into a `Nullable_T` slot:
+//   - If the value is already that nullable type → pass through.
+//   - If the value's type matches the nullable's inner T → wrap with tag=1.
+//   - If the value is i64/integer (codegen fallback) → produce a typed null.
+//   - If the value is some other unrelated struct → produce a typed null.
+// This unifies what was previously duplicated across emit_ret_value,
+// emit_if_expr, emit_match_arms, and the implicit-return path.
+export fn coerce_to_nullable(inner_ty: ptr, val: ptr) -> ptr {
+    let nullable_ty = make_nullable_type(inner_ty)
+    let val_ty = llvm.type_of(val)
+    if val_ty == nullable_ty { return val }
+    if val_ty == inner_ty { return wrap_nullable(inner_ty, val) }
+    // Mismatched value type → emit a typed null so the LLVM type still
+    // matches at the use site. Callers can detect this by comparing
+    // val_ty against inner_ty before calling.
+    make_null_value(inner_ty)
+}
+
+// Coerce a value into the current function's expected return type.
+// Returns the original value when not in a nullable function context.
+export fn coerce_to_fn_return(val: ptr) -> ptr {
+    if forge_fn_nullable_get_flag() != 1 { return val }
+    coerce_to_nullable(forge_fn_nullable_get_inner(), val)
 }
 
 export fn is_nullable_var(name: string) -> bool {
@@ -1355,14 +1420,8 @@ impl Codegen {
     }
 
     fn emit_ret_value(self, value: Expr) {
-        let ret_type = self.expr_type_name(value)
         let val = self.emit_expr(value)
-        let is_nullable = ret_type == "nullable" || ret_type == "null"
-        if forge_fn_nullable_get_flag() == 1 && !is_nullable {
-            llvm.build_ret(CG_B, wrap_nullable(forge_fn_nullable_get_inner(), val))
-        } else {
-            llvm.build_ret(CG_B, val)
-        }
+        llvm.build_ret(CG_B, coerce_to_fn_return(val))
     }
 
     fn dispatch_stmt(self, fe: FeatureStmt) {
@@ -2007,7 +2066,10 @@ impl Codegen {
             llvm.position_at_end(CG_B, arm_bb)
             // Walk the pattern and create bindings
             self.emit_pattern_bindings(arm.pattern, subj_raw, scrutinee_type)
-            let av = self.emit_block(arm.body)
+            mut av = self.emit_block(arm.body)
+            // Normalize the arm value to the function's expected return
+            // type so all phi incoming values share the same LLVM type.
+            av = coerce_to_fn_return(av)
             let ae = llvm.get_insert_block(CG_B)
             let arm_has_term = llvm.block_has_terminator(CG_B)
             if !arm_has_term { llvm.build_br(CG_B, merge_bb) }
@@ -2017,8 +2079,9 @@ impl Codegen {
             }
             llvm.position_at_end(CG_B, next_bb)
         }
-        // Fallthrough — no arm matched
-        let def_val = llvm.const_int(CG_I64, 0, 0)
+        // Fallthrough — no arm matched. Use the function's expected
+        // return type so the phi stays well-typed.
+        let def_val = coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0))
         phi_vals = phi_vals.push(def_val)
         phi_bbs = phi_bbs.push(llvm.get_insert_block(CG_B))
         llvm.build_br(CG_B, merge_bb)
@@ -2310,7 +2373,14 @@ impl Codegen {
             return llvm.const_int(CG_I64, tag, 0)
         }
 
-        // Special case: .length property on string/list variables
+        // Special case: .length property on string/list variables.
+        //
+        // ForgeString and List<T> are both ABI-compatible {ptr, i64} where
+        // field 1 is the length. Rather than dispatching to a named type
+        // (which subjects us to anonymous-vs-named LLVM struct mismatches
+        // through forge_string_length's coercion path), extract the length
+        // directly via extractvalue. This is the SINGLE SOURCE OF TRUTH for
+        // string/list length access in the self-hosted codegen.
         if field == "length" {
             // Try struct field access (for struct-typed vars like Lexer)
             let st = var_struct_type(var_name)
@@ -2318,8 +2388,14 @@ impl Codegen {
                 let len_val = forge_alloca_cache_load_field(var_name, st, struct_field_index(st, "length"), CG_B)
                 if len_val != 0 { return len_val }
             }
-            // For strings/lists: call forge_string_length
+            // For strings/lists: load the value, then extract field 1 as i64.
             let obj_val = self.emit_ident(var_name)
+            // If obj_val is already a 2-field struct, extract field 1.
+            let obj_kind = forge_value_type_kind(obj_val)
+            if obj_kind == LLVM_STRUCT_TYPE_KIND {
+                return llvm.build_extract_value(CG_B, obj_val, 1, "len")
+            }
+            // Fallback to forge_string_length for legacy paths.
             let ca = llvm.value_array_new(1)
             llvm.value_array_set(ca, 0, obj_val)
             let ft = mft1(CG_I64, CG_STR)
@@ -2721,6 +2797,87 @@ impl Codegen {
                     if fn_ref_sh != null {
                         return self.emit_fn_call_direct(fn_ref_sh, selfhost, args)
                     }
+                    // Enum constructor: TypeName.Variant(args) → build a value
+                    // of type %TypeName with the proper tag. Payload slots
+                    // hold the field values via insertvalue (scalars only —
+                    // aggregate fields like Span/ForgeString need slot
+                    // splitting, handled inline below).
+                    // Only applies to enums that have LLVM struct
+                    // representations (Expr, Statement, BinOp, UnaryOp).
+                    // Enum constructor: TypeName.Variant(args) → build a value of
+                    // the named %TypeName enum struct.
+                    //
+                    // Layout: { i8 tag, i64 x max_slots }. Each field of the
+                    // variant is stored starting at slot 1 (after the tag).
+                    // Aggregate-typed fields (Span = 4 i64s, ForgeString =
+                    // 2 i64s, nested enums = N i64s) span multiple slots.
+                    //
+                    // Approach: alloca the named enum type → store tag at
+                    // field 0 via GEP → for each arg, store the value through
+                    // a `ptr` cast at the appropriate byte offset (offset is
+                    // 8 + slot*8 because the i8 tag occupies the first 8-byte
+                    // slot due to struct alignment) → load the full struct.
+                    //
+                    // Storing through a typed pointer lets LLVM handle the
+                    // value's actual type, so a struct/aggregate value lands
+                    // correctly across the i64 slots without splitting.
+                    let _et = match_enum_tag(ns + "." + f)
+                    let _has_struct_enum = ns == "Expr" || ns == "Statement" || ns == "BinOp" || ns == "UnaryOp"
+                    if _et >= 0 && _has_struct_enum && CG_B != null {
+                        cg_reinit_types()
+                        let _eT = cg_make_enum_type(ns)
+                        if _eT != null {
+                            let _ealloca = llvm.build_alloca(CG_B, _eT, "ec")
+                            // Zero-init the whole enum so unused payload slots are 0.
+                            llvm.build_store(CG_B, llvm.const_null(_eT), _ealloca)
+                            // Struct GEPs into a named struct must use i32
+                            // indices (LLVM 19 verifier requirement).
+                            let _i32T = llvm.int32_type(CG_CTX)
+                            // Store tag at field 0 (the i8 tag).
+                            let _tagIdx = llvm.value_array_new(2)
+                            llvm.value_array_set(_tagIdx, 0, llvm.const_int(_i32T, 0, 0))
+                            llvm.value_array_set(_tagIdx, 1, llvm.const_int(_i32T, 0, 0))
+                            let _tagPtr = llvm.build_gep2(CG_B, _eT, _ealloca, _tagIdx, 2, "etp")
+                            llvm.value_array_free(_tagIdx)
+                            llvm.build_store(CG_B, llvm.const_int(CG_I8, _et, 0), _tagPtr)
+                            // Walk variant fields. For each field we GEP to
+                            // its starting i64 slot (field index = slot + 1)
+                            // and store the arg value through that pointer.
+                            let _vf = cg_enum_variant_field_types(ns, f)
+                            mut _slot = 0
+                            mut _ai = 0
+                            while _ai < args.length {
+                                let _av = self.emit_expr(args[_ai])
+                                // GEP to slot's first i64 (field index = _slot + 1; tag is field 0)
+                                let _gi = llvm.value_array_new(2)
+                                llvm.value_array_set(_gi, 0, llvm.const_int(_i32T, 0, 0))
+                                llvm.value_array_set(_gi, 1, llvm.const_int(_i32T, _slot + 1, 0))
+                                let _slotPtr = llvm.build_gep2(CG_B, _eT, _ealloca, _gi, 2, "esp")
+                                llvm.value_array_free(_gi)
+                                // Store the arg value through the slot pointer.
+                                // build_store accepts the value's actual type
+                                // and writes the full bytes; for aggregates
+                                // they span multiple slots automatically.
+                                if _av != null && _av != 0 {
+                                    llvm.build_store(CG_B, _av, _slotPtr)
+                                }
+                                // Advance slot by the field's slot count.
+                                mut _sc = 1
+                                if _ai < _vf.length {
+                                    let _fc = _vf[_ai]
+                                    if _fc == "s" { _sc = 2 }
+                                    if _fc == "l" { _sc = 2 }
+                                    if _fc == "4" { _sc = 4 }
+                                    if _fc == "p" { _sc = 1 }
+                                    if _fc == "i" { _sc = 1 }
+                                }
+                                _slot = _slot + _sc
+                                _ai = _ai + 1
+                            }
+                            return llvm.build_load(CG_B, _eT, _ealloca, "ev")
+                        }
+                    }
+
                     // Try method call: Type__method (impl methods)
                     // Resolve the struct type name for the object variable
                     mut impl_ns = ns
@@ -3000,6 +3157,7 @@ impl Codegen {
         mut last = llvm.const_int(CG_I64, 0, 0)
         let _stmts = block.statements
         forge_alloca_cache_set_var_type("_stmts", "List:Statement")
+        forge_trace_i64(7777, _stmts.length)
         for stmt in _stmts {
             if llvm.block_has_terminator(CG_B) { break }
             last = self.emit_statement(stmt)

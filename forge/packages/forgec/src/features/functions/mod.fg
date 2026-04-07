@@ -10,7 +10,7 @@ use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, re
 use parser.{Parser, Param, TypeExpr, parser_new}
 use lexer.{lexer_new}
 use checker.TypeChecker
-use codegen.{Codegen, CG_CTX, CG_STR, CG_I64, CG_I8, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types}
+use codegen.{Codegen, CG_CTX, CG_STR, CG_I64, CG_I8, make_nullable_type, wrap_nullable, make_null_value, cg_enum_max_fields, cg_make_enum_type, resolve_type_to_llvm, cg_reinit_types, coerce_to_fn_return}
 use features.variables.{parse_var_binding, VarKind, IN_FUNCTION_BODY}
 use features.structs.{parse_type_decl}
 use features.enums.{parse_enum_decl}
@@ -473,6 +473,24 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     forge_last_val_clear()
     cg_reinit_types()
 
+    // Set per-function nullable tracking so emit_return/emit_ret_value can
+    // properly wrap raw T values when the declared return is T?.
+    forge_fn_nullable_set(0, null, null)
+    mut _rtn0 = ""
+    if idx < FN_RETURN_TYPES.length { _rtn0 = FN_RETURN_TYPES[idx] }
+    if _rtn0.length > 1 {
+        let _last_idx = _rtn0.length - 1
+        if _last_idx >= 0 {
+            if _rtn0[_last_idx] == "?" {
+                let _inner_n = _rtn0.substring(0, _last_idx)
+                let _inner_t = resolve_type_to_llvm(_inner_n)
+                if _inner_t != null && _inner_t != CG_I64 {
+                    forge_fn_nullable_set(1, _inner_t, _inner_t)
+                }
+            }
+        }
+    }
+
     // Parse body to AST, then emit
     // For main: store argc/argv via forge_set_args(argc, argv)
     if is_main {
@@ -508,20 +526,16 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
         if is_main {
             llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
         } else {
-            // Compute return type late (after body emit, before implicit ret)
-            cg_reinit_types()
-            mut ret_type_name = ""
-            if idx < FN_RETURN_TYPES.length { ret_type_name = FN_RETURN_TYPES[idx] }
-            if ret_type_name.length > 1 { if ret_type_name[ret_type_name.length - 1] == "?" {
-                ret_type_name = ret_type_name.substring(0, ret_type_name.length - 1)
-            } }
+            // The forge_fn_nullable_set state is already configured from
+            // the function's declared return type (above). All wrapping
+            // logic lives in the single coerce_to_fn_return helper.
             cg_reinit_types()
             if forge_last_val_has() == 1 {
                 let rv = forge_last_val_get()
                 forge_last_val_clear()
-                llvm.build_ret(CG_B, rv)
+                llvm.build_ret(CG_B, coerce_to_fn_return(rv))
             } else {
-                llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
+                llvm.build_ret(CG_B, coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0)))
             }
         }
     }
