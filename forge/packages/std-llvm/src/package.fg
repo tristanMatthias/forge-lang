@@ -82,7 +82,8 @@ extern fn forge_llvm_build_global_string_ptr_s(builder: ptr, s: string, name: st
 
 // ── PHI nodes ──
 extern fn forge_llvm_build_phi_s(builder: ptr, ty: ptr, name: string) -> ptr
-extern fn forge_llvm_add_incoming(phi: ptr, values: ptr, blocks: ptr, count: int)
+extern fn forge_llvm_add_incoming(phi: ptr, value: ptr, block: ptr)
+extern fn forge_llvm_add_incoming_array(phi: ptr, values: ptr, blocks: ptr, count: int)
 extern fn forge_llvm_add_incoming_one(phi: ptr, value: ptr, block: ptr)
 
 // ── Struct Types ──
@@ -411,8 +412,15 @@ export fn add_incoming(phi: ptr, value: ptr, block: ptr) {
     forge_llvm_add_incoming_one(phi, value, block)
 }
 
+/// Alias for add_incoming that avoids the rust compiler's auto-
+/// mangling of `llvm.add_incoming` → `forge_llvm_add_incoming`
+/// (which has 4 params and mismatches our 3-arg call convention).
+export fn add_phi_entry(phi: ptr, value: ptr, block: ptr) {
+    forge_llvm_add_incoming_one(phi, value, block)
+}
+
 export fn add_incoming_array(phi: ptr, values: ptr, blocks: ptr, count: int) {
-    forge_llvm_add_incoming(phi, values, blocks, count)
+    forge_llvm_add_incoming_array(phi, values, blocks, count)
 }
 
 // ── Struct Types ──

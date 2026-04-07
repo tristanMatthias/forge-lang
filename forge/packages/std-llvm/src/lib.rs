@@ -1239,8 +1239,16 @@ pub extern "C" fn forge_llvm_build_phi(builder: LLVMPtr, ty: LLVMPtr, name: *con
 }
 
 #[no_mangle]
-pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, values: *mut LLVMPtr, blocks: *mut LLVMPtr, count: c_int) {
+pub extern "C" fn forge_llvm_add_incoming_array(phi: LLVMPtr, values: *mut LLVMPtr, blocks: *mut LLVMPtr, count: c_int) {
     unsafe { LLVMAddIncoming(phi, values, blocks, count as c_uint) }
+}
+
+// Legacy 3-arg entry point — the self-hosted compiler's `llvm.add_incoming`
+// wrapper auto-mangles to this name and expects the 3-arg convention.
+// Delegates to the _one variant.
+#[no_mangle]
+pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, value: LLVMPtr, block: LLVMPtr) {
+    forge_llvm_add_incoming_one(phi, value, block)
 }
 
 #[no_mangle]

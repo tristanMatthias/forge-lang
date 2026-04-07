@@ -1149,6 +1149,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_build_ptrtoint_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_ptr_to_int_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_add_incoming", mft3(CG_VOID, CG_PTR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_llvm_add_incoming_one", mft3(CG_VOID, CG_PTR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_build_extract_value_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_insert_value_s", mft5(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_gep2_s", mft5(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
