@@ -44,6 +44,10 @@ mut CG_RT_MEMCPY: ptr = null
 // List struct type: {ptr data, i64 count}
 mut CG_LIST: ptr = null
 
+// Nullable variable tracking: parallel lists of var name → inner type name
+export mut CG_NULLABLE_VAR_NAMES: List<string> = []
+export mut CG_NULLABLE_VAR_INNER: List<string> = []
+
 // Map runtime helpers (pointer-based API in runtime.c)
 export mut CG_RT_MAP_NEW: ptr = null
 export mut CG_RT_MAP_HAS: ptr = null
