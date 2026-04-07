@@ -72,15 +72,14 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
             }
         }
         let parsed_ret = p.parse_type_expr()
-        // Check if the parsed type is Nullable (T?) and update return_type_name
-        if parsed_ret != null {
-            match parsed_ret! {
-                .Nullable(inner, span) -> {
-                    // Append ? to signal nullable return
-                    return_type_name = return_type_name + "?"
-                }
-                _ -> {}
-            }
+        // Detect nullable return via the last consumed token's kind_id
+        // directly: the `.Nullable` match has proven unreliable in
+        // stage 2's self-compiled build because the enum tag layout
+        // doesn't round-trip cleanly through the wrapping.  Reading
+        // the token stream is the source of truth.
+        let last_pos = forge_parser_get_pos() - 1
+        if last_pos >= 0 && forge_ftok_kind_id(last_pos) == KID_QUESTION {
+            return_type_name = return_type_name + "?"
         }
         return_type = parsed_ret
     }
