@@ -1063,6 +1063,9 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_get_type_kind", mft1(CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_allocated_type", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_global_get_value_type", mft1(CG_PTR, CG_PTR))
+    // (module, ty) -> i64 — exact in-memory store size of an LLVM type, used
+    // by emit_list_literal so element sizes are never guessed.
+    llvm.add_function(CG_MOD, "forge_llvm_store_size_of_type", mft2(CG_I64, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_insert_block", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_basic_block_parent", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_entry_basic_block", mft1(CG_PTR, CG_PTR))
@@ -2361,24 +2364,23 @@ impl Codegen {
             let val = self.emit_expr(elem)
             llvm.value_array_set(vals, i, val)
             if i == 0 && val != null {
-                // Source of truth for element type is LLVM's own type system.
-                elem_ty = llvm.type_of(val)
-                // elem_size is the store size of the element type. Previously
-                // this was a hardcoded 8/16, but 16 silently truncated larger
-                // aggregates like %Expr/%Statement (112 bytes) — producing
+                // LLVM's own type system is the single source of truth for
+                // both element type AND size. Previously elem_size was a
+                // hardcoded 8/16, where 16 silently truncated larger
+                // aggregates like %Expr/%Statement (112 bytes), producing
                 // garbage when a list of Exprs was indexed.
                 //
-                // forge_struct_store_size walks the element's first AST expr
-                // to find a registered Forge type name and returns its
-                // in-memory size in bytes. Unknown types fall back to 8.
-                let sz_by_name = cg_elem_size_for_expr(elements[0])
-                if sz_by_name > 0 { elem_size = sz_by_name }
-                else {
-                    // Fall back to the struct-kind heuristic (16 bytes for
-                    // any struct value — covers ForgeString and List<scalar>).
-                    let tk = forge_value_type_kind(val)
-                    if tk == LLVM_STRUCT_TYPE_KIND { elem_size = 16 }
-                }
+                // `forge_llvm_store_size_of_type` wraps LLVMStoreSizeOfType
+                // from the LLVM C API; it returns the exact in-memory store
+                // size of an LLVM type in bytes. We call it as a free
+                // function (no `llvm.` prefix) so rust's self-hosted-source
+                // codegen resolves it via the runtime_fn! registry instead
+                // of the namespace-method path, which silently drops calls
+                // to some `llvm.X` wrappers and leaves the result alloca
+                // defaulted to `i64 0`.
+                elem_ty = llvm.type_of(val)
+                let sz = forge_llvm_store_size_of_type(CG_MOD, elem_ty)
+                if sz > 0 { elem_size = sz }
             }
             i = i + 1
         }
