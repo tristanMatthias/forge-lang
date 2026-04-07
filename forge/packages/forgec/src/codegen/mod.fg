@@ -405,12 +405,16 @@ export fn make_nullable_type(inner_ty: ptr) -> ptr {
     // registered by declare_all_fns. Only fall through to an anonymous
     // {i8, T} when the inner has no name (primitives, anonymous structs).
     let kind = llvm.get_type_kind(inner_ty)
-    let is_struct = kind == LLVM_STRUCT_TYPE_KIND
-    let inner_name = if is_struct { llvm.get_struct_name(inner_ty) } else { "" }
-    // Guard against empty/whitespace names that would produce a
-    // degenerate `%Nullable_` named struct shared across unrelated
-    // inner types. Require at least one non-underscore character.
-    let has_name = inner_name.length > 0 && inner_name != "_"
+    // Avoid an `if <cond> { string_call } else { "" }` if-expression:
+    // self-hosted codegen for string-typed if-expressions mis-compiles
+    // the assignment so the consequent branch never writes anything,
+    // leaving the binding as LLVM `undef`. Use an explicit mut + if.
+    mut inner_name: string = ""
+    if kind == LLVM_STRUCT_TYPE_KIND {
+        inner_name = llvm.get_struct_name(inner_ty)
+    }
+    mut has_name = false
+    if inner_name.length >= 3 { has_name = true }
 
     if has_name {
         let nullable_name = "Nullable_" + inner_name
