@@ -1113,7 +1113,16 @@ pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: L
         }
         std::alloc::dealloc(verify_tys as *mut u8, param_tys_layout);
         std::alloc::dealloc(param_tys as *mut u8, param_tys_layout);
-        LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name))
+        static mut BC2_TRACE: i32 = 200;
+        if BC2_TRACE > 0 {
+            eprintln!("  [BC2] about to LLVMBuildCall2 f={:p} nargs={}", f, num_args);
+            BC2_TRACE -= 1;
+        }
+        let r = LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name));
+        if BC2_TRACE > -1 {
+            eprintln!("  [BC2] done r={:p}", r);
+        }
+        r
     }
 }
 

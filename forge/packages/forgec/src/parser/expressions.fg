@@ -29,6 +29,7 @@ use core.kind_ids.{
     KID_PLUS, KID_PIPE, KID_UNDERSCORE,
 }
 use lexer.{parse_int, parse_float}
+use features.collections.{make_list_lit}
 // Enum type registry uses C-side (forge_enum_type_register/exists/max_fields)
 // Suppress cross-newline dot chaining inside match arm bodies
 mut IN_MATCH_ARM: bool = false
@@ -543,16 +544,21 @@ impl Parser {
     fn parse_list_literal(self) -> Expr? {
         let start = self.advance_span() // consume [
 
-        // Parse list elements
+        // Collect parsed list elements
+        mut elements: List<Expr> = []
         self.skip_newlines()
         while self.peek_kind_id() != KID_RBRACKET && !self.is_at_end() {
-            self.parse_expr()
+            let e = self.parse_expr()
+            if e != null {
+                elements = elements.push(e!)
+            }
             self.skip_newlines()
             if self.peek_kind_id() == KID_COMMA { self.advance() }
             self.skip_newlines()
         }
         self.expect_id(KID_RBRACKET)
-        Expr.Block(Block { statements: [], span: start })
+        let span = self.merge_spans(start, self.peek_at(-1).span)
+        make_list_lit(elements, span)
     }
 
     // ─── Dot Variant ───────────────────────────

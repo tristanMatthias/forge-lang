@@ -2518,6 +2518,10 @@ ForgeString forge_selfhost_process_run(ForgeString cmd, ForgeString args_list) {
     }
     argv[argc] = NULL;
 
+    fprintf(stderr, "[RUN] list.ptr=%p list.len=%lld argc=%d:", args_list.ptr, (long long)args_list.len, argc);
+    for (int ti = 0; ti < argc; ti++) fprintf(stderr, " [%s]", argv[ti]);
+    fprintf(stderr, "\n");
+
     pid_t pid = fork();
     if (pid < 0) {
         return forge_string_new("{\"code\":1}", 10);

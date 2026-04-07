@@ -44,7 +44,7 @@ fn get_map_lit(id: int) -> MapLitData? {
 
 // ─── Construction Helpers ───────────────────────
 
-fn make_list_lit(elements: List<Expr>, span: Span) -> Expr {
+export fn make_list_lit(elements: List<Expr>, span: Span) -> Expr {
     let id = next_node_id()
     LIST_LITS["${id}"] = ListLitData { elements, span }
     feature_expr("collections", "list_lit", id, span)
