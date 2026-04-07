@@ -2245,6 +2245,7 @@ impl Codegen {
         // Forcing the position here makes the loop tolerant to any drift
         // and is a no-op when nothing has moved.
         mut iter_dispatch_bb = llvm.get_insert_block(CG_B)
+        mut had_wildcard = false
         for arm in _arms {
             cg_reinit_types()
             llvm.position_at_end(CG_B, iter_dispatch_bb)
@@ -2302,13 +2303,32 @@ impl Codegen {
             // explicit re-position at the top of the loop will restore
             // CG_B here even if anything in between drifts.
             iter_dispatch_bb = next_bb
+            // Track whether we've consumed the dispatch with a wildcard
+            // — if so, the next_bb of this arm is unreachable AND the
+            // fallthrough block below would be an orphan. The fuzzer
+            // (forge_fuzz.sh) found this exact bug pattern.
+            if tag == -1 { had_wildcard = true }
         }
-        // Fallthrough — no arm matched. Use the function's expected
-        // return type so the phi stays well-typed.
-        let def_val = coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0))
-        let def_bb = llvm.get_insert_block(CG_B)
-        forge_phi_push(def_val, def_bb)
-        llvm.build_br(CG_B, merge_bb)
+        // Fallthrough — emit a default phi entry ONLY if no wildcard
+        // arm was hit. With a wildcard, the dispatch is total and the
+        // current `next_bb` is an unreachable orphan; emitting a phi
+        // entry from it produces "phi has incoming from block that
+        // never branches to me". Skipping the fallthrough also lets us
+        // skip the build_br that would terminate the orphan and add
+        // it as a real predecessor of the merge.
+        if !had_wildcard {
+            let def_val = coerce_to_fn_return(llvm.const_int(CG_I64, 0, 0))
+            let def_bb = llvm.get_insert_block(CG_B)
+            forge_phi_push(def_val, def_bb)
+            llvm.build_br(CG_B, merge_bb)
+        } else {
+            // Wildcard consumed the dispatch chain. The current block
+            // (the wildcard's `next_bb`) is empty and unreachable —
+            // terminate it with `unreachable` so llc treats it as
+            // dead code instead of as an orphan. The block is empty
+            // by construction (we never wrote into it).
+            llvm.build_unreachable(CG_B)
+        }
         llvm.position_at_end(CG_B, merge_bb)
         let phi_n = forge_phi_count_from(phi_mark)
         if phi_n > 0 {
