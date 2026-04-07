@@ -1314,10 +1314,14 @@ impl Parser {
 
     pub(crate) fn is_struct_literal(&self) -> bool {
         // { ident : expr } is struct literal
-        // { ident , ... } or { ident } is shorthand struct literal
+        // { ident , ... } is shorthand struct literal with multiple fields
+        // NOTE: { ident } alone is NOT treated as a struct literal — it
+        // collides with a block whose tail expression is `ident` (very
+        // common in match arm bodies like `.IntLit(n, _) -> { n }`).
+        // Single-field struct shorthand must be written `{ ident, }`.
         if let Some(TokenKind::Ident(_)) = self.peek().map(|t| &t.kind) {
             if let Some(next) = self.peek_at(1).map(|t| &t.kind) {
-                if matches!(next, TokenKind::Colon | TokenKind::Comma | TokenKind::RBrace) {
+                if matches!(next, TokenKind::Colon | TokenKind::Comma) {
                     return true;
                 }
             }

@@ -332,16 +332,41 @@ impl<'ctx> Codegen<'ctx> {
     /// has a determinable type. We do this BEFORE generating any code so the
     /// alloca slot has a fixed type that all arms must conform to.
     fn infer_match_result_type(&mut self, arms: &[MatchArm]) -> Option<BasicTypeEnum<'ctx>> {
+        // Walk arms and pick a result type. If arms disagree and at
+        // least one is a primitive (Int/Bool/Float/String/Ptr), the
+        // primitive wins — primitives have well-defined coercions and
+        // picking a struct/tuple type causes i64-vs-{i64} mismatches
+        // that silently zero out the result.
+        let mut first_concrete: Option<Type> = None;
+        let mut has_primitive = false;
+        let mut primitive_ty: Option<Type> = None;
         for arm in arms {
             let arm_ty = self.infer_type(&arm.body);
-            // Skip Unknown/Void — try the next arm
-            if matches!(arm_ty, Type::Unknown | Type::Void) {
-                continue;
+            if matches!(arm_ty, Type::Unknown | Type::Void) { continue; }
+            let is_prim = matches!(arm_ty, Type::Int | Type::Bool | Type::Float | Type::String | Type::Ptr);
+            if first_concrete.is_none() {
+                first_concrete = Some(arm_ty.clone());
             }
-            return Some(self.type_to_llvm_basic(&arm_ty));
+            if is_prim && primitive_ty.is_none() {
+                primitive_ty = Some(arm_ty.clone());
+            }
+            if is_prim { has_primitive = true; }
         }
-        // Default: i64 for matches that don't have a clear type
-        Some(self.context.i64_type().into())
+        let chosen = if has_primitive {
+            // If first concrete is non-primitive but a primitive exists,
+            // prefer the primitive.
+            match &first_concrete {
+                Some(t) if matches!(t, Type::Int | Type::Bool | Type::Float | Type::String | Type::Ptr) => first_concrete,
+                Some(_) => primitive_ty,
+                None => primitive_ty,
+            }
+        } else {
+            first_concrete
+        };
+        match chosen {
+            Some(t) => Some(self.type_to_llvm_basic(&t)),
+            None => Some(self.context.i64_type().into()),
+        }
     }
 
     pub(crate) fn compile_pattern_check(
