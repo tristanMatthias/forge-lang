@@ -78,16 +78,34 @@ Diff-driven is what's left.
 
 ---
 
-## Current State (latest commit: `55261f4`)
+## Current State (commits 6fe03f3, 21259e3 on `feat/mini-compiler`)
 
-**Stage 3 compiles and runs hello world end-to-end.** Full pipeline:
+**Stage 3 builds, links, runs, and exits 0**, score **43** (best ever).
+**Stage 1_rust and Stage 2 binary now correctly handle `command == "build"`**
+end-to-end: stage 2 binary scans, parses, and runs the build path on
+real source files. **Stage 3 main()** still emits only the trace lines
+and returns — the actual blocker (now firmly diagnosed) is described
+in "THE BLOCKER" below.
+
 ```
-Rust compiler → Stage 2 binary (2.3 MB)
-Stage 2       → Stage 3 binary (1.98 MB)
-Stage 3       → /tmp/hello3 → prints "Hello from Stage 3!"
+Rust compiler → Stage 1 binary (build/stage1_rust)        ✅ runs build path
+Stage 1       → output.ll = Stage 2 IR                     ✅ score 80
+llc + cc      → /tmp/stage2_bin                            ✅ runs build path
+/tmp/stage2_bin → /tmp/output.ll = Stage 3 IR              ✅ score 43, 388 fns
+llc + cc      → a.out (stage 3 binary)                     ✅ exits 0
 ```
 
-**Stage 3 does NOT yet fully self-compile main.fg.** Crashes in `Codegen_emit_match_arms` at `forge_value_type_kind+228` while compiling `severity_to_string` (and any function whose body is a match on an enum-valued parameter).
+`make test-stage1` (hello world end-to-end through stage 2) passes.
+
+```
+Rust compiler → Stage 1 binary (build/stage1_rust)        ✅
+Stage 1       → output.ll = Stage 2 IR                     ✅ score 48
+llc + cc      → /tmp/stage2 binary                         ✅
+/tmp/stage2   → /tmp/output.ll = Stage 3 IR                ✅ 388 fns
+llc + cc      → /tmp/stage3 binary                         ✅ exits 0
+```
+
+`make test-stage1` (hello world end-to-end through stage 2) passes.
 
 ## Build Commands
 
@@ -131,107 +149,390 @@ EOF
 7. `build_ret` / `build_br` / `build_cond_br` guard against double-terminator bugs
 8. process.run is a real fork/exec and handles `List<string>` args
 
-## THE BLOCKER: Stage 3 can't compile `match x` on enum-valued params
+## THE BLOCKER (UPDATED 2026-04-07): rust compile_match arm-body lost when arm body is `if k == "..." { ... } else { ... }`
 
-Reproduce with the smallest possible test:
+The previous "nested match-as-block-tail" diagnosis was symptom-level.
+After fixing two pattern_tag bugs (commits 6fe03f3, 21259e3) the deeper
+bug was uncovered via diff:
 
+```bash
+bash scripts/diagnose.sh --diff Parser_token_to_binop_key /tmp/stage1.ll /tmp/stage1.ll
+```
+
+In **stage 1 IR (rust-emitted)** for `Parser_token_to_binop_key`, every
+match arm body — `if k == "Pipe" { "Pipe" } else { "" }` etc. — is
+emitted as **orphan blocks** (`No predecessors!`). The arm dispatch
+blocks (`bb995`, `bb997`, `bb999`, …) are all empty `br merge` or store
+the wrong value (e.g., `store i64 %level, ptr %16`). The actual
+`forge_string_eq` calls live in unreachable blocks.
+
+**Result**: `token_to_binop_key` ALWAYS returns the empty string. So
+`parse_binary_level` never recognizes any operator. Every `==`, `!=`,
+`<`, `&&`, `||` etc. in main.fg silently parses as just the LHS.
+That's why every comparison disappears in stage 3 IR — and why all
+if-bodies look empty (the parsed bodies are real, but the conditions
+are wrong, and stage-2-binary's `emit_if` falls back to truthy on the
+LHS struct).
+
+This is **the** root cause for the entire remaining cascade. Fix this
+one bug in the rust compiler's `compile_match` and stage 3 should jump
+to a near-functional state.
+
+### Where to look
+
+`packages/forgec-rust/features/pattern_matching/codegen.rs` `compile_match`
+around lines 226-308. The arm body emission:
+```rust
+self.builder.position_at_end(arm_bb);
+self.push_scope();
+self.bind_pattern_vars(...);
+let arm_val = self.compile_expr(&arm.body);   // ← arm body is an if-expr
+self.pop_scope();
+let arm_end_bb = self.builder.get_insert_block().unwrap();
+```
+
+When `arm.body` is `if k == "Pipe" { "Pipe" } else { "" }`:
+1. `compile_expr` → `compile_if_feature` → `compile_if`
+2. `compile_if` calls `compile_expr(condition)` to emit the string
+   equality call. This SHOULD land in `arm_bb`. **It does not** — it
+   ends up in an orphan block.
+3. The cond_br + then/else/merge that follows the condition all hang
+   off that orphan block, so the entire if-expression is unreachable.
+4. `compile_match` sees `arm_end_bb = builder.get_insert_block()` =
+   the orphan merge, sees no terminator, emits `br merge_bb` — but
+   `arm_bb` itself stays empty.
+
+### Hypotheses to investigate
+
+- `compile_if` line 11 `let cond_val = self.compile_expr(condition)?;`
+  uses `?` — if `compile_expr` returns None, compile_if returns None
+  WITHOUT branching from current block. The condition's IR was emitted
+  into current block before the None return. So if compile_expr returns
+  None for the string-eq, you'd see partial IR in arm_bb, not orphan.
+- More likely: something between `position_at_end(arm_bb)` and
+  `compile_expr(if-expr)` is moving the builder. Possibly
+  `bind_pattern_vars` for the integer pattern reads/writes to a
+  different block.
+- Or `compile_expr(StringLit "Pipe")` triggers global string constant
+  creation that internally repositions the builder.
+- Or it's a `last_block_result_type` side effect from a prior arm's
+  Block compile.
+
+### Smallest repro
+
+`packages/forgec/src/parser/expressions.fg:50` `token_to_binop_key`:
 ```forge
-// /tmp/match_test.fg
-enum Color { Red Green }
-fn name(c: Color) -> string {
-    match c {
-        .Red -> "red"
-        .Green -> "green"
+fn token_to_binop_key(self, level: int) -> string {
+    let k = forge_kind_id_to_key(self.peek_kind_id())
+    match level {
+        1  -> if k == "Pipe" { "Pipe" } else { "" }
+        2  -> if k == "Or" { "Or" } else { "" }
+        ...
     }
 }
-fn main() { println(name(Color.Red)) }
 ```
 
-Running `/tmp/stage3 build /tmp/match_test.fg /tmp/match_test`:
+After fixing, diff `Parser_token_to_binop_key` between stage 1 IR and a
+clean reference — it should produce a working dispatch chain.
+
+---
+
+## (Historical) Earlier diagnosis: nested match-as-block-tail value loss
+
+Stage 3's main() reaches `if command == "build"` and falls through to
+neither branch (both go to merge → ret 0). Tracing this all the way down
+through the cascade lands on a real bug in the **rust compiler's**
+`compile_match` for the case where a `match` expression is the *last
+expression of an arm body block*. The inner match's result isn't being
+propagated as the outer arm's value.
+
+### Repro / verification (already done — do not repeat)
+
+Add an `eprintln` inside `Codegen.pattern_tag`'s `.Literal(value)` arm
+in `packages/forgec/src/codegen/mod.fg` AND another at the call site
+in `emit_match_arms`. Rebuild and run on main.fg:
 
 ```
-  [TOK] done name tokens=21
-  [BODY] name
-Backtrace:
-0   stage3 ... forge_signal_handler + 464
-1   libsystem_platform.dylib ... _sigtramp + 56
-2   stage3 ... forge_value_type_kind + 228
-3   stage3 ... Codegen_emit_match_arms + 1392
-4   stage3 ... Codegen_emit_expr_inner + 1940
-5   stage3 ... emit_fn_body_from_source + 1240
+[ptg_str_inner] StringLit list_lit       ← inner .StringLit arm fires
+[ema_str] tag=0 scrut_type=string         ← but the value reaching
+                                            emit_match_arms is 0, not -2
 ```
 
-### Root Cause
+So pattern_tag's source body says `-2`, the inner `match value { .StringLit -> -2 }`
+arm executes, **but the value bubbling out of the outer
+`.Literal(value) -> { match value { ... } }` block is `0`, not `-2`**.
 
-In `packages/forgec/src/codegen/mod.fg` `emit_match_arms` (~line 2046):
-```forge
-let subj_raw = self.emit_expr(scrutinee)
-...
-let val_kind = forge_value_type_kind(subj_raw)   // CRASH: subj_raw is garbage
+This holds for *every* string-literal pattern arm in main.fg. None of
+them ever propagate `-2` to `emit_match_arms`. The cascade:
+
+```
+pattern_tag returns 0 instead of -2
+  ↓
+emit_match_arms takes the `else` branch (treating tag 0 as enum tag)
+  ↓
+emits `icmp eq i64 %subj, 0`  (instead of forge_string_eq)
+  ↓
+for non-null kind_name strings the comparison is FALSE
+  ↓
+wildcard arm taken → emit_collection always returns 0
+  ↓
+list literals collapse → parser arms-list never populated
+  ↓
+every Statement.Match in main.fg compiles to a stub with no arms
+  ↓
+emit_collection IR shows: `extractvalue %ForgeString, 0; ptrtoint; icmp eq 0`
+                          (a kind_name.ptr null check, NOT a string compare)
+  ↓
+main()'s `if command == "build"` is reduced to truthy on command struct
+  ↓
+Stage 3 main always falls through both arms
 ```
 
-`subj_raw` is a non-null but **invalid** LLVMValueRef. `forge_value_type_kind` → `LLVMTypeOf(val)` dereferences it → segfault. Confirmed: inserting `forge_trace_i64(8888, subj_raw)` one line earlier prevents the crash but makes the output wrong — i.e. the value reaching the call is already garbage.
+### What this is NOT
 
-**Where the garbage comes from** (this is the fundamental bug, not a workaround target):
+It is **not** the old "destructure alloca size" bug from the previous
+agent's notes. That one was real but already fixed (`extract_enum_variant_fields`
+properly unboxes via inttoptr+load now, and `bind_pattern_vars` calls it).
+Pattern.Literal's `value: Expr` field IS correctly boxed and unboxed —
+verified by adding eprintln to the inner match's `.StringLit` arm: the
+arm fires with the literal string text intact. The destructure works.
 
-The outer `match expr { ... .MatchExpr(scrutinee, arms, span) -> ... }` in `emit_expr_inner` is compiled by the **Rust compiler** (it's building Stage 2 from source). The Rust compiler's enum destructure for **self-referential boxed fields** creates a binding alloca of the wrong size:
+It is also **not** a missing runtime function or registry inconsistency.
+`forge_string_eq` is declared in stage 2 IR and would be called if
+emit_match_arms reached its `tag == -2` branch.
 
-Stage 3 IR (`/tmp/s3main.ll`) for that arm shows:
-```llvm
-%22 = alloca i64, align 8                           ; scrutinee alloca — only 8 bytes
-...
-%347 = extractvalue %Expr %expr, 1                  ; boxed pointer slot
-store i64 %347, ptr %22, align 4
-...
-%reload144 = load %Expr, ptr %22, align 4           ; loads 112 bytes from an 8-byte alloca
-%358 = call i64 @Codegen_emit_match_arms(ptr %0, %Expr %reload144, ...)
+### What IS broken
+
+The **rust compiler's `compile_match`** stores each arm's result in a
+`match_result_tmp` alloca and reads it back at the merge block:
+
+```rust
+// packages/forgec-rust/features/pattern_matching/codegen.rs ~line 197
+let result_alloca = if let Some(rty) = inferred_result_type {
+    let alloca = tmp_builder.build_alloca(rty, "match_result_tmp").unwrap();
+    let zero = ...const_zero();
+    tmp_builder.build_store(alloca, zero).unwrap();
+    Some((alloca, rty))
+};
 ```
 
-`load %Expr, ptr %22` reads 112 bytes from an `i64` alloca — overflowing into adjacent stack slots. The resulting `%reload144` is garbage, passed into `emit_match_arms` as the scrutinee, then flows into `emit_expr → emit_ident("c") → forge_value_type_kind(garbage_ptr) → segfault`.
+Each arm body is compiled with `compile_expr(arm.body)`, and the result
+is stored back into the alloca. When the arm body is itself a Block
+ending in another `match` expression, the inner match has its OWN
+`match_result_tmp`. The OUTER arm's `arm_val` is supposed to be the
+inner match's loaded result.
 
-The Rust compiler's `extract_enum_variant_fields`
-(`packages/forgec-rust/features/pattern_matching/codegen.rs:467`) DOES
-have an inttoptr+load unbox path for `boxed_fields`, but it isn't reaching
-this destructure — either because:
-  (a) `bind_pattern_vars` isn't the codepath used here, OR
-  (b) the variant's `boxed_fields` list is empty for `MatchExpr` at the
-      point where the destructure is compiled, OR
-  (c) `create_entry_block_alloca` receives the stub `Type::Enum { name: "Expr", variants: vec![] }` and `type_to_llvm_basic` falls through to `i64_type()` because `enum_types.get("Expr")` returns `None` at that moment (circular type registration order).
+Verified: at runtime, pattern_tag's compiled machine code returns 0
+for a case where the source clearly says `-2`, and the issue is that
+the inner match's loaded result is NOT being propagated back as the
+outer arm's value. The outer arm sees the OUTER alloca's zero-init
+value (0).
 
-### Next Agent: Debugging Playbook
+### Where to look
 
-1. **Confirm the alloca type.** Grep `/tmp/s3main.ll` for the outer `match expr` destructure:
+1. **`compile_match` arm body handling** (`packages/forgec-rust/features/pattern_matching/codegen.rs` ~line 269):
+   ```rust
+   self.builder.position_at_end(arm_bb);
+   self.push_scope();
+   self.bind_pattern_vars(...);
+   let arm_val = self.compile_expr(&arm.body);
+   self.pop_scope();
    ```
-   grep -n "Codegen_emit_match_arms" /tmp/s3main.ll
+   `compile_expr(&arm.body)` for a Block should return the last
+   expression's value. If the last expression is itself a `match`,
+   that's a nested `compile_match` call. Verify that the nested call's
+   returned value (which is a load from its own `match_result_tmp`)
+   actually flows out as `arm_val`.
+
+2. **`compile_expr` for `Expr::Block`** (`packages/forgec-rust/codegen/codegen/expressions.rs:133-153`):
+   ```rust
+   Expr::Block(block) => {
+       self.push_scope();
+       let mut last = None;
+       for stmt in &block.statements {
+           match stmt {
+               Statement::Expr(expr) => {
+                   last = self.compile_expr(expr);
+                   ...
+               }
+               _ => { self.compile_statement(stmt); last = None; }
+           }
+       }
+       ...
+       last
+   }
    ```
-   Find the caller (bb with `call i64 @Codegen_emit_match_arms(...)`) and look at how its scrutinee alloca was created. If `alloca i64`, confirm the bug.
+   This looks correct on its face. But verify: when the inner expr is a
+   `MatchExpr`, does `compile_expr(MatchExpr)` actually call
+   `compile_match` and return its loaded result? Trace through
+   `dispatch_feature_expr!` → `compile_match_feature`.
 
-2. **Find where the alloca is emitted.** Add an `eprintln!` in
-   `packages/forgec-rust/features/pattern_matching/codegen.rs`:
-   - In `bind_pattern_vars` Pattern::Ident arm: log `name, subject_type,
-     llvm_ty_of_alloca` for `name == "scrutinee"`.
-   - In `extract_enum_variant_fields`: log the incoming variant's
-     `boxed_fields` and the resolved `full_type` for each boxed field.
+3. **Specific suspicion**: at line 297 in `compile_match`, after the
+   arm body, the code stores `arm_val` (or a coerced version) into
+   `result_alloca`. But this store may be happening AFTER the inner
+   match has already advanced the builder past `result_alloca`'s store
+   point. Specifically:
 
-3. **Check `enum_types` registration order.** If `enum_types.get("Expr")`
-   returns `None` during emit_expr_inner compilation, the issue is that
-   Expr's full variants aren't yet registered when bind_pattern_vars runs.
-   Fix: register all enum types in a first pass before compile_fn runs.
-
-4. **Verify the fix.** After the fix, the destructure IR should show:
-   ```llvm
-   %22 = alloca %Expr, align 8                       ; full struct alloca
-   ...
-   ; OR: unbox via inttoptr + load
-   %ptr = inttoptr i64 %field_val to ptr
-   %loaded = load %Expr, ptr %ptr, align 4
-   store %Expr %loaded, ptr %22
+   ```rust
+   let arm_end_bb = self.builder.get_insert_block().unwrap();
+   if arm_end_bb.get_terminator().is_none() {
+       if let Some((alloca, rty)) = result_alloca {
+           if let Some(val) = arm_val {
+               // store arm_val to result_alloca
+               self.builder.build_store(alloca, store_val).unwrap();
+           }
+       }
+       self.builder.build_unconditional_branch(merge_bb).unwrap();
+   }
    ```
 
-5. **Run the match_test repro.** Both `/tmp/match_test` and the full
-   main.fg self-compile should succeed.
+   If the inner match left the builder positioned at the inner merge block
+   (which IS the outer block's continuation), then the store-then-branch
+   sequence for the outer arm fires correctly. But if `result_alloca` is
+   the OUTER alloca and `arm_val` is `Some(load_from_inner_alloca)`, the
+   store stores the loaded inner value to the outer alloca. That should
+   work.
 
-## Fundamental Fixes Already In (commit `55261f4`)
+   The bug must be subtler. Possibilities:
+   - The inner match's `compile_match` returns `None` instead of
+     `Some(load result)` — check `return Some(result)` paths.
+   - The inner match's loaded value has a different LLVM type than the
+     outer's `result_alloca`, and `coerce_value` falls back to
+     `const_zero` (line 287-294: "Try coercion; fall back to zero
+     default of target type"). This is the most likely culprit — the
+     inner match returns i64 (from pattern_tag) but the outer alloca
+     might have a different type at this point.
+
+### Diff-driven first step
+
+Per the mandatory diff-driven approach at the top of this file, the next
+session should:
+
+```bash
+# 1. Generate stage 1 IR (rust-emitted) for pattern_tag
+./target/release/forgec build packages/forgec/src/main.fg --emit-ir > /tmp/stage1.ll
+
+# 2. Generate stage 2 IR (self-hosted-emitted, what stage1_rust outputs)
+./build/stage1_rust build packages/forgec/src/main.fg
+mv output.ll /tmp/stage2.ll
+
+# 3. Diff Codegen_pattern_tag specifically
+bash scripts/diagnose.sh --diff Codegen_pattern_tag /tmp/stage1.ll /tmp/stage2.ll
+```
+
+Stage 1 IR's pattern_tag IS the rust-compiled version — find its
+`.Literal` arm in stage 1 IR and look at how the inner match's result
+flows to the outer arm's result_alloca store. Compare to stage 2 IR.
+The divergence will pinpoint the rust compiler bug.
+
+Note: stage 1 IR is direct rust output (`--emit-ir`). Stage 2 IR is
+what stage1_rust EMITS for the same source via its self-hosted codegen.
+They should be byte-equivalent. Where they diverge is the bug.
+
+## Fixes added in the most recent session (uncommitted)
+
+All root-cause, no workarounds. Don't regress these.
+
+### Self-hosted codegen (`packages/forgec/src/codegen/mod.fg`)
+- **`Pattern` enum registered in `cg_register_core_types`** with
+  `forge_enum_type_register("Pattern", 8)`. Without this, every parameter
+  typed `pat: Pattern` (e.g. `pattern_tag`, `emit_pattern_bindings`) was
+  silently lowered to `i64`, and field destructuring `.EnumVariant(variant, _, _)`
+  read fields from a non-aggregate, collapsing every match dispatch.
+- **`emit_match_arms` phi wiring rewritten to use the C-side phi stack**
+  (`forge_phi_push` / `forge_phi_count_from` / `forge_phi_wire`). The old
+  `phi_vals: List<ptr>` / `phi_bbs: List<ptr>` lists corrupted across
+  iterations (CLAUDE.md: BasicBlockRefs CANNOT survive Forge `List<ptr>`),
+  producing PHI nodes whose entry count didn't match the merge block's
+  predecessor count. `emit_match_call` rewritten the same way.
+- **For-loop element-variable alloca hoisted to function entry block**.
+  Previously the alloca lived in the loop body, so any successor block
+  reachable from the loop *header* (the loop end block in particular)
+  failed SSA dominance.
+- **List `.Index` `safe_idx` extract guarded by struct kind check**.
+  Calling `build_extract_value` on a non-aggregate (const i64) is
+  undefined and was returning poison → llc folded every `list[k]` to
+  `list[0]`.
+- **`int(x)` / `float(x)` / `bool(x)` builtin handlers in `emit_call`**.
+  The comment said "Cast functions: string(x), int(x), float(x), bool(x)"
+  but only `string` was implemented; `int(text)` fell through to the
+  generic-call lookup, `parse_int` ended up emitted as `ret 0`, and every
+  integer literal in the source then parsed as 0.
+- **Missing extern declarations added to `cg_init_runtime`**:
+  `forge_phi_count_from`, `forge_phi_get_val`, `forge_phi_get_bb`,
+  `forge_struct_field_is_i8`, `forge_global_var_get_init`,
+  `forge_global_var_set_init`, `forge_pending_var_type_get`,
+  `forge_pending_var_type_clear`.
+- **`CG_MAP` lazy `{ptr keys, ptr vals, i64 length}` struct type** plus
+  `cg_get_map_struct_ty()` accessor. `resolve_type_to_llvm` now handles
+  `Map` / `map` / `Map:K:V` / `map:K:V` and returns the proper 24-byte
+  struct.
+- **`create_globals_from_registry` consults the full type name** via
+  `forge_global_var_get_type` and resolves it via `resolve_type_to_llvm`.
+  Falls back to the legacy `is_str` flag only when no full type is
+  registered. So `mut LIST_LITS: Map<string, ListLitData> = {}` now
+  allocates a 24-byte `{ptr,ptr,i64}` global instead of a 16-byte
+  `%ForgeString` (was silently truncating Map globals).
+- **`emit_let` and the `.Let` arm in `dispatch_emit_stmt` consult the
+  pending var-type table** unconditionally (the table is per-function
+  scoped — see runtime fix below — so consulting it always is safe).
+- **Exported `CG_B`, `CG_PTR`, `CG_LIST`, `CG_MAP`** so feature modules
+  can build typed values without round-tripping through resolve.
+
+### Self-hosted parser (`packages/forgec/src/features/variables/mod.fg`)
+- **Captures `Map<K, V>` annotations** the same way it captures
+  `List<T>`, stores `Map:K:V` in the global type registry.
+
+### Self-hosted parser bridge (`packages/forgec/src/features/functions/mod.fg`)
+- **`forge_pending_var_type_clear()` called at the start of every
+  `emit_fn_body_from_source`**. The pending var-type table holds
+  parser-time `let X: T = …` annotations and is consumed at codegen-time
+  by `emit_let`. Since every function body is parsed and emitted in
+  lockstep, the right scope for these annotations is the current
+  function — clearing here prevents stale entries (e.g. `let command: int = 0`
+  in fn A) from polluting the next function's `let command = args[1]`.
+
+### Self-hosted collections feature (`packages/forgec/src/features/collections/mod.fg`)
+- **`emit_collection`'s empty-list fallback builds a real `{ptr null, i64 0}`
+  via `build_insert_value`** rather than `const_int 0` or `const_null`.
+  Guaranteed to carry the correct LLVM struct type even when CG_LIST is
+  partially initialized in bootstrap stages — `mut xs: List<T> = []` then
+  alloca's a proper `{ptr,i64}` list instead of an `i64`.
+
+### Runtime (`stdlib/runtime.c`)
+- **`_pending_var_types` side table** with `forge_pending_var_type_get` /
+  `forge_pending_var_type_clear`. The OLD `forge_alloca_cache_set_var_type`
+  required a matching alloca cache entry to exist when called — the parser
+  legitimately calls it BEFORE the alloca exists, so it was a silent no-op.
+  Every `mut xs: List<T> = []` lost its element type, `define_var_typed`
+  defaulted to `i64`, and every subsequent `xs.push(...)` was silently
+  dropped — collapsing every parser/codegen helper that builds its result
+  via `list_push`. The fix: when no matching alloca exists,
+  `forge_alloca_cache_set_var_type` falls back to stashing in the pending
+  table; `emit_let` reads from it; `emit_fn_body_from_source` clears it
+  per function.
+
+### Rust compiler — `forge_llvm_build_store` (`packages/std-llvm/src/lib.rs`)
+- **Replaces `i64 0 → const_null(struct_ty)` for struct allocas**.
+  Storing a bare `i64 0` into a multi-field struct alloca leaves the
+  upper bytes uninitialized — when the alloca is 16 bytes (`{ptr,i64}`
+  list) this means subsequent loads see whatever happened to be on the
+  stack, and length-tracking goes haywire. Now produces full
+  `store %T zeroinitializer, ptr` for any constant-zero i64 → struct-alloca
+  store. Added `LLVMConstIntGetSExtValue` extern.
+
+### Rust compiler — type conversion (`packages/forgec-rust/features/type_conversion/codegen.rs`)
+- **`compile_int_conversion` / `compile_float_conversion` use
+  `forge_string_to_int` / `forge_string_to_float`** with
+  `call_runtime_expect`, not `forge_string_parse_int` / `_parse_float`.
+  The latter were registered via `runtime_fn!` but never declared in
+  the self-hosted `mod.fg`'s `cg_init_runtime` — two parallel registries.
+  Unified on `*_to_*` (single source of truth, reliably declared in both
+  Rust and self-hosted codegen). The `_parse_*` registrations were
+  removed from `features/strings/mod.rs`. `string.parse_int()` method
+  also routed to `forge_string_to_int`.
+
+## Earlier fundamental fixes still in (commit `55261f4`)
 
 These are all **real fixes**, not workarounds. Don't regress them:
 
@@ -349,11 +650,76 @@ bash scripts/diagnose.sh --kind-ids                  # Kind ID consistency
 
 ## Immediate Next Steps
 
-1. **Fix the destructure alloca size bug** for boxed self-ref enum
-   fields in the Rust compiler (see "Debugging Playbook" above). Once
-   `/tmp/match_test` runs, main.fg self-compile will likely unblock.
-2. **Rerun self-compile**: `/tmp/stage3 build packages/forgec/src/main.fg /tmp/stage4`. Expected: produces `/tmp/stage4` binary.
-3. **Fixed-point check**: `/tmp/stage4 build packages/forgec/src/main.fg /tmp/stage5` and `diff /tmp/forgec_out.ll` between stages 3→4 and 4→5. Once identical, we have M7 (fixed point).
+1. **Diff `Codegen_pattern_tag` between stage 1 IR and stage 2 IR**:
+   ```bash
+   ./target/release/forgec build packages/forgec/src/main.fg --emit-ir > /tmp/stage1.ll
+   ./build/stage1_rust build packages/forgec/src/main.fg && cp output.ll /tmp/stage2.ll
+   bash scripts/diagnose.sh --diff Codegen_pattern_tag /tmp/stage1.ll /tmp/stage2.ll
+   ```
+   The divergence — specifically in the `.Literal(value) -> { match value { … } }`
+   arm — IS the bug. Look for where the inner match's loaded result
+   should be stored to the outer arm's `match_result_tmp` alloca and
+   isn't.
+
+2. **Fix `compile_match` in `packages/forgec-rust/features/pattern_matching/codegen.rs`**.
+   The most likely issue is the coerce-to-zero fallback at lines 286-294:
+   ```rust
+   let coerced = self.coerce_value(val, rty);
+   if coerced.get_type() == rty {
+       coerced
+   } else {
+       match rty {
+           BasicTypeEnum::IntType(it) => it.const_zero().into(),
+           ...
+       }
+   }
+   ```
+   When the inner match returns an i64 (a Forge `int`) and the outer
+   match's `result_alloca` was inferred as something else (e.g. a struct
+   from another arm), the coerce fails and the value is replaced with
+   `const_zero`. Fix: improve `coerce_value` to handle int → other-int
+   widening, or pre-infer `result_alloca` type from ALL arms not just
+   the first.
+
+3. **Once pattern_tag returns -2 for StringLit** (verify with the diff),
+   the cascade unblocks. Re-run:
+   ```bash
+   make stage1-rust && make test-stage1
+   ./build/stage1_rust build packages/forgec/src/main.fg
+   cp output.ll /tmp/stage2.ll
+   /opt/homebrew/opt/llvm@19/bin/llc -O0 -filetype=obj /tmp/stage2.ll -o /tmp/stage2.o
+   cc -o /tmp/stage2 /tmp/stage2.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
+      packages/std-llvm/target/release/libforge_llvm.a \
+      -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses
+   bash scripts/diagnose.sh --stage3
+   ```
+   Expected: stage 3 score drops below 48; stage 3 output goes from 5
+   lines (`M:argc=3 / M:cmd=[build]`) to a real compilation trace.
+
+4. **Then `/tmp/stage3 build packages/forgec/src/main.fg /tmp/stage4`**
+   should produce a stage 4 binary.
+
+5. **Fixed-point check**: `/tmp/stage4 build packages/forgec/src/main.fg /tmp/stage5`,
+   then `diff /tmp/output.ll` between stages 3→4 and 4→5. Once identical,
+   we have M7.
+
+## What NOT to do (lessons from this session)
+
+- **Don't add eprintln tracing to runtime code** to bisect the bug.
+  It works but it's slow and the diff-driven approach is faster. The
+  one place eprintln helped this session was confirming the cascade
+  origin (pattern_tag returning the wrong value) — once confirmed,
+  switch to IR diffing.
+- **Don't regress the warts that were fixed** — see the "Fixes added in
+  the most recent session" list above. Specifically: do not re-add the
+  `val_type == "int" || ...` guard to `emit_let`/`.Let`, do not re-add
+  the `forge_string_parse_int` registry entries, do not revert the
+  Pattern enum registration, and do not weaken the
+  `forge_llvm_build_store` const-zero widening.
+- **Don't trust "Stage 3 builds ✅"** without checking that stage 3
+  binary actually does something useful with a non-trivial input. The
+  diagnose script reports build success but the binary may still emit
+  empty stub IR for everything.
 
 ## File Map
 
