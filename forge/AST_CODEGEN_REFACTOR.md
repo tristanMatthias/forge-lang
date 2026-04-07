@@ -202,8 +202,46 @@ When `arm.body` is `if k == "Pipe" { "Pipe" } else { "" }`:
    the orphan merge, sees no terminator, emits `br merge_bb` — but
    `arm_bb` itself stays empty.
 
-### THE REAL ROOT CAUSE (CONFIRMED 2026-04-07c via runtime tracing)
+### CORRECTION (2026-04-07d): the 72-iter trace was a different match
 
+Initial runtime tracing showed an emit_match_arms call running 72
+iterations and the diagnosis was "List<MatchArm> corruption". That
+diagnosis was **wrong**. Verified by:
+1. Adding `forge_trace_i64(6000, arms.length)` at entry to
+   emit_match_arms — distribution shows 27 matches with 2 arms,
+   10 with 3, ..., and outliers at 11, 12, 13, 16, 17, 19, **43, 44,
+   72, 87**.
+2. Adding parser-side trace (`forge_trace_i64(7000, arms.length)`
+   at end of `parse_match_expr`) — parser produces the same
+   counts as codegen.
+3. Source search: `parser/mod.fg:1163` `Parser.kind_to_key()` is
+   a real 87-arm match dispatching all `TokenKind` variants.
+   `lexer/mod.fg:1000` is the 44-arm one. Both are legitimate.
+4. Counting `icmp eq i64 %level` in token_to_binop_key's stage 2
+   IR: **11 dispatches** for 12 arms (wildcard has no icmp). The
+   for loop iterates correctly — the bug is NOT iteration count.
+
+So the original symptom — bb995 empty + arm body in orphan
+blocks — is a builder-position drift WITHIN the iter, not a list
+length problem. The 72-iter call is a separate (legitimate) match
+that happens to have 72 real arms.
+
+### Status: builder-drift root cause still unknown
+
+Tested (all ruled out as the source):
+- emit_pattern_bindings repositioning
+- pattern_tag repositioning
+- List<MatchArm> corruption
+- Per-iter cg_reinit_types side effects
+
+The drift IS happening — bb995 is provably empty + arm body lives
+in `bb998: No predecessors!` — but every static suspect has been
+ruled out. Next step: instrument the if-expression path
+(`emit_if_expr` in `if_else/mod.fg`) directly with a position
+trace at every step to find which `llvm.*` call moves the
+builder away from arm_bb.
+
+**Earlier diagnosis (via runtime tracing) — initial finding (NOW WITHDRAWN)**:
 Instrumented `emit_match_arms`'s for-loop with `forge_trace_i64`
 of an `iter_count` (incremented inside the loop). Result: a single
 `emit_match_arms` invocation runs **72 iterations** when the source
