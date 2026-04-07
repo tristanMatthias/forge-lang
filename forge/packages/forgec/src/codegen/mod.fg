@@ -2239,11 +2239,22 @@ impl Codegen {
         // for each predecessor of its parent basic block!").
         let phi_mark = forge_phi_mark()
         let _arms = arms
+        // Track the dispatch block for each iteration. Some inner emit
+        // (pattern_tag's nested matches, the for-loop induction itself,
+        // or any helper called below) may move CG_B between iterations.
+        // Forcing the position here makes the loop tolerant to any drift
+        // and is a no-op when nothing has moved.
+        mut iter_dispatch_bb = llvm.get_insert_block(CG_B)
         for arm in _arms {
             cg_reinit_types()
+            llvm.position_at_end(CG_B, iter_dispatch_bb)
             let arm_bb = llvm.append_basic_block(CG_CTX, fn_val, "ma")
             let next_bb = llvm.append_basic_block(CG_CTX, fn_val, "mn")
             let tag = self.pattern_tag(arm.pattern, scrutinee_type)
+            // pattern_tag dispatches via nested matches which may shift
+            // CG_B to inner merge blocks. Restore before emitting the
+            // dispatch icmp/cond_br.
+            llvm.position_at_end(CG_B, iter_dispatch_bb)
             if tag == -1 {
                 // Wildcard or ident — always matches
                 llvm.build_br(CG_B, arm_bb)
@@ -2287,6 +2298,10 @@ impl Codegen {
                 forge_phi_push(av, ae)
             }
             llvm.position_at_end(CG_B, next_bb)
+            // Save next_bb as the next iteration's dispatch block. The
+            // explicit re-position at the top of the loop will restore
+            // CG_B here even if anything in between drifts.
+            iter_dispatch_bb = next_bb
         }
         // Fallthrough — no arm matched. Use the function's expected
         // return type so the phi stays well-typed.
