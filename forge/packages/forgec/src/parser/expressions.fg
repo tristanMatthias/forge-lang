@@ -491,9 +491,13 @@ impl Parser {
         }
         let after_ident = pk2
 
-        // { ident: ... } or { ident, ... } or { ident } — struct literal
+        // { ident: ... } or { ident, ... } — struct literal.
+        // NOTE: { ident } alone is a BLOCK whose tail is `ident`, NOT a
+        // single-field struct shorthand. Single-field shorthand must be
+        // written `{ ident, }`. This avoids miscompiling match arm
+        // bodies like `.IntLit(n, _) -> { n }`.
         if after_brace.kind_id == KID_IDENT {
-            return after_ident.kind_id == KID_COLON || after_ident.kind_id == KID_COMMA || after_ident.kind_id == KID_RBRACE
+            return after_ident.kind_id == KID_COLON || after_ident.kind_id == KID_COMMA
         }
         // { "string": ... } — map literal
         if after_brace.kind_id == KID_STRING_LIT {
