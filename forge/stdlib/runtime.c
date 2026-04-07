@@ -4894,6 +4894,20 @@ void forge_trace_i64(int64_t a, int64_t b) {
     fprintf(stderr, "  [T] %lld %lld\n", (long long)a, (long long)b);
 }
 
+// Read an env var as an int. Returns 0 if unset, 1 if set to "1" or "true",
+// otherwise the parsed integer value (or 0 on parse failure). Used by the
+// codegen-side debug hooks (FORGE_DEBUG_VERIFY etc.).
+int64_t forge_env_int(ForgeString name) {
+    char buf[256];
+    if (name.len <= 0 || name.len >= 256) return 0;
+    memcpy(buf, name.ptr, name.len);
+    buf[name.len] = '\0';
+    const char* v = getenv(buf);
+    if (!v) return 0;
+    if (strcmp(v, "1") == 0 || strcmp(v, "true") == 0) return 1;
+    return (int64_t)atoll(v);
+}
+
 // Dump a Statement passed by value: {i8 tag, ptr payload} on ARM64
 void forge_trace_stmt(int64_t first_half, int64_t second_half) {
     int tag = (int)(first_half & 0xFF);
@@ -4938,7 +4952,62 @@ int64_t forge_emit_depth_push(void) { return ++_emit_depth; }
 int64_t forge_emit_depth_pop(void) { return --_emit_depth; }
 int64_t forge_emit_depth_get(void) { return _emit_depth; }
 
-// Set the Forge type name for the most recently added cache entry
+// Pending var-type annotations: parser sets these BEFORE the variable is
+// declared (and therefore before the alloca cache has an entry for it).
+// emit_let reads them at codegen time. Without this side table, every
+// `mut xs: List<T> = []` lost its parser-supplied element type and ended
+// up with an i64 alloca.
+#define _PENDING_VT_MAX 1024
+static struct {
+    char name[64];
+    char type_name[64];
+} _pending_var_types[_PENDING_VT_MAX];
+static int _pending_var_types_count = 0;
+
+static void _pending_var_type_set(const char* nptr, int64_t nlen, const char* tptr, int64_t tlen) {
+    int klen = nlen > 63 ? 63 : (int)nlen;
+    int vlen = tlen > 63 ? 63 : (int)tlen;
+    // Update existing
+    for (int i = 0; i < _pending_var_types_count; i++) {
+        if ((int)strlen(_pending_var_types[i].name) == klen &&
+            memcmp(_pending_var_types[i].name, nptr, klen) == 0) {
+            memcpy(_pending_var_types[i].type_name, tptr, vlen);
+            _pending_var_types[i].type_name[vlen] = '\0';
+            return;
+        }
+    }
+    // Insert new
+    if (_pending_var_types_count >= _PENDING_VT_MAX) return;
+    memcpy(_pending_var_types[_pending_var_types_count].name, nptr, klen);
+    _pending_var_types[_pending_var_types_count].name[klen] = '\0';
+    memcpy(_pending_var_types[_pending_var_types_count].type_name, tptr, vlen);
+    _pending_var_types[_pending_var_types_count].type_name[vlen] = '\0';
+    _pending_var_types_count++;
+}
+
+void forge_pending_var_type_clear(void) {
+    _pending_var_types_count = 0;
+}
+
+ForgeString forge_pending_var_type_get(ForgeString name) {
+    ForgeString empty = {NULL, 0};
+    if (!name.ptr || name.len <= 0) return empty;
+    int klen = name.len > 63 ? 63 : (int)name.len;
+    for (int i = _pending_var_types_count - 1; i >= 0; i--) {
+        if ((int)strlen(_pending_var_types[i].name) == klen &&
+            memcmp(_pending_var_types[i].name, name.ptr, klen) == 0) {
+            int tlen = (int)strlen(_pending_var_types[i].type_name);
+            if (tlen > 0) return forge_string_new(_pending_var_types[i].type_name, tlen);
+            return empty;
+        }
+    }
+    return empty;
+}
+
+// Set the Forge type name for the most recently added cache entry.
+// If no matching entry exists yet (the parser is annotating the type
+// BEFORE codegen creates the alloca), fall back to the persistent
+// pending side table so emit_let can pick it up later.
 void forge_alloca_cache_set_var_type(ForgeString name, ForgeString type_name) {
     if (!name.ptr || name.len <= 0) return;
     void* cur_fn = _ac_get_current_fn();
@@ -4953,6 +5022,10 @@ void forge_alloca_cache_set_var_type(ForgeString name, ForgeString type_name) {
             _ac[i].type_name[tlen] = '\0';
             return;
         }
+    }
+    // No alloca yet — stash in the pending table.
+    if (type_name.ptr && type_name.len > 0) {
+        _pending_var_type_set(name.ptr, name.len, type_name.ptr, type_name.len);
     }
 }
 

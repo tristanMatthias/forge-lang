@@ -25,7 +25,17 @@ case "${1:-}" in
     --pipeline) MODE="pipeline" ;;
     --kind-ids) MODE="kind-ids" ;;
     --source)  MODE="source" ;;
-    --diff)    MODE="diff"; DIFF_FN="${2:-}"; DIFF_A="${3:-build/stage2_input.ll}"; DIFF_B="${4:-/tmp/output.ll}" ;;
+    --diff|--diff-fn)
+        MODE="diff"; DIFF_FN="${2:-}";
+        DIFF_A="${3:-/tmp/stage1.ll}"
+        DIFF_B="${4:-/tmp/stage2.ll}"
+        ;;
+    --rank-diff)
+        # Rank functions by IR diff size between stage1 and stage2
+        MODE="rank-diff"
+        DIFF_A="${2:-/tmp/stage1.ll}"
+        DIFF_B="${3:-/tmp/stage2.ll}"
+        ;;
     --ir-sanity) MODE="ir-sanity"; IR="${2:-/tmp/output.ll}" ;;
 esac
 
@@ -683,25 +693,36 @@ run_pipeline() {
 # Defaults: file_a=build/stage2_input.ll, file_b=/tmp/output.ll
 # Use case: identify where self-hosted codegen drifts from rust codegen
 # for the same source function.
+# Extract one LLVM function definition by name into stdout. Uses proper
+# brace counting so it doesn't bail early if the body has comments or
+# strings that contain }. Awk-only so it works without python.
+extract_llvm_fn() {
+    local file="$1"
+    local fn="$2"
+    awk -v fn="$fn" '
+        BEGIN { in_fn=0 }
+        $0 ~ "^define .*@"fn"\\(" { in_fn=1; print; next }
+        in_fn {
+            print
+            if ($0 ~ /^}[[:space:]]*$/) { exit }
+        }
+    ' "$file"
+}
+
 run_diff() {
     if [ -z "$DIFF_FN" ]; then
-        echo "Usage: diagnose.sh --diff <fn_name> [file_a.ll] [file_b.ll]" >&2
+        echo "Usage: diagnose.sh --diff-fn <fn_name> [file_a.ll] [file_b.ll]" >&2
+        echo "       diagnose.sh --diff    <fn_name> [file_a.ll] [file_b.ll]   (alias)" >&2
+        echo "" >&2
+        echo "Defaults: file_a=/tmp/stage1.ll, file_b=/tmp/stage2.ll" >&2
         exit 1
     fi
     if [ ! -f "$DIFF_A" ]; then echo "ERROR: $DIFF_A not found" >&2; exit 1; fi
     if [ ! -f "$DIFF_B" ]; then echo "ERROR: $DIFF_B not found" >&2; exit 1; fi
     local tmp_a="/tmp/_diff_a.ll"
     local tmp_b="/tmp/_diff_b.ll"
-    awk -v fn="$DIFF_FN" '
-        $0 ~ "^define .*@"fn"\\(" { in_fn=1 }
-        in_fn { print }
-        in_fn && /^}/ { exit }
-    ' "$DIFF_A" > "$tmp_a"
-    awk -v fn="$DIFF_FN" '
-        $0 ~ "^define .*@"fn"\\(" { in_fn=1 }
-        in_fn { print }
-        in_fn && /^}/ { exit }
-    ' "$DIFF_B" > "$tmp_b"
+    extract_llvm_fn "$DIFF_A" "$DIFF_FN" > "$tmp_a"
+    extract_llvm_fn "$DIFF_B" "$DIFF_FN" > "$tmp_b"
     local la=$(wc -l < "$tmp_a")
     local lb=$(wc -l < "$tmp_b")
     echo "═══ IR Diff: @$DIFF_FN ═══"
@@ -709,10 +730,53 @@ run_diff() {
     echo "  $DIFF_B: $lb lines"
     if [ "$la" = "0" ]; then red "  not found in $DIFF_A"; exit 1; fi
     if [ "$lb" = "0" ]; then red "  not found in $DIFF_B"; exit 1; fi
+    if cmp -s "$tmp_a" "$tmp_b"; then
+        green "  byte-identical ✓"
+        return 0
+    fi
     echo ""
     diff -u "$tmp_a" "$tmp_b" | head -200
     echo ""
     echo "(full diff: diff -u $tmp_a $tmp_b)"
+}
+
+# Rank functions by diff size between two .ll files. Helps find the
+# smallest non-trivial divergent functions first — those are usually
+# the root causes (complex divergences are downstream effects).
+run_rank_diff() {
+    if [ ! -f "$DIFF_A" ]; then echo "ERROR: $DIFF_A not found" >&2; exit 1; fi
+    if [ ! -f "$DIFF_B" ]; then echo "ERROR: $DIFF_B not found" >&2; exit 1; fi
+    echo "═══ Function-level diff ranking ═══"
+    echo "  A: $DIFF_A"
+    echo "  B: $DIFF_B"
+    echo ""
+    local fns_file="/tmp/_rank_fns.txt"
+    grep -oE '^define [^@]*@[A-Za-z_][A-Za-z0-9_]*' "$DIFF_A" \
+        | sed 's/.*@//' | sort -u > "$fns_file"
+    local total
+    total=$(wc -l < "$fns_file" | tr -d ' ')
+    echo "  scanning $total functions..."
+    local results="/tmp/_rank_results.txt"
+    : > "$results"
+    while IFS= read -r fn; do
+        local a_lines b_lines diff_lines
+        a_lines=$(extract_llvm_fn "$DIFF_A" "$fn" | wc -l | tr -d ' ')
+        b_lines=$(extract_llvm_fn "$DIFF_B" "$fn" | wc -l | tr -d ' ')
+        if [ "$a_lines" = "0" ] || [ "$b_lines" = "0" ]; then continue; fi
+        diff_lines=$(diff <(extract_llvm_fn "$DIFF_A" "$fn") \
+                          <(extract_llvm_fn "$DIFF_B" "$fn") | wc -l | tr -d ' ')
+        if [ "$diff_lines" = "0" ]; then continue; fi
+        printf "%5d %5d %5d %s\n" "$diff_lines" "$a_lines" "$b_lines" "$fn" >> "$results"
+    done < "$fns_file"
+    echo ""
+    echo "  diff a_ln b_ln  function (sorted, smallest divergence first)"
+    sort -n "$results" | head -30
+    echo ""
+    local div_count
+    div_count=$(wc -l < "$results" | tr -d ' ')
+    echo "  $div_count of $total functions diverge"
+    echo ""
+    echo "(full ranking: sort -n $results)"
 }
 
 # ═════════════════════════════════════════════════════════════════
@@ -809,6 +873,7 @@ case "$MODE" in
     kind-ids) run_kind_ids ;;
     source)   run_source ;;
     diff)     run_diff ;;
+    rank-diff) run_rank_diff ;;
     ir-sanity) run_ir_sanity ;;
     full)     run_full ;;
 esac

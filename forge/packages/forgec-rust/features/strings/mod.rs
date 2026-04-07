@@ -48,8 +48,9 @@ crate::runtime_fn! { name: "forge_string_contains", feature: "strings", params: 
 crate::runtime_fn! { name: "forge_string_starts_with", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
 crate::runtime_fn! { name: "forge_string_ends_with", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
 crate::runtime_fn! { name: "forge_string_replace", feature: "strings", params: [ForgeString, ForgeString, ForgeString], ret: ForgeString }
-crate::runtime_fn! { name: "forge_string_parse_int", feature: "strings", params: [ForgeString], ret: I64 }
-crate::runtime_fn! { name: "forge_string_parse_float", feature: "strings", params: [ForgeString], ret: F64 }
+// forge_string_parse_int and forge_string_parse_float removed from registry —
+// callers now use forge_string_to_int / forge_string_to_float (single source
+// of truth, reliably declared in both Rust and self-hosted codegen).
 crate::runtime_fn! { name: "forge_string_repeat", feature: "strings", params: [ForgeString, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_string_substring", feature: "strings", params: [ForgeString, I64, I64], ret: ForgeString }
 crate::runtime_fn! { name: "forge_string_eq", feature: "strings", params: [ForgeString, ForgeString], ret: I8 }
@@ -147,6 +148,8 @@ crate::runtime_fn! { name: "forge_alloca_cache_has", feature: "strings", params:
 crate::runtime_fn! { name: "forge_alloca_cache_type_id", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_alloca_cache_set_var_type", feature: "strings", params: [ForgeString, ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_alloca_cache_get_var_type", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_pending_var_type_get", feature: "strings", params: [ForgeString], ret: ForgeString }
+crate::runtime_fn! { name: "forge_pending_var_type_clear", feature: "strings", params: [], ret: Void }
 crate::runtime_fn! { name: "forge_alloca_cache_load", feature: "strings", params: [ForgeString, Ptr, Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_alloca_cache_load_field", feature: "strings", params: [ForgeString, ForgeString, I64, Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_get_named_global_i64", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
@@ -209,6 +212,13 @@ crate::runtime_fn! { name: "forge_validate_token", feature: "strings", params: [
 crate::runtime_fn! { name: "forge_global_var_get_init", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_global_var_has_init", feature: "strings", params: [I64], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_i64", feature: "strings", params: [I64, I64], ret: Void }
+// Diagnostic helpers (#2 #3 #5 #6) — see packages/std-llvm/src/lib.rs
+crate::runtime_fn! { name: "forge_llvm_assert_at", feature: "strings", params: [Ptr, Ptr, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_llvm_verify_function", feature: "strings", params: [Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_llvm_dump_blocks", feature: "strings", params: [Ptr], ret: Void }
+crate::runtime_fn! { name: "forge_dbg_enter", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_dbg_exit", feature: "strings", params: [ForgeString], ret: Void }
+crate::runtime_fn! { name: "forge_env_int", feature: "strings", params: [ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_stmt", feature: "strings", params: [I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_dump_stmt_list", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_enable_peek_trace", feature: "strings", params: [], ret: Void }
