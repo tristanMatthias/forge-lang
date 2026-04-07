@@ -471,6 +471,20 @@ export fn coerce_to_nullable(inner_ty: ptr, val: ptr) -> ptr {
     make_null_value(inner_ty)
 }
 
+// After emitting a terminator (ret/br) into the current insert block,
+// LLVM requires any subsequent instructions to live in a new block.
+// Create an unreachable "dead" block and position the builder there
+// so stray instructions the codegen emits afterwards don't poison the
+// already-terminated block.
+export fn start_dead_block_after_terminator() {
+    let ib = llvm.get_insert_block(CG_B)
+    if ib == null { return }
+    let fn_val = llvm.get_basic_block_parent(ib)
+    if fn_val == null { return }
+    let dead = llvm.append_basic_block(CG_CTX, fn_val, "dead")
+    llvm.position_at_end(CG_B, dead)
+}
+
 // Coerce a value into the current function's expected return type.
 // Returns the original value when not in a nullable function context.
 export fn coerce_to_fn_return(val: ptr) -> ptr {
@@ -1454,6 +1468,7 @@ impl Codegen {
             }
             _ -> { self.emit_ret_value(value) }
         }
+        start_dead_block_after_terminator()
     }
 
     fn emit_ret_value(self, value: Expr) {
