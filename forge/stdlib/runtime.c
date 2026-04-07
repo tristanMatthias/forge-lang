@@ -4424,7 +4424,6 @@ void forge_build_cond_br_trunc(void* builder, void* cond, void* then_bb, void* e
 
     void* cond_type = type_of(cond);
     unsigned kind = get_kind(cond_type);
-
     void* cond_i1 = cond;
     // kind 8 = LLVMIntegerTypeKind; width 1 = i1
     if (kind == 8 && get_width && get_width(cond_type) > 1) {
@@ -4443,6 +4442,95 @@ void forge_build_cond_br_trunc(void* builder, void* cond, void* then_bb, void* e
                     void* i1_type = int1_type(ctx);
                     void* trunced = build_trunc(builder, cond, i1_type, "ct");
                     if (trunced) cond_i1 = trunced;
+                }
+            }
+        }
+    }
+    // kind 10 = LLVMStructTypeKind. The self-hosted codegen sometimes
+    // emits a branch on a ForgeString value (`if some_string { ... }`)
+    // when its source-level Eq/NotEq vs "" was lost upstream. Truthy
+    // convention for these structs: extract field 1 (length / tag /
+    // count) and compare != 0. Specifically:
+    //   ForgeString {ptr, i64 len}      → truthy iff len != 0
+    //   List<T>     {ptr, i64 count}    → truthy iff count != 0
+    //   Nullable_T  {i8 tag, T inner}   → truthy iff tag != 0
+    // For Nullable_T the right field is field 0 (the i8 tag), so for
+    // any 2-field struct whose first field is i8 (kind 8 width 1-8) we
+    // pick field 0; otherwise field 1.
+    // kind 12 = pointer. Truthy iff != null.
+    if (kind == 12) {
+        typedef void* (*build_icmp_fn)(void*, int, void*, void*, const char*);
+        typedef void* (*const_null_fn)(void*);
+        static build_icmp_fn bi_p = NULL;
+        static const_null_fn cn_p = NULL;
+        if (!bi_p) bi_p = (build_icmp_fn)dlsym(RTLD_DEFAULT, "LLVMBuildICmp");
+        if (!cn_p) cn_p = (const_null_fn)dlsym(RTLD_DEFAULT, "LLVMConstNull");
+        if (bi_p && cn_p) {
+            void* zero = cn_p(cond_type);
+            void* cmp = bi_p(builder, 33, cond, zero, "pcz");
+            if (cmp) cond_i1 = cmp;
+        }
+    }
+    if (kind == 10) {
+        typedef void* (*extract_fn)(void*, void*, unsigned, const char*);
+        typedef void* (*get_field_fn)(void*, unsigned);
+        typedef int (*count_field_fn)(void*);
+        static extract_fn build_extract = NULL;
+        static get_field_fn struct_get_type_at = NULL;
+        static count_field_fn struct_count_fields = NULL;
+        if (!build_extract) build_extract = (extract_fn)dlsym(RTLD_DEFAULT, "LLVMBuildExtractValue");
+        if (!struct_get_type_at) struct_get_type_at = (get_field_fn)dlsym(RTLD_DEFAULT, "LLVMStructGetTypeAtIndex");
+        if (!struct_count_fields) struct_count_fields = (count_field_fn)dlsym(RTLD_DEFAULT, "LLVMCountStructElementTypes");
+        if (build_extract && struct_count_fields && struct_get_type_at) {
+            // Walk down to the first integer (or pointer) leaf field,
+            // building a chain of extractvalue indices. This handles
+            // nested structs like Block = {List<Stmt>, Span} where
+            // neither top-level field is scalar.
+            unsigned idx_chain[8];
+            int chain_len = 0;
+            void* walk_ty = cond_type;
+            while (chain_len < 8) {
+                if (!walk_ty) break;
+                unsigned wk = get_kind(walk_ty);
+                if (wk == 8 || wk == 12) break; // int or pointer leaf
+                if (wk != 10) break;
+                int nf = struct_count_fields(walk_ty);
+                if (nf <= 0) break;
+                // Pick first int field; else first pointer; else field 0.
+                int picked = -1;
+                for (int fi = 0; fi < nf; fi++) {
+                    void* fty = struct_get_type_at(walk_ty, (unsigned)fi);
+                    if (fty && get_kind(fty) == 8) { picked = fi; break; }
+                }
+                if (picked < 0) {
+                    for (int fi = 0; fi < nf; fi++) {
+                        void* fty = struct_get_type_at(walk_ty, (unsigned)fi);
+                        if (fty && get_kind(fty) == 12) { picked = fi; break; }
+                    }
+                }
+                if (picked < 0) picked = 0;
+                idx_chain[chain_len++] = (unsigned)picked;
+                walk_ty = struct_get_type_at(walk_ty, (unsigned)picked);
+            }
+            void* field_val = cond;
+            for (int ci = 0; ci < chain_len; ci++) {
+                field_val = build_extract(builder, field_val, idx_chain[ci], "tcond");
+                if (!field_val) break;
+            }
+            void* field_ty_final = walk_ty;
+            if (field_val) {
+                // Compare to zero of the field's type. Use icmp ne.
+                typedef void* (*build_icmp_fn)(void*, int, void*, void*, const char*);
+                typedef void* (*const_null_fn)(void*);
+                static build_icmp_fn build_icmp = NULL;
+                static const_null_fn const_null = NULL;
+                if (!build_icmp) build_icmp = (build_icmp_fn)dlsym(RTLD_DEFAULT, "LLVMBuildICmp");
+                if (!const_null) const_null = (const_null_fn)dlsym(RTLD_DEFAULT, "LLVMConstNull");
+                if (build_icmp && const_null && field_ty_final) {
+                    void* zero = const_null(field_ty_final);
+                    // LLVMIntPredicate enum: LLVMIntNE = 33
+                    void* cmp = build_icmp(builder, 33, field_val, zero, "tcz");
+                    if (cmp) cond_i1 = cmp;
                 }
             }
         }
