@@ -55,10 +55,21 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
     mut return_type: TypeExpr? = null
     if p.check(TokenKind.Arrow) {
         p.advance()
-        // Capture return type name
+        // Capture return type name. For generics like `List<Expr>` we
+        // store the colon-mangled form `"List:Expr"` so list_elem_type can
+        // recover the element type ("Expr") later — without this the
+        // for-loop emit path falls back to CG_I64 stride and reads
+        // 112-byte Expr elements as 8-byte ints.
         let ret_tok = p.peek()
         if ret_tok.kind_id == 1 {
             return_type_name = ret_tok.text
+            let next_tok = p.peek_at(1)
+            if next_tok.kind_id == KID_LT {
+                let generic_tok = p.peek_at(2)
+                if generic_tok.kind_id == 1 {
+                    return_type_name = ret_tok.text + ":" + generic_tok.text
+                }
+            }
         }
         let parsed_ret = p.parse_type_expr()
         // Check if the parsed type is Nullable (T?) and update return_type_name

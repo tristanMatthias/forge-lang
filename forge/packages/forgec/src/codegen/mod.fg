@@ -2308,50 +2308,6 @@ impl Codegen {
         result
     }
 
-    // Return the in-memory size in bytes of the element type corresponding
-    // to `expr`. Used by emit_list_literal to avoid hardcoding elem_size.
-    //
-    // Specifically, we inspect Ident exprs (the common case for list literals
-    // that hold typed variables like `[result]`) and look up the variable's
-    // registered Forge type name via the alloca cache. The size table matches
-    // forge_enum_type_register declarations in init_types():
-    //
-    //   Expr/Statement       = 14 slots × 8 = 112 bytes
-    //   ForgeString/List     = 2 slots × 8 = 16 bytes
-    //   Span                 = 4 slots × 8 = 32 bytes
-    //   scalars (int/bool/…) = 8 bytes
-    //
-    // Returning 0 signals "fall back to the old heuristic".
-    fn cg_elem_size_for_expr(self, expr: Expr) -> int {
-        mut name = ""
-        match expr {
-            .Ident(n, _) -> { name = n }
-            _ -> {}
-        }
-        if name == "" { return 0 }
-        let tn = forge_alloca_cache_get_var_type(name)
-        if tn.length == 0 { return 0 }
-        if tn == "Expr" || tn == "Statement" { return 112 }
-        if tn == "Token" { return 112 }
-        if tn == "Span" { return 32 }
-        if tn == "string" { return 16 }
-        if tn == "int" || tn == "bool" || tn == "float" || tn == "ptr" { return 8 }
-        // Struct types: check the registered field count (each field = 8 bytes
-        // in the tagged-union representation). Unknown struct → 0 (caller
-        // falls back to 16).
-        let field_types = forge_struct_type_get_field_types(tn)
-        if field_types.length > 0 {
-            mut c = 1
-            mut p = 0
-            while p < field_types.length {
-                if field_types[p] == "," { c = c + 1 }
-                p = p + 1
-            }
-            return c * 8
-        }
-        0
-    }
-
     fn emit_list_literal(self, elements: List<Expr>) -> ptr {
         cg_reinit_types()
         let count = elements.length

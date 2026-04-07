@@ -123,6 +123,17 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
         let ret_tok = p.peek()
         if ret_tok.kind_id == 1 {
             return_type_name = ret_tok.text
+            // Capture generic param: `List<Expr>` → "List:Expr". Without
+            // this, list_elem_type falls back to "" and the for-loop emit
+            // path uses CG_I64 stride for List<Expr> reads, corrupting
+            // every iteration over a method-returned list.
+            let next_tok = p.peek_at(1)
+            if next_tok.kind_id == KID_LT {
+                let generic_tok = p.peek_at(2)
+                if generic_tok.kind_id == 1 {
+                    return_type_name = ret_tok.text + ":" + generic_tok.text
+                }
+            }
         }
         let parsed_ret = p.parse_type_expr()
         // Check if return type is nullable (T?) and append ?
