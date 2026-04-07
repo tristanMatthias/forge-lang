@@ -584,8 +584,12 @@ run_stage3() {
 
     echo ""
     echo "── Stage 3 Binary Build ──"
+    # MUST rm stale artifacts. Without this, a previous successful llc run
+    # leaves /tmp/stage3.o behind and we falsely report "llc passed" while
+    # actually using last week's object file.
+    rm -f /tmp/stage3.o /tmp/stage3
     /opt/homebrew/opt/llvm@19/bin/llc -O2 -filetype=obj /tmp/output.ll -o /tmp/stage3.o 2>/tmp/_s3_llc.log
-    if [ -f /tmp/stage3.o ]; then
+    if [ -s /tmp/stage3.o ] && ! grep -q "error:" /tmp/_s3_llc.log; then
         pass "llc → object file"
     else
         fail "llc → object file" "$(head -1 /tmp/_s3_llc.log)"
@@ -595,7 +599,7 @@ run_stage3() {
     cc -o /tmp/stage3 /tmp/stage3.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
         packages/std-llvm/target/release/libforge_llvm.a \
         -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses 2>/tmp/_s3_link.log
-    if [ -x /tmp/stage3 ]; then
+    if [ -x /tmp/stage3 ] && ! grep -q "error:" /tmp/_s3_link.log; then
         pass "cc → /tmp/stage3 executable"
     else
         fail "Linker" "$(head -1 /tmp/_s3_link.log)"

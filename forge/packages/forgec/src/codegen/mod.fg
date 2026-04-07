@@ -1120,6 +1120,13 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_build_zext_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_trunc_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_inttoptr_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    // ptr → i64. Both wrapper names exist in std-llvm; we declare the one
+    // the self-hosted source actually uses (`llvm.build_ptrtoint`). Without
+    // this declaration, the runtime call returns null and emit_call writes
+    // `<null operand!>` for the elem_size of every forge_list_push, which
+    // makes llc reject the entire stage 3 IR.
+    llvm.add_function(CG_MOD, "forge_llvm_build_ptrtoint_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_llvm_build_ptr_to_int_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_add_incoming", mft3(CG_VOID, CG_PTR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_build_extract_value_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_insert_value_s", mft5(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_I64, CG_STR))
