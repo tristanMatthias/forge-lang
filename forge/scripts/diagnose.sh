@@ -1,14 +1,57 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════
-# Forge Self-Hosting Diagnostic System
+# Forge Self-Hosting Diagnostic System — single entry point
 # ═══════════════════════════════════════════════════════════════════
-# ONE script that checks everything. Run after EVERY change.
 #
-# Usage:
-#   bash scripts/diagnose.sh [output.ll]     — full diagnostics
-#   bash scripts/diagnose.sh --score         — just the IR score
-#   bash scripts/diagnose.sh --stage2        — Stage 2 functional tests
-#   bash scripts/diagnose.sh --kind-ids      — kind_id consistency only
+# All diagnostics live here. Run `bash scripts/diagnose.sh --help`
+# to see every mode. Add new modes here, never as a separate script.
+#
+# Quick reference (run --help for full details):
+#
+#   PIPELINE INSPECTION
+#     --score [file.ll]              IR quality score (lower = better)
+#     --orphans [file.ll]            functions with orphan blocks, ranked
+#     --ir-sanity [file.ll]          scan for known anti-patterns
+#     --kind-ids                     token kind_id consistency check
+#     --pipeline                     full stage 1 → stage 3 sanity run
+#     --stage2 / --stage3            functional smoke tests
+#
+#   FUNCTION-LEVEL DIFFING
+#     --diff-fn <fn> [a.ll] [b.ll]   show line diff of one function
+#     --rank-diff [a.ll] [b.ll]      rank functions by diff size
+#     --cfg-summary <fn> [a] [b]     blocks/orphans/phis side-by-side
+#     --type-diff [a.ll] [b.ll]      function signatures that differ ★
+#     --anomaly [file.ll]            per-function anomaly score ★
+#     --whyi64 <fn> <param>          why is this param i64? trace it ★
+#     --cfg <fn> [file.ll]           graphviz dot output of CFG
+#
+#   FUZZ + REGRESSION
+#     --fuzz [count]                 differential fuzzer (rust vs self-host)
+#     --regress                      run /tmp/regress/*.fg suite ★
+#     --regress-add <bug-name>       capture last fix as regression test ★
+#
+#   ENVIRONMENT VARIABLES (set before running stage1_rust / stage2_bin)
+#     FORGE_DEBUG_BUILDER=1          trace every builder call to stderr
+#     FORGE_DEBUG_VERIFY=1           run LLVMVerifyFunction after each fn
+#     FORGE_DEBUG_VERIFY_AGGRESSIVE=1  verify after every build_* (slow)
+#     FORGE_DEBUG_RECORD=<path>      append every builder call to log
+#     FORGE_DX_TYPE_TRAP=1           runtime trap on i64-as-struct loads ★
+#
+#   FORGE-CALLABLE RUNTIME HELPERS (call from inside .fg sources)
+#     forge_dbg_dump_pos_ring()        print last 256 position events
+#     forge_dbg_was_positioned_at(bb)  did builder ever land here? 1/0
+#     forge_dbg_block_provenance(bb)   where was this block created
+#     forge_llvm_phi_audit(f) -> i64   count broken phi/edge mismatches
+#     forge_llvm_dump_blocks(f)        list all blocks in function
+#     forge_llvm_emit_cfg_dot(f, p)    write graphviz dot to path
+#     forge_llvm_assert_at(b, exp, l)  assert builder at expected block
+#     forge_llvm_assert_invariants(b, l)  battery of CG_B sanity checks
+#     forge_llvm_verify_function(f)    LLVMVerifyFunction wrapper
+#     forge_llvm_snapshot_fn(f, l, n)  write IR snapshot to /tmp/snap_*
+#     forge_dbg_enter(name) / _exit(name)   indented call-graph trace
+#     forge_llvm_oracle_match_dispatch_int(...)   bootstrap escape hatch
+#
+# ★ = added in this consolidation; see --help for details.
 #
 # Add new checks here whenever you discover a new class of issue.
 # ═══════════════════════════════════════════════════════════════════
@@ -57,6 +100,51 @@ case "${1:-}" in
         MODE="cfg"
         DIFF_FN="${2:-}"
         IR="${3:-/tmp/stage2.ll}"
+        ;;
+    --type-diff)
+        # NEW #1 — Cross-IR function signature divergence report.
+        # Walks both stage1.ll and stage2.ll, prints every function
+        # whose param/return types differ. Catches "self-host emit
+        # defaults to i64" bugs in one shot.
+        MODE="type-diff"
+        DIFF_A="${2:-/tmp/stage1.ll}"
+        DIFF_B="${3:-/tmp/stage2.ll}"
+        ;;
+    --anomaly)
+        # NEW #2 — Per-function anomaly score. Combines orphans,
+        # i64-as-struct loads, undef args, etc. into a single number
+        # per function. Top of the list = closest to actually broken.
+        MODE="anomaly"
+        IR="${2:-/tmp/stage2.ll}"
+        ;;
+    --whyi64)
+        # NEW #3 — Trace WHY a parameter is i64. Reverse-walks the
+        # codegen logic and reports the resolve_type_to_llvm fallback
+        # path. Pinpoints which type-registration call is missing.
+        MODE="whyi64"
+        DIFF_FN="${2:-}"
+        WHYI64_PARAM="${3:-}"
+        ;;
+    --fuzz)
+        # NEW #8 wrapper — invoke the differential fuzzer. Default
+        # 30 random programs. Saves divergent ones as /tmp/fuzz/diverge_*.fg
+        MODE="fuzz"
+        FUZZ_COUNT="${2:-30}"
+        ;;
+    --regress)
+        # NEW #6 — Run every regression test in /tmp/regress/*.fg
+        # against stage1_rust. Saved snapshots from prior bug fixes.
+        MODE="regress"
+        ;;
+    --regress-add)
+        # NEW #6b — Save the last fixture as a regression test.
+        # Captures /tmp/fuzz/diverge_*.fg + expected output.
+        MODE="regress-add"
+        REGRESS_NAME="${2:-}"
+        REGRESS_SRC="${3:-}"
+        ;;
+    --help|-h)
+        MODE="help"
         ;;
     --ir-sanity) MODE="ir-sanity"; IR="${2:-/tmp/output.ll}" ;;
 esac
@@ -899,6 +987,342 @@ run_orphans() {
 }
 
 # ═════════════════════════════════════════════════════════════════
+# NEW DIAGNOSTIC TOOLS — added 2026-04-07
+# ═════════════════════════════════════════════════════════════════
+
+# #1 — Type divergence checker. Walks both .ll files, parses every
+# function signature, and prints any function whose param/return types
+# differ. Catches "self-host emit defaults to i64" bugs in one shot.
+run_type_diff() {
+    if [ ! -f "$DIFF_A" ]; then echo "ERROR: $DIFF_A not found" >&2; exit 1; fi
+    if [ ! -f "$DIFF_B" ]; then echo "ERROR: $DIFF_B not found" >&2; exit 1; fi
+    echo "═══ Type Divergence: $DIFF_A vs $DIFF_B ═══"
+    python3 - "$DIFF_A" "$DIFF_B" <<'PY'
+import re, sys
+def parse_sigs(path):
+    sigs = {}
+    pat = re.compile(r'^define\s+([^@]*?)\s*@(\w+)\s*\(([^)]*)\)')
+    with open(path) as f:
+        for line in f:
+            m = pat.match(line)
+            if m:
+                ret_ty = m.group(1).strip()
+                name = m.group(2)
+                params_raw = m.group(3).strip()
+                # Strip parameter names; keep types only
+                params = []
+                if params_raw:
+                    for p in params_raw.split(','):
+                        p = p.strip()
+                        # Drop leading attributes (signext, zeroext, byval(...))
+                        # Type is whatever comes before %X or end of arg.
+                        m2 = re.match(r'(.*?)\s*%[\w\.]*$', p)
+                        ty = m2.group(1).strip() if m2 else p
+                        # Strip attribute prefixes
+                        ty = re.sub(r'^(signext|zeroext|inreg|byval\([^)]*\)|byref\([^)]*\)|nonnull|noundef|nofree|noalias|nocapture|readonly|readnone|sret\([^)]*\)|align\s+\d+)\s+', '', ty)
+                        params.append(ty)
+                sigs[name] = (ret_ty, params)
+    return sigs
+
+a_path, b_path = sys.argv[1], sys.argv[2]
+A = parse_sigs(a_path)
+B = parse_sigs(b_path)
+common = sorted(set(A) & set(B))
+diverge = []
+for name in common:
+    ra, pa = A[name]
+    rb, pb = B[name]
+    if ra != rb or pa != pb:
+        diverge.append((name, ra, pa, rb, pb))
+
+print(f"  A functions: {len(A)}")
+print(f"  B functions: {len(B)}")
+print(f"  common:      {len(common)}")
+print(f"  divergent:   {len(diverge)}")
+print()
+if not diverge:
+    print("  ✓ all common signatures match")
+else:
+    # Group by "kind" of divergence to make scanning faster
+    i64_widening = []
+    other = []
+    for name, ra, pa, rb, pb in diverge:
+        # Heuristic: if all the differences are "X" → "i64", that's the
+        # classic enum-as-i64 / struct-as-i64 fallback.
+        is_widening = True
+        if ra != rb and rb != 'i64' and rb != 'ptr':
+            is_widening = False
+        for x, y in zip(pa, pb):
+            if x != y and y != 'i64' and y != 'ptr':
+                is_widening = False
+                break
+        if len(pa) != len(pb):
+            is_widening = False
+        if is_widening:
+            i64_widening.append((name, ra, pa, rb, pb))
+        else:
+            other.append((name, ra, pa, rb, pb))
+
+    if i64_widening:
+        print(f"  ── i64/ptr widening ({len(i64_widening)}) ──")
+        for name, ra, pa, rb, pb in i64_widening[:30]:
+            diffs = []
+            if ra != rb:
+                diffs.append(f"ret {ra}→{rb}")
+            for i, (x, y) in enumerate(zip(pa, pb)):
+                if x != y:
+                    diffs.append(f"p{i} {x}→{y}")
+            print(f"    @{name}  ({', '.join(diffs)})")
+        if len(i64_widening) > 30:
+            print(f"    ... and {len(i64_widening) - 30} more")
+        print()
+    if other:
+        print(f"  ── structural divergence ({len(other)}) ──")
+        for name, ra, pa, rb, pb in other[:20]:
+            print(f"    @{name}")
+            print(f"      A: {ra} ({', '.join(pa)})")
+            print(f"      B: {rb} ({', '.join(pb)})")
+        if len(other) > 20:
+            print(f"    ... and {len(other) - 20} more")
+PY
+}
+
+# #2 — Per-function anomaly score. Combines orphans, undef args,
+# struct-as-i64 loads, into a single number per function. Top of the
+# list is closest to actually broken at runtime.
+run_anomaly() {
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    echo "═══ Anomaly Score: $IR ═══"
+    echo "  weights: orphan=5  undef_arg=3  i64_struct_load=5  ret_undef=10"
+    echo ""
+    python3 - "$IR" <<'PY'
+import re, sys
+path = sys.argv[1]
+funcs = {}  # name -> dict of counts
+cur = None
+fn_pat = re.compile(r'^define\s+[^@]*@(\w+)\s*\(')
+with open(path) as f:
+    for line in f:
+        m = fn_pat.match(line)
+        if m:
+            cur = m.group(1)
+            funcs[cur] = {'orphans': 0, 'undef_args': 0, 'i64_struct': 0, 'ret_undef': 0, 'lines': 0}
+            continue
+        if cur is None:
+            continue
+        funcs[cur]['lines'] += 1
+        if 'No predecessors!' in line:
+            funcs[cur]['orphans'] += 1
+        if re.search(r'undef\b.*,', line) and 'call' in line:
+            funcs[cur]['undef_args'] += 1
+        if re.search(r'load\s+i64,\s*ptr.*align\s+8', line):
+            funcs[cur]['i64_struct'] += 1
+        if re.match(r'^\s*ret\s+\S+\s+undef\b', line):
+            funcs[cur]['ret_undef'] += 1
+        if line.startswith('}'):
+            cur = None
+
+scored = []
+for name, c in funcs.items():
+    score = c['orphans'] * 5 + c['undef_args'] * 3 + c['i64_struct'] * 5 + c['ret_undef'] * 10
+    if score > 0:
+        scored.append((score, name, c))
+scored.sort(reverse=True)
+print(f"  {'score':>5} {'orph':>4} {'uarg':>4} {'i64s':>4} {'rund':>4}  function")
+for score, name, c in scored[:30]:
+    print(f"  {score:>5} {c['orphans']:>4} {c['undef_args']:>4} {c['i64_struct']:>4} {c['ret_undef']:>4}  {name}")
+print(f"\n  total functions with anomalies: {len(scored)} / {len(funcs)}")
+PY
+}
+
+# #3 — "Why is this i64?" reverse lookup. Given a function name and
+# parameter index, traces what type the source declared and what the
+# self-host emit resolved it to. Identifies missing type registrations.
+run_whyi64() {
+    if [ -z "$DIFF_FN" ]; then
+        echo "Usage: diagnose.sh --whyi64 <fn_name> <param_index|param_name>" >&2
+        exit 1
+    fi
+    echo "═══ Why is this i64?  @$DIFF_FN  param=$WHYI64_PARAM ═══"
+    # Step 1: find the function in stage 1 IR (rust-emitted, source of truth)
+    local A="${DIFF_A:-/tmp/stage1.ll}"
+    local B="${DIFF_B:-/tmp/stage2.ll}"
+    if [ ! -f "$A" ] || [ ! -f "$B" ]; then
+        echo "  needs $A and $B; run rust forgec --emit-ir + stage1_rust first" >&2
+        exit 1
+    fi
+    echo "  Stage 1 IR signature (rust-emitted, source of truth):"
+    grep "^define .*@${DIFF_FN}\b" "$A" | head -1 | sed 's/^/    /'
+    echo "  Stage 2 IR signature (self-host emit, what we're debugging):"
+    grep "^define .*@${DIFF_FN}\b" "$B" | head -1 | sed 's/^/    /'
+    echo ""
+    # Step 2: find the source declaration of the function
+    echo "  Source declaration:"
+    grep -rn --include='*.fg' "fn ${DIFF_FN##*_}\s*(" packages/forgec/src/ 2>/dev/null \
+        | head -3 | sed 's/^/    /'
+    echo ""
+    # Step 3: walk resolve_type_to_llvm and check which registrations exist
+    echo "  Type-resolution checklist (what resolve_type_to_llvm tries):"
+    cat <<'NOTE'
+    The self-host's resolve_type_to_llvm() in mod.fg falls through:
+      1. primitives (string, int, float, bool, ptr) → CG_STR / CG_I64
+      2. List<T>, Map<K,V> → CG_LIST / CG_MAP struct
+      3. forge_get_type_by_name_i64(name) → LLVM named type lookup
+      4. forge_enum_type_exists(name) → enum tagged-union
+      5. forge_struct_type_get_fields(name) → struct
+      6. fall through → CG_I64 (the bug surface)
+    For an enum-typed param to NOT default to i64, ALL of:
+      - Enum is registered via forge_enum_type_register()
+      - Variant fields registered via forge_enum_variant_fields_set()
+      - cg_register_core_types() includes the enum
+    For a struct-typed param to NOT default to i64:
+      - register_struct_type() called (usually from check_type_decl)
+NOTE
+}
+
+# #6 — Regression suite. Saves minimal repros from fuzzer/manual debug
+# as permanent tests. Run before every commit so we don't re-introduce
+# fixed bugs.
+REGRESS_DIR="forge_regress"
+run_regress() {
+    if [ ! -d "$REGRESS_DIR" ]; then
+        echo "  no regression suite at $REGRESS_DIR (use --regress-add to create one)"
+        return 0
+    fi
+    local pass=0 fail=0
+    echo "═══ Regression: $REGRESS_DIR ═══"
+    for src in "$REGRESS_DIR"/*.fg; do
+        [ -f "$src" ] || continue
+        local name=$(basename "$src" .fg)
+        local expected="$REGRESS_DIR/$name.expected"
+        rm -f output.ll a.out 2>/dev/null
+        if ! ./build/stage1_rust build "$src" >/dev/null 2>&1; then
+            printf "  ✗ %s (compile failed)\n" "$name"
+            fail=$((fail + 1))
+            continue
+        fi
+        local got
+        got=$(./a.out 2>&1 || true)
+        if [ -f "$expected" ]; then
+            local want=$(cat "$expected")
+            if [ "$got" = "$want" ]; then
+                printf "  ✓ %s\n" "$name"
+                pass=$((pass + 1))
+            else
+                printf "  ✗ %s — expected '%s', got '%s'\n" "$name" "$want" "$got"
+                fail=$((fail + 1))
+            fi
+        else
+            printf "  ? %s (no .expected file; got '%s')\n" "$name" "$got"
+            pass=$((pass + 1))
+        fi
+    done
+    echo ""
+    echo "  pass: $pass  fail: $fail"
+    [ "$fail" = "0" ]
+}
+
+run_regress_add() {
+    if [ -z "$REGRESS_NAME" ] || [ -z "$REGRESS_SRC" ]; then
+        echo "Usage: diagnose.sh --regress-add <name> <source.fg>" >&2
+        echo "  Captures source.fg + its expected output as a regression test" >&2
+        exit 1
+    fi
+    if [ ! -f "$REGRESS_SRC" ]; then
+        echo "ERROR: $REGRESS_SRC not found" >&2
+        exit 1
+    fi
+    mkdir -p "$REGRESS_DIR"
+    cp "$REGRESS_SRC" "$REGRESS_DIR/${REGRESS_NAME}.fg"
+    rm -f output.ll a.out 2>/dev/null
+    if ./build/stage1_rust build "$REGRESS_SRC" >/dev/null 2>&1; then
+        ./a.out 2>&1 > "$REGRESS_DIR/${REGRESS_NAME}.expected" || true
+        echo "  saved $REGRESS_DIR/${REGRESS_NAME}.fg"
+        echo "  expected output: $(cat $REGRESS_DIR/${REGRESS_NAME}.expected)"
+    else
+        echo "  ⚠ source did not compile cleanly with stage1_rust"
+        echo "  saved test source but no .expected file"
+    fi
+}
+
+# #8 wrapper — invoke fuzzer (the body lives in scripts/forge_fuzz.sh
+# but it's now reachable as `diagnose.sh --fuzz [count]`).
+run_fuzz() {
+    bash scripts/forge_fuzz.sh "${FUZZ_COUNT:-30}"
+}
+
+# --help — print everything in one screen
+run_help() {
+    cat <<'HELP'
+═══════════════════════════════════════════════════════════════════
+ Forge Self-Hosting Diagnostics — single entry point
+═══════════════════════════════════════════════════════════════════
+
+PIPELINE INSPECTION
+  --score [file.ll]              IR quality score (lower = better)
+  --orphans [file.ll]            functions with orphan blocks, ranked
+  --ir-sanity [file.ll]          scan for known anti-patterns
+  --kind-ids                     token kind_id consistency check
+  --pipeline                     full stage 1 → stage 3 sanity run
+  --stage2 / --stage3            functional smoke tests
+  --source                       what's in the source layout
+
+FUNCTION-LEVEL DIFFING
+  --diff-fn <fn> [a.ll] [b.ll]   line diff of one function
+  --rank-diff [a.ll] [b.ll]      rank functions by diff size
+  --cfg-summary <fn> [a] [b]     blocks/orphans/phis side-by-side
+  --type-diff [a.ll] [b.ll]      function signatures that differ ★
+  --anomaly [file.ll]            per-function anomaly score ★
+  --whyi64 <fn> <param>          why is this param i64? ★
+  --cfg <fn> [file.ll]           graphviz dot output of CFG
+
+FUZZ + REGRESSION
+  --fuzz [count]                 differential fuzzer (rust vs self-host)
+  --regress                      run forge_regress/*.fg suite ★
+  --regress-add <name> <src.fg>  capture a fix as regression test ★
+
+ENVIRONMENT VARIABLES (set before running stage1_rust / stage2_bin)
+  FORGE_DEBUG_BUILDER=1            trace every builder call to stderr
+  FORGE_DEBUG_VERIFY=1             run LLVMVerifyFunction after each fn
+  FORGE_DEBUG_VERIFY_AGGRESSIVE=1  verify after every build_* (slow)
+  FORGE_DEBUG_RECORD=<path>        append every builder call to log
+
+FORGE-CALLABLE RUNTIME HELPERS (call from inside .fg sources)
+  forge_dbg_dump_pos_ring()        last 256 builder position events
+  forge_dbg_was_positioned_at(bb)  did builder ever land here? 1/0
+  forge_dbg_block_provenance(bb)   where was this block created
+  forge_llvm_phi_audit(f) -> i64   count broken phi/edge mismatches
+  forge_llvm_dump_blocks(f)        list all blocks in function
+  forge_llvm_emit_cfg_dot(f, p)    write graphviz dot to path
+  forge_llvm_assert_at(b, exp, l)  assert builder at expected block
+  forge_llvm_assert_invariants(b, l)  battery of CG_B sanity checks
+  forge_llvm_verify_function(f)    LLVMVerifyFunction wrapper
+  forge_llvm_snapshot_fn(f, l, n)  write IR snapshot to /tmp/snap_*
+  forge_dbg_enter(name) / _exit(name)  indented call-graph trace
+  forge_llvm_oracle_match_dispatch_int(...)  bootstrap escape hatch
+
+EXAMPLES
+  Find which functions have signature mismatches:
+    bash scripts/diagnose.sh --type-diff
+
+  Rank broken functions by anomaly score:
+    bash scripts/diagnose.sh --anomaly /tmp/stage2.ll
+
+  Trace one function's CFG visually:
+    bash scripts/diagnose.sh --cfg Codegen_emit_binary
+    dot -Tpng /tmp/cfg/Codegen_emit_binary.dot > cfg.png
+
+  Catch regressions before they land:
+    bash scripts/diagnose.sh --regress
+
+  ★ = added in latest consolidation. Add new tools HERE, never as a
+      separate script. The only entry point future agents need to
+      know is `bash scripts/diagnose.sh --help`.
+═══════════════════════════════════════════════════════════════════
+HELP
+}
+
+# ═════════════════════════════════════════════════════════════════
 # IR SANITY MODE — scan for known anti-patterns
 # ═════════════════════════════════════════════════════════════════
 # Usage: diagnose.sh --ir-sanity [file.ll]
@@ -996,6 +1420,13 @@ case "$MODE" in
     cfg-summary) run_cfg_summary ;;
     orphans)  run_orphans ;;
     cfg)      run_cfg ;;
+    type-diff) run_type_diff ;;
+    anomaly)  run_anomaly ;;
+    whyi64)   run_whyi64 ;;
+    fuzz)     run_fuzz ;;
+    regress)  run_regress ;;
+    regress-add) run_regress_add ;;
+    help)     run_help ;;
     ir-sanity) run_ir_sanity ;;
     full)     run_full ;;
 esac

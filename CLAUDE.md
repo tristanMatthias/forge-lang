@@ -33,7 +33,36 @@ LLVM_SYS_191_PREFIX=/opt/homebrew/opt/llvm@19 cargo build --release
 
 ### Self-Hosting Build Pipeline (Makefile)
 
+## NEVER CONTEXT-BUDGET
+
+Do not stop, defer, or take shortcuts because of "context budget", "running
+out of context", "limited turns left", or any similar concern about your own
+runtime. Do the work properly. If something needs 50 lines of refactor, do
+the 50 lines. If something needs 3 fixes, do all 3. Never leave a workaround
+in place "for now" because of perceived budget. Finish the job to the same
+standard regardless of how much context has been used. The user explicitly
+does not want you reasoning about your own context limits — ever.
+
 **ALL self-hosting builds MUST use the Makefile. No ad-hoc commands.**
+
+**⚠️ MINI IS DEPRECATED — DO NOT TOUCH IT.** The mini text-IR compiler
+(`packages/forgec/src/mini/`, `make mini`, `make stage1-ir`, `make stage1`,
+`make test-mini`) is no longer part of the active bootstrap chain. Do NOT
+edit any file under `packages/forgec/src/mini/`, do NOT add `ir_raw`
+declarations there, and do NOT debug `build/mini` or `build/stage1.ll`.
+
+The active pipeline is **Rust compiler → Stage 1 binary → Stage 2 IR**:
+
+```bash
+make stage1-rust   # Rust compiler builds the self-hosted Stage 1 binary directly
+make test-stage1   # Stage 1 compiles + runs hello world
+make stage2-ir     # Stage 1 compiles main.fg → build/stage2.ll
+make audit         # score Stage 2 IR
+```
+
+If you find yourself looking at mini source files or chasing missing
+`forge_*` declarations in mini, STOP — you're on the wrong branch of the
+build graph. Use `stage1-rust`.
 
 ```bash
 cd forge/
@@ -87,16 +116,44 @@ Score (lower is better)
 
 ## Debugging & Analysis Tools
 
-### Diagnostic System (`scripts/diagnose.sh`)
-ONE script for all diagnostics. Run after EVERY change:
+### Diagnostic System (`scripts/diagnose.sh`) — single entry point
+
+**One script. One place to look. One place to add new checks.**
+
 ```bash
-bash scripts/diagnose.sh [output.ll]     # Full diagnostics (IR + source + Stage 2)
-bash scripts/diagnose.sh --score         # Just the IR quality score (lower is better)
-bash scripts/diagnose.sh --kind-ids      # Kind ID consistency across lexer/parser/runtime
-bash scripts/diagnose.sh --stage2        # Stage 2 functional tests (reads files? tokenizes? etc.)
+bash scripts/diagnose.sh --help          # ALWAYS START HERE
 ```
 
-**MANDATORY RULE: When you discover a new class of issue, ADD A CHECK for it to `scripts/diagnose.sh`.** The diagnostic system must grow over time to cover every possible failure mode.
+The `--help` lists every mode, every env var, every Forge-callable
+runtime helper, and example invocations. A future agent only needs to
+know that command — everything else is discoverable from there.
+
+Most-used modes:
+```bash
+bash scripts/diagnose.sh --score         # IR quality score
+bash scripts/diagnose.sh --type-diff     # function signatures that differ between rust and self-host
+bash scripts/diagnose.sh --anomaly       # per-function anomaly score (worst first)
+bash scripts/diagnose.sh --orphans       # functions with orphan blocks
+bash scripts/diagnose.sh --diff-fn <fn>  # one-function IR diff
+bash scripts/diagnose.sh --rank-diff     # rank all functions by diff size
+bash scripts/diagnose.sh --whyi64 <fn> <param>   # why is this i64?
+bash scripts/diagnose.sh --fuzz [count]  # differential fuzzer
+bash scripts/diagnose.sh --regress       # regression suite
+bash scripts/diagnose.sh --regress-add <name> <src.fg>   # capture a fix
+```
+
+**MANDATORY RULE**: When you discover a new class of issue, ADD A
+CHECK for it to `scripts/diagnose.sh` (NOT a separate script). The
+diagnostic system must grow over time to cover every possible failure
+mode, and it must stay centralized so future agents can find it.
+
+**MANDATORY RULE**: When you fix a bug, capture a regression test:
+```bash
+bash scripts/diagnose.sh --regress-add <bug-name> <minimal-repro.fg>
+```
+The `forge_regress/` directory is run by `--regress` and should pass
+before every commit. We have repeatedly re-introduced bugs because we
+don't have regression coverage.
 
 Other scripts:
 - `scripts/check_function.sh <name> [keyword]` — inspect one function's IR in output.ll
