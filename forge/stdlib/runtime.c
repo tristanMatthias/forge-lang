@@ -4395,6 +4395,46 @@ void forge_loop_continue(void* builder) {
     if (bbr) bbr(builder, cond_bb);
 }
 
+// ---- Phi incoming stack ----
+// Match/if codegen collects (value, block) pairs across arms and then
+// wires them up at the merge. Forge List<ptr> loses block pointers
+// (CLAUDE.md: "BasicBlockRefs CANNOT survive Forge global store/load"),
+// so we use a C-side stack indexed by a per-call frame depth.
+#define PHI_STACK_SIZE 256
+static void* _phi_val_stack[PHI_STACK_SIZE];
+static void* _phi_bb_stack[PHI_STACK_SIZE];
+static int _phi_depth = 0;
+
+int64_t forge_phi_mark(void) { return (int64_t)_phi_depth; }
+void forge_phi_push(void* val, void* bb) {
+    if (_phi_depth < PHI_STACK_SIZE) {
+        _phi_val_stack[_phi_depth] = val;
+        _phi_bb_stack[_phi_depth] = bb;
+        _phi_depth++;
+    }
+}
+int64_t forge_phi_count_from(int64_t mark) {
+    int m = (int)mark;
+    if (m < 0) m = 0;
+    if (_phi_depth < m) return 0;
+    return (int64_t)(_phi_depth - m);
+}
+void* forge_phi_get_val(int64_t idx) {
+    int i = (int)idx;
+    if (i < 0 || i >= _phi_depth) return 0;
+    return _phi_val_stack[i];
+}
+void* forge_phi_get_bb(int64_t idx) {
+    int i = (int)idx;
+    if (i < 0 || i >= _phi_depth) return 0;
+    return _phi_bb_stack[i];
+}
+void forge_phi_reset_to(int64_t mark) {
+    int m = (int)mark;
+    if (m < 0) m = 0;
+    if (m <= _phi_depth) _phi_depth = m;
+}
+
 // ---- Conditional branch with auto-trunc to i1 ----
 // Handles the trunc-to-i1 check entirely in C, eliminating ptr null checks in Forge.
 // If cond is already i1, passes it directly. If i64, truncs to i1 first.

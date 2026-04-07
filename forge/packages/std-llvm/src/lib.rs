@@ -168,6 +168,7 @@ extern "C" {
     fn LLVMGetBasicBlockParent(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetFirstInstruction(bb: LLVMPtr) -> LLVMPtr;
     fn LLVMGetEntryBasicBlock(f: LLVMPtr) -> LLVMPtr;
+    fn LLVMGetInstructionParent(inst: LLVMPtr) -> LLVMPtr;
 
     // Builder
     fn LLVMCreateBuilderInContext(ctx: LLVMPtr) -> LLVMPtr;
@@ -1254,10 +1255,18 @@ pub extern "C" fn forge_llvm_add_incoming(phi: LLVMPtr, value: LLVMPtr, block: L
 #[no_mangle]
 pub extern "C" fn forge_llvm_add_incoming_one(phi: LLVMPtr, value: LLVMPtr, block: LLVMPtr) {
     unsafe {
+        // Validate block: must belong to same function as the phi's parent
+        // block. Forge List<ptr> occasionally hands back a stale/corrupt
+        // BasicBlockRef; skipping silently is safer than a segfault or
+        // <badref> that pollutes downstream LLVM printing.
+        if phi.is_null() || value.is_null() || block.is_null() { return; }
+        let phi_block = LLVMGetInstructionParent(phi);
+        if phi_block.is_null() { return; }
+        let phi_fn = LLVMGetBasicBlockParent(phi_block);
+        let block_fn = LLVMGetBasicBlockParent(block);
+        if phi_fn.is_null() || block_fn.is_null() || phi_fn != block_fn { return; }
         // Auto-correct type mismatch: if phi expects i64 but value is null/ptr, use i64 0
-        let safe_value = if phi.is_null() || value.is_null() || block.is_null() {
-            return;
-        } else {
+        let safe_value = {
             let phi_ty = LLVMTypeOf(phi);
             let val_ty = LLVMTypeOf(value);
             let phi_kind = LLVMGetTypeKind(phi_ty);
