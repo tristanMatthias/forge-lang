@@ -136,17 +136,24 @@ fn parse_impl_method_as_fn(p: Parser, type_name: string) {
         }
     }
 
-    // Capture body source by brace counting (same as parse_fn_decl)
+    // Capture body source by brace counting. Use forge_ftok_kind_id (ftok
+    // API) rather than forge_peek_kind_id, because the latter reads from
+    // _c_token_list with a hardcoded 112-byte Token stride — and the self-
+    // hosted compiler's Token struct is smaller (TokenKind's max_fields is
+    // registered as 1), so those reads produce garbage kind_ids and the
+    // brace-counting loop walks to EOF instead of the method's closing `}`.
+    // ftok is a parallel C-side buffer keyed by token index, independent of
+    // whichever Token layout the compiler was built with.
     let open_pos = forge_parser_get_pos()
-    if forge_peek_kind_id(forge_parser_get_pos()) == 102 { p.advance() }
+    if forge_ftok_kind_id(forge_parser_get_pos()) == 102 { p.advance() }
     mut depth = 1
     while depth > 0 && !p.is_at_end() {
-        let cur_kid = forge_peek_kind_id(forge_parser_get_pos())
+        let cur_kid = forge_ftok_kind_id(forge_parser_get_pos())
         if cur_kid == 102 { depth = depth + 1 }
         if cur_kid == 103 { depth = depth - 1 }
         if depth > 0 { p.advance() }
     }
-    if forge_peek_kind_id(forge_parser_get_pos()) == 103 { p.advance() }
+    if forge_ftok_kind_id(forge_parser_get_pos()) == 103 { p.advance() }
     let close_pos = forge_parser_get_pos() - 1
     let body_src = forge_extract_body_source(p.source, open_pos, close_pos)
 

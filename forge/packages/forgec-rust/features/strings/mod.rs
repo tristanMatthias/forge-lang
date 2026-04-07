@@ -301,6 +301,7 @@ crate::runtime_fn! { name: "forge_llvm_struct_create_named_s", feature: "strings
 crate::runtime_fn! { name: "forge_llvm_const_string_s", feature: "strings", params: [Ptr, ForgeString], ret: Ptr }
 crate::runtime_fn! { name: "forge_llvm_print_module_to_file_s", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_llvm_emit_object_file_s", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
+crate::runtime_fn! { name: "forge_llvm_store_size_of_type", feature: "strings", params: [Ptr, Ptr], ret: I64 }
 
 crate::runtime_fn! { name: "forge_llvm_build_fadd_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }
 crate::runtime_fn! { name: "forge_llvm_build_fsub_s", feature: "strings", params: [Ptr, Ptr, Ptr, ForgeString], ret: Ptr }

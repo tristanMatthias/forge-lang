@@ -2305,6 +2305,50 @@ impl Codegen {
         result
     }
 
+    // Return the in-memory size in bytes of the element type corresponding
+    // to `expr`. Used by emit_list_literal to avoid hardcoding elem_size.
+    //
+    // Specifically, we inspect Ident exprs (the common case for list literals
+    // that hold typed variables like `[result]`) and look up the variable's
+    // registered Forge type name via the alloca cache. The size table matches
+    // forge_enum_type_register declarations in init_types():
+    //
+    //   Expr/Statement       = 14 slots × 8 = 112 bytes
+    //   ForgeString/List     = 2 slots × 8 = 16 bytes
+    //   Span                 = 4 slots × 8 = 32 bytes
+    //   scalars (int/bool/…) = 8 bytes
+    //
+    // Returning 0 signals "fall back to the old heuristic".
+    fn cg_elem_size_for_expr(self, expr: Expr) -> int {
+        mut name = ""
+        match expr {
+            .Ident(n, _) -> { name = n }
+            _ -> {}
+        }
+        if name == "" { return 0 }
+        let tn = forge_alloca_cache_get_var_type(name)
+        if tn.length == 0 { return 0 }
+        if tn == "Expr" || tn == "Statement" { return 112 }
+        if tn == "Token" { return 112 }
+        if tn == "Span" { return 32 }
+        if tn == "string" { return 16 }
+        if tn == "int" || tn == "bool" || tn == "float" || tn == "ptr" { return 8 }
+        // Struct types: check the registered field count (each field = 8 bytes
+        // in the tagged-union representation). Unknown struct → 0 (caller
+        // falls back to 16).
+        let field_types = forge_struct_type_get_field_types(tn)
+        if field_types.length > 0 {
+            mut c = 1
+            mut p = 0
+            while p < field_types.length {
+                if field_types[p] == "," { c = c + 1 }
+                p = p + 1
+            }
+            return c * 8
+        }
+        0
+    }
+
     fn emit_list_literal(self, elements: List<Expr>) -> ptr {
         cg_reinit_types()
         let count = elements.length
@@ -2317,11 +2361,23 @@ impl Codegen {
             let val = self.emit_expr(elem)
             llvm.value_array_set(vals, i, val)
             if i == 0 && val != null {
-                // Use LLVM's own type system instead of guessing
+                // Source of truth for element type is LLVM's own type system.
                 elem_ty = llvm.type_of(val)
-                let tk = forge_value_type_kind(val)
-                if tk == LLVM_STRUCT_TYPE_KIND {
-                    elem_size = 16
+                // elem_size is the store size of the element type. Previously
+                // this was a hardcoded 8/16, but 16 silently truncated larger
+                // aggregates like %Expr/%Statement (112 bytes) — producing
+                // garbage when a list of Exprs was indexed.
+                //
+                // forge_struct_store_size walks the element's first AST expr
+                // to find a registered Forge type name and returns its
+                // in-memory size in bytes. Unknown types fall back to 8.
+                let sz_by_name = cg_elem_size_for_expr(elements[0])
+                if sz_by_name > 0 { elem_size = sz_by_name }
+                else {
+                    // Fall back to the struct-kind heuristic (16 bytes for
+                    // any struct value — covers ForgeString and List<scalar>).
+                    let tk = forge_value_type_kind(val)
+                    if tk == LLVM_STRUCT_TYPE_KIND { elem_size = 16 }
                 }
             }
             i = i + 1
@@ -2699,6 +2755,17 @@ impl Codegen {
                 // Cast functions: string(x), int(x), float(x), bool(x)
                 if name == "string" && args.length > 0 {
                     let val = self.emit_expr(args[0])
+                    // Type-aware conversion: if the arg is already a string
+                    // (ForgeString = {ptr, i64} struct), return it as-is.
+                    // Without this, `string(some_string_var)` (e.g. inside a
+                    // template literal `${x}`) passes the ForgeString struct
+                    // through forge_int_to_string, which treats the struct's
+                    // first 8 bytes (the ptr) as an i64 and formats it as a
+                    // decimal — producing garbage like "4304805200_105553…".
+                    let val_kind = forge_value_type_kind(val)
+                    if val_kind == LLVM_STRUCT_TYPE_KIND {
+                        return val
+                    }
                     // Call forge_int_to_string(val) → ForgeString
                     let ca = llvm.value_array_new(1)
                     llvm.value_array_set(ca, 0, val)

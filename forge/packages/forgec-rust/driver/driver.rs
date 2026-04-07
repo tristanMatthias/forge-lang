@@ -1722,6 +1722,7 @@ pub fn inject_llvm_api(codegen: &crate::codegen::Codegen<'_>) {
     d!("forge_llvm_type_array_free", void, [ptr]);
     d!("forge_llvm_get_type_by_name", ptr, [ptr, ptr]);
     d!("forge_llvm_size_of", i64t, [ptr]);
+    d!("forge_llvm_store_size_of_type", i64t, [ptr, ptr]);
     d!("forge_llvm_add_function", ptr, [ptr, ptr, ptr]);
     d!("forge_llvm_get_named_function", ptr, [ptr, ptr]);
     d!("forge_llvm_get_param", ptr, [ptr, i32t]);
