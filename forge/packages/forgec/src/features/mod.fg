@@ -32,7 +32,7 @@ use core.types.Type
 use codegen.Codegen
 use checker.TypeChecker
 use variables.{parse_let, parse_mut, parse_const, check_var, emit_var, top_level_var}
-use functions.{parse_fn, parse_export, check_fn, emit_fn, top_level_fn, declare_all_functions, emit_fn_body, store_fn_for_codegen}
+use functions.{parse_fn, parse_export, check_fn, emit_fn, top_level_fn, emit_fn_body, store_fn_for_codegen}
 use enums.{parse_enum, check_enum, emit_enum_decl, top_level_enum}
 use structs.{parse_type_decl, check_type_decl, check_struct_lit, emit_type_decl, emit_struct_lit, top_level_type}
 use traits.{parse_trait, check_trait, top_level_trait}

@@ -309,32 +309,9 @@ export fn store_fn_return_type(type_name: string) {
 // Global function map (bootstrap workaround: Codegen.functions passed by value loses data)
 mut DECLARED_FNS: Map<string, ptr> = {}
 
-// Declare all functions (signatures only, no bodies) so forward calls work
-export fn declare_all_functions(cg: Codegen) {
-    mut i = 0
-    while i < FN_NAMES.length {
-        let name = FN_NAMES[i]
-        let is_main = name == "main"
-        mut pc = 0
-        if i < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[i] }
-        let param_arr = llvm.type_array_new(pc)
-        mut pi = 0
-        while pi < pc {
-            llvm.type_array_set(param_arr, pi, CG_I64)
-            pi = pi + 1
-        }
-        mut ret_ty = CG_I64
-        if is_main { ret_ty = CG_I32 }
-        cg_reinit_types()        cg_reinit_types()
-        if ret_ty == null { ret_ty = CG_I64 }
-        let fn_type = llvm.function_type(ret_ty, param_arr, pc, 0)
-        llvm.type_array_free(param_arr)
-        let fn_val = llvm.add_function(CG_MOD, name, fn_type)
-        cg.functions[name] = fn_val
-        DECLARED_FNS[name] = fn_val
-        i = i + 1
-    }
-}
+// (declare_all_functions removed — was a dead earlier-iteration variant
+// that defaulted every param + return to CG_I64. The active path is
+// declare_all_fns() called from main.fg.)
 
 // Phase 1: Declare all functions with proper types (called before any body emission)
 export fn declare_all_fns() {
@@ -374,7 +351,8 @@ export fn declare_all_fns() {
                         param_ty = CG_PTR
                     } else if tname == "string" { param_ty = CG_STR }
                     else if tname == "List" || (tname.length > 5 && tname.substring(0, 5) == "List:") { param_ty = CG_STR }
-                    else if tname != "int" && tname != "float" && tname != "bool" && tname != "ptr" && tname != "" {
+                    else if tname == "ptr" { param_ty = CG_PTR }
+                    else if tname != "int" && tname != "float" && tname != "bool" && tname != "" {
                         let resolved = resolve_type_to_llvm(tname)
                         if resolved != null { param_ty = resolved }
                     }
@@ -393,9 +371,17 @@ export fn declare_all_fns() {
                 is_nullable_ret = true
                 rtn = rtn.substring(0, rtn.length - 1)
             }
-            if rtn == "string" { ret_ty = CG_STR }
+            // Empty return type ("" / "void") → CG_VOID. Defaulting to
+            // CG_I64 here makes every void-returning function declare
+            // `define i64 @fn(...)`, which then mismatches the rust
+            // compiler's `define void @fn(...)` and breaks calling
+            // convention everywhere they meet (~30 functions).
+            if rtn == "" || rtn == "void" { ret_ty = CG_VOID }
+            else if rtn == "string" { ret_ty = CG_STR }
             else if rtn == "List" || (rtn.length > 5 && rtn.substring(0, 5) == "List:") { ret_ty = CG_STR }
-            else if rtn != "" && rtn != "int" && rtn != "float" && rtn != "bool" && rtn != "ptr" {
+            else if rtn == "ptr" { ret_ty = CG_PTR }
+            else if rtn == "bool" { ret_ty = CG_I8 }
+            else if rtn != "int" && rtn != "float" {
                 let resolved = resolve_type_to_llvm(rtn)
                 if resolved != null { ret_ty = resolved }
             }
@@ -753,80 +739,17 @@ export fn emit_all_fn_bodies(cg: Codegen) {
     }
 }
 
-// Emit a single function body (called from codegen's emit_statement via dispatch)
-export fn emit_fn_body(cg: Codegen, node: NodeRef) {
-    // No-op: all function bodies are emitted by emit_fn_body_from_source
-    // in the main compile loop. This avoids duplicate declarations.
-    return
-    let d = get_fn_decl(node.node_id)
-    if d == null { return }
-    let data = d!
-    let name = data.name
-    let is_main = name == "main"
+// Stub: registered as the "functions" feature emit handler so dispatch
+// from features/mod.fg doesn't crash. The ACTUAL function-body emission
+// path is emit_fn_body_from_source(cg, idx, param_offset), called from
+// main.fg's compile loop. Keep this as a true no-op so any future agent
+// who finds a 50-line dead body underneath a `return` doesn't waste 10
+// minutes on it (like I just did).
+export fn emit_fn_body(cg: Codegen, node: NodeRef) {}
 
-    // Get function from global map (struct fields don't survive pass-by-value)
-    if !DECLARED_FNS.has(name) { return }
-    let fn_val = DECLARED_FNS[name]
-    cg.current_fn = fn_val
-
-    let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
-    llvm.position_at_end(CG_B, entry)
-
-    // Define params as local variables using flat param name list
-    // Find param offset: sum of param counts for functions before this one
-    mut param_offset = 0
-    mut fi = 0
-    while fi < FN_NAMES.length {
-        if FN_NAMES[fi] == name { break }
-        if fi < FN_PARAM_COUNTS.length {
-            param_offset = param_offset + FN_PARAM_COUNTS[fi]
-        }
-        fi = fi + 1
-    }
-    mut pc = 0
-    if fi < FN_PARAM_COUNTS.length { pc = FN_PARAM_COUNTS[fi] }
-    mut pi = 0
-    while pi < pc {
-        let pname = forge_param_name_get(param_offset + pi)
-        let param_val = llvm.get_param(fn_val, pi)
-        if param_val == null { break }
-        cg.define_var(pname, Type.Int, param_val)
-        pi = pi + 1
-    }
-
-    cg.emit_block(data.body)
-
-    if is_main {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-    } else {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
-    }
-}
-
-fn emit_fn_data(cg: Codegen, data: FnDeclData) {
-    // Use already-declared function (from declare_all_fns)
-    let fn_val = llvm.get_named_function(CG_MOD, data.name)
-    if fn_val == null { return }
-    cg.current_fn = fn_val
-
-    let entry = llvm.append_basic_block(CG_CTX, fn_val, "entry")
-    llvm.position_at_end(CG_B, entry)
-
-    i = 0
-    for param in data.params {
-        let param_val = llvm.get_param(fn_val, i)
-        cg.define_var(param.name, Type.Int, param_val)
-        i = i + 1
-    }
-
-    cg.emit_block(data.body)
-
-    if is_main {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I32, 0, 0))
-    } else {
-        llvm.build_ret(CG_B, llvm.const_int(CG_I64, 0, 0))
-    }
-}
+// (emit_fn_data removed — was a third dead variant referencing
+// `i` and `is_main` from a non-existent enclosing scope, would not
+// even compile.)
 
 // ─── Registration ───────────────────────────────
 

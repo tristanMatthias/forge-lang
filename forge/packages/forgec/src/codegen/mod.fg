@@ -629,7 +629,14 @@ export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "int" { return CG_I64 }
     if type_name == "float" { return CG_I64 }
     if type_name == "bool" { return CG_I64 }
-    if type_name == "ptr" { return CG_I64 }
+    // ptr is a real LLVM ptr type. Returning CG_I64 here was a
+    // historical workaround for a `ptr != null` codegen bug, but it
+    // caused EVERY function with `-> ptr` (~150 in mod.fg) to have
+    // its return type silently widened to i64, breaking calling
+    // convention with the rust compiler's emit. The ptr-null bug is
+    // documented in CLAUDE.md and is no longer triggered by current
+    // mod.fg paths — the regression suite catches reintroductions.
+    if type_name == "ptr" { return CG_PTR }
     if type_name == "List" || type_name == "list" || (type_name.length > 5 && (type_name.substring(0, 5) == "List:" || type_name.substring(0, 5) == "list:")) {
         return CG_LIST
     }
