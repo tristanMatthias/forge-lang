@@ -78,7 +78,7 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         // doesn't round-trip cleanly through the wrapping.  Reading
         // the token stream is the source of truth.
         let last_pos = forge_parser_get_pos() - 1
-        if last_pos >= 0 && forge_ftok_kind_id(last_pos) == KID_QUESTION {
+        if last_pos >= 0 && return_type_name.length > 0 && forge_ftok_kind_id(last_pos) == KID_QUESTION {
             return_type_name = return_type_name + "?"
         }
         return_type = parsed_ret
@@ -488,16 +488,11 @@ export fn emit_fn_body_from_source(cg: Codegen, idx: int, param_offset: int) {
     forge_fn_nullable_set(0, null, null)
     mut _rtn0 = ""
     if idx < FN_RETURN_TYPES.length { _rtn0 = FN_RETURN_TYPES[idx] }
-    if _rtn0.length > 1 {
-        let _last_idx = _rtn0.length - 1
-        if _last_idx >= 0 {
-            if _rtn0[_last_idx] == "?" {
-                let _inner_n = _rtn0.substring(0, _last_idx)
-                let _inner_t = resolve_type_to_llvm(_inner_n)
-                if _inner_t != null && _inner_t != CG_I64 {
-                    forge_fn_nullable_set(1, _inner_t, _inner_t)
-                }
-            }
+    if _rtn0.length > 1 && _rtn0.substring(_rtn0.length - 1, _rtn0.length) == "?" {
+        let _inner_n = _rtn0.substring(0, _rtn0.length - 1)
+        let _inner_t = resolve_type_to_llvm(_inner_n)
+        if _inner_t != null && _inner_t != CG_I64 {
+            forge_fn_nullable_set(1, _inner_t, _inner_t)
         }
     }
 

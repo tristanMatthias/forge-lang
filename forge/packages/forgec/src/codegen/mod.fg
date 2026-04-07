@@ -407,7 +407,10 @@ export fn make_nullable_type(inner_ty: ptr) -> ptr {
     let kind = llvm.get_type_kind(inner_ty)
     let is_struct = kind == LLVM_STRUCT_TYPE_KIND
     let inner_name = if is_struct { llvm.get_struct_name(inner_ty) } else { "" }
-    let has_name = inner_name.length > 0
+    // Guard against empty/whitespace names that would produce a
+    // degenerate `%Nullable_` named struct shared across unrelated
+    // inner types. Require at least one non-underscore character.
+    let has_name = inner_name.length > 0 && inner_name != "_"
 
     if has_name {
         let nullable_name = "Nullable_" + inner_name
