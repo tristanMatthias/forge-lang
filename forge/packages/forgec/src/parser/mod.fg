@@ -719,20 +719,23 @@ impl Parser {
         self.skip_newlines()
         mut statements: List<Statement> = []
 
-        while self.peek_kind_id() != KID_RBRACE && !self.is_at_end() {
-            let before = forge_parser_get_pos()
-            let stmt = self.parse_statement()
-            forge_trace_i64(9001, forge_parser_get_pos())
-            if stmt != null {
-                forge_trace_i64(9002, 1)
-                statements = statements.push(stmt!)
-            } else {
-                forge_trace_i64(9002, 0)
+        // Use done/break form, not `!= KID_RBRACE`. Self-host has been
+        // observed to miscompile `!= KID_RBRACE` loops into empty
+        // bodies, which collapses every block (and every match arm) to
+        // a stub when stage 2 binary processes itself.
+        mut done = false
+        while !done && !self.is_at_end() {
+            if self.peek_kind_id() == KID_RBRACE { done = true }
+            if !done {
+                let before = forge_parser_get_pos()
+                let stmt = self.parse_statement()
+                if stmt != null {
+                    statements = statements.push(stmt!)
+                }
+                if forge_parser_get_pos() == before { self.advance() }
+                self.skip_newlines()
             }
-            if forge_parser_get_pos() == before { self.advance() }
-            self.skip_newlines()
         }
-        forge_trace_i64(9003, statements.length)
 
         self.expect_id(KID_RBRACE)
 
