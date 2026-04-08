@@ -496,6 +496,24 @@ impl<'ctx> Codegen<'ctx> {
             return alloca.into();
         }
 
+        // int/ptr → struct: write the scalar into a zero-init struct alloca
+        // and load it back as the target struct. Handles cases like
+        // `return some_i64_value` from a `-> Program` function — the
+        // self-host wraps complex types in i64/ptr handles, so we need to
+        // splat the bits into the struct's first slot rather than emit
+        // `ret <struct> undef` (which crashes any caller that uses the
+        // result). Better to return a zeroed struct than an undef.
+        if (val.is_int_value() || val.is_pointer_value()) && target_type.is_struct_type() {
+            let target_st = target_type.into_struct_type();
+            let alloca = self.builder.build_alloca(target_st, "i2s").unwrap();
+            self.builder.build_store(alloca, target_st.const_zero()).unwrap();
+            // Stash the scalar bits at offset 0 — most self-host structs
+            // are i64-prefixed, so the value survives if the caller treats
+            // the struct as opaque storage.
+            self.builder.build_store(alloca, val).ok();
+            return self.builder.build_load(target_st, alloca, "i2s_l").unwrap();
+        }
+
         // Struct → different struct: alloca + store + load to bitcast
         if val.is_struct_value() && target_type.is_struct_type() {
             let target_st = target_type.into_struct_type();
