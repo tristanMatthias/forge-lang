@@ -711,35 +711,44 @@ impl Parser {
 
         mut arms: List<MatchArm> = []
 
-        while self.peek_kind_id() != KID_RBRACE && !self.is_at_end() {
-            self.skip_newlines()
-            let arm_start = self.current_span()
+        // done/break form — self-host miscompiles `peek_kind_id() !=
+        // KID_RBRACE && !is_at_end()` into a truthy-of-peek check, so
+        // arms list ends up empty and every match expression collapses
+        // to "extract tag, return null" in stage 3 IR.
+        mut done = false
+        while !done && !self.is_at_end() {
+            if self.peek_kind_id() == KID_RBRACE { done = true }
+            if !done {
+                self.skip_newlines()
+                let arm_start = self.current_span()
 
-            let pat = self.parse_pattern()
-            if pat == null { break }
+                let pat = self.parse_pattern()
+                if pat == null { done = true }
+                if !done {
+                    self.skip_newlines()
+                    if self.peek_kind_id() == KID_ARROW { self.advance() }
+                    self.skip_newlines()
 
-            self.skip_newlines()
-            if self.peek_kind_id() == KID_ARROW { self.advance() }
-            self.skip_newlines()
+                    let prev_match = IN_MATCH_ARM
+                    IN_MATCH_ARM = true
+                    mut body = Block { statements: [], span: arm_start }
+                    if self.peek_kind_id() == KID_LBRACE {
+                        body = self.parse_block()
+                    } else {
+                        let e = self.parse_expr()
+                        mut body_stmts: List<Statement> = []
+                        if e != null { body_stmts = [Statement.Expr(e!)] }
+                        body = Block { statements: body_stmts, span: arm_start }
+                    }
+                    IN_MATCH_ARM = prev_match
 
-            let prev_match = IN_MATCH_ARM
-            IN_MATCH_ARM = true
-            mut body = Block { statements: [], span: arm_start }
-            if self.peek_kind_id() == KID_LBRACE {
-                body = self.parse_block()
-            } else {
-                let e = self.parse_expr()
-                mut body_stmts: List<Statement> = []
-                if e != null { body_stmts = [Statement.Expr(e!)] }
-                body = Block { statements: body_stmts, span: arm_start }
+                    arms = arms.push(MatchArm { pattern: pat!, body, span: arm_start })
+
+                    self.skip_newlines()
+                    if self.peek_kind_id() == KID_COMMA { self.advance() }
+                    self.skip_newlines()
+                }
             }
-            IN_MATCH_ARM = prev_match
-
-            arms = arms.push(MatchArm { pattern: pat!, body, span: arm_start })
-
-            self.skip_newlines()
-            if self.peek_kind_id() == KID_COMMA { self.advance() }
-            self.skip_newlines()
         }
         if self.peek_kind_id() == KID_RBRACE { self.advance() }
 
