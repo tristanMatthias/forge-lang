@@ -2,6 +2,8 @@
 
 This file records limitations in the current Rust host compiler and bootstrap toolchain that affect the new `bootstrap/` project.
 
+When host limitations force the bootstrap project away from the cleanest or most idiomatic Forge implementation, that deviation must be called out here explicitly. The point is to make "works under the host compiler today" visibly distinct from "ideal Forge code we actually want to keep".
+
 The rule for this file is simple:
 
 - if the limitation lives in the Rust host compiler or its runtime, record it here
@@ -129,6 +131,10 @@ The evaluator logic itself was correct. The failures came from moving `Value` en
 - rewrote the evaluator from mutable methods into plain free functions
 - replaced the evaluator runtime `Value` enum with an explicit tagged `Value` struct
 - kept the external `bootstrapc eval` behavior correct and fully tested
+
+**Why this is not ideal Forge code**
+
+In the long-term self-hosted compiler, the evaluator/runtime value model should be expressed as a real Forge tagged union or enum with clear helper methods. The current free-function + tagged-struct shape exists only because the host compiler miscompiles the more direct design.
 
 **What must happen later**
 
