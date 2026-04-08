@@ -1,0 +1,40 @@
+use @std.process
+
+mod token
+mod scanner
+
+use scanner.{scan_source, render_tokens}
+
+fn print_usage() {
+    eprintln("forge-bootstrap v0.1.0")
+    eprintln("Usage: bootstrapc tokens <file.fg>")
+}
+
+fn main() {
+    let args = process.args()
+    if args.length < 3 {
+        print_usage()
+        return
+    }
+
+    let command = args[1]
+    if command != "tokens" {
+        print_usage()
+        return
+    }
+
+    let path = args[2]
+    if !file_exists(path) {
+        eprintln("error: file not found: " + path)
+        return
+    }
+
+    let source = read_file(path)
+    let result = scan_source(source)
+    if result.had_error {
+        eprintln(result.error_message)
+        return
+    }
+
+    println(render_tokens(result))
+}

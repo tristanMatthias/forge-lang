@@ -1,0 +1,354 @@
+use token.{token_render}
+
+export type ScanResult = {
+    rendered: string,
+    had_error: bool,
+    error_message: string,
+}
+
+export type Scanner = {
+    source: string,
+    mut start: int,
+    mut current: int,
+    mut line: int,
+    mut column: int,
+    mut token_line: int,
+    mut token_column: int,
+    mut rendered: string,
+    mut token_count: int,
+    mut had_error: bool,
+    mut error_message: string,
+}
+
+export fn scanner_new(source: string) -> Scanner {
+    Scanner {
+        source,
+        start: 0,
+        current: 0,
+        line: 1,
+        column: 1,
+        token_line: 1,
+        token_column: 1,
+        rendered: "",
+        token_count: 0,
+        had_error: false,
+        error_message: "",
+    }
+}
+
+export fn scan_source(source: string) -> ScanResult {
+    mut scanner = scanner_new(source)
+    scanner.scan_tokens()
+}
+
+export fn render_tokens(result: ScanResult) -> string {
+    result.rendered
+}
+
+fn is_digit(ch: string) -> bool {
+    ch >= "0" && ch <= "9"
+}
+
+fn is_alpha(ch: string) -> bool {
+    (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+}
+
+fn is_alpha_numeric(ch: string) -> bool {
+    is_alpha(ch) || is_digit(ch)
+}
+
+fn keyword_kind(text: string) -> string {
+    if text == "and" { return "kw_and" }
+    if text == "else" { return "kw_else" }
+    if text == "false" { return "kw_false" }
+    if text == "fn" { return "kw_fn" }
+    if text == "for" { return "kw_for" }
+    if text == "if" { return "kw_if" }
+    if text == "let" { return "kw_let" }
+    if text == "mod" { return "kw_mod" }
+    if text == "mut" { return "kw_mut" }
+    if text == "null" { return "kw_null" }
+    if text == "or" { return "kw_or" }
+    if text == "return" { return "kw_return" }
+    if text == "true" { return "kw_true" }
+    if text == "use" { return "kw_use" }
+    if text == "while" { return "kw_while" }
+    return "identifier"
+}
+
+impl Scanner {
+    fn is_at_end(self) -> bool {
+        self.current >= self.source.length
+    }
+
+    fn peek(self) -> string {
+        if self.current >= self.source.length {
+            return ""
+        }
+        self.source[self.current]
+    }
+
+    fn peek_next(self) -> string {
+        if self.current + 1 >= self.source.length {
+            return ""
+        }
+        self.source[self.current + 1]
+    }
+
+    fn advance(self) -> string {
+        let ch = self.source[self.current]
+        self.current = self.current + 1
+        if ch == "\n" {
+            self.line = self.line + 1
+            self.column = 1
+        } else {
+            self.column = self.column + 1
+        }
+        ch
+    }
+
+    fn match_next(self, expected: string) -> bool {
+        if self.is_at_end() {
+            return false
+        }
+        if self.source[self.current] != expected {
+            return false
+        }
+        self.advance()
+        true
+    }
+
+    fn current_lexeme(self) -> string {
+        self.source.substring(self.start, self.current)
+    }
+
+    fn add_token(self, kind: string) {
+        let lexeme = self.current_lexeme()
+        self.add_token_with_lexeme(kind, lexeme)
+    }
+
+    fn add_token_with_lexeme(self, kind: string, lexeme: string) {
+        let line = token_render(kind, lexeme, self.token_line, self.token_column)
+        if self.token_count > 0 {
+            self.rendered = self.rendered + "\n"
+        }
+        self.rendered = self.rendered + line
+        self.token_count = self.token_count + 1
+    }
+
+    fn set_error(self, message: string) {
+        if self.had_error {
+            return
+        }
+        self.had_error = true
+        self.error_message = "scan error at " + string(self.token_line) + ":" + string(self.token_column) + ": " + message
+    }
+
+    fn scan_tokens(self) -> ScanResult {
+        while !self.is_at_end() {
+            self.start = self.current
+            self.token_line = self.line
+            self.token_column = self.column
+            self.scan_token()
+            if self.had_error {
+                break
+            }
+        }
+
+        if !self.had_error {
+            self.token_line = self.line
+            self.token_column = self.column
+            self.add_token_with_lexeme("eof", "")
+        }
+
+        ScanResult {
+            rendered: self.rendered,
+            had_error: self.had_error,
+            error_message: self.error_message,
+        }
+    }
+
+    fn scan_token(self) {
+        let ch = self.advance()
+
+        if ch == " " || ch == "\r" || ch == "\t" {
+            return
+        }
+
+        if ch == "\n" {
+            self.add_token_with_lexeme("newline", "\n")
+            return
+        }
+
+        if ch == "(" {
+            self.add_token("left_paren")
+            return
+        }
+        if ch == ")" {
+            self.add_token("right_paren")
+            return
+        }
+        if ch == "{" {
+            self.add_token("left_brace")
+            return
+        }
+        if ch == "}" {
+            self.add_token("right_brace")
+            return
+        }
+        if ch == "[" {
+            self.add_token("left_bracket")
+            return
+        }
+        if ch == "]" {
+            self.add_token("right_bracket")
+            return
+        }
+        if ch == "," {
+            self.add_token("comma")
+            return
+        }
+        if ch == "." {
+            self.add_token("dot")
+            return
+        }
+        if ch == ":" {
+            self.add_token("colon")
+            return
+        }
+        if ch == ";" {
+            self.add_token("semicolon")
+            return
+        }
+        if ch == "+" {
+            self.add_token("plus")
+            return
+        }
+        if ch == "*" {
+            self.add_token("star")
+            return
+        }
+        if ch == "?" {
+            self.add_token("question")
+            return
+        }
+
+        if ch == "-" {
+            if self.match_next(">") {
+                self.add_token("arrow")
+            } else {
+                self.add_token("minus")
+            }
+            return
+        }
+
+        if ch == "!" {
+            if self.match_next("=") {
+                self.add_token("bang_equal")
+            } else {
+                self.add_token("bang")
+            }
+            return
+        }
+
+        if ch == "=" {
+            if self.match_next("=") {
+                self.add_token("equal_equal")
+            } else {
+                self.add_token("equal")
+            }
+            return
+        }
+
+        if ch == "<" {
+            if self.match_next("=") {
+                self.add_token("less_equal")
+            } else {
+                self.add_token("less")
+            }
+            return
+        }
+
+        if ch == ">" {
+            if self.match_next("=") {
+                self.add_token("greater_equal")
+            } else {
+                self.add_token("greater")
+            }
+            return
+        }
+
+        if ch == "/" {
+            if self.match_next("/") {
+                while !self.is_at_end() && self.peek() != "\n" {
+                    self.advance()
+                }
+            } else {
+                self.add_token("slash")
+            }
+            return
+        }
+
+        if ch == "\"" {
+            self.scan_string()
+            return
+        }
+
+        if is_digit(ch) {
+            self.scan_number()
+            return
+        }
+
+        if is_alpha(ch) {
+            self.scan_identifier()
+            return
+        }
+
+        self.set_error("unexpected character `" + ch + "`")
+    }
+
+    fn scan_string(self) {
+        while !self.is_at_end() && self.peek() != "\"" {
+            if self.peek() == "\\" {
+                self.advance()
+                if !self.is_at_end() {
+                    self.advance()
+                }
+            } else {
+                self.advance()
+            }
+        }
+
+        if self.is_at_end() {
+            self.set_error("unterminated string")
+            return
+        }
+
+        self.advance()
+        self.add_token("string")
+    }
+
+    fn scan_number(self) {
+        while is_digit(self.peek()) {
+            self.advance()
+        }
+
+        if self.peek() == "." && is_digit(self.peek_next()) {
+            self.advance()
+            while is_digit(self.peek()) {
+                self.advance()
+            }
+        }
+
+        self.add_token("number")
+    }
+
+    fn scan_identifier(self) {
+        while is_alpha_numeric(self.peek()) {
+            self.advance()
+        }
+
+        let text = self.current_lexeme()
+        self.add_token_with_lexeme(keyword_kind(text), text)
+    }
+}

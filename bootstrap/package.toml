@@ -1,0 +1,8 @@
+[package]
+name = "bootstrap"
+namespace = "forge"
+version = "0.1.0"
+description = "Minimal self-host bootstrap compiler for Forge"
+
+[dependencies]
+"@std.process" = "0.1.0"

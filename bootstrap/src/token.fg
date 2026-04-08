@@ -1,0 +1,26 @@
+fn escape_lexeme(text: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < text.length {
+        let ch = text[i]
+        if ch == "\\" {
+            out = out + "\\\\"
+        } else if ch == "\"" {
+            out = out + "\\\""
+        } else if ch == "\n" {
+            out = out + "\\n"
+        } else if ch == "\r" {
+            out = out + "\\r"
+        } else if ch == "\t" {
+            out = out + "\\t"
+        } else {
+            out = out + ch
+        }
+        i = i + 1
+    }
+    out
+}
+
+export fn token_render(kind: string, lexeme: string, line: int, column: int) -> string {
+    string(line) + ":" + string(column) + " " + kind + " \"" + escape_lexeme(lexeme) + "\""
+}

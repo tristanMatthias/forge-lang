@@ -1,0 +1,7 @@
+mut count = 2 // keep decrementing
+while count > 0 {
+    count = count - 1
+    if count == 0 {
+        return
+    }
+}
