@@ -33,6 +33,10 @@ The bootstrap compiler is done when all of the following are true:
 - [x] Add the first working milestone: scanner-driven `tokens` command
 - [x] Add scanner golden tests
 - [x] Record host-compiler limitations and current mitigations in `TECH_DEBT.md`
+- [x] Add the first expression AST + parser milestone
+- [x] Add expression parser golden tests
+- [x] Add the Chapter 7 tree-walk expression evaluator
+- [x] Add evaluator golden tests
 
 ## Plan By Chapter
 
@@ -61,30 +65,32 @@ Crafting Interpreters reference: Chapter 4, "Scanning".
 
 Crafting Interpreters reference: Chapter 5, "Representing Code".
 
-- [ ] Define the minimal AST for the MVP compiler
-- [ ] Keep the AST small: declarations, statements, expressions, and type references needed for self-hosting
-- [ ] Add AST rendering or debug output for tests
-- [ ] Add parser fixtures that validate AST shape
+- [x] Define the minimal AST for the MVP compiler
+- [x] Keep the AST small: declarations, statements, expressions, and type references needed for self-hosting
+- [x] Add AST rendering or debug output for tests
+- [x] Add parser fixtures that validate AST shape
 
 ### Part D: Parsing Expressions
 
 Crafting Interpreters reference: Chapter 6, "Parsing Expressions".
 
-- [ ] Implement Pratt or precedence-based expression parsing
-- [ ] Support literals, identifiers, grouping, unary ops, binary ops, assignment, and calls
-- [ ] Keep precedence rules explicit and tested
-- [ ] Add parser tests for associativity and precedence
+- [x] Implement precedence-based expression parsing
+- [x] Support literals, identifiers, grouping, unary ops, and binary ops
+- [x] Keep precedence rules explicit and tested
+- [x] Add parser tests for associativity and precedence
+- [ ] Extend expression parsing to assignment and calls when statements/functions need them
 
-### Part E: Evaluating Expressions, Adapted
+### Part E: Evaluating Expressions
 
 Crafting Interpreters reference: Chapter 7, "Evaluating Expressions".
 
-We are not building a tree-walk interpreter as the end product. For this restart, Chapter 7 becomes a semantic-validation milestone.
+We are not building a tree-walk interpreter as the end product, but we are following Chapter 7 directly as a front-end milestone before any codegen work starts.
 
-- [ ] Add expression validation independent of codegen
-- [ ] Define the minimal type/value model required for self-hosting
-- [ ] Add constant/literal evaluation only where it simplifies later compilation
-- [ ] Keep this phase free of target-code emission
+- [x] Add a tree-walk evaluator for the current expression subset
+- [x] Define the minimal runtime value model required for literals, strings, booleans, and null
+- [x] Add runtime errors for invalid unary and binary operator usage
+- [x] Keep this phase free of target-code emission
+- [ ] Decide whether to keep the evaluator as a long-term semantic harness once native codegen exists
 
 ### Part F: Statements And State
 
@@ -258,7 +264,8 @@ Crafting Interpreters reference: Chapter 30.
 
 ### Milestone 2: Front-End Without Codegen
 
-- [ ] Parse source into AST
+- [x] Parse source into AST
+- [x] Evaluate the Chapter 7 expression subset
 - [ ] Resolve names and validate the MVP subset
 - [ ] Add tests for parse and resolution failures
 

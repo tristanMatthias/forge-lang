@@ -1,4 +1,4 @@
-use token.{token_render}
+use token.{Token, token_new, token_render, token_render_struct}
 
 export type ScanResult = {
     rendered: string,
@@ -38,7 +38,7 @@ export fn scanner_new(source: string) -> Scanner {
 
 export fn scan_source(source: string) -> ScanResult {
     mut scanner = scanner_new(source)
-    scanner.scan_tokens()
+    scanner.render_all_tokens()
 }
 
 export fn render_tokens(result: ScanResult) -> string {
@@ -122,13 +122,17 @@ impl Scanner {
         self.source.substring(self.start, self.current)
     }
 
-    fn add_token(self, kind: string) {
+    fn make_token(self, kind: string) -> Token {
         let lexeme = self.current_lexeme()
-        self.add_token_with_lexeme(kind, lexeme)
+        self.make_token_with_lexeme(kind, lexeme)
     }
 
-    fn add_token_with_lexeme(self, kind: string, lexeme: string) {
-        let line = token_render(kind, lexeme, self.token_line, self.token_column)
+    fn make_token_with_lexeme(self, kind: string, lexeme: string) -> Token {
+        token_new(kind, lexeme, self.token_line, self.token_column)
+    }
+
+    fn append_token(self, token: Token) {
+        let line = token_render_struct(token)
         if self.token_count > 0 {
             self.rendered = self.rendered + "\n"
         }
@@ -144,21 +148,16 @@ impl Scanner {
         self.error_message = "scan error at " + string(self.token_line) + ":" + string(self.token_column) + ": " + message
     }
 
-    fn scan_tokens(self) -> ScanResult {
-        while !self.is_at_end() {
-            self.start = self.current
-            self.token_line = self.line
-            self.token_column = self.column
-            self.scan_token()
+    fn render_all_tokens(self) -> ScanResult {
+        while true {
+            let token = self.next_token()
             if self.had_error {
                 break
             }
-        }
-
-        if !self.had_error {
-            self.token_line = self.line
-            self.token_column = self.column
-            self.add_token_with_lexeme("eof", "")
+            self.append_token(token)
+            if token.kind == "eof" {
+                break
+            }
         }
 
         ScanResult {
@@ -168,114 +167,115 @@ impl Scanner {
         }
     }
 
-    fn scan_token(self) {
+    fn next_token(self) -> Token {
+        while true {
+            if self.is_at_end() {
+                self.start = self.current
+                self.token_line = self.line
+                self.token_column = self.column
+                return self.make_token_with_lexeme("eof", "")
+            }
+
+            self.start = self.current
+            self.token_line = self.line
+            self.token_column = self.column
+
+            let token = self.scan_token()
+            if token.kind != "skip" {
+                return token
+            }
+        }
+    }
+
+    fn scan_token(self) -> Token {
         let ch = self.advance()
 
         if ch == " " || ch == "\r" || ch == "\t" {
-            return
+            return self.make_token_with_lexeme("skip", "")
         }
 
         if ch == "\n" {
-            self.add_token_with_lexeme("newline", "\n")
-            return
+            return self.make_token_with_lexeme("newline", "\n")
         }
 
         if ch == "(" {
-            self.add_token("left_paren")
-            return
+            return self.make_token("left_paren")
         }
         if ch == ")" {
-            self.add_token("right_paren")
-            return
+            return self.make_token("right_paren")
         }
         if ch == "{" {
-            self.add_token("left_brace")
-            return
+            return self.make_token("left_brace")
         }
         if ch == "}" {
-            self.add_token("right_brace")
-            return
+            return self.make_token("right_brace")
         }
         if ch == "[" {
-            self.add_token("left_bracket")
-            return
+            return self.make_token("left_bracket")
         }
         if ch == "]" {
-            self.add_token("right_bracket")
-            return
+            return self.make_token("right_bracket")
         }
         if ch == "," {
-            self.add_token("comma")
-            return
+            return self.make_token("comma")
         }
         if ch == "." {
-            self.add_token("dot")
-            return
+            return self.make_token("dot")
         }
         if ch == ":" {
-            self.add_token("colon")
-            return
+            return self.make_token("colon")
         }
         if ch == ";" {
-            self.add_token("semicolon")
-            return
+            return self.make_token("semicolon")
         }
         if ch == "+" {
-            self.add_token("plus")
-            return
+            return self.make_token("plus")
         }
         if ch == "*" {
-            self.add_token("star")
-            return
+            return self.make_token("star")
         }
         if ch == "?" {
-            self.add_token("question")
-            return
+            return self.make_token("question")
         }
 
         if ch == "-" {
             if self.match_next(">") {
-                self.add_token("arrow")
+                return self.make_token("arrow")
             } else {
-                self.add_token("minus")
+                return self.make_token("minus")
             }
-            return
         }
 
         if ch == "!" {
             if self.match_next("=") {
-                self.add_token("bang_equal")
+                return self.make_token("bang_equal")
             } else {
-                self.add_token("bang")
+                return self.make_token("bang")
             }
-            return
         }
 
         if ch == "=" {
             if self.match_next("=") {
-                self.add_token("equal_equal")
+                return self.make_token("equal_equal")
             } else {
-                self.add_token("equal")
+                return self.make_token("equal")
             }
-            return
         }
 
         if ch == "<" {
             if self.match_next("=") {
-                self.add_token("less_equal")
+                return self.make_token("less_equal")
             } else {
-                self.add_token("less")
+                return self.make_token("less")
             }
-            return
         }
 
         if ch == ">" {
             if self.match_next("=") {
-                self.add_token("greater_equal")
+                return self.make_token("greater_equal")
             } else {
-                self.add_token("greater")
+                return self.make_token("greater")
             }
-            return
         }
 
         if ch == "/" {
@@ -283,31 +283,29 @@ impl Scanner {
                 while !self.is_at_end() && self.peek() != "\n" {
                     self.advance()
                 }
+                return self.make_token_with_lexeme("skip", "")
             } else {
-                self.add_token("slash")
+                return self.make_token("slash")
             }
-            return
         }
 
         if ch == "\"" {
-            self.scan_string()
-            return
+            return self.scan_string()
         }
 
         if is_digit(ch) {
-            self.scan_number()
-            return
+            return self.scan_number()
         }
 
         if is_alpha(ch) {
-            self.scan_identifier()
-            return
+            return self.scan_identifier()
         }
 
         self.set_error("unexpected character `" + ch + "`")
+        self.make_token_with_lexeme("error", "")
     }
 
-    fn scan_string(self) {
+    fn scan_string(self) -> Token {
         while !self.is_at_end() && self.peek() != "\"" {
             if self.peek() == "\\" {
                 self.advance()
@@ -321,14 +319,14 @@ impl Scanner {
 
         if self.is_at_end() {
             self.set_error("unterminated string")
-            return
+            return self.make_token_with_lexeme("error", "")
         }
 
         self.advance()
-        self.add_token("string")
+        self.make_token("string")
     }
 
-    fn scan_number(self) {
+    fn scan_number(self) -> Token {
         while is_digit(self.peek()) {
             self.advance()
         }
@@ -340,15 +338,15 @@ impl Scanner {
             }
         }
 
-        self.add_token("number")
+        self.make_token("number")
     }
 
-    fn scan_identifier(self) {
+    fn scan_identifier(self) -> Token {
         while is_alpha_numeric(self.peek()) {
             self.advance()
         }
 
         let text = self.current_lexeme()
-        self.add_token_with_lexeme(keyword_kind(text), text)
+        self.make_token_with_lexeme(keyword_kind(text), text)
     }
 }

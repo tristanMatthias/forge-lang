@@ -1,0 +1,23 @@
+export enum Expr {
+    Number(value: string)
+    String(value: string)
+    Bool(value: string)
+    Null
+    Ident(name: string)
+    Grouping(expr: Expr)
+    Unary(operator: string, right: Expr)
+    Binary(left: Expr, operator: string, right: Expr)
+}
+
+export fn render_expr(expr: Expr) -> string {
+    match expr {
+        .Number(value) -> value
+        .String(value) -> value
+        .Bool(value) -> value
+        .Null -> "null"
+        .Ident(name) -> name
+        .Grouping(inner) -> "(group " + render_expr(inner) + ")"
+        .Unary(operator, right) -> "(" + operator + " " + render_expr(right) + ")"
+        .Binary(left, operator, right) -> "(" + operator + " " + render_expr(left) + " " + render_expr(right) + ")"
+    }
+}

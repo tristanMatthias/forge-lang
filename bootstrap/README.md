@@ -7,7 +7,8 @@ It is intentionally separate from the legacy `forge/packages/forgec` tree, which
 The implementation strategy follows the front-end progression from *Crafting Interpreters*, adapted to Forge:
 
 - start with a scanner and stable token model
-- add a Pratt parser for expressions
+- add a recursive-descent expression parser
+- add a tree-walk expression evaluator
 - add declarations and control flow
 - add semantic checks for the tiny self-host subset
 - add code generation only after the front end is boring and correct
@@ -16,11 +17,19 @@ The source language subset for this bootstrap lane stays intentionally small: lo
 
 ## Current milestone
 
-This first milestone implements a standalone `tokens` command that scans Forge source and prints a stable token stream. It gives us:
+The current milestones implement:
+
+- a standalone `tokens` command that scans Forge source and prints a stable token stream
+- a standalone `expr` command that parses expressions and prints a normalized AST form
+- a standalone `eval` command that evaluates expressions using the Chapter 7 tree-walk model
+
+This gives us:
 
 - an isolated project that the Rust compiler can build
 - a reusable token model for later parser work
-- golden tests that catch scanner regressions immediately
+- the first real AST representation for the bootstrap compiler
+- a working evaluator for literals, grouping, unary operators, arithmetic, comparison, equality, and string concatenation
+- golden tests that catch scanner and parser regressions immediately
 
 ## Usage
 
@@ -34,6 +43,18 @@ Print tokens for a Forge source file:
 
 ```bash
 bootstrap/build/bootstrapc tokens bootstrap/tests/scanner/basic_function.fg
+```
+
+Parse an expression file and print its AST:
+
+```bash
+bootstrap/build/bootstrapc expr bootstrap/tests/expr/arithmetic_precedence.fg
+```
+
+Evaluate an expression file and print its result:
+
+```bash
+bootstrap/build/bootstrapc eval bootstrap/tests/eval/arithmetic_precedence.fg
 ```
 
 Run the bootstrap test suite:

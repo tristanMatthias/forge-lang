@@ -17,7 +17,11 @@ if [ ! -f "$FORGE_DIR/packages/std-process/target/release/libforge_process.a" ];
 fi
 
 mkdir -p "$BUILD_DIR"
-"$HOST_COMPILER" build "$BOOTSTRAP_DIR" --dev -o "$BUILD_DIR/bootstrapc"
+build_log="$BUILD_DIR/build.log"
+if ! "$HOST_COMPILER" build "$BOOTSTRAP_DIR" --dev -o "$BUILD_DIR/bootstrapc" > "$build_log" 2>&1; then
+  cat "$build_log"
+  exit 1
+fi
 
 cases=0
 
@@ -36,4 +40,34 @@ for input in "$BOOTSTRAP_DIR"/tests/scanner/*.fg; do
   cases=$((cases + 1))
 done
 
-echo "PASS $cases scanner cases"
+for input in "$BOOTSTRAP_DIR"/tests/expr/*.fg; do
+  name=$(basename "$input" .fg)
+  expected="$BOOTSTRAP_DIR/tests/expr/$name.ast"
+  actual="$BUILD_DIR/$name.actual"
+  stderr_log="$BUILD_DIR/$name.stderr"
+
+  echo "expr/$name"
+  if ! "$BUILD_DIR/bootstrapc" expr "$input" > "$actual" 2> "$stderr_log"; then
+    cat "$stderr_log"
+    exit 1
+  fi
+  diff -u "$expected" "$actual"
+  cases=$((cases + 1))
+done
+
+for input in "$BOOTSTRAP_DIR"/tests/eval/*.fg; do
+  name=$(basename "$input" .fg)
+  expected="$BOOTSTRAP_DIR/tests/eval/$name.out"
+  actual="$BUILD_DIR/$name.actual"
+  stderr_log="$BUILD_DIR/$name.stderr"
+
+  echo "eval/$name"
+  if ! "$BUILD_DIR/bootstrapc" eval "$input" > "$actual" 2> "$stderr_log"; then
+    cat "$stderr_log"
+    exit 1
+  fi
+  diff -u "$expected" "$actual"
+  cases=$((cases + 1))
+done
+
+echo "PASS $cases total cases"

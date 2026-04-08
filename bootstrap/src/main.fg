@@ -2,39 +2,69 @@ use @std.process
 
 mod token
 mod scanner
+mod ast
+mod parser
+mod eval
 
 use scanner.{scan_source, render_tokens}
+use parser.{parse_expression_source}
+use ast.{render_expr}
+use eval.{eval_expression_source, render_value}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")
-    eprintln("Usage: bootstrapc tokens <file.fg>")
+    eprintln("Usage: bootstrapc <tokens|expr|eval> <file.fg>")
+}
+
+fn fail(message: string) {
+    eprintln(message)
+    process.exit(1)
 }
 
 fn main() {
     let args = process.args()
     if args.length < 3 {
         print_usage()
-        return
+        process.exit(1)
     }
 
     let command = args[1]
-    if command != "tokens" {
-        print_usage()
-        return
-    }
-
     let path = args[2]
     if !file_exists(path) {
-        eprintln("error: file not found: " + path)
-        return
+        fail("error: file not found: " + path)
     }
 
     let source = read_file(path)
-    let result = scan_source(source)
-    if result.had_error {
-        eprintln(result.error_message)
+    if command == "tokens" {
+        let result = scan_source(source)
+        if result.had_error {
+            fail(result.error_message)
+        }
+
+        println(render_tokens(result))
         return
     }
 
-    println(render_tokens(result))
+    if command == "expr" {
+        let result = parse_expression_source(source)
+        if result.had_error || result.expr == null {
+            fail(result.error_message)
+        }
+
+        println(render_expr(result.expr!))
+        return
+    }
+
+    if command == "eval" {
+        let result = eval_expression_source(source)
+        if result.had_error || result.value == null {
+            fail(result.error_message)
+        }
+
+        println(render_value(result.value!))
+        return
+    }
+
+    print_usage()
+    process.exit(1)
 }

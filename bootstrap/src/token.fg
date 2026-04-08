@@ -1,3 +1,14 @@
+export type Token = {
+    kind: string,
+    lexeme: string,
+    line: int,
+    column: int,
+}
+
+export fn token_new(kind: string, lexeme: string, line: int, column: int) -> Token {
+    Token { kind, lexeme, line, column }
+}
+
 fn escape_lexeme(text: string) -> string {
     mut out = ""
     mut i = 0
@@ -23,4 +34,8 @@ fn escape_lexeme(text: string) -> string {
 
 export fn token_render(kind: string, lexeme: string, line: int, column: int) -> string {
     string(line) + ":" + string(column) + " " + kind + " \"" + escape_lexeme(lexeme) + "\""
+}
+
+export fn token_render_struct(token: Token) -> string {
+    token_render(token.kind, token.lexeme, token.line, token.column)
 }

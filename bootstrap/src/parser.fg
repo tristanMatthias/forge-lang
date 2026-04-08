@@ -1,0 +1,442 @@
+use ast.{Expr}
+
+export type ParseResult = {
+    expr: Expr?,
+    had_error: bool,
+    error_message: string,
+}
+
+export type Parser = {
+    source: string,
+    mut start: int,
+    mut current: int,
+    mut line: int,
+    mut column: int,
+    mut current_kind: string,
+    mut current_lexeme: string,
+    mut current_line: int,
+    mut current_column: int,
+    mut had_error: bool,
+    mut error_message: string,
+}
+
+export fn parse_expression_source(source: string) -> ParseResult {
+    mut parser = parser_new(source)
+    parser.parse_file_expression()
+}
+
+fn is_digit(ch: string) -> bool {
+    ch >= "0" && ch <= "9"
+}
+
+fn is_alpha(ch: string) -> bool {
+    (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+}
+
+fn is_alpha_numeric(ch: string) -> bool {
+    is_alpha(ch) || is_digit(ch)
+}
+
+fn keyword_kind(text: string) -> string {
+    if text == "false" { return "kw_false" }
+    if text == "null" { return "kw_null" }
+    if text == "true" { return "kw_true" }
+    return "identifier"
+}
+
+export fn parser_new(source: string) -> Parser {
+    mut parser = Parser {
+        source,
+        start: 0,
+        current: 0,
+        line: 1,
+        column: 1,
+        current_kind: "",
+        current_lexeme: "",
+        current_line: 1,
+        current_column: 1,
+        had_error: false,
+        error_message: "",
+    }
+    parser.advance_token()
+    parser
+}
+
+impl Parser {
+    fn parse_file_expression(self) -> ParseResult {
+        let expr = self.parse_expression()
+        if expr == null {
+            return ParseResult {
+                expr: null,
+                had_error: self.had_error,
+                error_message: self.error_message,
+            }
+        }
+
+        if !self.check("eof") {
+            self.set_error("expected end of input")
+            return ParseResult {
+                expr: null,
+                had_error: true,
+                error_message: self.error_message,
+            }
+        }
+
+        ParseResult {
+            expr,
+            had_error: self.had_error,
+            error_message: self.error_message,
+        }
+    }
+
+    fn parse_expression(self) -> Expr? {
+        self.parse_equality()
+    }
+
+    fn parse_equality(self) -> Expr? {
+        let left = self.parse_comparison()
+        if left == null { return null }
+
+        mut expr = left!
+        while self.check("equal_equal") || self.check("bang_equal") {
+            let operator = self.current_lexeme
+            self.advance()
+            let right = self.parse_comparison()
+            if right == null { return null }
+            expr = Expr.Binary(expr, operator, right!)
+        }
+
+        expr
+    }
+
+    fn parse_comparison(self) -> Expr? {
+        let left = self.parse_term()
+        if left == null { return null }
+
+        mut expr = left!
+        while self.check("greater") || self.check("greater_equal") || self.check("less") || self.check("less_equal") {
+            let operator = self.current_lexeme
+            self.advance()
+            let right = self.parse_term()
+            if right == null { return null }
+            expr = Expr.Binary(expr, operator, right!)
+        }
+
+        expr
+    }
+
+    fn parse_term(self) -> Expr? {
+        let left = self.parse_factor()
+        if left == null { return null }
+
+        mut expr = left!
+        while self.check("plus") || self.check("minus") {
+            let operator = self.current_lexeme
+            self.advance()
+            let right = self.parse_factor()
+            if right == null { return null }
+            expr = Expr.Binary(expr, operator, right!)
+        }
+
+        expr
+    }
+
+    fn parse_factor(self) -> Expr? {
+        let left = self.parse_unary()
+        if left == null { return null }
+
+        mut expr = left!
+        while self.check("star") || self.check("slash") {
+            let operator = self.current_lexeme
+            self.advance()
+            let right = self.parse_unary()
+            if right == null { return null }
+            expr = Expr.Binary(expr, operator, right!)
+        }
+
+        expr
+    }
+
+    fn parse_unary(self) -> Expr? {
+        if self.check("bang") || self.check("minus") {
+            let operator = self.current_lexeme
+            self.advance()
+            let right = self.parse_unary()
+            if right == null { return null }
+            return Expr.Unary(operator, right!)
+        }
+
+        self.parse_primary()
+    }
+
+    fn parse_primary(self) -> Expr? {
+        if self.check("number") {
+            let value = self.current_lexeme
+            self.advance()
+            return Expr.Number(value)
+        }
+
+        if self.check("string") {
+            let value = self.current_lexeme
+            self.advance()
+            return Expr.String(value)
+        }
+
+        if self.check("kw_true") || self.check("kw_false") {
+            let value = self.current_lexeme
+            self.advance()
+            return Expr.Bool(value)
+        }
+
+        if self.check("kw_null") {
+            self.advance()
+            return Expr.Null
+        }
+
+        if self.check("identifier") {
+            let name = self.current_lexeme
+            self.advance()
+            return Expr.Ident(name)
+        }
+
+        if self.check("left_paren") {
+            self.advance()
+            let expr = self.parse_expression()
+            if expr == null { return null }
+            if !self.consume("right_paren", "expected `)` after expression") {
+                return null
+            }
+            return Expr.Grouping(expr!)
+        }
+
+        self.set_error("expected expression")
+        null
+    }
+
+    fn check(self, kind: string) -> bool {
+        self.current_kind == kind
+    }
+
+    fn advance(self) {
+        self.advance_token()
+    }
+
+    fn consume(self, kind: string, message: string) -> bool {
+        if self.check(kind) {
+            self.advance()
+            return true
+        }
+        self.set_error(message)
+        false
+    }
+
+    fn advance_token(self) {
+        self.skip_whitespace_and_comments()
+
+        self.start = self.current
+        self.current_line = self.line
+        self.current_column = self.column
+
+        if self.is_at_end() {
+            self.set_current("eof", "")
+            return
+        }
+
+        let ch = self.advance_char()
+
+        if ch == "(" {
+            self.set_current("left_paren", "(")
+            return
+        }
+        if ch == ")" {
+            self.set_current("right_paren", ")")
+            return
+        }
+        if ch == "+" {
+            self.set_current("plus", "+")
+            return
+        }
+        if ch == "-" {
+            self.set_current("minus", "-")
+            return
+        }
+        if ch == "*" {
+            self.set_current("star", "*")
+            return
+        }
+        if ch == "/" {
+            self.set_current("slash", "/")
+            return
+        }
+
+        if ch == "!" {
+            if self.match_next("=") {
+                self.set_current("bang_equal", "!=")
+            } else {
+                self.set_current("bang", "!")
+            }
+            return
+        }
+
+        if ch == "=" {
+            if self.match_next("=") {
+                self.set_current("equal_equal", "==")
+                return
+            }
+            self.set_error("unexpected `=`")
+            self.set_current("error", "=")
+            return
+        }
+
+        if ch == "<" {
+            if self.match_next("=") {
+                self.set_current("less_equal", "<=")
+            } else {
+                self.set_current("less", "<")
+            }
+            return
+        }
+
+        if ch == ">" {
+            if self.match_next("=") {
+                self.set_current("greater_equal", ">=")
+            } else {
+                self.set_current("greater", ">")
+            }
+            return
+        }
+
+        if ch == "\"" {
+            self.scan_string_token()
+            return
+        }
+
+        if is_digit(ch) {
+            self.scan_number_token()
+            return
+        }
+
+        if is_alpha(ch) {
+            self.scan_identifier_token()
+            return
+        }
+
+        self.set_error("unexpected character `" + ch + "`")
+        self.set_current("error", ch)
+    }
+
+    fn scan_string_token(self) {
+        while !self.is_at_end() && self.peek_char() != "\"" {
+            if self.peek_char() == "\\" {
+                self.advance_char()
+                if !self.is_at_end() {
+                    self.advance_char()
+                }
+            } else {
+                self.advance_char()
+            }
+        }
+
+        if self.is_at_end() {
+            self.set_error("unterminated string")
+            self.set_current("error", "")
+            return
+        }
+
+        self.advance_char()
+        self.set_current("string", self.source.substring(self.start, self.current))
+    }
+
+    fn scan_number_token(self) {
+        while is_digit(self.peek_char()) {
+            self.advance_char()
+        }
+
+        if self.peek_char() == "." && is_digit(self.peek_next_char()) {
+            self.advance_char()
+            while is_digit(self.peek_char()) {
+                self.advance_char()
+            }
+        }
+
+        self.set_current("number", self.source.substring(self.start, self.current))
+    }
+
+    fn scan_identifier_token(self) {
+        while is_alpha_numeric(self.peek_char()) {
+            self.advance_char()
+        }
+
+        let text = self.source.substring(self.start, self.current)
+        self.set_current(keyword_kind(text), text)
+    }
+
+    fn set_current(self, kind: string, lexeme: string) {
+        self.current_kind = kind
+        self.current_lexeme = lexeme
+    }
+
+    fn skip_whitespace_and_comments(self) {
+        while !self.is_at_end() {
+            let ch = self.peek_char()
+            if ch == " " || ch == "\r" || ch == "\t" || ch == "\n" {
+                self.advance_char()
+            } else if ch == "/" && self.peek_next_char() == "/" {
+                while !self.is_at_end() && self.peek_char() != "\n" {
+                    self.advance_char()
+                }
+            } else {
+                return
+            }
+        }
+    }
+
+    fn is_at_end(self) -> bool {
+        self.current >= self.source.length
+    }
+
+    fn peek_char(self) -> string {
+        if self.current >= self.source.length {
+            return ""
+        }
+        self.source[self.current]
+    }
+
+    fn peek_next_char(self) -> string {
+        if self.current + 1 >= self.source.length {
+            return ""
+        }
+        self.source[self.current + 1]
+    }
+
+    fn match_next(self, expected: string) -> bool {
+        if self.is_at_end() {
+            return false
+        }
+        if self.source[self.current] != expected {
+            return false
+        }
+        self.advance_char()
+        true
+    }
+
+    fn advance_char(self) -> string {
+        let ch = self.source[self.current]
+        self.current = self.current + 1
+        if ch == "\n" {
+            self.line = self.line + 1
+            self.column = 1
+        } else {
+            self.column = self.column + 1
+        }
+        ch
+    }
+
+    fn set_error(self, message: string) {
+        if self.had_error {
+            return
+        }
+        self.had_error = true
+        self.error_message = "parse error at " + string(self.current_line) + ":" + string(self.current_column) + ": " + message
+    }
+}

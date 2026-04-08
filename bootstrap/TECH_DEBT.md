@@ -19,6 +19,8 @@ The following bootstrap restart work is complete:
 - implemented the first milestone as a scanner-driven `tokens` command
 - added golden scanner tests in `bootstrap/tests/scanner/`
 - added a repeatable test harness in `bootstrap/scripts/test.sh`
+- added expression AST and parser milestones with golden tests
+- added a Chapter 7 tree-walk evaluator milestone with golden tests
 - built the native `@std.process` support library needed by the bootstrap CLI
 
 ## Open host-compiler debt
@@ -107,6 +109,32 @@ Fresh projects can resolve package metadata, but native packages fail at link ti
 
 - make the host toolchain build required native package artifacts automatically
 - or provide a first-class bootstrap/dependency setup command
+
+### 5. User enum payloads are unreliable across helper-function boundaries
+
+**Status:** open  
+**Severity:** high  
+**Where observed:** evaluator milestone, April 8 2026
+
+During the Chapter 7 evaluator work, small repros showed that the Rust host compiler/runtime can mis-handle user enum payloads once they cross certain function boundaries:
+
+- methods returning user enums produced empty output even when the same enum matched correctly inline
+- helper functions extracting `float` payloads from enum variants returned corrupted values like `0.0`
+- the original evaluator implementation segfaulted in `forge_string_to_float` after corrupted payload extraction
+
+The evaluator logic itself was correct. The failures came from moving `Value` enum payloads through helper functions in host-generated code.
+
+**What we did now**
+
+- rewrote the evaluator from mutable methods into plain free functions
+- replaced the evaluator runtime `Value` enum with an explicit tagged `Value` struct
+- kept the external `bootstrapc eval` behavior correct and fully tested
+
+**What must happen later**
+
+- fix enum payload passing/extraction in the Rust host compiler/runtime
+- restore a proper tagged union or enum-based runtime value model once the host path is trustworthy
+- delete the tagged-struct mitigation after dedicated repro tests pass
 
 ## Related existing documents
 

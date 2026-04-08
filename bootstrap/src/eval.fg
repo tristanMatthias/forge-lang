@@ -1,0 +1,272 @@
+use parser.{parse_expression_source}
+use ast.{Expr}
+
+export type Value = {
+    kind: string,
+    number_text: string,
+    text: string,
+    bool_value: bool,
+}
+
+export type EvalResult = {
+    value: Value?,
+    had_error: bool,
+    error_message: string,
+}
+
+export fn eval_expression_source(source: string) -> EvalResult {
+    let parsed = parse_expression_source(source)
+    if parsed.had_error || parsed.expr == null {
+        return EvalResult {
+            value: null,
+            had_error: true,
+            error_message: parsed.error_message,
+        }
+    }
+
+    eval_node(parsed.expr!)
+}
+
+export fn render_value(value: Value) -> string {
+    if value.kind == "number" {
+        return value.number_text
+    }
+
+    if value.kind == "string" {
+        return value.text
+    }
+
+    if value.kind == "bool" {
+        if value.bool_value { return "true" }
+        return "false"
+    }
+
+    "null"
+}
+
+fn render_number(value: float) -> string {
+    let text = string(value)
+    if text.length >= 2 {
+        let suffix = text.substring(text.length - 2, text.length)
+        if suffix == ".0" {
+            return text.substring(0, text.length - 2)
+        }
+    }
+    text
+}
+
+fn ok_result(value: Value) -> EvalResult {
+    EvalResult {
+        value,
+        had_error: false,
+        error_message: "",
+    }
+}
+
+fn value_number(text: string) -> Value {
+    Value {
+        kind: "number",
+        number_text: text,
+        text: "",
+        bool_value: false,
+    }
+}
+
+fn value_string(text: string) -> Value {
+    Value {
+        kind: "string",
+        number_text: "",
+        text,
+        bool_value: false,
+    }
+}
+
+fn value_bool(flag: bool) -> Value {
+    Value {
+        kind: "bool",
+        number_text: "",
+        text: "",
+        bool_value: flag,
+    }
+}
+
+fn value_null() -> Value {
+    Value {
+        kind: "null",
+        number_text: "",
+        text: "",
+        bool_value: false,
+    }
+}
+
+fn error_result(message: string) -> EvalResult {
+    EvalResult {
+        value: null,
+        had_error: true,
+        error_message: "eval error: " + message,
+    }
+}
+
+fn eval_node(expr: Expr) -> EvalResult {
+    match expr {
+        .Number(text) -> ok_result(value_number(render_number(float(text))))
+        .String(text) -> ok_result(value_string(unquote_string(text)))
+        .Bool(text) -> ok_result(value_bool(text == "true"))
+        .Null -> ok_result(value_null())
+        .Ident(name) -> error_result("undefined variable `" + name + "`")
+        .Grouping(inner) -> eval_node(inner)
+        .Unary(operator, right) -> eval_unary(operator, right)
+        .Binary(left, operator, right) -> eval_binary(left, operator, right)
+    }
+}
+
+fn eval_unary(operator: string, right: Expr) -> EvalResult {
+    let right_result = eval_node(right)
+    if right_result.had_error || right_result.value == null {
+        return right_result
+    }
+
+    let value = right_result.value!
+    if operator == "-" {
+        let number_text = as_number_text(value)
+        if number_text == null {
+            return error_result("operand must be a number")
+        }
+        return ok_result(value_number(render_number(0.0 - float(number_text!))))
+    }
+
+    if operator == "!" {
+        return ok_result(value_bool(!is_truthy(value)))
+    }
+
+    error_result("unsupported unary operator `" + operator + "`")
+}
+
+fn eval_binary(left: Expr, operator: string, right: Expr) -> EvalResult {
+    let left_result = eval_node(left)
+    if left_result.had_error || left_result.value == null {
+        return left_result
+    }
+
+    let right_result = eval_node(right)
+    if right_result.had_error || right_result.value == null {
+        return right_result
+    }
+
+    let left_value = left_result.value!
+    let right_value = right_result.value!
+
+    if operator == "+" {
+        return eval_plus(left_value, right_value)
+    }
+
+    if operator == "-" || operator == "*" || operator == "/" || operator == "<" || operator == "<=" || operator == ">" || operator == ">=" {
+        let left_text = as_number_text(left_value)
+        if left_text == null {
+            return error_result("operand must be a number")
+        }
+
+        let right_text = as_number_text(right_value)
+        if right_text == null {
+            return error_result("operand must be a number")
+        }
+
+        let left_num = float(left_text!)
+        let right_num = float(right_text!)
+
+        if operator == "-" { return ok_result(value_number(render_number(left_num - right_num))) }
+        if operator == "*" { return ok_result(value_number(render_number(left_num * right_num))) }
+        if operator == "/" { return ok_result(value_number(render_number(left_num / right_num))) }
+        if operator == "<" { return ok_result(value_bool(left_num < right_num)) }
+        if operator == "<=" { return ok_result(value_bool(left_num <= right_num)) }
+        if operator == ">" { return ok_result(value_bool(left_num > right_num)) }
+        if operator == ">=" { return ok_result(value_bool(left_num >= right_num)) }
+    }
+
+    if operator == "==" {
+        return ok_result(value_bool(values_equal(left_value, right_value)))
+    }
+
+    if operator == "!=" {
+        return ok_result(value_bool(!values_equal(left_value, right_value)))
+    }
+
+    error_result("unsupported binary operator `" + operator + "`")
+}
+
+fn eval_plus(left: Value, right: Value) -> EvalResult {
+    let left_num_text = as_number_text(left)
+    if left_num_text != null {
+        let right_num_text = as_number_text(right)
+        if right_num_text == null {
+            return error_result("operands to `+` must both be numbers or both be strings")
+        }
+        let left_num = float(left_num_text!)
+        let right_num = float(right_num_text!)
+        return ok_result(value_number(render_number(left_num + right_num)))
+    }
+
+    let left_text = as_string(left)
+    if left_text != null {
+        let right_text = as_string(right)
+        if right_text == null {
+            return error_result("operands to `+` must both be numbers or both be strings")
+        }
+        return ok_result(value_string(left_text! + right_text!))
+    }
+
+    error_result("operands to `+` must both be numbers or both be strings")
+}
+
+fn as_number_text(value: Value) -> string? {
+    if value.kind == "number" {
+        return value.number_text
+    }
+    null
+}
+
+fn as_string(value: Value) -> string? {
+    if value.kind == "string" {
+        return value.text
+    }
+    null
+}
+
+fn is_truthy(value: Value) -> bool {
+    if value.kind == "bool" {
+        return value.bool_value
+    }
+
+    if value.kind == "null" {
+        return false
+    }
+
+    true
+}
+
+fn values_equal(left: Value, right: Value) -> bool {
+    if left.kind != right.kind {
+        return false
+    }
+
+    if left.kind == "number" {
+        return float(left.number_text) == float(right.number_text)
+    }
+
+    if left.kind == "string" {
+        return left.text == right.text
+    }
+
+    if left.kind == "bool" {
+        return left.bool_value == right.bool_value
+    }
+
+    true
+}
+
+fn unquote_string(text: string) -> string {
+    if text.length < 2 {
+        return text
+    }
+    text.substring(1, text.length - 1)
+}
