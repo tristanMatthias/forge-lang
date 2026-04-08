@@ -1,15 +1,15 @@
 use crate::codegen::Codegen;
-use crate::driver::profile::{BuildProfile, count_functions};
+use crate::driver::profile::{count_functions, BuildProfile};
 use crate::errors::{CompileError, DiagnosticBag};
 use crate::features::components::expand::{ComponentExpander, ExpansionResult};
-use crate::parser::ast::TypeExpr;
+use crate::features::modules::project::ForgeProject;
+use crate::features::modules::resolver::{resolve_all_imports, resolve_mod_tree};
+use crate::features::modules::types::{ExportedSymbol, ResolvedImport};
 use crate::lexer::Lexer;
+use crate::package::{self, PackageInfo};
+use crate::parser::ast::TypeExpr;
 use crate::parser::ast::{ComponentBlockDecl, ComponentTemplateDef, Expr, Program, Statement};
 use crate::parser::{ComponentMeta, Parser};
-use crate::package::{self, PackageInfo};
-use crate::features::modules::types::{ExportedSymbol, ResolvedImport};
-use crate::features::modules::resolver::{resolve_mod_tree, resolve_all_imports};
-use crate::features::modules::project::ForgeProject;
 
 use inkwell::context::Context;
 use inkwell::OptimizationLevel;
@@ -74,18 +74,14 @@ impl Driver {
     /// Calls `action` with the Codegen result, loaded packages, and build profile.
     /// This is the single source of truth for the compilation pipeline — used by both
     /// `compile()` (AOT) and `run_jit()` (JIT).
-    fn with_compiled_module<T, F>(
-        &self,
-        source_path: &Path,
-        action: F,
-    ) -> Result<T, CompileError>
+    fn with_compiled_module<T, F>(&self, source_path: &Path, action: F) -> Result<T, CompileError>
     where
         F: FnOnce(&Codegen<'_>, &[PackageInfo], &mut BuildProfile) -> Result<T, CompileError>,
     {
         let mut bp = BuildProfile::new();
 
-        let source = std::fs::read_to_string(source_path)
-            .map_err(|e| CompileError::FileNotFound {
+        let source =
+            std::fs::read_to_string(source_path).map_err(|e| CompileError::FileNotFound {
                 path: source_path.display().to_string(),
                 detail: e.to_string(),
             })?;
@@ -136,7 +132,8 @@ impl Driver {
 
         // 5. Resolve module tree from `mod` declarations (Rust-style)
         let mut seen = std::collections::HashSet::new();
-        let mut local_modules = resolve_mod_tree(&program, source_path, "", &mut seen, &component_registry)?;
+        let mut local_modules =
+            resolve_mod_tree(&program, source_path, "", &mut seen, &component_registry)?;
 
         // 6. Resolve all module imports (exports, bubbling, sub-module deps, main program injection)
         let import_result = resolve_all_imports(&mut program, &mut local_modules)?;
@@ -151,7 +148,11 @@ impl Driver {
         // 8. Expand all ComponentBlock nodes → regular AST + lifecycle stmts
         let t = Instant::now();
         let expansion = expand_components(&mut program, &loaded_packages);
-        inject_lifecycle_stmts(&mut program, &expansion.startup_stmts, &expansion.main_end_stmts);
+        inject_lifecycle_stmts(
+            &mut program,
+            &expansion.startup_stmts,
+            &expansion.main_end_stmts,
+        );
         bp.add("expand", t.elapsed());
 
         bp.fn_count = count_functions(&program);
@@ -163,17 +164,23 @@ impl Driver {
         {
             use std::collections::HashMap;
             // Group methods by component kind (type-level) and instance name
-            let mut kind_methods: HashMap<String, Vec<(String, crate::typeck::types::Type)>> = HashMap::new();
-            let mut instance_methods: HashMap<String, Vec<(String, crate::typeck::types::Type)>> = HashMap::new();
+            let mut kind_methods: HashMap<String, Vec<(String, crate::typeck::types::Type)>> =
+                HashMap::new();
+            let mut instance_methods: HashMap<String, Vec<(String, crate::typeck::types::Type)>> =
+                HashMap::new();
             for cm in &expansion.component_methods {
-                let ret_ty = cm.return_type.as_ref()
+                let ret_ty = cm
+                    .return_type
+                    .as_ref()
                     .map(|t| checker.resolve_type_expr(t))
                     .unwrap_or(crate::typeck::types::Type::Void);
-                instance_methods.entry(cm.instance_name.clone())
+                instance_methods
+                    .entry(cm.instance_name.clone())
                     .or_default()
                     .push((cm.method_name.clone(), ret_ty.clone()));
                 let kind = capitalize_first(&cm.component_kind);
-                kind_methods.entry(kind)
+                kind_methods
+                    .entry(kind)
                     .or_default()
                     .push((cm.method_name.clone(), ret_ty));
             }
@@ -183,7 +190,10 @@ impl Driver {
                 // Ensure the struct type preserves its name for method resolution
                 let ty = match ty {
                     crate::typeck::types::Type::Struct { fields, .. } => {
-                        crate::typeck::types::Type::Struct { name: Some(kind.clone()), fields }
+                        crate::typeck::types::Type::Struct {
+                            name: Some(kind.clone()),
+                            fields,
+                        }
                     }
                     other => other,
                 };
@@ -203,11 +213,15 @@ impl Driver {
             // Build instance→kind mapping from component_methods
             let mut instance_kinds: HashMap<String, String> = HashMap::new();
             for cm in &expansion.component_methods {
-                instance_kinds.entry(cm.instance_name.clone())
+                instance_kinds
+                    .entry(cm.instance_name.clone())
                     .or_insert_with(|| capitalize_first(&cm.component_kind));
             }
             for (instance_name, methods) in &instance_methods {
-                checker.env.type_methods.insert(instance_name.clone(), methods.clone());
+                checker
+                    .env
+                    .type_methods
+                    .insert(instance_name.clone(), methods.clone());
                 checker.env.namespaces.insert(instance_name.clone());
                 // Define as typed variable so it can be passed to functions
                 if let Some(kind) = instance_kinds.get(instance_name) {
@@ -225,22 +239,38 @@ impl Driver {
         // Register imported symbols so the type checker knows about them
         for imp in &import_result.main_imports {
             match &imp.symbol {
-                ExportedSymbol::Function { params, return_type, .. } => {
-                    let param_types: Vec<crate::typeck::types::Type> = params.iter()
+                ExportedSymbol::Function {
+                    params,
+                    return_type,
+                    ..
+                } => {
+                    let param_types: Vec<crate::typeck::types::Type> = params
+                        .iter()
                         .map(|p| {
-                            p.type_ann.as_ref()
+                            p.type_ann
+                                .as_ref()
                                 .map(|t| checker.resolve_type_expr(t))
                                 .unwrap_or(crate::typeck::types::Type::Unknown)
                         })
                         .collect();
-                    let ret = return_type.as_ref()
+                    let ret = return_type
+                        .as_ref()
                         .map(|r| checker.resolve_type_expr(r))
                         .unwrap_or(crate::typeck::types::Type::Void);
-                    checker.env.define(imp.local_name.clone(),
-                        crate::typeck::types::Type::Function { params: param_types, return_type: Box::new(ret) }, false);
+                    checker.env.define(
+                        imp.local_name.clone(),
+                        crate::typeck::types::Type::Function {
+                            params: param_types,
+                            return_type: Box::new(ret),
+                        },
+                        false,
+                    );
                 }
-                ExportedSymbol::Value { type_ann, value, .. } => {
-                    let ty = type_ann.as_ref()
+                ExportedSymbol::Value {
+                    type_ann, value, ..
+                } => {
+                    let ty = type_ann
+                        .as_ref()
                         .map(|t| checker.resolve_type_expr(t))
                         .unwrap_or_else(|| checker.infer_type(&value));
                     checker.env.define(imp.local_name.clone(), ty, false);
@@ -275,20 +305,18 @@ impl Driver {
 
         // Populate static methods registry from packages
         for (type_name, method_name, fn_name) in &expansion.static_methods {
-            codegen.static_methods.insert(
-                (type_name.clone(), method_name.clone()),
-                fn_name.clone(),
-            );
+            codegen
+                .static_methods
+                .insert((type_name.clone(), method_name.clone()), fn_name.clone());
         }
         for pkg in &loaded_packages {
             let prefix = format!("forge_{}_", pkg.name);
             for extern_fn in &pkg.extern_fns {
                 if let Statement::ExternFn { name, .. } = extern_fn {
                     if let Some(method_name) = name.strip_prefix(&prefix) {
-                        codegen.static_methods.insert(
-                            (pkg.name.clone(), method_name.to_string()),
-                            name.clone(),
-                        );
+                        codegen
+                            .static_methods
+                            .insert((pkg.name.clone(), method_name.to_string()), name.clone());
                     }
                 }
             }
@@ -297,7 +325,9 @@ impl Driver {
             for fn_stmt in &pkg.exported_fns {
                 let fn_name = match fn_stmt {
                     Statement::FnDecl { name, .. } => Some(name.clone()),
-                    Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                    Statement::Feature(fe)
+                        if fe.feature_id == "functions" && fe.kind == "FnDecl" =>
+                    {
                         use crate::feature_data;
                         use crate::features::functions::types::FnDeclData;
                         feature_data!(fe, FnDeclData).map(|d| d.name.clone())
@@ -306,10 +336,9 @@ impl Driver {
                 };
                 if let Some(name) = fn_name {
                     let full_name = format!("{}_{}", pkg.name, name);
-                    codegen.static_methods.insert(
-                        (pkg.name.clone(), name),
-                        full_name,
-                    );
+                    codegen
+                        .static_methods
+                        .insert((pkg.name.clone(), name), full_name);
                 }
             }
         }
@@ -333,8 +362,8 @@ impl Driver {
     pub fn compile(&self, source_path: &Path) -> Result<PathBuf, CompileError> {
         // Handle emit_ast early — it needs special treatment
         if self.emit_ast {
-            let source = std::fs::read_to_string(source_path)
-                .map_err(|e| CompileError::FileNotFound {
+            let source =
+                std::fs::read_to_string(source_path).map_err(|e| CompileError::FileNotFound {
                     path: source_path.display().to_string(),
                     detail: e.to_string(),
                 })?;
@@ -370,7 +399,11 @@ impl Driver {
                 // affect correctness on ARM64 with OptimizationLevel::None.
                 eprintln!("  (skipping LLVM verification errors)");
                 // Print first 3000 chars of the actual error
-                let truncated = if detail.len() > 3000 { &detail[..3000] } else { &detail };
+                let truncated = if detail.len() > 3000 {
+                    &detail[..3000]
+                } else {
+                    &detail
+                };
                 eprintln!("{}", truncated);
             }
 
@@ -395,10 +428,32 @@ impl Driver {
                 .iter()
                 .flat_map(|p| p.link_flags.iter().cloned())
                 .collect();
+            // Collect every extern fn name declared in any loaded
+            // package's package.fg so the linker keeps the symbol
+            // alive — see comment in `link_with_packages`.
+            let package_extern_symbols: Vec<String> = loaded_packages
+                .iter()
+                .filter(|p| p.lib_path.exists())
+                .flat_map(|p| p.extern_fns.iter())
+                .filter_map(|stmt| {
+                    if let crate::parser::Statement::ExternFn { name, .. } = stmt {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
             // Link
             let t = Instant::now();
-            self.link_with_packages(&obj_path, &runtime_obj, &output_path, &package_lib_paths, &package_link_flags)?;
+            self.link_with_packages(
+                &obj_path,
+                &runtime_obj,
+                &output_path,
+                &package_lib_paths,
+                &package_link_flags,
+                &package_extern_symbols,
+            )?;
             bp.add("link", t.elapsed());
 
             // Cleanup
@@ -512,12 +567,12 @@ impl Driver {
 
         let binary = aot_driver.compile(source_path)?;
 
-        let status = std::process::Command::new(&binary)
-            .status()
-            .map_err(|e| CompileError::BinaryRunFailed {
+        let status = std::process::Command::new(&binary).status().map_err(|e| {
+            CompileError::BinaryRunFailed {
                 path: binary.display().to_string(),
                 detail: e.to_string(),
-            })?;
+            }
+        })?;
 
         std::fs::remove_file(&binary).ok();
         Ok(status.code().unwrap_or(1))
@@ -552,21 +607,33 @@ impl Driver {
 
         // Flush existing stdout buffers (both Rust and C)
         let _ = std::io::Write::flush(&mut std::io::stdout());
-        unsafe { fflush(std::ptr::null_mut()); }
+        unsafe {
+            fflush(std::ptr::null_mut());
+        }
 
         // Save original stdout, redirect to pipe
         let saved_stdout = unsafe { dup(STDOUT_FD) };
-        unsafe { dup2(write_fd, STDOUT_FD); }
-        unsafe { close(write_fd); }
+        unsafe {
+            dup2(write_fd, STDOUT_FD);
+        }
+        unsafe {
+            close(write_fd);
+        }
 
         // Run JIT
         let result = self.run_jit(source_path);
 
         // Flush and restore stdout
         let _ = std::io::Write::flush(&mut std::io::stdout());
-        unsafe { fflush(std::ptr::null_mut()); }
-        unsafe { dup2(saved_stdout, STDOUT_FD); }
-        unsafe { close(saved_stdout); }
+        unsafe {
+            fflush(std::ptr::null_mut());
+        }
+        unsafe {
+            dup2(saved_stdout, STDOUT_FD);
+        }
+        unsafe {
+            close(saved_stdout);
+        }
 
         // Read captured output from pipe (non-blocking: close write end already done)
         let mut captured = String::new();
@@ -615,7 +682,10 @@ impl Driver {
             let rendered = String::from_utf8_lossy(&buf).to_string();
             // Only fail on parser errors — type errors are often false positives
             // for the self-hosted compiler due to bootstrap type checker limitations
-            if rendered.contains("[F0001]") || rendered.contains("[F0002]") || rendered.contains("[F0003]") {
+            if rendered.contains("[F0001]")
+                || rendered.contains("[F0002]")
+                || rendered.contains("[F0003]")
+            {
                 return Err(rendered);
             }
             eprintln!("{}", rendered);
@@ -632,9 +702,11 @@ impl Driver {
         // Build a driver with project name as default output,
         // then delegate to the single-file path (handles packages, modules, etc.)
         let driver = Driver {
-            output: Some(self.output.clone().unwrap_or_else(|| {
-                PathBuf::from(&project.config.project.name)
-            })),
+            output: Some(
+                self.output
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from(&project.config.project.name)),
+            ),
             emit_ir: self.emit_ir,
             emit_ast: self.emit_ast,
             optimization: self.optimization,
@@ -649,8 +721,8 @@ impl Driver {
     }
 
     pub fn check(&self, source_path: &Path) -> Result<(), CompileError> {
-        let source = std::fs::read_to_string(source_path)
-            .map_err(|e| CompileError::FileNotFound {
+        let source =
+            std::fs::read_to_string(source_path).map_err(|e| CompileError::FileNotFound {
                 path: source_path.display().to_string(),
                 detail: e.to_string(),
             })?;
@@ -696,24 +768,34 @@ impl Driver {
 
         // Expand all ComponentBlock nodes → regular AST + lifecycle stmts
         let expansion = expand_components(&mut program, &loaded_packages);
-        inject_lifecycle_stmts(&mut program, &expansion.startup_stmts, &expansion.main_end_stmts);
+        inject_lifecycle_stmts(
+            &mut program,
+            &expansion.startup_stmts,
+            &expansion.main_end_stmts,
+        );
 
         // Type check
         let mut checker = crate::typeck::TypeChecker::new();
         // Register component types and instances with known methods for type checking
         {
             use std::collections::HashMap;
-            let mut kind_methods: HashMap<String, Vec<(String, crate::typeck::types::Type)>> = HashMap::new();
-            let mut instance_methods: HashMap<String, Vec<(String, crate::typeck::types::Type)>> = HashMap::new();
+            let mut kind_methods: HashMap<String, Vec<(String, crate::typeck::types::Type)>> =
+                HashMap::new();
+            let mut instance_methods: HashMap<String, Vec<(String, crate::typeck::types::Type)>> =
+                HashMap::new();
             for cm in &expansion.component_methods {
-                let ret_ty = cm.return_type.as_ref()
+                let ret_ty = cm
+                    .return_type
+                    .as_ref()
                     .map(|t| checker.resolve_type_expr(t))
                     .unwrap_or(crate::typeck::types::Type::Void);
-                instance_methods.entry(cm.instance_name.clone())
+                instance_methods
+                    .entry(cm.instance_name.clone())
                     .or_default()
                     .push((cm.method_name.clone(), ret_ty.clone()));
                 let kind = capitalize_first(&cm.component_kind);
-                kind_methods.entry(kind)
+                kind_methods
+                    .entry(kind)
                     .or_default()
                     .push((cm.method_name.clone(), ret_ty));
             }
@@ -721,7 +803,10 @@ impl Driver {
                 let ty = checker.resolve_type_expr(type_expr);
                 let ty = match ty {
                     crate::typeck::types::Type::Struct { fields, .. } => {
-                        crate::typeck::types::Type::Struct { name: Some(kind.clone()), fields }
+                        crate::typeck::types::Type::Struct {
+                            name: Some(kind.clone()),
+                            fields,
+                        }
                     }
                     other => other,
                 };
@@ -738,11 +823,15 @@ impl Driver {
             }
             let mut instance_kinds: HashMap<String, String> = HashMap::new();
             for cm in &expansion.component_methods {
-                instance_kinds.entry(cm.instance_name.clone())
+                instance_kinds
+                    .entry(cm.instance_name.clone())
                     .or_insert_with(|| capitalize_first(&cm.component_kind));
             }
             for (instance_name, methods) in &instance_methods {
-                checker.env.type_methods.insert(instance_name.clone(), methods.clone());
+                checker
+                    .env
+                    .type_methods
+                    .insert(instance_name.clone(), methods.clone());
                 checker.env.namespaces.insert(instance_name.clone());
                 if let Some(kind) = instance_kinds.get(instance_name) {
                     let ty = checker.env.resolve_type_name(kind);
@@ -770,13 +859,17 @@ impl Driver {
 
                 if applied > 0 {
                     // Write the fixed source back
-                    std::fs::write(source_path, &fixed_source)
-                        .map_err(|e| CompileError::FileNotFound {
+                    std::fs::write(source_path, &fixed_source).map_err(|e| {
+                        CompileError::FileNotFound {
                             path: source_path.display().to_string(),
                             detail: e.to_string(),
-                        })?;
+                        }
+                    })?;
                     // Info message — not an error, but still uses consistent formatting
-                    eprint!("\x1b[1;32mautofix\x1b[0m: applied {} fix(es), skipped {} low-confidence\n", applied, skipped);
+                    eprint!(
+                        "\x1b[1;32mautofix\x1b[0m: applied {} fix(es), skipped {} low-confidence\n",
+                        applied, skipped
+                    );
 
                     // Re-check to verify and show remaining errors
                     return self.check(source_path);
@@ -786,7 +879,9 @@ impl Driver {
             }
 
             self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err(CompileError::DiagnosticErrors { stage: "type checker" });
+            return Err(CompileError::DiagnosticErrors {
+                stage: "type checker",
+            });
         }
 
         // Print warnings even when no errors
@@ -801,8 +896,8 @@ impl Driver {
     /// Parse and type-check a source file, returning the typed program AST.
     /// Used by the `context` command to extract exports without codegen.
     pub fn parse_and_check(&self, source_path: &Path) -> Result<Program, CompileError> {
-        let source = std::fs::read_to_string(source_path)
-            .map_err(|e| CompileError::FileNotFound {
+        let source =
+            std::fs::read_to_string(source_path).map_err(|e| CompileError::FileNotFound {
                 path: source_path.display().to_string(),
                 detail: e.to_string(),
             })?;
@@ -848,7 +943,11 @@ impl Driver {
 
         // Expand all ComponentBlock nodes → regular AST + lifecycle stmts
         let expansion = expand_components(&mut program, &loaded_packages);
-        inject_lifecycle_stmts(&mut program, &expansion.startup_stmts, &expansion.main_end_stmts);
+        inject_lifecycle_stmts(
+            &mut program,
+            &expansion.startup_stmts,
+            &expansion.main_end_stmts,
+        );
 
         // Type check
         let mut checker = crate::typeck::TypeChecker::new();
@@ -859,15 +958,17 @@ impl Driver {
 
         if diag_bag.has_errors() {
             self.emit_diagnostics(&diag_bag, &source, filename);
-            return Err(CompileError::DiagnosticErrors { stage: "type checker" });
+            return Err(CompileError::DiagnosticErrors {
+                stage: "type checker",
+            });
         }
 
         Ok(program)
     }
 
     pub fn explain_line(&self, source_path: &Path, target_line: u32) -> Result<(), CompileError> {
-        let source = std::fs::read_to_string(source_path)
-            .map_err(|e| CompileError::FileNotFound {
+        let source =
+            std::fs::read_to_string(source_path).map_err(|e| CompileError::FileNotFound {
                 path: source_path.display().to_string(),
                 detail: e.to_string(),
             })?;
@@ -885,9 +986,27 @@ impl Driver {
         let mut found = false;
         for stmt in &program.statements {
             match stmt {
-                Statement::Let { name, type_ann, value, span, .. }
-                | Statement::Mut { name, type_ann, value, span, .. }
-                | Statement::Const { name, type_ann, value, span, .. } => {
+                Statement::Let {
+                    name,
+                    type_ann,
+                    value,
+                    span,
+                    ..
+                }
+                | Statement::Mut {
+                    name,
+                    type_ann,
+                    value,
+                    span,
+                    ..
+                }
+                | Statement::Const {
+                    name,
+                    type_ann,
+                    value,
+                    span,
+                    ..
+                } => {
                     if span.line != target_line {
                         continue;
                     }
@@ -899,20 +1018,32 @@ impl Driver {
                     self.explain_expr_type(&mut checker, value, 2);
                     println!();
                 }
-                Statement::FnDecl { name, params, return_type, span, .. } => {
+                Statement::FnDecl {
+                    name,
+                    params,
+                    return_type,
+                    span,
+                    ..
+                } => {
                     if span.line != target_line {
                         continue;
                     }
                     found = true;
-                    let ret_ty = return_type.as_ref()
+                    let ret_ty = return_type
+                        .as_ref()
                         .map(|t| checker.resolve_type_expr(t))
                         .unwrap_or(crate::typeck::types::Type::Void);
-                    let param_strs: Vec<String> = params.iter().map(|p| {
-                        let ty = p.type_ann.as_ref()
-                            .map(|t| checker.resolve_type_expr(t))
-                            .unwrap_or(crate::typeck::types::Type::Unknown);
-                        format!("{}: {}", p.name, ty)
-                    }).collect();
+                    let param_strs: Vec<String> = params
+                        .iter()
+                        .map(|p| {
+                            let ty = p
+                                .type_ann
+                                .as_ref()
+                                .map(|t| checker.resolve_type_expr(t))
+                                .unwrap_or(crate::typeck::types::Type::Unknown);
+                            format!("{}: {}", p.name, ty)
+                        })
+                        .collect();
                     println!("  fn {}({}) -> {}", name, param_strs.join(", "), ret_ty);
                     println!();
                 }
@@ -925,9 +1056,27 @@ impl Driver {
             if let Statement::FnDecl { body, .. } = stmt {
                 for inner in &body.statements {
                     match inner {
-                        Statement::Let { name, type_ann, value, span, .. }
-                        | Statement::Mut { name, type_ann, value, span, .. }
-                        | Statement::Const { name, type_ann, value, span, .. } => {
+                        Statement::Let {
+                            name,
+                            type_ann,
+                            value,
+                            span,
+                            ..
+                        }
+                        | Statement::Mut {
+                            name,
+                            type_ann,
+                            value,
+                            span,
+                            ..
+                        }
+                        | Statement::Const {
+                            name,
+                            type_ann,
+                            value,
+                            span,
+                            ..
+                        } => {
                             if span.line != target_line {
                                 continue;
                             }
@@ -951,7 +1100,12 @@ impl Driver {
         Ok(())
     }
 
-    fn explain_expr_type(&self, checker: &mut crate::typeck::TypeChecker, expr: &crate::parser::ast::Expr, depth: usize) {
+    fn explain_expr_type(
+        &self,
+        checker: &mut crate::typeck::TypeChecker,
+        expr: &crate::parser::ast::Expr,
+        depth: usize,
+    ) {
         let indent = "    ".repeat(depth);
         match expr {
             Expr::Ident(name, _) => {
@@ -976,7 +1130,9 @@ impl Driver {
                     }
                 }
             }
-            Expr::Binary { op, left, right, .. } => {
+            Expr::Binary {
+                op, left, right, ..
+            } => {
                 let left_ty = checker.infer_type(left);
                 let right_ty = checker.infer_type(right);
                 println!("{}  {:?}({}, {})", indent, op, left_ty, right_ty);
@@ -1000,7 +1156,13 @@ impl Driver {
 
     /// Check the diagnostic bag for errors, emit them if present, and return a CompileError.
     /// For the type checker stage, continue despite errors (bootstrap has false positives).
-    fn check_diagnostics(&self, diag_bag: &DiagnosticBag, source: &str, filename: &str, stage: &'static str) -> Result<(), CompileError> {
+    fn check_diagnostics(
+        &self,
+        diag_bag: &DiagnosticBag,
+        source: &str,
+        filename: &str,
+        stage: &'static str,
+    ) -> Result<(), CompileError> {
         if diag_bag.has_errors() {
             self.emit_diagnostics(diag_bag, source, filename);
             // Only hard-fail on lexer/parser errors — type checker errors are often
@@ -1045,13 +1207,17 @@ impl Driver {
 
     /// Return the cache path for a runtime artifact with the given extension (e.g. "o", "hash", "dylib").
     fn runtime_cache_artifact(&self, ext: &str) -> PathBuf {
-        self.runtime_cache_dir().join(format!("forge_runtime_{}.{}", self.opt_tag(), ext))
+        self.runtime_cache_dir()
+            .join(format!("forge_runtime_{}.{}", self.opt_tag(), ext))
     }
 
     /// Find runtime.c in known locations relative to source file, project dir, or forge binary.
     fn find_runtime_src(&self, hint_path: &Path) -> Result<PathBuf, CompileError> {
         let mut paths = vec![
-            hint_path.parent().unwrap_or(Path::new(".")).join("../stdlib/runtime.c"),
+            hint_path
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join("../stdlib/runtime.c"),
             hint_path.join("stdlib/runtime.c"),
             hint_path.join("../stdlib/runtime.c"),
             PathBuf::from("stdlib/runtime.c"),
@@ -1063,7 +1229,8 @@ impl Driver {
                 paths.push(exe_dir.join("../../stdlib/runtime.c"));
             }
         }
-        paths.iter()
+        paths
+            .iter()
             .find(|p| p.exists())
             .cloned()
             .ok_or(CompileError::RuntimeNotFound)
@@ -1081,7 +1248,9 @@ impl Driver {
         let opt_flag = self.opt_flag();
 
         let dylib_path = self.runtime_cache_artifact("dylib");
-        let hash_path = self.runtime_cache_dir().join(format!("forge_runtime_{}_dylib.hash", self.opt_tag()));
+        let hash_path = self
+            .runtime_cache_dir()
+            .join(format!("forge_runtime_{}_dylib.hash", self.opt_tag()));
 
         // Check cache
         let current_hash = self.runtime_hash(&runtime_src);
@@ -1093,17 +1262,26 @@ impl Driver {
             }
         }
 
-        let src_str = runtime_src.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
-            stderr: format!("runtime path contains invalid UTF-8: {}", runtime_src.display()),
-        })?;
-        let dylib_str = dylib_path.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
-            stderr: "dylib cache path contains invalid UTF-8".to_string(),
-        })?;
+        let src_str = runtime_src
+            .to_str()
+            .ok_or_else(|| CompileError::RuntimeCompileFailed {
+                stderr: format!(
+                    "runtime path contains invalid UTF-8: {}",
+                    runtime_src.display()
+                ),
+            })?;
+        let dylib_str = dylib_path
+            .to_str()
+            .ok_or_else(|| CompileError::RuntimeCompileFailed {
+                stderr: "dylib cache path contains invalid UTF-8".to_string(),
+            })?;
 
         let output = Command::new("cc")
             .args(["-dynamiclib", "-o", dylib_str, src_str, opt_flag])
             .output()
-            .map_err(|e| CompileError::RuntimeCompileFailed { stderr: e.to_string() })?;
+            .map_err(|e| CompileError::RuntimeCompileFailed {
+                stderr: e.to_string(),
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -1124,17 +1302,29 @@ impl Driver {
 
         let runtime_obj = self.runtime_cache_artifact("o");
 
-        let src_str = runtime_src.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
-            stderr: format!("runtime path contains invalid UTF-8: {}", runtime_src.display()),
-        })?;
-        let obj_str = runtime_obj.to_str().ok_or_else(|| CompileError::RuntimeCompileFailed {
-            stderr: format!("runtime object path contains invalid UTF-8: {}", runtime_obj.display()),
-        })?;
+        let src_str = runtime_src
+            .to_str()
+            .ok_or_else(|| CompileError::RuntimeCompileFailed {
+                stderr: format!(
+                    "runtime path contains invalid UTF-8: {}",
+                    runtime_src.display()
+                ),
+            })?;
+        let obj_str = runtime_obj
+            .to_str()
+            .ok_or_else(|| CompileError::RuntimeCompileFailed {
+                stderr: format!(
+                    "runtime object path contains invalid UTF-8: {}",
+                    runtime_obj.display()
+                ),
+            })?;
 
         let output = Command::new("cc")
             .args(["-c", src_str, "-o", obj_str, opt_flag])
             .output()
-            .map_err(|e| CompileError::RuntimeCompileFailed { stderr: e.to_string() })?;
+            .map_err(|e| CompileError::RuntimeCompileFailed {
+                stderr: e.to_string(),
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -1142,7 +1332,10 @@ impl Driver {
         }
 
         // Write hash marker so we can validate the cache next time
-        let _ = std::fs::write(self.runtime_cache_artifact("hash"), self.runtime_hash(runtime_src));
+        let _ = std::fs::write(
+            self.runtime_cache_artifact("hash"),
+            self.runtime_hash(runtime_src),
+        );
 
         Ok(runtime_obj)
     }
@@ -1187,11 +1380,14 @@ impl Driver {
         output: &Path,
         package_lib_paths: &[PathBuf],
         package_link_flags: &[String],
+        package_extern_symbols: &[String],
     ) -> Result<(), CompileError> {
         let path_str = |p: &Path| -> Result<String, CompileError> {
-            p.to_str().map(|s| s.to_string()).ok_or_else(|| CompileError::LinkerFailed {
-                stderr: format!("path contains invalid UTF-8: {}", p.display()),
-            })
+            p.to_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| CompileError::LinkerFailed {
+                    stderr: format!("path contains invalid UTF-8: {}", p.display()),
+                })
         };
 
         let mut args = vec![
@@ -1202,7 +1398,25 @@ impl Driver {
             "-Wl,-stack_size,0x10000000".to_string(), // 256MB stack for deep parser recursion
         ];
 
-        // Add package native library paths
+        // Tell the linker to preserve every extern symbol declared in
+        // a loaded package's `package.fg`, even if user Forge code does
+        // not statically reference it. This matters because `_s`
+        // extern wrappers in packages like `@std.llvm` resolve their
+        // underlying C symbol via runtime `dlsym(RTLD_DEFAULT, "...")`.
+        // Without an explicit `-u` reference the underlying symbol is
+        // dead-stripped from the archive, dlsym returns null, and the
+        // call silently no-ops. See bootstrap/TECH_DEBT.md #9.
+        for sym in package_extern_symbols {
+            // macOS prepends an underscore to C symbols.
+            let mangled = if cfg!(target_os = "macos") {
+                format!("_{}", sym)
+            } else {
+                sym.clone()
+            };
+            args.push(format!("-Wl,-u,{}", mangled));
+        }
+
+        // Add package native library paths.
         let mut has_native_packages = false;
         for lib_path in package_lib_paths {
             args.push(path_str(lib_path)?);
@@ -1226,10 +1440,11 @@ impl Driver {
         }
 
         let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let output_cmd = Command::new("cc")
-            .args(&args_str)
-            .output()
-            .map_err(|e| CompileError::LinkerFailed { stderr: e.to_string() })?;
+        let output_cmd = Command::new("cc").args(&args_str).output().map_err(|e| {
+            CompileError::LinkerFailed {
+                stderr: e.to_string(),
+            }
+        })?;
 
         if !output_cmd.status.success() {
             let stderr = String::from_utf8_lossy(&output_cmd.stderr).to_string();
@@ -1241,7 +1456,10 @@ impl Driver {
 
     /// Load packages by pre-scanned (namespace, name) pairs.
     /// Returns an error if any package fails to load — never silently ignores failures.
-    fn load_packages_by_uses(&self, uses: &[(String, String)]) -> Result<Vec<PackageInfo>, CompileError> {
+    fn load_packages_by_uses(
+        &self,
+        uses: &[(String, String)],
+    ) -> Result<Vec<PackageInfo>, CompileError> {
         let mut packages = Vec::new();
         let packages_base = match self.find_packages_dir() {
             Some(base) => base,
@@ -1251,11 +1469,12 @@ impl Driver {
         for (namespace, name) in uses {
             match package::find_package(&packages_base, namespace, name) {
                 Some(package_dir) => {
-                    let info = package::load_package(&package_dir)
-                        .map_err(|e| CompileError::PackageLoadFailed {
+                    let info = package::load_package(&package_dir).map_err(|e| {
+                        CompileError::PackageLoadFailed {
                             package: format!("@{}.{}", namespace, name),
                             detail: e,
-                        })?;
+                        }
+                    })?;
                     packages.push(info);
                 }
                 None => {
@@ -1274,10 +1493,7 @@ impl Driver {
     /// Find the packages directory relative to the forge binary or source tree
     fn find_packages_dir(&self) -> Option<PathBuf> {
         // Check relative to the cargo manifest dir (for development)
-        let candidates = vec![
-            PathBuf::from("packages"),
-            PathBuf::from("../packages"),
-        ];
+        let candidates = vec![PathBuf::from("packages"), PathBuf::from("../packages")];
 
         // Also check relative to the forge binary
         if let Ok(exe) = std::env::current_exe() {
@@ -1381,10 +1597,7 @@ fn build_component_registry(packages: &[PackageInfo]) -> HashMap<String, Compone
 /// When a component body contains a config entry whose key matches an imported
 /// component block name, the config entry is replaced with the actual component block.
 /// E.g., `use commands.{build}` + `cli forge { build }` → injects `build` component.
-fn inject_imported_components(
-    program: &mut Program,
-    imports: &[ResolvedImport],
-) {
+fn inject_imported_components(program: &mut Program, imports: &[ResolvedImport]) {
     // Build map of imported component block names → decls
     let mut imported_components: HashMap<String, ComponentBlockDecl> = HashMap::new();
     for imp in imports {
@@ -1450,7 +1663,16 @@ fn inject_extern_fns(program: &mut Program, packages: &[PackageInfo]) {
 fn inject_exported_fns(program: &mut Program, packages: &[PackageInfo]) {
     for pkg in packages {
         for fn_stmt in &pkg.exported_fns {
-            if let Statement::FnDecl { name, type_params, params, return_type, body, span, .. } = fn_stmt {
+            if let Statement::FnDecl {
+                name,
+                type_params,
+                params,
+                return_type,
+                body,
+                span,
+                ..
+            } = fn_stmt
+            {
                 let renamed = Statement::FnDecl {
                     name: format!("{}_{}", pkg.name, name),
                     type_params: type_params.clone(),
@@ -1504,7 +1726,12 @@ fn expand_components(program: &mut Program, packages: &[PackageInfo]) -> Compone
     for stmt in program.statements.drain(..) {
         if let Statement::ComponentBlock(ref decl) = stmt {
             let result = if let Some(template) = find_template(packages, &decl.component) {
-                ComponentExpander::expand_from_template(template, decl, &service_infos, &all_templates)
+                ComponentExpander::expand_from_template(
+                    template,
+                    decl,
+                    &service_infos,
+                    &all_templates,
+                )
             } else {
                 ExpansionResult::new()
             };
@@ -1552,7 +1779,10 @@ fn capitalize_first(s: &str) -> String {
     }
 }
 
-fn register_package_annotations(checker: &mut crate::typeck::TypeChecker, packages: &[PackageInfo]) {
+fn register_package_annotations(
+    checker: &mut crate::typeck::TypeChecker,
+    packages: &[PackageInfo],
+) {
     for pkg in packages {
         for meta in &pkg.component_metas {
             for ann_decl in &meta.annotation_decls {
@@ -1605,7 +1835,15 @@ fn inject_lifecycle_stmts(
                 let mut new_body = startup_stmts.to_vec();
                 new_body.extend(body_stmts.to_vec());
                 if let Some(last) = new_body.last() {
-                    if matches!(last, Statement::Return { .. } | Statement::Feature(crate::feature::FeatureStmt { feature_id: "functions", kind: "Return", .. })) {
+                    if matches!(
+                        last,
+                        Statement::Return { .. }
+                            | Statement::Feature(crate::feature::FeatureStmt {
+                                feature_id: "functions",
+                                kind: "Return",
+                                ..
+                            })
+                    ) {
                         let ret = new_body.pop().unwrap();
                         new_body.extend(main_end_stmts.to_vec());
                         new_body.push(ret);
@@ -1632,7 +1870,10 @@ fn inject_lifecycle_stmts(
                         type_params: data.type_params.clone(),
                         params: data.params.clone(),
                         return_type: data.return_type.clone(),
-                        body: crate::parser::ast::Block { statements: new_stmts, span: data.body.span },
+                        body: crate::parser::ast::Block {
+                            statements: new_stmts,
+                            span: data.body.span,
+                        },
                         exported: data.exported,
                     };
                     *stmt = Statement::Feature(crate::feature::FeatureStmt {
@@ -1659,7 +1900,10 @@ fn inject_lifecycle_stmts(
             type_params: vec![],
             params: vec![],
             return_type: None,
-            body: crate::parser::ast::Block { statements: startup_stmts.to_vec(), span: sp },
+            body: crate::parser::ast::Block {
+                statements: startup_stmts.to_vec(),
+                span: sp,
+            },
             exported: false,
             span: sp,
         });
@@ -1670,7 +1914,10 @@ fn inject_lifecycle_stmts(
             type_params: vec![],
             params: vec![],
             return_type: None,
-            body: crate::parser::ast::Block { statements: main_end_stmts.to_vec(), span: sp },
+            body: crate::parser::ast::Block {
+                statements: main_end_stmts.to_vec(),
+                span: sp,
+            },
             exported: false,
             span: sp,
         });
@@ -1741,7 +1988,11 @@ pub fn inject_llvm_api(codegen: &crate::codegen::Codegen<'_>) {
     d!("forge_llvm_get_allocated_type", ptr, [ptr]);
     d!("forge_llvm_build_store", ptr, [ptr, ptr, ptr]);
     d!("forge_llvm_build_load", ptr, [ptr, ptr, ptr, ptr]);
-    d!("forge_llvm_build_call", ptr, [ptr, ptr, ptr, ptr, i32t, ptr]);
+    d!(
+        "forge_llvm_build_call",
+        ptr,
+        [ptr, ptr, ptr, ptr, i32t, ptr]
+    );
     d!("forge_llvm_build_add", ptr, [ptr, ptr, ptr, ptr]);
     d!("forge_llvm_build_sub", ptr, [ptr, ptr, ptr, ptr]);
     d!("forge_llvm_build_mul", ptr, [ptr, ptr, ptr, ptr]);
@@ -1756,10 +2007,22 @@ pub fn inject_llvm_api(codegen: &crate::codegen::Codegen<'_>) {
     d!("forge_llvm_build_trunc", ptr, [ptr, ptr, ptr, ptr]);
     d!("forge_llvm_build_zext", ptr, [ptr, ptr, ptr, ptr]);
     d!("forge_llvm_build_bitcast", ptr, [ptr, ptr, ptr, ptr]);
-    d!("forge_llvm_build_struct_gep2", ptr, [ptr, ptr, ptr, i32t, ptr]);
-    d!("forge_llvm_build_gep2", ptr, [ptr, ptr, ptr, ptr, i32t, ptr]);
+    d!(
+        "forge_llvm_build_struct_gep2",
+        ptr,
+        [ptr, ptr, ptr, i32t, ptr]
+    );
+    d!(
+        "forge_llvm_build_gep2",
+        ptr,
+        [ptr, ptr, ptr, ptr, i32t, ptr]
+    );
     d!("forge_llvm_build_extract_value", ptr, [ptr, ptr, i32t, ptr]);
-    d!("forge_llvm_build_insert_value", ptr, [ptr, ptr, ptr, i32t, ptr]);
+    d!(
+        "forge_llvm_build_insert_value",
+        ptr,
+        [ptr, ptr, ptr, i32t, ptr]
+    );
     d!("forge_llvm_build_phi", ptr, [ptr, ptr, ptr]);
     d!("forge_llvm_add_incoming_one", void, [ptr, ptr, ptr]);
     d!("forge_llvm_build_ptr_to_int", ptr, [ptr, ptr, ptr, ptr]);
@@ -1772,6 +2035,8 @@ pub fn inject_llvm_api(codegen: &crate::codegen::Codegen<'_>) {
     d!("forge_llvm_value_array_set", void, [ptr, i32t, ptr]);
     d!("forge_llvm_value_array_free", void, [ptr]);
     d!("forge_llvm_global_get_value_type", ptr, [ptr]);
+    d!("forge_llvm_fn_get_param_type", ptr, [ptr, i32t]);
+    d!("forge_bb_has_terminator", i64t, [ptr]);
     d!("forge_llvm_type_of", ptr, [ptr]);
     d!("forge_llvm_get_type_kind", i32t, [ptr]);
     d!("forge_llvm_emit_object_file", i32t, [ptr, ptr]);
