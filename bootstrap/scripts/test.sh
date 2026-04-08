@@ -16,6 +16,10 @@ if [ ! -f "$FORGE_DIR/packages/std-process/target/release/libforge_process.a" ];
   (cd "$FORGE_DIR/packages/std-process" && cargo build --release)
 fi
 
+if [ ! -f "$FORGE_DIR/packages/std-llvm/target/release/libforge_llvm.a" ]; then
+  (cd "$FORGE_DIR/packages/std-llvm" && LLVM_SYS_191_PREFIX=/opt/homebrew/opt/llvm@19 cargo build --release)
+fi
+
 mkdir -p "$BUILD_DIR"
 build_log="$BUILD_DIR/build.log"
 if ! "$HOST_COMPILER" build "$BOOTSTRAP_DIR" --dev -o "$BUILD_DIR/bootstrapc" > "$build_log" 2>&1; then
@@ -85,6 +89,34 @@ for input in "$BOOTSTRAP_DIR"/tests/eval/*.fg; do
   cases=$((cases + 1))
 done
 
+for input in "$BOOTSTRAP_DIR"/tests/check/*.fg; do
+  name=$(basename "$input" .fg)
+  actual="$BUILD_DIR/$name.actual"
+  stderr_log="$BUILD_DIR/$name.stderr"
+
+  # Error tests have .err, success tests have .out
+  if [ -f "$BOOTSTRAP_DIR/tests/check/$name.err" ]; then
+    expected="$BOOTSTRAP_DIR/tests/check/$name.err"
+    echo "check/$name (error)"
+    if "$BUILD_DIR/bootstrapc" check "$input" > "$actual" 2> "$stderr_log"; then
+      echo "FAIL: expected error but check succeeded"
+      exit 1
+    fi
+    # Error message goes to stderr; filter runtime debug noise
+    grep -v '^\[' "$stderr_log" > "$actual"
+    diff -u "$expected" "$actual"
+  else
+    expected="$BOOTSTRAP_DIR/tests/check/$name.out"
+    echo "check/$name"
+    if ! "$BUILD_DIR/bootstrapc" check "$input" > "$actual" 2> "$stderr_log"; then
+      cat "$stderr_log"
+      exit 1
+    fi
+    diff -u "$expected" "$actual"
+  fi
+  cases=$((cases + 1))
+done
+
 for input in "$BOOTSTRAP_DIR"/tests/run/*.fg; do
   name=$(basename "$input" .fg)
   expected="$BOOTSTRAP_DIR/tests/run/$name.out"
@@ -97,6 +129,35 @@ for input in "$BOOTSTRAP_DIR"/tests/run/*.fg; do
     exit 1
   fi
   diff -u "$expected" "$actual"
+  cases=$((cases + 1))
+done
+
+for input in "$BOOTSTRAP_DIR"/tests/compile/*.fg; do
+  name=$(basename "$input" .fg)
+  expected_exit=$(cat "$BOOTSTRAP_DIR/tests/compile/$name.exit")
+  ll_path="$BUILD_DIR/$name.ll"
+  bin_path="$BUILD_DIR/$name.bin"
+  stderr_log="$BUILD_DIR/$name.stderr"
+
+  echo "compile/$name"
+  cp "$input" "$BUILD_DIR/$name.fg"
+  if ! "$BUILD_DIR/bootstrapc" compile "$BUILD_DIR/$name.fg" > /dev/null 2> "$stderr_log"; then
+    cat "$stderr_log"
+    exit 1
+  fi
+  mv "$BUILD_DIR/$name.fg.ll" "$ll_path"
+  if ! cc -o "$bin_path" "$ll_path" 2> "$stderr_log"; then
+    cat "$stderr_log"
+    exit 1
+  fi
+  set +e
+  "$bin_path"
+  actual_exit=$?
+  set -e
+  if [ "$actual_exit" != "$expected_exit" ]; then
+    echo "FAIL: expected exit $expected_exit, got $actual_exit"
+    exit 1
+  fi
   cases=$((cases + 1))
 done
 

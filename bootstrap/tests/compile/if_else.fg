@@ -1,0 +1,6 @@
+mut x = 7
+if x > 5 {
+    return 100
+} else {
+    return 200
+}

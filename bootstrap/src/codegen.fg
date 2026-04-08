@@ -1,5 +1,5 @@
 use @std.llvm
-use ast.{Expr, ExprList, Stmt, StmtList, ParamList}
+use ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend}
 
 // ── Public API ──
 
@@ -12,13 +12,15 @@ type Codegen = {
     ctx: ptr,
     module: ptr,
     builder: ptr,
+    main_fn: ptr,
     i64_type: ptr,
     i1_type: ptr,
     ptr_type: ptr,
 }
 
-fn null_ptr(cg: Codegen) -> ptr {
-    llvm.const_null(cg.ptr_type)
+fn null_ptr_val() -> ptr {
+    let n: ptr = null
+    n
 }
 
 export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult {
@@ -30,15 +32,6 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     let i1t = llvm.int1_type(ctx)
     let pt = llvm.pointer_type(ctx)
 
-    let cg = Codegen {
-        ctx,
-        module: m,
-        builder,
-        i64_type: i64t,
-        i1_type: i1t,
-        ptr_type: pt,
-    }
-
     // Create main: () -> i64
     let params = llvm.type_array_new(0)
     let main_type = llvm.function_type(i64t, params, 0, 0)
@@ -48,8 +41,19 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     let entry = llvm.append_basic_block(ctx, main_fn, "entry")
     llvm.position_at_end(builder, entry)
 
-    // Emit statements
-    let result = emit_stmt_list(cg, stmts)
+    let cg = Codegen {
+        ctx,
+        module: m,
+        builder,
+        main_fn,
+        i64_type: i64t,
+        i1_type: i1t,
+        ptr_type: pt,
+    }
+
+    // Emit top-level statements with an empty environment
+    let initial: VarEnv = VarEnv.End
+    let result = emit_stmt_list(cg, initial, stmts)
     if result.had_error {
         llvm.dispose_builder(builder)
         llvm.module_dispose(m)
@@ -57,7 +61,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         return CodegenResult { had_error: true, error_message: result.error_message }
     }
 
-    // Default return 0
+    // Default return 0 if the program didn't end in an explicit return
     if !llvm.block_has_terminator(builder) {
         llvm.build_ret(builder, llvm.const_int(i64t, 0, 0))
     }
@@ -71,12 +75,6 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         return CodegenResult { had_error: true, error_message: "codegen error: LLVM module verification failed" }
     }
 
-    // Persist IR to disk. The host link of bootstrap binaries currently
-    // drops the underlying `forge_llvm_print_module_to_file` symbol so
-    // the runtime dlsym dance silently no-ops — see TECH_DEBT.md #9.
-    // We still issue the call so that future linker fixes immediately
-    // start producing output, and we report an explicit error if the
-    // file did not appear.
     let write_result = llvm.print_module_to_file(m, output_path)
 
     llvm.dispose_builder(builder)
@@ -84,7 +82,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     llvm.context_dispose(ctx)
 
     if write_result != 0 {
-        return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to " + output_path + " (host debt #9)" }
+        return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to " + output_path }
     }
 
     CodegenResult { had_error: false, error_message: "" }
@@ -103,50 +101,160 @@ fn ok_emit(value: ptr) -> EmitResult {
 }
 
 fn err_emit(message: string) -> EmitResult {
-    let n: ptr = null
-    EmitResult { value: n, had_error: true, error_message: "codegen error: " + message }
+    EmitResult { value: null_ptr_val(), had_error: true, error_message: "codegen error: " + message }
+}
+
+type StmtResult = {
+    env: VarEnv,
+    had_error: bool,
+    error_message: string,
+}
+
+fn ok_stmt(env: VarEnv) -> StmtResult {
+    StmtResult { env, had_error: false, error_message: "" }
+}
+
+fn err_stmt(message: string) -> StmtResult {
+    StmtResult { env: VarEnv.End, had_error: true, error_message: message }
+}
+
+fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
+    StmtResult { env: VarEnv.End, had_error: true, error_message: r.error_message }
 }
 
 // ── Statement emission ──
 
-fn emit_stmt_list(cg: Codegen, stmts: StmtList) -> EmitResult {
+fn emit_stmt_list(cg: Codegen, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
-        .End -> ok_emit(null_ptr(cg))
+        .End -> ok_stmt(env)
         .Node(stmt, next) -> {
-            let result = emit_stmt(cg, stmt)
+            let result = emit_stmt(cg, env, stmt)
             if result.had_error {
                 return result
             }
-            match next {
-                .End -> result
-                _ -> emit_stmt_list(cg, next)
-            }
+            emit_stmt_list(cg, result.env, next)
         }
     }
 }
 
-fn emit_stmt(cg: Codegen, stmt: Stmt) -> EmitResult {
+fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
-        .Expr(expr) -> emit_expr(cg, expr)
-        .Ret(value) -> {
-            let result = emit_expr(cg, value)
-            if result.had_error {
-                return result
+        .Expr(expr) -> {
+            let r = emit_expr(cg, env, expr)
+            if r.had_error {
+                return err_stmt_from_expr(r)
             }
-            llvm.build_ret(cg.builder, result.value)
-            ok_emit(result.value)
+            ok_stmt(env)
+        }
+        .Ret(value) -> {
+            let r = emit_expr(cg, env, value)
+            if r.had_error {
+                return err_stmt_from_expr(r)
+            }
+            llvm.build_ret(cg.builder, r.value)
+            ok_stmt(env)
         }
         .RetEmpty -> {
             llvm.build_ret(cg.builder, llvm.const_int(cg.i64_type, 0, 0))
-            ok_emit(null_ptr(cg))
+            ok_stmt(env)
         }
-        _ -> err_emit("unsupported statement type")
+        .Let(name, initializer) -> emit_var_decl(cg, env, name, initializer)
+        .Mut(name, initializer) -> emit_var_decl(cg, env, name, initializer)
+        .Block(body) -> {
+            let inner = emit_stmt_list(cg, env, body)
+            if inner.had_error {
+                return inner
+            }
+            // Block exits restore the outer scope.
+            ok_stmt(env)
+        }
+        .If(condition, then_branch, else_branch) -> emit_if(cg, env, condition, then_branch, else_branch)
+        .While(condition, body) -> emit_while(cg, env, condition, body)
+        _ -> err_stmt("codegen error: unsupported statement type")
     }
+}
+
+fn emit_var_decl(cg: Codegen, env: VarEnv, name: string, initializer: Expr) -> StmtResult {
+    let r = emit_expr(cg, env, initializer)
+    if r.had_error {
+        return err_stmt_from_expr(r)
+    }
+    let alloca = llvm.build_alloca(cg.builder, cg.i64_type, name)
+    llvm.build_store(cg.builder, r.value, alloca)
+    ok_stmt(env_extend(env, name, alloca))
+}
+
+fn emit_if(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> StmtResult {
+    let cond = emit_expr(cg, env, condition)
+    if cond.had_error {
+        return err_stmt_from_expr(cond)
+    }
+    // Truncate i64 → i1 for the branch.
+    let cond_i1 = llvm.build_icmp(cg.builder, 33, cond.value, llvm.const_int(cg.i64_type, 0, 0), "if_cond")
+
+    let then_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "then")
+    let else_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "else")
+    let merge_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "ifcont")
+
+    llvm.build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
+
+    // Then branch
+    llvm.position_at_end(cg.builder, then_bb)
+    let then_result = emit_stmt(cg, env, then_branch)
+    if then_result.had_error {
+        return then_result
+    }
+    if !llvm.block_has_terminator(cg.builder) {
+        llvm.build_br(cg.builder, merge_bb)
+    }
+
+    // Else branch
+    llvm.position_at_end(cg.builder, else_bb)
+    if else_branch != null {
+        let else_result = emit_stmt(cg, env, else_branch!)
+        if else_result.had_error {
+            return else_result
+        }
+    }
+    if !llvm.block_has_terminator(cg.builder) {
+        llvm.build_br(cg.builder, merge_bb)
+    }
+
+    llvm.position_at_end(cg.builder, merge_bb)
+    ok_stmt(env)
+}
+
+fn emit_while(cg: Codegen, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
+    let cond_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "while.cond")
+    let body_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "while.body")
+    let exit_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "while.exit")
+
+    llvm.build_br(cg.builder, cond_bb)
+
+    llvm.position_at_end(cg.builder, cond_bb)
+    let cond = emit_expr(cg, env, condition)
+    if cond.had_error {
+        return err_stmt_from_expr(cond)
+    }
+    let cond_i1 = llvm.build_icmp(cg.builder, 33, cond.value, llvm.const_int(cg.i64_type, 0, 0), "while_cond")
+    llvm.build_cond_br(cg.builder, cond_i1, body_bb, exit_bb)
+
+    llvm.position_at_end(cg.builder, body_bb)
+    let body_result = emit_stmt(cg, env, body)
+    if body_result.had_error {
+        return body_result
+    }
+    if !llvm.block_has_terminator(cg.builder) {
+        llvm.build_br(cg.builder, cond_bb)
+    }
+
+    llvm.position_at_end(cg.builder, exit_bb)
+    ok_stmt(env)
 }
 
 // ── Expression emission ──
 
-fn emit_expr(cg: Codegen, expr: Expr) -> EmitResult {
+fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
     match expr {
         .Number(text) -> {
             let value = int(text)
@@ -159,15 +267,35 @@ fn emit_expr(cg: Codegen, expr: Expr) -> EmitResult {
             ok_emit(llvm.const_int(cg.i64_type, 0, 0))
         }
         .Null -> ok_emit(llvm.const_int(cg.i64_type, 0, 0))
-        .Grouping(inner) -> emit_expr(cg, inner)
-        .Unary(operator, right) -> emit_unary(cg, operator, right)
-        .Binary(left, operator, right) -> emit_binary(cg, left, operator, right)
+        .Grouping(inner) -> emit_expr(cg, env, inner)
+        .Unary(operator, right) -> emit_unary(cg, env, operator, right)
+        .Binary(left, operator, right) -> emit_binary(cg, env, left, operator, right)
+        .Logical(left, operator, right) -> emit_binary(cg, env, left, operator, right)
+        .Ident(name) -> {
+            let alloca = env_lookup(env, name)
+            if alloca == null {
+                return err_emit("undefined variable `" + name + "`")
+            }
+            ok_emit(llvm.build_load(cg.builder, cg.i64_type, alloca, name))
+        }
+        .Assign(name, value) -> {
+            let alloca = env_lookup(env, name)
+            if alloca == null {
+                return err_emit("assignment to undefined variable `" + name + "`")
+            }
+            let r = emit_expr(cg, env, value)
+            if r.had_error {
+                return r
+            }
+            llvm.build_store(cg.builder, r.value, alloca)
+            ok_emit(r.value)
+        }
         _ -> err_emit("unsupported expression type")
     }
 }
 
-fn emit_unary(cg: Codegen, operator: string, right: Expr) -> EmitResult {
-    let right_result = emit_expr(cg, right)
+fn emit_unary(cg: Codegen, env: VarEnv, operator: string, right: Expr) -> EmitResult {
+    let right_result = emit_expr(cg, env, right)
     if right_result.had_error {
         return right_result
     }
@@ -185,14 +313,14 @@ fn emit_unary(cg: Codegen, operator: string, right: Expr) -> EmitResult {
     err_emit("unsupported unary operator `" + operator + "`")
 }
 
-fn emit_binary(cg: Codegen, left: Expr, operator: string, right: Expr) -> EmitResult {
-    let left_result = emit_expr(cg, left)
+fn emit_binary(cg: Codegen, env: VarEnv, left: Expr, operator: string, right: Expr) -> EmitResult {
+    let left_result = emit_expr(cg, env, left)
     if left_result.had_error {
         return left_result
     }
     let lhs = left_result.value
 
-    let right_result = emit_expr(cg, right)
+    let right_result = emit_expr(cg, env, right)
     if right_result.had_error {
         return right_result
     }
@@ -228,6 +356,24 @@ fn emit_binary(cg: Codegen, left: Expr, operator: string, right: Expr) -> EmitRe
     if operator == ">=" {
         let cmp = llvm.build_icmp(cg.builder, 39, lhs, rhs, "sge")
         return ok_emit(llvm.build_zext(cg.builder, cmp, cg.i64_type, "sge_ext"))
+    }
+
+    if operator == "&&" {
+        // Eager-bitwise lowering — short-circuit can come later.
+        let l_bool = llvm.build_icmp(cg.builder, 33, lhs, llvm.const_int(cg.i64_type, 0, 0), "l_bool")
+        let r_bool = llvm.build_icmp(cg.builder, 33, rhs, llvm.const_int(cg.i64_type, 0, 0), "r_bool")
+        let l_ext = llvm.build_zext(cg.builder, l_bool, cg.i64_type, "l_ext")
+        let r_ext = llvm.build_zext(cg.builder, r_bool, cg.i64_type, "r_ext")
+        return ok_emit(llvm.build_mul(cg.builder, l_ext, r_ext, "and"))
+    }
+    if operator == "||" {
+        let l_bool = llvm.build_icmp(cg.builder, 33, lhs, llvm.const_int(cg.i64_type, 0, 0), "l_bool")
+        let r_bool = llvm.build_icmp(cg.builder, 33, rhs, llvm.const_int(cg.i64_type, 0, 0), "r_bool")
+        let l_ext = llvm.build_zext(cg.builder, l_bool, cg.i64_type, "l_ext")
+        let r_ext = llvm.build_zext(cg.builder, r_bool, cg.i64_type, "r_ext")
+        let sum = llvm.build_add(cg.builder, l_ext, r_ext, "or_sum")
+        let nonzero = llvm.build_icmp(cg.builder, 33, sum, llvm.const_int(cg.i64_type, 0, 0), "or_cmp")
+        return ok_emit(llvm.build_zext(cg.builder, nonzero, cg.i64_type, "or"))
     }
 
     err_emit("unsupported binary operator `" + operator + "`")

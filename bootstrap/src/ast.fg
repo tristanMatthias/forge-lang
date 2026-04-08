@@ -1,3 +1,13 @@
+export enum ExprList {
+    End
+    Node(expr: Expr, next: ExprList)
+}
+
+export enum ParamList {
+    End
+    Node(name: string, next: ParamList)
+}
+
 export enum Expr {
     Number(value: string)
     String(value: string)
@@ -8,6 +18,8 @@ export enum Expr {
     Grouping(expr: Expr)
     Unary(operator: string, right: Expr)
     Binary(left: Expr, operator: string, right: Expr)
+    Logical(left: Expr, operator: string, right: Expr)
+    Call(callee: Expr, args: ExprList)
 }
 
 export enum Stmt {
@@ -15,11 +27,43 @@ export enum Stmt {
     Mut(name: string, initializer: Expr)
     Expr(expr: Expr)
     Block(body: StmtList)
+    If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
+    While(condition: Expr, body: Stmt)
+    Function(name: string, params: ParamList, body: StmtList)
+    Ret(value: Expr)
+    RetEmpty
 }
 
 export enum StmtList {
     End
     Node(stmt: Stmt, next: StmtList)
+}
+
+// Recursive variable environment used by codegen.
+// We can't use `List` here because host `List.push()` corrupts
+// the bootstrap path — see TECH_DEBT.md #1.
+export enum VarEnv {
+    End
+    Node(name: string, alloca: ptr, next: VarEnv)
+}
+
+export fn env_lookup(env: VarEnv, name: string) -> ptr {
+    match env {
+        .End -> {
+            let n: ptr = null
+            n
+        }
+        .Node(n, alloca, next) -> {
+            if n == name {
+                return alloca
+            }
+            env_lookup(next, name)
+        }
+    }
+}
+
+export fn env_extend(env: VarEnv, name: string, alloca: ptr) -> VarEnv {
+    VarEnv.Node(name, alloca, env)
 }
 
 export fn render_expr(expr: Expr) -> string {
@@ -33,6 +77,43 @@ export fn render_expr(expr: Expr) -> string {
         .Grouping(inner) -> "(group " + render_expr(inner) + ")"
         .Unary(operator, right) -> "(" + operator + " " + render_expr(right) + ")"
         .Binary(left, operator, right) -> "(" + operator + " " + render_expr(left) + " " + render_expr(right) + ")"
+        .Logical(left, operator, right) -> "(" + operator + " " + render_expr(left) + " " + render_expr(right) + ")"
+        .Call(callee, args) -> "(call " + render_expr(callee) + " " + render_expr_list(args) + ")"
+    }
+}
+
+export fn render_expr_list(exprs: ExprList) -> string {
+    match exprs {
+        .End -> "()"
+        .Node(expr, next) -> {
+            let head = render_expr(expr)
+            let tail = render_expr_list_tail(next)
+            "(" + head + tail + ")"
+        }
+    }
+}
+
+fn render_expr_list_tail(exprs: ExprList) -> string {
+    match exprs {
+        .End -> ""
+        .Node(expr, next) -> ", " + render_expr(expr) + render_expr_list_tail(next)
+    }
+}
+
+export fn render_param_list(params: ParamList) -> string {
+    match params {
+        .End -> "()"
+        .Node(name, next) -> {
+            let tail = render_param_list_tail(next)
+            "(" + name + tail + ")"
+        }
+    }
+}
+
+fn render_param_list_tail(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, next) -> ", " + name + render_param_list_tail(next)
     }
 }
 
@@ -42,6 +123,18 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Mut(name, initializer) -> "(mut " + name + " " + render_expr(initializer) + ")"
         .Expr(expr) -> "(expr " + render_expr(expr) + ")"
         .Block(body) -> "(block " + render_stmt_list(body) + ")"
+        .If(condition, then_branch, else_branch) -> {
+            let base = "(if " + render_expr(condition) + " " + render_stmt(then_branch)
+            if else_branch == null {
+                base + ")"
+            } else {
+                base + " " + render_stmt(else_branch!) + ")"
+            }
+        }
+        .While(condition, body) -> "(while " + render_expr(condition) + " " + render_stmt(body) + ")"
+        .Function(name, params, body) -> "(fn " + name + " " + render_param_list(params) + " " + render_stmt_list(body) + ")"
+        .Ret(value) -> "(return " + render_expr(value) + ")"
+        .RetEmpty -> "(return)"
     }
 }
 

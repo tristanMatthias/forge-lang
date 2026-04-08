@@ -312,9 +312,9 @@ Crafting Interpreters reference: Chapter 30.
 
 ### Milestone 3: Native Codegen For The MVP Subset
 
-- [ ] Emit LLVM IR for integer expressions and print the result
-- [ ] Emit variables, assignment, and block scoping
-- [ ] Emit control flow (if/else, while)
+- [x] Emit LLVM IR for integer expressions and print the result
+- [x] Emit variables, assignment, and block scoping
+- [x] Emit control flow (if/else, while)
 - [ ] Emit function definitions and calls
 - [ ] Emit string operations via runtime linkage
 - [ ] Emit structs and enums (tagged unions)
