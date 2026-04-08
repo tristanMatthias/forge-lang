@@ -81,6 +81,17 @@ fn parse_fn_decl(p: Parser, exported: bool) -> Statement? {
         if last_pos >= 0 && return_type_name.length > 0 && forge_ftok_kind_id(last_pos) == KID_QUESTION {
             return_type_name = return_type_name + "?"
         }
+        // Defensive: if parse_type_expr left the cursor sitting on `?`
+        // (stage 2 bin self-host miscompile of `peek_kind_id() ==
+        // KID_QUESTION` inside parse_type_expr), consume it here so
+        // the body brace counter doesn't see it as a non-LBRACE token
+        // and skip the body opener.
+        if p.peek_kind_id() == KID_QUESTION {
+            p.advance()
+            if return_type_name.length > 0 {
+                return_type_name = return_type_name + "?"
+            }
+        }
         return_type = parsed_ret
     }
 
