@@ -466,7 +466,14 @@ impl Parser {
         }
         if kid == KID_USE {
             self.advance()
-            while !self.is_at_end() && self.peek_kind_id() != KID_NEWLINE { self.advance() }
+            // Skip until end of line. Use ==/break form rather than `!=`
+            // because `!= KID_NEWLINE` has hit miscompile issues in
+            // earlier self-host bootstrap snapshots.
+            mut done = false
+            while !done && !self.is_at_end() {
+                if self.peek_kind_id() == KID_NEWLINE { done = true }
+                if !done { self.advance() }
+            }
             return Statement.Expr(Expr.IntLit(0, tok.span))
         }
         if kid == KID_MOD {

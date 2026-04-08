@@ -36,7 +36,7 @@ type FnDeclData = {
 }
 
 fn get_fn_decl(node_id: int) -> FnDeclData? {
-    let key = "${node_id}"
+    let key = string(node_id)
     if FN_DECLS.has(key) { FN_DECLS[key] } else { null }
 }
 

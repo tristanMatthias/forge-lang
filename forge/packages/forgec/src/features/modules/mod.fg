@@ -56,14 +56,22 @@ fn parse_use(p: Parser) -> Statement? {
     if p.peek_kind_id() == KID_LBRACE {
         p.advance()
         p.skip_newlines()
-        while p.peek_kind_id() != KID_RBRACE && !p.is_at_end() {
-            p.skip_newlines()
-            let item = p.expect_ident()
-            if item != null {
-                items = items.push(item!)
+        // Use kid-equality (==) loop instead of != to avoid a self-host
+        // miscompile of `!=` that consumes the entire file when stage 2
+        // bin compiles parse_use.
+        mut done = false
+        while !done && !p.is_at_end() {
+            let k = p.peek_kind_id()
+            if k == KID_RBRACE { done = true }
+            if !done {
+                p.skip_newlines()
+                let item = p.expect_ident()
+                if item != null {
+                    items = items.push(item!)
+                }
+                p.skip_newlines()
+                if p.peek_kind_id() == KID_COMMA { p.advance() }
             }
-            p.skip_newlines()
-            if p.peek_kind_id() == KID_COMMA { p.advance() }
         }
         if p.expect(.RBrace) == null { return null }
     }
