@@ -6,3 +6,4 @@ description = "Minimal self-host bootstrap compiler for Forge"
 
 [dependencies]
 "@std.process" = "0.1.0"
+"@std.llvm" = "0.1.0"

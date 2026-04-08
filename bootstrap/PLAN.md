@@ -39,6 +39,13 @@ The bootstrap compiler is done when all of the following are true:
 - [x] Add evaluator golden tests
 - [x] Add the Chapter 8 statements-and-state parser milestone
 - [x] Add statement runner golden tests
+- [x] Add control flow (`if`/`else`, `while`) with parser and runner tests
+- [x] Discover and mitigate host nullable-return corruption (TECH_DEBT #6)
+- [x] Add functions (declarations, calls, return, recursion) with tests
+- [x] Add `println` and `string` builtins
+- [x] Add logical operators (`&&`, `||`) with short-circuit evaluation
+- [x] Add resolver pass with `check` command and error tests
+- [x] Complete Milestone 2: Front-End Without Codegen
 
 ## Plan By Chapter
 
@@ -101,7 +108,7 @@ Crafting Interpreters reference: Chapter 8, "Statements and State".
 
 - [x] Parse `let`, `mut`, expression statements, and blocks
 - [x] Parse assignment expressions and wire them into statement execution
-- [ ] Parse `return`
+- [x] Parse `return`
 - [ ] Implement global declarations required by the bootstrap compiler source
 - [x] Add local lexical name binding for the statement runner
 - [x] Add tests for shadowing behavior and block-local state
@@ -110,29 +117,29 @@ Crafting Interpreters reference: Chapter 8, "Statements and State".
 
 Crafting Interpreters reference: Chapter 9, "Control Flow".
 
-- [ ] Parse and validate `if`
-- [ ] Parse and validate `while`
+- [x] Parse and validate `if`
+- [x] Parse and validate `while`
 - [ ] Add the minimal `for` form only if the bootstrap compiler source truly needs it
-- [ ] Add control-flow tests before codegen work starts
+- [x] Add control-flow tests before codegen work starts
 
 ### Part H: Functions
 
 Crafting Interpreters reference: Chapter 10, "Functions".
 
-- [ ] Parse function declarations and function calls
-- [ ] Support parameters and return types for the MVP subset
-- [ ] Add a function symbol table and call validation
-- [ ] Add recursive function tests
+- [x] Parse function declarations and function calls
+- [x] Support parameters and return values for the MVP subset
+- [x] Add a function symbol table and call validation
+- [x] Add recursive function tests
 - [ ] Add module-level function ordering tests
 
 ### Part I: Resolving And Binding
 
 Crafting Interpreters reference: Chapter 11, "Resolving and Binding".
 
-- [ ] Implement lexical scope resolution
-- [ ] Resolve locals vs globals explicitly
-- [ ] Reject invalid reads before initialization
-- [ ] Add scope-depth tests
+- [x] Implement lexical scope resolution
+- [x] Resolve locals vs globals explicitly
+- [x] Reject invalid reads before initialization
+- [x] Add scope-depth tests
 - [ ] Add closure planning only if still required for self-hosting
 
 ### Part J: Classes And Inheritance, Deferred
@@ -147,112 +154,140 @@ These are not part of the MVP unless the bootstrap compiler source genuinely req
 
 ## Plan By Backend Adaptation
 
-The second half of *Crafting Interpreters* builds clox, a bytecode VM. We are adapting those chapters into a native self-hosting compiler plan instead of building a VM.
+The second half of *Crafting Interpreters* builds clox, a bytecode VM. We skip the VM
+and emit LLVM IR directly. The book's concepts map cleanly:
 
-### Part K: Chunk / VM Chapters, Adapted Into IR Design
+| Book concept (clox)       | Our approach (LLVM)                               |
+|---------------------------|----------------------------------------------------|
+| Bytecode chunk            | LLVM module + functions                            |
+| `OP_CONSTANT`             | LLVM constant values                               |
+| `OP_ADD`, `OP_MULTIPLY`   | `add`, `fmul` instructions                         |
+| `OP_JUMP_IF_FALSE`        | `br i1 %cond, label %then, label %else`            |
+| `OP_CALL` + stack frames  | LLVM `call` + function definitions                 |
+| `OP_GET_LOCAL/GLOBAL`     | `load` from allocas / globals                      |
+| Value union (NaN-boxing)  | LLVM struct types, tagged unions                   |
+| GC heap objects           | malloc + runtime (no GC in MVP, leak-and-exit)     |
 
-Crafting Interpreters reference: Chapters 14 and 15.
+The codegen walks the AST directly — no intermediate bytecode. Each AST node lowers
+to LLVM instructions via the LLVM C API.
 
-- [ ] Define the compiler's internal lowering boundary
-- [ ] Choose the smallest stable internal representation needed before LLVM/native emission
-- [ ] Keep debug dumps for that representation
-- [ ] Add tests that lock down lowering output for small programs
+### Part K: LLVM Scaffolding
 
-### Part L: Scanning On Demand
+Crafting Interpreters reference: Chapters 14-15 (VM setup), adapted to LLVM.
 
-Crafting Interpreters reference: Chapter 16.
+- [ ] Add a `codegen.fg` module that creates an LLVM module, builder, and context
+- [ ] Emit a minimal `main` function that returns an integer exit code
+- [ ] Link with `cc` to produce a runnable binary
+- [ ] Add a `compile` command to the bootstrap CLI
+- [ ] Add codegen golden tests that compile and run small programs
+- [ ] Verify the full pipeline: source → parse → codegen → LLVM IR → binary → run
 
-- [ ] Decide whether incremental/on-demand scanning is worth adding before self-hosting
-- [ ] Default answer should be no unless profiling proves it matters
+### Part L: Compiling Expressions
 
-### Part M: Compiling Expressions
+Crafting Interpreters reference: Chapters 16-17 (scanning + compiling expressions).
 
-Crafting Interpreters reference: Chapter 17.
+Scanning is already done (Part B). This part lowers expressions to LLVM IR.
 
-- [ ] Lower expressions to the internal representation
-- [ ] Lower variable reads/writes
-- [ ] Lower calls and returns
-- [ ] Add codegen golden tests for small single-file programs
+- [ ] Emit integer/float constants
+- [ ] Emit arithmetic (`+`, `-`, `*`, `/`) as LLVM instructions
+- [ ] Emit comparisons (`<`, `<=`, `>`, `>=`, `==`, `!=`) as `icmp`/`fcmp`
+- [ ] Emit boolean logic (`&&`, `||`) with short-circuit basic blocks
+- [ ] Emit unary operators (`-`, `!`)
+- [ ] Emit grouping (just recurse, no IR needed)
+- [ ] Add codegen tests for expression evaluation
 
-### Part N: Runtime Value Representation
+### Part M: Variables And Storage
 
-Crafting Interpreters reference: Chapter 18, "Types of Values".
+Crafting Interpreters reference: Chapters 21-22 (globals and locals).
 
-For Forge bootstrap, this is the ABI/runtime representation question.
-
-- [ ] Define the runtime representation for strings
-- [ ] Define the runtime representation for lists only if they remain necessary in the bootstrap source
-- [ ] Keep the representation simple and deterministic
-- [ ] Add explicit ABI tests at the host/self-host boundary
-
-### Part O: Strings
-
-Crafting Interpreters reference: Chapter 19, "Strings".
-
-- [ ] Finalize bootstrap string operations needed by the compiler itself
-- [ ] Add tests for slicing/concatenation only if actually required by the compiler source
-- [ ] Keep string support small until self-hosting is reached
-
-### Part P: Hash Tables
-
-Crafting Interpreters reference: Chapter 20, "Hash Tables".
-
-- [ ] Decide whether the bootstrap compiler can avoid maps in the MVP
-- [ ] If maps are required, implement them in the runtime or rely on proven host/runtime support
-- [ ] Add regression tests for symbol-table correctness
-
-### Part Q: Globals And Locals In Codegen
-
-Crafting Interpreters reference: Chapters 21 and 22.
-
-- [ ] Emit storage for globals
-- [ ] Emit storage for locals
-- [ ] Make local resolution deterministic and explicit
+- [ ] Emit `alloca` for local variables (`let`, `mut`)
+- [ ] Emit `store`/`load` for variable access and assignment
+- [ ] Handle block scoping (allocas in entry block, scoped lifetime)
 - [ ] Add codegen tests for shadowing, assignment, and nested blocks
 
-### Part R: Jumping Back And Forth
+### Part N: Control Flow
 
-Crafting Interpreters reference: Chapter 23.
+Crafting Interpreters reference: Chapter 23 (jumping back and forth).
 
-- [ ] Lower conditional branches
-- [ ] Lower loops
-- [ ] Add CFG-focused tests for nested control flow
+- [ ] Emit `if`/`else` as conditional branches between basic blocks
+- [ ] Emit `while` as loop with back-edge basic blocks
+- [ ] Ensure all basic blocks are properly terminated
+- [ ] Add codegen tests for nested control flow
 
-### Part S: Calls And Functions
+### Part O: Functions And Calls
 
-Crafting Interpreters reference: Chapter 24.
+Crafting Interpreters reference: Chapter 24 (calls and functions).
 
-- [ ] Emit function definitions
-- [ ] Emit function calls
-- [ ] Add calling-convention tests between bootstrap-generated code and runtime support
+- [ ] Emit LLVM function definitions with typed parameters
+- [ ] Emit `call` instructions for function calls
+- [ ] Emit `ret` for return statements
+- [ ] Handle `println` as an extern call to a C runtime function
+- [ ] Add codegen tests for recursion (fibonacci) and early return
 
-### Part T: Closures
+### Part P: Runtime Value Representation
+
+Crafting Interpreters reference: Chapter 18 (types of values).
+
+This defines how Forge values map to LLVM types at the ABI level.
+
+- [ ] Define string representation (pointer + length, or null-terminated C strings)
+- [ ] Define enum/tagged-union representation (i8 tag + payload struct)
+- [ ] Define nullable representation (i8 tag + value)
+- [ ] Link against the existing Forge runtime for string operations (concat, substring, etc.)
+- [ ] Add ABI-level tests for value passing between functions
+
+### Part Q: Strings
+
+Crafting Interpreters reference: Chapter 19 (strings).
+
+- [ ] Emit string literals as global constants
+- [ ] Emit string concatenation via runtime call
+- [ ] Emit string comparison via runtime call
+- [ ] Emit string indexing and `.length` access
+- [ ] Emit `.substring()` via runtime call
+- [ ] Add codegen tests for all string operations used by the bootstrap source
+
+### Part R: Structs And Enums
+
+Not in Crafting Interpreters — Forge-specific.
+
+- [ ] Emit struct types as LLVM named struct types
+- [ ] Emit struct construction (field initialization)
+- [ ] Emit field access as `getelementptr` + `load`
+- [ ] Emit enum types as tagged unions (`{i8, max-payload-struct}`)
+- [ ] Emit `match` as a chain of tag comparisons + payload extraction
+- [ ] Emit nullable types as tag-0/tag-1 enums
+- [ ] Add codegen tests for struct and enum patterns used by the bootstrap source
+
+### Part S: Modules And Imports
+
+Not in Crafting Interpreters — Forge-specific.
+
+- [ ] Compile multiple source files into one LLVM module
+- [ ] Resolve cross-module function references
+- [ ] Resolve cross-module type references
+- [ ] Add codegen tests for the bootstrap module structure
+
+### Part T: Closures, Deferred
 
 Crafting Interpreters reference: Chapter 25.
 
-- [ ] Decide whether closures are part of the MVP self-host subset
-- [ ] If not required for the compiler source, defer until after self-hosting
-- [ ] If required, add resolver and runtime support with dedicated tests before enabling them in compiler code
+- [ ] Not required for the bootstrap MVP
+- [ ] Defer until after self-hosting unless the bootstrap source genuinely needs them
 
 ### Part U: Memory Management
 
-Crafting Interpreters reference: Chapter 26, "Garbage Collection".
+Crafting Interpreters reference: Chapter 26 (garbage collection).
 
-For Forge bootstrap, this maps to the memory strategy in [docs/feat_bootstrap_memory.md](/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/docs/feat_bootstrap_memory.md).
+For the bootstrap MVP, we use the simplest correct strategy: malloc, never free.
+The compiler runs once and exits — leaked memory is reclaimed by the OS.
 
-- [ ] Implement the Phase 1 "copy-everything" strategy or an equivalent simple-correct approach
-- [ ] Make compiler-generated code correct before optimizing memory behavior
-- [ ] Add tests that specifically exercise values across function-call boundaries
-- [ ] Remove host-corruption mitigations once self-host codegen owns value lifetimes
+- [ ] Use malloc for heap-allocated values (strings, enum payloads)
+- [ ] No GC in the MVP
+- [ ] Add memory strategy notes for post-self-hosting optimization
+- [ ] Defer real memory management until the compiler can rebuild itself
 
-### Part V: Classes / Methods / Superclasses, Deferred
-
-Crafting Interpreters reference: Chapters 27, 28, and 29.
-
-- [ ] Do not add object-model work before self-hosting unless forced by the bootstrap source
-- [ ] If methods are needed, add the smallest useful subset after the compiler already rebuilds itself
-
-### Part W: Optimization
+### Part V: Optimization, Deferred
 
 Crafting Interpreters reference: Chapter 30.
 
@@ -272,14 +307,20 @@ Crafting Interpreters reference: Chapter 30.
 - [x] Parse source into AST
 - [x] Evaluate the Chapter 7 expression subset
 - [x] Execute the Chapter 8 statement/state subset
-- [ ] Resolve names and validate the MVP subset
-- [ ] Add tests for parse and resolution failures
+- [x] Resolve names and validate the MVP subset
+- [x] Add tests for parse and resolution failures
 
 ### Milestone 3: Native Codegen For The MVP Subset
 
-- [ ] Compile minimal single-file programs
-- [ ] Compile multi-file bootstrap project source
-- [ ] Rebuild the bootstrap compiler with itself once
+- [ ] Emit LLVM IR for integer expressions and print the result
+- [ ] Emit variables, assignment, and block scoping
+- [ ] Emit control flow (if/else, while)
+- [ ] Emit function definitions and calls
+- [ ] Emit string operations via runtime linkage
+- [ ] Emit structs and enums (tagged unions)
+- [ ] Emit match expressions as conditional branches
+- [ ] Emit module imports and cross-file compilation
+- [ ] Compile the bootstrap compiler source with itself
 
 ### Milestone 4: Fixed-Point Self-Host
 

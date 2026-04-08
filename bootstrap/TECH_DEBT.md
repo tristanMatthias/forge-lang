@@ -149,6 +149,133 @@ In the long-term self-hosted compiler, the evaluator/runtime value model should 
 - restore a proper tagged union or enum-based runtime value model once the host path is trustworthy
 - delete the tagged-struct mitigation after dedicated repro tests pass
 
+### 6. Nullable returns from recursive enum-matching functions corrupt values
+
+**Status:** open
+**Severity:** critical
+**Where observed:** evaluator variable lookup, April 8 2026
+
+When a function returns `T?` (nullable) from within a `match` on a recursive enum, and the function recurses through the enum chain, the returned value is corrupted. Specifically, `lookup_binding` returning `Value?` through recursive `BindingList.Node` traversal produced `null` instead of the actual value for any binding that was not at the head of the chain.
+
+Minimal reproduction:
+
+```forge
+let a = 1
+let b = 2
+a   // returns null instead of 1
+```
+
+The lookup for `a` requires one recursive step past `b` in the binding chain. The recursive return corrupts the `Value?` to `null`.
+
+**What we did now**
+
+- replaced `lookup_binding` return type from `Value?` to a non-nullable `LookupResult` struct with an explicit `found: bool` field
+- callers check `result.found` instead of `result == null`
+
+**Why this is not ideal Forge code**
+
+A nullable return is the natural design for a lookup function. The struct wrapper with an explicit found flag exists only because the host compiler corrupts nullable returns from recursive enum matches.
+
+**What must happen later**
+
+- fix the host compiler so nullable returns from recursive enum-matching functions are correct
+- restore `Value?` return type for lookup once the host is trustworthy
+- delete the `LookupResult` wrapper
+
+### 7. `return` is not allowed in bare match arms
+
+**Status:** open
+**Severity:** low
+**Where observed:** eval.fg function milestone, April 8 2026
+
+The host compiler rejects `return` as the expression in a bare (non-braced) match arm:
+
+```forge
+_ -> return error_result(...)   // rejected: "expected expression, got Return"
+_ -> { return error_result(...) }  // works
+```
+
+**What we did now**
+
+- wrapped all bare match arm `return` statements in braces
+
+**What must happen later**
+
+- fix the host compiler parser to accept `return` in bare match arm position
+- or document this as intentionally unsupported syntax
+
+### 8. Enum variant names that match keywords are rejected
+
+**Status:** open
+**Severity:** low
+**Where observed:** eval.fg function milestone, April 8 2026
+
+The host compiler rejects `Return` as an enum variant name, presumably because it case-insensitively conflicts with the `return` keyword. We renamed `Stmt.Return` to `Stmt.Ret` to work around this.
+
+**What we did now**
+
+- renamed `Return` variant to `Ret` and added a separate `RetEmpty` variant
+
+**What must happen later**
+
+- fix the host compiler to correctly distinguish uppercase variant names from lowercase keywords
+
+### 9. `@std.llvm` non-`_s` extern fns were not pulled into bootstrap binaries [FIXED]
+
+**Status:** fixed in `forge/packages/forgec-rust/driver/driver.rs`, April 8 2026
+**Severity:** was high — blocked Milestone 3 native codegen
+
+The host compiler's static link of project-style bootstrap binaries
+did not pull in the underlying non-`_s` C symbols from
+`libforge_llvm.a`. The auto-generated `_s` wrapper for
+`llvm.print_module_to_file` called
+`dlsym("forge_llvm_print_module_to_file")` at runtime, which returned
+null because the symbol was never linked, so the call silently
+no-opped and no file was written.
+
+**What we did**
+
+- in `link_with_packages`, the host now collects every `extern fn`
+  declared in any loaded package's `package.fg` and emits one
+  `-Wl,-u,_<symbol>` flag per name, forcing the linker to keep those
+  archive entries even when no Forge user code statically references
+  them
+- verified end-to-end: `bootstrapc compile prog.fg` now writes
+  `prog.fg.ll` containing valid LLVM IR; `cc -o prog prog.fg.ll`
+  links and the resulting binary returns the program's expression as
+  its exit code
+
+This fix is the host doing the right thing — every package extern is
+intentionally part of the package's public ABI, so it must be
+preserved at link time. The previous behavior was a quiet
+correctness bug: declarations in `package.fg` claimed those symbols
+existed at runtime, but the linker had stripped them.
+
+### 10. Package `use` prescan only walks the entry file
+
+**Status:** open
+**Severity:** medium
+
+The host compiler's `prescan_package_uses` runs against the tokens of
+the entry file only (`src/main.fg`). Submodules brought in via `mod
+foo` are NOT scanned, so packages they `use` are never loaded —
+their extern fn list is missing, their native lib is not linked, and
+their `-Wl,-u` flags are not emitted (see #9).
+
+**What we did now**
+
+- added a load-bearing `use @std.llvm` to `bootstrap/src/main.fg`
+  even though only `src/codegen.fg` actually calls `llvm.*`. The
+  comment in `main.fg` flags it as a host workaround.
+
+**What must happen later**
+
+- fix `prescan_package_uses` to walk every module reachable from the
+  entry file (or to scan the project's full token stream after `mod`
+  resolution, before the package loader runs)
+- once that lands, delete the `use @std.llvm` line from `main.fg` and
+  the surrounding comment
+
 ## Related existing documents
 
 These documents already capture older bootstrap debt and should stay in sync with what we learn here:

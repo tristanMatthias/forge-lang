@@ -1,19 +1,29 @@
 use @std.process
+// Load-bearing import: the host compiler's package prescan only walks
+// the entry file's tokens, so even though codegen.fg is the actual
+// caller of `@std.llvm` we have to declare the dependency here too
+// (otherwise the package is not loaded and link `-u` symbols are not
+// emitted). See bootstrap/TECH_DEBT.md #10.
+use @std.llvm
 
 mod token
 mod scanner
 mod ast
 mod parser
 mod eval
+mod resolver
+mod codegen
 
 use scanner.{scan_source, render_tokens}
 use parser.{parse_expression_source, parse_program_source}
 use ast.{render_expr, render_stmt_list}
 use eval.{eval_expression_source, execute_program_source, render_value}
+use resolver.{resolve_program}
+use codegen.{compile_program}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")
-    eprintln("Usage: bootstrapc <tokens|expr|program|eval|run> <file.fg>")
+    eprintln("Usage: bootstrapc <tokens|expr|program|eval|check|compile|run> <file.fg>")
 }
 
 fn fail(message: string) {
@@ -72,6 +82,38 @@ fn main() {
         }
 
         println(render_value(result.value!))
+        return
+    }
+
+    if command == "check" {
+        let parsed = parse_program_source(source)
+        if parsed.had_error || parsed.stmts == null {
+            fail(parsed.error_message)
+        }
+        let resolved = resolve_program(parsed.stmts!)
+        if resolved.had_error {
+            fail(resolved.error_message)
+        }
+        println("ok")
+        return
+    }
+
+    if command == "compile" {
+        let parsed = parse_program_source(source)
+        if parsed.had_error || parsed.stmts == null {
+            fail(parsed.error_message)
+        }
+        let resolved = resolve_program(parsed.stmts!)
+        if resolved.had_error {
+            fail(resolved.error_message)
+        }
+
+        let output = path + ".ll"
+        let compiled = compile_program(parsed.stmts!, output)
+        if compiled.had_error {
+            fail(compiled.error_message)
+        }
+        println(output)
         return
     }
 
