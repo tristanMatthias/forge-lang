@@ -163,6 +163,32 @@ case "${1:-}" in
         MODE="ret-undef"
         IR="${2:-/tmp/stage2.ll}"
         ;;
+    --fn-ir)
+        # Print one function's IR from a given .ll file. Replaces ad-hoc
+        # `awk '/define.*@FN/,/^}/' file.ll` invocations.
+        MODE="fn-ir"
+        DIFF_FN="${2:-}"
+        IR="${3:-output.ll}"
+        ;;
+    --show-fn)
+        # Print one function's IR from BOTH output.ll (stage 2 IR, what
+        # stage 2 binary executes) and /tmp/output.ll (stage 3 IR, what
+        # stage 2 binary emits). Side-by-side line counts plus full
+        # bodies. Use this any time a function looks like a stub in
+        # stage 3 IR — diff vs the rust-compiled version pinpoints the
+        # miscompile fast.
+        MODE="show-fn"
+        DIFF_FN="${2:-}"
+        ;;
+    --binop-test)
+        # Compile a fixed set of binary-op test programs (+, ==, &&, etc)
+        # through stage1_rust and /tmp/stage2 and check the runtime
+        # output. Stage 1 is the oracle. Any binop where stage 2 produces
+        # different output is a miscompile site, printed with the wrong
+        # value next to the expected one. Catches the entire class of
+        # "stage 2 binary emits stub bodies" bugs in <2 seconds.
+        MODE="binop-test"
+        ;;
 esac
 
 FORGE_SRC="packages/forgec/src"
@@ -183,6 +209,169 @@ ok()     { green "  ✓ $1"; }
 # ═════════════════════════════════════════════════════════════════
 # SCORE MODE — just the IR quality score
 # ═════════════════════════════════════════════════════════════════
+run_fn_ir() {
+    if [ -z "$DIFF_FN" ]; then
+        echo "Usage: diagnose.sh --fn-ir <fn_name> [file.ll]" >&2
+        exit 1
+    fi
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    extract_llvm_fn "$IR" "$DIFF_FN"
+}
+
+run_show_fn() {
+    if [ -z "$DIFF_FN" ]; then
+        echo "Usage: diagnose.sh --show-fn <fn_name>" >&2
+        echo "  Compares stage 2 IR with stage 3 IR for one function." >&2
+        exit 1
+    fi
+    # Prefer the pipeline's stable copy. The cwd `output.ll` gets clobbered
+    # any time someone runs stage1_rust on a small test program.
+    local s2=/tmp/stage1_output.ll
+    [ -f "$s2" ] || s2=output.ll
+    local s3=/tmp/output.ll
+    [ -f "$s2" ] || { echo "ERROR: $s2 not found — run --pipeline first" >&2; exit 1; }
+    [ -f "$s3" ] || { echo "ERROR: $s3 not found — run --pipeline first" >&2; exit 1; }
+    local s2_lines s3_lines
+    s2_lines=$(extract_llvm_fn "$s2" "$DIFF_FN" | wc -l | tr -d ' ')
+    s3_lines=$(extract_llvm_fn "$s3" "$DIFF_FN" | wc -l | tr -d ' ')
+    echo "═══ $DIFF_FN ═══"
+    echo "  output.ll      (stage 2 IR, rust-compiled, executed by stage 2 bin): $s2_lines lines"
+    echo "  /tmp/output.ll (stage 3 IR, stage-2-bin emitted):                    $s3_lines lines"
+    if [ "$s3_lines" -lt 20 ] && [ "$s2_lines" -gt 50 ]; then
+        echo "  ⚠ stage 3 looks like a STUB (stage 2 has $s2_lines lines, stage 3 only $s3_lines)"
+    fi
+    echo ""
+    echo "── stage 3 IR (/tmp/output.ll) ──"
+    extract_llvm_fn "$s3" "$DIFF_FN"
+    echo ""
+    echo "── stage 2 IR (output.ll) — first 80 lines ──"
+    extract_llvm_fn "$s2" "$DIFF_FN" | head -80
+}
+
+run_binop_test() {
+    echo "═══ Binary-op runtime check ═══"
+    echo "  Compiles test programs with build/stage1_rust (oracle) and"
+    echo "  /tmp/stage2 (suspect), runs both, compares output."
+    echo ""
+
+    if [ ! -x build/stage1_rust ]; then
+        echo "  ✗ build/stage1_rust missing — run --pipeline first" >&2
+        return 1
+    fi
+    if [ ! -x /tmp/stage2 ]; then
+        echo "  ✗ /tmp/stage2 missing — run --pipeline first" >&2
+        return 1
+    fi
+
+    local pass=0 fail=0 fixtures=/tmp/_binop_fixtures
+    rm -rf "$fixtures"; mkdir -p "$fixtures"
+
+    # Each test: name, source, expected stdout
+    write_case() {
+        local name="$1"; local src="$2"; local exp="$3"
+        printf '%s' "$src" > "$fixtures/$name.fg"
+        printf '%s' "$exp" > "$fixtures/$name.expected"
+    }
+
+    write_case "add" \
+'fn f(n: int) -> int { n + 5 }
+fn main() { println(string(f(10))) }
+' "15"
+
+    write_case "sub" \
+'fn f(n: int) -> int { n - 3 }
+fn main() { println(string(f(10))) }
+' "7"
+
+    write_case "mul" \
+'fn f(n: int) -> int { n * 4 }
+fn main() { println(string(f(3))) }
+' "12"
+
+    write_case "eq_true" \
+'fn f(n: int) -> int { if n == 5 { 100 } else { 200 } }
+fn main() { println(string(f(5))) }
+' "100"
+
+    write_case "eq_false" \
+'fn f(n: int) -> int { if n == 5 { 100 } else { 200 } }
+fn main() { println(string(f(7))) }
+' "200"
+
+    write_case "lt" \
+'fn f(n: int) -> int { if n < 5 { 1 } else { 2 } }
+fn main() { println(string(f(3))) }
+' "1"
+
+    write_case "and_tt" \
+'fn f(a: int, b: int) -> int { if a == 1 && b == 2 { 9 } else { 0 } }
+fn main() { println(string(f(1, 2))) }
+' "9"
+
+    write_case "and_tf" \
+'fn f(a: int, b: int) -> int { if a == 1 && b == 2 { 9 } else { 0 } }
+fn main() { println(string(f(1, 3))) }
+' "0"
+
+    write_case "or" \
+'fn f(a: int) -> int { if a == 1 || a == 2 { 9 } else { 0 } }
+fn main() { println(string(f(2))) }
+' "9"
+
+    write_case "match_enum" \
+'enum Color { Red, Green, Blue }
+fn name_of(c: Color) -> string { match c { .Red -> "red"  .Green -> "green"  .Blue -> "blue" } }
+fn main() { println(name_of(Color.Green)) }
+' "green"
+
+    printf "  %-12s  %-10s  %-10s  %s\n" "case" "stage1" "stage2" "expected"
+    printf "  %-12s  %-10s  %-10s  %s\n" "----" "------" "------" "--------"
+
+    local oracle_log=/tmp/_binop_oracle.log
+    : > "$oracle_log"
+
+    for src in "$fixtures"/*.fg; do
+        local name; name=$(basename "$src" .fg)
+        local exp; exp=$(cat "$fixtures/$name.expected")
+
+        local s1_out s2_out s1_status s2_status
+        rm -f a.out
+        if build/stage1_rust build "$src" >/dev/null 2>&1 && [ -x a.out ]; then
+            s1_out=$(./a.out 2>&1 | tr -d '\n'); s1_status=$?
+        else
+            s1_out="<build-fail>"; s1_status=99
+        fi
+
+        rm -f a.out
+        if /tmp/stage2 build "$src" >/dev/null 2>&1 && [ -x a.out ]; then
+            s2_out=$(./a.out 2>&1 | tr -d '\n'); s2_status=$?
+        else
+            s2_out="<build-fail>"; s2_status=99
+        fi
+
+        local mark=" "
+        if [ "$s1_out" = "$exp" ] && [ "$s2_out" = "$exp" ]; then
+            mark=$(printf "\033[32m✓\033[0m")
+            pass=$((pass + 1))
+        elif [ "$s1_out" != "$exp" ]; then
+            mark=$(printf "\033[33m?\033[0m")  # oracle disagrees — bad fixture
+            echo "ORACLE-FAIL: $name s1='$s1_out' exp='$exp'" >> "$oracle_log"
+            fail=$((fail + 1))
+        else
+            mark=$(printf "\033[31m✗\033[0m")
+            fail=$((fail + 1))
+        fi
+        printf "  %s %-12s %-10s  %-10s  %s\n" "$mark" "$name" "$s1_out" "$s2_out" "$exp"
+    done
+
+    rm -f a.out
+    echo ""
+    echo "  pass=$pass fail=$fail"
+    if [ -s "$oracle_log" ]; then
+        echo "  (oracle-fails are bad fixtures, not stage 2 bugs — see $oracle_log)"
+    fi
+}
+
 run_ret_undef() {
     if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
     echo "═══ Functions returning undef (missing build_ret coercion) — $IR ═══"
@@ -1685,6 +1874,13 @@ FUNCTION-LEVEL DIFFING
   --anomaly [file.ll]            per-function anomaly score ★
   --whyi64 <fn> <param>          why is this param i64? ★
   --cfg <fn> [file.ll]           graphviz dot output of CFG
+  --fn-ir <fn> [file.ll]         dump one function's IR (no awk) ★
+  --show-fn <fn>                 stage 2 IR vs stage 3 IR side-by-side ★
+  --ret-undef [file.ll]          fns emitting `ret <T> undef` ★
+
+RUNTIME BEHAVIOR
+  --binop-test                   compile +/-/==/&&/etc through stage1_rust
+                                 vs stage 2 bin and diff runtime output ★
 
 FUZZ + REGRESSION
   --fuzz [count]                 differential fuzzer (rust vs self-host)
@@ -1843,6 +2039,9 @@ case "$MODE" in
     help)     run_help ;;
     ir-sanity) run_ir_sanity ;;
     ret-undef) run_ret_undef ;;
+    fn-ir)    run_fn_ir ;;
+    show-fn)  run_show_fn ;;
+    binop-test) run_binop_test ;;
     full)     run_full ;;
 esac
 

@@ -71,10 +71,12 @@ if [ "$NEW_SCORE" -gt "$B_SCORE" ] && [ "$NEW_FNS" -le "$B_FNS" ]; then
     echo "  ✗ stage 3 SCORE got worse ($B_SCORE → $NEW_SCORE) without fn-count growth" >&2; REGRESSED=1
 fi
 
-if [ "$REGRESSED" -eq 1 ]; then
+if [ "$REGRESSED" -eq 1 ] && [ "${1:-}" != "--update" ]; then
     echo "" >&2
-    echo "  Stage 3 regressed. Fix the regression, or commit with" >&2
-    echo "  --no-verify if this is intentional and you have a reason." >&2
+    echo "  Stage 3 regressed. Fix the regression, commit with --no-verify," >&2
+    echo "  or run \`bash scripts/check_stage3_progress.sh --update\` to" >&2
+    echo "  intentionally rebaseline (e.g. after a fix that surfaces more" >&2
+    echo "  known-bad sites by making more functions actually emit code)." >&2
     exit 1
 fi
 

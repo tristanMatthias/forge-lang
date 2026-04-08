@@ -49,26 +49,64 @@ impl Parser {
     // Returns "" for no match (bootstrap workaround: nullable returns unreliable)
     fn token_to_binop_key(self, level: int) -> string {
         let k = forge_kind_id_to_key(self.peek_kind_id())
-        match level {
-            1  -> if k == "Pipe" { "Pipe" } else { "" }
-            2  -> if k == "Or" { "Or" } else { "" }
-            3  -> if k == "And" { "And" } else { "" }
-            4  -> if k == "EqEq" { "Eq" } else if k == "NotEq" { "NotEq" } else { "" }
-            5  -> {
-                if k == "Lt" { "Lt" }
-                else if k == "LtEq" { "LtEq" }
-                else if k == "Gt" { "Gt" }
-                else if k == "GtEq" { "GtEq" }
-                else { "" }
-            }
-            6  -> if k == "Bar" { "BitOr" } else { "" }
-            7  -> if k == "Caret" { "BitXor" } else { "" }
-            8  -> if k == "Ampersand" { "BitAnd" } else { "" }
-            9  -> if k == "ShiftLeft" { "Shl" } else if k == "ShiftRight" { "Shr" } else { "" }
-            10 -> if k == "Plus" { "Add" } else if k == "Minus" { "Sub" } else { "" }
-            11 -> if k == "Star" { "Mul" } else if k == "Slash" { "Div" } else if k == "Percent" { "Mod" } else { "" }
-            _  -> ""
+        // Flat if-chain — the rust compiler miscompiles `match level { N
+        // -> if k == "..." { ... } }` into dead code (the if-else inside
+        // the match arm body becomes unreachable, so every level returns
+        // ""). Until that bug is fixed in the rust codegen, structure
+        // this as a single dispatch.
+        if level == 1 {
+            if k == "Pipe" { return "Pipe" }
+            return ""
         }
+        if level == 2 {
+            if k == "Or" { return "Or" }
+            return ""
+        }
+        if level == 3 {
+            if k == "And" { return "And" }
+            return ""
+        }
+        if level == 4 {
+            if k == "EqEq" { return "Eq" }
+            if k == "NotEq" { return "NotEq" }
+            return ""
+        }
+        if level == 5 {
+            if k == "Lt" { return "Lt" }
+            if k == "LtEq" { return "LtEq" }
+            if k == "Gt" { return "Gt" }
+            if k == "GtEq" { return "GtEq" }
+            return ""
+        }
+        if level == 6 {
+            if k == "Bar" { return "BitOr" }
+            return ""
+        }
+        if level == 7 {
+            if k == "Caret" { return "BitXor" }
+            return ""
+        }
+        if level == 8 {
+            if k == "Ampersand" { return "BitAnd" }
+            return ""
+        }
+        if level == 9 {
+            if k == "ShiftLeft" { return "Shl" }
+            if k == "ShiftRight" { return "Shr" }
+            return ""
+        }
+        if level == 10 {
+            if k == "Plus" { return "Add" }
+            if k == "Minus" { return "Sub" }
+            return ""
+        }
+        if level == 11 {
+            if k == "Star" { return "Mul" }
+            if k == "Slash" { return "Div" }
+            if k == "Percent" { return "Mod" }
+            return ""
+        }
+        ""
     }
 
     fn binop_from_key(self, key: string) -> BinOp {
