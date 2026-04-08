@@ -31,7 +31,7 @@ type VarDeclData = {
 }
 
 fn get_var_decl(node_id: int) -> VarDeclData? {
-    let key = "${node_id}"
+    let key = string(node_id)
     if VAR_DECLS.has(key) { VAR_DECLS[key] } else { null }
 }
 
