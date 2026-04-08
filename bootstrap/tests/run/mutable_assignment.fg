@@ -1,0 +1,4 @@
+let base = 1
+mut total = base + 2
+total = total * 3
+total

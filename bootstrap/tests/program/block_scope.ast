@@ -1,0 +1,5 @@
+(mut total 1)
+(block (expr (assign total (+ total 2)))
+(let inner total)
+(expr inner))
+(expr total)

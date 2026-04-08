@@ -21,7 +21,9 @@ The current milestones implement:
 
 - a standalone `tokens` command that scans Forge source and prints a stable token stream
 - a standalone `expr` command that parses expressions and prints a normalized AST form
+- a standalone `program` command that parses statement files and prints a normalized AST form
 - a standalone `eval` command that evaluates expressions using the Chapter 7 tree-walk model
+- a standalone `run` command that executes the Chapter 8 statement subset with lexical scope
 
 This gives us:
 
@@ -29,6 +31,7 @@ This gives us:
 - a reusable token model for later parser work
 - the first real AST representation for the bootstrap compiler
 - a working evaluator for literals, grouping, unary operators, arithmetic, comparison, equality, and string concatenation
+- a working statement runner for `let`, `mut`, assignment, expression statements, and block scope
 - golden tests that catch scanner and parser regressions immediately
 
 ## Usage
@@ -51,10 +54,22 @@ Parse an expression file and print its AST:
 bootstrap/build/bootstrapc expr bootstrap/tests/expr/arithmetic_precedence.fg
 ```
 
+Parse a statement file and print its AST:
+
+```bash
+bootstrap/build/bootstrapc program bootstrap/tests/program/vars_and_assignment.fg
+```
+
 Evaluate an expression file and print its result:
 
 ```bash
 bootstrap/build/bootstrapc eval bootstrap/tests/eval/arithmetic_precedence.fg
+```
+
+Execute a statement file and print its final value:
+
+```bash
+bootstrap/build/bootstrapc run bootstrap/tests/run/mutable_assignment.fg
 ```
 
 Run the bootstrap test suite:

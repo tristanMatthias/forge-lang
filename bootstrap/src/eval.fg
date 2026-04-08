@@ -1,5 +1,5 @@
-use parser.{parse_expression_source}
-use ast.{Expr}
+use parser.{parse_expression_source, parse_program_source}
+use ast.{Expr, Stmt, StmtList}
 
 export type Value = {
     kind: string,
@@ -14,6 +14,30 @@ export type EvalResult = {
     error_message: string,
 }
 
+enum BindingList {
+    End
+    Node(name: string, mutable_binding: bool, depth: int, value: Value, next: BindingList)
+}
+
+type Runtime = {
+    bindings: BindingList,
+    depth: int,
+}
+
+type StepResult = {
+    runtime: Runtime,
+    value: Value,
+    had_error: bool,
+    error_message: string,
+}
+
+type AssignBindingsResult = {
+    bindings: BindingList,
+    found: bool,
+    had_error: bool,
+    error_message: string,
+}
+
 export fn eval_expression_source(source: string) -> EvalResult {
     let parsed = parse_expression_source(source)
     if parsed.had_error || parsed.expr == null {
@@ -24,7 +48,20 @@ export fn eval_expression_source(source: string) -> EvalResult {
         }
     }
 
-    eval_node(parsed.expr!)
+    finish_result(eval_expr(runtime_new(), parsed.expr!))
+}
+
+export fn execute_program_source(source: string) -> EvalResult {
+    let parsed = parse_program_source(source)
+    if parsed.had_error || parsed.stmts == null {
+        return EvalResult {
+            value: null,
+            had_error: true,
+            error_message: parsed.error_message,
+        }
+    }
+
+    finish_result(execute_stmt_list(runtime_new(), parsed.stmts!))
 }
 
 export fn render_value(value: Value) -> string {
@@ -55,11 +92,36 @@ fn render_number(value: float) -> string {
     text
 }
 
-fn ok_result(value: Value) -> EvalResult {
+fn finish_result(step: StepResult) -> EvalResult {
     EvalResult {
+        value: step.value,
+        had_error: step.had_error,
+        error_message: step.error_message,
+    }
+}
+
+fn runtime_new() -> Runtime {
+    Runtime {
+        bindings: BindingList.End,
+        depth: 0,
+    }
+}
+
+fn ok_result(runtime: Runtime, value: Value) -> StepResult {
+    StepResult {
+        runtime,
         value,
         had_error: false,
         error_message: "",
+    }
+}
+
+fn error_result(runtime: Runtime, message: string) -> StepResult {
+    StepResult {
+        runtime,
+        value: value_null(),
+        had_error: true,
+        error_message: "eval error: " + message,
     }
 }
 
@@ -99,123 +161,314 @@ fn value_null() -> Value {
     }
 }
 
-fn error_result(message: string) -> EvalResult {
-    EvalResult {
-        value: null,
-        had_error: true,
-        error_message: "eval error: " + message,
+fn enter_scope(runtime: Runtime) -> Runtime {
+    Runtime {
+        bindings: runtime.bindings,
+        depth: runtime.depth + 1,
     }
 }
 
-fn eval_node(expr: Expr) -> EvalResult {
+fn exit_scope(runtime: Runtime) -> Runtime {
+    Runtime {
+        bindings: pop_scope_bindings(runtime.bindings, runtime.depth),
+        depth: runtime.depth - 1,
+    }
+}
+
+fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
+    match bindings {
+        .End -> BindingList.End
+        .Node(name, mutable_binding, binding_depth, value, next) -> {
+            if binding_depth == depth {
+                return pop_scope_bindings(next, depth)
+            }
+
+            BindingList.Node(name, mutable_binding, binding_depth, value, next)
+        }
+    }
+}
+
+fn define_binding(runtime: Runtime, name: string, mutable_binding: bool, value: Value) -> Runtime {
+    Runtime {
+        bindings: BindingList.Node(name, mutable_binding, runtime.depth, value, runtime.bindings),
+        depth: runtime.depth,
+    }
+}
+
+fn lookup_binding(bindings: BindingList, name: string) -> Value? {
+    match bindings {
+        .End -> null
+        .Node(binding_name, _, _, value, next) -> {
+            if binding_name == name {
+                return value
+            }
+            lookup_binding(next, name)
+        }
+    }
+}
+
+fn assign_binding(bindings: BindingList, name: string, value: Value) -> AssignBindingsResult {
+    match bindings {
+        .End -> {
+            return AssignBindingsResult {
+                bindings: BindingList.End,
+                found: false,
+                had_error: false,
+                error_message: "",
+            }
+        }
+        .Node(binding_name, mutable_binding, depth, current_value, next) -> {
+            if binding_name == name {
+                if !mutable_binding {
+                    return AssignBindingsResult {
+                        bindings,
+                        found: true,
+                        had_error: true,
+                        error_message: "eval error: cannot assign to immutable variable `" + name + "`",
+                    }
+                }
+
+                return AssignBindingsResult {
+                    bindings: BindingList.Node(binding_name, mutable_binding, depth, value, next),
+                    found: true,
+                    had_error: false,
+                    error_message: "",
+                }
+            }
+
+            let assigned = assign_binding(next, name, value)
+            if assigned.had_error {
+                return AssignBindingsResult {
+                    bindings,
+                    found: true,
+                    had_error: true,
+                    error_message: assigned.error_message,
+                }
+            }
+
+            if !assigned.found {
+                return AssignBindingsResult {
+                    bindings,
+                    found: false,
+                    had_error: false,
+                    error_message: "",
+                }
+            }
+
+            AssignBindingsResult {
+                bindings: BindingList.Node(binding_name, mutable_binding, depth, current_value, assigned.bindings),
+                found: true,
+                had_error: false,
+                error_message: "",
+            }
+        }
+    }
+}
+
+fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
+    match stmts {
+        .End -> ok_result(runtime, value_null())
+        .Node(stmt, next) -> {
+            let current = execute_stmt(runtime, stmt)
+            if current.had_error {
+                return current
+            }
+
+            match next {
+                .End -> current
+                _ -> {
+                    let rest = execute_stmt_list(current.runtime, next)
+                    if rest.had_error {
+                        return rest
+                    }
+
+                    rest
+                }
+            }
+        }
+    }
+}
+
+fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Let(name, initializer) -> {
+            let init = eval_expr(runtime, initializer)
+            if init.had_error {
+                return init
+            }
+
+            let next_runtime = define_binding(init.runtime, name, false, init.value)
+            ok_result(next_runtime, value_null())
+        }
+        .Mut(name, initializer) -> {
+            let init = eval_expr(runtime, initializer)
+            if init.had_error {
+                return init
+            }
+
+            let next_runtime = define_binding(init.runtime, name, true, init.value)
+            ok_result(next_runtime, value_null())
+        }
+        .Expr(expr) -> eval_expr(runtime, expr)
+        .Block(body) -> {
+            let entered = enter_scope(runtime)
+            let body_result = execute_stmt_list(entered, body)
+            let exited = exit_scope(body_result.runtime)
+            if body_result.had_error {
+                return StepResult {
+                    runtime: exited,
+                    value: value_null(),
+                    had_error: body_result.had_error,
+                    error_message: body_result.error_message,
+                }
+            }
+
+            ok_result(exited, body_result.value)
+        }
+    }
+}
+
+fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
     match expr {
-        .Number(text) -> ok_result(value_number(render_number(float(text))))
-        .String(text) -> ok_result(value_string(unquote_string(text)))
-        .Bool(text) -> ok_result(value_bool(text == "true"))
-        .Null -> ok_result(value_null())
-        .Ident(name) -> error_result("undefined variable `" + name + "`")
-        .Grouping(inner) -> eval_node(inner)
-        .Unary(operator, right) -> eval_unary(operator, right)
-        .Binary(left, operator, right) -> eval_binary(left, operator, right)
+        .Number(text) -> ok_result(runtime, value_number(render_number(float(text))))
+        .String(text) -> ok_result(runtime, value_string(unquote_string(text)))
+        .Bool(text) -> ok_result(runtime, value_bool(text == "true"))
+        .Null -> ok_result(runtime, value_null())
+        .Ident(name) -> {
+            let value = lookup_binding(runtime.bindings, name)
+            if value == null {
+                return error_result(runtime, "undefined variable `" + name + "`")
+            }
+            ok_result(runtime, value!)
+        }
+        .Assign(name, value_expr) -> {
+            let value_result = eval_expr(runtime, value_expr)
+            if value_result.had_error {
+                return value_result
+            }
+
+            let assigned = assign_binding(value_result.runtime.bindings, name, value_result.value)
+            if assigned.had_error {
+                return StepResult {
+                    runtime: value_result.runtime,
+                    value: value_null(),
+                    had_error: true,
+                    error_message: assigned.error_message,
+                }
+            }
+
+            if !assigned.found {
+                return error_result(value_result.runtime, "undefined variable `" + name + "`")
+            }
+
+            let next_runtime = Runtime {
+                bindings: assigned.bindings,
+                depth: value_result.runtime.depth,
+            }
+            ok_result(next_runtime, value_result.value)
+        }
+        .Grouping(inner) -> eval_expr(runtime, inner)
+        .Unary(operator, right) -> eval_unary(runtime, operator, right)
+        .Binary(left, operator, right) -> eval_binary(runtime, left, operator, right)
     }
 }
 
-fn eval_unary(operator: string, right: Expr) -> EvalResult {
-    let right_result = eval_node(right)
-    if right_result.had_error || right_result.value == null {
+fn eval_unary(runtime: Runtime, operator: string, right: Expr) -> StepResult {
+    let right_result = eval_expr(runtime, right)
+    if right_result.had_error {
         return right_result
     }
 
-    let value = right_result.value!
+    let value = right_result.value
     if operator == "-" {
         let number_text = as_number_text(value)
         if number_text == null {
-            return error_result("operand must be a number")
+            return error_result(right_result.runtime, "operand must be a number")
         }
-        return ok_result(value_number(render_number(0.0 - float(number_text!))))
+        return ok_result(right_result.runtime, value_number(render_number(0.0 - float(number_text!))))
     }
 
     if operator == "!" {
-        return ok_result(value_bool(!is_truthy(value)))
+        return ok_result(right_result.runtime, value_bool(!is_truthy(value)))
     }
 
-    error_result("unsupported unary operator `" + operator + "`")
+    error_result(right_result.runtime, "unsupported unary operator `" + operator + "`")
 }
 
-fn eval_binary(left: Expr, operator: string, right: Expr) -> EvalResult {
-    let left_result = eval_node(left)
-    if left_result.had_error || left_result.value == null {
+fn eval_binary(runtime: Runtime, left: Expr, operator: string, right: Expr) -> StepResult {
+    let left_result = eval_expr(runtime, left)
+    if left_result.had_error {
         return left_result
     }
 
-    let right_result = eval_node(right)
-    if right_result.had_error || right_result.value == null {
+    let right_result = eval_expr(left_result.runtime, right)
+    if right_result.had_error {
         return right_result
     }
 
-    let left_value = left_result.value!
-    let right_value = right_result.value!
+    let left_value = left_result.value
+    let right_value = right_result.value
 
     if operator == "+" {
-        return eval_plus(left_value, right_value)
+        return eval_plus(right_result.runtime, left_value, right_value)
     }
 
     if operator == "-" || operator == "*" || operator == "/" || operator == "<" || operator == "<=" || operator == ">" || operator == ">=" {
         let left_text = as_number_text(left_value)
         if left_text == null {
-            return error_result("operand must be a number")
+            return error_result(right_result.runtime, "operand must be a number")
         }
 
         let right_text = as_number_text(right_value)
         if right_text == null {
-            return error_result("operand must be a number")
+            return error_result(right_result.runtime, "operand must be a number")
         }
 
         let left_num = float(left_text!)
         let right_num = float(right_text!)
 
-        if operator == "-" { return ok_result(value_number(render_number(left_num - right_num))) }
-        if operator == "*" { return ok_result(value_number(render_number(left_num * right_num))) }
-        if operator == "/" { return ok_result(value_number(render_number(left_num / right_num))) }
-        if operator == "<" { return ok_result(value_bool(left_num < right_num)) }
-        if operator == "<=" { return ok_result(value_bool(left_num <= right_num)) }
-        if operator == ">" { return ok_result(value_bool(left_num > right_num)) }
-        if operator == ">=" { return ok_result(value_bool(left_num >= right_num)) }
+        if operator == "-" { return ok_result(right_result.runtime, value_number(render_number(left_num - right_num))) }
+        if operator == "*" { return ok_result(right_result.runtime, value_number(render_number(left_num * right_num))) }
+        if operator == "/" { return ok_result(right_result.runtime, value_number(render_number(left_num / right_num))) }
+        if operator == "<" { return ok_result(right_result.runtime, value_bool(left_num < right_num)) }
+        if operator == "<=" { return ok_result(right_result.runtime, value_bool(left_num <= right_num)) }
+        if operator == ">" { return ok_result(right_result.runtime, value_bool(left_num > right_num)) }
+        if operator == ">=" { return ok_result(right_result.runtime, value_bool(left_num >= right_num)) }
     }
 
     if operator == "==" {
-        return ok_result(value_bool(values_equal(left_value, right_value)))
+        return ok_result(right_result.runtime, value_bool(values_equal(left_value, right_value)))
     }
 
     if operator == "!=" {
-        return ok_result(value_bool(!values_equal(left_value, right_value)))
+        return ok_result(right_result.runtime, value_bool(!values_equal(left_value, right_value)))
     }
 
-    error_result("unsupported binary operator `" + operator + "`")
+    error_result(right_result.runtime, "unsupported binary operator `" + operator + "`")
 }
 
-fn eval_plus(left: Value, right: Value) -> EvalResult {
+fn eval_plus(runtime: Runtime, left: Value, right: Value) -> StepResult {
     let left_num_text = as_number_text(left)
     if left_num_text != null {
         let right_num_text = as_number_text(right)
         if right_num_text == null {
-            return error_result("operands to `+` must both be numbers or both be strings")
+            return error_result(runtime, "operands to `+` must both be numbers or both be strings")
         }
         let left_num = float(left_num_text!)
         let right_num = float(right_num_text!)
-        return ok_result(value_number(render_number(left_num + right_num)))
+        return ok_result(runtime, value_number(render_number(left_num + right_num)))
     }
 
     let left_text = as_string(left)
     if left_text != null {
         let right_text = as_string(right)
         if right_text == null {
-            return error_result("operands to `+` must both be numbers or both be strings")
+            return error_result(runtime, "operands to `+` must both be numbers or both be strings")
         }
-        return ok_result(value_string(left_text! + right_text!))
+        return ok_result(runtime, value_string(left_text! + right_text!))
     }
 
-    error_result("operands to `+` must both be numbers or both be strings")
+    error_result(runtime, "operands to `+` must both be numbers or both be strings")
 }
 
 fn as_number_text(value: Value) -> string? {

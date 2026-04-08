@@ -23,6 +23,7 @@ The following bootstrap restart work is complete:
 - added a repeatable test harness in `bootstrap/scripts/test.sh`
 - added expression AST and parser milestones with golden tests
 - added a Chapter 7 tree-walk evaluator milestone with golden tests
+- added a Chapter 8 statements-and-state milestone with parser and runner tests
 - built the native `@std.process` support library needed by the bootstrap CLI
 
 ## Open host-compiler debt
@@ -45,12 +46,18 @@ This matches the broader lifetime/copying problem already described in [docs/fea
 
 - removed list-based token accumulation from the milestone
 - switched the scanner to emit a deterministic rendered token stream directly
+- represented statement sequences and runtime bindings as recursive chains instead of normal list-backed structures
 - kept the external scanner behavior correct and fully tested
+
+**Why this is not ideal Forge code**
+
+The long-term bootstrap compiler should use ordinary in-memory collections for token streams, statement lists, and scope data where that is the clearest design. The current recursive-chain representation exists because host `List.push()` is not reliable enough to trust for bootstrap work.
 
 **What must happen later**
 
 - fix the host compiler/runtime so `List.push()` is correct for bootstrap code
 - restore an in-memory token representation for the scanner and parser
+- replace recursive chain structures with clearer collection-based representations where appropriate
 - delete the rendered-string mitigation once the host fix is proven by tests
 
 ### 2. Bootstrap binaries emit internal debug noise on stderr

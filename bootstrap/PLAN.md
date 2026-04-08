@@ -37,6 +37,8 @@ The bootstrap compiler is done when all of the following are true:
 - [x] Add expression parser golden tests
 - [x] Add the Chapter 7 tree-walk expression evaluator
 - [x] Add evaluator golden tests
+- [x] Add the Chapter 8 statements-and-state parser milestone
+- [x] Add statement runner golden tests
 
 ## Plan By Chapter
 
@@ -78,7 +80,8 @@ Crafting Interpreters reference: Chapter 6, "Parsing Expressions".
 - [x] Support literals, identifiers, grouping, unary ops, and binary ops
 - [x] Keep precedence rules explicit and tested
 - [x] Add parser tests for associativity and precedence
-- [ ] Extend expression parsing to assignment and calls when statements/functions need them
+- [x] Extend expression parsing to assignment
+- [ ] Extend expression parsing to calls when functions need them
 
 ### Part E: Evaluating Expressions
 
@@ -96,10 +99,12 @@ We are not building a tree-walk interpreter as the end product, but we are follo
 
 Crafting Interpreters reference: Chapter 8, "Statements and State".
 
-- [ ] Parse `let`, `mut`, expression statements, blocks, and `return`
+- [x] Parse `let`, `mut`, expression statements, and blocks
+- [x] Parse assignment expressions and wire them into statement execution
+- [ ] Parse `return`
 - [ ] Implement global declarations required by the bootstrap compiler source
-- [ ] Add name binding for globals
-- [ ] Add tests for declaration order and shadowing behavior
+- [x] Add local lexical name binding for the statement runner
+- [x] Add tests for shadowing behavior and block-local state
 
 ### Part G: Control Flow
 
@@ -266,6 +271,7 @@ Crafting Interpreters reference: Chapter 30.
 
 - [x] Parse source into AST
 - [x] Evaluate the Chapter 7 expression subset
+- [x] Execute the Chapter 8 statement/state subset
 - [ ] Resolve names and validate the MVP subset
 - [ ] Add tests for parse and resolution failures
 

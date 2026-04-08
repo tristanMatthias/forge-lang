@@ -4,9 +4,22 @@ export enum Expr {
     Bool(value: string)
     Null
     Ident(name: string)
+    Assign(name: string, value: Expr)
     Grouping(expr: Expr)
     Unary(operator: string, right: Expr)
     Binary(left: Expr, operator: string, right: Expr)
+}
+
+export enum Stmt {
+    Let(name: string, initializer: Expr)
+    Mut(name: string, initializer: Expr)
+    Expr(expr: Expr)
+    Block(body: StmtList)
+}
+
+export enum StmtList {
+    End
+    Node(stmt: Stmt, next: StmtList)
 }
 
 export fn render_expr(expr: Expr) -> string {
@@ -16,8 +29,33 @@ export fn render_expr(expr: Expr) -> string {
         .Bool(value) -> value
         .Null -> "null"
         .Ident(name) -> name
+        .Assign(name, value) -> "(assign " + name + " " + render_expr(value) + ")"
         .Grouping(inner) -> "(group " + render_expr(inner) + ")"
         .Unary(operator, right) -> "(" + operator + " " + render_expr(right) + ")"
         .Binary(left, operator, right) -> "(" + operator + " " + render_expr(left) + " " + render_expr(right) + ")"
+    }
+}
+
+export fn render_stmt(stmt: Stmt) -> string {
+    match stmt {
+        .Let(name, initializer) -> "(let " + name + " " + render_expr(initializer) + ")"
+        .Mut(name, initializer) -> "(mut " + name + " " + render_expr(initializer) + ")"
+        .Expr(expr) -> "(expr " + render_expr(expr) + ")"
+        .Block(body) -> "(block " + render_stmt_list(body) + ")"
+    }
+}
+
+export fn render_stmt_list(stmts: StmtList) -> string {
+    match stmts {
+        .End -> ""
+        .Node(stmt, next) -> {
+            let head = render_stmt(stmt)
+            let tail = render_stmt_list(next)
+            if tail == "" {
+                head
+            } else {
+                head + "\n" + tail
+            }
+        }
     }
 }

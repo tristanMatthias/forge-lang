@@ -1,7 +1,13 @@
-use ast.{Expr}
+use ast.{Expr, Stmt, StmtList}
 
 export type ParseResult = {
     expr: Expr?,
+    had_error: bool,
+    error_message: string,
+}
+
+export type ProgramParseResult = {
+    stmts: StmtList?,
     had_error: bool,
     error_message: string,
 }
@@ -25,6 +31,11 @@ export fn parse_expression_source(source: string) -> ParseResult {
     parser.parse_file_expression()
 }
 
+export fn parse_program_source(source: string) -> ProgramParseResult {
+    mut parser = parser_new(source)
+    parser.parse_file_program()
+}
+
 fn is_digit(ch: string) -> bool {
     ch >= "0" && ch <= "9"
 }
@@ -39,6 +50,8 @@ fn is_alpha_numeric(ch: string) -> bool {
 
 fn keyword_kind(text: string) -> string {
     if text == "false" { return "kw_false" }
+    if text == "let" { return "kw_let" }
+    if text == "mut" { return "kw_mut" }
     if text == "null" { return "kw_null" }
     if text == "true" { return "kw_true" }
     return "identifier"
@@ -89,8 +102,130 @@ impl Parser {
         }
     }
 
+    fn parse_file_program(self) -> ProgramParseResult {
+        let stmts = self.parse_statement_list(false)
+        if stmts == null {
+            return ProgramParseResult {
+                stmts: null,
+                had_error: self.had_error,
+                error_message: self.error_message,
+            }
+        }
+
+        if !self.check("eof") {
+            self.set_error("expected end of input")
+            return ProgramParseResult {
+                stmts: null,
+                had_error: true,
+                error_message: self.error_message,
+            }
+        }
+
+        ProgramParseResult {
+            stmts,
+            had_error: self.had_error,
+            error_message: self.error_message,
+        }
+    }
+
+    fn parse_statement_list(self, stop_at_right_brace: bool) -> StmtList? {
+        if stop_at_right_brace && self.check("right_brace") {
+            return StmtList.End
+        }
+
+        if self.check("eof") {
+            return StmtList.End
+        }
+
+        if !stop_at_right_brace && self.check("right_brace") {
+            self.set_error("unexpected `}`")
+            return null
+        }
+
+        let stmt = self.parse_declaration()
+        if stmt == null { return null }
+
+        let next = self.parse_statement_list(stop_at_right_brace)
+        if next == null { return null }
+
+        StmtList.Node(stmt!, next!)
+    }
+
+    fn parse_declaration(self) -> Stmt? {
+        if self.check("kw_let") {
+            return self.parse_let_statement()
+        }
+
+        if self.check("kw_mut") {
+            return self.parse_mut_statement()
+        }
+
+        self.parse_statement()
+    }
+
+    fn parse_let_statement(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected variable name")
+        if name == null { return null }
+        if !self.consume("equal", "expected `=` after variable name") {
+            return null
+        }
+        let initializer = self.parse_expression()
+        if initializer == null { return null }
+        Stmt.Let(name!, initializer!)
+    }
+
+    fn parse_mut_statement(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected variable name")
+        if name == null { return null }
+        if !self.consume("equal", "expected `=` after variable name") {
+            return null
+        }
+        let initializer = self.parse_expression()
+        if initializer == null { return null }
+        Stmt.Mut(name!, initializer!)
+    }
+
+    fn parse_statement(self) -> Stmt? {
+        if self.check("left_brace") {
+            self.advance()
+            let body = self.parse_statement_list(true)
+            if body == null { return null }
+            if !self.consume("right_brace", "expected `}` after block") {
+                return null
+            }
+            return Stmt.Block(body!)
+        }
+
+        let expr = self.parse_expression()
+        if expr == null { return null }
+        Stmt.Expr(expr!)
+    }
+
     fn parse_expression(self) -> Expr? {
-        self.parse_equality()
+        self.parse_assignment()
+    }
+
+    fn parse_assignment(self) -> Expr? {
+        let left = self.parse_equality()
+        if left == null { return null }
+
+        if !self.check("equal") {
+            return left
+        }
+
+        self.advance()
+        let value = self.parse_assignment()
+        if value == null { return null }
+
+        match left! {
+            .Ident(name) -> Expr.Assign(name, value!)
+            _ -> {
+                self.set_error("invalid assignment target")
+                null
+            }
+        }
     }
 
     fn parse_equality(self) -> Expr? {
@@ -230,6 +365,16 @@ impl Parser {
         false
     }
 
+    fn consume_identifier(self, message: string) -> string? {
+        if self.check("identifier") {
+            let name = self.current_lexeme
+            self.advance()
+            return name
+        }
+        self.set_error(message)
+        null
+    }
+
     fn advance_token(self) {
         self.skip_whitespace_and_comments()
 
@@ -250,6 +395,14 @@ impl Parser {
         }
         if ch == ")" {
             self.set_current("right_paren", ")")
+            return
+        }
+        if ch == "{" {
+            self.set_current("left_brace", "{")
+            return
+        }
+        if ch == "}" {
+            self.set_current("right_brace", "}")
             return
         }
         if ch == "+" {
@@ -281,10 +434,9 @@ impl Parser {
         if ch == "=" {
             if self.match_next("=") {
                 self.set_current("equal_equal", "==")
-                return
+            } else {
+                self.set_current("equal", "=")
             }
-            self.set_error("unexpected `=`")
-            self.set_current("error", "=")
             return
         }
 

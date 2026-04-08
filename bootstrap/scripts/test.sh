@@ -55,6 +55,21 @@ for input in "$BOOTSTRAP_DIR"/tests/expr/*.fg; do
   cases=$((cases + 1))
 done
 
+for input in "$BOOTSTRAP_DIR"/tests/program/*.fg; do
+  name=$(basename "$input" .fg)
+  expected="$BOOTSTRAP_DIR/tests/program/$name.ast"
+  actual="$BUILD_DIR/$name.actual"
+  stderr_log="$BUILD_DIR/$name.stderr"
+
+  echo "program/$name"
+  if ! "$BUILD_DIR/bootstrapc" program "$input" > "$actual" 2> "$stderr_log"; then
+    cat "$stderr_log"
+    exit 1
+  fi
+  diff -u "$expected" "$actual"
+  cases=$((cases + 1))
+done
+
 for input in "$BOOTSTRAP_DIR"/tests/eval/*.fg; do
   name=$(basename "$input" .fg)
   expected="$BOOTSTRAP_DIR/tests/eval/$name.out"
@@ -63,6 +78,21 @@ for input in "$BOOTSTRAP_DIR"/tests/eval/*.fg; do
 
   echo "eval/$name"
   if ! "$BUILD_DIR/bootstrapc" eval "$input" > "$actual" 2> "$stderr_log"; then
+    cat "$stderr_log"
+    exit 1
+  fi
+  diff -u "$expected" "$actual"
+  cases=$((cases + 1))
+done
+
+for input in "$BOOTSTRAP_DIR"/tests/run/*.fg; do
+  name=$(basename "$input" .fg)
+  expected="$BOOTSTRAP_DIR/tests/run/$name.out"
+  actual="$BUILD_DIR/$name.actual"
+  stderr_log="$BUILD_DIR/$name.stderr"
+
+  echo "run/$name"
+  if ! "$BUILD_DIR/bootstrapc" run "$input" > "$actual" 2> "$stderr_log"; then
     cat "$stderr_log"
     exit 1
   fi

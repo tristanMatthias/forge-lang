@@ -1,0 +1,6 @@
+mut total = 1
+{
+  let total = 5
+  total
+}
+total
