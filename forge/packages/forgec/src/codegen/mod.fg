@@ -539,8 +539,33 @@ export fn start_dead_block_after_terminator() {
 // Coerce a value into the current function's expected return type.
 // Returns the original value when not in a nullable function context.
 export fn coerce_to_fn_return(val: ptr) -> ptr {
-    if forge_fn_nullable_get_flag() != 1 { return val }
-    coerce_to_nullable(forge_fn_nullable_get_inner(), val)
+    if forge_fn_nullable_get_flag() == 1 {
+        return coerce_to_nullable(forge_fn_nullable_get_inner(), val)
+    }
+    // Non-nullable: handle int↔ptr coercion. The self-host stores many
+    // ptr-typed values in i64 allocas (because forge_*_i64 wrappers
+    // return i64). When such a value is returned from a `-> ptr` fn,
+    // we must emit `inttoptr` so the ret type matches.
+    let ib = llvm.get_insert_block(CG_B)
+    if ib == null { return val }
+    let fn_val = llvm.get_basic_block_parent(ib)
+    if fn_val == null { return val }
+    let ret_ty = forge_llvm_get_fn_return_type(fn_val)
+    if ret_ty == null { return val }
+    let val_ty = llvm.type_of(val)
+    if val_ty == ret_ty { return val }
+    let ret_kind = llvm.get_type_kind(ret_ty)
+    let val_kind = llvm.get_type_kind(val_ty)
+    // LLVM type kind literals: 8 = Integer, 12 = Pointer (Core.h LLVMTypeKind).
+    // Don't use the LLVM_*_TYPE_KIND mut globals — they compile to zero-init
+    // in self-host, so the runtime comparison silently fails.
+    if val_kind == 8 && ret_kind == 12 {
+        return llvm.build_inttoptr(CG_B, val, ret_ty, "rcp")
+    }
+    if val_kind == 12 && ret_kind == 8 {
+        return llvm.build_ptrtoint(CG_B, val, ret_ty, "rci")
+    }
+    val
 }
 
 export fn is_nullable_var(name: string) -> bool {
@@ -1263,6 +1288,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_build_zext_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_trunc_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_inttoptr_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_llvm_get_fn_return_type", mft1(CG_PTR, CG_PTR))
     // ptr → i64. Both wrapper names exist in std-llvm; we declare the one
     // the self-hosted source actually uses (`llvm.build_ptrtoint`). Without
     // this declaration, the runtime call returns null and emit_call writes

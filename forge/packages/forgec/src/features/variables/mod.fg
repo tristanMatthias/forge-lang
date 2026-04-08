@@ -54,7 +54,9 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
     // Optional type annotation: : Type
     // Capture type annotation info for global type detection
     mut ann_is_list = 0
+    mut ann_is_map = 0
     mut ann_elem_name = ""
+    mut ann_map_val_name = ""
     mut type_ann: TypeExpr? = null
     if p.peek_kind_id() == KID_COLON {
         p.advance()
@@ -66,6 +68,18 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
             let elem_tok = p.peek_at(2)
             if elem_tok.kind_id == 1 {
                 ann_elem_name = elem_tok.text
+            }
+        }
+        // Capture Map<K, V> — value type goes 4 tokens ahead: Map < K , V >
+        if type_tok.kind_id == 1 && type_tok.text == "Map" {
+            ann_is_map = 1
+            let key_tok = p.peek_at(2)
+            if key_tok.kind_id == 1 {
+                ann_elem_name = key_tok.text
+            }
+            let val_tok = p.peek_at(4)
+            if val_tok.kind_id == 1 {
+                ann_map_val_name = val_tok.text
             }
         }
         type_ann = p.parse_type_expr()
@@ -115,6 +129,16 @@ fn parse_var_binding(p: Parser, kind: VarKind, exported: bool) -> Statement? {
         forge_alloca_cache_set_var_type(var_name, type_str)
         // Also store in global registry for expr_type_name lookup
         forge_global_var_set_type(var_name, type_str)
+    }
+    // If type annotation says Map<K, V>, pre-register so the global is
+    // allocated as a proper {ptr,ptr,i64} map struct rather than the
+    // 16-byte ForgeString fallback. Without this, every `mut M: Map<K,V> = {}`
+    // is silently allocated as a 16-byte string and every `M[k] = v` writes
+    // garbage past the end of the global.
+    if ann_is_map == 1 && ann_elem_name != "" && ann_map_val_name != "" {
+        let map_type_str = "Map:" + ann_elem_name + ":" + ann_map_val_name
+        forge_alloca_cache_set_var_type(var_name, map_type_str)
+        forge_global_var_set_type(var_name, map_type_str)
     }
 
     PARSE_END_POS = forge_parser_get_pos()

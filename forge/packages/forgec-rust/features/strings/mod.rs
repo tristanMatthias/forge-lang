@@ -231,6 +231,7 @@ crate::runtime_fn! { name: "forge_llvm_emit_cfg_dot", feature: "strings", params
 crate::runtime_fn! { name: "forge_llvm_assert_invariants", feature: "strings", params: [Ptr, ForgeString], ret: I64 }
 crate::runtime_fn! { name: "forge_llvm_oracle_match_dispatch_int", feature: "strings", params: [Ptr, Ptr, Ptr, I64, Ptr, Ptr, Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_bb_has_terminator", feature: "strings", params: [Ptr], ret: I64 }
+crate::runtime_fn! { name: "forge_bb_has_predecessors", feature: "strings", params: [Ptr], ret: I64 }
 crate::runtime_fn! { name: "forge_trace_stmt", feature: "strings", params: [I64, I64], ret: Void }
 crate::runtime_fn! { name: "forge_dump_stmt_list", feature: "strings", params: [ForgeString], ret: Void }
 crate::runtime_fn! { name: "forge_enable_peek_trace", feature: "strings", params: [], ret: Void }

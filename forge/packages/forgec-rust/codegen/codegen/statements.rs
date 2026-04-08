@@ -20,6 +20,9 @@ impl<'ctx> Codegen<'ctx> {
                         if let Some(ty) = self.type_checker.env.type_aliases.get(n) {
                             return ty.clone();
                         }
+                        if let Some(ty) = self.type_checker.env.enum_types.get(n) {
+                            return ty.clone();
+                        }
                     }
                     // No unresolved types found — issue is elsewhere
                 }

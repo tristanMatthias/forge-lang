@@ -926,6 +926,17 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                             }
                         }
                     }
+                    // ret ptr ← int value: emit inttoptr
+                    if ret_kind == 12 && val_kind == 8 {
+                        let v_i64 = ensure_i64(builder, value);
+                        let p = LLVMBuildIntToPtr(builder, v_i64, ret_ty, safe_name(std::ptr::null()));
+                        return LLVMBuildRet(builder, p);
+                    }
+                    // ret int ← ptr value: emit ptrtoint
+                    if ret_kind == 8 && val_kind == 12 {
+                        let i = LLVMBuildPtrToInt(builder, value, ret_ty, safe_name(std::ptr::null()));
+                        return LLVMBuildRet(builder, i);
+                    }
                     // Always coerce value to match return type
                     let coerced = ensure_i64(builder, value);
                     let coerced_ty = LLVMTypeOf(coerced);
@@ -1662,6 +1673,18 @@ pub extern "C" fn forge_llvm_type_of(val: LLVMPtr) -> LLVMPtr {
 #[no_mangle]
 pub extern "C" fn llvm_type_of(val: LLVMPtr) -> LLVMPtr {
     forge_llvm_type_of(val)
+}
+
+/// Get the return type of a function value (LLVMValueRef of a function).
+/// Equivalent to LLVMGetReturnType(LLVMGlobalGetValueType(fn_val)).
+#[no_mangle]
+pub extern "C" fn forge_llvm_get_fn_return_type(fn_val: LLVMPtr) -> LLVMPtr {
+    if fn_val.is_null() { return std::ptr::null_mut(); }
+    unsafe {
+        let fn_ty = LLVMGlobalGetValueType(fn_val);
+        if fn_ty.is_null() { return std::ptr::null_mut(); }
+        LLVMGetReturnType(fn_ty)
+    }
 }
 
 

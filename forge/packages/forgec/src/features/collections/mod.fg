@@ -10,7 +10,8 @@ use core.ast.{Expr, NodeRef, feature_expr, next_node_id}
 use core.types.{Type, StructField}
 use core.registry.{reg_parser, reg_check_stmt, reg_check_expr, reg_emit_stmt, reg_emit_expr, reg_top_level}
 use checker.TypeChecker
-use codegen.Codegen
+use codegen.{Codegen, CG_LIST, CG_I64, CG_PTR, CG_B}
+use @std.llvm
 
 // ─── Side Tables ────────────────────────────────
 
@@ -93,7 +94,20 @@ fn emit_collection(cg: Codegen, node: NodeRef) -> ptr {
     match node.kind_name {
         "list_lit" -> {
             let d = get_list_lit(node.node_id)
-            if d == null { return llvm.const_int(CG_I64, 0, 0) }
+            // For empty list literals (and the Map-truncation fallback for
+            // ListLitData lookups), build a concrete empty {ptr, i64} list
+            // value via insertvalue rather than relying on CG_LIST const_null.
+            // This guarantees the resulting LLVM Value carries the right
+            // struct type even when CG_LIST is partially initialized in
+            // bootstrap stages — `mut xs: List<T> = []` then alloca's a
+            // proper {ptr,i64} list instead of an i64.
+            if d == null {
+                let null_p = llvm.const_null(CG_PTR)
+                let zero = llvm.const_int(CG_I64, 0, 0)
+                let undef = llvm.get_undef(CG_LIST)
+                let s1 = llvm.build_insert_value(CG_B, undef, null_p, 0, "el1")
+                return llvm.build_insert_value(CG_B, s1, zero, 1, "el2")
+            }
             let data = d!
             cg.emit_list_literal(data.elements)
         }

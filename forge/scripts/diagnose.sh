@@ -153,6 +153,16 @@ case "${1:-}" in
         MODE="help"
         ;;
     --ir-sanity) MODE="ir-sanity"; IR="${2:-/tmp/output.ll}" ;;
+    --ret-undef)
+        # List every function whose body contains `ret <T> undef`,
+        # grouped by return type. These mark places where build_ret was
+        # called with a value whose type didn't match the function's
+        # declared return — usually missing int↔ptr coercion. Catches
+        # the LLVMBuildRet undef-fallback that crashes Stage 3 with
+        # bogus type ptrs into LLVMAddGlobal.
+        MODE="ret-undef"
+        IR="${2:-/tmp/stage2.ll}"
+        ;;
 esac
 
 FORGE_SRC="packages/forgec/src"
@@ -173,6 +183,40 @@ ok()     { green "  ✓ $1"; }
 # ═════════════════════════════════════════════════════════════════
 # SCORE MODE — just the IR quality score
 # ═════════════════════════════════════════════════════════════════
+run_ret_undef() {
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    echo "═══ Functions returning undef (missing build_ret coercion) — $IR ═══"
+    python3 - "$IR" <<'PY'
+import re, sys, collections
+fn = None
+ret_ty = None
+hits = collections.defaultdict(list)
+with open(sys.argv[1]) as f:
+    for line in f:
+        m = re.match(r'define\s+(\S+)\s+@(\w+)\(', line)
+        if m:
+            fn = m.group(2); ret_ty = m.group(1); continue
+        if fn and re.search(r'^\s*ret\s+\S+\s+undef\s*$', line):
+            hits[ret_ty].append(fn)
+            fn = None
+total = 0
+for ty, fns in sorted(hits.items(), key=lambda kv: -len(kv[1])):
+    seen = []
+    for n in fns:
+        if n not in seen: seen.append(n)
+    total += len(seen)
+    print(f"  ret {ty} undef  ({len(seen)} fns)")
+    for n in seen[:20]:
+        print(f"    {n}")
+    if len(seen) > 20:
+        print(f"    ... +{len(seen)-20} more")
+print(f"\nTOTAL: {total} functions emit `ret <T> undef`")
+print("These usually mean self-host's emit_ret_value passed a value whose")
+print("LLVM type didn't match the function's declared return. Common cause:")
+print("missing inttoptr/ptrtoint coercion in forge_llvm_build_ret wrapper.")
+PY
+}
+
 run_score() {
     if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
 
@@ -1798,6 +1842,7 @@ case "$MODE" in
     bugs)     run_bugs ;;
     help)     run_help ;;
     ir-sanity) run_ir_sanity ;;
+    ret-undef) run_ret_undef ;;
     full)     run_full ;;
 esac
 

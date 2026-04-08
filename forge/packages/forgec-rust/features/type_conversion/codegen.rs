@@ -35,7 +35,10 @@ impl<'ctx> Codegen<'ctx> {
                 Some(int_val.into())
             }
             Type::String => {
-                self.call_runtime("forge_string_parse_int", &[val.into()], "str_to_int")
+                self.call_runtime_expect(
+                    "forge_string_to_int", &[val.into()], "str_to_int",
+                    "forge_string_to_int not declared",
+                )
             }
             _ => Some(self.context.i64_type().const_zero().into()),
         }
@@ -76,7 +79,10 @@ impl<'ctx> Codegen<'ctx> {
                 Some(float_val.into())
             }
             Type::String => {
-                self.call_runtime("forge_string_parse_float", &[val.into()], "str_to_float")
+                self.call_runtime_expect(
+                    "forge_string_to_float", &[val.into()], "str_to_float",
+                    "forge_string_to_float not declared",
+                )
             }
             _ => Some(self.context.f64_type().const_float(0.0).into()),
         }

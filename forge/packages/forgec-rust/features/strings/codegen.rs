@@ -37,7 +37,7 @@ impl<'ctx> Codegen<'ctx> {
                 let replace_val = self.compile_expr(&args.get(1)?.value)?;
                 self.call_runtime("forge_string_replace", &[obj_val.into(), find_val.into(), replace_val.into()], "replace")
             }
-            "parse_int" => self.call_runtime("forge_string_parse_int", &[obj_val.into()], "parse_int"),
+            "parse_int" => self.call_runtime("forge_string_to_int", &[obj_val.into()], "parse_int"),
             "repeat" => {
                 let count_val = self.compile_expr(&args.first()?.value)?;
                 self.call_runtime("forge_string_repeat", &[obj_val.into(), count_val.into()], "repeat")
