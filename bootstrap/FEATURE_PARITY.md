@@ -33,7 +33,7 @@ Status key:
 | bool | `true`, `false` | ✅ | |
 | null | `null` | ✅ | = i64 0 |
 | hex/bin/oct literals | `0xFF`, `0b1010`, `0o755` | ✅ | |
-| numeric underscores | `1_000_000` | 🔲 | |
+| numeric underscores | `1_000_000` | ✅ | lexer strips underscores | |
 
 ## Functions
 
@@ -44,7 +44,7 @@ Status key:
 | implicit return | last expression is return value | ✅ | |
 | extern fn | `extern fn name(params) -> type` | ✅ | C ABI |
 | fn types | `fn(A, B) -> R` | 🔲 | |
-| closures / lambdas | `(x) -> x * 2` | 🔲 | **high priority** |
+| closures / lambdas | `(x) -> x * 2` | ✅ | lifted functions, typed params |
 | `it` parameter | `.method(it * 2)` | 🔲 | needs closures |
 | generics | `fn name<T>(x: T) -> T` | ✅ | parsed, erased to i64 |
 | generic constraints | `fn name<T: Trait>(x: T)` | 🔲 | needs generics + traits |
@@ -85,7 +85,7 @@ Status key:
 | if / else | `if cond { } else { }` | ✅ | stmt + expr form |
 | else if | `if a { } else if b { }` | ✅ | |
 | while | `while cond { body }` | ✅ | |
-| for-in | `for x in collection { }` | 🔲 | needs iterators |
+| for-in | `for x in collection { }` | ✅ | index-based desugar, typed elements |
 | for-range | `for i in 0..10 { }` | ✅ | half-open range, i64 counter |
 | break / continue | `break`, `continue` | ✅ | scoped via Ctx.loops |
 | expression blocks | `{ stmts; last_expr }` | ✅ | |
@@ -100,7 +100,7 @@ Status key:
 | logical | `&&`, `||` | ✅ | **eager, not short-circuit** |
 | logical keywords | `and`, `or`, `not` | ✅ | aliases for &&, ||, ! |
 | unary | `-x`, `!x` | ✅ | |
-| bitwise | `&`, `|`, `^`, `<<`, `>>`, `~` | 🔲 | |
+| bitwise | `&`, `|`, `^`, `<<`, `>>`, `~` | ✅ | full precedence chain | |
 | pipe | `expr |> fn` | ✅ | desugars to call |
 | ranges | `start..end`, `start..=end` | 🔲 | |
 | type operators | `without`, `only`, `partial` | 🔲 | |
@@ -116,10 +116,10 @@ Status key:
 | `.substring` | `s.substring(start, end)` | ✅ | |
 | string templates | `` `hello ${name}` `` | ✅ | desugars to string concat |
 | tagged templates | `` tag`template` `` | 🔲 | needs templates |
-| `.split`, `.trim`, etc. | `s.split(sep)` | 🔲 | |
-| `.contains`, `.starts_with` | `s.contains(sub)` | 🔲 | |
-| `.replace`, `.upper`, `.lower` | `s.replace(a, b)` | 🔲 | |
-| `char_code(s)` | `char_code("A")` | 🔲 | |
+| `.split`, `.trim`, etc. | `s.split(sep)` | ✅ | C runtime |
+| `.contains`, `.starts_with` | `s.contains(sub)` | ✅ | C runtime |
+| `.replace`, `.upper`, `.lower` | `s.replace(a, b)` | ✅ | C runtime |
+| `char_code(s)` | `char_code("A")` | ✅ | C runtime | |
 
 ## Null Safety
 
@@ -138,13 +138,13 @@ Status key:
 
 | Feature | Forge syntax | Bootstrap | Notes |
 |---|---|---|---|
-| list literal | `[1, 2, 3]` | 🔲 | bootstrap uses recursive enums |
-| map literal | `{ "a": 1 }` | 🔲 | |
+| list literal | `[1, 2, 3]` | ✅ | forge_array_*, typed elements | bootstrap uses recursive enums |
+| map literal | `{ "a": 1 }` | ✅ | forge_map_*_cstr | |
 | tuple literal | `(a, b, c)` | ✅ | with type tracking |
 | tuple destructuring | `let (x, y) = pair` | ✅ | |
-| slicing | `list[start..end]` | 🔲 | |
-| list methods | `.push`, `.map`, `.filter`, etc. | 🔲 | |
-| map methods | `.has`, `.get`, `.keys` | 🔲 | |
+| slicing | `list[start..end]` | ✅ | forge_array_slice | |
+| list methods | `.push`, `.map`, `.filter`, etc. | ✅ | push,pop,map,filter,reduce,foreach | |
+| map methods | `.has`, `.get`, `.keys` | ✅ | get,set,has,keys,length | |
 
 ## Modules & Imports
 
@@ -238,15 +238,15 @@ Status key:
 | Category | Total | ✅ Done | 🔲 TODO | ⬜ N/A |
 |---|---|---|---|---|
 | Variables & Bindings | 7 | 5 | 2 | 0 |
-| Primitive Types | 7 | 4 | 3 | 0 |
-| Functions | 9 | 5 | 4 | 0 |
+| Primitive Types | 7 | 5 | 2 | 0 |
+| Functions | 9 | 6 | 3 | 0 |
 | Structs & Types | 8 | 8 | 0 | 0 |
 | Enums & Matching | 11 | 5 | 6 | 0 |
-| Control Flow | 8 | 5 | 3 | 0 |
-| Operators | 8 | 3 | 5 | 0 |
-| Strings | 11 | 5 | 6 | 0 |
+| Control Flow | 8 | 7 | 1 | 0 |
+| Operators | 8 | 7 | 1 | 0 |
+| Strings | 11 | 9 | 2 | 0 |
 | Null Safety | 8 | 6 | 2 | 0 |
-| Collections | 7 | 2 | 5 | 0 |
+| Collections | 7 | 7 | 0 | 0 |
 | Modules & Imports | 5 | 4 | 1 | 0 |
 | I/O & Runtime | 12 | 7 | 5 | 0 |
 | Concurrency | 4 | 0 | 4 | 0 |
@@ -254,7 +254,7 @@ Status key:
 | Testing | 4 | 0 | 4 | 0 |
 | Pointer Ops | 4 | 0 | 4 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **63** | **58** | **10** |
+| **TOTAL** | **131** | **83** | **38** | **10** |
 
 ## Dogfooding Rule
 

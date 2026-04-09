@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (131 total: 80 done, 41 todo, 10 n/a)
+## Feature Progress (131 total: 83 done, 38 todo, 10 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -83,12 +83,12 @@
 | 77 | error propagation (?) | ✅ | dogfooded (98 patterns) |
 | 78 | catch blocks | 🔲 | |
 | 79 | list literal | ✅ | [1,2,3] via forge_array_* | |
-| 80 | map literal | 🔲 | |
+| 80 | map literal | ✅ | {"k":v} via C hash map | |
 | 81 | tuple literal | ✅ | with type tracking |
 | 82 | tuple destructuring | ✅ | |
-| 83 | slicing | 🔲 | |
+| 83 | slicing | ✅ | list[1..3] via forge_array_slice | |
 | 84 | list methods | ✅ | push,pop,map,filter,reduce,foreach | |
-| 85 | map methods | 🔲 | |
+| 85 | map methods | ✅ | .get,.set,.has,.keys,.length | |
 | 86 | mod declaration | ✅ | |
 | 87 | use import | ✅ | |
 | 88 | export | ✅ | |
