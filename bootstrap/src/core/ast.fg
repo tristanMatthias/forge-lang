@@ -71,7 +71,7 @@ export enum ValueType {
     Struct(name: string),
     Enum(name: string),
     Tuple(elements: TypeList),
-    List,
+    List(elem: ValueType),
     Map,
     Fn,
     Void,
@@ -97,7 +97,11 @@ export fn vtype_is_str(t: ValueType) -> bool {
 }
 
 export fn vtype_is_list(t: ValueType) -> bool {
-    match t { .List -> true, _ -> false }
+    match t { .List(_) -> true, _ -> false }
+}
+
+export fn vtype_list_elem(t: ValueType) -> ValueType {
+    match t { .List(e) -> e, _ -> ValueType.Int }
 }
 
 export fn vtype_is_map(t: ValueType) -> bool {
@@ -125,7 +129,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Struct(n) -> n
         .Enum(n) -> n
         .Tuple(_) -> "(tuple)"
-        .List -> "List"
+        .List(_) -> "List"
         .Map -> "Map"
         .Fn -> "fn"
         .Void -> "void"

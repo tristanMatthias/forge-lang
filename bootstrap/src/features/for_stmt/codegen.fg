@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `for variable in start..end { body }` with
 // break/continue support via the scoped loop stack in Ctx.
 
-use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType}
+use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem}
 use core.cg.{Ctx, LoopStack, StmtResult, ok_stmt, err_stmt_from_expr, ctx_with_loops, const_i64, get_fn, call_1, call_2}
 use codegen.{emit_expr, emit_stmt}
 
@@ -77,9 +77,9 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     let counter = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "forin_i")
     forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), counter)
 
-    // Element alloca
+    // Element alloca — bind with the list's element type
     let elem_alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, variable)
-    let body_env = env_extend(env, variable, elem_alloca, ValueType.Int)
+    let body_env = env_extend(env, variable, elem_alloca, vtype_list_elem(coll_r.ty))
 
     // Basic blocks
     let cond_bb = new_bb(ctx, "forin.cond")

@@ -5,7 +5,7 @@
 // Feature-specific codegen lives in features/*/codegen.fg and is
 // resolved globally by the host compiler's cross-file impl lookup.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_struct_name, vtype_enum_name, vtype_display}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display}
 use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc}
 
 // ── Direct C extern declarations ──
@@ -938,7 +938,8 @@ fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     if vtype_is_list(r.ty) {
         let i_r = emit_expr(ctx, env, idx)
         if i_r.had_error { return i_r }
-        return ok_emit(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, i_r.value, "list_idx"))
+        let elem = call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, i_r.value, "list_idx")
+        return ok_emit_typed(elem, vtype_list_elem(r.ty))
     }
     if !vtype_is_str(r.ty) {
         return err_emit("indexing on non-string/list value (ty=" + vtype_display(r.ty) + ")")
@@ -1075,7 +1076,7 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             let str_ptr = to_ptr(ctx, r.value, "str_self")
             let sep_ptr = to_ptr(ctx, arg_r.value, "sep_arg")
             let result = call_2(ctx, get_fn(ctx, "forge_str_split"), str_ptr, sep_ptr, "split_result")
-            return EmitResult { value: result, ty: ValueType.List, had_error: false, error_message: "" }
+            return EmitResult { value: result, ty: ValueType.List(ValueType.Str), had_error: false, error_message: "" }
         }
         return err_emit("string method `" + method + "` not implemented")
     }
@@ -1100,7 +1101,8 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             let arg_r = emit_single_arg(ctx, env, args)?
             let fn_name = "forge_array_" + method
             let result = call_2(ctx, get_fn(ctx, fn_name), r.value, arg_r.value, method)
-            return EmitResult { value: result, ty: ValueType.List, had_error: false, error_message: "" }
+            let elem_ty = vtype_list_elem(r.ty)
+            return EmitResult { value: result, ty: ValueType.List(elem_ty), had_error: false, error_message: "" }
         }
         if method == "foreach" {
             let arg_r = emit_single_arg(ctx, env, args)?
@@ -1133,7 +1135,7 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
         }
         if method == "keys" {
             let keys = call_1(ctx, get_fn(ctx, "forge_map_keys_cstr"), r.value, "map_keys")
-            return ok_emit_typed(keys, ValueType.List)
+            return ok_emit_typed(keys, ValueType.List(ValueType.Str))
         }
         return err_emit("map method `" + method + "` not implemented")
     }
@@ -1330,7 +1332,7 @@ fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitR
     let end_r = emit_expr(ctx, env, end)
     if end_r.had_error { return end_r }
     let result = call_3(ctx, get_fn(ctx, "forge_array_slice"), obj_r.value, start_r.value, end_r.value, "slice")
-    ok_emit_typed(result, ValueType.List)
+    ok_emit_typed(result, obj_r.ty)
 }
 
 fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
