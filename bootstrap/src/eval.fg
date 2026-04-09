@@ -417,6 +417,8 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             // that cares.
             ok_result(runtime, value_null())
         }
+        .EnumDecl(_, _) -> ok_result(runtime, value_null())
+        .Match(_, _) -> error_result(runtime, "match statements are not supported by the tree-walk evaluator")
     }
 }
 
@@ -496,6 +498,7 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .Call(callee, args) -> eval_call(runtime, callee, args)
         .StructLit(_, _) -> error_result(runtime, "struct literals are not supported by the tree-walk evaluator")
         .FieldAccess(_, _) -> error_result(runtime, "field access is not supported by the tree-walk evaluator")
+        .EnumCtor(_, _, _) -> error_result(runtime, "enum constructors are not supported by the tree-walk evaluator")
     }
 }
 

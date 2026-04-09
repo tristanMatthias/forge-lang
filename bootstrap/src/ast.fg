@@ -22,6 +22,29 @@ export enum FieldInitList {
     Node(name: string, value: Expr, next: FieldInitList)
 }
 
+// Variant of an enum declaration. Each variant has zero or more
+// payload fields. Field types are tracked as textual tags ("i64"/"str")
+// like everywhere else in the MVP.
+export enum VariantList {
+    End
+    Node(name: string, fields: FieldList, next: VariantList)
+}
+
+// Pattern in a match arm.
+//   .Variant            → no payload binding
+//   .Variant(a, b)      → bind payload positionally to `a`, `b`
+//   _                   → wildcard
+export enum Pattern {
+    Wildcard
+    Variant(name: string, bindings: ParamList)
+}
+
+// Arms of a match expression/statement, terminated by `End`.
+export enum MatchArmList {
+    End
+    Node(pattern: Pattern, body: Stmt, next: MatchArmList)
+}
+
 export enum Expr {
     Number(value: string)
     String(value: string)
@@ -36,6 +59,7 @@ export enum Expr {
     Call(callee: Expr, args: ExprList)
     StructLit(name: string, inits: FieldInitList)
     FieldAccess(obj: Expr, field: string)
+    EnumCtor(type_name: string, variant: string, args: ExprList)
 }
 
 export enum Stmt {
@@ -49,6 +73,8 @@ export enum Stmt {
     Ret(value: Expr)
     RetEmpty
     TypeDecl(name: string, fields: FieldList)
+    EnumDecl(name: string, variants: VariantList)
+    Match(subject: Expr, arms: MatchArmList)
 }
 
 export enum StmtList {
@@ -170,6 +196,54 @@ fn field_index_of_loop(fields: FieldList, name: string, idx: int) -> int {
     }
 }
 
+export fn variant_list_length(variants: VariantList) -> int {
+    match variants {
+        .End -> 0
+        .Node(_, _, next) -> 1 + variant_list_length(next)
+    }
+}
+
+// Find a variant by name in a VariantList. Returns the matching
+// FieldList plus its zero-based tag index, or (false, ...).
+export type VariantLookup = {
+    found: bool,
+    fields: FieldList,
+    tag: int,
+}
+
+export fn variant_lookup(variants: VariantList, name: string) -> VariantLookup {
+    variant_lookup_loop(variants, name, 0)
+}
+
+fn variant_lookup_loop(variants: VariantList, name: string, idx: int) -> VariantLookup {
+    match variants {
+        .End -> VariantLookup { found: false, fields: FieldList.End, tag: -1 }
+        .Node(n, fields, next) -> {
+            if n == name {
+                return VariantLookup { found: true, fields, tag: idx }
+            }
+            variant_lookup_loop(next, name, idx + 1)
+        }
+    }
+}
+
+// Maximum number of i64 slots needed across all variants in this enum.
+// Determines the size of the payload union in the LLVM struct layout.
+export fn variant_max_payload(variants: VariantList) -> int {
+    match variants {
+        .End -> 0
+        .Node(_, fields, next) -> {
+            let here = field_list_length(fields)
+            let rest = variant_max_payload(next)
+            if here > rest {
+                here
+            } else {
+                rest
+            }
+        }
+    }
+}
+
 // Returns the textual type ("i64"/"str") for field `name`, or "i64".
 export fn field_type_of(fields: FieldList, name: string) -> string {
     match fields {
@@ -198,6 +272,7 @@ export fn render_expr(expr: Expr) -> string {
         .Call(callee, args) -> "(call " + render_expr(callee) + " " + render_expr_list(args) + ")"
         .StructLit(name, inits) -> "(struct " + name + " " + render_field_init_list(inits) + ")"
         .FieldAccess(obj, field) -> "(field " + render_expr(obj) + " " + field + ")"
+        .EnumCtor(type_name, variant, args) -> "(ctor " + type_name + "." + variant + " " + render_expr_list(args) + ")"
     }
 }
 
@@ -291,6 +366,51 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Ret(value) -> "(return " + render_expr(value) + ")"
         .RetEmpty -> "(return)"
         .TypeDecl(name, fields) -> "(type " + name + " " + render_field_list(fields) + ")"
+        .EnumDecl(name, variants) -> "(enum " + name + " " + render_variant_list(variants) + ")"
+        .Match(subject, arms) -> "(match " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"
+    }
+}
+
+export fn render_variant_list(variants: VariantList) -> string {
+    match variants {
+        .End -> "()"
+        .Node(name, fields, next) -> {
+            let head = name + render_field_list(fields)
+            let tail = render_variant_tail(next)
+            "(" + head + tail + ")"
+        }
+    }
+}
+
+fn render_variant_tail(variants: VariantList) -> string {
+    match variants {
+        .End -> ""
+        .Node(name, fields, next) -> ", " + name + render_field_list(fields) + render_variant_tail(next)
+    }
+}
+
+export fn render_pattern(p: Pattern) -> string {
+    match p {
+        .Wildcard -> "_"
+        .Variant(name, bindings) -> "." + name + render_param_list(bindings)
+    }
+}
+
+export fn render_match_arm_list(arms: MatchArmList) -> string {
+    match arms {
+        .End -> "()"
+        .Node(pattern, body, next) -> {
+            let head = render_pattern(pattern) + " -> " + render_stmt(body)
+            let tail = render_match_arm_tail(next)
+            "(" + head + tail + ")"
+        }
+    }
+}
+
+fn render_match_arm_tail(arms: MatchArmList) -> string {
+    match arms {
+        .End -> ""
+        .Node(pattern, body, next) -> "; " + render_pattern(pattern) + " -> " + render_stmt(body) + render_match_arm_tail(next)
     }
 }
 

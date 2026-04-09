@@ -1,0 +1,11 @@
+enum Op {
+    Add(a: i64, b: i64),
+    Negate(x: i64)
+}
+
+let op = Op.Add(15, 27)
+match op {
+    .Add(a, b) -> { return a + b }
+    .Negate(x) -> { return 0 - x }
+}
+return 0

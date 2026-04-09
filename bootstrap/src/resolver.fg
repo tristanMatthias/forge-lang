@@ -1,4 +1,4 @@
-use ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList}
+use ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern}
 
 export type ResolveResult = {
     had_error: bool,
@@ -218,6 +218,36 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .Ret(value) -> resolve_expr(r, value)
         .RetEmpty -> r
         .TypeDecl(_, _) -> r
+        .EnumDecl(_, _) -> r
+        .Match(subject, arms) -> {
+            let after_subject = resolve_expr(r, subject)
+            resolve_match_arms(after_subject, arms)
+        }
+    }
+}
+
+fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
+    if r.had_error {
+        return r
+    }
+    match arms {
+        .End -> r
+        .Node(pattern, body, next) -> {
+            // Pattern bindings (e.g. `.Foo(a, b)`) enter a fresh
+            // scope that's only visible inside this arm's body.
+            let entered = enter_resolve_scope(r)
+            let with_bindings = declare_pattern_bindings(entered, pattern)
+            let after_body = resolve_stmt(with_bindings, body)
+            let exited = exit_resolve_scope(after_body)
+            resolve_match_arms(exited, next)
+        }
+    }
+}
+
+fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
+    match pattern {
+        .Wildcard -> r
+        .Variant(_, bindings) -> declare_params(r, bindings)
     }
 }
 
@@ -281,6 +311,7 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         }
         .StructLit(_, inits) -> resolve_field_init_list(r, inits)
         .FieldAccess(obj, _) -> resolve_expr(r, obj)
+        .EnumCtor(_, _, args) -> resolve_expr_list(r, args)
     }
 }
 

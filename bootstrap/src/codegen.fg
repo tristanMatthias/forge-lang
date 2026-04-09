@@ -1,5 +1,5 @@
 use @std.llvm
-use ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of}
+use ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload}
 
 // ── Public API ──
 
@@ -66,6 +66,43 @@ fn struct_reg_extend(name: string, fields: FieldList) {
     CG_STRUCTS = StructReg.Node(name, fields, CG_STRUCTS)
 }
 
+// ── Enum registry ──
+//
+// Maps enum name → its VariantList. Same idea as the struct
+// registry: LLVM holds the named struct type, but variant names,
+// tags, and field types live only here.
+enum EnumReg {
+    End
+    Node(name: string, variants: VariantList, next: EnumReg)
+}
+
+mut CG_ENUMS: EnumReg = EnumReg.End
+
+type EnumLookup = {
+    found: bool,
+    variants: VariantList,
+}
+
+fn enum_reg_lookup(name: string) -> EnumLookup {
+    enum_reg_lookup_loop(CG_ENUMS, name)
+}
+
+fn enum_reg_lookup_loop(reg: EnumReg, name: string) -> EnumLookup {
+    match reg {
+        .End -> EnumLookup { found: false, variants: VariantList.End }
+        .Node(n, variants, next) -> {
+            if n == name {
+                return EnumLookup { found: true, variants }
+            }
+            enum_reg_lookup_loop(next, name)
+        }
+    }
+}
+
+fn enum_reg_extend(name: string, variants: VariantList) {
+    CG_ENUMS = EnumReg.Node(name, variants, CG_ENUMS)
+}
+
 export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult {
     let ctx = llvm.context_create()
     let m = llvm.module_create("bootstrap", ctx)
@@ -106,9 +143,11 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     llvm.type_array_free(memcpy_param_arr)
     llvm.add_function(m, "memcpy", memcpy_type)
 
-    // Reset and rebuild the per-compile struct registry.
+    // Reset and rebuild the per-compile struct/enum registries.
     CG_STRUCTS = StructReg.End
+    CG_ENUMS = EnumReg.End
     declare_structs(ctx, i64t, stmts)
+    declare_enums(ctx, i64t, stmts)
 
     // Pass 1: declare every user-defined function as an LLVM
     // prototype so call sites (which may appear before the
@@ -254,6 +293,43 @@ fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList) {
             declare_structs(ctx, i64t, next)
         }
     }
+}
+
+// ── Enum declaration pass ──
+
+fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList) {
+    match stmts {
+        .End -> {}
+        .Node(stmt, next) -> {
+            match stmt {
+                .EnumDecl(name, variants) -> {
+                    // Each enum is laid out as `{i8 tag, i64 x N}`
+                    // where N = max number of fields across variants.
+                    // Field types are erased to i64 — strings are
+                    // pointer-encoded already.
+                    let max_fields = variant_max_payload(variants)
+                    let total_fields = max_fields + 1
+                    let field_arr = llvm.type_array_new(total_fields)
+                    llvm.type_array_set(field_arr, 0, llvm.int8_type(ctx))
+                    fill_i64_param_array_offset(field_arr, i64t, 1, max_fields)
+                    let st = llvm.struct_create_named(ctx, name)
+                    llvm.struct_set_body(st, field_arr, total_fields, 0)
+                    llvm.type_array_free(field_arr)
+                    enum_reg_extend(name, variants)
+                }
+                _ -> {}
+            }
+            declare_enums(ctx, i64t, next)
+        }
+    }
+}
+
+fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
+    if count <= 0 {
+        return
+    }
+    llvm.type_array_set(arr, base, i64t)
+    fill_i64_param_array_offset(arr, i64t, base + 1, count - 1)
 }
 
 // ── Function declaration pass ──
@@ -416,6 +492,8 @@ fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
         .If(condition, then_branch, else_branch) -> emit_if(cg, env, condition, then_branch, else_branch)
         .While(condition, body) -> emit_while(cg, env, condition, body)
         .TypeDecl(_, _) -> ok_stmt(env)
+        .EnumDecl(_, _) -> ok_stmt(env)
+        .Match(subject, arms) -> emit_match(cg, env, subject, arms)
         _ -> err_stmt("codegen error: unsupported statement type")
     }
 }
@@ -545,6 +623,7 @@ fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
         .Call(callee, args) -> emit_call(cg, env, callee, args)
         .StructLit(name, inits) -> emit_struct_lit(cg, env, name, inits)
         .FieldAccess(obj, field) -> emit_field_access(cg, env, obj, field)
+        .EnumCtor(type_name, variant, args) -> emit_enum_ctor(cg, env, type_name, variant, args)
         _ -> err_emit("unsupported expression type")
     }
 }
@@ -592,6 +671,21 @@ fn fill_struct_fields(cg: Codegen, env: VarEnv, st_ty: ptr, alloca: ptr, inits: 
 }
 
 fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> EmitResult {
+    // Special case: bare `EnumName.Variant` (zero-arg enum
+    // constructor). The parser models this as
+    // FieldAccess(Ident(EnumName), Variant) because there's no
+    // following `(`. Detect that here by checking the enum registry
+    // before falling back to struct field access.
+    match obj {
+        .Ident(head) -> {
+            let enum_l = enum_reg_lookup(head)
+            if enum_l.found {
+                return emit_enum_ctor(cg, env, head, field, ExprList.End)
+            }
+        }
+        _ -> {}
+    }
+
     let r = emit_expr(cg, env, obj)
     if r.had_error {
         return r
@@ -615,6 +709,192 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     let loaded = llvm.build_load(cg.builder, cg.i64_type, gep, field)
     let field_ty = field_type_of(lookup.fields, field)
     EmitResult { value: loaded, ty: field_ty, had_error: false, error_message: "" }
+}
+
+fn emit_enum_ctor(cg: Codegen, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
+    let enum_l = enum_reg_lookup(type_name)
+    if !enum_l.found {
+        return err_emit("undefined enum type `" + type_name + "`")
+    }
+    let v = variant_lookup(enum_l.variants, variant)
+    if !v.found {
+        return err_emit("enum `" + type_name + "` has no variant `" + variant + "`")
+    }
+    let st_ty = llvm.get_type_by_name(cg.ctx, type_name)
+    if st_ty == null {
+        return err_emit("LLVM enum type `" + type_name + "` not declared")
+    }
+    let alloca = llvm.build_alloca(cg.builder, st_ty, type_name)
+    // Set tag at field index 0.
+    let tag_gep = llvm.build_struct_gep2(cg.builder, st_ty, alloca, 0, "tag_ptr")
+    let tag_val = llvm.const_int(llvm.int8_type(cg.ctx), v.tag, 0)
+    llvm.build_store(cg.builder, tag_val, tag_gep)
+    // Store payload args at field indices 1..N.
+    let fill = fill_enum_payload(cg, env, st_ty, alloca, args, 0)
+    if fill.had_error {
+        return fill
+    }
+    let as_i64 = llvm.build_ptr_to_int(cg.builder, alloca, cg.i64_type, "enum_i64")
+    EmitResult { value: as_i64, ty: "enum:" + type_name, had_error: false, error_message: "" }
+}
+
+fn fill_enum_payload(cg: Codegen, env: VarEnv, st_ty: ptr, alloca: ptr, args: ExprList, idx: int) -> EmitResult {
+    match args {
+        .End -> ok_emit(null_ptr_val())
+        .Node(expr, next) -> {
+            let r = emit_expr(cg, env, expr)
+            if r.had_error {
+                return r
+            }
+            let gep = llvm.build_struct_gep2(cg.builder, st_ty, alloca, idx + 1, "payload_ptr")
+            llvm.build_store(cg.builder, r.value, gep)
+            fill_enum_payload(cg, env, st_ty, alloca, next, idx + 1)
+        }
+    }
+}
+
+// "enum:Name" → "Name"; anything else → "".
+fn emit_match(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchArmList) -> StmtResult {
+    let r = emit_expr(cg, env, subject)
+    if r.had_error {
+        return err_stmt_from_expr(r)
+    }
+    let enum_name = strip_enum_prefix(r.ty)
+    if enum_name == "" {
+        return err_stmt("codegen error: match subject is not an enum (ty=" + r.ty + ")")
+    }
+    let lookup = enum_reg_lookup(enum_name)
+    if !lookup.found {
+        return err_stmt("codegen error: unknown enum `" + enum_name + "`")
+    }
+    let st_ty = llvm.get_type_by_name(cg.ctx, enum_name)
+    let subj_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "match_subj")
+    // Load tag once.
+    let tag_gep = llvm.build_struct_gep2(cg.builder, st_ty, subj_ptr, 0, "tag_ptr")
+    let tag_val = llvm.build_load(cg.builder, llvm.int8_type(cg.ctx), tag_gep, "tag")
+
+    let merge_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "match_end")
+    let arm_result = emit_match_arms(cg, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)
+    if arm_result.had_error {
+        return arm_result
+    }
+    llvm.position_at_end(cg.builder, merge_bb)
+    ok_stmt(env)
+}
+
+fn emit_match_arms(cg: Codegen, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> StmtResult {
+    match arms {
+        .End -> {
+            // No more arms — terminate the current block by branching
+            // to merge if it isn't already terminated. (A wildcard
+            // arm is the standard way to handle this.)
+            if !llvm.block_has_terminator(cg.builder) {
+                llvm.build_br(cg.builder, merge_bb)
+            }
+            ok_stmt(env)
+        }
+        .Node(pattern, body, next) -> {
+            let arm_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "match_arm")
+            let next_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "match_next")
+            // Compare current tag against this pattern's variant tag,
+            // or always-true for wildcard.
+            match pattern {
+                .Wildcard -> {
+                    llvm.build_br(cg.builder, arm_bb)
+                }
+                .Variant(vname, _) -> {
+                    let v = variant_lookup(variants, vname)
+                    if !v.found {
+                        return err_stmt("codegen error: pattern references unknown variant `" + vname + "`")
+                    }
+                    let want_tag = llvm.const_int(llvm.int8_type(cg.ctx), v.tag, 0)
+                    let cmp = llvm.build_icmp(cg.builder, 32, tag_val, want_tag, "tag_eq")
+                    llvm.build_cond_br(cg.builder, cmp, arm_bb, next_bb)
+                }
+            }
+            // Emit the arm body, with payload bindings if any.
+            llvm.position_at_end(cg.builder, arm_bb)
+            let arm_env = bind_pattern_payload(cg, env, pattern, st_ty, subj_ptr, variants)
+            let body_result = emit_stmt(cg, arm_env, body)
+            if body_result.had_error {
+                return body_result
+            }
+            if !llvm.block_has_terminator(cg.builder) {
+                llvm.build_br(cg.builder, merge_bb)
+            }
+            // Continue dispatch in next_bb.
+            llvm.position_at_end(cg.builder, next_bb)
+            emit_match_arms(cg, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb)
+        }
+    }
+}
+
+fn bind_pattern_payload(cg: Codegen, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList) -> VarEnv {
+    match pattern {
+        .Wildcard -> env
+        .Variant(vname, bindings) -> {
+            let v = variant_lookup(variants, vname)
+            if !v.found {
+                return env
+            }
+            // Walk the bindings ParamList in parallel with the
+            // variant's FieldList. For each name, GEP to payload
+            // index (1 + i), load i64, alloca, store.
+            bind_pattern_payload_loop(cg, env, st_ty, subj_ptr, bindings, v.fields, 0)
+        }
+    }
+}
+
+fn bind_pattern_payload_loop(cg: Codegen, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: FieldList, idx: int) -> VarEnv {
+    match bindings {
+        .End -> env
+        .Node(name, next_b) -> {
+            // _ in a binding position is a "don't bind" placeholder.
+            if name == "_" {
+                return bind_pattern_payload_loop(cg, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
+            }
+            let gep = llvm.build_struct_gep2(cg.builder, st_ty, subj_ptr, idx + 1, "pbind_ptr")
+            let loaded = llvm.build_load(cg.builder, cg.i64_type, gep, name)
+            let alloca = llvm.build_alloca(cg.builder, cg.i64_type, name)
+            llvm.build_store(cg.builder, loaded, alloca)
+            let field_ty = field_type_at(fields, 0)
+            let extended = env_extend(env, name, alloca, field_ty)
+            bind_pattern_payload_loop(cg, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
+        }
+    }
+}
+
+fn advance_field_list(fields: FieldList) -> FieldList {
+    match fields {
+        .End -> FieldList.End
+        .Node(_, _, next) -> next
+    }
+}
+
+fn field_type_at(fields: FieldList, idx: int) -> string {
+    match fields {
+        .End -> "i64"
+        .Node(_, ty, next) -> {
+            if idx <= 0 {
+                if ty == "str" {
+                    return "str"
+                }
+                return "i64"
+            }
+            field_type_at(next, idx - 1)
+        }
+    }
+}
+
+fn strip_enum_prefix(ty: string) -> string {
+    if ty.length < 6 {
+        return ""
+    }
+    let head = ty.substring(0, 5)
+    if head != "enum:" {
+        return ""
+    }
+    ty.substring(5, ty.length)
 }
 
 // "struct:Name" → "Name"; anything else → "".
