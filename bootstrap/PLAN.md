@@ -397,23 +397,9 @@ do when blocked / never do until forced".
   no real type lattice to dump. Add only after the type tracker refactor
   below.
 
-- ~~**Wide-store-into-narrow-buffer pass in `--score`**~~ *(done)*
-  Tracks SSA aliases through ptrtoint/inttoptr/add and flags any
-  `store iN` whose destination came from `malloc(K)` with `K*8 < N`.
-  Resets state at function boundaries. Wide-store hits are fatal
-  (exit non-zero). Verified: 0 false positives on current bs2 IR
-  (37224 lines), 2 true positives on the synthetic bug-class repro.
-
-- ~~**Fixed-point self-host check (`--check-fixedpoint`)**~~ *(done)*
-  Verifies bs2 and bs3 emit byte-identical IR for `bootstrap/src/main.fg`.
-  Wired into the pre-commit hook when `bootstrap/src/` or std-llvm or
-  the runtime is touched. The single most important self-hosting
-  invariant — a regression that breaks it now blocks the commit.
-
-- ~~**Cross-compiler regression mode**~~ *(done)*
-  `--regress` now compiles each test through both stage1 and bs2,
-  runs both binaries, and asserts the stdout matches. Any
-  stage1↔bs2 divergence is a hard failure.
+- ~~Wide-store-into-narrow-buffer pass in `--score`~~ *(done)*
+- ~~Fixed-point self-host check (`--check-fixedpoint`)~~ *(done)*
+- ~~Cross-compiler regression mode~~ *(done)*
 
 - **Audit `--bisect-lines` for line-aware bisection** *(do when blocked)*
   Currently bisects on raw line count, which can produce
@@ -423,15 +409,12 @@ do when blocked / never do until forced".
 ### Bootstrap codegen / compiler
 
 - **Real per-alloca type tracking** *(do when blocked, high leverage)*
-  bs2 currently tracks types via the `EmitResult.ty: string` tag plus
-  several global registries (`CG_FN_RETS`, `CG_GLOBALS`, `CG_STRUCTS`).
-  Many code paths lose the tag (struct field loads, generic call
-  returns, match arms) and default to "i64". Replace with a single
-  source of truth: read each value's type from LLVM directly via
-  `LLVMGetAllocatedType` / `LLVMTypeOf` instead of carrying string
-  tags. Same M1 refactor that the Rust compiler still needs (see
-  `forge/SELF_HOST_PLAN.md`). This unblocks `--dump-types` and
-  eliminates a class of "wrong dispatch" bugs.
+  bs2 currently tracks types via the `EmitResult.ty: string` tag.
+  Many code paths lose the tag and default to "i64". Replace with
+  a single source of truth: read each value's type from LLVM
+  directly via `LLVMGetAllocatedType` / `LLVMTypeOf`. Note: all
+  registries now flow through Ctx (zero globals), so the
+  infrastructure is ready for this.
 
 - **Exhaustive match in codegen for `Stmt` / `Expr`** *(do soon)*
   The `Stmt.If` tail-position bug existed because `emit_block_loop`
@@ -494,22 +477,13 @@ Three sites cleaned up in `afcecb4`. Remaining audit:
 ### Test coverage / regression suite
 
 - **Capture more programs as regression tests** *(do soon)*
-  Currently 6: zero, hello, int_to_string, fib, field_access,
-  string_ops. Add: enum match, struct mutation, while + break, nested
-  if-else expressions, recursive type rendering, multi-arg method call,
-  string substring, file I/O round-trip. Each is one
-  `--regress-add` invocation.
+  Currently 7: zero, hello, int_to_string, fib, field_access,
+  string_ops, nested_mods. Add: enum match, struct mutation,
+  while + break, nested if-else expressions, multi-arg method call,
+  string substring. Each is one `--regress-add` invocation.
 
-- **Stage1-vs-bs2 IR equivalence test** *(do soon)*
-  Add a regression mode that compiles each captured `.fg` with both
-  stage1 and bs2 and asserts the .ll files are byte-identical. Catches
-  any new codegen divergence at commit time.
-
-- **Self-host regression** *(do now — see below)*
-  The bs2-self-compiles-bootstrap fixed-point check should run in
-  CI / pre-commit when `bootstrap/src/` changes, not just the
-  user-program regression tests. The pre-commit hook currently runs
-  only `--regress`; extend it to also do `--build-bs3` + diff-fixed-point.
+- ~~Stage1-vs-bs2 IR equivalence test~~ *(done — built into --regress)*
+- ~~Self-host regression~~ *(done — pre-commit runs --check-fixedpoint)*
 
 ### Bug-class prevention rules (encoded as session learnings)
 
