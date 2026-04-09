@@ -1,211 +1,298 @@
-# Feature Parity: Bootstrap vs Rust Compiler
+# Feature Parity: Bootstrap vs Forge Language
 
-Inventory of what the Rust host compiler supports vs what the
-bootstrap currently handles. Organized by priority tier.
+Complete inventory. Every feature of the Forge language is listed
+below with its bootstrap status. Source of truth: `forge lang --llm`
+and `forge features` (67 features, 62 stable).
 
-## What Bootstrap HAS (self-host subset)
-
-### Declarations
-- [x] `fn` declarations with params + return type
-- [x] `extern fn` (C FFI)
-- [x] `let` / `mut` variable bindings with optional type annotation
-- [x] `type Foo = { fields }` (struct declaration)
-- [x] `enum Foo { Variant(fields) }` (tagged union)
-- [x] `impl Type { fn method(self) }` (methods, desugared to Type__method)
-- [x] `mod foo` (module system, supports nested dirs)
-- [x] `use module.{names}` (import — host resolves, bootstrap text-inlines)
-- [x] `export` (visibility marker — host-only semantics)
-
-### Statements
-- [x] `if` / `else` (statement + expression form)
-- [x] `while` (with break/continue via scoped loop stack)
-- [x] `match` on enums (statement + expression, with pattern bindings)
-- [x] `return` / `return expr`
-- [x] `break` / `continue`
-- [x] Block expressions `{ stmts; last_expr }`
-
-### Expressions
-- [x] Arithmetic: `+`, `-`, `*`, `/`
-- [x] Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
-- [x] Logical: `&&`, `||` (eager, not short-circuit)
-- [x] Unary: `-`, `!`
-- [x] String concat via `+`
-- [x] String indexing `s[i]`
-- [x] String `.length` / `.substring(start, end)`
-- [x] Field access `obj.field`
-- [x] Field assign `obj.field = val`
-- [x] Struct literals `Foo { x: 1, y }` (with shorthand)
-- [x] Enum constructors `Foo.Variant(args)`
-- [x] Function calls `f(args)`
-- [x] Method calls `obj.method(args)`
-- [x] Nullable `?` (erased — everything is i64)
-- [x] Force-unwrap `expr!` (no-op in bootstrap)
-- [x] `null` literal
-- [x] `int()`, `string()`, `println()`, `eprintln()` builtins
+Status key:
+  ✅ = implemented in bootstrap
+  🔲 = not yet implemented
+  ⬜ = not applicable to bootstrap (domain-specific / runtime-only)
 
 ---
 
-## TIER 1 — Needed to compile real Forge programs
-Priority: do first. These are the features that real user programs use daily.
+## Variables & Bindings
 
-### for loops *(Rust: features/for_loops)*
-```forge
-for item in list { ... }
-for i in 0..10 { ... }
-```
-Needs: `for` keyword, range expressions, iterator protocol.
-The bootstrap currently uses `while` for everything. `for` is
-the most common loop form in user code.
-**Estimate: medium (parser + codegen, needs range type)**
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| let binding | `let x = 1` | ✅ | |
+| mut binding | `mut y = 2` | ✅ | |
+| const binding | `const Z = 3` | 🔲 | |
+| type annotation | `let x: int = 42` | ✅ | optional, defaults to i64 |
+| immutability enforcement | `x = 2` errors if `let` | 🔲 | bootstrap allows mutation on let |
+| field mutability | `type T = { mut x: int }` | ✅ | parsed, not enforced |
+| shorthand fields | `Foo { name }` = `Foo { name: name }` | ✅ | |
 
-### closures / lambdas *(Rust: features/closures)*
-```forge
-let add = fn(a, b) { a + b }
-list.map(fn(x) { x * 2 })
-```
-Needs: lambda expressions, capture semantics, function-typed values.
-Critical for any functional-style code and most standard library patterns.
-**Estimate: large (capture analysis, heap-allocated closures)**
+## Primitive Types
 
-### generics *(Rust: features/generics)*
-```forge
-fn identity<T>(x: T) -> T { x }
-type Box<T> = { value: T }
-```
-Needs: type parameters, monomorphization or type erasure.
-Required for any generic collection (List<T>, Map<K,V>).
-**Estimate: large (type system extension)**
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| int (i64) | `42`, `-1`, `1_000_000` | ✅ | |
+| float (f64) | `3.14`, `1.0e10` | 🔲 | parsed but not codegen'd |
+| string | `"hello"` | ✅ | raw cstr in bootstrap |
+| bool | `true`, `false` | ✅ | |
+| null | `null` | ✅ | = i64 0 |
+| hex/bin/oct literals | `0xFF`, `0b1010`, `0o755` | 🔲 | |
+| numeric underscores | `1_000_000` | 🔲 | |
 
-### collections *(Rust: features/collections)*
-```forge
-let list = [1, 2, 3]
-let map = { "a": 1, "b": 2 }
-list.push(4)
-map.get("a")
-```
-Needs: List<T>, Map<K,V> with runtime support.
-Currently bootstrap uses recursive enums (linked lists) instead.
-**Estimate: large (needs generics OR monomorphized builtins)**
+## Functions
 
-### string templates *(Rust: features/string_templates)*
-```forge
-let msg = "hello {name}, you are {age} years old"
-```
-Needs: template literal parsing + codegen.
-Used everywhere in user code.
-**Estimate: small-medium (parser + concat codegen)**
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| fn declaration | `fn name(params) -> type { body }` | ✅ | |
+| return | `return expr` | ✅ | |
+| implicit return | last expression is return value | ✅ | |
+| extern fn | `extern fn name(params) -> type` | ✅ | C ABI |
+| fn types | `fn(A, B) -> R` | 🔲 | |
+| closures / lambdas | `(x) -> x * 2` | 🔲 | **high priority** |
+| `it` parameter | `.method(it * 2)` | 🔲 | needs closures |
+| generics | `fn name<T>(x: T) -> T` | 🔲 | **high priority** |
+| generic constraints | `fn name<T: Trait>(x: T)` | 🔲 | needs generics + traits |
 
-### null safety *(Rust: features/null_safety)*
-```forge
-let x: int? = null
-if x != null { use(x!) }
-```
-Bootstrap currently erases nullability (everything is i64, null = 0).
-Real null safety needs: nullable type tracking, null checks at
-access sites, `?` propagation.
-**Estimate: large (type system change)**
+## Structs & Types
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| type declaration | `type T = { fields }` | ✅ | |
+| struct literal | `Foo { x: 1, y: 2 }` | ✅ | |
+| field access | `obj.field` | ✅ | |
+| field assign | `obj.field = val` | ✅ | |
+| `with` expression | `obj with { field: val }` | 🔲 | functional update |
+| traits | `trait Name { fn method(self) }` | 🔲 | **high priority** |
+| impl for trait | `impl Trait for Type { }` | 🔲 | needs traits |
+| impl block | `impl Type { fn method(self) }` | ✅ | desugars to Type__method |
+
+## Enums & Pattern Matching
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| enum declaration | `enum Name { A, B(x: int) }` | ✅ | |
+| enum constructor | `Name.Variant(args)` | ✅ | |
+| match statement | `match expr { .A -> ... }` | ✅ | |
+| match expression | `let x = match expr { ... }` | ✅ | |
+| wildcard pattern | `_ -> ...` | ✅ | |
+| variant binding | `.A(x, y) -> use(x)` | ✅ | |
+| nested patterns | `.A(.Inner(x), y) -> ...` | 🔲 | |
+| match guards | `pattern if guard -> body` | 🔲 | |
+| match tables | `match expr table { ... }` | 🔲 | |
+| `is` keyword | `value is Pattern` | 🔲 | |
+| contextual resolution | `let x: Enum = .variant` | 🔲 | |
+
+## Control Flow
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| if / else | `if cond { } else { }` | ✅ | stmt + expr form |
+| else if | `if a { } else if b { }` | ✅ | |
+| while | `while cond { body }` | ✅ | |
+| for-in | `for x in collection { }` | 🔲 | **high priority** |
+| for-range | `for i in 0..10 { }` | 🔲 | needs ranges |
+| break / continue | `break`, `continue` | ✅ | scoped via Ctx.loops |
+| expression blocks | `{ stmts; last_expr }` | ✅ | |
+| defer | `defer cleanup()` | 🔲 | |
+
+## Operators
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| arithmetic | `+`, `-`, `*`, `/` | ✅ | |
+| comparison | `==`, `!=`, `<`, `<=`, `>`, `>=` | ✅ | |
+| logical | `&&`, `||` | ✅ | **eager, not short-circuit** |
+| logical keywords | `and`, `or`, `not` | 🔲 | |
+| unary | `-x`, `!x` | ✅ | |
+| bitwise | `&`, `|`, `^`, `<<`, `>>`, `~` | 🔲 | |
+| pipe | `expr |> fn` | 🔲 | |
+| ranges | `start..end`, `start..=end` | 🔲 | |
+| type operators | `without`, `only`, `partial` | 🔲 | |
+
+## Strings
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| string literals | `"hello"` | ✅ | |
+| string concat | `a + b` | ✅ | |
+| string indexing | `s[i]` | ✅ | returns 1-char string |
+| `.length` | `s.length` | ✅ | via strlen |
+| `.substring` | `s.substring(start, end)` | ✅ | |
+| string templates | `` `hello ${name}` `` | 🔲 | **high priority** |
+| tagged templates | `` tag`template` `` | 🔲 | needs templates |
+| `.split`, `.trim`, etc. | `s.split(sep)` | 🔲 | |
+| `.contains`, `.starts_with` | `s.contains(sub)` | 🔲 | |
+| `.replace`, `.upper`, `.lower` | `s.replace(a, b)` | 🔲 | |
+| `char_code(s)` | `char_code("A")` | 🔲 | |
+
+## Null Safety
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| nullable types | `T?` | 🔲 | bootstrap erases to i64 |
+| null check | `expr == null` | ✅ | via icmp |
+| force unwrap | `expr!` | ✅ | no-op (everything is i64) |
+| optional chaining | `expr?.field` | 🔲 | |
+| null coalescing | `expr ?? default` | 🔲 | |
+| null throw | `expr ?? throw .error` | 🔲 | |
+| error propagation | `expr?` (Result) | 🔲 | |
+| catch blocks | `catch { body }` | 🔲 | |
+
+## Collections
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| list literal | `[1, 2, 3]` | 🔲 | bootstrap uses recursive enums |
+| map literal | `{ "a": 1 }` | 🔲 | |
+| tuple literal | `(a, b, c)` | 🔲 | |
+| tuple destructuring | `let (x, y) = pair` | 🔲 | |
+| slicing | `list[start..end]` | 🔲 | |
+| list methods | `.push`, `.map`, `.filter`, etc. | 🔲 | |
+| map methods | `.has`, `.get`, `.keys` | 🔲 | |
+
+## Modules & Imports
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| mod declaration | `mod name` | ✅ | supports nested dirs |
+| use import | `use module.{names}` | ✅ | host resolves; bootstrap text-inlines |
+| export | `export fn name()` | ✅ | host-only semantics |
+| package use | `use @namespace.name` | ✅ | via host prescan workaround |
+| proper separate compilation | | 🔲 | bootstrap inlines everything |
+
+## I/O & Runtime
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| println / print | `println(value)` | ✅ | via puts |
+| eprintln / eprint | `eprintln(value)` | ✅ | via C extern |
+| string() conversion | `string(42)` | ✅ | via snprintf |
+| int() conversion | `int("42")` | ✅ | via atoi |
+| float() conversion | `float("3.14")` | 🔲 | |
+| file_exists | `file_exists(path)` | ✅ | via C extern |
+| read_file | `read_file(path)` | ✅ | via C extern |
+| write_file | `write_file(path, content)` | ✅ | via C extern |
+| json.parse / stringify | `json.parse(str)` | 🔲 | |
+| process_uptime | `process_uptime()` | 🔲 | |
+| datetime | `datetime_now()` | 🔲 | |
+| durations | `7d`, `24h`, `5m` | 🔲 | |
+| shell shorthand | `$"command ${arg}"` | 🔲 | |
+
+## Concurrency
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| spawn | `spawn { body }` | 🔲 | |
+| channels | `ch <- value`, `<- ch` | 🔲 | |
+| select | `select { ch -> body }` | 🔲 | |
+| parallel | `parallel { }` | 🔲 | |
+
+## Components (domain-specific)
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| component blocks | `name(args) { config }` | ⬜ | not applicable |
+| config declaration | `config { field: type = default }` | ⬜ | not applicable |
+| events | `event before_create(record)` | ⬜ | not applicable |
+| custom syntax | `@syntax("pattern") fn name(...)` | ⬜ | not applicable |
+
+## Testing
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| spec tests | `spec "name" { given { } then { } }` | 🔲 | |
+| table literals | `table { col | col; val | val }` | 🔲 | |
+| validation | `validate(value)` | 🔲 | |
+| annotations | `@name`, `@name(args)` | 🔲 | |
+
+## Pointer Operations (low-level)
+
+| Feature | Forge syntax | Bootstrap | Notes |
+|---|---|---|---|
+| ptr arithmetic | `ptr + n`, `ptr - ptr` | 🔲 | |
+| ptr indexing | `ptr[i]`, `ptr[i] = byte` | 🔲 | |
+| ptr ↔ string | `string.from_ptr`, `ptr.from_string` | 🔲 | |
+| c_abi_trampolines | | 🔲 | |
+
+## Packages (standard library)
+
+| Package | Bootstrap | Notes |
+|---|---|---|
+| @llvm | ✅ | via C extern wrappers |
+| @process | ✅ | via forge_selfhost_* C externs |
+| @fs | ✅ | via forge_selfhost_* C externs |
+| @forgec | ✅ | the bootstrap IS the compiler |
+| @ai | ⬜ | not applicable |
+| @archive | ⬜ | not applicable |
+| @cache | ⬜ | not applicable |
+| @channel | 🔲 | needs concurrency |
+| @cli | 🔲 | |
+| @crypto | ⬜ | not applicable |
+| @http | ⬜ | not applicable |
+| @jsonrpc | ⬜ | not applicable |
+| @semver | 🔲 | |
+| @term | 🔲 | |
+| @test | 🔲 | |
+| @toml | 🔲 | |
 
 ---
 
-## TIER 2 — Needed for a useful compiler
-Priority: after Tier 1. These make the compiler practical but aren't blocking.
+## Summary
 
-### traits *(Rust: features/traits)*
-```forge
-trait Display { fn display(self) -> string }
-impl Display for Foo { ... }
-```
-Needs: trait declarations, impl-for-trait, virtual dispatch.
-**Estimate: large**
+| Category | Total | ✅ Done | 🔲 TODO | ⬜ N/A |
+|---|---|---|---|---|
+| Variables & Bindings | 7 | 5 | 2 | 0 |
+| Primitive Types | 7 | 4 | 3 | 0 |
+| Functions | 9 | 4 | 5 | 0 |
+| Structs & Types | 8 | 5 | 3 | 0 |
+| Enums & Matching | 11 | 5 | 6 | 0 |
+| Control Flow | 8 | 5 | 3 | 0 |
+| Operators | 8 | 3 | 5 | 0 |
+| Strings | 11 | 5 | 6 | 0 |
+| Null Safety | 8 | 2 | 6 | 0 |
+| Collections | 7 | 0 | 7 | 0 |
+| Modules & Imports | 5 | 4 | 1 | 0 |
+| I/O & Runtime | 12 | 7 | 5 | 0 |
+| Concurrency | 4 | 0 | 4 | 0 |
+| Components | 4 | 0 | 0 | 4 |
+| Testing | 4 | 0 | 4 | 0 |
+| Pointer Ops | 4 | 0 | 4 | 0 |
+| Packages | 14 | 4 | 4 | 6 |
+| **TOTAL** | **131** | **53** | **68** | **10** |
 
-### error propagation *(Rust: features/error_propagation)*
-```forge
-fn read() -> Result<string> {
-    let f = open("file")?
-    f.read()?
-}
-```
-Needs: `?` operator, Result type, automatic error wrapping.
-**Estimate: medium**
+## Priority Order
 
-### pipe operator *(Rust: features/pipe_operator)*
-```forge
-data |> transform |> render
-```
-Needs: parser + desugar to nested calls.
-**Estimate: small**
+### Phase A — Make the language pleasant (small features)
+1. `for` loops + ranges
+2. string templates (`` `hello ${name}` ``)
+3. pipe operator (`|>`)
+4. `const` bindings
+5. hex/bin/oct numeric literals
+6. `and`/`or`/`not` keyword operators
 
-### ranges *(Rust: features/ranges)*
-```forge
-0..10
-0..=10
-```
-Needs: range literals, iterator integration.
-**Estimate: small-medium (pairs with for loops)**
+### Phase B — Type system (large features)
+7. null safety (nullable types, `?.`, `??`)
+8. generics (`<T>`)
+9. traits + impl-for-trait
 
-### tuples *(Rust: features/tuples)*
-```forge
-let (a, b) = get_pair()
-```
-Needs: tuple types, destructuring.
-**Estimate: medium**
+### Phase C — Data structures
+10. collections (List, Map) — needs generics or monomorphized builtins
+11. tuples + destructuring
+12. error propagation (`?` operator, Result type)
+13. slicing
 
-### file I/O *(Rust: features/file_io)*
-```forge
-let content = read_file("path")
-write_file("path", content)
-```
-Bootstrap already has `forge_selfhost_read_file` etc. as C
-externs. This is about making them proper language-level features.
-**Estimate: small (already works via extern, needs proper API)**
+### Phase D — Real programs
+14. closures / lambdas
+15. proper separate compilation (not text-inlining)
+16. short-circuit `&&` / `||`
 
-### imports (proper) *(Rust: features/imports)*
-Currently bootstrap text-inlines all modules. Real imports need:
-separate compilation, symbol visibility, cross-module type checking.
-**Estimate: large**
+### Phase E — Extended
+17. `with` expression
+18. `defer`
+19. `is` keyword
+20. nested patterns + match guards
+21. bitwise operators
+22. float support
 
----
-
-## TIER 3 — Nice to have / domain-specific
-Priority: after the compiler is useful for general programs.
-
-- `is` keyword (type checking at runtime)
-- `with` expressions (functional record update)
-- `defer` (cleanup on scope exit)
-- `spawn` / `parallel` (concurrency)
-- `channels` (message passing)
-- `select` syntax (channel multiplexing)
-- tagged templates
-- shell shorthand (`$"command"`)
-- `it` parameter (implicit lambda parameter)
-- JSON builtins
-- table literals
-- query helpers
-- component system (component_syntax, component_events, component_config)
-- pattern matching (advanced — guards, nested patterns)
-- spec tests
-- field mutability tracking
-- type conversion operators
-- validation
-
----
-
-## Recommended execution order
-
-```
-Phase A (self-host++)    for loops → string templates → ranges → pipe operator
-Phase B (type system)    null safety → generics → traits
-Phase C (collections)    collections (List/Map) → error propagation → tuples
-Phase D (real programs)  closures → file I/O → proper imports
-```
-
-Phase A makes the language pleasant to write in. Phase B makes the
-type system real. Phase C enables data structures. Phase D enables
-real-world programs.
-
-Each feature follows the established pattern:
-1. Create `features/<name>/` with WHY.md, grammar.md
-2. Add parser.fg (impl Parser block)
-3. Add codegen.fg (imports from core/cg.fg)
-4. Add example.fg + expected.out
-5. `make test` + commit
+### Phase F — Domain-specific (as needed)
+23. spec tests
+24. concurrency (spawn, channels, select)
+25. shell shorthand
+26. annotations
+27. pointer ops
