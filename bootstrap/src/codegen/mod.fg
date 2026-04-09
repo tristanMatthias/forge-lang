@@ -625,6 +625,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .Try(inner) -> emit_try(ctx, env, inner)
         .Tuple(elements) -> emit_tuple(ctx, env, elements)
         .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx)
+        .With(obj, overrides) -> emit_with(ctx, env, obj, overrides)
         _ -> err_emit("unsupported expression type")
     }
 }

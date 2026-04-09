@@ -148,6 +148,7 @@ fn p_keyword_kind(text: string) -> string {
     if text == "break" { return "kw_break" }
     if text == "continue" { return "kw_continue" }
     if text == "trait" { return "kw_trait" }
+    if text == "with" { return "kw_with" }
     return "identifier"
 }
 
@@ -511,7 +512,20 @@ impl Parser {
             return Expr.Unary(operator, right)
         }
 
-        self.parse_call()
+        mut expr = self.parse_call()?
+        // `expr with { field: value, ... }` — functional struct update (chainable)
+        while self.check("kw_with") {
+            self.advance()
+            if !self.consume("left_brace", "expected `{` after `with`") {
+                return null
+            }
+            let overrides = self.parse_field_init_list()?
+            if !self.consume("right_brace", "expected `}` after with fields") {
+                return null
+            }
+            expr = Expr.With(expr, overrides)
+        }
+        expr
     }
 
     // Peek at the source character immediately after the current

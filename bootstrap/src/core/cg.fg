@@ -281,20 +281,19 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
 
 // ── Ctx copy helpers ──
 //
-// Creating a modified Ctx (e.g. with a different current_fn or
-// pushed loop) requires spelling out all 12 fields. These helpers
-// copy everything and override just the field that changed.
+// Functional struct update via `with`. Adding a new field to Ctx
+// requires ZERO changes here.
 
 export fn ctx_with_fn(ctx: Ctx, fn_val: ptr) -> Ctx {
-    Ctx { lc: ctx.lc, module: ctx.module, builder: ctx.builder, current_fn: fn_val, i64_type: ctx.i64_type, i1_type: ctx.i1_type, ptr_type: ctx.ptr_type, structs: ctx.structs, enums: ctx.enums, fn_rets: ctx.fn_rets, top_level_vars: ctx.top_level_vars, loops: ctx.loops }
+    ctx with { current_fn: fn_val }
 }
 
 export fn ctx_with_loops(ctx: Ctx, loops: LoopStack) -> Ctx {
-    Ctx { lc: ctx.lc, module: ctx.module, builder: ctx.builder, current_fn: ctx.current_fn, i64_type: ctx.i64_type, i1_type: ctx.i1_type, ptr_type: ctx.ptr_type, structs: ctx.structs, enums: ctx.enums, fn_rets: ctx.fn_rets, top_level_vars: ctx.top_level_vars, loops }
+    ctx with { loops }
 }
 
 export fn ctx_with_top_level(ctx: Ctx, top_level_vars: TopLevelVars) -> Ctx {
-    Ctx { lc: ctx.lc, module: ctx.module, builder: ctx.builder, current_fn: ctx.current_fn, i64_type: ctx.i64_type, i1_type: ctx.i1_type, ptr_type: ctx.ptr_type, structs: ctx.structs, enums: ctx.enums, fn_rets: ctx.fn_rets, top_level_vars, loops: ctx.loops }
+    ctx with { top_level_vars }
 }
 
 // ── Cg helpers ──

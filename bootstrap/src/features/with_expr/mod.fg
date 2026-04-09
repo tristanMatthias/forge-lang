@@ -1,0 +1,5 @@
+// WHY: `expr with { field: value }` — functional struct update.
+// Creates a copy with specified fields overridden. The original
+// is not mutated. Eliminates verbose struct-copy boilerplate.
+
+mod codegen

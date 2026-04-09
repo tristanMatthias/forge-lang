@@ -1,0 +1,65 @@
+// WHY: codegen for `expr with { field: value, ... }` — functional
+// struct update. Creates a copy of the struct with specified fields
+// overridden. The original is not mutated.
+//
+// Implementation: malloc new struct, copy all fields from original,
+// then overwrite the specified fields with new values.
+
+use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, strip_struct_prefix, struct_reg_lookup, translate_param_type, const_i64, to_ptr, to_i64, cg_malloc}
+use codegen.{emit_expr}
+
+export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> EmitResult {
+    let r = emit_expr(ctx, env, obj)
+    if r.had_error { return r }
+
+    let struct_name = strip_struct_prefix(r.ty)
+    if struct_name == "" {
+        return err_emit("`with` requires a struct value (got ty=" + r.ty + ")")
+    }
+    let lookup = struct_reg_lookup(ctx.structs, struct_name)
+    if !lookup.found {
+        return err_emit("unknown struct `" + struct_name + "` in with expression")
+    }
+
+    // Count fields and allocate new struct
+    let field_count = field_list_length(lookup.fields)
+    let new_buf = cg_malloc(ctx, const_i64(ctx, field_count * 8))
+    let src_ptr = to_ptr(ctx, r.value, "with_src")
+
+    // Copy all fields from original
+    copy_struct_fields(ctx, src_ptr, new_buf, struct_name, field_count, 0)
+
+    // Override specified fields
+    apply_overrides(ctx, env, new_buf, struct_name, lookup.fields, overrides)
+
+    EmitResult { value: to_i64(ctx, new_buf, "with_result"), ty: r.ty, had_error: false, error_message: "" }
+}
+
+fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, count: int, idx: int) {
+    if idx >= count { return }
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
+    let src_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, src, idx, "with_cp_src")
+    let val = forge_llvm_build_load(ctx.builder, ctx.i64_type, src_gep, "with_cp_val")
+    let dst_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, dst, idx, "with_cp_dst")
+    forge_llvm_build_store(ctx.builder, val, dst_gep)
+    copy_struct_fields(ctx, src, dst, struct_name, count, idx + 1)
+}
+
+fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields: FieldList, overrides: FieldInitList) {
+    match overrides {
+        .End -> {}
+        .Node(name, value_expr, next) -> {
+            let idx = field_index_of(fields, name)
+            if idx >= 0 {
+                let r = emit_expr(ctx, env, value_expr)
+                if !r.had_error {
+                    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
+                    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, dst, idx, "with_ovr")
+                    forge_llvm_build_store(ctx.builder, r.value, gep)
+                }
+            }
+            apply_overrides(ctx, env, dst, struct_name, fields, next)
+        }
+    }
+}

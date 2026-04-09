@@ -79,6 +79,7 @@ export enum Expr {
     Try(expr: Expr)
     Tuple(elements: ExprList)
     TupleIndex(obj: Expr, index: int)
+    With(obj: Expr, overrides: FieldInitList)
 }
 
 export enum Stmt {
@@ -314,6 +315,7 @@ export fn render_expr(expr: Expr) -> string {
         .Try(inner) -> "(? " + render_expr(inner) + ")"
         .Tuple(elements) -> "(tuple " + render_expr_list(elements) + ")"
         .TupleIndex(obj, idx) -> "(tuple-idx " + render_expr(obj) + " " + string(idx) + ")"
+        .With(obj, overrides) -> "(with " + render_expr(obj) + " " + render_field_init_list(overrides) + ")"
     }
 }
 
