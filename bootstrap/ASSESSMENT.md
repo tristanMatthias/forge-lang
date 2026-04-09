@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (131 total: 63 done, 58 todo, 10 n/a)
+## Feature Progress (131 total: 80 done, 41 todo, 10 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -17,13 +17,13 @@
 | 11 | bool | ✅ | |
 | 12 | null | ✅ | |
 | 13 | hex/bin/oct literals | ✅ | |
-| 14 | numeric underscores | 🔲 | |
+| 14 | numeric underscores | ✅ | |
 | 15 | fn declaration | ✅ | |
 | 16 | return | ✅ | |
 | 17 | implicit return | ✅ | |
 | 18 | extern fn | ✅ | |
 | 19 | fn types | 🔲 | |
-| 20 | closures / lambdas | 🔲 | high priority |
+| 20 | closures / lambdas | ✅ | lifted functions + indirect calls |
 | 21 | `it` parameter | 🔲 | needs closures |
 | 22 | generics | ✅ | parsed, erased |
 | 23 | generic constraints | 🔲 | |
@@ -31,7 +31,7 @@
 | 25 | struct literal | ✅ | |
 | 26 | field access | ✅ | |
 | 27 | field assign | ✅ | |
-| 28 | `with` expression | ✅ | functional update, dogfooded in Ctx |
+| 28 | `with` expression | ✅ | dogfooded in Ctx helpers |
 | 29 | traits | ✅ | no dynamic dispatch |
 | 30 | impl for trait | ✅ | desugars to Type__method |
 | 31 | impl block | ✅ | |
@@ -49,7 +49,7 @@
 | 43 | if / else | ✅ | stmt + expr |
 | 44 | else if | ✅ | |
 | 45 | while | ✅ | |
-| 46 | for-in | 🔲 | needs iterators |
+| 46 | for-in | ✅ | `for x in list`, index-based desugar |
 | 47 | for-range | ✅ | |
 | 48 | break / continue | ✅ | |
 | 49 | expression blocks | ✅ | |
@@ -59,7 +59,7 @@
 | 53 | logical (&&/\|\|) | ✅ | short-circuit |
 | 54 | logical keywords | ✅ | and/or/not |
 | 55 | unary | ✅ | |
-| 56 | bitwise | 🔲 | |
+| 56 | bitwise | ✅ | &, |, ^, <<, >>, ~, % | |
 | 57 | pipe | ✅ | |
 | 58 | ranges | 🔲 | |
 | 59 | type operators | 🔲 | |
@@ -70,10 +70,10 @@
 | 64 | .substring | ✅ | |
 | 65 | string templates | ✅ | with sub-parser for expressions |
 | 66 | tagged templates | 🔲 | |
-| 67 | .split, .trim | 🔲 | |
-| 68 | .contains, .starts_with | 🔲 | |
-| 69 | .replace, .upper, .lower | 🔲 | |
-| 70 | char_code | 🔲 | |
+| 67 | .split, .trim | ✅ | C runtime | |
+| 68 | .contains, .starts_with | ✅ | C runtime | |
+| 69 | .replace, .upper, .lower | ✅ | C runtime | |
+| 70 | char_code | ✅ | C runtime | |
 | 71 | nullable types (T?) | ✅ | erased |
 | 72 | null check | ✅ | |
 | 73 | force unwrap (!) | ✅ | |
@@ -82,12 +82,12 @@
 | 76 | null throw | 🔲 | |
 | 77 | error propagation (?) | ✅ | dogfooded (98 patterns) |
 | 78 | catch blocks | 🔲 | |
-| 79 | list literal | 🔲 | |
+| 79 | list literal | ✅ | [1,2,3] via forge_array_* | |
 | 80 | map literal | 🔲 | |
 | 81 | tuple literal | ✅ | with type tracking |
 | 82 | tuple destructuring | ✅ | |
 | 83 | slicing | 🔲 | |
-| 84 | list methods | 🔲 | |
+| 84 | list methods | ✅ | push,pop,map,filter,reduce,foreach | |
 | 85 | map methods | 🔲 | |
 | 86 | mod declaration | ✅ | |
 | 87 | use import | ✅ | |
