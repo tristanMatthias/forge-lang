@@ -1,0 +1,75 @@
+// WHY: parses `type Foo = { ... }` declarations and the
+// supporting field grammars (declaration + literal init).
+
+use core.ast.{Stmt, Expr, FieldList, FieldInitList}
+use parser.{Parser}
+
+impl Parser {
+    fn parse_type_declaration(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected type name")
+        if name == null { return null }
+        if !self.consume("equal", "expected `=` after type name") {
+            return null
+        }
+        if !self.consume("left_brace", "expected `{` after `=`") {
+            return null
+        }
+        let fields = self.parse_field_list()
+        if fields == null { return null }
+        if !self.consume("right_brace", "expected `}` after fields") {
+            return null
+        }
+        Stmt.TypeDecl(name!, fields!)
+    }
+
+    fn parse_field_list(self) -> FieldList? {
+        if self.check("right_brace") {
+            return FieldList.End
+        }
+        // Optional `mut` modifier — ignored for now.
+        if self.check("kw_mut") {
+            self.advance()
+        }
+        let name = self.consume_identifier("expected field name")
+        if name == null { return null }
+        if !self.consume("colon", "expected `:` after field name") {
+            return null
+        }
+        let ty = self.consume_type("expected field type")
+        if ty == null { return null }
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_field_list()
+            if rest == null { return null }
+            return FieldList.Node(name!, ty!, rest!)
+        }
+        FieldList.Node(name!, ty!, FieldList.End)
+    }
+
+    fn parse_field_init_list(self) -> FieldInitList? {
+        if self.check("right_brace") {
+            return FieldInitList.End
+        }
+        let name = self.consume_identifier("expected field name")
+        if name == null { return null }
+        // Shorthand: `Foo { name }` is sugar for `Foo { name: name }`.
+        // If the next token is `,` or `}`, the field value is just
+        // the variable with the same name.
+        let value = if self.check("colon") {
+            self.advance()
+            let v = self.parse_expression()
+            if v == null { return null }
+            v!
+        } else {
+            Expr.Ident(name!)
+        }
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_field_init_list()
+            if rest == null { return null }
+            return FieldInitList.Node(name!, value, rest!)
+        }
+        FieldInitList.Node(name!, value, FieldInitList.End)
+    }
+}

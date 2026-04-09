@@ -1,0 +1,55 @@
+// WHY: parses `let` and `mut` variable bindings.
+
+use core.ast.{Stmt}
+use parser.{Parser}
+
+impl Parser {
+    fn parse_let_statement(self) -> Stmt? {
+        self.advance()
+        // Optional `mut` modifier — `let mut x = ...` is equivalent
+        // to `mut x = ...` in our model.
+        let is_mut = self.check("kw_mut")
+        if is_mut {
+            self.advance()
+        }
+        let name = self.consume_identifier("expected variable name")
+        if name == null { return null }
+        let ty = if self.check("colon") {
+            self.advance()
+            let t = self.consume_type("expected type after `:`")
+            if t == null { return null }
+            t!
+        } else {
+            "i64"
+        }
+        if !self.consume("equal", "expected `=` after variable name") {
+            return null
+        }
+        let initializer = self.parse_expression()
+        if initializer == null { return null }
+        if is_mut {
+            return Stmt.Mut(name!, ty, initializer!)
+        }
+        Stmt.Let(name!, ty, initializer!)
+    }
+
+    fn parse_mut_statement(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected variable name")
+        if name == null { return null }
+        let ty = if self.check("colon") {
+            self.advance()
+            let t = self.consume_type("expected type after `:`")
+            if t == null { return null }
+            t!
+        } else {
+            "i64"
+        }
+        if !self.consume("equal", "expected `=` after variable name") {
+            return null
+        }
+        let initializer = self.parse_expression()
+        if initializer == null { return null }
+        Stmt.Mut(name!, ty, initializer!)
+    }
+}

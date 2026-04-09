@@ -1,0 +1,78 @@
+// WHY: parses top-level `fn` declarations and the parameter list
+// they introduce.
+
+use core.ast.{Stmt, ParamList}
+use parser.{Parser}
+
+impl Parser {
+    fn parse_function_declaration(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected function name")
+        if name == null { return null }
+        if !self.consume("left_paren", "expected `(` after function name") {
+            return null
+        }
+
+        let params = self.parse_param_list()
+        if params == null { return null }
+
+        if !self.consume("right_paren", "expected `)` after parameters") {
+            return null
+        }
+
+        // Optional return type annotation: `-> Type`. Stored as a
+        // textual tag and registered in the function-return-type
+        // registry so chained calls preserve typing.
+        let ret_ty = if self.check("arrow") {
+            self.advance()
+            let r = self.consume_type("expected return type after `->`")
+            if r == null { return null }
+            r!
+        } else {
+            "i64"
+        }
+
+        if !self.consume("left_brace", "expected `{` after function parameters") {
+            return null
+        }
+
+        let body = self.parse_statement_list(true)
+        if body == null { return null }
+
+        if !self.consume("right_brace", "expected `}` after function body") {
+            return null
+        }
+
+        Stmt.Function(name!, params!, ret_ty, body!)
+    }
+
+    fn parse_param_list(self) -> ParamList? {
+        if self.check("right_paren") {
+            return ParamList.End
+        }
+
+        let name = self.consume_identifier("expected parameter name")
+        if name == null { return null }
+
+        // Optional `: Type` annotation. Stored verbatim; codegen
+        // translates the textual type into its internal value tag.
+        if self.check("colon") {
+            self.advance()
+            let ty = self.consume_type("expected parameter type after `:`")
+            if ty == null { return null }
+            return self.finish_param(name!, ty!)
+        }
+
+        self.finish_param(name!, "i64")
+    }
+
+    fn finish_param(self, name: string, ty: string) -> ParamList? {
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_param_list()
+            if rest == null { return null }
+            return ParamList.Node(name, ty, rest!)
+        }
+        ParamList.Node(name, ty, ParamList.End)
+    }
+}
