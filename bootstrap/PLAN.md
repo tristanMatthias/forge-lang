@@ -377,165 +377,47 @@ To actually feed `bootstrap/src/*.fg` into the bootstrap compiler we still need:
 
 ## Backlog
 
-Comprehensive list of ideas, follow-ups, and known loose ends accumulated
-during the self-hosting work. Each item is sized "do now / do soon /
-do when blocked / never do until forced".
+Active tasks are in `.ralph/fix_plan.md`. Feature parity tracking
+is in `bootstrap/FEATURE_PARITY.md`. What follows here are items
+that are NOT actively scheduled — they're "do when blocked" or
+"nice to have" that we pull off the shelf when something forces us.
 
-### Tooling — diagnose.sh
+### Tooling (do when blocked)
 
-- **`--trace-codegen` in the bootstrap compiler** *(do when blocked)*
-  Emit each LLVM IR line with a sidecar comment naming the Forge source
-  span / AST node that produced it (e.g. `; from emit_binary, parser.fg:961`).
-  Lets `diagnose.sh --diff` say "this divergence is from `emit_binary` on
-  line X" instead of just dumping the raw IR diff. Add when we hit a
-  divergence we can't trivially eyeball.
+- **`--trace-codegen`**: emit each IR line with a source-span comment.
+  Add when we hit a divergence we can't eyeball.
+- **`--dump-types`**: print inferred type tags per expression.
+  Blocked on real per-alloca type tracking.
+- **Line-aware `--bisect-lines`**: bisect on declaration boundaries
+  instead of raw line count.
 
-- **`--dump-types` in the bootstrap compiler** *(blocked on real type tracker)*
-  Print the inferred Forge type tag (`i64`, `str`, `enum:Token`, etc.) for
-  every expression and every variable load. Useless today because bs2's
-  type tracker is "everything is i64 unless flagged otherwise" — there is
-  no real type lattice to dump. Add only after the type tracker refactor
-  below.
+### Compiler internals (do when blocked)
 
-- ~~Wide-store-into-narrow-buffer pass in `--score`~~ *(done)*
-- ~~Fixed-point self-host check (`--check-fixedpoint`)~~ *(done)*
-- ~~Cross-compiler regression mode~~ *(done)*
+- **Real per-alloca type tracking**: replace `EmitResult.ty` string
+  tags with LLVM's own type system. High leverage but large. All
+  registries already flow through Ctx, so infrastructure is ready.
+- **Match expression type unification**: currently uses first arm's
+  type. Real unification catches mismatches.
+- **`forge_llvm_get_named_function` namespace-call issue**: host-side
+  bug where `ptr != null` produces `br i1 false` on Unknown type.
+  Bootstrap unaffected (everything is i64).
 
-- **Audit `--bisect-lines` for line-aware bisection** *(do when blocked)*
-  Currently bisects on raw line count, which can produce
-  syntactically-broken prefixes. Improve to bisect on top-level
-  declaration boundaries so the minimal repro is always parseable.
+### Known limitations (accepted for now)
 
-### Bootstrap codegen / compiler
+- **bs2 leaks memory**: every compile leaks all malloc'd data.
+  Acceptable because the compiler is one-shot and the OS reclaims.
+- **Pre-commit hook is opt-in**: `make install-hooks` or manual symlink.
+- **`--score` orphan-block heuristic is approximate**: counts
+  post-return merge blocks as orphans. Not bugs, just noise.
+- **main.fg.ll artifacts**: `.gitignore`d but occasionally sneak in.
 
-- **Real per-alloca type tracking** *(do when blocked, high leverage)*
-  bs2 currently tracks types via the `EmitResult.ty: string` tag.
-  Many code paths lose the tag and default to "i64". Replace with
-  a single source of truth: read each value's type from LLVM
-  directly via `LLVMGetAllocatedType` / `LLVMTypeOf`. Note: all
-  registries now flow through Ctx (zero globals), so the
-  infrastructure is ready for this.
+### Bug-class rules (encoded in CODE_QUALITY.md)
 
-- **Exhaustive match in codegen for `Stmt` / `Expr`** *(do soon)*
-  The `Stmt.If` tail-position bug existed because `emit_block_loop`
-  used a fallthrough `_ -> emit_stmt; return 0`. Forge's match-table
-  feature can warn on missing arms — once that warning lands in the
-  bootstrap compiler too, this whole class of bug becomes a compile
-  error. Today: grep `_ -> {}` and `_ -> emit_stmt` periodically and
-  audit each. Long-term: enforce exhaustive match.
-
-- **Short-circuit `&&` / `||` lowering** *(do when blocked)*
-  Bootstrap currently lowers `a && b` as `mul(zext(a), zext(b))` and
-  `a || b` as `add(zext(a), zext(b)) != 0`. Both sides are always
-  evaluated. The classic `if x != null && x.field` pattern would
-  segfault under this. parse_call has 4 eager `self.check(...)` calls
-  per loop iteration as a result. Lower as cond_br + phi for real
-  short-circuit semantics. Only blocked because no current source
-  triggers the dependence.
-
-- **Match expression type unification** *(do when blocked)*
-  `emit_match_expr_arms` uses the *first* arm's type as the whole
-  match expression's type. Works because bootstrap source happens to
-  be uniform across arms. A real unification would catch arm mismatches
-  at compile time.
-
-- **`emit_stmt_as_value` coverage audit** *(do soon)*
-  The new helper handles `Expr`, `Block`, `Match`, `If`. Verify there
-  are no other Stmt variants that could legitimately appear in tail
-  position and yield a value (e.g. `While` returning the last
-  iteration's value? Probably not, but document the choice).
-
-- **`forge_llvm_get_named_function` for namespace calls** *(known issue)*
-  Listed in CLAUDE.md as a Rust-compiler bug: `ptr != null` produces
-  `br i1 false` when the variable's inferred type is Unknown. Bootstrap
-  is unaffected (we're using i64 everywhere) but worth checking that
-  bs2's namespace-call lowering doesn't have a parallel issue.
-
-### std-llvm hardening — "no fake successes" rule
-
-Three sites cleaned up in `afcecb4`. Remaining audit:
-
-- **Audit every `return LLVMConstInt` / `return LLVMConstNull` /
-  `return LLVMGetUndef` in std-llvm/src/lib.rs** *(do soon)*
-  ~40 hits. Each is a candidate silent fallback. Triage:
-  catch-and-fail-loud (eprintln + null) where there's no legitimate
-  success path, leave alone where the constant value is the actual
-  answer (e.g. `LLVMConstInt(i1, 1, 0)` in a literal-true builder).
-
-- **`forge_llvm_build_call` arg-count / arg-type checks** *(do soon)*
-  Currently if `num_args > 0 && args.is_null()` returns null, but
-  silently truncates / passes garbage on type mismatch. Should check
-  arg types against fn_type's parameter types and refuse loudly on
-  mismatch.
-
-- **`forge_llvm_build_load` type compatibility** *(do soon)*
-  Now refuses non-pointer destinations, but still accepts any `ty`
-  argument without checking against the destination's allocated
-  type. Should warn (or refuse) when `ty` differs from
-  `LLVMGetAllocatedType(ptr)` for alloca destinations.
-
-### Test coverage / regression suite
-
-- **Capture more programs as regression tests** *(do soon)*
-  Currently 7: zero, hello, int_to_string, fib, field_access,
-  string_ops, nested_mods. Add: enum match, struct mutation,
-  while + break, nested if-else expressions, multi-arg method call,
-  string substring. Each is one `--regress-add` invocation.
-
-- ~~Stage1-vs-bs2 IR equivalence test~~ *(done — built into --regress)*
-- ~~Self-host regression~~ *(done — pre-commit runs --check-fixedpoint)*
-
-### Bug-class prevention rules (encoded as session learnings)
-
-These belong in CLAUDE.md or a new "lessons" doc — they're meta-rules
-extracted from this session's debugging experience.
-
-- **No fake successes in low-level builders.** A helper that can't
-  perform the requested operation must return null + warn, not
-  substitute a constant. (Encoded: 3 sites in std-llvm.)
-
-- **No silent value loss in tail position.** Every Stmt variant that
-  legitimately holds a value must propagate it through tail position.
-  Empty `_ -> {}` arms in codegen are red flags. (Encoded: new
-  `emit_stmt_as_value` helper.)
-
-- **`store iN` width must match the allocation's actual size.** Never
-  auto-widen narrow integer stores to match a defaulted i64 — only
-  widen when the destination is an alloca with a known wider integer
-  element type. (Encoded: new `forge_llvm_build_store`.)
-
-- **Auto-widening defaults are catastrophic in low-level helpers.**
-  Defaults make the common case work but mask the failure case
-  invisibly. Prefer explicit failure to silent miscompilation.
-
-- **Different crashes can be the same root cause.** When chasing a
-  bug, if multiple symptoms cluster around `nanov2_guard_corruption_detected`
-  or randomly-different sites, suspect a shared upstream corruption,
-  not multiple bugs.
-
-### Loose ends / known limitations
-
-- **bs2's codegen helpers leak memory.** Every `.fg.ll` compile leaks
-  every malloc bs2 made. Fine because the compiler is one-shot, but
-  document it.
-
-- **Pre-commit hook is opt-in.** It's a tracked script + a manual
-  symlink. Anyone cloning the repo has to run the install line.
-  Consider a `bootstrap/scripts/install-hooks.sh` or a note in
-  `bootstrap/README.md`.
-
-- **`forge_llvm_build_call`'s `[BC]` debug print is on in release.**
-  It clutters every test run. Either gate it on an env var or remove.
-
-- **`bisect_*.fg` files accumulate in `bootstrap/build/`.** Add a
-  cleanup pass or move to `/tmp/`.
-
-- **`bootstrap/src/main.fg.ll` shouldn't be tracked.** Already
-  `.gitignore`d, but verify it stays out.
-
-- **`--score`'s orphan-block heuristic is approximate.** Doesn't
-  catch indirectbr or blockaddress, and counts post-return merge
-  blocks as orphans. Acceptable but worth a comment.
+These are session learnings already enforced by code and tooling:
+- No fake successes in low-level builders (std-llvm hardened)
+- No silent value loss in tail position (emit_stmt_as_value)
+- Store width must match allocation size (forge_llvm_build_store fixed)
+- No mutable globals (all state flows through Ctx)
 
 ## Source References
 

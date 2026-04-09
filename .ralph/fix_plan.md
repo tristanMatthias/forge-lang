@@ -23,6 +23,12 @@ For each feature: create features/<name>/ dir, add parser.fg + codegen.fg + exam
 - [ ] 14. Hex/bin/oct numeric literals (0xFF, 0b1010, 0o755)
 - [ ] 15. `and`/`or`/`not` keyword operators
 
+## Priority: More std-llvm hardening (tasks 16-18)
+
+- [ ] 16. forge_llvm_build_call arg-count / arg-type validation (check args match fn_type params, refuse loudly on mismatch)
+- [ ] 17. forge_llvm_build_load type compatibility (warn when load ty differs from LLVMGetAllocatedType for alloca destinations)
+- [ ] 18. Match expression type unification (emit_match_expr_arms should verify all arms produce the same type, not just use the first)
+
 ## When all tasks are done
 
 Set EXIT_SIGNAL: true in your RALPH_STATUS block.
