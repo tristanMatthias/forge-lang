@@ -619,6 +619,8 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
         .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value)
         .IfExpr(c, t, e) -> emit_if_expr(ctx, env, c, t, e)
+        .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right)
+        .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field)
         _ -> err_emit("unsupported expression type")
     }
 }

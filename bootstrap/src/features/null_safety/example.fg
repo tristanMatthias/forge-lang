@@ -1,0 +1,14 @@
+// Null coalescing: a ?? b → if a is null, use b
+let x: ptr = null
+let y = x ?? 42
+println(string(y))
+
+// Null coalescing with non-null left
+let z = 10 ?? 99
+println(string(z))
+
+// Chained null coalesce
+let a: ptr = null
+let b: ptr = null
+let c = a ?? b ?? 7
+println(string(c))

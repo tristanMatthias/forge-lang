@@ -1,0 +1,4 @@
+// WHY: null safety operators `??` (null coalesce) and `?.` (optional chain).
+// Eliminates verbose `if x == null { default } else { x! }` patterns.
+
+mod codegen

@@ -17,7 +17,7 @@ Status key:
 |---|---|---|---|
 | let binding | `let x = 1` | ✅ | |
 | mut binding | `mut y = 2` | ✅ | |
-| const binding | `const Z = 3` | 🔲 | |
+| const binding | `const Z = 3` | ✅ | parsed as let (immutability not enforced) |
 | type annotation | `let x: int = 42` | ✅ | optional, defaults to i64 |
 | immutability enforcement | `x = 2` errors if `let` | 🔲 | bootstrap allows mutation on let |
 | field mutability | `type T = { mut x: int }` | ✅ | parsed, not enforced |
@@ -32,7 +32,7 @@ Status key:
 | string | `"hello"` | ✅ | raw cstr in bootstrap |
 | bool | `true`, `false` | ✅ | |
 | null | `null` | ✅ | = i64 0 |
-| hex/bin/oct literals | `0xFF`, `0b1010`, `0o755` | 🔲 | |
+| hex/bin/oct literals | `0xFF`, `0b1010`, `0o755` | ✅ | |
 | numeric underscores | `1_000_000` | 🔲 | |
 
 ## Functions
@@ -85,8 +85,8 @@ Status key:
 | if / else | `if cond { } else { }` | ✅ | stmt + expr form |
 | else if | `if a { } else if b { }` | ✅ | |
 | while | `while cond { body }` | ✅ | |
-| for-in | `for x in collection { }` | 🔲 | **high priority** |
-| for-range | `for i in 0..10 { }` | 🔲 | needs ranges |
+| for-in | `for x in collection { }` | 🔲 | needs iterators |
+| for-range | `for i in 0..10 { }` | ✅ | half-open range, i64 counter |
 | break / continue | `break`, `continue` | ✅ | scoped via Ctx.loops |
 | expression blocks | `{ stmts; last_expr }` | ✅ | |
 | defer | `defer cleanup()` | 🔲 | |
@@ -98,10 +98,10 @@ Status key:
 | arithmetic | `+`, `-`, `*`, `/` | ✅ | |
 | comparison | `==`, `!=`, `<`, `<=`, `>`, `>=` | ✅ | |
 | logical | `&&`, `||` | ✅ | **eager, not short-circuit** |
-| logical keywords | `and`, `or`, `not` | 🔲 | |
+| logical keywords | `and`, `or`, `not` | ✅ | aliases for &&, ||, ! |
 | unary | `-x`, `!x` | ✅ | |
 | bitwise | `&`, `|`, `^`, `<<`, `>>`, `~` | 🔲 | |
-| pipe | `expr |> fn` | 🔲 | |
+| pipe | `expr |> fn` | ✅ | desugars to call |
 | ranges | `start..end`, `start..=end` | 🔲 | |
 | type operators | `without`, `only`, `partial` | 🔲 | |
 
@@ -114,7 +114,7 @@ Status key:
 | string indexing | `s[i]` | ✅ | returns 1-char string |
 | `.length` | `s.length` | ✅ | via strlen |
 | `.substring` | `s.substring(start, end)` | ✅ | |
-| string templates | `` `hello ${name}` `` | 🔲 | **high priority** |
+| string templates | `` `hello ${name}` `` | ✅ | desugars to string concat |
 | tagged templates | `` tag`template` `` | 🔲 | needs templates |
 | `.split`, `.trim`, etc. | `s.split(sep)` | 🔲 | |
 | `.contains`, `.starts_with` | `s.contains(sub)` | 🔲 | |
@@ -125,11 +125,11 @@ Status key:
 
 | Feature | Forge syntax | Bootstrap | Notes |
 |---|---|---|---|
-| nullable types | `T?` | 🔲 | bootstrap erases to i64 |
+| nullable types | `T?` | ✅ | parsed, erased to i64 |
 | null check | `expr == null` | ✅ | via icmp |
 | force unwrap | `expr!` | ✅ | no-op (everything is i64) |
-| optional chaining | `expr?.field` | 🔲 | |
-| null coalescing | `expr ?? default` | 🔲 | |
+| optional chaining | `expr?.field` | ✅ | short-circuit branch |
+| null coalescing | `expr ?? default` | ✅ | short-circuit branch |
 | null throw | `expr ?? throw .error` | 🔲 | |
 | error propagation | `expr?` (Result) | 🔲 | |
 | catch blocks | `catch { body }` | 🔲 | |
@@ -245,7 +245,7 @@ Status key:
 | Control Flow | 8 | 5 | 3 | 0 |
 | Operators | 8 | 3 | 5 | 0 |
 | Strings | 11 | 5 | 6 | 0 |
-| Null Safety | 8 | 2 | 6 | 0 |
+| Null Safety | 8 | 5 | 3 | 0 |
 | Collections | 7 | 0 | 7 | 0 |
 | Modules & Imports | 5 | 4 | 1 | 0 |
 | I/O & Runtime | 12 | 7 | 5 | 0 |
@@ -254,7 +254,7 @@ Status key:
 | Testing | 4 | 0 | 4 | 0 |
 | Pointer Ops | 4 | 0 | 4 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **53** | **68** | **10** |
+| **TOTAL** | **131** | **56** | **65** | **10** |
 
 ## Dogfooding Rule
 

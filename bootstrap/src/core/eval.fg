@@ -520,6 +520,8 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .MatchExpr(_, _) -> error_result(runtime, "match expressions are not supported by the tree-walk evaluator")
         .FieldAssign(_, _, _) -> error_result(runtime, "field assignment is not supported by the tree-walk evaluator")
         .IfExpr(_, _, _) -> error_result(runtime, "if expressions are not supported by the tree-walk evaluator")
+        .NullCoalesce(_, _) -> error_result(runtime, "null coalesce is not supported by the tree-walk evaluator")
+        .OptionalChain(_, _) -> error_result(runtime, "optional chain is not supported by the tree-walk evaluator")
     }
 }
 

@@ -1,0 +1,82 @@
+// WHY: codegen for null safety operators `??` and `?.`.
+//
+// `a ?? b`   → short-circuit: if a != 0 then a else b
+// `a?.field` → if a == 0 then 0 else a.field
+//
+// In the bootstrap's everything-is-i64 model, null == 0. These
+// operators compile to simple i64 null-check branches.
+
+use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, strip_struct_prefix, struct_reg_lookup, translate_param_type, new_bb, const_i64, to_ptr}
+use codegen.{emit_expr}
+
+export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
+    let l = emit_expr(ctx, env, left)
+    if l.had_error { return l }
+
+    // Short-circuit: if left != 0 (non-null), skip right.
+    let is_null = forge_llvm_build_icmp(ctx.builder, 32, l.value, const_i64(ctx, 0), "nc_null")
+    let then_bb = new_bb(ctx, "nc_rhs")
+    let merge_bb = new_bb(ctx, "nc_end")
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "nc_result")
+    forge_llvm_build_store(ctx.builder, l.value, result_slot)
+    forge_llvm_build_cond_br(ctx.builder, is_null, then_bb, merge_bb)
+
+    // Right-hand side: only evaluated when left is null.
+    forge_llvm_position_at_end(ctx.builder, then_bb)
+    let r = emit_expr(ctx, env, right)
+    if r.had_error { return r }
+    forge_llvm_build_store(ctx.builder, r.value, result_slot)
+    forge_llvm_build_br(ctx.builder, merge_bb)
+
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "nc_val")
+    // Propagate the left type (if non-null, the result has left's type).
+    EmitResult { value: loaded, ty: l.ty, had_error: false, error_message: "" }
+}
+
+export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitResult {
+    let r = emit_expr(ctx, env, obj)
+    if r.had_error { return r }
+
+    // If the object is null (i64 0), produce null without accessing.
+    let is_null = forge_llvm_build_icmp(ctx.builder, 32, r.value, const_i64(ctx, 0), "oc_null")
+    let access_bb = new_bb(ctx, "oc_access")
+    let merge_bb = new_bb(ctx, "oc_end")
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "oc_result")
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
+    forge_llvm_build_cond_br(ctx.builder, is_null, merge_bb, access_bb)
+
+    // Access the field (only reached when obj is non-null).
+    forge_llvm_position_at_end(ctx.builder, access_bb)
+    let struct_name = strip_struct_prefix(r.ty)
+    if struct_name == "" {
+        // For non-struct types (e.g. strings), fall back to
+        // returning the value itself. ?. on a non-struct is
+        // effectively a null-check passthrough.
+        forge_llvm_build_store(ctx.builder, r.value, result_slot)
+        forge_llvm_build_br(ctx.builder, merge_bb)
+        forge_llvm_position_at_end(ctx.builder, merge_bb)
+        let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "oc_val")
+        return EmitResult { value: loaded, ty: r.ty, had_error: false, error_message: "" }
+    }
+    let lookup = struct_reg_lookup(ctx.structs, struct_name)
+    if !lookup.found {
+        return err_emit("unknown struct `" + struct_name + "` in optional chain")
+    }
+    let idx = field_index_of(lookup.fields, field)
+    if idx < 0 {
+        return err_emit("unknown field `" + field + "` on struct `" + struct_name + "` in optional chain")
+    }
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
+    let obj_ptr = to_ptr(ctx, r.value, "oc_ptr")
+    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "oc_fld")
+    let loaded_field = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, field)
+    forge_llvm_build_store(ctx.builder, loaded_field, result_slot)
+    forge_llvm_build_br(ctx.builder, merge_bb)
+
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let final_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "oc_val")
+    let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
+    EmitResult { value: final_val, ty: field_ty, had_error: false, error_message: "" }
+}

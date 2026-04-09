@@ -34,31 +34,41 @@ export fn resolve_program(stmts: StmtList) -> ResolveResult {
 }
 
 fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
-    match stmts {
-        .End -> r
-        .Node(stmt, next) -> {
-            let after = match stmt {
-                .Function(name, _, _, _) -> declare_function(r, name)
-                .ExternFn(name, _, _) -> declare_function(r, name)
-                .Impl(type_name, methods) -> collect_method_names(r, type_name, methods)
-                _ -> r
+    mut current = stmts
+    mut res = r
+    while true {
+        match current {
+            .End -> { return res }
+            .Node(stmt, next) -> {
+                res = match stmt {
+                    .Function(name, _, _, _) -> declare_function(res, name)
+                    .ExternFn(name, _, _) -> declare_function(res, name)
+                    .Impl(type_name, methods) -> collect_method_names(res, type_name, methods)
+                    _ -> res
+                }
+                current = next
             }
-            collect_function_names(after, next)
         }
     }
+    res
 }
 
 fn collect_method_names(r: Resolver, type_name: string, methods: StmtList) -> Resolver {
-    match methods {
-        .End -> r
-        .Node(stmt, next) -> {
-            let after = match stmt {
-                .Function(name, _, _, _) -> declare_function(r, name)
-                _ -> r
+    mut current = methods
+    mut res = r
+    while true {
+        match current {
+            .End -> { return res }
+            .Node(stmt, next) -> {
+                res = match stmt {
+                    .Function(name, _, _, _) -> declare_function(res, name)
+                    _ -> res
+                }
+                current = next
             }
-            collect_method_names(after, type_name, next)
         }
     }
+    res
 }
 
 fn resolver_new() -> Resolver {
@@ -197,16 +207,19 @@ fn is_builtin(name: string) -> bool {
 }
 
 fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
-    if r.had_error {
-        return r
-    }
-    match stmts {
-        .End -> r
-        .Node(stmt, next) -> {
-            let after = resolve_stmt(r, stmt)
-            resolve_stmt_list(after, next)
+    mut current = stmts
+    mut res = r
+    while true {
+        if res.had_error { return res }
+        match current {
+            .End -> { return res }
+            .Node(stmt, next) -> {
+                res = resolve_stmt(res, stmt)
+                current = next
+            }
         }
     }
+    res
 }
 
 fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
@@ -257,6 +270,15 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after_subject = resolve_expr(r, subject)
             resolve_match_arms(after_subject, arms)
         }
+        .For(variable, start, end, body) -> {
+            let after_start = resolve_expr(r, start)
+            let after_end = resolve_expr(after_start, end)
+            let entered = enter_resolve_scope(after_end)
+            let declared = declare_name(entered, variable)
+            let defined = define_name(declared, variable)
+            let after_body = resolve_stmt(defined, body)
+            exit_resolve_scope(after_body)
+        }
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
         .NoOp -> r
         .ExternFn(name, _, _) -> declare_function(r, name)
@@ -266,21 +288,22 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
 }
 
 fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
-    if r.had_error {
-        return r
-    }
-    match arms {
-        .End -> r
-        .Node(pattern, body, next) -> {
-            // Pattern bindings (e.g. `.Foo(a, b)`) enter a fresh
-            // scope that's only visible inside this arm's body.
-            let entered = enter_resolve_scope(r)
-            let with_bindings = declare_pattern_bindings(entered, pattern)
-            let after_body = resolve_expr(with_bindings, body)
-            let exited = exit_resolve_scope(after_body)
-            resolve_match_arms(exited, next)
+    mut current = arms
+    mut res = r
+    while true {
+        if res.had_error { return res }
+        match current {
+            .End -> { return res }
+            .Node(pattern, body, next) -> {
+                let entered = enter_resolve_scope(res)
+                let with_bindings = declare_pattern_bindings(entered, pattern)
+                let after_body = resolve_expr(with_bindings, body)
+                res = exit_resolve_scope(after_body)
+                current = next
+            }
         }
     }
+    res
 }
 
 fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
@@ -291,14 +314,19 @@ fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
 }
 
 fn declare_params(r: Resolver, params: ParamList) -> Resolver {
-    match params {
-        .End -> r
-        .Node(name, _, next) -> {
-            let declared = declare_name(r, name)
-            let defined = define_name(declared, name)
-            declare_params(defined, next)
+    mut current = params
+    mut res = r
+    while true {
+        match current {
+            .End -> { return res }
+            .Node(name, _, next) -> {
+                let declared = declare_name(res, name)
+                res = define_name(declared, name)
+                current = next
+            }
         }
     }
+    res
 }
 
 fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
@@ -399,6 +427,11 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             let after_t = resolve_expr(after_c, t)
             resolve_expr(after_t, e)
         }
+        .NullCoalesce(left, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        .OptionalChain(obj, _) -> resolve_expr(r, obj)
     }
 }
 
@@ -411,27 +444,33 @@ fn starts_with_upper(name: string) -> bool {
 }
 
 fn resolve_field_init_list(r: Resolver, inits: FieldInitList) -> Resolver {
-    if r.had_error {
-        return r
-    }
-    match inits {
-        .End -> r
-        .Node(_, value, next) -> {
-            let after = resolve_expr(r, value)
-            resolve_field_init_list(after, next)
+    mut current = inits
+    mut res = r
+    while true {
+        if res.had_error { return res }
+        match current {
+            .End -> { return res }
+            .Node(_, value, next) -> {
+                res = resolve_expr(res, value)
+                current = next
+            }
         }
     }
+    res
 }
 
 fn resolve_expr_list(r: Resolver, exprs: ExprList) -> Resolver {
-    if r.had_error {
-        return r
-    }
-    match exprs {
-        .End -> r
-        .Node(expr, next) -> {
-            let after = resolve_expr(r, expr)
-            resolve_expr_list(after, next)
+    mut current = exprs
+    mut res = r
+    while true {
+        if res.had_error { return res }
+        match current {
+            .End -> { return res }
+            .Node(expr, next) -> {
+                res = resolve_expr(res, expr)
+                current = next
+            }
         }
     }
+    res
 }

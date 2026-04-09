@@ -45,27 +45,27 @@ export fn parse_program_source(source: string) -> ProgramParseResult {
     parser.parse_file_program()
 }
 
-fn is_digit(ch: string) -> bool {
+fn p_is_digit(ch: string) -> bool {
     ch >= "0" && ch <= "9"
 }
 
-fn is_alpha(ch: string) -> bool {
+fn p_is_alpha(ch: string) -> bool {
     (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
 }
 
-fn is_alpha_numeric(ch: string) -> bool {
-    is_alpha(ch) || is_digit(ch)
+fn p_is_alpha_numeric(ch: string) -> bool {
+    p_is_alpha(ch) || p_is_digit(ch)
 }
 
-fn is_hex_digit(ch: string) -> bool {
-    is_digit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
+fn p_is_hex_digit(ch: string) -> bool {
+    p_is_digit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
 }
 
-fn is_binary_digit(ch: string) -> bool {
+fn p_is_binary_digit(ch: string) -> bool {
     ch == "0" || ch == "1"
 }
 
-fn is_octal_digit(ch: string) -> bool {
+fn p_is_octal_digit(ch: string) -> bool {
     ch >= "0" && ch <= "7"
 }
 
@@ -91,7 +91,7 @@ fn starts_with_upper_p(name: string) -> bool {
     head >= "A" && head <= "Z"
 }
 
-fn keyword_kind(text: string) -> string {
+fn p_keyword_kind(text: string) -> string {
     if text == "and" { return "kw_and" }
     if text == "const" { return "kw_const" }
     if text == "else" { return "kw_else" }
@@ -385,7 +385,7 @@ impl Parser {
     }
 
     fn parse_pipe(self) -> Expr? {
-        let left = self.parse_or()
+        let left = self.parse_null_coalesce()
         if left == null { return null }
 
         mut expr = left!
@@ -402,6 +402,21 @@ impl Parser {
                     expr = Expr.Call(rhs!, ExprList.Node(expr, ExprList.End))
                 }
             }
+        }
+
+        expr
+    }
+
+    fn parse_null_coalesce(self) -> Expr? {
+        let left = self.parse_or()
+        if left == null { return null }
+
+        mut expr = left!
+        while self.check("question_question") {
+            self.advance()
+            let right = self.parse_or()
+            if right == null { return null }
+            expr = Expr.NullCoalesce(expr, right!)
         }
 
         expr
@@ -554,13 +569,19 @@ impl Parser {
         if expr == null { return null }
 
         mut result = expr!
-        while self.check("left_paren") || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || self.check("left_bracket") {
+        while self.check("left_paren") || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || self.check("left_bracket") || self.check("question_dot") {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check("bang") {
                 self.advance()
             }
-            if self.check("left_bracket") {
+            // Optional chaining: `expr?.field`
+            if self.check("question_dot") {
+                self.advance()
+                let field = self.consume_identifier("expected field name after `?.`")
+                if field == null { return null }
+                result = Expr.OptionalChain(result, field!)
+            } else if self.check("left_bracket") {
                 self.advance()
                 let idx = self.parse_expression()
                 if idx == null { return null }
@@ -743,7 +764,7 @@ impl Parser {
                     j = j + 1
                 }
                 if j >= len {
-                    self.set_error("unterminated ${...} in template string")
+                    self.set_error("unterminated template expression in string")
                     return null
                 }
                 let ident_name = raw.substring(expr_start, j)
@@ -906,7 +927,13 @@ impl Parser {
             return
         }
         if ch == "?" {
-            self.set_current("question", "?")
+            if self.match_next("?") {
+                self.set_current("question_question", "??")
+            } else if self.match_next(".") {
+                self.set_current("question_dot", "?.")
+            } else {
+                self.set_current("question", "?")
+            }
             return
         }
         if ch == "@" {
@@ -992,12 +1019,12 @@ impl Parser {
             return
         }
 
-        if is_digit(ch) {
+        if p_is_digit(ch) {
             self.scan_number_token()
             return
         }
 
-        if is_alpha(ch) {
+        if p_is_alpha(ch) {
             self.scan_identifier_token()
             return
         }
@@ -1075,7 +1102,7 @@ impl Parser {
             let prefix = self.peek_char()
             if prefix == "x" || prefix == "X" {
                 self.advance_char()
-                while is_hex_digit(self.peek_char()) {
+                while p_is_hex_digit(self.peek_char()) {
                     self.advance_char()
                 }
                 self.set_current("number", self.source.substring(self.start, self.current))
@@ -1083,7 +1110,7 @@ impl Parser {
             }
             if prefix == "b" || prefix == "B" {
                 self.advance_char()
-                while is_binary_digit(self.peek_char()) {
+                while p_is_binary_digit(self.peek_char()) {
                     self.advance_char()
                 }
                 self.set_current("number", self.source.substring(self.start, self.current))
@@ -1091,7 +1118,7 @@ impl Parser {
             }
             if prefix == "o" || prefix == "O" {
                 self.advance_char()
-                while is_octal_digit(self.peek_char()) {
+                while p_is_octal_digit(self.peek_char()) {
                     self.advance_char()
                 }
                 self.set_current("number", self.source.substring(self.start, self.current))
@@ -1099,13 +1126,13 @@ impl Parser {
             }
         }
 
-        while is_digit(self.peek_char()) {
+        while p_is_digit(self.peek_char()) {
             self.advance_char()
         }
 
-        if self.peek_char() == "." && is_digit(self.peek_next_char()) {
+        if self.peek_char() == "." && p_is_digit(self.peek_next_char()) {
             self.advance_char()
-            while is_digit(self.peek_char()) {
+            while p_is_digit(self.peek_char()) {
                 self.advance_char()
             }
         }
@@ -1114,12 +1141,12 @@ impl Parser {
     }
 
     fn scan_identifier_token(self) {
-        while is_alpha_numeric(self.peek_char()) {
+        while p_is_alpha_numeric(self.peek_char()) {
             self.advance_char()
         }
 
         let text = self.source.substring(self.start, self.current)
-        self.set_current(keyword_kind(text), text)
+        self.set_current(p_keyword_kind(text), text)
     }
 
     fn set_current(self, kind: string, lexeme: string) {
