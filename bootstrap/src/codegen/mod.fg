@@ -40,14 +40,8 @@ export type CodegenResult = {
 // translate_param_type, strip_struct_prefix all moved to core/cg.fg.
 
 // Function return type registry. The bootstrap MVP doesn't carry
-// FnRetTypes, TopLevelVars, LoopStack, and their lookup functions
-// now live in core/cg.fg as fields on the Codegen struct.
-// CG_GLOBALS remains as the one mutable global (mutated during emission).
-mut CG_GLOBALS: TopLevelVars = TopLevelVars.End
-
-fn global_register(name: string, llvm_global: ptr, ty: string) {
-    CG_GLOBALS = TopLevelVars.Node(name, llvm_global, ty, CG_GLOBALS)
-}
+// All registries live in core/cg.fg as fields on the Codegen struct.
+// Zero mutable globals.
 
 
 // EnumReg, CG_ENUMS, enum_reg_lookup, enum_reg_extend — see core/cg.fg note above.
@@ -128,8 +122,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     // mutable globals.
     let structs = declare_structs(ctx, i64t, stmts, StructReg.End)
     let enums = declare_enums(ctx, i64t, stmts, EnumReg.End)
-    CG_GLOBALS = TopLevelVars.End
-    declare_globals(m, ctx, i64t, structs, enums, stmts)
+    let top_level_vars = declare_globals(m, ctx, i64t, structs, enums, stmts, TopLevelVars.End)
     let fn_rets = declare_functions(m, ctx, i64t, structs, enums, stmts, FnRetTypes.End)
 
     // Synthesize a wrapper function for the top-level non-function
@@ -158,7 +151,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         structs,
         enums,
         fn_rets,
-        top_level_vars: TopLevelVars.End,
+        top_level_vars,
         loops: LoopStack.End,
     }
 
@@ -249,24 +242,24 @@ fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> Stru
 // initializers may reference user functions and structs that
 // haven't been emitted yet.
 
-fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList) {
+fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
     match stmts {
-        .End -> {}
+        .End -> reg
         .Node(stmt, next) -> {
-            match stmt {
+            let updated = match stmt {
                 .Let(name, ty, _) -> {
                     let g = forge_llvm_add_global(m, i64t, name)
                     forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
-                    global_register(name, g, translate_param_type(structs, enums, ty))
+                    TopLevelVars.Node(name, g, translate_param_type(structs, enums, ty), reg)
                 }
                 .Mut(name, ty, _) -> {
                     let g = forge_llvm_add_global(m, i64t, name)
                     forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
-                    global_register(name, g, translate_param_type(structs, enums, ty))
+                    TopLevelVars.Node(name, g, translate_param_type(structs, enums, ty), reg)
                 }
-                _ -> {}
+                _ -> reg
             }
-            declare_globals(m, ctx, i64t, structs, enums, next)
+            declare_globals(m, ctx, i64t, structs, enums, next, updated)
         }
     }
 }
@@ -353,41 +346,74 @@ fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
 
 // ── Top-level pass (skips function decls) ──
 
+// TopLevelResult carries an updated Codegen so emit_top_level_init
+// can thread updated top_level_vars forward without changing the
+// StmtResult type (which would require updating ~50 call sites).
+type TopLevelResult = {
+    cg: Codegen,
+    env: VarEnv,
+    had_error: bool,
+    error_message: string,
+}
+
 fn emit_top_level(cg: Codegen, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(env)
         .Node(stmt, next) -> {
-            let result = match stmt {
-                .Function(_, _, _, _) -> ok_stmt(env)
-                .Let(name, _, init) -> emit_top_level_init(cg, env, name, init)
-                .Mut(name, _, init) -> emit_top_level_init(cg, env, name, init)
-                _ -> emit_stmt(cg, env, stmt)
+            match stmt {
+                .Function(_, _, _, _) -> emit_top_level(cg, env, next)
+                .Let(name, _, init) -> {
+                    let result = emit_top_level_init(cg, env, name, init)
+                    if result.had_error {
+                        return err_stmt(result.error_message)
+                    }
+                    emit_top_level(result.cg, result.env, next)
+                }
+                .Mut(name, _, init) -> {
+                    let result = emit_top_level_init(cg, env, name, init)
+                    if result.had_error {
+                        return err_stmt(result.error_message)
+                    }
+                    emit_top_level(result.cg, result.env, next)
+                }
+                _ -> {
+                    let result = emit_stmt(cg, env, stmt)
+                    if result.had_error {
+                        return result
+                    }
+                    emit_top_level(cg, result.env, next)
+                }
             }
-            if result.had_error {
-                return result
-            }
-            emit_top_level(cg, result.env, next)
         }
     }
 }
 
-fn emit_top_level_init(cg: Codegen, env: VarEnv, name: string, init: Expr) -> StmtResult {
-    // Top-level let/mut declarations were already allocated as
-    // module globals in declare_globals. Here we just emit the
-    // initializer expression at main's entry and store it.
-    let g = toplevel_lookup(CG_GLOBALS, name)
+fn emit_top_level_init(cg: Codegen, env: VarEnv, name: string, init: Expr) -> TopLevelResult {
+    let g = toplevel_lookup(cg.top_level_vars, name)
     if !g.found {
-        return err_stmt("codegen error: global `" + name + "` not declared")
+        return TopLevelResult { cg, env, had_error: true, error_message: "codegen error: global `" + name + "` not declared" }
     }
     let r = emit_expr(cg, env, init)
     if r.had_error {
-        return err_stmt_from_expr(r)
+        return TopLevelResult { cg, env, had_error: true, error_message: r.error_message }
     }
     forge_llvm_build_store(cg.builder, r.value, g.llvm_global)
-    // Update the global registry's value tag with the inferred
-    // type so subsequent reads carry the right tag.
-    global_register(name, g.llvm_global, r.ty)
-    ok_stmt(env)
+    let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, cg.top_level_vars)
+    let updated_cg = Codegen {
+        ctx: cg.ctx,
+        module: cg.module,
+        builder: cg.builder,
+        current_fn: cg.current_fn,
+        i64_type: cg.i64_type,
+        i1_type: cg.i1_type,
+        ptr_type: cg.ptr_type,
+        structs: cg.structs,
+        enums: cg.enums,
+        fn_rets: cg.fn_rets,
+        top_level_vars: updated_top,
+        loops: cg.loops,
+    }
+    TopLevelResult { cg: updated_cg, env, had_error: false, error_message: "" }
 }
 
 // ── Statement emission ──
@@ -498,7 +524,7 @@ export fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
                 let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, local.alloca, name)
                 return EmitResult { value: loaded, ty: local.ty, had_error: false, error_message: "" }
             }
-            let g = toplevel_lookup(CG_GLOBALS, name)
+            let g = toplevel_lookup(cg.top_level_vars, name)
             if g.found {
                 let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, g.llvm_global, name)
                 return EmitResult { value: loaded, ty: g.ty, had_error: false, error_message: "" }
@@ -515,7 +541,7 @@ export fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
                 forge_llvm_build_store(cg.builder, r.value, local.alloca)
                 return EmitResult { value: r.value, ty: local.ty, had_error: false, error_message: "" }
             }
-            let g = toplevel_lookup(CG_GLOBALS, name)
+            let g = toplevel_lookup(cg.top_level_vars, name)
             if g.found {
                 forge_llvm_build_store(cg.builder, r.value, g.llvm_global)
                 return EmitResult { value: r.value, ty: g.ty, had_error: false, error_message: "" }
