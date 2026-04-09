@@ -1,0 +1,38 @@
+// String method chaining
+let s = "  Hello, World!  "
+let clean = s.trim()
+println(clean)
+println(string(clean.length))
+
+// Replace + upper
+let shouting = "hello world".replace("world", "forge").upper()
+println(shouting)
+
+// Split + iterate
+let parts = "a-b-c-d".split("-")
+println(string(parts.length))
+for p in parts {
+    println(p)
+}
+
+// Index_of edge cases
+println(string("hello".index_of("hello")))
+println(string("hello".index_of("x")))
+println(string("hello".index_of("")))
+
+// Contains with empty
+println(string("hello".contains("")))
+println(string("".contains("")))
+println(string("".contains("x")))
+
+// Starts/ends edge cases
+println(string("hello".starts_with("")))
+println(string("hello".ends_with("")))
+println(string("".starts_with("")))
+
+// Split + length
+let csv = "10,20,30,40,50"
+let values = csv.split(",")
+println(string(values.length))
+println(values[0])
+println(values[4])

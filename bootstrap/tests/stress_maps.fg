@@ -1,0 +1,29 @@
+// Stress: many entries
+let m = {}
+for i in 0..50 {
+    m.set(string(i), string(i * i))
+}
+println(string(m.length))
+println(m.get("7"))
+println(m.get("49"))
+
+// Overwrite all values
+for i in 0..50 {
+    m.set(string(i), string(i + 100))
+}
+println(string(m.length))
+println(m.get("7"))
+
+// Keys list
+let k = m.keys()
+println(string(k.length))
+
+// Map with empty string key
+let weird = {}
+weird.set("", "empty_key")
+println(weird.get(""))
+println(string(weird.has("")))
+
+// Non-existent key returns 0
+println(string(m.get("999")))
+println(string(m.has("999")))

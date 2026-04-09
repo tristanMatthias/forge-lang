@@ -1,0 +1,30 @@
+// With expression stress
+type Config = {
+    host: string,
+    port: int,
+    debug: int,
+    timeout: int,
+}
+
+let base = Config { host: "localhost", port: 80, debug: 0, timeout: 30 }
+
+// Single override
+let dev = base with { debug: 1 }
+println(string(dev.debug))
+println(string(dev.port))
+
+// Multiple overrides
+let prod = base with { host: "prod.example.com", port: 443 }
+println(prod.host)
+println(string(prod.port))
+
+// Chained with
+let staging = base with { host: "staging" } with { port: 8443 } with { debug: 1 }
+println(staging.host)
+println(string(staging.port))
+println(string(staging.debug))
+println(string(staging.timeout))
+
+// Original unchanged
+println(base.host)
+println(string(base.port))

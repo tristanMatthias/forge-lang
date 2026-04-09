@@ -1,0 +1,62 @@
+// Ultimate combo: every feature interacting
+trait Describable {
+    fn describe(self) -> string
+}
+
+type Task = { title: string, priority: int, done: int }
+
+impl Describable for Task {
+    fn describe(self) -> string {
+        `${self.title} (p${string(self.priority)})`
+    }
+}
+
+impl Task {
+    fn is_high_priority(self) -> int {
+        self.priority >= 3
+    }
+}
+
+// Build tasks
+let tasks = [
+    Task { title: "design", priority: 5, done: 1 },
+    Task { title: "implement", priority: 4, done: 0 },
+    Task { title: "test", priority: 3, done: 0 },
+    Task { title: "docs", priority: 1, done: 1 },
+    Task { title: "deploy", priority: 5, done: 0 },
+]
+
+// For-in + method calls
+for t in tasks {
+    if t.is_high_priority() && t.done == 0 {
+        println(t.describe())
+    }
+}
+
+// Bitwise flags
+let READ = 1
+let WRITE = 2
+let EXEC = 4
+let perms = READ | WRITE
+println(string(perms & READ != 0))
+println(string(perms & EXEC != 0))
+
+// Map of results
+let results = {}
+results.set("pass", "3")
+results.set("fail", "0")
+results.set("skip", "1")
+println(results.get("pass"))
+
+// Tuple destructuring + template
+let (x, y) = (42, 99)
+println(`x=${string(x)}, y=${string(y)}`)
+
+// Lambda + reduce
+let sum = [1, 2, 3, 4, 5].reduce(0, (a, b) -> a + b)
+println(string(sum))
+
+// Slice + for-in
+for n in [10, 20, 30, 40, 50][1..4] {
+    println(string(n))
+}
