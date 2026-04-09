@@ -79,7 +79,7 @@ export type CodegenResult = {
     error_message: string,
 }
 
-type Codegen = {
+export type Codegen = {
     ctx: ptr,
     module: ptr,
     builder: ptr,
@@ -92,7 +92,7 @@ type Codegen = {
     ptr_type: ptr,
 }
 
-fn null_ptr_val() -> ptr {
+export fn null_ptr_val() -> ptr {
     let n: ptr = null
     n
 }
@@ -259,12 +259,12 @@ enum EnumReg {
 
 mut CG_ENUMS: EnumReg = EnumReg.End
 
-type EnumLookup = {
+export type EnumLookup = {
     found: bool,
     variants: VariantList,
 }
 
-fn enum_reg_lookup(name: string) -> EnumLookup {
+export fn enum_reg_lookup(name: string) -> EnumLookup {
     enum_reg_lookup_loop(CG_ENUMS, name)
 }
 
@@ -448,7 +448,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 
 // ── Helpers ──
 
-type EmitResult = {
+export type EmitResult = {
     value: ptr,
     // "i64" or "str". `str` values are stored as i64-encoded
     // pointers (ptrtoint) and decoded back to `ptr` at use sites
@@ -459,33 +459,33 @@ type EmitResult = {
     error_message: string,
 }
 
-fn ok_emit(value: ptr) -> EmitResult {
+export fn ok_emit(value: ptr) -> EmitResult {
     EmitResult { value, ty: "i64", had_error: false, error_message: "" }
 }
 
-fn ok_emit_str(value: ptr) -> EmitResult {
+export fn ok_emit_str(value: ptr) -> EmitResult {
     EmitResult { value, ty: "str", had_error: false, error_message: "" }
 }
 
-fn err_emit(message: string) -> EmitResult {
+export fn err_emit(message: string) -> EmitResult {
     EmitResult { value: null_ptr_val(), ty: "i64", had_error: true, error_message: "codegen error: " + message }
 }
 
-type StmtResult = {
+export type StmtResult = {
     env: VarEnv,
     had_error: bool,
     error_message: string,
 }
 
-fn ok_stmt(env: VarEnv) -> StmtResult {
+export fn ok_stmt(env: VarEnv) -> StmtResult {
     StmtResult { env, had_error: false, error_message: "" }
 }
 
-fn err_stmt(message: string) -> StmtResult {
+export fn err_stmt(message: string) -> StmtResult {
     StmtResult { env: VarEnv.End, had_error: true, error_message: message }
 }
 
-fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
+export fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
     StmtResult { env: VarEnv.End, had_error: true, error_message: r.error_message }
 }
 
@@ -705,7 +705,7 @@ fn bind_params_inline(builder: ptr, i64t: ptr, fn_val: ptr, params: ParamList, i
     }
 }
 
-fn translate_param_type(ty: string) -> string {
+export fn translate_param_type(ty: string) -> string {
     if ty == "str" { return "str" }
     if ty == "string" { return "str" }
     if ty == "i64" { return "i64" }
@@ -919,7 +919,7 @@ fn emit_while(cg: Codegen, env: VarEnv, condition: Expr, body: Stmt) -> StmtResu
 
 // ── Expression emission ──
 
-fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
+export fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
     match expr {
         .Number(text) -> {
             let value = int(text)
@@ -1563,14 +1563,14 @@ fn bind_pattern_payload_loop(cg: Codegen, env: VarEnv, st_ty: ptr, subj_ptr: ptr
     }
 }
 
-fn advance_field_list(fields: FieldList) -> FieldList {
+export fn advance_field_list(fields: FieldList) -> FieldList {
     match fields {
         .End -> FieldList.End
         .Node(_, _, next) -> next
     }
 }
 
-fn field_type_at(fields: FieldList, idx: int) -> string {
+export fn field_type_at(fields: FieldList, idx: int) -> string {
     match fields {
         .End -> "i64"
         .Node(_, ty, next) -> {
@@ -1582,7 +1582,7 @@ fn field_type_at(fields: FieldList, idx: int) -> string {
     }
 }
 
-fn strip_enum_prefix(ty: string) -> string {
+export fn strip_enum_prefix(ty: string) -> string {
     if ty.length < 6 {
         return ""
     }
