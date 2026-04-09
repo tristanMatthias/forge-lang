@@ -110,6 +110,27 @@ If any commit breaks any of these, **revert immediately** and
 reconsider the approach. The migration is not allowed to "regress
 temporarily and fix it next commit".
 
+## Phase status snapshot
+
+| Phase | Description | Status |
+|---|---|---|
+| 0 | Audit + baseline | ✅ done |
+| 1 | preprocess_modules supports nested dirs | ✅ done |
+| 2 | Skeleton + CODE_QUALITY.md | ✅ done |
+| 3.1 | Move token.fg → core/ | ✅ done |
+| 3.2 | Move ast.fg → core/ | ✅ done |
+| 3.3 | Move scanner.fg + resolver.fg → core/ | ✅ done |
+| 3.4 | Move eval.fg → core/ | ✅ done |
+| 4a | Extract match PARSER into features/match/ | ✅ done |
+| 4b.1 | Extract leaf shared types into core/cg.fg | ✅ done |
+| 4b.2 | Extract emit/stmt.fg + emit/expr.fg dispatchers | 🟡 next |
+| 4b.3 | Move emit_match into features/match/codegen.fg | ⏳ blocked on 4b.2 + registry move |
+| 5 | Extract remaining features (if, while, let, fn, struct, enum, impl, ...) | ⏳ pending |
+| 6 | Collapse parser.fg into parse/ | ⏳ pending |
+| 7 | Collapse codegen.fg into emit/ | ⏳ pending |
+| 8 | Cg fluent helper layer + Compiler context refactor | ⏳ pending |
+| 9 | Per-feature WHY/grammar + assembled GRAMMAR.md | ⏳ pending |
+
 ## Phases
 
 Each phase is one or more commits. Phases are designed to be
