@@ -39,17 +39,12 @@ Types are encoded as strings: `"i64"`, `"str"`, `"enum:Name"`,
 large refactor that touches every emit function. Do it before
 feature #20.
 
-### 3. Operator string dispatch
+### ~~3. Operator string dispatch~~ (FIXED)
 
-**Severity:** low
-**Impact:** O(k) string comparisons per binary expression
+**Status:** fixed (April 9 2026)
 
-Binary operators are stored as strings (`"+"`, `"=="`, etc.) and
-dispatched via cascading `if operator == "+"` checks. At 30+
-operators this becomes measurable.
-
-**Plan:** Parse-time conversion to a `BinaryOp` enum. Quick refactor,
-do before adding bitwise operators.
+**Resolution:** BinOp/UnOp/LogicOp enums. Parse converts tokens to
+enums at parse time. Codegen matches on enums. IR shrank 220 lines.
 
 ### 4. VarLookup/FnLookup structs (was nullable return workaround)
 
