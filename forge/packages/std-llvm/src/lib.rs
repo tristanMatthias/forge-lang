@@ -988,15 +988,26 @@ fn guard_int_binop(lhs: LLVMPtr, rhs: LLVMPtr) -> bool {
 }
 
 // Ensure an LLVM value is i64 — widen if narrower, extract from struct if needed
+// Coerce a value to i64 for use in i64-typed contexts (alloca slot,
+// integer arithmetic, etc). Returns null on unsupported inputs so the
+// caller fails loudly instead of receiving a silent zero — see the
+// "no fake successes" rule near forge_llvm_build_store.
 unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
-    if val.is_null() { return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0)); }
+    if val.is_null() {
+        eprintln!("ensure_i64: null input");
+        return std::ptr::null_mut();
+    }
     let ty = LLVMTypeOf(val);
     let kind = LLVMGetTypeKind(ty);
     let i64_ty = TYPE_CACHE.with(|c| c.borrow().i64);
     if kind == 8 { // IntegerTypeKind
         let w = LLVMGetIntTypeWidth(ty);
         if w < 64 { return LLVMBuildZExt(builder, val, i64_ty, safe_name(std::ptr::null())); }
-        return val;
+        if w == 64 { return val; }
+        // Wider than i64 — would have to truncate. Refuse silently
+        // truncating; caller must do it explicitly if they meant to.
+        eprintln!("ensure_i64: refusing to truncate i{} to i64", w);
+        return std::ptr::null_mut();
     }
     if kind == 12 { // PointerTypeKind — convert to i64
         return LLVMBuildPtrToInt(builder, val, i64_ty, safe_name(std::ptr::null()));
@@ -1005,17 +1016,14 @@ unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
         let f0 = LLVMBuildExtractValue(builder, val, 0, safe_name(std::ptr::null()));
         if !f0.is_null() {
             let f0_kind = LLVMGetTypeKind(LLVMTypeOf(f0));
-            if f0_kind == 12 { // PointerTypeKind
+            if f0_kind == 12 {
                 return LLVMBuildPtrToInt(builder, f0, i64_ty, safe_name(std::ptr::null()));
             }
             if f0_kind == 8 { return f0; }
         }
     }
-    // For constants like null pointer: use const 0
-    if LLVMIsConstant(val) != 0 {
-        return LLVMConstInt(i64_ty, 0, 0);
-    }
-    val
+    eprintln!("ensure_i64: unsupported value kind {}", kind);
+    std::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -1313,9 +1321,12 @@ pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
         }
         let ptr_kind = LLVMGetTypeKind(LLVMTypeOf(ptr));
         if ptr_kind != 12 { // Not PointerTypeKind
-            let ty_kind = LLVMGetTypeKind(ty);
-            if ty_kind == 8 { return LLVMConstInt(ty, 0, 0); }
-            return LLVMGetUndef(ty);
+            // Loud failure: substituting a fake load (const 0 / undef)
+            // for an invalid load address produces wrong-but-valid IR
+            // that runs and corrupts state. Return null so the caller
+            // fails visibly instead.
+            eprintln!("forge_llvm_build_load: destination is not a pointer (kind={})", ptr_kind);
+            return std::ptr::null_mut();
         }
         LLVMBuildLoad2(builder, ty, ptr, safe_name(name))
     }
@@ -1380,7 +1391,6 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
         if lhs_kind != 8 && lhs_kind != 12 {
             // For struct types (10), try string comparison via forge_string_compare
             if lhs_kind == 10 {
-                // Look up forge_string_compare in the module
                 let bb = LLVMGetInsertBlock(builder);
                 if !bb.is_null() {
                     let func = LLVMGetBasicBlockParent(bb);
@@ -1388,7 +1398,6 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
                         let module = LLVMGetGlobalParent(func);
                         let cmp_fn = LLVMGetNamedFunction(module, b"forge_string_compare\0".as_ptr() as *const c_char);
                         if !cmp_fn.is_null() {
-                            // Call forge_string_compare(lhs, rhs) → i64, then icmp result with 0
                             let fn_ty = LLVMGlobalGetValueType(cmp_fn);
                             let mut args = [lhs, rhs];
                             let cmp_result = LLVMBuildCall2(builder, fn_ty, cmp_fn, args.as_mut_ptr(), 2, safe_name(std::ptr::null()));
@@ -1399,12 +1408,15 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
                     }
                 }
             }
-            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
-            return LLVMConstInt(i1, 0, 0);
+            // Loud failure: returning const false here would silently
+            // make every check on this value go down the wrong branch
+            // — that was the original parse_call/strcmp landmine. Bail.
+            eprintln!("forge_llvm_build_icmp: unsupported lhs type kind {}", lhs_kind);
+            return std::ptr::null_mut();
         }
         if lhs_ty != rhs_ty {
-            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
-            return LLVMConstInt(i1, 0, 0);
+            eprintln!("forge_llvm_build_icmp: type mismatch (lhs kind {}, rhs kind {})", lhs_kind, LLVMGetTypeKind(rhs_ty));
+            return std::ptr::null_mut();
         }
         LLVMBuildICmp(builder, pred, lhs, rhs, safe_name(name))
     }
