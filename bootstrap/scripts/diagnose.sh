@@ -17,19 +17,19 @@ REPO_DIR=$(CDPATH= cd -- "$BOOTSTRAP_DIR/.." && pwd)
 FORGE_DIR="$REPO_DIR/forge"
 BUILD_DIR="$BOOTSTRAP_DIR/build"
 REGRESS_DIR="$BOOTSTRAP_DIR/regress"
-HOST_COMPILER="$FORGE_DIR/target/release/forgec"
+SEED_LL="$BOOTSTRAP_DIR/seed/seed.ll"
+SEED_BIN="$BUILD_DIR/seed"
 RUNTIME_C="$FORGE_DIR/stdlib/runtime.c"
 RUNTIME_O="$BUILD_DIR/runtime.o"
 RUNTIME_ASAN_O="$BUILD_DIR/runtime_asan.o"
-STAGE1="$BUILD_DIR/bootstrapc"
 BS2="$BUILD_DIR/bs2"
 BS2_ASAN="$BUILD_DIR/bs2_asan"
 BS3="$BUILD_DIR/bs3"
 
 LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm@19}"
-LLVM_LIBS_LDFLAGS=$("$LLVM_PREFIX/bin/llvm-config" --ldflags --libs --system-libs core 2>/dev/null || true)
+LLVM_CONFIG="$LLVM_PREFIX/bin/llvm-config"
+LLC="$LLVM_PREFIX/bin/llc"
 STDLLVM_A="$FORGE_DIR/packages/std-llvm/target/release/libforge_llvm.a"
-STDPROC_A="$FORGE_DIR/packages/std-process/target/release/libforge_process.a"
 
 C_RED='\033[0;31m'
 C_GREEN='\033[0;32m'
@@ -130,14 +130,6 @@ EOF
 # Build helpers
 # ─────────────────────────────────────────────────────────────────────
 
-ensure_host_compiler() {
-  if [ ! -x "$HOST_COMPILER" ]; then
-    log "host compiler missing — building forgec"
-    (cd "$FORGE_DIR" && LLVM_SYS_191_PREFIX="$LLVM_PREFIX" cargo build --release) >&2 \
-      || die "failed to build host compiler"
-  fi
-}
-
 ensure_runtime() {
   if [ ! -f "$RUNTIME_O" ] || [ "$RUNTIME_C" -nt "$RUNTIME_O" ]; then
     mkdir -p "$BUILD_DIR"
@@ -161,35 +153,36 @@ ensure_stdlibs() {
     (cd "$FORGE_DIR/packages/std-llvm" && LLVM_SYS_191_PREFIX="$LLVM_PREFIX" cargo build --release) >&2 \
       || die "libforge_llvm build failed"
   fi
-  if [ ! -f "$STDPROC_A" ]; then
-    log "building libforge_process"
-    (cd "$FORGE_DIR/packages/std-process" && cargo build --release) >&2 \
-      || die "libforge_process build failed"
-  fi
 }
 
-ensure_stage1() {
-  ensure_host_compiler
+# Build the seed binary from seed/seed.ll (no Rust compiler needed).
+# The seed IR is checked into the repo and is the bootstrap's lifeline.
+ensure_seed() {
   ensure_stdlibs
-  if [ ! -x "$STAGE1" ] || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$STAGE1" ]; then
-    log "building stage1 (bootstrapc) via host compiler"
+  ensure_runtime
+  if [ ! -x "$SEED_BIN" ] || [ "$SEED_LL" -nt "$SEED_BIN" ]; then
+    [ -f "$SEED_LL" ] || die "seed IR not found at $SEED_LL — repo is corrupt"
+    log "building seed compiler from seed/seed.ll"
     mkdir -p "$BUILD_DIR"
-    if ! "$HOST_COMPILER" build "$BOOTSTRAP_DIR" --dev -o "$STAGE1" >"$BUILD_DIR/stage1.build.log" 2>&1; then
-      cat "$BUILD_DIR/stage1.build.log" >&2
-      die "stage1 build failed (see $BUILD_DIR/stage1.build.log)"
-    fi
+    "$LLC" -O2 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed.o" \
+      || die "seed llc failed"
+    cc -o "$SEED_BIN" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$STDLLVM_A" \
+      -L"$LLVM_PREFIX/lib" -lLLVM-19 -lc++ 2>"$BUILD_DIR/seed.link.log" \
+      || { cat "$BUILD_DIR/seed.link.log" >&2; die "seed link failed"; }
   fi
 }
 
-# Compile <fg> with stage1, producing <fg>.ll. Echoes the .ll path.
-emit_ll_stage1() {
-  local fg="$1"
-  ensure_stage1
-  "$STAGE1" compile "$fg" >/dev/null || die "stage1 codegen failed for $fg"
-  echo "$fg.ll"
+# Link an LLVM IR file into an executable.
+link_ll() {
+  local ll="$1" out="$2" logfile="$3"
+  "$LLC" -O2 -filetype=obj "$ll" -o "${out}.o" \
+    || die "llc failed for $ll"
+  cc -o "$out" "${out}.o" "$RUNTIME_O" "$STDLLVM_A" \
+    -L"$LLVM_PREFIX/lib" -lLLVM-19 -lc++ 2>"$logfile" \
+    || { cat "$logfile" >&2; die "link failed for $out"; }
 }
 
-# Compile <fg> with bs2, producing <fg>.ll. Echoes the .ll path.
+# Compile <fg> with bs2, producing <fg>.ll.
 emit_ll_bs2() {
   local fg="$1"
   ensure_bs2
@@ -202,25 +195,21 @@ emit_ll_bs2() {
 }
 
 ensure_bs2() {
-  ensure_stage1
-  ensure_runtime
+  ensure_seed
   if [ ! -x "$BS2" ] \
      || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$BS2" ] \
-     || [ "$BOOTSTRAP_DIR/src/codegen.fg" -nt "$BS2" ] \
-     || [ "$BOOTSTRAP_DIR/src/parser.fg" -nt "$BS2" ]; then
-    log "compiling bootstrap/src/main.fg with stage1"
-    "$STAGE1" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1 \
+     || [ "$SEED_LL" -nt "$BS2" ]; then
+    log "compiling bootstrap/src/main.fg with seed compiler"
+    "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1 \
       || { cat "$BUILD_DIR/bs2.codegen.log" >&2; die "bs2 codegen failed"; }
     log "linking $BS2"
-    cc -o "$BS2" "$BOOTSTRAP_DIR/src/main.fg.ll" "$RUNTIME_O" \
-       "$STDLLVM_A" "$STDPROC_A" $LLVM_LIBS_LDFLAGS 2>"$BUILD_DIR/bs2.link.log" \
-      || { cat "$BUILD_DIR/bs2.link.log" >&2; die "bs2 link failed"; }
+    link_ll "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
     ok "built $BS2"
   fi
 }
 
 ensure_bs2_asan() {
-  ensure_stage1
+  ensure_seed
   ensure_runtime_asan
   if [ ! -x "$BS2_ASAN" ] || [ "$BS2" -nt "$BS2_ASAN" ]; then
     log "compiling bootstrap/src/main.fg with stage1 (for ASan)"
@@ -238,17 +227,11 @@ ensure_bs2_asan() {
 ensure_bs3() {
   ensure_bs2
   log "compiling bootstrap/src/main.fg with bs2 → $BS3"
-  cp "$BOOTSTRAP_DIR/src/main.fg" "$BUILD_DIR/main_for_bs3.fg"
-  # Resolve all `mod foo` lines into the input first, by symlinking
-  # the src dir contents into build/. We just point bs2 at the original
-  # file so its preprocess_modules walks the right directory.
   if ! "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs3.codegen.log" 2>&1; then
     cat "$BUILD_DIR/bs3.codegen.log" >&2
-    die "bs3 codegen failed (bs2 cannot self-compile yet)"
+    die "bs3 codegen failed (bs2 cannot self-compile)"
   fi
-  cc -o "$BS3" "$BOOTSTRAP_DIR/src/main.fg.ll" "$RUNTIME_O" \
-     "$STDLLVM_A" "$STDPROC_A" $LLVM_LIBS_LDFLAGS 2>"$BUILD_DIR/bs3.link.log" \
-    || { cat "$BUILD_DIR/bs3.link.log" >&2; die "bs3 link failed"; }
+  link_ll "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS3" "$BUILD_DIR/bs3.link.log"
   ok "built $BS3"
 }
 
@@ -297,28 +280,21 @@ mode_check_fixedpoint() {
 
 # Compile + link + run a .fg with bs2 (or stage1).
 run_fg() {
-  local fg="$1"; local which="$2"
+  local fg="$1"
   [ -f "$fg" ] || die "no such file: $fg"
-  local compiler ll bin
-  case "$which" in
-    bs2)    ensure_bs2;    compiler="$BS2" ;;
-    stage1) ensure_stage1; compiler="$STAGE1" ;;
-    *) die "run_fg: unknown compiler '$which'" ;;
-  esac
-  ensure_runtime
+  ensure_bs2
+  local ll bin
   ll="$fg.ll"
   bin="${fg%.fg}.bin"
-  if ! "$compiler" compile "$fg" >"$BUILD_DIR/last_run.log" 2>&1; then
+  if ! "$BS2" compile "$fg" >"$BUILD_DIR/last_run.log" 2>&1; then
     cat "$BUILD_DIR/last_run.log" >&2
-    die "$which codegen failed"
+    die "bs2 codegen failed"
   fi
-  cc -o "$bin" "$ll" "$RUNTIME_O" 2>"$BUILD_DIR/last_link.log" \
-    || { cat "$BUILD_DIR/last_link.log" >&2; die "link failed"; }
+  link_ll "$ll" "$bin" "$BUILD_DIR/last_link.log"
   "$bin"
 }
 
-mode_run()        { run_fg "$1" bs2; }
-mode_run_stage1() { run_fg "$1" stage1; }
+mode_run() { run_fg "$1"; }
 
 mode_check() {
   local fg="$1"; [ -f "$fg" ] || die "no such file: $fg"
@@ -330,13 +306,6 @@ mode_ll() {
   local fg="$1"; [ -f "$fg" ] || die "no such file: $fg"
   ensure_bs2
   "$BS2" compile "$fg" >/dev/null
-  cat "$fg.ll"
-}
-
-mode_ll_stage1() {
-  local fg="$1"; [ -f "$fg" ] || die "no such file: $fg"
-  ensure_stage1
-  "$STAGE1" compile "$fg" >/dev/null
   cat "$fg.ll"
 }
 
@@ -574,52 +543,16 @@ mode_regress() {
     # are marked with a `.bs2only` sidecar file and skip the stage1
     # cross-check. The bs2 path still runs and validates against
     # expected output.
-    local skip_s1=0
-    if [ -f "${fg%.fg}.bs2only" ] || [ -f "$REGRESS_DIR/$name.bs2only" ]; then
-      skip_s1=1
-    fi
-
-    # Stage1 path: compile, link, run, capture stdout. We don't compare
-    # against the .out file directly here — that's bs2's contract — but
-    # we do require stage1's output to MATCH bs2's output. Any divergence
-    # means stage1 and bs2 disagree on the semantics of the program,
-    # which is a self-host invariant violation.
-    bin_s1="$BUILD_DIR/regress_${name}_s1.bin"
-    if [ "$skip_s1" -eq 0 ]; then
-    if ! "$STAGE1" compile "$fg" >"$BUILD_DIR/regress_${name}_s1.codegen.log" 2>&1; then
-      err "$name: stage1 codegen failed"
-      fail=$((fail+1))
-      continue
-    fi
-    if ! cc -o "$bin_s1" "$fg.ll" "$RUNTIME_O" 2>"$BUILD_DIR/regress_${name}_s1.link.log"; then
-      err "$name: stage1 link failed"
-      fail=$((fail+1))
-      continue
-    fi
-    actual_s1=$("$bin_s1" 2>&1) || true
-    fi  # end skip_s1
-
-    # bs2 path: compile, link, run, compare against expected.
+    # Compile, link, run with bs2, compare against expected output.
     bin="$BUILD_DIR/regress_$name.bin"
     if ! "$BS2" compile "$fg" >"$BUILD_DIR/regress_$name.codegen.log" 2>&1; then
-      err "$name: bs2 codegen failed"
+      err "$name: codegen failed"
       fail=$((fail+1))
       continue
     fi
-    if ! cc -o "$bin" "$fg.ll" "$RUNTIME_O" 2>"$BUILD_DIR/regress_$name.link.log"; then
-      err "$name: link failed"
-      fail=$((fail+1))
-      continue
-    fi
+    link_ll "$fg.ll" "$bin" "$BUILD_DIR/regress_$name.link.log" 2>/dev/null \
+      || { err "$name: link failed"; fail=$((fail+1)); continue; }
     actual=$("$bin" 2>&1) || true
-
-    # Cross-compiler equivalence: stage1 and bs2 must agree.
-    if [ "$skip_s1" -eq 0 ] && [ "$actual" != "$actual_s1" ]; then
-      err "$name: stage1 and bs2 disagree on output"
-      diff -u <(echo "$actual_s1") <(echo "$actual") | sed 's/^/    /' >&2
-      fail=$((fail+1))
-      continue
-    fi
 
     if [ "$actual" = "$(cat "$expected")" ]; then
       ok "$name"
@@ -649,7 +582,7 @@ mode_regress_add() {
     die "bs2 codegen failed — fix the codegen first"
   fi
   local bin="$BUILD_DIR/regress_$name.bin"
-  if ! cc -o "$bin" "$stage.ll" "$RUNTIME_O" 2>/dev/null; then
+  if ! link_ll "$stage.ll" "$bin" "$BUILD_DIR/_capture.link.log" 2>/dev/null; then
     rm -f "$stage" "$stage.ll"
     die "link failed"
   fi
@@ -754,10 +687,8 @@ main() {
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;
     --run)                mode_run "$@" ;;
-    --run-stage1)         mode_run_stage1 "$@" ;;
     --check)              mode_check "$@" ;;
     --ll)                 mode_ll "$@" ;;
-    --ll-stage1)          mode_ll_stage1 "$@" ;;
     --diff)               mode_diff "$@" ;;
     --diff-fn)            mode_diff_fn "$@" ;;
     --score)              mode_score "$@" ;;

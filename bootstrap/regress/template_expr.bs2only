@@ -1,4 +1,0 @@
-Known stage1 divergence: sub-parser in template desugaring crashes
-stage1 (Rust-compiled bootstrap) but works in bs2 (self-compiled).
-Root cause: parser_new() inside desugar_template() triggers a codegen
-bug in the Rust host compiler's handling of large struct allocation.
