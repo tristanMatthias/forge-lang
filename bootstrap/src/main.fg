@@ -35,17 +35,15 @@ fn read_file(path: string) -> string { forge_selfhost_read_file(path) }
 fn write_file(path: string, content: string) -> int { forge_selfhost_write_file(path, content) }
 
 mod core
-mod scanner
 mod parser
 mod eval
-mod resolver
 mod codegen
 
-use scanner.{scan_source, render_tokens}
+use core.scanner.{scan_source, render_tokens}
 use parser.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list}
 use eval.{eval_expression_source, execute_program_source, render_value}
-use resolver.{resolve_program}
+use core.resolver.{resolve_program}
 use codegen.{compile_program}
 
 fn print_usage() {
