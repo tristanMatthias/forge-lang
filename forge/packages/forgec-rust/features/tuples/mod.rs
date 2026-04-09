@@ -29,6 +29,6 @@ elements, consider switching to a named struct for clarity.",
     category: "Collections",
 }
 
-pub mod types;
-pub mod codegen;
 pub mod checker;
+pub mod codegen;
+pub mod types;

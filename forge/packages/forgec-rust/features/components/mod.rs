@@ -34,8 +34,8 @@ requires only a new package, never a compiler change.",
     category_order: Advanced,
 }
 
-pub mod parser;
 pub mod checker;
 pub mod codegen;
 pub mod expand;
+pub mod parser;
 pub mod types;

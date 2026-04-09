@@ -1,6 +1,6 @@
+use crate::errors::Diagnostic;
 use crate::feature::FeatureStmt;
 use crate::feature_data;
-use crate::errors::Diagnostic;
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
 
@@ -14,7 +14,8 @@ impl TypeChecker {
                 if let Some(data) = feature_data!(fe, FnDeclData) {
                     self.env.push_scope();
 
-                    let ret_type = data.return_type
+                    let ret_type = data
+                        .return_type
                         .as_ref()
                         .map(|t| self.resolve_type_expr(t))
                         .unwrap_or(Type::Void);
@@ -54,7 +55,13 @@ impl TypeChecker {
                     if let Some(val) = &data.value {
                         let val_type = self.check_expr(val);
                         if let Some(expected) = self.current_fn_return_type.clone() {
-                            self.check_type_mismatch_ctx(&expected, &val_type, fe.span, None, Some(val));
+                            self.check_type_mismatch_ctx(
+                                &expected,
+                                &val_type,
+                                fe.span,
+                                None,
+                                Some(val),
+                            );
                         }
                     }
                 }
@@ -68,15 +75,19 @@ impl TypeChecker {
         if let Some(data) = feature_data!(fe, FnDeclData) {
             // Check for builtin shadowing
             if crate::registry::BuiltinFnRegistry::all_names().contains(&data.name.as_str()) {
-                self.diagnostics.push(Diagnostic::error(
-                    "F0012",
-                    format!("cannot redefine builtin function '{}'", data.name),
-                    fe.span,
-                ).with_help("choose a different function name".to_string()));
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        "F0012",
+                        format!("cannot redefine builtin function '{}'", data.name),
+                        fe.span,
+                    )
+                    .with_help("choose a different function name".to_string()),
+                );
                 return;
             }
 
-            let param_types: Vec<Type> = data.params
+            let param_types: Vec<Type> = data
+                .params
                 .iter()
                 .map(|p| {
                     p.type_ann
@@ -85,7 +96,8 @@ impl TypeChecker {
                         .unwrap_or(Type::Unknown)
                 })
                 .collect();
-            let ret = data.return_type
+            let ret = data
+                .return_type
                 .as_ref()
                 .map(|t| self.resolve_type_expr(t))
                 .unwrap_or(Type::Void);
@@ -100,14 +112,20 @@ impl TypeChecker {
 
             // Store type params for generic functions
             if !data.type_params.is_empty() {
-                self.env.fn_type_params.insert(data.name.clone(), data.type_params.clone());
-                let param_type_names: Vec<Option<String>> = data.params.iter().map(|p| {
-                    match &p.type_ann {
+                self.env
+                    .fn_type_params
+                    .insert(data.name.clone(), data.type_params.clone());
+                let param_type_names: Vec<Option<String>> = data
+                    .params
+                    .iter()
+                    .map(|p| match &p.type_ann {
                         Some(crate::parser::ast::TypeExpr::Named(n)) => Some(n.clone()),
                         _ => None,
-                    }
-                }).collect();
-                self.env.fn_param_type_names.insert(data.name.clone(), param_type_names);
+                    })
+                    .collect();
+                self.env
+                    .fn_param_type_names
+                    .insert(data.name.clone(), param_type_names);
             }
         }
     }

@@ -51,7 +51,12 @@ impl ExpansionResult {
 // ---- AST builder helpers ----
 
 fn sp() -> Span {
-    Span { start: 0, end: 0, line: 0, col: 0 }
+    Span {
+        start: 0,
+        end: 0,
+        line: 0,
+        col: 0,
+    }
 }
 
 fn ident(name: &str) -> Expr {
@@ -63,7 +68,10 @@ fn call(name: &str, args: Vec<Expr>) -> Expr {
         callee: Box::new(ident(name)),
         args: args
             .into_iter()
-            .map(|v| CallArg { name: None, value: v })
+            .map(|v| CallArg {
+                name: None,
+                value: v,
+            })
             .collect(),
         type_args: vec![],
         span: sp(),
@@ -79,7 +87,10 @@ fn method_call(obj: &str, method: &str, args: Vec<Expr>) -> Expr {
         }),
         args: args
             .into_iter()
-            .map(|v| CallArg { name: None, value: v })
+            .map(|v| CallArg {
+                name: None,
+                value: v,
+            })
             .collect(),
         type_args: vec![],
         span: sp(),
@@ -147,7 +158,10 @@ fn type_ann_to_str(te: &TypeExpr) -> &str {
 // Serializes schema fields to JSON for the native package library to generate SQL.
 // This is generic data serialization — no SQL type mapping knowledge here.
 
-fn build_schema_json(fields: &[ComponentSchemaField], _component_annotations: &[Annotation]) -> String {
+fn build_schema_json(
+    fields: &[ComponentSchemaField],
+    _component_annotations: &[Annotation],
+) -> String {
     let mut entries = Vec::new();
     for field in fields {
         let mut obj = format!(
@@ -170,7 +184,11 @@ fn build_schema_json(fields: &[ComponentSchemaField], _component_annotations: &[
                             .iter()
                             .map(|arg| match arg {
                                 Expr::BoolLit(b, _) => {
-                                    if *b { "true".to_string() } else { "false".to_string() }
+                                    if *b {
+                                        "true".to_string()
+                                    } else {
+                                        "false".to_string()
+                                    }
                                 }
                                 Expr::IntLit(n, _) => n.to_string(),
                                 Expr::StringLit(s, _) => format!("\"{}\"", s),
@@ -178,7 +196,11 @@ fn build_schema_json(fields: &[ComponentSchemaField], _component_annotations: &[
                                 _ => "null".to_string(),
                             })
                             .collect();
-                        format!("{{\"name\":\"{}\",\"args\":[{}]}}", ann.name, args.join(","))
+                        format!(
+                            "{{\"name\":\"{}\",\"args\":[{}]}}",
+                            ann.name,
+                            args.join(",")
+                        )
                     }
                 })
                 .collect();
@@ -277,7 +299,11 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             Expr::Ident(substitute_ident_string(name, ctx), *span)
         }
         // Component property access via `self.*`
-        Expr::MemberAccess { object, field, span } => {
+        Expr::MemberAccess {
+            object,
+            field,
+            span,
+        } => {
             if let Expr::Ident(obj_name, _) = object.as_ref() {
                 if obj_name == "self" {
                     // `self.name` → instance name as string
@@ -300,7 +326,12 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             }
             // `self.config.KEY` → resolved config value
             // This arrives as MemberAccess { object: MemberAccess { object: Ident("self"), field: "config" }, field: KEY }
-            if let Expr::MemberAccess { object: inner_obj, field: inner_field, .. } = object.as_ref() {
+            if let Expr::MemberAccess {
+                object: inner_obj,
+                field: inner_field,
+                ..
+            } = object.as_ref()
+            {
                 if let Expr::Ident(obj_name, _) = inner_obj.as_ref() {
                     if obj_name == "self" && inner_field == "config" {
                         if let Some(cfg) = ctx.config.iter().find(|c| c.key == *field) {
@@ -339,21 +370,22 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             expr.clone()
         }
         Expr::StringLit(_, _) => expr.clone(),
-        Expr::TemplateLit { parts, span } => {
-            Expr::TemplateLit {
-                parts: parts
-                    .iter()
-                    .map(|p| match p {
-                        TemplatePart::Literal(s) => TemplatePart::Literal(s.clone()),
-                        TemplatePart::Expr(e) => {
-                            TemplatePart::Expr(Box::new(substitute_expr(e, ctx)))
-                        }
-                    })
-                    .collect(),
-                span: *span,
-            }
-        }
-        Expr::Call { callee, args, type_args, span } => Expr::Call {
+        Expr::TemplateLit { parts, span } => Expr::TemplateLit {
+            parts: parts
+                .iter()
+                .map(|p| match p {
+                    TemplatePart::Literal(s) => TemplatePart::Literal(s.clone()),
+                    TemplatePart::Expr(e) => TemplatePart::Expr(Box::new(substitute_expr(e, ctx))),
+                })
+                .collect(),
+            span: *span,
+        },
+        Expr::Call {
+            callee,
+            args,
+            type_args,
+            span,
+        } => Expr::Call {
             callee: Box::new(substitute_expr(callee, ctx)),
             args: args
                 .iter()
@@ -365,7 +397,12 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             type_args: type_args.clone(),
             span: *span,
         },
-        Expr::Binary { left, op, right, span } => Expr::Binary {
+        Expr::Binary {
+            left,
+            op,
+            right,
+            span,
+        } => Expr::Binary {
             left: Box::new(substitute_expr(left, ctx)),
             op: *op,
             right: Box::new(substitute_expr(right, ctx)),
@@ -377,7 +414,11 @@ fn substitute_expr(expr: &Expr, ctx: &SubstitutionContext) -> Expr {
             span: *span,
         },
         Expr::Block(block) => Expr::Block(substitute_block(block, ctx)),
-        Expr::Index { object, index, span } => Expr::Index {
+        Expr::Index {
+            object,
+            index,
+            span,
+        } => Expr::Index {
             object: Box::new(substitute_expr(object, ctx)),
             index: Box::new(substitute_expr(index, ctx)),
             span: *span,
@@ -397,7 +438,6 @@ fn substitute_feature_expr(fe: &crate::feature::FeatureExpr, ctx: &SubstitutionC
         span: fe.span,
     })
 }
-
 
 fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
     match te {
@@ -442,26 +482,58 @@ fn substitute_type_expr(te: &TypeExpr, ctx: &SubstitutionContext) -> TypeExpr {
             }
             TypeExpr::Named(name.clone())
         }
-        TypeExpr::Nullable(inner)   => TypeExpr::Nullable(Box::new(substitute_type_expr(inner, ctx))),
-        TypeExpr::AsPartial(base)   => TypeExpr::AsPartial(Box::new(substitute_type_expr(base, ctx))),
+        TypeExpr::Nullable(inner) => TypeExpr::Nullable(Box::new(substitute_type_expr(inner, ctx))),
+        TypeExpr::AsPartial(base) => TypeExpr::AsPartial(Box::new(substitute_type_expr(base, ctx))),
         TypeExpr::Generic { name, args } => TypeExpr::Generic {
             name: name.clone(),
             args: args.iter().map(|a| substitute_type_expr(a, ctx)).collect(),
         },
-        TypeExpr::Union(types)  => TypeExpr::Union(types.iter().map(|t| substitute_type_expr(t, ctx)).collect()),
-        TypeExpr::Tuple(types)  => TypeExpr::Tuple(types.iter().map(|t| substitute_type_expr(t, ctx)).collect()),
-        TypeExpr::Function { params, return_type } => TypeExpr::Function {
-            params: params.iter().map(|t| substitute_type_expr(t, ctx)).collect(),
+        TypeExpr::Union(types) => {
+            TypeExpr::Union(types.iter().map(|t| substitute_type_expr(t, ctx)).collect())
+        }
+        TypeExpr::Tuple(types) => {
+            TypeExpr::Tuple(types.iter().map(|t| substitute_type_expr(t, ctx)).collect())
+        }
+        TypeExpr::Function {
+            params,
+            return_type,
+        } => TypeExpr::Function {
+            params: params
+                .iter()
+                .map(|t| substitute_type_expr(t, ctx))
+                .collect(),
             return_type: Box::new(substitute_type_expr(return_type, ctx)),
         },
         TypeExpr::Struct { fields } => TypeExpr::Struct {
-            fields: fields.iter().map(|f| StructFieldDef { name: f.name.clone(), type_expr: substitute_type_expr(&f.type_expr, ctx), annotations: f.annotations.clone(), mutable: f.mutable }).collect(),
+            fields: fields
+                .iter()
+                .map(|f| StructFieldDef {
+                    name: f.name.clone(),
+                    type_expr: substitute_type_expr(&f.type_expr, ctx),
+                    annotations: f.annotations.clone(),
+                    mutable: f.mutable,
+                })
+                .collect(),
         },
-        TypeExpr::Without  { base, fields } => TypeExpr::Without  { base: Box::new(substitute_type_expr(base, ctx)), fields: fields.clone() },
-        TypeExpr::Only     { base, fields } => TypeExpr::Only     { base: Box::new(substitute_type_expr(base, ctx)), fields: fields.clone() },
+        TypeExpr::Without { base, fields } => TypeExpr::Without {
+            base: Box::new(substitute_type_expr(base, ctx)),
+            fields: fields.clone(),
+        },
+        TypeExpr::Only { base, fields } => TypeExpr::Only {
+            base: Box::new(substitute_type_expr(base, ctx)),
+            fields: fields.clone(),
+        },
         TypeExpr::TypeWith { base, fields } => TypeExpr::TypeWith {
             base: Box::new(substitute_type_expr(base, ctx)),
-            fields: fields.iter().map(|f| StructFieldDef { name: f.name.clone(), type_expr: substitute_type_expr(&f.type_expr, ctx), annotations: f.annotations.clone(), mutable: f.mutable }).collect(),
+            fields: fields
+                .iter()
+                .map(|f| StructFieldDef {
+                    name: f.name.clone(),
+                    type_expr: substitute_type_expr(&f.type_expr, ctx),
+                    annotations: f.annotations.clone(),
+                    mutable: f.mutable,
+                })
+                .collect(),
         },
         TypeExpr::Intersection(left, right) => TypeExpr::Intersection(
             Box::new(substitute_type_expr(left, ctx)),
@@ -506,44 +578,82 @@ fn substitute_stmt(stmt: &Statement, ctx: &SubstitutionContext) -> Statement {
         };
     }
     match stmt {
-        Statement::Let   { name, type_ann, value, exported, span, .. } => sub_binding!(Let,   name, type_ann, value, exported, span),
-        Statement::Mut   { name, type_ann, value, exported, span, .. } => sub_binding!(Mut,   name, type_ann, value, exported, span),
-        Statement::Const { name, type_ann, value, exported, span, .. } => sub_binding!(Const, name, type_ann, value, exported, span),
+        Statement::Let {
+            name,
+            type_ann,
+            value,
+            exported,
+            span,
+            ..
+        } => sub_binding!(Let, name, type_ann, value, exported, span),
+        Statement::Mut {
+            name,
+            type_ann,
+            value,
+            exported,
+            span,
+            ..
+        } => sub_binding!(Mut, name, type_ann, value, exported, span),
+        Statement::Const {
+            name,
+            type_ann,
+            value,
+            exported,
+            span,
+            ..
+        } => sub_binding!(Const, name, type_ann, value, exported, span),
         Statement::Expr(expr) => Statement::Expr(substitute_expr(expr, ctx)),
         Statement::Return { value, span } => Statement::Return {
             value: value.as_ref().map(|v| substitute_expr(v, ctx)),
             span: *span,
         },
-        Statement::FnDecl { name, type_params, params, return_type, body, exported, span } => {
-            Statement::FnDecl {
-                name: substitute_ident_string(name, ctx),
-                type_params: type_params.clone(),
-                params: params.iter().map(|p| substitute_param(p, ctx)).collect(),
-                return_type: return_type.as_ref().map(|t| substitute_type_expr(t, ctx)),
-                body: substitute_block(body, ctx),
-                exported: *exported,
-                span: *span,
-            }
-        }
-        Statement::For { pattern, iterable, body, span } => Statement::For {
+        Statement::FnDecl {
+            name,
+            type_params,
+            params,
+            return_type,
+            body,
+            exported,
+            span,
+        } => Statement::FnDecl {
+            name: substitute_ident_string(name, ctx),
+            type_params: type_params.clone(),
+            params: params.iter().map(|p| substitute_param(p, ctx)).collect(),
+            return_type: return_type.as_ref().map(|t| substitute_type_expr(t, ctx)),
+            body: substitute_block(body, ctx),
+            exported: *exported,
+            span: *span,
+        },
+        Statement::For {
+            pattern,
+            iterable,
+            body,
+            span,
+        } => Statement::For {
             pattern: pattern.clone(),
             iterable: substitute_expr(iterable, ctx),
             body: substitute_block(body, ctx),
             span: *span,
         },
-        Statement::While { condition, body, span } => Statement::While {
+        Statement::While {
+            condition,
+            body,
+            span,
+        } => Statement::While {
             condition: substitute_expr(condition, ctx),
             body: substitute_block(body, ctx),
             span: *span,
         },
-        Statement::Assign { target, value, span } => Statement::Assign {
+        Statement::Assign {
+            target,
+            value,
+            span,
+        } => Statement::Assign {
             target: substitute_expr(target, ctx),
             value: substitute_expr(value, ctx),
             span: *span,
         },
-        Statement::Feature(fe) => {
-            substitute_feature_stmt(fe, ctx)
-        }
+        Statement::Feature(fe) => substitute_feature_stmt(fe, ctx),
         // Pass through unchanged
         _ => stmt.clone(),
     }
@@ -551,7 +661,10 @@ fn substitute_stmt(stmt: &Statement, ctx: &SubstitutionContext) -> Statement {
 
 /// Substitute template placeholders inside Feature variant statements.
 /// Delegates to each feature data type's `substitute_exprs` implementation.
-fn substitute_feature_stmt(fe: &crate::feature::FeatureStmt, ctx: &SubstitutionContext) -> Statement {
+fn substitute_feature_stmt(
+    fe: &crate::feature::FeatureStmt,
+    ctx: &SubstitutionContext,
+) -> Statement {
     let new_data = with_sub_fns(ctx, |fns| fe.data.substitute_exprs(fns));
     reconstruct_feature_stmt(fe, new_data)
 }
@@ -560,14 +673,16 @@ fn substitute_feature_stmt(fe: &crate::feature::FeatureStmt, ctx: &SubstitutionC
 
 /// Map schema fields to struct-style (name, type, annotations) tuples,
 /// optionally filtering out fields annotated with @hidden.
-fn map_schema_fields(
-    schema: &[ComponentSchemaField],
-    visible_only: bool,
-) -> Vec<StructFieldDef> {
+fn map_schema_fields(schema: &[ComponentSchemaField], visible_only: bool) -> Vec<StructFieldDef> {
     schema
         .iter()
         .filter(|f| !visible_only || !f.annotations.iter().any(|a| a.name == "hidden"))
-        .map(|f| StructFieldDef { name: f.name.clone(), type_expr: f.type_ann.clone(), annotations: Vec::new(), mutable: false })
+        .map(|f| StructFieldDef {
+            name: f.name.clone(),
+            type_expr: f.type_ann.clone(),
+            annotations: Vec::new(),
+            mutable: false,
+        })
         .collect()
 }
 
@@ -587,11 +702,9 @@ fn register_component_method(
     params: &[Param],
     return_type: &Option<TypeExpr>,
 ) {
-    result.static_methods.push((
-        ctx.name.clone(),
-        method_name.to_string(),
-        fn_name.clone(),
-    ));
+    result
+        .static_methods
+        .push((ctx.name.clone(), method_name.to_string(), fn_name.clone()));
     result.component_methods.push(ComponentMethodInfo {
         instance_name: ctx.name.clone(),
         component_kind: ctx.component_kind.clone(),
@@ -654,13 +767,33 @@ fn expand_syntax_call(
 }
 
 /// Like substitute_syntax_args but passes service_infos through for $resolve_service
-fn substitute_syntax_args_with_services(stmt: &Statement, args: &std::collections::HashMap<String, Expr>, service_infos: &[ServiceInfo]) -> Statement {
+fn substitute_syntax_args_with_services(
+    stmt: &Statement,
+    args: &std::collections::HashMap<String, Expr>,
+    service_infos: &[ServiceInfo],
+) -> Statement {
     match stmt {
-        Statement::Expr(expr) => Statement::Expr(substitute_syntax_args_expr(expr, args, service_infos)),
-        Statement::Let { name, type_ann, value, exported, span, .. } => {
+        Statement::Expr(expr) => {
+            Statement::Expr(substitute_syntax_args_expr(expr, args, service_infos))
+        }
+        Statement::Let {
+            name,
+            type_ann,
+            value,
+            exported,
+            span,
+            ..
+        } => {
             // Handle $handler_param_N: bind closure param names to template-provided values
             if name.starts_with("$handler_param_") {
-                return match try_expand_handler_param(name, value, *exported, *span, args, service_infos) {
+                return match try_expand_handler_param(
+                    name,
+                    value,
+                    *exported,
+                    *span,
+                    args,
+                    service_infos,
+                ) {
                     Some(s) => s,
                     // No matching closure param — drop this placeholder binding
                     None => Statement::Expr(Expr::IntLit(0, sp())),
@@ -674,30 +807,38 @@ fn substitute_syntax_args_with_services(stmt: &Statement, args: &std::collection
                 exported: *exported,
                 span: *span,
             }
-        },
+        }
         Statement::Return { value, span } => Statement::Return {
-            value: value.as_ref().map(|v| substitute_syntax_args_expr(v, args, service_infos)),
+            value: value
+                .as_ref()
+                .map(|v| substitute_syntax_args_expr(v, args, service_infos)),
             span: *span,
         },
-        Statement::FnDecl { name, type_params, params, return_type, body, exported, span } => {
-            Statement::FnDecl {
-                name: name.clone(),
-                type_params: type_params.clone(),
-                params: params.clone(),
-                return_type: return_type.clone(),
-                body: Block {
-                    statements: body.statements.iter()
-                        .map(|s| substitute_syntax_args_with_services(s, args, service_infos))
-                        .collect(),
-                    span: body.span,
-                },
-                exported: *exported,
-                span: *span,
-            }
-        }
-        Statement::Feature(fe) => {
-            substitute_syntax_args_feature_stmt(fe, args, service_infos)
-        }
+        Statement::FnDecl {
+            name,
+            type_params,
+            params,
+            return_type,
+            body,
+            exported,
+            span,
+        } => Statement::FnDecl {
+            name: name.clone(),
+            type_params: type_params.clone(),
+            params: params.clone(),
+            return_type: return_type.clone(),
+            body: Block {
+                statements: body
+                    .statements
+                    .iter()
+                    .map(|s| substitute_syntax_args_with_services(s, args, service_infos))
+                    .collect(),
+                span: body.span,
+            },
+            exported: *exported,
+            span: *span,
+        },
+        Statement::Feature(fe) => substitute_syntax_args_feature_stmt(fe, args, service_infos),
         _ => stmt.clone(),
     }
 }
@@ -717,7 +858,14 @@ fn substitute_syntax_args_feature_stmt(
                 // Handle $handler_param_N for Let kind
                 if fe.kind == "Let" && data.name.starts_with("$handler_param_") {
                     // Return as old-style Let since that's what template expansion expects
-                    return match try_expand_handler_param(&data.name, &data.value, data.exported, fe.span, args, service_infos) {
+                    return match try_expand_handler_param(
+                        &data.name,
+                        &data.value,
+                        data.exported,
+                        fe.span,
+                        args,
+                        service_infos,
+                    ) {
                         Some(s) => s,
                         None => Statement::Expr(Expr::IntLit(0, sp())),
                     };
@@ -744,7 +892,10 @@ fn substitute_syntax_args_feature_stmt(
                     params: data.params.clone(),
                     return_type: data.return_type.clone(),
                     body: Block {
-                        statements: data.body.statements.iter()
+                        statements: data
+                            .body
+                            .statements
+                            .iter()
                             .map(|s| substitute_syntax_args_with_services(s, args, service_infos))
                             .collect(),
                         span: data.body.span,
@@ -760,7 +911,10 @@ fn substitute_syntax_args_feature_stmt(
             use crate::features::functions::types::ReturnData;
             if let Some(data) = feature_data!(fe, ReturnData) {
                 let new_data = ReturnData {
-                    value: data.value.as_ref().map(|v| substitute_syntax_args_expr(v, args, service_infos)),
+                    value: data
+                        .value
+                        .as_ref()
+                        .map(|v| substitute_syntax_args_expr(v, args, service_infos)),
                 };
                 reconstruct_feature_stmt(fe, Box::new(new_data))
             } else {
@@ -774,7 +928,15 @@ fn substitute_syntax_args_feature_stmt(
 /// Replace all occurrences of $generated in FnDecl names and Ident references
 fn replace_dollar_generated(stmt: &Statement, generated_name: &str) -> Statement {
     match stmt {
-        Statement::FnDecl { name, type_params, params, return_type, body, exported, span } => {
+        Statement::FnDecl {
+            name,
+            type_params,
+            params,
+            return_type,
+            body,
+            exported,
+            span,
+        } => {
             let new_name = if name == "$generated" {
                 generated_name.to_string()
             } else {
@@ -786,7 +948,9 @@ fn replace_dollar_generated(stmt: &Statement, generated_name: &str) -> Statement
                 params: params.clone(),
                 return_type: return_type.clone(),
                 body: Block {
-                    statements: body.statements.iter()
+                    statements: body
+                        .statements
+                        .iter()
                         .map(|s| replace_dollar_generated(s, generated_name))
                         .collect(),
                     span: body.span,
@@ -795,8 +959,17 @@ fn replace_dollar_generated(stmt: &Statement, generated_name: &str) -> Statement
                 span: *span,
             }
         }
-        Statement::Expr(expr) => Statement::Expr(replace_dollar_generated_expr(expr, generated_name)),
-        Statement::Let { name, type_ann, value, exported, span, .. } => Statement::Let {
+        Statement::Expr(expr) => {
+            Statement::Expr(replace_dollar_generated_expr(expr, generated_name))
+        }
+        Statement::Let {
+            name,
+            type_ann,
+            value,
+            exported,
+            span,
+            ..
+        } => Statement::Let {
             name: name.clone(),
             type_ann: type_ann.clone(),
             type_ann_span: None,
@@ -804,15 +977,16 @@ fn replace_dollar_generated(stmt: &Statement, generated_name: &str) -> Statement
             exported: *exported,
             span: *span,
         },
-        Statement::Feature(fe) => {
-            replace_dollar_generated_feature_stmt(fe, generated_name)
-        }
+        Statement::Feature(fe) => replace_dollar_generated_feature_stmt(fe, generated_name),
         _ => stmt.clone(),
     }
 }
 
 /// Handle Feature variant in replace_dollar_generated
-fn replace_dollar_generated_feature_stmt(fe: &crate::feature::FeatureStmt, generated_name: &str) -> Statement {
+fn replace_dollar_generated_feature_stmt(
+    fe: &crate::feature::FeatureStmt,
+    generated_name: &str,
+) -> Statement {
     use crate::feature_data;
 
     match (fe.feature_id, fe.kind) {
@@ -830,7 +1004,10 @@ fn replace_dollar_generated_feature_stmt(fe: &crate::feature::FeatureStmt, gener
                     params: data.params.clone(),
                     return_type: data.return_type.clone(),
                     body: Block {
-                        statements: data.body.statements.iter()
+                        statements: data
+                            .body
+                            .statements
+                            .iter()
                             .map(|s| replace_dollar_generated(s, generated_name))
                             .collect(),
                         span: data.body.span,
@@ -871,12 +1048,20 @@ fn replace_dollar_generated_expr(expr: &Expr, generated_name: &str) -> Expr {
                 expr.clone()
             }
         }
-        Expr::Call { callee, args, type_args, span } => Expr::Call {
+        Expr::Call {
+            callee,
+            args,
+            type_args,
+            span,
+        } => Expr::Call {
             callee: Box::new(replace_dollar_generated_expr(callee, generated_name)),
-            args: args.iter().map(|a| CallArg {
-                name: a.name.clone(),
-                value: replace_dollar_generated_expr(&a.value, generated_name),
-            }).collect(),
+            args: args
+                .iter()
+                .map(|a| CallArg {
+                    name: a.name.clone(),
+                    value: replace_dollar_generated_expr(&a.value, generated_name),
+                })
+                .collect(),
             type_args: type_args.clone(),
             span: *span,
         },
@@ -885,7 +1070,10 @@ fn replace_dollar_generated_expr(expr: &Expr, generated_name: &str) -> Expr {
 }
 
 /// Find the Nth param from the first closure found in the args map
-fn find_closure_param_in_args(args: &std::collections::HashMap<String, Expr>, idx: usize) -> Option<Param> {
+fn find_closure_param_in_args(
+    args: &std::collections::HashMap<String, Expr>,
+    idx: usize,
+) -> Option<Param> {
     use crate::feature_data;
     use crate::features::closures::types::ClosureData;
     for value in args.values() {
@@ -926,7 +1114,10 @@ fn try_expand_handler_param(
                     field: "parse".to_string(),
                     span: sp(),
                 }),
-                args: vec![CallArg { name: None, value: substituted_value }],
+                args: vec![CallArg {
+                    name: None,
+                    value: substituted_value,
+                }],
                 type_args: vec![],
                 span: sp(),
             },
@@ -945,18 +1136,27 @@ fn try_expand_handler_param(
 }
 
 /// Replace identifiers that match syntax fn param names with their captured values
-fn substitute_syntax_args(stmt: &Statement, args: &std::collections::HashMap<String, Expr>) -> Statement {
+fn substitute_syntax_args(
+    stmt: &Statement,
+    args: &std::collections::HashMap<String, Expr>,
+) -> Statement {
     substitute_syntax_args_with_services(stmt, args, &[])
 }
 
-fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<String, Expr>, service_infos: &[ServiceInfo]) -> Expr {
+fn substitute_syntax_args_expr(
+    expr: &Expr,
+    args: &std::collections::HashMap<String, Expr>,
+    service_infos: &[ServiceInfo],
+) -> Expr {
     match expr {
         Expr::Ident(name, _span) => {
             if let Some(replacement) = args.get(name) {
                 // Closure unwrapping: when a handler arg is a closure, unwrap to just the body
                 if let Expr::Feature(fe) = replacement {
                     if fe.feature_id == "closures" {
-                        if let Some(data) = crate::feature_data!(fe, crate::features::closures::types::ClosureData) {
+                        if let Some(data) =
+                            crate::feature_data!(fe, crate::features::closures::types::ClosureData)
+                        {
                             return *data.body.clone();
                         }
                     }
@@ -965,12 +1165,18 @@ fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<Str
             }
             expr.clone()
         }
-        Expr::Call { callee, args: call_args, type_args, span } => {
+        Expr::Call {
+            callee,
+            args: call_args,
+            type_args,
+            span,
+        } => {
             // Handle $resolve_service() intrinsic
             if let Expr::Ident(name, _) = callee.as_ref() {
                 if name == "$resolve_service" {
                     if let Some(first_arg) = call_args.first() {
-                        let resolved = substitute_syntax_args_expr(&first_arg.value, args, service_infos);
+                        let resolved =
+                            substitute_syntax_args_expr(&first_arg.value, args, service_infos);
                         if let Expr::StringLit(service_name, s) = &resolved {
                             // Look up service → model table name
                             let table_name = service_infos
@@ -986,42 +1192,63 @@ fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<Str
             }
             Expr::Call {
                 callee: Box::new(substitute_syntax_args_expr(callee, args, service_infos)),
-                args: call_args.iter().map(|a| CallArg {
-                    name: a.name.clone(),
-                    value: substitute_syntax_args_expr(&a.value, args, service_infos),
-                }).collect(),
+                args: call_args
+                    .iter()
+                    .map(|a| CallArg {
+                        name: a.name.clone(),
+                        value: substitute_syntax_args_expr(&a.value, args, service_infos),
+                    })
+                    .collect(),
                 type_args: type_args.clone(),
                 span: *span,
             }
         }
-        Expr::MemberAccess { object, field, span } => Expr::MemberAccess {
+        Expr::MemberAccess {
+            object,
+            field,
+            span,
+        } => Expr::MemberAccess {
             object: Box::new(substitute_syntax_args_expr(object, args, service_infos)),
             field: field.clone(),
             span: *span,
         },
-        Expr::Binary { left, op, right, span } => Expr::Binary {
+        Expr::Binary {
+            left,
+            op,
+            right,
+            span,
+        } => Expr::Binary {
             left: Box::new(substitute_syntax_args_expr(left, args, service_infos)),
             op: *op,
             right: Box::new(substitute_syntax_args_expr(right, args, service_infos)),
             span: *span,
         },
         Expr::Block(block) => Expr::Block(Block {
-            statements: block.statements.iter()
+            statements: block
+                .statements
+                .iter()
                 .map(|s| substitute_syntax_args(s, args))
                 .collect(),
             span: block.span,
         }),
         Expr::Feature(ref fe) if fe.kind == "StructLit" => {
-            use crate::features::structs::types::StructLitData;
             use crate::feature::FeatureExpr;
+            use crate::features::structs::types::StructLitData;
             if let Some(data) = crate::feature_data!(fe, StructLitData) {
                 Expr::Feature(FeatureExpr {
                     feature_id: fe.feature_id,
                     kind: fe.kind,
                     data: Box::new(StructLitData {
                         name: data.name.clone(),
-                        fields: data.fields.iter()
-                            .map(|(k, v)| (k.clone(), substitute_syntax_args_expr(v, args, service_infos)))
+                        fields: data
+                            .fields
+                            .iter()
+                            .map(|(k, v)| {
+                                (
+                                    k.clone(),
+                                    substitute_syntax_args_expr(v, args, service_infos),
+                                )
+                            })
                             .collect(),
                         span: data.span,
                     }),
@@ -1032,10 +1259,13 @@ fn substitute_syntax_args_expr(expr: &Expr, args: &std::collections::HashMap<Str
             }
         }
         Expr::TemplateLit { parts, span } => Expr::TemplateLit {
-            parts: parts.iter()
+            parts: parts
+                .iter()
                 .map(|p| match p {
                     TemplatePart::Literal(s) => TemplatePart::Literal(s.clone()),
-                    TemplatePart::Expr(e) => TemplatePart::Expr(Box::new(substitute_syntax_args_expr(e, args, service_infos))),
+                    TemplatePart::Expr(e) => TemplatePart::Expr(Box::new(
+                        substitute_syntax_args_expr(e, args, service_infos),
+                    )),
                 })
                 .collect(),
             span: *span,
@@ -1073,7 +1303,14 @@ fn substitute_fn_template(
     method_name: &str,
     ctx: &SubstitutionContext,
 ) -> Statement {
-    if let Statement::FnDecl { params, return_type, body, span, .. } = decl {
+    if let Statement::FnDecl {
+        params,
+        return_type,
+        body,
+        span,
+        ..
+    } = decl
+    {
         let fn_name = component_method_name(&ctx.name, method_name);
         Statement::FnDecl {
             name: fn_name,
@@ -1091,7 +1328,8 @@ fn substitute_fn_template(
 
 /// Find the name of the first parameter whose type annotation matches `type_name`.
 fn find_first_param_by_type<'a>(params: &'a [Param], type_name: &str) -> Option<&'a str> {
-    params.iter()
+    params
+        .iter()
         .find(|p| matches!(&p.type_ann, Some(TypeExpr::Named(t)) if t == type_name))
         .map(|p| p.name.as_str())
 }
@@ -1115,7 +1353,16 @@ fn build_component_hooked_fn(
     before_hooks: &HashMap<String, HookInfo>,
     after_hooks: &HashMap<String, HookInfo>,
 ) -> Statement {
-    if let Statement::FnDecl { name, type_params, params, return_type, body, exported, span } = original_fn {
+    if let Statement::FnDecl {
+        name,
+        type_params,
+        params,
+        return_type,
+        body,
+        exported,
+        span,
+    } = original_fn
+    {
         let mut new_stmts = Vec::new();
 
         // Before hook: inject user's hook body before the template function body
@@ -1169,7 +1416,10 @@ fn build_component_hooked_fn(
                     Some(Statement::Expr(expr)) => {
                         // A call or other expression — capture its result
                         new_stmts.push(let_stmt("__hook_result", expr.clone()));
-                        ("__hook_result".to_string(), expr_stmt(ident("__hook_result")))
+                        (
+                            "__hook_result".to_string(),
+                            expr_stmt(ident("__hook_result")),
+                        )
                     }
                     _ => {
                         // Not an expression — fall back
@@ -1186,7 +1436,8 @@ fn build_component_hooked_fn(
                     // Untyped model hook param → wants full record.
                     // If the fn already returns a struct (e.g. update returns $name),
                     // bind directly to the return value. Otherwise call get_internal(id).
-                    let returns_struct = matches!(return_type, Some(TypeExpr::Named(n)) if n == &ctx.name);
+                    let returns_struct =
+                        matches!(return_type, Some(TypeExpr::Named(n)) if n == &ctx.name);
                     if returns_struct {
                         new_stmts.push(let_stmt(&original_name, ident(&id_var)));
                     } else {
@@ -1201,7 +1452,8 @@ fn build_component_hooked_fn(
                         // Service hook: fetch full record via model's get_internal
                         // If fn returns model struct, bind directly; else call get_internal
                         let ref_name = model_ref.to_string();
-                        let returns_struct = matches!(return_type, Some(TypeExpr::Named(n)) if *n == ref_name);
+                        let returns_struct =
+                            matches!(return_type, Some(TypeExpr::Named(n)) if *n == ref_name);
                         if returns_struct {
                             new_stmts.push(let_stmt(&original_name, ident(&id_var)));
                         } else {
@@ -1228,7 +1480,10 @@ fn build_component_hooked_fn(
             type_params: type_params.clone(),
             params: params.clone(),
             return_type: return_type.clone(),
-            body: Block { statements: new_stmts, span: *span },
+            body: Block {
+                statements: new_stmts,
+                span: *span,
+            },
             exported: *exported,
             span: *span,
         }
@@ -1248,7 +1503,10 @@ fn find_id_variable(body_stmts: &[Statement], params: &[Param]) -> String {
             }
         }
     }
-    params.first().map(|p| p.name.clone()).unwrap_or_else(|| "__id".to_string())
+    params
+        .first()
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| "__id".to_string())
 }
 
 /// Strip __raw_ prefix added by the on-event parser for C ptr params
@@ -1266,7 +1524,12 @@ fn inject_hook_body(body: &Block, param_name: &str, stmts: &mut Vec<Statement>) 
     let original_name = strip_raw_prefix(param_name);
     for s in &body.statements {
         // Skip forge_string_new prologue injected by on-event parser
-        if let Statement::Let { name: var_name, value: Expr::Call { callee, .. }, .. } = s {
+        if let Statement::Let {
+            name: var_name,
+            value: Expr::Call { callee, .. },
+            ..
+        } = s
+        {
             if *var_name == original_name {
                 if let Expr::Ident(fn_name, _) = callee.as_ref() {
                     if fn_name == "forge_string_new" {
@@ -1301,22 +1564,37 @@ fn extract_hooks_and_methods(
     ) {
         let operation = name.trim_start_matches(prefix).to_string();
         let param_name = params.first().map(|p| p.name.clone()).unwrap_or_default();
-        map.insert(operation, HookInfo { param_name, body: body.clone() });
+        map.insert(
+            operation,
+            HookInfo {
+                param_name,
+                body: body.clone(),
+            },
+        );
     }
 
     // Hook prefix → target map: (prefix, is_before)
     const HOOK_PREFIXES: &[(&str, bool)] = &[
         ("__hook_before_", true),
-        ("__hook_after_",  false),
-        ("on_before_",     true),
-        ("on_after_",      false),
+        ("__hook_after_", false),
+        ("on_before_", true),
+        ("on_after_", false),
     ];
 
     for stmt in blocks {
-        if let Statement::FnDecl { name, params, body, .. } = stmt {
-            let matched = HOOK_PREFIXES.iter().find(|(prefix, _)| name.starts_with(prefix));
+        if let Statement::FnDecl {
+            name, params, body, ..
+        } = stmt
+        {
+            let matched = HOOK_PREFIXES
+                .iter()
+                .find(|(prefix, _)| name.starts_with(prefix));
             if let Some((prefix, is_before)) = matched {
-                let target = if *is_before { &mut before_hooks } else { &mut after_hooks };
+                let target = if *is_before {
+                    &mut before_hooks
+                } else {
+                    &mut after_hooks
+                };
                 insert_hook(target, name, prefix, params, body);
             } else {
                 custom_methods.push(stmt.clone());
@@ -1338,7 +1616,14 @@ fn expand_custom_methods(
     };
 
     for method_stmt in custom_methods {
-        if let Statement::FnDecl { name, params, return_type, body, .. } = method_stmt {
+        if let Statement::FnDecl {
+            name,
+            params,
+            return_type,
+            body,
+            ..
+        } = method_stmt
+        {
             let new_name = component_method_name(&ctx.name, name);
 
             // Rewrite params typed as the model to `int`
@@ -1387,7 +1672,14 @@ fn expand_simple_methods(
     result: &mut ExpansionResult,
 ) {
     for stmt in methods {
-        if let Statement::FnDecl { name, params, return_type, body, .. } = stmt {
+        if let Statement::FnDecl {
+            name,
+            params,
+            return_type,
+            body,
+            ..
+        } = stmt
+        {
             let fn_name = component_method_name(&ctx.name, name);
             result.statements.push(Statement::FnDecl {
                 name: fn_name,
@@ -1423,13 +1715,10 @@ impl ComponentExpander {
             }
         };
 
-        let ref_type = decl
-            .args
-            .iter()
-            .find_map(|a| match a {
-                ComponentArg::ForRef(name, _) => Some(name.clone()),
-                _ => None,
-            });
+        let ref_type = decl.args.iter().find_map(|a| match a {
+            ComponentArg::ForRef(name, _) => Some(name.clone()),
+            _ => None,
+        });
 
         let schema = decl.body.schema.clone();
         let schema_json = if template.has_schema && !schema.is_empty() {
@@ -1458,10 +1747,7 @@ impl ComponentExpander {
         // maps annotation name "table" to config key "table_name" (ann_name + "_name").
         for ann in &decl.body.annotations {
             // Try exact match first, then annotation_name convention
-            let config_key_candidates = vec![
-                ann.name.clone(),
-                format!("{}_name", ann.name),
-            ];
+            let config_key_candidates = vec![ann.name.clone(), format!("{}_name", ann.name)];
             for candidate in config_key_candidates {
                 let schema_has_key = template.config_schema.iter().any(|e| e.key == candidate);
                 let already_set = merged_config.iter().any(|c| c.key == candidate);
@@ -1482,7 +1768,14 @@ impl ComponentExpander {
         let resolved_config = resolve_config(&merged_config, &template.config_schema);
 
         let component_kind = template.component_name.clone();
-        let ctx = SubstitutionContext { name, component_kind, ref_type, schema, schema_json, config: resolved_config };
+        let ctx = SubstitutionContext {
+            name,
+            component_kind,
+            ref_type,
+            schema,
+            schema_json,
+            config: resolved_config,
+        };
 
         // Extract hooks and custom methods from user body
         let (before_hooks, after_hooks, custom_methods) =
@@ -1512,11 +1805,19 @@ impl ComponentExpander {
                         result.main_end_stmts.push(substitute_stmt(s, &ctx));
                     }
                 }
-                ComponentTemplateItem::FnTemplate { method_name, decl: fn_decl_stmt } => {
+                ComponentTemplateItem::FnTemplate {
+                    method_name,
+                    decl: fn_decl_stmt,
+                } => {
                     let fn_name = component_method_name(&ctx.name, method_name);
 
                     // Extract params/return_type for type checker registration
-                    let (tpl_params, tpl_ret) = if let Statement::FnDecl { params, return_type, .. } = fn_decl_stmt {
+                    let (tpl_params, tpl_ret) = if let Statement::FnDecl {
+                        params,
+                        return_type,
+                        ..
+                    } = fn_decl_stmt
+                    {
                         (params.clone(), return_type.clone())
                     } else {
                         (vec![], None)
@@ -1532,20 +1833,37 @@ impl ComponentExpander {
                             let substituted =
                                 substitute_fn_template(fn_decl_stmt, method_name, &ctx);
                             let hooked = build_component_hooked_fn(
-                                method_name, &ctx, &substituted, &before_hooks, &after_hooks,
+                                method_name,
+                                &ctx,
+                                &substituted,
+                                &before_hooks,
+                                &after_hooks,
                             );
                             result.statements.push(hooked);
-                            register_component_method(&mut result, &ctx, method_name, fn_name, &tpl_params, &tpl_ret);
+                            register_component_method(
+                                &mut result,
+                                &ctx,
+                                method_name,
+                                fn_name,
+                                &tpl_params,
+                                &tpl_ret,
+                            );
                         } else {
                             // No hooks: map directly to model method
                             let model_ref = ctx.ref_type.as_ref().unwrap();
                             let model_fn = format!("{}_{}", model_ref, method_name);
-                            register_component_method(&mut result, &ctx, method_name, model_fn, &tpl_params, &tpl_ret);
+                            register_component_method(
+                                &mut result,
+                                &ctx,
+                                method_name,
+                                model_fn,
+                                &tpl_params,
+                                &tpl_ret,
+                            );
                         }
                     } else {
                         // Model template: substitute and emit
-                        let substituted =
-                            substitute_fn_template(fn_decl_stmt, method_name, &ctx);
+                        let substituted = substitute_fn_template(fn_decl_stmt, method_name, &ctx);
 
                         // Inject hooks into model template functions if present
                         let has_before = before_hooks.contains_key(method_name);
@@ -1553,13 +1871,24 @@ impl ComponentExpander {
 
                         if has_before || has_after {
                             let hooked = build_component_hooked_fn(
-                                method_name, &ctx, &substituted, &before_hooks, &after_hooks,
+                                method_name,
+                                &ctx,
+                                &substituted,
+                                &before_hooks,
+                                &after_hooks,
                             );
                             result.statements.push(hooked);
                         } else {
                             result.statements.push(substituted);
                         }
-                        register_component_method(&mut result, &ctx, method_name, fn_name, &tpl_params, &tpl_ret);
+                        register_component_method(
+                            &mut result,
+                            &ctx,
+                            method_name,
+                            fn_name,
+                            &tpl_params,
+                            &tpl_ret,
+                        );
                     }
                 }
                 ComponentTemplateItem::InitFn(stmts) => {
@@ -1583,32 +1912,34 @@ impl ComponentExpander {
                 }
                 // OnAfterChildren is handled after body block processing (below)
                 ComponentTemplateItem::OnAfterChildren(_) => {}
-                ComponentTemplateItem::EventDecl { name: event_name, params: event_params, .. } => {
+                ComponentTemplateItem::EventDecl {
+                    name: event_name,
+                    params: event_params,
+                    ..
+                } => {
                     // Check if user provided an on_EVENT handler
                     let handler_name = format!("on_{}", event_name);
-                    let user_has_handler = decl.body.blocks.iter().any(|s| {
-                        match s {
-                            Statement::FnDecl { name, .. } => name == &handler_name,
-                            Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
-                                use crate::feature_data;
-                                use crate::features::functions::types::FnDeclData;
-                                feature_data!(fe, FnDeclData).map_or(false, |d| d.name == handler_name)
-                            }
-                            _ => false,
+                    let user_has_handler = decl.body.blocks.iter().any(|s| match s {
+                        Statement::FnDecl { name, .. } => name == &handler_name,
+                        Statement::Feature(fe)
+                            if fe.feature_id == "functions" && fe.kind == "FnDecl" =>
+                        {
+                            use crate::feature_data;
+                            use crate::features::functions::types::FnDeclData;
+                            feature_data!(fe, FnDeclData).map_or(false, |d| d.name == handler_name)
                         }
+                        _ => false,
                     });
                     if !user_has_handler {
                         // Generate a no-op stub function
                         let stub_name = component_method_name(&ctx.name, event_name);
-                        let stub_params: Vec<Param> = event_params.iter().map(|p| {
-                            substitute_param(p, &ctx)
-                        }).collect();
-                        result.statements.push(fn_decl(
-                            &stub_name,
-                            stub_params,
-                            None,
-                            vec![],
-                        ));
+                        let stub_params: Vec<Param> = event_params
+                            .iter()
+                            .map(|p| substitute_param(p, &ctx))
+                            .collect();
+                        result
+                            .statements
+                            .push(fn_decl(&stub_name, stub_params, None, vec![]));
                     }
                 }
             }
@@ -1622,12 +1953,20 @@ impl ComponentExpander {
                     if let Expr::Ident(name, _) = callee.as_ref() {
                         if name.starts_with("__component_") {
                             let fn_name = name.trim_start_matches("__component_");
-                            if let Some(syntax_fn) = template.syntax_fns.iter().find(|sf| sf.fn_name == fn_name) {
-                                let expanded = expand_syntax_call(syntax_fn, args, &ctx, service_infos);
+                            if let Some(syntax_fn) =
+                                template.syntax_fns.iter().find(|sf| sf.fn_name == fn_name)
+                            {
+                                let expanded =
+                                    expand_syntax_call(syntax_fn, args, &ctx, service_infos);
                                 for s in expanded {
                                     match &s {
                                         Statement::FnDecl { .. } => result.statements.push(s),
-                                        Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => result.statements.push(s),
+                                        Statement::Feature(fe)
+                                            if fe.feature_id == "functions"
+                                                && fe.kind == "FnDecl" =>
+                                        {
+                                            result.statements.push(s)
+                                        }
                                         _ => result.startup_stmts.push(s),
                                     }
                                 }
@@ -1637,8 +1976,16 @@ impl ComponentExpander {
                 }
                 // Recursively expand nested component blocks (e.g., command/flag inside cli)
                 Statement::ComponentBlock(nested_decl) => {
-                    if let Some(nested_template) = all_templates.iter().find(|t| t.component_name == nested_decl.component) {
-                        let nested_result = Self::expand_from_template(nested_template, nested_decl, service_infos, all_templates);
+                    if let Some(nested_template) = all_templates
+                        .iter()
+                        .find(|t| t.component_name == nested_decl.component)
+                    {
+                        let nested_result = Self::expand_from_template(
+                            nested_template,
+                            nested_decl,
+                            service_infos,
+                            all_templates,
+                        );
                         result.startup_stmts.extend(nested_result.startup_stmts);
                         result.main_end_stmts.extend(nested_result.main_end_stmts);
                         result.statements.extend(nested_result.statements);
@@ -1684,9 +2031,22 @@ impl ComponentExpander {
         // Populate service metadata for server mount resolution
         if template.has_ref {
             // Service template: build ServiceInfo
-            let hooks: Vec<ServiceHook> = before_hooks.iter()
-                .map(|(op, info)| ServiceHook { timing: HookTiming::Before, operation: op.clone(), param: info.param_name.clone(), body: info.body.clone(), span: sp() })
-                .chain(after_hooks.iter().map(|(op, info)| ServiceHook { timing: HookTiming::After, operation: op.clone(), param: info.param_name.clone(), body: info.body.clone(), span: sp() }))
+            let hooks: Vec<ServiceHook> = before_hooks
+                .iter()
+                .map(|(op, info)| ServiceHook {
+                    timing: HookTiming::Before,
+                    operation: op.clone(),
+                    param: info.param_name.clone(),
+                    body: info.body.clone(),
+                    span: sp(),
+                })
+                .chain(after_hooks.iter().map(|(op, info)| ServiceHook {
+                    timing: HookTiming::After,
+                    operation: op.clone(),
+                    param: info.param_name.clone(),
+                    body: info.body.clone(),
+                    span: sp(),
+                }))
                 .collect();
             result.service_info = Some(ServiceInfo {
                 name: ctx.name.clone(),
@@ -1701,15 +2061,28 @@ impl ComponentExpander {
         if result.type_decl.is_none() && !result.component_methods.is_empty() {
             let kind = capitalize_first(&ctx.component_kind);
             // Build struct fields: __name + config fields
-            let mut fields: Vec<StructFieldDef> = vec![
-                StructFieldDef { name: "__name".to_string(), type_expr: TypeExpr::Named("string".to_string()), annotations: vec![], mutable: false },
-            ];
+            let mut fields: Vec<StructFieldDef> = vec![StructFieldDef {
+                name: "__name".to_string(),
+                type_expr: TypeExpr::Named("string".to_string()),
+                annotations: vec![],
+                mutable: false,
+            }];
             for entry in &template.config_schema {
-                fields.push(StructFieldDef { name: entry.key.clone(), type_expr: entry.type_ann.clone(), annotations: vec![], mutable: false });
+                fields.push(StructFieldDef {
+                    name: entry.key.clone(),
+                    type_expr: entry.type_ann.clone(),
+                    annotations: vec![],
+                    mutable: false,
+                });
             }
             for item in &template.body {
                 if let ComponentTemplateItem::FieldDecl { name, type_ann, .. } = item {
-                    fields.push(StructFieldDef { name: name.clone(), type_expr: type_ann.clone(), annotations: vec![], mutable: false });
+                    fields.push(StructFieldDef {
+                        name: name.clone(),
+                        type_expr: type_ann.clone(),
+                        annotations: vec![],
+                        mutable: false,
+                    });
                 }
             }
             result.component_type = Some((kind, TypeExpr::Struct { fields }));

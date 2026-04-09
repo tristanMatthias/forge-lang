@@ -94,20 +94,7 @@ impl<'ctx> Codegen<'ctx> {
             // refactors. The type checker reports the arity mismatch separately.
             let valid_arg_count = args.len().min(variant.fields.len());
             for (i, arg) in args.iter().take(valid_arg_count).enumerate() {
-                // Hint the target type for this slot so that
-                // context-sensitive literals (notably `null`) lower
-                // into the variant field's actual LLVM type rather
-                // than the legacy `{i8, i64}` Nullable shape. Without
-                // this, `Enum.Variant("name", null, ...)` for a
-                // `ptr`-typed field produces an insertvalue type
-                // mismatch.
-                let old_hint = self.struct_target_type.take();
-                if !variant.boxed_fields.contains(&i) {
-                    self.struct_target_type = Some(variant.fields[i].1.clone());
-                }
-                let compiled = self.compile_expr(&arg.value);
-                self.struct_target_type = old_hint;
-                if let Some(val) = compiled {
+                if let Some(val) = self.compile_expr(&arg.value) {
                     let stored_val = if variant.boxed_fields.contains(&i) {
                         // Box: heap-allocate the value and store pointer as i64
                         let val_ty = val.get_type();

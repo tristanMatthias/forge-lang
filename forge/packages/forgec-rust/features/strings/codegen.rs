@@ -1,6 +1,6 @@
+use inkwell::values::BasicValueEnum;
 use inkwell::AddressSpace;
 use inkwell::IntPredicate;
-use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::parser::ast::CallArg;
@@ -21,49 +21,89 @@ impl<'ctx> Codegen<'ctx> {
             "trim" => self.call_runtime("forge_string_trim", &[obj_val.into()], "trim"),
             "contains" => {
                 let arg_val = self.compile_expr(&args.first()?.value)?;
-                self.call_runtime("forge_string_contains", &[obj_val.into(), arg_val.into()], "contains")
+                self.call_runtime(
+                    "forge_string_contains",
+                    &[obj_val.into(), arg_val.into()],
+                    "contains",
+                )
             }
             "split" => self.compile_string_split(&obj_val, args),
             "starts_with" => {
                 let arg_val = self.compile_expr(&args.first()?.value)?;
-                self.call_runtime("forge_string_starts_with", &[obj_val.into(), arg_val.into()], "starts_with")
+                self.call_runtime(
+                    "forge_string_starts_with",
+                    &[obj_val.into(), arg_val.into()],
+                    "starts_with",
+                )
             }
             "ends_with" => {
                 let arg_val = self.compile_expr(&args.first()?.value)?;
-                self.call_runtime("forge_string_ends_with", &[obj_val.into(), arg_val.into()], "ends_with")
+                self.call_runtime(
+                    "forge_string_ends_with",
+                    &[obj_val.into(), arg_val.into()],
+                    "ends_with",
+                )
             }
             "replace" => {
                 let find_val = self.compile_expr(&args.get(0)?.value)?;
                 let replace_val = self.compile_expr(&args.get(1)?.value)?;
-                self.call_runtime("forge_string_replace", &[obj_val.into(), find_val.into(), replace_val.into()], "replace")
+                self.call_runtime(
+                    "forge_string_replace",
+                    &[obj_val.into(), find_val.into(), replace_val.into()],
+                    "replace",
+                )
             }
             "parse_int" => self.call_runtime("forge_string_to_int", &[obj_val.into()], "parse_int"),
             "repeat" => {
                 let count_val = self.compile_expr(&args.first()?.value)?;
-                self.call_runtime("forge_string_repeat", &[obj_val.into(), count_val.into()], "repeat")
+                self.call_runtime(
+                    "forge_string_repeat",
+                    &[obj_val.into(), count_val.into()],
+                    "repeat",
+                )
             }
             "substring" => {
                 let start_val = self.compile_expr(&args.get(0)?.value)?;
                 let end_val = self.compile_expr(&args.get(1)?.value)?;
-                self.call_runtime("forge_string_substring", &[obj_val.into(), start_val.into(), end_val.into()], "substring")
+                self.call_runtime(
+                    "forge_string_substring",
+                    &[obj_val.into(), start_val.into(), end_val.into()],
+                    "substring",
+                )
             }
             "char_at" => {
                 let index_val = self.compile_expr(&args.first()?.value)?;
-                self.call_runtime("forge_string_char_at", &[obj_val.into(), index_val.into()], "char_at")
+                self.call_runtime(
+                    "forge_string_char_at",
+                    &[obj_val.into(), index_val.into()],
+                    "char_at",
+                )
             }
             "byte_at" => {
                 let index_val = self.compile_expr(&args.first()?.value)?;
-                self.call_runtime("forge_string_byte_at", &[obj_val.into(), index_val.into()], "byte_at")
+                self.call_runtime(
+                    "forge_string_byte_at",
+                    &[obj_val.into(), index_val.into()],
+                    "byte_at",
+                )
             }
             "bytes" => self.compile_string_to_int_list(&obj_val, "forge_string_bytes"),
             "chars" => self.compile_string_to_string_list(&obj_val, "forge_string_chars"),
             "index_of" => {
                 let arg_val = self.compile_expr(&args.first()?.value)?;
-                self.call_runtime("forge_string_index_of", &[obj_val.into(), arg_val.into()], "index_of")
+                self.call_runtime(
+                    "forge_string_index_of",
+                    &[obj_val.into(), arg_val.into()],
+                    "index_of",
+                )
             }
             "last_index_of" => {
                 let arg_val = self.compile_expr(&args.first()?.value)?;
-                self.call_runtime("forge_string_last_index_of", &[obj_val.into(), arg_val.into()], "last_index_of")
+                self.call_runtime(
+                    "forge_string_last_index_of",
+                    &[obj_val.into(), arg_val.into()],
+                    "last_index_of",
+                )
             }
             _ => None,
         }
@@ -80,26 +120,35 @@ impl<'ctx> Codegen<'ctx> {
         let ptr_type = self.context.ptr_type(AddressSpace::default());
         let i64_type = self.context.i64_type();
 
-        let split_fn = self.module.get_function("forge_string_split").unwrap_or_else(|| {
-            let ft = i64_type.fn_type(
-                &[string_type.into(), string_type.into(), ptr_type.into()],
-                false,
-            );
-            self.module.add_function("forge_string_split", ft, None)
-        });
+        let split_fn = self
+            .module
+            .get_function("forge_string_split")
+            .unwrap_or_else(|| {
+                let ft = i64_type.fn_type(
+                    &[string_type.into(), string_type.into(), ptr_type.into()],
+                    false,
+                );
+                self.module.add_function("forge_string_split", ft, None)
+            });
 
         // Allocate output pointer on stack
         let out_ptr = self.builder.build_alloca(ptr_type, "split_out").unwrap();
 
         // Call split: returns count, writes data ptr to out_ptr
-        let count = self.builder
-            .build_call(split_fn, &[(*obj_val).into(), sep_val.into(), out_ptr.into()], "split_count")
+        let count = self
+            .builder
+            .build_call(
+                split_fn,
+                &[(*obj_val).into(), sep_val.into(), out_ptr.into()],
+                "split_count",
+            )
             .unwrap()
             .try_as_basic_value()
             .basic()?
             .into_int_value();
 
-        let data_ptr = self.builder
+        let data_ptr = self
+            .builder
             .build_load(ptr_type, out_ptr, "split_data")
             .unwrap()
             .into_pointer_value();
@@ -108,8 +157,16 @@ impl<'ctx> Codegen<'ctx> {
         let list_type = self.type_to_llvm_basic(&Type::List(Box::new(Type::String)));
         let list_struct_type = list_type.into_struct_type();
         let mut result_list = list_struct_type.get_undef();
-        result_list = self.builder.build_insert_value(result_list, data_ptr, 0, "sp").unwrap().into_struct_value();
-        result_list = self.builder.build_insert_value(result_list, count, 1, "sl").unwrap().into_struct_value();
+        result_list = self
+            .builder
+            .build_insert_value(result_list, data_ptr, 0, "sp")
+            .unwrap()
+            .into_struct_value();
+        result_list = self
+            .builder
+            .build_insert_value(result_list, count, 1, "sl")
+            .unwrap()
+            .into_struct_value();
         Some(result_list.into())
     }
 
@@ -125,22 +182,21 @@ impl<'ctx> Codegen<'ctx> {
         let i64_type = self.context.i64_type();
 
         let func = self.module.get_function(runtime_fn).unwrap_or_else(|| {
-            let ft = i64_type.fn_type(
-                &[string_type.into(), ptr_type.into()],
-                false,
-            );
+            let ft = i64_type.fn_type(&[string_type.into(), ptr_type.into()], false);
             self.module.add_function(runtime_fn, ft, None)
         });
 
         let out_ptr = self.builder.build_alloca(ptr_type, "out_ptr").unwrap();
-        let count = self.builder
+        let count = self
+            .builder
             .build_call(func, &[(*obj_val).into(), out_ptr.into()], "count")
             .unwrap()
             .try_as_basic_value()
             .basic()?
             .into_int_value();
 
-        let data_ptr = self.builder
+        let data_ptr = self
+            .builder
             .build_load(ptr_type, out_ptr, "data")
             .unwrap()
             .into_pointer_value();
@@ -148,8 +204,16 @@ impl<'ctx> Codegen<'ctx> {
         let list_type = self.type_to_llvm_basic(&Type::List(Box::new(Type::Int)));
         let list_struct_type = list_type.into_struct_type();
         let mut result = list_struct_type.get_undef();
-        result = self.builder.build_insert_value(result, data_ptr, 0, "lp").unwrap().into_struct_value();
-        result = self.builder.build_insert_value(result, count, 1, "ll").unwrap().into_struct_value();
+        result = self
+            .builder
+            .build_insert_value(result, data_ptr, 0, "lp")
+            .unwrap()
+            .into_struct_value();
+        result = self
+            .builder
+            .build_insert_value(result, count, 1, "ll")
+            .unwrap()
+            .into_struct_value();
         Some(result.into())
     }
 
@@ -163,22 +227,21 @@ impl<'ctx> Codegen<'ctx> {
         let i64_type = self.context.i64_type();
 
         let func = self.module.get_function(runtime_fn).unwrap_or_else(|| {
-            let ft = i64_type.fn_type(
-                &[string_type.into(), ptr_type.into()],
-                false,
-            );
+            let ft = i64_type.fn_type(&[string_type.into(), ptr_type.into()], false);
             self.module.add_function(runtime_fn, ft, None)
         });
 
         let out_ptr = self.builder.build_alloca(ptr_type, "out_ptr").unwrap();
-        let count = self.builder
+        let count = self
+            .builder
             .build_call(func, &[(*obj_val).into(), out_ptr.into()], "count")
             .unwrap()
             .try_as_basic_value()
             .basic()?
             .into_int_value();
 
-        let data_ptr = self.builder
+        let data_ptr = self
+            .builder
             .build_load(ptr_type, out_ptr, "data")
             .unwrap()
             .into_pointer_value();
@@ -186,8 +249,16 @@ impl<'ctx> Codegen<'ctx> {
         let list_type = self.type_to_llvm_basic(&Type::List(Box::new(Type::String)));
         let list_struct_type = list_type.into_struct_type();
         let mut result = list_struct_type.get_undef();
-        result = self.builder.build_insert_value(result, data_ptr, 0, "lp").unwrap().into_struct_value();
-        result = self.builder.build_insert_value(result, count, 1, "ll").unwrap().into_struct_value();
+        result = self
+            .builder
+            .build_insert_value(result, data_ptr, 0, "lp")
+            .unwrap()
+            .into_struct_value();
+        result = self
+            .builder
+            .build_insert_value(result, count, 1, "ll")
+            .unwrap()
+            .into_struct_value();
         Some(result.into())
     }
 
@@ -238,7 +309,10 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    pub(crate) fn compile_string_conversion(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
+    pub(crate) fn compile_string_conversion(
+        &mut self,
+        args: &[CallArg],
+    ) -> Option<BasicValueEnum<'ctx>> {
         if args.is_empty() {
             return None;
         }
@@ -260,25 +334,42 @@ impl<'ctx> Codegen<'ctx> {
         let struct_val = val.into_struct_value();
 
         // Extract the null tag (index 0, i8: 0=null, 1=has value)
-        let tag = self.builder.build_extract_value(struct_val, 0, "null_tag").unwrap().into_int_value();
-        let is_non_null = self.builder.build_int_compare(
-            IntPredicate::NE,
-            tag,
-            self.context.i8_type().const_zero(),
-            "is_non_null",
-        ).unwrap();
+        let tag = self
+            .builder
+            .build_extract_value(struct_val, 0, "null_tag")
+            .unwrap()
+            .into_int_value();
+        let is_non_null = self
+            .builder
+            .build_int_compare(
+                IntPredicate::NE,
+                tag,
+                self.context.i8_type().const_zero(),
+                "is_non_null",
+            )
+            .unwrap();
 
         let function = self.current_function();
-        let then_bb = self.context.append_basic_block(function, "nullable_has_val");
-        let else_bb = self.context.append_basic_block(function, "nullable_is_null");
+        let then_bb = self
+            .context
+            .append_basic_block(function, "nullable_has_val");
+        let else_bb = self
+            .context
+            .append_basic_block(function, "nullable_is_null");
         let merge_bb = self.context.append_basic_block(function, "nullable_merge");
 
-        self.builder.build_conditional_branch(is_non_null, then_bb, else_bb).unwrap();
+        self.builder
+            .build_conditional_branch(is_non_null, then_bb, else_bb)
+            .unwrap();
 
         // Then: extract inner value and convert to string
         self.builder.position_at_end(then_bb);
-        let inner_val = self.builder.build_extract_value(struct_val, 1, "inner_val").unwrap();
-        let inner_str = self.value_to_string(inner_val, inner_type)
+        let inner_val = self
+            .builder
+            .build_extract_value(struct_val, 1, "inner_val")
+            .unwrap();
+        let inner_str = self
+            .value_to_string(inner_val, inner_type)
             .unwrap_or_else(|| self.build_string_literal("unknown"));
         self.builder.build_unconditional_branch(merge_bb).unwrap();
         let then_end = self.builder.get_insert_block().unwrap();

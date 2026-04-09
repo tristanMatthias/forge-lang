@@ -21,7 +21,12 @@ impl Parser {
                     parts.push(TemplatePart::Literal(s));
                 }
                 LexTemplatePart::Expr(expr_text, expr_span) => {
-                    let mut lexer = Lexer::new_with_offset(&expr_text, expr_span.start, expr_span.line, expr_span.col);
+                    let mut lexer = Lexer::new_with_offset(
+                        &expr_text,
+                        expr_span.start,
+                        expr_span.line,
+                        expr_span.col,
+                    );
                     let tokens = lexer.tokenize();
                     let mut parser = Parser::new(tokens);
                     if let Some(expr) = parser.parse_expr() {
@@ -34,7 +39,11 @@ impl Parser {
         Some(feature_expr(
             "tagged_templates",
             "TaggedTemplate",
-            Box::new(TaggedTemplateData { tag, parts, type_param }),
+            Box::new(TaggedTemplateData {
+                tag,
+                parts,
+                type_param,
+            }),
             span,
         ))
     }

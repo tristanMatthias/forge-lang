@@ -9,7 +9,8 @@ use super::types::{NullCoalesceData, NullPropagateData};
 impl TypeChecker {
     /// Type-check a null coalesce expression via Feature dispatch.
     pub(crate) fn check_null_coalesce_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, NullCoalesceData, |data| self.check_null_coalesce(&data.left, &data.right))
+        feature_check!(self, fe, NullCoalesceData, |data| self
+            .check_null_coalesce(&data.left, &data.right))
     }
 
     /// Type-check a null coalesce expression: `left ?? right`
@@ -27,7 +28,8 @@ impl TypeChecker {
 
     /// Type-check a null propagate expression via Feature dispatch.
     pub(crate) fn check_null_propagate_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, NullPropagateData, |data| self.check_null_propagate(&data.object, &data.field))
+        feature_check!(self, fe, NullPropagateData, |data| self
+            .check_null_propagate(&data.object, &data.field))
     }
 
     /// Type-check a null propagate expression: `object?.field`
@@ -41,13 +43,11 @@ impl TypeChecker {
             _ => &obj_type,
         };
         let field_type = match inner {
-            Type::Struct { fields, .. } => {
-                fields
-                    .iter()
-                    .find(|(name, _)| name == field)
-                    .map(|(_, ty)| ty.clone())
-                    .unwrap_or(Type::Unknown)
-            }
+            Type::Struct { fields, .. } => fields
+                .iter()
+                .find(|(name, _)| name == field)
+                .map(|(_, ty)| ty.clone())
+                .unwrap_or(Type::Unknown),
             Type::String => match field {
                 "length" => Type::Int,
                 _ => Type::Unknown,

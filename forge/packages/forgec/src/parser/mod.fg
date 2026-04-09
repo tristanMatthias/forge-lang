@@ -70,6 +70,7 @@ export type Parser = {
 }
 
 export fn parser_new(tokens: List<Token>) -> Parser {
+    forge_parser_set_pos(0)
     Parser {
         tokens,
         pos: 0,
@@ -79,7 +80,6 @@ export fn parser_new(tokens: List<Token>) -> Parser {
 }
 
 export fn parser_new_with_source(tokens: List<Token>, source: string) -> Parser {
-    forge_set_token_list(tokens)
     forge_parser_set_pos(0)
     Parser {
         tokens,
@@ -307,7 +307,7 @@ impl Parser {
         mut count = 0
         mut offset = 0
         while forge_parser_get_pos() + offset < forge_token_list_len() {
-            let tok = self.tokens[forge_parser_get_pos() + offset]
+            let tok = self.peek_at(offset)
             if tok.kind_id != 120 {  // not Newline
                 if count == n {
                     return tok

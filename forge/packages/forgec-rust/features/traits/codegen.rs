@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use inkwell::AddressSpace;
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum};
 use inkwell::types::BasicMetadataTypeEnum;
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum};
+use inkwell::AddressSpace;
 
 use crate::codegen::codegen::{Codegen, ImplInfo, ImplMethodInfo, TraitInfo};
 use crate::feature::FeatureStmt;
@@ -32,7 +32,10 @@ impl<'ctx> Codegen<'ctx> {
                 let mangled = format!("{}_{}", type_name, method_name);
 
                 // Check if this type has any mut fields — if so, pass self by pointer
-                let has_mut_fields = self.type_checker.mutable_fields.iter()
+                let has_mut_fields = self
+                    .type_checker
+                    .mutable_fields
+                    .iter()
                     .any(|(tn, _)| tn == type_name);
 
                 let mut resolved_params = Vec::new();
@@ -59,14 +62,23 @@ impl<'ctx> Codegen<'ctx> {
                     } else {
                         let mut param = p.clone();
                         if let Some(ref type_ann) = p.type_ann {
-                            param.type_ann = Some(self.resolve_impl_type_expr(type_ann, type_name, &impl_info.associated_types));
+                            param.type_ann = Some(self.resolve_impl_type_expr(
+                                type_ann,
+                                type_name,
+                                &impl_info.associated_types,
+                            ));
                         }
                         resolved_params.push(param);
                     }
                 }
 
                 self.declare_function(&mangled, &resolved_params, method_info.return_type.as_ref());
-                methods_to_compile.push((mangled, resolved_params, method_info.return_type.clone(), method_info.body.clone()));
+                methods_to_compile.push((
+                    mangled,
+                    resolved_params,
+                    method_info.return_type.clone(),
+                    method_info.body.clone(),
+                ));
             }
 
             // Pass 1b: Declare default methods from the trait if not overridden
@@ -90,8 +102,17 @@ impl<'ctx> Codegen<'ctx> {
                                         resolved_params.push(p.clone());
                                     }
                                 }
-                                self.declare_function(&mangled, &resolved_params, trait_method.return_type.as_ref());
-                                methods_to_compile.push((mangled, resolved_params, trait_method.return_type.clone(), default_body.clone()));
+                                self.declare_function(
+                                    &mangled,
+                                    &resolved_params,
+                                    trait_method.return_type.as_ref(),
+                                );
+                                methods_to_compile.push((
+                                    mangled,
+                                    resolved_params,
+                                    trait_method.return_type.clone(),
+                                    default_body.clone(),
+                                ));
                             }
                         }
                     }
@@ -133,24 +154,35 @@ impl<'ctx> Codegen<'ctx> {
                             let real_ret = real_fn_type.get_return_type();
 
                             // Thunk params: ptr (for self), then same extra params as real fn
-                            let mut thunk_params: Vec<inkwell::types::BasicMetadataTypeEnum> = vec![ptr_type.into()];
+                            let mut thunk_params: Vec<inkwell::types::BasicMetadataTypeEnum> =
+                                vec![ptr_type.into()];
                             for i in 1..real_param_count {
-                                thunk_params.push(real_fn_type.get_param_types()[i as usize].into());
+                                thunk_params
+                                    .push(real_fn_type.get_param_types()[i as usize].into());
                             }
 
                             let thunk_fn_type = if let Some(ret) = real_ret {
                                 match ret {
-                                    inkwell::types::BasicTypeEnum::IntType(t) => t.fn_type(&thunk_params, false),
-                                    inkwell::types::BasicTypeEnum::FloatType(t) => t.fn_type(&thunk_params, false),
-                                    inkwell::types::BasicTypeEnum::StructType(t) => t.fn_type(&thunk_params, false),
-                                    inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&thunk_params, false),
+                                    inkwell::types::BasicTypeEnum::IntType(t) => {
+                                        t.fn_type(&thunk_params, false)
+                                    }
+                                    inkwell::types::BasicTypeEnum::FloatType(t) => {
+                                        t.fn_type(&thunk_params, false)
+                                    }
+                                    inkwell::types::BasicTypeEnum::StructType(t) => {
+                                        t.fn_type(&thunk_params, false)
+                                    }
+                                    inkwell::types::BasicTypeEnum::PointerType(t) => {
+                                        t.fn_type(&thunk_params, false)
+                                    }
                                     _ => self.context.i64_type().fn_type(&thunk_params, false),
                                 }
                             } else {
                                 self.context.void_type().fn_type(&thunk_params, false)
                             };
 
-                            let thunk_fn = self.module.add_function(&thunk_name, thunk_fn_type, None);
+                            let thunk_fn =
+                                self.module.add_function(&thunk_name, thunk_fn_type, None);
 
                             // Build thunk body
                             let saved_bb = self.builder.get_insert_block();
@@ -159,16 +191,24 @@ impl<'ctx> Codegen<'ctx> {
 
                             // Load concrete self from ptr
                             let self_ptr = thunk_fn.get_first_param().unwrap().into_pointer_value();
-                            let self_type: inkwell::types::BasicTypeEnum = real_fn_type.get_param_types()[0].try_into().unwrap();
-                            let loaded_self = self.builder.build_load(self_type, self_ptr, "self").unwrap();
+                            let self_type: inkwell::types::BasicTypeEnum =
+                                real_fn_type.get_param_types()[0].try_into().unwrap();
+                            let loaded_self = self
+                                .builder
+                                .build_load(self_type, self_ptr, "self")
+                                .unwrap();
 
                             // Build call args: loaded_self + forwarded params
-                            let mut call_args: Vec<BasicMetadataValueEnum> = vec![loaded_self.into()];
+                            let mut call_args: Vec<BasicMetadataValueEnum> =
+                                vec![loaded_self.into()];
                             for i in 1..thunk_fn.count_params() {
                                 call_args.push(thunk_fn.get_nth_param(i).unwrap().into());
                             }
 
-                            let result = self.builder.build_call(real_func, &call_args, "thunk_call").unwrap();
+                            let result = self
+                                .builder
+                                .build_call(real_func, &call_args, "thunk_call")
+                                .unwrap();
 
                             if real_ret.is_some() {
                                 let ret_val = result.try_as_basic_value().basic().unwrap();
@@ -187,16 +227,18 @@ impl<'ctx> Codegen<'ctx> {
                     }
 
                     if thunk_ptrs.len() == trait_info.methods.len() {
-                        let vtable_type = self.context.struct_type(
-                            &vec![ptr_type.into(); thunk_ptrs.len()],
-                            false,
-                        );
+                        let vtable_type = self
+                            .context
+                            .struct_type(&vec![ptr_type.into(); thunk_ptrs.len()], false);
                         let vtable_global = self.module.add_global(vtable_type, None, &vtable_name);
 
                         let mut vtable_init = vtable_type.get_undef();
                         for (i, fp) in thunk_ptrs.iter().enumerate() {
-                            vtable_init = self.builder.build_insert_value(vtable_init, *fp, i as u32, "vt")
-                                .unwrap().into_struct_value();
+                            vtable_init = self
+                                .builder
+                                .build_insert_value(vtable_init, *fp, i as u32, "vt")
+                                .unwrap()
+                                .into_struct_value();
                         }
                         vtable_global.set_initializer(&vtable_init);
                         vtable_global.set_constant(true);
@@ -224,24 +266,38 @@ impl<'ctx> Codegen<'ctx> {
         let concrete_llvm_type = self.type_to_llvm_basic(concrete_type);
         let slots = self.type_i64_slots(concrete_type) as u64;
         let size = self.context.i64_type().const_int(slots * 8, false);
-        let data_ptr = self.builder.build_call(
-            self.module.get_function("malloc").unwrap_or_else(|| {
-                let malloc_type = ptr_type.fn_type(&[self.context.i64_type().into()], false);
-                self.module.add_function("malloc", malloc_type, None)
-            }),
-            &[size.into()],
-            "trait_data",
-        ).unwrap().try_as_basic_value().basic()?.into_pointer_value();
+        let data_ptr = self
+            .builder
+            .build_call(
+                self.module.get_function("malloc").unwrap_or_else(|| {
+                    let malloc_type = ptr_type.fn_type(&[self.context.i64_type().into()], false);
+                    self.module.add_function("malloc", malloc_type, None)
+                }),
+                &[size.into()],
+                "trait_data",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .basic()?
+            .into_pointer_value();
 
         self.builder.build_store(data_ptr, concrete_val).unwrap();
 
         // Build the fat pointer struct { data_ptr, vtable_ptr }
-        let fat_ptr_type = self.context.struct_type(&[ptr_type.into(), ptr_type.into()], false);
+        let fat_ptr_type = self
+            .context
+            .struct_type(&[ptr_type.into(), ptr_type.into()], false);
         let mut fat_ptr = fat_ptr_type.get_undef();
-        fat_ptr = self.builder.build_insert_value(fat_ptr, data_ptr, 0, "fp_data")
-            .unwrap().into_struct_value();
-        fat_ptr = self.builder.build_insert_value(fat_ptr, vtable_global.as_pointer_value(), 1, "fp_vtable")
-            .unwrap().into_struct_value();
+        fat_ptr = self
+            .builder
+            .build_insert_value(fat_ptr, data_ptr, 0, "fp_data")
+            .unwrap()
+            .into_struct_value();
+        fat_ptr = self
+            .builder
+            .build_insert_value(fat_ptr, vtable_global.as_pointer_value(), 1, "fp_vtable")
+            .unwrap()
+            .into_struct_value();
 
         Some(fat_ptr.into())
     }
@@ -264,19 +320,34 @@ impl<'ctx> Codegen<'ctx> {
         let struct_val = fat_ptr.into_struct_value();
 
         // Extract data_ptr and vtable_ptr
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data_ptr")
-            .unwrap().into_pointer_value();
-        let vtable_ptr = self.builder.build_extract_value(struct_val, 1, "vtable_ptr")
-            .unwrap().into_pointer_value();
+        let data_ptr = self
+            .builder
+            .build_extract_value(struct_val, 0, "data_ptr")
+            .unwrap()
+            .into_pointer_value();
+        let vtable_ptr = self
+            .builder
+            .build_extract_value(struct_val, 1, "vtable_ptr")
+            .unwrap()
+            .into_pointer_value();
 
         // Load the function pointer from the vtable
         let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
         let vtable_elem_ptr = unsafe {
-            self.builder.build_gep(ptr_type, vtable_ptr, &[self.context.i64_type().const_int(method_idx as u64, false)], "vt_elem")
+            self.builder
+                .build_gep(
+                    ptr_type,
+                    vtable_ptr,
+                    &[self.context.i64_type().const_int(method_idx as u64, false)],
+                    "vt_elem",
+                )
                 .unwrap()
         };
-        let fn_ptr = self.builder.build_load(ptr_type, vtable_elem_ptr, "fn_ptr")
-            .unwrap().into_pointer_value();
+        let fn_ptr = self
+            .builder
+            .build_load(ptr_type, vtable_elem_ptr, "fn_ptr")
+            .unwrap()
+            .into_pointer_value();
 
         // Build call args: data_ptr (as self), then user args
         let mut call_args: Vec<BasicMetadataValueEnum> = vec![data_ptr.into()];
@@ -288,7 +359,9 @@ impl<'ctx> Codegen<'ctx> {
 
         // Determine return type for the function signature
         let ret_method = &trait_info.methods[method_idx];
-        let ret_type = ret_method.return_type.as_ref()
+        let ret_type = ret_method
+            .return_type
+            .as_ref()
             .map(|t| self.type_checker.resolve_type_expr(t))
             .unwrap_or(Type::Void);
 
@@ -303,7 +376,8 @@ impl<'ctx> Codegen<'ctx> {
 
         // Find the thunk to get its type signature
         let impls = self.impls.clone();
-        let thunk_fn = impls.iter()
+        let thunk_fn = impls
+            .iter()
             .filter(|i| i.trait_name.as_deref() == Some(trait_name))
             .find_map(|i| {
                 let thunk_name = format!("__thunk_{}_{}", i.type_name, method);
@@ -312,7 +386,9 @@ impl<'ctx> Codegen<'ctx> {
 
         let fn_type = thunk_fn.get_type();
 
-        let result = self.builder.build_indirect_call(fn_type, fn_ptr, &call_args, "dyn_call")
+        let result = self
+            .builder
+            .build_indirect_call(fn_type, fn_ptr, &call_args, "dyn_call")
             .unwrap();
         result.try_as_basic_value().basic()
     }
@@ -329,23 +405,36 @@ impl<'ctx> Codegen<'ctx> {
                 // Use the named type so resolution preserves the name
                 TypeExpr::Named(n.clone())
             }
-            Type::Struct { name: None, fields } => {
-                TypeExpr::Struct {
-                    fields: fields.iter().map(|(fname, fty)| StructFieldDef { name: fname.clone(), type_expr: self.type_to_type_expr(fty), annotations: Vec::new(), mutable: false }).collect(),
-                }
-            }
+            Type::Struct { name: None, fields } => TypeExpr::Struct {
+                fields: fields
+                    .iter()
+                    .map(|(fname, fty)| StructFieldDef {
+                        name: fname.clone(),
+                        type_expr: self.type_to_type_expr(fty),
+                        annotations: Vec::new(),
+                        mutable: false,
+                    })
+                    .collect(),
+            },
             Type::List(inner) => TypeExpr::Generic {
                 name: "List".to_string(),
                 args: vec![self.type_to_type_expr(inner)],
             },
             Type::Nullable(inner) => TypeExpr::Nullable(Box::new(self.type_to_type_expr(inner))),
-            Type::Tuple(elems) => TypeExpr::Tuple(elems.iter().map(|e| self.type_to_type_expr(e)).collect()),
+            Type::Tuple(elems) => {
+                TypeExpr::Tuple(elems.iter().map(|e| self.type_to_type_expr(e)).collect())
+            }
             _ => TypeExpr::Named("int".to_string()), // fallback
         }
     }
 
     /// Resolve a type expression in the context of an impl block
-    pub(crate) fn resolve_impl_type_expr(&self, type_expr: &TypeExpr, type_name: &str, associated_types: &[(String, TypeExpr)]) -> TypeExpr {
+    pub(crate) fn resolve_impl_type_expr(
+        &self,
+        type_expr: &TypeExpr,
+        type_name: &str,
+        associated_types: &[(String, TypeExpr)],
+    ) -> TypeExpr {
         match type_expr {
             TypeExpr::Named(name) => {
                 if name == type_name {
@@ -420,7 +509,12 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Find operator trait impl for a type: given type_name and op (Add, Sub, etc), return mangled method name
-    pub(crate) fn find_operator_impl(&self, type_name: &str, trait_name: &str, method_name: &str) -> Option<String> {
+    pub(crate) fn find_operator_impl(
+        &self,
+        type_name: &str,
+        trait_name: &str,
+        method_name: &str,
+    ) -> Option<String> {
         for impl_info in &self.impls {
             if impl_info.type_name == type_name {
                 if let Some(ref tn) = impl_info.trait_name {
@@ -456,21 +550,34 @@ impl<'ctx> Codegen<'ctx> {
         match fe.kind {
             "TraitDecl" => {
                 if let Some(data) = feature_data!(fe, TraitDeclData) {
-                    self.traits.insert(data.name.clone(), TraitInfo {
-                        methods: data.methods.clone(),
-                    });
+                    self.traits.insert(
+                        data.name.clone(),
+                        TraitInfo {
+                            methods: data.methods.clone(),
+                        },
+                    );
                 }
             }
             "ImplBlock" => {
                 if let Some(data) = feature_data!(fe, ImplBlockData) {
                     let mut method_map = HashMap::new();
                     for m in &data.methods {
-                        if let Statement::FnDecl { name, params, return_type, body, .. } = m {
-                            method_map.insert(name.clone(), ImplMethodInfo {
-                                params: params.clone(),
-                                return_type: return_type.clone(),
-                                body: body.clone(),
-                            });
+                        if let Statement::FnDecl {
+                            name,
+                            params,
+                            return_type,
+                            body,
+                            ..
+                        } = m
+                        {
+                            method_map.insert(
+                                name.clone(),
+                                ImplMethodInfo {
+                                    params: params.clone(),
+                                    return_type: return_type.clone(),
+                                    body: body.clone(),
+                                },
+                            );
                         }
                     }
                     self.impls.push(ImplInfo {

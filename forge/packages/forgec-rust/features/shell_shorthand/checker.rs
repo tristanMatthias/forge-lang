@@ -9,7 +9,8 @@ use super::types::DollarExecData;
 impl TypeChecker {
     /// Type-check a dollar-exec expression via Feature dispatch.
     pub(crate) fn check_dollar_exec_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, DollarExecData, |data| self.check_dollar_exec(&data.parts))
+        feature_check!(self, fe, DollarExecData, |data| self
+            .check_dollar_exec(&data.parts))
     }
 
     /// Type-check a dollar-exec expression.

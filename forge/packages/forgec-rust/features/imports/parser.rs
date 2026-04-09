@@ -90,7 +90,9 @@ impl Parser {
             TokenKind::Const => self.parse_const_feature_with_export(true),
             TokenKind::Trait => self.parse_trait_decl_feature(true),
             _ => {
-                self.error("expected fn, enum, type, let, mut, const, trait, or component after export");
+                self.error(
+                    "expected fn, enum, type, let, mut, const, trait, or component after export",
+                );
                 None
             }
         }

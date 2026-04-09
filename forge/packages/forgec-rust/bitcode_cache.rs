@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// Bitcode cache entry for a package
 #[derive(Debug, Clone)]
@@ -33,7 +33,10 @@ impl BitcodeCache {
             HashMap::new()
         };
 
-        Ok(Self { cache_dir: bc_dir, index })
+        Ok(Self {
+            cache_dir: bc_dir,
+            index,
+        })
     }
 
     /// Check if bitcode exists for a package version
@@ -62,14 +65,21 @@ impl BitcodeCache {
         content_hash: &str,
     ) -> Result<BitcodeEntry, String> {
         let key = format!("{}@{}", package, version);
-        let bc_filename = format!("{}_{}.bc", package.replace('-', "_"), version.replace('.', "_"));
-        let sig_filename = format!("{}_{}.sig", package.replace('-', "_"), version.replace('.', "_"));
+        let bc_filename = format!(
+            "{}_{}.bc",
+            package.replace('-', "_"),
+            version.replace('.', "_")
+        );
+        let sig_filename = format!(
+            "{}_{}.sig",
+            package.replace('-', "_"),
+            version.replace('.', "_")
+        );
 
         let bc_path = self.cache_dir.join(&bc_filename);
         let sig_path = self.cache_dir.join(&sig_filename);
 
-        std::fs::write(&bc_path, bc_data)
-            .map_err(|e| format!("cannot write bitcode: {}", e))?;
+        std::fs::write(&bc_path, bc_data).map_err(|e| format!("cannot write bitcode: {}", e))?;
         std::fs::write(&sig_path, type_signatures)
             .map_err(|e| format!("cannot write type signatures: {}", e))?;
 
@@ -110,7 +120,12 @@ impl BitcodeCache {
     }
 
     /// Verify a cached entry's hash matches expected
-    pub fn verify(&self, package: &str, version: &str, expected_hash: &str) -> Result<bool, String> {
+    pub fn verify(
+        &self,
+        package: &str,
+        version: &str,
+        expected_hash: &str,
+    ) -> Result<bool, String> {
         let key = format!("{}@{}", package, version);
         match self.index.get(&key) {
             Some(entry) => Ok(entry.hash == expected_hash),
@@ -120,11 +135,12 @@ impl BitcodeCache {
 
     /// Garbage collect: remove entries not in the keep list
     pub fn gc(&mut self, keep: &[(String, String)]) -> Result<usize, String> {
-        let keep_keys: std::collections::HashSet<String> = keep.iter()
-            .map(|(p, v)| format!("{}@{}", p, v))
-            .collect();
+        let keep_keys: std::collections::HashSet<String> =
+            keep.iter().map(|(p, v)| format!("{}@{}", p, v)).collect();
 
-        let to_remove: Vec<String> = self.index.keys()
+        let to_remove: Vec<String> = self
+            .index
+            .keys()
             .filter(|k| !keep_keys.contains(*k))
             .cloned()
             .collect();
@@ -156,22 +172,23 @@ impl BitcodeCache {
             content.push_str(&format!("package = \"{}\"\n", entry.package));
             content.push_str(&format!("version = \"{}\"\n", entry.version));
             content.push_str(&format!("bc_path = \"{}\"\n", entry.bc_path.display()));
-            content.push_str(&format!("type_sig_path = \"{}\"\n", entry.type_sig_path.display()));
+            content.push_str(&format!(
+                "type_sig_path = \"{}\"\n",
+                entry.type_sig_path.display()
+            ));
             content.push_str(&format!("hash = \"{}\"\n", entry.hash));
             content.push_str(&format!("size_bytes = {}\n\n", entry.size_bytes));
         }
 
-        std::fs::write(&index_path, &content)
-            .map_err(|e| format!("cannot write index: {}", e))
+        std::fs::write(&index_path, &content).map_err(|e| format!("cannot write index: {}", e))
     }
 }
 
 fn load_index(path: &Path) -> Result<HashMap<String, BitcodeEntry>, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read index: {}", e))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("cannot read index: {}", e))?;
 
-    let toml_val: toml::Value = toml::from_str(&content)
-        .map_err(|e| format!("invalid index: {}", e))?;
+    let toml_val: toml::Value =
+        toml::from_str(&content).map_err(|e| format!("invalid index: {}", e))?;
 
     let mut index = HashMap::new();
 
@@ -179,12 +196,37 @@ fn load_index(path: &Path) -> Result<HashMap<String, BitcodeEntry>, String> {
         for (key, val) in table {
             if let Some(entry_table) = val.as_table() {
                 let entry = BitcodeEntry {
-                    package: entry_table.get("package").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    version: entry_table.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    bc_path: PathBuf::from(entry_table.get("bc_path").and_then(|v| v.as_str()).unwrap_or("")),
-                    type_sig_path: PathBuf::from(entry_table.get("type_sig_path").and_then(|v| v.as_str()).unwrap_or("")),
-                    hash: entry_table.get("hash").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    size_bytes: entry_table.get("size_bytes").and_then(|v| v.as_integer()).unwrap_or(0) as u64,
+                    package: entry_table
+                        .get("package")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    version: entry_table
+                        .get("version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    bc_path: PathBuf::from(
+                        entry_table
+                            .get("bc_path")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                    ),
+                    type_sig_path: PathBuf::from(
+                        entry_table
+                            .get("type_sig_path")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                    ),
+                    hash: entry_table
+                        .get("hash")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    size_bytes: entry_table
+                        .get("size_bytes")
+                        .and_then(|v| v.as_integer())
+                        .unwrap_or(0) as u64,
                 };
                 index.insert(key.clone(), entry);
             }
@@ -248,12 +290,15 @@ mod tests {
         let mut cache = BitcodeCache::open(&tmp).unwrap();
         assert!(!cache.has("test-pkg", "1.0.0"));
 
-        let entry = cache.store(
-            "test-pkg", "1.0.0",
-            b"fake bitcode data",
-            "fn test() -> int",
-            "sha256:abc123",
-        ).unwrap();
+        let entry = cache
+            .store(
+                "test-pkg",
+                "1.0.0",
+                b"fake bitcode data",
+                "fn test() -> int",
+                "sha256:abc123",
+            )
+            .unwrap();
 
         assert!(cache.has("test-pkg", "1.0.0"));
         assert_eq!(entry.size_bytes, b"fake bitcode data".len() as u64);
@@ -276,7 +321,9 @@ mod tests {
         cache.store("pkg-c", "3.0.0", b"c", "", "").unwrap();
 
         // Keep only pkg-a
-        let removed = cache.gc(&[("pkg-a".to_string(), "1.0.0".to_string())]).unwrap();
+        let removed = cache
+            .gc(&[("pkg-a".to_string(), "1.0.0".to_string())])
+            .unwrap();
         assert_eq!(removed, 2);
         assert!(cache.has("pkg-a", "1.0.0"));
         assert!(!cache.has("pkg-b", "2.0.0"));
@@ -290,9 +337,12 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
 
         let mut cache = BitcodeCache::open(&tmp).unwrap();
-        cache.store("cached-pkg", "1.0.0", b"bc", "", "hash1").unwrap();
+        cache
+            .store("cached-pkg", "1.0.0", b"bc", "", "hash1")
+            .unwrap();
 
-        let strategy = determine_build_strategy(&cache, "cached-pkg", "1.0.0", false, Some("hash1"));
+        let strategy =
+            determine_build_strategy(&cache, "cached-pkg", "1.0.0", false, Some("hash1"));
         assert!(matches!(strategy, BuildStrategy::UseCachedBitcode(_)));
 
         let strategy = determine_build_strategy(&cache, "new-pkg", "1.0.0", false, None);

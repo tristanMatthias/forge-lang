@@ -10,26 +10,20 @@ use super::types::TableLitData;
 impl TypeChecker {
     /// Type-check a table literal via Feature dispatch.
     pub(crate) fn check_table_lit_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, TableLitData, |data| self.check_table_literal(&data.columns, &data.rows))
+        feature_check!(self, fe, TableLitData, |data| self
+            .check_table_literal(&data.columns, &data.rows))
     }
 
     /// Type-check a table literal. Infers column types from the first row,
     /// then validates that all subsequent rows match.
-    pub(crate) fn check_table_literal(
-        &mut self,
-        columns: &[String],
-        rows: &[Vec<Expr>],
-    ) -> Type {
+    pub(crate) fn check_table_literal(&mut self, columns: &[String], rows: &[Vec<Expr>]) -> Type {
         if rows.is_empty() {
             // Empty table — can't infer types, return List<Unknown struct>
             let fields: Vec<(String, Type)> = columns
                 .iter()
                 .map(|name| (name.clone(), Type::Unknown))
                 .collect();
-            return Type::List(Box::new(Type::Struct {
-                name: None,
-                fields,
-            }));
+            return Type::List(Box::new(Type::Struct { name: None, fields }));
         }
 
         // Infer column types from first row
@@ -50,20 +44,24 @@ impl TypeChecker {
                 if !self.table_types_compatible(expected, &val_type) {
                     let diag = Diagnostic::error(
                         "F0030",
-                        format!(
-                            "type mismatch in table column '{}'",
-                            col_name,
-                        ),
+                        format!("type mismatch in table column '{}'", col_name,),
                         expr.span(),
                     )
                     .with_label(
                         expr.span(),
-                        format!("expected {}, found {}", self.type_name(expected), self.type_name(&val_type)),
+                        format!(
+                            "expected {}, found {}",
+                            self.type_name(expected),
+                            self.type_name(&val_type)
+                        ),
                         LabelKind::Primary,
                     )
                     .with_label(
                         first_row[col_idx].span(),
-                        format!("column type inferred as {} from this value", self.type_name(expected)),
+                        format!(
+                            "column type inferred as {} from this value",
+                            self.type_name(expected)
+                        ),
                         LabelKind::Secondary,
                     )
                     .with_help(format!(
@@ -94,7 +92,10 @@ impl TypeChecker {
             return true;
         }
         // Int and Float are compatible in numeric columns
-        if matches!((expected, actual), (Type::Int, Type::Float) | (Type::Float, Type::Int)) {
+        if matches!(
+            (expected, actual),
+            (Type::Int, Type::Float) | (Type::Float, Type::Int)
+        ) {
             return true;
         }
         false
@@ -113,7 +114,10 @@ impl TypeChecker {
             Type::List(inner) => format!("List<{}>", self.type_name(inner)),
             Type::Struct { name: Some(n), .. } => n.clone(),
             Type::Struct { name: None, fields } => {
-                let fs: Vec<String> = fields.iter().map(|(n, t)| format!("{}: {}", n, self.type_name(t))).collect();
+                let fs: Vec<String> = fields
+                    .iter()
+                    .map(|(n, t)| format!("{}: {}", n, self.type_name(t)))
+                    .collect();
                 format!("{{{}}}", fs.join(", "))
             }
             _ => format!("{:?}", ty),

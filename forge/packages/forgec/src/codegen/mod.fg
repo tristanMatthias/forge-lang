@@ -434,33 +434,41 @@ export fn register_enum_variant_fields(enum_name: string, variant_name: string, 
 //
 // This function is the SINGLE SOURCE OF TRUTH for nullable type construction.
 export fn make_nullable_type(inner_ty: ptr) -> ptr {
-    // For named struct inners, prefer the existing %Nullable_<T> named
-    // type so values built here match the function-signature types
-    // registered by declare_all_fns. Only fall through to an anonymous
-    // {i8, T} when the inner has no name (primitives, anonymous structs).
+    // Prefer canonical named %Nullable_<T> types whenever the source-level
+    // type has a stable name. This must cover BOTH named structs
+    // (ForgeString → Nullable_string) and primitive/ptr returns
+    // (int/bool/float/ptr → Nullable_int / Nullable_bool / ...).
+    //
+    // If we fall back to anonymous `{i8, T}` for primitive nullables,
+    // `coerce_to_nullable` sees an already-nullable `%Nullable_int` value
+    // as "mismatched" and replaces it with a typed null. That's exactly
+    // why `fn g() -> int? { return f() }` was compiling to `ret null`.
     let kind = llvm.get_type_kind(inner_ty)
-    // Avoid an `if <cond> { string_call } else { "" }` if-expression:
-    // self-hosted codegen for string-typed if-expressions mis-compiles
-    // the assignment so the consequent branch never writes anything,
-    // leaving the binding as LLVM `undef`. Use an explicit mut + if.
-    mut inner_name: string = ""
-    if kind == LLVM_STRUCT_TYPE_KIND {
-        inner_name = llvm.get_struct_name(inner_ty)
+    mut canonical = ""
+    if inner_ty == CG_I64 { canonical = "int" }
+    if inner_ty == CG_I8 { canonical = "bool" }
+    if inner_ty == CG_F64 { canonical = "float" }
+    if inner_ty == CG_PTR { canonical = "ptr" }
+    if canonical == "" {
+        // Avoid an `if <cond> { string_call } else { "" }` if-expression:
+        // self-hosted codegen for string-typed if-expressions mis-compiles
+        // the assignment so the consequent branch never writes anything,
+        // leaving the binding as LLVM `undef`. Use an explicit mut + if.
+        mut inner_name: string = ""
+        if kind == 10 && llvm.is_literal_struct(inner_ty) == 0 {
+            inner_name = llvm.get_struct_name(inner_ty)
+        }
+        if inner_name.length >= 3 {
+            canonical = inner_name
+            // CRITICAL: declare_all_fns names nullable returns with the
+            // SOURCE type name (e.g. `string?` → `%Nullable_string`), NOT
+            // the LLVM type name (`%ForgeString`). Mirror that mapping here
+            // so codegen-emitted values match declared function signatures.
+            if inner_name == "ForgeString" { canonical = "string" }
+        }
     }
-    mut has_name = false
-    if inner_name.length >= 3 { has_name = true }
 
-    if has_name {
-        // CRITICAL: declare_all_fns names nullable returns with the SOURCE
-        // type name (e.g. `string?` → `%Nullable_string`), NOT the LLVM
-        // type name (`%ForgeString`). Mirror that mapping here so the
-        // codegen-emitted nullable type matches the function-signature
-        // type. Otherwise the verifier sees mismatched named structs:
-        //   alloca %Nullable_string ; store %Nullable_ForgeString
-        // Both Lexer_peek and ~30 other functions on main.fg fail
-        // verification today because of this single divergence.
-        mut canonical = inner_name
-        if inner_name == "ForgeString" { canonical = "string" }
+    if canonical != "" {
         let nullable_name = "Nullable_" + canonical
         let existing = llvm.get_type_by_name(CG_CTX, nullable_name)
         if existing != null { return existing }
@@ -515,6 +523,17 @@ export fn coerce_to_nullable(inner_ty: ptr, val: ptr) -> ptr {
     let nullable_ty = make_nullable_type(inner_ty)
     let val_ty = llvm.type_of(val)
     if val_ty == nullable_ty { return val }
+    // Named vs anonymous nullable carriers (`%Nullable_int` vs `{i8, i64}`)
+    // are ABI-compatible and should round-trip, not collapse to null.
+    if llvm.get_type_kind(val_ty) == 10 && llvm.get_type_kind(nullable_ty) == 10 {
+        let want_fields = llvm.count_struct_element_types(nullable_ty)
+        let got_fields = llvm.count_struct_element_types(val_ty)
+        if want_fields == got_fields && want_fields > 0 {
+            let tmp = llvm.build_alloca(CG_B, nullable_ty, "__forge_nullable_tmp")
+            llvm.build_store(CG_B, val, tmp)
+            return llvm.build_load(CG_B, nullable_ty, tmp, "ntr")
+        }
+    }
     if val_ty == inner_ty { return wrap_nullable(inner_ty, val) }
     // Mismatched value type → emit a typed null so the LLVM type still
     // matches at the use site. Callers can detect this by comparing
@@ -538,14 +557,20 @@ export fn start_dead_block_after_terminator() {
 
 // Coerce a value into the current function's expected return type.
 // Returns the original value when not in a nullable function context.
-export fn coerce_to_fn_return(val: ptr) -> ptr {
-    if forge_fn_nullable_get_flag() == 1 {
-        return coerce_to_nullable(forge_fn_nullable_get_inner(), val)
+// If `e` is `Expr.Ident(name, _)`, return `name`. Otherwise return "".
+// Extracted as a free function so callers in emit_call can use it without
+// needing a nested match-in-match pattern, which the rust compiler has
+// historically miscompiled.
+export fn ident_name_of(e: Expr) -> string {
+    match e {
+        .Ident(n, _) -> { return n }
+        _ -> {}
     }
-    // Non-nullable: handle int↔ptr coercion. The self-host stores many
-    // ptr-typed values in i64 allocas (because forge_*_i64 wrappers
-    // return i64). When such a value is returned from a `-> ptr` fn,
-    // we must emit `inttoptr` so the ret type matches.
+    ""
+}
+
+
+export fn coerce_to_fn_return(val: ptr) -> ptr {
     let ib = llvm.get_insert_block(CG_B)
     if ib == null { return val }
     let fn_val = llvm.get_basic_block_parent(ib)
@@ -556,6 +581,27 @@ export fn coerce_to_fn_return(val: ptr) -> ptr {
     if val_ty == ret_ty { return val }
     let ret_kind = llvm.get_type_kind(ret_ty)
     let val_kind = llvm.get_type_kind(val_ty)
+    // Trust the actual function signature first. Named structs often
+    // diverge by name while still being layout-compatible
+    // (`%Nullable_Statement` vs another `{i8, %Statement}` carrier).
+    // Store+reload through the real return type to canonicalize them.
+    if ret_kind == 10 && val_kind == 10 {
+        let ret_fields = llvm.count_struct_element_types(ret_ty)
+        let val_fields = llvm.count_struct_element_types(val_ty)
+        if ret_fields == val_fields && ret_fields > 0 {
+            let tmp = llvm.build_alloca(CG_B, ret_ty, "__forge_fn_ret_tmp")
+            llvm.build_store(CG_B, val, tmp)
+            return llvm.build_load(CG_B, ret_ty, tmp, "rtr")
+        }
+    }
+    if forge_fn_nullable_get_flag() == 1 {
+        return coerce_to_nullable(forge_fn_nullable_get_inner(), val)
+    }
+    // Non-nullable: handle int↔ptr coercion. The self-host stores many
+    // ptr-typed values in i64 allocas (because forge_*_i64 wrappers
+    // return i64). When such a value is returned from a `-> ptr` fn,
+    // we must emit `inttoptr` so the ret type matches.
+    if val_ty == ret_ty { return val }
     // LLVM type kind literals: 8 = Integer, 12 = Pointer (Core.h LLVMTypeKind).
     // Don't use the LLVM_*_TYPE_KIND mut globals — they compile to zero-init
     // in self-host, so the runtime comparison silently fails.
@@ -566,6 +612,90 @@ export fn coerce_to_fn_return(val: ptr) -> ptr {
         return llvm.build_ptrtoint(CG_B, val, ret_ty, "rci")
     }
     val
+}
+
+// Coerce a value to the ABI shape of a storage slot before storing it.
+// This is the single source of truth for local-variable and assignment
+// stores in the self-hosted compiler.
+export fn coerce_to_storage_type(storage_ty: ptr, val: ptr) -> ptr {
+    if storage_ty == null || val == null { return val }
+    let val_ty = llvm.type_of(val)
+    if val_ty == storage_ty { return val }
+    let storage_kind = llvm.get_type_kind(storage_ty)
+    let val_kind = llvm.get_type_kind(val_ty)
+    if storage_kind == 10 && val_kind == 10 {
+        let want_fields = llvm.count_struct_element_types(storage_ty)
+        let got_fields = llvm.count_struct_element_types(val_ty)
+        if want_fields == got_fields && want_fields > 0 {
+            let tmp = llvm.build_alloca(CG_B, storage_ty, "__forge_store_tmp")
+            llvm.build_store(CG_B, val, tmp)
+            return llvm.build_load(CG_B, storage_ty, tmp, "str")
+        }
+    }
+    if val_kind == 8 && storage_kind == 12 {
+        return llvm.build_inttoptr(CG_B, val, storage_ty, "stp")
+    }
+    if val_kind == 12 && storage_kind == 8 {
+        return llvm.build_ptrtoint(CG_B, val, storage_ty, "sti")
+    }
+    let i1_ty = llvm.int1_type(CG_CTX)
+    if storage_ty == i1_ty && val_kind == 8 {
+        return llvm.build_trunc(CG_B, val, i1_ty, "st1")
+    }
+    if storage_ty == CG_I8 && val_kind == 8 {
+        if val_ty == i1_ty {
+            return llvm.build_zext(CG_B, val, CG_I8, "st8")
+        }
+        return llvm.build_trunc(CG_B, val, CG_I8, "st8")
+    }
+    if storage_ty == CG_I64 && val_kind == 8 {
+        return llvm.build_zext(CG_B, val, CG_I64, "stz")
+    }
+    val
+}
+
+// Coerce a single call argument value to the named-struct shape that the
+// callee declared. LLVM 19 unifies structurally identical anonymous and
+// named structs (e.g. `{ ptr, i64 }` and `%ForgeString`) into the same
+// Type pointer, but the IR builder will NOT auto-cast across a call
+// boundary — passing a `{ ptr, i64 }` value to a `%ForgeString` parameter
+// ends up as `%ForgeString undef` in the call instruction, silently
+// dropping the real value. Round-tripping through an alloca with the
+// declared param type materializes a fresh SSA value of the right named
+// shape, which build_call then accepts unchanged.
+//
+// Only struct values need this — scalars and pointers cross call
+// boundaries fine. Returns `av` unchanged when the kind isn't struct or
+// the param type can't be looked up.
+export fn coerce_call_arg(av: ptr, fn_ty: ptr, idx: int) -> ptr {
+    if av == null { return av }
+    if fn_ty == null { return av }
+    let av_kind = forge_value_type_kind(av)
+    if av_kind != 10 { return av }
+    let pt = llvm.fn_get_param_type(fn_ty, idx)
+    if pt == null { return av }
+    let cur_bb = llvm.get_insert_block(CG_B)
+    if cur_bb == null { return av }
+    // Bail if the current block is already terminated. Inserting an
+    // alloca/store/load after a terminator produces dead instructions
+    // whose loaded value is poison at runtime — that's exactly what was
+    // crashing parse_int compilation in stage 2 binary when this helper
+    // was wired into emit_fn_call_direct.
+    if forge_bb_has_terminator(cur_bb) == 1 { return av }
+    let fn_val = llvm.get_basic_block_parent(cur_bb)
+    if fn_val == null { return av }
+    let entry_bb = llvm.get_entry_basic_block(fn_val)
+    if entry_bb == null { return av }
+    let first_instr = llvm.get_first_instruction(entry_bb)
+    if first_instr != null {
+        llvm.position_before(CG_B, first_instr)
+    } else {
+        llvm.position_at_end(CG_B, entry_bb)
+    }
+    let tmp = llvm.build_alloca(CG_B, pt, "__forge_coerce_arg_tmp")
+    llvm.position_at_end(CG_B, cur_bb)
+    llvm.build_store(CG_B, av, tmp)
+    llvm.build_load(CG_B, pt, tmp, "cav")
 }
 
 export fn is_nullable_var(name: string) -> bool {
@@ -652,8 +782,14 @@ fn create_struct_llvm_type(name: string, idx: int) -> ptr {
 export fn resolve_type_to_llvm(type_name: string) -> ptr {
     if type_name == "string" { return CG_STR }
     if type_name == "int" { return CG_I64 }
-    if type_name == "float" { return CG_I64 }
-    if type_name == "bool" { return CG_I64 }
+    // float must use CG_F64, not CG_I64. Returning i64 for float caused
+    // every `float`-typed parameter and local to be silently widened to
+    // i64, breaking calling convention with rust-emitted callers.
+    if type_name == "float" { return CG_F64 }
+    // bool must use CG_I8 (matches LLVM's natural representation and
+    // what rust-emitted IR uses). Returning i64 for bool widened every
+    // bool alloca/param to i64, with the same calling-convention issue.
+    if type_name == "bool" { return CG_I8 }
     // ptr is a real LLVM ptr type. Returning CG_I64 here was a
     // historical workaround for a `ptr != null` codegen bug, but it
     // caused EVERY function with `-> ptr` (~150 in mod.fg) to have
@@ -819,7 +955,7 @@ export fn cg_reinit_types() {
     CG_F64 = llvm.double_type(CG_CTX)
     // CG_STR is set once by cg_init_str — don't clobber it here
     // (get_type_by_name may return null in bootstrap if string isn't null-terminated)
-    CG_LIST = CG_STR
+    cg_init_list_type()
 }
 
 fn cg_init_other_types() {
@@ -836,7 +972,13 @@ fn cg_init_str() {
     llvm.type_array_set(sf, 1, CG_I64)
     llvm.struct_set_body(CG_STR, sf, 2, 0)
     llvm.type_array_free(sf)
-    // List type: {ptr, i64} — same layout as ForgeString but semantically different
+    cg_init_list_type()
+}
+
+fn cg_init_list_type() {
+    // List type: {ptr, i64} — same layout as ForgeString but semantically different.
+    // Rebuild it whenever the scalar LLVM type globals are refreshed so List<T>
+    // signatures never collapse back to the named %ForgeString ABI.
     let lf = llvm.type_array_new(2)
     llvm.type_array_set(lf, 0, CG_PTR)
     llvm.type_array_set(lf, 1, CG_I64)
@@ -1229,6 +1371,8 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_get_undef", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_type_of", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_type_kind", mft1(CG_I64, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_llvm_count_struct_element_types", mft1(CG_I64, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_llvm_is_literal_struct", mft1(CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_allocated_type", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_global_get_value_type", mft1(CG_PTR, CG_PTR))
     // (module, ty) -> i64 — exact in-memory store size of an LLVM type, used
@@ -1239,11 +1383,13 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_get_entry_basic_block", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_first_instruction", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_block_has_terminator", mft1(CG_I64, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_bb_has_terminator", mft1(CG_I64, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_build_ret_void", mft1(CG_VOID, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_const_null", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_type_array_new", mft1(CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_llvm_type_array_free", mft1(CG_VOID, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_value_array_new", mft1(CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_llvm_value_array_get", mft2(CG_PTR, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_llvm_value_array_free", mft1(CG_VOID, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_get_param", mft2(CG_PTR, CG_PTR, CG_I64))
     // 2-arg
@@ -1258,11 +1404,13 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_get_named_function_s", mft2(CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_get_named_global_s", mft2(CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_get_type_by_name_s", mft2(CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_llvm_get_struct_name_s", mft1(CG_STR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_append_basic_block_s", mft3(CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_position_at_end", mft2(CG_VOID, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_position_before", mft2(CG_VOID, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_build_br", mft2(CG_PTR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_build_ret", mft2(CG_PTR, CG_PTR, CG_PTR))
+    llvm.add_function(CG_MOD, "forge_llvm_build_unreachable", mft1(CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_build_alloca_s", mft3(CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_store", mft3(CG_PTR, CG_PTR, CG_PTR, CG_PTR))
     llvm.add_function(CG_MOD, "forge_llvm_print_module_to_file_s", mft2(CG_VOID, CG_PTR, CG_STR))
@@ -1288,6 +1436,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_llvm_build_zext_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_trunc_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
     llvm.add_function(CG_MOD, "forge_llvm_build_inttoptr_s", mft4(CG_PTR, CG_PTR, CG_PTR, CG_PTR, CG_STR))
+    llvm.add_function(CG_MOD, "forge_llvm_fn_get_param_type", mft2(CG_PTR, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_llvm_get_fn_return_type", mft1(CG_PTR, CG_PTR))
     // ptr → i64. Both wrapper names exist in std-llvm; we declare the one
     // the self-hosted source actually uses (`llvm.build_ptrtoint`). Without
@@ -1327,7 +1476,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_peek_kind_id", mft1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_extract_body_source", mft3(CG_STR, CG_STR, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_kind_id_for_keyword", mft1(CG_I64, CG_STR))
-    llvm.add_function(CG_MOD, "forge_list_push", mft3(CG_STR, CG_STR, CG_PTR, CG_I64))
+    llvm.add_function(CG_MOD, "forge_list_push", mft3(CG_LIST, CG_LIST, CG_PTR, CG_I64))
     llvm.add_function(CG_MOD, "forge_signal_handler", mft1(CG_VOID, CG_I64))
     // Alloca cache (C-side per-function variable storage)
     llvm.add_function(CG_MOD, "forge_alloca_cache_set", mft2(CG_I64, CG_STR, CG_PTR))
@@ -1478,7 +1627,7 @@ fn cg_init_runtime() {
     llvm.add_function(CG_MOD, "forge_ftok_clear", mft0(CG_VOID))
     llvm.add_function(CG_MOD, "forge_ftok_push", mft6(CG_VOID, CG_I64, CG_STR, CG_I64, CG_I64, CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_ftok_count", mft0(CG_I64))
-    llvm.add_function(CG_MOD, "forge_ftok_to_list", mft0(CG_STR))
+    llvm.add_function(CG_MOD, "forge_ftok_to_list", mft0(CG_LIST))
     llvm.add_function(CG_MOD, "forge_ftok_kind_id", mft1(CG_I64, CG_I64))
     llvm.add_function(CG_MOD, "forge_ftok_text", mft1(CG_STR, CG_I64))
     llvm.add_function(CG_MOD, "forge_kind_id_to_key", mft1(CG_STR, CG_I64))
@@ -1597,7 +1746,7 @@ impl Codegen {
         // Get length: extract field 1 (for {ptr, i64} lists)
         let len_val = llvm.build_extract_value(CG_B, list_val, 1, "len")
         // Create counter
-        let counter = llvm.build_alloca(CG_B, CG_I64, "fi")
+        let counter = llvm.build_alloca(CG_B, CG_I64, "__fi")
         llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), counter)
         let fn_val = self.current_fn
         let cond_bb = llvm.append_basic_block(CG_CTX, fn_val, "fc")
@@ -1686,17 +1835,17 @@ impl Codegen {
                 if var_type.length > 0 { return var_type }
                 // Fallback: LLVM type kind (0=miss, 8=i64, 10=struct, 12=ptr)
                 let type_kind = forge_alloca_cache_type_id(name)
-                if type_kind == LLVM_STRUCT_TYPE_KIND { return "string" }
-                if type_kind == LLVM_POINTER_TYPE_KIND { return "ptr" }
-                if type_kind == LLVM_INTEGER_TYPE_KIND { return "int" }
+                if type_kind == 10 { return "string" }
+                if type_kind == 12 { return "ptr" }
+                if type_kind == 8 { return "int" }
                 // Check global type name registry (set by parse_var_binding for List<T> globals)
                 let global_type = forge_global_var_get_type(name)
                 if global_type.length > 0 { return global_type }
                 // Check if it's a global (i64-based to avoid ptr null check issue)
                 let gkind = forge_global_type_kind(CG_MOD, name)
-                if gkind == LLVM_STRUCT_TYPE_KIND { return "string" }  // StructTypeKind (ForgeString)
-                if gkind == LLVM_POINTER_TYPE_KIND { return "ptr" }     // PointerTypeKind
-                if gkind == LLVM_INTEGER_TYPE_KIND { return "int" }      // IntegerTypeKind
+                if gkind == 10 { return "string" }  // StructTypeKind (ForgeString)
+                if gkind == 12 { return "ptr" }     // PointerTypeKind
+                if gkind == 8 { return "int" }      // IntegerTypeKind
                 // Check function return types
                 mut fi = 0
                 while fi < FN_NAMES.length {
@@ -1966,7 +2115,7 @@ impl Codegen {
                 // undefined and can return a poison value, which llc then
                 // folds to 0 — turning every `list[k]` into `list[0]`.
                 mut safe_idx = idx_val
-                if forge_value_type_kind(idx_val) == LLVM_STRUCT_TYPE_KIND {
+                if forge_value_type_kind(idx_val) == 10 {
                     let maybe_int = llvm.build_extract_value(CG_B, idx_val, 0, "ix")
                     if maybe_int != null { safe_idx = maybe_int }
                 }
@@ -2004,7 +2153,7 @@ impl Codegen {
                 // For i64-typed enums: use the value directly (it IS the tag)
                 mut cmp_lhs = obj_val
                 let val_kind = forge_value_type_kind(obj_val)
-                if val_kind == LLVM_STRUCT_TYPE_KIND {
+                if val_kind == 10 {
                     // Struct type — extract tag (field 0)
                     let etag = llvm.build_extract_value(CG_B, obj_val, 0, "it")
                     cmp_lhs = llvm.build_zext(CG_B, etag, llvm.int64_type(CG_CTX), "ite")
@@ -2266,7 +2415,7 @@ impl Codegen {
         // For enum scrutinees, extract the tag byte for integer comparison
         mut subj = subj_raw
         let val_kind = forge_value_type_kind(subj_raw)
-        if val_kind == LLVM_STRUCT_TYPE_KIND {
+        if val_kind == 10 {
             let tag_byte = llvm.build_extract_value(CG_B, subj_raw, 0, "tg")
             subj = llvm.build_zext(CG_B, tag_byte, CG_I64, "te")
         }
@@ -2406,7 +2555,7 @@ impl Codegen {
         cg_reinit_types()
         let struct_ty = resolve_type_to_llvm(struct_name)
         if struct_ty == CG_I64 { return llvm.const_int(CG_I64, 0, 0) }
-        let alloca = llvm.build_alloca(CG_B, struct_ty, "sl")
+        let alloca = llvm.build_alloca(CG_B, struct_ty, "__forge_struct_lit_tmp")
         llvm.build_store(CG_B, llvm.const_null(struct_ty), alloca)
         // Use C-side field name list to map source fields to correct GEP indices
         let slit_count = forge_struct_lit_field_count()
@@ -2436,7 +2585,12 @@ impl Codegen {
                 // Find alloca from cache (returns ptr-as-i64, 0 for miss)
                 let alloca_i = forge_alloca_cache_has(name)
                 if alloca_i != 0 {
-                    llvm.build_store(CG_B, val, alloca_i)
+                    let alloca_ty = llvm.get_allocated_type(alloca_i)
+                    if alloca_ty != null {
+                        llvm.build_store(CG_B, coerce_to_storage_type(alloca_ty, val), alloca_i)
+                    } else {
+                        llvm.build_store(CG_B, val, alloca_i)
+                    }
                     return
                 }
                 // Try global variable (i64-based to avoid ptr null check issue)
@@ -2704,7 +2858,7 @@ impl Codegen {
             let obj_val = self.emit_ident(var_name)
             // If obj_val is already a 2-field struct, extract field 1.
             let obj_kind = forge_value_type_kind(obj_val)
-            if obj_kind == LLVM_STRUCT_TYPE_KIND {
+            if obj_kind == 10 {
                 return llvm.build_extract_value(CG_B, obj_val, 1, "len")
             }
             // Fallback to forge_string_length for legacy paths.
@@ -2739,7 +2893,7 @@ impl Codegen {
             let alloca_ty = llvm.get_allocated_type(alloca_ptr)
             if alloca_ty != null {
                 let akind = llvm.get_type_kind(alloca_ty)
-                if akind == LLVM_STRUCT_TYPE_KIND {
+                if akind == 10 && llvm.is_literal_struct(alloca_ty) == 0 {
                     // Try to find the field by checking all registered struct types
                     let ty_name = llvm.get_struct_name(alloca_ty)
                     if ty_name != "" {
@@ -2765,12 +2919,12 @@ impl Codegen {
         // Unwrap nullable values for comparison: if one side is nullable {i8, T}
         // and the other is a non-nullable value, extract the inner T before comparing.
         // Only unwrap when the OTHER side is a struct (ForgeString etc), not a scalar (null/int).
-        let lhs_is_nullable = forge_value_type_kind(lhs) == LLVM_STRUCT_TYPE_KIND && forge_struct_field_is_i8(lhs, 0) == 1
-        let rhs_is_nullable = forge_value_type_kind(rhs) == LLVM_STRUCT_TYPE_KIND && forge_struct_field_is_i8(rhs, 0) == 1
-        if lhs_is_nullable == 1 && rhs_is_nullable == 0 && forge_value_type_kind(rhs) == LLVM_STRUCT_TYPE_KIND {
+        let lhs_is_nullable = forge_value_type_kind(lhs) == 10 && forge_struct_field_is_i8(lhs, 0) == 1
+        let rhs_is_nullable = forge_value_type_kind(rhs) == 10 && forge_struct_field_is_i8(rhs, 0) == 1
+        if lhs_is_nullable == 1 && rhs_is_nullable == 0 && forge_value_type_kind(rhs) == 10 {
             lhs = llvm.build_extract_value(CG_B, lhs, 1, "unwrap_lhs")
         }
-        if rhs_is_nullable == 1 && lhs_is_nullable == 0 && forge_value_type_kind(lhs) == LLVM_STRUCT_TYPE_KIND {
+        if rhs_is_nullable == 1 && lhs_is_nullable == 0 && forge_value_type_kind(lhs) == 10 {
             rhs = llvm.build_extract_value(CG_B, rhs, 1, "unwrap_rhs")
         }
         // Detect types from LLVM values (central, reliable)
@@ -2983,7 +3137,7 @@ impl Codegen {
                 if name == "int" && args.length > 0 {
                     let val = self.emit_expr(args[0])
                     let val_kind = forge_value_type_kind(val)
-                    if val_kind == LLVM_STRUCT_TYPE_KIND {
+                    if val_kind == 10 {
                         // ForgeString → forge_string_to_int
                         let ca = llvm.value_array_new(1)
                         llvm.value_array_set(ca, 0, val)
@@ -3011,7 +3165,7 @@ impl Codegen {
                     // first 8 bytes (the ptr) as an i64 and formats it as a
                     // decimal — producing garbage like "4304805200_105553…".
                     let val_kind = forge_value_type_kind(val)
-                    if val_kind == LLVM_STRUCT_TYPE_KIND {
+                    if val_kind == 10 {
                         return val
                     }
                     // Call forge_int_to_string(val) → ForgeString
@@ -3031,6 +3185,23 @@ impl Codegen {
                 }
             }
             .MemberAccess(o, f, s) -> {
+                // EnumName.Variant(args) — call the inline enum constructor.
+                // Without this, every parameterized enum constructor (e.g.
+                // Pattern.EnumVariant(name, fields, span) in parse_pattern)
+                // returns null, every match-arm parser produces empty arms,
+                // every match codegen stubs to "return default", and stage 3
+                // self-compile fails. The Token struct field i64 overflow
+                // mentioned in the previous comment here is handled by
+                // emit_struct_lit's coercion path — match constructors return
+                // proper enum struct values that get stored into proper enum
+                // struct slots. Mixed-width assignment is a separate concern.
+                // No dispatch needed: the existing struct-enum constructor
+                // path further below (line ~3220) handles all enum types
+                // including Pattern, K, etc. via the generic ec/match_enum_tag
+                // mechanism. Adding a separate dispatch here intercepted
+                // Statement/Expr/BinOp/UnaryOp BEFORE that path could fire,
+                // routing them to a stub that produced zero-valued enums.
+
                 // Built-in method calls: obj.has(key), obj.push(val), etc.
                 if f == "has" && args.length >= 1 {
                     let obj_val = self.emit_expr(o)
@@ -3059,7 +3230,7 @@ impl Codegen {
                     mut elem_ty = llvm.type_of(elem_val)
                     if elem_ty == null { elem_ty = CG_I64 }
                     // Store elem to temp alloca, get its address
-                    let tmp = llvm.build_alloca(CG_B, elem_ty, "pe")
+                    let tmp = llvm.build_alloca(CG_B, elem_ty, "__forge_ptr_elem_tmp")
                     llvm.build_store(CG_B, elem_val, tmp)
                     // Compute element size via GEP trick
                     let null_ptr = llvm.const_null(CG_PTR)
@@ -3092,7 +3263,7 @@ impl Codegen {
                     let set_val = self.emit_expr(args[1])
                     // Convert set_val to i64 if needed
                     mut val_i64 = set_val
-                    if forge_value_type_kind(set_val) == LLVM_POINTER_TYPE_KIND {
+                    if forge_value_type_kind(set_val) == 12 {
                         // Pointer value → ptrtoint
                         val_i64 = llvm.build_ptrtoint(CG_B, set_val, CG_I64, "si")
                     }
@@ -3178,7 +3349,7 @@ impl Codegen {
                         cg_reinit_types()
                         let _eT = cg_make_enum_type(ns)
                         if _eT != null {
-                            let _ealloca = llvm.build_alloca(CG_B, _eT, "ec")
+                            let _ealloca = llvm.build_alloca(CG_B, _eT, "__forge_enum_case_tmp")
                             // Zero-init the whole enum so unused payload slots are 0.
                             llvm.build_store(CG_B, llvm.const_null(_eT), _ealloca)
                             // Struct GEPs into a named struct must use i32
@@ -3224,7 +3395,7 @@ impl Codegen {
                                 llvm.value_array_free(_gi)
 
                                 if _av != null && _av != 0 {
-                                    if _aCode == "p" && _av_kind == LLVM_STRUCT_TYPE_KIND {
+                                    if _aCode == "p" && _av_kind == 10 {
                                         // Boxed pointer field with aggregate
                                         // value: heap-alloc and store ptr.
                                         let _sz = llvm.store_size_of_type(CG_MOD, _av_ty)
@@ -3309,20 +3480,22 @@ impl Codegen {
     }
 
     fn emit_fn_call_direct(self, fn_val: ptr, fn_name: string, args: List<Expr>) -> ptr {
-        // Emit all argument values
+        // Resolve fn_ty BEFORE emitting args so each arg can be coerced
+        // to the declared param shape via coerce_call_arg as it's emitted.
+        // Keeping fn_ty stable across arg compilation is fine because
+        // global_get_value_type is a pure lookup with no builder side
+        // effects.
+        cg_reinit_types()
+        let fn_ty = llvm.global_get_value_type(fn_val)
         let arg_arr = llvm.value_array_new(args.length)
         mut i = 0
         for arg in args {
-            llvm.value_array_set(arg_arr, i, self.emit_expr(arg))
+            let av = self.emit_expr(arg)
+            llvm.value_array_set(arg_arr, i, coerce_call_arg(av, fn_ty, i))
             i = i + 1
         }
-
-        // Use the function's actual LLVM type (works for both user and runtime fns)
-        cg_reinit_types()
-        let fn_ty = llvm.global_get_value_type(fn_val)
         let r = llvm.build_call(CG_B, fn_ty, fn_val, arg_arr, args.length, "call")
         llvm.value_array_free(arg_arr)
-
         r
     }
 
@@ -3474,7 +3647,7 @@ impl Codegen {
                             if cached_ty != null { elem_llvm_ty = cached_ty }
                         }
                     }
-                    let fa = llvm.build_alloca(CG_B, CG_I64, "fi")
+                    let fa = llvm.build_alloca(CG_B, CG_I64, "__fi")
                     llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), fa)
                     // Get length: try extractvalue(fl, 1) first — works when fl is {ptr, i64}.
                     // Falls back to forge_string_length call if extractvalue fails (i64 value).
@@ -3506,7 +3679,7 @@ impl Codegen {
                     if fd == null {
                         // List value was not a struct — can't iterate. Skip to end.
                         // Create a dummy var for the loop body to reference
-                        let fv = llvm.build_alloca(CG_B, CG_I64, "iv")
+                        let fv = llvm.build_alloca(CG_B, CG_I64, "__forge_iter_val_tmp")
                         llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), fv)
                         llvm.build_br(CG_B, f4)
                         llvm.position_at_end(CG_B, f3)
@@ -3532,7 +3705,7 @@ impl Codegen {
                         } else {
                             llvm.position_at_end(CG_B, entry_for_bb)
                         }
-                        let fv = llvm.build_alloca(CG_B, elem_llvm_ty, "iv")
+                        let fv = llvm.build_alloca(CG_B, elem_llvm_ty, "__forge_iter_val_tmp")
                         llvm.position_at_end(CG_B, cur_for_bb)
                         llvm.build_store(CG_B, fe, fv)
                         // Register loop var in alloca cache (always — even without type info)
@@ -3583,7 +3756,7 @@ impl Codegen {
         // Falls back to type name when value type is i64 but Forge type is struct.
         mut alloca_ty = llvm.type_of(value)
         let val_kind = forge_value_type_kind(value)
-        if val_kind == LLVM_INTEGER_TYPE_KIND {
+        if val_kind == 8 {
             // Value is integer but Forge type might be string/list/struct.
             if type_name == "string" || type_name == "List" { alloca_ty = CG_STR }
             let resolved = resolve_type_to_llvm(type_name)
@@ -3601,7 +3774,7 @@ impl Codegen {
         }
         let alloca = llvm.build_alloca(CG_B, alloca_ty, name)
         llvm.position_at_end(CG_B, cur_bb)
-        llvm.build_store(CG_B, value, alloca)
+        llvm.build_store(CG_B, coerce_to_storage_type(alloca_ty, value), alloca)
         forge_alloca_cache_set(name, alloca)
         // Preserve pre-set types (e.g., "List:Statement" from parser annotations)
         let existing = forge_alloca_cache_get_var_type(name)

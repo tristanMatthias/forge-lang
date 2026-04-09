@@ -15,7 +15,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, SpawnData, |data| self.compile_spawn_block(&data.body))
+        feature_codegen!(self, fe, SpawnData, |data| self
+            .compile_spawn_block(&data.body))
     }
 
     /// Compile a `spawn { ... }` block.
@@ -23,10 +24,7 @@ impl<'ctx> Codegen<'ctx> {
     /// Captures variables from the outer scope into globals, creates an anonymous
     /// LLVM function for the spawn body, loads captured variables inside it,
     /// and calls `forge_spawn(fn_ptr)` to run it on a new thread.
-    pub(crate) fn compile_spawn_block(
-        &mut self,
-        body: &Block,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    pub(crate) fn compile_spawn_block(&mut self, body: &Block) -> Option<BasicValueEnum<'ctx>> {
         // Capture variables from outer scope into globals so the spawn
         // function (a separate LLVM function) can access them.
         let cap_prefix = format!("__spawn_cap_{}", self.functions.len());
@@ -54,7 +52,10 @@ impl<'ctx> Codegen<'ctx> {
         for (name, global_name, ty) in &captured {
             if let Some(global) = self.module.get_global(global_name) {
                 let llvm_ty = self.type_to_llvm_basic(ty);
-                let val = self.builder.build_load(llvm_ty, global.as_pointer_value(), name).unwrap();
+                let val = self
+                    .builder
+                    .build_load(llvm_ty, global.as_pointer_value(), name)
+                    .unwrap();
                 let alloca = self.create_entry_block_alloca(ty, name);
                 self.builder.build_store(alloca, val).unwrap();
                 self.define_var(name.clone(), alloca, ty.clone());
@@ -66,7 +67,13 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Add return if no terminator
-        if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+        if self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
             self.builder.build_return(None).unwrap();
         }
 

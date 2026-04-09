@@ -9,7 +9,11 @@ use super::types::IfData;
 impl TypeChecker {
     /// Type-check an if/else expression via the Feature dispatch system.
     pub(crate) fn check_if_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, IfData, |data| self.check_if_expr_impl(&data.condition, &data.then_branch, data.else_branch.as_ref()))
+        feature_check!(self, fe, IfData, |data| self.check_if_expr_impl(
+            &data.condition,
+            &data.then_branch,
+            data.else_branch.as_ref()
+        ))
     }
 
     /// Type-check an if/else expression.

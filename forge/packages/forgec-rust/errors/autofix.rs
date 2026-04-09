@@ -2,7 +2,11 @@ use crate::errors::diagnostic::Diagnostic;
 
 /// Apply high-confidence fixes from diagnostics to the source text.
 /// Returns (fixed_source, applied_count, skipped_count).
-pub fn apply_fixes(source: &str, diagnostics: &[Diagnostic], min_confidence: f64) -> (String, usize, usize) {
+pub fn apply_fixes(
+    source: &str,
+    diagnostics: &[Diagnostic],
+    min_confidence: f64,
+) -> (String, usize, usize) {
     // Collect all edits from all suggestions that meet the confidence threshold
     let mut all_edits: Vec<(usize, usize, String, f64)> = Vec::new(); // (start, end, replacement, confidence)
 

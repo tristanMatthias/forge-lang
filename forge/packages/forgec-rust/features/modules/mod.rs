@@ -28,8 +28,8 @@ are injected into the importing program's AST so they have access to the full ru
     category: "Special",
 }
 
-pub mod types;
-pub mod parser;
-pub mod resolver;
-pub mod project;
 pub mod codegen;
+pub mod parser;
+pub mod project;
+pub mod resolver;
+pub mod types;

@@ -2,7 +2,6 @@
 ///
 /// Generates self-contained HTML sites from the same data backing
 /// `compiler lang` and `compiler docs` CLI commands.
-
 use std::path::Path;
 
 use crate::docs;
@@ -13,7 +12,6 @@ use crate::registry::{FeatureMetadata, FeatureRegistry, FeatureStatus};
 
 // Feature categories are now derived from FeatureMetadata::category
 // via FeatureRegistry::by_category()
-
 
 // ── CSS Stylesheet ──────────────────────────────────────────────────
 
@@ -286,10 +284,9 @@ fn highlight_forge(code: &str) -> String {
     let mut i = 0;
 
     let keywords = [
-        "let", "mut", "fn", "if", "else", "for", "while", "match", "return",
-        "spawn", "defer", "select", "in", "is", "with", "enum", "struct",
-        "trait", "spec", "given", "then", "use", "const", "true", "false",
-        "null", "export", "type", "on",
+        "let", "mut", "fn", "if", "else", "for", "while", "match", "return", "spawn", "defer",
+        "select", "in", "is", "with", "enum", "struct", "trait", "spec", "given", "then", "use",
+        "const", "true", "false", "null", "export", "type", "on",
     ];
     let builtin_names = crate::registry::BuiltinFnRegistry::all_names();
 
@@ -329,8 +326,12 @@ fn highlight_forge(code: &str) -> String {
                     i += 2;
                     let mut depth = 1;
                     while i < len && depth > 0 {
-                        if chars[i] == '{' { depth += 1; }
-                        if chars[i] == '}' { depth -= 1; }
+                        if chars[i] == '{' {
+                            depth += 1;
+                        }
+                        if chars[i] == '}' {
+                            depth -= 1;
+                        }
                         if depth > 0 {
                             push_escaped(&mut out, chars[i]);
                         }
@@ -363,7 +364,12 @@ fn highlight_forge(code: &str) -> String {
         }
 
         // Numbers
-        if ch.is_ascii_digit() || (ch == '-' && i + 1 < len && chars[i + 1].is_ascii_digit() && (i == 0 || !chars[i - 1].is_alphanumeric())) {
+        if ch.is_ascii_digit()
+            || (ch == '-'
+                && i + 1 < len
+                && chars[i + 1].is_ascii_digit()
+                && (i == 0 || !chars[i - 1].is_alphanumeric()))
+        {
             out.push_str(r#"<span class="num">"#);
             if ch == '-' {
                 out.push('-');
@@ -419,21 +425,25 @@ fn match_operator(chars: &[char], i: usize) -> Option<&'static str> {
     let remaining = chars.len() - i;
     if remaining >= 3 {
         let three: String = chars[i..i + 3].iter().collect();
-        if three == "..=" { return Some("..="); }
+        if three == "..=" {
+            return Some("..=");
+        }
     }
     if remaining >= 2 {
         let two: String = chars[i..i + 2].iter().collect();
         match two.as_str() {
-            "->" | "|>" | "<-" | ".." | "=>" | "?." | "??" => return Some(match two.as_str() {
-                "->" => "->",
-                "|>" => "|>",
-                "<-" => "<-",
-                ".." => "..",
-                "=>" => "=>",
-                "?." => "?.",
-                "??" => "??",
-                _ => unreachable!(),
-            }),
+            "->" | "|>" | "<-" | ".." | "=>" | "?." | "??" => {
+                return Some(match two.as_str() {
+                    "->" => "->",
+                    "|>" => "|>",
+                    "<-" => "<-",
+                    ".." => "..",
+                    "=>" => "=>",
+                    "?." => "?.",
+                    "??" => "??",
+                    _ => unreachable!(),
+                })
+            }
             _ => {}
         }
     }
@@ -461,14 +471,21 @@ fn lang_nav(active: &str, base: &str) -> String {
     let features = FeatureRegistry::all_sorted();
     let mut nav = String::new();
 
-    nav.push_str(&format!(r#"<div class="logo"><a href="{}index.html">Forge</a></div>"#, base));
+    nav.push_str(&format!(
+        r#"<div class="logo"><a href="{}index.html">Forge</a></div>"#,
+        base
+    ));
     nav.push_str(r#"<input type="text" class="search-box" placeholder="Search..." id="nav-search" onkeyup="filterNav(this.value)">"#);
 
     // Types
     nav.push_str(r#"<div class="section-title">Types</div><ul>"#);
     let types = builtin_types();
     for t in &types {
-        let cls = if active == t.name { r#" class="active""# } else { "" };
+        let cls = if active == t.name {
+            r#" class="active""#
+        } else {
+            ""
+        };
         nav.push_str(&format!(
             r#"<li class="nav-item" data-name="{}"><a href="{}types/{}.html"{}>{}</a></li>"#,
             t.name, base, t.name, cls, t.name
@@ -480,10 +497,17 @@ fn lang_nav(active: &str, base: &str) -> String {
     let mut shown: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
     for (cat_name, cat_features) in FeatureRegistry::by_category() {
-        nav.push_str(&format!(r#"<div class="section-title">{}</div><ul>"#, cat_name));
+        nav.push_str(&format!(
+            r#"<div class="section-title">{}</div><ul>"#,
+            cat_name
+        ));
         for f in &cat_features {
             shown.insert(f.id);
-            let cls = if active == f.id { r#" class="active""# } else { "" };
+            let cls = if active == f.id {
+                r#" class="active""#
+            } else {
+                ""
+            };
             nav.push_str(&format!(
                 r#"<li class="nav-item" data-name="{}"><a href="{}features/{}.html"{}>{}</a></li>"#,
                 f.id, base, f.id, cls, f.name
@@ -497,7 +521,11 @@ fn lang_nav(active: &str, base: &str) -> String {
     if !other.is_empty() {
         nav.push_str(r#"<div class="section-title">Other</div><ul>"#);
         for f in &other {
-            let cls = if active == f.id { r#" class="active""# } else { "" };
+            let cls = if active == f.id {
+                r#" class="active""#
+            } else {
+                ""
+            };
             nav.push_str(&format!(
                 r#"<li class="nav-item" data-name="{}"><a href="{}features/{}.html"{}>{}</a></li>"#,
                 f.id, base, f.id, cls, f.name
@@ -508,9 +536,21 @@ fn lang_nav(active: &str, base: &str) -> String {
 
     // Errors
     nav.push_str(r#"<div class="section-title">Reference</div><ul>"#);
-    let err_cls = if active == "errors" { r#" class="active""# } else { "" };
-    let spec_cls = if active == "spec" { r#" class="active""# } else { "" };
-    let cheat_cls = if active == "cheatsheet" { r#" class="active""# } else { "" };
+    let err_cls = if active == "errors" {
+        r#" class="active""#
+    } else {
+        ""
+    };
+    let spec_cls = if active == "spec" {
+        r#" class="active""#
+    } else {
+        ""
+    };
+    let cheat_cls = if active == "cheatsheet" {
+        r#" class="active""#
+    } else {
+        ""
+    };
     nav.push_str(&format!(
         r#"<li class="nav-item" data-name="errors"><a href="{}errors/index.html"{}>Error Codes</a></li>"#,
         base, err_cls
@@ -526,7 +566,8 @@ fn lang_nav(active: &str, base: &str) -> String {
     nav.push_str("</ul>");
 
     // Filter script
-    nav.push_str(r#"<script>
+    nav.push_str(
+        r#"<script>
 function filterNav(q) {
     q = q.toLowerCase();
     document.querySelectorAll('.nav-item').forEach(function(li) {
@@ -534,22 +575,33 @@ function filterNav(q) {
         li.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
     });
 }
-</script>"#);
+</script>"#,
+    );
 
     nav
 }
 
 fn docs_nav(active: &str, base: &str, project_docs: &docs::ProjectDocs) -> String {
     let mut nav = String::new();
-    nav.push_str(&format!(r#"<div class="logo"><a href="{}index.html">Project Docs</a></div>"#, base));
+    nav.push_str(&format!(
+        r#"<div class="logo"><a href="{}index.html">Project Docs</a></div>"#,
+        base
+    ));
 
     if !project_docs.functions.is_empty() {
         nav.push_str(r#"<div class="section-title">Functions</div><ul>"#);
         for f in &project_docs.functions {
-            let cls = if active == f.name { r#" class="active""# } else { "" };
+            let cls = if active == f.name {
+                r#" class="active""#
+            } else {
+                ""
+            };
             nav.push_str(&format!(
                 r#"<li><a href="{}symbols/{}.html"{}>{}</a></li>"#,
-                base, html_escape(&f.name), cls, html_escape(&f.name)
+                base,
+                html_escape(&f.name),
+                cls,
+                html_escape(&f.name)
             ));
         }
         nav.push_str("</ul>");
@@ -558,10 +610,17 @@ fn docs_nav(active: &str, base: &str, project_docs: &docs::ProjectDocs) -> Strin
     if !project_docs.types.is_empty() {
         nav.push_str(r#"<div class="section-title">Types</div><ul>"#);
         for t in &project_docs.types {
-            let cls = if active == t.name { r#" class="active""# } else { "" };
+            let cls = if active == t.name {
+                r#" class="active""#
+            } else {
+                ""
+            };
             nav.push_str(&format!(
                 r#"<li><a href="{}symbols/{}.html"{}>{}</a></li>"#,
-                base, html_escape(&t.name), cls, html_escape(&t.name)
+                base,
+                html_escape(&t.name),
+                cls,
+                html_escape(&t.name)
             ));
         }
         nav.push_str("</ul>");
@@ -570,17 +629,27 @@ fn docs_nav(active: &str, base: &str, project_docs: &docs::ProjectDocs) -> Strin
     if !project_docs.enums.is_empty() {
         nav.push_str(r#"<div class="section-title">Enums</div><ul>"#);
         for e in &project_docs.enums {
-            let cls = if active == e.name { r#" class="active""# } else { "" };
+            let cls = if active == e.name {
+                r#" class="active""#
+            } else {
+                ""
+            };
             nav.push_str(&format!(
                 r#"<li><a href="{}symbols/{}.html"{}>{}</a></li>"#,
-                base, html_escape(&e.name), cls, html_escape(&e.name)
+                base,
+                html_escape(&e.name),
+                cls,
+                html_escape(&e.name)
             ));
         }
         nav.push_str("</ul>");
     }
 
     nav.push_str(r#"<div class="section-title">Language</div><ul>"#);
-    nav.push_str(&format!(r#"<li><a href="{}lang/index.html">Language Reference</a></li>"#, base));
+    nav.push_str(&format!(
+        r#"<li><a href="{}lang/index.html">Language Reference</a></li>"#,
+        base
+    ));
     nav.push_str("</ul>");
 
     nav
@@ -727,7 +796,11 @@ fn generate_search_index() -> String {
     let types = builtin_types();
 
     for f in &features {
-        let desc = if !f.short.is_empty() { f.short } else { f.description };
+        let desc = if !f.short.is_empty() {
+            f.short
+        } else {
+            f.description
+        };
         entries.push(format!(
             r#"{{"type":"feature","id":"{}","name":"{}","text":"{}","url":"features/{}.html"}}"#,
             json_escape(f.id),
@@ -740,7 +813,8 @@ fn generate_search_index() -> String {
     for t in &types {
         entries.push(format!(
             r#"{{"type":"type","id":"{}","name":"{}","text":"{}","url":"types/{}.html"}}"#,
-            t.name, t.name,
+            t.name,
+            t.name,
             json_escape(t.description),
             t.name
         ));
@@ -788,7 +862,9 @@ fn generate_index_page(features: &[&FeatureMetadata], types: &[SiteTypeDoc]) -> 
 
     let mut body = String::new();
     body.push_str("<h1>Forge Language Reference</h1>");
-    body.push_str("<p>Explore the Forge programming language: types, features, and error codes.</p>");
+    body.push_str(
+        "<p>Explore the Forge programming language: types, features, and error codes.</p>",
+    );
 
     // Search
     body.push_str(r#"
@@ -807,7 +883,8 @@ fn generate_index_page(features: &[&FeatureMetadata], types: &[SiteTypeDoc]) -> 
         };
         body.push_str(&format!(
             r#"<div class="card"><a href="types/{}.html"><h3>{}</h3></a><p>{}{}</p></div>"#,
-            t.name, t.name,
+            t.name,
+            t.name,
             truncate_html(t.description, 80),
             method_note
         ));
@@ -825,10 +902,16 @@ fn generate_index_page(features: &[&FeatureMetadata], types: &[SiteTypeDoc]) -> 
         body.push_str(r#"<div class="feature-grid">"#);
         for f in &cat_features {
             shown.insert(f.id);
-            let desc = if !f.short.is_empty() { f.short } else { f.description };
+            let desc = if !f.short.is_empty() {
+                f.short
+            } else {
+                f.description
+            };
             body.push_str(&format!(
                 r#"<div class="card"><a href="features/{}.html"><h3>{} {}</h3></a><p>{}</p></div>"#,
-                f.id, html_escape(f.name), status_badge(f.status),
+                f.id,
+                html_escape(f.name),
+                status_badge(f.status),
                 truncate_html(desc, 100)
             ));
         }
@@ -841,10 +924,16 @@ fn generate_index_page(features: &[&FeatureMetadata], types: &[SiteTypeDoc]) -> 
         body.push_str("<h2>Other</h2>");
         body.push_str(r#"<div class="feature-grid">"#);
         for f in &other {
-            let desc = if !f.short.is_empty() { f.short } else { f.description };
+            let desc = if !f.short.is_empty() {
+                f.short
+            } else {
+                f.description
+            };
             body.push_str(&format!(
                 r#"<div class="card"><a href="features/{}.html"><h3>{} {}</h3></a><p>{}</p></div>"#,
-                f.id, html_escape(f.name), status_badge(f.status),
+                f.id,
+                html_escape(f.name),
+                status_badge(f.status),
                 truncate_html(desc, 100)
             ));
         }
@@ -853,11 +942,13 @@ fn generate_index_page(features: &[&FeatureMetadata], types: &[SiteTypeDoc]) -> 
 
     // Quick links
     body.push_str("<h2>Reference</h2>");
-    body.push_str(r#"<ul>
+    body.push_str(
+        r#"<ul>
 <li><a href="errors/index.html">Error Codes</a></li>
 <li><a href="spec.html">Full Language Spec</a></li>
 <li><a href="cheatsheet.html">Cheatsheet</a></li>
-</ul>"#);
+</ul>"#,
+    );
 
     // Search script
     body.push_str(r#"
@@ -903,7 +994,11 @@ fn generate_feature_page(meta: &FeatureMetadata) -> String {
     ));
 
     // Description
-    let desc = if !meta.short.is_empty() { meta.short } else { meta.description };
+    let desc = if !meta.short.is_empty() {
+        meta.short
+    } else {
+        meta.description
+    };
     body.push_str(&format!("<p>{}</p>", html_escape(desc)));
     if !meta.short.is_empty() && meta.description != meta.short {
         body.push_str(&format!("<p>{}</p>", html_escape(meta.description)));
@@ -967,10 +1062,7 @@ fn generate_feature_page(meta: &FeatureMetadata) -> String {
     if !meta.depends.is_empty() {
         body.push_str("<h2>Dependencies</h2><ul>");
         for dep in meta.depends {
-            body.push_str(&format!(
-                r#"<li><a href="{}.html">{}</a></li>"#,
-                dep, dep
-            ));
+            body.push_str(&format!(r#"<li><a href="{}.html">{}</a></li>"#, dep, dep));
         }
         body.push_str("</ul>");
     }
@@ -979,10 +1071,7 @@ fn generate_feature_page(meta: &FeatureMetadata) -> String {
     if !meta.enables.is_empty() {
         body.push_str("<h2>Enables</h2><ul>");
         for en in meta.enables {
-            body.push_str(&format!(
-                r#"<li><a href="{}.html">{}</a></li>"#,
-                en, en
-            ));
+            body.push_str(&format!(r#"<li><a href="{}.html">{}</a></li>"#, en, en));
         }
         body.push_str("</ul>");
     }
@@ -1040,13 +1129,17 @@ fn generate_errors_page() -> String {
     body.push_str("<h1>Error Codes</h1>");
     body.push_str("<p>All Forge compiler error and warning codes.</p>");
 
-    body.push_str("<table><thead><tr><th>Code</th><th>Title</th><th>Level</th></tr></thead><tbody>");
+    body.push_str(
+        "<table><thead><tr><th>Code</th><th>Title</th><th>Level</th></tr></thead><tbody>",
+    );
     for code in &codes {
         if let Some(entry) = registry.lookup(code) {
             let level_str = format!("{:?}", entry.level);
             body.push_str(&format!(
                 "<tr id=\"{}\"><td><a href=\"#{}\">{}</a></td><td>{}</td><td>{}</td></tr>",
-                code, code, code,
+                code,
+                code,
+                code,
                 html_escape(&entry.title),
                 level_str
             ));
@@ -1057,15 +1150,26 @@ fn generate_errors_page() -> String {
     // Detailed sections
     for code in &codes {
         if let Some(entry) = registry.lookup(code) {
-            body.push_str(&format!("<h2 id=\"{}-detail\">{} &mdash; {}</h2>", code, code, html_escape(&entry.title)));
+            body.push_str(&format!(
+                "<h2 id=\"{}-detail\">{} &mdash; {}</h2>",
+                code,
+                code,
+                html_escape(&entry.title)
+            ));
             if !entry.message.is_empty() {
                 body.push_str(&format!("<p>{}</p>", html_escape(&entry.message)));
             }
             if !entry.help.is_empty() {
-                body.push_str(&format!("<p><strong>Help:</strong> {}</p>", html_escape(&entry.help)));
+                body.push_str(&format!(
+                    "<p><strong>Help:</strong> {}</p>",
+                    html_escape(&entry.help)
+                ));
             }
             if !entry.doc.is_empty() {
-                body.push_str(&format!("<p>{}</p>", html_escape(&entry.doc).replace("\\n", "<br>")));
+                body.push_str(&format!(
+                    "<p>{}</p>",
+                    html_escape(&entry.doc).replace("\\n", "<br>")
+                ));
             }
         }
     }
@@ -1082,14 +1186,22 @@ fn generate_spec_page() -> String {
     body.push_str("<p>Complete language specification with syntax rules and examples.</p>");
 
     body.push_str("<h2>Type System</h2>");
-    body.push_str(&code_block("int, float, string, bool, null, list<T>, map<K,V>, fn<(A)->R>"));
+    body.push_str(&code_block(
+        "int, float, string, bool, null, list<T>, map<K,V>, fn<(A)->R>",
+    ));
     body.push_str("<p>Truthy: everything except <code>false</code>, <code>null</code>, <code>0</code>, <code>\"\"</code>.</p>");
 
     for f in &features {
-        let desc = if !f.short.is_empty() { f.short } else { f.description };
+        let desc = if !f.short.is_empty() {
+            f.short
+        } else {
+            f.description
+        };
         body.push_str(&format!(
             "<h2><a href=\"features/{}.html\">{}</a> {}</h2>",
-            f.id, html_escape(f.name), status_badge(f.status)
+            f.id,
+            html_escape(f.name),
+            status_badge(f.status)
         ));
         body.push_str(&format!("<p>{}</p>", html_escape(desc)));
         if !f.syntax.is_empty() {
@@ -1107,65 +1219,95 @@ fn generate_cheatsheet_page() -> String {
     body.push_str("<h1>Forge Cheatsheet</h1>");
 
     let sections: &[(&str, &[&str])] = &[
-        ("Variables", &[
-            "let x = 1",
-            "mut y = 2",
-            "const PI = 3.14",
-            "let name: string = \"hi\"",
-        ]),
-        ("Functions", &[
-            "fn add(a: int, b: int) -> int {",
-            "    a + b",
-            "}",
-            "fn greet(name: string) { }",
-        ]),
-        ("Closures", &[
-            "(x) -> x * 2",
-            "(x, y) -> { x + y }",
-            "list.map(it > 0)    // it param",
-        ]),
-        ("Control Flow", &[
-            "if cond { } else { }",
-            "for x in list { }",
-            "while cond { }",
-            "match expr { p -> body }",
-        ]),
-        ("Operators", &[
-            "data |> transform |> output",
-            "1..10          // exclusive range",
-            "1..=10         // inclusive range",
-            "x is int       // type check",
-        ]),
-        ("Collections", &[
-            "[1, 2, 3]              // list",
-            "{key: \"val\"}           // map",
-            "(1, \"two\", true)       // tuple",
-            "type Point { x: int }  // struct",
-        ]),
-        ("Null Safety", &[
-            "let x: int? = null",
-            "x ?? default_value",
-            "x?.method()",
-            "result?        // propagate error",
-        ]),
-        ("Concurrency", &[
-            "spawn { work() }",
-            "ch <- val         // send",
-            "<- ch             // receive",
-            "select { x <- ch -> body }",
-        ]),
-        ("Strings", &[
-            "\"hello ${name}\"      // template",
-            "$\"echo ${cmd}\"       // shell exec",
-            "s.split(\",\")  s.trim()",
-            "s.length()  s.upper()",
-        ]),
-        ("Special", &[
-            "defer cleanup()       // runs at end",
-            "expr with { f: val }  // struct update",
-            "5m  30s  24h  7d      // durations",
-            "use @std.fs.{fs}      // imports",
-        ]),
+        (
+            "Variables",
+            &[
+                "let x = 1",
+                "mut y = 2",
+                "const PI = 3.14",
+                "let name: string = \"hi\"",
+            ],
+        ),
+        (
+            "Functions",
+            &[
+                "fn add(a: int, b: int) -> int {",
+                "    a + b",
+                "}",
+                "fn greet(name: string) { }",
+            ],
+        ),
+        (
+            "Closures",
+            &[
+                "(x) -> x * 2",
+                "(x, y) -> { x + y }",
+                "list.map(it > 0)    // it param",
+            ],
+        ),
+        (
+            "Control Flow",
+            &[
+                "if cond { } else { }",
+                "for x in list { }",
+                "while cond { }",
+                "match expr { p -> body }",
+            ],
+        ),
+        (
+            "Operators",
+            &[
+                "data |> transform |> output",
+                "1..10          // exclusive range",
+                "1..=10         // inclusive range",
+                "x is int       // type check",
+            ],
+        ),
+        (
+            "Collections",
+            &[
+                "[1, 2, 3]              // list",
+                "{key: \"val\"}           // map",
+                "(1, \"two\", true)       // tuple",
+                "type Point { x: int }  // struct",
+            ],
+        ),
+        (
+            "Null Safety",
+            &[
+                "let x: int? = null",
+                "x ?? default_value",
+                "x?.method()",
+                "result?        // propagate error",
+            ],
+        ),
+        (
+            "Concurrency",
+            &[
+                "spawn { work() }",
+                "ch <- val         // send",
+                "<- ch             // receive",
+                "select { x <- ch -> body }",
+            ],
+        ),
+        (
+            "Strings",
+            &[
+                "\"hello ${name}\"      // template",
+                "$\"echo ${cmd}\"       // shell exec",
+                "s.split(\",\")  s.trim()",
+                "s.length()  s.upper()",
+            ],
+        ),
+        (
+            "Special",
+            &[
+                "defer cleanup()       // runs at end",
+                "expr with { f: val }  // struct update",
+                "5m  30s  24h  7d      // durations",
+                "use @std.fs.{fs}      // imports",
+            ],
+        ),
     ];
 
     body.push_str(r#"<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">"#);
@@ -1187,17 +1329,27 @@ fn generate_docs_index(project_docs: &docs::ProjectDocs) -> String {
 
     body.push_str("<h1>Project Documentation</h1>");
 
-    let total = project_docs.functions.len() + project_docs.types.len()
-        + project_docs.enums.len() + project_docs.constants.len();
+    let total = project_docs.functions.len()
+        + project_docs.types.len()
+        + project_docs.enums.len()
+        + project_docs.constants.len();
     body.push_str(&format!("<p>{} symbols documented.</p>", total));
 
     if !project_docs.functions.is_empty() {
         body.push_str("<h2>Functions</h2>");
         body.push_str("<table><thead><tr><th>Name</th><th>Signature</th><th>Description</th></tr></thead><tbody>");
         for f in &project_docs.functions {
-            let params: Vec<String> = f.params.iter().map(|(n, t)| {
-                if t.is_empty() { n.clone() } else { format!("{}: {}", n, t) }
-            }).collect();
+            let params: Vec<String> = f
+                .params
+                .iter()
+                .map(|(n, t)| {
+                    if t.is_empty() {
+                        n.clone()
+                    } else {
+                        format!("{}: {}", n, t)
+                    }
+                })
+                .collect();
             let sig = match &f.return_type {
                 Some(ret) => format!("fn {}({}) -> {}", f.name, params.join(", "), ret),
                 None => format!("fn {}({})", f.name, params.join(", ")),
@@ -1215,12 +1367,15 @@ fn generate_docs_index(project_docs: &docs::ProjectDocs) -> String {
 
     if !project_docs.types.is_empty() {
         body.push_str("<h2>Types</h2>");
-        body.push_str("<table><thead><tr><th>Name</th><th>Kind</th><th>Description</th></tr></thead><tbody>");
+        body.push_str(
+            "<table><thead><tr><th>Name</th><th>Kind</th><th>Description</th></tr></thead><tbody>",
+        );
         for t in &project_docs.types {
             let doc_line = t.doc.lines().next().unwrap_or("");
             body.push_str(&format!(
                 r#"<tr><td><a href="symbols/{}.html">{}</a></td><td>{}</td><td>{}</td></tr>"#,
-                html_escape(&t.name), html_escape(&t.name),
+                html_escape(&t.name),
+                html_escape(&t.name),
                 html_escape(&t.kind),
                 html_escape(doc_line)
             ));
@@ -1235,7 +1390,8 @@ fn generate_docs_index(project_docs: &docs::ProjectDocs) -> String {
             let doc_line = e.doc.lines().next().unwrap_or("");
             body.push_str(&format!(
                 r#"<tr><td><a href="symbols/{}.html">{}</a></td><td>{}</td><td>{}</td></tr>"#,
-                html_escape(&e.name), html_escape(&e.name),
+                html_escape(&e.name),
+                html_escape(&e.name),
                 html_escape(&e.variants.join(", ")),
                 html_escape(doc_line)
             ));
@@ -1250,9 +1406,17 @@ fn generate_symbol_page_fn(f: &docs::FnDoc, project_docs: &docs::ProjectDocs) ->
     let nav = docs_nav(&f.name, "../", project_docs);
     let mut body = String::new();
 
-    let params: Vec<String> = f.params.iter().map(|(n, t)| {
-        if t.is_empty() { n.clone() } else { format!("{}: {}", n, t) }
-    }).collect();
+    let params: Vec<String> = f
+        .params
+        .iter()
+        .map(|(n, t)| {
+            if t.is_empty() {
+                n.clone()
+            } else {
+                format!("{}: {}", n, t)
+            }
+        })
+        .collect();
     let sig = match &f.return_type {
         Some(ret) => format!("fn {}({}) -> {}", f.name, params.join(", "), ret),
         None => format!("fn {}({})", f.name, params.join(", ")),
@@ -1271,7 +1435,11 @@ fn generate_symbol_page_fn(f: &docs::FnDoc, project_docs: &docs::ProjectDocs) ->
         }
     }
 
-    body.push_str(&format!("<p>Defined in <code>{}:{}</code></p>", html_escape(&f.file), f.line));
+    body.push_str(&format!(
+        "<p>Defined in <code>{}:{}</code></p>",
+        html_escape(&f.file),
+        f.line
+    ));
 
     html_page(&f.name, &body, &nav, "../style.css")
 }
@@ -1280,7 +1448,11 @@ fn generate_symbol_page_type(t: &docs::TypeDocEntry, project_docs: &docs::Projec
     let nav = docs_nav(&t.name, "../", project_docs);
     let mut body = String::new();
 
-    body.push_str(&format!("<h1>{} {}</h1>", html_escape(&t.kind), html_escape(&t.name)));
+    body.push_str(&format!(
+        "<h1>{} {}</h1>",
+        html_escape(&t.kind),
+        html_escape(&t.name)
+    ));
     if t.exported {
         body.push_str(r#"<span class="badge badge-stable">exported</span> "#);
     }
@@ -1291,7 +1463,11 @@ fn generate_symbol_page_type(t: &docs::TypeDocEntry, project_docs: &docs::Projec
         }
     }
 
-    body.push_str(&format!("<p>Defined in <code>{}:{}</code></p>", html_escape(&t.file), t.line));
+    body.push_str(&format!(
+        "<p>Defined in <code>{}:{}</code></p>",
+        html_escape(&t.file),
+        t.line
+    ));
 
     html_page(&t.name, &body, &nav, "../style.css")
 }
@@ -1319,7 +1495,11 @@ fn generate_symbol_page_enum(e: &docs::EnumDoc, project_docs: &docs::ProjectDocs
         body.push_str("</ul>");
     }
 
-    body.push_str(&format!("<p>Defined in <code>{}:{}</code></p>", html_escape(&e.file), e.line));
+    body.push_str(&format!(
+        "<p>Defined in <code>{}:{}</code></p>",
+        html_escape(&e.file),
+        e.line
+    ));
 
     html_page(&e.name, &body, &nav, "../style.css")
 }
@@ -1357,8 +1537,7 @@ pub fn generate_lang_site(output_dir: &str) {
     let types = builtin_types();
 
     // style.css
-    std::fs::write(out.join("style.css"), generate_css())
-        .expect("Failed to write style.css");
+    std::fs::write(out.join("style.css"), generate_css()).expect("Failed to write style.css");
 
     // search-index.json
     std::fs::write(out.join("search-index.json"), generate_search_index())
@@ -1391,12 +1570,14 @@ pub fn generate_lang_site(output_dir: &str) {
     }
 
     // Errors page
-    std::fs::write(out.join("errors").join("index.html"), generate_errors_page())
-        .expect("Failed to write errors page");
+    std::fs::write(
+        out.join("errors").join("index.html"),
+        generate_errors_page(),
+    )
+    .expect("Failed to write errors page");
 
     // Spec page
-    std::fs::write(out.join("spec.html"), generate_spec_page())
-        .expect("Failed to write spec page");
+    std::fs::write(out.join("spec.html"), generate_spec_page()).expect("Failed to write spec page");
 
     // Cheatsheet page
     std::fs::write(out.join("cheatsheet.html"), generate_cheatsheet_page())
@@ -1416,8 +1597,7 @@ pub fn generate_docs_site(project_dir: &str, output_dir: &str) {
     let project_docs = docs::extract_project_docs(project_path);
 
     // style.css (same styles)
-    std::fs::write(out.join("style.css"), generate_css())
-        .expect("Failed to write style.css");
+    std::fs::write(out.join("style.css"), generate_css()).expect("Failed to write style.css");
 
     // index.html
     std::fs::write(out.join("index.html"), generate_docs_index(&project_docs))
@@ -1454,6 +1634,10 @@ pub fn generate_docs_site(project_dir: &str, output_dir: &str) {
     let lang_dir = out.join("lang");
     generate_lang_site(&lang_dir.to_string_lossy());
 
-    let symbol_count = project_docs.functions.len() + project_docs.types.len() + project_docs.enums.len();
-    eprintln!("Generated project docs ({} symbols) in {}/", symbol_count, output_dir);
+    let symbol_count =
+        project_docs.functions.len() + project_docs.types.len() + project_docs.enums.len();
+    eprintln!(
+        "Generated project docs ({} symbols) in {}/",
+        symbol_count, output_dir
+    );
 }

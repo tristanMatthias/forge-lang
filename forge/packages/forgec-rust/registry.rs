@@ -109,8 +109,16 @@ impl FeatureRegistry {
         let mut result: Vec<_> = groups.into_iter().collect();
         // Sort by minimum category_order in each group, then alphabetically by name
         result.sort_by(|(name_a, features_a), (name_b, features_b)| {
-            let min_a = features_a.iter().map(|f| f.category_order).min().unwrap_or(CategoryPriority::Default);
-            let min_b = features_b.iter().map(|f| f.category_order).min().unwrap_or(CategoryPriority::Default);
+            let min_a = features_a
+                .iter()
+                .map(|f| f.category_order)
+                .min()
+                .unwrap_or(CategoryPriority::Default);
+            let min_b = features_b
+                .iter()
+                .map(|f| f.category_order)
+                .min()
+                .unwrap_or(CategoryPriority::Default);
             min_a.cmp(&min_b).then_with(|| name_a.cmp(name_b))
         });
         result
@@ -147,7 +155,10 @@ impl FeatureRegistry {
         let mut wip = 0u32;
         let mut draft = 0u32;
 
-        println!("  {:<28} {:<10} {:<10} {}", "Feature", "Status", "Examples", "Deps");
+        println!(
+            "  {:<28} {:<10} {:<10} {}",
+            "Feature", "Status", "Examples", "Deps"
+        );
         println!("  {}", "─".repeat(70));
 
         for f in &features {
@@ -174,11 +185,7 @@ impl FeatureRegistry {
 
             println!(
                 "  {:<28} {:<10} {:>5} {}  {}",
-                f.id,
-                f.status,
-                examples_str,
-                status_icon,
-                deps
+                f.id, f.status, examples_str, status_icon, deps
             );
 
             match f.status {
@@ -211,16 +218,12 @@ impl FeatureRegistry {
         };
 
         // Find root features (no dependencies)
-        let roots: Vec<&&FeatureMetadata> = features
-            .iter()
-            .filter(|f| f.depends.is_empty())
-            .collect();
+        let roots: Vec<&&FeatureMetadata> =
+            features.iter().filter(|f| f.depends.is_empty()).collect();
 
         // Features with dependencies
-        let with_deps: Vec<&&FeatureMetadata> = features
-            .iter()
-            .filter(|f| !f.depends.is_empty())
-            .collect();
+        let with_deps: Vec<&&FeatureMetadata> =
+            features.iter().filter(|f| !f.depends.is_empty()).collect();
 
         // Print tree from roots that have dependents
         let has_dependents: Vec<&&FeatureMetadata> = roots
@@ -250,8 +253,7 @@ impl FeatureRegistry {
 
         // Print features whose dependencies aren't all registered
         if !with_deps.is_empty() {
-            let all_ids: std::collections::HashSet<&str> =
-                features.iter().map(|f| f.id).collect();
+            let all_ids: std::collections::HashSet<&str> = features.iter().map(|f| f.id).collect();
             let orphans: Vec<&&FeatureMetadata> = with_deps
                 .iter()
                 .filter(|f| f.depends.iter().any(|d| !all_ids.contains(d)))
@@ -325,7 +327,11 @@ impl FeatureRegistry {
             let (passed, total) = crate::test_runner::count_module_tests(&features_dir, id);
             if total > 0 {
                 println!();
-                let color = if passed == total { "\x1b[32m" } else { "\x1b[33m" };
+                let color = if passed == total {
+                    "\x1b[32m"
+                } else {
+                    "\x1b[33m"
+                };
                 println!("  Tests: {}{}/{} passing\x1b[0m", color, passed, total);
             }
         }
@@ -334,14 +340,13 @@ impl FeatureRegistry {
         println!("  Source: packages/forgec-rust/features/{}/mod.rs", f.id);
 
         // List example files
-        let examples_dir = std::path::PathBuf::from(format!("packages/forgec-rust/features/{}/examples", f.id));
+        let examples_dir =
+            std::path::PathBuf::from(format!("packages/forgec-rust/features/{}/examples", f.id));
         if examples_dir.is_dir() {
             if let Ok(entries) = std::fs::read_dir(&examples_dir) {
                 let mut files: Vec<_> = entries
                     .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.path().extension().and_then(|x| x.to_str()) == Some("fg")
-                    })
+                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("fg"))
                     .collect();
                 files.sort_by_key(|e| e.file_name());
 
@@ -776,14 +781,19 @@ impl BuiltinFnRegistry {
     }
 
     /// Check if a namespace.method is a registered builtin
-    pub fn get_namespace_method(namespace: &str, method: &str) -> Option<&'static BuiltinNamespaceMethod> {
-        inventory::iter::<BuiltinNamespaceMethod>.into_iter()
+    pub fn get_namespace_method(
+        namespace: &str,
+        method: &str,
+    ) -> Option<&'static BuiltinNamespaceMethod> {
+        inventory::iter::<BuiltinNamespaceMethod>
+            .into_iter()
             .find(|m| m.namespace == namespace && m.method == method)
     }
 
     /// Check if a name is a registered namespace
     pub fn is_namespace(name: &str) -> bool {
-        inventory::iter::<BuiltinNamespace>.into_iter()
+        inventory::iter::<BuiltinNamespace>
+            .into_iter()
             .any(|ns| ns.name == name)
     }
 
@@ -959,14 +969,18 @@ impl RuntimeFnRegistry {
     pub fn register_in_env(env: &mut crate::typeck::env::TypeEnv) {
         use crate::typeck::types::Type;
         for decl in Self::all() {
-            let params: Vec<Type> = decl.params.iter().map(|p| match p {
-                RuntimeType::I64 => Type::Int,
-                RuntimeType::F64 => Type::Float,
-                RuntimeType::I8 => Type::Int,
-                RuntimeType::Ptr => Type::Ptr,
-                RuntimeType::ForgeString => Type::String,
-                RuntimeType::ForgeList => Type::List(Box::new(Type::Unknown)),
-            }).collect();
+            let params: Vec<Type> = decl
+                .params
+                .iter()
+                .map(|p| match p {
+                    RuntimeType::I64 => Type::Int,
+                    RuntimeType::F64 => Type::Float,
+                    RuntimeType::I8 => Type::Int,
+                    RuntimeType::Ptr => Type::Ptr,
+                    RuntimeType::ForgeString => Type::String,
+                    RuntimeType::ForgeList => Type::List(Box::new(Type::Unknown)),
+                })
+                .collect();
             let return_type = match decl.ret {
                 RuntimeRetType::Void => Type::Void,
                 RuntimeRetType::I64 => Type::Int,

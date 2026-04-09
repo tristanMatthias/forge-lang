@@ -35,7 +35,10 @@ impl TypeChecker {
             }
 
             // Build struct type from column names + inferred types
-            let fields: Vec<(String, Type)> = data.columns.iter().enumerate()
+            let fields: Vec<(String, Type)> = data
+                .columns
+                .iter()
+                .enumerate()
                 .map(|(i, name)| {
                     let ty = col_types.get(i).cloned().unwrap_or(Type::Unknown);
                     (name.clone(), ty)

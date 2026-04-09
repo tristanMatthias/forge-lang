@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::errors::CompileError;
-use crate::parser::ComponentMeta;
 use crate::lexer::Lexer;
 use crate::parser::ast::{Program, Statement};
+use crate::parser::ComponentMeta;
 use crate::parser::Parser;
 
 use super::types::{ExportedSymbol, ResolvedImport};
@@ -102,13 +102,17 @@ pub fn collect_exports(program: &Program) -> Vec<ExportedSymbol> {
             }
             Statement::ComponentBlock(decl) if decl.exported => {
                 // Component name is the first Ident arg (e.g., `command build` → "build")
-                let name = decl.args.iter().find_map(|a| {
-                    if let crate::parser::ast::ComponentArg::Ident(n, _) = a {
-                        Some(n.clone())
-                    } else {
-                        None
-                    }
-                }).unwrap_or_else(|| decl.component.clone());
+                let name = decl
+                    .args
+                    .iter()
+                    .find_map(|a| {
+                        if let crate::parser::ast::ComponentArg::Ident(n, _) = a {
+                            Some(n.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| decl.component.clone());
                 exports.push(ExportedSymbol::ComponentBlock {
                     name,
                     decl: decl.clone(),
@@ -154,7 +158,9 @@ pub fn resolve_mod_tree(
 
         // Find the module file: foo.fg or foo/mod.fg
         let file_path = find_mod_file(source_dir, &mod_name, source_path)?;
-        let canonical = file_path.canonicalize().unwrap_or_else(|_| file_path.clone());
+        let canonical = file_path
+            .canonicalize()
+            .unwrap_or_else(|_| file_path.clone());
 
         if seen.contains(&canonical) {
             return Err(CompileError::CliError {
@@ -172,7 +178,13 @@ pub fn resolve_mod_tree(
         // Recurse into the module to find nested mod declarations.
         // For directory modules (foo/mod.fg), nested mods resolve relative to foo/.
         // For file modules (foo.fg), nested mods resolve relative to foo/ (create dir).
-        let nested = resolve_mod_tree(&mod_program, &file_path, &module_path, seen, component_registry)?;
+        let nested = resolve_mod_tree(
+            &mod_program,
+            &file_path,
+            &module_path,
+            seen,
+            component_registry,
+        )?;
 
         // Children (dependencies) before parent so types are defined in order
         modules.extend(nested);
@@ -284,9 +296,12 @@ pub fn resolve_use_statements(
 
         let module_path = path.join(".");
 
-        let exports = module_exports
-            .get(&module_path)
-            .ok_or_else(|| format!("unresolved module: {} (did you forget `mod {}`?)", module_path, path[0]))?;
+        let exports = module_exports.get(&module_path).ok_or_else(|| {
+            format!(
+                "unresolved module: {} (did you forget `mod {}`?)",
+                module_path, path[0]
+            )
+        })?;
 
         if items.is_empty() {
             // For the path-only case, module is path[..n-1], item is path[n-1]
@@ -294,9 +309,12 @@ pub fn resolve_use_statements(
                 let mod_path = path[..path.len() - 1].join(".");
                 let item_name = path.last().unwrap();
 
-                let mod_exports = module_exports
-                    .get(&mod_path)
-                    .ok_or_else(|| format!("unresolved module: {} (did you forget `mod {}`?)", mod_path, path[0]))?;
+                let mod_exports = module_exports.get(&mod_path).ok_or_else(|| {
+                    format!(
+                        "unresolved module: {} (did you forget `mod {}`?)",
+                        mod_path, path[0]
+                    )
+                })?;
 
                 let sym = mod_exports
                     .iter()
@@ -383,7 +401,8 @@ pub fn resolve_all_imports(
         if let Some(dot_pos) = path.rfind('.') {
             let parent = &path[..dot_pos];
             if let Some(child_exports) = module_exports.get(path).cloned() {
-                module_exports.entry(parent.to_string())
+                module_exports
+                    .entry(parent.to_string())
                     .or_default()
                     .extend(child_exports);
             }
@@ -395,7 +414,8 @@ pub fn resolve_all_imports(
     //    blocks from sub-modules are placed into the main program.
     //
     //    Snapshot module statements first for lookup during injection.
-    let module_stmts: Vec<Vec<Statement>> = local_modules.iter()
+    let module_stmts: Vec<Vec<Statement>> = local_modules
+        .iter()
         .map(|(_, _, _, prog)| prog.statements.clone())
         .collect();
 
@@ -407,8 +427,11 @@ pub fn resolve_all_imports(
     }
 
     // 4. Resolve the main program's own imports
-    let main_imports = resolve_use_statements(program, &module_exports)
-        .map_err(|e| CompileError::CliError { message: e, help: None })?;
+    let main_imports =
+        resolve_use_statements(program, &module_exports).map_err(|e| CompileError::CliError {
+            message: e,
+            help: None,
+        })?;
 
     // 5. Merge all module definitions into the main program.
     //
@@ -461,36 +484,49 @@ pub fn resolve_all_imports(
             for stmt in &mod_program.statements {
                 match stmt {
                     Statement::ModDecl { .. } | Statement::Use { .. } => continue,
-                    Statement::Feature(fe) if fe.feature_id == "imports" && fe.kind == "Use" => continue,
+                    Statement::Feature(fe) if fe.feature_id == "imports" && fe.kind == "Use" => {
+                        continue
+                    }
                     // Deduplicate type/enum/fn definitions
                     Statement::EnumDecl { name, .. } | Statement::TypeDecl { name, .. } => {
-                        if !seen_types.insert(name.clone()) { continue; }
-                        program.statements.insert(insert_pos, stmt.clone()); insert_pos += 1;
+                        if !seen_types.insert(name.clone()) {
+                            continue;
+                        }
+                        program.statements.insert(insert_pos, stmt.clone());
+                        insert_pos += 1;
                     }
                     Statement::FnDecl { name, .. } => {
-                        if !seen_fns.insert(name.clone()) { continue; }
-                        program.statements.insert(insert_pos, stmt.clone()); insert_pos += 1;
+                        if !seen_fns.insert(name.clone()) {
+                            continue;
+                        }
+                        program.statements.insert(insert_pos, stmt.clone());
+                        insert_pos += 1;
                     }
                     Statement::Feature(fe) => {
                         use crate::feature_data;
                         let skip = if fe.feature_id == "enums" {
                             use crate::features::enums::types::EnumDeclData;
-                            feature_data!(fe, EnumDeclData).map_or(false, |d| !seen_types.insert(d.name.clone()))
+                            feature_data!(fe, EnumDeclData)
+                                .map_or(false, |d| !seen_types.insert(d.name.clone()))
                         } else if fe.feature_id == "structs" {
                             use crate::features::structs::types::TypeDeclData;
-                            feature_data!(fe, TypeDeclData).map_or(false, |d| !seen_types.insert(d.name.clone()))
+                            feature_data!(fe, TypeDeclData)
+                                .map_or(false, |d| !seen_types.insert(d.name.clone()))
                         } else if fe.feature_id == "functions" {
                             use crate::features::functions::types::FnDeclData;
-                            feature_data!(fe, FnDeclData).map_or(false, |d| !seen_fns.insert(d.name.clone()))
+                            feature_data!(fe, FnDeclData)
+                                .map_or(false, |d| !seen_fns.insert(d.name.clone()))
                         } else {
                             false
                         };
                         if !skip {
-                            program.statements.insert(insert_pos, stmt.clone()); insert_pos += 1;
+                            program.statements.insert(insert_pos, stmt.clone());
+                            insert_pos += 1;
                         }
                     }
                     _ => {
-                        program.statements.insert(insert_pos, stmt.clone()); insert_pos += 1;
+                        program.statements.insert(insert_pos, stmt.clone());
+                        insert_pos += 1;
                     }
                 }
             }
@@ -512,19 +548,33 @@ fn inject_imports_into_program(
 ) {
     for imp in imports {
         // Inject type/enum declarations directly into the program
-        if let ExportedSymbol::TypeDecl { stmt, .. } | ExportedSymbol::EnumDecl { stmt, .. } = &imp.symbol {
+        if let ExportedSymbol::TypeDecl { stmt, .. } | ExportedSymbol::EnumDecl { stmt, .. } =
+            &imp.symbol
+        {
             program.statements.insert(0, stmt.clone());
             continue;
         }
 
-        if let ExportedSymbol::Function { name, params, return_type, .. } = &imp.symbol {
+        if let ExportedSymbol::Function {
+            name,
+            params,
+            return_type,
+            ..
+        } = &imp.symbol
+        {
             'outer: for stmts in module_stmts {
                 for stmt in stmts {
                     let found = match stmt {
-                        Statement::FnDecl { name: fn_name, body, span, type_params, .. } if fn_name == name => {
-                            Some((type_params.clone(), body.clone(), *span))
-                        }
-                        Statement::Feature(fe) if fe.feature_id == "functions" && fe.kind == "FnDecl" => {
+                        Statement::FnDecl {
+                            name: fn_name,
+                            body,
+                            span,
+                            type_params,
+                            ..
+                        } if fn_name == name => Some((type_params.clone(), body.clone(), *span)),
+                        Statement::Feature(fe)
+                            if fe.feature_id == "functions" && fe.kind == "FnDecl" =>
+                        {
                             use crate::feature_data;
                             use crate::features::functions::types::FnDeclData;
                             if let Some(data) = feature_data!(fe, FnDeclData) {
@@ -540,15 +590,18 @@ fn inject_imports_into_program(
                         _ => None,
                     };
                     if let Some((type_params, body, span)) = found {
-                        program.statements.insert(0, Statement::FnDecl {
-                            name: imp.local_name.clone(),
-                            type_params,
-                            params: params.clone(),
-                            return_type: return_type.clone(),
-                            body,
-                            exported: false,
-                            span,
-                        });
+                        program.statements.insert(
+                            0,
+                            Statement::FnDecl {
+                                name: imp.local_name.clone(),
+                                type_params,
+                                params: params.clone(),
+                                return_type: return_type.clone(),
+                                body,
+                                exported: false,
+                                span,
+                            },
+                        );
                         break 'outer;
                     }
                 }

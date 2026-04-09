@@ -2,7 +2,7 @@ use super::*;
 
 impl<'ctx> Codegen<'ctx> {
     pub(crate) fn declare_runtime_functions(&mut self) {
-        use crate::registry::{RuntimeFnRegistry, RuntimeType, RuntimeRetType};
+        use crate::registry::{RuntimeFnRegistry, RuntimeRetType, RuntimeType};
 
         let i64_type = self.context.i64_type();
         let f64_type = self.context.f64_type();
@@ -18,20 +18,27 @@ impl<'ctx> Codegen<'ctx> {
                 continue;
             }
 
-            let list_type = self.context.struct_type(&[ptr_type.into(), i64_type.into()], false);
-            let param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> = decl.params.iter().map(|p| match p {
-                RuntimeType::I64 => i64_type.into(),
-                RuntimeType::F64 => f64_type.into(),
-                RuntimeType::I8 => i8_type.into(),
-                RuntimeType::Ptr => ptr_type.into(),
-                RuntimeType::ForgeString => string_type.into(),
-                RuntimeType::ForgeList => list_type.into(),
-            }).collect();
+            let list_type = self
+                .context
+                .struct_type(&[ptr_type.into(), i64_type.into()], false);
+            let param_types: Vec<inkwell::types::BasicMetadataTypeEnum<'ctx>> = decl
+                .params
+                .iter()
+                .map(|p| match p {
+                    RuntimeType::I64 => i64_type.into(),
+                    RuntimeType::F64 => f64_type.into(),
+                    RuntimeType::I8 => i8_type.into(),
+                    RuntimeType::Ptr => ptr_type.into(),
+                    RuntimeType::ForgeString => string_type.into(),
+                    RuntimeType::ForgeList => list_type.into(),
+                })
+                .collect();
 
             // Handle snprintf specially (variadic)
             if decl.name == "snprintf" {
                 if self.module.get_function(decl.name).is_none() {
-                    let ft = i32_type.fn_type(&[ptr_type.into(), i64_type.into(), ptr_type.into()], true);
+                    let ft = i32_type
+                        .fn_type(&[ptr_type.into(), i64_type.into(), ptr_type.into()], true);
                     self.module.add_function(decl.name, ft, None);
                 }
                 continue;

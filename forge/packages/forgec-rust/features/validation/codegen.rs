@@ -13,10 +13,7 @@ impl<'ctx> Codegen<'ctx> {
     ///
     /// Pipeline: @default → @transform → validation checks
     /// Returns Ok(transformed_value) if all pass, Err(ValidationError) if any fail.
-    pub(crate) fn compile_validate(
-        &mut self,
-        args: &[CallArg],
-    ) -> Option<BasicValueEnum<'ctx>> {
+    pub(crate) fn compile_validate(&mut self, args: &[CallArg]) -> Option<BasicValueEnum<'ctx>> {
         if args.len() < 2 {
             return None;
         }
@@ -35,7 +32,10 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         // Look up annotations for this type
-        let annotations = self.type_checker.env.type_annotations
+        let annotations = self
+            .type_checker
+            .env
+            .type_annotations
             .get(&type_name)
             .cloned()
             .unwrap_or_default();
@@ -65,12 +65,14 @@ impl<'ctx> Codegen<'ctx> {
             let field_type = &struct_fields[field_idx].1;
 
             for ann in field_anns {
-                if ann.name != "default" { continue; }
-                if !matches!(field_type, Type::Nullable(_)) { continue; }
+                if ann.name != "default" {
+                    continue;
+                }
+                if !matches!(field_type, Type::Nullable(_)) {
+                    continue;
+                }
 
-                struct_val = self.apply_default(
-                    struct_val, field_idx, ann, field_type, current_fn,
-                );
+                struct_val = self.apply_default(struct_val, field_idx, ann, field_type, current_fn);
             }
         }
 
@@ -83,7 +85,9 @@ impl<'ctx> Codegen<'ctx> {
             let field_type = &struct_fields[field_idx].1;
 
             for ann in field_anns {
-                if ann.name != "transform" { continue; }
+                if ann.name != "transform" {
+                    continue;
+                }
 
                 if let Some(new_val) = self.apply_transform(
                     struct_val, field_idx, ann, field_type, is_partial, current_fn,
@@ -103,9 +107,14 @@ impl<'ctx> Codegen<'ctx> {
         let field_error_size = field_error_type.size_of().unwrap();
 
         // Count max possible errors (only from validation annotations)
-        let max_errors: u64 = annotations.iter().map(|(_, anns)| {
-            anns.iter().filter(|a| matches!(a.name.as_str(), "min" | "max" | "validate" | "pattern")).count() as u64
-        }).sum();
+        let max_errors: u64 = annotations
+            .iter()
+            .map(|(_, anns)| {
+                anns.iter()
+                    .filter(|a| matches!(a.name.as_str(), "min" | "max" | "validate" | "pattern"))
+                    .count() as u64
+            })
+            .sum();
 
         if max_errors == 0 {
             // Only @default/@transform annotations, no validation to do
@@ -113,20 +122,26 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Allocate error array
-        let total_size = self.builder.build_int_mul(
-            field_error_size,
-            self.context.i64_type().const_int(max_errors, false),
-            "err_array_size",
-        ).unwrap();
-        let errors_ptr = self.call_runtime(
-            "forge_alloc", &[total_size.into()], "errors_data"
-        )?.into_pointer_value();
+        let total_size = self
+            .builder
+            .build_int_mul(
+                field_error_size,
+                self.context.i64_type().const_int(max_errors, false),
+                "err_array_size",
+            )
+            .unwrap();
+        let errors_ptr = self
+            .call_runtime("forge_alloc", &[total_size.into()], "errors_data")?
+            .into_pointer_value();
 
         // Error counter
-        let error_count_ptr = self.builder.build_alloca(
-            self.context.i64_type(), "error_count"
-        ).unwrap();
-        self.builder.build_store(error_count_ptr, self.context.i64_type().const_zero()).unwrap();
+        let error_count_ptr = self
+            .builder
+            .build_alloca(self.context.i64_type(), "error_count")
+            .unwrap();
+        self.builder
+            .build_store(error_count_ptr, self.context.i64_type().const_zero())
+            .unwrap();
 
         // For each annotated field, generate validation checks
         for (field_name, field_anns) in &annotations {
@@ -138,25 +153,38 @@ impl<'ctx> Codegen<'ctx> {
             let field_type = &struct_fields[field_idx].1;
 
             // Skip fields with only non-validation annotations
-            let has_validation = field_anns.iter().any(|a| {
-                matches!(a.name.as_str(), "min" | "max" | "validate" | "pattern")
-            });
-            if !has_validation { continue; }
+            let has_validation = field_anns
+                .iter()
+                .any(|a| matches!(a.name.as_str(), "min" | "max" | "validate" | "pattern"));
+            if !has_validation {
+                continue;
+            }
 
             // Extract field value from (possibly transformed) struct
-            let field_val = self.builder.build_extract_value(
-                struct_val.into_struct_value(),
-                field_idx as u32,
-                &format!("field_{}", field_name),
-            ).unwrap();
+            let field_val = self
+                .builder
+                .build_extract_value(
+                    struct_val.into_struct_value(),
+                    field_idx as u32,
+                    &format!("field_{}", field_name),
+                )
+                .unwrap();
 
             // For partial types, skip validation if field is null
             let after_field_block = if is_partial && matches!(field_type, Type::Nullable(_)) {
-                let has_val_bool = self.extract_tag_is_set(field_val.into_struct_value(), "has_val").unwrap();
+                let has_val_bool = self
+                    .extract_tag_is_set(field_val.into_struct_value(), "has_val")
+                    .unwrap();
 
-                let check_block = self.context.append_basic_block(current_fn, &format!("check_{}", field_name));
-                let skip_block = self.context.append_basic_block(current_fn, &format!("skip_{}", field_name));
-                self.builder.build_conditional_branch(has_val_bool, check_block, skip_block).unwrap();
+                let check_block = self
+                    .context
+                    .append_basic_block(current_fn, &format!("check_{}", field_name));
+                let skip_block = self
+                    .context
+                    .append_basic_block(current_fn, &format!("skip_{}", field_name));
+                self.builder
+                    .build_conditional_branch(has_val_bool, check_block, skip_block)
+                    .unwrap();
                 self.builder.position_at_end(check_block);
 
                 Some(skip_block)
@@ -166,7 +194,8 @@ impl<'ctx> Codegen<'ctx> {
 
             // Get the actual value to check (unwrap nullable for partial types)
             let check_val = if is_partial && matches!(field_type, Type::Nullable(_)) {
-                self.extract_tagged_payload(field_val.into_struct_value(), "inner").unwrap()
+                self.extract_tagged_payload(field_val.into_struct_value(), "inner")
+                    .unwrap()
             } else {
                 field_val
             };
@@ -198,22 +227,31 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Build the final result based on error count
-        let final_count = self.builder.build_load(
-            self.context.i64_type(), error_count_ptr, "final_count"
-        ).unwrap().into_int_value();
+        let final_count = self
+            .builder
+            .build_load(self.context.i64_type(), error_count_ptr, "final_count")
+            .unwrap()
+            .into_int_value();
 
-        let has_errors = self.builder.build_int_compare(
-            IntPredicate::NE,
-            final_count,
-            self.context.i64_type().const_zero(),
-            "has_errors",
-        ).unwrap();
+        let has_errors = self
+            .builder
+            .build_int_compare(
+                IntPredicate::NE,
+                final_count,
+                self.context.i64_type().const_zero(),
+                "has_errors",
+            )
+            .unwrap();
 
         let ok_block = self.context.append_basic_block(current_fn, "validate_ok");
         let err_block = self.context.append_basic_block(current_fn, "validate_err");
-        let merge_block = self.context.append_basic_block(current_fn, "validate_merge");
+        let merge_block = self
+            .context
+            .append_basic_block(current_fn, "validate_merge");
 
-        self.builder.build_conditional_branch(has_errors, err_block, ok_block).unwrap();
+        self.builder
+            .build_conditional_branch(has_errors, err_block, ok_block)
+            .unwrap();
 
         // Build the Result type
         let result_type = Self::validation_result_type(&target_type);
@@ -222,7 +260,9 @@ impl<'ctx> Codegen<'ctx> {
         // OK path — return the transformed struct
         self.builder.position_at_end(ok_block);
         let ok_result = self.build_tagged_result(result_llvm_ty, 0, struct_val, "ok");
-        self.builder.build_unconditional_branch(merge_block).unwrap();
+        self.builder
+            .build_unconditional_branch(merge_block)
+            .unwrap();
 
         // ERR path
         self.builder.position_at_end(err_block);
@@ -234,25 +274,40 @@ impl<'ctx> Codegen<'ctx> {
             false,
         );
         let mut list_val = list_type.get_undef();
-        list_val = self.builder.build_insert_value(list_val, errors_ptr, 0, "list_ptr")
-            .unwrap().into_struct_value();
-        let final_count_err = self.builder.build_load(
-            self.context.i64_type(), error_count_ptr, "final_count_err"
-        ).unwrap();
-        list_val = self.builder.build_insert_value(list_val, final_count_err, 1, "list_len")
-            .unwrap().into_struct_value();
+        list_val = self
+            .builder
+            .build_insert_value(list_val, errors_ptr, 0, "list_ptr")
+            .unwrap()
+            .into_struct_value();
+        let final_count_err = self
+            .builder
+            .build_load(self.context.i64_type(), error_count_ptr, "final_count_err")
+            .unwrap();
+        list_val = self
+            .builder
+            .build_insert_value(list_val, final_count_err, 1, "list_len")
+            .unwrap()
+            .into_struct_value();
 
         let ve_type = self.context.struct_type(&[list_type.into()], false);
         let mut ve_val = ve_type.get_undef();
-        ve_val = self.builder.build_insert_value(ve_val, list_val, 0, "ve_fields")
-            .unwrap().into_struct_value();
+        ve_val = self
+            .builder
+            .build_insert_value(ve_val, list_val, 0, "ve_fields")
+            .unwrap()
+            .into_struct_value();
 
         let err_result = self.build_tagged_result(result_llvm_ty, 1, ve_val.into(), "err");
-        self.builder.build_unconditional_branch(merge_block).unwrap();
+        self.builder
+            .build_unconditional_branch(merge_block)
+            .unwrap();
 
         // Merge
         self.builder.position_at_end(merge_block);
-        let phi = self.builder.build_phi(result_llvm_ty, "validate_result").unwrap();
+        let phi = self
+            .builder
+            .build_phi(result_llvm_ty, "validate_result")
+            .unwrap();
         phi.add_incoming(&[(&ok_result, ok_block), (&err_result, err_block)]);
 
         Some(phi.as_basic_value())
@@ -273,24 +328,31 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         // Extract the nullable field
-        let field_val = self.builder.build_extract_value(
-            struct_val.into_struct_value(), field_idx as u32, "default_field"
-        ).unwrap();
+        let field_val = self
+            .builder
+            .build_extract_value(
+                struct_val.into_struct_value(),
+                field_idx as u32,
+                "default_field",
+            )
+            .unwrap();
 
-        let has_val = self.extract_tag_is_set(field_val.into_struct_value(), "default").unwrap();
+        let has_val = self
+            .extract_tag_is_set(field_val.into_struct_value(), "default")
+            .unwrap();
         let is_null = self.builder.build_not(has_val, "is_null").unwrap();
 
         let apply_block = self.context.append_basic_block(current_fn, "apply_default");
         let skip_block = self.context.append_basic_block(current_fn, "skip_default");
 
-        self.builder.build_conditional_branch(is_null, apply_block, skip_block).unwrap();
+        self.builder
+            .build_conditional_branch(is_null, apply_block, skip_block)
+            .unwrap();
 
         // Apply default: build nullable { 1, default_value }
         self.builder.position_at_end(apply_block);
         let default_val = match (&ann.args.first(), inner_type) {
-            (Some(AnnotationArg::String(s)), Type::String) => {
-                Some(self.make_forge_string(s))
-            }
+            (Some(AnnotationArg::String(s)), Type::String) => Some(self.make_forge_string(s)),
             (Some(AnnotationArg::Int(n)), Type::Int) => {
                 Some(self.context.i64_type().const_int(*n as u64, true).into())
             }
@@ -312,17 +374,33 @@ impl<'ctx> Codegen<'ctx> {
             let nullable_llvm = self.type_to_llvm_basic(field_type);
             let nullable_ty = nullable_llvm.into_struct_type();
             let mut nullable_val = nullable_ty.get_undef();
-            nullable_val = self.builder.build_insert_value(
-                nullable_val, self.context.i8_type().const_int(1, false), 0, "has"
-            ).unwrap().into_struct_value();
-            nullable_val = self.builder.build_insert_value(
-                nullable_val, dv, 1, "default_val"
-            ).unwrap().into_struct_value();
+            nullable_val = self
+                .builder
+                .build_insert_value(
+                    nullable_val,
+                    self.context.i8_type().const_int(1, false),
+                    0,
+                    "has",
+                )
+                .unwrap()
+                .into_struct_value();
+            nullable_val = self
+                .builder
+                .build_insert_value(nullable_val, dv, 1, "default_val")
+                .unwrap()
+                .into_struct_value();
 
             // Replace field in struct
-            self.builder.build_insert_value(
-                struct_val.into_struct_value(), nullable_val, field_idx as u32, "with_default"
-            ).unwrap().into_struct_value().into()
+            self.builder
+                .build_insert_value(
+                    struct_val.into_struct_value(),
+                    nullable_val,
+                    field_idx as u32,
+                    "with_default",
+                )
+                .unwrap()
+                .into_struct_value()
+                .into()
         } else {
             struct_val
         };
@@ -332,13 +410,19 @@ impl<'ctx> Codegen<'ctx> {
 
         // Merge
         self.builder.position_at_end(skip_block);
-        let phi = self.builder.build_phi(struct_val.get_type(), "default_merged").unwrap();
-        phi.add_incoming(&[(&applied_struct, apply_end), (&struct_val, {
-            // The block before the conditional branch — we need the predecessor
-            // The skip_block has two incoming edges: apply_block and the original block
-            // We need the block that branched to skip_block directly
-            apply_block.get_previous_basic_block().unwrap()
-        })]);
+        let phi = self
+            .builder
+            .build_phi(struct_val.get_type(), "default_merged")
+            .unwrap();
+        phi.add_incoming(&[
+            (&applied_struct, apply_end),
+            (&struct_val, {
+                // The block before the conditional branch — we need the predecessor
+                // The skip_block has two incoming edges: apply_block and the original block
+                // We need the block that branched to skip_block directly
+                apply_block.get_previous_basic_block().unwrap()
+            }),
+        ]);
         phi.as_basic_value()
     }
 
@@ -360,19 +444,28 @@ impl<'ctx> Codegen<'ctx> {
 
         // For partial nullable fields, only transform if present
         if is_partial && matches!(field_type, Type::Nullable(_)) {
-            let field_val = self.builder.build_extract_value(
-                struct_val.into_struct_value(), field_idx as u32, "tf_field"
-            ).unwrap();
-            let has_val_bool = self.extract_tag_is_set(field_val.into_struct_value(), "tf").unwrap();
+            let field_val = self
+                .builder
+                .build_extract_value(struct_val.into_struct_value(), field_idx as u32, "tf_field")
+                .unwrap();
+            let has_val_bool = self
+                .extract_tag_is_set(field_val.into_struct_value(), "tf")
+                .unwrap();
 
             let transform_block = self.context.append_basic_block(current_fn, "transform");
-            let skip_block = self.context.append_basic_block(current_fn, "skip_transform");
+            let skip_block = self
+                .context
+                .append_basic_block(current_fn, "skip_transform");
 
-            self.builder.build_conditional_branch(has_val_bool, transform_block, skip_block).unwrap();
+            self.builder
+                .build_conditional_branch(has_val_bool, transform_block, skip_block)
+                .unwrap();
             let pre_block = self.builder.get_insert_block().unwrap();
 
             self.builder.position_at_end(transform_block);
-            let inner_val = self.extract_tagged_payload(field_val.into_struct_value(), "tf").unwrap();
+            let inner_val = self
+                .extract_tagged_payload(field_val.into_struct_value(), "tf")
+                .unwrap();
 
             // Bind `it` and compile transform expression
             self.push_scope();
@@ -389,30 +482,51 @@ impl<'ctx> Codegen<'ctx> {
             // Re-wrap in nullable
             let nullable_llvm = self.type_to_llvm_basic(field_type).into_struct_type();
             let mut new_nullable = nullable_llvm.get_undef();
-            new_nullable = self.builder.build_insert_value(
-                new_nullable, self.context.i8_type().const_int(1, false), 0, "has"
-            ).unwrap().into_struct_value();
-            new_nullable = self.builder.build_insert_value(
-                new_nullable, transformed, 1, "transformed"
-            ).unwrap().into_struct_value();
+            new_nullable = self
+                .builder
+                .build_insert_value(
+                    new_nullable,
+                    self.context.i8_type().const_int(1, false),
+                    0,
+                    "has",
+                )
+                .unwrap()
+                .into_struct_value();
+            new_nullable = self
+                .builder
+                .build_insert_value(new_nullable, transformed, 1, "transformed")
+                .unwrap()
+                .into_struct_value();
 
-            let new_struct: BasicValueEnum = self.builder.build_insert_value(
-                struct_val.into_struct_value(), new_nullable, field_idx as u32, "with_transform"
-            ).unwrap().into_struct_value().into();
+            let new_struct: BasicValueEnum = self
+                .builder
+                .build_insert_value(
+                    struct_val.into_struct_value(),
+                    new_nullable,
+                    field_idx as u32,
+                    "with_transform",
+                )
+                .unwrap()
+                .into_struct_value()
+                .into();
 
             self.builder.build_unconditional_branch(skip_block).unwrap();
             let transform_end = self.builder.get_insert_block().unwrap();
 
             self.builder.position_at_end(skip_block);
-            let phi = self.builder.build_phi(struct_val.get_type(), "tf_merged").unwrap();
+            let phi = self
+                .builder
+                .build_phi(struct_val.get_type(), "tf_merged")
+                .unwrap();
             phi.add_incoming(&[(&new_struct, transform_end), (&struct_val, pre_block)]);
             return Some(phi.as_basic_value());
         }
 
         // Non-nullable field: always transform
-        let field_val = self.builder.build_extract_value(
-            struct_val.into_struct_value(), field_idx as u32, "tf_field"
-        ).unwrap();
+        let field_val = self
+            .builder
+            .build_extract_value(struct_val.into_struct_value(), field_idx as u32, "tf_field")
+            .unwrap();
 
         // Bind `it` and compile transform expression
         self.push_scope();
@@ -427,9 +541,16 @@ impl<'ctx> Codegen<'ctx> {
         self.pop_scope();
 
         // Replace field in struct
-        let new_struct = self.builder.build_insert_value(
-            struct_val.into_struct_value(), transformed, field_idx as u32, "with_transform"
-        ).unwrap().into_struct_value();
+        let new_struct = self
+            .builder
+            .build_insert_value(
+                struct_val.into_struct_value(),
+                transformed,
+                field_idx as u32,
+                "with_transform",
+            )
+            .unwrap()
+            .into_struct_value();
         Some(new_struct.into())
     }
 
@@ -450,16 +571,24 @@ impl<'ctx> Codegen<'ctx> {
         if ann.name == "validate" {
             if let Some(AnnotationArg::Expr(closure_expr)) = ann.args.first() {
                 let closure_parts = match closure_expr {
-                    Expr::Feature(fe) if fe.feature_id == "closures" => {
-                        fe.data.as_any().downcast_ref::<crate::features::closures::types::ClosureData>()
-                            .map(|data| (data.params.as_slice(), data.body.as_ref()))
-                    }
+                    Expr::Feature(fe) if fe.feature_id == "closures" => fe
+                        .data
+                        .as_any()
+                        .downcast_ref::<crate::features::closures::types::ClosureData>()
+                        .map(|data| (data.params.as_slice(), data.body.as_ref())),
                     _ => None,
                 };
                 if let Some((params, body)) = closure_parts {
                     self.compile_closure_validator_check(
-                        params, body, field_val, field_type, field_name,
-                        errors_ptr, error_count_ptr, field_error_type, current_fn,
+                        params,
+                        body,
+                        field_val,
+                        field_type,
+                        field_name,
+                        errors_ptr,
+                        error_count_ptr,
+                        field_error_type,
+                        current_fn,
                     );
                     return;
                 }
@@ -480,14 +609,16 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         // Create blocks for pass/fail
-        let fail_block = self.context.append_basic_block(
-            current_fn, &format!("fail_{}_{}", field_name, ann.name)
-        );
-        let cont_block = self.context.append_basic_block(
-            current_fn, &format!("cont_{}_{}", field_name, ann.name)
-        );
+        let fail_block = self
+            .context
+            .append_basic_block(current_fn, &format!("fail_{}_{}", field_name, ann.name));
+        let cont_block = self
+            .context
+            .append_basic_block(current_fn, &format!("cont_{}_{}", field_name, ann.name));
 
-        self.builder.build_conditional_branch(check_ok, cont_block, fail_block).unwrap();
+        self.builder
+            .build_conditional_branch(check_ok, cont_block, fail_block)
+            .unwrap();
 
         // Fail block: store FieldError
         self.builder.position_at_end(fail_block);
@@ -565,30 +696,44 @@ impl<'ctx> Codegen<'ctx> {
         let struct_val = result_val.into_struct_value();
         let is_err = self.extract_tag_is_set(struct_val, "closure").unwrap();
 
-        let fail_block = self.context.append_basic_block(
-            current_fn, &format!("fail_{}_closure", field_name)
-        );
-        let cont_block = self.context.append_basic_block(
-            current_fn, &format!("cont_{}_closure", field_name)
-        );
+        let fail_block = self
+            .context
+            .append_basic_block(current_fn, &format!("fail_{}_closure", field_name));
+        let cont_block = self
+            .context
+            .append_basic_block(current_fn, &format!("cont_{}_closure", field_name));
 
-        self.builder.build_conditional_branch(is_err, fail_block, cont_block).unwrap();
+        self.builder
+            .build_conditional_branch(is_err, fail_block, cont_block)
+            .unwrap();
 
         // Fail block: extract error message from Result Err payload and store FieldError
         self.builder.position_at_end(fail_block);
 
         // Extract the error string from the Result payload via memory reinterpret
         let result_llvm_ty = self.type_to_llvm_basic(&result_type).into_struct_type();
-        let result_alloca = self.builder.build_alloca(result_llvm_ty, "closure_result_tmp").unwrap();
+        let result_alloca = self
+            .builder
+            .build_alloca(result_llvm_ty, "closure_result_tmp")
+            .unwrap();
         self.builder.build_store(result_alloca, struct_val).unwrap();
-        let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, result_alloca, 1, "err_payload_ptr").unwrap();
-        let val_ptr = self.builder.build_bit_cast(
-            payload_ptr, self.context.ptr_type(AddressSpace::default()), "err_val_ptr"
-        ).unwrap();
+        let payload_ptr = self
+            .builder
+            .build_struct_gep(result_llvm_ty, result_alloca, 1, "err_payload_ptr")
+            .unwrap();
+        let val_ptr = self
+            .builder
+            .build_bit_cast(
+                payload_ptr,
+                self.context.ptr_type(AddressSpace::default()),
+                "err_val_ptr",
+            )
+            .unwrap();
         let err_string_type = self.type_to_llvm_basic(&Type::String);
-        let err_msg = self.builder.build_load(
-            err_string_type, val_ptr.into_pointer_value(), "err_msg"
-        ).unwrap();
+        let err_msg = self
+            .builder
+            .build_load(err_string_type, val_ptr.into_pointer_value(), "err_msg")
+            .unwrap();
 
         let field_str = self.make_forge_string(field_name);
         let rule_str = self.make_forge_string("validate");
@@ -609,12 +754,21 @@ impl<'ctx> Codegen<'ctx> {
         msg_str: BasicValueEnum<'ctx>,
     ) -> inkwell::values::StructValue<'ctx> {
         let mut error_val = field_error_type.get_undef();
-        error_val = self.builder.build_insert_value(error_val, field_str, 0, "fe_field")
-            .unwrap().into_struct_value();
-        error_val = self.builder.build_insert_value(error_val, rule_str, 1, "fe_rule")
-            .unwrap().into_struct_value();
-        error_val = self.builder.build_insert_value(error_val, msg_str, 2, "fe_msg")
-            .unwrap().into_struct_value();
+        error_val = self
+            .builder
+            .build_insert_value(error_val, field_str, 0, "fe_field")
+            .unwrap()
+            .into_struct_value();
+        error_val = self
+            .builder
+            .build_insert_value(error_val, rule_str, 1, "fe_rule")
+            .unwrap()
+            .into_struct_value();
+        error_val = self
+            .builder
+            .build_insert_value(error_val, msg_str, 2, "fe_msg")
+            .unwrap()
+            .into_struct_value();
         error_val
     }
 
@@ -626,20 +780,29 @@ impl<'ctx> Codegen<'ctx> {
         errors_ptr: PointerValue<'ctx>,
         error_count_ptr: PointerValue<'ctx>,
     ) {
-        let count = self.builder.build_load(
-            self.context.i64_type(), error_count_ptr, "cur_count"
-        ).unwrap().into_int_value();
+        let count = self
+            .builder
+            .build_load(self.context.i64_type(), error_count_ptr, "cur_count")
+            .unwrap()
+            .into_int_value();
         let elem_ptr = unsafe {
-            self.builder.build_gep(
-                field_error_type, errors_ptr, &[count], "error_slot"
-            ).unwrap()
+            self.builder
+                .build_gep(field_error_type, errors_ptr, &[count], "error_slot")
+                .unwrap()
         };
         self.builder.build_store(elem_ptr, error_val).unwrap();
 
-        let new_count = self.builder.build_int_add(
-            count, self.context.i64_type().const_int(1, false), "inc_count"
-        ).unwrap();
-        self.builder.build_store(error_count_ptr, new_count).unwrap();
+        let new_count = self
+            .builder
+            .build_int_add(
+                count,
+                self.context.i64_type().const_int(1, false),
+                "inc_count",
+            )
+            .unwrap();
+        self.builder
+            .build_store(error_count_ptr, new_count)
+            .unwrap();
     }
 
     /// Check @min(n) or @max(n) — string length or numeric value bound check.
@@ -657,40 +820,78 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         let (int_pred, float_pred, rule, qualifier) = if is_min {
-            (IntPredicate::SGE, inkwell::FloatPredicate::OGE, "min", "at least")
+            (
+                IntPredicate::SGE,
+                inkwell::FloatPredicate::OGE,
+                "min",
+                "at least",
+            )
         } else {
-            (IntPredicate::SLE, inkwell::FloatPredicate::OLE, "max", "at most")
+            (
+                IntPredicate::SLE,
+                inkwell::FloatPredicate::OLE,
+                "max",
+                "at most",
+            )
         };
         let check_label = format!("{}_ok", rule);
 
         match field_type {
             Type::String => {
-                let len = self.call_runtime("forge_string_length", &[field_val.into()], "str_len")?.into_int_value();
-                let ok = self.builder.build_int_compare(
-                    int_pred, len,
-                    self.context.i64_type().const_int(bound_val as u64, false),
-                    &check_label,
-                ).unwrap();
-                Some((ok, rule.to_string(),
-                    format!("must be {} {} character{}", qualifier, bound_val, if bound_val != 1 { "s" } else { "" })))
+                let len = self
+                    .call_runtime("forge_string_length", &[field_val.into()], "str_len")?
+                    .into_int_value();
+                let ok = self
+                    .builder
+                    .build_int_compare(
+                        int_pred,
+                        len,
+                        self.context.i64_type().const_int(bound_val as u64, false),
+                        &check_label,
+                    )
+                    .unwrap();
+                Some((
+                    ok,
+                    rule.to_string(),
+                    format!(
+                        "must be {} {} character{}",
+                        qualifier,
+                        bound_val,
+                        if bound_val != 1 { "s" } else { "" }
+                    ),
+                ))
             }
             Type::Int => {
-                let ok = self.builder.build_int_compare(
-                    int_pred,
-                    field_val.into_int_value(),
-                    self.context.i64_type().const_int(bound_val as u64, true),
-                    &check_label,
-                ).unwrap();
-                Some((ok, rule.to_string(), format!("must be {} {}", qualifier, bound_val)))
+                let ok = self
+                    .builder
+                    .build_int_compare(
+                        int_pred,
+                        field_val.into_int_value(),
+                        self.context.i64_type().const_int(bound_val as u64, true),
+                        &check_label,
+                    )
+                    .unwrap();
+                Some((
+                    ok,
+                    rule.to_string(),
+                    format!("must be {} {}", qualifier, bound_val),
+                ))
             }
             Type::Float => {
-                let ok = self.builder.build_float_compare(
-                    float_pred,
-                    field_val.into_float_value(),
-                    self.context.f64_type().const_float(bound_val as f64),
-                    &check_label,
-                ).unwrap();
-                Some((ok, rule.to_string(), format!("must be {} {}", qualifier, bound_val)))
+                let ok = self
+                    .builder
+                    .build_float_compare(
+                        float_pred,
+                        field_val.into_float_value(),
+                        self.context.f64_type().const_float(bound_val as f64),
+                        &check_label,
+                    )
+                    .unwrap();
+                Some((
+                    ok,
+                    rule.to_string(),
+                    format!("must be {} {}", qualifier, bound_val),
+                ))
             }
             _ => None,
         }
@@ -707,18 +908,30 @@ impl<'ctx> Codegen<'ctx> {
             Some(AnnotationArg::Ident(name)) => {
                 // Named validators: email, url, uuid
                 let (fn_name, rule, msg) = match name.as_str() {
-                    "email" => ("forge_validate_email", "email", "must be a valid email address"),
+                    "email" => (
+                        "forge_validate_email",
+                        "email",
+                        "must be a valid email address",
+                    ),
                     "url" => ("forge_validate_url", "url", "must be a valid URL"),
                     "uuid" => ("forge_validate_uuid", "uuid", "must be a valid UUID"),
                     _ => return None,
                 };
 
                 let validate_fn = self.module.get_function(fn_name)?;
-                let result = self.builder.build_call(
-                    validate_fn, &[field_val.into()], "validate_result"
-                ).unwrap().try_as_basic_value().basic()?.into_int_value();
+                let result = self
+                    .builder
+                    .build_call(validate_fn, &[field_val.into()], "validate_result")
+                    .unwrap()
+                    .try_as_basic_value()
+                    .basic()?
+                    .into_int_value();
 
-                Some((self.int_ne_zero(result, "validate_ok"), rule.to_string(), msg.to_string()))
+                Some((
+                    self.int_ne_zero(result, "validate_ok"),
+                    rule.to_string(),
+                    msg.to_string(),
+                ))
             }
             Some(AnnotationArg::Expr(expr)) => {
                 // Custom expression validator: @validate(it > 0 && it < 100)
@@ -751,7 +964,11 @@ impl<'ctx> Codegen<'ctx> {
                     return None;
                 };
 
-                Some((ok, "validate".to_string(), "custom validation failed".to_string()))
+                Some((
+                    ok,
+                    "validate".to_string(),
+                    "custom validation failed".to_string(),
+                ))
             }
             _ => None,
         }
@@ -770,18 +987,25 @@ impl<'ctx> Codegen<'ctx> {
         };
 
         let pattern_str = self.make_forge_string(&pattern);
-        let result = self.call_runtime("forge_validate_pattern", &[field_val.into(), pattern_str.into()], "pattern_result")?.into_int_value();
-        Some((self.int_ne_zero(result, "pattern_ok"), "pattern".to_string(), format!("must match pattern {}", pattern)))
+        let result = self
+            .call_runtime(
+                "forge_validate_pattern",
+                &[field_val.into(), pattern_str.into()],
+                "pattern_result",
+            )?
+            .into_int_value();
+        Some((
+            self.int_ne_zero(result, "pattern_ok"),
+            "pattern".to_string(),
+            format!("must match pattern {}", pattern),
+        ))
     }
 
     /// Compare an integer value against zero with NE predicate (returns i1 bool).
     fn int_ne_zero(&self, val: IntValue<'ctx>, label: &str) -> IntValue<'ctx> {
-        self.builder.build_int_compare(
-            IntPredicate::NE,
-            val,
-            val.get_type().const_zero(),
-            label,
-        ).unwrap()
+        self.builder
+            .build_int_compare(IntPredicate::NE, val, val.get_type().const_zero(), label)
+            .unwrap()
     }
 
     /// Build the Result<TargetType, ValidationError> type for validation results.
@@ -809,23 +1033,47 @@ impl<'ctx> Codegen<'ctx> {
         payload: BasicValueEnum<'ctx>,
         label: &str,
     ) -> BasicValueEnum<'ctx> {
-        let alloca = self.builder.build_alloca(result_llvm_ty, &format!("{}_result", label)).unwrap();
-        let tag_ptr = self.builder.build_struct_gep(result_llvm_ty, alloca, 0, "tag_ptr").unwrap();
-        self.builder.build_store(tag_ptr, self.context.i8_type().const_int(tag, false)).unwrap();
-        let payload_ptr = self.builder.build_struct_gep(result_llvm_ty, alloca, 1, "payload_ptr").unwrap();
-        let val_ptr = self.builder.build_bit_cast(
-            payload_ptr, self.context.ptr_type(AddressSpace::default()), "val_ptr"
-        ).unwrap();
-        self.builder.build_store(val_ptr.into_pointer_value(), payload).unwrap();
-        self.builder.build_load(result_llvm_ty, alloca, &format!("{}_loaded", label)).unwrap()
+        let alloca = self
+            .builder
+            .build_alloca(result_llvm_ty, &format!("{}_result", label))
+            .unwrap();
+        let tag_ptr = self
+            .builder
+            .build_struct_gep(result_llvm_ty, alloca, 0, "tag_ptr")
+            .unwrap();
+        self.builder
+            .build_store(tag_ptr, self.context.i8_type().const_int(tag, false))
+            .unwrap();
+        let payload_ptr = self
+            .builder
+            .build_struct_gep(result_llvm_ty, alloca, 1, "payload_ptr")
+            .unwrap();
+        let val_ptr = self
+            .builder
+            .build_bit_cast(
+                payload_ptr,
+                self.context.ptr_type(AddressSpace::default()),
+                "val_ptr",
+            )
+            .unwrap();
+        self.builder
+            .build_store(val_ptr.into_pointer_value(), payload)
+            .unwrap();
+        self.builder
+            .build_load(result_llvm_ty, alloca, &format!("{}_loaded", label))
+            .unwrap()
     }
 
     /// Create a ForgeString constant from a &str
     pub(crate) fn make_forge_string(&mut self, s: &str) -> BasicValueEnum<'ctx> {
-        let global = self.builder.build_global_string_ptr(s, "str_const").unwrap();
+        let global = self
+            .builder
+            .build_global_string_ptr(s, "str_const")
+            .unwrap();
         let ptr = global.as_pointer_value();
         let len = self.context.i64_type().const_int(s.len() as u64, false);
 
-        self.call_runtime("forge_string_new", &[ptr.into(), len.into()], "forge_str").unwrap()
+        self.call_runtime("forge_string_new", &[ptr.into(), len.into()], "forge_str")
+            .unwrap()
     }
 }

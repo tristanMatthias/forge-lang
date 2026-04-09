@@ -12,9 +12,16 @@ pub struct NullCoalesceData {
 }
 
 impl crate::feature::FeatureNode for NullCoalesceData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(NullCoalesceData {
             left: Box::new((fns.sub_expr)(&self.left)),
             right: Box::new((fns.sub_expr)(&self.right)),
@@ -30,9 +37,16 @@ pub struct NullPropagateData {
 }
 
 impl crate::feature::FeatureNode for NullPropagateData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(NullPropagateData {
             object: Box::new((fns.sub_expr)(&self.object)),
             field: self.field.clone(),
@@ -47,9 +61,16 @@ pub struct ForceUnwrapData {
 }
 
 impl crate::feature::FeatureNode for ForceUnwrapData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(ForceUnwrapData {
             operand: Box::new((fns.sub_expr)(&self.operand)),
         })
@@ -59,12 +80,14 @@ impl crate::feature::FeatureNode for ForceUnwrapData {
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a null coalesce expression via Feature dispatch.
     pub(crate) fn infer_null_coalesce_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, NullCoalesceData, |data| self.infer_type(&data.right))
+        feature_check!(self, fe, NullCoalesceData, |data| self
+            .infer_type(&data.right))
     }
 
     /// Infer the type of a null propagate expression via Feature dispatch.
     pub(crate) fn infer_null_propagate_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, NullPropagateData, |data| self.infer_null_propagate_type_inner(&data.object, &data.field))
+        feature_check!(self, fe, NullPropagateData, |data| self
+            .infer_null_propagate_type_inner(&data.object, &data.field))
     }
 
     /// Infer the type of a force unwrap expression: `expr!`
@@ -86,11 +109,11 @@ impl<'ctx> Codegen<'ctx> {
             _ => &ot,
         };
         match inner {
-            Type::Struct { fields, .. } => {
-                fields.iter().find(|(n, _)| n == field)
-                    .map(|(_, ty)| Type::Nullable(Box::new(ty.clone())))
-                    .unwrap_or(Type::Unknown)
-            }
+            Type::Struct { fields, .. } => fields
+                .iter()
+                .find(|(n, _)| n == field)
+                .map(|(_, ty)| Type::Nullable(Box::new(ty.clone())))
+                .unwrap_or(Type::Unknown),
             Type::String => match field {
                 "length" | "parse_int" => Type::Nullable(Box::new(Type::Int)),
                 "upper" | "lower" | "trim" | "replace" => Type::Nullable(Box::new(Type::String)),

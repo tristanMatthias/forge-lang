@@ -55,7 +55,16 @@ impl<'ctx> Codegen<'ctx> {
     /// Returns the number of i64 slots needed to store a value of the given type.
     pub(crate) fn type_i64_slots(&self, ty: &Type) -> usize {
         match ty {
-            Type::Int | Type::Float | Type::Bool | Type::Void | Type::Never | Type::Ptr | Type::Unknown | Type::Error | Type::Channel(_) | Type::DynTrait(_) => 1,
+            Type::Int
+            | Type::Float
+            | Type::Bool
+            | Type::Void
+            | Type::Never
+            | Type::Ptr
+            | Type::Unknown
+            | Type::Error
+            | Type::Channel(_)
+            | Type::DynTrait(_) => 1,
             Type::String => 2, // {ptr, i64} = 16 bytes
             Type::Nullable(inner) => 1 + self.type_i64_slots(inner), // {i8, inner}
             Type::List(_) | Type::Map(_, _) => 2, // pointer + length or similar
@@ -65,7 +74,10 @@ impl<'ctx> Codegen<'ctx> {
                 // If variants is empty, this is a stub (self-referential type).
                 // Look up the full type from the registry.
                 let actual_variants = if variants.is_empty() {
-                    self.type_checker.env.enum_types.get(name)
+                    self.type_checker
+                        .env
+                        .enum_types
+                        .get(name)
                         .and_then(|t| match t {
                             Type::Enum { variants: v, .. } => Some(v.clone()),
                             _ => None,
@@ -76,15 +88,24 @@ impl<'ctx> Codegen<'ctx> {
                 };
                 // tag (1 slot) + max variant payload
                 // Boxed (self-referential) fields count as 1 slot (pointer)
-                let max_payload = actual_variants.iter().map(|v| {
-                    v.fields.iter().enumerate().map(|(i, (_, ty))| {
-                        if v.boxed_fields.contains(&i) {
-                            1 // pointer-sized
-                        } else {
-                            self.type_i64_slots(ty)
-                        }
-                    }).sum::<usize>()
-                }).max().unwrap_or(0).max(1);
+                let max_payload = actual_variants
+                    .iter()
+                    .map(|v| {
+                        v.fields
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (_, ty))| {
+                                if v.boxed_fields.contains(&i) {
+                                    1 // pointer-sized
+                                } else {
+                                    self.type_i64_slots(ty)
+                                }
+                            })
+                            .sum::<usize>()
+                    })
+                    .max()
+                    .unwrap_or(0)
+                    .max(1);
                 1 + max_payload
             }
             Type::Function { .. } => 1, // function pointer
@@ -106,11 +127,14 @@ impl<'ctx> Codegen<'ctx> {
         let cache_key = match ty {
             Type::Struct { name: Some(n), .. } => format!("struct:{}", n),
             Type::Enum { name, .. } => format!("enum:{}", name),
-            Type::Nullable(inner) => format!("nullable:{}", match inner.as_ref() {
-                Type::Struct { name: Some(n), .. } => format!("struct:{}", n),
-                Type::Enum { name, .. } => format!("enum:{}", name),
-                other => format!("{:?}", other),
-            }),
+            Type::Nullable(inner) => format!(
+                "nullable:{}",
+                match inner.as_ref() {
+                    Type::Struct { name: Some(n), .. } => format!("struct:{}", n),
+                    Type::Enum { name, .. } => format!("enum:{}", name),
+                    other => format!("{:?}", other),
+                }
+            ),
             other => format!("{:?}", other),
         };
         if let Some(cached) = self.llvm_type_cache.borrow().get(&cache_key) {
@@ -118,8 +142,11 @@ impl<'ctx> Codegen<'ctx> {
         }
         let result = self.type_to_llvm_basic_inner(ty);
         match ty {
-            Type::Struct { .. } | Type::Enum { .. } | Type::Nullable(_)
-            | Type::Result(_, _) | Type::Tuple(_) => {
+            Type::Struct { .. }
+            | Type::Enum { .. }
+            | Type::Nullable(_)
+            | Type::Result(_, _)
+            | Type::Tuple(_) => {
                 self.llvm_type_cache.borrow_mut().insert(cache_key, result);
             }
             _ => {}
@@ -202,9 +229,7 @@ impl<'ctx> Codegen<'ctx> {
                     )
                     .into()
             }
-            Type::Function { .. } => {
-                self.context.ptr_type(AddressSpace::default()).into()
-            }
+            Type::Function { .. } => self.context.ptr_type(AddressSpace::default()).into(),
             Type::Result(ok, err) => {
                 let ok_slots = self.type_i64_slots(ok);
                 let err_slots = self.type_i64_slots(err);
@@ -219,7 +244,10 @@ impl<'ctx> Codegen<'ctx> {
                 // Range isn't typically stored as a value; use i64 pair
                 self.context
                     .struct_type(
-                        &[self.context.i64_type().into(), self.context.i64_type().into()],
+                        &[
+                            self.context.i64_type().into(),
+                            self.context.i64_type().into(),
+                        ],
                         false,
                     )
                     .into()
@@ -252,7 +280,11 @@ impl<'ctx> Codegen<'ctx> {
             Type::Enum { name, variants, .. } => {
                 // If variants is empty, this is a stub — look up the full type
                 let actual_variants = if variants.is_empty() {
-                    let looked_up = self.type_checker.env.enum_types.get(name)
+                    let looked_up = self
+                        .type_checker
+                        .env
+                        .enum_types
+                        .get(name)
                         .and_then(|t| match t {
                             Type::Enum { variants: v, .. } => Some(v.clone()),
                             _ => None,
@@ -266,15 +298,24 @@ impl<'ctx> Codegen<'ctx> {
                     variants.clone()
                 };
                 // Tagged union using i64 slots for type-safe union storage.
-                let max_slots = actual_variants.iter().map(|v| {
-                    v.fields.iter().enumerate().map(|(i, (_, ty))| {
-                        if v.boxed_fields.contains(&i) {
-                            1
-                        } else {
-                            self.type_i64_slots(ty)
-                        }
-                    }).sum::<usize>()
-                }).max().unwrap_or(0).max(1);
+                let max_slots = actual_variants
+                    .iter()
+                    .map(|v| {
+                        v.fields
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (_, ty))| {
+                                if v.boxed_fields.contains(&i) {
+                                    1
+                                } else {
+                                    self.type_i64_slots(ty)
+                                }
+                            })
+                            .sum::<usize>()
+                    })
+                    .max()
+                    .unwrap_or(0)
+                    .max(1);
                 let mut field_types: Vec<BasicTypeEnum<'ctx>> = vec![self.context.i8_type().into()];
                 for _ in 0..max_slots {
                     field_types.push(self.context.i64_type().into());
@@ -288,16 +329,15 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 let named = self.context.opaque_struct_type(name);
                 let body: Vec<inkwell::types::BasicTypeEnum<'ctx>> = field_types.clone();
-                named.set_body(
-                    &body.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
-                    false,
-                );
+                named.set_body(&body.iter().map(|t| (*t).into()).collect::<Vec<_>>(), false);
                 named.into()
             }
             Type::DynTrait(_) => {
                 // Fat pointer: { data_ptr, vtable_ptr }
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
-                self.context.struct_type(&[ptr_type.into(), ptr_type.into()], false).into()
+                self.context
+                    .struct_type(&[ptr_type.into(), ptr_type.into()], false)
+                    .into()
             }
             _ => self.context.i64_type().into(),
         }
@@ -316,7 +356,11 @@ impl<'ctx> Codegen<'ctx> {
                 let string_type = self.string_type();
                 string_type.const_zero().into()
             }
-            Type::Ptr => self.context.ptr_type(inkwell::AddressSpace::default()).const_null().into(),
+            Type::Ptr => self
+                .context
+                .ptr_type(inkwell::AddressSpace::default())
+                .const_null()
+                .into(),
             _ => {
                 // For struct/enum/nullable/etc, return a zero-initialized value
                 // of the correct LLVM type
@@ -328,7 +372,9 @@ impl<'ctx> Codegen<'ctx> {
                     BasicTypeEnum::PointerType(pt) => pt.const_null().into(),
                     BasicTypeEnum::ArrayType(at) => at.const_zero().into(),
                     BasicTypeEnum::VectorType(vt) => vt.const_zero().into(),
-                    BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
+                    BasicTypeEnum::ScalableVectorType(_) => {
+                        panic!("unsupported type: scalable vector")
+                    }
                 }
             }
         }
@@ -353,7 +399,9 @@ impl<'ctx> Codegen<'ctx> {
                     Type::Unknown
                 }
             }
-            Expr::Binary { left, op, right, .. } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
                 let lt = self.infer_type(left);
                 let rt = self.infer_type(right);
                 // Ptr operations
@@ -366,7 +414,11 @@ impl<'ctx> Codegen<'ctx> {
                     _ => {}
                 }
                 match op {
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+                    BinaryOp::Add
+                    | BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod => {
                         if lt == Type::Float || rt == Type::Float {
                             Type::Float
                         } else if lt == Type::String {
@@ -381,7 +433,10 @@ impl<'ctx> Codegen<'ctx> {
                                 _ => "",
                             };
                             if !trait_name.is_empty() {
-                                if self.find_operator_impl(&type_name, trait_name, "").is_some() {
+                                if self
+                                    .find_operator_impl(&type_name, trait_name, "")
+                                    .is_some()
+                                {
                                     // Return the type itself (operator returns same type typically)
                                     return lt;
                                 }
@@ -391,9 +446,11 @@ impl<'ctx> Codegen<'ctx> {
                             Type::Int
                         }
                     }
-                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
-                        Type::Int
-                    }
+                    BinaryOp::BitAnd
+                    | BinaryOp::BitOr
+                    | BinaryOp::BitXor
+                    | BinaryOp::Shl
+                    | BinaryOp::Shr => Type::Int,
                     _ => Type::Bool,
                 }
             }
@@ -420,13 +477,24 @@ impl<'ctx> Codegen<'ctx> {
                             "validation" => {
                                 // validate(value, TypeName) -> Result<TypeName, ValidationError>
                                 if args.len() >= 2 {
-                                    if let CallArg { value: Expr::Ident(type_name, _), .. } = &args[1] {
-                                        let ok_type = self.type_checker.env.resolve_type_name(type_name);
-                                        let err_type = self.type_checker.env.resolve_type_name("ValidationError");
+                                    if let CallArg {
+                                        value: Expr::Ident(type_name, _),
+                                        ..
+                                    } = &args[1]
+                                    {
+                                        let ok_type =
+                                            self.type_checker.env.resolve_type_name(type_name);
+                                        let err_type = self
+                                            .type_checker
+                                            .env
+                                            .resolve_type_name("ValidationError");
                                         return Type::Result(Box::new(ok_type), Box::new(err_type));
                                     }
                                 }
-                                return Type::Result(Box::new(Type::Unknown), Box::new(Type::Unknown));
+                                return Type::Result(
+                                    Box::new(Type::Unknown),
+                                    Box::new(Type::Unknown),
+                                );
                             }
                             _ => {
                                 // Simple builtins: return type from env.functions
@@ -468,7 +536,9 @@ impl<'ctx> Codegen<'ctx> {
                 } else if let Expr::MemberAccess { object, field, .. } = callee.as_ref() {
                     // Namespace method type inference via registry
                     if let Expr::Ident(name, _) = object.as_ref() {
-                        if let Some(ns_method) = crate::registry::BuiltinFnRegistry::get_namespace_method(name, field) {
+                        if let Some(ns_method) =
+                            crate::registry::BuiltinFnRegistry::get_namespace_method(name, field)
+                        {
                             match ns_method.return_type {
                                 crate::registry::BuiltinType::Custom("channel") => {
                                     // channel.tick() -> Channel<Int>, channel.new() -> Channel<Unknown>
@@ -502,9 +572,12 @@ impl<'ctx> Codegen<'ctx> {
                     let obj_type = self.infer_type(object);
                     match &obj_type {
                         Type::String => match field.as_str() {
-                            "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" | "substring" => Type::String,
+                            "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at"
+                            | "substring" => Type::String,
                             "contains" | "starts_with" | "ends_with" => Type::Bool,
-                            "length" | "parse_int" | "byte_at" | "index_of" | "indexOf" => Type::Int,
+                            "length" | "parse_int" | "byte_at" | "index_of" | "indexOf" => {
+                                Type::Int
+                            }
                             "split" | "chars" => Type::List(Box::new(Type::String)),
                             "bytes" => Type::List(Box::new(Type::Int)),
                             _ => Type::Unknown,
@@ -523,7 +596,9 @@ impl<'ctx> Codegen<'ctx> {
                             "sum" => Type::Int,
                             "find" => Type::Nullable(inner.clone()),
                             "any" | "all" => Type::Bool,
-                            "enumerate" => Type::List(Box::new(Type::Tuple(vec![Type::Int, *inner.clone()]))),
+                            "enumerate" => {
+                                Type::List(Box::new(Type::Tuple(vec![Type::Int, *inner.clone()])))
+                            }
                             "join" => Type::String,
                             "reduce" => {
                                 if let Some(first_arg) = args.first() {
@@ -557,16 +632,23 @@ impl<'ctx> Codegen<'ctx> {
                                 // Look up trait impl return type
                                 for impl_info in &self.impls {
                                     if impl_info.type_name == type_name {
-                                        if let Some(method) = impl_info.methods.get(field.as_str()) {
+                                        if let Some(method) = impl_info.methods.get(field.as_str())
+                                        {
                                             if let Some(ref rt) = method.return_type {
-                                                let resolved = self.type_checker.resolve_type_expr(rt);
+                                                let resolved =
+                                                    self.type_checker.resolve_type_expr(rt);
                                                 // If it resolves to unnamed struct matching a named type, use the named version
-                                                if let Type::Struct { name: None, fields } = &resolved {
+                                                if let Type::Struct { name: None, fields } =
+                                                    &resolved
+                                                {
                                                     // Check if this matches any named type
                                                     for (tn, t) in &self.named_types {
                                                         if let Type::Struct { fields: nf, .. } = t {
                                                             if nf == fields {
-                                                                return Type::Struct { name: Some(tn.clone()), fields: fields.clone() };
+                                                                return Type::Struct {
+                                                                    name: Some(tn.clone()),
+                                                                    fields: fields.clone(),
+                                                                };
                                                             }
                                                         }
                                                     }
@@ -593,13 +675,11 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 let obj_type = self.infer_type(object);
                 match &obj_type {
-                    Type::Struct { fields, .. } => {
-                        fields
-                            .iter()
-                            .find(|(name, _)| name == field)
-                            .map(|(_, ty)| ty.clone())
-                            .unwrap_or(Type::Unknown)
-                    }
+                    Type::Struct { fields, .. } => fields
+                        .iter()
+                        .find(|(name, _)| name == field)
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or(Type::Unknown),
                     Type::String => match field.as_str() {
                         "length" => Type::Int,
                         _ => Type::Unknown,
@@ -675,10 +755,17 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Infer the return type of a method call on a given type
-    pub(crate) fn infer_method_return_type(&self, obj_type: &Type, method: &str, args: &[CallArg]) -> Type {
+    pub(crate) fn infer_method_return_type(
+        &self,
+        obj_type: &Type,
+        method: &str,
+        args: &[CallArg],
+    ) -> Type {
         match obj_type {
             Type::String => match method {
-                "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" | "substring" => Type::String,
+                "upper" | "lower" | "trim" | "replace" | "repeat" | "char_at" | "substring" => {
+                    Type::String
+                }
                 "contains" | "starts_with" | "ends_with" => Type::Bool,
                 "length" | "parse_int" | "byte_at" | "index_of" | "indexOf" => Type::Int,
                 "split" | "chars" => Type::List(Box::new(Type::String)),
@@ -733,12 +820,10 @@ impl<'ctx> Codegen<'ctx> {
                 Type::Nullable(Box::new(self.unify_branch_types(inner_a, inner_b)))
             }
             // Unify inner types for Map
-            (Type::Map(ka, va), Type::Map(kb, vb)) => {
-                Type::Map(
-                    Box::new(self.unify_branch_types(ka, kb)),
-                    Box::new(self.unify_branch_types(va, vb)),
-                )
-            }
+            (Type::Map(ka, va), Type::Map(kb, vb)) => Type::Map(
+                Box::new(self.unify_branch_types(ka, kb)),
+                Box::new(self.unify_branch_types(va, vb)),
+            ),
             // Default: prefer the first (then) branch
             _ => a.clone(),
         }

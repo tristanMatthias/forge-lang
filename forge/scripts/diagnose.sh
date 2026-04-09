@@ -13,6 +13,7 @@
 #     --orphans [file.ll]            functions with orphan blocks, ranked
 #     --ir-sanity [file.ll]          scan for known anti-patterns
 #     --kind-ids                     token kind_id consistency check
+#     --build-stage2 [ir] [bin]      link a runnable compiler from IR ★
 #     --pipeline                     full stage 1 → stage 3 sanity run
 #     --stage2 / --stage3            functional smoke tests
 #
@@ -21,7 +22,10 @@
 #     --rank-diff [a.ll] [b.ll]      rank functions by diff size
 #     --cfg-summary <fn> [a] [b]     blocks/orphans/phis side-by-side
 #     --type-diff [a.ll] [b.ll]      function signatures that differ ★
+#     --storage-audit [file.ll]      rank direct alloca/store ABI mismatches ★
 #     --anomaly [file.ll]            per-function anomaly score ★
+#     --llvm-decls                   audit missing self-host LLVM decls ★
+#     --body-reparse <src.fg>        trace body-src → tokens → stmt counts ★
 #     --whyi64 <fn> <param>          why is this param i64? trace it ★
 #     --cfg <fn> [file.ll]           graphviz dot output of CFG
 #
@@ -63,6 +67,11 @@ IR="${1:-output.ll}"
 MODE="full"
 case "${1:-}" in
     --score)   MODE="score"; IR="${2:-output.ll}" ;;
+    --build-stage2)
+        MODE="build-stage2"
+        IR="${2:-build/stage2.ll}"
+        STAGE_BIN_OUT="${3:-build/stage2}"
+        ;;
     --stage2)  MODE="stage2" ;;
     --stage3)  MODE="stage3" ;;
     --pipeline) MODE="pipeline" ;;
@@ -110,12 +119,31 @@ case "${1:-}" in
         DIFF_A="${2:-/tmp/stage1.ll}"
         DIFF_B="${3:-/tmp/stage2.ll}"
         ;;
+    --storage-audit)
+        # Direct alloca/store ABI mismatch audit. Ranks functions where a
+        # stack slot is allocated as one type but written with another
+        # (e.g. `alloca i8` + `store i64`). This catches the typed-local
+        # coercion bugs that stage 2 crashes tend to come from.
+        MODE="storage-audit"
+        IR="${2:-/tmp/stage2.ll}"
+        ;;
     --anomaly)
         # NEW #2 — Per-function anomaly score. Combines orphans,
         # i64-as-struct loads, undef args, etc. into a single number
         # per function. Top of the list = closest to actually broken.
         MODE="anomaly"
         IR="${2:-/tmp/stage2.ll}"
+        ;;
+    --llvm-decls)
+        # Audit llvm.* wrappers used by the self-host codegen against
+        # the forge_llvm_* declarations registered in codegen_init_runtime.
+        MODE="llvm-decls"
+        ;;
+    --body-reparse)
+        # Compile a source file through the current stage2 compiler and
+        # print the body extraction / re-lex / re-parse trace only.
+        MODE="body-reparse"
+        BODY_REPARSE_SRC="${2:-}"
         ;;
     --whyi64)
         # NEW #3 — Trace WHY a parameter is i64. Reverse-walks the
@@ -163,6 +191,13 @@ case "${1:-}" in
         MODE="ret-undef"
         IR="${2:-/tmp/stage2.ll}"
         ;;
+    --container-abi)
+        # Audit source-declared List<T>/Map<K,V> params and returns
+        # against emitted IR signatures. Flags container signatures
+        # that still lower to %ForgeString.
+        MODE="container-abi"
+        IR="${2:-/tmp/stage2.ll}"
+        ;;
     --fn-ir)
         # Print one function's IR from a given .ll file. Replaces ad-hoc
         # `awk '/define.*@FN/,/^}/' file.ll` invocations.
@@ -189,6 +224,107 @@ case "${1:-}" in
         # "stage 2 binary emits stub bodies" bugs in <2 seconds.
         MODE="binop-test"
         ;;
+    --capture)
+        # Snapshot the current output.ll under a label so it can be diffed
+        # later. Use this BEFORE making a codegen change so you can compare
+        # the IR before/after with --diff-builds. Snapshots live in
+        # /tmp/forge_snapshots/<label>.ll.
+        MODE="capture"
+        CAPTURE_LABEL="${2:-}"
+        IR="${3:-output.ll}"
+        ;;
+    --diff-builds)
+        # Compare two captured snapshots (or .ll files) with @NNNN, %NN,
+        # and bbNN names normalized so the diff shows real semantic
+        # differences instead of register renumbering noise. Optional
+        # third arg restricts the diff to one function.
+        MODE="diff-builds"
+        DIFF_A="${2:-}"
+        DIFF_B="${3:-}"
+        DIFF_FN="${4:-}"
+        ;;
+    --probe-cmp)
+        # Post-process output.ll to instrument every `icmp eq/ne` in <fn>
+        # with a runtime trace call. Recompile (llc + cc), run on the given
+        # input, and grep traces. Use this when you suspect == is broken
+        # for some operand shape but you can't tell which call is wrong.
+        MODE="probe-cmp"
+        DIFF_FN="${2:-}"
+        PROBE_INPUT="${3:-/tmp/_probe_input.fg}"
+        ;;
+    --snip)
+        # Compile and run a one-line Forge expression through both
+        # stage1_rust and the stage 2 binary, diff the outputs. Wraps
+        # the expression in `fn main() { ... ; println("ok") }`. The
+        # fastest way to ask "does the self-host binary handle THIS?"
+        MODE="snip"
+        SNIP_CODE="${2:-}"
+        ;;
+    --repro)
+        # Look up a minimal repro for a known stage 3 symptom and write
+        # it to /tmp/_repro_<symptom>.fg. Use --repro list to see all
+        # registered symptoms.
+        MODE="repro"
+        REPRO_NAME="${2:-list}"
+        ;;
+    --shadow-check)
+        # Static lint over packages/forgec/src/*.fg looking for user
+        # `let/mut <name>` declarations whose name collides with an
+        # internal LLVM SSA name emitted by build_alloca elsewhere in
+        # codegen (the for-loop counter, while-loop blocks, etc.).
+        # Either side of the collision becomes the other's silent bug
+        # via the auto-cache by direct name. Caught the first stage-3
+        # bug after the fact; should have caught it in advance.
+        MODE="shadow-check"
+        ;;
+    --dump-bisect)
+        # Run stage1_rust with FORGE_DEBUG_DUMP=<fn> set, then walk
+        # /tmp/forge_dump/*.ll in sequence and diff each consecutive
+        # pair. Each diff shows EXACTLY what one codegen step did.
+        # Use this to find which call introduces a divergence: when
+        # the diff is empty for a step, that step was a no-op; when
+        # the diff is unexpected (instructions in wrong block, wrong
+        # value type, etc.), that step is the bug.
+        MODE="dump-bisect"
+        DIFF_FN="${2:-Parser_parse_statement}"
+        ;;
+    --crash-asm)
+        # Disassemble a binary at <fn>+<offset> ±20 instructions to see
+        # the actual machine instruction that crashed. The OS reports
+        # crashes by nearest-symbol, which is often misleading — the PC
+        # might be inside a different function or in a stack-probe
+        # helper. This shows the truth.
+        MODE="crash-asm"
+        DIFF_FN="${2:-Codegen_emit_statement}"
+        CRASH_OFF="${3:-88}"
+        CRASH_BIN="${4:-./a.out}"
+        ;;
+    --find-stubs)
+        # Compare two snapshots/.ll files. List every function where the
+        # second is < 25% the size of the first AND has the classic match-
+        # stub signature (extract tag + zext + br + phi + ret default).
+        # These are the functions whose codegen is silently broken.
+        MODE="find-stubs"
+        DIFF_A="${2:-s2}"
+        DIFF_B="${3:-s3}"
+        ;;
+    --cmp-broken)
+        # 5-second smoke battery: a fixed set of "can stage 2 binary
+        # do basic things" tests. Each is a tiny Forge program with a
+        # known expected output. Compile via stage 2 binary, run, diff.
+        # First failing test name is your next bug.
+        MODE="cmp-broken"
+        ;;
+    --progress)
+        # Quantified "how close are we to stage 3 self-compiling"
+        # report. Combines:
+        #   1. Function count parity (stage 3 IR vs stage 2 IR)
+        #   2. Per-function body parity (byte-equal? close? stub?)
+        #   3. Stage 3 binary functional smoke tests
+        #   4. Stage 3 binop fixture pass rate
+        # And prints one composite "% complete" number.
+        MODE="progress"
+        ;;
 esac
 
 FORGE_SRC="packages/forgec/src"
@@ -196,6 +332,13 @@ RUST_FEATURES="packages/forgec-rust/features"
 CODEGEN="packages/forgec/src/codegen/mod.fg"
 RUNTIME="stdlib/runtime.c"
 KIND_IDS="packages/forgec/src/core/kind_ids.fg"
+LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm@19}"
+LLC_BIN="${LLC_BIN:-$LLVM_PREFIX/bin/llc}"
+LLVM_CONFIG_BIN="${LLVM_CONFIG_BIN:-$LLVM_PREFIX/bin/llvm-config}"
+STD_LLVM_LIB="packages/std-llvm/target/release/libforge_llvm.a"
+RUNTIME_O="build/runtime.o"
+DEFAULT_STAGE2_LL="build/stage2.ll"
+DEFAULT_STAGE2_BIN="build/stage2"
 ERRORS=0
 WARNINGS=0
 
@@ -205,6 +348,91 @@ green()  { printf "\033[32m%s\033[0m\n" "$1"; }
 err()    { red "  ✗ $1"; ERRORS=$((ERRORS + 1)); }
 warn()   { yellow "  ⚠ $1"; WARNINGS=$((WARNINGS + 1)); }
 ok()     { green "  ✓ $1"; }
+
+build_compiler_from_ir() {
+    local ir="$1"
+    local out_bin="$2"
+    local out_obj="$3"
+    local llc_log="$4"
+    local link_log="$5"
+
+    if [ ! -f "$ir" ]; then
+        echo "ERROR: IR not found: $ir" >&2
+        return 1
+    fi
+    if [ ! -f "$RUNTIME_O" ]; then
+        echo "ERROR: runtime object missing: $RUNTIME_O (run make runtime or make stage1-rust)" >&2
+        return 1
+    fi
+    if [ ! -f "$STD_LLVM_LIB" ]; then
+        echo "ERROR: std-llvm archive missing: $STD_LLVM_LIB" >&2
+        return 1
+    fi
+    if [ ! -x "$LLC_BIN" ] || [ ! -x "$LLVM_CONFIG_BIN" ]; then
+        echo "ERROR: LLVM tools missing under $LLVM_PREFIX" >&2
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$out_bin")"
+    rm -f "$out_obj" "$out_bin"
+
+    "$LLC_BIN" -O2 -filetype=obj "$ir" -o "$out_obj" >"$llc_log" 2>&1 || return 1
+
+    local llvm_libs
+    llvm_libs="$("$LLVM_CONFIG_BIN" --ldflags --libs core analysis bitwriter)"
+    cc -o "$out_bin" "$out_obj" "$RUNTIME_O" -lm -Wl,-stack_size,0x10000000 \
+        "$STD_LLVM_LIB" $llvm_libs -lstdc++ -lz -lcurses >"$link_log" 2>&1 || return 1
+
+    [ -x "$out_bin" ]
+}
+
+resolve_stage2_bin() {
+    if [ -x "$DEFAULT_STAGE2_BIN" ]; then
+        echo "$DEFAULT_STAGE2_BIN"
+        return 0
+    fi
+    if [ -x /tmp/stage2 ]; then
+        echo /tmp/stage2
+        return 0
+    fi
+    return 1
+}
+
+ensure_stage2_bin() {
+    local existing
+    existing=$(resolve_stage2_bin 2>/dev/null) || true
+    if [ -n "$existing" ]; then
+        echo "$existing"
+        return 0
+    fi
+    if [ ! -f "$DEFAULT_STAGE2_LL" ]; then
+        echo "ERROR: no stage2 compiler or IR found. Run make stage2-ir or make stage2." >&2
+        return 1
+    fi
+    if build_compiler_from_ir "$DEFAULT_STAGE2_LL" "$DEFAULT_STAGE2_BIN" "${DEFAULT_STAGE2_BIN}.o" \
+        /tmp/_stage2_llc.log /tmp/_stage2_link.log; then
+        echo "$DEFAULT_STAGE2_BIN"
+        return 0
+    fi
+    echo "ERROR: failed to build $DEFAULT_STAGE2_BIN from $DEFAULT_STAGE2_LL" >&2
+    [ -s /tmp/_stage2_llc.log ] && head -20 /tmp/_stage2_llc.log >&2
+    [ -s /tmp/_stage2_link.log ] && head -20 /tmp/_stage2_link.log >&2
+    return 1
+}
+
+run_build_stage2() {
+    local out_bin="${STAGE_BIN_OUT:-$DEFAULT_STAGE2_BIN}"
+    local out_obj
+    out_obj="${out_bin%.*}.o"
+    if build_compiler_from_ir "$IR" "$out_bin" "$out_obj" /tmp/_build_stage2_llc.log /tmp/_build_stage2_link.log; then
+        echo "built compiler: $out_bin"
+        return 0
+    fi
+    echo "failed to build compiler from $IR" >&2
+    [ -s /tmp/_build_stage2_llc.log ] && tail -20 /tmp/_build_stage2_llc.log >&2
+    [ -s /tmp/_build_stage2_link.log ] && tail -20 /tmp/_build_stage2_link.log >&2
+    return 1
+}
 
 # ═════════════════════════════════════════════════════════════════
 # SCORE MODE — just the IR quality score
@@ -216,6 +444,487 @@ run_fn_ir() {
     fi
     if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
     extract_llvm_fn "$IR" "$DIFF_FN"
+}
+
+# ─── Snapshot capture / diff ─────────────────────────────────────
+SNAP_DIR=/tmp/forge_snapshots
+
+run_capture() {
+    if [ -z "$CAPTURE_LABEL" ]; then
+        echo "Usage: diagnose.sh --capture <label> [file.ll]" >&2
+        echo "  Snapshots <file.ll> (default output.ll) to $SNAP_DIR/<label>.ll" >&2
+        exit 1
+    fi
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    mkdir -p "$SNAP_DIR"
+    cp "$IR" "$SNAP_DIR/${CAPTURE_LABEL}.ll"
+    local lines fns
+    lines=$(wc -l < "$SNAP_DIR/${CAPTURE_LABEL}.ll" | tr -d ' ')
+    fns=$(grep -c '^define ' "$SNAP_DIR/${CAPTURE_LABEL}.ll")
+    echo "captured $IR → $SNAP_DIR/${CAPTURE_LABEL}.ll  ($fns fns, $lines lines)"
+}
+
+# Resolve a snapshot name OR a path to an actual .ll file.
+resolve_snap() {
+    local s="$1"
+    if [ -f "$s" ]; then echo "$s"; return; fi
+    if [ -f "$SNAP_DIR/${s}.ll" ]; then echo "$SNAP_DIR/${s}.ll"; return; fi
+    echo "ERROR: '$s' is neither a file nor a snapshot label in $SNAP_DIR" >&2
+    exit 1
+}
+
+# Strip register/block/global numbering so the diff shows only semantic
+# differences. Same normalization I kept reaching for via ad-hoc sed.
+normalize_ir() {
+    sed -E 's/@[0-9]+/@N/g; s/%[0-9]+/%N/g; s/bb[0-9]+/bbN/g'
+}
+
+run_diff_builds() {
+    if [ -z "$DIFF_A" ] || [ -z "$DIFF_B" ]; then
+        echo "Usage: diagnose.sh --diff-builds <a> <b> [fn_name]" >&2
+        echo "  <a>, <b> may be snapshot labels (see --capture) or .ll paths" >&2
+        echo "  Optional fn_name restricts the diff to one function." >&2
+        exit 1
+    fi
+    local a b
+    a=$(resolve_snap "$DIFF_A")
+    b=$(resolve_snap "$DIFF_B")
+    local at bt
+    at=$(mktemp); bt=$(mktemp)
+    if [ -n "$DIFF_FN" ]; then
+        extract_llvm_fn "$a" "$DIFF_FN" | normalize_ir > "$at"
+        extract_llvm_fn "$b" "$DIFF_FN" | normalize_ir > "$bt"
+    else
+        normalize_ir < "$a" > "$at"
+        normalize_ir < "$b" > "$bt"
+    fi
+    local total
+    total=$(diff "$at" "$bt" | wc -l | tr -d ' ')
+    echo "── normalized diff: $a vs $b ${DIFF_FN:+(fn $DIFF_FN)} ──"
+    echo "  total diff lines: $total"
+    if [ "$total" = "0" ]; then
+        green "  (identical after normalization)"
+    else
+        diff "$at" "$bt"
+    fi
+    rm -f "$at" "$bt"
+}
+
+# ─── --snip "code" ───────────────────────────────────────────────
+# Wrap a one-liner in a main function, build via stage1_rust → run,
+# then build via stage 2 binary → run. Diff the two outputs. The
+# fastest "is the self-host binary broken for this construct?" check.
+run_snip() {
+    if [ -z "$SNIP_CODE" ]; then
+        echo "Usage: diagnose.sh --snip 'forge expression(s)'" >&2
+        echo "  e.g. --snip 'let a = 122; if a == 122 { println(\"yes\") }'" >&2
+        exit 1
+    fi
+    local f=/tmp/_snip.fg
+    {
+        echo "fn main() {"
+        echo "    $SNIP_CODE"
+        echo "    println(\"__snip_done__\")"
+        echo "}"
+    } > "$f"
+    echo "── snippet ──"
+    sed 's/^/  /' "$f"
+    echo ""
+    if [ ! -x ./build/stage1_rust ]; then
+        echo "  ERROR: build/stage1_rust missing — run make stage1-rust" >&2
+        exit 1
+    fi
+    echo "── stage1_rust → run ──"
+    ./build/stage1_rust build "$f" >/tmp/_snip_s1.log 2>&1 || true
+    if [ -x ./a.out ]; then
+        ./a.out >/tmp/_snip_s1_run.out 2>&1
+        sed 's/^/  /' /tmp/_snip_s1_run.out
+        cp ./a.out /tmp/_snip_stage1_bin
+    else
+        echo "  build failed:"; tail -5 /tmp/_snip_s1.log | sed 's/^/    /'
+        return
+    fi
+    echo ""
+    echo "── stage2 binary → compile snippet → run ──"
+    if [ ! -x ./build/stage1_rust ]; then return; fi
+    # Stage 2 binary == ./a.out from compiling main.fg
+    ./build/stage1_rust build packages/forgec/src/main.fg >/tmp/_snip_s2build.log 2>&1
+    if [ ! -x ./a.out ]; then
+        echo "  stage 2 build failed"; return
+    fi
+    ./a.out build "$f" >/tmp/_snip_s2.log 2>&1 || true
+    if [ -x ./a.out ]; then
+        ./a.out >/tmp/_snip_s2_run.out 2>&1
+        sed 's/^/  /' /tmp/_snip_s2_run.out
+    else
+        echo "  stage 2 binary failed to compile snippet:"
+        tail -5 /tmp/_snip_s2.log | sed 's/^/    /'
+        return
+    fi
+    echo ""
+    if cmp -s /tmp/_snip_s1_run.out /tmp/_snip_s2_run.out; then
+        green "  identical ✓ — self-host handles this construct"
+    else
+        red "  DIVERGENT — stage 2 binary mis-handles this construct"
+        echo "  diff:"
+        diff /tmp/_snip_s1_run.out /tmp/_snip_s2_run.out | sed 's/^/    /'
+    fi
+}
+
+# ─── --repro <symptom> ───────────────────────────────────────────
+# Catalog of minimal repros for known stage 3 bugs. Add new entries
+# here when you find them. Usage: --repro list, --repro <name>.
+run_repro() {
+    if [ "$REPRO_NAME" = "list" ] || [ -z "$REPRO_NAME" ]; then
+        cat <<'EOF'
+Known stage 3 symptoms:
+
+  for-loop-counter-shadow
+    User var named `fi` collides with emit_for's internal counter
+    SSA name "fi". Auto-cache by direct name overwrites the user
+    entry. Symptom: struct literals drop every-other field.
+    Fixed: emit_for renamed counter to "__fi".
+
+  match-stub
+    Match expression compiles to a 13-line stub that returns the
+    default value, dropping all arm dispatches. Currently the
+    blocker for stage 3 self-compile.
+
+  primitive-eq
+    `let a = 122; if a == 122 { ... }` evaluates the equality
+    incorrectly when one side is loaded from a struct field and
+    the other from an `export mut` global. Open.
+
+Use --repro <name> to write the repro to /tmp/_repro_<name>.fg.
+EOF
+        return
+    fi
+    local out="/tmp/_repro_${REPRO_NAME}.fg"
+    case "$REPRO_NAME" in
+        for-loop-counter-shadow)
+            cat > "$out" <<'EOF'
+fn main() {
+    mut fi = 100
+    let xs: List<int> = [1, 2, 3, 4]
+    for x in xs {
+        fi = fi + 1
+    }
+    println("fi=" + string(fi))
+    // Expect: fi=104. Pre-fix actual: fi=102 (loop counter shadow).
+}
+EOF
+            ;;
+        match-stub)
+            cat > "$out" <<'EOF'
+enum K { A, B, C, D }
+fn name(k: K) -> string {
+    match k {
+        .A -> { "a" }
+        .B -> { "b" }
+        .C -> { "c" }
+        .D -> { "d" }
+    }
+}
+fn main() { println(name(K.B)) }
+// Expect: b. Stage 2 binary stubs the match → prints "" or default.
+EOF
+            ;;
+        primitive-eq)
+            cat > "$out" <<'EOF'
+export mut THE_VAL: int = 122
+type Box = { v: int }
+fn main() {
+    let b = Box { v: 122 }
+    if b.v == THE_VAL {
+        println("equal")
+    } else {
+        println("not equal — BUG")
+    }
+}
+// Expect: equal. Stage 2 binary often emits "not equal".
+EOF
+            ;;
+        *)
+            echo "Unknown symptom: $REPRO_NAME (try --repro list)" >&2
+            exit 1
+            ;;
+    esac
+    echo "wrote $out"
+    sed 's/^/  /' "$out"
+}
+
+# ─── --shadow-check ──────────────────────────────────────────────
+# Static lint: scan for user `let/mut <name> = ...` declarations
+# whose <name> matches an internal SSA-name string used in any
+# `build_alloca(..., "<name>")` call elsewhere in the same file.
+# Such collisions are silent bugs via the auto-cache by direct
+# name path in forge_llvm_build_alloca.
+run_shadow_check() {
+    echo "── Scanning packages/forgec/src for var/SSA-name collisions ──"
+    local internal_names
+    internal_names=$(grep -rhoE 'build_alloca\([^,]*,[^,]*,[[:space:]]*"[a-zA-Z_][a-zA-Z0-9_]{0,4}"' packages/forgec/src 2>/dev/null \
+        | grep -oE '"[a-zA-Z_][a-zA-Z0-9_]*"$' \
+        | tr -d '"' \
+        | sort -u)
+    if [ -z "$internal_names" ]; then
+        echo "  no internal alloca names found"
+        return
+    fi
+    local found=0
+    for n in $internal_names; do
+        # Find user `let|mut <n>` declarations in the same package
+        local hits
+        hits=$(grep -rnE "(let|mut) +${n}( |=|:)" packages/forgec/src 2>/dev/null \
+            | grep -v "build_alloca" \
+            | grep -v "^[^:]*\.md:")
+        if [ -n "$hits" ]; then
+            yellow "  ⚠ \"$n\" — used as both internal SSA name and user variable:"
+            echo "$hits" | head -5 | sed 's/^/      /'
+            found=$((found + 1))
+        fi
+    done
+    if [ "$found" = "0" ]; then
+        green "  no collisions found ✓"
+    else
+        echo ""
+        echo "  $found collisions. Each is a potential silent bug. Rename"
+        echo "  EITHER the user variable OR the build_alloca name string."
+    fi
+}
+
+# ─── --probe-cmp <fn> [input.fg] ─────────────────────────────────
+# Patch output.ll: in <fn>, before every `icmp eq/ne i64`, emit a
+# call to forge_trace_i64 (id 9999) with both operands. Then re-llc
+# + re-link, run on input.fg, grep traces. Use this when an `==`
+# is silently false in stage 2 binary and you can't tell which one.
+run_probe_cmp() {
+    if [ -z "$DIFF_FN" ]; then
+        echo "Usage: diagnose.sh --probe-cmp <fn_name> [input.fg]" >&2
+        exit 1
+    fi
+    if [ ! -f output.ll ]; then
+        echo "ERROR: output.ll missing — run stage1_rust first" >&2
+        exit 1
+    fi
+    local patched=/tmp/_probe_cmp.ll
+    # Use perl (always present on macOS) for portable in-fn icmp injection.
+    # For each `icmp eq/ne i64 LHS, RHS` inside the target function,
+    # prepend two trace calls with LHS then RHS. We don't modify the icmp.
+    perl -e '
+        my $fn = $ARGV[0]; shift @ARGV;
+        my $marker = "\@$fn(";
+        my $in_fn = 0;
+        while (<STDIN>) {
+            if (index($_, "define ") == 0 && index($_, $marker) >= 0) {
+                $in_fn = 1; print; next;
+            }
+            if ($in_fn && /^\}/) { $in_fn = 0; print; next; }
+            if ($in_fn && /^\s+(?:%\S+\s+=\s+)?icmp (?:eq|ne) i64 (\S+), (\S+)$/) {
+                my ($lhs, $rhs) = ($1, $2);
+                $lhs =~ s/,$//;
+                print "  call void \@forge_trace_i64(i64 9999, i64 $lhs)\n";
+                print "  call void \@forge_trace_i64(i64 9998, i64 $rhs)\n";
+            }
+            print;
+        }
+    ' "$DIFF_FN" < output.ll > "$patched"
+    local ndiff
+    ndiff=$(diff output.ll "$patched" | grep -c '^>')
+    echo "  injected $((ndiff / 2)) probes into @$DIFF_FN"
+    if [ "$ndiff" = "0" ]; then
+        echo "  no i64 == / != comparisons found in @$DIFF_FN" >&2
+        return
+    fi
+    /opt/homebrew/opt/llvm@19/bin/llc -filetype=obj "$patched" -o /tmp/_probe.o 2>/tmp/_probe_llc.log
+    if [ ! -s /tmp/_probe.o ]; then
+        echo "  llc failed:"; head -5 /tmp/_probe_llc.log | sed 's/^/    /'
+        return
+    fi
+    cc -o /tmp/_probe_bin /tmp/_probe.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
+        packages/std-llvm/target/release/libforge_llvm.a \
+        -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses 2>/tmp/_probe_link.log
+    if [ ! -x /tmp/_probe_bin ]; then
+        echo "  link failed:"; head -5 /tmp/_probe_link.log | sed 's/^/    /'
+        return
+    fi
+    if [ ! -f "$PROBE_INPUT" ]; then
+        echo "  no input file ($PROBE_INPUT) — skipping run; binary at /tmp/_probe_bin"
+        return
+    fi
+    /tmp/_probe_bin build "$PROBE_INPUT" 2>/tmp/_probe_run.log
+    grep -E "9999|9998" /tmp/_probe_run.log | head -40
+}
+
+# ─── --cmp-broken ────────────────────────────────────────────────
+# Battery of tiny self-contained Forge programs that exercise the
+# operations stage 2 binary needs in order to self-compile. Each
+# test has a known expected stdout. First failing test name is
+# probably your next stage-3 bug.
+run_cmp_broken() {
+    local stage2_bin
+    stage2_bin=$(ensure_stage2_bin) || return 1
+    local pass=0 fail=0
+    local tests_dir=/tmp/_cb_tests
+    rm -rf "$tests_dir" && mkdir -p "$tests_dir"
+    cb_run() {
+        local name="$1" expected="$2" code="$3"
+        local f="$tests_dir/${name}.fg"
+        printf 'fn main() {\n    %s\n}\n' "$code" > "$f"
+        rm -f a.out output.ll
+        "$stage2_bin" build "$f" >/tmp/_cb_build_run.log 2>&1 || true
+        if [ ! -x ./a.out ]; then
+            red "  ✗ $name — stage 2 binary failed to compile snippet"
+            tail -5 /tmp/_cb_build_run.log | sed 's/^/      /'
+            fail=$((fail + 1))
+            return
+        fi
+        local actual
+        actual=$(./a.out 2>&1 | tail -5)
+        if [ "$actual" = "$expected" ]; then
+            green "  ✓ $name"
+            pass=$((pass + 1))
+        else
+            red "  ✗ $name"
+            echo "      expected: $expected"
+            echo "      actual:   $actual"
+            fail=$((fail + 1))
+        fi
+    }
+    echo "── stage 2 binary smoke battery ──"
+    cb_run "int_eq_literal"   "yes"  'if 5 == 5 { println("yes") } else { println("no") }'
+    cb_run "int_eq_var"       "yes"  'let a = 122; if a == 122 { println("yes") } else { println("no") }'
+    cb_run "int_eq_two_vars"  "yes"  'let a = 7; let b = 7; if a == b { println("yes") } else { println("no") }'
+    cb_run "string_eq"        "yes"  'if "hi" == "hi" { println("yes") } else { println("no") }'
+    cb_run "for_loop_count"   "10"   'mut s = 0; let xs: List<int> = [1,2,3,4]; for x in xs { s = s + x }; println(string(s))'
+    cb_run "for_with_fi_var"  "fi=104"  'mut fi = 100; let xs: List<int> = [1,2,3,4]; for x in xs { fi = fi + 1 }; println("fi=" + string(fi))'
+    cb_run "struct_4_fields"  "1 2 3 4" 'let t: List<int> = [1,2,3,4]; println(string(t[0]) + " " + string(t[1]) + " " + string(t[2]) + " " + string(t[3]))'
+    echo ""
+    echo "  $pass passed, $fail failed"
+}
+
+# ─── --find-stubs ────────────────────────────────────────────────
+# Compare two .ll files (or snapshot labels) and list every function
+# where the second has < 25% the line count of the first AND looks
+# like a stub (single phi entry, returns default). Output sorted by
+# how much was lost — biggest stubs first. These are the functions
+# whose codegen is silently broken in stage 2 binary's compilation.
+run_find_stubs() {
+    local a b
+    a=$(resolve_snap "$DIFF_A")
+    b=$(resolve_snap "$DIFF_B")
+    echo "── find-stubs: $a (ref) vs $b (target) ──"
+    local fns_file=/tmp/_stubs_fns.txt
+    grep -oE '^define [^@]*@[A-Za-z_][A-Za-z0-9_]*' "$a" \
+        | sed 's/.*@//' | sort -u > "$fns_file"
+    local results=/tmp/_stubs_results.txt
+    : > "$results"
+    while IFS= read -r fn; do
+        local al bl
+        al=$(extract_llvm_fn "$a" "$fn" | wc -l | tr -d ' ')
+        bl=$(extract_llvm_fn "$b" "$fn" | wc -l | tr -d ' ')
+        if [ "$al" = "0" ] || [ "$bl" = "0" ]; then continue; fi
+        # Stub heuristic: target < 25% of ref AND ref ≥ 30 lines AND target ≤ 25 lines
+        if [ "$al" -ge 30 ] && [ "$bl" -le 25 ] && [ $((bl * 4)) -lt "$al" ]; then
+            local lost=$((al - bl))
+            # Bonus: confirm it has the match-stub signature
+            local sig=""
+            if extract_llvm_fn "$b" "$fn" | grep -q 'phi .*\[.*\]$'; then
+                sig="${sig}phi"
+            fi
+            if extract_llvm_fn "$b" "$fn" | grep -qE 'extractvalue.*, 0$'; then
+                sig="${sig:+$sig+}tag"
+            fi
+            printf "%5d %5d %5d %s %s\n" "$lost" "$al" "$bl" "$fn" "${sig:-?}" >> "$results"
+        fi
+    done < "$fns_file"
+    local count
+    count=$(wc -l < "$results" | tr -d ' ')
+    if [ "$count" = "0" ]; then
+        green "  no stubs found ✓"
+        return
+    fi
+    echo ""
+    echo "  found $count stubbed functions (sorted by lines lost):"
+    echo ""
+    printf "  %5s %5s %5s  %s\n" "lost" "ref" "tgt" "function"
+    sort -rn "$results" | head -50 | sed 's/^/  /'
+    echo ""
+    echo "  signatures: phi=single phi entry, tag=extract+zext (match dispatch stub)"
+    echo "  full list:  sort -rn $results"
+}
+
+run_dump_bisect() {
+    if [ -z "$DIFF_FN" ]; then
+        echo "Usage: diagnose.sh --dump-bisect <fn_name>" >&2
+        exit 1
+    fi
+    rm -rf /tmp/forge_dump && mkdir -p /tmp/forge_dump
+    echo "── running stage1_rust with FORGE_DEBUG_DUMP=$DIFF_FN ──"
+    FORGE_DEBUG_DUMP="$DIFF_FN" LLVM_SYS_191_PREFIX=/opt/homebrew/opt/llvm@19 \
+        ./target/release/forgec build packages/forgec/src/main.fg --dev -o /tmp/_dump_test \
+        > /tmp/_dump_run.log 2>&1
+    local count
+    count=$(ls /tmp/forge_dump/*.ll 2>/dev/null | wc -l | tr -d ' ')
+    echo "  produced $count step dumps in /tmp/forge_dump/"
+    if [ "$count" = "0" ]; then
+        echo "  no dumps — function $DIFF_FN was never compiled" >&2
+        echo "  available functions in module:" >&2
+        grep -oE "^define [^@]*@[A-Za-z_][A-Za-z0-9_]*" /tmp/_dump_test 2>/dev/null \
+            | sed 's/.*@//' | sort -u | head -20 | sed 's/^/    /' >&2
+        return
+    fi
+    echo ""
+    echo "── per-step diffs (only non-empty shown) ──"
+    local files=( $(ls /tmp/forge_dump/*.ll | sort) )
+    local prev=""
+    local step=0
+    for f in "${files[@]}"; do
+        if [ -n "$prev" ]; then
+            local n
+            n=$(diff "$prev" "$f" | wc -l | tr -d ' ')
+            if [ "$n" != "0" ]; then
+                local label
+                label=$(basename "$f" .ll | sed 's/^[0-9]*_//')
+                printf "  step %3d  %5d lines  %s\n" "$step" "$n" "$label"
+            fi
+        fi
+        prev="$f"
+        step=$((step + 1))
+    done
+    echo ""
+    echo "  inspect: diff /tmp/forge_dump/<a>.ll /tmp/forge_dump/<b>.ll"
+}
+
+run_crash_asm() {
+    local bin="$CRASH_BIN"
+    if [ ! -x "$bin" ]; then
+        echo "ERROR: binary $bin not found or not executable" >&2
+        exit 1
+    fi
+    # Get the function's start address from nm.
+    local start
+    start=$(nm "$bin" 2>/dev/null | awk -v fn="$DIFF_FN" '$3 == "_"fn || $3 == fn {print "0x"$1; exit}')
+    if [ -z "$start" ]; then
+        echo "ERROR: symbol $DIFF_FN not found in $bin" >&2
+        echo "  candidates:" >&2
+        nm "$bin" 2>/dev/null | grep -i "$DIFF_FN" | head -5 >&2
+        exit 1
+    fi
+    local pc
+    pc=$(printf "0x%x" $((start + CRASH_OFF)))
+    echo "── disassembly: $DIFF_FN+$CRASH_OFF in $bin ──"
+    echo "  symbol start: $start"
+    echo "  crash pc:     $pc"
+    echo ""
+    # Use lldb to disassemble. ±20 instructions = 80 bytes.
+    local lo hi
+    lo=$(printf "0x%x" $((start + CRASH_OFF - 80)))
+    hi=$(printf "0x%x" $((start + CRASH_OFF + 80)))
+    lldb -batch -o "disassemble --start-address $lo --end-address $hi" "$bin" 2>&1 \
+        | grep -E "^[ →]|0x[0-9a-f]+" \
+        | awk -v pc="$pc" '
+            { mark=" "; if (index($0, pc) > 0) mark=">"; print mark " " $0 }
+        ' | head -50
 }
 
 run_show_fn() {
@@ -249,19 +958,17 @@ run_show_fn() {
 }
 
 run_binop_test() {
+    local stage2_bin
     echo "═══ Binary-op runtime check ═══"
     echo "  Compiles test programs with build/stage1_rust (oracle) and"
-    echo "  /tmp/stage2 (suspect), runs both, compares output."
+    echo "  the resolved stage2 compiler (suspect), runs both, compares output."
     echo ""
 
     if [ ! -x build/stage1_rust ]; then
         echo "  ✗ build/stage1_rust missing — run --pipeline first" >&2
         return 1
     fi
-    if [ ! -x /tmp/stage2 ]; then
-        echo "  ✗ /tmp/stage2 missing — run --pipeline first" >&2
-        return 1
-    fi
+    stage2_bin=$(ensure_stage2_bin) || return 1
 
     local pass=0 fail=0 fixtures=/tmp/_binop_fixtures
     rm -rf "$fixtures"; mkdir -p "$fixtures"
@@ -329,6 +1036,8 @@ fn main() { println(name_of(Color.Green)) }
 
     local oracle_log=/tmp/_binop_oracle.log
     : > "$oracle_log"
+    local stage2_bin
+    stage2_bin=$(ensure_stage2_bin) || return 1
 
     for src in "$fixtures"/*.fg; do
         local name; name=$(basename "$src" .fg)
@@ -342,8 +1051,8 @@ fn main() { println(name_of(Color.Green)) }
             s1_out="<build-fail>"; s1_status=99
         fi
 
-        rm -f a.out
-        if /tmp/stage2 build "$src" >/dev/null 2>&1 && [ -x a.out ]; then
+        rm -f a.out output.ll
+        if "$stage2_bin" build "$src" >/dev/null 2>&1 && [ -x a.out ]; then
             s2_out=$(./a.out 2>&1 | tr -d '\n'); s2_status=$?
         else
             s2_out="<build-fail>"; s2_status=99
@@ -369,6 +1078,221 @@ fn main() { println(name_of(Color.Green)) }
     echo "  pass=$pass fail=$fail"
     if [ -s "$oracle_log" ]; then
         echo "  (oracle-fails are bad fixtures, not stage 2 bugs — see $oracle_log)"
+    fi
+}
+
+run_progress() {
+    echo "═══════════════════════════════════════════════════════"
+    echo " Stage 3 self-compile progress"
+    echo "═══════════════════════════════════════════════════════"
+    local s2=/tmp/stage1_output.ll
+    [ -f "$s2" ] || s2=output.ll
+    local s3=/tmp/output.ll
+    if [ ! -f "$s2" ] || [ ! -f "$s3" ]; then
+        echo "  ✗ need both $s2 and $s3 — run --pipeline first" >&2
+        return 1
+    fi
+
+    # ──────────────────────────────────────────────
+    # 1. Function count parity
+    # ──────────────────────────────────────────────
+    local s2_fns s3_fns
+    s2_fns=$(grep -c "^define" "$s2")
+    s3_fns=$(grep -c "^define" "$s3")
+    local fn_pct=0
+    if [ "$s2_fns" -gt 0 ]; then
+        fn_pct=$(( s3_fns * 100 / s2_fns ))
+    fi
+    echo ""
+    echo "── 1. Function-count parity ──"
+    printf "  stage 2 IR: %d functions\n" "$s2_fns"
+    printf "  stage 3 IR: %d functions   (%d%%)\n" "$s3_fns" "$fn_pct"
+
+    # ──────────────────────────────────────────────
+    # 2. Per-function body parity
+    # ──────────────────────────────────────────────
+    echo ""
+    echo "── 2. Per-function body parity ──"
+    python3 - "$s2" "$s3" <<'PY'
+import re, sys, hashlib
+def parse(path):
+    fns = {}
+    cur, body = None, []
+    with open(path) as f:
+        for line in f:
+            m = re.match(r'define\s+\S+\s+@(\w+)\(', line)
+            if m:
+                if cur:
+                    fns[cur] = body
+                cur = m.group(1); body = [line]
+            elif cur is not None:
+                body.append(line)
+                if line.startswith('}'):
+                    fns[cur] = body
+                    cur, body = None, []
+    return fns
+
+a = parse(sys.argv[1])
+b = parse(sys.argv[2])
+common = sorted(set(a) & set(b))
+if not common:
+    print("  no common functions"); sys.exit(0)
+
+ident = 0   # byte-identical bodies
+close = 0   # within 10% line-count
+stub  = 0   # stage3 < 25% of stage2 lines, suggests stub
+diff_score_total = 0
+
+stub_examples = []
+for name in common:
+    al, bl = len(a[name]), len(b[name])
+    # normalize: drop bbN labels (auto-numbered) and SSA register numbers
+    def norm(lines):
+        s = ''.join(lines)
+        s = re.sub(r'%\d+', '%v', s)
+        s = re.sub(r'bb\d+', 'bb', s)
+        s = re.sub(r'@\d+', '@N', s)  # global string indices
+        return s
+    if norm(a[name]) == norm(b[name]):
+        ident += 1
+    elif al > 0 and abs(al - bl) <= max(2, al // 10):
+        close += 1
+    elif al > 30 and bl < al // 4:
+        stub += 1
+        if len(stub_examples) < 10:
+            stub_examples.append((name, al, bl))
+    diff_score_total += abs(al - bl)
+
+n = len(common)
+print(f"  byte-identical:    {ident}/{n}  ({ident*100//n}%)")
+print(f"  close (<=10% diff): {close}/{n}  ({close*100//n}%)")
+print(f"  stub (s3<25% s2):  {stub}/{n}  ({stub*100//n}%)")
+print(f"  avg line drift:    {diff_score_total/n:.1f} lines/fn")
+
+if stub_examples:
+    print("")
+    print("  worst stubs (top 10 by stage2 line count):")
+    stub_examples.sort(key=lambda x: -x[1])
+    for name, al, bl in stub_examples:
+        print(f"    {name:38s} stage2={al:5d}  stage3={bl:5d}")
+
+# Body-parity score: identical full credit, close half credit
+body_pct = (ident * 100 + close * 50) // n
+print(f"")
+print(f"  BODY PARITY:       {body_pct}%")
+PY
+    local body_pct
+    body_pct=$(python3 - "$s2" "$s3" <<'PY'
+import re, sys
+def parse(p):
+    fns={}; cur=None; body=[]
+    for line in open(p):
+        m=re.match(r'define\s+\S+\s+@(\w+)\(', line)
+        if m:
+            if cur: fns[cur]=body
+            cur=m.group(1); body=[line]
+        elif cur is not None:
+            body.append(line)
+            if line.startswith('}'): fns[cur]=body; cur=None; body=[]
+    return fns
+a=parse(sys.argv[1]); b=parse(sys.argv[2])
+common=sorted(set(a)&set(b))
+if not common: print(0); sys.exit(0)
+def norm(ls):
+    s=''.join(ls); s=re.sub(r'%\d+','%v',s); s=re.sub(r'bb\d+','bb',s); s=re.sub(r'@\d+','@N',s); return s
+ident=close=0
+for n in common:
+    al,bl=len(a[n]),len(b[n])
+    if norm(a[n])==norm(b[n]): ident+=1
+    elif al>0 and abs(al-bl)<=max(2,al//10): close+=1
+print((ident*100+close*50)//len(common))
+PY
+)
+
+    # ──────────────────────────────────────────────
+    # 3. Stage 3 functional smoke tests
+    # ──────────────────────────────────────────────
+    echo ""
+    echo "── 3. Stage 3 binary functional checks ──"
+    local s3_bin=/tmp/stage3
+    local hello_pass=0 binop_pass=0 binop_total=0
+    # Stage 3 currently has infinite-loop bugs on real input — wrap every
+    # invocation in a 5-second perl alarm.
+    s3run() { perl -e 'alarm 5; exec @ARGV' "$@" 2>/dev/null; }
+
+    if [ ! -x "$s3_bin" ]; then
+        echo "  ✗ /tmp/stage3 missing — run --pipeline first" >&2
+    else
+        # 3a. Trivial hello
+        cat > /tmp/_p_hello.fg <<'FG'
+fn main() { println("hi") }
+FG
+        rm -f a.out
+        if s3run "$s3_bin" build /tmp/_p_hello.fg && [ -x a.out ]; then
+            local out
+            out=$(perl -e 'alarm 3; exec "./a.out"' 2>&1 | tr -d '\n')
+            if [ "$out" = "hi" ]; then
+                hello_pass=1
+                echo "  ✓ stage 3 binary compiles and runs hello-world"
+            else
+                echo "  ✗ stage 3 hello-world produced: '$out' (expected 'hi')"
+            fi
+        else
+            echo "  ✗ stage 3 binary hangs/fails on hello-world"
+        fi
+        rm -f a.out
+
+        # 3b. Run binop fixtures through stage 3 (not stage 2)
+        local fixtures=/tmp/_binop_fixtures
+        if [ -d "$fixtures" ]; then
+            for src in "$fixtures"/*.fg; do
+                local exp; exp=$(cat "${src%.fg}.expected")
+                rm -f a.out
+                if s3run "$s3_bin" build "$src" && [ -x a.out ]; then
+                    local out; out=$(perl -e 'alarm 3; exec "./a.out"' 2>&1 | tr -d '\n')
+                    if [ "$out" = "$exp" ]; then
+                        binop_pass=$((binop_pass + 1))
+                    fi
+                fi
+                binop_total=$((binop_total + 1))
+            done
+            rm -f a.out
+            local binop_pct=0
+            [ "$binop_total" -gt 0 ] && binop_pct=$(( binop_pass * 100 / binop_total ))
+            printf "  binop fixtures via stage 3: %d/%d (%d%%)\n" "$binop_pass" "$binop_total" "$binop_pct"
+        else
+            echo "  (no binop fixtures — run --binop-test once first)"
+        fi
+    fi
+
+    # ──────────────────────────────────────────────
+    # 4. Composite score
+    # ──────────────────────────────────────────────
+    echo ""
+    echo "── 4. Composite progress ──"
+    local binop_pct=0
+    [ "${binop_total:-0}" -gt 0 ] && binop_pct=$(( binop_pass * 100 / binop_total ))
+    # Weighting:
+    #   fn_pct        20%   (function count parity)
+    #   body_pct      40%   (function body parity, the hard part)
+    #   hello_pass    10%   (binary boots and produces output)
+    #   binop_pct     30%   (runtime semantics correct)
+    local composite=$(( fn_pct * 20 / 100 + body_pct * 40 / 100 + hello_pass * 10 + binop_pct * 30 / 100 ))
+    printf "  fn-count parity:  %3d%%   (×0.20)\n" "$fn_pct"
+    printf "  body parity:      %3d%%   (×0.40)\n" "$body_pct"
+    printf "  hello-world boot: %3d%%   (×0.10)\n" "$((hello_pass * 100))"
+    printf "  binop runtime:    %3d%%   (×0.30)\n" "$binop_pct"
+    echo  "                  ─────────"
+    printf "  PROGRESS:         %3d%%\n" "$composite"
+    echo ""
+    if [ "$composite" -ge 90 ]; then
+        green "  ★ stage 3 self-compile is within reach"
+    elif [ "$composite" -ge 60 ]; then
+        yellow "  → solid runway; keep fixing the worst stubs"
+    elif [ "$composite" -ge 30 ]; then
+        yellow "  → infrastructure is up; semantics still half-broken"
+    else
+        red "  → early days"
     fi
 }
 
@@ -403,6 +1327,75 @@ print(f"\nTOTAL: {total} functions emit `ret <T> undef`")
 print("These usually mean self-host's emit_ret_value passed a value whose")
 print("LLVM type didn't match the function's declared return. Common cause:")
 print("missing inttoptr/ptrtoint coercion in forge_llvm_build_ret wrapper.")
+PY
+}
+
+run_container_abi() {
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    echo "═══ Container ABI audit — $IR ═══"
+    python3 - "$IR" <<'PY'
+import pathlib, re, sys
+
+ir_path = pathlib.Path(sys.argv[1])
+src_root = pathlib.Path("packages/forgec/src")
+
+sig_re = re.compile(r'\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\((.*?)\)\s*(?:->\s*([^{]+))?')
+param_re = re.compile(r':\s*([^,)]+)')
+decls = {}
+
+for path in src_root.rglob("*.fg"):
+    text = re.sub(r'\s+', ' ', path.read_text())
+    for match in sig_re.finditer(text):
+        name = match.group(1)
+        params_src = match.group(2) or ""
+        ret_src = (match.group(3) or "").strip()
+        params = [p.strip() for p in param_re.findall(params_src)]
+        has_container = any(p.startswith("List<") or p.startswith("Map<") for p in params)
+        has_container = has_container or ret_src.startswith("List<") or ret_src.startswith("Map<")
+        if has_container:
+            decls[name] = {"path": str(path), "params": params, "ret": ret_src}
+
+if not decls:
+    print("  no List<T>/Map<K,V> source signatures found")
+    sys.exit(0)
+
+ir = ir_path.read_text()
+ir_sig_re = re.compile(r'^define\s+(.+?)\s+@([A-Za-z_][A-Za-z0-9_]*)\((.*?)\)\s*\{', re.M)
+issues = []
+checked = 0
+
+for ret_ty, name, params_src in ir_sig_re.findall(ir):
+    if name not in decls:
+        continue
+    checked += 1
+    src = decls[name]
+    ir_params = []
+    if params_src.strip():
+        ir_params = [p.strip() for p in re.split(r',\s*(?![^{}]*\})', params_src)]
+    if len(ir_params) != len(src["params"]):
+        issues.append((name, src["path"], f"param-count source={len(src['params'])} ir={len(ir_params)}"))
+        continue
+    for idx, src_param in enumerate(src["params"]):
+        if src_param.startswith("List<") or src_param.startswith("Map<"):
+            if "%ForgeString" in ir_params[idx]:
+                issues.append((name, src["path"], f"param {idx} lowered to ForgeString: {src_param} -> {ir_params[idx]}"))
+    if (src["ret"].startswith("List<") or src["ret"].startswith("Map<")) and "%ForgeString" in ret_ty:
+        issues.append((name, src["path"], f"return lowered to ForgeString: {src['ret']} -> {ret_ty}"))
+
+if not checked:
+    print("  no matching IR definitions found for source container signatures")
+    sys.exit(0)
+
+if not issues:
+    print(f"  checked {checked} functions with container signatures")
+    print("  no List<T>/Map<K,V> -> %ForgeString signature aliases found ✓")
+    sys.exit(0)
+
+for name, path, msg in issues:
+    print(f"  {name:32s} {msg}")
+    print(f"      source: {path}")
+print()
+print(f"TOTAL: {len(issues)} container ABI mismatches")
 PY
 }
 
@@ -632,20 +1625,13 @@ run_kind_ids() {
 # STAGE2 MODE — functional tests
 # ═════════════════════════════════════════════════════════════════
 run_stage2() {
-    STAGE2=build/stage2
-    if [ ! -f "/tmp/stage2" ] && [ ! -f "$STAGE2" ]; then
-        echo "No Stage 2 binary found. Build with:"
-        echo "  /opt/homebrew/opt/llvm@19/bin/llc -O2 -filetype=obj output.ll -o /tmp/stage2.o"
-        echo "  cc -o /tmp/stage2 /tmp/stage2.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \\"
-        echo "    packages/std-llvm/target/release/libforge_llvm.a \\"
-        echo "    -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses"
-        return
-    fi
-    [ -f "/tmp/stage2" ] && STAGE2="/tmp/stage2"
+    local STAGE2
+    STAGE2=$(ensure_stage2_bin) || return 1
 
     echo "═══════════════════════════════════════════════"
     echo " Stage 2 Functional Tests"
     echo "═══════════════════════════════════════════════"
+    echo " Using compiler: $STAGE2"
 
     pass() { printf "  [\033[32m✓\033[0m] %s\n" "$1"; }
     fail() { printf "  [\033[31m✗\033[0m] %s — %s\n" "$1" "$2"; }
@@ -818,7 +1804,7 @@ for f, c in sorted(counts.items(), key=lambda x: -x[1])[:5]:
     # ─── 12. Stage 2 Binary ───────────────────────────────────
     echo ""
     echo "── 12. Stage 2 Binary ──"
-    if [ -f "/tmp/stage2" ] || [ -f "build/stage2" ]; then
+    if [ -f "/tmp/stage2" ] || [ -f "build/stage2" ] || [ -f "$DEFAULT_STAGE2_LL" ]; then
         run_stage2
     else
         warn "No Stage 2 binary found"
@@ -897,10 +1883,8 @@ run_source() {
 # STAGE3 MODE — build and test stage 3 binary
 # ═════════════════════════════════════════════════════════════════
 run_stage3() {
-    if [ ! -f "/tmp/stage2" ]; then
-        echo "No /tmp/stage2 binary found. Run --stage2 or --pipeline first."
-        return
-    fi
+    local STAGE2_BIN
+    STAGE2_BIN=$(ensure_stage2_bin) || return 1
 
     echo "═══════════════════════════════════════════════"
     echo " Stage 3 Build & Test"
@@ -915,7 +1899,7 @@ run_stage3() {
     ABS_SRC="$(pwd -P)/$FORGE_SRC/main.fg"
     pushd /tmp > /dev/null
     rm -f /tmp/output.ll
-    /tmp/stage2 build "$ABS_SRC" >/tmp/_s3_out.log 2>&1 || true
+    "$STAGE2_BIN" build "$ABS_SRC" >/tmp/_s3_out.log 2>&1 || true
     popd > /dev/null
 
     if [ ! -f /tmp/output.ll ]; then
@@ -947,7 +1931,7 @@ run_stage3() {
     # leaves /tmp/stage3.o behind and we falsely report "llc passed" while
     # actually using last week's object file.
     rm -f /tmp/stage3.o /tmp/stage3
-    /opt/homebrew/opt/llvm@19/bin/llc -O2 -filetype=obj /tmp/output.ll -o /tmp/stage3.o 2>/tmp/_s3_llc.log
+    "$LLC_BIN" -O2 -filetype=obj /tmp/output.ll -o /tmp/stage3.o 2>/tmp/_s3_llc.log
     if [ -s /tmp/stage3.o ] && ! grep -q "error:" /tmp/_s3_llc.log; then
         pass "llc → object file"
     else
@@ -955,9 +1939,10 @@ run_stage3() {
         return
     fi
 
-    cc -o /tmp/stage3 /tmp/stage3.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
-        packages/std-llvm/target/release/libforge_llvm.a \
-        -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses 2>/tmp/_s3_link.log
+    local llvm_libs
+    llvm_libs="$("$LLVM_CONFIG_BIN" --ldflags --libs core analysis bitwriter)"
+    cc -o /tmp/stage3 /tmp/stage3.o "$RUNTIME_O" -lm -Wl,-stack_size,0x10000000 \
+        "$STD_LLVM_LIB" $llvm_libs -lstdc++ -lz -lcurses 2>/tmp/_s3_link.log
     if [ -x /tmp/stage3 ] && ! grep -q "error:" /tmp/_s3_link.log; then
         pass "cc → /tmp/stage3 executable"
     else
@@ -966,13 +1951,33 @@ run_stage3() {
     fi
 
     echo ""
-    echo "── Stage 3 Run ──"
-    /tmp/stage3 build "$FORGE_SRC/main.fg" >/tmp/_s3_runlog 2>&1
+    echo "── Stage 3 Run (60s hard timeout) ──"
+    # Stage 3 has known infinite-loop bugs on real input. ALWAYS bound it.
+    # If you don't, the pipeline silently hangs forever and zombie procs
+    # accumulate at 85% CPU (we've collected 6+ in a single afternoon).
+    rm -f /tmp/_s3_runlog
+    ( /tmp/stage3 build "$FORGE_SRC/main.fg" >/tmp/_s3_runlog 2>&1 ) &
+    local s3_pid=$!
+    local waited=0
+    while kill -0 "$s3_pid" 2>/dev/null; do
+        if [ "$waited" -ge 60 ]; then
+            kill -9 "$s3_pid" 2>/dev/null
+            wait "$s3_pid" 2>/dev/null
+            fail "Stage 3 exits 0" "TIMEOUT after 60s — INFINITE LOOP"
+            local lines=$(wc -l < /tmp/_s3_runlog 2>/dev/null | tr -d ' ')
+            echo "  last $lines lines of output before timeout:"
+            tail -10 /tmp/_s3_runlog 2>/dev/null | sed 's/^/    /'
+            return
+        fi
+        sleep 1
+        waited=$((waited+1))
+    done
+    wait "$s3_pid"
     EXIT=$?
     if [ "$EXIT" -eq 0 ]; then
-        pass "Stage 3 exits 0"
+        pass "Stage 3 exits 0 (after ${waited}s)"
     else
-        fail "Stage 3 exits 0" "exit $EXIT"
+        fail "Stage 3 exits 0" "exit $EXIT after ${waited}s"
     fi
 
     LINES=$(wc -l < /tmp/_s3_runlog | tr -d ' ')
@@ -1019,12 +2024,9 @@ run_pipeline() {
 
     echo ""
     echo "── Stage 2 binary build ──"
-    cp output.ll /tmp/stage1_output.ll
-    /opt/homebrew/opt/llvm@19/bin/llc -O2 -filetype=obj /tmp/stage1_output.ll -o /tmp/stage2.o 2>/tmp/_p2llc.log
-    cc -o /tmp/stage2 /tmp/stage2.o build/runtime.o -lm -Wl,-stack_size,0x10000000 \
-        packages/std-llvm/target/release/libforge_llvm.a \
-        -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses 2>/tmp/_p2link.log
-    if [ -x /tmp/stage2 ]; then
+    cp -f output.ll "$DEFAULT_STAGE2_LL"
+    if build_compiler_from_ir "$DEFAULT_STAGE2_LL" "$DEFAULT_STAGE2_BIN" "${DEFAULT_STAGE2_BIN}.o" \
+        /tmp/_p2llc.log /tmp/_p2link.log; then
         pass "Stage 2 binary built"
     else
         fail "Stage 2 build" "$(tail -3 /tmp/_p2link.log | tr '\n' ' ')"
@@ -1372,6 +2374,49 @@ for score, name, c in scored[:30]:
     print(f"  {score:>5} {c['orphans']:>4} {c['undef_args']:>4} {c['i64_struct']:>4} {c['ret_undef']:>4}  {name}")
 print(f"\n  total functions with anomalies: {len(scored)} / {len(funcs)}")
 PY
+}
+
+run_llvm_decls() {
+    python3 - <<'PY'
+import pathlib, re, sys
+
+code = pathlib.Path("packages/forgec/src/codegen/mod.fg").read_text()
+wrappers = sorted(set(re.findall(r'llvm\.([A-Za-z0-9_]+)\(', code)))
+declared = set(re.findall(r'"(forge_llvm_[A-Za-z0-9_]+(?:_s)?)"', code))
+
+missing = []
+for name in wrappers:
+    expected = [f"forge_llvm_{name}", f"forge_llvm_{name}_s"]
+    if not any(sym in declared for sym in expected):
+        missing.append((name, expected))
+
+print("═══ LLVM Decl Audit ═══")
+if not missing:
+    print("  all llvm.* wrappers used by self-host codegen are declared ✓")
+    sys.exit(0)
+
+for name, expected in missing:
+    print(f"  missing llvm.{name} -> one of: {', '.join(expected)}")
+sys.exit(1)
+PY
+}
+
+run_body_reparse() {
+    if [ -z "${BODY_REPARSE_SRC:-}" ]; then
+        echo "Usage: diagnose.sh --body-reparse <src.fg>" >&2
+        return 2
+    fi
+    if [ ! -f "$BODY_REPARSE_SRC" ]; then
+        echo "Source file not found: $BODY_REPARSE_SRC" >&2
+        return 2
+    fi
+
+    local STAGE2
+    STAGE2=$(ensure_stage2_bin) || return 1
+    local TMP_BIN=/tmp/forge_body_reparse.bin
+
+    "$STAGE2" build "$BODY_REPARSE_SRC" "$TMP_BIN" 2>&1 | \
+        grep -E '^(\[STORE\]|  \[FN_ADD\]|  \[fn_store|  >> |  \[TOK\]|  \[BODY\]|  \[T\] 7777|  \[EBS\]|  \[extract_body\])' || true
 }
 
 # #3 — "Why is this i64?" reverse lookup. Given a function name and
@@ -1787,35 +2832,123 @@ PY
     # Method E: stage 2 binary smoke test
     echo ""
     echo "── E. Stage 2 binary smoke test ──"
-    /opt/homebrew/opt/llvm@19/bin/llc -O0 -filetype=obj "$B" -o /tmp/stage2.o 2>/dev/null
-    cc -o /tmp/stage2_bin /tmp/stage2.o build/runtime.o $(/opt/homebrew/opt/llvm@19/bin/llvm-config --ldflags --libs core analysis bitwriter) -lm -Wl,-stack_size,0x10000000 packages/std-llvm/target/release/libforge_llvm.a -lstdc++ -lz -lcurses 2>/dev/null
-    echo 'fn main() { println("hi") }' > /tmp/_bug_hi.fg
-    rm -f output.ll a.out 2>/dev/null
-    /tmp/stage2_bin build /tmp/_bug_hi.fg >/dev/null 2>&1 || true
-    if [ -f a.out ] && [ "$(./a.out 2>&1)" = "hi" ]; then
-        echo "  ✓ stage 2 binary compiles + runs hello world"
+    if build_compiler_from_ir "$B" /tmp/stage2_bin /tmp/stage2_bin.o /tmp/_bugs_stage2_llc.log /tmp/_bugs_stage2_link.log; then
+        echo 'fn main() { println("hi") }' > /tmp/_bug_hi.fg
+        rm -f output.ll a.out 2>/dev/null
+        /tmp/stage2_bin build /tmp/_bug_hi.fg >/dev/null 2>&1 || true
+        if [ -f a.out ] && [ "$(./a.out 2>&1)" = "hi" ]; then
+            echo "  ✓ stage 2 binary compiles + runs hello world"
+        else
+            echo "  ✗ stage 2 binary BROKEN on hello world"
+            echo "STAGE2_BIN\thello_world\thello-world-broken" >> "$report"
+        fi
     else
-        echo "  ✗ stage 2 binary BROKEN on hello world"
-        echo "STAGE2_BIN\thello_world\thello-world-broken" >> "$report"
+        echo "  ✗ stage 2 binary failed to link from $B"
+        echo "STAGE2_BIN\tlink\tlink-failure" >> "$report"
     fi
 
     # Method F: stage 3 binary smoke test (stage 2 → stage 3)
     echo ""
     echo "── F. Stage 3 binary smoke test ──"
-    rm -f output.ll a.out 2>/dev/null
-    /tmp/stage2_bin build packages/forgec/src/main.fg >/dev/null 2>&1 || true
-    if [ -f output.ll ]; then
-        cp output.ll /tmp/stage3.ll
-        if /opt/homebrew/opt/llvm@19/bin/llc -O0 -filetype=null /tmp/stage3.ll >/dev/null 2>&1; then
-            echo "  ✓ stage 3 IR llc-clean ($(grep -c '^define' /tmp/stage3.ll) functions)"
+    if [ -x /tmp/stage2_bin ]; then
+        rm -f output.ll a.out 2>/dev/null
+        /tmp/stage2_bin build packages/forgec/src/main.fg >/dev/null 2>&1 || true
+        if [ -f output.ll ]; then
+            cp output.ll /tmp/stage3.ll
+            if "$LLC_BIN" -O0 -filetype=null /tmp/stage3.ll >/dev/null 2>&1; then
+                echo "  ✓ stage 3 IR llc-clean ($(grep -c '^define' /tmp/stage3.ll) functions)"
+            else
+                echo "  ✗ stage 3 IR fails llc"
+                echo "STAGE3_BIN\tllc\tllc-failure" >> "$report"
+            fi
         else
-            echo "  ✗ stage 3 IR fails llc"
-            echo "STAGE3_BIN\tllc\tllc-failure" >> "$report"
+            echo "  ✗ stage 2 binary did NOT produce stage 3 IR"
+            echo "STAGE3_BIN\tcompile\tdid-not-emit" >> "$report"
         fi
     else
-        echo "  ✗ stage 2 binary did NOT produce stage 3 IR"
-        echo "STAGE3_BIN\tcompile\tdid-not-emit" >> "$report"
+        echo "  (skipped — /tmp/stage2_bin not built)"
     fi
+
+    # Method G: stub detection (functions truncated to ≤25% of ref)
+    echo ""
+    echo "── G. Stubbed functions (find-stubs) ──"
+    local stubs_file=/tmp/_bugs_stubs.txt
+    : > "$stubs_file"
+    while IFS= read -r fn; do
+        local al bl
+        al=$(extract_llvm_fn "$A" "$fn" | wc -l | tr -d ' ')
+        bl=$(extract_llvm_fn "$B" "$fn" | wc -l | tr -d ' ')
+        if [ "$al" = "0" ] || [ "$bl" = "0" ]; then continue; fi
+        if [ "$al" -ge 30 ] && [ "$bl" -le 25 ] && [ $((bl * 4)) -lt "$al" ]; then
+            echo "$fn $al $bl" >> "$stubs_file"
+        fi
+    done < <(grep -oE '^define [^@]*@[A-Za-z_][A-Za-z0-9_]*' "$A" | sed 's/.*@//' | sort -u)
+    local stub_count
+    stub_count=$(wc -l < "$stubs_file" | tr -d ' ')
+    echo "  total stubbed functions: $stub_count"
+    if [ "$stub_count" != "0" ]; then
+        echo "  top 5 (lines lost):"
+        awk '{print ($2-$3) " " $1 " (" $2 "→" $3 ")"}' "$stubs_file" \
+            | sort -rn | head -5 | sed 's/^/    /'
+        awk '{print "STUB\t" $1 "\tref=" $2 " tgt=" $3}' "$stubs_file" >> "$report"
+    fi
+
+    # Method H: stage 2 binary smoke battery (--cmp-broken inline)
+    echo ""
+    echo "── H. Stage 2 binary smoke battery (cmp-broken) ──"
+    local cb_pass=0 cb_fail=0
+    local cb_dir=/tmp/_bugs_cb
+    rm -rf "$cb_dir" && mkdir -p "$cb_dir"
+    if [ -x /tmp/stage2_bin ]; then
+        cb_test() {
+            local n="$1" exp="$2" code="$3"
+            local f="$cb_dir/$n.fg"
+            printf 'fn main() {\n    %s\n}\n' "$code" > "$f"
+            rm -f a.out output.ll
+            /tmp/stage2_bin build "$f" >/dev/null 2>&1 || true
+            if [ ! -x ./a.out ]; then
+                cb_fail=$((cb_fail + 1))
+                echo "SMOKE\t$n\tcompile-failed" >> "$report"
+                return
+            fi
+            local got
+            got=$(./a.out 2>&1 | tail -5)
+            if [ "$got" = "$exp" ]; then
+                cb_pass=$((cb_pass + 1))
+            else
+                cb_fail=$((cb_fail + 1))
+                echo "SMOKE\t$n\texpected=$exp got=$got" >> "$report"
+            fi
+        }
+        cb_test int_eq_literal   "yes"  'if 5 == 5 { println("yes") } else { println("no") }'
+        cb_test int_eq_var       "yes"  'let a = 122; if a == 122 { println("yes") } else { println("no") }'
+        cb_test for_loop_count   "10"   'mut s = 0; let xs: List<int> = [1,2,3,4]; for x in xs { s = s + x }; println(string(s))'
+        cb_test list_lit_length  "4"    'let xs: List<int> = [1,2,3,4]; println(string(xs.length))'
+        cb_test match_enum       "b"    'enum K { A, B }; fn main() { let r = match K.B { .A -> { "a" } .B -> { "b" } }; println(r) }'
+        echo "  $cb_pass passed, $cb_fail failed"
+    else
+        echo "  (skipped — /tmp/stage2_bin not built)"
+    fi
+
+    # Method I: shadow-check static lint
+    echo ""
+    echo "── I. SSA-name / user-var collisions (shadow-check) ──"
+    local internal_names
+    internal_names=$(grep -rhoE 'build_alloca\([^)]*"[a-zA-Z_][a-zA-Z0-9_]{0,4}"\)' packages/forgec/src 2>/dev/null \
+        | grep -oE '"[a-zA-Z_][a-zA-Z0-9_]*"' | tr -d '"' | sort -u)
+    local shadow_count=0
+    for n in $internal_names; do
+        # Skip __-prefixed names (intentionally internal)
+        case "$n" in __*) continue ;; esac
+        local hits
+        hits=$(grep -rnE "(let|mut) +${n}( |=|:)" packages/forgec/src 2>/dev/null \
+            | grep -v "build_alloca" | grep -v "/mini" || true)
+        if [ -n "$hits" ]; then
+            shadow_count=$((shadow_count + 1))
+            echo "SHADOW\t$n\t$(echo "$hits" | head -1)" >> "$report"
+        fi
+    done
+    echo "  collisions found: $shadow_count"
 
     # ── Phase 3: deduplicate and rank ──────────────────────────
     echo ""
@@ -1862,6 +2995,7 @@ PIPELINE INSPECTION
   --orphans [file.ll]            functions with orphan blocks, ranked
   --ir-sanity [file.ll]          scan for known anti-patterns
   --kind-ids                     token kind_id consistency check
+  --build-stage2 [ir] [bin]      link a runnable compiler from IR ★
   --pipeline                     full stage 1 → stage 3 sanity run
   --stage2 / --stage3            functional smoke tests
   --source                       what's in the source layout
@@ -1871,10 +3005,24 @@ FUNCTION-LEVEL DIFFING
   --rank-diff [a.ll] [b.ll]      rank functions by diff size
   --cfg-summary <fn> [a] [b]     blocks/orphans/phis side-by-side
   --type-diff [a.ll] [b.ll]      function signatures that differ ★
+  --storage-audit [file.ll]      rank direct alloca/store ABI mismatches ★
   --anomaly [file.ll]            per-function anomaly score ★
+  --llvm-decls                   audit missing self-host LLVM decls ★
+  --body-reparse <src.fg>        trace body-src → tokens → stmt counts ★
   --whyi64 <fn> <param>          why is this param i64? ★
   --cfg <fn> [file.ll]           graphviz dot output of CFG
   --fn-ir <fn> [file.ll]         dump one function's IR (no awk) ★
+  --capture <label> [file.ll]    snapshot output.ll for later --diff-builds ★
+  --diff-builds <a> <b> [fn]     diff two snapshots, names normalized ★
+  --container-abi [file.ll]      source vs IR audit for List/Map signatures ★
+  --probe-cmp <fn> [in.fg]       trace every == in <fn> at runtime ★
+  --snip "code"                  compile + run a one-liner via stage1+stage2 ★
+  --repro <symptom>|list         emit a minimal repro for known stage 3 bugs ★
+  --shadow-check                 lint user vars colliding with internal SSA names ★
+  --cmp-broken                   5s smoke battery — first failing test = next bug ★
+  --find-stubs [ref] [tgt]       list every fn that's stubbed in tgt vs ref ★
+  --crash-asm <fn> [off] [bin]   disassemble around a crash offset ★
+  --dump-bisect <fn>             per-step IR dumps + diff (FORGE_DEBUG_DUMP) ★
   --show-fn <fn>                 stage 2 IR vs stage 3 IR side-by-side ★
   --ret-undef [file.ll]          fns emitting `ret <T> undef` ★
 
@@ -1917,6 +3065,12 @@ EXAMPLES
   Rank broken functions by anomaly score:
     bash scripts/diagnose.sh --anomaly /tmp/stage2.ll
 
+  Catch missing llvm.* wrapper declarations early:
+    bash scripts/diagnose.sh --llvm-decls
+
+  Trace which function bodies reparse to 0 statements:
+    bash scripts/diagnose.sh --body-reparse /tmp/repro.fg
+
   Trace one function's CFG visually:
     bash scripts/diagnose.sh --cfg Codegen_emit_binary
     dot -Tpng /tmp/cfg/Codegen_emit_binary.dot > cfg.png
@@ -1929,6 +3083,62 @@ EXAMPLES
       know is `bash scripts/diagnose.sh --help`.
 ═══════════════════════════════════════════════════════════════════
 HELP
+}
+
+# ═════════════════════════════════════════════════════════════════
+# STORAGE-AUDIT MODE — direct alloca/store ABI mismatches
+# ═════════════════════════════════════════════════════════════════
+run_storage_audit() {
+    if [ ! -f "$IR" ]; then echo "ERROR: $IR not found" >&2; exit 1; fi
+    echo "═══ Storage Audit: $IR ═══"
+    python3 - "$IR" <<'PY'
+import re
+import sys
+from collections import defaultdict
+
+path = sys.argv[1]
+by_fn = defaultdict(list)
+allocas = {}
+current_fn = None
+
+with open(path) as f:
+    for ln, line in enumerate(f, 1):
+        m = re.match(r'^define .* @([^(]+)\(', line)
+        if m:
+            current_fn = m.group(1)
+            allocas = {}
+            continue
+        if current_fn and line.startswith('}'):
+            current_fn = None
+            allocas = {}
+            continue
+        if not current_fn:
+            continue
+        m = re.match(r'\s*(%\S+)\s*=\s*alloca\s+([^,]+)', line)
+        if m:
+            allocas[m.group(1)] = m.group(2).strip()
+            continue
+        m = re.match(r'\s*store\s+([^,]+?)\s+\S+,\s*ptr\s+(%\S+)', line)
+        if m:
+            store_ty = m.group(1).strip()
+            slot = m.group(2)
+            want = allocas.get(slot)
+            if want and want != store_ty:
+                by_fn[current_fn].append((ln, slot, want, store_ty))
+
+ranked = sorted(by_fn.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+total = sum(len(items) for _, items in ranked)
+for idx, (fn, items) in enumerate(ranked[:20], 1):
+    print(f"{len(items):3d}  {fn}")
+    for ln, slot, want, got in items:
+        print(f"    line {ln:<6} {slot} : alloca {want} but store {got}")
+if not ranked:
+    print("No direct alloca/store mismatches found.")
+print()
+print(f"TOTAL mismatched direct stores: {total}")
+if len(ranked) > 20:
+    print(f"Showing top 20 functions only ({len(ranked)} total functions with mismatches)")
+PY
 }
 
 # ═════════════════════════════════════════════════════════════════
@@ -2019,6 +3229,7 @@ PY
 # ═════════════════════════════════════════════════════════════════
 case "$MODE" in
     score)    run_score ;;
+    build-stage2) run_build_stage2 ;;
     stage2)   run_stage2 ;;
     stage3)   run_stage3 ;;
     pipeline) run_pipeline ;;
@@ -2030,7 +3241,10 @@ case "$MODE" in
     orphans)  run_orphans ;;
     cfg)      run_cfg ;;
     type-diff) run_type_diff ;;
+    storage-audit) run_storage_audit ;;
     anomaly)  run_anomaly ;;
+    llvm-decls) run_llvm_decls ;;
+    body-reparse) run_body_reparse ;;
     whyi64)   run_whyi64 ;;
     fuzz)     run_fuzz ;;
     regress)  run_regress ;;
@@ -2039,9 +3253,21 @@ case "$MODE" in
     help)     run_help ;;
     ir-sanity) run_ir_sanity ;;
     ret-undef) run_ret_undef ;;
+    container-abi) run_container_abi ;;
     fn-ir)    run_fn_ir ;;
     show-fn)  run_show_fn ;;
     binop-test) run_binop_test ;;
+    capture)  run_capture ;;
+    diff-builds) run_diff_builds ;;
+    probe-cmp) run_probe_cmp ;;
+    snip)     run_snip ;;
+    repro)    run_repro ;;
+    shadow-check) run_shadow_check ;;
+    cmp-broken)   run_cmp_broken ;;
+    find-stubs)   run_find_stubs ;;
+    crash-asm)    run_crash_asm ;;
+    dump-bisect)  run_dump_bisect ;;
+    progress) run_progress ;;
     full)     run_full ;;
 esac
 

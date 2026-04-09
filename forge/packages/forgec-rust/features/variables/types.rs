@@ -1,5 +1,5 @@
-use crate::parser::ast::{Expr, Pattern, TypeExpr};
 use crate::lexer::Span;
+use crate::parser::ast::{Expr, Pattern, TypeExpr};
 
 /// Variable declaration kind
 #[derive(Debug, Clone)]
@@ -21,9 +21,16 @@ pub struct VarDeclData {
 }
 
 impl crate::feature::FeatureNode for VarDeclData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(VarDeclData {
             kind: self.kind.clone(),
             name: (fns.sub_ident)(&self.name),
@@ -43,9 +50,16 @@ pub struct LetDestructureData {
 }
 
 impl crate::feature::FeatureNode for LetDestructureData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(LetDestructureData {
             pattern: self.pattern.clone(),
             value: (fns.sub_expr)(&self.value),

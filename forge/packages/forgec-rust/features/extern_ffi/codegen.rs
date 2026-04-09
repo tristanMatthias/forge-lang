@@ -33,11 +33,14 @@ impl<'ctx> Codegen<'ctx> {
                     "string" | "cstring" => {
                         // Extern fns return raw C pointers (*const c_char),
                         // not ForgeString. Call sites auto-wrap ptr→ForgeString.
-                        self.context.ptr_type(AddressSpace::default()).fn_type(&param_types, false)
+                        self.context
+                            .ptr_type(AddressSpace::default())
+                            .fn_type(&param_types, false)
                     }
-                    "ptr" => {
-                        self.context.ptr_type(AddressSpace::default()).fn_type(&param_types, false)
-                    }
+                    "ptr" => self
+                        .context
+                        .ptr_type(AddressSpace::default())
+                        .fn_type(&param_types, false),
                     "int" | "i64" => self.context.i64_type().fn_type(&param_types, false),
                     "i32" => self.context.i32_type().fn_type(&param_types, false),
                     "i16" => self.context.i16_type().fn_type(&param_types, false),

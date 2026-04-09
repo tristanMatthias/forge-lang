@@ -23,83 +23,116 @@ impl Parser {
             Expr::Index { object, index, .. } => {
                 Self::expr_contains_it(object) || Self::expr_contains_it(index)
             }
-            Expr::TemplateLit { parts, .. } => {
-                parts.iter().any(|part| {
-                    if let TemplatePart::Expr(e) = part {
-                        Self::expr_contains_it(e)
-                    } else {
-                        false
-                    }
-                })
-            }
-            Expr::Block(block) => {
-                block.statements.iter().any(|s| {
-                    if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
-                })
-            }
+            Expr::TemplateLit { parts, .. } => parts.iter().any(|part| {
+                if let TemplatePart::Expr(e) = part {
+                    Self::expr_contains_it(e)
+                } else {
+                    false
+                }
+            }),
+            Expr::Block(block) => block.statements.iter().any(|s| {
+                if let Statement::Expr(e) = s {
+                    Self::expr_contains_it(e)
+                } else {
+                    false
+                }
+            }),
             // Handle Feature variants
             Expr::Feature(fe) => {
                 match fe.feature_id {
                     "null_safety" => {
-                        if let Some(data) = feature_data!(fe, crate::features::null_safety::types::NullCoalesceData) {
-                            return Self::expr_contains_it(&data.left) || Self::expr_contains_it(&data.right);
+                        if let Some(data) =
+                            feature_data!(fe, crate::features::null_safety::types::NullCoalesceData)
+                        {
+                            return Self::expr_contains_it(&data.left)
+                                || Self::expr_contains_it(&data.right);
                         }
-                        if let Some(data) = feature_data!(fe, crate::features::null_safety::types::NullPropagateData) {
+                        if let Some(data) = feature_data!(
+                            fe,
+                            crate::features::null_safety::types::NullPropagateData
+                        ) {
                             return Self::expr_contains_it(&data.object);
                         }
                         false
                     }
                     "error_propagation" => {
-                        if let Some(data) = feature_data!(fe, crate::features::error_propagation::types::ErrorPropagateData) {
+                        if let Some(data) = feature_data!(
+                            fe,
+                            crate::features::error_propagation::types::ErrorPropagateData
+                        ) {
                             return Self::expr_contains_it(&data.operand);
                         }
                         false
                     }
                     "closures" => false, // Don't look inside closures
                     "if_else" => {
-                        if let Some(data) = feature_data!(fe, crate::features::if_else::types::IfData) {
+                        if let Some(data) =
+                            feature_data!(fe, crate::features::if_else::types::IfData)
+                        {
                             return Self::expr_contains_it(&data.condition)
                                 || data.then_branch.statements.iter().any(|s| {
-                                    if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
+                                    if let Statement::Expr(e) = s {
+                                        Self::expr_contains_it(e)
+                                    } else {
+                                        false
+                                    }
                                 })
                                 || data.else_branch.as_ref().map_or(false, |eb| {
                                     eb.statements.iter().any(|s| {
-                                        if let Statement::Expr(e) = s { Self::expr_contains_it(e) } else { false }
+                                        if let Statement::Expr(e) = s {
+                                            Self::expr_contains_it(e)
+                                        } else {
+                                            false
+                                        }
                                     })
                                 });
                         }
                         false
                     }
                     "pattern_matching" => {
-                        if let Some(data) = feature_data!(fe, crate::features::pattern_matching::types::MatchData) {
+                        if let Some(data) =
+                            feature_data!(fe, crate::features::pattern_matching::types::MatchData)
+                        {
                             return Self::expr_contains_it(&data.subject)
                                 || data.arms.iter().any(|arm| {
                                     Self::expr_contains_it(&arm.body)
-                                        || arm.guard.as_ref().map_or(false, |g| Self::expr_contains_it(g))
+                                        || arm
+                                            .guard
+                                            .as_ref()
+                                            .map_or(false, |g| Self::expr_contains_it(g))
                                 });
                         }
                         false
                     }
                     "pipe_operator" => {
-                        if let Some(data) = feature_data!(fe, crate::features::pipe_operator::types::PipeData) {
-                            return Self::expr_contains_it(&data.left) || Self::expr_contains_it(&data.right);
+                        if let Some(data) =
+                            feature_data!(fe, crate::features::pipe_operator::types::PipeData)
+                        {
+                            return Self::expr_contains_it(&data.left)
+                                || Self::expr_contains_it(&data.right);
                         }
                         false
                     }
                     "structs" => {
-                        if let Some(data) = feature_data!(fe, crate::features::structs::types::StructLitData) {
+                        if let Some(data) =
+                            feature_data!(fe, crate::features::structs::types::StructLitData)
+                        {
                             return data.fields.iter().any(|(_, e)| Self::expr_contains_it(e));
                         }
                         false
                     }
                     "collections" => {
-                        if let Some(data) = feature_data!(fe, crate::features::collections::types::ListLitData) {
+                        if let Some(data) =
+                            feature_data!(fe, crate::features::collections::types::ListLitData)
+                        {
                             return data.elements.iter().any(|e| Self::expr_contains_it(e));
                         }
                         false
                     }
                     "tuples" => {
-                        if let Some(data) = feature_data!(fe, crate::features::tuples::types::TupleLitData) {
+                        if let Some(data) =
+                            feature_data!(fe, crate::features::tuples::types::TupleLitData)
+                        {
                             return data.elements.iter().any(|e| Self::expr_contains_it(e));
                         }
                         false

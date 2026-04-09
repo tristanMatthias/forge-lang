@@ -1,5 +1,525 @@
 # Self-Hosting Status & Next Steps
 
+## ═══════════════════════════════════════════════════════
+## ❌ NO HACKS. PERFECT-WORLD COMPILER. NO EXCEPTIONS. ❌
+## ═══════════════════════════════════════════════════════
+
+> **Read this first. Read it twice. If you skip this section you will
+> waste your session and add more debt to a codebase that already has
+> too much.**
+
+This compiler is a **mature, self-hosting language compiler**. Treat it
+as one. Every decision you make should be answerable to the question:
+**"Is this how a real compiler does it?"** If the answer is "no, but
+it works for now" — STOP. You are about to add a hack.
+
+### What "no hacks" means
+
+A hack is anything that:
+
+1. **Aliases two semantically distinct types to the same LLVM type** so
+   that one can stand in for the other. Lists are not strings. Spans
+   are not lists. Bools are not i64. Floats are not i64. Pointers are
+   not i64. **Each type gets its own LLVM type.** Even when the
+   layouts happen to coincide. LLVM 19 type unification will not save
+   you — the IR builder will silently substitute `undef` at call
+   boundaries when it can't tell two unified types apart, and you
+   will spend three sessions chasing the resulting garbage.
+
+2. **Patches a symptom at the call site instead of fixing the source.**
+   If `Codegen_emit_list_literal` is being called with `%ForgeString
+   undef`, the fix is **not** to add a `coerce_call_arg` helper at
+   every call site that round-trips the value through an alloca. The
+   fix is to make `List<T>` a distinct named type so the call site
+   produces the right value in the first place.
+
+3. **Adds a runtime auto-coercion fallback that emits `LLVMGetUndef`
+   when it can't figure out the right answer.** This exists today in
+   `forge_llvm_build_call` (`packages/std-llvm/src/lib.rs` lines
+   ~1434-1510). It is the central source of fragility in the
+   compiler. **Delete it.** Force every call site to produce
+   correctly-typed args. The cascade of failures that exposes is the
+   actual work — those failures are the real bugs the runtime
+   coercion has been hiding.
+
+4. **Stores a multi-byte aggregate through a smaller-byte alloca**
+   ("the bytes still fit if I'm careful"). This is what produces the
+   `store %ForgeString through ptr-typed alloca` overflow we found in
+   parse_int. Every alloca's type must match every store/load through
+   it. No exceptions, no "but it works because of alignment".
+
+5. **Uses a global flag, mutable global, or string-keyed side table to
+   track type information that LLVM already knows.** LLVM's type
+   system is the single source of truth. Use `LLVMGetAllocatedType`,
+   `LLVMTypeOf`, `LLVMGetParamTypes`, `get_nth_param().get_type()`.
+   The CG_VAR_TYPES, CG_LAST_IS_STR, etc. patterns from earlier
+   bootstrap eras are technical debt and should be deleted as you
+   encounter them.
+
+6. **Adds a "this branch is rare so I'll handle it lazily" path.**
+   Every variant must be handled. Every match arm must produce the
+   right value. Empty match arms (`-> {}`) are bugs unless they're
+   genuinely no-ops with comments explaining why.
+
+7. **Ships an "intermittent" or "build-cache-sensitive" bug.** If
+   something only crashes "sometimes", you have a real bug — usually
+   a use-of-uninitialized memory or a use-after-free. Track it down.
+   Don't shrug.
+
+8. **Uses string concatenation in a hot path** (lexer, parser,
+   codegen inner loop). Strings allocate. Allocation in the lexer
+   means the lexer is allocating thousands of times per file and
+   you'll never get fast compile times. Use `forge_trace_i64` or
+   integer-only telemetry in hot paths.
+
+9. **Wraps a bug in a comment that says "workaround for X" or "TODO:
+   fix later" or "the proper fix is Y but that's a multi-day
+   effort".** If the proper fix is multi-day, **do the proper fix**.
+   That's how mature compilers get built. Workarounds compound;
+   proper fixes pay down debt. Every multi-day fix you do is a week
+   of future sessions you don't have to spend chasing the same root
+   cause.
+
+### What "perfect world, mature compiler" means
+
+The reference is rustc, clang, ghc — compilers that solved these
+problems decades ago and don't have hacks for them. Concretely:
+
+- **Every Forge type maps to exactly one LLVM type.** `Type::List(T)`
+  → `%List_T` or a per-instantiation anonymous `{ ptr, i64 }`, but
+  *consistently*, never `%ForgeString`. `Type::Span` → `%Span` (the
+  4-i64 named struct), always. `Type::Bool` → `i8`. `Type::Float` →
+  `double`. `Type::Ptr` → `ptr`. The mapping function is **the only
+  place** these decisions are made, and every codegen path goes
+  through it.
+
+- **Every function declaration uses the type system to compute its
+  signature.** No "hardcode List<T> as %ForgeString in
+  declare_all_fns" shortcuts. The signature comes from the types,
+  the types come from the type checker, the type checker is the
+  single source of truth.
+
+- **Every call site coerces using the function's actual declared
+  param types**, looked up via `get_nth_param(i).get_type()`. The
+  coercion is small and explicit because the types match in
+  *almost every case* — coerce is for the rare legitimate
+  conversions (i64 → ptr handle, etc.), not the catch-all hammer it
+  is today.
+
+- **The runtime helpers in `forge_llvm_build_call` and friends are
+  thin wrappers around the LLVM C API.** They null-check, they
+  forward, they do *not* try to coerce arguments. If the caller
+  passes the wrong type, the LLVM verifier catches it and the
+  compiler reports a clear internal error pointing at the buggy
+  emit site.
+
+- **Variable allocas are typed.** `let xs: List<int> = []` allocates
+  a `%List_int` (or anon `{ptr, i64}`) and stores a zero-init list
+  value into it. Loading from it produces a list value. There is
+  no "store 16 bytes through an 8-byte alloca and hope the upper
+  bits aren't read" anywhere.
+
+- **Match arm bindings inherit the variant field's declared type.**
+  `.IntLit(value, span)` binds `value: int` (i64) and `span: Span`
+  (4-i64 struct). The codegen unpacks the enum payload using the
+  exact field offsets and types from the variant declaration, no
+  guessing, no "assume Span is 2 i64s and read the first half".
+
+- **The bootstrap chain has parity.** Stage 2 IR (emitted by
+  stage1_rust running self-host source) and Stage 3 IR (emitted by
+  stage 2 binary running self-host source) should be **byte-for-byte
+  identical** modulo SSA renumbering. If they differ, the diff is a
+  bug. Period. The current ~46 ret_undef + 60 undef_args + 10
+  undef_length values in the audit are **all bugs**, not "areas to
+  improve". They are tracked because someone needs to delete them.
+
+- **Diagnostics are first-class.** Every internal error gives a clear
+  message ("expected `%ForgeString` for parameter 1 of
+  Codegen_emit_list_literal, got `{ptr, i64}` from emit_collection
+  line 112"), not a segfault in `LLVMTypeOf`. The diagnose script's
+  --score and --diff-fn modes are how you find bugs; they exist
+  because the codebase didn't have proper diagnostics earlier and
+  it cost weeks.
+
+- **The error paths are real.** No `unwrap()` on user input. No
+  silent `return null`. No "this branch is unreachable so I'll
+  return undef and hope it's never hit". Every error gets a
+  CompileError variant and renders through `CompileError::render()`.
+
+### How to evaluate any proposed fix
+
+Before you write a single line of code, ask yourself:
+
+> Is this fix making the compiler more like a real, mature compiler,
+> or is it making the compiler more like itself?
+
+If the answer is "more like itself", you are probably about to add a
+hack. Stop and think about what a real compiler would do here.
+
+If you find yourself patching the same root cause in 5 places, **stop
+patching and fix the root cause**. Five sites with the same hack is
+five sites that will need to be fixed in the eventual cleanup, plus
+the original bug, plus the time you spent on the hacks. Do the
+cleanup *now*.
+
+If your "fix" requires explaining "this is fine because [historical
+reason] [bootstrap quirk] [interaction with other hack]", you are
+adding a hack. Real compilers don't need historical justification
+for their type system.
+
+---
+
+## ═══════════════════════════════════════════════════════
+## SYSTEMIC ROOT CAUSE: THE AGGREGATE-TYPE COLLAPSE
+## ═══════════════════════════════════════════════════════
+
+This is the single most important diagnosis in the codebase right
+now. **Every "stage 3 doesn't work" symptom traces back to this.**
+Internalize this section before you touch anything.
+
+### The bug, in one sentence
+
+**The self-host treats every aggregate type that's "around 16 bytes"
+as `%ForgeString`**, with scattered ad-hoc hacks throughout the
+codebase to interpret the bytes correctly when the difference matters.
+
+### How it manifests
+
+1. **`CG_LIST = CG_STR`** in `cg_reinit_types`
+   (`packages/forgec/src/codegen/mod.fg` ~line 885). This single
+   line aliases the list type and the string type. Every `let xs:
+   List<T> = ...` then allocates a `%ForgeString` and the list
+   header is interpreted as a string header at runtime. `args:
+   List<Expr>` parameters in self-host functions are all typed as
+   `%ForgeString` for the same reason.
+
+2. **`Span` collapses to `%ForgeString` in enum-variant unpacking.**
+   Stage 2 IR for `Codegen_emit_call`'s match arms shows patterns
+   like:
+   ```llvm
+   %13 = extractvalue %Expr %callee1, 3
+   %14 = extractvalue %Expr %callee1, 4
+   %15 = inttoptr i64 %13 to ptr
+   %16 = insertvalue %ForgeString undef, ptr %15, 0
+   %17 = insertvalue %ForgeString %16, i64 %14, 1
+   store %ForgeString %17, ptr %span, align 8
+   ```
+   This unpacks **two** i64 fields out of a four-i64 Span, builds a
+   ForgeString, and stores it into a `%span` alloca that's also
+   typed as `%ForgeString`. The remaining 16 bytes (line, col)
+   are silently dropped.
+
+3. **`bool` collapses to `i64`** because `resolve_type_to_llvm("bool")`
+   returns `CG_I64`. Every bool param/local is widened, breaking
+   ABI parity with rust-emitted callers.
+
+4. **`float` collapses to `i64`** for the same reason.
+
+5. **`Map`** would collapse too but happens to use a 3-i64 shape so
+   the alias would lose data — handled separately in
+   `cg_get_map_struct_ty()`.
+
+6. **The runtime catch-all in `forge_llvm_build_call`** (in
+   `packages/std-llvm/src/lib.rs` lines ~1434-1510) does a gauntlet
+   of `extractvalue` / `inttoptr` / `ptrtoint` coercions when arg
+   types don't match param types, and **falls back to `LLVMGetUndef`
+   when it can't figure out a coercion**. That `undef` is the
+   garbage that propagates everywhere downstream. It is **the
+   central enabler** of the type-collapse pattern: without it, the
+   LLVM verifier would catch every type mismatch immediately and
+   force the upstream emit code to be correct.
+
+### Why it's hard to fix piecemeal
+
+Every site that touches the collapsed types has been written
+assuming the alias holds. A `let xs: List<T> = []` site stores a
+ForgeString-zero into the alloca because that's what `const_null(CG_LIST)`
+returns. A `extract_value(expr_val, 3)` site reads only 2 fields
+because the surrounding code assumes Span is 2 slots wide. A
+`define_var_typed("span", "Span", ...)` site relies on `type_of(value)`
+returning `%ForgeString` so the alloca is sized to match.
+
+**You cannot flip the alias without flipping all of these at once.**
+We tried this session. The result was stage1_rust segfaulting
+during its own compilation because half the codebase assumes the
+alias and the other half had been patched not to.
+
+### The actual fix (do all of this in one branch)
+
+1. **Make `CG_LIST` a distinct anonymous `{ ptr, i64 }`** (not
+   `%ForgeString`). Set it once in `cg_init_str` and never clobber
+   it in `cg_reinit_types`. Update the `cg_reinit_types` comment.
+
+2. **Make every `List<T>` parameter, return, local, and field use
+   `CG_LIST`.** This means:
+   - `declare_all_fns` (`features/functions/mod.fg`) — replace the
+     `if tname == "List" || ... { param_ty = CG_STR }` lines with
+     `param_ty = CG_LIST`. Same for return.
+   - `define_var_typed` (`codegen/mod.fg`) — when `type_name`
+     starts with "List" / "list", use `CG_LIST`, not `type_of(value)`
+     which currently returns `%ForgeString`.
+   - `emit_expr_inner`'s `.Block(block)` empty-list path — already
+     fixed in this session, keep it.
+   - `emit_list_literal` — already uses `CG_LIST` correctly,
+     verify the new distinct type propagates.
+
+3. **Fix Span unpacking in match arms.** Find the codegen path that
+   emits the broken `extractvalue ..., 3 / 4 / insertvalue
+   %ForgeString` pattern and replace it with proper Span field
+   access. The variant-field metadata already records Span as
+   `"4"` slots; the unpacking code is what's wrong.
+
+4. **Fix `resolve_type_to_llvm`:**
+   - `if type_name == "bool" { return CG_I8 }`
+   - `if type_name == "float" { return CG_F64 }`
+   - `if type_name == "ptr" { return CG_PTR }` (already correct)
+
+5. **Delete `forge_llvm_build_call`'s auto-coercion entirely.** Lines
+   ~1434-1510 of `packages/std-llvm/src/lib.rs`. The function
+   becomes:
+   ```rust
+   pub extern "C" fn forge_llvm_build_call(builder, fn_type, f, args, num_args, name) -> LLVMPtr {
+       if builder.is_null() || fn_type.is_null() || f.is_null() { return null; }
+       LLVMBuildCall2(builder, fn_type, f, args, num_args as c_uint, safe_name(name))
+   }
+   ```
+   That's it. Every caller must produce correctly-typed args. The
+   failures this exposes are the real bugs that need to be fixed.
+
+6. **Delete the equivalent in-runtime coercion for `forge_llvm_build_store`,
+   `forge_llvm_build_load`, etc.** if they exist. Search for
+   `LLVMGetUndef` in `lib.rs` and audit every use.
+
+7. **Run the cascade.** Build stage1_rust. Fix the verifier errors
+   it surfaces — each one is a real bug. Then run stage 2 → stage
+   3. Fix the new errors that surface. Continue until parity.
+
+### Estimated effort
+
+**2-4 days of focused work**, not a session. Probably more like 4
+than 2. The cascade from removing the runtime coercion will surface
+30-50 individual emit-site bugs. Each is small. The aggregate is
+the work.
+
+**Do not attempt this in less than half a day per layer.** Rushing
+this and committing partial fixes is how we got here.
+
+### Why this is the only way forward
+
+We have spent multiple sessions patching individual symptoms of this
+single root cause. The score has walked in a tight circle (72 → 70
+→ 64 → 70 → 64) for hours of work. Each patch exposes the next
+symptom. Each "fix" requires another patch. **This is a sign that
+the patches are at the wrong layer.**
+
+The session log (search "session_2026" in `~/.claude/projects/...`)
+shows the same bug being re-discovered in different forms across
+every session for weeks. This is technical debt compound interest.
+The only way out is to pay it down all at once.
+
+After this refactor lands, the remaining stage 3 work will be
+*linear* (one bug, one fix, one diff drop) instead of
+*combinatorial* (one fix exposes three new bugs because they were
+all entangled with the same hack).
+
+---
+
+## ───────────────────────────────────────────────────────
+## SESSION HANDOFF (2026-04-07 evening, second session)
+## ───────────────────────────────────────────────────────
+
+> Read this whole section before reading the rest of the doc. Then read
+> CLAUDE.md (the **NO WORKAROUNDS** section at the very top is
+> non-negotiable).
+
+### Where things stand
+- `make stage1-rust` builds clean.
+- `./build/stage1_rust build packages/forgec/src/main.fg` produces
+  `output.ll` (Stage 2 IR) cleanly. **395 functions**, score 72,
+  builds + links + runs.
+- `bash scripts/diagnose.sh --pipeline` tail says
+  `Stage 3 IR produced — no /tmp/output.ll` — i.e. stage 2 binary
+  segfaults when compiling main.fg. The crash currently lands in
+  `Codegen_emit_statement + 88` during `>> span_new`. Same crash hits
+  hello-world (`/tmp/_t1.fg`) sometimes — appears intermittent /
+  build-cache-sensitive, hello-world has been seen to compile on a
+  fresh build.
+- `bash scripts/diagnose.sh --binop-test` (the canonical "is the
+  parser/codegen actually working" probe) was at **9/10 passing**
+  earlier today and `match_enum` was the only failure. After the
+  changes below it should still pass — re-run it first thing.
+- Stage 3 progress score (`bash scripts/diagnose.sh --progress`) was
+  at **44%** before the latest unfinished work. Composite breakdown
+  was: fn-count 100% × 0.20, body parity 61% × 0.40, hello-world
+  boot 0% × 0.10, binop runtime 0% × 0.30.
+
+### What I was actually working on (mid-fix, NOT FINISHED)
+
+The remaining body-parity gap is overwhelmingly explained by
+**`return Pattern.EnumVariant(...)` and any other `EnumName.Variant(args)`
+constructor in tail-return position emitting `ret zeroinitializer`** in
+the *self-host's* output (NOT in the rust compiler's output). The rust
+compiler's `compile_enum_constructor` works fine — `--emit-ir` of a
+small repro shows correct alloca + insertvalue + load. The self-host
+just doesn't have an emit path for enum constructors at all.
+
+Concrete root cause:
+- The Forge parser produces `EnumName.Variant(args)` as a regular
+  `Expr.Call(MemberAccess(Ident(EnumName), Variant), args)` AST node.
+  There is **no** separate `Expr.Feature("enums", "enum_construct")`
+  node — `make_enum_construct` exists in `features/enums/mod.fg` but
+  is never called from the parser.
+- `dispatch_emit_expr` in `features/mod.fg` therefore never gets a
+  chance to dispatch enum construction.
+- The self-host's `Codegen.emit_call`'s `.MemberAccess(o, f, s)` arm
+  doesn't recognize the enum-constructor pattern at all. It falls
+  through, eventually returning a default zero/null which then gets
+  wrapped (incorrectly, with the wrong size) into the function's
+  Nullable return.
+
+**The fix in flight (finish this):**
+
+1. **NEW FUNCTION** `Codegen.emit_enum_construct_inline(self, enum_name,
+   variant_name, args)` was added in `packages/forgec/src/codegen/mod.fg`
+   (around line 2425). It uses `cg_get_enum_ty_for`,
+   `cg_enum_variant_field_types`, `cg_enum_field_slot_offset`, and
+   `match_enum_tag`. It allocas the enum struct, stores the tag byte,
+   packs each arg into the right `i64` slot(s) per the field-type code
+   ("i" = 1 slot, "s"/"l" = 2 slots, "4" = 4 slots), and loads/returns.
+   It guards `s`/`l` against non-struct values so a wrong-typed `v` does
+   not crash `build_ptrtoint`.
+
+2. **NEW HELPER** `ident_name_of(e: Expr) -> string` near `coerce_to_fn_return`
+   (returns the name of an `Expr.Ident`, or `""`). Lifted out of a nested
+   match because the rust compiler historically miscompiles match-in-match.
+
+3. **NEW DISPATCH** in `emit_call`'s `.MemberAccess(o, f, s)` arm:
+   ```forge
+   let enum_name = ident_name_of(o)
+   if enum_name.length > 0 && forge_enum_type_exists(enum_name) == 1 {
+       return self.emit_enum_construct_inline(enum_name, f, args)
+   }
+   ```
+   Currently in the file. **THIS IS WHAT BREAKS STAGE 2.** Without
+   this 4-line block, stage 2 binary compiles main.fg cleanly. With
+   it, stage 2 binary segfaults during `>> span_new` (or anywhere
+   else) at `Codegen_emit_statement + 88`. The crash is intermittent
+   on the first build attempt and reliable on subsequent attempts.
+
+4. **NEW DISPATCH ENTRY** in `features/mod.fg`'s `dispatch_emit_expr`:
+   ```forge
+   else if fid == "enums" { return emit_enum_construct(cg, node) }
+   ```
+   This is dead code right now (the parser doesn't produce
+   `Feature("enums", "enum_construct")` nodes), but it's harmless
+   and lines up with future parser work.
+
+5. **NEW UNUSED FUNCTION** `emit_enum_construct(cg, node)` in
+   `features/enums/mod.fg`. Same body shape as
+   `emit_enum_construct_inline` but takes a `NodeRef` and looks up
+   `ENUM_CONSTRUCTS`. Not yet reachable.
+
+### Why item #3 crashes — what to chase
+
+The crash signature:
+```
+forge: fatal error — segmentation fault
+0  stage2  forge_signal_handler + 464
+1  libsystem_platform.dylib  _sigtramp
+2  stage2  Codegen_emit_statement + 88
+```
+Always +88 from emit_statement, always during compilation of the
+*first* function emitted. Last good trace before crash is `[T] 999
+999` (entry of emit_statement) followed sometimes by `[T] 0 998`
+(.Expr arm). The crash is in the load right after extracting the
+boxed Expr ptr from `Statement.Expr`.
+
+What I confirmed:
+- `ident_name_of` and `forge_enum_type_exists` calls alone do NOT
+  trigger the crash. Removing the call to
+  `self.emit_enum_construct_inline(...)` (but keeping the helper
+  call and the if-check) makes stage 2 work again.
+- The IR for `Codegen_emit_call` after the fix shows the exact call
+  site `call ptr @Codegen_emit_enum_construct_inline(ptr %0,
+  %ForgeString %enum_name99, %ForgeString %f100, %ForgeString
+  %args101)`. The signature matches. Both the function and the call
+  site agree the third arg is `%ForgeString` (List<Expr> maps to it).
+- Score regresses 18 → 72 with the new code, mostly from new
+  `ret_undef` sites — likely because `emit_enum_construct_inline`
+  itself contains `for arg in _args { ... }` and the inner code
+  produces some bad returns.
+
+What I would do next:
+1. `bash scripts/diagnose.sh --fn-ir Codegen_emit_enum_construct_inline output.ll`
+   and read the IR. Look for any `ret`, dead bbs, mistyped store
+   widths into the `enum_tmp` alloca, or `inttoptr` of a non-int.
+   The bug is almost certainly a mismatched-store-size between the
+   value coming back from `emit_expr(arg)` and the i64 slot it gets
+   stored into.
+2. Diff `Codegen_emit_call` before/after the call-site addition with
+   `--diff-fn`. Look for verifier warnings like `Terminator found in
+   the middle of a basic block!` which the rust compiler prints to
+   stderr during build — that's a red flag.
+3. The "intermittent crash on first build" thing — investigate
+   whether output.ll is sometimes stale. The pre-commit hook updates
+   `forge/scripts/stage3_baseline.txt`, but `make stage1-rust` may
+   not be picking up changed `mod.fg` files via its dependency graph.
+
+### What you do NOT do
+
+- **No workarounds.** Read the **NO WORKAROUNDS** section at the top
+  of `CLAUDE.md`. The previous agent (me) committed six of them in a
+  row this week and you can see how that played out — it just moved
+  the bugs around. If you find yourself wanting to "rewrite the call
+  site to avoid the broken pattern" or "use a temporary variable to
+  dodge the miscompile" — STOP and fix the actual bug instead.
+- **No rewriting parse_pattern in self-host source to dodge the
+  enum-constructor problem.** The fix is in
+  `Codegen.emit_enum_construct_inline` + the dispatch in
+  `emit_call.MemberAccess`.
+- **No deleting `emit_enum_construct_inline` to make stage 2 build.**
+  That just gets us back to a broken-but-quiet state.
+
+### Useful diagnostics added this session
+
+```bash
+bash scripts/diagnose.sh --binop-test       # 10 runtime fixtures, fastest probe
+bash scripts/diagnose.sh --progress         # composite % toward stage 3 self-compile
+bash scripts/diagnose.sh --show-fn <fn>     # stage 2 vs stage 3 IR side-by-side
+bash scripts/diagnose.sh --fn-ir <fn> [.ll] # dump one function's IR (no awk)
+bash scripts/diagnose.sh --ret-undef [.ll]  # functions returning undef
+```
+
+The progress guard (`forge/scripts/check_stage3_progress.sh`,
+`.githooks/pre-commit`) blocks commits that regress stage 3 metrics.
+Bypass with `--no-verify` only when intentional. Run with `--update`
+after a deliberate metric shift to rebaseline.
+
+### One-shot recovery (if everything's broken)
+
+```bash
+make stage1-rust
+./build/stage1_rust build packages/forgec/src/main.fg
+cp output.ll /tmp/stage1_output.ll
+/opt/homebrew/opt/llvm@19/bin/llc -O2 -filetype=obj /tmp/stage1_output.ll -o /tmp/stage2.o
+cc -o /tmp/stage2 /tmp/stage2.o build/runtime.o -lm \
+   -Wl,-stack_size,0x10000000 \
+   packages/std-llvm/target/release/libforge_llvm.a \
+   -L/opt/homebrew/Cellar/llvm@19/19.1.7/lib -lLLVM-19 -lstdc++ -lz -lcurses
+/tmp/stage2 build /tmp/_t1.fg && ./a.out   # should print "hi"
+```
+
+If stage2 segfaults: revert the `.MemberAccess` arm dispatch in
+`packages/forgec/src/codegen/mod.fg` (remove the `let enum_name = …`
++ `if … { return self.emit_enum_construct_inline(...) }` block, but
+keep `emit_enum_construct_inline`, `ident_name_of`, and
+`emit_enum_construct` defined). That gets back to a green stage 2
+without losing the foundation of the fix.
+
+## ───────────────────────────────────────────────────────
+## ORIGINAL DOC (pre-handoff)
+## ───────────────────────────────────────────────────────
+
 ## ⚠️ MANDATORY APPROACH: DIFF-DRIVEN BUG HUNTING ⚠️
 
 **Read this first. Do not skip. Do not improvise a different approach.**

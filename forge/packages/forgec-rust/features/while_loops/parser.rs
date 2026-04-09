@@ -26,10 +26,7 @@ impl Parser {
         Some(feature_stmt(
             "while_loops",
             "Loop",
-            Box::new(LoopData {
-                body,
-                label: None,
-            }),
+            Box::new(LoopData { body, label: None }),
             start,
         ))
     }
@@ -47,10 +44,7 @@ impl Parser {
         Some(feature_stmt(
             "while_loops",
             "Break",
-            Box::new(BreakData {
-                value,
-                label: None,
-            }),
+            Box::new(BreakData { value, label: None }),
             start,
         ))
     }

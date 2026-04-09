@@ -2,11 +2,11 @@ use inkwell::values::BasicValueEnum;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureExpr;
-use crate::{feature_codegen, feature_data};
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
+use crate::{feature_codegen, feature_data};
 
-use super::types::{NullCoalesceData, NullPropagateData, ForceUnwrapData};
+use super::types::{ForceUnwrapData, NullCoalesceData, NullPropagateData};
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile a null coalesce expression via Feature dispatch.
@@ -14,7 +14,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, NullCoalesceData, |data| self.compile_null_coalesce(&data.left, &data.right))
+        feature_codegen!(self, fe, NullCoalesceData, |data| self
+            .compile_null_coalesce(&data.left, &data.right))
     }
 
     /// Compile a null propagate expression via Feature dispatch.
@@ -22,7 +23,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, NullPropagateData, |data| self.compile_null_propagate(&data.object, &data.field))
+        feature_codegen!(self, fe, NullPropagateData, |data| self
+            .compile_null_propagate(&data.object, &data.field))
     }
 
     /// Compile a force unwrap expression via Feature dispatch: `expr!`
@@ -75,21 +77,26 @@ impl<'ctx> Codegen<'ctx> {
                 let is_present = self.extract_tag_is_set(struct_val, "null")?;
 
                 let function = self.current_function();
-                let then_bb = self.context.append_basic_block(function, "coalesce_present");
+                let then_bb = self
+                    .context
+                    .append_basic_block(function, "coalesce_present");
                 let else_bb = self.context.append_basic_block(function, "coalesce_null");
                 let merge_bb = self.context.append_basic_block(function, "coalesce_merge");
 
-                self.builder.build_conditional_branch(is_present, then_bb, else_bb).unwrap();
+                self.builder
+                    .build_conditional_branch(is_present, then_bb, else_bb)
+                    .unwrap();
 
                 self.builder.position_at_end(then_bb);
                 let present_val = self.extract_tagged_payload(struct_val, "present")?;
                 // If right side is nullable, wrap present_val in nullable to match
                 let right_type = self.infer_type(right);
-                let present_val = if right_type.is_nullable() && present_val.get_type() != right_val.get_type() {
-                    self.wrap_in_nullable(present_val, &right_type)
-                } else {
-                    self.coerce_value(present_val, right_val.get_type())
-                };
+                let present_val =
+                    if right_type.is_nullable() && present_val.get_type() != right_val.get_type() {
+                        self.wrap_in_nullable(present_val, &right_type)
+                    } else {
+                        self.coerce_value(present_val, right_val.get_type())
+                    };
                 let then_end = self.builder.get_insert_block().unwrap();
                 self.builder.build_unconditional_branch(merge_bb).unwrap();
 
@@ -98,11 +105,11 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder.build_unconditional_branch(merge_bb).unwrap();
 
                 self.builder.position_at_end(merge_bb);
-                let phi = self.builder.build_phi(right_val.get_type(), "coalesce_result").unwrap();
-                phi.add_incoming(&[
-                    (&present_val, then_end),
-                    (&right_val, else_end),
-                ]);
+                let phi = self
+                    .builder
+                    .build_phi(right_val.get_type(), "coalesce_result")
+                    .unwrap();
+                phi.add_incoming(&[(&present_val, then_end), (&right_val, else_end)]);
                 return Some(phi.as_basic_value());
             }
         }
@@ -133,11 +140,11 @@ impl<'ctx> Codegen<'ctx> {
                 "upper" | "lower" => Type::String,
                 _ => Type::Unknown,
             },
-            Type::Struct { fields, .. } => {
-                fields.iter().find(|(n, _)| n == field)
-                    .map(|(_, ty)| ty.clone())
-                    .unwrap_or(Type::Unknown)
-            }
+            Type::Struct { fields, .. } => fields
+                .iter()
+                .find(|(n, _)| n == field)
+                .map(|(_, ty)| ty.clone())
+                .unwrap_or(Type::Unknown),
             _ => Type::Unknown,
         };
 
@@ -156,7 +163,9 @@ impl<'ctx> Codegen<'ctx> {
         let else_bb = self.context.append_basic_block(function, "np_null");
         let merge_bb = self.context.append_basic_block(function, "np_merge");
 
-        self.builder.build_conditional_branch(is_present, then_bb, else_bb).unwrap();
+        self.builder
+            .build_conditional_branch(is_present, then_bb, else_bb)
+            .unwrap();
 
         // Present path: extract inner value and access field
         self.builder.position_at_end(then_bb);
@@ -172,7 +181,9 @@ impl<'ctx> Codegen<'ctx> {
             Type::Struct { fields, .. } => {
                 if let Some(idx) = fields.iter().position(|(n, _)| n == field) {
                     if inner_val.is_struct_value() {
-                        self.builder.build_extract_value(inner_val.into_struct_value(), idx as u32, field).ok()
+                        self.builder
+                            .build_extract_value(inner_val.into_struct_value(), idx as u32, field)
+                            .ok()
                     } else {
                         None
                     }
@@ -198,22 +209,40 @@ impl<'ctx> Codegen<'ctx> {
 
         // Merge
         self.builder.position_at_end(merge_bb);
-        let phi = self.builder.build_phi(nullable_result_llvm, "np_result").unwrap();
+        let phi = self
+            .builder
+            .build_phi(nullable_result_llvm, "np_result")
+            .unwrap();
         phi.add_incoming(&[(&present_result, then_end), (&null_result, else_end)]);
         Some(phi.as_basic_value())
     }
 
-    pub(crate) fn wrap_in_nullable(&mut self, val: BasicValueEnum<'ctx>, nullable_ty: &Type) -> BasicValueEnum<'ctx> {
+    pub(crate) fn wrap_in_nullable(
+        &mut self,
+        val: BasicValueEnum<'ctx>,
+        nullable_ty: &Type,
+    ) -> BasicValueEnum<'ctx> {
         let nullable_llvm_ty = self.type_to_llvm_basic(nullable_ty);
-        let alloca = self.builder.build_alloca(nullable_llvm_ty, "nullable_wrap").unwrap();
+        let alloca = self
+            .builder
+            .build_alloca(nullable_llvm_ty, "nullable_wrap")
+            .unwrap();
         let struct_ty = nullable_llvm_ty.into_struct_type();
 
         // Store tag = 1 (present)
-        let tag_ptr = self.builder.build_struct_gep(struct_ty, alloca, 0, "tag_ptr").unwrap();
-        self.builder.build_store(tag_ptr, self.context.i8_type().const_int(1, false)).unwrap();
+        let tag_ptr = self
+            .builder
+            .build_struct_gep(struct_ty, alloca, 0, "tag_ptr")
+            .unwrap();
+        self.builder
+            .build_store(tag_ptr, self.context.i8_type().const_int(1, false))
+            .unwrap();
 
         // Store value
-        let val_ptr = self.builder.build_struct_gep(struct_ty, alloca, 1, "val_ptr").unwrap();
+        let val_ptr = self
+            .builder
+            .build_struct_gep(struct_ty, alloca, 1, "val_ptr")
+            .unwrap();
         // Coerce the value if needed to match the inner type
         let inner_ty = match nullable_ty {
             Type::Nullable(inner) => self.type_to_llvm_basic(inner),
@@ -223,14 +252,20 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_store(val_ptr, coerced).unwrap();
 
         // Load the full struct
-        self.builder.build_load(nullable_llvm_ty, alloca, "nullable_val").unwrap()
+        self.builder
+            .build_load(nullable_llvm_ty, alloca, "nullable_val")
+            .unwrap()
     }
 
     /// If the declared type is nullable but the value isn't already the correct nullable struct,
     /// wrap or re-create appropriately.
     /// - Non-nullable value → wrap with tag=1 (present)
     /// - Null with wrong inner type → create properly-typed null with tag=0
-    pub(crate) fn maybe_wrap_nullable(&mut self, val: BasicValueEnum<'ctx>, ty: &Type) -> BasicValueEnum<'ctx> {
+    pub(crate) fn maybe_wrap_nullable(
+        &mut self,
+        val: BasicValueEnum<'ctx>,
+        ty: &Type,
+    ) -> BasicValueEnum<'ctx> {
         if let Type::Nullable(_) = ty {
             let expected_llvm = self.type_to_llvm_basic(ty);
             if val.get_type() != expected_llvm {
@@ -259,7 +294,10 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Detect if a condition is `name != null` and return (name, inner_type) for narrowing
     pub(crate) fn detect_null_check(&self, condition: &Expr) -> Option<(String, Type)> {
-        if let Expr::Binary { left, op, right, .. } = condition {
+        if let Expr::Binary {
+            left, op, right, ..
+        } = condition
+        {
             if matches!(op, BinaryOp::NotEq) {
                 // Check: left is ident, right is null
                 if let (Expr::Ident(name, _), Expr::NullLit(_)) = (left.as_ref(), right.as_ref()) {

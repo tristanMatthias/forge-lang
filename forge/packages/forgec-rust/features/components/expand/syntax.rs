@@ -38,10 +38,13 @@ impl SyntaxPattern {
             if chars.peek() == Some(&'{') {
                 // Placeholder or ListPlaceholder
                 chars.next(); // consume '{'
-                // Check for ... prefix → ListPlaceholder
+                              // Check for ... prefix → ListPlaceholder
                 let is_list = {
                     let mut p = chars.clone();
-                    matches!((p.next(), p.next(), p.next()), (Some('.'), Some('.'), Some('.')))
+                    matches!(
+                        (p.next(), p.next(), p.next()),
+                        (Some('.'), Some('.'), Some('.'))
+                    )
                 };
                 if is_list {
                     chars.next(); // '.'
@@ -87,11 +90,7 @@ impl SyntaxPattern {
     /// Try to match tokens starting at `pos` against this pattern.
     /// Returns a SyntaxMatchResult with captured values if matched.
     /// Matching stops at newline or end of tokens.
-    pub fn try_match(
-        &self,
-        tokens: &[Token],
-        pos: usize,
-    ) -> Option<SyntaxMatchResult> {
+    pub fn try_match(&self, tokens: &[Token], pos: usize) -> Option<SyntaxMatchResult> {
         let mut captures: HashMap<String, Vec<Token>> = HashMap::new();
         let mut list_captures: HashMap<String, Vec<Vec<Token>>> = HashMap::new();
         let mut i = pos;
@@ -117,7 +116,11 @@ impl SyntaxPattern {
                 PatternSegment::ListPlaceholder(name) => {
                     // Capture comma-separated items until newline/eof or next literal
                     let next_literal = self.segments[seg_idx + 1..].iter().find_map(|s| {
-                        if let PatternSegment::Literal(l) = s { Some(l.as_str()) } else { None }
+                        if let PatternSegment::Literal(l) = s {
+                            Some(l.as_str())
+                        } else {
+                            None
+                        }
                     });
 
                     let mut items: Vec<Vec<Token>> = Vec::new();
@@ -128,7 +131,9 @@ impl SyntaxPattern {
                             break;
                         }
                         if let Some(stop) = next_literal {
-                            if token_text(&tokens[i]) == stop { break; }
+                            if token_text(&tokens[i]) == stop {
+                                break;
+                            }
                         }
                         if matches!(tokens[i].kind, TokenKind::Comma) {
                             if !current_item.is_empty() {
@@ -136,7 +141,7 @@ impl SyntaxPattern {
                                 current_item = Vec::new();
                             }
                             i += 1; // consume comma
-                            // Skip whitespace/newlines after comma
+                                    // Skip whitespace/newlines after comma
                             while i < tokens.len() && matches!(tokens[i].kind, TokenKind::Newline) {
                                 i += 1;
                             }
@@ -164,13 +169,17 @@ impl SyntaxPattern {
                     });
 
                     // Check if the immediately next segment is also a placeholder
-                    let next_is_placeholder = self.segments.get(seg_idx + 1)
+                    let next_is_placeholder = self
+                        .segments
+                        .get(seg_idx + 1)
                         .map_or(false, |s| matches!(s, PatternSegment::Placeholder(_)));
 
                     let mut captured = Vec::new();
                     if next_is_placeholder {
                         // When followed by another placeholder, capture exactly ONE token
-                        if i < tokens.len() && !matches!(tokens[i].kind, TokenKind::Newline | TokenKind::Eof) {
+                        if i < tokens.len()
+                            && !matches!(tokens[i].kind, TokenKind::Newline | TokenKind::Eof)
+                        {
                             captured.push(tokens[i].clone());
                             i += 1;
                         }
@@ -237,7 +246,11 @@ impl SyntaxPattern {
             }
         }
 
-        Some(SyntaxMatchResult { captures, list_captures, new_pos: i })
+        Some(SyntaxMatchResult {
+            captures,
+            list_captures,
+            new_pos: i,
+        })
     }
 }
 

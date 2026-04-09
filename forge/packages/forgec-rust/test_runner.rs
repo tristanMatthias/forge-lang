@@ -8,7 +8,6 @@
 /// Parallel mode (-j N): all forks happen sequentially on the main thread
 /// (avoiding fd inheritance issues), while N worker threads handle pipe
 /// reading + waitpid concurrently.
-
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -108,25 +107,47 @@ struct Colors {
 
 impl Colors {
     fn new(no_color: bool) -> Self {
-        Self { enabled: !no_color && atty_stdout() }
+        Self {
+            enabled: !no_color && atty_stdout(),
+        }
     }
     fn green(&self, s: &str) -> String {
-        if self.enabled { format!("\x1b[32m{}\x1b[0m", s) } else { s.to_string() }
+        if self.enabled {
+            format!("\x1b[32m{}\x1b[0m", s)
+        } else {
+            s.to_string()
+        }
     }
     fn red(&self, s: &str) -> String {
-        if self.enabled { format!("\x1b[31m{}\x1b[0m", s) } else { s.to_string() }
+        if self.enabled {
+            format!("\x1b[31m{}\x1b[0m", s)
+        } else {
+            s.to_string()
+        }
     }
     fn dim(&self, s: &str) -> String {
-        if self.enabled { format!("\x1b[2m{}\x1b[0m", s) } else { s.to_string() }
+        if self.enabled {
+            format!("\x1b[2m{}\x1b[0m", s)
+        } else {
+            s.to_string()
+        }
     }
     fn cyan(&self, s: &str) -> String {
-        if self.enabled { format!("\x1b[36m{}\x1b[0m", s) } else { s.to_string() }
+        if self.enabled {
+            format!("\x1b[36m{}\x1b[0m", s)
+        } else {
+            s.to_string()
+        }
     }
     fn hide_cursor(&self) {
-        if self.enabled { print!("\x1b[?25l"); }
+        if self.enabled {
+            print!("\x1b[?25l");
+        }
     }
     fn show_cursor(&self) {
-        if self.enabled { print!("\x1b[?25h"); }
+        if self.enabled {
+            print!("\x1b[?25h");
+        }
     }
 }
 
@@ -134,8 +155,12 @@ fn atty_stdout() -> bool {
     unsafe { libc_isatty(1) != 0 }
 }
 
-extern "C" { fn isatty(fd: i32) -> i32; }
-unsafe fn libc_isatty(fd: i32) -> i32 { unsafe { isatty(fd) } }
+extern "C" {
+    fn isatty(fd: i32) -> i32;
+}
+unsafe fn libc_isatty(fd: i32) -> i32 {
+    unsafe { isatty(fd) }
+}
 
 // ── Discovery ───────────────────────────────────────────────────────
 
@@ -151,8 +176,13 @@ pub fn find_modules_dir() -> Option<PathBuf> {
     }
 
     // Check common subdirectory patterns
-    for subdir in &["features", "modules", "src/features", "src/modules",
-                     "packages/forgec-rust/features"] {
+    for subdir in &[
+        "features",
+        "modules",
+        "src/features",
+        "src/modules",
+        "packages/forgec-rust/features",
+    ] {
         let candidate = cwd.join(subdir);
         if candidate.is_dir() && has_modules(&candidate) {
             return Some(candidate);
@@ -174,7 +204,9 @@ fn has_modules(dir: &Path) -> bool {
 
 fn get_example_files(module_dir: &Path) -> Vec<PathBuf> {
     let examples_dir = module_dir.join("examples");
-    if !examples_dir.is_dir() { return vec![]; }
+    if !examples_dir.is_dir() {
+        return vec![];
+    }
 
     let mut files: Vec<PathBuf> = std::fs::read_dir(&examples_dir)
         .ok()
@@ -187,7 +219,9 @@ fn get_example_files(module_dir: &Path) -> Vec<PathBuf> {
             // Skip helper/module files that have no test expectations.
             // These are companion files imported by actual test files.
             if let Ok(source) = std::fs::read_to_string(p) {
-                source.contains("/// expect:") || source.contains("/// expect-error:") || source.contains("/// expect-stderr:")
+                source.contains("/// expect:")
+                    || source.contains("/// expect-error:")
+                    || source.contains("/// expect-stderr:")
             } else {
                 false
             }
@@ -231,7 +265,9 @@ fn discover_work_items(
 
     for module in &modules {
         let files = get_example_files(&modules_dir.join(module));
-        if files.is_empty() { continue; }
+        if files.is_empty() {
+            continue;
+        }
         module_test_counts.insert(module.clone(), files.len());
         module_order.push(module.clone());
         for file in files {
@@ -245,32 +281,50 @@ fn discover_work_items(
 // ── Extraction ──────────────────────────────────────────────────────
 
 pub fn extract_expected_output(source: &str) -> Vec<String> {
-    source.lines()
-        .filter_map(|line| line.trim().strip_prefix("/// expect:").map(|r| r.trim().to_string()))
+    source
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("/// expect:")
+                .map(|r| r.trim().to_string())
+        })
         .collect()
 }
 
 pub fn extract_expected_stderr(source: &str) -> Vec<String> {
-    source.lines()
-        .filter_map(|line| line.trim().strip_prefix("/// expect-stderr:").map(|r| r.trim().to_string()))
+    source
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("/// expect-stderr:")
+                .map(|r| r.trim().to_string())
+        })
         .collect()
 }
 
 pub fn extract_expected_exit_code(source: &str) -> Option<i32> {
     source.lines().find_map(|line| {
-        line.trim().strip_prefix("/// expect-exit:").and_then(|r| r.trim().parse().ok())
+        line.trim()
+            .strip_prefix("/// expect-exit:")
+            .and_then(|r| r.trim().parse().ok())
     })
 }
 
 pub fn extract_expected_error(source: &str) -> Option<String> {
     source.lines().find_map(|line| {
-        line.trim().strip_prefix("/// expect-error:").map(|r| r.trim().to_string())
+        line.trim()
+            .strip_prefix("/// expect-error:")
+            .map(|r| r.trim().to_string())
     })
 }
 
 pub fn extract_doc_comment(source: &str) -> Vec<String> {
-    source.lines()
-        .take_while(|line| { let t = line.trim(); t.starts_with("///") || t.is_empty() })
+    source
+        .lines()
+        .take_while(|line| {
+            let t = line.trim();
+            t.starts_with("///") || t.is_empty()
+        })
         .filter_map(|line| line.trim().strip_prefix("///").map(|s| s.to_string()))
         .collect()
 }
@@ -295,9 +349,13 @@ const RTLD_DEFAULT: *mut std::ffi::c_void = std::ptr::null_mut();
 
 fn make_error_result(fg_file: &Path, module: &str, error: String) -> TestResult {
     TestResult {
-        file: fg_file.to_path_buf(), module: module.to_string(),
-        passed: false, expected: vec![], actual: vec![],
-        error: Some(error), duration: Duration::ZERO,
+        file: fg_file.to_path_buf(),
+        module: module.to_string(),
+        passed: false,
+        expected: vec![],
+        actual: vec![],
+        error: Some(error),
+        duration: Duration::ZERO,
     }
 }
 
@@ -310,13 +368,23 @@ fn run_example_forked(fg_file: &Path, module: &str) -> TestResult {
 
     let expectations = TestExpectations::from_source(&source);
     if expectations.is_empty() {
-        return make_error_result(fg_file, module,
-            "no /// expect:, /// expect-stderr:, or /// expect-error: comments found".to_string());
+        return make_error_result(
+            fg_file,
+            module,
+            "no /// expect:, /// expect-stderr:, or /// expect-error: comments found".to_string(),
+        );
     }
 
     match fork_child(fg_file, expectations.is_check()) {
-        Ok((pid, stdout_fd, stderr_fd, start)) =>
-            collect_child(pid, stdout_fd, stderr_fd, start, fg_file, module, &expectations),
+        Ok((pid, stdout_fd, stderr_fd, start)) => collect_child(
+            pid,
+            stdout_fd,
+            stderr_fd,
+            start,
+            fg_file,
+            module,
+            &expectations,
+        ),
         Err(e) => make_error_result(fg_file, module, e),
     }
 }
@@ -329,7 +397,9 @@ fn fork_child(fg_file: &Path, is_check: bool) -> Result<(i32, i32, i32, Instant)
 
     let mut stdout_pipe: [i32; 2] = [0; 2];
     let mut stderr_pipe: [i32; 2] = [0; 2];
-    if unsafe { pipe(stdout_pipe.as_mut_ptr()) } != 0 || unsafe { pipe(stderr_pipe.as_mut_ptr()) } != 0 {
+    if unsafe { pipe(stdout_pipe.as_mut_ptr()) } != 0
+        || unsafe { pipe(stderr_pipe.as_mut_ptr()) } != 0
+    {
         return Err("failed to create pipes".to_string());
     }
 
@@ -353,12 +423,18 @@ fn fork_child(fg_file: &Path, is_check: bool) -> Result<(i32, i32, i32, Instant)
         let mut exit_code = if is_check {
             match driver.check(fg_file) {
                 Ok(_) => 0,
-                Err(e) => { eprintln!("{}", e.render()); 1 }
+                Err(e) => {
+                    eprintln!("{}", e.render());
+                    1
+                }
             }
         } else {
             match driver.run_jit(fg_file) {
                 Ok(code) => code,
-                Err(e) => { eprintln!("{}", e.render()); 1 }
+                Err(e) => {
+                    eprintln!("{}", e.render());
+                    1
+                }
             }
         };
 
@@ -368,30 +444,49 @@ fn fork_child(fg_file: &Path, is_check: bool) -> Result<(i32, i32, i32, Instant)
             let sym = dlsym(RTLD_DEFAULT, b"forge_test_summary\0".as_ptr() as *const i8);
             if !sym.is_null() {
                 let f: extern "C" fn() -> i64 = std::mem::transmute(sym);
-                if f() != 0 { exit_code = 1; }
+                if f() != 0 {
+                    exit_code = 1;
+                }
             }
         }
 
         let _ = io::stdout().flush();
         let _ = io::stderr().flush();
-        unsafe { fflush(std::ptr::null_mut()); }
-        unsafe { _exit(exit_code); }
+        unsafe {
+            fflush(std::ptr::null_mut());
+        }
+        unsafe {
+            _exit(exit_code);
+        }
     }
 
     if pid < 0 {
-        unsafe { close(stdout_pipe[0]); close(stdout_pipe[1]); close(stderr_pipe[0]); close(stderr_pipe[1]); }
+        unsafe {
+            close(stdout_pipe[0]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[0]);
+            close(stderr_pipe[1]);
+        }
         return Err("fork() failed".to_string());
     }
 
     // Parent: close write ends
-    unsafe { close(stdout_pipe[1]); close(stderr_pipe[1]); }
+    unsafe {
+        close(stdout_pipe[1]);
+        close(stderr_pipe[1]);
+    }
     Ok((pid, stdout_pipe[0], stderr_pipe[0], start))
 }
 
 /// Read pipes from a finished child, wait for exit, and build TestResult.
 fn collect_child(
-    pid: i32, stdout_fd: i32, stderr_fd: i32, start: Instant,
-    fg_file: &Path, module: &str, expectations: &TestExpectations,
+    pid: i32,
+    stdout_fd: i32,
+    stderr_fd: i32,
+    start: Instant,
+    fg_file: &Path,
+    module: &str,
+    expectations: &TestExpectations,
 ) -> TestResult {
     use std::io::Read as _;
     use std::os::unix::io::FromRawFd;
@@ -409,21 +504,23 @@ fn collect_child(
     let stderr_str = stderr_thread.join().unwrap_or_default();
 
     let mut status: i32 = 0;
-    unsafe { waitpid(pid, &mut status, 0); }
+    unsafe {
+        waitpid(pid, &mut status, 0);
+    }
     let duration = start.elapsed();
 
     let killed_by_signal = (status & 0x7f) != 0;
     if killed_by_signal {
         let sig = status & 0x7f;
         let sig_name = match sig {
-            4  => "illegal instruction (SIGILL)",
-            6  => "abort (SIGABRT)",
-            7  => "bus error (SIGBUS)",
-            8  => "floating point exception (SIGFPE)",
-            9  => "killed (SIGKILL)",
+            4 => "illegal instruction (SIGILL)",
+            6 => "abort (SIGABRT)",
+            7 => "bus error (SIGBUS)",
+            8 => "floating point exception (SIGFPE)",
+            9 => "killed (SIGKILL)",
             10 => "bus error (SIGBUS)",
             11 => "segmentation fault (SIGSEGV)",
-            _  => "",
+            _ => "",
         };
         let msg = if sig_name.is_empty() {
             format!("child killed by signal {}", sig)
@@ -434,7 +531,15 @@ fn collect_child(
     }
 
     let exit_code = (status >> 8) & 0xff;
-    evaluate_result(fg_file, module, exit_code, duration, &stdout_str, &stderr_str, expectations)
+    evaluate_result(
+        fg_file,
+        module,
+        exit_code,
+        duration,
+        &stdout_str,
+        &stderr_str,
+        expectations,
+    )
 }
 
 /// Run tests in parallel. All forks happen sequentially on the main thread
@@ -452,12 +557,18 @@ fn run_tests_parallel(
     }
 
     for (module, file) in work_items {
-        if slot_rx.recv().is_err() { break; }
+        if slot_rx.recv().is_err() {
+            break;
+        }
 
         let source = match std::fs::read_to_string(&file) {
             Ok(s) => s,
             Err(e) => {
-                let _ = tx.send(make_error_result(&file, &module, format!("cannot read file: {}", e)));
+                let _ = tx.send(make_error_result(
+                    &file,
+                    &module,
+                    format!("cannot read file: {}", e),
+                ));
                 let _ = slot_tx.send(());
                 continue;
             }
@@ -465,8 +576,12 @@ fn run_tests_parallel(
 
         let expectations = TestExpectations::from_source(&source);
         if expectations.is_empty() {
-            let _ = tx.send(make_error_result(&file, &module,
-                "no /// expect:, /// expect-stderr:, or /// expect-error: comments found".to_string()));
+            let _ = tx.send(make_error_result(
+                &file,
+                &module,
+                "no /// expect:, /// expect-stderr:, or /// expect-error: comments found"
+                    .to_string(),
+            ));
             let _ = slot_tx.send(());
             continue;
         }
@@ -477,8 +592,15 @@ fn run_tests_parallel(
                 let tx = tx.clone();
                 let slot_tx = slot_tx.clone();
                 handles.push(std::thread::spawn(move || {
-                    let result = collect_child(pid, stdout_fd, stderr_fd, start,
-                                               &file, &module, &expectations);
+                    let result = collect_child(
+                        pid,
+                        stdout_fd,
+                        stderr_fd,
+                        start,
+                        &file,
+                        &module,
+                        &expectations,
+                    );
                     let _ = tx.send(result);
                     let _ = slot_tx.send(());
                 }));
@@ -494,13 +616,21 @@ fn run_tests_parallel(
 }
 
 fn evaluate_result(
-    fg_file: &Path, module: &str, exit_code: i32, duration: Duration,
-    stdout_str: &str, stderr_str: &str, exp: &TestExpectations,
+    fg_file: &Path,
+    module: &str,
+    exit_code: i32,
+    duration: Duration,
+    stdout_str: &str,
+    stderr_str: &str,
+    exp: &TestExpectations,
 ) -> TestResult {
     if let Some(ref error_code) = exp.error {
         let passed = exit_code != 0 && stderr_str.contains(error_code.as_str());
         return TestResult {
-            file: fg_file.to_path_buf(), module: module.to_string(), passed, duration,
+            file: fg_file.to_path_buf(),
+            module: module.to_string(),
+            passed,
+            duration,
             expected: vec![format!("error: {}", error_code)],
             actual: if exit_code != 0 {
                 vec![format!("error: {}", error_code)]
@@ -511,17 +641,24 @@ fn evaluate_result(
                 Some(if exit_code == 0 {
                     "expected compilation to fail, but it succeeded".to_string()
                 } else {
-                    format!("expected error code {}, got: {}",
-                        error_code, stderr_str.lines().next().unwrap_or(""))
+                    format!(
+                        "expected error code {}, got: {}",
+                        error_code,
+                        stderr_str.lines().next().unwrap_or("")
+                    )
                 })
-            } else { None },
+            } else {
+                None
+            },
         };
     }
 
     if !exp.stderr.is_empty() {
         let clean = strip_ansi_codes(stderr_str);
         let stderr_lines: Vec<&str> = clean.lines().collect();
-        let missing: Vec<String> = exp.stderr.iter()
+        let missing: Vec<String> = exp
+            .stderr
+            .iter()
             .filter(|e| !stderr_lines.iter().any(|line| line.contains(e.as_str())))
             .cloned()
             .collect();
@@ -529,7 +666,10 @@ fn evaluate_result(
         let passed = missing.is_empty() && exit_ok;
 
         return TestResult {
-            file: fg_file.to_path_buf(), module: module.to_string(), passed, duration,
+            file: fg_file.to_path_buf(),
+            module: module.to_string(),
+            passed,
+            duration,
             expected: exp.stderr.clone(),
             actual: stderr_lines.iter().map(|s| s.to_string()).collect(),
             error: if !passed {
@@ -538,7 +678,9 @@ fn evaluate_result(
                 } else {
                     format!("expected exit code {:?}, got {}", exp.exit_code, exit_code)
                 })
-            } else { None },
+            } else {
+                None
+            },
         };
     }
 
@@ -546,23 +688,36 @@ fn evaluate_result(
     let passed = actual == exp.stdout;
 
     TestResult {
-        file: fg_file.to_path_buf(), module: module.to_string(), passed, duration,
-        expected: exp.stdout.clone(), actual,
+        file: fg_file.to_path_buf(),
+        module: module.to_string(),
+        passed,
+        duration,
+        expected: exp.stdout.clone(),
+        actual,
         error: if !passed && exit_code != 0 {
             Some(format!("exit code {}: {}", exit_code, stderr_str.trim()))
-        } else { None },
+        } else {
+            None
+        },
     }
 }
 
 pub fn test_module(modules_dir: &Path, module: &str) -> ModuleTestResult {
     let files = get_example_files(&modules_dir.join(module));
     let start = Instant::now();
-    let results: Vec<TestResult> = files.iter()
+    let results: Vec<TestResult> = files
+        .iter()
         .map(|file| run_example_forked(file, module))
         .collect();
     let passed = results.iter().filter(|r| r.passed).count();
     let total = results.len();
-    ModuleTestResult { module: module.to_string(), total, passed, results, duration: start.elapsed() }
+    ModuleTestResult {
+        module: module.to_string(),
+        total,
+        passed,
+        results,
+        duration: start.elapsed(),
+    }
 }
 
 // ── Main entry point ────────────────────────────────────────────────
@@ -613,9 +768,15 @@ impl ProgressState {
     /// Record a completed test result.
     fn record(&mut self, result: TestResult) {
         self.completed += 1;
-        if result.passed { self.passed += 1; } else { self.failed += 1; }
+        if result.passed {
+            self.passed += 1;
+        } else {
+            self.failed += 1;
+        }
         let module = result.module.clone();
-        self.module_starts.entry(module.clone()).or_insert_with(Instant::now);
+        self.module_starts
+            .entry(module.clone())
+            .or_insert_with(Instant::now);
         self.module_results.entry(module).or_default().push(result);
     }
 
@@ -623,19 +784,41 @@ impl ProgressState {
     fn update_footer(&mut self, c: &Colors) {
         clear_footer(self.footer_lines);
         self.spinner_idx = (self.spinner_idx + 1) % SPINNER.len();
-        print_footer(c, &self.running, self.completed, self.total,
-                     self.suite_start.elapsed(), self.spinner_idx);
+        print_footer(
+            c,
+            &self.running,
+            self.completed,
+            self.total,
+            self.suite_start.elapsed(),
+            self.spinner_idx,
+        );
         let _ = io::stdout().flush();
         self.footer_lines = 2;
     }
 
     /// Render the module if all its tests are done.
-    fn try_render_module(&mut self, module: &str, config: &TestRunConfig, c: &Colors, is_tty: bool) {
+    fn try_render_module(
+        &mut self,
+        module: &str,
+        config: &TestRunConfig,
+        c: &Colors,
+        is_tty: bool,
+    ) {
         let expected = self.module_test_counts.get(module).copied().unwrap_or(0);
-        let current = self.module_results.get(module).map(|v| v.len()).unwrap_or(0);
-        if current != expected { return; }
+        let current = self
+            .module_results
+            .get(module)
+            .map(|v| v.len())
+            .unwrap_or(0);
+        if current != expected {
+            return;
+        }
 
-        let mod_start = self.module_starts.get(module).copied().unwrap_or(self.suite_start);
+        let mod_start = self
+            .module_starts
+            .get(module)
+            .copied()
+            .unwrap_or(self.suite_start);
         let mod_duration = mod_start.elapsed();
 
         let results = self.module_results.remove(module).unwrap_or_default();
@@ -644,8 +827,10 @@ impl ProgressState {
 
         let (mod_failures, kept_results): (Vec<_>, Vec<_>) =
             results.into_iter().partition(|r| !r.passed);
-        let mod_failures: Vec<(String, TestResult)> =
-            mod_failures.into_iter().map(|r| (module.to_string(), r)).collect();
+        let mod_failures: Vec<(String, TestResult)> = mod_failures
+            .into_iter()
+            .map(|r| (module.to_string(), r))
+            .collect();
 
         if !config.quiet {
             if is_tty {
@@ -653,12 +838,26 @@ impl ProgressState {
                 self.footer_lines = 0;
             }
 
-            print_module_result(module, mod_passed, mod_total, mod_duration,
-                                 &mod_failures, &kept_results, config, c);
+            print_module_result(
+                module,
+                mod_passed,
+                mod_total,
+                mod_duration,
+                &mod_failures,
+                &kept_results,
+                config,
+                c,
+            );
 
             if is_tty {
-                print_footer(c, &self.running, self.completed, self.total,
-                             self.suite_start.elapsed(), self.spinner_idx);
+                print_footer(
+                    c,
+                    &self.running,
+                    self.completed,
+                    self.total,
+                    self.suite_start.elapsed(),
+                    self.spinner_idx,
+                );
                 let _ = io::stdout().flush();
                 self.footer_lines = 2;
             }
@@ -676,7 +875,10 @@ fn run_tests_human(target: Option<&str>, config: &TestRunConfig) -> bool {
         None => {
             let err = crate::errors::CompileError::CliError {
                 message: "no test modules found in current directory".to_string(),
-                help: Some("run `forge test` from a directory containing modules with examples/".to_string()),
+                help: Some(
+                    "run `forge test` from a directory containing modules with examples/"
+                        .to_string(),
+                ),
             };
             eprint!("{}", err.render());
             return false;
@@ -693,13 +895,19 @@ fn run_tests_human(target: Option<&str>, config: &TestRunConfig) -> bool {
     let module_count = module_order.len();
 
     if total_tests == 0 {
-        if !config.quiet { println!("\n  No tests found."); }
+        if !config.quiet {
+            println!("\n  No tests found.");
+        }
         return true;
     }
 
     if !config.quiet {
-        println!("\n  {} {} tests from {} modules\n",
-            c.dim("Running"), total_tests, module_count);
+        println!(
+            "\n  {} {} tests from {} modules\n",
+            c.dim("Running"),
+            total_tests,
+            module_count
+        );
     }
 
     let mut state = ProgressState::new(module_test_counts, total_tests);
@@ -720,7 +928,9 @@ fn run_tests_human(target: Option<&str>, config: &TestRunConfig) -> bool {
             let module = result.module.clone();
             state.record(result);
 
-            if is_tty && !config.quiet { state.update_footer(&c); }
+            if is_tty && !config.quiet {
+                state.update_footer(&c);
+            }
             state.try_render_module(&module, config, &c, is_tty);
 
             if config.fail_fast && state.failed > 0 {
@@ -729,11 +939,16 @@ fn run_tests_human(target: Option<&str>, config: &TestRunConfig) -> bool {
             }
         }
 
-        for h in handles { let _ = h.join(); }
+        for h in handles {
+            let _ = h.join();
+        }
     } else {
         for (module, file) in &work_items {
-            let label = format!("{}/{}", module,
-                file.file_stem().unwrap_or_default().to_string_lossy());
+            let label = format!(
+                "{}/{}",
+                module,
+                file.file_stem().unwrap_or_default().to_string_lossy()
+            );
 
             if is_tty && !config.quiet {
                 state.running.push(label.clone());
@@ -764,17 +979,25 @@ fn run_tests_human(target: Option<&str>, config: &TestRunConfig) -> bool {
 }
 
 fn print_human_summary(
-    state: &ProgressState, module_count: usize, stopped_early: bool,
-    c: &Colors, config: &TestRunConfig,
+    state: &ProgressState,
+    module_count: usize,
+    stopped_early: bool,
+    c: &Colors,
+    config: &TestRunConfig,
 ) {
     let suite_duration = state.suite_start.elapsed();
 
     println!("\n  {}\n", c.dim(&"─".repeat(54)));
 
     if state.failed == 0 {
-        println!("  {} {}", c.green("✓"), c.green(&format!("{} passed", state.passed)));
+        println!(
+            "  {} {}",
+            c.green("✓"),
+            c.green(&format!("{} passed", state.passed))
+        );
     } else {
-        println!("  {}  {}",
+        println!(
+            "  {}  {}",
             c.red(&format!("✖ {} failed", state.failed)),
             c.green(&format!("✓ {} passed", state.passed)),
         );
@@ -800,9 +1023,14 @@ fn print_human_summary(
         }
     }
 
-    println!("\n  {}\n\n  {}",
-        c.dim(&format!("Duration: {} | Modules: {} | Tests: {}",
-            format_duration(suite_duration), module_count, state.total)),
+    println!(
+        "\n  {}\n\n  {}",
+        c.dim(&format!(
+            "Duration: {} | Modules: {} | Tests: {}",
+            format_duration(suite_duration),
+            module_count,
+            state.total
+        )),
         c.dim(&"─".repeat(54)),
     );
 }
@@ -810,15 +1038,26 @@ fn print_human_summary(
 // ── Module result rendering ─────────────────────────────────────────
 
 fn print_module_result(
-    module: &str, passed: usize, total: usize, duration: Duration,
-    failures: &[(String, TestResult)], passing: &[TestResult],
-    config: &TestRunConfig, c: &Colors,
+    module: &str,
+    passed: usize,
+    total: usize,
+    duration: Duration,
+    failures: &[(String, TestResult)],
+    passing: &[TestResult],
+    config: &TestRunConfig,
+    c: &Colors,
 ) {
-    let icon = if passed == total { c.green("✓") } else { c.red("●") };
+    let icon = if passed == total {
+        c.green("✓")
+    } else {
+        c.red("●")
+    };
 
     if passed == total && !config.verbose {
-        println!("  {} {:<32} {}  {}",
-            icon, module,
+        println!(
+            "  {} {:<32} {}  {}",
+            icon,
+            module,
             c.dim(&format!("{}/{}", passed, total)),
             c.dim(&format_duration(duration)),
         );
@@ -828,18 +1067,31 @@ fn print_module_result(
     let counts = if passed == total {
         c.dim(&format!("{}/{}", passed, total))
     } else {
-        format!("{} {}", c.dim(&format!("{}/{}", passed, total)),
-            c.red(&format!("{} failed", total - passed)))
+        format!(
+            "{} {}",
+            c.dim(&format!("{}/{}", passed, total)),
+            c.red(&format!("{} failed", total - passed))
+        )
     };
     println!("  {} {}  {}", icon, module, counts);
 
     for test in passing {
         let name = test.file.file_stem().unwrap_or_default().to_string_lossy();
-        println!("    {} {:<36} {}", c.green("✓"), name, c.dim(&format_duration(test.duration)));
+        println!(
+            "    {} {:<36} {}",
+            c.green("✓"),
+            name,
+            c.dim(&format_duration(test.duration))
+        );
     }
     for (_, test) in failures {
         let name = test.file.file_stem().unwrap_or_default().to_string_lossy();
-        println!("    {} {:<36} {}", c.red("✖"), name, c.dim(&format_duration(test.duration)));
+        println!(
+            "    {} {:<36} {}",
+            c.red("✖"),
+            name,
+            c.dim(&format_duration(test.duration))
+        );
         print_failure_detail(test, c);
     }
     println!();
@@ -850,8 +1102,12 @@ fn print_module_result(
 const SPINNER: &[char] = &['◐', '◓', '◑', '◒'];
 
 fn print_footer(
-    c: &Colors, running: &[String],
-    completed: usize, total: usize, elapsed: Duration, spinner_idx: usize,
+    c: &Colors,
+    running: &[String],
+    completed: usize,
+    total: usize,
+    elapsed: Duration,
+    spinner_idx: usize,
 ) {
     let spinner = SPINNER[spinner_idx % SPINNER.len()];
 
@@ -861,22 +1117,41 @@ fn print_footer(
         let max_show = 3;
         let shown: Vec<&str> = running.iter().take(max_show).map(|s| s.as_str()).collect();
         let extra = if running.len() > max_show {
-            format!("  {}", c.dim(&format!("+{} more", running.len() - max_show)))
-        } else { String::new() };
-        println!("  {} {}{}", c.cyan(&spinner.to_string()), c.dim(&shown.join("  ")), extra);
+            format!(
+                "  {}",
+                c.dim(&format!("+{} more", running.len() - max_show))
+            )
+        } else {
+            String::new()
+        };
+        println!(
+            "  {} {}{}",
+            c.cyan(&spinner.to_string()),
+            c.dim(&shown.join("  ")),
+            extra
+        );
     }
 
     let bar_width = 40usize;
-    let filled = if total > 0 { (completed * bar_width) / total } else { 0 };
-    println!("  {}{}  {}/{}  {}",
+    let filled = if total > 0 {
+        (completed * bar_width) / total
+    } else {
+        0
+    };
+    println!(
+        "  {}{}  {}/{}  {}",
         c.green(&"█".repeat(filled)),
         c.dim(&"░".repeat(bar_width - filled)),
-        completed, total, c.dim(&format_duration(elapsed)),
+        completed,
+        total,
+        c.dim(&format_duration(elapsed)),
     );
 }
 
 fn clear_footer(lines: usize) {
-    if lines == 0 { return; }
+    if lines == 0 {
+        return;
+    }
     let stdout = io::stdout();
     let mut handle = stdout.lock();
     for _ in 0..lines {
@@ -890,7 +1165,8 @@ fn clear_footer(lines: usize) {
 fn print_failure_detail(test: &TestResult, c: &Colors) {
     if let Some(ref err) = test.error {
         let clean = strip_ansi_codes(err);
-        let lines: Vec<&str> = clean.lines()
+        let lines: Vec<&str> = clean
+            .lines()
             .map(|l| l.trim())
             .filter(|l| !l.is_empty())
             .collect();
@@ -898,7 +1174,10 @@ fn print_failure_detail(test: &TestResult, c: &Colors) {
             println!("        {}", c.red(line));
         }
         if lines.len() > 6 {
-            println!("        {}", c.dim(&format!("... ({} more lines)", lines.len() - 6)));
+            println!(
+                "        {}",
+                c.dim(&format!("... ({} more lines)", lines.len() - 6))
+            );
         }
     } else {
         print_diff(&test.expected, &test.actual, c, 8);
@@ -916,7 +1195,11 @@ fn print_diff(expected: &[String], actual: &[String], c: &Colors, indent: usize)
         exp_sorted.sort();
         act_sorted.sort();
         if exp_sorted == act_sorted && expected != actual {
-            println!("{}{}  output lines match but in wrong order:", pad, c.red("!"));
+            println!(
+                "{}{}  output lines match but in wrong order:",
+                pad,
+                c.red("!")
+            );
             println!("{}   {} {}", pad, c.dim("expected:"), expected.join(", "));
             println!("{}   {}   {}", pad, c.dim("actual:"), actual.join(", "));
             return;
@@ -929,17 +1212,25 @@ fn print_diff(expected: &[String], actual: &[String], c: &Colors, indent: usize)
         if exp == act {
             println!("{}  {}", pad, c.dim(act));
         } else {
-            if !exp.is_empty() { println!("{}{} {}", pad, c.green("expected:"), c.green(exp)); }
-            if !act.is_empty() { println!("{}{} {}", pad, c.red("  actual:"), c.red(act)); }
+            if !exp.is_empty() {
+                println!("{}{} {}", pad, c.green("expected:"), c.green(exp));
+            }
+            if !act.is_empty() {
+                println!("{}{} {}", pad, c.red("  actual:"), c.red(act));
+            }
         }
     }
 }
 
 fn format_duration(d: Duration) -> String {
     let us = d.as_micros();
-    if us < 1000 { format!("{}µs", us) }
-    else if us < 1_000_000 { format!("{:.1}ms", us as f64 / 1000.0) }
-    else { format!("{:.1}s", d.as_secs_f64()) }
+    if us < 1000 {
+        format!("{}µs", us)
+    } else if us < 1_000_000 {
+        format!("{:.1}ms", us as f64 / 1000.0)
+    } else {
+        format!("{:.1}s", d.as_secs_f64())
+    }
 }
 
 fn strip_ansi_codes(s: &str) -> String {
@@ -949,7 +1240,9 @@ fn strip_ansi_codes(s: &str) -> String {
         if c == '\x1b' {
             while let Some(&next) = chars.peek() {
                 chars.next();
-                if next == 'm' { break; }
+                if next == 'm' {
+                    break;
+                }
             }
         } else {
             result.push(c);
@@ -961,14 +1254,25 @@ fn strip_ansi_codes(s: &str) -> String {
 // ── Stream output (JSON lines) ──────────────────────────────────────
 
 fn emit_stream_result(result: &TestResult) {
-    let name = result.file.file_stem().unwrap_or_default().to_string_lossy();
+    let name = result
+        .file
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
     let ms = result.duration.as_millis();
     if result.passed {
-        println!("{{\"event\":\"pass\",\"module\":\"{}\",\"test\":\"{}\",\"duration_ms\":{}}}",
-            result.module, name, ms);
+        println!(
+            "{{\"event\":\"pass\",\"module\":\"{}\",\"test\":\"{}\",\"duration_ms\":{}}}",
+            result.module, name, ms
+        );
     } else {
-        let err = result.error.as_deref().unwrap_or("")
-            .replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
+        let err = result
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n");
         println!("{{\"event\":\"fail\",\"module\":\"{}\",\"test\":\"{}\",\"duration_ms\":{},\"error\":\"{}\"}}",
             result.module, name, ms, err);
     }
@@ -986,8 +1290,11 @@ fn run_tests_stream(target: Option<&str>, config: &TestRunConfig) -> bool {
     let (work_items, module_test_counts, _) =
         discover_work_items(&modules_dir, target, config.filter.as_deref());
 
-    println!("{{\"event\":\"suite_start\",\"modules\":{},\"tests\":{}}}",
-        module_test_counts.len(), work_items.len());
+    println!(
+        "{{\"event\":\"suite_start\",\"modules\":{},\"tests\":{}}}",
+        module_test_counts.len(),
+        work_items.len()
+    );
 
     let suite_start = Instant::now();
     let mut total_passed = 0usize;
@@ -1001,19 +1308,32 @@ fn run_tests_stream(target: Option<&str>, config: &TestRunConfig) -> bool {
 
         if module_started.insert(module.clone()) {
             let count = module_test_counts.get(&module).copied().unwrap_or(0);
-            println!("{{\"event\":\"module_start\",\"module\":\"{}\",\"tests\":{}}}", module, count);
+            println!(
+                "{{\"event\":\"module_start\",\"module\":\"{}\",\"tests\":{}}}",
+                module, count
+            );
             module_starts.insert(module.clone(), Instant::now());
         }
 
-        if result.passed { total_passed += 1; } else { total_failed += 1; }
+        if result.passed {
+            total_passed += 1;
+        } else {
+            total_failed += 1;
+        }
         emit_stream_result(&result);
-        module_results.entry(module.clone()).or_default().push(result);
+        module_results
+            .entry(module.clone())
+            .or_default()
+            .push(result);
 
         let expected = module_test_counts.get(&module).copied().unwrap_or(0);
         if module_results.get(&module).map(|v| v.len()).unwrap_or(0) == expected {
             let results = module_results.remove(&module).unwrap_or_default();
             let mod_passed = results.iter().filter(|r| r.passed).count();
-            let mod_dur = module_starts.get(&module).map(|s| s.elapsed().as_millis()).unwrap_or(0);
+            let mod_dur = module_starts
+                .get(&module)
+                .map(|s| s.elapsed().as_millis())
+                .unwrap_or(0);
             println!("{{\"event\":\"module_end\",\"module\":\"{}\",\"passed\":{},\"total\":{},\"duration_ms\":{}}}",
                 module, mod_passed, results.len(), mod_dur);
         }
@@ -1025,18 +1345,28 @@ fn run_tests_stream(target: Option<&str>, config: &TestRunConfig) -> bool {
         let handles = run_tests_parallel(config.jobs, work_items, tx);
         for result in rx {
             let failed = handle_result(result);
-            if config.fail_fast && failed > 0 { break; }
+            if config.fail_fast && failed > 0 {
+                break;
+            }
         }
-        for h in handles { let _ = h.join(); }
+        for h in handles {
+            let _ = h.join();
+        }
     } else {
         for (module, file) in &work_items {
             let failed = handle_result(run_example_forked(file, module));
-            if config.fail_fast && failed > 0 { break; }
+            if config.fail_fast && failed > 0 {
+                break;
+            }
         }
     }
 
-    println!("{{\"event\":\"suite_end\",\"passed\":{},\"failed\":{},\"duration_ms\":{}}}",
-        total_passed, total_failed, suite_start.elapsed().as_millis());
+    println!(
+        "{{\"event\":\"suite_end\",\"passed\":{},\"failed\":{},\"duration_ms\":{}}}",
+        total_passed,
+        total_failed,
+        suite_start.elapsed().as_millis()
+    );
     total_failed == 0
 }
 
@@ -1051,23 +1381,37 @@ fn run_tests_json(target: Option<&str>, config: &TestRunConfig) -> bool {
         }
     };
 
-    let (_, _, module_order) =
-        discover_work_items(&modules_dir, target, config.filter.as_deref());
+    let (_, _, module_order) = discover_work_items(&modules_dir, target, config.filter.as_deref());
 
-    let module_results: Vec<ModuleTestResult> = module_order.iter()
+    let module_results: Vec<ModuleTestResult> = module_order
+        .iter()
         .map(|m| test_module(&modules_dir, m))
         .collect();
 
     let mut all_passed = true;
-    let entries: Vec<String> = module_results.iter().map(|result| {
-        if result.passed != result.total { all_passed = false; }
-        let tests: Vec<String> = result.results.iter().map(|t| {
-            let name = t.file.file_stem().unwrap_or_default().to_string_lossy();
-            format!("{{\"name\":\"{}\",\"passed\":{}}}", name, t.passed)
-        }).collect();
-        format!("{{\"module\":\"{}\",\"passed\":{},\"total\":{},\"tests\":[{}]}}",
-            result.module, result.passed, result.total, tests.join(","))
-    }).collect();
+    let entries: Vec<String> = module_results
+        .iter()
+        .map(|result| {
+            if result.passed != result.total {
+                all_passed = false;
+            }
+            let tests: Vec<String> = result
+                .results
+                .iter()
+                .map(|t| {
+                    let name = t.file.file_stem().unwrap_or_default().to_string_lossy();
+                    format!("{{\"name\":\"{}\",\"passed\":{}}}", name, t.passed)
+                })
+                .collect();
+            format!(
+                "{{\"module\":\"{}\",\"passed\":{},\"total\":{},\"tests\":[{}]}}",
+                result.module,
+                result.passed,
+                result.total,
+                tests.join(",")
+            )
+        })
+        .collect();
 
     println!("[{}]", entries.join(","));
     all_passed
@@ -1085,7 +1429,8 @@ pub fn get_all_module_test_counts() -> Vec<(String, usize, usize)> {
         Some(d) => d,
         None => return vec![],
     };
-    discover_modules(&modules_dir).iter()
+    discover_modules(&modules_dir)
+        .iter()
         .map(|m| {
             let (passed, total) = count_module_tests(&modules_dir, m);
             (m.clone(), passed, total)
@@ -1098,7 +1443,8 @@ pub fn get_all_module_example_counts() -> Vec<(String, usize)> {
         Some(d) => d,
         None => return vec![],
     };
-    discover_modules(&modules_dir).iter()
+    discover_modules(&modules_dir)
+        .iter()
         .map(|m| {
             let count = get_example_files(&modules_dir.join(m)).len();
             (m.clone(), count)

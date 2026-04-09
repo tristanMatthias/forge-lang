@@ -2,7 +2,6 @@
 ///
 /// Powers `forge lang` CLI commands for exploring language features,
 /// symbols, error codes, types, and syntax from the terminal.
-
 use std::path::PathBuf;
 
 use crate::ansi::{bold, cyan, dim, green, red, truncate_str, yellow};
@@ -88,10 +87,7 @@ fn find_packages_dir() -> Option<PathBuf> {
 
     // Try CWD-based paths
     let cwd = std::env::current_dir().ok()?;
-    for candidate in &[
-        cwd.join("packages"),
-        cwd.join("forge").join("packages"),
-    ] {
+    for candidate in &[cwd.join("packages"), cwd.join("forge").join("packages")] {
         if candidate.is_dir() {
             return Some(candidate.clone());
         }
@@ -106,7 +102,8 @@ fn parse_package(toml_path: &PathBuf, fg_path: &PathBuf) -> Option<PackageDoc> {
 
     let name = extract_toml_string(&toml_content, "name")?;
     let namespace = extract_toml_string(&toml_content, "namespace").unwrap_or_default();
-    let version = extract_toml_string(&toml_content, "version").unwrap_or_else(|| "0.0.0".to_string());
+    let version =
+        extract_toml_string(&toml_content, "version").unwrap_or_else(|| "0.0.0".to_string());
     let description = extract_toml_string(&toml_content, "description").unwrap_or_default();
 
     // Extract component names from [components.X] sections
@@ -276,7 +273,11 @@ fn parse_extern_fn_line(line: &str, doc_lines: &[String]) -> Option<ExternFnDoc>
 }
 
 /// Parse a component block to extract config fields and @syntax patterns.
-fn parse_component_block(lines: &[&str], start: usize, doc_lines: &[String]) -> Option<ComponentDoc> {
+fn parse_component_block(
+    lines: &[&str],
+    start: usize,
+    doc_lines: &[String],
+) -> Option<ComponentDoc> {
     let first_line = lines[start].trim();
     // component name(args) {
     let rest = first_line.strip_prefix("component ")?;
@@ -373,10 +374,7 @@ fn extract_syntax_pattern(line: &str) -> Option<String> {
 /// Show documentation for a single package.
 fn show_package(pkg: &PackageDoc) {
     let header = format!("@{}", pkg.namespace);
-    let right = format!(
-        "{} v{}",
-        pkg.name, pkg.version
-    );
+    let right = format!("{} v{}", pkg.name, pkg.version);
 
     println!();
     println!("  {:<52} {}", bold(&header), dim(&right));
@@ -470,8 +468,7 @@ fn show_package_component(pkg: &PackageDoc, component_name: &str) {
                 "\n  No component '{}' in @{}. Available: {}\n",
                 component_name,
                 pkg.namespace,
-                pkg
-                    .components
+                pkg.components
                     .iter()
                     .map(|c| c.name.as_str())
                     .collect::<Vec<_>>()
@@ -540,25 +537,21 @@ fn show_all_packages() {
             if comp_names.is_empty() {
                 "extern functions".to_string()
             } else {
-                format!("{} component{}", comp_names.join(", "), if comp_names.len() > 1 { "s" } else { "" })
+                format!(
+                    "{} component{}",
+                    comp_names.join(", "),
+                    if comp_names.len() > 1 { "s" } else { "" }
+                )
             }
         } else {
             p.description.clone()
         };
 
-        println!(
-            "    {:<12} {:<24} {}",
-            cyan(&ns),
-            dim(&name_ver),
-            desc
-        );
+        println!("    {:<12} {:<24} {}", cyan(&ns), dim(&name_ver), desc);
     }
 
     println!();
-    println!(
-        "  Detail: {}",
-        cyan("forge lang @<package>")
-    );
+    println!("  Detail: {}", cyan("forge lang @<package>"));
     println!();
 }
 
@@ -664,7 +657,8 @@ const LIST_METHODS: &[MethodDoc] = &[
     MethodDoc {
         name: "length",
         signature: "list<T>.length -> int",
-        description: "Get the number of elements in the list. Accessed as a property, not a method call.",
+        description:
+            "Get the number of elements in the list. Accessed as a property, not a method call.",
         example: "[1, 2, 3].length  // => 3",
     },
     MethodDoc {
@@ -778,7 +772,8 @@ const JSON_METHODS: &[MethodDoc] = &[
     MethodDoc {
         name: "parse",
         signature: "json.parse(str: string) -> T",
-        description: "Parse a JSON string into a typed value. The target type is inferred from context.",
+        description:
+            "Parse a JSON string into a typed value. The target type is inferred from context.",
         example: "let user: User = json.parse(data)",
     },
     MethodDoc {
@@ -831,7 +826,10 @@ fn find_type(name: &str) -> Option<&'static TypeDoc> {
     BUILTIN_TYPES.iter().find(|t| t.name == name)
 }
 
-fn find_method(type_name: &str, method_name: &str) -> Option<(&'static TypeDoc, &'static MethodDoc)> {
+fn find_method(
+    type_name: &str,
+    method_name: &str,
+) -> Option<(&'static TypeDoc, &'static MethodDoc)> {
     let type_doc = find_type(type_name)?;
     let method_doc = type_doc.methods.iter().find(|m| m.name == method_name)?;
     Some((type_doc, method_doc))
@@ -912,11 +910,7 @@ pub fn show_feature(query: &str) {
     };
 
     println!();
-    println!(
-        "  {:<52} {}",
-        bold(meta.name),
-        status_colored(meta)
-    );
+    println!("  {:<52} {}", bold(meta.name), status_colored(meta));
     println!("  {}", dim(&"\u{2500}".repeat(57)));
     println!();
     println!("  {}", description);
@@ -1023,11 +1017,7 @@ fn show_type(name: &str) {
     };
 
     println!();
-    println!(
-        "  {:<52} {}",
-        bold(type_doc.name),
-        dim("built-in type")
-    );
+    println!("  {:<52} {}", bold(type_doc.name), dim("built-in type"));
     println!("  {}", dim(&"\u{2500}".repeat(57)));
     println!();
     println!("  {}", type_doc.description);
@@ -1044,7 +1034,10 @@ fn show_type(name: &str) {
         }
     } else {
         println!();
-        println!("  {}", dim("No methods. Used with operators and built-in functions."));
+        println!(
+            "  {}",
+            dim("No methods. Used with operators and built-in functions.")
+        );
     }
 
     println!();
@@ -1093,10 +1086,7 @@ fn show_method(type_name: &str, method_name: &str) {
         println!("    {}", line);
     }
     println!();
-    println!(
-        "  Type: {}",
-        cyan(&format!("forge lang {}", type_doc.name))
-    );
+    println!("  Type: {}", cyan(&format!("forge lang {}", type_doc.name)));
     println!();
 }
 
@@ -1125,10 +1115,7 @@ fn show_types() {
     }
 
     println!();
-    println!(
-        "  Detail: {}",
-        cyan("forge lang <type>")
-    );
+    println!("  Detail: {}", cyan("forge lang <type>"));
     println!();
 }
 
@@ -1200,17 +1187,16 @@ pub fn show_all() {
                 if comp_names.is_empty() {
                     "extern functions".to_string()
                 } else {
-                    format!("{} component{}", comp_names.join(", "), if comp_names.len() > 1 { "s" } else { "" })
+                    format!(
+                        "{} component{}",
+                        comp_names.join(", "),
+                        if comp_names.len() > 1 { "s" } else { "" }
+                    )
                 }
             } else {
                 p.description.clone()
             };
-            println!(
-                "    {:<12} {:<24} {}",
-                ns,
-                dim(&name_ver),
-                dim(&desc)
-            );
+            println!("    {:<12} {:<24} {}", ns, dim(&name_ver), dim(&desc));
         }
     }
 
@@ -1299,7 +1285,11 @@ pub fn show_symbols() {
 /// Print the list of error codes with titles from the registry.
 fn print_error_code_list() {
     let registry = ErrorRegistry::builtin();
-    let mut codes = registry.all_codes().into_iter().map(|c| c.to_string()).collect::<Vec<_>>();
+    let mut codes = registry
+        .all_codes()
+        .into_iter()
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>();
     codes.sort();
     for code in &codes {
         if let Some(entry) = registry.lookup(code) {
@@ -1368,7 +1358,12 @@ pub fn validate_lang() {
 
     // ── Per-feature checks ──────────────────────────────────────────
     println!();
-    println!("  {}: {}/{} registered", bold("Features"), features.len(), features.len());
+    println!(
+        "  {}: {}/{} registered",
+        bold("Features"),
+        features.len(),
+        features.len()
+    );
 
     let mut has_syntax_count = 0usize;
     let mut has_short_count = 0usize;
@@ -1395,23 +1390,42 @@ pub fn validate_lang() {
         let has_grammar = !f.grammar.is_empty();
         let has_category = !f.category.is_empty();
 
-        if has_syntax { has_syntax_count += 1; }
-        if has_short { has_short_count += 1; }
-        if has_examples { has_examples_count += 1; }
-        if has_description { has_description_count += 1; }
-        if has_long_desc { has_long_desc_count += 1; }
-        if has_grammar { has_grammar_count += 1; }
-        if has_category { has_category_count += 1; }
+        if has_syntax {
+            has_syntax_count += 1;
+        }
+        if has_short {
+            has_short_count += 1;
+        }
+        if has_examples {
+            has_examples_count += 1;
+        }
+        if has_description {
+            has_description_count += 1;
+        }
+        if has_long_desc {
+            has_long_desc_count += 1;
+        }
+        if has_grammar {
+            has_grammar_count += 1;
+        }
+        if has_category {
+            has_category_count += 1;
+        }
         has_status_count += 1; // status is always set (it's an enum)
 
         let is_stable = f.status == crate::registry::FeatureStatus::Stable;
         if is_stable {
             stable_count += 1;
-            if has_examples { stable_with_examples += 1; }
+            if has_examples {
+                stable_with_examples += 1;
+            }
         }
 
-        let is_fully_doc = has_syntax && has_short && has_examples && has_long_desc && has_grammar && has_category;
-        if is_fully_doc { fully_documented += 1; }
+        let is_fully_doc =
+            has_syntax && has_short && has_examples && has_long_desc && has_grammar && has_category;
+        if is_fully_doc {
+            fully_documented += 1;
+        }
 
         // Determine line icon
         let (icon, _icon_color) = if is_fully_doc {
@@ -1422,10 +1436,26 @@ pub fn validate_lang() {
             ("\u{2717}", false) // cross, red
         };
 
-        let syntax_tag = if has_syntax { green("syntax \u{2713}") } else { red("no syntax") };
-        let short_tag = if has_short { green("short \u{2713}") } else { red("no short") };
-        let long_desc_tag = if has_long_desc { green("long_desc \u{2713}") } else { red("no long_desc") };
-        let grammar_tag = if has_grammar { green("grammar \u{2713}") } else { red("no grammar") };
+        let syntax_tag = if has_syntax {
+            green("syntax \u{2713}")
+        } else {
+            red("no syntax")
+        };
+        let short_tag = if has_short {
+            green("short \u{2713}")
+        } else {
+            red("no short")
+        };
+        let long_desc_tag = if has_long_desc {
+            green("long_desc \u{2713}")
+        } else {
+            red("no long_desc")
+        };
+        let grammar_tag = if has_grammar {
+            green("grammar \u{2713}")
+        } else {
+            red("no grammar")
+        };
         let examples_tag = if has_examples {
             format!("{} examples", example_count)
         } else {
@@ -1452,15 +1482,60 @@ pub fn validate_lang() {
     println!("  {}", bold("Coverage Checks"));
 
     let checks: Vec<(&str, usize, usize, bool)> = vec![
-        ("All features have descriptions", has_description_count, total, has_description_count == total),
-        ("All features have long descriptions", has_long_desc_count, total, has_long_desc_count == total),
-        ("All features have grammar rules", has_grammar_count, total, has_grammar_count == total),
-        ("All features have categories", has_category_count, total, has_category_count == total),
-        ("All features have syntax patterns", has_syntax_count, total, has_syntax_count == total),
-        ("All features have short descriptions", has_short_count, total, has_short_count == total),
-        ("All features have examples", has_examples_count, total, has_examples_count == total),
-        ("All features have status set", has_status_count, total, has_status_count == total),
-        ("All stable features have examples", stable_with_examples, stable_count, stable_with_examples == stable_count),
+        (
+            "All features have descriptions",
+            has_description_count,
+            total,
+            has_description_count == total,
+        ),
+        (
+            "All features have long descriptions",
+            has_long_desc_count,
+            total,
+            has_long_desc_count == total,
+        ),
+        (
+            "All features have grammar rules",
+            has_grammar_count,
+            total,
+            has_grammar_count == total,
+        ),
+        (
+            "All features have categories",
+            has_category_count,
+            total,
+            has_category_count == total,
+        ),
+        (
+            "All features have syntax patterns",
+            has_syntax_count,
+            total,
+            has_syntax_count == total,
+        ),
+        (
+            "All features have short descriptions",
+            has_short_count,
+            total,
+            has_short_count == total,
+        ),
+        (
+            "All features have examples",
+            has_examples_count,
+            total,
+            has_examples_count == total,
+        ),
+        (
+            "All features have status set",
+            has_status_count,
+            total,
+            has_status_count == total,
+        ),
+        (
+            "All stable features have examples",
+            stable_with_examples,
+            stable_count,
+            stable_with_examples == stable_count,
+        ),
     ];
 
     for (label, num, denom, pass) in &checks {
@@ -1487,7 +1562,12 @@ pub fn validate_lang() {
         if t.methods.is_empty() {
             println!("    {} {}", green("\u{2713}"), t.name);
         } else {
-            println!("    {} {}: {} methods", green("\u{2713}"), t.name, t.methods.len());
+            println!(
+                "    {} {}: {} methods",
+                green("\u{2713}"),
+                t.name,
+                t.methods.len()
+            );
         }
     }
 
@@ -1605,8 +1685,7 @@ pub fn resolve(query: &str) {
     }
 
     // 5. Error code (starts with F followed by digits)
-    if query.starts_with('F') && query.len() > 1 && query[1..].chars().all(|c| c.is_ascii_digit())
-    {
+    if query.starts_with('F') && query.len() > 1 && query[1..].chars().all(|c| c.is_ascii_digit()) {
         show_error(query);
         return;
     }
@@ -1656,7 +1735,11 @@ pub fn resolve(query: &str) {
 pub fn show_short(query: &str) {
     match FeatureRegistry::get(query) {
         Some(meta) => {
-            let desc = if !meta.short.is_empty() { meta.short } else { meta.description };
+            let desc = if !meta.short.is_empty() {
+                meta.short
+            } else {
+                meta.description
+            };
             println!("  {}: {}", meta.id, desc);
         }
         None => {
@@ -1755,9 +1838,12 @@ pub fn show_llm_compact() {
 
     // Packages section — only show non-empty entries
     let packages = discover_packages();
-    let non_empty: Vec<&PackageDoc> = packages.iter().filter(|p| {
-        !p.description.is_empty() || !p.components.is_empty() || !p.extern_fns.is_empty()
-    }).collect();
+    let non_empty: Vec<&PackageDoc> = packages
+        .iter()
+        .filter(|p| {
+            !p.description.is_empty() || !p.components.is_empty() || !p.extern_fns.is_empty()
+        })
+        .collect();
     if !non_empty.is_empty() {
         println!();
         println!("## Packages (use @namespace)");
@@ -1816,7 +1902,10 @@ fn read_quickstart_example() -> Option<String> {
     let features_dir = find_features_dir()?;
     // features_dir is packages/forgec-rust/features/, go up 3 levels to forge root
     let forge_root = features_dir.parent()?.parent()?.parent()?;
-    let quickstart = forge_root.join("tests").join("programs").join("quickstart.fg");
+    let quickstart = forge_root
+        .join("tests")
+        .join("programs")
+        .join("quickstart.fg");
     if !quickstart.exists() {
         return None;
     }
@@ -1837,7 +1926,11 @@ fn read_quickstart_example() -> Option<String> {
     while code.last().map_or(false, |l| l.trim().is_empty()) {
         code.pop();
     }
-    if code.is_empty() { None } else { Some(code.join("\n") + "\n") }
+    if code.is_empty() {
+        None
+    } else {
+        Some(code.join("\n") + "\n")
+    }
 }
 
 // ── LLM Full ────────────────────────────────────────────────────────
@@ -2154,8 +2247,14 @@ pub fn show_search(query: &str) {
     // Search features
     let features = FeatureRegistry::all();
     for f in &features {
-        let score =
-            search_score(&query_lower, f.id, f.name, feature_desc(f), f.tokens, f.symbols);
+        let score = search_score(
+            &query_lower,
+            f.id,
+            f.name,
+            feature_desc(f),
+            f.tokens,
+            f.symbols,
+        );
         if score > 0 {
             results.push(SearchResult {
                 category: "Features",
@@ -2179,9 +2278,7 @@ pub fn show_search(query: &str) {
 
     // Search types and methods
     for t in BUILTIN_TYPES {
-        if t.name.contains(&query_lower)
-            || t.description.to_lowercase().contains(&query_lower)
-        {
+        if t.name.contains(&query_lower) || t.description.to_lowercase().contains(&query_lower) {
             results.push(SearchResult {
                 category: "Types",
                 name: t.name.to_string(),
@@ -2218,7 +2315,11 @@ pub fn show_search(query: &str) {
                     category: "Errors",
                     name: code.to_string(),
                     description: entry.title.clone(),
-                    score: if code.to_lowercase() == query_lower { 5 } else { 2 },
+                    score: if code.to_lowercase() == query_lower {
+                        5
+                    } else {
+                        2
+                    },
                 });
             }
         }
@@ -2240,8 +2341,15 @@ pub fn show_search(query: &str) {
             2
         } else {
             // Check component names
-            let comp_match = p.components.iter().any(|c| c.name.to_lowercase().contains(&query_lower));
-            if comp_match { 2 } else { 0 }
+            let comp_match = p
+                .components
+                .iter()
+                .any(|c| c.name.to_lowercase().contains(&query_lower));
+            if comp_match {
+                2
+            } else {
+                0
+            }
         };
 
         if score > 0 {
@@ -2276,7 +2384,9 @@ pub fn show_search(query: &str) {
     println!();
 
     // Group by category
-    let categories = ["Features", "Syntax", "Types", "Methods", "Packages", "Errors"];
+    let categories = [
+        "Features", "Syntax", "Types", "Methods", "Packages", "Errors",
+    ];
     for cat in &categories {
         let cat_results: Vec<&SearchResult> =
             results.iter().filter(|r| r.category == *cat).collect();

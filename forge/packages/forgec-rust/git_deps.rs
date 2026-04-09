@@ -51,13 +51,9 @@ pub fn parse_git_dep(name: &str, value: &toml::Value) -> Option<GitDependency> {
 }
 
 /// Resolve a git dependency: clone/fetch to cache, checkout ref, return resolved info.
-pub fn resolve_git_dep(
-    dep: &GitDependency,
-    cache_dir: &Path,
-) -> Result<ResolvedGitDep, String> {
+pub fn resolve_git_dep(dep: &GitDependency, cache_dir: &Path) -> Result<ResolvedGitDep, String> {
     let git_cache = cache_dir.join("git");
-    std::fs::create_dir_all(&git_cache)
-        .map_err(|e| format!("cannot create git cache: {}", e))?;
+    std::fs::create_dir_all(&git_cache).map_err(|e| format!("cannot create git cache: {}", e))?;
 
     // Use URL hash as directory name to avoid conflicts
     let dir_name = simple_hash(&dep.url);
@@ -74,29 +70,18 @@ pub fn resolve_git_dep(
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
-                "git fetch failed for '{}': {}",
-                dep.url, stderr
-            ));
+            return Err(format!("git fetch failed for '{}': {}", dep.url, stderr));
         }
     } else {
         // Clone bare
         let output = Command::new("git")
-            .args([
-                "clone",
-                "--bare",
-                &dep.url,
-                repo_dir.to_str().unwrap(),
-            ])
+            .args(["clone", "--bare", &dep.url, repo_dir.to_str().unwrap()])
             .output()
             .map_err(|e| format!("git clone failed: {}", e))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
-                "git clone failed for '{}': {}",
-                dep.url, stderr
-            ));
+            return Err(format!("git clone failed for '{}': {}", dep.url, stderr));
         }
     }
 
@@ -122,9 +107,7 @@ pub fn resolve_git_dep(
         ));
     }
 
-    let resolved_rev = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .to_string();
+    let resolved_rev = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     // Create a checkout directory for this specific revision
     let checkout_dir = git_cache.join(format!(
@@ -238,8 +221,7 @@ rev = "abc123""#,
 
     #[test]
     fn test_parse_git_dep_default() {
-        let val: toml::Value =
-            toml::from_str(r#"git = "https://github.com/user/repo""#).unwrap();
+        let val: toml::Value = toml::from_str(r#"git = "https://github.com/user/repo""#).unwrap();
         let dep = parse_git_dep("my-dep", &val).unwrap();
         assert!(matches!(dep.reference, GitRef::Default));
     }

@@ -3,8 +3,8 @@ use inkwell::values::BasicValueEnum;
 use crate::codegen::codegen::Codegen;
 use crate::feature::{FeatureExpr, FeatureStmt};
 use crate::parser::ast::Expr;
-use crate::{feature_codegen, feature_check, feature_data};
 use crate::typeck::types::Type;
+use crate::{feature_check, feature_codegen, feature_data};
 
 use super::types::{StructLitData, TypeDeclData};
 
@@ -15,7 +15,11 @@ impl<'ctx> Codegen<'ctx> {
     ) -> Option<BasicValueEnum<'ctx>> {
         // If we have a target type with more fields (e.g., partial structs),
         // build the struct according to the target type, filling missing nullable fields with null
-        if let Some(Type::Struct { fields: target_fields, .. }) = &self.struct_target_type.clone() {
+        if let Some(Type::Struct {
+            fields: target_fields,
+            ..
+        }) = &self.struct_target_type.clone()
+        {
             if target_fields.len() >= fields.len() && !target_fields.is_empty() {
                 let provided: std::collections::HashMap<&str, &Expr> =
                     fields.iter().map(|(n, e)| (n.as_str(), e)).collect();
@@ -36,19 +40,30 @@ impl<'ctx> Codegen<'ctx> {
                             let val = self.compile_expr(expr)?;
                             let ty = self.infer_type(expr);
                             // Wrap in nullable if target is nullable but value isn't
-                            if matches!(ftype, Type::Nullable(_)) && !matches!(&ty, Type::Nullable(_)) {
+                            if matches!(ftype, Type::Nullable(_))
+                                && !matches!(&ty, Type::Nullable(_))
+                            {
                                 let inner_llvm = val.get_type();
                                 let nullable_type = self.context.struct_type(
                                     &[self.context.i8_type().into(), inner_llvm.into()],
                                     false,
                                 );
                                 let mut nullable_val = nullable_type.get_undef();
-                                nullable_val = self.builder
-                                    .build_insert_value(nullable_val, self.context.i8_type().const_int(1, false), 0, "has")
-                                    .unwrap().into_struct_value();
-                                nullable_val = self.builder
+                                nullable_val = self
+                                    .builder
+                                    .build_insert_value(
+                                        nullable_val,
+                                        self.context.i8_type().const_int(1, false),
+                                        0,
+                                        "has",
+                                    )
+                                    .unwrap()
+                                    .into_struct_value();
+                                nullable_val = self
+                                    .builder
                                     .build_insert_value(nullable_val, val, 1, "val")
-                                    .unwrap().into_struct_value();
+                                    .unwrap()
+                                    .into_struct_value();
                                 all_field_types.push(self.type_to_llvm_basic(ftype));
                                 all_field_vals.push(nullable_val.into());
                             } else {
@@ -84,22 +99,30 @@ impl<'ctx> Codegen<'ctx> {
                 }
 
                 // Use named struct type if the target type has a name
-                let struct_type = if let Some(Type::Struct { name: Some(n), .. }) = &self.struct_target_type {
-                    self.context.get_struct_type(n).unwrap_or_else(|| {
+                let struct_type =
+                    if let Some(Type::Struct { name: Some(n), .. }) = &self.struct_target_type {
+                        self.context.get_struct_type(n).unwrap_or_else(|| {
+                            self.context.struct_type(
+                                &all_field_types
+                                    .iter()
+                                    .map(|t| (*t).into())
+                                    .collect::<Vec<_>>(),
+                                false,
+                            )
+                        })
+                    } else {
                         self.context.struct_type(
-                            &all_field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
+                            &all_field_types
+                                .iter()
+                                .map(|t| (*t).into())
+                                .collect::<Vec<_>>(),
                             false,
                         )
-                    })
-                } else {
-                    self.context.struct_type(
-                        &all_field_types.iter().map(|t| (*t).into()).collect::<Vec<_>>(),
-                        false,
-                    )
-                };
+                    };
                 let mut struct_val = struct_type.get_undef();
                 for (i, val) in all_field_vals.iter().enumerate() {
-                    struct_val = self.builder
+                    struct_val = self
+                        .builder
                         .build_insert_value(struct_val, *val, i as u32, "field")
                         .unwrap()
                         .into_struct_value();
@@ -114,8 +137,8 @@ impl<'ctx> Codegen<'ctx> {
 
         // Try to use the current function's return type for field type resolution
         // This ensures enum fields use the canonical (full-size) type, not narrow types
-        let return_struct_fields: Option<Vec<(String, Type)>> = self.current_fn_return_type.as_ref()
-            .and_then(|t| match t {
+        let return_struct_fields: Option<Vec<(String, Type)>> =
+            self.current_fn_return_type.as_ref().and_then(|t| match t {
                 Type::Struct { fields: f, .. } => Some(f.clone()),
                 Type::Nullable(inner) => match inner.as_ref() {
                     Type::Struct { fields: f, .. } => Some(f.clone()),
@@ -158,7 +181,9 @@ impl<'ctx> Codegen<'ctx> {
                 fields: type_fields.clone(),
             };
             // Check if the return type or target type has a matching named struct
-            let named_type = self.current_fn_return_type.as_ref()
+            let named_type = self
+                .current_fn_return_type
+                .as_ref()
                 .and_then(|rt| match rt {
                     Type::Struct { name: Some(n), .. } => self.context.get_struct_type(n),
                     Type::Nullable(inner) => match inner.as_ref() {
@@ -167,10 +192,12 @@ impl<'ctx> Codegen<'ctx> {
                     },
                     _ => None,
                 })
-                .or_else(|| self.struct_target_type.as_ref().and_then(|st| match st {
-                    Type::Struct { name: Some(n), .. } => self.context.get_struct_type(n),
-                    _ => None,
-                }));
+                .or_else(|| {
+                    self.struct_target_type.as_ref().and_then(|st| match st {
+                        Type::Struct { name: Some(n), .. } => self.context.get_struct_type(n),
+                        _ => None,
+                    })
+                });
             if let Some(named) = named_type {
                 if named.count_fields() == field_types.len() as u32 {
                     named
@@ -190,7 +217,8 @@ impl<'ctx> Codegen<'ctx> {
 
         let mut struct_val = struct_type.get_undef();
         for (i, val) in field_vals.iter().enumerate() {
-            struct_val = self.builder
+            struct_val = self
+                .builder
                 .build_insert_value(struct_val, *val, i as u32, "field")
                 .unwrap()
                 .into_struct_value();
@@ -235,7 +263,10 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 if let Some(ty) = self.type_checker.env.type_aliases.get(type_name) {
                     return match ty {
-                        Type::Struct { fields: f, name: None } => Type::Struct {
+                        Type::Struct {
+                            fields: f,
+                            name: None,
+                        } => Type::Struct {
                             name: Some(type_name.clone()),
                             fields: f.clone(),
                         },
@@ -243,7 +274,8 @@ impl<'ctx> Codegen<'ctx> {
                     };
                 }
             }
-            let field_types: Vec<(String, Type)> = data.fields
+            let field_types: Vec<(String, Type)> = data
+                .fields
                 .iter()
                 .map(|(name, expr)| (name.clone(), self.infer_type(expr)))
                 .collect();

@@ -14,7 +14,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, WithData, |data| self.compile_with(&data.base, &data.updates))
+        feature_codegen!(self, fe, WithData, |data| self
+            .compile_with(&data.base, &data.updates))
     }
 
     /// Compile a `with` expression: `base with { field: value, ... }`

@@ -37,9 +37,12 @@ impl TypeChecker {
         // For table literals, register column names as variables
         if let Expr::Feature(fe) = table {
             if fe.feature_id == "table_literal" {
-                if let Some(data) = crate::feature_data!(fe, crate::features::table_literal::types::TableLitData) {
+                if let Some(data) =
+                    crate::feature_data!(fe, crate::features::table_literal::types::TableLitData)
+                {
                     for col in &data.columns {
-                        self.env.define(col.clone(), crate::typeck::types::Type::Unknown, false);
+                        self.env
+                            .define(col.clone(), crate::typeck::types::Type::Unknown, false);
                     }
                 }
             }

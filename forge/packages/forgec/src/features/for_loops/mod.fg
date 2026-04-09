@@ -31,7 +31,7 @@ export fn emit_for_ast(cg: Codegen, var_name: string, iterable: Expr, body: Bloc
         eprintln("  WARN: for-in iterable is null, skipping")
         return
     }
-    let ia = llvm.build_alloca(CG_B, CG_I64, "fi")
+    let ia = llvm.build_alloca(CG_B, CG_I64, "__fi")
     llvm.build_store(CG_B, llvm.const_int(CG_I64, 0, 0), ia)
     let la = llvm.value_array_new(1)
     llvm.value_array_set(la, 0, lv)

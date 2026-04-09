@@ -84,7 +84,10 @@ impl Parser {
         // Handle inline default config: `flag dev "Description"` or `command build "Description" { ... }`
         let mut inline_config = Vec::new();
         if let Some(ref default_key) = meta.default_config_key {
-            if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::StringLiteral(_))) {
+            if matches!(
+                self.peek().map(|t| &t.kind),
+                Some(TokenKind::StringLiteral(_))
+            ) {
                 let span = self.peek()?.span;
                 if let Some(value) = self.parse_expr() {
                     inline_config.push(ComponentConfig {
@@ -202,7 +205,10 @@ impl Parser {
                     self.skip_newlines();
                     let event_name = match &self.peek()?.kind {
                         TokenKind::Ident(n) => n.clone(),
-                        _ => { self.error("expected event name after 'on'"); continue; }
+                        _ => {
+                            self.error("expected event name after 'on'");
+                            continue;
+                        }
                     };
                     self.advance();
                     let user_params = if self.check(&TokenKind::LParen) {
@@ -236,13 +242,22 @@ impl Parser {
                                 value: Expr::Call {
                                     callee: Box::new(Expr::Ident("forge_string_new".into(), sp)),
                                     args: vec![
-                                        CallArg { name: None, value: Expr::Ident(raw_name.clone(), sp) },
-                                        CallArg { name: None, value: Expr::Call {
-                                            callee: Box::new(Expr::Ident("strlen".into(), sp)),
-                                            args: vec![CallArg { name: None, value: Expr::Ident(raw_name, sp) }],
-                                            type_args: vec![],
-                                            span: sp,
-                                        }},
+                                        CallArg {
+                                            name: None,
+                                            value: Expr::Ident(raw_name.clone(), sp),
+                                        },
+                                        CallArg {
+                                            name: None,
+                                            value: Expr::Call {
+                                                callee: Box::new(Expr::Ident("strlen".into(), sp)),
+                                                args: vec![CallArg {
+                                                    name: None,
+                                                    value: Expr::Ident(raw_name, sp),
+                                                }],
+                                                type_args: vec![],
+                                                span: sp,
+                                            },
+                                        },
                                     ],
                                     type_args: vec![],
                                     span: sp,
@@ -268,7 +283,12 @@ impl Parser {
                         span: sp,
                     });
                 }
-                TokenKind::Ident(name) if name == "run" && self.peek_at(1).map_or(false, |t| matches!(t.kind, TokenKind::LBrace)) => {
+                TokenKind::Ident(name)
+                    if name == "run"
+                        && self
+                            .peek_at(1)
+                            .map_or(false, |t| matches!(t.kind, TokenKind::LBrace)) =>
+                {
                     // run { body } → FnDecl("__run")
                     let sp = self.advance()?.span; // consume 'run'
                     self.skip_newlines();
@@ -298,13 +318,20 @@ impl Parser {
                     // Parse prefix: string literal or /path tokens
                     let prefix = if matches!(&self.peek()?.kind, TokenKind::StringLiteral(_)) {
                         match &self.peek()?.kind {
-                            TokenKind::StringLiteral(s) => { let s = s.clone(); self.advance(); s }
+                            TokenKind::StringLiteral(s) => {
+                                let s = s.clone();
+                                self.advance();
+                                s
+                            }
                             _ => String::new(),
                         }
                     } else {
                         // Collect path tokens until '{' (e.g., /api/v1)
                         let mut path = String::new();
-                        while !self.check(&TokenKind::LBrace) && !self.check(&TokenKind::Newline) && !self.is_at_end() {
+                        while !self.check(&TokenKind::LBrace)
+                            && !self.check(&TokenKind::Newline)
+                            && !self.is_at_end()
+                        {
                             let tok = self.advance()?;
                             match &tok.kind {
                                 TokenKind::Slash => path.push('/'),
@@ -319,7 +346,10 @@ impl Parser {
                     // Generate push_prefix call
                     blocks.push(Statement::Expr(Expr::Call {
                         callee: Box::new(Expr::Ident("__component_under_start".into(), sp)),
-                        args: vec![CallArg { name: Some("prefix".into()), value: Expr::StringLit(prefix, sp) }],
+                        args: vec![CallArg {
+                            name: Some("prefix".into()),
+                            value: Expr::StringLit(prefix, sp),
+                        }],
                         type_args: vec![],
                         span: sp,
                     }));
@@ -346,7 +376,10 @@ impl Parser {
                     self.skip_newlines();
                     let mw_name = match &self.peek()?.kind {
                         TokenKind::Ident(n) => n.clone(),
-                        _ => { self.error("expected middleware name"); continue; }
+                        _ => {
+                            self.error("expected middleware name");
+                            continue;
+                        }
                     };
                     self.advance(); // consume name
                     self.skip_newlines();
@@ -356,16 +389,21 @@ impl Parser {
                         self.skip_newlines();
                         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
                             self.skip_newlines();
-                            if self.check(&TokenKind::RBrace) { break; }
+                            if self.check(&TokenKind::RBrace) {
+                                break;
+                            }
                             if matches!(&self.peek()?.kind, TokenKind::On) {
                                 let on_sp = self.advance()?.span; // consume 'on'
                                 self.skip_newlines();
                                 let event = match &self.peek()?.kind {
                                     TokenKind::Ident(n) => n.clone(),
-                                    _ => { self.advance(); continue; }
+                                    _ => {
+                                        self.advance();
+                                        continue;
+                                    }
                                 };
                                 self.advance(); // consume event name
-                                // Parse params
+                                                // Parse params
                                 let params = if self.check(&TokenKind::LParen) {
                                     self.advance();
                                     let p = self.parse_params().unwrap_or_default();
@@ -388,8 +426,17 @@ impl Parser {
                                             type_ann: None,
                                             type_ann_span: None,
                                             value: Expr::Call {
-                                                callee: Box::new(Expr::Ident("forge_http_ptr_to_str".into(), on_sp)),
-                                                args: vec![CallArg { name: None, value: Expr::Ident(internal_names[i].into(), on_sp) }],
+                                                callee: Box::new(Expr::Ident(
+                                                    "forge_http_ptr_to_str".into(),
+                                                    on_sp,
+                                                )),
+                                                args: vec![CallArg {
+                                                    name: None,
+                                                    value: Expr::Ident(
+                                                        internal_names[i].into(),
+                                                        on_sp,
+                                                    ),
+                                                }],
                                                 type_args: vec![],
                                                 span: on_sp,
                                             },
@@ -405,12 +452,48 @@ impl Parser {
                                     name: fn_name.clone(),
                                     type_params: vec![],
                                     params: vec![
-                                        Param { name: "__m".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                        Param { name: "__p".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                        Param { name: "__b".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                        Param { name: "__h".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                        Param { name: "__response_buf".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                        Param { name: "__response_buf_len".into(), type_ann: Some(TypeExpr::Named("int".into())), default: None, span: on_sp, mutable: false },
+                                        Param {
+                                            name: "__m".into(),
+                                            type_ann: Some(TypeExpr::Named("ptr".into())),
+                                            default: None,
+                                            span: on_sp,
+                                            mutable: false,
+                                        },
+                                        Param {
+                                            name: "__p".into(),
+                                            type_ann: Some(TypeExpr::Named("ptr".into())),
+                                            default: None,
+                                            span: on_sp,
+                                            mutable: false,
+                                        },
+                                        Param {
+                                            name: "__b".into(),
+                                            type_ann: Some(TypeExpr::Named("ptr".into())),
+                                            default: None,
+                                            span: on_sp,
+                                            mutable: false,
+                                        },
+                                        Param {
+                                            name: "__h".into(),
+                                            type_ann: Some(TypeExpr::Named("ptr".into())),
+                                            default: None,
+                                            span: on_sp,
+                                            mutable: false,
+                                        },
+                                        Param {
+                                            name: "__response_buf".into(),
+                                            type_ann: Some(TypeExpr::Named("ptr".into())),
+                                            default: None,
+                                            span: on_sp,
+                                            mutable: false,
+                                        },
+                                        Param {
+                                            name: "__response_buf_len".into(),
+                                            type_ann: Some(TypeExpr::Named("int".into())),
+                                            default: None,
+                                            span: on_sp,
+                                            mutable: false,
+                                        },
                                     ],
                                     return_type: Some(TypeExpr::Named("int".into())),
                                     body,
@@ -427,8 +510,14 @@ impl Parser {
                                 blocks.push(Statement::Expr(Expr::Call {
                                     callee: Box::new(Expr::Ident(register_fn.into(), on_sp)),
                                     args: vec![
-                                        CallArg { name: Some("name".into()), value: Expr::StringLit(mw_name.clone(), on_sp) },
-                                        CallArg { name: Some("handler".into()), value: Expr::Ident(fn_name, on_sp) },
+                                        CallArg {
+                                            name: Some("name".into()),
+                                            value: Expr::StringLit(mw_name.clone(), on_sp),
+                                        },
+                                        CallArg {
+                                            name: Some("handler".into()),
+                                            value: Expr::Ident(fn_name, on_sp),
+                                        },
                                     ],
                                     type_args: vec![],
                                     span: on_sp,
@@ -455,7 +544,10 @@ impl Parser {
                     // Look ahead to distinguish
                     let field_name = match &self.peek()?.kind {
                         TokenKind::Ident(n) => n.clone(),
-                        _ => { self.advance(); continue; }
+                        _ => {
+                            self.advance();
+                            continue;
+                        }
                     };
                     let field_span = self.advance()?.span;
 
@@ -472,7 +564,10 @@ impl Parser {
                                 TokenKind::Ident(n) => n.clone(),
                                 TokenKind::Table => "table".to_string(),
                                 TokenKind::Type => "type".to_string(),
-                                _ => { self.error("expected annotation name"); break; }
+                                _ => {
+                                    self.error("expected annotation name");
+                                    break;
+                                }
                             };
                             self.advance();
 
@@ -564,7 +659,9 @@ impl Parser {
     fn parse_under_body(&mut self, meta: &ComponentMeta, blocks: &mut Vec<Statement>) {
         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
             self.skip_newlines();
-            if self.check(&TokenKind::RBrace) { break; }
+            if self.check(&TokenKind::RBrace) {
+                break;
+            }
 
             // Check for block keywords first
             let is_block_keyword = match &self.peek() {
@@ -591,14 +688,24 @@ impl Parser {
                         // Nested under block — recurse
                         let sp = self.advance().unwrap().span;
                         self.skip_newlines();
-                        let prefix = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::StringLiteral(_))) {
+                        let prefix = if matches!(
+                            self.peek().map(|t| &t.kind),
+                            Some(TokenKind::StringLiteral(_))
+                        ) {
                             match &self.peek().unwrap().kind {
-                                TokenKind::StringLiteral(s) => { let s = s.clone(); self.advance(); s }
+                                TokenKind::StringLiteral(s) => {
+                                    let s = s.clone();
+                                    self.advance();
+                                    s
+                                }
                                 _ => String::new(),
                             }
                         } else {
                             let mut path = String::new();
-                            while !self.check(&TokenKind::LBrace) && !self.check(&TokenKind::Newline) && !self.is_at_end() {
+                            while !self.check(&TokenKind::LBrace)
+                                && !self.check(&TokenKind::Newline)
+                                && !self.is_at_end()
+                            {
                                 let tok = self.advance().unwrap();
                                 match &tok.kind {
                                     TokenKind::Slash => path.push('/'),
@@ -612,7 +719,10 @@ impl Parser {
                         self.skip_newlines();
                         blocks.push(Statement::Expr(Expr::Call {
                             callee: Box::new(Expr::Ident("__component_under_start".into(), sp)),
-                            args: vec![CallArg { name: Some("prefix".into()), value: Expr::StringLit(prefix, sp) }],
+                            args: vec![CallArg {
+                                name: Some("prefix".into()),
+                                value: Expr::StringLit(prefix, sp),
+                            }],
                             type_args: vec![],
                             span: sp,
                         }));
@@ -637,7 +747,10 @@ impl Parser {
                         self.skip_newlines();
                         let mw_name = match self.peek().map(|t| t.kind.clone()) {
                             Some(TokenKind::Ident(n)) => n,
-                            _ => { self.advance(); continue; }
+                            _ => {
+                                self.advance();
+                                continue;
+                            }
                         };
                         self.advance(); // consume name
                         self.skip_newlines();
@@ -646,13 +759,18 @@ impl Parser {
                             self.skip_newlines();
                             while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
                                 self.skip_newlines();
-                                if self.check(&TokenKind::RBrace) { break; }
+                                if self.check(&TokenKind::RBrace) {
+                                    break;
+                                }
                                 if matches!(self.peek().map(|t| &t.kind), Some(&TokenKind::On)) {
                                     let on_sp = self.advance().unwrap().span;
                                     self.skip_newlines();
                                     let event = match self.peek().map(|t| t.kind.clone()) {
                                         Some(TokenKind::Ident(n)) => n,
-                                        _ => { self.advance(); continue; }
+                                        _ => {
+                                            self.advance();
+                                            continue;
+                                        }
                                     };
                                     self.advance();
                                     let params = if self.check(&TokenKind::LParen) {
@@ -674,8 +792,17 @@ impl Parser {
                                                     type_ann: None,
                                                     type_ann_span: None,
                                                     value: Expr::Call {
-                                                        callee: Box::new(Expr::Ident("forge_http_ptr_to_str".into(), on_sp)),
-                                                        args: vec![CallArg { name: None, value: Expr::Ident(internal_names[i].into(), on_sp) }],
+                                                        callee: Box::new(Expr::Ident(
+                                                            "forge_http_ptr_to_str".into(),
+                                                            on_sp,
+                                                        )),
+                                                        args: vec![CallArg {
+                                                            name: None,
+                                                            value: Expr::Ident(
+                                                                internal_names[i].into(),
+                                                                on_sp,
+                                                            ),
+                                                        }],
                                                         type_args: vec![],
                                                         span: on_sp,
                                                     },
@@ -690,12 +817,48 @@ impl Parser {
                                             name: fn_name.clone(),
                                             type_params: vec![],
                                             params: vec![
-                                                Param { name: "__m".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                                Param { name: "__p".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                                Param { name: "__b".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                                Param { name: "__h".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                                Param { name: "__response_buf".into(), type_ann: Some(TypeExpr::Named("ptr".into())), default: None, span: on_sp, mutable: false },
-                                                Param { name: "__response_buf_len".into(), type_ann: Some(TypeExpr::Named("int".into())), default: None, span: on_sp, mutable: false },
+                                                Param {
+                                                    name: "__m".into(),
+                                                    type_ann: Some(TypeExpr::Named("ptr".into())),
+                                                    default: None,
+                                                    span: on_sp,
+                                                    mutable: false,
+                                                },
+                                                Param {
+                                                    name: "__p".into(),
+                                                    type_ann: Some(TypeExpr::Named("ptr".into())),
+                                                    default: None,
+                                                    span: on_sp,
+                                                    mutable: false,
+                                                },
+                                                Param {
+                                                    name: "__b".into(),
+                                                    type_ann: Some(TypeExpr::Named("ptr".into())),
+                                                    default: None,
+                                                    span: on_sp,
+                                                    mutable: false,
+                                                },
+                                                Param {
+                                                    name: "__h".into(),
+                                                    type_ann: Some(TypeExpr::Named("ptr".into())),
+                                                    default: None,
+                                                    span: on_sp,
+                                                    mutable: false,
+                                                },
+                                                Param {
+                                                    name: "__response_buf".into(),
+                                                    type_ann: Some(TypeExpr::Named("ptr".into())),
+                                                    default: None,
+                                                    span: on_sp,
+                                                    mutable: false,
+                                                },
+                                                Param {
+                                                    name: "__response_buf_len".into(),
+                                                    type_ann: Some(TypeExpr::Named("int".into())),
+                                                    default: None,
+                                                    span: on_sp,
+                                                    mutable: false,
+                                                },
                                             ],
                                             return_type: Some(TypeExpr::Named("int".into())),
                                             body,
@@ -708,10 +871,19 @@ impl Parser {
                                             "__component_use_mw_after"
                                         };
                                         blocks.push(Statement::Expr(Expr::Call {
-                                            callee: Box::new(Expr::Ident(register_fn.into(), on_sp)),
+                                            callee: Box::new(Expr::Ident(
+                                                register_fn.into(),
+                                                on_sp,
+                                            )),
                                             args: vec![
-                                                CallArg { name: Some("name".into()), value: Expr::StringLit(mw_name.clone(), on_sp) },
-                                                CallArg { name: Some("handler".into()), value: Expr::Ident(fn_name, on_sp) },
+                                                CallArg {
+                                                    name: Some("name".into()),
+                                                    value: Expr::StringLit(mw_name.clone(), on_sp),
+                                                },
+                                                CallArg {
+                                                    name: Some("handler".into()),
+                                                    value: Expr::Ident(fn_name, on_sp),
+                                                },
                                             ],
                                             type_args: vec![],
                                             span: on_sp,
@@ -721,7 +893,9 @@ impl Parser {
                                     self.advance();
                                 }
                             }
-                            if self.check(&TokenKind::RBrace) { self.advance(); }
+                            if self.check(&TokenKind::RBrace) {
+                                self.advance();
+                            }
                         }
                     }
                     TokenKind::On => {
@@ -752,7 +926,7 @@ impl Parser {
     /// Parse a single annotation: @name or @name(arg1, arg2)
     fn parse_component_annotation(&mut self) -> Option<Annotation> {
         let ann_start = self.advance()?.span; // consume '@'
-        // Accept identifiers and keywords as annotation names
+                                              // Accept identifiers and keywords as annotation names
         let ann_name = match &self.peek()?.kind {
             TokenKind::Ident(n) => n.clone(),
             TokenKind::Table => "table".to_string(),
@@ -911,7 +1085,9 @@ impl Parser {
                     self.skip_newlines();
                     while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
                         self.skip_newlines();
-                        if self.check(&TokenKind::RBrace) { break; }
+                        if self.check(&TokenKind::RBrace) {
+                            break;
+                        }
                         let entry_span = self.peek()?.span;
                         let key = self.expect_ident()?;
                         self.expect(&TokenKind::Colon)?;
@@ -951,7 +1127,8 @@ impl Parser {
                     self.expect(&TokenKind::Eq)?;
                     self.skip_newlines();
                     let schema_name = self.expect_ident()?; // Schema or SchemaVisible
-                    let visible_only = schema_name == "SchemaVisible" || schema_name == "$schema_visible";
+                    let visible_only =
+                        schema_name == "SchemaVisible" || schema_name == "$schema_visible";
                     items.push(ComponentTemplateItem::TypeFromSchema { visible_only });
                 }
                 TokenKind::Fn => {
@@ -997,10 +1174,7 @@ impl Parser {
                             exported: false,
                             span: fn_start,
                         };
-                        items.push(ComponentTemplateItem::FnTemplate {
-                            method_name,
-                            decl,
-                        });
+                        items.push(ComponentTemplateItem::FnTemplate { method_name, decl });
                     }
                 }
                 TokenKind::Ident(name) if name == "extern" => {
@@ -1033,8 +1207,12 @@ impl Parser {
 
                     match lifecycle.as_str() {
                         "startup" => items.push(ComponentTemplateItem::OnStartup(block.statements)),
-                        "main_end" => items.push(ComponentTemplateItem::OnMainEnd(block.statements)),
-                        "after_children" => items.push(ComponentTemplateItem::OnAfterChildren(block.statements)),
+                        "main_end" => {
+                            items.push(ComponentTemplateItem::OnMainEnd(block.statements))
+                        }
+                        "after_children" => {
+                            items.push(ComponentTemplateItem::OnAfterChildren(block.statements))
+                        }
                         _ => {
                             self.error(&format!("unknown lifecycle: {}", lifecycle));
                         }
@@ -1052,7 +1230,10 @@ impl Parser {
                     self.expect(&TokenKind::LParen)?;
                     let pattern = match &self.peek()?.kind {
                         TokenKind::StringLiteral(s) => s.clone(),
-                        _ => { self.error("expected string pattern for @syntax"); continue; }
+                        _ => {
+                            self.error("expected string pattern for @syntax");
+                            continue;
+                        }
                     };
                     self.advance();
                     self.expect(&TokenKind::RParen)?;

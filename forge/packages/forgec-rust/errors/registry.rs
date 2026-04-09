@@ -35,8 +35,8 @@ struct TomlEntry {
 
 impl ErrorRegistry {
     pub fn from_toml_str(toml_str: &str) -> Result<Self, String> {
-        let table: HashMap<String, TomlEntry> =
-            toml::from_str(toml_str).map_err(|e| format!("failed to parse registry TOML: {}", e))?;
+        let table: HashMap<String, TomlEntry> = toml::from_str(toml_str)
+            .map_err(|e| format!("failed to parse registry TOML: {}", e))?;
 
         let mut entries = HashMap::new();
         for (code, entry) in table {

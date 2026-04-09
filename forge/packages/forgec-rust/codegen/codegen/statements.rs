@@ -35,7 +35,24 @@ impl<'ctx> Codegen<'ctx> {
             .map(|p| {
                 p.type_ann
                     .as_ref()
-                    .map(|t| self.type_checker.resolve_type_expr(t))
+                    .map(|t| {
+                        let resolved = self.type_checker.resolve_type_expr(t);
+                        if matches!(resolved, Type::Error | Type::Unknown) {
+                            // Same fallback as ret_ty: try named_types and env
+                            if let TypeExpr::Named(n) = t {
+                                if let Some(ty) = self.named_types.get(n) {
+                                    return ty.clone();
+                                }
+                                if let Some(ty) = self.type_checker.env.type_aliases.get(n) {
+                                    return ty.clone();
+                                }
+                                if let Some(ty) = self.type_checker.env.enum_types.get(n) {
+                                    return ty.clone();
+                                }
+                            }
+                        }
+                        resolved
+                    })
                     .unwrap_or(Type::Unknown)
             })
             .collect();
@@ -76,7 +93,12 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 self.compile_fn(name, params, return_type.as_ref(), body);
             }
-            Statement::Let { name, value, type_ann, .. } => {
+            Statement::Let {
+                name,
+                value,
+                type_ann,
+                ..
+            } => {
                 // Set type hints from type annotation
                 if let Some(ta) = type_ann {
                     let resolved = self.type_checker.resolve_type_expr(ta);
@@ -88,8 +110,12 @@ impl<'ctx> Codegen<'ctx> {
                     self.struct_target_type = Some(resolved);
                 }
                 // Handle `{}` parsed as empty block when type annotation says map
-                let ann_type = type_ann.as_ref().map(|t| self.type_checker.resolve_type_expr(t));
-                let val = if matches!(&ann_type, Some(Type::Map(_, _))) && matches!(value, Expr::Block(b) if b.statements.is_empty()) {
+                let ann_type = type_ann
+                    .as_ref()
+                    .map(|t| self.type_checker.resolve_type_expr(t));
+                let val = if matches!(&ann_type, Some(Type::Map(_, _)))
+                    && matches!(value, Expr::Block(b) if b.statements.is_empty())
+                {
                     self.compile_map_lit(&[])
                 } else {
                     // When type annotation is ptr, suppress auto-wrapping ptr→ForgeString
@@ -138,9 +164,9 @@ impl<'ctx> Codegen<'ctx> {
                     let val = if ty == Type::Ptr && val.is_struct_value() {
                         let string_type = self.string_type();
                         if val.into_struct_value().get_type() == string_type {
-                            self.builder.build_extract_value(
-                                val.into_struct_value(), 0, "str_to_ptr"
-                            ).unwrap()
+                            self.builder
+                                .build_extract_value(val.into_struct_value(), 0, "str_to_ptr")
+                                .unwrap()
                         } else {
                             val
                         }
@@ -156,28 +182,46 @@ impl<'ctx> Codegen<'ctx> {
                         val
                     };
                     let alloca = self.create_entry_block_alloca(&ty, name);
-                    self.builder.build_store(alloca, val).unwrap();
+                    self.store_typed(alloca, &ty, val);
                     self.define_var(name.clone(), alloca, ty);
                 }
             }
             Statement::LetDestructure { pattern, value, .. } => {
                 self.compile_let_destructure(pattern, value);
             }
-            Statement::Mut { name, value, type_ann, .. } => {
+            Statement::Mut {
+                name,
+                value,
+                type_ann,
+                ..
+            } => {
                 if self.global_mutables.contains_key(name) {
                     // Global mutable: the LLVM global already exists (created in pre-scan).
                     // Compile the initializer and store it to the global.
                     // This must run inside a function body (e.g. auto-main).
-                    if self.builder.get_insert_block().and_then(|b| b.get_parent()).is_some() {
+                    if self
+                        .builder
+                        .get_insert_block()
+                        .and_then(|b| b.get_parent())
+                        .is_some()
+                    {
                         let global_ty = self.global_mutables.get(name).cloned();
-                        let val = if matches!(&global_ty, Some(Type::Map(_, _))) && matches!(value, Expr::Block(b) if b.statements.is_empty()) {
+                        let val = if matches!(&global_ty, Some(Type::Map(_, _)))
+                            && matches!(value, Expr::Block(b) if b.statements.is_empty())
+                        {
                             self.compile_map_lit(&[])
                         } else {
                             self.compile_expr(value)
                         };
                         if let Some(val) = val {
                             if let Some(global) = self.module.get_global(name) {
-                                self.builder.build_store(global.as_pointer_value(), val).unwrap();
+                                if let Some(global_ty) = global_ty {
+                                    self.store_typed(global.as_pointer_value(), &global_ty, val);
+                                } else {
+                                    self.builder
+                                        .build_store(global.as_pointer_value(), val)
+                                        .unwrap();
+                                }
                             }
                         }
                     }
@@ -185,21 +229,28 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 self.compile_binding(name, value, type_ann.as_ref());
             }
-            Statement::Const { name, value, type_ann, .. } => {
+            Statement::Const {
+                name,
+                value,
+                type_ann,
+                ..
+            } => {
                 self.compile_binding(name, value, type_ann.as_ref());
             }
             Statement::Assign { target, value, .. } => {
                 if let Expr::Ident(name, _) = target {
                     // Suppress ptr→ForgeString wrapping for ptr-typed assignments
                     let var_type = self.lookup_var(name).map(|(_, t)| t);
-                    if matches!(&var_type, Some(Type::Ptr)) || self.global_mutables.get(name) == Some(&Type::Ptr) {
+                    if matches!(&var_type, Some(Type::Ptr))
+                        || self.global_mutables.get(name) == Some(&Type::Ptr)
+                    {
                         self.suppress_string_wrap = true;
                     }
                     let val = self.compile_expr(value);
                     self.suppress_string_wrap = false;
                     if let Some(val) = val {
-                        if let Some((ptr, _)) = self.lookup_var(name) {
-                            self.builder.build_store(ptr, val).unwrap();
+                        if let Some((ptr, ty)) = self.lookup_var(name) {
+                            self.store_typed(ptr, &ty, val);
                         }
                     }
                 } else if let Expr::MemberAccess { object, field, .. } = target {
@@ -210,13 +261,17 @@ impl<'ctx> Codegen<'ctx> {
                             if let Some((ptr, ty)) = self.lookup_var(name) {
                                 if let Type::Struct { fields, .. } = &ty {
                                     if let Some(idx) = fields.iter().position(|(n, _)| n == field) {
-                                        let field_ptr = self.builder.build_struct_gep(
-                                            self.type_to_llvm_basic(&ty),
-                                            ptr,
-                                            idx as u32,
-                                            "field_ptr",
-                                        ).unwrap();
-                                        self.builder.build_store(field_ptr, val).unwrap();
+                                        let field_ptr = self
+                                            .builder
+                                            .build_struct_gep(
+                                                self.type_to_llvm_basic(&ty),
+                                                ptr,
+                                                idx as u32,
+                                                "field_ptr",
+                                            )
+                                            .unwrap();
+                                        let field_ty = &fields[idx].1;
+                                        self.store_typed(field_ptr, field_ty, val);
                                     }
                                 }
                             }
@@ -241,7 +296,9 @@ impl<'ctx> Codegen<'ctx> {
                     let compiled = self.compile_expr(val);
                     if let Some(v) = compiled {
                         // Use the LLVM function's actual return type for coercion
-                        let fn_ret = self.builder.get_insert_block()
+                        let fn_ret = self
+                            .builder
+                            .get_insert_block()
                             .and_then(|bb| bb.get_parent())
                             .and_then(|f| f.get_type().get_return_type());
 
@@ -267,27 +324,27 @@ impl<'ctx> Codegen<'ctx> {
                                 self.builder.build_return(Some(&default)).unwrap();
                             } else {
                                 if let Some(ret_ty) = self.current_fn_return_type.clone() {
-                            if ret_ty != Type::Void {
-                                let default = self.default_value(&ret_ty);
-                                self.builder.build_return(Some(&default)).unwrap();
-                            } else {
-                                self.builder.build_return(None).unwrap();
-                            }
-                        } else {
-                            self.builder.build_return(None).unwrap();
-                        }
+                                    if ret_ty != Type::Void {
+                                        let default = self.default_value(&ret_ty);
+                                        self.builder.build_return(Some(&default)).unwrap();
+                                    } else {
+                                        self.builder.build_return(None).unwrap();
+                                    }
+                                } else {
+                                    self.builder.build_return(None).unwrap();
+                                }
                             }
                         } else {
                             if let Some(ret_ty) = self.current_fn_return_type.clone() {
-                            if ret_ty != Type::Void {
-                                let default = self.default_value(&ret_ty);
-                                self.builder.build_return(Some(&default)).unwrap();
+                                if ret_ty != Type::Void {
+                                    let default = self.default_value(&ret_ty);
+                                    self.builder.build_return(Some(&default)).unwrap();
+                                } else {
+                                    self.builder.build_return(None).unwrap();
+                                }
                             } else {
                                 self.builder.build_return(None).unwrap();
                             }
-                        } else {
-                            self.builder.build_return(None).unwrap();
-                        }
                         }
                     }
                 } else if self.current_fn_name.as_deref() == Some("main") {
@@ -297,19 +354,26 @@ impl<'ctx> Codegen<'ctx> {
                         .unwrap();
                 } else {
                     if let Some(ret_ty) = self.current_fn_return_type.clone() {
-                            if ret_ty != Type::Void {
-                                let default = self.default_value(&ret_ty);
-                                self.builder.build_return(Some(&default)).unwrap();
-                            } else {
-                                self.builder.build_return(None).unwrap();
-                            }
+                        if ret_ty != Type::Void {
+                            let default = self.default_value(&ret_ty);
+                            self.builder.build_return(Some(&default)).unwrap();
                         } else {
                             self.builder.build_return(None).unwrap();
                         }
+                    } else {
+                        self.builder.build_return(None).unwrap();
+                    }
                 }
             }
-            Statement::For { pattern, iterable, body, .. } => self.compile_for(pattern, iterable, body),
-            Statement::While { condition, body, .. } => self.compile_while(condition, body),
+            Statement::For {
+                pattern,
+                iterable,
+                body,
+                ..
+            } => self.compile_for(pattern, iterable, body),
+            Statement::While {
+                condition, body, ..
+            } => self.compile_while(condition, body),
             Statement::Loop { body, .. } => self.compile_loop(body),
             Statement::Break { value, .. } => self.compile_break(value.as_ref()),
             Statement::Continue { .. }
@@ -324,18 +388,33 @@ impl<'ctx> Codegen<'ctx> {
             Statement::Defer { body, .. } => {
                 self.deferred_stmts.push(body.clone());
             }
-            Statement::ExternFn { name, params, return_type, .. } => {
+            Statement::ExternFn {
+                name,
+                params,
+                return_type,
+                ..
+            } => {
                 self.compile_extern_fn(name, params, return_type.as_ref());
             }
             Statement::Select { arms, .. } => self.compile_select(arms),
             Statement::SpecBlock { name, body, .. } => self.compile_spec_block(name, body),
             Statement::GivenBlock { name, body, .. } => self.compile_given_block(name, body),
             Statement::ThenBlock { name, body, span } => self.compile_then_block(name, body, span),
-            Statement::ThenShouldFail { name, body, span } => self.compile_then_should_fail(name, body, span),
-            Statement::ThenShouldFailWith { name, expected, body, span } =>
-                self.compile_then_should_fail_with(name, expected, body, span),
-            Statement::ThenWhere { name, table, body, span } =>
-                self.compile_then_where(name, table, body, span),
+            Statement::ThenShouldFail { name, body, span } => {
+                self.compile_then_should_fail(name, body, span)
+            }
+            Statement::ThenShouldFailWith {
+                name,
+                expected,
+                body,
+                span,
+            } => self.compile_then_should_fail_with(name, expected, body, span),
+            Statement::ThenWhere {
+                name,
+                table,
+                body,
+                span,
+            } => self.compile_then_where(name, table, body, span),
             Statement::SkipBlock { name, .. } => self.compile_skip_block(name),
             Statement::TodoStmt { name, .. } => self.compile_todo_stmt(name),
             Statement::Feature(fe) => self.compile_feature_stmt(fe),
@@ -366,7 +445,9 @@ impl<'ctx> Codegen<'ctx> {
             .unwrap_or_else(|| self.infer_type(value));
 
         // Handle `{}` parsed as empty block when type annotation says map
-        let val = if matches!(&ty, Type::Map(_, _)) && matches!(value, Expr::Block(b) if b.statements.is_empty()) {
+        let val = if matches!(&ty, Type::Map(_, _))
+            && matches!(value, Expr::Block(b) if b.statements.is_empty())
+        {
             self.compile_map_lit(&[])
         } else {
             self.compile_expr(value)
@@ -374,7 +455,7 @@ impl<'ctx> Codegen<'ctx> {
 
         if let Some(val) = val {
             let alloca = self.create_entry_block_alloca(&ty, name);
-            self.builder.build_store(alloca, val).unwrap();
+            self.store_typed(alloca, &ty, val);
             self.define_var(name.to_string(), alloca, ty);
         }
     }
@@ -410,11 +491,16 @@ impl<'ctx> Codegen<'ctx> {
             // For self methods: resolve actual struct type from mangled name
             if param.name == "self" {
                 // Resolve the struct type from the mangled method name (TypeName__method or TypeName_method)
-                let struct_type = name.find('_')
+                let struct_type = name
+                    .find('_')
                     .and_then(|idx| {
                         let tn = &name[..idx];
                         let resolved = self.resolve_named_type(tn);
-                        if matches!(resolved, Type::Unknown | Type::Error) { None } else { Some(resolved) }
+                        if matches!(resolved, Type::Unknown | Type::Error) {
+                            None
+                        } else {
+                            Some(resolved)
+                        }
                     })
                     .unwrap_or(ty.clone());
 
@@ -445,7 +531,11 @@ impl<'ctx> Codegen<'ctx> {
         let resolved_now = return_type
             .map(|t| self.type_checker.resolve_type_expr(t))
             .unwrap_or(Type::Void);
-        let cached = self.fn_return_types.get(name).cloned().unwrap_or(Type::Void);
+        let cached = self
+            .fn_return_types
+            .get(name)
+            .cloned()
+            .unwrap_or(Type::Void);
         // If the freshly-resolved type contains no errors, prefer it.
         // Otherwise fall back to the cached value (or void).
         fn type_has_error(t: &Type) -> bool {
@@ -464,7 +554,8 @@ impl<'ctx> Codegen<'ctx> {
             resolved_now
         };
         // Update the cache with the better-resolved type
-        self.fn_return_types.insert(name.to_string(), ret_ty.clone());
+        self.fn_return_types
+            .insert(name.to_string(), ret_ty.clone());
 
         let prev_return_type = self.current_fn_return_type.take();
         self.current_fn_return_type = Some(ret_ty.clone());
@@ -498,7 +589,9 @@ impl<'ctx> Codegen<'ctx> {
                     let compiled = self.compile_expr(val);
                     if let Some(v) = compiled {
                         // Use LLVM function's actual return type for coercion
-                        let fn_ret = self.builder.get_insert_block()
+                        let fn_ret = self
+                            .builder
+                            .get_insert_block()
                             .and_then(|bb| bb.get_parent())
                             .and_then(|f| f.get_type().get_return_type());
 
@@ -572,18 +665,20 @@ impl<'ctx> Codegen<'ctx> {
                     .unwrap();
             } else if ret_ty == Type::Void {
                 if let Some(ret_ty) = self.current_fn_return_type.clone() {
-                            if ret_ty != Type::Void {
-                                let default = self.default_value(&ret_ty);
-                                self.builder.build_return(Some(&default)).unwrap();
-                            } else {
-                                self.builder.build_return(None).unwrap();
-                            }
-                        } else {
-                            self.builder.build_return(None).unwrap();
-                        }
+                    if ret_ty != Type::Void {
+                        let default = self.default_value(&ret_ty);
+                        self.builder.build_return(Some(&default)).unwrap();
+                    } else {
+                        self.builder.build_return(None).unwrap();
+                    }
+                } else {
+                    self.builder.build_return(None).unwrap();
+                }
             } else if let Some(val) = last_val {
                 // Use the function's actual LLVM return type for comparison
-                let fn_val = self.builder.get_insert_block()
+                let fn_val = self
+                    .builder
+                    .get_insert_block()
                     .and_then(|bb| bb.get_parent());
                 let fn_ret_type = fn_val.and_then(|f| f.get_type().get_return_type());
 
@@ -592,28 +687,48 @@ impl<'ctx> Codegen<'ctx> {
                         // Types match — return directly
                         self.builder.build_return(Some(&val)).unwrap();
                     } else if let Type::Nullable(_) = &ret_ty {
-                        let wrapped = self.wrap_in_nullable(val, &ret_ty);
+                        // Use maybe_wrap_nullable rather than wrap_in_nullable so a
+                        // const-zero `{i8, T}` (a NullLit compiled with the wrong
+                        // inner type) is recognized and recreated as a properly
+                        // typed null instead of being blindly wrapped — which
+                        // would corrupt the inner via a too-small store/load.
+                        let wrapped = self.maybe_wrap_nullable(val, &ret_ty);
                         self.builder.build_return(Some(&wrapped)).unwrap();
-                    } else if ret_ty == Type::String && val.is_pointer_value() && !matches!(fn_ret, BasicTypeEnum::PointerType(_)) {
+                    } else if ret_ty == Type::String
+                        && val.is_pointer_value()
+                        && !matches!(fn_ret, BasicTypeEnum::PointerType(_))
+                    {
                         let forge_str = self.wrap_ptr_as_string(val.into_pointer_value()).unwrap();
                         self.builder.build_return(Some(&forge_str)).unwrap();
                     } else if fn_ret.is_struct_type() && !val.is_struct_value() {
                         // Value type doesn't match struct return — use zeroed struct
-                        self.builder.build_return(Some(&fn_ret.into_struct_type().const_zero())).unwrap();
+                        self.builder
+                            .build_return(Some(&fn_ret.into_struct_type().const_zero()))
+                            .unwrap();
                     } else if fn_ret.is_pointer_type() && val.is_struct_value() {
                         // Struct value but function returns ptr — alloca, store, return ptr
-                        let alloca = self.builder.build_alloca(val.get_type(), "ret_tmp").unwrap();
+                        let alloca = self
+                            .builder
+                            .build_alloca(val.get_type(), "ret_tmp")
+                            .unwrap();
                         self.builder.build_store(alloca, val).unwrap();
                         self.builder.build_return(Some(&alloca)).unwrap();
                     } else if fn_ret.is_pointer_type() && val.is_int_value() {
                         // Integer value (e.g., i64 from C function returning a handle) → ptr
-                        let ptr_val = self.builder
-                            .build_int_to_ptr(val.into_int_value(), fn_ret.into_pointer_type(), "i2p_ret")
+                        let ptr_val = self
+                            .builder
+                            .build_int_to_ptr(
+                                val.into_int_value(),
+                                fn_ret.into_pointer_type(),
+                                "i2p_ret",
+                            )
                             .unwrap();
                         self.builder.build_return(Some(&ptr_val)).unwrap();
                     } else if fn_ret.is_pointer_type() && !val.is_pointer_value() {
                         // Non-struct, non-int value doesn't match ptr return — use null pointer
-                        self.builder.build_return(Some(&fn_ret.into_pointer_type().const_null())).unwrap();
+                        self.builder
+                            .build_return(Some(&fn_ret.into_pointer_type().const_null()))
+                            .unwrap();
                     } else {
                         let coerced = self.coerce_value(val, fn_ret);
                         self.builder.build_return(Some(&coerced)).unwrap();
@@ -624,7 +739,9 @@ impl<'ctx> Codegen<'ctx> {
             } else {
                 // Return default value — use the LLVM function's actual return type
                 // to avoid mismatch when Forge type resolution returns Unknown
-                let fn_val = self.builder.get_insert_block()
+                let fn_val = self
+                    .builder
+                    .get_insert_block()
                     .and_then(|bb| bb.get_parent());
                 if let Some(func) = fn_val {
                     if let Some(llvm_ret) = func.get_type().get_return_type() {
@@ -636,7 +753,9 @@ impl<'ctx> Codegen<'ctx> {
                                 self.builder.build_return(Some(&it.const_zero())).unwrap();
                             }
                             BasicTypeEnum::FloatType(ft) => {
-                                self.builder.build_return(Some(&ft.const_float(0.0))).unwrap();
+                                self.builder
+                                    .build_return(Some(&ft.const_float(0.0)))
+                                    .unwrap();
                             }
                             BasicTypeEnum::PointerType(pt) => {
                                 self.builder.build_return(Some(&pt.const_null())).unwrap();
@@ -673,7 +792,8 @@ impl<'ctx> Codegen<'ctx> {
                         for (i, elem) in elems.iter().enumerate() {
                             if let Pattern::Ident(name, _) = elem {
                                 let elem_ty = types.get(i).cloned().unwrap_or(Type::Int);
-                                let extracted = self.builder
+                                let extracted = self
+                                    .builder
                                     .build_extract_value(struct_val, i as u32, name)
                                     .unwrap();
                                 let alloca = self.create_entry_block_alloca(&elem_ty, name);
@@ -687,14 +807,24 @@ impl<'ctx> Codegen<'ctx> {
             Pattern::Struct { fields, .. } => {
                 let val = self.compile_expr(value);
                 let val_type = self.infer_type(value);
-                if let (Some(val), Type::Struct { fields: type_fields, .. }) = (val, &val_type) {
+                if let (
+                    Some(val),
+                    Type::Struct {
+                        fields: type_fields,
+                        ..
+                    },
+                ) = (val, &val_type)
+                {
                     if val.is_struct_value() {
                         let struct_val = val.into_struct_value();
                         for (field_name, pat) in fields {
                             if let Pattern::Ident(name, _) = pat {
-                                if let Some(idx) = type_fields.iter().position(|(n, _)| n == field_name) {
+                                if let Some(idx) =
+                                    type_fields.iter().position(|(n, _)| n == field_name)
+                                {
                                     let field_ty = type_fields[idx].1.clone();
-                                    let extracted = self.builder
+                                    let extracted = self
+                                        .builder
                                         .build_extract_value(struct_val, idx as u32, name)
                                         .unwrap();
                                     let alloca = self.create_entry_block_alloca(&field_ty, name);
@@ -724,14 +854,19 @@ impl<'ctx> Codegen<'ctx> {
                             if let Pattern::Ident(name, _) = elem_pat {
                                 let idx = self.context.i64_type().const_int(i as u64, false);
                                 let elem_ptr = unsafe {
-                                    self.builder.build_gep(
-                                        elem_llvm_ty,
-                                        data_ptr,
-                                        &[idx],
-                                        &format!("{}_ptr", name),
-                                    ).unwrap()
+                                    self.builder
+                                        .build_gep(
+                                            elem_llvm_ty,
+                                            data_ptr,
+                                            &[idx],
+                                            &format!("{}_ptr", name),
+                                        )
+                                        .unwrap()
                                 };
-                                let loaded = self.builder.build_load(elem_llvm_ty, elem_ptr, name).unwrap();
+                                let loaded = self
+                                    .builder
+                                    .build_load(elem_llvm_ty, elem_ptr, name)
+                                    .unwrap();
                                 let alloca = self.create_entry_block_alloca(&elem_type, name);
                                 self.builder.build_store(alloca, loaded).unwrap();
                                 self.define_var(name.clone(), alloca, elem_type.clone());
@@ -741,30 +876,37 @@ impl<'ctx> Codegen<'ctx> {
                         // Handle ...rest
                         if let Some(rest_name) = rest {
                             let fixed_count = elements.len() as u64;
-                            let fixed_count_val = self.context.i64_type().const_int(fixed_count, false);
-                            let rest_len = self.builder
+                            let fixed_count_val =
+                                self.context.i64_type().const_int(fixed_count, false);
+                            let rest_len = self
+                                .builder
                                 .build_int_sub(list_len, fixed_count_val, "rest_len")
                                 .unwrap();
 
                             // Compute pointer to start of rest elements
                             let rest_data_ptr = unsafe {
-                                self.builder.build_gep(
-                                    elem_llvm_ty,
-                                    data_ptr,
-                                    &[fixed_count_val],
-                                    "rest_data_ptr",
-                                ).unwrap()
+                                self.builder
+                                    .build_gep(
+                                        elem_llvm_ty,
+                                        data_ptr,
+                                        &[fixed_count_val],
+                                        "rest_data_ptr",
+                                    )
+                                    .unwrap()
                             };
 
                             // Build a new list struct {ptr, len} for rest
-                            let list_type = self.type_to_llvm_basic(&Type::List(Box::new(elem_type.clone())));
+                            let list_type =
+                                self.type_to_llvm_basic(&Type::List(Box::new(elem_type.clone())));
                             let list_struct_type = list_type.into_struct_type();
                             let mut rest_struct = list_struct_type.get_undef();
-                            rest_struct = self.builder
+                            rest_struct = self
+                                .builder
                                 .build_insert_value(rest_struct, rest_data_ptr, 0, "rest_ptr")
                                 .unwrap()
                                 .into_struct_value();
-                            rest_struct = self.builder
+                            rest_struct = self
+                                .builder
                                 .build_insert_value(rest_struct, rest_len, 1, "rest_len_val")
                                 .unwrap()
                                 .into_struct_value();

@@ -2444,12 +2444,91 @@ static void _forge_capture_args(int argc, char** argv) {
 }
 
 // process.args() → List<string> (ForgeString elements)
+// Number of process arguments captured at startup. Used by the
+// bootstrap compiler's main() to inspect argv without going
+// through the @std.process List<string> wrapper.
+int64_t forge_selfhost_argc(void) {
+    return (int64_t)_forge_argc;
+}
+
+// Bootstrap-side debug logger: write a c-string to stderr followed
+// by a newline, with an explicit flush so output survives a
+// subsequent crash.
+void forge_selfhost_trace(const char* s) {
+    if (!s) s = "(null)";
+    fputs(s, stderr);
+    fputc('\n', stderr);
+    fflush(stderr);
+}
+
+void forge_selfhost_trace_int(const char* label, int64_t val) {
+    if (!label) label = "?";
+    fprintf(stderr, "%s = %lld\n", label, (long long)val);
+    fflush(stderr);
+}
+
+// ── Bootstrap selfhost C-string wrappers ────────────────────
+//
+// The bootstrap compiler's value model treats every value as a
+// 64-bit slot — strings are passed as a single `char*` rather
+// than the `{char* ptr; int64_t len}` ForgeString struct. The
+// regular forge_* runtime functions take ForgeString-by-value,
+// so we expose plain C-string variants for the bootstrap's
+// calling convention. They convert the input to a temporary
+// ForgeString, dispatch to the real function, and return either
+// an int or a freshly-allocated NUL-terminated buffer.
+
+static ForgeString cstr_to_forge(const char* s) {
+    if (!s) return (ForgeString){ .ptr = NULL, .len = 0 };
+    return (ForgeString){ .ptr = (char*)s, .len = (int64_t)strlen(s) };
+}
+
+int64_t forge_selfhost_file_exists(const char* path) {
+    if (!path) return 0;
+    return (int64_t)forge_file_exists(cstr_to_forge(path));
+}
+
+const char* forge_selfhost_read_file(const char* path) {
+    if (!path) return "";
+    extern ForgeString forge_read_file(ForgeString path);
+    ForgeString result = forge_read_file(cstr_to_forge(path));
+    if (!result.ptr) return "";
+    // forge_read_file already null-terminates the buffer.
+    return result.ptr;
+}
+
+int64_t forge_selfhost_write_file(const char* path, const char* content) {
+    if (!path || !content) return 0;
+    extern int8_t forge_write_file(ForgeString, ForgeString);
+    return (int64_t)forge_write_file(cstr_to_forge(path), cstr_to_forge(content));
+}
+
+int64_t forge_selfhost_string_to_int(const char* s) {
+    if (!s) return 0;
+    return (int64_t)atoll(s);
+}
+
+double forge_selfhost_string_to_float(const char* s) {
+    if (!s) return 0.0;
+    return strtod(s, NULL);
+}
+
 // Get a specific arg by index (avoids list indexing issues in codegen)
 ForgeString forge_selfhost_get_arg(int64_t idx) {
     if (idx < 0 || idx >= _forge_argc || !_forge_argv) {
         return forge_string_new("", 0);
     }
     return forge_string_new(_forge_argv[idx], strlen(_forge_argv[idx]));
+}
+
+// C-string variant of forge_selfhost_get_arg for the bootstrap
+// compiler's calling convention (every value is a single i64
+// slot — strings are passed as `const char*`).
+const char* forge_selfhost_get_arg_cstr(int64_t idx) {
+    if (idx < 0 || idx >= _forge_argc || !_forge_argv) {
+        return "";
+    }
+    return _forge_argv[idx];
 }
 
 ForgeList forge_selfhost_process_args(void) {

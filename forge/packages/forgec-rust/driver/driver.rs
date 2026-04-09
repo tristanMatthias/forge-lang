@@ -428,21 +428,6 @@ impl Driver {
                 .iter()
                 .flat_map(|p| p.link_flags.iter().cloned())
                 .collect();
-            // Collect every extern fn name declared in any loaded
-            // package's package.fg so the linker keeps the symbol
-            // alive — see comment in `link_with_packages`.
-            let package_extern_symbols: Vec<String> = loaded_packages
-                .iter()
-                .filter(|p| p.lib_path.exists())
-                .flat_map(|p| p.extern_fns.iter())
-                .filter_map(|stmt| {
-                    if let crate::parser::Statement::ExternFn { name, .. } = stmt {
-                        Some(name.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
 
             // Link
             let t = Instant::now();
@@ -452,7 +437,6 @@ impl Driver {
                 &output_path,
                 &package_lib_paths,
                 &package_link_flags,
-                &package_extern_symbols,
             )?;
             bp.add("link", t.elapsed());
 
@@ -1380,7 +1364,6 @@ impl Driver {
         output: &Path,
         package_lib_paths: &[PathBuf],
         package_link_flags: &[String],
-        package_extern_symbols: &[String],
     ) -> Result<(), CompileError> {
         let path_str = |p: &Path| -> Result<String, CompileError> {
             p.to_str()
@@ -1398,25 +1381,7 @@ impl Driver {
             "-Wl,-stack_size,0x10000000".to_string(), // 256MB stack for deep parser recursion
         ];
 
-        // Tell the linker to preserve every extern symbol declared in
-        // a loaded package's `package.fg`, even if user Forge code does
-        // not statically reference it. This matters because `_s`
-        // extern wrappers in packages like `@std.llvm` resolve their
-        // underlying C symbol via runtime `dlsym(RTLD_DEFAULT, "...")`.
-        // Without an explicit `-u` reference the underlying symbol is
-        // dead-stripped from the archive, dlsym returns null, and the
-        // call silently no-ops. See bootstrap/TECH_DEBT.md #9.
-        for sym in package_extern_symbols {
-            // macOS prepends an underscore to C symbols.
-            let mangled = if cfg!(target_os = "macos") {
-                format!("_{}", sym)
-            } else {
-                sym.clone()
-            };
-            args.push(format!("-Wl,-u,{}", mangled));
-        }
-
-        // Add package native library paths.
+        // Add package native library paths
         let mut has_native_packages = false;
         for lib_path in package_lib_paths {
             args.push(path_str(lib_path)?);

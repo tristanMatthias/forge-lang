@@ -13,9 +13,16 @@ pub struct RangeData {
 }
 
 impl crate::feature::FeatureNode for RangeData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(RangeData {
             start: Box::new((fns.sub_expr)(&self.start)),
             end: Box::new((fns.sub_expr)(&self.end)),
@@ -27,7 +34,8 @@ impl crate::feature::FeatureNode for RangeData {
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of a range expression via the Feature dispatch system.
     pub(crate) fn infer_range_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, RangeData, |data| self.infer_range_type(&data.start))
+        feature_check!(self, fe, RangeData, |data| self
+            .infer_range_type(&data.start))
     }
 
     /// Infer the type of a range expression: Range<T> where T is the start type.

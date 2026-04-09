@@ -11,9 +11,16 @@ pub struct ErrorPropagateData {
 }
 
 impl crate::feature::FeatureNode for ErrorPropagateData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(ErrorPropagateData {
             operand: Box::new((fns.sub_expr)(&self.operand)),
         })
@@ -27,9 +34,16 @@ pub struct OkExprData {
 }
 
 impl crate::feature::FeatureNode for OkExprData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(OkExprData {
             value: Box::new((fns.sub_expr)(&self.value)),
         })
@@ -43,9 +57,16 @@ pub struct ErrExprData {
 }
 
 impl crate::feature::FeatureNode for ErrExprData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(ErrExprData {
             value: Box::new((fns.sub_expr)(&self.value)),
         })
@@ -61,9 +82,16 @@ pub struct CatchData {
 }
 
 impl crate::feature::FeatureNode for CatchData {
-    fn as_any(&self) -> &dyn std::any::Any { self }
-    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> { Box::new(self.clone()) }
-    fn substitute_exprs(&self, fns: &crate::feature::SubFns) -> Box<dyn crate::feature::FeatureNode> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn crate::feature::FeatureNode> {
+        Box::new(self.clone())
+    }
+    fn substitute_exprs(
+        &self,
+        fns: &crate::feature::SubFns,
+    ) -> Box<dyn crate::feature::FeatureNode> {
         Box::new(CatchData {
             expr: Box::new((fns.sub_expr)(&self.expr)),
             binding: self.binding.clone(),
@@ -75,7 +103,8 @@ impl crate::feature::FeatureNode for CatchData {
 impl<'ctx> Codegen<'ctx> {
     /// Infer the type of `ok(value)` via Feature dispatch.
     pub(crate) fn infer_ok_expr_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, OkExprData, |data| self.infer_ok_expr_type(&data.value))
+        feature_check!(self, fe, OkExprData, |data| self
+            .infer_ok_expr_type(&data.value))
     }
 
     /// Infer the type of `ok(value)` — returns `Result<T, String>`.
@@ -85,7 +114,8 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Infer the type of `err(value)` via Feature dispatch.
     pub(crate) fn infer_err_expr_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, ErrExprData, |data| self.infer_err_expr_type(&data.value))
+        feature_check!(self, fe, ErrExprData, |data| self
+            .infer_err_expr_type(&data.value))
     }
 
     /// Infer the type of `err(value)` — returns `Result<Unknown, T>`.
@@ -95,7 +125,8 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Infer the type of `expr catch { handler }` via Feature dispatch.
     pub(crate) fn infer_catch_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, CatchData, |data| self.infer_catch_type(&data.expr))
+        feature_check!(self, fe, CatchData, |data| self
+            .infer_catch_type(&data.expr))
     }
 
     /// Infer the type of `expr catch { handler }`.
@@ -117,7 +148,8 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Infer the type of `expr?` via Feature dispatch.
     pub(crate) fn infer_error_propagate_feature_type(&self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, ErrorPropagateData, |data| self.infer_error_propagate_type(&data.operand))
+        feature_check!(self, fe, ErrorPropagateData, |data| self
+            .infer_error_propagate_type(&data.operand))
     }
 
     /// Infer the type of `expr?` — error propagation.

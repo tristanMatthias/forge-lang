@@ -2,23 +2,23 @@
 # Forge Self-Hosting Build System
 # ═══════════════════════════════════════════════════════════════════
 #
-# Pipeline:
-#   1. cargo        → target/release/forgec       (Rust compiler)
-#   2. cargo        → libforge_llvm.a             (LLVM bindings)
-#   3. cc           → build/runtime.o             (C runtime)
-#   4. forgec build → build/mini                  (mini compiler binary)
-#   5. mini build   → build/stage1.ll             (Stage 1 IR)
-#   6. llc + cc     → build/stage1                (Stage 1 binary)
-#   7. stage1 build → build/stage2.ll             (Stage 2 IR)
-#   8. audit        → score                       (Stage 2 quality)
+# Pipeline (mini is DEPRECATED — do not use):
+#   1. cargo            → target/release/forgec     (Rust compiler)
+#   2. cargo            → libforge_llvm.a           (LLVM bindings)
+#   3. cc               → build/runtime.o           (C runtime)
+#   4. forgec build     → build/stage1_rust         (Stage 1 binary, built by Rust forgec)
+#   5. stage1_rust build→ build/stage2.ll           (Stage 2 IR)
+#   6. llc + cc         → build/stage2              (Stage 2 compiler)
+#   7. audit            → score                     (Stage 2 quality)
 #
 # Usage:
 #   make runtime     — compile runtime.o
-#   make mini        — build mini compiler binary
-#   make stage1-ir   — mini compiles source → Stage 1 IR
-#   make stage1      — link Stage 1 binary
+#   make stage1-rust — Rust compiler builds Stage 1 binary
 #   make stage2-ir   — Stage 1 compiles source → Stage 2 IR
+#   make stage2      — link Stage 2 compiler binary
 #   make audit       — audit Stage 2 IR quality
+#   make test-stage1 — Stage 1 compiles+runs hello world
+#   make test-stage2 — Stage 2 compiles+runs hello world
 #   make clean       — remove all build artifacts
 #
 # ═══════════════════════════════════════════════════════════════════
@@ -40,16 +40,18 @@ STAGE1_LL    := $(BUILD)/stage1.ll
 STAGE1_O     := $(BUILD)/stage1.o
 STAGE1_BIN   := $(BUILD)/stage1
 STAGE2_LL    := $(BUILD)/stage2.ll
+STAGE2_O     := $(BUILD)/stage2.o
+STAGE2_BIN   := $(BUILD)/stage2
 
 # Link flags shared by stage1 and stage2
 LINK_FLAGS   := -lm -Wl,-stack_size,0x10000000 $(STD_LLVM_LIB) \
                 $(LLVM_LIBS) -lstdc++ -lz -lcurses
 
-.PHONY: all clean runtime mini stage1-ir stage1 stage2-ir audit test-mini help
+.PHONY: all clean runtime stage1-rust stage2-ir stage2 audit test-stage1 test-stage2 help
 
-all: stage1
+all: stage1-rust
 help:
-	@echo "Targets: runtime mini stage1-ir stage1 stage2-ir audit clean"
+	@echo "Targets: runtime stage1-rust stage2-ir stage2 audit test-stage1 test-stage2 clean"
 
 # ─── Prerequisites ────────────────────────────────────────────────
 
@@ -123,9 +125,9 @@ $(STAGE1_BIN): $(STAGE1_LL) $(RUNTIME_O) $(STD_LLVM_LIB)
 # ─── Step 5: Stage 2 IR ─────────────────────────────────────────
 
 stage2-ir: $(STAGE2_LL)
-$(STAGE2_LL): $(STAGE1_BIN)
-	@echo "=== Stage 1 compiling source → Stage 2 IR ==="
-	$(STAGE1_BIN) build $(SOURCE)
+$(STAGE2_LL): $(STAGE1_RUST)
+	@echo "=== Stage 1 (Rust-built) compiling source → Stage 2 IR ==="
+	$(STAGE1_RUST) build $(SOURCE)
 	@if [ -f output.ll ]; then \
 		mv output.ll $(STAGE2_LL); \
 		echo "  Stage 2 IR: $$(grep -c '^define' $(STAGE2_LL)) functions"; \
@@ -133,6 +135,16 @@ $(STAGE2_LL): $(STAGE1_BIN)
 		echo "ERROR: stage1 did not produce output.ll"; \
 		exit 1; \
 	fi
+
+# ─── Step 6: Stage 2 Binary ─────────────────────────────────────
+
+stage2: $(STAGE2_BIN)
+$(STAGE2_BIN): $(STAGE2_LL) $(RUNTIME_O) $(STD_LLVM_LIB)
+	@echo "=== Linking Stage 2 compiler ==="
+	$(LLC) -O2 -filetype=obj $(STAGE2_LL) -o $(STAGE2_O)
+	cc -o $(STAGE2_BIN) $(STAGE2_O) $(RUNTIME_O) $(LINK_FLAGS)
+	@echo "  Built: $(STAGE2_BIN)"
+	@$(STAGE2_BIN) 2>&1 | head -1
 
 # ─── Audit ───────────────────────────────────────────────────────
 
@@ -171,6 +183,24 @@ test-stage1: $(STAGE1_RUST) $(RUNTIME_O)
 		echo "  PASS"; \
 	else \
 		echo "  FAIL: no IR produced"; \
+		exit 1; \
+	fi
+
+# ─── Test: Stage 2 compiles hello world ─────────────────────────
+
+test-stage2: $(STAGE2_BIN) $(RUNTIME_O)
+	@echo "=== Testing Stage 2 compiler on hello world ==="
+	@echo 'fn main() { println("hello from stage 3!") }' > /tmp/forge_s2_test.fg
+	@rm -f output.ll a.out /tmp/forge_s2_test.log
+	@$(STAGE2_BIN) build /tmp/forge_s2_test.fg >/tmp/forge_s2_test.log 2>&1 || true
+	@if [ -x a.out ]; then \
+		./a.out && \
+		rm -f /tmp/forge_s2_test.fg output.ll a.out /tmp/forge_s2_test.log; \
+		echo "  PASS"; \
+	else \
+		echo "  FAIL: stage2 did not produce a.out"; \
+		tail -20 /tmp/forge_s2_test.log; \
+		rm -f /tmp/forge_s2_test.fg output.ll a.out /tmp/forge_s2_test.log; \
 		exit 1; \
 	fi
 

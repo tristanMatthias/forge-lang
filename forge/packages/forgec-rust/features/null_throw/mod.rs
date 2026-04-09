@@ -21,6 +21,6 @@ panic with \"not_found\" if null.",
     category: "Null Safety",
 }
 
-pub mod types;
 pub mod checker;
 pub mod codegen;
+pub mod types;

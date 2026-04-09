@@ -97,7 +97,8 @@ impl Parser {
                 if self.check(&TokenKind::LParen) {
                     self.advance();
                     self.skip_newlines();
-                    let fields = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
+                    let fields = self
+                        .parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
                     Some(Pattern::Enum {
                         variant,
                         fields,
@@ -137,7 +138,11 @@ impl Parser {
             }
             TokenKind::Ok_ | TokenKind::Err_ => {
                 // Ok(binding) or Err(binding) patterns for Result matching
-                let variant = if matches!(tok.kind, TokenKind::Ok_) { "Ok" } else { "Err" };
+                let variant = if matches!(tok.kind, TokenKind::Ok_) {
+                    "Ok"
+                } else {
+                    "Err"
+                };
                 self.advance();
                 let fields = if self.check(&TokenKind::LParen) {
                     self.advance();
@@ -178,8 +183,8 @@ impl Parser {
                 if self.check(&TokenKind::LParen) {
                     self.advance();
                     self.skip_newlines();
-                    let fields =
-                        self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
+                    let fields = self
+                        .parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
                     Some(Pattern::Enum {
                         variant,
                         fields,
@@ -197,7 +202,8 @@ impl Parser {
                 // Tuple pattern: (a, b, ...)
                 let span = self.advance()?.span;
                 self.skip_newlines();
-                let elems = self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
+                let elems =
+                    self.parse_delimited_until(&TokenKind::RParen, |p| p.parse_simple_pattern())?;
                 Some(Pattern::Tuple(elems, span))
             }
             TokenKind::IntLiteral(n) => {

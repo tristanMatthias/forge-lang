@@ -3,7 +3,6 @@
 /// Parses two context.fg files (output from `forge context`), diffs their
 /// API surfaces, classifies each change as major/minor/patch, and computes
 /// the minimum allowed version bump.
-
 use std::collections::HashMap;
 
 // ── API item types ──────────────────────────────────────────────────
@@ -314,10 +313,7 @@ fn parse_type_lines(lines: &[&str], start: usize) -> (Option<ApiItem>, usize) {
             }
             i += 1;
         }
-        (
-            Some(ApiItem::Type { name, definition }),
-            consumed,
-        )
+        (Some(ApiItem::Type { name, definition }), consumed)
     } else {
         (
             Some(ApiItem::Type {
@@ -528,8 +524,7 @@ impl SemVer {
         match level {
             BumpLevel::Major => self.major > old.major,
             BumpLevel::Minor => {
-                self.major > old.major
-                    || (self.major == old.major && self.minor > old.minor)
+                self.major > old.major || (self.major == old.major && self.minor > old.minor)
             }
             BumpLevel::Patch => {
                 self.major > old.major
@@ -672,10 +667,16 @@ fn format_item_summary(item: &ApiItem) -> String {
             params,
             return_type,
         } => {
-            let params_str: Vec<String> =
-                params.iter().map(|(n, t)| {
-                    if t.is_empty() { n.clone() } else { format!("{}: {}", n, t) }
-                }).collect();
+            let params_str: Vec<String> = params
+                .iter()
+                .map(|(n, t)| {
+                    if t.is_empty() {
+                        n.clone()
+                    } else {
+                        format!("{}: {}", n, t)
+                    }
+                })
+                .collect();
             match return_type {
                 Some(ret) => format!("fn {}({}) -> {}", name, params_str.join(", "), ret),
                 None => format!("fn {}({})", name, params_str.join(", ")),

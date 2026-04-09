@@ -4,7 +4,11 @@ use inkwell::basic_block::BasicBlock;
 impl<'ctx> Codegen<'ctx> {
     /// Get the current function being compiled.
     pub(crate) fn current_function(&self) -> inkwell::values::FunctionValue<'ctx> {
-        self.builder.get_insert_block().unwrap().get_parent().unwrap()
+        self.builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap()
     }
 
     pub(crate) fn push_scope(&mut self) {
@@ -30,8 +34,13 @@ impl<'ctx> Codegen<'ctx> {
                     if let Some(func) = self.functions.get(&mangled).copied() {
                         if let Some((ptr, ty)) = self.lookup_var(var_name) {
                             let llvm_ty = self.type_to_llvm_basic(&ty);
-                            let val = self.builder.build_load(llvm_ty, ptr, &format!("drop_{}", var_name)).unwrap();
-                            self.builder.build_call(func, &[val.into()], "drop_call").unwrap();
+                            let val = self
+                                .builder
+                                .build_load(llvm_ty, ptr, &format!("drop_{}", var_name))
+                                .unwrap();
+                            self.builder
+                                .build_call(func, &[val.into()], "drop_call")
+                                .unwrap();
                         }
                     }
                 }
@@ -87,11 +96,20 @@ impl<'ctx> Codegen<'ctx> {
 
     /// Capture all variables from current scope into LLVM globals.
     /// Returns Vec of (local_name, global_name, type) for the spawn function to load.
-    pub(crate) fn capture_scope_vars_to_globals(&mut self, prefix: &str) -> Vec<(String, String, Type)> {
+    pub(crate) fn capture_scope_vars_to_globals(
+        &mut self,
+        prefix: &str,
+    ) -> Vec<(String, String, Type)> {
         let mut captured = Vec::new();
         // Collect all variables from all scopes
-        let all_vars: Vec<(String, PointerValue<'ctx>, Type)> = self.variables.iter()
-            .flat_map(|scope| scope.iter().map(|(name, (ptr, ty))| (name.clone(), *ptr, ty.clone())))
+        let all_vars: Vec<(String, PointerValue<'ctx>, Type)> = self
+            .variables
+            .iter()
+            .flat_map(|scope| {
+                scope
+                    .iter()
+                    .map(|(name, (ptr, ty))| (name.clone(), *ptr, ty.clone()))
+            })
             .collect();
 
         for (name, ptr, ty) in all_vars {
@@ -105,9 +123,14 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             // Store current value to global
-            let val = self.builder.build_load(llvm_ty, ptr, &format!("cap_{}", name)).unwrap();
+            let val = self
+                .builder
+                .build_load(llvm_ty, ptr, &format!("cap_{}", name))
+                .unwrap();
             let global = self.module.get_global(&global_name).unwrap();
-            self.builder.build_store(global.as_pointer_value(), val).unwrap();
+            self.builder
+                .build_store(global.as_pointer_value(), val)
+                .unwrap();
 
             captured.push((name, global_name, ty));
         }
@@ -123,7 +146,8 @@ impl<'ctx> Codegen<'ctx> {
         label: &str,
     ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
         let func = self.module.get_function(fn_name)?;
-        self.builder.build_call(func, args, label)
+        self.builder
+            .build_call(func, args, label)
             .ok()?
             .try_as_basic_value()
             .basic()
@@ -138,9 +162,12 @@ impl<'ctx> Codegen<'ctx> {
         label: &str,
         msg: &str,
     ) -> Option<inkwell::values::BasicValueEnum<'ctx>> {
-        let func = self.module.get_function(fn_name)
+        let func = self
+            .module
+            .get_function(fn_name)
             .unwrap_or_else(|| panic!("{}", msg));
-        self.builder.build_call(func, args, label)
+        self.builder
+            .build_call(func, args, label)
             .unwrap()
             .try_as_basic_value()
             .basic()
@@ -158,11 +185,7 @@ impl<'ctx> Codegen<'ctx> {
         }
     }
 
-    pub(crate) fn create_entry_block_alloca(
-        &self,
-        ty: &Type,
-        name: &str,
-    ) -> PointerValue<'ctx> {
+    pub(crate) fn create_entry_block_alloca(&self, ty: &Type, name: &str) -> PointerValue<'ctx> {
         let llvm_ty = self.type_to_llvm_basic(ty);
         let function = self.current_function();
         let entry = function.get_first_basic_block().unwrap();
@@ -205,6 +228,20 @@ impl<'ctx> Codegen<'ctx> {
         tmp_builder.build_alloca(llvm_ty, name).unwrap()
     }
 
+    /// Canonical typed storage write. Coerces the value to the slot's LLVM
+    /// type before emitting the store so bool locals, pointer handles, and
+    /// struct values land in memory with the right ABI shape.
+    pub(crate) fn store_typed(
+        &self,
+        ptr: PointerValue<'ctx>,
+        ty: &Type,
+        val: inkwell::values::BasicValueEnum<'ctx>,
+    ) {
+        let llvm_ty = self.type_to_llvm_basic(ty);
+        let coerced = self.coerce_value(val, llvm_ty);
+        self.builder.build_store(ptr, coerced).unwrap();
+    }
+
     /// Wrap a raw C string pointer as a ForgeString by calling strlen + forge_string_new.
     /// This is the standard pattern for converting `ptr` → `{ptr, len}` ForgeString.
     pub(crate) fn wrap_ptr_as_string(
@@ -222,8 +259,16 @@ impl<'ctx> Codegen<'ctx> {
         list_val: &BasicValueEnum<'ctx>,
     ) -> Option<(PointerValue<'ctx>, IntValue<'ctx>)> {
         let struct_val = list_val.into_struct_value();
-        let data_ptr = self.builder.build_extract_value(struct_val, 0, "data_ptr").ok()?.into_pointer_value();
-        let list_len = self.builder.build_extract_value(struct_val, 1, "len").ok()?.into_int_value();
+        let data_ptr = self
+            .builder
+            .build_extract_value(struct_val, 0, "data_ptr")
+            .ok()?
+            .into_pointer_value();
+        let list_len = self
+            .builder
+            .build_extract_value(struct_val, 1, "len")
+            .ok()?
+            .into_int_value();
         Some((data_ptr, list_len))
     }
 
@@ -237,8 +282,16 @@ impl<'ctx> Codegen<'ctx> {
         let list_type = self.type_to_llvm_basic(&Type::List(Box::new(elem_type.clone())));
         let list_struct_type = list_type.into_struct_type();
         let mut result = list_struct_type.get_undef();
-        result = self.builder.build_insert_value(result, data_ptr, 0, "list_data").unwrap().into_struct_value();
-        result = self.builder.build_insert_value(result, len.into(), 1, "list_len").unwrap().into_struct_value();
+        result = self
+            .builder
+            .build_insert_value(result, data_ptr, 0, "list_data")
+            .unwrap()
+            .into_struct_value();
+        result = self
+            .builder
+            .build_insert_value(result, len.into(), 1, "list_len")
+            .unwrap()
+            .into_struct_value();
         result
     }
 
@@ -249,22 +302,35 @@ impl<'ctx> Codegen<'ctx> {
         prefix: &str,
     ) -> (BasicBlock<'ctx>, BasicBlock<'ctx>, BasicBlock<'ctx>) {
         let function = self.current_function();
-        let loop_bb = self.context.append_basic_block(function, &format!("{}_loop", prefix));
-        let body_bb = self.context.append_basic_block(function, &format!("{}_body", prefix));
-        let end_bb = self.context.append_basic_block(function, &format!("{}_end", prefix));
+        let loop_bb = self
+            .context
+            .append_basic_block(function, &format!("{}_loop", prefix));
+        let body_bb = self
+            .context
+            .append_basic_block(function, &format!("{}_body", prefix));
+        let end_bb = self
+            .context
+            .append_basic_block(function, &format!("{}_end", prefix));
         self.builder.build_unconditional_branch(loop_bb).unwrap();
         self.builder.position_at_end(loop_bb);
         (loop_bb, body_bb, end_bb)
     }
 
     /// Load from an i64 alloca, add `delta`, store back.
-    pub(crate) fn increment_i64(
-        &self,
-        alloca: PointerValue<'ctx>,
-        delta: u64,
-    ) -> IntValue<'ctx> {
-        let current = self.builder.build_load(self.context.i64_type(), alloca, "cur").unwrap().into_int_value();
-        let next = self.builder.build_int_add(current, self.context.i64_type().const_int(delta, false), "next").unwrap();
+    pub(crate) fn increment_i64(&self, alloca: PointerValue<'ctx>, delta: u64) -> IntValue<'ctx> {
+        let current = self
+            .builder
+            .build_load(self.context.i64_type(), alloca, "cur")
+            .unwrap()
+            .into_int_value();
+        let next = self
+            .builder
+            .build_int_add(
+                current,
+                self.context.i64_type().const_int(delta, false),
+                "next",
+            )
+            .unwrap();
         self.builder.build_store(alloca, next).unwrap();
         next
     }
@@ -279,22 +345,40 @@ impl<'ctx> Codegen<'ctx> {
         payload: BasicValueEnum<'ctx>,
         label: &str,
     ) -> BasicValueEnum<'ctx> {
-        let alloca = self.builder.build_alloca(struct_type, &format!("{}_tmp", label)).unwrap();
+        let alloca = self
+            .builder
+            .build_alloca(struct_type, &format!("{}_tmp", label))
+            .unwrap();
 
         // Store tag
-        let tag_ptr = self.builder.build_struct_gep(struct_type, alloca, 0, "tag_ptr").unwrap();
-        self.builder.build_store(tag_ptr, self.context.i8_type().const_int(tag as u64, false)).unwrap();
+        let tag_ptr = self
+            .builder
+            .build_struct_gep(struct_type, alloca, 0, "tag_ptr")
+            .unwrap();
+        self.builder
+            .build_store(tag_ptr, self.context.i8_type().const_int(tag as u64, false))
+            .unwrap();
 
         // Store payload via bitcast to handle type size differences
-        let payload_ptr = self.builder.build_struct_gep(struct_type, alloca, 1, "payload_ptr").unwrap();
-        let val_ptr = self.builder.build_bit_cast(
-            payload_ptr,
-            self.context.ptr_type(inkwell::AddressSpace::default()),
-            "val_ptr",
-        ).unwrap();
-        self.builder.build_store(val_ptr.into_pointer_value(), payload).unwrap();
+        let payload_ptr = self
+            .builder
+            .build_struct_gep(struct_type, alloca, 1, "payload_ptr")
+            .unwrap();
+        let val_ptr = self
+            .builder
+            .build_bit_cast(
+                payload_ptr,
+                self.context.ptr_type(inkwell::AddressSpace::default()),
+                "val_ptr",
+            )
+            .unwrap();
+        self.builder
+            .build_store(val_ptr.into_pointer_value(), payload)
+            .unwrap();
 
         // Load the full struct back
-        self.builder.build_load(struct_type, alloca, &format!("{}_loaded", label)).unwrap()
+        self.builder
+            .build_load(struct_type, alloca, &format!("{}_loaded", label))
+            .unwrap()
     }
 }

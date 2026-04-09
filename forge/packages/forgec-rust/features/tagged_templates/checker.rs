@@ -38,8 +38,12 @@ impl TypeChecker {
             if let TemplatePart::Expr(e) = part {
                 let expr_ty = self.check_expr(e);
                 match &expr_ty {
-                    Type::Int | Type::Float | Type::Bool | Type::String
-                    | Type::Unknown | Type::Error => {}
+                    Type::Int
+                    | Type::Float
+                    | Type::Bool
+                    | Type::String
+                    | Type::Unknown
+                    | Type::Error => {}
                     Type::Nullable(_) => {
                         let ty_str = format_type(&expr_ty);
                         self.diagnostics.push(
@@ -98,7 +102,10 @@ impl TypeChecker {
         };
 
         match fn_type {
-            Some(Type::Function { params, return_type }) => {
+            Some(Type::Function {
+                params,
+                return_type,
+            }) => {
                 // Validate: tag function must accept exactly 1 argument
                 if params.len() != 1 {
                     self.diagnostics.push(
@@ -178,11 +185,8 @@ impl TypeChecker {
                 // in env.functions by the time we reach here, so this is truly undefined.
                 let scope_names = self.env.all_names_in_scope();
                 let candidates: Vec<&str> = scope_names.iter().map(|s| s.as_str()).collect();
-                let mut diag = Diagnostic::error(
-                    "F0020",
-                    format!("undefined tag function '{}'", tag),
-                    *span,
-                );
+                let mut diag =
+                    Diagnostic::error("F0020", format!("undefined tag function '{}'", tag), *span);
                 if let Some(suggestion) = crate::errors::did_you_mean(tag, &candidates, 2) {
                     diag = diag.with_help(format!("did you mean '{}'?", suggestion));
                 } else {
@@ -211,7 +215,9 @@ fn format_type(ty: &Type) -> String {
         Type::Bool => "bool".to_string(),
         Type::Struct { name: Some(n), .. } => n.clone(),
         Type::Struct { fields, .. } => {
-            let field_strs: Vec<String> = fields.iter().take(3)
+            let field_strs: Vec<String> = fields
+                .iter()
+                .take(3)
                 .map(|(n, t)| format!("{}: {}", n, format_type(t)))
                 .collect();
             if fields.len() > 3 {
@@ -226,7 +232,10 @@ fn format_type(ty: &Type) -> String {
             format!("({})", s.join(", "))
         }
         Type::Nullable(inner) => format!("{}?", format_type(inner)),
-        Type::Function { params, return_type } => {
+        Type::Function {
+            params,
+            return_type,
+        } => {
             let p: Vec<String> = params.iter().map(|t| format_type(t)).collect();
             format!("fn({}) -> {}", p.join(", "), format_type(return_type))
         }

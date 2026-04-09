@@ -25,7 +25,9 @@ impl<'ctx> Codegen<'ctx> {
         let select_loop = self.context.append_basic_block(function, "select_loop");
         let select_end = self.context.append_basic_block(function, "select_end");
 
-        self.builder.build_unconditional_branch(select_loop).unwrap();
+        self.builder
+            .build_unconditional_branch(select_loop)
+            .unwrap();
         self.builder.position_at_end(select_loop);
 
         for (i, arm) in arms.iter().enumerate() {
@@ -35,32 +37,52 @@ impl<'ctx> Codegen<'ctx> {
 
                 // Call forge_channel_try_receive(id, timeout_ms) for non-blocking check
                 let timeout = self.context.i64_type().const_int(10, false); // 10ms poll
-                let raw_ptr = self.call_runtime_expect(
-                    "forge_channel_try_receive", &[ch_id.into(), timeout.into()], "try_recv",
-                    "forge_channel_try_receive not declared",
-                ).unwrap();
+                let raw_ptr = self
+                    .call_runtime_expect(
+                        "forge_channel_try_receive",
+                        &[ch_id.into(), timeout.into()],
+                        "try_recv",
+                        "forge_channel_try_receive not declared",
+                    )
+                    .unwrap();
 
                 // Check if result starts with \0 (sentinel for TIMEOUT/CLOSED)
                 let first_byte_ptr = raw_ptr.into_pointer_value();
-                let first_byte = self.builder.build_load(self.context.i8_type(), first_byte_ptr, "first_byte").unwrap().into_int_value();
-                let is_null = self.builder.build_int_compare(
-                    IntPredicate::EQ, first_byte, self.context.i8_type().const_zero(), "is_sentinel"
-                ).unwrap();
+                let first_byte = self
+                    .builder
+                    .build_load(self.context.i8_type(), first_byte_ptr, "first_byte")
+                    .unwrap()
+                    .into_int_value();
+                let is_null = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        first_byte,
+                        self.context.i8_type().const_zero(),
+                        "is_sentinel",
+                    )
+                    .unwrap();
 
                 let arm_name = format!("select_arm_{}", i);
                 let next_name = format!("select_next_{}", i);
                 let arm_bb = self.context.append_basic_block(function, &arm_name);
                 let next_bb = self.context.append_basic_block(function, &next_name);
 
-                self.builder.build_conditional_branch(is_null, next_bb, arm_bb).unwrap();
+                self.builder
+                    .build_conditional_branch(is_null, next_bb, arm_bb)
+                    .unwrap();
 
                 // Arm body: received a value
                 self.builder.position_at_end(arm_bb);
                 self.push_scope();
 
                 // Convert ptr to ForgeString and bind to pattern
-                let len = self.call_runtime("strlen", &[raw_ptr.into()], "len").unwrap();
-                let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str").unwrap();
+                let len = self
+                    .call_runtime("strlen", &[raw_ptr.into()], "len")
+                    .unwrap();
+                let forge_str = self
+                    .call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "str")
+                    .unwrap();
 
                 // Bind pattern
                 if let Pattern::Ident(name, _) = &arm.binding {
@@ -75,7 +97,13 @@ impl<'ctx> Codegen<'ctx> {
                 }
                 self.pop_scope();
 
-                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                if self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_terminator()
+                    .is_none()
+                {
                     self.builder.build_unconditional_branch(select_end).unwrap();
                 }
 
@@ -84,7 +112,9 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // If no arm matched, loop back
-        self.builder.build_unconditional_branch(select_loop).unwrap();
+        self.builder
+            .build_unconditional_branch(select_loop)
+            .unwrap();
 
         self.builder.position_at_end(select_end);
     }

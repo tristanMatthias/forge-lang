@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 pub struct PathDependency {
     pub name: String,
     pub version: String,
-    pub path: PathBuf,          // absolute resolved path
-    pub original_path: String,   // as written in forge.toml
+    pub path: PathBuf,         // absolute resolved path
+    pub original_path: String, // as written in forge.toml
 }
 
 /// Parse a path dependency from forge.toml value.
@@ -17,7 +17,11 @@ pub fn parse_path_dep(name: &str, value: &toml::Value) -> Option<PathDependency>
     let path_str = table.get("path")?.as_str()?;
     Some(PathDependency {
         name: name.to_string(),
-        version: table.get("version").and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string(),
+        version: table
+            .get("version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("0.0.0")
+            .to_string(),
         path: PathBuf::from(path_str),
         original_path: path_str.to_string(),
     })
@@ -32,14 +36,19 @@ pub fn resolve_path_dep(
     let abs_path = if dep.path.is_absolute() {
         dep.path.clone()
     } else {
-        project_dir.join(&dep.path).canonicalize()
-            .map_err(|e| format!("path dependency '{}' at '{}': {}", dep.name, dep.original_path, e))?
+        project_dir.join(&dep.path).canonicalize().map_err(|e| {
+            format!(
+                "path dependency '{}' at '{}': {}",
+                dep.name, dep.original_path, e
+            )
+        })?
     };
 
     if !abs_path.exists() {
         return Err(format!(
             "path dependency '{}' points to '{}' which does not exist",
-            dep.name, abs_path.display()
+            dep.name,
+            abs_path.display()
         ));
     }
 
@@ -47,7 +56,8 @@ pub fn resolve_path_dep(
     if !pkg_toml.exists() {
         return Err(format!(
             "path dependency '{}' at '{}' has no package.toml",
-            dep.name, abs_path.display()
+            dep.name,
+            abs_path.display()
         ));
     }
 
@@ -59,13 +69,10 @@ pub fn resolve_path_dep(
 
 /// Check that path dependencies are not included in a publishable package.
 /// Path deps are local-only and cannot be resolved by other users.
-pub fn check_no_path_deps_in_publish(
-    deps: &[(String, toml::Value)],
-) -> Result<(), Vec<String>> {
-    let path_deps: Vec<String> = deps.iter()
-        .filter_map(|(name, val)| {
-            parse_path_dep(name, val).map(|_| name.clone())
-        })
+pub fn check_no_path_deps_in_publish(deps: &[(String, toml::Value)]) -> Result<(), Vec<String>> {
+    let path_deps: Vec<String> = deps
+        .iter()
+        .filter_map(|(name, val)| parse_path_dep(name, val).map(|_| name.clone()))
         .collect();
 
     if path_deps.is_empty() {
@@ -76,27 +83,25 @@ pub fn check_no_path_deps_in_publish(
 }
 
 /// Extract all path dependencies from a forge.toml dependencies table
-pub fn extract_path_deps(
-    deps: &toml::value::Table,
-) -> Vec<PathDependency> {
+pub fn extract_path_deps(deps: &toml::value::Table) -> Vec<PathDependency> {
     deps.iter()
         .filter_map(|(name, val)| parse_path_dep(name, val))
         .collect()
 }
 
 /// Extract all non-path (registry) dependencies from a forge.toml dependencies table
-pub fn extract_registry_deps(
-    deps: &toml::value::Table,
-) -> Vec<(String, String)> {
+pub fn extract_registry_deps(deps: &toml::value::Table) -> Vec<(String, String)> {
     deps.iter()
         .filter_map(|(name, val)| {
             if val.is_str() {
                 Some((name.clone(), val.as_str().unwrap().to_string()))
             } else if let Some(table) = val.as_table() {
                 if table.contains_key("path") {
-                    None  // Skip path deps
+                    None // Skip path deps
                 } else {
-                    table.get("version").and_then(|v| v.as_str())
+                    table
+                        .get("version")
+                        .and_then(|v| v.as_str())
                         .map(|v| (name.clone(), v.to_string()))
                 }
             } else {

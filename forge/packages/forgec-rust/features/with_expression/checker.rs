@@ -9,7 +9,8 @@ use super::types::WithData;
 impl TypeChecker {
     /// Type-check a `with` expression via the Feature dispatch system.
     pub(crate) fn check_with_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, WithData, |data| self.check_with(&data.base, &data.updates))
+        feature_check!(self, fe, WithData, |data| self
+            .check_with(&data.base, &data.updates))
     }
 
     /// Type-check a `with` expression: `expr with { field: value }`.

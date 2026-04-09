@@ -6,7 +6,10 @@ use crate::typeck::env::TypeEnv;
 use crate::typeck::types::{AnnotationArg, FieldAnnotation, Type};
 
 impl TypeChecker {
-    pub(crate) fn extract_type_annotations(&mut self, type_expr: &TypeExpr) -> Vec<(String, Vec<FieldAnnotation>)> {
+    pub(crate) fn extract_type_annotations(
+        &mut self,
+        type_expr: &TypeExpr,
+    ) -> Vec<(String, Vec<FieldAnnotation>)> {
         /// Known core field annotations and what types they accept
         const CORE_ANNOTATIONS: &[(&str, &[&str])] = &[
             ("min", &["string", "int", "float"]),
@@ -21,7 +24,9 @@ impl TypeChecker {
             TypeExpr::Struct { fields } => {
                 let mut result = Vec::new();
                 for field in fields {
-                    if field.annotations.is_empty() { continue; }
+                    if field.annotations.is_empty() {
+                        continue;
+                    }
                     let field_name = &field.name;
                     let anns = &field.annotations;
 
@@ -69,12 +74,15 @@ impl TypeChecker {
                                 name == ann_name && (target == "field" || target == "type")
                             })
                         } else {
-                            const FALLBACK_PACKAGE_ANNOTATIONS: &[&str] = &["primary", "auto_increment", "unique", "hidden", "owner"];
+                            const FALLBACK_PACKAGE_ANNOTATIONS: &[&str] =
+                                &["primary", "auto_increment", "unique", "hidden", "owner"];
                             FALLBACK_PACKAGE_ANNOTATIONS.contains(&ann_name)
                         };
                         if is_package_ann {
                             // Find the component name for a better error message
-                            let component_name = self.package_annotations.iter()
+                            let component_name = self
+                                .package_annotations
+                                .iter()
                                 .find(|(name, _, _)| name == ann_name)
                                 .map(|(_, _, comp)| comp.as_str())
                                 .unwrap_or("component");
@@ -91,17 +99,25 @@ impl TypeChecker {
                         // ── Unknown annotation (F0072) ──
                         let entry = CORE_ANNOTATIONS.iter().find(|(name, _)| *name == ann_name);
                         if entry.is_none() {
-                            let core_names: Vec<&str> = CORE_ANNOTATIONS.iter().map(|(n, _)| *n).collect();
-                            let available = core_names.iter().map(|n| format!("@{}", n)).collect::<Vec<_>>().join(", ");
+                            let core_names: Vec<&str> =
+                                CORE_ANNOTATIONS.iter().map(|(n, _)| *n).collect();
+                            let available = core_names
+                                .iter()
+                                .map(|n| format!("@{}", n))
+                                .collect::<Vec<_>>()
+                                .join(", ");
                             let mut diag = Diagnostic::error(
                                 "F0072",
                                 format!("@{} is not a valid field annotation", ann_name),
                                 ann.span,
                             );
-                            if let Some(suggestion) = crate::errors::suggestions::did_you_mean(ann_name, &core_names, 2) {
+                            if let Some(suggestion) =
+                                crate::errors::suggestions::did_you_mean(ann_name, &core_names, 2)
+                            {
                                 diag = diag.with_help(format!("did you mean @{}?", suggestion));
                             } else {
-                                diag = diag.with_help(format!("available annotations: {}", available));
+                                diag =
+                                    diag.with_help(format!("available annotations: {}", available));
                             }
                             self.diagnostics.push(diag);
                             continue;
@@ -113,9 +129,14 @@ impl TypeChecker {
                             let args_str = Self::format_annotation_args(&ann.args);
                             self.diagnostics.push(Diagnostic::error(
                                 "F0080",
-                                format!("@{}({}) requires {}, got {} on field '{}'",
-                                    ann_name, args_str,
-                                    allowed_types.join(" or "), type_str, field_name),
+                                format!(
+                                    "@{}({}) requires {}, got {} on field '{}'",
+                                    ann_name,
+                                    args_str,
+                                    allowed_types.join(" or "),
+                                    type_str,
+                                    field_name
+                                ),
                                 ann.span,
                             ));
                             continue;
@@ -139,16 +160,21 @@ impl TypeChecker {
                                 if ann.args.is_empty() {
                                     self.diagnostics.push(Diagnostic::error(
                                         "F0080",
-                                        format!("@{} requires an argument — e.g. @{}({})",
-                                            ann_name, ann_name,
-                                            if type_str == "string" { "1" } else { "0" }),
+                                        format!(
+                                            "@{} requires an argument — e.g. @{}({})",
+                                            ann_name,
+                                            ann_name,
+                                            if type_str == "string" { "1" } else { "0" }
+                                        ),
                                         ann.span,
                                     ));
                                 } else if !matches!(ann.args.first(), Some(Expr::IntLit(..))) {
                                     self.diagnostics.push(Diagnostic::error(
                                         "F0080",
-                                        format!("@{} expects an integer argument — e.g. @{}(1)",
-                                            ann_name, ann_name),
+                                        format!(
+                                            "@{} expects an integer argument — e.g. @{}(1)",
+                                            ann_name, ann_name
+                                        ),
                                         ann.span,
                                     ));
                                 } else if let Some(Expr::IntLit(n, _)) = ann.args.first() {
@@ -213,8 +239,16 @@ impl TypeChecker {
                                 } else if ann.args.is_empty() {
                                     self.diagnostics.push(Diagnostic::error(
                                         "F0080",
-                                        format!("@default requires a value — e.g. @default(\"{}\")",
-                                            match type_str { "string" => "value", "int" => "0", "float" => "0.0", "bool" => "true", _ => "..." }),
+                                        format!(
+                                            "@default requires a value — e.g. @default(\"{}\")",
+                                            match type_str {
+                                                "string" => "value",
+                                                "int" => "0",
+                                                "float" => "0.0",
+                                                "bool" => "true",
+                                                _ => "...",
+                                            }
+                                        ),
                                         ann.span,
                                     ));
                                 } else {
@@ -268,21 +302,33 @@ impl TypeChecker {
             }
             TypeExpr::Named(name) => {
                 // Look up annotations from a referenced type
-                self.env.type_annotations.get(name).cloned().unwrap_or_default()
+                self.env
+                    .type_annotations
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_default()
             }
-            TypeExpr::Without { base, fields: removed } => {
+            TypeExpr::Without {
+                base,
+                fields: removed,
+            } => {
                 let base_anns = self.extract_type_annotations(base);
-                base_anns.into_iter()
+                base_anns
+                    .into_iter()
                     .filter(|(name, _)| !removed.contains(name))
                     .collect()
             }
             TypeExpr::Only { base, fields: kept } => {
                 let base_anns = self.extract_type_annotations(base);
-                base_anns.into_iter()
+                base_anns
+                    .into_iter()
                     .filter(|(name, _)| kept.contains(name))
                     .collect()
             }
-            TypeExpr::TypeWith { base, fields: new_fields } => {
+            TypeExpr::TypeWith {
+                base,
+                fields: new_fields,
+            } => {
                 let mut result = self.extract_type_annotations(base);
                 // Add/override annotations from new fields
                 for f in new_fields {
@@ -320,28 +366,38 @@ impl TypeChecker {
 
     /// Format annotation args for error messages
     fn format_annotation_args(args: &[Expr]) -> String {
-        args.iter().map(|a| match a {
-            Expr::Ident(name, _) => name.clone(),
-            Expr::StringLit(s, _) => format!("\"{}\"", s),
-            Expr::IntLit(n, _) => n.to_string(),
-            Expr::FloatLit(f, _) => f.to_string(),
-            Expr::BoolLit(b, _) => b.to_string(),
-            _ => "...".to_string(),
-        }).collect::<Vec<_>>().join(", ")
+        args.iter()
+            .map(|a| match a {
+                Expr::Ident(name, _) => name.clone(),
+                Expr::StringLit(s, _) => format!("\"{}\"", s),
+                Expr::IntLit(n, _) => n.to_string(),
+                Expr::FloatLit(f, _) => f.to_string(),
+                Expr::BoolLit(b, _) => b.to_string(),
+                _ => "...".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     fn format_field_annotation_args(args: &[AnnotationArg]) -> String {
-        args.iter().map(|a| match a {
-            AnnotationArg::Int(n) => n.to_string(),
-            AnnotationArg::Float(f) => f.to_string(),
-            AnnotationArg::String(s) => format!("\"{}\"", s),
-            AnnotationArg::Bool(b) => b.to_string(),
-            AnnotationArg::Ident(s) => s.clone(),
-            AnnotationArg::Expr(_) => "...".to_string(),
-        }).collect::<Vec<_>>().join(", ")
+        args.iter()
+            .map(|a| match a {
+                AnnotationArg::Int(n) => n.to_string(),
+                AnnotationArg::Float(f) => f.to_string(),
+                AnnotationArg::String(s) => format!("\"{}\"", s),
+                AnnotationArg::Bool(b) => b.to_string(),
+                AnnotationArg::Ident(s) => s.clone(),
+                AnnotationArg::Expr(_) => "...".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
-    pub(crate) fn check_intersection_annotation_conflicts(&mut self, type_expr: &TypeExpr, span: Span) {
+    pub(crate) fn check_intersection_annotation_conflicts(
+        &mut self,
+        type_expr: &TypeExpr,
+        span: Span,
+    ) {
         if let TypeExpr::Intersection(left, right) = type_expr {
             // Recursively check nested intersections
             self.check_intersection_annotation_conflicts(left, span);
@@ -351,14 +407,18 @@ impl TypeChecker {
             let right_anns = self.extract_type_annotations(right);
 
             for (field_name, right_field_anns) in &right_anns {
-                if let Some((_, left_field_anns)) = left_anns.iter().find(|(n, _)| n == field_name) {
+                if let Some((_, left_field_anns)) = left_anns.iter().find(|(n, _)| n == field_name)
+                {
                     // Both sides have annotations for this field — check for conflicts
                     for right_ann in right_field_anns {
-                        if let Some(left_ann) = left_field_anns.iter().find(|a| a.name == right_ann.name) {
+                        if let Some(left_ann) =
+                            left_field_anns.iter().find(|a| a.name == right_ann.name)
+                        {
                             // Same annotation name on same field — check if values differ
                             if left_ann.args != right_ann.args {
                                 let left_args = Self::format_field_annotation_args(&left_ann.args);
-                                let right_args = Self::format_field_annotation_args(&right_ann.args);
+                                let right_args =
+                                    Self::format_field_annotation_args(&right_ann.args);
                                 self.diagnostics.push(Diagnostic::error(
                                     "F0081",
                                     format!(

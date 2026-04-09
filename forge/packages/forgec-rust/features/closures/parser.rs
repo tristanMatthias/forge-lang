@@ -22,7 +22,9 @@ impl Parser {
                         // Check if followed by -> or {
                         let mut next = i + 1;
                         // Skip newlines
-                        while next < self.tokens.len() && self.tokens[next].kind == TokenKind::Newline {
+                        while next < self.tokens.len()
+                            && self.tokens[next].kind == TokenKind::Newline
+                        {
                             next += 1;
                         }
                         if next < self.tokens.len() {
@@ -34,12 +36,27 @@ impl Parser {
                 // Binary/comparison operators at depth 1 mean this is a grouped
                 // expression, not closure params. Closures have: ident, colon,
                 // type names, commas — never binary operators.
-                TokenKind::EqEq | TokenKind::NotEq | TokenKind::Lt | TokenKind::LtEq
-                | TokenKind::Gt | TokenKind::GtEq | TokenKind::And | TokenKind::Or
-                | TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash
-                | TokenKind::Percent | TokenKind::Pipe | TokenKind::Bar
-                | TokenKind::Ampersand | TokenKind::Caret
-                    if depth == 1 => return false,
+                TokenKind::EqEq
+                | TokenKind::NotEq
+                | TokenKind::Lt
+                | TokenKind::LtEq
+                | TokenKind::Gt
+                | TokenKind::GtEq
+                | TokenKind::And
+                | TokenKind::Or
+                | TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Star
+                | TokenKind::Slash
+                | TokenKind::Percent
+                | TokenKind::Pipe
+                | TokenKind::Bar
+                | TokenKind::Ampersand
+                | TokenKind::Caret
+                    if depth == 1 =>
+                {
+                    return false
+                }
                 _ => {}
             }
             i += 1;

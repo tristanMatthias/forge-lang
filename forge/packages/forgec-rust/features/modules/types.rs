@@ -18,15 +18,9 @@ pub enum ExportedSymbol {
         decl: ComponentBlockDecl,
     },
     /// An exported type declaration (struct or type alias)
-    TypeDecl {
-        name: String,
-        stmt: Statement,
-    },
+    TypeDecl { name: String, stmt: Statement },
     /// An exported enum declaration
-    EnumDecl {
-        name: String,
-        stmt: Statement,
-    },
+    EnumDecl { name: String, stmt: Statement },
 }
 
 /// Information about an import that needs to be injected into codegen

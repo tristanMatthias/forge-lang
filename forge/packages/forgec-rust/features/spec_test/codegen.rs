@@ -5,20 +5,12 @@ use crate::parser::ast::*;
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile a spec block: calls forge_test_start_spec, compiles body, calls forge_test_end_spec
-    pub(crate) fn compile_spec_block(
-        &mut self,
-        name: &str,
-        body: &Block,
-    ) {
+    pub(crate) fn compile_spec_block(&mut self, name: &str, body: &Block) {
         self.compile_test_section("spec", name, body, false);
     }
 
     /// Compile a given block: calls forge_test_start_given, compiles body, calls forge_test_end_given
-    pub(crate) fn compile_given_block(
-        &mut self,
-        name: &str,
-        body: &Block,
-    ) {
+    pub(crate) fn compile_given_block(&mut self, name: &str, body: &Block) {
         self.compile_test_section("given", name, body, true);
     }
 
@@ -28,14 +20,20 @@ impl<'ctx> Codegen<'ctx> {
         let end_fn = format!("forge_test_end_{}", kind);
         let name_ptr = self.build_test_cstr(name);
         self.call_runtime_expect(
-            &start_fn, &[name_ptr.into()], "",
+            &start_fn,
+            &[name_ptr.into()],
+            "",
             &format!("{} not declared - did you `use @std.test`?", start_fn),
         );
-        if scoped { self.push_scope(); }
+        if scoped {
+            self.push_scope();
+        }
         for stmt in &body.statements {
             self.compile_statement(stmt);
         }
-        if scoped { self.pop_scope(); }
+        if scoped {
+            self.pop_scope();
+        }
         self.call_runtime_void(&end_fn, &[]);
     }
 
@@ -84,15 +82,19 @@ impl<'ctx> Codegen<'ctx> {
         let result = self.compile_then_body(body);
 
         // Invert: if result is 0 (false/error), did_error = 1 (pass)
-        let did_error = self.builder.build_int_compare(
-            inkwell::IntPredicate::EQ,
-            result,
-            self.context.i8_type().const_zero(),
-            "did_error",
-        ).unwrap();
-        let did_error_i8 = self.builder.build_int_z_extend(
-            did_error, self.context.i8_type(), "did_error_i8"
-        ).unwrap();
+        let did_error = self
+            .builder
+            .build_int_compare(
+                inkwell::IntPredicate::EQ,
+                result,
+                self.context.i8_type().const_zero(),
+                "did_error",
+            )
+            .unwrap();
+        let did_error_i8 = self
+            .builder
+            .build_int_z_extend(did_error, self.context.i8_type(), "did_error_i8")
+            .unwrap();
 
         let name_ptr = self.build_test_cstr(name);
         let empty_ptr = self.build_test_cstr("");
@@ -102,7 +104,14 @@ impl<'ctx> Codegen<'ctx> {
 
         self.call_runtime_expect(
             "forge_test_run_then_should_fail",
-            &[name_ptr.into(), did_error_i8.into(), empty_ptr.into(), expected_ptr.into(), file_ptr.into(), line_val.into()],
+            &[
+                name_ptr.into(),
+                did_error_i8.into(),
+                empty_ptr.into(),
+                expected_ptr.into(),
+                file_ptr.into(),
+                line_val.into(),
+            ],
             "",
             "forge_test_run_then_should_fail not declared - did you `use @std.test`?",
         );
@@ -120,7 +129,9 @@ impl<'ctx> Codegen<'ctx> {
         // Table literal is Feature("table_literal")
         let (columns, rows) = if let Expr::Feature(fe) = table {
             if fe.feature_id == "table_literal" {
-                if let Some(data) = crate::feature_data!(fe, crate::features::table_literal::types::TableLitData) {
+                if let Some(data) =
+                    crate::feature_data!(fe, crate::features::table_literal::types::TableLitData)
+                {
                     (data.columns.as_slice(), data.rows.as_slice())
                 } else {
                     return;
@@ -132,34 +143,36 @@ impl<'ctx> Codegen<'ctx> {
             return;
         };
         for (row_idx, row) in rows.iter().enumerate() {
-                self.push_scope();
+            self.push_scope();
 
-                // Build descriptive test name: "name (col1=val1, col2=val2)"
-                let row_desc = columns.iter().zip(row.iter())
-                    .map(|(col, val)| format!("{}: {}", col, expr_preview(val)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let test_name = format!("{} ({}) [{}]", name, row_desc, row_idx + 1);
+            // Build descriptive test name: "name (col1=val1, col2=val2)"
+            let row_desc = columns
+                .iter()
+                .zip(row.iter())
+                .map(|(col, val)| format!("{}: {}", col, expr_preview(val)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let test_name = format!("{} ({}) [{}]", name, row_desc, row_idx + 1);
 
-                // Bind each column value as a local variable
-                for (col_idx, col_name) in columns.iter().enumerate() {
-                    if col_idx < row.len() {
-                        let val = self.compile_expr(&row[col_idx]);
-                        if let Some(val) = val {
-                            let ty = self.infer_type(&row[col_idx]);
-                            let alloca = self.create_entry_block_alloca(&ty, col_name);
-                            self.builder.build_store(alloca, val).unwrap();
-                            self.define_var(col_name.clone(), alloca, ty);
-                        }
+            // Bind each column value as a local variable
+            for (col_idx, col_name) in columns.iter().enumerate() {
+                if col_idx < row.len() {
+                    let val = self.compile_expr(&row[col_idx]);
+                    if let Some(val) = val {
+                        let ty = self.infer_type(&row[col_idx]);
+                        let alloca = self.create_entry_block_alloca(&ty, col_name);
+                        self.builder.build_store(alloca, val).unwrap();
+                        self.define_var(col_name.clone(), alloca, ty);
                     }
                 }
-
-                // Compile assertion body
-                let result = self.compile_then_body(body);
-                self.emit_test_run_then(&test_name, result, span);
-
-                self.pop_scope();
             }
+
+            // Compile assertion body
+            let result = self.compile_then_body(body);
+            self.emit_test_run_then(&test_name, result, span);
+
+            self.pop_scope();
+        }
     }
 
     /// Compile a skip statement: calls forge_test_skip(name)
@@ -176,7 +189,9 @@ impl<'ctx> Codegen<'ctx> {
     fn emit_test_call(&mut self, fn_name: &str, name: &str) {
         let name_ptr = self.build_test_cstr(name);
         self.call_runtime_expect(
-            fn_name, &[name_ptr.into()], "",
+            fn_name,
+            &[name_ptr.into()],
+            "",
             &format!("{} not declared - did you `use @std.test`?", fn_name),
         );
     }
@@ -217,14 +232,24 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Helper: emit forge_test_run_then(name, result, file, line).
-    fn emit_test_run_then(&mut self, name: &str, result: inkwell::values::IntValue<'ctx>, span: &crate::lexer::Span) {
+    fn emit_test_run_then(
+        &mut self,
+        name: &str,
+        result: inkwell::values::IntValue<'ctx>,
+        span: &crate::lexer::Span,
+    ) {
         let name_ptr = self.build_test_cstr(name);
         let file_ptr = self.build_test_cstr(&self.source_file.clone());
         let line_val = self.context.i64_type().const_int(span.line as u64, false);
 
         self.call_runtime_expect(
             "forge_test_run_then",
-            &[name_ptr.into(), result.into(), file_ptr.into(), line_val.into()],
+            &[
+                name_ptr.into(),
+                result.into(),
+                file_ptr.into(),
+                line_val.into(),
+            ],
             "",
             "forge_test_run_then not declared - did you `use @std.test`?",
         );

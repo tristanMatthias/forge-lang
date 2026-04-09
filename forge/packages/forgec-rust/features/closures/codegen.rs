@@ -1,11 +1,11 @@
+use crate::codegen::codegen::Codegen;
+use crate::feature::FeatureExpr;
+use crate::parser::ast::*;
+use crate::typeck::types::Type;
+use crate::{feature_codegen, feature_data};
 use inkwell::types::BasicMetadataTypeEnum;
 use inkwell::values::BasicValueEnum;
 use std::collections::{HashMap, HashSet};
-use crate::codegen::codegen::Codegen;
-use crate::feature::FeatureExpr;
-use crate::{feature_codegen, feature_data};
-use crate::parser::ast::*;
-use crate::typeck::types::Type;
 
 use super::types::ClosureData;
 
@@ -13,7 +13,9 @@ use super::types::ClosureData;
 /// aren't bound by the expression itself).
 fn collect_free_vars(expr: &Expr, free: &mut HashSet<String>) {
     match expr {
-        Expr::Ident(name, _) => { free.insert(name.clone()); }
+        Expr::Ident(name, _) => {
+            free.insert(name.clone());
+        }
         Expr::Binary { left, right, .. } => {
             collect_free_vars(left, free);
             collect_free_vars(right, free);
@@ -21,7 +23,9 @@ fn collect_free_vars(expr: &Expr, free: &mut HashSet<String>) {
         Expr::Unary { operand, .. } => collect_free_vars(operand, free),
         Expr::Call { callee, args, .. } => {
             collect_free_vars(callee, free);
-            for arg in args { collect_free_vars(&arg.value, free); }
+            for arg in args {
+                collect_free_vars(&arg.value, free);
+            }
         }
         Expr::MemberAccess { object, .. } => collect_free_vars(object, free),
         Expr::Index { object, index, .. } => {
@@ -35,7 +39,9 @@ fn collect_free_vars(expr: &Expr, free: &mut HashSet<String>) {
         }
         Expr::TemplateLit { parts, .. } => {
             for part in parts {
-                if let TemplatePart::Expr(e) = part { collect_free_vars(e, free); }
+                if let TemplatePart::Expr(e) = part {
+                    collect_free_vars(e, free);
+                }
             }
         }
         Expr::Feature(fe) => {
@@ -45,26 +51,41 @@ fn collect_free_vars(expr: &Expr, free: &mut HashSet<String>) {
             }
             if let Some(data) = feature_data!(fe, crate::features::if_else::types::IfData) {
                 collect_free_vars(&data.condition, free);
-                for stmt in &data.then_branch.statements { collect_free_vars_stmt(stmt, free); }
+                for stmt in &data.then_branch.statements {
+                    collect_free_vars_stmt(stmt, free);
+                }
                 if let Some(eb) = &data.else_branch {
-                    for stmt in &eb.statements { collect_free_vars_stmt(stmt, free); }
+                    for stmt in &eb.statements {
+                        collect_free_vars_stmt(stmt, free);
+                    }
                 }
             }
-            if let Some(data) = feature_data!(fe, crate::features::pattern_matching::types::MatchData) {
+            if let Some(data) =
+                feature_data!(fe, crate::features::pattern_matching::types::MatchData)
+            {
                 collect_free_vars(&data.subject, free);
                 for arm in &data.arms {
                     collect_free_vars(&arm.body, free);
-                    if let Some(g) = &arm.guard { collect_free_vars(g, free); }
+                    if let Some(g) = &arm.guard {
+                        collect_free_vars(g, free);
+                    }
                 }
             }
             if let Some(data) = feature_data!(fe, crate::features::structs::types::StructLitData) {
-                for (_, e) in &data.fields { collect_free_vars(e, free); }
+                for (_, e) in &data.fields {
+                    collect_free_vars(e, free);
+                }
             }
-            if let Some(data) = feature_data!(fe, crate::features::collections::types::ListLitData) {
-                for e in &data.elements { collect_free_vars(e, free); }
+            if let Some(data) = feature_data!(fe, crate::features::collections::types::ListLitData)
+            {
+                for e in &data.elements {
+                    collect_free_vars(e, free);
+                }
             }
             if let Some(data) = feature_data!(fe, crate::features::tuples::types::TupleLitData) {
-                for e in &data.elements { collect_free_vars(e, free); }
+                for e in &data.elements {
+                    collect_free_vars(e, free);
+                }
             }
         }
         _ => {}
@@ -75,7 +96,9 @@ fn collect_free_vars_stmt(stmt: &Statement, free: &mut HashSet<String>) {
     match stmt {
         Statement::Expr(e) => collect_free_vars(e, free),
         Statement::Return { value, .. } => {
-            if let Some(v) = value { collect_free_vars(v, free); }
+            if let Some(v) = value {
+                collect_free_vars(v, free);
+            }
         }
         _ => {}
     }
@@ -126,10 +149,15 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Extract closure params and body from a Feature("closures") expression.
-    fn extract_closure_parts(expr: &crate::parser::ast::Expr) -> Option<(&[crate::parser::ast::Param], &crate::parser::ast::Expr)> {
+    fn extract_closure_parts(
+        expr: &crate::parser::ast::Expr,
+    ) -> Option<(&[crate::parser::ast::Param], &crate::parser::ast::Expr)> {
         match expr {
             crate::parser::ast::Expr::Feature(fe) if fe.feature_id == "closures" => {
-                let data = fe.data.as_any().downcast_ref::<crate::features::closures::types::ClosureData>()?;
+                let data = fe
+                    .data
+                    .as_any()
+                    .downcast_ref::<crate::features::closures::types::ClosureData>()?;
                 Some((data.params.as_slice(), data.body.as_ref()))
             }
             _ => None,
@@ -141,7 +169,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, ClosureData, |data| self.compile_closure(&data.params, &data.body))
+        feature_codegen!(self, fe, ClosureData, |data| self
+            .compile_closure(&data.params, &data.body))
     }
 
     /// Compile a closure expression into an anonymous function, returning a function pointer.
@@ -180,7 +209,10 @@ impl<'ctx> Codegen<'ctx> {
         for var_name in &free_vars {
             if let Some((ptr, ty)) = self.lookup_var(var_name) {
                 let llvm_ty = self.type_to_llvm_basic(&ty);
-                let val = self.builder.build_load(llvm_ty, ptr, &format!("cap_{}", var_name)).unwrap();
+                let val = self
+                    .builder
+                    .build_load(llvm_ty, ptr, &format!("cap_{}", var_name))
+                    .unwrap();
                 captured.push((var_name.clone(), val, ty));
             }
         }
@@ -195,7 +227,9 @@ impl<'ctx> Codegen<'ctx> {
                 global.set_initializer(&llvm_ty.const_zero());
             }
             let global = self.module.get_global(&global_name).unwrap();
-            self.builder.build_store(global.as_pointer_value(), *val).unwrap();
+            self.builder
+                .build_store(global.as_pointer_value(), *val)
+                .unwrap();
         }
 
         let llvm_param_types: Vec<BasicMetadataTypeEnum<'ctx>> = param_types
@@ -219,10 +253,14 @@ impl<'ctx> Codegen<'ctx> {
                 inkwell::types::BasicTypeEnum::IntType(t) => t.fn_type(&llvm_param_types, false),
                 inkwell::types::BasicTypeEnum::FloatType(t) => t.fn_type(&llvm_param_types, false),
                 inkwell::types::BasicTypeEnum::StructType(t) => t.fn_type(&llvm_param_types, false),
-                inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&llvm_param_types, false),
+                inkwell::types::BasicTypeEnum::PointerType(t) => {
+                    t.fn_type(&llvm_param_types, false)
+                }
                 inkwell::types::BasicTypeEnum::ArrayType(t) => t.fn_type(&llvm_param_types, false),
                 inkwell::types::BasicTypeEnum::VectorType(t) => t.fn_type(&llvm_param_types, false),
-                inkwell::types::BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
+                inkwell::types::BasicTypeEnum::ScalableVectorType(_) => {
+                    panic!("unsupported type: scalable vector")
+                }
             }
         };
         let function = self.module.add_function(&closure_name, fn_type, None);
@@ -241,7 +279,14 @@ impl<'ctx> Codegen<'ctx> {
             let global_name = format!("__capture_{}_{}", closure_name, name);
             let llvm_ty = self.type_to_llvm_basic(ty);
             let global = self.module.get_global(&global_name).unwrap();
-            let loaded = self.builder.build_load(llvm_ty, global.as_pointer_value(), &format!("load_{}", name)).unwrap();
+            let loaded = self
+                .builder
+                .build_load(
+                    llvm_ty,
+                    global.as_pointer_value(),
+                    &format!("load_{}", name),
+                )
+                .unwrap();
             let alloca = self.create_entry_block_alloca(ty, name);
             self.builder.build_store(alloca, loaded).unwrap();
             self.define_var(name.clone(), alloca, ty.clone());
@@ -259,7 +304,9 @@ impl<'ctx> Codegen<'ctx> {
         if let Some(val) = ret_val {
             self.builder.build_return(Some(&val)).unwrap();
         } else {
-            self.builder.build_return(Some(&self.context.i64_type().const_zero())).unwrap();
+            self.builder
+                .build_return(Some(&self.context.i64_type().const_zero()))
+                .unwrap();
         }
         self.pop_scope();
 
@@ -294,7 +341,9 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             Expr::Feature(fe) if fe.feature_id == "if_else" => {
-                if let Some(data) = crate::feature_data!(fe, crate::features::if_else::types::IfData) {
+                if let Some(data) =
+                    crate::feature_data!(fe, crate::features::if_else::types::IfData)
+                {
                     if let Some(Statement::Expr(last)) = data.then_branch.statements.last() {
                         self.infer_closure_body_type(last, params)
                     } else {
@@ -304,19 +353,35 @@ impl<'ctx> Codegen<'ctx> {
                     Type::Void
                 }
             }
-            Expr::Binary { op, left, .. } => {
-                match op {
-                    BinaryOp::Eq | BinaryOp::NotEq | BinaryOp::Lt | BinaryOp::LtEq |
-                    BinaryOp::Gt | BinaryOp::GtEq | BinaryOp::And | BinaryOp::Or => Type::Bool,
-                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod |
-                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
-                        let lt = self.infer_closure_body_type(left, params);
-                        if lt == Type::Float { Type::Float }
-                        else if lt == Type::String { Type::String }
-                        else { Type::Int }
+            Expr::Binary { op, left, .. } => match op {
+                BinaryOp::Eq
+                | BinaryOp::NotEq
+                | BinaryOp::Lt
+                | BinaryOp::LtEq
+                | BinaryOp::Gt
+                | BinaryOp::GtEq
+                | BinaryOp::And
+                | BinaryOp::Or => Type::Bool,
+                BinaryOp::Add
+                | BinaryOp::Sub
+                | BinaryOp::Mul
+                | BinaryOp::Div
+                | BinaryOp::Mod
+                | BinaryOp::BitAnd
+                | BinaryOp::BitOr
+                | BinaryOp::BitXor
+                | BinaryOp::Shl
+                | BinaryOp::Shr => {
+                    let lt = self.infer_closure_body_type(left, params);
+                    if lt == Type::Float {
+                        Type::Float
+                    } else if lt == Type::String {
+                        Type::String
+                    } else {
+                        Type::Int
                     }
                 }
-            }
+            },
             Expr::Call { callee, .. } => {
                 if let Expr::Ident(name, _) = callee.as_ref() {
                     if let Some(def) = crate::registry::BuiltinFnRegistry::get(name) {
@@ -333,7 +398,11 @@ impl<'ctx> Codegen<'ctx> {
             // For anything else, fall back to infer_type (which may return Unknown → Int)
             _ => {
                 let ty = self.infer_type(body);
-                if ty == Type::Unknown { Type::Int } else { ty }
+                if ty == Type::Unknown {
+                    Type::Int
+                } else {
+                    ty
+                }
             }
         }
     }

@@ -1,5 +1,5 @@
-pub mod codegen;
 pub mod checker;
+pub mod codegen;
 
 crate::forge_feature! {
     name: "Pointer Operations",

@@ -9,7 +9,8 @@ use super::types::MatchData;
 impl TypeChecker {
     /// Type-check a match expression via the Feature dispatch system.
     pub(crate) fn check_match_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, MatchData, |data| self.check_match(&data.subject, &data.arms))
+        feature_check!(self, fe, MatchData, |data| self
+            .check_match(&data.subject, &data.arms))
     }
 
     pub(crate) fn check_match(&mut self, subject: &Expr, arms: &[MatchArm]) -> Type {
@@ -50,7 +51,11 @@ impl TypeChecker {
                 }
             }
             Pattern::Struct { fields, .. } => {
-                if let Type::Struct { fields: type_fields, .. } = val_type {
+                if let Type::Struct {
+                    fields: type_fields,
+                    ..
+                } = val_type
+                {
                     for (field_name, pat) in fields {
                         if let Pattern::Ident(name, _) = pat {
                             let ty = type_fields
@@ -81,7 +86,8 @@ impl TypeChecker {
                     }
                 }
                 if let Some(rest_name) = rest {
-                    self.env.define(rest_name.clone(), Type::List(Box::new(elem_type)), false);
+                    self.env
+                        .define(rest_name.clone(), Type::List(Box::new(elem_type)), false);
                 }
             }
             Pattern::Ident(name, _) => {

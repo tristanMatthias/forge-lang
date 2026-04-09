@@ -15,7 +15,8 @@ impl Parser {
             self.skip_newlines();
 
             // Check for `is not` — "not" is lexed as Ident("not"), not TokenKind::Not (which is `!`)
-            let negated = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Ident(s)) if s == "not") {
+            let negated = if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Ident(s)) if s == "not")
+            {
                 self.advance();
                 self.skip_newlines();
                 true

@@ -3,9 +3,9 @@ use inkwell::IntPredicate;
 
 use crate::codegen::codegen::Codegen;
 use crate::feature::FeatureStmt;
-use crate::{feature_data, feature_stmt};
 use crate::parser::ast::*;
 use crate::typeck::types::Type;
+use crate::{feature_data, feature_stmt};
 
 use super::super::ranges::types::RangeData;
 use super::types::ForData;
@@ -38,14 +38,26 @@ impl<'ctx> Codegen<'ctx> {
         self.loop_continue_blocks.pop();
 
         // Branch to continue block if no terminator (break/continue already jumped)
-        if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-            self.builder.build_unconditional_branch(continue_bb).unwrap();
+        if self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
+            self.builder
+                .build_unconditional_branch(continue_bb)
+                .unwrap();
         }
     }
 
     /// Compile a for loop via the Feature dispatch system.
     pub(crate) fn compile_for_feature(&mut self, fe: &FeatureStmt) {
-        feature_stmt!(self, fe, ForData, |data| self.compile_for(&data.pattern, &data.iterable, &data.body));
+        feature_stmt!(self, fe, ForData, |data| self.compile_for(
+            &data.pattern,
+            &data.iterable,
+            &data.body
+        ));
     }
 
     pub(crate) fn compile_for(&mut self, pattern: &Pattern, iterable: &Expr, body: &Block) {
@@ -68,7 +80,9 @@ impl<'ctx> Codegen<'ctx> {
 
             // Alloca for index
             let idx_alloca = self.create_entry_block_alloca(&Type::Int, "__for_idx");
-            self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+            self.builder
+                .build_store(idx_alloca, self.context.i64_type().const_zero())
+                .unwrap();
 
             let loop_bb = self.context.append_basic_block(function, "for_loop");
             let body_bb = self.context.append_basic_block(function, "for_body");
@@ -78,15 +92,19 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.build_unconditional_branch(loop_bb).unwrap();
             self.builder.position_at_end(loop_bb);
 
-            let current_idx = self.builder
+            let current_idx = self
+                .builder
                 .build_load(self.context.i64_type(), idx_alloca, "idx")
                 .unwrap()
                 .into_int_value();
 
-            let cond = self.builder
+            let cond = self
+                .builder
                 .build_int_compare(IntPredicate::SLT, current_idx, list_len, "for_cond")
                 .unwrap();
-            self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
+            self.builder
+                .build_conditional_branch(cond, body_bb, end_bb)
+                .unwrap();
 
             self.builder.position_at_end(body_bb);
 
@@ -94,9 +112,14 @@ impl<'ctx> Codegen<'ctx> {
             let actual_elem_type = elem_type.as_ref();
             let elem_llvm_ty = self.type_to_llvm_basic(actual_elem_type);
             let elem_ptr = unsafe {
-                self.builder.build_gep(elem_llvm_ty, data_ptr, &[current_idx], "elem_ptr").unwrap()
+                self.builder
+                    .build_gep(elem_llvm_ty, data_ptr, &[current_idx], "elem_ptr")
+                    .unwrap()
             };
-            let elem_val = self.builder.build_load(elem_llvm_ty, elem_ptr, "elem").unwrap();
+            let elem_val = self
+                .builder
+                .build_load(elem_llvm_ty, elem_ptr, "elem")
+                .unwrap();
 
             // Bind pattern inside the loop body scope
             self.push_scope();
@@ -117,7 +140,8 @@ impl<'ctx> Codegen<'ctx> {
                             for (i, pat) in elems.iter().enumerate() {
                                 if let Pattern::Ident(name, _) = pat {
                                     let field_ty = tuple_types.get(i).cloned().unwrap_or(Type::Int);
-                                    let field_val = self.builder
+                                    let field_val = self
+                                        .builder
                                         .build_extract_value(tuple_val, i as u32, name)
                                         .unwrap();
                                     let alloca = self.create_entry_block_alloca(&field_ty, name);
@@ -139,7 +163,13 @@ impl<'ctx> Codegen<'ctx> {
             self.loop_exit_blocks.pop();
             self.loop_continue_blocks.pop();
 
-            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            if self
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+            {
                 self.builder.build_unconditional_branch(inc_bb).unwrap();
             }
 
@@ -153,9 +183,21 @@ impl<'ctx> Codegen<'ctx> {
             // Map iteration: for (k, v) in map
             let map_val = self.compile_expr(iterable).unwrap();
             let struct_val = map_val.into_struct_value();
-            let keys_ptr = self.builder.build_extract_value(struct_val, 0, "keys").unwrap().into_pointer_value();
-            let vals_ptr = self.builder.build_extract_value(struct_val, 1, "vals").unwrap().into_pointer_value();
-            let map_len = self.builder.build_extract_value(struct_val, 2, "len").unwrap().into_int_value();
+            let keys_ptr = self
+                .builder
+                .build_extract_value(struct_val, 0, "keys")
+                .unwrap()
+                .into_pointer_value();
+            let vals_ptr = self
+                .builder
+                .build_extract_value(struct_val, 1, "vals")
+                .unwrap()
+                .into_pointer_value();
+            let map_len = self
+                .builder
+                .build_extract_value(struct_val, 2, "len")
+                .unwrap()
+                .into_int_value();
 
             let key_llvm_ty = self.type_to_llvm_basic(key_type);
             let val_llvm_ty = self.type_to_llvm_basic(val_type);
@@ -164,7 +206,9 @@ impl<'ctx> Codegen<'ctx> {
 
             // Alloca for index
             let idx_alloca = self.create_entry_block_alloca(&Type::Int, "__map_for_idx");
-            self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+            self.builder
+                .build_store(idx_alloca, self.context.i64_type().const_zero())
+                .unwrap();
 
             let loop_bb = self.context.append_basic_block(function, "map_for_loop");
             let body_bb = self.context.append_basic_block(function, "map_for_body");
@@ -174,28 +218,42 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.build_unconditional_branch(loop_bb).unwrap();
             self.builder.position_at_end(loop_bb);
 
-            let current_idx = self.builder
+            let current_idx = self
+                .builder
                 .build_load(self.context.i64_type(), idx_alloca, "idx")
                 .unwrap()
                 .into_int_value();
 
-            let cond = self.builder
+            let cond = self
+                .builder
                 .build_int_compare(IntPredicate::SLT, current_idx, map_len, "map_for_cond")
                 .unwrap();
-            self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
+            self.builder
+                .build_conditional_branch(cond, body_bb, end_bb)
+                .unwrap();
 
             self.builder.position_at_end(body_bb);
 
             // Load current key and value
             let key_ptr = unsafe {
-                self.builder.build_gep(key_llvm_ty, keys_ptr, &[current_idx], "key_ptr").unwrap()
+                self.builder
+                    .build_gep(key_llvm_ty, keys_ptr, &[current_idx], "key_ptr")
+                    .unwrap()
             };
-            let key_val = self.builder.build_load(key_llvm_ty, key_ptr, "key").unwrap();
+            let key_val = self
+                .builder
+                .build_load(key_llvm_ty, key_ptr, "key")
+                .unwrap();
 
             let val_ptr = unsafe {
-                self.builder.build_gep(val_llvm_ty, vals_ptr, &[current_idx], "val_ptr").unwrap()
+                self.builder
+                    .build_gep(val_llvm_ty, vals_ptr, &[current_idx], "val_ptr")
+                    .unwrap()
             };
-            let val_val = self.builder.build_load(val_llvm_ty, val_ptr, "val").unwrap();
+            let val_val = self
+                .builder
+                .build_load(val_llvm_ty, val_ptr, "val")
+                .unwrap();
 
             // Bind pattern inside the loop body scope
             self.push_scope();
@@ -241,7 +299,13 @@ impl<'ctx> Codegen<'ctx> {
             self.loop_exit_blocks.pop();
             self.loop_continue_blocks.pop();
 
-            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            if self
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+            {
                 self.builder.build_unconditional_branch(inc_bb).unwrap();
             }
 
@@ -257,11 +321,15 @@ impl<'ctx> Codegen<'ctx> {
             let function = self.current_function();
 
             // Get string length
-            let str_len = self.call_runtime("forge_string_length", &[str_val.into()], "str_len")
-                .unwrap().into_int_value();
+            let str_len = self
+                .call_runtime("forge_string_length", &[str_val.into()], "str_len")
+                .unwrap()
+                .into_int_value();
 
             let idx_alloca = self.create_entry_block_alloca(&Type::Int, "__str_idx");
-            self.builder.build_store(idx_alloca, self.context.i64_type().const_zero()).unwrap();
+            self.builder
+                .build_store(idx_alloca, self.context.i64_type().const_zero())
+                .unwrap();
 
             let loop_bb = self.context.append_basic_block(function, "str_loop");
             let body_bb = self.context.append_basic_block(function, "str_body");
@@ -271,23 +339,29 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.build_unconditional_branch(loop_bb).unwrap();
             self.builder.position_at_end(loop_bb);
 
-            let current_idx = self.builder
+            let current_idx = self
+                .builder
                 .build_load(self.context.i64_type(), idx_alloca, "idx")
                 .unwrap()
                 .into_int_value();
-            let cond = self.builder
+            let cond = self
+                .builder
                 .build_int_compare(IntPredicate::SLT, current_idx, str_len, "str_cond")
                 .unwrap();
-            self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
+            self.builder
+                .build_conditional_branch(cond, body_bb, end_bb)
+                .unwrap();
 
             self.builder.position_at_end(body_bb);
 
             // Get character at index: forge_string_char_at(str, idx)
-            let char_val = self.call_runtime(
-                "forge_string_char_at",
-                &[str_val.into(), current_idx.into()],
-                "char_at",
-            ).unwrap();
+            let char_val = self
+                .call_runtime(
+                    "forge_string_char_at",
+                    &[str_val.into(), current_idx.into()],
+                    "char_at",
+                )
+                .unwrap();
 
             self.push_scope();
             self.loop_exit_blocks.push((end_bb, None));
@@ -307,7 +381,13 @@ impl<'ctx> Codegen<'ctx> {
             self.loop_exit_blocks.pop();
             self.loop_continue_blocks.pop();
 
-            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            if self
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+            {
                 self.builder.build_unconditional_branch(inc_bb).unwrap();
             }
 
@@ -334,23 +414,43 @@ impl<'ctx> Codegen<'ctx> {
             self.builder.position_at_end(loop_bb);
 
             // Call forge_channel_receive(id) -> ptr
-            let ch_id = self.builder.build_load(self.context.i64_type(), ch_id_alloca, "ch_id").unwrap();
-            let raw_ptr = self.call_runtime("forge_channel_receive", &[ch_id.into()], "recv_ptr")
-                .unwrap().into_pointer_value();
+            let ch_id = self
+                .builder
+                .build_load(self.context.i64_type(), ch_id_alloca, "ch_id")
+                .unwrap();
+            let raw_ptr = self
+                .call_runtime("forge_channel_receive", &[ch_id.into()], "recv_ptr")
+                .unwrap()
+                .into_pointer_value();
 
             // Check if result starts with \0 (sentinel for closed)
-            let first_byte = self.builder.build_load(self.context.i8_type(), raw_ptr, "first_byte")
-                .unwrap().into_int_value();
-            let is_sentinel = self.builder.build_int_compare(
-                IntPredicate::EQ, first_byte, self.context.i8_type().const_zero(), "is_closed"
-            ).unwrap();
-            self.builder.build_conditional_branch(is_sentinel, end_bb, body_bb).unwrap();
+            let first_byte = self
+                .builder
+                .build_load(self.context.i8_type(), raw_ptr, "first_byte")
+                .unwrap()
+                .into_int_value();
+            let is_sentinel = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    first_byte,
+                    self.context.i8_type().const_zero(),
+                    "is_closed",
+                )
+                .unwrap();
+            self.builder
+                .build_conditional_branch(is_sentinel, end_bb, body_bb)
+                .unwrap();
 
             self.builder.position_at_end(body_bb);
 
             // Convert raw ptr to ForgeString for the loop variable
-            let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
-            let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "msg_str").unwrap();
+            let len = self
+                .call_runtime("strlen", &[raw_ptr.into()], "slen")
+                .unwrap();
+            let forge_str = self
+                .call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "msg_str")
+                .unwrap();
 
             // Bind the pattern inside the scope
             self.push_scope();
@@ -373,7 +473,13 @@ impl<'ctx> Codegen<'ctx> {
             self.pop_scope();
             self.loop_exit_blocks.pop();
 
-            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            if self
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+            {
                 self.builder.build_unconditional_branch(loop_bb).unwrap();
             }
 
@@ -407,7 +513,9 @@ impl<'ctx> Codegen<'ctx> {
         // (e.g. if the condition involved function calls with internal branches).
         // Use the current insert block for the conditional branch.
         let cond_bool = self.to_i1(cond_val);
-        self.builder.build_conditional_branch(cond_bool, body_bb, end_bb).unwrap();
+        self.builder
+            .build_conditional_branch(cond_bool, body_bb, end_bb)
+            .unwrap();
 
         self.builder.position_at_end(body_bb);
         self.compile_loop_body(body, end_bb, cond_bb, None);
@@ -422,7 +530,10 @@ impl<'ctx> Codegen<'ctx> {
         let end_bb = self.context.append_basic_block(function, "loop_end");
 
         // Create alloca for break value
-        let break_alloca = self.builder.build_alloca(self.context.i64_type(), "loop_break_val").unwrap();
+        let break_alloca = self
+            .builder
+            .build_alloca(self.context.i64_type(), "loop_break_val")
+            .unwrap();
 
         self.builder.build_unconditional_branch(body_bb).unwrap();
         self.builder.position_at_end(body_bb);
@@ -462,22 +573,35 @@ impl<'ctx> Codegen<'ctx> {
         self.builder.build_unconditional_branch(loop_bb).unwrap();
         self.builder.position_at_end(loop_bb);
 
-        let current = self.builder
+        let current = self
+            .builder
             .build_load(self.context.i64_type(), alloca, "current")
             .unwrap()
             .into_int_value();
 
         let cond = if inclusive {
             self.builder
-                .build_int_compare(IntPredicate::SLE, current, end_val.into_int_value(), "for_cond")
+                .build_int_compare(
+                    IntPredicate::SLE,
+                    current,
+                    end_val.into_int_value(),
+                    "for_cond",
+                )
                 .unwrap()
         } else {
             self.builder
-                .build_int_compare(IntPredicate::SLT, current, end_val.into_int_value(), "for_cond")
+                .build_int_compare(
+                    IntPredicate::SLT,
+                    current,
+                    end_val.into_int_value(),
+                    "for_cond",
+                )
                 .unwrap()
         };
 
-        self.builder.build_conditional_branch(cond, body_bb, end_bb).unwrap();
+        self.builder
+            .build_conditional_branch(cond, body_bb, end_bb)
+            .unwrap();
 
         // Compile body: define loop var inside the body scope, then use compile_loop_body pattern
         self.builder.position_at_end(body_bb);
@@ -493,7 +617,13 @@ impl<'ctx> Codegen<'ctx> {
         self.loop_exit_blocks.pop();
         self.loop_continue_blocks.pop();
 
-        if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+        if self
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
             self.builder.build_unconditional_branch(inc_bb).unwrap();
         }
 
@@ -507,7 +637,9 @@ impl<'ctx> Codegen<'ctx> {
 
     pub(crate) fn compile_continue(&mut self) {
         if let Some(continue_bb) = self.loop_continue_blocks.last().copied() {
-            self.builder.build_unconditional_branch(continue_bb).unwrap();
+            self.builder
+                .build_unconditional_branch(continue_bb)
+                .unwrap();
         }
     }
 

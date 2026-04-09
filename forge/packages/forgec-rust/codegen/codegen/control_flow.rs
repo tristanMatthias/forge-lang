@@ -35,7 +35,9 @@ impl<'ctx> Codegen<'ctx> {
         let else_bb = self.context.append_basic_block(function, "else");
         let merge_bb = self.context.append_basic_block(function, "merge");
 
-        self.builder.build_conditional_branch(cond_bool, then_bb, else_bb).unwrap();
+        self.builder
+            .build_conditional_branch(cond_bool, then_bb, else_bb)
+            .unwrap();
 
         // Detect smart narrowing: if condition is `name != null`, narrow name in then-branch
         let narrowing_info = self.detect_null_check(condition);
@@ -50,11 +52,18 @@ impl<'ctx> Codegen<'ctx> {
                 if ty.is_nullable() {
                     // Load the nullable struct, extract the inner value, rebind
                     let llvm_ty = self.type_to_llvm_basic(&ty);
-                    let nullable_val = self.builder.build_load(llvm_ty, ptr, "narrow_load").unwrap();
+                    let nullable_val = self
+                        .builder
+                        .build_load(llvm_ty, ptr, "narrow_load")
+                        .unwrap();
                     if nullable_val.is_struct_value() {
-                        let inner_val = self.builder.build_extract_value(nullable_val.into_struct_value(), 1, "narrowed").ok();
+                        let inner_val = self
+                            .builder
+                            .build_extract_value(nullable_val.into_struct_value(), 1, "narrowed")
+                            .ok();
                         if let Some(iv) = inner_val {
-                            let narrow_alloca = self.create_entry_block_alloca(inner_type, var_name);
+                            let narrow_alloca =
+                                self.create_entry_block_alloca(inner_type, var_name);
                             self.builder.build_store(narrow_alloca, iv).unwrap();
                             self.define_var(var_name.clone(), narrow_alloca, inner_type.clone());
                         }
@@ -81,17 +90,23 @@ impl<'ctx> Codegen<'ctx> {
         let else_end_bb = self.builder.get_insert_block().unwrap();
         let else_had_terminator = else_end_bb.get_terminator().is_some();
 
-        let then_returns = then_had_terminator && then_end_bb.get_terminator().map_or(false, |t| {
-            t.get_opcode() == inkwell::values::InstructionOpcode::Return
-        });
-        let else_returns = else_had_terminator && else_end_bb.get_terminator().map_or(false, |t| {
-            t.get_opcode() == inkwell::values::InstructionOpcode::Return
-        });
+        let then_returns = then_had_terminator
+            && then_end_bb.get_terminator().map_or(false, |t| {
+                t.get_opcode() == inkwell::values::InstructionOpcode::Return
+            });
+        let else_returns = else_had_terminator
+            && else_end_bb.get_terminator().map_or(false, |t| {
+                t.get_opcode() == inkwell::values::InstructionOpcode::Return
+            });
 
         if let (Some(tv), Some(ev)) = (&then_val, &else_val) {
             let is_struct_type = tv.is_struct_value();
             let has_else = else_branch.is_some();
-            if tv.get_type() == ev.get_type() && !then_returns && !else_returns && (!is_struct_type || has_else) {
+            if tv.get_type() == ev.get_type()
+                && !then_returns
+                && !else_returns
+                && (!is_struct_type || has_else)
+            {
                 // Use alloca-based value passing instead of phi nodes.
                 // Phi nodes break when nested if-else chains produce values in
                 // inner merge blocks that don't dominate the outer merge.
@@ -114,7 +129,9 @@ impl<'ctx> Codegen<'ctx> {
                 } else {
                     tmp_builder.position_at_end(entry);
                 }
-                let alloca = tmp_builder.build_alloca(result_ty, "if_result_tmp").unwrap();
+                let alloca = tmp_builder
+                    .build_alloca(result_ty, "if_result_tmp")
+                    .unwrap();
 
                 // Store then value in its block (value dominates here),
                 // then add branch terminator
@@ -131,7 +148,10 @@ impl<'ctx> Codegen<'ctx> {
                 }
 
                 self.builder.position_at_end(merge_bb);
-                let result = self.builder.build_load(result_ty, alloca, "if_result").unwrap();
+                let result = self
+                    .builder
+                    .build_load(result_ty, alloca, "if_result")
+                    .unwrap();
                 return Some(result);
             }
 
@@ -139,7 +159,9 @@ impl<'ctx> Codegen<'ctx> {
             // This handles cases like: if cond { "alice" } else { null }
             // where one branch is a value and the other is a nullable (null)
             let then_type = self.infer_if_branch_type(then_branch);
-            let else_type = else_branch.map(|eb| self.infer_if_branch_type(eb)).unwrap_or(Type::Void);
+            let else_type = else_branch
+                .map(|eb| self.infer_if_branch_type(eb))
+                .unwrap_or(Type::Void);
 
             let is_then_null = matches!(then_type, Type::Nullable(_));
             let is_else_null = matches!(else_type, Type::Nullable(_));
@@ -160,11 +182,23 @@ impl<'ctx> Codegen<'ctx> {
                     if matches!(ret_ty, Type::Nullable(_)) {
                         ret_ty.clone()
                     } else {
-                        let inner = if !is_then_null { then_type.clone() } else if let Type::Nullable(inner) = &else_type { *inner.clone() } else { else_type.clone() };
+                        let inner = if !is_then_null {
+                            then_type.clone()
+                        } else if let Type::Nullable(inner) = &else_type {
+                            *inner.clone()
+                        } else {
+                            else_type.clone()
+                        };
                         Type::Nullable(Box::new(inner))
                     }
                 } else {
-                    let inner = if !is_then_null { then_type.clone() } else if let Type::Nullable(inner) = &else_type { *inner.clone() } else { else_type.clone() };
+                    let inner = if !is_then_null {
+                        then_type.clone()
+                    } else if let Type::Nullable(inner) = &else_type {
+                        *inner.clone()
+                    } else {
+                        else_type.clone()
+                    };
                     Type::Nullable(Box::new(inner))
                 };
 
@@ -200,7 +234,10 @@ impl<'ctx> Codegen<'ctx> {
                 self.builder.build_unconditional_branch(merge_bb).unwrap();
 
                 self.builder.position_at_end(merge_bb);
-                let phi = self.builder.build_phi(nullable_llvm_ty, "if_nullable_result").unwrap();
+                let phi = self
+                    .builder
+                    .build_phi(nullable_llvm_ty, "if_nullable_result")
+                    .unwrap();
                 phi.add_incoming(&[(&then_wrapped, then_end_bb2), (&else_wrapped, else_end_bb2)]);
                 return Some(phi.as_basic_value());
             }
@@ -221,7 +258,10 @@ impl<'ctx> Codegen<'ctx> {
     /// Compile all statements in a block, tracking the last expression value.
     /// Returns the value of the last expression statement, or None if the block
     /// ends with a non-expression statement.
-    pub(crate) fn compile_block_for_value(&mut self, block: &Block) -> Option<BasicValueEnum<'ctx>> {
+    pub(crate) fn compile_block_for_value(
+        &mut self,
+        block: &Block,
+    ) -> Option<BasicValueEnum<'ctx>> {
         let mut last_val = None;
         let before_bb = self.builder.get_insert_block();
         for stmt in &block.statements {

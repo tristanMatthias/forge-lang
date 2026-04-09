@@ -10,8 +10,10 @@ impl TypeChecker {
     /// Type-check a channel expression via the Feature dispatch system.
     pub(crate) fn check_channel_feature(&mut self, fe: &FeatureExpr) -> Type {
         match fe.kind {
-            "ChannelSend" => feature_check!(self, fe, ChannelSendData, |data| self.check_channel_send(&data.channel, &data.value)),
-            "ChannelReceive" => feature_check!(self, fe, ChannelReceiveData, |data| self.check_channel_receive(&data.channel)),
+            "ChannelSend" => feature_check!(self, fe, ChannelSendData, |data| self
+                .check_channel_send(&data.channel, &data.value)),
+            "ChannelReceive" => feature_check!(self, fe, ChannelReceiveData, |data| self
+                .check_channel_receive(&data.channel)),
             _ => Type::Unknown,
         }
     }

@@ -9,9 +9,9 @@
 // - string.from_ptr(ptr, int) → string
 // - ptr.from_string(string) → ptr
 
-use crate::typeck::TypeChecker;
-use crate::typeck::types::Type;
 use crate::parser::ast::{BinaryOp, Expr};
+use crate::typeck::types::Type;
+use crate::typeck::TypeChecker;
 
 impl TypeChecker {
     /// Check if an index expression on ptr type is valid.
@@ -26,7 +26,12 @@ impl TypeChecker {
 
     /// Check ptr binary operations.
     /// Returns Some(result_type) if this is a ptr operation, None otherwise.
-    pub(crate) fn check_ptr_binary(&self, left: &Type, op: &BinaryOp, right: &Type) -> Option<Type> {
+    pub(crate) fn check_ptr_binary(
+        &self,
+        left: &Type,
+        op: &BinaryOp,
+        right: &Type,
+    ) -> Option<Type> {
         match (left, op, right) {
             // ptr + int → ptr
             (Type::Ptr, BinaryOp::Add, Type::Int) => Some(Type::Ptr),
@@ -43,7 +48,12 @@ impl TypeChecker {
 
     /// Check calls to string.from_ptr(ptr, int) and ptr.from_string(string).
     /// Returns Some(result_type) if this is a bridge call, None otherwise.
-    pub(crate) fn check_ptr_bridge_call(&mut self, object: &str, method: &str, args: &[Expr]) -> Option<Type> {
+    pub(crate) fn check_ptr_bridge_call(
+        &mut self,
+        object: &str,
+        method: &str,
+        args: &[Expr],
+    ) -> Option<Type> {
         match (object, method) {
             ("string", "from_ptr") => {
                 if args.len() == 2 {

@@ -33,7 +33,7 @@ use codegen.Codegen
 use checker.TypeChecker
 use variables.{parse_let, parse_mut, parse_const, check_var, emit_var, top_level_var}
 use functions.{parse_fn, parse_export, check_fn, emit_fn, top_level_fn, emit_fn_body, store_fn_for_codegen}
-use enums.{parse_enum, check_enum, emit_enum_decl, top_level_enum}
+use enums.{parse_enum, check_enum, emit_enum_decl, emit_enum_construct, top_level_enum}
 use structs.{parse_type_decl, check_type_decl, check_struct_lit, emit_type_decl, emit_struct_lit, top_level_type}
 use traits.{parse_trait, check_trait, top_level_trait}
 use impl_methods.{parse_impl, check_impl, emit_impl, top_level_impl}
@@ -81,6 +81,7 @@ export fn dispatch_emit_expr(cg: Codegen, node: NodeRef) -> ptr {
     else if fid == "closures" { return emit_closure(cg, node) }
     else if fid == "null_safety" { return emit_null_safety(cg, node) }
     else if fid == "structs" { return emit_struct_lit(cg, node) }
+    else if fid == "enums" { return emit_enum_construct(cg, node) }
     else {
         eprintln("[dispatch_emit_expr] unknown feature: ${fid}")
     }

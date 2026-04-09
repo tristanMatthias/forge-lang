@@ -1,6 +1,6 @@
-use inkwell::values::BasicValueEnum;
 use crate::codegen::codegen::Codegen;
 use crate::parser::ast::*;
+use inkwell::values::BasicValueEnum;
 
 impl<'ctx> Codegen<'ctx> {
     /// Compile a template literal by concatenating all parts.
@@ -8,7 +8,10 @@ impl<'ctx> Codegen<'ctx> {
     /// Literal segments become string constants; expression segments are compiled
     /// and converted to strings via `value_to_string`, then concatenated with
     /// `forge_string_concat`.
-    pub(crate) fn compile_template(&mut self, parts: &[TemplatePart]) -> Option<BasicValueEnum<'ctx>> {
+    pub(crate) fn compile_template(
+        &mut self,
+        parts: &[TemplatePart],
+    ) -> Option<BasicValueEnum<'ctx>> {
         // Handle empty template literal: `` => empty string
         if parts.is_empty() {
             return Some(self.build_string_literal(""));
@@ -27,7 +30,12 @@ impl<'ctx> Codegen<'ctx> {
             };
 
             result = Some(if let Some(prev) = result {
-                self.call_runtime("forge_string_concat", &[prev.into(), part_val.into()], "concat").unwrap()
+                self.call_runtime(
+                    "forge_string_concat",
+                    &[prev.into(), part_val.into()],
+                    "concat",
+                )
+                .unwrap()
             } else {
                 part_val
             });

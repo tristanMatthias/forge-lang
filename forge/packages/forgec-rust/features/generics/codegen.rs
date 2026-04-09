@@ -6,26 +6,34 @@ use crate::typeck::types::Type;
 
 impl<'ctx> Codegen<'ctx> {
     /// Monomorphize and compile a generic function for specific type arguments
-    pub(crate) fn monomorphize_fn(&mut self, fn_name: &str, type_args: &[(&str, Type)]) -> Option<String> {
+    pub(crate) fn monomorphize_fn(
+        &mut self,
+        fn_name: &str,
+        type_args: &[(&str, Type)],
+    ) -> Option<String> {
         let generic_fn = self.generic_fns.get(fn_name)?.clone();
 
         // Build mangled name
-        let type_suffix: Vec<String> = type_args.iter().map(|(_, ty)| {
-            match ty {
+        let type_suffix: Vec<String> = type_args
+            .iter()
+            .map(|(_, ty)| match ty {
                 Type::Int => "int".to_string(),
                 Type::Float => "float".to_string(),
                 Type::Bool => "bool".to_string(),
                 Type::String => "string".to_string(),
                 Type::Struct { name: Some(n), .. } => n.clone(),
-                Type::List(inner) => format!("List_{}", match inner.as_ref() {
-                    Type::Int => "int",
-                    Type::Float => "float",
-                    Type::String => "string",
-                    _ => "unknown",
-                }),
+                Type::List(inner) => format!(
+                    "List_{}",
+                    match inner.as_ref() {
+                        Type::Int => "int",
+                        Type::Float => "float",
+                        Type::String => "string",
+                        _ => "unknown",
+                    }
+                ),
                 _ => "unknown".to_string(),
-            }
-        }).collect();
+            })
+            .collect();
         let mangled = format!("{}_{}", fn_name, type_suffix.join("_"));
 
         // Check if already monomorphized
@@ -51,14 +59,22 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Substitute in return type
-        let resolved_return = generic_fn.return_type.as_ref().map(|rt| self.substitute_type_expr(rt, &type_map));
+        let resolved_return = generic_fn
+            .return_type
+            .as_ref()
+            .map(|rt| self.substitute_type_expr(rt, &type_map));
 
         // Save current builder position and scope (since compile_fn changes them)
         let saved_block = self.builder.get_insert_block();
 
         // Declare and compile the specialized function
         self.declare_function(&mangled, &resolved_params, resolved_return.as_ref());
-        self.compile_fn(&mangled, &resolved_params, resolved_return.as_ref(), &generic_fn.body);
+        self.compile_fn(
+            &mangled,
+            &resolved_params,
+            resolved_return.as_ref(),
+            &generic_fn.body,
+        );
 
         // Restore builder position
         if let Some(block) = saved_block {
@@ -69,7 +85,11 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Substitute type parameters in a TypeExpr
-    pub(crate) fn substitute_type_expr(&self, type_expr: &TypeExpr, type_map: &HashMap<String, Type>) -> TypeExpr {
+    pub(crate) fn substitute_type_expr(
+        &self,
+        type_expr: &TypeExpr,
+        type_map: &HashMap<String, Type>,
+    ) -> TypeExpr {
         match type_expr {
             TypeExpr::Named(name) => {
                 if let Some(ty) = type_map.get(name) {
@@ -79,27 +99,42 @@ impl<'ctx> Codegen<'ctx> {
                 }
             }
             TypeExpr::Generic { name, args } => {
-                let resolved_args: Vec<TypeExpr> = args.iter().map(|a| self.substitute_type_expr(a, type_map)).collect();
-                TypeExpr::Generic { name: name.clone(), args: resolved_args }
+                let resolved_args: Vec<TypeExpr> = args
+                    .iter()
+                    .map(|a| self.substitute_type_expr(a, type_map))
+                    .collect();
+                TypeExpr::Generic {
+                    name: name.clone(),
+                    args: resolved_args,
+                }
             }
             TypeExpr::Nullable(inner) => {
                 TypeExpr::Nullable(Box::new(self.substitute_type_expr(inner, type_map)))
             }
-            TypeExpr::Tuple(elems) => {
-                TypeExpr::Tuple(elems.iter().map(|e| self.substitute_type_expr(e, type_map)).collect())
-            }
+            TypeExpr::Tuple(elems) => TypeExpr::Tuple(
+                elems
+                    .iter()
+                    .map(|e| self.substitute_type_expr(e, type_map))
+                    .collect(),
+            ),
             _ => type_expr.clone(),
         }
     }
 
     /// Infer type arguments for a generic function call based on the argument types
-    pub(crate) fn infer_type_args(&self, fn_name: &str, args: &[CallArg]) -> Option<Vec<(String, Type)>> {
+    pub(crate) fn infer_type_args(
+        &self,
+        fn_name: &str,
+        args: &[CallArg],
+    ) -> Option<Vec<(String, Type)>> {
         let generic_fn = self.generic_fns.get(fn_name)?;
 
         let mut type_map: HashMap<String, Type> = HashMap::new();
 
         for (i, param) in generic_fn.params.iter().enumerate() {
-            if i >= args.len() { continue; }
+            if i >= args.len() {
+                continue;
+            }
             let arg_type = self.infer_type(&args[i].value);
             if let Some(ref type_ann) = param.type_ann {
                 self.unify_type_expr(type_ann, &arg_type, &mut type_map);
@@ -107,7 +142,9 @@ impl<'ctx> Codegen<'ctx> {
         }
 
         // Build result in order of type_params
-        let result: Vec<(String, Type)> = generic_fn.type_params.iter()
+        let result: Vec<(String, Type)> = generic_fn
+            .type_params
+            .iter()
             .map(|tp| {
                 let ty = type_map.get(&tp.name).cloned().unwrap_or(Type::Unknown);
                 (tp.name.clone(), ty)
@@ -118,7 +155,12 @@ impl<'ctx> Codegen<'ctx> {
     }
 
     /// Unify a TypeExpr against an actual Type, populating the type_map
-    pub(crate) fn unify_type_expr(&self, type_expr: &TypeExpr, actual: &Type, type_map: &mut HashMap<String, Type>) {
+    pub(crate) fn unify_type_expr(
+        &self,
+        type_expr: &TypeExpr,
+        actual: &Type,
+        type_map: &mut HashMap<String, Type>,
+    ) {
         match type_expr {
             TypeExpr::Named(name) => {
                 // If this is a type parameter name (single uppercase letter or in type params)

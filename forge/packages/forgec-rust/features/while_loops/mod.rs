@@ -26,7 +26,7 @@ and reserve `while` for conditions that depend on external state or complex term
     category: "Control Flow",
 }
 
-pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod parser;
 pub mod types;

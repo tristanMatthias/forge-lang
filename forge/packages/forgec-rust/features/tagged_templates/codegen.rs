@@ -14,7 +14,8 @@ impl<'ctx> Codegen<'ctx> {
         &mut self,
         fe: &FeatureExpr,
     ) -> Option<BasicValueEnum<'ctx>> {
-        feature_codegen!(self, fe, TaggedTemplateData, |data| self.compile_tagged_template(&data.tag, &data.parts))
+        feature_codegen!(self, fe, TaggedTemplateData, |data| self
+            .compile_tagged_template(&data.tag, &data.parts))
     }
 
     /// Compile a tagged template literal: `tag\`template ${expr}\``
@@ -50,7 +51,8 @@ impl<'ctx> Codegen<'ctx> {
                     let expr_type = self.infer_type(expr);
                     // value_to_string returns None for non-stringifiable types
                     // (enums, structs, etc.) — use a placeholder to avoid ICE
-                    let str_val = self.value_to_string(val, &expr_type)
+                    let str_val = self
+                        .value_to_string(val, &expr_type)
                         .unwrap_or_else(|| self.build_string_literal("<unsupported>"));
                     values.push(str_val);
                 }
@@ -61,34 +63,50 @@ impl<'ctx> Codegen<'ctx> {
         // Build parts array JSON: "literal1","literal2",...
         for (i, lit) in literals.iter().enumerate() {
             let quote = self.build_string_literal("\"");
-            json = self.call_runtime("forge_string_concat", &[json.into(), quote.into()], "c").unwrap();
-            json = self.call_runtime("forge_string_concat", &[json.into(), (*lit).into()], "c").unwrap();
+            json = self
+                .call_runtime("forge_string_concat", &[json.into(), quote.into()], "c")
+                .unwrap();
+            json = self
+                .call_runtime("forge_string_concat", &[json.into(), (*lit).into()], "c")
+                .unwrap();
 
             let suffix = if i < literals.len() - 1 { "\"," } else { "\"" };
             let s = self.build_string_literal(suffix);
-            json = self.call_runtime("forge_string_concat", &[json.into(), s.into()], "c").unwrap();
+            json = self
+                .call_runtime("forge_string_concat", &[json.into(), s.into()], "c")
+                .unwrap();
         }
 
         // Add ],values:[
         let mid = self.build_string_literal("],\"values\":[");
-        json = self.call_runtime("forge_string_concat", &[json.into(), mid.into()], "c").unwrap();
+        json = self
+            .call_runtime("forge_string_concat", &[json.into(), mid.into()], "c")
+            .unwrap();
 
         // Build values array JSON
         for (i, val) in values.iter().enumerate() {
             let quote = self.build_string_literal("\"");
-            json = self.call_runtime("forge_string_concat", &[json.into(), quote.into()], "c").unwrap();
+            json = self
+                .call_runtime("forge_string_concat", &[json.into(), quote.into()], "c")
+                .unwrap();
 
             let escaped = self.call_json_escape(*val);
-            json = self.call_runtime("forge_string_concat", &[json.into(), escaped.into()], "c").unwrap();
+            json = self
+                .call_runtime("forge_string_concat", &[json.into(), escaped.into()], "c")
+                .unwrap();
 
             let suffix = if i < values.len() - 1 { "\"," } else { "\"" };
             let s = self.build_string_literal(suffix);
-            json = self.call_runtime("forge_string_concat", &[json.into(), s.into()], "c").unwrap();
+            json = self
+                .call_runtime("forge_string_concat", &[json.into(), s.into()], "c")
+                .unwrap();
         }
 
         // Close: ]}
         let close = self.build_string_literal("]}");
-        json = self.call_runtime("forge_string_concat", &[json.into(), close.into()], "c").unwrap();
+        json = self
+            .call_runtime("forge_string_concat", &[json.into(), close.into()], "c")
+            .unwrap();
 
         // Call the tag function with the JSON string
         self.call_tag_function(tag, json)
@@ -119,7 +137,9 @@ impl<'ctx> Codegen<'ctx> {
                 return self.call_extern_tag(func, json);
             } else {
                 // Forge fn: takes ForgeString directly
-                let result = self.builder.build_call(func, &[json.into()], "tagged_result")
+                let result = self
+                    .builder
+                    .build_call(func, &[json.into()], "tagged_result")
                     .unwrap();
                 return result.try_as_basic_value().basic();
             }
@@ -130,27 +150,42 @@ impl<'ctx> Codegen<'ctx> {
             match ty {
                 Type::Function { return_type, .. } => {
                     let (alloca, _) = self.lookup_var(tag).unwrap();
-                    let fn_ptr = self.builder.build_load(
-                        ptr_type,
-                        alloca,
-                        "tag_fn",
-                    ).unwrap().into_pointer_value();
+                    let fn_ptr = self
+                        .builder
+                        .build_load(ptr_type, alloca, "tag_fn")
+                        .unwrap()
+                        .into_pointer_value();
 
                     let str_type = self.string_type();
                     let ret_llvm = self.type_to_llvm_basic(&return_type);
                     let fn_type = match ret_llvm {
-                        inkwell::types::BasicTypeEnum::IntType(t) => t.fn_type(&[str_type.into()], false),
-                        inkwell::types::BasicTypeEnum::FloatType(t) => t.fn_type(&[str_type.into()], false),
-                        inkwell::types::BasicTypeEnum::StructType(t) => t.fn_type(&[str_type.into()], false),
-                        inkwell::types::BasicTypeEnum::PointerType(t) => t.fn_type(&[str_type.into()], false),
-                        inkwell::types::BasicTypeEnum::ArrayType(t) => t.fn_type(&[str_type.into()], false),
-                        inkwell::types::BasicTypeEnum::VectorType(t) => t.fn_type(&[str_type.into()], false),
-                        inkwell::types::BasicTypeEnum::ScalableVectorType(_) => panic!("unsupported type: scalable vector"),
+                        inkwell::types::BasicTypeEnum::IntType(t) => {
+                            t.fn_type(&[str_type.into()], false)
+                        }
+                        inkwell::types::BasicTypeEnum::FloatType(t) => {
+                            t.fn_type(&[str_type.into()], false)
+                        }
+                        inkwell::types::BasicTypeEnum::StructType(t) => {
+                            t.fn_type(&[str_type.into()], false)
+                        }
+                        inkwell::types::BasicTypeEnum::PointerType(t) => {
+                            t.fn_type(&[str_type.into()], false)
+                        }
+                        inkwell::types::BasicTypeEnum::ArrayType(t) => {
+                            t.fn_type(&[str_type.into()], false)
+                        }
+                        inkwell::types::BasicTypeEnum::VectorType(t) => {
+                            t.fn_type(&[str_type.into()], false)
+                        }
+                        inkwell::types::BasicTypeEnum::ScalableVectorType(_) => {
+                            panic!("unsupported type: scalable vector")
+                        }
                     };
 
-                    let result = self.builder.build_indirect_call(
-                        fn_type, fn_ptr, &[json.into()], "tagged_result"
-                    ).unwrap();
+                    let result = self
+                        .builder
+                        .build_indirect_call(fn_type, fn_ptr, &[json.into()], "tagged_result")
+                        .unwrap();
                     return result.try_as_basic_value().basic();
                 }
                 _ => {
@@ -173,18 +208,27 @@ impl<'ctx> Codegen<'ctx> {
         func: inkwell::values::FunctionValue<'ctx>,
         json: BasicValueEnum<'ctx>,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let ptr = self.builder.build_extract_value(
-            json.into_struct_value(), 0, "json_ptr"
-        ).unwrap();
-        let result = self.builder.build_call(func, &[ptr.into()], "tagged_result")
+        let ptr = self
+            .builder
+            .build_extract_value(json.into_struct_value(), 0, "json_ptr")
+            .unwrap();
+        let result = self
+            .builder
+            .build_call(func, &[ptr.into()], "tagged_result")
             .unwrap();
 
         if let Some(ret) = result.try_as_basic_value().basic() {
             if ret.is_pointer_value() {
                 // Convert ptr return to ForgeString
                 let raw_ptr = ret.into_pointer_value();
-                let len = self.call_runtime("strlen", &[raw_ptr.into()], "slen").unwrap();
-                let forge_str = self.call_runtime("forge_string_new", &[raw_ptr.into(), len.into()], "tagged_str")?;
+                let len = self
+                    .call_runtime("strlen", &[raw_ptr.into()], "slen")
+                    .unwrap();
+                let forge_str = self.call_runtime(
+                    "forge_string_new",
+                    &[raw_ptr.into(), len.into()],
+                    "tagged_str",
+                )?;
                 Some(forge_str)
             } else {
                 Some(ret)
@@ -198,22 +242,43 @@ impl<'ctx> Codegen<'ctx> {
     fn call_json_escape(&mut self, val: BasicValueEnum<'ctx>) -> BasicValueEnum<'ctx> {
         let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
 
-        let escape_fn = self.module.get_function("forge_json_escape").unwrap_or_else(|| {
-            let ft = ptr_type.fn_type(&[ptr_type.into(), self.context.i64_type().into()], false);
-            self.module.add_function("forge_json_escape", ft, None)
-        });
+        let escape_fn = self
+            .module
+            .get_function("forge_json_escape")
+            .unwrap_or_else(|| {
+                let ft =
+                    ptr_type.fn_type(&[ptr_type.into(), self.context.i64_type().into()], false);
+                self.module.add_function("forge_json_escape", ft, None)
+            });
 
         let str_val = val.into_struct_value();
-        let str_ptr = self.builder.build_extract_value(str_val, 0, "esc_ptr").unwrap();
-        let str_len = self.builder.build_extract_value(str_val, 1, "esc_len").unwrap();
+        let str_ptr = self
+            .builder
+            .build_extract_value(str_val, 0, "esc_ptr")
+            .unwrap();
+        let str_len = self
+            .builder
+            .build_extract_value(str_val, 1, "esc_len")
+            .unwrap();
 
-        let result = self.builder.build_call(
-            escape_fn, &[str_ptr.into(), str_len.into()], "escaped"
-        ).unwrap().try_as_basic_value().basic().unwrap();
+        let result = self
+            .builder
+            .build_call(escape_fn, &[str_ptr.into(), str_len.into()], "escaped")
+            .unwrap()
+            .try_as_basic_value()
+            .basic()
+            .unwrap();
         let escaped_ptr = result.into_pointer_value();
 
-        let len = self.call_runtime("strlen", &[escaped_ptr.into()], "elen").unwrap();
-        self.call_runtime("forge_string_new", &[escaped_ptr.into(), len.into()], "escaped_str").unwrap()
+        let len = self
+            .call_runtime("strlen", &[escaped_ptr.into()], "elen")
+            .unwrap();
+        self.call_runtime(
+            "forge_string_new",
+            &[escaped_ptr.into(), len.into()],
+            "escaped_str",
+        )
+        .unwrap()
     }
 
     /// Infer the type of a tagged template expression.

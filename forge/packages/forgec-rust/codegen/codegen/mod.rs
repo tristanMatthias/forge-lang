@@ -77,7 +77,10 @@ pub struct Codegen<'ctx> {
     pub(crate) variables: Vec<HashMap<String, (PointerValue<'ctx>, Type)>>,
     pub(crate) functions: HashMap<String, FunctionValue<'ctx>>,
     pub(crate) type_checker: TypeChecker,
-    pub(crate) loop_exit_blocks: Vec<(inkwell::basic_block::BasicBlock<'ctx>, Option<PointerValue<'ctx>>)>,
+    pub(crate) loop_exit_blocks: Vec<(
+        inkwell::basic_block::BasicBlock<'ctx>,
+        Option<PointerValue<'ctx>>,
+    )>,
     pub(crate) loop_continue_blocks: Vec<inkwell::basic_block::BasicBlock<'ctx>>,
     pub(crate) current_fn_return_type: Option<Type>,
     pub(crate) current_fn_name: Option<String>,
@@ -104,7 +107,65 @@ pub struct Codegen<'ctx> {
     pub(crate) suppress_string_wrap: bool,
     /// Cache for LLVM struct types keyed by a type key string.
     /// Uses RefCell so type_to_llvm_basic can stay &self.
-    pub(crate) llvm_type_cache: std::cell::RefCell<HashMap<String, inkwell::types::BasicTypeEnum<'ctx>>>,
+    pub(crate) llvm_type_cache:
+        std::cell::RefCell<HashMap<String, inkwell::types::BasicTypeEnum<'ctx>>>,
+}
+
+// ─── Codegen step-by-step IR dump ────────────────────────────────
+//
+// Set FORGE_DEBUG_DUMP=<fn_name> to dump the current function's IR
+// after every instrumented codegen step. Files land in
+// /tmp/forge_dump/NNNN_label.ll, sequentially numbered. Diff between
+// consecutive files shows exactly which step produced what change.
+// This is the diagnostic that should have existed for the
+// "%ec vs %enum_tmp" investigation in this session — without it
+// you waste hours on eprintlns. With it, the bisect is one run.
+
+static DBG_DUMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn dbg_dump_target() -> Option<String> {
+    std::env::var("FORGE_DEBUG_DUMP")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+impl<'ctx> Codegen<'ctx> {
+    /// Dump the current function's IR to /tmp/forge_dump/NNNN_label.ll
+    /// if FORGE_DEBUG_DUMP matches the current function or contains "*".
+    /// No-op when env var unset (zero overhead).
+    pub fn dbg_dump(&self, label: &str) {
+        let target = match dbg_dump_target() {
+            Some(t) => t,
+            None => return,
+        };
+        let cur = match self.current_fn_name.as_ref() {
+            Some(n) => n,
+            None => return,
+        };
+        if target != "*" && cur != &target {
+            return;
+        }
+        let func = match self.module.get_function(cur) {
+            Some(f) => f,
+            None => return,
+        };
+        let _ = std::fs::create_dir_all("/tmp/forge_dump");
+        let seq = DBG_DUMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let safe_label: String = label
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' || c == '.' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let path = format!("/tmp/forge_dump/{:04}_{}_{}.ll", seq, cur, safe_label);
+        use inkwell::values::AnyValue;
+        let ir = func.print_to_string().to_string();
+        let _ = std::fs::write(&path, ir);
+    }
 }
 
 impl<'ctx> Codegen<'ctx> {
@@ -162,19 +223,38 @@ impl<'ctx> Codegen<'ctx> {
                     self.named_types.insert(name.clone(), named_ty);
                 }
                 Statement::TraitDecl { name, methods, .. } => {
-                    self.traits.insert(name.clone(), TraitInfo {
-                        methods: methods.clone(),
-                    });
+                    self.traits.insert(
+                        name.clone(),
+                        TraitInfo {
+                            methods: methods.clone(),
+                        },
+                    );
                 }
-                Statement::ImplBlock { trait_name, type_name, methods, associated_types, .. } => {
+                Statement::ImplBlock {
+                    trait_name,
+                    type_name,
+                    methods,
+                    associated_types,
+                    ..
+                } => {
                     let mut method_map = HashMap::new();
                     for m in methods {
-                        if let Statement::FnDecl { name, params, return_type, body, .. } = m {
-                            method_map.insert(name.clone(), ImplMethodInfo {
-                                params: params.clone(),
-                                return_type: return_type.clone(),
-                                body: body.clone(),
-                            });
+                        if let Statement::FnDecl {
+                            name,
+                            params,
+                            return_type,
+                            body,
+                            ..
+                        } = m
+                        {
+                            method_map.insert(
+                                name.clone(),
+                                ImplMethodInfo {
+                                    params: params.clone(),
+                                    return_type: return_type.clone(),
+                                    body: body.clone(),
+                                },
+                            );
                         }
                     }
                     self.impls.push(ImplInfo {
@@ -184,17 +264,32 @@ impl<'ctx> Codegen<'ctx> {
                         associated_types: associated_types.clone(),
                     });
                 }
-                Statement::FnDecl { name, type_params, params, return_type, body, .. } => {
+                Statement::FnDecl {
+                    name,
+                    type_params,
+                    params,
+                    return_type,
+                    body,
+                    ..
+                } => {
                     if !type_params.is_empty() {
-                        self.generic_fns.insert(name.clone(), GenericFnInfo {
-                            type_params: type_params.clone(),
-                            params: params.clone(),
-                            return_type: return_type.clone(),
-                            body: body.clone(),
-                        });
+                        self.generic_fns.insert(
+                            name.clone(),
+                            GenericFnInfo {
+                                type_params: type_params.clone(),
+                                params: params.clone(),
+                                return_type: return_type.clone(),
+                                body: body.clone(),
+                            },
+                        );
                     }
                 }
-                Statement::Mut { name, value, type_ann, .. } => {
+                Statement::Mut {
+                    name,
+                    value,
+                    type_ann,
+                    ..
+                } => {
                     let ty = type_ann
                         .as_ref()
                         .map(|t| self.type_checker.resolve_type_expr(t))
@@ -204,18 +299,21 @@ impl<'ctx> Codegen<'ctx> {
                     global.set_initializer(&llvm_ty.const_zero());
                     self.global_mutables.insert(name.clone(), ty);
                 }
-                Statement::ExternFn { name, params, return_type, .. } => {
+                Statement::ExternFn {
+                    name,
+                    params,
+                    return_type,
+                    ..
+                } => {
                     self.compile_extern_fn(name, params, return_type.as_ref());
                 }
-                Statement::Feature(fe) => {
-                    match fe.feature_id {
-                        "structs" => self.compile_program_structs_feature(fe),
-                        "traits" => self.compile_program_traits_feature(fe),
-                        "functions" => self.compile_program_functions_feature(fe),
-                        "variables" => self.compile_program_variables_feature(fe),
-                        _ => {}
-                    }
-                }
+                Statement::Feature(fe) => match fe.feature_id {
+                    "structs" => self.compile_program_structs_feature(fe),
+                    "traits" => self.compile_program_traits_feature(fe),
+                    "functions" => self.compile_program_functions_feature(fe),
+                    "variables" => self.compile_program_variables_feature(fe),
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -227,11 +325,23 @@ impl<'ctx> Codegen<'ctx> {
         for _ in 0..2 {
             // Clear cache to force re-resolution on second pass
             self.llvm_type_cache.borrow_mut().clear();
-            let type_aliases: Vec<_> = self.type_checker.env.type_aliases.clone().into_iter().collect();
+            let type_aliases: Vec<_> = self
+                .type_checker
+                .env
+                .type_aliases
+                .clone()
+                .into_iter()
+                .collect();
             for (_, ty) in &type_aliases {
                 self.type_to_llvm_basic(ty);
             }
-            let enum_types: Vec<_> = self.type_checker.env.enum_types.clone().into_iter().collect();
+            let enum_types: Vec<_> = self
+                .type_checker
+                .env
+                .enum_types
+                .clone()
+                .into_iter()
+                .collect();
             for (_, ty) in &enum_types {
                 self.type_to_llvm_basic(ty);
             }
@@ -241,7 +351,13 @@ impl<'ctx> Codegen<'ctx> {
         // This ensures impl methods can call any user-defined function.
         for stmt in &program.statements {
             match stmt {
-                Statement::FnDecl { name, type_params, params, return_type, .. } => {
+                Statement::FnDecl {
+                    name,
+                    type_params,
+                    params,
+                    return_type,
+                    ..
+                } => {
                     if type_params.is_empty() {
                         self.declare_function(name, params, return_type.as_ref());
                     }
@@ -260,25 +376,21 @@ impl<'ctx> Codegen<'ctx> {
         self.declare_package_functions();
 
         // Check if we need to auto-wrap top-level statements in main()
-        let has_explicit_main = program.statements.iter().any(|s| {
-            match s {
-                Statement::FnDecl { name, .. } => name == "main",
-                Statement::Feature(fe) => Self::is_feature_main_fn(fe),
-                _ => false,
-            }
+        let has_explicit_main = program.statements.iter().any(|s| match s {
+            Statement::FnDecl { name, .. } => name == "main",
+            Statement::Feature(fe) => Self::is_feature_main_fn(fe),
+            _ => false,
         });
-        let has_top_level_stmts = program.statements.iter().any(|s| {
-            match s {
-                Statement::FnDecl { .. }
-                | Statement::TypeDecl { .. }
-                | Statement::TraitDecl { .. }
-                | Statement::ImplBlock { .. }
-                | Statement::ExternFn { .. }
-                | Statement::Mut { .. }
-                | Statement::ModDecl { .. } => false,
-                Statement::Feature(fe) => !Self::is_feature_declaration_only(fe),
-                _ => true,
-            }
+        let has_top_level_stmts = program.statements.iter().any(|s| match s {
+            Statement::FnDecl { .. }
+            | Statement::TypeDecl { .. }
+            | Statement::TraitDecl { .. }
+            | Statement::ImplBlock { .. }
+            | Statement::ExternFn { .. }
+            | Statement::Mut { .. }
+            | Statement::ModDecl { .. } => false,
+            Statement::Feature(fe) => !Self::is_feature_declaration_only(fe),
+            _ => true,
         });
 
         if !has_explicit_main && has_top_level_stmts {
@@ -337,8 +449,14 @@ impl<'ctx> Codegen<'ctx> {
             }
 
             // Return 0
-            if self.builder.get_insert_block().map_or(true, |b| b.get_terminator().is_none()) {
-                self.builder.build_return(Some(&i32_type.const_zero())).unwrap();
+            if self
+                .builder
+                .get_insert_block()
+                .map_or(true, |b| b.get_terminator().is_none())
+            {
+                self.builder
+                    .build_return(Some(&i32_type.const_zero()))
+                    .unwrap();
             }
         } else {
             // Normal path: compile declarations first, then main() handles the rest.
@@ -382,7 +500,8 @@ impl<'ctx> Codegen<'ctx> {
             }
             // Compile deferred stmts in small batched functions to avoid
             // stack corruption from too many operations in one block.
-            let all_deferred: Vec<Statement> = deferred_global_inits.iter()
+            let all_deferred: Vec<Statement> = deferred_global_inits
+                .iter()
                 .chain(deferred_expr_stmts.iter())
                 .cloned()
                 .collect();
@@ -430,7 +549,9 @@ impl<'ctx> Codegen<'ctx> {
                     if let Some(main_end_fn) = self.module.get_function("__forge_main_end") {
                         self.builder.build_call(main_end_fn, &[], "").unwrap();
                     }
-                    self.builder.build_return(Some(&i32_type.const_zero())).unwrap();
+                    self.builder
+                        .build_return(Some(&i32_type.const_zero()))
+                        .unwrap();
                 }
             }
         }

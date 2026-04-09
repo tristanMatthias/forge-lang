@@ -1,11 +1,11 @@
-use crate::errors::Diagnostic;
 use crate::errors::diagnostic::LabelKind;
+use crate::errors::Diagnostic;
 use crate::feature::{FeatureExpr, FeatureStmt};
 use crate::lexer::Span;
 use crate::parser::ast::*;
-use crate::{feature_check, feature_data};
 use crate::typeck::checker::TypeChecker;
 use crate::typeck::types::Type;
+use crate::{feature_check, feature_data};
 
 use super::types::{StructLitData, TypeDeclData};
 
@@ -22,7 +22,9 @@ impl TypeChecker {
             self.check_intersection_annotation_conflicts(&data.value, fe.span);
             let field_annotations = self.extract_type_annotations(&data.value);
             if !field_annotations.is_empty() {
-                self.env.type_annotations.insert(data.name.clone(), field_annotations);
+                self.env
+                    .type_annotations
+                    .insert(data.name.clone(), field_annotations);
             }
             if self.is_partial_type_expr(&data.value) {
                 self.env.partial_types.insert(data.name.clone());
@@ -32,7 +34,8 @@ impl TypeChecker {
             if let TypeExpr::Struct { fields } = &data.value {
                 for field in fields {
                     if field.mutable {
-                        self.mutable_fields.insert((data.name.clone(), field.name.clone()));
+                        self.mutable_fields
+                            .insert((data.name.clone(), field.name.clone()));
                     }
                 }
             }
@@ -51,7 +54,11 @@ impl TypeChecker {
 
     /// Type-check a struct literal expression via the Feature dispatch system.
     pub(crate) fn check_struct_lit_feature(&mut self, fe: &FeatureExpr) -> Type {
-        feature_check!(self, fe, StructLitData, |data| self.check_struct_lit(&data.name, &data.fields, data.span))
+        feature_check!(self, fe, StructLitData, |data| self.check_struct_lit(
+            &data.name,
+            &data.fields,
+            data.span
+        ))
     }
 
     /// Type-check a struct literal expression.
@@ -84,12 +91,19 @@ impl TypeChecker {
         // validate field names and types against the known type fields.
         if let Some(type_name) = struct_name {
             let resolved = self.env.resolve_type_name(type_name);
-            if let Type::Struct { fields: type_fields, .. } = &resolved {
+            if let Type::Struct {
+                fields: type_fields,
+                ..
+            } = &resolved
+            {
                 let known_names: Vec<&str> = type_fields.iter().map(|(n, _)| n.as_str()).collect();
                 for (field_name, field_val) in fields {
-                    if let Some((_, expected_ty)) = type_fields.iter().find(|(n, _)| n == field_name) {
+                    if let Some((_, expected_ty)) =
+                        type_fields.iter().find(|(n, _)| n == field_name)
+                    {
                         // Check field type matches declared type
-                        let actual_ty = field_types.iter()
+                        let actual_ty = field_types
+                            .iter()
                             .find(|(n, _)| n == field_name)
                             .map(|(_, t)| t.clone())
                             .unwrap_or(Type::Unknown);
@@ -111,12 +125,22 @@ impl TypeChecker {
                             format!("'{}' is not a field on {}", field_name, type_name),
                             lit_span,
                         )
-                        .with_label(field_span, format!("'{}' is not a field on {}", field_name, type_name), LabelKind::Primary);
+                        .with_label(
+                            field_span,
+                            format!("'{}' is not a field on {}", field_name, type_name),
+                            LabelKind::Primary,
+                        );
 
-                        if let Some(suggestion) = crate::errors::did_you_mean(field_name, &known_names, 2) {
+                        if let Some(suggestion) =
+                            crate::errors::did_you_mean(field_name, &known_names, 2)
+                        {
                             diag = diag.with_help(format!("did you mean '{}'?", suggestion));
                         } else {
-                            diag = diag.with_help(format!("available fields on {}: {}", type_name, known_names.join(", ")));
+                            diag = diag.with_help(format!(
+                                "available fields on {}: {}",
+                                type_name,
+                                known_names.join(", ")
+                            ));
                         }
                         self.diagnostics.push(diag);
                     }

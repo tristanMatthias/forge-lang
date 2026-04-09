@@ -2,13 +2,33 @@ use crate::feature::{FeatureExpr, FeatureNode, FeatureStmt};
 use crate::lexer::Span;
 
 /// Convenience constructor for `Expr::Feature(FeatureExpr { ... })`.
-pub fn feature_expr(feature_id: &'static str, kind: &'static str, data: Box<dyn FeatureNode>, span: Span) -> Expr {
-    Expr::Feature(FeatureExpr { feature_id, kind, data, span })
+pub fn feature_expr(
+    feature_id: &'static str,
+    kind: &'static str,
+    data: Box<dyn FeatureNode>,
+    span: Span,
+) -> Expr {
+    Expr::Feature(FeatureExpr {
+        feature_id,
+        kind,
+        data,
+        span,
+    })
 }
 
 /// Convenience constructor for `Statement::Feature(FeatureStmt { ... })`.
-pub fn feature_stmt(feature_id: &'static str, kind: &'static str, data: Box<dyn FeatureNode>, span: Span) -> Statement {
-    Statement::Feature(FeatureStmt { feature_id, kind, data, span })
+pub fn feature_stmt(
+    feature_id: &'static str,
+    kind: &'static str,
+    data: Box<dyn FeatureNode>,
+    span: Span,
+) -> Statement {
+    Statement::Feature(FeatureStmt {
+        feature_id,
+        kind,
+        data,
+        span,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -396,7 +416,6 @@ pub enum Expr {
     NullLit(Span),
 
     Ident(String, Span),
-
 
     Binary {
         left: Box<Expr>,

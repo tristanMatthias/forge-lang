@@ -1,6 +1,6 @@
-pub mod parser;
 pub mod checker;
 pub mod codegen;
+pub mod parser;
 
 crate::forge_feature! {
     name: "Spec Test",
