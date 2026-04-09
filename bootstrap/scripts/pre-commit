@@ -17,12 +17,16 @@ cd "$REPO_DIR"
 # Files staged in this commit.
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
-# Trigger when bootstrap source, the runtime, or std-llvm is touched.
-# Anything else skips the suite.
+# Trigger the regression suite for any bootstrap-affecting change.
 relevant=$(echo "$staged" | grep -E '^(bootstrap/|forge/stdlib/runtime\.c|forge/packages/std-llvm/)' || true)
 if [ -z "$relevant" ]; then
   exit 0
 fi
+
+# Trigger the (heavier) self-host fixed-point check only when the
+# bootstrap source itself or its build inputs change. Touching just
+# regression test files or scripts doesn't require it.
+src_relevant=$(echo "$staged" | grep -E '^(bootstrap/src/|forge/stdlib/runtime\.c|forge/packages/std-llvm/)' || true)
 
 echo "[pre-commit] bootstrap-affecting changes detected — running regression suite"
 if ! bootstrap/scripts/diagnose.sh --regress; then
@@ -31,5 +35,17 @@ if ! bootstrap/scripts/diagnose.sh --regress; then
   echo "[pre-commit] fix the regression, or 'git commit --no-verify' to bypass"
   exit 1
 fi
-
 echo "[pre-commit] regression suite passed"
+
+if [ -n "$src_relevant" ]; then
+  echo "[pre-commit] bootstrap source touched — verifying self-host fixed point"
+  if ! bootstrap/scripts/diagnose.sh --check-fixedpoint; then
+    echo
+    echo "[pre-commit] SELF-HOST FIXED POINT BROKEN — commit blocked"
+    echo "[pre-commit] bs2 and bs3 emit different IR for bootstrap/src/main.fg"
+    echo "[pre-commit] this means the last change to bootstrap/src/ produced a"
+    echo "[pre-commit] non-self-consistent compiler. Fix or 'git commit --no-verify'."
+    exit 1
+  fi
+  echo "[pre-commit] self-host fixed point holds"
+fi

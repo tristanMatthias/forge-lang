@@ -397,21 +397,23 @@ do when blocked / never do until forced".
   no real type lattice to dump. Add only after the type tracker refactor
   below.
 
-- **Wide-store-into-narrow-buffer pass in `--score`** *(do soon)*
-  Scan emitted .ll for `store iN, ptr %X` where `%X` traces back to a
-  `call ptr @malloc(i64 K)` with `K * 8 < N`. Would have caught the
-  `s[i]` heap-corruption bug immediately. ~30 lines of awk.
+- ~~**Wide-store-into-narrow-buffer pass in `--score`**~~ *(done)*
+  Tracks SSA aliases through ptrtoint/inttoptr/add and flags any
+  `store iN` whose destination came from `malloc(K)` with `K*8 < N`.
+  Resets state at function boundaries. Wide-store hits are fatal
+  (exit non-zero). Verified: 0 false positives on current bs2 IR
+  (37224 lines), 2 true positives on the synthetic bug-class repro.
 
-- **`--build-bs4` / fixed-point loop verifier** *(do soon)*
-  Currently `--build-bs3` only goes one generation. Add `--build-bs4`
-  that builds bs3 → bs4 and asserts bs3.ll == bs4.ll. The current bs2 → bs3
-  byte-equality check is the right invariant, but a regression that
-  breaks it would currently slip past. This is a one-command guard.
+- ~~**Fixed-point self-host check (`--check-fixedpoint`)**~~ *(done)*
+  Verifies bs2 and bs3 emit byte-identical IR for `bootstrap/src/main.fg`.
+  Wired into the pre-commit hook when `bootstrap/src/` or std-llvm or
+  the runtime is touched. The single most important self-hosting
+  invariant — a regression that breaks it now blocks the commit.
 
-- **Cross-compiler regression mode** *(do soon)*
-  `--regress` runs each test through bs2 only. Add an option to also
-  run each test through bs3 and stage1 and assert all three produce
-  identical stdout. Catches stage1↔bs2 codegen divergence early.
+- ~~**Cross-compiler regression mode**~~ *(done)*
+  `--regress` now compiles each test through both stage1 and bs2,
+  runs both binaries, and asserts the stdout matches. Any
+  stage1↔bs2 divergence is a hard failure.
 
 - **Audit `--bisect-lines` for line-aware bisection** *(do when blocked)*
   Currently bisects on raw line count, which can produce

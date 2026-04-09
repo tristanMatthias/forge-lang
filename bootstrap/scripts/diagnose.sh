@@ -59,6 +59,11 @@ BUILD MODES
   --build-bs2-asan     Same as --build-bs2 but link with -fsanitize=address.
   --build-bs3          Compile bootstrap/src/main.fg with bs2 → build/bs3.
                        (The fixed-point self-host check.)
+  --check-fixedpoint   Verify bs2 and bs3 emit byte-identical IR for
+                       bootstrap/src/main.fg. The single most important
+                       self-hosting invariant — if this fails, a recent
+                       commit broke the bootstrap chain. Wired into the
+                       pre-commit hook when bootstrap/src/ is touched.
 
 RUN MODES
   --run    <file.fg>   Compile <file.fg> with bs2, link, run. Prints stdout.
@@ -76,9 +81,11 @@ DIFF & ANALYSIS
                        Same as --diff but only shows the body of one
                        function.
   --score  [file.ll]   Score an emitted IR file. Counts ret-undef, orphan
-                       blocks, missing terminators, and similar quality
-                       smells. Lower is better. Defaults to the most
-                       recently emitted .ll under build/.
+                       blocks, missing terminators, wide-store-into-
+                       narrow-malloc bugs, and similar quality smells.
+                       Lower is better. Wide-store hits are fatal (the
+                       heap-corruption bug class) and exit non-zero.
+                       Defaults to the most recently emitted .ll.
   --rank   <file.fg>   Rank functions in <file.fg>'s emitted IR by line
                        count — useful for spotting bloat.
 
@@ -261,6 +268,33 @@ mode_build_bs2()      { ensure_bs2;      ok "$BS2"; }
 mode_build_bs2_asan() { ensure_bs2_asan; ok "$BS2_ASAN"; }
 mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
 
+# Verify bootstrap reaches its self-host fixed point: bs2 and bs3 must
+# emit byte-identical IR for the same input (bootstrap/src/main.fg).
+# If this fails, self-hosting is broken — the bug is somewhere between
+# bs2 and bs3 (one generation diverged from the previous).
+mode_check_fixedpoint() {
+  ensure_bs2
+  ensure_bs3
+  log "compiling bootstrap/src/main.fg with bs2"
+  "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1 \
+    || die "bs2 failed to compile bootstrap source"
+  cp "$BOOTSTRAP_DIR/src/main.fg.ll" "$BUILD_DIR/fp_bs2.ll"
+  log "compiling bootstrap/src/main.fg with bs3"
+  "$BS3" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1 \
+    || die "bs3 failed to compile bootstrap source"
+  cp "$BOOTSTRAP_DIR/src/main.fg.ll" "$BUILD_DIR/fp_bs3.ll"
+  if diff -q "$BUILD_DIR/fp_bs2.ll" "$BUILD_DIR/fp_bs3.ll" >/dev/null; then
+    local lines; lines=$(wc -l <"$BUILD_DIR/fp_bs2.ll" | tr -d ' ')
+    ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR"
+  else
+    err "FIXED POINT BROKEN — bs2 and bs3 emit different IR for bootstrap/src/main.fg"
+    err "diff: $(diff "$BUILD_DIR/fp_bs2.ll" "$BUILD_DIR/fp_bs3.ll" | wc -l | tr -d ' ') lines"
+    err "  bs2 IR: $BUILD_DIR/fp_bs2.ll"
+    err "  bs3 IR: $BUILD_DIR/fp_bs3.ll"
+    return 1
+  fi
+}
+
 # Compile + link + run a .fg with bs2 (or stage1).
 run_fg() {
   local fg="$1"; local which="$2"
@@ -398,6 +432,65 @@ mode_score() {
     }
   ' "$ll")
 
+  # Wide-store-into-narrow-malloc detector. Catches the bug class we
+  # spent half a session chasing in 3814cce: a `store iN` whose
+  # destination came from a `call ptr @malloc(i64 K)` with K*8 < N.
+  # Tracks ptr provenance through ptrtoint/inttoptr/add aliases since
+  # bootstrap-emitted IR routes everything through i64 round-trips.
+  # Each hit is a definite heap overflow — these are bugs, not smells.
+  wide_stores=$(awk '
+    function bytes(width) { return int(width/8) }
+    function ssa_lhs(line,    s) {
+      s = line; sub(/^[ \t]+/, "", s); sub(/ *=.*/, "", s); return s
+    }
+    # Reset state at function boundaries — SSA names are local to each
+    # function and reusing %1, %2 across functions would otherwise cause
+    # phantom hits from earlier malloc sizes leaking forward.
+    /^define / { delete malloc_size; next }
+    /= call ptr @malloc\(i64 [0-9]+\)/ {
+      lhs = ssa_lhs($0)
+      match($0, /malloc\(i64 [0-9]+\)/)
+      # "malloc(i64 " is 11 chars, trailing ")" is 1 char.
+      sz = substr($0, RSTART+11, RLENGTH-12)
+      malloc_size[lhs] = sz + 0
+      next
+    }
+    /= ptrtoint ptr %[A-Za-z0-9_.]+/ {
+      lhs = ssa_lhs($0)
+      match($0, /ptr %[A-Za-z0-9_.]+/)
+      # "ptr " is 4 chars; keep the leading "%" so the key matches.
+      src = substr($0, RSTART+4, RLENGTH-4)
+      if (src in malloc_size) malloc_size[lhs] = malloc_size[src]
+      next
+    }
+    /= inttoptr i64 %[A-Za-z0-9_.]+/ {
+      lhs = ssa_lhs($0)
+      match($0, /i64 %[A-Za-z0-9_.]+/)
+      src = substr($0, RSTART+4, RLENGTH-4)
+      if (src in malloc_size) malloc_size[lhs] = malloc_size[src]
+      next
+    }
+    /= add i64 %[A-Za-z0-9_.]+, [0-9]+/ {
+      lhs = ssa_lhs($0)
+      # Match the operand AFTER "add i64 " — not the LHS, which is also a %.
+      match($0, /add i64 %[A-Za-z0-9_.]+/)
+      src = substr($0, RSTART+8, RLENGTH-8)
+      if (src in malloc_size) malloc_size[lhs] = malloc_size[src]
+      next
+    }
+    /^[ \t]*store i[0-9]+ .*, ptr %[A-Za-z0-9_.]+/ {
+      match($0, /store i[0-9]+/)
+      width = substr($0, RSTART+7, RLENGTH-7) + 0
+      match($0, /ptr %[A-Za-z0-9_.]+/)
+      dst = substr($0, RSTART+4, RLENGTH-4)
+      if (dst in malloc_size && bytes(width) > malloc_size[dst]) {
+        printf("  %s: store i%d into malloc(%d) at NR=%d\n", dst, width, malloc_size[dst], NR) > "/dev/stderr"
+        c++
+      }
+    }
+    END { print c+0 }
+  ' "$ll")
+
   printf "%-22s %s\n" "file"            "$ll"
   printf "%-22s %s\n" "lines"           "$total"
   printf "%-22s %s\n" "functions"       "$fns"
@@ -407,8 +500,13 @@ mode_score() {
   printf "%-22s %s\n" "unreachable"     "$unreachable"
   printf "%-22s %s\n" "empty blocks"    "$empty_blocks"
   printf "%-22s %s\n" "orphan blocks"   "$orphan_blocks"
-  local score=$((ret_undef*10 + br_const_false*5 + phi_undef*5 + empty_blocks*2 + orphan_blocks*3))
+  printf "%-22s ${C_RED}%s${C_RESET}\n" "wide stores (BUG)" "$wide_stores"
+  local score=$((ret_undef*10 + br_const_false*5 + phi_undef*5 + empty_blocks*2 + orphan_blocks*3 + wide_stores*100))
   printf "%-22s ${C_YELLOW}%s${C_RESET}\n" "SCORE (lower=better)" "$score"
+  if [ "$wide_stores" -gt 0 ]; then
+    err "wide-store-into-narrow-malloc detected — this is the heap-overflow bug class"
+    return 1
+  fi
 }
 
 mode_rank() {
@@ -440,14 +538,35 @@ mode_rank() {
 
 mode_regress() {
   ensure_bs2
+  ensure_stage1
   mkdir -p "$REGRESS_DIR"
   local pass=0 fail=0
   shopt -s nullglob
   for fg in "$REGRESS_DIR"/*.fg; do
-    local name expected actual bin
+    local name expected actual bin actual_s1 bin_s1
     name=$(basename "$fg" .fg)
     expected="$REGRESS_DIR/$name.out"
     [ -f "$expected" ] || { warn "$name: missing $name.out, skipping"; continue; }
+
+    # Stage1 path: compile, link, run, capture stdout. We don't compare
+    # against the .out file directly here — that's bs2's contract — but
+    # we do require stage1's output to MATCH bs2's output. Any divergence
+    # means stage1 and bs2 disagree on the semantics of the program,
+    # which is a self-host invariant violation.
+    bin_s1="$BUILD_DIR/regress_${name}_s1.bin"
+    if ! "$STAGE1" compile "$fg" >"$BUILD_DIR/regress_${name}_s1.codegen.log" 2>&1; then
+      err "$name: stage1 codegen failed"
+      fail=$((fail+1))
+      continue
+    fi
+    if ! cc -o "$bin_s1" "$fg.ll" "$RUNTIME_O" 2>"$BUILD_DIR/regress_${name}_s1.link.log"; then
+      err "$name: stage1 link failed"
+      fail=$((fail+1))
+      continue
+    fi
+    actual_s1=$("$bin_s1" 2>&1) || true
+
+    # bs2 path: compile, link, run, compare against expected.
     bin="$BUILD_DIR/regress_$name.bin"
     if ! "$BS2" compile "$fg" >"$BUILD_DIR/regress_$name.codegen.log" 2>&1; then
       err "$name: bs2 codegen failed"
@@ -460,6 +579,15 @@ mode_regress() {
       continue
     fi
     actual=$("$bin" 2>&1) || true
+
+    # Cross-compiler equivalence: stage1 and bs2 must agree.
+    if [ "$actual" != "$actual_s1" ]; then
+      err "$name: stage1 and bs2 disagree on output"
+      diff -u <(echo "$actual_s1") <(echo "$actual") | sed 's/^/    /' >&2
+      fail=$((fail+1))
+      continue
+    fi
+
     if [ "$actual" = "$(cat "$expected")" ]; then
       ok "$name"
       pass=$((pass+1))
@@ -591,6 +719,7 @@ main() {
     --build-bs2)          mode_build_bs2 "$@" ;;
     --build-bs2-asan)     mode_build_bs2_asan "$@" ;;
     --build-bs3)          mode_build_bs3 "$@" ;;
+    --check-fixedpoint)   mode_check_fixedpoint "$@" ;;
     --run)                mode_run "$@" ;;
     --run-stage1)         mode_run_stage1 "$@" ;;
     --check)              mode_check "$@" ;;
