@@ -1,37 +1,37 @@
 // WHY: emits LLVM IR for `if` as a statement (with optional else).
 
 use core.ast.{Expr, Stmt, VarEnv}
-use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt_from_expr}
+use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt_from_expr}
 use codegen.{emit_expr, emit_stmt}
 
 
-export fn emit_if(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> StmtResult {
-    let cond = emit_expr(cg, env, condition)
+export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> StmtResult {
+    let cond = emit_expr(ctx, env, condition)
     if cond.had_error {
         return err_stmt_from_expr(cond)
     }
-    let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "if_cond")
-    let then_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "then")
-    let else_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "else")
-    let merge_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "ifcont")
-    forge_llvm_build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
+    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, forge_llvm_const_int(ctx.i64_type, 0, 0), "if_cond")
+    let then_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "then")
+    let else_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "else")
+    let merge_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "ifcont")
+    forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
 
-    forge_llvm_position_at_end(cg.builder, then_bb)
-    let then_result = emit_stmt(cg, env, then_branch)
+    forge_llvm_position_at_end(ctx.builder, then_bb)
+    let then_result = emit_stmt(ctx, env, then_branch)
     if then_result.had_error { return then_result }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_br(cg.builder, merge_bb)
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_br(ctx.builder, merge_bb)
     }
 
-    forge_llvm_position_at_end(cg.builder, else_bb)
+    forge_llvm_position_at_end(ctx.builder, else_bb)
     if else_branch != null {
-        let else_result = emit_stmt(cg, env, else_branch!)
+        let else_result = emit_stmt(ctx, env, else_branch!)
         if else_result.had_error { return else_result }
     }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_br(cg.builder, merge_bb)
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_br(ctx.builder, merge_bb)
     }
 
-    forge_llvm_position_at_end(cg.builder, merge_bb)
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
     ok_stmt(env)
 }

@@ -20,7 +20,7 @@ use core.ast.{VarEnv, FieldList, VariantList}
 // reach the LLVM C API: the context, module, builder, and the
 // function whose body the builder is currently positioned in.
 
-export type Codegen = {
+export type Ctx = {
     ctx: ptr,
     module: ptr,
     builder: ptr,

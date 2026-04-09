@@ -1,5 +1,5 @@
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload}
-use core.cg.{Codegen, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix, strip_struct_prefix, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type}
+use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix, strip_struct_prefix, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type}
 
 // ── Direct C extern declarations ──
 //
@@ -29,7 +29,7 @@ export type CodegenResult = {
     error_message: string,
 }
 
-// Codegen, EmitResult, StmtResult, ok_emit, err_emit, ok_stmt,
+// Ctx, EmitResult, StmtResult, ok_emit, err_emit, ok_stmt,
 // err_stmt, err_stmt_from_expr, null_ptr_val, advance_field_list,
 // field_type_at, strip_enum_prefix all moved to core/cg.fg as
 // part of Phase 4b of the feature migration. They're imported via
@@ -40,20 +40,20 @@ export type CodegenResult = {
 // translate_param_type, strip_struct_prefix all moved to core/cg.fg.
 
 // Function return type registry. The bootstrap MVP doesn't carry
-// All registries live in core/cg.fg as fields on the Codegen struct.
+// All registries live in core/cg.fg as fields on the Ctx struct.
 // Zero mutable globals.
 
 
 // EnumReg, CG_ENUMS, enum_reg_lookup, enum_reg_extend — see core/cg.fg note above.
 
 export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult {
-    let ctx = forge_llvm_context_create()
-    let m = forge_llvm_module_create("bootstrap", ctx)
-    let builder = forge_llvm_create_builder(ctx)
+    let lc = forge_llvm_context_create()
+    let m = forge_llvm_module_create("bootstrap", lc)
+    let builder = forge_llvm_create_builder(lc)
 
-    let i64t = forge_llvm_int64_type(ctx)
-    let i1t = forge_llvm_int1_type(ctx)
-    let pt = forge_llvm_pointer_type(ctx)
+    let i64t = forge_llvm_int64_type(lc)
+    let i1t = forge_llvm_int1_type(lc)
+    let pt = forge_llvm_pointer_type(lc)
 
     // Declare libc helpers we lower string ops onto.
     //   puts(ptr) -> i32        — for println(str)
@@ -62,7 +62,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     //   memcpy(ptr, ptr, i64) -> ptr
     let puts_param_arr = forge_llvm_type_array_new(1)
     forge_llvm_type_array_set(puts_param_arr, 0, pt)
-    let puts_type = forge_llvm_function_type(forge_llvm_int32_type(ctx), puts_param_arr, 1, 0)
+    let puts_type = forge_llvm_function_type(forge_llvm_int32_type(lc), puts_param_arr, 1, 0)
     forge_llvm_type_array_free(puts_param_arr)
     forge_llvm_add_function(m, "puts", puts_type)
 
@@ -89,7 +89,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     let strcmp_param_arr = forge_llvm_type_array_new(2)
     forge_llvm_type_array_set(strcmp_param_arr, 0, pt)
     forge_llvm_type_array_set(strcmp_param_arr, 1, pt)
-    let strcmp_type = forge_llvm_function_type(forge_llvm_int32_type(ctx), strcmp_param_arr, 2, 0)
+    let strcmp_type = forge_llvm_function_type(forge_llvm_int32_type(lc), strcmp_param_arr, 2, 0)
     forge_llvm_type_array_free(strcmp_param_arr)
     forge_llvm_add_function(m, "strcmp", strcmp_type)
 
@@ -99,31 +99,31 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_set(snprintf_param_arr, 0, pt)
     forge_llvm_type_array_set(snprintf_param_arr, 1, i64t)
     forge_llvm_type_array_set(snprintf_param_arr, 2, pt)
-    let snprintf_type = forge_llvm_function_type(forge_llvm_int32_type(ctx), snprintf_param_arr, 3, 1)
+    let snprintf_type = forge_llvm_function_type(forge_llvm_int32_type(lc), snprintf_param_arr, 3, 1)
     forge_llvm_type_array_free(snprintf_param_arr)
     forge_llvm_add_function(m, "snprintf", snprintf_type)
 
     // atoi(str) -> i32 for the int() builtin.
     let atoi_param_arr = forge_llvm_type_array_new(1)
     forge_llvm_type_array_set(atoi_param_arr, 0, pt)
-    let atoi_type = forge_llvm_function_type(forge_llvm_int32_type(ctx), atoi_param_arr, 1, 0)
+    let atoi_type = forge_llvm_function_type(forge_llvm_int32_type(lc), atoi_param_arr, 1, 0)
     forge_llvm_type_array_free(atoi_param_arr)
     forge_llvm_add_function(m, "atoi", atoi_type)
 
     // exit(int) for process.exit
     let exit_param_arr = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(exit_param_arr, 0, forge_llvm_int32_type(ctx))
-    let exit_type = forge_llvm_function_type(forge_llvm_void_type(ctx), exit_param_arr, 1, 0)
+    forge_llvm_type_array_set(exit_param_arr, 0, forge_llvm_int32_type(lc))
+    let exit_type = forge_llvm_function_type(forge_llvm_void_type(lc), exit_param_arr, 1, 0)
     forge_llvm_type_array_free(exit_param_arr)
     forge_llvm_add_function(m, "exit", exit_type)
 
     // Build the per-compile registries by walking the AST once.
-    // These are threaded through Codegen as immutable data — no
+    // These are threaded through Ctx as immutable data — no
     // mutable globals.
-    let structs = declare_structs(ctx, i64t, stmts, StructReg.End)
-    let enums = declare_enums(ctx, i64t, stmts, EnumReg.End)
-    let top_level_vars = declare_globals(m, ctx, i64t, structs, enums, stmts, TopLevelVars.End)
-    let fn_rets = declare_functions(m, ctx, i64t, structs, enums, stmts, FnRetTypes.End)
+    let structs = declare_structs(lc, i64t, stmts, StructReg.End)
+    let enums = declare_enums(lc, i64t, stmts, EnumReg.End)
+    let top_level_vars = declare_globals(m, lc, i64t, structs, enums, stmts, TopLevelVars.End)
+    let fn_rets = declare_functions(m, lc, i64t, structs, enums, stmts, FnRetTypes.End)
 
     // Synthesize a wrapper function for the top-level non-function
     // statements. If the source already defines its own `fn main`,
@@ -137,11 +137,11 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(main_params)
     let main_fn = forge_llvm_add_function(m, main_name, main_type)
 
-    let entry = forge_llvm_append_basic_block(ctx, main_fn, "entry")
+    let entry = forge_llvm_append_basic_block(lc, main_fn, "entry")
     forge_llvm_position_at_end(builder, entry)
 
-    let cg = Codegen {
-        ctx,
+    let ctx = Ctx {
+        ctx: lc,
         module: m,
         builder,
         current_fn: main_fn,
@@ -157,11 +157,11 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 
     // Pass 2: emit each user-defined function's body, then emit
     // every non-function top-level statement into main.
-    let body_result = emit_function_bodies(cg, stmts)
+    let body_result = emit_function_bodies(ctx, stmts)
     if body_result.had_error {
         forge_llvm_dispose_builder(builder)
         forge_llvm_module_dispose(m)
-        forge_llvm_context_dispose(ctx)
+        forge_llvm_context_dispose(ctx.ctx)
         return CodegenResult { had_error: true, error_message: body_result.error_message }
     }
 
@@ -170,11 +170,11 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     // before emitting top-level statements.
     forge_llvm_position_at_end(builder, entry)
     let initial: VarEnv = VarEnv.End
-    let result = emit_top_level(cg, initial, stmts)
+    let result = emit_top_level(ctx, initial, stmts)
     if result.had_error {
         forge_llvm_dispose_builder(builder)
         forge_llvm_module_dispose(m)
-        forge_llvm_context_dispose(ctx)
+        forge_llvm_context_dispose(ctx.ctx)
         return CodegenResult { had_error: true, error_message: result.error_message }
     }
 
@@ -188,7 +188,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     if verify != 0 {
         forge_llvm_dispose_builder(builder)
         forge_llvm_module_dispose(m)
-        forge_llvm_context_dispose(ctx)
+        forge_llvm_context_dispose(ctx.ctx)
         return CodegenResult { had_error: true, error_message: "codegen error: LLVM module verification failed" }
     }
 
@@ -196,7 +196,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 
     forge_llvm_dispose_builder(builder)
     forge_llvm_module_dispose(m)
-    forge_llvm_context_dispose(ctx)
+    forge_llvm_context_dispose(ctx.ctx)
 
     if write_result != 0 {
         return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to " + output_path }
@@ -208,7 +208,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 // ── Helpers ──
 
 // EmitResult, StmtResult, and the ok_*/err_* helpers moved to
-// core/cg.fg. See note above the deleted Codegen definition.
+// core/ctx.fg. See note above the deleted Ctx definition.
 
 // ── Struct declaration pass ──
 
@@ -342,148 +342,148 @@ fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
 
 // emit_function_bodies, emit_function_body, bind_params_inline → features/fn_decl/codegen.fg
 
-// translate_param_type — moved to core/cg.fg.
+// translate_param_type — moved to core/ctx.fg.
 
 // ── Top-level pass (skips function decls) ──
 
-// TopLevelResult carries an updated Codegen so emit_top_level_init
+// TopLevelResult carries an updated Ctx so emit_top_level_init
 // can thread updated top_level_vars forward without changing the
 // StmtResult type (which would require updating ~50 call sites).
 type TopLevelResult = {
-    cg: Codegen,
+    ctx: Ctx,
     env: VarEnv,
     had_error: bool,
     error_message: string,
 }
 
-fn emit_top_level(cg: Codegen, env: VarEnv, stmts: StmtList) -> StmtResult {
+fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(env)
         .Node(stmt, next) -> {
             match stmt {
-                .Function(_, _, _, _) -> emit_top_level(cg, env, next)
+                .Function(_, _, _, _) -> emit_top_level(ctx, env, next)
                 .Let(name, _, init) -> {
-                    let result = emit_top_level_init(cg, env, name, init)
+                    let result = emit_top_level_init(ctx, env, name, init)
                     if result.had_error {
                         return err_stmt(result.error_message)
                     }
-                    emit_top_level(result.cg, result.env, next)
+                    emit_top_level(result.ctx, result.env, next)
                 }
                 .Mut(name, _, init) -> {
-                    let result = emit_top_level_init(cg, env, name, init)
+                    let result = emit_top_level_init(ctx, env, name, init)
                     if result.had_error {
                         return err_stmt(result.error_message)
                     }
-                    emit_top_level(result.cg, result.env, next)
+                    emit_top_level(result.ctx, result.env, next)
                 }
                 _ -> {
-                    let result = emit_stmt(cg, env, stmt)
+                    let result = emit_stmt(ctx, env, stmt)
                     if result.had_error {
                         return result
                     }
-                    emit_top_level(cg, result.env, next)
+                    emit_top_level(ctx, result.env, next)
                 }
             }
         }
     }
 }
 
-fn emit_top_level_init(cg: Codegen, env: VarEnv, name: string, init: Expr) -> TopLevelResult {
-    let g = toplevel_lookup(cg.top_level_vars, name)
+fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLevelResult {
+    let g = toplevel_lookup(ctx.top_level_vars, name)
     if !g.found {
-        return TopLevelResult { cg, env, had_error: true, error_message: "codegen error: global `" + name + "` not declared" }
+        return TopLevelResult { ctx, env, had_error: true, error_message: "codegen error: global `" + name + "` not declared" }
     }
-    let r = emit_expr(cg, env, init)
+    let r = emit_expr(ctx, env, init)
     if r.had_error {
-        return TopLevelResult { cg, env, had_error: true, error_message: r.error_message }
+        return TopLevelResult { ctx, env, had_error: true, error_message: r.error_message }
     }
-    forge_llvm_build_store(cg.builder, r.value, g.llvm_global)
-    let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, cg.top_level_vars)
-    let updated_cg = Codegen {
-        ctx: cg.ctx,
-        module: cg.module,
-        builder: cg.builder,
-        current_fn: cg.current_fn,
-        i64_type: cg.i64_type,
-        i1_type: cg.i1_type,
-        ptr_type: cg.ptr_type,
-        structs: cg.structs,
-        enums: cg.enums,
-        fn_rets: cg.fn_rets,
+    forge_llvm_build_store(ctx.builder, r.value, g.llvm_global)
+    let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
+    let updated_cg = Ctx {
+        ctx: ctx.ctx,
+        module: ctx.module,
+        builder: ctx.builder,
+        current_fn: ctx.current_fn,
+        i64_type: ctx.i64_type,
+        i1_type: ctx.i1_type,
+        ptr_type: ctx.ptr_type,
+        structs: ctx.structs,
+        enums: ctx.enums,
+        fn_rets: ctx.fn_rets,
         top_level_vars: updated_top,
-        loops: cg.loops,
+        loops: ctx.loops,
     }
-    TopLevelResult { cg: updated_cg, env, had_error: false, error_message: "" }
+    TopLevelResult { ctx: updated_cg, env, had_error: false, error_message: "" }
 }
 
 // ── Statement emission ──
 
-fn emit_stmt_list(cg: Codegen, env: VarEnv, stmts: StmtList) -> StmtResult {
+fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(env)
         .Node(stmt, next) -> {
-            let result = emit_stmt(cg, env, stmt)
+            let result = emit_stmt(ctx, env, stmt)
             if result.had_error {
                 return result
             }
-            emit_stmt_list(cg, result.env, next)
+            emit_stmt_list(ctx, result.env, next)
         }
     }
 }
 
-export fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
+export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
         .Expr(expr) -> {
-            let r = emit_expr(cg, env, expr)
+            let r = emit_expr(ctx, env, expr)
             if r.had_error {
                 return err_stmt_from_expr(r)
             }
             ok_stmt(env)
         }
         .Ret(value) -> {
-            let r = emit_expr(cg, env, value)
+            let r = emit_expr(ctx, env, value)
             if r.had_error {
                 return err_stmt_from_expr(r)
             }
-            forge_llvm_build_ret(cg.builder, r.value)
+            forge_llvm_build_ret(ctx.builder, r.value)
             ok_stmt(env)
         }
         .RetEmpty -> {
-            forge_llvm_build_ret(cg.builder, forge_llvm_const_int(cg.i64_type, 0, 0))
+            forge_llvm_build_ret(ctx.builder, forge_llvm_const_int(ctx.i64_type, 0, 0))
             ok_stmt(env)
         }
-        .Let(name, _, initializer) -> emit_var_decl(cg, env, name, initializer)
-        .Mut(name, _, initializer) -> emit_var_decl(cg, env, name, initializer)
+        .Let(name, _, initializer) -> emit_var_decl(ctx, env, name, initializer)
+        .Mut(name, _, initializer) -> emit_var_decl(ctx, env, name, initializer)
         .Block(body) -> {
-            let inner = emit_stmt_list(cg, env, body)
+            let inner = emit_stmt_list(ctx, env, body)
             if inner.had_error {
                 return inner
             }
             // Block exits restore the outer scope.
             ok_stmt(env)
         }
-        .If(condition, then_branch, else_branch) -> emit_if(cg, env, condition, then_branch, else_branch)
-        .While(condition, body) -> emit_while(cg, env, condition, body)
+        .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
+        .While(condition, body) -> emit_while(ctx, env, condition, body)
         .TypeDecl(_, _) -> ok_stmt(env)
         .EnumDecl(_, _) -> ok_stmt(env)
-        .Match(subject, arms) -> emit_match(cg, env, subject, arms)
+        .Match(subject, arms) -> emit_match(ctx, env, subject, arms)
         .Impl(_, _) -> ok_stmt(env)
         .NoOp -> ok_stmt(env)
         .ExternFn(_, _, _) -> ok_stmt(env)
         .Break -> {
-            let frame = loops_top(cg.loops)
+            let frame = loops_top(ctx.loops)
             if !frame.found {
                 return err_stmt("codegen error: break outside loop")
             }
-            forge_llvm_build_br(cg.builder, frame.exit_bb)
+            forge_llvm_build_br(ctx.builder, frame.exit_bb)
             ok_stmt(env)
         }
         .Continue -> {
-            let frame = loops_top(cg.loops)
+            let frame = loops_top(ctx.loops)
             if !frame.found {
                 return err_stmt("codegen error: continue outside loop")
             }
-            forge_llvm_build_br(cg.builder, frame.cond_bb)
+            forge_llvm_build_br(ctx.builder, frame.cond_bb)
             ok_stmt(env)
         }
         _ -> err_stmt("codegen error: unsupported statement type")
@@ -496,111 +496,111 @@ export fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
 
 // ── Expression emission ──
 
-export fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
+export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr {
         .Number(text) -> {
             let value = int(text)
-            ok_emit(forge_llvm_const_int(cg.i64_type, value, 0))
+            ok_emit(forge_llvm_const_int(ctx.i64_type, value, 0))
         }
         .Bool(text) -> {
             if text == "true" {
-                return ok_emit(forge_llvm_const_int(cg.i64_type, 1, 0))
+                return ok_emit(forge_llvm_const_int(ctx.i64_type, 1, 0))
             }
-            ok_emit(forge_llvm_const_int(cg.i64_type, 0, 0))
+            ok_emit(forge_llvm_const_int(ctx.i64_type, 0, 0))
         }
-        .Null -> ok_emit(forge_llvm_const_int(cg.i64_type, 0, 0))
+        .Null -> ok_emit(forge_llvm_const_int(ctx.i64_type, 0, 0))
         .String(text) -> {
             let inner = strip_quotes(text)
-            let str_ptr = forge_llvm_build_global_string_ptr(cg.builder, inner, ".str")
-            ok_emit_str(forge_llvm_build_ptr_to_int(cg.builder, str_ptr, cg.i64_type, "str_i64"))
+            let str_ptr = forge_llvm_build_global_string_ptr(ctx.builder, inner, ".str")
+            ok_emit_str(forge_llvm_build_ptr_to_int(ctx.builder, str_ptr, ctx.i64_type, "str_i64"))
         }
-        .Grouping(inner) -> emit_expr(cg, env, inner)
-        .Unary(operator, right) -> emit_unary(cg, env, operator, right)
-        .Binary(left, operator, right) -> emit_binary(cg, env, left, operator, right)
-        .Logical(left, operator, right) -> emit_binary(cg, env, left, operator, right)
+        .Grouping(inner) -> emit_expr(ctx, env, inner)
+        .Unary(operator, right) -> emit_unary(ctx, env, operator, right)
+        .Binary(left, operator, right) -> emit_binary(ctx, env, left, operator, right)
+        .Logical(left, operator, right) -> emit_binary(ctx, env, left, operator, right)
         .Ident(name) -> {
             let local = env_lookup(env, name)
             if local.found {
-                let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, local.alloca, name)
+                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, local.alloca, name)
                 return EmitResult { value: loaded, ty: local.ty, had_error: false, error_message: "" }
             }
-            let g = toplevel_lookup(cg.top_level_vars, name)
+            let g = toplevel_lookup(ctx.top_level_vars, name)
             if g.found {
-                let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, g.llvm_global, name)
+                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, g.llvm_global, name)
                 return EmitResult { value: loaded, ty: g.ty, had_error: false, error_message: "" }
             }
             err_emit("undefined variable `" + name + "`")
         }
         .Assign(name, value) -> {
-            let r = emit_expr(cg, env, value)
+            let r = emit_expr(ctx, env, value)
             if r.had_error {
                 return r
             }
             let local = env_lookup(env, name)
             if local.found {
-                forge_llvm_build_store(cg.builder, r.value, local.alloca)
+                forge_llvm_build_store(ctx.builder, r.value, local.alloca)
                 return EmitResult { value: r.value, ty: local.ty, had_error: false, error_message: "" }
             }
-            let g = toplevel_lookup(cg.top_level_vars, name)
+            let g = toplevel_lookup(ctx.top_level_vars, name)
             if g.found {
-                forge_llvm_build_store(cg.builder, r.value, g.llvm_global)
+                forge_llvm_build_store(ctx.builder, r.value, g.llvm_global)
                 return EmitResult { value: r.value, ty: g.ty, had_error: false, error_message: "" }
             }
             err_emit("assignment to undefined variable `" + name + "`")
         }
-        .Call(callee, args) -> emit_call(cg, env, callee, args)
-        .StructLit(name, inits) -> emit_struct_lit(cg, env, name, inits)
-        .FieldAccess(obj, field) -> emit_field_access(cg, env, obj, field)
-        .EnumCtor(type_name, variant, args) -> emit_enum_ctor(cg, env, type_name, variant, args)
-        .Index(obj, idx) -> emit_index(cg, env, obj, idx)
-        .Block(body) -> emit_block_expr(cg, env, body)
-        .MatchExpr(subject, arms) -> emit_match_expr(cg, env, subject, arms)
-        .FieldAssign(obj, field, value) -> emit_field_assign(cg, env, obj, field, value)
-        .IfExpr(c, t, e) -> emit_if_expr(cg, env, c, t, e)
+        .Call(callee, args) -> emit_call(ctx, env, callee, args)
+        .StructLit(name, inits) -> emit_struct_lit(ctx, env, name, inits)
+        .FieldAccess(obj, field) -> emit_field_access(ctx, env, obj, field)
+        .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, args)
+        .Index(obj, idx) -> emit_index(ctx, env, obj, idx)
+        .Block(body) -> emit_block_expr(ctx, env, body)
+        .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
+        .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value)
+        .IfExpr(c, t, e) -> emit_if_expr(ctx, env, c, t, e)
         _ -> err_emit("unsupported expression type")
     }
 }
 
-fn emit_if_expr(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
-    let cond = emit_expr(cg, env, condition)
+fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
+    let cond = emit_expr(ctx, env, condition)
     if cond.had_error {
         return cond
     }
-    let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "ife_cond")
-    let then_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "ife_then")
-    let else_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "ife_else")
-    let merge_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "ife_end")
-    let result_slot = forge_llvm_build_alloca(cg.builder, cg.i64_type, "ife_result")
-    forge_llvm_build_store(cg.builder, forge_llvm_const_int(cg.i64_type, 0, 0), result_slot)
-    forge_llvm_build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
+    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, forge_llvm_const_int(ctx.i64_type, 0, 0), "ife_cond")
+    let then_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "ife_then")
+    let else_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "ife_else")
+    let merge_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "ife_end")
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "ife_result")
+    forge_llvm_build_store(ctx.builder, forge_llvm_const_int(ctx.i64_type, 0, 0), result_slot)
+    forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
 
-    forge_llvm_position_at_end(cg.builder, then_bb)
-    let t = emit_expr(cg, env, then_branch)
+    forge_llvm_position_at_end(ctx.builder, then_bb)
+    let t = emit_expr(ctx, env, then_branch)
     if t.had_error {
         return t
     }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_store(cg.builder, t.value, result_slot)
-        forge_llvm_build_br(cg.builder, merge_bb)
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_store(ctx.builder, t.value, result_slot)
+        forge_llvm_build_br(ctx.builder, merge_bb)
     }
 
-    forge_llvm_position_at_end(cg.builder, else_bb)
-    let e = emit_expr(cg, env, else_branch)
+    forge_llvm_position_at_end(ctx.builder, else_bb)
+    let e = emit_expr(ctx, env, else_branch)
     if e.had_error {
         return e
     }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_store(cg.builder, e.value, result_slot)
-        forge_llvm_build_br(cg.builder, merge_bb)
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_store(ctx.builder, e.value, result_slot)
+        forge_llvm_build_br(ctx.builder, merge_bb)
     }
 
-    forge_llvm_position_at_end(cg.builder, merge_bb)
-    let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, result_slot, "ife_val")
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "ife_val")
     ok_emit(loaded)
 }
 
-fn emit_field_assign(cg: Codegen, env: VarEnv, obj: Expr, field: string, value: Expr) -> EmitResult {
-    let r = emit_expr(cg, env, obj)
+fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> EmitResult {
+    let r = emit_expr(ctx, env, obj)
     if r.had_error {
         return r
     }
@@ -608,7 +608,7 @@ fn emit_field_assign(cg: Codegen, env: VarEnv, obj: Expr, field: string, value: 
     if struct_name == "" {
         return err_emit("field assignment on non-struct value (ty=" + r.ty + ")")
     }
-    let lookup = struct_reg_lookup(cg.structs, struct_name)
+    let lookup = struct_reg_lookup(ctx.structs, struct_name)
     if !lookup.found {
         return err_emit("unknown struct `" + struct_name + "`")
     }
@@ -616,23 +616,23 @@ fn emit_field_assign(cg: Codegen, env: VarEnv, obj: Expr, field: string, value: 
     if idx < 0 {
         return err_emit("unknown field `" + field + "` on struct `" + struct_name + "`")
     }
-    let st_ty = forge_llvm_get_type_by_name(cg.ctx, struct_name)
-    let obj_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "fa_ptr")
-    let gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, obj_ptr, idx, "fa_fld")
-    let v = emit_expr(cg, env, value)
+    let st_ty = forge_llvm_get_type_by_name(ctx.ctx, struct_name)
+    let obj_ptr = forge_llvm_build_int_to_ptr(ctx.builder, r.value, ctx.ptr_type, "fa_ptr")
+    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fa_fld")
+    let v = emit_expr(ctx, env, value)
     if v.had_error {
         return v
     }
-    forge_llvm_build_store(cg.builder, v.value, gep)
+    forge_llvm_build_store(ctx.builder, v.value, gep)
     ok_emit(v.value)
 }
 
-fn emit_block_expr(cg: Codegen, env: VarEnv, stmts: StmtList) -> EmitResult {
+fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
     // A block expression's value is the value of the LAST
     // statement, if that statement is a `Stmt.Expr`. Anything
     // else (return, let, while, ...) yields i64 0. Each non-last
     // statement is executed for its side effects.
-    emit_block_loop(cg, env, stmts, forge_llvm_const_int(cg.i64_type, 0, 0), "i64")
+    emit_block_loop(ctx, env, stmts, forge_llvm_const_int(ctx.i64_type, 0, 0), "i64")
 }
 
 // A statement in tail position of a block expression must yield a
@@ -641,14 +641,14 @@ fn emit_block_expr(cg: Codegen, env: VarEnv, stmts: StmtList) -> EmitResult {
 // matching expression-emission helper, recursing through nested
 // blocks/ifs as needed. Anything that has no value (let/while/return)
 // falls through to emit_stmt and the caller's default last_val.
-fn emit_stmt_as_value(cg: Codegen, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: string) -> EmitResult {
+fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: string) -> EmitResult {
     match stmt {
-        .Expr(e) -> emit_expr(cg, env, e)
-        .Block(body) -> emit_block_expr(cg, env, body)
-        .Match(subject, arms) -> emit_match_expr(cg, env, subject, arms)
-        .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(cg, env, condition, then_branch, else_branch)
+        .Expr(e) -> emit_expr(ctx, env, e)
+        .Block(body) -> emit_block_expr(ctx, env, body)
+        .Match(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
+        .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
         _ -> {
-            let s = emit_stmt(cg, env, stmt)
+            let s = emit_stmt(ctx, env, stmt)
             if s.had_error {
                 return err_emit(s.error_message)
             }
@@ -662,61 +662,61 @@ fn emit_stmt_as_value(cg: Codegen, env: VarEnv, stmt: Stmt, last_val: ptr, last_
 // of a block expression. We need to phi the branch values back out,
 // recursing into emit_stmt_as_value so nested blocks/matches/ifs in
 // the branches also propagate their values.
-fn emit_stmt_if_as_value(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
-    let cond = emit_expr(cg, env, condition)
+fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
+    let cond = emit_expr(ctx, env, condition)
     if cond.had_error {
         return cond
     }
-    let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "sif_cond")
-    let then_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "sif_then")
-    let else_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "sif_else")
-    let merge_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "sif_end")
-    let result_slot = forge_llvm_build_alloca(cg.builder, cg.i64_type, "sif_result")
-    forge_llvm_build_store(cg.builder, forge_llvm_const_int(cg.i64_type, 0, 0), result_slot)
-    forge_llvm_build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
+    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, forge_llvm_const_int(ctx.i64_type, 0, 0), "sif_cond")
+    let then_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "sif_then")
+    let else_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "sif_else")
+    let merge_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "sif_end")
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "sif_result")
+    forge_llvm_build_store(ctx.builder, forge_llvm_const_int(ctx.i64_type, 0, 0), result_slot)
+    forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
 
-    forge_llvm_position_at_end(cg.builder, then_bb)
-    let zero = forge_llvm_const_int(cg.i64_type, 0, 0)
-    let t = emit_stmt_as_value(cg, env, then_branch, zero, "i64")
+    forge_llvm_position_at_end(ctx.builder, then_bb)
+    let zero = forge_llvm_const_int(ctx.i64_type, 0, 0)
+    let t = emit_stmt_as_value(ctx, env, then_branch, zero, "i64")
     if t.had_error {
         return t
     }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_store(cg.builder, t.value, result_slot)
-        forge_llvm_build_br(cg.builder, merge_bb)
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_store(ctx.builder, t.value, result_slot)
+        forge_llvm_build_br(ctx.builder, merge_bb)
     }
 
-    forge_llvm_position_at_end(cg.builder, else_bb)
+    forge_llvm_position_at_end(ctx.builder, else_bb)
     if else_branch != null {
-        let e = emit_stmt_as_value(cg, env, else_branch!, zero, "i64")
+        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, "i64")
         if e.had_error {
             return e
         }
-        if forge_llvm_block_has_terminator(cg.builder) == 0 {
-            forge_llvm_build_store(cg.builder, e.value, result_slot)
-            forge_llvm_build_br(cg.builder, merge_bb)
+        if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+            forge_llvm_build_store(ctx.builder, e.value, result_slot)
+            forge_llvm_build_br(ctx.builder, merge_bb)
         }
     } else {
-        forge_llvm_build_br(cg.builder, merge_bb)
+        forge_llvm_build_br(ctx.builder, merge_bb)
     }
 
-    forge_llvm_position_at_end(cg.builder, merge_bb)
-    let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, result_slot, "sif_val")
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "sif_val")
     EmitResult { value: loaded, ty: t.ty, had_error: false, error_message: "" }
 }
 
-export fn emit_block_loop(cg: Codegen, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: string) -> EmitResult {
+export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: string) -> EmitResult {
     match stmts {
         .End -> EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
         .Node(stmt, next) -> {
             match next {
-                .End -> emit_stmt_as_value(cg, env, stmt, last_val, last_ty)
+                .End -> emit_stmt_as_value(ctx, env, stmt, last_val, last_ty)
                 _ -> {
-                    let s = emit_stmt(cg, env, stmt)
+                    let s = emit_stmt(ctx, env, stmt)
                     if s.had_error {
                         return err_emit(s.error_message)
                     }
-                    emit_block_loop(cg, s.env, next, last_val, last_ty)
+                    emit_block_loop(ctx, s.env, next, last_val, last_ty)
                 }
             }
         }
@@ -729,75 +729,75 @@ export fn emit_block_loop(cg: Codegen, env: VarEnv, stmts: StmtList, last_val: p
 // and emit_match_expr by name — Forge resolves them globally across
 // the module tree, same as it does for cross-file impl blocks.
 
-fn emit_index(cg: Codegen, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
-    let r = emit_expr(cg, env, obj)
+fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
+    let r = emit_expr(ctx, env, obj)
     if r.had_error {
         return r
     }
     if r.ty != "str" && r.ty != "string" {
         return err_emit("indexing on non-string value (ty=" + r.ty + ")")
     }
-    let i_r = emit_expr(cg, env, idx)
+    let i_r = emit_expr(ctx, env, idx)
     if i_r.had_error {
         return i_r
     }
     // Allocate a 2-byte buffer (1 char + nul), copy the byte at
     // src+i, set buf[1]=0. Returns a fresh str.
     let src_int = r.value
-    let off_int = forge_llvm_build_add(cg.builder, src_int, i_r.value, "idx_off_int")
-    let off_ptr = forge_llvm_build_int_to_ptr(cg.builder, off_int, cg.ptr_type, "idx_off")
-    let byte = forge_llvm_build_load(cg.builder, forge_llvm_int8_type(cg.ctx), off_ptr, "idx_byte")
-    let malloc_fn = forge_llvm_get_named_function(cg.module, "malloc")
+    let off_int = forge_llvm_build_add(ctx.builder, src_int, i_r.value, "idx_off_int")
+    let off_ptr = forge_llvm_build_int_to_ptr(ctx.builder, off_int, ctx.ptr_type, "idx_off")
+    let byte = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.ctx), off_ptr, "idx_byte")
+    let malloc_fn = forge_llvm_get_named_function(ctx.module, "malloc")
     let mpa = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(mpa, 0, cg.i64_type)
-    let malloc_type = forge_llvm_function_type(cg.ptr_type, mpa, 1, 0)
+    forge_llvm_type_array_set(mpa, 0, ctx.i64_type)
+    let malloc_type = forge_llvm_function_type(ctx.ptr_type, mpa, 1, 0)
     forge_llvm_type_array_free(mpa)
     let m_arr = forge_llvm_value_array_new(1)
-    forge_llvm_value_array_set(m_arr, 0, forge_llvm_const_int(cg.i64_type, 2, 0))
-    let buf = forge_llvm_build_call(cg.builder, malloc_type, malloc_fn, m_arr, 1, "idx_buf")
+    forge_llvm_value_array_set(m_arr, 0, forge_llvm_const_int(ctx.i64_type, 2, 0))
+    let buf = forge_llvm_build_call(ctx.builder, malloc_type, malloc_fn, m_arr, 1, "idx_buf")
     forge_llvm_value_array_free(m_arr)
-    forge_llvm_build_store(cg.builder, byte, buf)
+    forge_llvm_build_store(ctx.builder, byte, buf)
     // buf[1] = 0
-    let buf_int = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "idx_buf_int")
-    let one = forge_llvm_const_int(cg.i64_type, 1, 0)
-    let nul_int = forge_llvm_build_add(cg.builder, buf_int, one, "idx_nul_int")
-    let nul_ptr = forge_llvm_build_int_to_ptr(cg.builder, nul_int, cg.ptr_type, "idx_nul")
-    forge_llvm_build_store(cg.builder, forge_llvm_const_int(forge_llvm_int8_type(cg.ctx), 0, 0), nul_ptr)
-    let result_i64 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "idx_result")
+    let buf_int = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "idx_buf_int")
+    let one = forge_llvm_const_int(ctx.i64_type, 1, 0)
+    let nul_int = forge_llvm_build_add(ctx.builder, buf_int, one, "idx_nul_int")
+    let nul_ptr = forge_llvm_build_int_to_ptr(ctx.builder, nul_int, ctx.ptr_type, "idx_nul")
+    forge_llvm_build_store(ctx.builder, forge_llvm_const_int(forge_llvm_int8_type(ctx.ctx), 0, 0), nul_ptr)
+    let result_i64 = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "idx_result")
     ok_emit_str(result_i64)
 }
 
 // emit_struct_lit, malloc_struct_bytes, fill_struct_fields → features/struct_decl/codegen.fg
 
-fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> EmitResult {
+fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitResult {
     // Special case: bare `EnumName.Variant` (zero-arg enum
     // constructor). The parser models this as
     // FieldAccess(Ident(EnumName), Variant).
     match obj {
         .Ident(head) -> {
-            let enum_l = enum_reg_lookup(cg.enums, head)
+            let enum_l = enum_reg_lookup(ctx.enums, head)
             if enum_l.found {
-                return emit_enum_ctor(cg, env, head, field, ExprList.End)
+                return emit_enum_ctor(ctx, env, head, field, ExprList.End)
             }
         }
         _ -> {}
     }
 
-    let r = emit_expr(cg, env, obj)
+    let r = emit_expr(ctx, env, obj)
     if r.had_error {
         return r
     }
     // String property access — `s.length` is a libc strlen.
     if r.ty == "str" && field == "length" {
-        let str_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "len_arg")
-        let strlen_fn = forge_llvm_get_named_function(cg.module, "strlen")
+        let str_ptr = forge_llvm_build_int_to_ptr(ctx.builder, r.value, ctx.ptr_type, "len_arg")
+        let strlen_fn = forge_llvm_get_named_function(ctx.module, "strlen")
         let pa = forge_llvm_type_array_new(1)
-        forge_llvm_type_array_set(pa, 0, cg.ptr_type)
-        let strlen_ty = forge_llvm_function_type(cg.i64_type, pa, 1, 0)
+        forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
+        let strlen_ty = forge_llvm_function_type(ctx.i64_type, pa, 1, 0)
         forge_llvm_type_array_free(pa)
         let arr = forge_llvm_value_array_new(1)
         forge_llvm_value_array_set(arr, 0, str_ptr)
-        let len = forge_llvm_build_call(cg.builder, strlen_ty, strlen_fn, arr, 1, "strlen_call")
+        let len = forge_llvm_build_call(ctx.builder, strlen_ty, strlen_fn, arr, 1, "strlen_call")
         forge_llvm_value_array_free(arr)
         return ok_emit(len)
     }
@@ -806,7 +806,7 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     if struct_name == "" {
         return err_emit("field access on non-struct value (ty=" + r.ty + ", field=" + field + ")")
     }
-    let lookup = struct_reg_lookup(cg.structs, struct_name)
+    let lookup = struct_reg_lookup(ctx.structs, struct_name)
     if !lookup.found {
         return err_emit("unknown struct `" + struct_name + "`")
     }
@@ -814,11 +814,11 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     if idx < 0 {
         return err_emit("unknown field `" + field + "` on struct `" + struct_name + "`")
     }
-    let st_ty = forge_llvm_get_type_by_name(cg.ctx, struct_name)
-    let obj_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "obj_ptr")
-    let gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, obj_ptr, idx, "fld_ptr")
-    let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, gep, field)
-    let field_ty = translate_param_type(cg.structs, cg.enums, field_type_of(lookup.fields, field))
+    let st_ty = forge_llvm_get_type_by_name(ctx.ctx, struct_name)
+    let obj_ptr = forge_llvm_build_int_to_ptr(ctx.builder, r.value, ctx.ptr_type, "obj_ptr")
+    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fld_ptr")
+    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, field)
+    let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
     EmitResult { value: loaded, ty: field_ty, had_error: false, error_message: "" }
 }
 
@@ -829,44 +829,44 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
 // bind_pattern_payload_loop — see features/match/codegen.fg.
 
 // advance_field_list, field_type_at, strip_enum_prefix moved to
-// core/cg.fg.
+// core/ctx.fg.
 
 // "struct:Name" → "Name"; anything else → "".
-// strip_struct_prefix — moved to core/cg.fg.
+// strip_struct_prefix — moved to core/ctx.fg.
 
-fn emit_call(cg: Codegen, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
+fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
     // Destructure callee exactly once.
     match callee {
-        .Ident(name) -> emit_call_named(cg, env, name, args)
-        .FieldAccess(obj, method) -> emit_method_call(cg, env, obj, method, args)
+        .Ident(name) -> emit_call_named(ctx, env, name, args)
+        .FieldAccess(obj, method) -> emit_method_call(ctx, env, obj, method, args)
         _ -> err_emit("only direct function calls are supported")
     }
 }
 
-fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: ExprList) -> EmitResult {
+fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: ExprList) -> EmitResult {
     // Special-case `.length` and `.substring` on strings — these are
     // emitted via libc strlen / a custom substring helper rather than
     // dispatched as methods.
-    let r = emit_expr(cg, env, obj)
+    let r = emit_expr(ctx, env, obj)
     if r.had_error {
         return r
     }
     if r.ty == "str" {
         if method == "length" {
-            let str_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "len_arg")
-            let strlen_fn = forge_llvm_get_named_function(cg.module, "strlen")
+            let str_ptr = forge_llvm_build_int_to_ptr(ctx.builder, r.value, ctx.ptr_type, "len_arg")
+            let strlen_fn = forge_llvm_get_named_function(ctx.module, "strlen")
             let pa = forge_llvm_type_array_new(1)
-            forge_llvm_type_array_set(pa, 0, cg.ptr_type)
-            let strlen_ty = forge_llvm_function_type(cg.i64_type, pa, 1, 0)
+            forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
+            let strlen_ty = forge_llvm_function_type(ctx.i64_type, pa, 1, 0)
             forge_llvm_type_array_free(pa)
             let arr = forge_llvm_value_array_new(1)
             forge_llvm_value_array_set(arr, 0, str_ptr)
-            let len = forge_llvm_build_call(cg.builder, strlen_ty, strlen_fn, arr, 1, "strlen_call")
+            let len = forge_llvm_build_call(ctx.builder, strlen_ty, strlen_fn, arr, 1, "strlen_call")
             forge_llvm_value_array_free(arr)
             return ok_emit(len)
         }
         if method == "substring" {
-            return emit_substring(cg, env, r.value, args)
+            return emit_substring(ctx, env, r.value, args)
         }
         return err_emit("string method `" + method + "` not implemented")
     }
@@ -882,7 +882,7 @@ fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: E
         return err_emit("method call on non-struct/enum value (ty=" + r.ty + ")")
     }
     let mangled = owner + "__" + method
-    let fn_val = forge_llvm_get_named_function(cg.module, mangled)
+    let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
     if fn_val == null {
         return err_emit("undefined method `" + owner + "." + method + "`")
     }
@@ -891,72 +891,72 @@ fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: E
     let arg_count = extra_count + 1
     let arg_arr = forge_llvm_value_array_new(arg_count)
     forge_llvm_value_array_set(arg_arr, 0, r.value)
-    let fill = fill_arg_array(cg, env, arg_arr, args, 1)
+    let fill = fill_arg_array(ctx, env, arg_arr, args, 1)
     if fill.had_error {
         forge_llvm_value_array_free(arg_arr)
         return fill
     }
     let param_arr = forge_llvm_type_array_new(arg_count)
-    fill_i64_param_array(param_arr, cg.i64_type, 0, arg_count)
-    let fn_type = forge_llvm_function_type(cg.i64_type, param_arr, arg_count, 0)
+    fill_i64_param_array(param_arr, ctx.i64_type, 0, arg_count)
+    let fn_type = forge_llvm_function_type(ctx.i64_type, param_arr, arg_count, 0)
     forge_llvm_type_array_free(param_arr)
-    let result = forge_llvm_build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "methcall")
+    let result = forge_llvm_build_call(ctx.builder, fn_type, fn_val, arg_arr, arg_count, "methcall")
     forge_llvm_value_array_free(arg_arr)
-    let ret_ty = fn_ret_lookup(cg.fn_rets, mangled)
+    let ret_ty = fn_ret_lookup(ctx.fn_rets, mangled)
     if ret_ty == "" {
         return ok_emit(result)
     }
     EmitResult { value: result, ty: ret_ty, had_error: false, error_message: "" }
 }
 
-fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> EmitResult {
+fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitResult {
     if name == "println" {
-        return emit_println(cg, env, args)
+        return emit_println(ctx, env, args)
     }
     if name == "eprintln" {
         // Same as println for the MVP — go to stdout. Bootstrap
         // source uses eprintln only for diagnostics.
-        return emit_println(cg, env, args)
+        return emit_println(ctx, env, args)
     }
     if name == "string" {
-        return emit_int_to_string(cg, env, args)
+        return emit_int_to_string(ctx, env, args)
     }
     if name == "int" {
-        return emit_string_to_int(cg, env, args)
+        return emit_string_to_int(ctx, env, args)
     }
-    let fn_val = forge_llvm_get_named_function(cg.module, name)
+    let fn_val = forge_llvm_get_named_function(ctx.module, name)
     if fn_val == null {
         return err_emit("undefined function `" + name + "`")
     }
 
     let arg_count = expr_list_length(args)
     let arg_arr = forge_llvm_value_array_new(arg_count)
-    let fill = fill_arg_array(cg, env, arg_arr, args, 0)
+    let fill = fill_arg_array(ctx, env, arg_arr, args, 0)
     if fill.had_error {
         forge_llvm_value_array_free(arg_arr)
         return fill
     }
     // All bootstrap functions have the same shape: (i64, i64, ...) -> i64.
     let param_arr = forge_llvm_type_array_new(arg_count)
-    fill_i64_param_array(param_arr, cg.i64_type, 0, arg_count)
-    let fn_type = forge_llvm_function_type(cg.i64_type, param_arr, arg_count, 0)
+    fill_i64_param_array(param_arr, ctx.i64_type, 0, arg_count)
+    let fn_type = forge_llvm_function_type(ctx.i64_type, param_arr, arg_count, 0)
     forge_llvm_type_array_free(param_arr)
 
-    let result = forge_llvm_build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
+    let result = forge_llvm_build_call(ctx.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
     forge_llvm_value_array_free(arg_arr)
-    let ret_ty = fn_ret_lookup(cg.fn_rets, name)
+    let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
     if ret_ty == "" {
         return ok_emit(result)
     }
     EmitResult { value: result, ty: ret_ty, had_error: false, error_message: "" }
 }
 
-fn emit_int_to_string(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
+fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // string(i64) → str via snprintf into a 32-byte malloc'd buffer.
     match args {
         .End -> err_emit("string() expects 1 arg")
         .Node(arg, _) -> {
-            let r = emit_expr(cg, env, arg)
+            let r = emit_expr(ctx, env, arg)
             if r.had_error {
                 return r
             }
@@ -965,43 +965,43 @@ fn emit_int_to_string(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
                 return r
             }
             // malloc(32)
-            let malloc_fn = forge_llvm_get_named_function(cg.module, "malloc")
+            let malloc_fn = forge_llvm_get_named_function(ctx.module, "malloc")
             let mpa = forge_llvm_type_array_new(1)
-            forge_llvm_type_array_set(mpa, 0, cg.i64_type)
-            let malloc_type = forge_llvm_function_type(cg.ptr_type, mpa, 1, 0)
+            forge_llvm_type_array_set(mpa, 0, ctx.i64_type)
+            let malloc_type = forge_llvm_function_type(ctx.ptr_type, mpa, 1, 0)
             forge_llvm_type_array_free(mpa)
             let m_arr = forge_llvm_value_array_new(1)
-            forge_llvm_value_array_set(m_arr, 0, forge_llvm_const_int(cg.i64_type, 32, 0))
-            let buf = forge_llvm_build_call(cg.builder, malloc_type, malloc_fn, m_arr, 1, "i2s_buf")
+            forge_llvm_value_array_set(m_arr, 0, forge_llvm_const_int(ctx.i64_type, 32, 0))
+            let buf = forge_llvm_build_call(ctx.builder, malloc_type, malloc_fn, m_arr, 1, "i2s_buf")
             forge_llvm_value_array_free(m_arr)
             // snprintf(buf, 32, "%lld", value)
-            let fmt = forge_llvm_build_global_string_ptr(cg.builder, "%lld", ".i2s_fmt")
-            let snprintf_fn = forge_llvm_get_named_function(cg.module, "snprintf")
+            let fmt = forge_llvm_build_global_string_ptr(ctx.builder, "%lld", ".i2s_fmt")
+            let snprintf_fn = forge_llvm_get_named_function(ctx.module, "snprintf")
             let spa = forge_llvm_type_array_new(3)
-            forge_llvm_type_array_set(spa, 0, cg.ptr_type)
-            forge_llvm_type_array_set(spa, 1, cg.i64_type)
-            forge_llvm_type_array_set(spa, 2, cg.ptr_type)
-            let snprintf_type = forge_llvm_function_type(forge_llvm_int32_type(cg.ctx), spa, 3, 1)
+            forge_llvm_type_array_set(spa, 0, ctx.ptr_type)
+            forge_llvm_type_array_set(spa, 1, ctx.i64_type)
+            forge_llvm_type_array_set(spa, 2, ctx.ptr_type)
+            let snprintf_type = forge_llvm_function_type(forge_llvm_int32_type(ctx.ctx), spa, 3, 1)
             forge_llvm_type_array_free(spa)
             let s_arr = forge_llvm_value_array_new(4)
             forge_llvm_value_array_set(s_arr, 0, buf)
-            forge_llvm_value_array_set(s_arr, 1, forge_llvm_const_int(cg.i64_type, 32, 0))
+            forge_llvm_value_array_set(s_arr, 1, forge_llvm_const_int(ctx.i64_type, 32, 0))
             forge_llvm_value_array_set(s_arr, 2, fmt)
             forge_llvm_value_array_set(s_arr, 3, r.value)
-            forge_llvm_build_call(cg.builder, snprintf_type, snprintf_fn, s_arr, 4, "")
+            forge_llvm_build_call(ctx.builder, snprintf_type, snprintf_fn, s_arr, 4, "")
             forge_llvm_value_array_free(s_arr)
-            let result_i64 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "i2s_result")
+            let result_i64 = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "i2s_result")
             ok_emit_str(result_i64)
         }
     }
 }
 
-fn emit_string_to_int(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
+fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // int(str) → i64 via libc atoi.
     match args {
         .End -> err_emit("int() expects 1 arg")
         .Node(arg, _) -> {
-            let r = emit_expr(cg, env, arg)
+            let r = emit_expr(ctx, env, arg)
             if r.had_error {
                 return r
             }
@@ -1009,23 +1009,23 @@ fn emit_string_to_int(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
                 // Already an int — pass through.
                 return r
             }
-            let str_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "atoi_arg")
-            let atoi_fn = forge_llvm_get_named_function(cg.module, "atoi")
+            let str_ptr = forge_llvm_build_int_to_ptr(ctx.builder, r.value, ctx.ptr_type, "atoi_arg")
+            let atoi_fn = forge_llvm_get_named_function(ctx.module, "atoi")
             let pa = forge_llvm_type_array_new(1)
-            forge_llvm_type_array_set(pa, 0, cg.ptr_type)
-            let atoi_type = forge_llvm_function_type(forge_llvm_int32_type(cg.ctx), pa, 1, 0)
+            forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
+            let atoi_type = forge_llvm_function_type(forge_llvm_int32_type(ctx.ctx), pa, 1, 0)
             forge_llvm_type_array_free(pa)
             let arr = forge_llvm_value_array_new(1)
             forge_llvm_value_array_set(arr, 0, str_ptr)
-            let result32 = forge_llvm_build_call(cg.builder, atoi_type, atoi_fn, arr, 1, "atoi_call")
+            let result32 = forge_llvm_build_call(ctx.builder, atoi_type, atoi_fn, arr, 1, "atoi_call")
             forge_llvm_value_array_free(arr)
             // Sign-extend i32 → i64.
-            ok_emit(forge_llvm_build_sext(cg.builder, result32, cg.i64_type, "atoi_ext"))
+            ok_emit(forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "atoi_ext"))
         }
     }
 }
 
-fn emit_println(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
+fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // Special-case the most common shape: `println("literal")`. We
     // destructure straight to the inner string text in a single
     // match — going through any extra binding clobbers the payload
@@ -1035,11 +1035,11 @@ fn emit_println(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
             match e {
                 .String(text) -> {
                     let inner = strip_quotes(text)
-                    let str_ptr = forge_llvm_build_global_string_ptr(cg.builder, inner, ".str")
-                    forge_llvm_build_ptr_to_int(cg.builder, str_ptr, cg.i64_type, "str_i64")
+                    let str_ptr = forge_llvm_build_global_string_ptr(ctx.builder, inner, ".str")
+                    forge_llvm_build_ptr_to_int(ctx.builder, str_ptr, ctx.i64_type, "str_i64")
                 }
                 _ -> {
-                    let r = emit_expr(cg, env, e)
+                    let r = emit_expr(ctx, env, e)
                     if r.had_error {
                         return r
                     }
@@ -1051,92 +1051,92 @@ fn emit_println(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
             return err_emit("println expects 1 argument")
         }
     }
-    let str_ptr2 = forge_llvm_build_int_to_ptr(cg.builder, str_i64, cg.ptr_type, "str_ptr")
-    let puts_fn = forge_llvm_get_named_function(cg.module, "puts")
+    let str_ptr2 = forge_llvm_build_int_to_ptr(ctx.builder, str_i64, ctx.ptr_type, "str_ptr")
+    let puts_fn = forge_llvm_get_named_function(ctx.module, "puts")
     let arg_arr = forge_llvm_value_array_new(1)
     forge_llvm_value_array_set(arg_arr, 0, str_ptr2)
     let puts_param_arr = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(puts_param_arr, 0, cg.ptr_type)
-    let puts_type = forge_llvm_function_type(forge_llvm_int32_type(cg.ctx), puts_param_arr, 1, 0)
+    forge_llvm_type_array_set(puts_param_arr, 0, ctx.ptr_type)
+    let puts_type = forge_llvm_function_type(forge_llvm_int32_type(ctx.ctx), puts_param_arr, 1, 0)
     forge_llvm_type_array_free(puts_param_arr)
-    forge_llvm_build_call(cg.builder, puts_type, puts_fn, arg_arr, 1, "")
+    forge_llvm_build_call(ctx.builder, puts_type, puts_fn, arg_arr, 1, "")
     forge_llvm_value_array_free(arg_arr)
-    ok_emit(forge_llvm_const_int(cg.i64_type, 0, 0))
+    ok_emit(forge_llvm_const_int(ctx.i64_type, 0, 0))
 }
 
-fn emit_concat(cg: Codegen, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
+fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     // Decode the i64-encoded operands back to ptrs.
-    let lhs_ptr = forge_llvm_build_int_to_ptr(cg.builder, lhs_i64, cg.ptr_type, "concat_l")
-    let rhs_ptr = forge_llvm_build_int_to_ptr(cg.builder, rhs_i64, cg.ptr_type, "concat_r")
+    let lhs_ptr = forge_llvm_build_int_to_ptr(ctx.builder, lhs_i64, ctx.ptr_type, "concat_l")
+    let rhs_ptr = forge_llvm_build_int_to_ptr(ctx.builder, rhs_i64, ctx.ptr_type, "concat_r")
 
     // strlen each side.
-    let strlen_fn = forge_llvm_get_named_function(cg.module, "strlen")
+    let strlen_fn = forge_llvm_get_named_function(ctx.module, "strlen")
     let strlen_param_arr = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(strlen_param_arr, 0, cg.ptr_type)
-    let strlen_type = forge_llvm_function_type(cg.i64_type, strlen_param_arr, 1, 0)
+    forge_llvm_type_array_set(strlen_param_arr, 0, ctx.ptr_type)
+    let strlen_type = forge_llvm_function_type(ctx.i64_type, strlen_param_arr, 1, 0)
     forge_llvm_type_array_free(strlen_param_arr)
 
     let l_arr = forge_llvm_value_array_new(1)
     forge_llvm_value_array_set(l_arr, 0, lhs_ptr)
-    let lhs_len = forge_llvm_build_call(cg.builder, strlen_type, strlen_fn, l_arr, 1, "lhs_len")
+    let lhs_len = forge_llvm_build_call(ctx.builder, strlen_type, strlen_fn, l_arr, 1, "lhs_len")
     forge_llvm_value_array_free(l_arr)
 
     let r_arr = forge_llvm_value_array_new(1)
     forge_llvm_value_array_set(r_arr, 0, rhs_ptr)
-    let rhs_len = forge_llvm_build_call(cg.builder, strlen_type, strlen_fn, r_arr, 1, "rhs_len")
+    let rhs_len = forge_llvm_build_call(ctx.builder, strlen_type, strlen_fn, r_arr, 1, "rhs_len")
     forge_llvm_value_array_free(r_arr)
 
     // total = lhs_len + rhs_len; alloc = total + 1 (null terminator)
-    let total = forge_llvm_build_add(cg.builder, lhs_len, rhs_len, "concat_total")
-    let one = forge_llvm_const_int(cg.i64_type, 1, 0)
-    let alloc_size = forge_llvm_build_add(cg.builder, total, one, "concat_size")
+    let total = forge_llvm_build_add(ctx.builder, lhs_len, rhs_len, "concat_total")
+    let one = forge_llvm_const_int(ctx.i64_type, 1, 0)
+    let alloc_size = forge_llvm_build_add(ctx.builder, total, one, "concat_size")
 
     // malloc(alloc_size)
-    let malloc_fn = forge_llvm_get_named_function(cg.module, "malloc")
+    let malloc_fn = forge_llvm_get_named_function(ctx.module, "malloc")
     let malloc_param_arr = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(malloc_param_arr, 0, cg.i64_type)
-    let malloc_type = forge_llvm_function_type(cg.ptr_type, malloc_param_arr, 1, 0)
+    forge_llvm_type_array_set(malloc_param_arr, 0, ctx.i64_type)
+    let malloc_type = forge_llvm_function_type(ctx.ptr_type, malloc_param_arr, 1, 0)
     forge_llvm_type_array_free(malloc_param_arr)
 
     let m_arr = forge_llvm_value_array_new(1)
     forge_llvm_value_array_set(m_arr, 0, alloc_size)
-    let buf = forge_llvm_build_call(cg.builder, malloc_type, malloc_fn, m_arr, 1, "concat_buf")
+    let buf = forge_llvm_build_call(ctx.builder, malloc_type, malloc_fn, m_arr, 1, "concat_buf")
     forge_llvm_value_array_free(m_arr)
 
     // memcpy(buf, lhs_ptr, lhs_len)
-    let memcpy_fn = forge_llvm_get_named_function(cg.module, "memcpy")
+    let memcpy_fn = forge_llvm_get_named_function(ctx.module, "memcpy")
     let memcpy_param_arr = forge_llvm_type_array_new(3)
-    forge_llvm_type_array_set(memcpy_param_arr, 0, cg.ptr_type)
-    forge_llvm_type_array_set(memcpy_param_arr, 1, cg.ptr_type)
-    forge_llvm_type_array_set(memcpy_param_arr, 2, cg.i64_type)
-    let memcpy_type = forge_llvm_function_type(cg.ptr_type, memcpy_param_arr, 3, 0)
+    forge_llvm_type_array_set(memcpy_param_arr, 0, ctx.ptr_type)
+    forge_llvm_type_array_set(memcpy_param_arr, 1, ctx.ptr_type)
+    forge_llvm_type_array_set(memcpy_param_arr, 2, ctx.i64_type)
+    let memcpy_type = forge_llvm_function_type(ctx.ptr_type, memcpy_param_arr, 3, 0)
     forge_llvm_type_array_free(memcpy_param_arr)
 
     let mc1_arr = forge_llvm_value_array_new(3)
     forge_llvm_value_array_set(mc1_arr, 0, buf)
     forge_llvm_value_array_set(mc1_arr, 1, lhs_ptr)
     forge_llvm_value_array_set(mc1_arr, 2, lhs_len)
-    forge_llvm_build_call(cg.builder, memcpy_type, memcpy_fn, mc1_arr, 3, "")
+    forge_llvm_build_call(ctx.builder, memcpy_type, memcpy_fn, mc1_arr, 3, "")
     forge_llvm_value_array_free(mc1_arr)
 
     // memcpy(buf + lhs_len, rhs_ptr, rhs_len + 1)  — copies rhs and the trailing NUL
-    let buf_int = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "buf_int")
-    let dst2_int = forge_llvm_build_add(cg.builder, buf_int, lhs_len, "dst2_int")
-    let dst2 = forge_llvm_build_int_to_ptr(cg.builder, dst2_int, cg.ptr_type, "dst2")
-    let rhs_len_plus_1 = forge_llvm_build_add(cg.builder, rhs_len, one, "rhs_len_p1")
+    let buf_int = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "buf_int")
+    let dst2_int = forge_llvm_build_add(ctx.builder, buf_int, lhs_len, "dst2_int")
+    let dst2 = forge_llvm_build_int_to_ptr(ctx.builder, dst2_int, ctx.ptr_type, "dst2")
+    let rhs_len_plus_1 = forge_llvm_build_add(ctx.builder, rhs_len, one, "rhs_len_p1")
 
     let mc2_arr = forge_llvm_value_array_new(3)
     forge_llvm_value_array_set(mc2_arr, 0, dst2)
     forge_llvm_value_array_set(mc2_arr, 1, rhs_ptr)
     forge_llvm_value_array_set(mc2_arr, 2, rhs_len_plus_1)
-    forge_llvm_build_call(cg.builder, memcpy_type, memcpy_fn, mc2_arr, 3, "")
+    forge_llvm_build_call(ctx.builder, memcpy_type, memcpy_fn, mc2_arr, 3, "")
     forge_llvm_value_array_free(mc2_arr)
 
-    let result_i64 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "concat_i64")
+    let result_i64 = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "concat_i64")
     ok_emit_str(result_i64)
 }
 
-fn emit_substring(cg: Codegen, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
+fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
     // Expect exactly two integer args: start and end (exclusive).
     // Destructure exactly once — repeated `match args` corrupts
     // the inner payloads (host-compiler issue).
@@ -1145,62 +1145,62 @@ fn emit_substring(cg: Codegen, env: VarEnv, str_i64: ptr, args: ExprList) -> Emi
         .Node(start_arg, rest) -> {
             match rest {
                 .End -> err_emit("substring expects 2 args, got 1")
-                .Node(end_arg, _) -> emit_substring_inner(cg, env, str_i64, start_arg, end_arg)
+                .Node(end_arg, _) -> emit_substring_inner(ctx, env, str_i64, start_arg, end_arg)
             }
         }
     }
 }
 
-fn emit_substring_inner(cg: Codegen, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> EmitResult {
-    let start_r = emit_expr(cg, env, start_arg)
+fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> EmitResult {
+    let start_r = emit_expr(ctx, env, start_arg)
     if start_r.had_error {
         return start_r
     }
-    let end_r = emit_expr(cg, env, end_arg)
+    let end_r = emit_expr(ctx, env, end_arg)
     if end_r.had_error {
         return end_r
     }
-    let str_ptr = forge_llvm_build_int_to_ptr(cg.builder, str_i64, cg.ptr_type, "sub_src")
-    let len = forge_llvm_build_sub(cg.builder, end_r.value, start_r.value, "sub_len")
-    let one = forge_llvm_const_int(cg.i64_type, 1, 0)
-    let alloc_size = forge_llvm_build_add(cg.builder, len, one, "sub_alloc")
+    let str_ptr = forge_llvm_build_int_to_ptr(ctx.builder, str_i64, ctx.ptr_type, "sub_src")
+    let len = forge_llvm_build_sub(ctx.builder, end_r.value, start_r.value, "sub_len")
+    let one = forge_llvm_const_int(ctx.i64_type, 1, 0)
+    let alloc_size = forge_llvm_build_add(ctx.builder, len, one, "sub_alloc")
     // malloc(alloc_size)
-    let malloc_fn = forge_llvm_get_named_function(cg.module, "malloc")
+    let malloc_fn = forge_llvm_get_named_function(ctx.module, "malloc")
     let mpa = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(mpa, 0, cg.i64_type)
-    let malloc_type = forge_llvm_function_type(cg.ptr_type, mpa, 1, 0)
+    forge_llvm_type_array_set(mpa, 0, ctx.i64_type)
+    let malloc_type = forge_llvm_function_type(ctx.ptr_type, mpa, 1, 0)
     forge_llvm_type_array_free(mpa)
     let m_arr = forge_llvm_value_array_new(1)
     forge_llvm_value_array_set(m_arr, 0, alloc_size)
-    let buf = forge_llvm_build_call(cg.builder, malloc_type, malloc_fn, m_arr, 1, "sub_buf")
+    let buf = forge_llvm_build_call(ctx.builder, malloc_type, malloc_fn, m_arr, 1, "sub_buf")
     forge_llvm_value_array_free(m_arr)
     // memcpy(buf, src + start, len)
-    let src_int = forge_llvm_build_ptr_to_int(cg.builder, str_ptr, cg.i64_type, "sub_src_int")
-    let off_int = forge_llvm_build_add(cg.builder, src_int, start_r.value, "sub_off_int")
-    let off_ptr = forge_llvm_build_int_to_ptr(cg.builder, off_int, cg.ptr_type, "sub_off")
-    let memcpy_fn = forge_llvm_get_named_function(cg.module, "memcpy")
+    let src_int = forge_llvm_build_ptr_to_int(ctx.builder, str_ptr, ctx.i64_type, "sub_src_int")
+    let off_int = forge_llvm_build_add(ctx.builder, src_int, start_r.value, "sub_off_int")
+    let off_ptr = forge_llvm_build_int_to_ptr(ctx.builder, off_int, ctx.ptr_type, "sub_off")
+    let memcpy_fn = forge_llvm_get_named_function(ctx.module, "memcpy")
     let mcpa = forge_llvm_type_array_new(3)
-    forge_llvm_type_array_set(mcpa, 0, cg.ptr_type)
-    forge_llvm_type_array_set(mcpa, 1, cg.ptr_type)
-    forge_llvm_type_array_set(mcpa, 2, cg.i64_type)
-    let memcpy_type = forge_llvm_function_type(cg.ptr_type, mcpa, 3, 0)
+    forge_llvm_type_array_set(mcpa, 0, ctx.ptr_type)
+    forge_llvm_type_array_set(mcpa, 1, ctx.ptr_type)
+    forge_llvm_type_array_set(mcpa, 2, ctx.i64_type)
+    let memcpy_type = forge_llvm_function_type(ctx.ptr_type, mcpa, 3, 0)
     forge_llvm_type_array_free(mcpa)
     let mc_arr = forge_llvm_value_array_new(3)
     forge_llvm_value_array_set(mc_arr, 0, buf)
     forge_llvm_value_array_set(mc_arr, 1, off_ptr)
     forge_llvm_value_array_set(mc_arr, 2, len)
-    forge_llvm_build_call(cg.builder, memcpy_type, memcpy_fn, mc_arr, 3, "")
+    forge_llvm_build_call(ctx.builder, memcpy_type, memcpy_fn, mc_arr, 3, "")
     forge_llvm_value_array_free(mc_arr)
     // Null-terminate at buf[len].
-    let buf_int2 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "sub_buf_int")
-    let nul_int = forge_llvm_build_add(cg.builder, buf_int2, len, "sub_nul_int")
-    let nul_ptr = forge_llvm_build_int_to_ptr(cg.builder, nul_int, cg.ptr_type, "sub_nul")
-    forge_llvm_build_store(cg.builder, forge_llvm_const_int(forge_llvm_int8_type(cg.ctx), 0, 0), nul_ptr)
-    let result_i64 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "sub_result")
+    let buf_int2 = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "sub_buf_int")
+    let nul_int = forge_llvm_build_add(ctx.builder, buf_int2, len, "sub_nul_int")
+    let nul_ptr = forge_llvm_build_int_to_ptr(ctx.builder, nul_int, ctx.ptr_type, "sub_nul")
+    forge_llvm_build_store(ctx.builder, forge_llvm_const_int(forge_llvm_int8_type(ctx.ctx), 0, 0), nul_ptr)
+    let result_i64 = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "sub_result")
     ok_emit_str(result_i64)
 }
 
-fn emit_str_cmp(cg: Codegen, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitResult {
+fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitResult {
     // Lower string ordering ops (<, <=, >, >=) to a libc strcmp
     // call followed by a signed comparison of the result against
     // 0. We sign-extend strcmp's i32 result into i64 ourselves
@@ -1208,45 +1208,45 @@ fn emit_str_cmp(cg: Codegen, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitResul
     // operands via zero-extend, which would turn a negative
     // strcmp result into a huge positive i64 and break signed
     // comparison.
-    let lhs_ptr = forge_llvm_build_int_to_ptr(cg.builder, lhs_i64, cg.ptr_type, "scmp_l")
-    let rhs_ptr = forge_llvm_build_int_to_ptr(cg.builder, rhs_i64, cg.ptr_type, "scmp_r")
-    let strcmp_fn = forge_llvm_get_named_function(cg.module, "strcmp")
+    let lhs_ptr = forge_llvm_build_int_to_ptr(ctx.builder, lhs_i64, ctx.ptr_type, "scmp_l")
+    let rhs_ptr = forge_llvm_build_int_to_ptr(ctx.builder, rhs_i64, ctx.ptr_type, "scmp_r")
+    let strcmp_fn = forge_llvm_get_named_function(ctx.module, "strcmp")
     let pa = forge_llvm_type_array_new(2)
-    forge_llvm_type_array_set(pa, 0, cg.ptr_type)
-    forge_llvm_type_array_set(pa, 1, cg.ptr_type)
-    let strcmp_type = forge_llvm_function_type(forge_llvm_int32_type(cg.ctx), pa, 2, 0)
+    forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
+    forge_llvm_type_array_set(pa, 1, ctx.ptr_type)
+    let strcmp_type = forge_llvm_function_type(forge_llvm_int32_type(ctx.ctx), pa, 2, 0)
     forge_llvm_type_array_free(pa)
     let arr = forge_llvm_value_array_new(2)
     forge_llvm_value_array_set(arr, 0, lhs_ptr)
     forge_llvm_value_array_set(arr, 1, rhs_ptr)
-    let result32 = forge_llvm_build_call(cg.builder, strcmp_type, strcmp_fn, arr, 2, "strcmp_call")
+    let result32 = forge_llvm_build_call(ctx.builder, strcmp_type, strcmp_fn, arr, 2, "strcmp_call")
     forge_llvm_value_array_free(arr)
-    let result64 = forge_llvm_build_sext(cg.builder, result32, cg.i64_type, "strcmp_sext")
-    let zero64 = forge_llvm_const_int(cg.i64_type, 0, 0)
-    let cmp = forge_llvm_build_icmp(cg.builder, pred, result64, zero64, "scmp_cmp")
-    ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "scmp_ext"))
+    let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
+    let zero64 = forge_llvm_const_int(ctx.i64_type, 0, 0)
+    let cmp = forge_llvm_build_icmp(ctx.builder, pred, result64, zero64, "scmp_cmp")
+    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "scmp_ext"))
 }
 
-fn emit_str_eq(cg: Codegen, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult {
-    let lhs_ptr = forge_llvm_build_int_to_ptr(cg.builder, lhs_i64, cg.ptr_type, "streq_l")
-    let rhs_ptr = forge_llvm_build_int_to_ptr(cg.builder, rhs_i64, cg.ptr_type, "streq_r")
-    let strcmp_fn = forge_llvm_get_named_function(cg.module, "strcmp")
+fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult {
+    let lhs_ptr = forge_llvm_build_int_to_ptr(ctx.builder, lhs_i64, ctx.ptr_type, "streq_l")
+    let rhs_ptr = forge_llvm_build_int_to_ptr(ctx.builder, rhs_i64, ctx.ptr_type, "streq_r")
+    let strcmp_fn = forge_llvm_get_named_function(ctx.module, "strcmp")
     let pa = forge_llvm_type_array_new(2)
-    forge_llvm_type_array_set(pa, 0, cg.ptr_type)
-    forge_llvm_type_array_set(pa, 1, cg.ptr_type)
-    let strcmp_type = forge_llvm_function_type(forge_llvm_int32_type(cg.ctx), pa, 2, 0)
+    forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
+    forge_llvm_type_array_set(pa, 1, ctx.ptr_type)
+    let strcmp_type = forge_llvm_function_type(forge_llvm_int32_type(ctx.ctx), pa, 2, 0)
     forge_llvm_type_array_free(pa)
     let arr = forge_llvm_value_array_new(2)
     forge_llvm_value_array_set(arr, 0, lhs_ptr)
     forge_llvm_value_array_set(arr, 1, rhs_ptr)
-    let result32 = forge_llvm_build_call(cg.builder, strcmp_type, strcmp_fn, arr, 2, "strcmp_call")
+    let result32 = forge_llvm_build_call(ctx.builder, strcmp_type, strcmp_fn, arr, 2, "strcmp_call")
     forge_llvm_value_array_free(arr)
     // Compare strcmp result against 0 (i32). For == we want eq;
     // for != we want ne. The result of icmp is i1; zext to i64.
-    let zero32 = forge_llvm_const_int(forge_llvm_int32_type(cg.ctx), 0, 0)
+    let zero32 = forge_llvm_const_int(forge_llvm_int32_type(ctx.ctx), 0, 0)
     let pred = if invert { 33 } else { 32 }
-    let cmp = forge_llvm_build_icmp(cg.builder, pred, result32, zero32, "streq_cmp")
-    ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "streq_ext"))
+    let cmp = forge_llvm_build_icmp(ctx.builder, pred, result32, zero32, "streq_cmp")
+    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "streq_ext"))
 }
 
 fn strip_quotes(s: string) -> string {
@@ -1257,34 +1257,34 @@ fn strip_quotes(s: string) -> string {
     s.substring(1, len - 1)
 }
 
-fn fill_arg_array(cg: Codegen, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
+fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(expr, next) -> {
-            let r = emit_expr(cg, env, expr)
+            let r = emit_expr(ctx, env, expr)
             if r.had_error {
                 return r
             }
             forge_llvm_value_array_set(arr, idx, r.value)
-            fill_arg_array(cg, env, arr, next, idx + 1)
+            fill_arg_array(ctx, env, arr, next, idx + 1)
         }
     }
 }
 
-fn emit_unary(cg: Codegen, env: VarEnv, operator: string, right: Expr) -> EmitResult {
-    let right_result = emit_expr(cg, env, right)
+fn emit_unary(ctx: Ctx, env: VarEnv, operator: string, right: Expr) -> EmitResult {
+    let right_result = emit_expr(ctx, env, right)
     if right_result.had_error {
         return right_result
     }
 
     if operator == "-" {
-        let zero = forge_llvm_const_int(cg.i64_type, 0, 0)
-        return ok_emit(forge_llvm_build_sub(cg.builder, zero, right_result.value, "neg"))
+        let zero = forge_llvm_const_int(ctx.i64_type, 0, 0)
+        return ok_emit(forge_llvm_build_sub(ctx.builder, zero, right_result.value, "neg"))
     }
 
     if operator == "!" {
-        let cmp = forge_llvm_build_icmp(cg.builder, 32, right_result.value, forge_llvm_const_int(cg.i64_type, 0, 0), "not_cmp")
-        return ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "not"))
+        let cmp = forge_llvm_build_icmp(ctx.builder, 32, right_result.value, forge_llvm_const_int(ctx.i64_type, 0, 0), "not_cmp")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "not"))
     }
 
     err_emit("unsupported unary operator `" + operator + "`")
@@ -1297,14 +1297,14 @@ fn is_null_literal(e: Expr) -> bool {
     }
 }
 
-fn emit_binary(cg: Codegen, env: VarEnv, left: Expr, operator: string, right: Expr) -> EmitResult {
-    let left_result = emit_expr(cg, env, left)
+fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, operator: string, right: Expr) -> EmitResult {
+    let left_result = emit_expr(ctx, env, left)
     if left_result.had_error {
         return left_result
     }
     let lhs = left_result.value
 
-    let right_result = emit_expr(cg, env, right)
+    let right_result = emit_expr(ctx, env, right)
     if right_result.had_error {
         return right_result
     }
@@ -1319,75 +1319,75 @@ fn emit_binary(cg: Codegen, env: VarEnv, left: Expr, operator: string, right: Ex
         // emit a string concat sequence (strlen+strlen+malloc+memcpy
         // ×2 + null-terminate). Otherwise it's an integer add.
         if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_concat(cg, lhs, rhs)
+            return emit_concat(ctx, lhs, rhs)
         }
-        return ok_emit(forge_llvm_build_add(cg.builder, lhs, rhs, "add"))
+        return ok_emit(forge_llvm_build_add(ctx.builder, lhs, rhs, "add"))
     }
-    if operator == "-" { return ok_emit(forge_llvm_build_sub(cg.builder, lhs, rhs, "sub")) }
-    if operator == "*" { return ok_emit(forge_llvm_build_mul(cg.builder, lhs, rhs, "mul")) }
-    if operator == "/" { return ok_emit(forge_llvm_build_sdiv(cg.builder, lhs, rhs, "div")) }
+    if operator == "-" { return ok_emit(forge_llvm_build_sub(ctx.builder, lhs, rhs, "sub")) }
+    if operator == "*" { return ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul")) }
+    if operator == "/" { return ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div")) }
 
     // Comparisons: icmp returns i1, zext to i64
     // pred: 32=eq, 33=ne, 38=sgt, 39=sge, 40=slt, 41=sle
     if operator == "==" {
         if !null_cmp && (left_result.ty == "str" || right_result.ty == "str") {
-            return emit_str_eq(cg, lhs, rhs, false)
+            return emit_str_eq(ctx, lhs, rhs, false)
         }
-        let cmp = forge_llvm_build_icmp(cg.builder, 32, lhs, rhs, "eq")
-        return ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "eq_ext"))
+        let cmp = forge_llvm_build_icmp(ctx.builder, 32, lhs, rhs, "eq")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "eq_ext"))
     }
     if operator == "!=" {
         if !null_cmp && (left_result.ty == "str" || right_result.ty == "str") {
-            return emit_str_eq(cg, lhs, rhs, true)
+            return emit_str_eq(ctx, lhs, rhs, true)
         }
-        let cmp = forge_llvm_build_icmp(cg.builder, 33, lhs, rhs, "ne")
-        return ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "ne_ext"))
+        let cmp = forge_llvm_build_icmp(ctx.builder, 33, lhs, rhs, "ne")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "ne_ext"))
     }
     if operator == "<" {
         if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_str_cmp(cg, lhs, rhs, 40)
+            return emit_str_cmp(ctx, lhs, rhs, 40)
         }
-        let cmp = forge_llvm_build_icmp(cg.builder, 40, lhs, rhs, "slt")
-        return ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "slt_ext"))
+        let cmp = forge_llvm_build_icmp(ctx.builder, 40, lhs, rhs, "slt")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "slt_ext"))
     }
     if operator == "<=" {
         if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_str_cmp(cg, lhs, rhs, 41)
+            return emit_str_cmp(ctx, lhs, rhs, 41)
         }
-        let cmp = forge_llvm_build_icmp(cg.builder, 41, lhs, rhs, "sle")
-        return ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "sle_ext"))
+        let cmp = forge_llvm_build_icmp(ctx.builder, 41, lhs, rhs, "sle")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sle_ext"))
     }
     if operator == ">" {
         if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_str_cmp(cg, lhs, rhs, 38)
+            return emit_str_cmp(ctx, lhs, rhs, 38)
         }
-        let cmp = forge_llvm_build_icmp(cg.builder, 38, lhs, rhs, "sgt")
-        return ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "sgt_ext"))
+        let cmp = forge_llvm_build_icmp(ctx.builder, 38, lhs, rhs, "sgt")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sgt_ext"))
     }
     if operator == ">=" {
         if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_str_cmp(cg, lhs, rhs, 39)
+            return emit_str_cmp(ctx, lhs, rhs, 39)
         }
-        let cmp = forge_llvm_build_icmp(cg.builder, 39, lhs, rhs, "sge")
-        return ok_emit(forge_llvm_build_zext(cg.builder, cmp, cg.i64_type, "sge_ext"))
+        let cmp = forge_llvm_build_icmp(ctx.builder, 39, lhs, rhs, "sge")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sge_ext"))
     }
 
     if operator == "&&" {
         // Eager-bitwise lowering — short-circuit can come later.
-        let l_bool = forge_llvm_build_icmp(cg.builder, 33, lhs, forge_llvm_const_int(cg.i64_type, 0, 0), "l_bool")
-        let r_bool = forge_llvm_build_icmp(cg.builder, 33, rhs, forge_llvm_const_int(cg.i64_type, 0, 0), "r_bool")
-        let l_ext = forge_llvm_build_zext(cg.builder, l_bool, cg.i64_type, "l_ext")
-        let r_ext = forge_llvm_build_zext(cg.builder, r_bool, cg.i64_type, "r_ext")
-        return ok_emit(forge_llvm_build_mul(cg.builder, l_ext, r_ext, "and"))
+        let l_bool = forge_llvm_build_icmp(ctx.builder, 33, lhs, forge_llvm_const_int(ctx.i64_type, 0, 0), "l_bool")
+        let r_bool = forge_llvm_build_icmp(ctx.builder, 33, rhs, forge_llvm_const_int(ctx.i64_type, 0, 0), "r_bool")
+        let l_ext = forge_llvm_build_zext(ctx.builder, l_bool, ctx.i64_type, "l_ext")
+        let r_ext = forge_llvm_build_zext(ctx.builder, r_bool, ctx.i64_type, "r_ext")
+        return ok_emit(forge_llvm_build_mul(ctx.builder, l_ext, r_ext, "and"))
     }
     if operator == "||" {
-        let l_bool = forge_llvm_build_icmp(cg.builder, 33, lhs, forge_llvm_const_int(cg.i64_type, 0, 0), "l_bool")
-        let r_bool = forge_llvm_build_icmp(cg.builder, 33, rhs, forge_llvm_const_int(cg.i64_type, 0, 0), "r_bool")
-        let l_ext = forge_llvm_build_zext(cg.builder, l_bool, cg.i64_type, "l_ext")
-        let r_ext = forge_llvm_build_zext(cg.builder, r_bool, cg.i64_type, "r_ext")
-        let sum = forge_llvm_build_add(cg.builder, l_ext, r_ext, "or_sum")
-        let nonzero = forge_llvm_build_icmp(cg.builder, 33, sum, forge_llvm_const_int(cg.i64_type, 0, 0), "or_cmp")
-        return ok_emit(forge_llvm_build_zext(cg.builder, nonzero, cg.i64_type, "or"))
+        let l_bool = forge_llvm_build_icmp(ctx.builder, 33, lhs, forge_llvm_const_int(ctx.i64_type, 0, 0), "l_bool")
+        let r_bool = forge_llvm_build_icmp(ctx.builder, 33, rhs, forge_llvm_const_int(ctx.i64_type, 0, 0), "r_bool")
+        let l_ext = forge_llvm_build_zext(ctx.builder, l_bool, ctx.i64_type, "l_ext")
+        let r_ext = forge_llvm_build_zext(ctx.builder, r_bool, ctx.i64_type, "r_ext")
+        let sum = forge_llvm_build_add(ctx.builder, l_ext, r_ext, "or_sum")
+        let nonzero = forge_llvm_build_icmp(ctx.builder, 33, sum, forge_llvm_const_int(ctx.i64_type, 0, 0), "or_cmp")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, nonzero, ctx.i64_type, "or"))
     }
 
     err_emit("unsupported binary operator `" + operator + "`")

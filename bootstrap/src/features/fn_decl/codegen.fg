@@ -1,68 +1,68 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 
 use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend}
-use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt, translate_param_type}
+use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_param_type}
 use codegen.{emit_block_loop}
 
 
-export fn emit_function_bodies(cg: Codegen, stmts: StmtList) -> StmtResult {
+export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(VarEnv.End)
         .Node(stmt, next) -> {
             let r = match stmt {
-                .Function(name, params, _, body) -> emit_function_body(cg, name, params, body)
-                .Impl(_, methods) -> emit_function_bodies(cg, methods)
+                .Function(name, params, _, body) -> emit_function_body(ctx, name, params, body)
+                .Impl(_, methods) -> emit_function_bodies(ctx, methods)
                 _ -> ok_stmt(VarEnv.End)
             }
             if r.had_error { return r }
-            emit_function_bodies(cg, next)
+            emit_function_bodies(ctx, next)
         }
     }
 }
 
-export fn emit_function_body(cg: Codegen, name: string, params: ParamList, body: StmtList) -> StmtResult {
-    let fn_val = forge_llvm_get_named_function(cg.module, name)
+export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: StmtList) -> StmtResult {
+    let fn_val = forge_llvm_get_named_function(ctx.module, name)
     if fn_val == null {
         return err_stmt("codegen error: function `" + name + "` was not declared in pass 1")
     }
-    let entry = forge_llvm_append_basic_block(cg.ctx, fn_val, "entry")
-    forge_llvm_position_at_end(cg.builder, entry)
+    let entry = forge_llvm_append_basic_block(ctx.ctx, fn_val, "entry")
+    forge_llvm_position_at_end(ctx.builder, entry)
 
     let empty_env: VarEnv = VarEnv.End
-    let env = bind_params_inline(cg, fn_val, params, 0, empty_env)
+    let env = bind_params_inline(ctx, fn_val, params, 0, empty_env)
 
-    let body_cg = Codegen {
-        ctx: cg.ctx,
-        module: cg.module,
-        builder: cg.builder,
+    let body_cg = Ctx {
+        ctx: ctx.ctx,
+        module: ctx.module,
+        builder: ctx.builder,
         current_fn: fn_val,
-        i64_type: cg.i64_type,
-        i1_type: cg.i1_type,
-        ptr_type: cg.ptr_type,
-        structs: cg.structs,
-        enums: cg.enums,
-        fn_rets: cg.fn_rets,
-        top_level_vars: cg.top_level_vars,
-        loops: cg.loops,
+        i64_type: ctx.i64_type,
+        i1_type: ctx.i1_type,
+        ptr_type: ctx.ptr_type,
+        structs: ctx.structs,
+        enums: ctx.enums,
+        fn_rets: ctx.fn_rets,
+        top_level_vars: ctx.top_level_vars,
+        loops: ctx.loops,
     }
 
-    let r = emit_block_loop(body_cg, env, body, forge_llvm_const_int(cg.i64_type, 0, 0), "i64")
+    let r = emit_block_loop(body_cg, env, body, forge_llvm_const_int(ctx.i64_type, 0, 0), "i64")
     if r.had_error { return err_stmt(r.error_message) }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_ret(cg.builder, r.value)
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_ret(ctx.builder, r.value)
     }
     ok_stmt(VarEnv.End)
 }
 
-fn bind_params_inline(cg: Codegen, fn_val: ptr, params: ParamList, idx: int, env: VarEnv) -> VarEnv {
+fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: ParamList, idx: int, env: VarEnv) -> VarEnv {
     match params {
         .End -> env
         .Node(name, ty, next) -> {
             let arg = forge_llvm_get_param(fn_val, idx)
-            let alloca = forge_llvm_build_alloca(cg.builder, cg.i64_type, name)
-            forge_llvm_build_store(cg.builder, arg, alloca)
-            let internal_ty = translate_param_type(cg.structs, cg.enums, ty)
-            bind_params_inline(cg, fn_val, next, idx + 1, env_extend(env, name, alloca, internal_ty))
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
+            forge_llvm_build_store(ctx.builder, arg, alloca)
+            let internal_ty = translate_param_type(ctx.structs, ctx.enums, ty)
+            bind_params_inline(ctx, fn_val, next, idx + 1, env_extend(env, name, alloca, internal_ty))
         }
     }
 }
