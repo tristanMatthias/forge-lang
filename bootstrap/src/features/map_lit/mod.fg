@@ -1,0 +1,3 @@
+// WHY: map literals {"key": value, ...} backed by C-runtime hash maps.
+
+mod codegen

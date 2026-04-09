@@ -1,0 +1,16 @@
+let m = {"name": "Alice", "age": "30"}
+println(m.get("name"))
+println(m.get("age"))
+println(string(m.has("name")))
+println(string(m.has("missing")))
+println(string(m.length))
+
+m.set("email", "alice@test.com")
+println(m.get("email"))
+println(string(m.length))
+
+let keys = m.keys()
+println(string(keys.length))
+
+let empty = {}
+println(string(empty.length))

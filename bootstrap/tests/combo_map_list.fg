@@ -1,0 +1,30 @@
+// Map operations
+let config = {"host": "localhost", "port": "8080", "debug": "true"}
+println(config.get("host"))
+println(config.get("port"))
+println(string(config.length))
+
+// keys returns a list
+let keys = config.keys()
+println(string(keys.length))
+
+// Build a map programmatically
+let lookup = {}
+lookup.set("alice", "100")
+lookup.set("bob", "200") 
+lookup.set("carol", "300")
+println(lookup.get("bob"))
+println(string(lookup.has("carol")))
+println(string(lookup.has("dave")))
+println(string(lookup.length))
+
+// Overwrite
+lookup.set("alice", "999")
+println(lookup.get("alice"))
+
+// Map + list + lambda combo
+let scores = [90, 85, 95, 70, 88]
+let high = scores.filter((s) -> s >= 90)
+let result = {"count": string(high.length), "first": string(high[0])}
+println(result.get("count"))
+println(result.get("first"))

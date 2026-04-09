@@ -23,3 +23,4 @@ mod tuples
 mod with_expr
 mod list_lit
 mod closures
+mod map_lit

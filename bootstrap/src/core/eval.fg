@@ -536,6 +536,7 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .With(_, _) -> error_result(runtime, "with expression is not supported by the tree-walk evaluator")
         .ListLit(_) -> error_result(runtime, "list literals are not supported by the tree-walk evaluator")
         .Lambda(_, _) -> error_result(runtime, "lambdas are not supported by the tree-walk evaluator")
+        .MapLit(_) -> error_result(runtime, "map literals are not supported by the tree-walk evaluator")
     }
 }
 

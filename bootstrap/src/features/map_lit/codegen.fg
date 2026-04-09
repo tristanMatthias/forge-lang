@@ -1,0 +1,33 @@
+// WHY: codegen for map literals {"key": value, ...} and map operations.
+// Maps are backed by the C-runtime forge_map_*_cstr functions.
+
+use core.ast.{Expr, ExprList, VarEnv, ValueType}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, get_fn, call_0, call_1, call_2, call_3, to_ptr, to_i64}
+use codegen.{emit_expr}
+
+export fn emit_map_lit(ctx: Ctx, env: VarEnv, entries: ExprList) -> EmitResult {
+    let new_fn = get_fn(ctx, "forge_map_new_cstr")
+    let set_fn = get_fn(ctx, "forge_map_set_cstr")
+    let map = call_0(ctx, new_fn, "map")
+    insert_map_entries(ctx, env, entries, map, set_fn)
+}
+
+fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr, set_fn: ptr) -> EmitResult {
+    match entries {
+        .End -> EmitResult { value: map, ty: ValueType.Map, had_error: false, error_message: "" }
+        .Node(key_expr, rest) -> {
+            let key_r = emit_expr(ctx, env, key_expr)
+            if key_r.had_error { return key_r }
+            match rest {
+                .End -> err_emit("map literal has key without value")
+                .Node(val_expr, remaining) -> {
+                    let val_r = emit_expr(ctx, env, val_expr)
+                    if val_r.had_error { return val_r }
+                    let key_ptr = to_ptr(ctx, key_r.value, "map_key")
+                    call_3(ctx, set_fn, map, key_ptr, val_r.value, "")
+                    insert_map_entries(ctx, env, remaining, map, set_fn)
+                }
+            }
+        }
+    }
+}

@@ -192,6 +192,32 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_str_to_upper", str_to_str)
     forge_llvm_add_function(m, "forge_str_to_lower", str_to_str)
 
+    // C-runtime: hash maps
+    let map_new_type = forge_llvm_function_type(pt, forge_llvm_type_array_new(0), 0, 0)
+    forge_llvm_add_function(m, "forge_map_new_cstr", map_new_type)
+
+    // map_set(ptr, ptr, i64) → void
+    let map_set_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(map_set_arr, 0, pt)
+    forge_llvm_type_array_set(map_set_arr, 1, pt)
+    forge_llvm_type_array_set(map_set_arr, 2, i64t)
+    let map_set_type = forge_llvm_function_type(forge_llvm_void_type(lc), map_set_arr, 3, 0)
+    forge_llvm_type_array_free(map_set_arr)
+    forge_llvm_add_function(m, "forge_map_set_cstr", map_set_type)
+
+    // map_get(ptr, ptr) → i64
+    forge_llvm_add_function(m, "forge_map_get_cstr", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_map_has_cstr", str_str_to_i64)
+
+    // map_len(ptr) → i64, map_keys(ptr) → ptr
+    forge_llvm_add_function(m, "forge_map_len_cstr", arr_len_type)
+
+    let map_keys_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(map_keys_arr, 0, pt)
+    let map_keys_type = forge_llvm_function_type(pt, map_keys_arr, 1, 0)
+    forge_llvm_type_array_free(map_keys_arr)
+    forge_llvm_add_function(m, "forge_map_keys_cstr", map_keys_type)
+
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
@@ -724,6 +750,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .With(obj, overrides) -> emit_with(ctx, env, obj, overrides)
         .ListLit(elements) -> emit_list_lit(ctx, env, elements)
         .Lambda(params, body) -> emit_lambda(ctx, env, params, body)
+        .MapLit(entries) -> emit_map_lit(ctx, env, entries)
         _ -> err_emit("unsupported expression type")
     }
 }
@@ -957,6 +984,10 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
     if vtype_is_list(r.ty) && field == "length" {
         return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), r.value, "list_len"))
     }
+    // Map property access — `map.length`
+    if vtype_is_map(r.ty) && field == "length" {
+        return ok_emit(call_1(ctx, get_fn(ctx, "forge_map_len_cstr"), r.value, "map_len"))
+    }
     // The object's ty tag tells us which struct it is.
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
@@ -1071,6 +1102,30 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             return emit_list_reduce(ctx, env, r.value, args)
         }
         return err_emit("list method `" + method + "` not implemented")
+    }
+    // Map methods backed by C runtime
+    if vtype_is_map(r.ty) {
+        if method == "get" {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let key_ptr = to_ptr(ctx, arg_r.value, "map_key")
+            return ok_emit(call_2(ctx, get_fn(ctx, "forge_map_get_cstr"), r.value, key_ptr, "map_get"))
+        }
+        if method == "has" {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let key_ptr = to_ptr(ctx, arg_r.value, "map_key")
+            return ok_emit(call_2(ctx, get_fn(ctx, "forge_map_has_cstr"), r.value, key_ptr, "map_has"))
+        }
+        if method == "set" {
+            return emit_map_set(ctx, env, r.value, args)
+        }
+        if method == "len" || method == "length" {
+            return ok_emit(call_1(ctx, get_fn(ctx, "forge_map_len_cstr"), r.value, "map_len"))
+        }
+        if method == "keys" {
+            let keys = call_1(ctx, get_fn(ctx, "forge_map_keys_cstr"), r.value, "map_keys")
+            return ok_emit_typed(keys, ValueType.List)
+        }
+        return err_emit("map method `" + method + "` not implemented")
     }
     // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
     let type_name = vtype_struct_name(r.ty)
@@ -1255,6 +1310,26 @@ fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
 
     ok_emit_str(to_i64(ctx, buf, "concat_i64"))
+}
+
+fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
+    match args {
+        .Node(key_expr, rest) -> {
+            match rest {
+                .Node(val_expr, _) -> {
+                    let key_r = emit_expr(ctx, env, key_expr)
+                    if key_r.had_error { return key_r }
+                    let val_r = emit_expr(ctx, env, val_expr)
+                    if val_r.had_error { return val_r }
+                    let key_ptr = to_ptr(ctx, key_r.value, "set_key")
+                    call_3(ctx, get_fn(ctx, "forge_map_set_cstr"), map, key_ptr, val_r.value, "")
+                    ok_emit(map)
+                }
+                _ -> err_emit("map.set expects 2 arguments: key and value")
+            }
+        }
+        _ -> err_emit("map.set expects 2 arguments: key and value")
+    }
 }
 
 fn emit_list_reduce(ctx: Ctx, env: VarEnv, list_val: ptr, args: ExprList) -> EmitResult {

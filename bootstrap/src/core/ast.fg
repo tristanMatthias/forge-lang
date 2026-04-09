@@ -72,6 +72,7 @@ export enum ValueType {
     Enum(name: string),
     Tuple(elements: TypeList),
     List,
+    Map,
     Fn,
     Void,
 }
@@ -99,6 +100,10 @@ export fn vtype_is_list(t: ValueType) -> bool {
     match t { .List -> true, _ -> false }
 }
 
+export fn vtype_is_map(t: ValueType) -> bool {
+    match t { .Map -> true, _ -> false }
+}
+
 export fn vtype_is_fn(t: ValueType) -> bool {
     match t { .Fn -> true, _ -> false }
 }
@@ -121,6 +126,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Enum(n) -> n
         .Tuple(_) -> "(tuple)"
         .List -> "List"
+        .Map -> "Map"
         .Fn -> "fn"
         .Void -> "void"
     }
@@ -223,6 +229,8 @@ export enum Expr {
     With(obj: Expr, overrides: FieldInitList)
     ListLit(elements: ExprList)
     Lambda(params: ParamList, body: Expr)
+    // Entries is a flat list: key1, val1, key2, val2, ...
+    MapLit(entries: ExprList)
 }
 
 export enum Stmt {
@@ -462,6 +470,7 @@ export fn render_expr(expr: Expr) -> string {
         .With(obj, overrides) -> "(with " + render_expr(obj) + " " + render_field_init_list(overrides) + ")"
         .ListLit(elements) -> "(list " + render_expr_list(elements) + ")"
         .Lambda(params, body) -> "(lambda " + render_param_list(params) + " " + render_expr(body) + ")"
+        .MapLit(entries) -> "(map " + render_expr_list(entries) + ")"
     }
 }
 

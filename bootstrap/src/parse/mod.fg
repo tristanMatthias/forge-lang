@@ -850,6 +850,12 @@ impl Parser {
         }
 
         if self.check("left_brace") {
+            // Map literal: { "key": value, ... }
+            // Disambiguate from block: if first token after { is a string,
+            // and the token after that is a colon, it's a map.
+            if self.is_map_literal() {
+                return self.parse_map_literal()
+            }
             return self.parse_block_expression()
         }
 
@@ -932,6 +938,60 @@ impl Parser {
             result = Expr.String("\"\"")
         }
         result
+    }
+
+    // Lookahead: is the current `{` the start of a map literal?
+    // A map starts with `{ "string" :` or `{ }` (empty map).
+    fn is_map_literal(self) -> bool {
+        // Save position for lookahead
+        let saved_pos = self.current
+        let saved_start = self.start
+        let saved_kind = self.current_kind
+        let saved_lex = self.current_lexeme
+
+        self.advance()  // consume {
+        let is_map = self.check("right_brace") || (self.check("string") && {
+            self.advance()  // consume string
+            self.check("colon")
+        })
+
+        // Restore position
+        self.current = saved_pos
+        self.start = saved_start
+        self.current_kind = saved_kind
+        self.current_lexeme = saved_lex
+        is_map
+    }
+
+    fn parse_map_literal(self) -> Expr? {
+        self.advance()  // consume {
+        if self.check("right_brace") {
+            self.advance()
+            return Expr.MapLit(ExprList.End)
+        }
+        let entries = self.parse_map_entries()?
+        if !self.consume("right_brace", "expected `}` after map") {
+            return null
+        }
+        Expr.MapLit(entries)
+    }
+
+    // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
+    fn parse_map_entries(self) -> ExprList? {
+        let key = self.parse_expression()?
+        if !self.consume("colon", "expected `:` after map key") {
+            return null
+        }
+        let value = self.parse_expression()?
+        if self.check("comma") {
+            self.advance()
+            if self.check("right_brace") {
+                return ExprList.Node(key, ExprList.Node(value, ExprList.End))
+            }
+            let rest = self.parse_map_entries()?
+            return ExprList.Node(key, ExprList.Node(value, rest))
+        }
+        ExprList.Node(key, ExprList.Node(value, ExprList.End))
     }
 
     fn parse_lambda_body(self) -> Expr? {
