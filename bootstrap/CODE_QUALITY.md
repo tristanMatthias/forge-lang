@@ -104,14 +104,23 @@ features/match/codegen.fg circular. The correct answer was a
 shared `core/cg.fg`. The principle costs an extra file but earns
 a clean DAG forever.
 
-### Every file under 200 lines
-Hard limit. If a file is longer, split it. The threshold is
-intentionally aggressive because small files are the whole point of
-the layout.
-
 ### One construct per file
-A `features/<name>/parser.fg` parses ONE construct. If it grows
-multiple constructs, split into more files. Same for codegen.
+A `features/<name>/parser.fg` parses ONE construct (or one tightly
+related family — e.g. a `match` parser owns both the statement
+form and the expression form because they share an arm-list and
+pattern grammar). If a file starts handling unrelated constructs,
+split it.
+
+There is **no hard line-count limit**. A file should be as long as
+the one concept it owns naturally requires. Some constructs (a
+fully-developed pattern matcher, the precedence climber for
+expressions) are legitimately long. Others (a `return` parser) are
+tiny. The rule is about *cohesion*, not size.
+
+The signal that a file is too big is not "it has more than N
+lines" — it's "I keep scrolling past unrelated code to find the
+thing I want." When that happens, look for a missing concept and
+extract it. When it doesn't, the file is fine at any length.
 
 ### Forbidden vocabulary
 These words are banned in identifiers and filenames:
@@ -178,7 +187,7 @@ two dispatcher lines plus a `make test`.
 
 ## Anti-patterns (red flags in code review)
 
-- A file longer than 200 lines (split it)
+- A file that mixes unrelated concepts (split it by concept, not by size)
 - A file named `*_helpers.fg`, `*_utils.fg`, etc. (be specific)
 - A `_ -> {}` match arm in codegen or check (silent value loss)
 - A function returning a hardcoded constant on failure (fake success)
