@@ -4,15 +4,6 @@ use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend}
 use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt, translate_param_type}
 use codegen.{emit_block_loop}
 
-extern fn forge_llvm_get_named_function(m: ptr, name: string) -> ptr
-extern fn forge_llvm_get_param(fn_val: ptr, idx: int) -> ptr
-extern fn forge_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
-extern fn forge_llvm_position_at_end(b: ptr, bb: ptr)
-extern fn forge_llvm_build_alloca(b: ptr, ty: ptr, name: string) -> ptr
-extern fn forge_llvm_build_store(b: ptr, val: ptr, ptr_val: ptr) -> ptr
-extern fn forge_llvm_build_ret(b: ptr, val: ptr) -> ptr
-extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
-extern fn forge_llvm_block_has_terminator(b: ptr) -> int
 
 export fn emit_function_bodies(cg: Codegen, stmts: StmtList) -> StmtResult {
     match stmts {

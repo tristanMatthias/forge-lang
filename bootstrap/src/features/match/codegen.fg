@@ -4,20 +4,6 @@ use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, Va
 use core.cg.{Codegen, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, null_ptr_val, enum_reg_lookup, strip_enum_prefix, translate_param_type, field_type_at, advance_field_list}
 use codegen.{emit_expr}
 
-extern fn forge_llvm_get_type_by_name(ctx: ptr, name: string) -> ptr
-extern fn forge_llvm_int8_type(ctx: ptr) -> ptr
-extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
-extern fn forge_llvm_build_int_to_ptr(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
-extern fn forge_llvm_build_struct_gep2(b: ptr, ty: ptr, ptr_val: ptr, idx: int, name: string) -> ptr
-extern fn forge_llvm_build_load(b: ptr, ty: ptr, ptr_val: ptr, name: string) -> ptr
-extern fn forge_llvm_build_store(b: ptr, val: ptr, ptr_val: ptr) -> ptr
-extern fn forge_llvm_build_alloca(b: ptr, ty: ptr, name: string) -> ptr
-extern fn forge_llvm_build_icmp(b: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
-extern fn forge_llvm_build_cond_br(b: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr
-extern fn forge_llvm_build_br(b: ptr, bb: ptr) -> ptr
-extern fn forge_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
-extern fn forge_llvm_position_at_end(b: ptr, bb: ptr)
-extern fn forge_llvm_block_has_terminator(b: ptr) -> int
 
 // ── Match as expression ──
 

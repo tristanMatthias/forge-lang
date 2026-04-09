@@ -4,20 +4,6 @@ use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list
 use core.cg.{Codegen, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup}
 use codegen.{emit_expr}
 
-extern fn forge_llvm_get_type_by_name(ctx: ptr, name: string) -> ptr
-extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
-extern fn forge_llvm_build_ptr_to_int(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
-extern fn forge_llvm_build_struct_gep2(b: ptr, ty: ptr, ptr_val: ptr, idx: int, name: string) -> ptr
-extern fn forge_llvm_build_store(b: ptr, val: ptr, ptr_val: ptr) -> ptr
-extern fn forge_llvm_build_call(b: ptr, fn_type: ptr, fn_val: ptr, args: ptr, count: int, name: string) -> ptr
-extern fn forge_llvm_get_named_function(m: ptr, name: string) -> ptr
-extern fn forge_llvm_function_type(ret: ptr, params: ptr, count: int, is_var: int) -> ptr
-extern fn forge_llvm_type_array_new(count: int) -> ptr
-extern fn forge_llvm_type_array_set(arr: ptr, idx: int, ty: ptr)
-extern fn forge_llvm_type_array_free(arr: ptr)
-extern fn forge_llvm_value_array_new(count: int) -> ptr
-extern fn forge_llvm_value_array_set(arr: ptr, idx: int, val: ptr)
-extern fn forge_llvm_value_array_free(arr: ptr)
 
 export fn emit_struct_lit(cg: Codegen, env: VarEnv, name: string, inits: FieldInitList) -> EmitResult {
     let lookup = struct_reg_lookup(name)

@@ -4,8 +4,6 @@ use core.ast.{Expr, VarEnv, env_extend}
 use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt_from_expr}
 use codegen.{emit_expr}
 
-extern fn forge_llvm_build_alloca(b: ptr, ty: ptr, name: string) -> ptr
-extern fn forge_llvm_build_store(b: ptr, val: ptr, ptr_val: ptr) -> ptr
 
 export fn emit_var_decl(cg: Codegen, env: VarEnv, name: string, initializer: Expr) -> StmtResult {
     let r = emit_expr(cg, env, initializer)

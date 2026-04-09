@@ -5,13 +5,6 @@ use core.ast.{Expr, Stmt, VarEnv}
 use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt_from_expr}
 use codegen.{emit_expr, emit_stmt, loops_push, loops_pop}
 
-extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
-extern fn forge_llvm_build_icmp(b: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
-extern fn forge_llvm_build_cond_br(b: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr
-extern fn forge_llvm_build_br(b: ptr, bb: ptr) -> ptr
-extern fn forge_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
-extern fn forge_llvm_position_at_end(b: ptr, bb: ptr)
-extern fn forge_llvm_block_has_terminator(b: ptr) -> int
 
 export fn emit_while(cg: Codegen, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
     let cond_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "while.cond")
