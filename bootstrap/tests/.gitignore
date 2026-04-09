@@ -1,2 +1,3 @@
 *.fg.ll
 *.bin
+*.bin.o

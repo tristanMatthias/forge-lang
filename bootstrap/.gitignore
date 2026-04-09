@@ -2,3 +2,4 @@ src/*.fg.ll
 src/**/*.fg.ll
 src/**/*.bin
 build/
+*.bin.o
