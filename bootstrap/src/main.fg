@@ -75,7 +75,11 @@ fn dirname(path: string) -> string {
 }
 
 // Walk the source line by line. For each `mod foo` line, replace it
-// with the content of `<dir>/foo.fg`. Other lines pass through.
+// with the content of `<dir>/foo.fg` OR `<dir>/foo/mod.fg`, then
+// recursively preprocess the inlined content so nested module
+// hierarchies work. The directory style (`foo/mod.fg`) is what
+// powers the feature-organized layout where each language feature
+// lives under `features/<name>/`.
 fn preprocess_modules(source: string, entry_path: string) -> string {
     let dir = dirname(entry_path)
     mut out = ""
@@ -95,11 +99,21 @@ fn preprocess_modules(source: string, entry_path: string) -> string {
         if mod_name == "" {
             out = out + line
         } else {
-            let mod_path = dir + mod_name + ".fg"
-            if file_exists(mod_path) {
-                let mod_src = read_file(mod_path)
+            // Try sibling-file form first: <dir>/<name>.fg
+            let sibling_path = dir + mod_name + ".fg"
+            // Then directory-module form: <dir>/<name>/mod.fg
+            let dir_mod_path = dir + mod_name + "/mod.fg"
+            if file_exists(sibling_path) {
+                let mod_src = read_file(sibling_path)
+                let inlined = preprocess_modules(mod_src, sibling_path)
                 out = out + "// === module " + mod_name + " ===\n"
-                out = out + mod_src
+                out = out + inlined
+                out = out + "\n"
+            } else if file_exists(dir_mod_path) {
+                let mod_src = read_file(dir_mod_path)
+                let inlined = preprocess_modules(mod_src, dir_mod_path)
+                out = out + "// === module " + mod_name + " ===\n"
+                out = out + inlined
                 out = out + "\n"
             } else {
                 out = out + "// === module " + mod_name + " (not found) ===\n"

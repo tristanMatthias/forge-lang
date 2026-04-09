@@ -542,11 +542,32 @@ mode_regress() {
   mkdir -p "$REGRESS_DIR"
   local pass=0 fail=0
   shopt -s nullglob
+
+  # Build the test list: top-level *.fg files AND directories
+  # containing main.fg. The directory form lets us test multi-file
+  # fixtures (e.g. nested module resolution).
+  local test_specs=()
   for fg in "$REGRESS_DIR"/*.fg; do
-    local name expected actual bin actual_s1 bin_s1
-    name=$(basename "$fg" .fg)
-    expected="$REGRESS_DIR/$name.out"
-    [ -f "$expected" ] || { warn "$name: missing $name.out, skipping"; continue; }
+    test_specs+=("$fg")
+  done
+  for d in "$REGRESS_DIR"/*/; do
+    if [ -f "${d}main.fg" ]; then
+      test_specs+=("${d}main.fg")
+    fi
+  done
+
+  for fg in "${test_specs[@]}"; do
+    local name expected actual bin actual_s1 bin_s1 expected_dir
+    if [[ "$fg" == */main.fg ]]; then
+      # Directory test: name comes from the directory, .out lives next to main.fg.
+      expected_dir=$(dirname "$fg")
+      name=$(basename "$expected_dir")
+      expected="$expected_dir/expected.out"
+    else
+      name=$(basename "$fg" .fg)
+      expected="$REGRESS_DIR/$name.out"
+    fi
+    [ -f "$expected" ] || { warn "$name: missing expected.out, skipping"; continue; }
 
     # Stage1 path: compile, link, run, capture stdout. We don't compare
     # against the .out file directly here — that's bs2's contract — but

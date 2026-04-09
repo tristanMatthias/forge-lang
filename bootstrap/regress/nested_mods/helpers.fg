@@ -1,0 +1,1 @@
+fn greet() -> string { "from sibling" }
