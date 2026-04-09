@@ -451,12 +451,14 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         }
         .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
         .While(condition, body) -> emit_while(ctx, env, condition, body)
+        .For(variable, start, end, body) -> emit_for(ctx, env, variable, start, end, body)
+        // These are handled in pre-passes (register_types, register_fns); no IR here
         .TypeDecl(_, _) -> ok_stmt(env)
         .EnumDecl(_, _) -> ok_stmt(env)
-        .Match(subject, arms) -> emit_match(ctx, env, subject, arms)
         .Impl(_, _) -> ok_stmt(env)
-        .NoOp -> ok_stmt(env)
         .ExternFn(_, _, _) -> ok_stmt(env)
+        .NoOp -> ok_stmt(env)
+        .Match(subject, arms) -> emit_match(ctx, env, subject, arms)
         .Break -> {
             let frame = loops_top(ctx.loops)
             if !frame.found {
@@ -481,12 +483,85 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 // emit_if      → features/if_stmt/codegen.fg
 // emit_while   → features/while_stmt/codegen.fg
 
+// ── Number literal parsing ──
+
+fn parse_int_literal(text: string) -> int {
+    if text.length > 2 {
+        let prefix = text.substring(0, 2)
+        if prefix == "0x" || prefix == "0X" {
+            return parse_hex(text.substring(2, text.length))
+        }
+        if prefix == "0b" || prefix == "0B" {
+            return parse_binary(text.substring(2, text.length))
+        }
+        if prefix == "0o" || prefix == "0O" {
+            return parse_octal(text.substring(2, text.length))
+        }
+    }
+    int(text)
+}
+
+fn hex_digit_value(ch: string) -> int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    if ch == "a" || ch == "A" { return 10 }
+    if ch == "b" || ch == "B" { return 11 }
+    if ch == "c" || ch == "C" { return 12 }
+    if ch == "d" || ch == "D" { return 13 }
+    if ch == "e" || ch == "E" { return 14 }
+    if ch == "f" || ch == "F" { return 15 }
+    0
+}
+
+fn parse_hex(digits: string) -> int {
+    mut result = 0
+    mut i = 0
+    while i < digits.length {
+        result = result * 16 + hex_digit_value(digits[i])
+        i = i + 1
+    }
+    result
+}
+
+fn parse_binary(digits: string) -> int {
+    mut result = 0
+    mut i = 0
+    while i < digits.length {
+        let ch = digits[i]
+        if ch == "1" {
+            result = result * 2 + 1
+        } else {
+            result = result * 2
+        }
+        i = i + 1
+    }
+    result
+}
+
+fn parse_octal(digits: string) -> int {
+    mut result = 0
+    mut i = 0
+    while i < digits.length {
+        result = result * 8 + hex_digit_value(digits[i])
+        i = i + 1
+    }
+    result
+}
+
 // ── Expression emission ──
 
 export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr {
         .Number(text) -> {
-            let value = int(text)
+            let value = parse_int_literal(text)
             ok_emit(const_i64(ctx, value))
         }
         .Bool(text) -> {
@@ -759,7 +834,7 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
                 return emit_enum_ctor(ctx, env, head, field, ExprList.End)
             }
         }
-        _ -> {}
+        _ -> {} // not an Ident — fall through to regular field access
     }
 
     let r = emit_expr(ctx, env, obj)

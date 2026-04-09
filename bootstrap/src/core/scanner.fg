@@ -57,8 +57,21 @@ fn is_alpha_numeric(ch: string) -> bool {
     is_alpha(ch) || is_digit(ch)
 }
 
+fn is_hex_digit(ch: string) -> bool {
+    is_digit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
+}
+
+fn is_binary_digit(ch: string) -> bool {
+    ch == "0" || ch == "1"
+}
+
+fn is_octal_digit(ch: string) -> bool {
+    ch >= "0" && ch <= "7"
+}
+
 fn keyword_kind(text: string) -> string {
     if text == "and" { return "kw_and" }
+    if text == "const" { return "kw_const" }
     if text == "else" { return "kw_else" }
     if text == "false" { return "kw_false" }
     if text == "fn" { return "kw_fn" }
@@ -67,6 +80,7 @@ fn keyword_kind(text: string) -> string {
     if text == "let" { return "kw_let" }
     if text == "mod" { return "kw_mod" }
     if text == "mut" { return "kw_mut" }
+    if text == "not" { return "kw_not" }
     if text == "null" { return "kw_null" }
     if text == "or" { return "kw_or" }
     if text == "return" { return "kw_return" }
@@ -286,6 +300,23 @@ impl Scanner {
             }
         }
 
+        if ch == "|" {
+            if self.match_next("|") {
+                return self.make_token("pipe_pipe")
+            }
+            if self.match_next(">") {
+                return self.make_token("pipe_gt")
+            }
+            return self.make_token("pipe")
+        }
+
+        if ch == "&" {
+            if self.match_next("&") {
+                return self.make_token("amp_amp")
+            }
+            return self.make_token("amp")
+        }
+
         if ch == "/" {
             if self.match_next("/") {
                 while !self.is_at_end() && self.peek() != "\n" {
@@ -299,6 +330,10 @@ impl Scanner {
 
         if ch == "\"" {
             return self.scan_string()
+        }
+
+        if ch == "`" {
+            return self.scan_template()
         }
 
         if is_digit(ch) {
@@ -358,7 +393,48 @@ impl Scanner {
         self.make_token_with_lexeme("string", content)
     }
 
+    fn scan_template(self) -> Token {
+        mut content = ""
+        while !self.is_at_end() && self.peek() != "`" {
+            content = content + self.peek()
+            self.advance()
+        }
+        if self.is_at_end() {
+            self.set_error("unterminated template string")
+            return self.make_token_with_lexeme("error", "")
+        }
+        self.advance()
+        self.make_token_with_lexeme("template", content)
+    }
+
     fn scan_number(self) -> Token {
+        // Check for 0x, 0b, 0o prefixes (first digit already consumed by advance())
+        let first = self.source[self.start]
+        if first == "0" {
+            let prefix = self.peek()
+            if prefix == "x" || prefix == "X" {
+                self.advance()
+                while is_hex_digit(self.peek()) {
+                    self.advance()
+                }
+                return self.make_token("number")
+            }
+            if prefix == "b" || prefix == "B" {
+                self.advance()
+                while is_binary_digit(self.peek()) {
+                    self.advance()
+                }
+                return self.make_token("number")
+            }
+            if prefix == "o" || prefix == "O" {
+                self.advance()
+                while is_octal_digit(self.peek()) {
+                    self.advance()
+                }
+                return self.make_token("number")
+            }
+        }
+
         while is_digit(self.peek()) {
             self.advance()
         }

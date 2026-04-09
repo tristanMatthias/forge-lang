@@ -5,3 +5,17 @@
 
 # Rust build artifacts
 **/target/
+.ralph/logs/
+.ralph/.claude_session_id
+.ralph/.ralph_session
+.ralph/.call_count
+.ralph/.token_count
+.ralph/.circuit_breaker_history
+.ralph/.circuit_breaker_state
+.ralph/.exit_signals
+.ralph/.last_reset
+.ralph/.loop_start_sha
+.ralph/live.log
+.ralph/progress.json
+.ralph/status.json
+.ralph/docs/

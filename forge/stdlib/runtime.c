@@ -927,16 +927,9 @@ void forge_debug_parser_state(ForgeString label) {
         (long long)forge_token_kind_id(_c_token_list, _c_parser_pos));
 }
 
-static int char_at_count = 0;
-static int _char_at_diag = 0;
 ForgeString forge_string_char_at(ForgeString s, int64_t index) {
-    if (_char_at_diag < 5 || (!s.ptr || index < 0 || index >= s.len)) {
-        fprintf(stderr, "[char_at #%d] ptr=%p len=%lld idx=%lld\n", _char_at_diag, s.ptr, (long long)s.len, (long long)index);
-        _char_at_diag++;
-    }
     forge_string_bounds_check(s, index, "char_at");
     unsigned char c = (unsigned char)s.ptr[index];
-    char_at_count++;
     // ASCII byte — return pointer to static char (no malloc!)
     if (c < 0x80) {
         ensure_ascii_chars();

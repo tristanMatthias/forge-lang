@@ -11,8 +11,7 @@ export fn token_new(kind: string, lexeme: string, line: int, column: int) -> Tok
 
 fn escape_lexeme(text: string) -> string {
     mut out = ""
-    mut i = 0
-    while i < text.length {
+    for i in 0..text.length {
         let ch = text[i]
         if ch == "\\" {
             out = out + "\\\\"
@@ -27,7 +26,6 @@ fn escape_lexeme(text: string) -> string {
         } else {
             out = out + ch
         }
-        i = i + 1
     }
     out
 }

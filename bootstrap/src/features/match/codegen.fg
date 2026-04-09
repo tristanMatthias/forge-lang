@@ -60,7 +60,12 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                 forge_llvm_build_br(ctx.builder, merge_bb)
             }
             forge_llvm_position_at_end(ctx.builder, next_bb)
-            let _rest = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)
+            let rest = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)
+            if rest.had_error { return rest }
+            // Type unification: warn if arms disagree on type
+            if rest.ty != "i64" && body_result.ty != rest.ty {
+                eprintln("warning: match arms have different types: `" + body_result.ty + "` vs `" + rest.ty + "`")
+            }
             EmitResult { value: body_result.value, ty: body_result.ty, had_error: false, error_message: "" }
         }
     }
