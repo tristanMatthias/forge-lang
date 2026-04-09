@@ -723,7 +723,10 @@ impl Parser {
         null
     }
 
-    // Desugar `hello ${name}!` into `"hello " + string(name) + "!"`
+    // Desugar `hello ${expr}!` into `"hello " + string(expr) + "!"`
+    // The content between `${` and `}` is parsed as a full expression
+    // by creating a sub-parser, so `${a + b}`, `${foo.bar}`, and
+    // `${string(x)}` all work.
     fn desugar_template(self, raw: string) -> Expr? {
         mut result: Expr? = null
         mut i = 0
@@ -731,6 +734,7 @@ impl Parser {
         mut text_start = 0
         while i < len {
             if i + 1 < len && raw[i] == "$" && raw[i + 1] == "{" {
+                // Flush text segment before the interpolation.
                 if i > text_start {
                     let seg = "\"" + raw.substring(text_start, i) + "\""
                     let str_expr = Expr.String(seg)
@@ -740,6 +744,8 @@ impl Parser {
                         result = Expr.Binary(result!, "+", str_expr)
                     }
                 }
+                // Find matching `}` (no nesting — braces inside
+                // template expressions are not supported).
                 let expr_start = i + 2
                 mut j = expr_start
                 while j < len && raw[j] != "}" {
@@ -749,9 +755,16 @@ impl Parser {
                     self.set_error("unterminated template expression in string")
                     return null
                 }
-                let ident_name = raw.substring(expr_start, j)
-                let ident_expr = Expr.Ident(ident_name)
-                let str_call = Expr.Call(Expr.Ident("string"), ExprList.Node(ident_expr, ExprList.End))
+                // Parse the content between ${ and } as a real expression.
+                let sub_source = raw.substring(expr_start, j)
+                mut sub_parser = parser_new(sub_source)
+                let parsed = sub_parser.parse_expression()
+                if parsed == null {
+                    self.set_error("invalid expression in template: " + sub_source)
+                    return null
+                }
+                // Wrap in string() call for automatic conversion.
+                let str_call = Expr.Call(Expr.Ident("string"), ExprList.Node(parsed!, ExprList.End))
                 if result == null {
                     result = str_call
                 } else {
@@ -763,6 +776,7 @@ impl Parser {
                 i = i + 1
             }
         }
+        // Flush trailing text after last interpolation.
         if text_start < len {
             let seg = "\"" + raw.substring(text_start, len) + "\""
             let str_expr = Expr.String(seg)
