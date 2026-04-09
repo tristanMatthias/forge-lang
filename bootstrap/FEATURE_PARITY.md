@@ -256,6 +256,23 @@ Status key:
 | Packages | 14 | 4 | 4 | 6 |
 | **TOTAL** | **131** | **53** | **68** | **10** |
 
+## Dogfooding Rule
+
+**After each feature is added, refactor the bootstrap source to USE
+that feature.** This is non-negotiable. The bootstrap compiler is
+the first and most important user of its own language. If we add
+`for` loops, every `while i < n { ... i = i + 1 }` in the bootstrap
+source gets rewritten to `for i in 0..n { ... }`. If we add string
+templates, every `"hello " + name` becomes `` `hello ${name}` ``.
+
+This serves three purposes:
+1. **Regression coverage** — the bootstrap self-compiles, so any
+   miscompilation of the new feature is caught by `make selfhost`.
+2. **Proof the feature works** — if we can't rewrite our own code to
+   use it, the feature has a bug.
+3. **Code quality** — the bootstrap becomes a showcase of idiomatic
+   Forge, not a museum of workarounds.
+
 ## Priority Order
 
 ### Phase A — Make the language pleasant (small features)
