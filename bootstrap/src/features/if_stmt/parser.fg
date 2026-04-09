@@ -1,0 +1,66 @@
+// WHY: parses `if` as both a statement and an expression form.
+
+use core.ast.{Stmt, Expr}
+use parser.{Parser}
+
+impl Parser {
+    fn parse_if_statement(self) -> Stmt? {
+        self.advance()
+        let saved = self.allow_struct_lit
+        self.allow_struct_lit = false
+        let condition = self.parse_expression()
+        self.allow_struct_lit = saved
+        if condition == null { return null }
+
+        if !self.check("left_brace") {
+            self.set_error("expected `{` after if condition")
+            return null
+        }
+
+        let then_branch = self.parse_statement()
+        if then_branch == null { return null }
+
+        if self.check("kw_else") {
+            self.advance()
+            let else_branch = self.parse_statement()
+            if else_branch == null { return null }
+            return Stmt.If(condition!, then_branch!, else_branch)
+        }
+
+        Stmt.If(condition!, then_branch!, null)
+    }
+
+    fn parse_if_expression(self) -> Expr? {
+        self.advance()
+        let saved = self.allow_struct_lit
+        self.allow_struct_lit = false
+        let condition = self.parse_expression()
+        self.allow_struct_lit = saved
+        if condition == null { return null }
+        if !self.check("left_brace") {
+            self.set_error("expected `{` after if condition")
+            return null
+        }
+        let then_branch = self.parse_block_expression()
+        if then_branch == null { return null }
+        if !self.check("kw_else") {
+            return Expr.IfExpr(condition!, then_branch!, Expr.Number("0"))
+        }
+        self.advance()
+        // Else can be either a block, another if-expression
+        // (`else if`), or a single expression.
+        if self.check("kw_if") {
+            let else_branch = self.parse_if_expression()
+            if else_branch == null { return null }
+            return Expr.IfExpr(condition!, then_branch!, else_branch!)
+        }
+        if self.check("left_brace") {
+            let else_branch = self.parse_block_expression()
+            if else_branch == null { return null }
+            return Expr.IfExpr(condition!, then_branch!, else_branch!)
+        }
+        let else_branch = self.parse_expression()
+        if else_branch == null { return null }
+        Expr.IfExpr(condition!, then_branch!, else_branch!)
+    }
+}
