@@ -12,7 +12,7 @@ export type ResolveResult = {
 
 enum ScopeEntry {
     End
-    Node(name: string, defined: bool, depth: int, next: ScopeEntry)
+    Node(name: string, defined: bool, mutable: bool, depth: int, next: ScopeEntry)
 }
 
 enum FnEntry {
@@ -122,18 +122,26 @@ fn exit_resolve_scope(r: Resolver) -> Resolver {
 fn pop_resolve_scope(entries: ScopeEntry, depth: int) -> ScopeEntry {
     match entries {
         .End -> ScopeEntry.End
-        .Node(name, defined, entry_depth, next) -> {
+        .Node(name, defined, is_mut, entry_depth, next) -> {
             if entry_depth == depth {
                 return pop_resolve_scope(next, depth)
             }
-            ScopeEntry.Node(name, defined, entry_depth, next)
+            ScopeEntry.Node(name, defined, is_mut, entry_depth, next)
         }
     }
 }
 
 fn declare_name(r: Resolver, name: string) -> Resolver {
+    declare_name_mut(r, name, false)
+}
+
+fn declare_name_mutable(r: Resolver, name: string) -> Resolver {
+    declare_name_mut(r, name, true)
+}
+
+fn declare_name_mut(r: Resolver, name: string, is_mut: bool) -> Resolver {
     Resolver {
-        scopes: ScopeEntry.Node(name, false, r.depth, r.scopes),
+        scopes: ScopeEntry.Node(name, false, is_mut, r.depth, r.scopes),
         functions: r.functions,
         depth: r.depth,
         had_error: r.had_error,
@@ -165,11 +173,11 @@ fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
 fn mark_defined(entries: ScopeEntry, name: string, depth: int) -> ScopeEntry {
     match entries {
         .End -> ScopeEntry.End
-        .Node(entry_name, defined, entry_depth, next) -> {
+        .Node(entry_name, defined, is_mut, entry_depth, next) -> {
             if entry_name == name && entry_depth == depth {
-                return ScopeEntry.Node(entry_name, true, entry_depth, next)
+                return ScopeEntry.Node(entry_name, true, is_mut, entry_depth, next)
             }
-            ScopeEntry.Node(entry_name, defined, entry_depth, mark_defined(next, name, depth))
+            ScopeEntry.Node(entry_name, defined, is_mut, entry_depth, mark_defined(next, name, depth))
         }
     }
 }
@@ -187,14 +195,15 @@ fn declare_function(r: Resolver, name: string) -> Resolver {
 type NameLookup = {
     found: bool,
     defined: bool,
+    mutable: bool,
 }
 
 fn lookup_name(entries: ScopeEntry, name: string) -> NameLookup {
     match entries {
-        .End -> NameLookup { found: false, defined: false }
-        .Node(entry_name, defined, _, next) -> {
+        .End -> NameLookup { found: false, defined: false, mutable: false }
+        .Node(entry_name, defined, is_mut, _, next) -> {
             if entry_name == name {
-                return NameLookup { found: true, defined }
+                return NameLookup { found: true, defined, mutable: is_mut }
             }
             lookup_name(next, name)
         }
@@ -244,12 +253,12 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     }
     match stmt {
         .Let(name, _, initializer) -> {
-            let declared = declare_name(r, name)
+            let declared = declare_name(r, name)  // immutable
             let after_init = resolve_expr(declared, initializer)
             define_name(after_init, name)
         }
         .Mut(name, _, initializer) -> {
-            let declared = declare_name(r, name)
+            let declared = declare_name_mutable(r, name)  // mutable
             let after_init = resolve_expr(declared, initializer)
             define_name(after_init, name)
         }
@@ -323,10 +332,11 @@ fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
         if res.had_error { return res }
         match current {
             .End -> { return res }
-            .Node(pattern, body, next) -> {
+            .Node(pattern, guard, body, next) -> {
                 let entered = enter_resolve_scope(res)
                 let with_bindings = declare_pattern_bindings(entered, pattern)
-                let after_body = resolve_expr(with_bindings, body)
+                let after_guard = if guard != null { resolve_expr(with_bindings, guard!) } else { with_bindings }
+                let after_body = resolve_expr(after_guard, body)
                 res = exit_resolve_scope(after_body)
                 current = next
             }
@@ -390,14 +400,16 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         }
         .Assign(name, value) -> {
             let after_value = resolve_expr(r, value)
-            // Uppercase names are treated as opaque mut globals
-            // (CG_LOOPS, CG_STRUCTS, ...).
+            // Uppercase names are treated as opaque mut globals.
             if starts_with_upper(name) {
                 return after_value
             }
             let result = lookup_name(after_value.scopes, name)
             if !result.found {
                 return set_resolve_error(after_value, "undefined variable `" + name + "`")
+            }
+            if !result.mutable {
+                return set_resolve_error(after_value, "cannot assign to immutable variable `" + name + "` (use `mut` to make it mutable)")
             }
             after_value
         }

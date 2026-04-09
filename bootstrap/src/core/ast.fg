@@ -51,7 +51,7 @@ export enum Pattern {
 // block is itself an Expr.Block.
 export enum MatchArmList {
     End
-    Node(pattern: Pattern, body: Expr, next: MatchArmList)
+    Node(pattern: Pattern, guard: Expr?, body: Expr, next: MatchArmList)
 }
 
 // ── Value types ──
@@ -612,8 +612,9 @@ export fn render_pattern(p: Pattern) -> string {
 export fn render_match_arm_list(arms: MatchArmList) -> string {
     match arms {
         .End -> "()"
-        .Node(pattern, body, next) -> {
-            let head = render_pattern(pattern) + " -> " + render_expr(body)
+        .Node(pattern, guard, body, next) -> {
+            let guard_str = if guard != null { " if " + render_expr(guard!) } else { "" }
+            let head = render_pattern(pattern) + guard_str + " -> " + render_expr(body)
             let tail = render_match_arm_tail(next)
             "(" + head + tail + ")"
         }
@@ -623,7 +624,10 @@ export fn render_match_arm_list(arms: MatchArmList) -> string {
 fn render_match_arm_tail(arms: MatchArmList) -> string {
     match arms {
         .End -> ""
-        .Node(pattern, body, next) -> "; " + render_pattern(pattern) + " -> " + render_expr(body) + render_match_arm_tail(next)
+        .Node(pattern, guard, body, next) -> {
+            let guard_str = if guard != null { " if " + render_expr(guard!) } else { "" }
+            "; " + render_pattern(pattern) + guard_str + " -> " + render_expr(body) + render_match_arm_tail(next)
+        }
     }
 }
 

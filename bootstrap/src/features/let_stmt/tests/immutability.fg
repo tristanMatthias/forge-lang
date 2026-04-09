@@ -1,0 +1,39 @@
+// mut allows reassignment
+mut x = 5
+x = 10
+println(string(x))
+
+// let with complex initializer
+let y = 3 + 4 * 2
+println(string(y))
+
+// mut in for loop
+mut sum = 0
+for i in 0..5 {
+    sum = sum + i
+}
+println(string(sum))
+
+// Struct field assign is allowed (separate from variable immutability)
+type Point = { x: int, y: int }
+let p = Point { x: 1, y: 2 }
+p.x = 99
+println(string(p.x))
+
+// mut inside function
+fn counter() -> int {
+    mut n = 0
+    for i in 0..10 {
+        n = n + 1
+    }
+    n
+}
+println(string(counter()))
+
+// let in nested scope
+let outer = 42
+{
+    let inner = outer + 1
+    println(string(inner))
+}
+println(string(outer))

@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq}
-use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, to_ptr}
+use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr}
 use codegen.{emit_expr}
 
 
@@ -12,7 +12,9 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
     if r.had_error { return r }
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {
-        return err_emit("match subject is not an enum (ty=" + vtype_display(r.ty) + ")")
+        // Non-enum match: treat as guard-based if-else chain.
+        // Each arm must be a wildcard with an optional guard.
+        return emit_primitive_match_expr(ctx, env, r, arms)
     }
     let lookup = enum_reg_lookup(ctx.enums, enum_name)
     if !lookup.found { return err_emit("unknown enum `" + enum_name + "`") }
@@ -38,7 +40,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             }
             EmitResult { value: null_ptr_val(), ty: ValueType.Int, had_error: false, error_message: "" }
         }
-        .Node(pattern, body, next) -> {
+        .Node(pattern, guard, body, next) -> {
             let arm_bb = new_bb(ctx, "march_arm")
             let next_bb = new_bb(ctx, "march_next")
             match pattern {
@@ -53,6 +55,15 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             }
             forge_llvm_position_at_end(ctx.builder, arm_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
+            // Guard: if present, check condition; if false, skip to next arm
+            if guard != null {
+                let guard_r = emit_expr(ctx, arm_env, guard!)
+                if guard_r.had_error { return guard_r }
+                let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "guard")
+                let guard_pass_bb = new_bb(ctx, "guard_pass")
+                forge_llvm_build_cond_br(ctx.builder, guard_bool, guard_pass_bb, next_bb)
+                forge_llvm_position_at_end(ctx.builder, guard_pass_bb)
+            }
             let body_result = emit_expr(ctx, arm_env, body)
             if body_result.had_error { return body_result }
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
@@ -78,18 +89,8 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
     if r.had_error { return err_stmt_from_expr(r) }
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {
-        let dbg = match subject {
-            .Ident(n) -> "ident " + n
-            .Call(callee, _) -> {
-                match callee {
-                    .Ident(cn) -> "call " + cn
-                    _ -> "call other"
-                }
-            }
-            .FieldAccess(_, f) -> "field " + f
-            _ -> "other"
-        }
-        return err_stmt("codegen error: match subject is not an enum (ty=" + vtype_display(r.ty) + ") subj=" + dbg)
+        // Non-enum match: treat as guard-based if-else chain.
+        return emit_primitive_match_stmt(ctx, env, r, arms)
     }
     let lookup = enum_reg_lookup(ctx.enums, enum_name)
     if !lookup.found { return err_stmt("codegen error: unknown enum `" + enum_name + "`") }
@@ -112,7 +113,7 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
             }
             ok_stmt(env)
         }
-        .Node(pattern, body, next) -> {
+        .Node(pattern, guard, body, next) -> {
             let arm_bb = new_bb(ctx, "match_arm")
             let next_bb = new_bb(ctx, "match_next")
             match pattern {
@@ -127,6 +128,14 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
             }
             forge_llvm_position_at_end(ctx.builder, arm_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
+            if guard != null {
+                let guard_r = emit_expr(ctx, arm_env, guard!)
+                if guard_r.had_error { return err_stmt(guard_r.error_message) }
+                let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "guard")
+                let guard_pass_bb = new_bb(ctx, "guard_pass")
+                forge_llvm_build_cond_br(ctx.builder, guard_bool, guard_pass_bb, next_bb)
+                forge_llvm_position_at_end(ctx.builder, guard_pass_bb)
+            }
             let body_result = emit_expr(ctx, arm_env, body)
             if body_result.had_error { return err_stmt(body_result.error_message) }
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
@@ -165,6 +174,110 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
             let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
             let extended = env_extend(env, name, alloca, field_ty)
             bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
+        }
+    }
+}
+
+// ── Primitive match (non-enum) ──
+// When the match subject is not an enum, arms are treated as a
+// guard-based if-else chain. Only wildcard patterns are allowed.
+// The subject value is available in the guard via the original variable.
+
+fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList) -> EmitResult {
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "pmatch_result")
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
+    let merge_bb = new_bb(ctx, "pmatch_end")
+    emit_primitive_arms_expr(ctx, env, arms, merge_bb, result_slot)
+}
+
+fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, arms: MatchArmList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
+    match arms {
+        .End -> {
+            // No arm matched — fall through with default value.
+            if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                forge_llvm_build_br(ctx.builder, merge_bb)
+            }
+            forge_llvm_position_at_end(ctx.builder, merge_bb)
+            let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "pmatch_val")
+            EmitResult { value: loaded, ty: ValueType.Int, had_error: false, error_message: "" }
+        }
+        .Node(pattern, guard, body, next) -> {
+            if guard != null {
+                // Guarded arm: if guard { body } else { next arm }
+                let guard_r = emit_expr(ctx, env, guard!)
+                if guard_r.had_error { return guard_r }
+                let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
+                let body_bb = new_bb(ctx, "parm_body")
+                let next_bb = new_bb(ctx, "parm_next")
+                forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
+
+                forge_llvm_position_at_end(ctx.builder, body_bb)
+                let body_r = emit_expr(ctx, env, body)
+                if body_r.had_error { return body_r }
+                if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                    forge_llvm_build_store(ctx.builder, body_r.value, result_slot)
+                    forge_llvm_build_br(ctx.builder, merge_bb)
+                }
+
+                forge_llvm_position_at_end(ctx.builder, next_bb)
+                emit_primitive_arms_expr(ctx, env, next, merge_bb, result_slot)
+            } else {
+                // Unguarded wildcard: always matches (catch-all)
+                let body_r = emit_expr(ctx, env, body)
+                if body_r.had_error { return body_r }
+                if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                    forge_llvm_build_store(ctx.builder, body_r.value, result_slot)
+                    forge_llvm_build_br(ctx.builder, merge_bb)
+                }
+                forge_llvm_position_at_end(ctx.builder, merge_bb)
+                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "pmatch_val")
+                EmitResult { value: loaded, ty: body_r.ty, had_error: false, error_message: "" }
+            }
+        }
+    }
+}
+
+fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList) -> StmtResult {
+    let merge_bb = new_bb(ctx, "pmatch_end")
+    emit_primitive_arms_stmt(ctx, env, arms, merge_bb)
+}
+
+fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, arms: MatchArmList, merge_bb: ptr) -> StmtResult {
+    match arms {
+        .End -> {
+            if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                forge_llvm_build_br(ctx.builder, merge_bb)
+            }
+            forge_llvm_position_at_end(ctx.builder, merge_bb)
+            ok_stmt(env)
+        }
+        .Node(pattern, guard, body, next) -> {
+            if guard != null {
+                let guard_r = emit_expr(ctx, env, guard!)
+                if guard_r.had_error { return err_stmt_from_expr(guard_r) }
+                let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
+                let body_bb = new_bb(ctx, "parm_body")
+                let next_bb = new_bb(ctx, "parm_next")
+                forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
+
+                forge_llvm_position_at_end(ctx.builder, body_bb)
+                let body_r = emit_expr(ctx, env, body)
+                if body_r.had_error { return err_stmt_from_expr(body_r) }
+                if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                    forge_llvm_build_br(ctx.builder, merge_bb)
+                }
+
+                forge_llvm_position_at_end(ctx.builder, next_bb)
+                emit_primitive_arms_stmt(ctx, env, next, merge_bb)
+            } else {
+                let body_r = emit_expr(ctx, env, body)
+                if body_r.had_error { return err_stmt_from_expr(body_r) }
+                if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                    forge_llvm_build_br(ctx.builder, merge_bb)
+                }
+                forge_llvm_position_at_end(ctx.builder, merge_bb)
+                ok_stmt(env)
+            }
         }
     }
 }

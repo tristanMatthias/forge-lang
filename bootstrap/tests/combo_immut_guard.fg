@@ -1,0 +1,29 @@
+// Combo: immutability + match guards + closures + lists + for-in
+enum Priority { Low, Medium, High(level: int) }
+
+type Task = { name: string, priority: Priority, done: int }
+
+let tasks = [
+    Task { name: "design", priority: Priority.High(5), done: 0 },
+    Task { name: "code", priority: Priority.High(3), done: 1 },
+    Task { name: "test", priority: Priority.Medium, done: 0 },
+    Task { name: "docs", priority: Priority.Low, done: 0 },
+]
+
+// Use mut for accumulator, let for everything else
+mut urgent_count = 0
+for t in tasks {
+    let is_urgent = match t.priority {
+        .High(lvl) if lvl >= 4 -> 1
+        _ -> 0
+    }
+    if is_urgent == 1 && t.done == 0 {
+        urgent_count = urgent_count + 1
+        println(t.name)
+    }
+}
+println(string(urgent_count))
+
+// Filter with guard-like logic via lambda
+let undone = tasks.filter((t) -> t.done == 0)
+println(string(undone.length))

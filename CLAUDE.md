@@ -374,3 +374,11 @@ This prevents the user from losing track of what's happening between session rep
 16. **NEVER use mutable global state for type tracking.** Variable types come from LLVM's own type system via `get_allocated_type()` on the variable's alloca. Struct/enum types come from `get_type_by_name()` on the LLVM context. No parallel lists, no CSV strings, no global flags. LLVM is the single source of truth for all type information.
 
 17. **Use Map<string, ptr> for variable lookup, not parallel lists.** Variables should be stored in `Codegen.vars: Map<string, ptr>` (name → alloca). If Map has corruption bugs, fix the Map implementation in runtime.c — don't replace it with parallel List<string>/List<ptr> globals.
+
+## ABSOLUTE RULES (from user, non-negotiable)
+
+1. **NEVER say "that's a bigger change" as a reason to skip work.** Do the work. If it needs 200 lines, write 200 lines. If it needs restructuring, restructure. No deferring.
+2. **NEVER say "known limitation" when it's a bug.** Fix it.
+3. **NEVER simplify a test to avoid a bug.** Fix the bug.
+4. **NEVER leave a workaround and move on.** Fix the root cause.
+5. **NEVER write to the memory system.** All persistent notes go in CLAUDE.md or project docs.

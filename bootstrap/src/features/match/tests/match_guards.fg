@@ -1,0 +1,64 @@
+// Match guard on enum payloads
+enum Shape {
+    Circle(radius: int),
+    Rect(w: int, h: int),
+}
+
+fn classify(s: Shape) -> string {
+    match s {
+        .Circle(r) if r > 10 -> "big circle"
+        .Circle(r) if r > 5 -> "medium circle"
+        .Circle(_) -> "small circle"
+        .Rect(w, h) if w == h -> "square"
+        .Rect(_, _) -> "rectangle"
+    }
+}
+
+println(classify(Shape.Circle(15)))
+println(classify(Shape.Circle(7)))
+println(classify(Shape.Circle(2)))
+println(classify(Shape.Rect(5, 5)))
+println(classify(Shape.Rect(3, 7)))
+
+// Guard on primitive (non-enum match)
+fn check(x: int) -> string {
+    match x {
+        _ if x > 100 -> "huge"
+        _ if x > 0 -> "positive"
+        _ -> "non-positive"
+    }
+}
+println(check(200))
+println(check(50))
+println(check(-5))
+
+// Guard accessing payload
+enum Result {
+    Ok(value: int),
+    Err(code: int),
+}
+
+fn describe(r: Result) -> string {
+    match r {
+        .Ok(v) if v > 0 -> `ok: ${string(v)}`
+        .Ok(_) -> "ok: zero or negative"
+        .Err(c) if c == 404 -> "not found"
+        .Err(c) -> `error: ${string(c)}`
+    }
+}
+println(describe(Result.Ok(42)))
+println(describe(Result.Ok(-1)))
+println(describe(Result.Err(404)))
+println(describe(Result.Err(500)))
+
+// Guard with string match
+fn greet(name: string) -> string {
+    match name {
+        _ if name == "Alice" -> "Hello Alice!"
+        _ if name.starts_with("B") -> `Hey ${name}!`
+        _ -> `Hi ${name}!`
+    }
+}
+println(greet("Alice"))
+println(greet("Bob"))
+println(greet("Carol"))

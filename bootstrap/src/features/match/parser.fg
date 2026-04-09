@@ -32,13 +32,17 @@ impl Parser {
             return MatchArmList.End
         }
         let pattern = self.parse_pattern()?
+        // Optional guard: `pattern if cond ->`
+        let guard: Expr? = if self.check("kw_if") {
+            self.advance()
+            let g = self.parse_expression()?
+            g
+        } else {
+            null
+        }
         if !self.consume("arrow", "expected `->` after pattern") {
             return null
         }
-        // Disable `.field` postfix consumption while parsing the
-        // arm body so the next sibling pattern (`.Variant(...)`)
-        // isn't gobbled into the body. Brace-block bodies
-        // re-enable the flag inside their statement list.
         let saved = self.allow_dot_postfix
         self.allow_dot_postfix = false
         let body = self.parse_expression()
@@ -48,7 +52,7 @@ impl Parser {
             self.advance()
         }
         let rest = self.parse_match_arm_list()?
-        MatchArmList.Node(pattern, body!, rest)
+        MatchArmList.Node(pattern, guard, body!, rest)
     }
 
     fn parse_pattern(self) -> Pattern? {
