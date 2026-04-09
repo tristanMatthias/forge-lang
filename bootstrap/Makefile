@@ -80,3 +80,12 @@ clean:
 	@rm -rf build
 	@rm -f src/*.fg.ll
 	@echo "cleaned: build/ and src/*.fg.ll"
+
+# Assemble the canonical grammar from feature fragments.
+grammar:
+	@echo "# Forge Bootstrap Grammar" > GRAMMAR.md
+	@echo "" >> GRAMMAR.md
+	@echo "Assembled from \`src/features/*/grammar.md\`." >> GRAMMAR.md
+	@echo "" >> GRAMMAR.md
+	@for f in src/features/*/grammar.md; do echo "---" >> GRAMMAR.md; echo "" >> GRAMMAR.md; cat "$$f" >> GRAMMAR.md; echo "" >> GRAMMAR.md; done
+	@echo "assembled GRAMMAR.md ($$(wc -l < GRAMMAR.md | tr -d ' ') lines)"
