@@ -375,26 +375,191 @@ To actually feed `bootstrap/src/*.fg` into the bootstrap compiler we still need:
 - [ ] no optimization work
 - [ ] no parity chase with the current Rust compiler
 
-## Future Tooling Ideas
+## Backlog
 
-Not yet built — pull off the shelf when there's a concrete bug they
-would have helped diagnose.
+Comprehensive list of ideas, follow-ups, and known loose ends accumulated
+during the self-hosting work. Each item is sized "do now / do soon /
+do when blocked / never do until forced".
 
-- **`--trace-codegen`** in the bootstrap compiler: emit each LLVM IR
-  line with a sidecar comment naming the Forge source span / AST node
-  that produced it (e.g. `; from emit_binary, parser.fg:961`). Lets
-  `diagnose.sh --diff` say "this divergence is from `emit_binary` on
+### Tooling — diagnose.sh
+
+- **`--trace-codegen` in the bootstrap compiler** *(do when blocked)*
+  Emit each LLVM IR line with a sidecar comment naming the Forge source
+  span / AST node that produced it (e.g. `; from emit_binary, parser.fg:961`).
+  Lets `diagnose.sh --diff` say "this divergence is from `emit_binary` on
   line X" instead of just dumping the raw IR diff. Add when we hit a
   divergence we can't trivially eyeball.
 
-- **`--dump-types`** in the bootstrap compiler: print the inferred
-  Forge type tag (`i64`, `str`, `enum:Token`, etc.) for every
-  expression and every variable load. Useless today because bs2's
-  type tracker is "everything is i64 unless flagged otherwise" — there
-  is no real type lattice to dump. Add only after we replace the
-  flag-based tracking with a real per-alloca type table (the same
-  refactor M1 in forge/SELF_HOST_PLAN.md describes for the Rust
-  compiler — bs2 will need it eventually).
+- **`--dump-types` in the bootstrap compiler** *(blocked on real type tracker)*
+  Print the inferred Forge type tag (`i64`, `str`, `enum:Token`, etc.) for
+  every expression and every variable load. Useless today because bs2's
+  type tracker is "everything is i64 unless flagged otherwise" — there is
+  no real type lattice to dump. Add only after the type tracker refactor
+  below.
+
+- **Wide-store-into-narrow-buffer pass in `--score`** *(do soon)*
+  Scan emitted .ll for `store iN, ptr %X` where `%X` traces back to a
+  `call ptr @malloc(i64 K)` with `K * 8 < N`. Would have caught the
+  `s[i]` heap-corruption bug immediately. ~30 lines of awk.
+
+- **`--build-bs4` / fixed-point loop verifier** *(do soon)*
+  Currently `--build-bs3` only goes one generation. Add `--build-bs4`
+  that builds bs3 → bs4 and asserts bs3.ll == bs4.ll. The current bs2 → bs3
+  byte-equality check is the right invariant, but a regression that
+  breaks it would currently slip past. This is a one-command guard.
+
+- **Cross-compiler regression mode** *(do soon)*
+  `--regress` runs each test through bs2 only. Add an option to also
+  run each test through bs3 and stage1 and assert all three produce
+  identical stdout. Catches stage1↔bs2 codegen divergence early.
+
+- **Audit `--bisect-lines` for line-aware bisection** *(do when blocked)*
+  Currently bisects on raw line count, which can produce
+  syntactically-broken prefixes. Improve to bisect on top-level
+  declaration boundaries so the minimal repro is always parseable.
+
+### Bootstrap codegen / compiler
+
+- **Real per-alloca type tracking** *(do when blocked, high leverage)*
+  bs2 currently tracks types via the `EmitResult.ty: string` tag plus
+  several global registries (`CG_FN_RETS`, `CG_GLOBALS`, `CG_STRUCTS`).
+  Many code paths lose the tag (struct field loads, generic call
+  returns, match arms) and default to "i64". Replace with a single
+  source of truth: read each value's type from LLVM directly via
+  `LLVMGetAllocatedType` / `LLVMTypeOf` instead of carrying string
+  tags. Same M1 refactor that the Rust compiler still needs (see
+  `forge/SELF_HOST_PLAN.md`). This unblocks `--dump-types` and
+  eliminates a class of "wrong dispatch" bugs.
+
+- **Exhaustive match in codegen for `Stmt` / `Expr`** *(do soon)*
+  The `Stmt.If` tail-position bug existed because `emit_block_loop`
+  used a fallthrough `_ -> emit_stmt; return 0`. Forge's match-table
+  feature can warn on missing arms — once that warning lands in the
+  bootstrap compiler too, this whole class of bug becomes a compile
+  error. Today: grep `_ -> {}` and `_ -> emit_stmt` periodically and
+  audit each. Long-term: enforce exhaustive match.
+
+- **Short-circuit `&&` / `||` lowering** *(do when blocked)*
+  Bootstrap currently lowers `a && b` as `mul(zext(a), zext(b))` and
+  `a || b` as `add(zext(a), zext(b)) != 0`. Both sides are always
+  evaluated. The classic `if x != null && x.field` pattern would
+  segfault under this. parse_call has 4 eager `self.check(...)` calls
+  per loop iteration as a result. Lower as cond_br + phi for real
+  short-circuit semantics. Only blocked because no current source
+  triggers the dependence.
+
+- **Match expression type unification** *(do when blocked)*
+  `emit_match_expr_arms` uses the *first* arm's type as the whole
+  match expression's type. Works because bootstrap source happens to
+  be uniform across arms. A real unification would catch arm mismatches
+  at compile time.
+
+- **`emit_stmt_as_value` coverage audit** *(do soon)*
+  The new helper handles `Expr`, `Block`, `Match`, `If`. Verify there
+  are no other Stmt variants that could legitimately appear in tail
+  position and yield a value (e.g. `While` returning the last
+  iteration's value? Probably not, but document the choice).
+
+- **`forge_llvm_get_named_function` for namespace calls** *(known issue)*
+  Listed in CLAUDE.md as a Rust-compiler bug: `ptr != null` produces
+  `br i1 false` when the variable's inferred type is Unknown. Bootstrap
+  is unaffected (we're using i64 everywhere) but worth checking that
+  bs2's namespace-call lowering doesn't have a parallel issue.
+
+### std-llvm hardening — "no fake successes" rule
+
+Three sites cleaned up in `afcecb4`. Remaining audit:
+
+- **Audit every `return LLVMConstInt` / `return LLVMConstNull` /
+  `return LLVMGetUndef` in std-llvm/src/lib.rs** *(do soon)*
+  ~40 hits. Each is a candidate silent fallback. Triage:
+  catch-and-fail-loud (eprintln + null) where there's no legitimate
+  success path, leave alone where the constant value is the actual
+  answer (e.g. `LLVMConstInt(i1, 1, 0)` in a literal-true builder).
+
+- **`forge_llvm_build_call` arg-count / arg-type checks** *(do soon)*
+  Currently if `num_args > 0 && args.is_null()` returns null, but
+  silently truncates / passes garbage on type mismatch. Should check
+  arg types against fn_type's parameter types and refuse loudly on
+  mismatch.
+
+- **`forge_llvm_build_load` type compatibility** *(do soon)*
+  Now refuses non-pointer destinations, but still accepts any `ty`
+  argument without checking against the destination's allocated
+  type. Should warn (or refuse) when `ty` differs from
+  `LLVMGetAllocatedType(ptr)` for alloca destinations.
+
+### Test coverage / regression suite
+
+- **Capture more programs as regression tests** *(do soon)*
+  Currently 6: zero, hello, int_to_string, fib, field_access,
+  string_ops. Add: enum match, struct mutation, while + break, nested
+  if-else expressions, recursive type rendering, multi-arg method call,
+  string substring, file I/O round-trip. Each is one
+  `--regress-add` invocation.
+
+- **Stage1-vs-bs2 IR equivalence test** *(do soon)*
+  Add a regression mode that compiles each captured `.fg` with both
+  stage1 and bs2 and asserts the .ll files are byte-identical. Catches
+  any new codegen divergence at commit time.
+
+- **Self-host regression** *(do now — see below)*
+  The bs2-self-compiles-bootstrap fixed-point check should run in
+  CI / pre-commit when `bootstrap/src/` changes, not just the
+  user-program regression tests. The pre-commit hook currently runs
+  only `--regress`; extend it to also do `--build-bs3` + diff-fixed-point.
+
+### Bug-class prevention rules (encoded as session learnings)
+
+These belong in CLAUDE.md or a new "lessons" doc — they're meta-rules
+extracted from this session's debugging experience.
+
+- **No fake successes in low-level builders.** A helper that can't
+  perform the requested operation must return null + warn, not
+  substitute a constant. (Encoded: 3 sites in std-llvm.)
+
+- **No silent value loss in tail position.** Every Stmt variant that
+  legitimately holds a value must propagate it through tail position.
+  Empty `_ -> {}` arms in codegen are red flags. (Encoded: new
+  `emit_stmt_as_value` helper.)
+
+- **`store iN` width must match the allocation's actual size.** Never
+  auto-widen narrow integer stores to match a defaulted i64 — only
+  widen when the destination is an alloca with a known wider integer
+  element type. (Encoded: new `forge_llvm_build_store`.)
+
+- **Auto-widening defaults are catastrophic in low-level helpers.**
+  Defaults make the common case work but mask the failure case
+  invisibly. Prefer explicit failure to silent miscompilation.
+
+- **Different crashes can be the same root cause.** When chasing a
+  bug, if multiple symptoms cluster around `nanov2_guard_corruption_detected`
+  or randomly-different sites, suspect a shared upstream corruption,
+  not multiple bugs.
+
+### Loose ends / known limitations
+
+- **bs2's codegen helpers leak memory.** Every `.fg.ll` compile leaks
+  every malloc bs2 made. Fine because the compiler is one-shot, but
+  document it.
+
+- **Pre-commit hook is opt-in.** It's a tracked script + a manual
+  symlink. Anyone cloning the repo has to run the install line.
+  Consider a `bootstrap/scripts/install-hooks.sh` or a note in
+  `bootstrap/README.md`.
+
+- **`forge_llvm_build_call`'s `[BC]` debug print is on in release.**
+  It clutters every test run. Either gate it on an env var or remove.
+
+- **`bisect_*.fg` files accumulate in `bootstrap/build/`.** Add a
+  cleanup pass or move to `/tmp/`.
+
+- **`bootstrap/src/main.fg.ll` shouldn't be tracked.** Already
+  `.gitignore`d, but verify it stays out.
+
+- **`--score`'s orphan-block heuristic is approximate.** Doesn't
+  catch indirectbr or blockaddress, and counts post-return merge
+  blocks as orphans. Acceptable but worth a comment.
 
 ## Source References
 
