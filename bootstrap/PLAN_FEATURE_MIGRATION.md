@@ -129,6 +129,10 @@ temporarily and fix it next commit".
 | 5.2 | Extract if/while/extern parsers | ✅ done |
 | 5.3 | Extract let, fn, struct, enum, impl parsers | ✅ done |
 | 6 | Collapse parser.fg into parse/ | ✅ done |
+| 7 | Collapse codegen.fg into codegen/ | ✅ done |
+| Ctx | Rename Codegen → Ctx, eliminate ALL mutable globals | ✅ done |
+| 8 | Cg fluent helper layer | 🟡 in progress |
+| 9 | Assembled GRAMMAR.md from feature fragments | ✅ done |
 | 7 | Collapse codegen.fg into emit/ | ⏳ pending |
 | 8 | Cg fluent helper layer + Compiler context refactor | ⏳ pending |
 | 9 | Per-feature WHY/grammar + assembled GRAMMAR.md | ⏳ pending |
