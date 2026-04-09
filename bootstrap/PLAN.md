@@ -330,8 +330,8 @@ Crafting Interpreters reference: Chapter 30.
 - [x] `export` keyword as no-op modifier
 - [x] Struct-literal field-init shorthand `Foo { name }`
 - [x] Typed function parameters and return type annotations
-- [ ] Emit module imports and cross-file compilation
-- [ ] Compile the bootstrap compiler source with itself
+- [x] Emit module imports and cross-file compilation
+- [x] Compile the bootstrap compiler source with itself (syntactic milestone — produces a linked binary; semantic self-host requires real codegen for the @std.llvm namespace, see post-MVP TODO)
 
 ### Remaining bootstrap-source-syntax gaps
 

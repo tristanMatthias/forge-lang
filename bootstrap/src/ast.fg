@@ -88,6 +88,8 @@ export enum Stmt {
     Impl(type_name: string, methods: StmtList)
     NoOp
     ExternFn(name: string, params: ParamList)
+    Break
+    Continue
 }
 
 export enum StmtList {
@@ -389,6 +391,8 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Impl(name, methods) -> "(impl " + name + " " + render_stmt_list(methods) + ")"
         .NoOp -> "(noop)"
         .ExternFn(name, params) -> "(extern " + name + " " + render_param_list(params) + ")"
+        .Break -> "(break)"
+        .Continue -> "(continue)"
     }
 }
 

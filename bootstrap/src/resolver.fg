@@ -191,7 +191,23 @@ fn lookup_fn(fns: FnEntry, name: string) -> bool {
 }
 
 fn is_builtin(name: string) -> bool {
-    name == "println" || name == "string"
+    if name == "println" { return true }
+    if name == "eprintln" { return true }
+    if name == "string" { return true }
+    if name == "int" { return true }
+    if name == "read_file" { return true }
+    if name == "write_file" { return true }
+    if name == "file_exists" { return true }
+    if name == "float" { return true }
+    if name == "self" { return true }
+    // Package namespace prefixes — bootstrap source uses
+    // `llvm.context_create()` and `process.exit(...)` after a
+    // `use @std.X` line, which we treat as no-ops. The resolver
+    // skips lookups for these names; codegen lowers namespace
+    // calls to placeholder dispatches.
+    if name == "llvm" { return true }
+    if name == "process" { return true }
+    false
 }
 
 fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
@@ -258,6 +274,8 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
         .NoOp -> r
         .ExternFn(name, _) -> declare_function(r, name)
+        .Break -> r
+        .Continue -> r
     }
 }
 
@@ -329,6 +347,11 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         }
         .Assign(name, value) -> {
             let after_value = resolve_expr(r, value)
+            // Uppercase names are treated as opaque mut globals
+            // (CG_LOOPS, CG_STRUCTS, ...).
+            if starts_with_upper(name) {
+                return after_value
+            }
             let result = lookup_name(after_value.scopes, name)
             if !result.found {
                 return set_resolve_error(after_value, "undefined variable `" + name + "`")

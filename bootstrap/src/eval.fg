@@ -422,6 +422,8 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .Impl(_, _) -> ok_result(runtime, value_null())
         .NoOp -> ok_result(runtime, value_null())
         .ExternFn(_, _) -> ok_result(runtime, value_null())
+        .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
+        .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
     }
 }
 

@@ -98,6 +98,8 @@ fn keyword_kind(text: string) -> string {
     if text == "mod" { return "kw_mod" }
     if text == "impl" { return "kw_impl" }
     if text == "extern" { return "kw_extern" }
+    if text == "break" { return "kw_break" }
+    if text == "continue" { return "kw_continue" }
     return "identifier"
 }
 
@@ -563,6 +565,16 @@ impl Parser {
             return self.parse_match_statement()
         }
 
+        if self.check("kw_break") {
+            self.advance()
+            return Stmt.Break
+        }
+
+        if self.check("kw_continue") {
+            self.advance()
+            return Stmt.Continue
+        }
+
         let expr = self.parse_expression()
         if expr == null { return null }
         Stmt.Expr(expr!)
@@ -896,12 +908,8 @@ impl Parser {
 
     // Peek at the source character immediately after the current
     // `.` token to see whether the next identifier starts with an
-    // uppercase letter. Used to disambiguate match-arm pattern
-    // separators (`.UpperIdent` is always an enum constructor and
-    // can be safely consumed) from sibling patterns (`.endOfArm`
-    // is a field/method which we want to suppress in arm bodies).
+    // uppercase letter.
     fn peek_next_is_upper(self) -> bool {
-        // self.current is the position right after the `.` token.
         if self.current >= self.source.length {
             return false
         }
@@ -909,12 +917,35 @@ impl Parser {
         ch >= "A" && ch <= "Z"
     }
 
+    // Should the current `.` token be consumed as a field / method
+    // / enum-ctor postfix on `result`?
+    //
+    // Always allowed in normal context (`allow_dot_postfix == true`).
+    //
+    // Inside a match arm body (`allow_dot_postfix == false`):
+    //   - `.lowerIdent`  → always a field / method, never a sibling
+    //                       pattern, so allow it
+    //   - `.UpperIdent`  → might be a sibling pattern unless
+    //                       `result` is itself an uppercase Ident
+    //                       (an enum-type prefix like `Foo.Bar`).
+    //                       Otherwise suppress so the next pattern
+    //                       can be parsed.
+    fn dot_is_postfix(self, result: Expr) -> bool {
+        if self.allow_dot_postfix {
+            return true
+        }
+        if !self.peek_next_is_upper() {
+            return true
+        }
+        expr_is_upper_ident(result)
+    }
+
     fn parse_call(self) -> Expr? {
         let expr = self.parse_primary()
         if expr == null { return null }
 
         mut result = expr!
-        while self.check("left_paren") || (self.check("dot") && (self.allow_dot_postfix || (self.peek_next_is_upper() && expr_is_upper_ident(result)))) || self.check("bang") || self.check("left_bracket") {
+        while self.check("left_paren") || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || self.check("left_bracket") {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check("bang") {
@@ -1002,6 +1033,17 @@ impl Parser {
     }
 
     fn parse_arg_list(self) -> ExprList? {
+        // Inside a paren-bounded arg list we're unambiguously not
+        // at a sibling pattern position, so re-enable `.field`
+        // postfix consumption.
+        let saved = self.allow_dot_postfix
+        self.allow_dot_postfix = true
+        let result = self.parse_arg_list_inner()
+        self.allow_dot_postfix = saved
+        result
+    }
+
+    fn parse_arg_list_inner(self) -> ExprList? {
         if self.check("right_paren") {
             return ExprList.End
         }
@@ -1011,7 +1053,7 @@ impl Parser {
 
         if self.check("comma") {
             self.advance()
-            let rest = self.parse_arg_list()
+            let rest = self.parse_arg_list_inner()
             if rest == null { return null }
             return ExprList.Node(expr!, rest!)
         }
@@ -1060,7 +1102,10 @@ impl Parser {
 
         if self.check("left_paren") {
             self.advance()
+            let saved = self.allow_dot_postfix
+            self.allow_dot_postfix = true
             let expr = self.parse_expression()
+            self.allow_dot_postfix = saved
             if expr == null { return null }
             if !self.consume("right_paren", "expected `)` after expression") {
                 return null

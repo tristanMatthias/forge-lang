@@ -79,6 +79,8 @@ fn keyword_kind(text: string) -> string {
     if text == "export" { return "kw_export" }
     if text == "impl" { return "kw_impl" }
     if text == "extern" { return "kw_extern" }
+    if text == "break" { return "kw_break" }
+    if text == "continue" { return "kw_continue" }
     return "identifier"
 }
 
