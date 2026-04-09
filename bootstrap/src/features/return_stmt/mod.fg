@@ -1,0 +1,5 @@
+// WHY: aggregator for the return statement feature.
+// Named `return_stmt` instead of `return` because `return` is a
+// reserved keyword that can't appear in `mod` declarations.
+
+mod parser

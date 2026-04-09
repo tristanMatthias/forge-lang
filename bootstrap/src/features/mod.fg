@@ -1,4 +1,9 @@
 // WHY: aggregator for all language features. Each subdirectory is
 // one feature with its own parser.fg, codegen.fg, example.fg.
+//
+// Features whose name collides with a reserved keyword (return, if,
+// while, let, mut, fn, struct, enum, impl, extern, break, continue)
+// use a `_stmt` or `_decl` suffix in the directory name.
 
 mod match
+mod return_stmt

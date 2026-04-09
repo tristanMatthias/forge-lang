@@ -714,17 +714,7 @@ impl Parser {
         ParamList.Node(name, ty, ParamList.End)
     }
 
-    fn parse_return_statement(self) -> Stmt? {
-        self.advance()
-
-        if self.check("right_brace") || self.check("eof") {
-            return Stmt.RetEmpty
-        }
-
-        let value = self.parse_expression()
-        if value == null { return null }
-        Stmt.Ret(value!)
-    }
+    // parse_return_statement moved to features/return_stmt/parser.fg.
 
     fn parse_expression(self) -> Expr? {
         self.parse_assignment()
