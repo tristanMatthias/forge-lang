@@ -6,3 +6,4 @@ mod token
 mod ast
 mod scanner
 mod resolver
+mod eval
