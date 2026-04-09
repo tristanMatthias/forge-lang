@@ -375,6 +375,27 @@ To actually feed `bootstrap/src/*.fg` into the bootstrap compiler we still need:
 - [ ] no optimization work
 - [ ] no parity chase with the current Rust compiler
 
+## Future Tooling Ideas
+
+Not yet built — pull off the shelf when there's a concrete bug they
+would have helped diagnose.
+
+- **`--trace-codegen`** in the bootstrap compiler: emit each LLVM IR
+  line with a sidecar comment naming the Forge source span / AST node
+  that produced it (e.g. `; from emit_binary, parser.fg:961`). Lets
+  `diagnose.sh --diff` say "this divergence is from `emit_binary` on
+  line X" instead of just dumping the raw IR diff. Add when we hit a
+  divergence we can't trivially eyeball.
+
+- **`--dump-types`** in the bootstrap compiler: print the inferred
+  Forge type tag (`i64`, `str`, `enum:Token`, etc.) for every
+  expression and every variable load. Useless today because bs2's
+  type tracker is "everything is i64 unless flagged otherwise" — there
+  is no real type lattice to dump. Add only after we replace the
+  flag-based tracking with a real per-alloca type table (the same
+  refactor M1 in forge/SELF_HOST_PLAN.md describes for the Rust
+  compiler — bs2 will need it eventually).
+
 ## Source References
 
 This plan is based on:
