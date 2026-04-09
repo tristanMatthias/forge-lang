@@ -6,6 +6,7 @@ in order. Each task is a self-contained commit.
 
 ## Rules
 
+- Read `CLAUDE.md` — it has non-negotiable rules (NO WORKAROUNDS, fix bugs at source, never context-budget)
 - Read `bootstrap/CODE_QUALITY.md` before making ANY change
 - Read `bootstrap/FEATURE_PARITY.md` for the full feature inventory
 - NEVER use `git checkout --` on modified tracked files
