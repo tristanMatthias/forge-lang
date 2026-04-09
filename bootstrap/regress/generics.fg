@@ -1,0 +1,28 @@
+// Generic function — type parameter erased to i64
+fn identity<T>(x: T) -> T {
+    x
+}
+
+// Generic type declaration
+type Pair<A, B> = {
+    first: A,
+    second: B,
+}
+
+// Generic enum
+enum Option<T> {
+    None,
+    Some(value: T),
+}
+
+let x = identity(42)
+println(string(x))
+
+let p = Pair { first: 10, second: 20 }
+println(string(p.first + p.second))
+
+let opt = Option.Some(99)
+match opt {
+    .None -> println(string(0))
+    .Some(v) -> println(string(v))
+}

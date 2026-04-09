@@ -118,6 +118,7 @@ fn p_keyword_kind(text: string) -> string {
     if text == "extern" { return "kw_extern" }
     if text == "break" { return "kw_break" }
     if text == "continue" { return "kw_continue" }
+    if text == "trait" { return "kw_trait" }
     return "identifier"
 }
 
@@ -844,9 +845,9 @@ impl Parser {
         null
     }
 
-    // Consume a type reference: identifier optionally followed by `?`.
-    // The trailing `?` (nullable) is currently erased — we just
-    // return the underlying name.
+    // Consume a type reference: identifier optionally followed by
+    // generic arguments `<A, B>` and/or nullable `?`.
+    // Both generics and nullable are erased — we return the base name.
     fn consume_type(self, message: string) -> string? {
         if !self.check("identifier") {
             self.set_error(message)
@@ -854,10 +855,31 @@ impl Parser {
         }
         let name = self.current_lexeme
         self.advance()
+        // Skip generic arguments: Type<A, B>
+        if self.check("less") {
+            self.skip_angle_brackets()
+        }
         if self.check("question") {
             self.advance()
         }
         name
+    }
+
+    // Skip a balanced `< ... >` bracket group, handling nesting.
+    // Used for both generic declarations (`fn foo<T>`) and generic
+    // arguments in types (`List<int>`). Content is discarded since
+    // the bootstrap erases all types to i64.
+    fn skip_angle_brackets(self) {
+        self.advance()  // consume `<`
+        mut depth = 1
+        while depth > 0 && !self.check("eof") {
+            if self.check("less") {
+                depth = depth + 1
+            } else if self.check("greater") {
+                depth = depth - 1
+            }
+            self.advance()
+        }
     }
 
     fn advance_token(self) {

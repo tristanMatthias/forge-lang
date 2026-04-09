@@ -7,17 +7,38 @@ use parse.{Parser}
 impl Parser {
     fn parse_impl_declaration(self) -> Stmt? {
         self.advance()
+        // Optional generic parameters on impl: `impl<T> ...`
+        if self.check("less") {
+            self.skip_angle_brackets()
+        }
         let type_name = self.consume_identifier("expected type name after `impl`")
         if type_name == null { return null }
+        // Skip generic args on the type name: `impl Foo<T> { ... }`
+        if self.check("less") {
+            self.skip_angle_brackets()
+        }
+        // Handle `impl Trait for Type { ... }` — the trait name is
+        // discarded for now; methods are still desugared to
+        // `Type__method`. Full trait dispatch comes later.
+        mut target_name = type_name!
+        if self.check("kw_for") {
+            self.advance()
+            let for_type = self.consume_identifier("expected type name after `for`")
+            if for_type == null { return null }
+            if self.check("less") {
+                self.skip_angle_brackets()
+            }
+            target_name = for_type!
+        }
         if !self.consume("left_brace", "expected `{` after impl type name") {
             return null
         }
-        let methods = self.parse_impl_methods(type_name!)
+        let methods = self.parse_impl_methods(target_name)
         if methods == null { return null }
         if !self.consume("right_brace", "expected `}` after impl block") {
             return null
         }
-        Stmt.Impl(type_name!, methods!)
+        Stmt.Impl(target_name, methods!)
     }
 
     fn parse_impl_methods(self, type_name: string) -> StmtList? {

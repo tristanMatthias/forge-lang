@@ -46,7 +46,7 @@ Status key:
 | fn types | `fn(A, B) -> R` | 🔲 | |
 | closures / lambdas | `(x) -> x * 2` | 🔲 | **high priority** |
 | `it` parameter | `.method(it * 2)` | 🔲 | needs closures |
-| generics | `fn name<T>(x: T) -> T` | 🔲 | **high priority** |
+| generics | `fn name<T>(x: T) -> T` | ✅ | parsed, erased to i64 |
 | generic constraints | `fn name<T: Trait>(x: T)` | 🔲 | needs generics + traits |
 
 ## Structs & Types
@@ -239,7 +239,7 @@ Status key:
 |---|---|---|---|---|
 | Variables & Bindings | 7 | 5 | 2 | 0 |
 | Primitive Types | 7 | 4 | 3 | 0 |
-| Functions | 9 | 4 | 5 | 0 |
+| Functions | 9 | 5 | 4 | 0 |
 | Structs & Types | 8 | 5 | 3 | 0 |
 | Enums & Matching | 11 | 5 | 6 | 0 |
 | Control Flow | 8 | 5 | 3 | 0 |
@@ -254,7 +254,7 @@ Status key:
 | Testing | 4 | 0 | 4 | 0 |
 | Pointer Ops | 4 | 0 | 4 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **56** | **65** | **10** |
+| **TOTAL** | **131** | **57** | **64** | **10** |
 
 ## Dogfooding Rule
 

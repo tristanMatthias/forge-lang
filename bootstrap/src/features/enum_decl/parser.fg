@@ -9,6 +9,10 @@ impl Parser {
         self.advance()
         let name = self.consume_identifier("expected enum name")
         if name == null { return null }
+        // Optional generic parameters: enum Result<T, E> { ... }
+        if self.check("less") {
+            self.skip_angle_brackets()
+        }
         if !self.consume("left_brace", "expected `{` after enum name") {
             return null
         }
