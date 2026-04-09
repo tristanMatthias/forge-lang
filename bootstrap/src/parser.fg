@@ -264,12 +264,15 @@ impl Parser {
         if !self.consume("right_paren", "expected `)` after parameters") {
             return null
         }
-        if self.check("arrow") {
+        let ret_ty = if self.check("arrow") {
             self.advance()
-            let _ret = self.consume_type("expected return type after `->`")
-            if _ret == null { return null }
+            let r = self.consume_type("expected return type after `->`")
+            if r == null { return null }
+            r!
+        } else {
+            "i64"
         }
-        Stmt.ExternFn(name!, params!)
+        Stmt.ExternFn(name!, params!, ret_ty)
     }
 
     fn parse_use_or_mod_skip(self) -> Stmt? {
@@ -332,10 +335,13 @@ impl Parser {
         if !self.consume("right_paren", "expected `)` after parameters") {
             return null
         }
-        if self.check("arrow") {
+        let ret_ty = if self.check("arrow") {
             self.advance()
-            let _ret = self.consume_type("expected return type after `->`")
-            if _ret == null { return null }
+            let r = self.consume_type("expected return type after `->`")
+            if r == null { return null }
+            r!
+        } else {
+            "i64"
         }
         if !self.consume("left_brace", "expected `{` after method parameters") {
             return null
@@ -347,7 +353,7 @@ impl Parser {
         }
         // Desugar to a top-level function named `Type__method`.
         let mangled = type_name + "__" + name!
-        Stmt.Function(mangled, params!, body!)
+        Stmt.Function(mangled, params!, ret_ty, body!)
     }
 
     fn parse_method_param_list(self, type_name: string) -> ParamList? {
@@ -706,14 +712,16 @@ impl Parser {
             return null
         }
 
-        // Optional return type annotation: `-> Type`. The MVP
-        // doesn't carry the type through to codegen (every fn
-        // returns i64), but accepting it lets bootstrap source
-        // parse cleanly.
-        if self.check("arrow") {
+        // Optional return type annotation: `-> Type`. Stored as a
+        // textual tag and registered in the function-return-type
+        // registry so chained calls preserve typing.
+        let ret_ty = if self.check("arrow") {
             self.advance()
-            let _ret = self.consume_type("expected return type after `->`")
-            if _ret == null { return null }
+            let r = self.consume_type("expected return type after `->`")
+            if r == null { return null }
+            r!
+        } else {
+            "i64"
         }
 
         if !self.consume("left_brace", "expected `{` after function parameters") {
@@ -727,7 +735,7 @@ impl Parser {
             return null
         }
 
-        Stmt.Function(name!, params!, body!)
+        Stmt.Function(name!, params!, ret_ty, body!)
     }
 
     fn parse_param_list(self) -> ParamList? {

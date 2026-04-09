@@ -79,7 +79,11 @@ export enum Stmt {
     Block(body: StmtList)
     If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
     While(condition: Expr, body: Stmt)
-    Function(name: string, params: ParamList, body: StmtList)
+    // `ret_ty` is the textual return type as written in source
+    // (e.g. "i64", "str", "Stmt", "i64?"). Codegen translates this
+    // into its internal value-type tag and uses it to set the
+    // result type of `call(fn)` so chained calls preserve typing.
+    Function(name: string, params: ParamList, ret_ty: string, body: StmtList)
     Ret(value: Expr)
     RetEmpty
     TypeDecl(name: string, fields: FieldList)
@@ -87,7 +91,7 @@ export enum Stmt {
     Match(subject: Expr, arms: MatchArmList)
     Impl(type_name: string, methods: StmtList)
     NoOp
-    ExternFn(name: string, params: ParamList)
+    ExternFn(name: string, params: ParamList, ret_ty: string)
     Break
     Continue
 }
@@ -382,7 +386,7 @@ export fn render_stmt(stmt: Stmt) -> string {
             }
         }
         .While(condition, body) -> "(while " + render_expr(condition) + " " + render_stmt(body) + ")"
-        .Function(name, params, body) -> "(fn " + name + " " + render_param_list(params) + " " + render_stmt_list(body) + ")"
+        .Function(name, params, ret_ty, body) -> "(fn " + name + " " + render_param_list(params) + " -> " + ret_ty + " " + render_stmt_list(body) + ")"
         .Ret(value) -> "(return " + render_expr(value) + ")"
         .RetEmpty -> "(return)"
         .TypeDecl(name, fields) -> "(type " + name + " " + render_field_list(fields) + ")"
@@ -390,7 +394,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Match(subject, arms) -> "(match " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"
         .Impl(name, methods) -> "(impl " + name + " " + render_stmt_list(methods) + ")"
         .NoOp -> "(noop)"
-        .ExternFn(name, params) -> "(extern " + name + " " + render_param_list(params) + ")"
+        .ExternFn(name, params, ret_ty) -> "(extern " + name + " " + render_param_list(params) + " -> " + ret_ty + ")"
         .Break -> "(break)"
         .Continue -> "(continue)"
     }

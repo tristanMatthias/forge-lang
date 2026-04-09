@@ -41,8 +41,8 @@ fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
         .End -> r
         .Node(stmt, next) -> {
             let after = match stmt {
-                .Function(name, _, _) -> declare_function(r, name)
-                .ExternFn(name, _) -> declare_function(r, name)
+                .Function(name, _, _, _) -> declare_function(r, name)
+                .ExternFn(name, _, _) -> declare_function(r, name)
                 .Impl(type_name, methods) -> collect_method_names(r, type_name, methods)
                 _ -> r
             }
@@ -56,7 +56,7 @@ fn collect_method_names(r: Resolver, type_name: string, methods: StmtList) -> Re
         .End -> r
         .Node(stmt, next) -> {
             let after = match stmt {
-                .Function(name, _, _) -> declare_function(r, name)
+                .Function(name, _, _, _) -> declare_function(r, name)
                 _ -> r
             }
             collect_method_names(after, type_name, next)
@@ -195,18 +195,7 @@ fn is_builtin(name: string) -> bool {
     if name == "eprintln" { return true }
     if name == "string" { return true }
     if name == "int" { return true }
-    if name == "read_file" { return true }
-    if name == "write_file" { return true }
-    if name == "file_exists" { return true }
-    if name == "float" { return true }
     if name == "self" { return true }
-    // Package namespace prefixes — bootstrap source uses
-    // `llvm.context_create()` and `process.exit(...)` after a
-    // `use @std.X` line, which we treat as no-ops. The resolver
-    // skips lookups for these names; codegen lowers namespace
-    // calls to placeholder dispatches.
-    if name == "llvm" { return true }
-    if name == "process" { return true }
     false
 }
 
@@ -256,7 +245,7 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after_cond = resolve_expr(r, condition)
             resolve_stmt(after_cond, body)
         }
-        .Function(name, params, body) -> {
+        .Function(name, params, _, body) -> {
             let with_fn = declare_function(r, name)
             let entered = enter_resolve_scope(with_fn)
             let with_params = declare_params(entered, params)
@@ -273,7 +262,7 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         }
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
         .NoOp -> r
-        .ExternFn(name, _) -> declare_function(r, name)
+        .ExternFn(name, _, _) -> declare_function(r, name)
         .Break -> r
         .Continue -> r
     }

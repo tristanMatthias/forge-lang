@@ -396,7 +396,7 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .While(condition, body) -> {
             execute_while(runtime, condition, body)
         }
-        .Function(name, params, body) -> {
+        .Function(name, params, _, body) -> {
             let next_runtime = define_function(runtime, name, params, body)
             ok_result(next_runtime, value_null())
         }
@@ -421,7 +421,7 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .Match(_, _) -> error_result(runtime, "match statements are not supported by the tree-walk evaluator")
         .Impl(_, _) -> ok_result(runtime, value_null())
         .NoOp -> ok_result(runtime, value_null())
-        .ExternFn(_, _) -> ok_result(runtime, value_null())
+        .ExternFn(_, _, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
     }

@@ -41,6 +41,79 @@ enum StructReg {
 
 mut CG_STRUCTS: StructReg = StructReg.End
 
+// Function return type registry. The bootstrap MVP doesn't carry
+// declared return types through to LLVM (every function returns
+// i64 at the ABI level), but we track the declared *value tag*
+// here so chained method calls and `let x = call()` get the right
+// downstream type. Looked up by mangled function name.
+enum FnRetTypes {
+    End
+    Node(name: string, ret_ty: string, next: FnRetTypes)
+}
+
+mut CG_FN_RETS: FnRetTypes = FnRetTypes.End
+
+fn fn_ret_register(name: string, ret_ty: string) {
+    CG_FN_RETS = FnRetTypes.Node(name, ret_ty, CG_FN_RETS)
+}
+
+fn fn_ret_lookup(name: string) -> string {
+    fn_ret_lookup_loop(CG_FN_RETS, name)
+}
+
+fn fn_ret_lookup_loop(reg: FnRetTypes, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, ty, next) -> {
+            if n == name {
+                return ty
+            }
+            fn_ret_lookup_loop(next, name)
+        }
+    }
+}
+
+// Top-level `mut` global registry. Each declaration emits an LLVM
+// global of i64 type, and the environment-lookup path consults
+// this registry when a name isn't a local. The value tag tracks
+// what type the global holds (so reads return a properly-tagged
+// value).
+enum GlobalReg {
+    End
+    Node(name: string, llvm_global: ptr, ty: string, next: GlobalReg)
+}
+
+mut CG_GLOBALS: GlobalReg = GlobalReg.End
+
+type GlobalLookup = {
+    found: bool,
+    llvm_global: ptr,
+    ty: string,
+}
+
+fn global_register(name: string, llvm_global: ptr, ty: string) {
+    CG_GLOBALS = GlobalReg.Node(name, llvm_global, ty, CG_GLOBALS)
+}
+
+fn global_lookup(name: string) -> GlobalLookup {
+    global_lookup_loop(CG_GLOBALS, name)
+}
+
+fn global_lookup_loop(reg: GlobalReg, name: string) -> GlobalLookup {
+    match reg {
+        .End -> {
+            let n: ptr = null
+            GlobalLookup { found: false, llvm_global: n, ty: "i64" }
+        }
+        .Node(n, g, ty, next) -> {
+            if n == name {
+                return GlobalLookup { found: true, llvm_global: g, ty }
+            }
+            global_lookup_loop(next, name)
+        }
+    }
+}
+
 // Loop stack for break/continue. Each frame holds the basic block
 // to branch to for `continue` (the loop's condition check block)
 // and the block to branch to for `break` (the loop's exit block).
@@ -211,12 +284,15 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     llvm.type_array_free(exit_param_arr)
     llvm.add_function(m, "exit", exit_type)
 
-    // Reset and rebuild the per-compile struct/enum registries.
+    // Reset and rebuild the per-compile registries.
     CG_STRUCTS = StructReg.End
     CG_ENUMS = EnumReg.End
     CG_LOOPS = LoopStack.End
+    CG_FN_RETS = FnRetTypes.End
+    CG_GLOBALS = GlobalReg.End
     declare_structs(ctx, i64t, stmts)
     declare_enums(ctx, i64t, stmts)
+    declare_globals(m, ctx, i64t, stmts)
 
     // Pass 1: declare every user-defined function as an LLVM
     // prototype so call sites (which may appear before the
@@ -364,6 +440,37 @@ fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList) {
     }
 }
 
+// ── Global declaration pass ──
+//
+// Top-level `let` and `mut` declarations become module-level LLVM
+// globals (i64). Their initializers are deferred to a synthetic
+// `bs_init_globals` function called from `main` at startup; the
+// declaration pass only allocates the global slot itself, since
+// initializers may reference user functions and structs that
+// haven't been emitted yet.
+
+fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
+    match stmts {
+        .End -> {}
+        .Node(stmt, next) -> {
+            match stmt {
+                .Let(name, _) -> {
+                    let g = llvm.add_global(m, i64t, name)
+                    llvm.set_initializer(g, llvm.const_int(i64t, 0, 0))
+                    global_register(name, g, "i64")
+                }
+                .Mut(name, _) -> {
+                    let g = llvm.add_global(m, i64t, name)
+                    llvm.set_initializer(g, llvm.const_int(i64t, 0, 0))
+                    global_register(name, g, "i64")
+                }
+                _ -> {}
+            }
+            declare_globals(m, ctx, i64t, next)
+        }
+    }
+}
+
 // ── Enum declaration pass ──
 
 fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList) {
@@ -408,15 +515,16 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
         .End -> {}
         .Node(stmt, next) -> {
             match stmt {
-                .Function(name, params, body) -> {
+                .Function(name, params, ret_ty, body) -> {
                     let arity = param_list_length(params)
                     let param_arr = llvm.type_array_new(arity)
                     fill_i64_param_array(param_arr, i64t, 0, arity)
                     let fn_type = llvm.function_type(i64t, param_arr, arity, 0)
                     llvm.type_array_free(param_arr)
                     llvm.add_function(m, name, fn_type)
+                    fn_ret_register(name, translate_param_type(ret_ty))
                 }
-                .ExternFn(name, params) -> {
+                .ExternFn(name, params, ret_ty) -> {
                     // Same shape as a normal function declaration:
                     // every parameter and the return value are i64
                     // in the bootstrap MVP. Codegen calls this via
@@ -427,6 +535,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
                     let fn_type = llvm.function_type(i64t, param_arr, arity, 0)
                     llvm.type_array_free(param_arr)
                     llvm.add_function(m, name, fn_type)
+                    fn_ret_register(name, translate_param_type(ret_ty))
                 }
                 .Impl(_, methods) -> declare_functions(m, ctx, i64t, methods)
                 _ -> {}
@@ -451,7 +560,7 @@ fn emit_function_bodies(cg: Codegen, stmts: StmtList) -> StmtResult {
         .End -> ok_stmt(VarEnv.End)
         .Node(stmt, next) -> {
             let r = match stmt {
-                .Function(name, params, body) -> emit_function_body(cg, name, params, body)
+                .Function(name, params, _, body) -> emit_function_body(cg, name, params, body)
                 .Impl(_, methods) -> emit_function_bodies(cg, methods)
                 _ -> ok_stmt(VarEnv.End)
             }
@@ -539,7 +648,9 @@ fn emit_top_level(cg: Codegen, env: VarEnv, stmts: StmtList) -> StmtResult {
         .End -> ok_stmt(env)
         .Node(stmt, next) -> {
             let result = match stmt {
-                .Function(_, _, _) -> ok_stmt(env)
+                .Function(_, _, _, _) -> ok_stmt(env)
+                .Let(name, init) -> emit_top_level_init(cg, env, name, init)
+                .Mut(name, init) -> emit_top_level_init(cg, env, name, init)
                 _ -> emit_stmt(cg, env, stmt)
             }
             if result.had_error {
@@ -548,6 +659,25 @@ fn emit_top_level(cg: Codegen, env: VarEnv, stmts: StmtList) -> StmtResult {
             emit_top_level(cg, result.env, next)
         }
     }
+}
+
+fn emit_top_level_init(cg: Codegen, env: VarEnv, name: string, init: Expr) -> StmtResult {
+    // Top-level let/mut declarations were already allocated as
+    // module globals in declare_globals. Here we just emit the
+    // initializer expression at main's entry and store it.
+    let g = global_lookup(name)
+    if !g.found {
+        return err_stmt("codegen error: global `" + name + "` not declared")
+    }
+    let r = emit_expr(cg, env, init)
+    if r.had_error {
+        return err_stmt_from_expr(r)
+    }
+    llvm.build_store(cg.builder, r.value, g.llvm_global)
+    // Update the global registry's value tag with the inferred
+    // type so subsequent reads carry the right tag.
+    global_register(name, g.llvm_global, r.ty)
+    ok_stmt(env)
 }
 
 // ── Statement emission ──
@@ -603,7 +733,7 @@ fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
         .Match(subject, arms) -> emit_match(cg, env, subject, arms)
         .Impl(_, _) -> ok_stmt(env)
         .NoOp -> ok_stmt(env)
-        .ExternFn(_, _) -> ok_stmt(env)
+        .ExternFn(_, _, _) -> ok_stmt(env)
         .Break -> {
             let frame = loops_top()
             if !frame.found {
@@ -729,34 +859,34 @@ fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
         .Binary(left, operator, right) -> emit_binary(cg, env, left, operator, right)
         .Logical(left, operator, right) -> emit_binary(cg, env, left, operator, right)
         .Ident(name) -> {
-            let lookup = env_lookup(env, name)
-            if !lookup.found {
-                // Unknown name (likely a mut global like CG_LOOPS
-                // or a builtin we don't model). Return an opaque
-                // i64 zero so the IR remains valid.
-                return ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+            let local = env_lookup(env, name)
+            if local.found {
+                let loaded = llvm.build_load(cg.builder, cg.i64_type, local.alloca, name)
+                return EmitResult { value: loaded, ty: local.ty, had_error: false, error_message: "" }
             }
-            let loaded = llvm.build_load(cg.builder, cg.i64_type, lookup.alloca, name)
-            EmitResult { value: loaded, ty: lookup.ty, had_error: false, error_message: "" }
+            let g = global_lookup(name)
+            if g.found {
+                let loaded = llvm.build_load(cg.builder, cg.i64_type, g.llvm_global, name)
+                return EmitResult { value: loaded, ty: g.ty, had_error: false, error_message: "" }
+            }
+            err_emit("undefined variable `" + name + "`")
         }
         .Assign(name, value) -> {
-            let lookup = env_lookup(env, name)
-            if !lookup.found {
-                // Assignment to an unknown name (e.g. a mut global
-                // we don't model). Evaluate the RHS for side
-                // effects and discard.
-                let r = emit_expr(cg, env, value)
-                if r.had_error {
-                    return r
-                }
-                return ok_emit(r.value)
-            }
             let r = emit_expr(cg, env, value)
             if r.had_error {
                 return r
             }
-            llvm.build_store(cg.builder, r.value, lookup.alloca)
-            EmitResult { value: r.value, ty: lookup.ty, had_error: false, error_message: "" }
+            let local = env_lookup(env, name)
+            if local.found {
+                llvm.build_store(cg.builder, r.value, local.alloca)
+                return EmitResult { value: r.value, ty: local.ty, had_error: false, error_message: "" }
+            }
+            let g = global_lookup(name)
+            if g.found {
+                llvm.build_store(cg.builder, r.value, g.llvm_global)
+                return EmitResult { value: r.value, ty: g.ty, had_error: false, error_message: "" }
+            }
+            err_emit("assignment to undefined variable `" + name + "`")
         }
         .Call(callee, args) -> emit_call(cg, env, callee, args)
         .StructLit(name, inits) -> emit_struct_lit(cg, env, name, inits)
@@ -890,14 +1020,11 @@ fn emit_match_expr(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchArmList) 
     }
     let enum_name = strip_enum_prefix(r.ty)
     if enum_name == "" {
-        // Opaque match expression — emit a placeholder zero.
-        let _ = emit_match_placeholder(cg, env, arms)
-        return ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+        return err_emit("match subject is not an enum (ty=" + r.ty + ")")
     }
     let lookup = enum_reg_lookup(enum_name)
     if !lookup.found {
-        let _ = emit_match_placeholder(cg, env, arms)
-        return ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+        return err_emit("unknown enum `" + enum_name + "`")
     }
     let st_ty = llvm.get_type_by_name(cg.ctx, enum_name)
     let subj_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "match_subj")
@@ -967,9 +1094,7 @@ fn emit_index(cg: Codegen, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
         return r
     }
     if r.ty != "str" && r.ty != "string" {
-        // Opaque indexing — placeholder zero so self-compile
-        // doesn't break.
-        return ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+        return err_emit("indexing on non-string value (ty=" + r.ty + ")")
     }
     let i_r = emit_expr(cg, env, idx)
     if i_r.had_error {
@@ -1044,14 +1169,11 @@ fn fill_struct_fields(cg: Codegen, env: VarEnv, st_ty: ptr, alloca: ptr, inits: 
 }
 
 fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> EmitResult {
-    // Namespace field access placeholder — `process.args`,
-    // `args.length`, etc. when obj is the package prefix `llvm`
-    // or `process`.
+    // Special case: bare `EnumName.Variant` (zero-arg enum
+    // constructor). The parser models this as
+    // FieldAccess(Ident(EnumName), Variant).
     match obj {
         .Ident(head) -> {
-            if head == "llvm" || head == "process" {
-                return ok_emit(llvm.const_int(cg.i64_type, 0, 0))
-            }
             let enum_l = enum_reg_lookup(head)
             if enum_l.found {
                 return emit_enum_ctor(cg, env, head, field, ExprList.End)
@@ -1081,16 +1203,15 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     // The object's ty tag tells us which struct it is.
     let struct_name = strip_struct_prefix(r.ty)
     if struct_name == "" {
-        // Opaque receiver — placeholder.
-        return ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+        return err_emit("field access on non-struct value (ty=" + r.ty + ")")
     }
     let lookup = struct_reg_lookup(struct_name)
     if !lookup.found {
-        return ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+        return err_emit("unknown struct `" + struct_name + "`")
     }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 {
-        return ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+        return err_emit("unknown field `" + field + "` on struct `" + struct_name + "`")
     }
     let st_ty = llvm.get_type_by_name(cg.ctx, struct_name)
     let obj_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "obj_ptr")
@@ -1143,45 +1264,6 @@ fn fill_enum_payload(cg: Codegen, env: VarEnv, st_ty: ptr, alloca: ptr, args: Ex
 }
 
 // "enum:Name" → "Name"; anything else → "".
-fn emit_match_placeholder(cg: Codegen, env: VarEnv, arms: MatchArmList) -> StmtResult {
-    // Emit each arm body in sequence (not actually dispatching).
-    // Pattern bindings are still given placeholder allocas so the
-    // body can reference them without "undefined variable" errors.
-    match arms {
-        .End -> ok_stmt(env)
-        .Node(pattern, body, next) -> {
-            let arm_env = bind_pattern_placeholder(cg, env, pattern)
-            let r = emit_expr(cg, arm_env, body)
-            if r.had_error {
-                return err_stmt(r.error_message)
-            }
-            emit_match_placeholder(cg, env, next)
-        }
-    }
-}
-
-fn bind_pattern_placeholder(cg: Codegen, env: VarEnv, pattern: Pattern) -> VarEnv {
-    match pattern {
-        .Wildcard -> env
-        .Variant(_, bindings) -> bind_placeholder_loop(cg, env, bindings)
-    }
-}
-
-fn bind_placeholder_loop(cg: Codegen, env: VarEnv, bindings: ParamList) -> VarEnv {
-    match bindings {
-        .End -> env
-        .Node(name, _, next) -> {
-            if name == "_" {
-                return bind_placeholder_loop(cg, env, next)
-            }
-            let alloca = llvm.build_alloca(cg.builder, cg.i64_type, name)
-            llvm.build_store(cg.builder, llvm.const_int(cg.i64_type, 0, 0), alloca)
-            let extended = env_extend(env, name, alloca, "i64")
-            bind_placeholder_loop(cg, extended, next)
-        }
-    }
-}
-
 fn emit_match(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchArmList) -> StmtResult {
     let r = emit_expr(cg, env, subject)
     if r.had_error {
@@ -1189,13 +1271,11 @@ fn emit_match(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchArmList) -> St
     }
     let enum_name = strip_enum_prefix(r.ty)
     if enum_name == "" {
-        // Opaque match — emit a placeholder that walks the arm
-        // bodies for side effects but does no tag dispatch.
-        return emit_match_placeholder(cg, env, arms)
+        return err_stmt("codegen error: match subject is not an enum (ty=" + r.ty + ")")
     }
     let lookup = enum_reg_lookup(enum_name)
     if !lookup.found {
-        return emit_match_placeholder(cg, env, arms)
+        return err_stmt("codegen error: unknown enum `" + enum_name + "`")
     }
     let st_ty = llvm.get_type_by_name(cg.ctx, enum_name)
     let subj_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "match_subj")
@@ -1351,20 +1431,6 @@ fn emit_call(cg: Codegen, env: VarEnv, callee: Expr, args: ExprList) -> EmitResu
 }
 
 fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: ExprList) -> EmitResult {
-    // Namespace dispatch: `llvm.foo(args)` and `process.foo(args)`
-    // come from the host's @std.llvm and @std.process packages,
-    // which the bootstrap doesn't actually compile. Lower these to
-    // a placeholder constant so the IR is valid even though the
-    // call is a no-op. The self-compiled binary won't actually
-    // drive LLVM, but it will link.
-    match obj {
-        .Ident(head) -> {
-            if head == "llvm" || head == "process" {
-                return emit_namespace_call(cg, env, args)
-            }
-        }
-        _ -> {}
-    }
     // Special-case `.length` and `.substring` on strings — these are
     // emitted via libc strlen / a custom substring helper rather than
     // dispatched as methods.
@@ -1400,19 +1466,12 @@ fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: E
         enum_name
     }
     if owner == "" {
-        // Fall back to a placeholder dispatch when the receiver's
-        // type tag is opaque (i64). Self-host mode can't track
-        // function return types yet, so chained method calls like
-        // `foo().bar().baz()` end up here. Emit a no-op evaluator
-        // for the args and return 0.
-        return emit_namespace_call(cg, env, args)
+        return err_emit("method call on non-struct/enum value (ty=" + r.ty + ")")
     }
     let mangled = owner + "__" + method
     let fn_val = llvm.get_named_function(cg.module, mangled)
     if fn_val == null {
-        // Method not declared — fall through to placeholder so
-        // self-compile can succeed.
-        return emit_namespace_call(cg, env, args)
+        return err_emit("undefined method `" + owner + "." + method + "`")
     }
     // Build arg array with self prepended.
     let extra_count = expr_list_length(args)
@@ -1430,16 +1489,11 @@ fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: E
     llvm.type_array_free(param_arr)
     let result = llvm.build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "methcall")
     llvm.value_array_free(arg_arr)
-    ok_emit(result)
-}
-
-fn emit_namespace_call(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
-    // Evaluate args for side effects but return 0. Used as a
-    // placeholder for unimplemented namespace method calls.
-    let arr = llvm.value_array_new(8)
-    let _fill = fill_arg_array(cg, env, arr, args, 0)
-    llvm.value_array_free(arr)
-    ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+    let ret_ty = fn_ret_lookup(mangled)
+    if ret_ty == "" {
+        return ok_emit(result)
+    }
+    EmitResult { value: result, ty: ret_ty, had_error: false, error_message: "" }
 }
 
 fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> EmitResult {
@@ -1456,18 +1510,6 @@ fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> Em
     }
     if name == "int" {
         return emit_string_to_int(cg, env, args)
-    }
-    if name == "float" {
-        return emit_string_to_int(cg, env, args)
-    }
-    if name == "read_file" {
-        return emit_namespace_call(cg, env, args)
-    }
-    if name == "write_file" {
-        return emit_namespace_call(cg, env, args)
-    }
-    if name == "file_exists" {
-        return emit_namespace_call(cg, env, args)
     }
     let fn_val = llvm.get_named_function(cg.module, name)
     if fn_val == null {
@@ -1489,7 +1531,11 @@ fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> Em
 
     let result = llvm.build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
     llvm.value_array_free(arg_arr)
-    ok_emit(result)
+    let ret_ty = fn_ret_lookup(name)
+    if ret_ty == "" {
+        return ok_emit(result)
+    }
+    EmitResult { value: result, ty: ret_ty, had_error: false, error_message: "" }
 }
 
 fn emit_int_to_string(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
