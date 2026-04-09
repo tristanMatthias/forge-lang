@@ -64,6 +64,10 @@ fn keyword_kind(text: string) -> string {
     if text == "return" { return "kw_return" }
     if text == "true" { return "kw_true" }
     if text == "while" { return "kw_while" }
+    if text == "type" { return "kw_type" }
+    if text == "enum" { return "kw_enum" }
+    if text == "match" { return "kw_match" }
+    if text == "export" { return "kw_export" }
     return "identifier"
 }
 
@@ -163,6 +167,14 @@ impl Parser {
     }
 
     fn parse_declaration(self) -> Stmt? {
+        // `export` is currently a no-op modifier — every top-level
+        // declaration is reachable from main, so the visibility tag
+        // is irrelevant for single-file MVP compilation. Recorded
+        // here so bootstrap source files parse cleanly.
+        if self.check("kw_export") {
+            self.advance()
+        }
+
         if self.check("kw_fn") {
             return self.parse_function_declaration()
         }
@@ -471,6 +483,16 @@ impl Parser {
             return null
         }
 
+        // Optional return type annotation: `-> Type`. The MVP
+        // doesn't carry the type through to codegen (every fn
+        // returns i64), but accepting it lets bootstrap source
+        // parse cleanly.
+        if self.check("arrow") {
+            self.advance()
+            let _ret = self.consume_identifier("expected return type after `->`")
+            if _ret == null { return null }
+        }
+
         if !self.consume("left_brace", "expected `{` after function parameters") {
             return null
         }
@@ -493,14 +515,26 @@ impl Parser {
         let name = self.consume_identifier("expected parameter name")
         if name == null { return null }
 
+        // Optional `: Type` annotation. Stored verbatim; codegen
+        // translates the textual type into its internal value tag.
+        if self.check("colon") {
+            self.advance()
+            let ty = self.consume_identifier("expected parameter type after `:`")
+            if ty == null { return null }
+            return self.finish_param(name!, ty!)
+        }
+
+        self.finish_param(name!, "i64")
+    }
+
+    fn finish_param(self, name: string, ty: string) -> ParamList? {
         if self.check("comma") {
             self.advance()
             let rest = self.parse_param_list()
             if rest == null { return null }
-            return ParamList.Node(name!, rest!)
+            return ParamList.Node(name, ty, rest!)
         }
-
-        ParamList.Node(name!, ParamList.End)
+        ParamList.Node(name, ty, ParamList.End)
     }
 
     fn parse_return_statement(self) -> Stmt? {
@@ -698,18 +732,24 @@ impl Parser {
         }
         let name = self.consume_identifier("expected field name")
         if name == null { return null }
-        if !self.consume("colon", "expected `:` after field name") {
-            return null
+        // Shorthand: `Foo { name }` is sugar for `Foo { name: name }`.
+        // If the next token is `,` or `}`, the field value is just
+        // the variable with the same name.
+        let value = if self.check("colon") {
+            self.advance()
+            let v = self.parse_expression()
+            if v == null { return null }
+            v!
+        } else {
+            Expr.Ident(name!)
         }
-        let value = self.parse_expression()
-        if value == null { return null }
         if self.check("comma") {
             self.advance()
             let rest = self.parse_field_init_list()
             if rest == null { return null }
-            return FieldInitList.Node(name!, value!, rest!)
+            return FieldInitList.Node(name!, value, rest!)
         }
-        FieldInitList.Node(name!, value!, FieldInitList.End)
+        FieldInitList.Node(name!, value, FieldInitList.End)
     }
 
     fn parse_arg_list(self) -> ExprList? {

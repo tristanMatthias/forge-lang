@@ -254,7 +254,7 @@ fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
 fn declare_params(r: Resolver, params: ParamList) -> Resolver {
     match params {
         .End -> r
-        .Node(name, next) -> {
+        .Node(name, _, next) -> {
             let declared = declare_name(r, name)
             let defined = define_name(declared, name)
             declare_params(defined, next)
@@ -273,6 +273,11 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .Null -> r
         .Ident(name) -> {
             if is_builtin(name) {
+                return r
+            }
+            // Uppercase identifiers are treated as type names — the
+            // resolver doesn't track them, codegen does.
+            if starts_with_upper(name) {
                 return r
             }
             let result = lookup_name(r.scopes, name)
@@ -310,9 +315,33 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             resolve_expr_list(after_callee, args)
         }
         .StructLit(_, inits) -> resolve_field_init_list(r, inits)
-        .FieldAccess(obj, _) -> resolve_expr(r, obj)
+        .FieldAccess(obj, _) -> {
+            // `Type.Variant` (a zero-arg enum constructor) is parsed
+            // as FieldAccess(Ident(Type), Variant). Skip the inner
+            // Ident lookup when it starts with an uppercase letter
+            // because it's a type name, not a runtime value.
+            // Codegen does the actual validity check against the
+            // enum/struct registries.
+            match obj {
+                .Ident(name) -> {
+                    if starts_with_upper(name) {
+                        return r
+                    }
+                    resolve_expr(r, obj)
+                }
+                _ -> resolve_expr(r, obj)
+            }
+        }
         .EnumCtor(_, _, args) -> resolve_expr_list(r, args)
     }
+}
+
+fn starts_with_upper(name: string) -> bool {
+    if name.length < 1 {
+        return false
+    }
+    let head = name.substring(0, 1)
+    head >= "A" && head <= "Z"
 }
 
 fn resolve_field_init_list(r: Resolver, inits: FieldInitList) -> Resolver {

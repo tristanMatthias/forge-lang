@@ -415,14 +415,37 @@ fn emit_function_body(cg: Codegen, name: string, params: ParamList, body: StmtLi
 fn bind_params_inline(builder: ptr, i64t: ptr, fn_val: ptr, params: ParamList, idx: int, env: VarEnv) -> VarEnv {
     match params {
         .End -> env
-        .Node(name, next) -> {
+        .Node(name, ty, next) -> {
             let arg = llvm.get_param(fn_val, idx)
             let alloca = llvm.build_alloca(builder, i64t, name)
             llvm.build_store(builder, arg, alloca)
-            // Function parameters are i64 by default in the MVP.
-            bind_params_inline(builder, i64t, fn_val, next, idx + 1, env_extend(env, name, alloca, "i64"))
+            // Translate the user-facing type annotation into the
+            // codegen's internal value tag. "str" stays as-is,
+            // anything starting with uppercase is assumed to be a
+            // struct or enum and tagged accordingly so that field
+            // access and match can find the right registry entry.
+            let internal_ty = translate_param_type(ty)
+            bind_params_inline(builder, i64t, fn_val, next, idx + 1, env_extend(env, name, alloca, internal_ty))
         }
     }
+}
+
+fn translate_param_type(ty: string) -> string {
+    if ty == "str" { return "str" }
+    if ty == "i64" { return "i64" }
+    if ty == "int" { return "i64" }
+    if ty == "bool" { return "i64" }
+    if ty == "ptr" { return "i64" }
+    // Anything else: check the registries. Enum first, then struct.
+    let enum_l = enum_reg_lookup(ty)
+    if enum_l.found {
+        return "enum:" + ty
+    }
+    let struct_l = struct_reg_lookup(ty)
+    if struct_l.found {
+        return "struct:" + ty
+    }
+    "i64"
 }
 
 // ── Top-level pass (skips function decls) ──
@@ -848,7 +871,7 @@ fn bind_pattern_payload(cg: Codegen, env: VarEnv, pattern: Pattern, st_ty: ptr, 
 fn bind_pattern_payload_loop(cg: Codegen, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: FieldList, idx: int) -> VarEnv {
     match bindings {
         .End -> env
-        .Node(name, next_b) -> {
+        .Node(name, _, next_b) -> {
             // _ in a binding position is a "don't bind" placeholder.
             if name == "_" {
                 return bind_pattern_payload_loop(cg, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)

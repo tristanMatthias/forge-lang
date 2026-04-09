@@ -535,7 +535,7 @@ fn eval_arg_list(runtime: Runtime, args: ExprList) -> EvalArgsResult {
 fn bind_params(runtime: Runtime, params: ParamList, args: ValueList) -> Runtime {
     match params {
         .End -> runtime
-        .Node(name, next_params) -> {
+        .Node(name, _, next_params) -> {
             match args {
                 .End -> runtime
                 .Node(value, next_args) -> {
@@ -550,7 +550,7 @@ fn bind_params(runtime: Runtime, params: ParamList, args: ValueList) -> Runtime 
 fn count_params(params: ParamList) -> int {
     match params {
         .End -> 0
-        .Node(_, next) -> 1 + count_params(next)
+        .Node(_, _, next) -> 1 + count_params(next)
     }
 }
 
