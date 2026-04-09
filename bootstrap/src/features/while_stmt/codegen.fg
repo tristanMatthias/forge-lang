@@ -1,10 +1,9 @@
 // WHY: emits LLVM IR for `while cond { body }` with break/continue
-// support via the loop stack.
+// support via the scoped loop stack in Codegen.
 
 use core.ast.{Expr, Stmt, VarEnv}
-use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt_from_expr}
-use codegen.{emit_expr, emit_stmt, loops_push, loops_pop}
-
+use core.cg.{Codegen, LoopStack, StmtResult, ok_stmt, err_stmt_from_expr}
+use codegen.{emit_expr, emit_stmt}
 
 export fn emit_while(cg: Codegen, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
     let cond_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "while.cond")
@@ -18,10 +17,24 @@ export fn emit_while(cg: Codegen, env: VarEnv, condition: Expr, body: Stmt) -> S
     let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "while_cond")
     forge_llvm_build_cond_br(cg.builder, cond_i1, body_bb, exit_bb)
 
+    // Scoped loop stack: create a new Codegen with this loop's
+    // frame pushed. The body sees it; the outer cg is unchanged.
     forge_llvm_position_at_end(cg.builder, body_bb)
-    loops_push(cond_bb, exit_bb)
-    let body_result = emit_stmt(cg, env, body)
-    loops_pop()
+    let body_cg = Codegen {
+        ctx: cg.ctx,
+        module: cg.module,
+        builder: cg.builder,
+        current_fn: cg.current_fn,
+        i64_type: cg.i64_type,
+        i1_type: cg.i1_type,
+        ptr_type: cg.ptr_type,
+        structs: cg.structs,
+        enums: cg.enums,
+        fn_rets: cg.fn_rets,
+        top_level_vars: cg.top_level_vars,
+        loops: LoopStack.Frame(cond_bb, exit_bb, cg.loops),
+    }
+    let body_result = emit_stmt(body_cg, env, body)
     if body_result.had_error { return body_result }
     if forge_llvm_block_has_terminator(cg.builder) == 0 {
         forge_llvm_build_br(cg.builder, cond_bb)

@@ -1,5 +1,5 @@
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload}
-use core.cg.{Codegen, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix, strip_struct_prefix, EnumLookup, StructLookup, StructReg, EnumReg, enum_reg_lookup, struct_reg_lookup, translate_param_type}
+use core.cg.{Codegen, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix, strip_struct_prefix, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type}
 
 // ── Direct C extern declarations ──
 //
@@ -40,116 +40,15 @@ export type CodegenResult = {
 // translate_param_type, strip_struct_prefix all moved to core/cg.fg.
 
 // Function return type registry. The bootstrap MVP doesn't carry
-// declared return types through to LLVM (every function returns
-// i64 at the ABI level), but we track the declared *value tag*
-// here so chained method calls and `let x = call()` get the right
-// downstream type. Looked up by mangled function name.
-enum FnRetTypes {
-    End
-    Node(name: string, ret_ty: string, next: FnRetTypes)
-}
-
-mut CG_FN_RETS: FnRetTypes = FnRetTypes.End
-
-fn fn_ret_register(name: string, ret_ty: string) {
-    CG_FN_RETS = FnRetTypes.Node(name, ret_ty, CG_FN_RETS)
-}
-
-fn fn_ret_lookup(name: string) -> string {
-    fn_ret_lookup_loop(CG_FN_RETS, name)
-}
-
-fn fn_ret_lookup_loop(reg: FnRetTypes, name: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(n, ty, next) -> {
-            if n == name {
-                return ty
-            }
-            fn_ret_lookup_loop(next, name)
-        }
-    }
-}
-
-// Top-level `mut` global registry. Each declaration emits an LLVM
-// global of i64 type, and the environment-lookup path consults
-// this registry when a name isn't a local. The value tag tracks
-// what type the global holds (so reads return a properly-tagged
-// value).
-enum GlobalReg {
-    End
-    Node(name: string, llvm_global: ptr, ty: string, next: GlobalReg)
-}
-
-mut CG_GLOBALS: GlobalReg = GlobalReg.End
-
-type GlobalLookup = {
-    found: bool,
-    llvm_global: ptr,
-    ty: string,
-}
+// FnRetTypes, TopLevelVars, LoopStack, and their lookup functions
+// now live in core/cg.fg as fields on the Codegen struct.
+// CG_GLOBALS remains as the one mutable global (mutated during emission).
+mut CG_GLOBALS: TopLevelVars = TopLevelVars.End
 
 fn global_register(name: string, llvm_global: ptr, ty: string) {
-    CG_GLOBALS = GlobalReg.Node(name, llvm_global, ty, CG_GLOBALS)
+    CG_GLOBALS = TopLevelVars.Node(name, llvm_global, ty, CG_GLOBALS)
 }
 
-fn global_lookup(name: string) -> GlobalLookup {
-    global_lookup_loop(CG_GLOBALS, name)
-}
-
-fn global_lookup_loop(reg: GlobalReg, name: string) -> GlobalLookup {
-    match reg {
-        .End -> {
-            let n: ptr = null
-            GlobalLookup { found: false, llvm_global: n, ty: "i64" }
-        }
-        .Node(n, g, ty, next) -> {
-            if n == name {
-                return GlobalLookup { found: true, llvm_global: g, ty }
-            }
-            global_lookup_loop(next, name)
-        }
-    }
-}
-
-// Loop stack for break/continue. Each frame holds the basic block
-// to branch to for `continue` (the loop's condition check block)
-// and the block to branch to for `break` (the loop's exit block).
-enum LoopStack {
-    End
-    Frame(cond_bb: ptr, exit_bb: ptr, next: LoopStack)
-}
-
-mut CG_LOOPS: LoopStack = LoopStack.End
-
-export fn loops_push(cond_bb: ptr, exit_bb: ptr) {
-    CG_LOOPS = LoopStack.Frame(cond_bb, exit_bb, CG_LOOPS)
-}
-
-export fn loops_pop() {
-    match CG_LOOPS {
-        .End -> {}
-        .Frame(_, _, next) -> CG_LOOPS = next
-    }
-}
-
-type LoopFrame = {
-    found: bool,
-    cond_bb: ptr,
-    exit_bb: ptr,
-}
-
-fn loops_top() -> LoopFrame {
-    match CG_LOOPS {
-        .End -> {
-            let n: ptr = null
-            LoopFrame { found: false, cond_bb: n, exit_bb: n }
-        }
-        .Frame(c, e, _) -> LoopFrame { found: true, cond_bb: c, exit_bb: e }
-    }
-}
-
-// StructLookup, struct_reg_lookup, struct_reg_extend — see core/cg.fg.
 
 // EnumReg, CG_ENUMS, enum_reg_lookup, enum_reg_extend — see core/cg.fg note above.
 
@@ -229,16 +128,9 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     // mutable globals.
     let structs = declare_structs(ctx, i64t, stmts, StructReg.End)
     let enums = declare_enums(ctx, i64t, stmts, EnumReg.End)
-    CG_LOOPS = LoopStack.End
-    CG_FN_RETS = FnRetTypes.End
-    CG_GLOBALS = GlobalReg.End
+    CG_GLOBALS = TopLevelVars.End
     declare_globals(m, ctx, i64t, structs, enums, stmts)
-
-    // Pass 1: declare every user-defined function as an LLVM
-    // prototype so call sites (which may appear before the
-    // declaration in source order) can resolve them by name via
-    // `llvm.get_named_function`.
-    declare_functions(m, ctx, i64t, structs, enums, stmts)
+    let fn_rets = declare_functions(m, ctx, i64t, structs, enums, stmts, FnRetTypes.End)
 
     // Synthesize a wrapper function for the top-level non-function
     // statements. If the source already defines its own `fn main`,
@@ -265,6 +157,9 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         ptr_type: pt,
         structs,
         enums,
+        fn_rets,
+        top_level_vars: TopLevelVars.End,
+        loops: LoopStack.End,
     }
 
     // Pass 2: emit each user-defined function's body, then emit
@@ -411,11 +306,11 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 
 // ── Function declaration pass ──
 
-fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList) {
+fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
     match stmts {
-        .End -> {}
+        .End -> reg
         .Node(stmt, next) -> {
-            match stmt {
+            let updated = match stmt {
                 .Function(name, params, ret_ty, body) -> {
                     let arity = param_list_length(params)
                     let param_arr = forge_llvm_type_array_new(arity)
@@ -423,7 +318,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
                     let fn_type = forge_llvm_function_type(i64t, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
-                    fn_ret_register(name, translate_param_type(structs, enums, ret_ty))
+                    FnRetTypes.Node(name, translate_param_type(structs, enums, ret_ty), reg)
                 }
                 .ExternFn(name, params, ret_ty) -> {
                     let arity = param_list_length(params)
@@ -432,12 +327,12 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
                     let fn_type = forge_llvm_function_type(i64t, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
-                    fn_ret_register(name, translate_param_type(structs, enums, ret_ty))
+                    FnRetTypes.Node(name, translate_param_type(structs, enums, ret_ty), reg)
                 }
-                .Impl(_, methods) -> declare_functions(m, ctx, i64t, structs, enums, methods)
-                _ -> {}
+                .Impl(_, methods) -> declare_functions(m, ctx, i64t, structs, enums, methods, reg)
+                _ -> reg
             }
-            declare_functions(m, ctx, i64t, structs, enums, next)
+            declare_functions(m, ctx, i64t, structs, enums, next, updated)
         }
     }
 }
@@ -480,7 +375,7 @@ fn emit_top_level_init(cg: Codegen, env: VarEnv, name: string, init: Expr) -> St
     // Top-level let/mut declarations were already allocated as
     // module globals in declare_globals. Here we just emit the
     // initializer expression at main's entry and store it.
-    let g = global_lookup(name)
+    let g = toplevel_lookup(CG_GLOBALS, name)
     if !g.found {
         return err_stmt("codegen error: global `" + name + "` not declared")
     }
@@ -550,7 +445,7 @@ export fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
         .NoOp -> ok_stmt(env)
         .ExternFn(_, _, _) -> ok_stmt(env)
         .Break -> {
-            let frame = loops_top()
+            let frame = loops_top(cg.loops)
             if !frame.found {
                 return err_stmt("codegen error: break outside loop")
             }
@@ -558,7 +453,7 @@ export fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
             ok_stmt(env)
         }
         .Continue -> {
-            let frame = loops_top()
+            let frame = loops_top(cg.loops)
             if !frame.found {
                 return err_stmt("codegen error: continue outside loop")
             }
@@ -603,7 +498,7 @@ export fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
                 let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, local.alloca, name)
                 return EmitResult { value: loaded, ty: local.ty, had_error: false, error_message: "" }
             }
-            let g = global_lookup(name)
+            let g = toplevel_lookup(CG_GLOBALS, name)
             if g.found {
                 let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, g.llvm_global, name)
                 return EmitResult { value: loaded, ty: g.ty, had_error: false, error_message: "" }
@@ -620,7 +515,7 @@ export fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
                 forge_llvm_build_store(cg.builder, r.value, local.alloca)
                 return EmitResult { value: r.value, ty: local.ty, had_error: false, error_message: "" }
             }
-            let g = global_lookup(name)
+            let g = toplevel_lookup(CG_GLOBALS, name)
             if g.found {
                 forge_llvm_build_store(cg.builder, r.value, g.llvm_global)
                 return EmitResult { value: r.value, ty: g.ty, had_error: false, error_message: "" }
@@ -981,7 +876,7 @@ fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: E
     forge_llvm_type_array_free(param_arr)
     let result = forge_llvm_build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "methcall")
     forge_llvm_value_array_free(arg_arr)
-    let ret_ty = fn_ret_lookup(mangled)
+    let ret_ty = fn_ret_lookup(cg.fn_rets, mangled)
     if ret_ty == "" {
         return ok_emit(result)
     }
@@ -1023,7 +918,7 @@ fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> Em
 
     let result = forge_llvm_build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
     forge_llvm_value_array_free(arg_arr)
-    let ret_ty = fn_ret_lookup(name)
+    let ret_ty = fn_ret_lookup(cg.fn_rets, name)
     if ret_ty == "" {
         return ok_emit(result)
     }

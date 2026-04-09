@@ -41,6 +41,9 @@ export fn emit_function_body(cg: Codegen, name: string, params: ParamList, body:
         ptr_type: cg.ptr_type,
         structs: cg.structs,
         enums: cg.enums,
+        fn_rets: cg.fn_rets,
+        top_level_vars: cg.top_level_vars,
+        loops: cg.loops,
     }
 
     let r = emit_block_loop(body_cg, env, body, forge_llvm_const_int(cg.i64_type, 0, 0), "i64")

@@ -36,6 +36,9 @@ export type Codegen = {
     // struct. No mutable globals needed.
     structs: StructReg,
     enums: EnumReg,
+    fn_rets: FnRetTypes,
+    top_level_vars: TopLevelVars,
+    loops: LoopStack,
 }
 
 export fn null_ptr_val() -> ptr {
@@ -149,6 +152,22 @@ export fn strip_struct_prefix(ty: string) -> string {
 // mutable globals — the registries are pure data threaded through
 // function parameters.
 
+
+export enum FnRetTypes {
+    End
+    Node(name: string, ret_ty: string, next: FnRetTypes)
+}
+
+export enum TopLevelVars {
+    End
+    Node(name: string, llvm_global: ptr, ty: string, next: TopLevelVars)
+}
+
+export enum LoopStack {
+    End
+    Frame(cond_bb: ptr, exit_bb: ptr, next: LoopStack)
+}
+
 export enum StructReg {
     End
     Node(name: string, fields: FieldList, next: StructReg)
@@ -196,6 +215,52 @@ export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
 // translate_param_type: converts Forge type names to the internal
 // string tag used by EmitResult.ty. Uses the registries from the
 // Codegen struct.
+
+export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, ty, next) -> {
+            if n == name { return ty }
+            fn_ret_lookup(next, name)
+        }
+    }
+}
+
+export type TopLevelLookup = {
+    found: bool,
+    llvm_global: ptr,
+    ty: string,
+}
+
+export fn toplevel_lookup(reg: TopLevelVars, name: string) -> TopLevelLookup {
+    match reg {
+        .End -> {
+            let n: ptr = null
+            TopLevelLookup { found: false, llvm_global: n, ty: "i64" }
+        }
+        .Node(n, g, ty, next) -> {
+            if n == name { return TopLevelLookup { found: true, llvm_global: g, ty } }
+            toplevel_lookup(next, name)
+        }
+    }
+}
+
+export type LoopFrame = {
+    found: bool,
+    cond_bb: ptr,
+    exit_bb: ptr,
+}
+
+export fn loops_top(stack: LoopStack) -> LoopFrame {
+    match stack {
+        .End -> {
+            let n: ptr = null
+            LoopFrame { found: false, cond_bb: n, exit_bb: n }
+        }
+        .Frame(c, e, _) -> LoopFrame { found: true, cond_bb: c, exit_bb: e }
+    }
+}
+
 export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -> string {
     if ty == "str" { return "str" }
     if ty == "string" { return "str" }
