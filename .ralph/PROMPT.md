@@ -11,6 +11,9 @@ in order. Each task is a self-contained commit.
 - NEVER use `git checkout --` on modified tracked files
 - NEVER add mutable globals — all state flows through `Ctx`
 - Every commit must pass `make -C bootstrap test`
+- TINY COMMITS. One logical change per commit. Never batch unrelated
+  changes. Each commit must compile, pass tests, and be independently
+  revertable. If a task is big, split it into multiple commits.
 - If stuck after 3 attempts on a task, mark it blocked and move on
 - After adding a new language feature, REFACTOR the bootstrap source
   to USE that feature (see "Dogfooding Rule" in FEATURE_PARITY.md)
