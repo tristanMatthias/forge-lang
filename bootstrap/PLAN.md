@@ -315,7 +315,7 @@ Crafting Interpreters reference: Chapter 30.
 - [x] Emit LLVM IR for integer expressions and print the result
 - [x] Emit variables, assignment, and block scoping
 - [x] Emit control flow (if/else, while)
-- [ ] Emit function definitions and calls
+- [x] Emit function definitions and calls
 - [ ] Emit string operations via runtime linkage
 - [ ] Emit structs and enums (tagged unions)
 - [ ] Emit match expressions as conditional branches

@@ -276,6 +276,99 @@ their `-Wl,-u` flags are not emitted (see #9).
 - once that lands, delete the `use @std.llvm` line from `main.fg` and
   the surrounding comment
 
+### 11. Re-matching the same enum value produces a corrupted payload
+
+**Status:** open
+**Severity:** high
+**Where observed:** codegen.fg `emit_call`, April 8 2026
+
+A function that does:
+
+```forge
+match callee {
+    .Ident(n) -> eprintln(n)   // prints "add"
+    _ -> ...
+}
+let name = match callee {
+    .Ident(n) -> n
+    _ -> "?"
+}
+eprintln(name)                 // prints empty / corrupted
+```
+
+…sees the second match's bound name come out empty even though the
+first match printed it correctly. The host appears to invalidate the
+enum payload pointer after the first destructure.
+
+**What we did now**
+
+- destructure the callee exactly once and immediately tail-call into
+  a helper that takes the extracted name as a plain `string` arg
+
+**What must happen later**
+
+- fix the host so a value can be matched against multiple times
+  without payload corruption
+
+### 12. Recursive enum fields on a struct don't survive cross-function calls
+
+**Status:** open
+**Severity:** high
+**Where observed:** codegen.fg `Codegen.fns: FnEnv`, April 8 2026
+
+When a struct contains an `enum` field (e.g. `Codegen.fns: FnEnv`)
+and the struct is passed by value through a chain of function calls,
+the enum field is silently zeroed somewhere along the way. We
+verified that the field is populated correctly in `compile_program`
+and inside `emit_function_body`, but by the time `emit_top_level →
+emit_stmt → emit_expr → emit_call` runs, `cg.fns` has reverted to
+`.End`. Storing the same `FnEnv` in a `mut` global also did not
+survive between functions.
+
+**What we did now**
+
+- removed the `fns` field from `Codegen` entirely
+- look every function up by LLVM symbol name via
+  `llvm.get_named_function(module, name)` instead of via a
+  Forge-side symbol table
+- this works because every bootstrap function currently has the
+  same `(i64, i64, ...) -> i64` shape, so the call site can
+  reconstruct the function type from the arg count alone
+
+**What must happen later**
+
+- fix the host so structs with enum fields round-trip safely across
+  call boundaries
+- once that lands, restore a real symbol table so we can store
+  per-function metadata (return type, parameter types, source span)
+  alongside the LLVM value
+
+### 13. Passing a recursive enum payload directly into a helper crashes
+
+**Status:** open
+**Severity:** high
+**Where observed:** codegen.fg `bind_params`, April 8 2026
+
+`bind_params(cg, fn_val, params, 0, env)` consistently segfaults
+when `params: ParamList` is the destructured payload of a `match
+stmt { .Function(name, params, body) -> ... }` arm. The crash
+happens *before* `bind_params`'s first statement runs — it's at the
+call instruction itself. Renaming the helper to `bind_params_inline`
+and dropping the `Codegen` argument made the call go through
+unchanged.
+
+**What we did now**
+
+- pass only the primitives the helper actually needs (`builder`,
+  `i64t`, `fn_val`, `params`, `idx`, `env`) and avoid passing
+  `Codegen` to it
+
+**What must happen later**
+
+- fix the host so an enum payload bound by a `match` arm can be
+  passed by value into another function without corrupting the call
+  frame
+
 ## Related existing documents
 
 These documents already capture older bootstrap debt and should stay in sync with what we learn here:

@@ -1,0 +1,7 @@
+fn add(a, b) {
+    return a + b
+}
+fn mul(a, b) {
+    return a * b
+}
+return add(mul(3, 4), 7)

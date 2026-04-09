@@ -1,5 +1,5 @@
 use @std.llvm
-use ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend}
+use ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length}
 
 // ── Public API ──
 
@@ -12,7 +12,10 @@ type Codegen = {
     ctx: ptr,
     module: ptr,
     builder: ptr,
-    main_fn: ptr,
+    // The function whose body the builder is currently positioned in.
+    // append_basic_block needs this; codegen for `if`/`while` and
+    // function bodies all use it.
+    current_fn: ptr,
     i64_type: ptr,
     i1_type: ptr,
     ptr_type: ptr,
@@ -32,10 +35,17 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     let i1t = llvm.int1_type(ctx)
     let pt = llvm.pointer_type(ctx)
 
-    // Create main: () -> i64
-    let params = llvm.type_array_new(0)
-    let main_type = llvm.function_type(i64t, params, 0, 0)
-    llvm.type_array_free(params)
+    // Pass 1: declare every user-defined function as an LLVM
+    // prototype so call sites (which may appear before the
+    // declaration in source order) can resolve them by name via
+    // `llvm.get_named_function`.
+    declare_functions(m, ctx, i64t, stmts)
+
+    // Create main: () -> i64. Top-level non-function statements run
+    // inside it.
+    let main_params = llvm.type_array_new(0)
+    let main_type = llvm.function_type(i64t, main_params, 0, 0)
+    llvm.type_array_free(main_params)
     let main_fn = llvm.add_function(m, "main", main_type)
 
     let entry = llvm.append_basic_block(ctx, main_fn, "entry")
@@ -45,15 +55,28 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         ctx,
         module: m,
         builder,
-        main_fn,
+        current_fn: main_fn,
         i64_type: i64t,
         i1_type: i1t,
         ptr_type: pt,
     }
 
-    // Emit top-level statements with an empty environment
+    // Pass 2: emit each user-defined function's body, then emit
+    // every non-function top-level statement into main.
+    let body_result = emit_function_bodies(cg, stmts)
+    if body_result.had_error {
+        llvm.dispose_builder(builder)
+        llvm.module_dispose(m)
+        llvm.context_dispose(ctx)
+        return CodegenResult { had_error: true, error_message: body_result.error_message }
+    }
+
+    // After emitting any function bodies, the builder may be sitting
+    // in a function-body block. Reposition it back at main's entry
+    // before emitting top-level statements.
+    llvm.position_at_end(builder, entry)
     let initial: VarEnv = VarEnv.End
-    let result = emit_stmt_list(cg, initial, stmts)
+    let result = emit_top_level(cg, initial, stmts)
     if result.had_error {
         llvm.dispose_builder(builder)
         llvm.module_dispose(m)
@@ -120,6 +143,116 @@ fn err_stmt(message: string) -> StmtResult {
 
 fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
     StmtResult { env: VarEnv.End, had_error: true, error_message: r.error_message }
+}
+
+// ── Function declaration pass ──
+
+fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
+    match stmts {
+        .End -> {}
+        .Node(stmt, next) -> {
+            match stmt {
+                .Function(name, params, body) -> {
+                    let arity = param_list_length(params)
+                    let param_arr = llvm.type_array_new(arity)
+                    fill_i64_param_array(param_arr, i64t, 0, arity)
+                    let fn_type = llvm.function_type(i64t, param_arr, arity, 0)
+                    llvm.type_array_free(param_arr)
+                    llvm.add_function(m, name, fn_type)
+                }
+                _ -> {}
+            }
+            declare_functions(m, ctx, i64t, next)
+        }
+    }
+}
+
+fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
+    if idx >= count {
+        return
+    }
+    llvm.type_array_set(arr, idx, i64t)
+    fill_i64_param_array(arr, i64t, idx + 1, count)
+}
+
+// ── Function body pass ──
+
+fn emit_function_bodies(cg: Codegen, stmts: StmtList) -> StmtResult {
+    match stmts {
+        .End -> ok_stmt(VarEnv.End)
+        .Node(stmt, next) -> {
+            let r = match stmt {
+                .Function(name, params, body) -> emit_function_body(cg, name, params, body)
+                _ -> ok_stmt(VarEnv.End)
+            }
+            if r.had_error {
+                return r
+            }
+            emit_function_bodies(cg, next)
+        }
+    }
+}
+
+fn emit_function_body(cg: Codegen, name: string, params: ParamList, body: StmtList) -> StmtResult {
+    let fn_val = llvm.get_named_function(cg.module, name)
+    if fn_val == null {
+        return err_stmt("codegen error: function `" + name + "` was not declared in pass 1")
+    }
+
+    let entry = llvm.append_basic_block(cg.ctx, fn_val, "entry")
+    llvm.position_at_end(cg.builder, entry)
+
+    let empty_env: VarEnv = VarEnv.End
+    let env = bind_params_inline(cg.builder, cg.i64_type, fn_val, params, 0, empty_env)
+
+    let body_cg = Codegen {
+        ctx: cg.ctx,
+        module: cg.module,
+        builder: cg.builder,
+        current_fn: fn_val,
+        i64_type: cg.i64_type,
+        i1_type: cg.i1_type,
+        ptr_type: cg.ptr_type,
+    }
+
+    let r = emit_stmt_list(body_cg, env, body)
+    if r.had_error {
+        return r
+    }
+    if !llvm.block_has_terminator(cg.builder) {
+        llvm.build_ret(cg.builder, llvm.const_int(cg.i64_type, 0, 0))
+    }
+    ok_stmt(VarEnv.End)
+}
+
+fn bind_params_inline(builder: ptr, i64t: ptr, fn_val: ptr, params: ParamList, idx: int, env: VarEnv) -> VarEnv {
+    match params {
+        .End -> env
+        .Node(name, next) -> {
+            let arg = llvm.get_param(fn_val, idx)
+            let alloca = llvm.build_alloca(builder, i64t, name)
+            llvm.build_store(builder, arg, alloca)
+            bind_params_inline(builder, i64t, fn_val, next, idx + 1, env_extend(env, name, alloca))
+        }
+    }
+}
+
+// ── Top-level pass (skips function decls) ──
+
+fn emit_top_level(cg: Codegen, env: VarEnv, stmts: StmtList) -> StmtResult {
+    match stmts {
+        .End -> ok_stmt(env)
+        .Node(stmt, next) -> {
+            let result = match stmt {
+                .Function(_, _, _) -> ok_stmt(env)
+                _ -> emit_stmt(cg, env, stmt)
+            }
+            if result.had_error {
+                return result
+            }
+            emit_top_level(cg, result.env, next)
+        }
+    }
 }
 
 // ── Statement emission ──
@@ -192,9 +325,9 @@ fn emit_if(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_br
     // Truncate i64 → i1 for the branch.
     let cond_i1 = llvm.build_icmp(cg.builder, 33, cond.value, llvm.const_int(cg.i64_type, 0, 0), "if_cond")
 
-    let then_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "then")
-    let else_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "else")
-    let merge_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "ifcont")
+    let then_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "then")
+    let else_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "else")
+    let merge_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "ifcont")
 
     llvm.build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
 
@@ -225,9 +358,9 @@ fn emit_if(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_br
 }
 
 fn emit_while(cg: Codegen, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
-    let cond_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "while.cond")
-    let body_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "while.body")
-    let exit_bb = llvm.append_basic_block(cg.ctx, cg.main_fn, "while.exit")
+    let cond_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "while.cond")
+    let body_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "while.body")
+    let exit_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "while.exit")
 
     llvm.build_br(cg.builder, cond_bb)
 
@@ -290,7 +423,57 @@ fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
             llvm.build_store(cg.builder, r.value, alloca)
             ok_emit(r.value)
         }
+        .Call(callee, args) -> emit_call(cg, env, callee, args)
         _ -> err_emit("unsupported expression type")
+    }
+}
+
+fn emit_call(cg: Codegen, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
+    // Destructure callee exactly once. Repeated `match` of the same
+    // enum value miscompiles in the host: the second destructure
+    // produces a corrupted payload (an empty string in this case),
+    // which makes the function lookup silently fail.
+    match callee {
+        .Ident(name) -> emit_call_named(cg, env, name, args)
+        _ -> err_emit("only direct function calls are supported")
+    }
+}
+
+fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> EmitResult {
+    let fn_val = llvm.get_named_function(cg.module, name)
+    if fn_val == null {
+        return err_emit("undefined function `" + name + "`")
+    }
+
+    let arg_count = expr_list_length(args)
+    let arg_arr = llvm.value_array_new(arg_count)
+    let fill = fill_arg_array(cg, env, arg_arr, args, 0)
+    if fill.had_error {
+        llvm.value_array_free(arg_arr)
+        return fill
+    }
+    // All bootstrap functions have the same shape: (i64, i64, ...) -> i64.
+    let param_arr = llvm.type_array_new(arg_count)
+    fill_i64_param_array(param_arr, cg.i64_type, 0, arg_count)
+    let fn_type = llvm.function_type(cg.i64_type, param_arr, arg_count, 0)
+    llvm.type_array_free(param_arr)
+
+    let result = llvm.build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
+    llvm.value_array_free(arg_arr)
+    ok_emit(result)
+}
+
+fn fill_arg_array(cg: Codegen, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
+    match args {
+        .End -> ok_emit(null_ptr_val())
+        .Node(expr, next) -> {
+            let r = emit_expr(cg, env, expr)
+            if r.had_error {
+                return r
+            }
+            llvm.value_array_set(arr, idx, r.value)
+            fill_arg_array(cg, env, arr, next, idx + 1)
+        }
     }
 }
 

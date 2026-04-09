@@ -66,6 +66,51 @@ export fn env_extend(env: VarEnv, name: string, alloca: ptr) -> VarEnv {
     VarEnv.Node(name, alloca, env)
 }
 
+// Function symbol table — name → (LLVM function value, arity).
+export enum FnEnv {
+    End
+    Node(name: string, fn_val: ptr, arity: int, next: FnEnv)
+}
+
+export type FnLookup = {
+    found: bool,
+    fn_val: ptr,
+    arity: int,
+}
+
+export fn fn_env_lookup(env: FnEnv, name: string) -> FnLookup {
+    match env {
+        .End -> {
+            let n: ptr = null
+            FnLookup { found: false, fn_val: n, arity: 0 }
+        }
+        .Node(n, fn_val, arity, next) -> {
+            if n == name {
+                return FnLookup { found: true, fn_val, arity }
+            }
+            fn_env_lookup(next, name)
+        }
+    }
+}
+
+export fn fn_env_extend(env: FnEnv, name: string, fn_val: ptr, arity: int) -> FnEnv {
+    FnEnv.Node(name, fn_val, arity, env)
+}
+
+export fn param_list_length(params: ParamList) -> int {
+    match params {
+        .End -> 0
+        .Node(_, next) -> 1 + param_list_length(next)
+    }
+}
+
+export fn expr_list_length(exprs: ExprList) -> int {
+    match exprs {
+        .End -> 0
+        .Node(_, next) -> 1 + expr_list_length(next)
+    }
+}
+
 export fn render_expr(expr: Expr) -> string {
     match expr {
         .Number(value) -> value
