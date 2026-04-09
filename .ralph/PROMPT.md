@@ -81,3 +81,17 @@ Grep all codegen files for `_ -> {}` and `_ -> ok_stmt` and
 swallowed case is genuinely a no-op. If any should produce a
 value or an error, fix it.
 Verify: `make -C bootstrap test`.
+
+### 8. Remove bootstrap stderr debug noise (TECH_DEBT #2)
+The host runtime prints `[char_at #N]` traces to stderr on every
+bootstrap run. Find the source in `forge/stdlib/runtime.c` (look
+for `char_at` debug prints) and either remove them or gate behind
+an env var like `FORGE_DEBUG_RUNTIME=1`.
+Verify: `make -C bootstrap test` produces no `[char_at` lines.
+
+### 9. Clean up TECH_DEBT.md
+Review `bootstrap/TECH_DEBT.md`. Items marked [FIXED] should be
+collapsed to one-liners. Items that are no longer relevant (because
+of the feature migration or the Ctx refactor) should be marked as
+resolved. Don't delete them — just update status.
+Verify: no code changes needed, just documentation.
