@@ -1,0 +1,6 @@
+fn inner() -> int? { null }
+fn middle() -> int? { inner()? }
+fn outer() -> int? { middle()? }
+
+let r = outer()
+println(string(r ?? -1))

@@ -1,0 +1,59 @@
+// Every feature interacting
+trait Describable {
+    fn describe(self) -> string
+}
+
+type Point = { x: int, y: int }
+
+impl Describable for Point {
+    fn describe(self) -> string {
+        `(${string(self.x)}, ${string(self.y)})`
+    }
+}
+
+enum Shape {
+    Circle(center: Point, radius: int),
+    Rect(origin: Point, w: int, h: int),
+}
+
+fn area(s: Shape) -> int {
+    match s {
+        .Circle(_, r) -> r * r * 3
+        .Rect(_, w, h) -> w * h
+    }
+}
+
+fn make_shapes() -> int {
+    let shapes = (
+        Shape.Circle(Point { x: 0, y: 0 }, 5),
+        Shape.Rect(Point { x: 1, y: 1 }, 4, 6)
+    )
+    
+    mut total = 0
+    let a0 = area(shapes.0)
+    let a1 = area(shapes.1)
+    total = a0 + a1
+    total
+}
+
+let total = make_shapes()
+println(string(total))
+
+// ? + ?? combo
+fn safe_div(a: int, b: int) -> int? {
+    if b == 0 { return null }
+    a / b
+}
+
+let result = safe_div(100, 4) ?? -1
+println(string(result))
+
+let result2 = safe_div(100, 0) ?? -1
+println(string(result2))
+
+// Pipe + tuple
+fn double(n: int) -> int { n * 2 }
+let val = 5 |> double
+let pair = (val, val + 1)
+println(string(pair.0))
+println(string(pair.1))

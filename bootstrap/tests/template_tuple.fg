@@ -1,0 +1,5 @@
+let pair = (10, 20)
+println(`first: ${string(pair.0)}, second: ${string(pair.1)}`)
+
+let (a, b) = (3, 7)
+println(`${string(a)} + ${string(b)} = ${string(a + b)}`)

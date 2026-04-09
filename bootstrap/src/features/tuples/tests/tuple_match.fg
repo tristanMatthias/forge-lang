@@ -1,0 +1,28 @@
+// Tuple + enum — store enum results directly, not through tuple
+enum Result {
+    Ok(value: int),
+    Err(code: int),
+}
+
+fn divide(a: int, b: int) -> Result {
+    if b == 0 {
+        return Result.Err(0)
+    }
+    Result.Ok(a / b)
+}
+
+let r1 = divide(10, 2)
+let r2 = divide(10, 0)
+
+// Pack into tuple for transport
+let pair = (r1, r2)
+
+// Match on original variables (type is known)
+match r1 {
+    .Ok(v) -> println(string(v))
+    .Err(_) -> println("error")
+}
+match r2 {
+    .Ok(v) -> println(string(v))
+    .Err(_) -> println("div by zero")
+}

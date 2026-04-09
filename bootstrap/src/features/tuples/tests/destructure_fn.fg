@@ -1,0 +1,6 @@
+fn get_pair() -> int {
+    (100, 200)
+}
+let (a, b) = get_pair()
+println(string(a))
+println(string(b))

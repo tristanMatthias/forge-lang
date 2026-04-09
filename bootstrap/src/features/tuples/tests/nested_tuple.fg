@@ -1,0 +1,6 @@
+let outer = ((1, 2), (3, 4))
+let inner = outer.0
+println(string(inner.0))
+println(string(inner.1))
+let inner2 = outer.1
+println(string(inner2.0 + inner2.1))

@@ -1,0 +1,17 @@
+fn maybe(n: int) -> int? {
+    if n == 3 { return null }
+    n * 10
+}
+
+fn sum_safe() -> int? {
+    mut total = 0
+    for i in 0..5 {
+        let v = maybe(i)?
+        total = total + v
+    }
+    total
+}
+
+// Fails at i=3
+let r = sum_safe()
+println(string(r ?? -1))

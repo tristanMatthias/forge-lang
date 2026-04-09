@@ -1,0 +1,20 @@
+// ? operator + tuple combo
+fn find(name: string) -> string? {
+    if name == "alice" { return "Alice Smith" }
+    null
+}
+
+fn greet_pair(a: string, b: string) -> int? {
+    let name_a = find(a)?
+    let name_b = find(b)?
+    let pair = (name_a, name_b)
+    println(pair.0)
+    println(pair.1)
+    1
+}
+
+let r = greet_pair("alice", "alice")
+println(string(r ?? 0))
+
+let r2 = greet_pair("alice", "bob")
+println(string(r2 ?? -1))
