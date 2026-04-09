@@ -194,23 +194,64 @@ Goal: prove the feature-directory pattern works end-to-end by
 extracting one feature completely. We pick `match` because it's
 self-contained and exercises the most parser+codegen surface area.
 
-- Create `features/match/`.
-- Move `parse_match_*` functions from `parser.fg` into
-  `features/match/parser.fg`.
-- Move `emit_match*` functions from `codegen.fg` into
-  `features/match/codegen.fg`.
-- Update the `parse_statement` dispatcher in `parser.fg` to call
-  `parse_match` from the new location.
-- Update the `emit_stmt` dispatcher in `codegen.fg` likewise.
-- Add `features/match/WHY.md`, `grammar.md`, `example.fg`,
-  `example.out`.
+#### Phase 4a — Parser extraction (DONE)
 
-**Verification:** `make test && make selfhost`. The fixed-point
-diff against the Phase 0 snapshot should show only renamed
-function locations, not changed semantics.
+- Create `features/match/parser.fg` with an `impl Parser` block
+  containing the four match-related parsing methods.
+- The dispatchers in `parser.fg` (parse_statement, parse_primary)
+  still call `self.parse_match_statement()` and
+  `self.parse_match_expression()` — Forge resolves methods
+  globally across `impl Parser` blocks, so no dispatcher edit is
+  needed.
+- Add `features/match/{example.fg, expected.out, WHY.md, grammar.md}`.
 
-**Estimated cost:** 1 session. The first feature is the slowest
-because we're discovering the pattern.
+#### Phase 4b — Codegen extraction (revised)
+
+The naive approach is to put `emit_match` in
+`features/match/codegen.fg` and have it import from `codegen.fg`
+while `codegen.fg`'s dispatcher imports back from
+`features/match/codegen.fg`. **This is a circular import. We
+forbid those by policy** — see CODE_QUALITY.md.
+
+The correct approach is a three-module DAG:
+
+```
+core/cg.fg                    (shared types + helpers, no dispatcher)
+   ↑                ↑
+   |                |
+codegen.fg     features/match/codegen.fg
+   ↑                ↑
+   |________________|
+   |
+emit/stmt.fg + emit/expr.fg   (dispatchers, depend on both)
+```
+
+So Phase 4b is actually *three* commits:
+
+1. **Extract `core/cg.fg`** containing the shared types
+   (`Codegen`, `EmitResult`, `StmtResult`) and the small helpers
+   (`ok_emit`, `err_emit`, `ok_stmt`, `err_stmt`, `null_ptr_val`,
+   `translate_param_type`, `strip_enum_prefix`,
+   `advance_field_list`, `field_type_at`). These are the "leaf"
+   things that don't depend on dispatchers.
+
+2. **Extract `emit/stmt.fg` and `emit/expr.fg`** as the
+   dispatchers, importing from `core/cg.fg` and (eventually)
+   `features/<X>/codegen.fg`.
+
+3. **Create `features/match/codegen.fg`** with the moved
+   `emit_match*` functions, importing only from `core/cg.fg`. The
+   dispatchers in `emit/stmt.fg` and `emit/expr.fg` import the
+   `emit_match` and `emit_match_expr` entry points from this file.
+
+After this, `codegen.fg` itself shrinks dramatically (only the
+remaining feature emits + `compile_program`). It becomes a
+transitional module that further phases will eliminate.
+
+**Verification after each commit:** `make test && make selfhost`.
+
+**Estimated cost:** 1-2 sessions. Each of the three steps is
+its own commit with its own verification cycle.
 
 ### Phase 5 — Extract remaining features one at a time
 

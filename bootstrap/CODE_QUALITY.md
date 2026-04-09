@@ -81,6 +81,29 @@ Every piece of compile state lives in the `Compiler` context struct
 (or its sub-structs) and is threaded explicitly. No `mut CG_FOO` at
 module scope. Globals are spooky action at a distance.
 
+### No circular module imports
+Module dependencies must form a DAG. If `a` uses `b`, then `b` must
+not transitively use `a`. Forge's host compiler may technically
+allow cycles, but we forbid them as policy because:
+
+  - Go, Swift, Elm, OCaml all forbid them by language design
+  - Cycles are usually a sign that two modules should be one, OR
+    that there's a missing third module both should depend on
+  - Cycles make refactoring fragile and reading order ambiguous
+  - "It works" is not the same as "it's correct"
+
+When you need a cycle, **extract the shared concept into a
+parent module that both sides depend on.** The dispatcher pattern
+is the canonical example: if `codegen.fg` and `features/match/codegen.fg`
+need to share types, those types live in `core/cg.fg` and both
+sides depend on `core/cg.fg` one-way.
+
+This rule exists because the obvious-feeling shortcut during the
+feature migration (Phase 4b) was to make codegen.fg and
+features/match/codegen.fg circular. The correct answer was a
+shared `core/cg.fg`. The principle costs an extra file but earns
+a clean DAG forever.
+
 ### Every file under 200 lines
 Hard limit. If a file is longer, split it. The threshold is
 intentionally aggressive because small files are the whole point of
