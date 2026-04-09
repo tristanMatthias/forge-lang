@@ -1,0 +1,126 @@
+// WHY: shared codegen types and pure leaf helpers that any feature
+// codegen file may depend on. Living here breaks what would
+// otherwise be a circular import: codegen.fg ↔ features/<X>/codegen.fg.
+//
+// Both sides depend one-way on this module, forming a clean DAG.
+//
+// AGENT:
+//   read this file when:    looking for the EmitResult / StmtResult
+//                           shape, the Cg helper API, or shared
+//                           string-tag conventions
+//   do NOT read this file when:   the issue is feature-specific emit
+//                                 logic (features/<X>/codegen.fg)
+//                                 or the dispatchers (codegen.fg)
+
+use core.ast.{VarEnv, FieldList}
+
+// ── Codegen context ──
+//
+// The Codegen struct carries everything an emit function needs to
+// reach the LLVM C API: the context, module, builder, and the
+// function whose body the builder is currently positioned in.
+
+export type Codegen = {
+    ctx: ptr,
+    module: ptr,
+    builder: ptr,
+    // The function whose body the builder is currently positioned in.
+    // append_basic_block needs this; codegen for `if`/`while` and
+    // function bodies all use it.
+    current_fn: ptr,
+    i64_type: ptr,
+    i1_type: ptr,
+    ptr_type: ptr,
+}
+
+export fn null_ptr_val() -> ptr {
+    let n: ptr = null
+    n
+}
+
+// ── EmitResult / StmtResult ──
+//
+// Every emit_* function returns one of these. EmitResult carries a
+// value (LLVM ValueRef as ptr) plus a string `ty` tag that tells
+// later code whether to dispatch through string operations or
+// integer operations. StmtResult is the same shape minus the value:
+// statements emit for side effects only.
+
+export type EmitResult = {
+    value: ptr,
+    // "i64" or "str". `str` values are stored as i64-encoded
+    // pointers (ptrtoint) and decoded back to `ptr` at use sites
+    // (println, concat). The tag tells `+` whether to emit an i64
+    // add or a string concat.
+    ty: string,
+    had_error: bool,
+    error_message: string,
+}
+
+export fn ok_emit(value: ptr) -> EmitResult {
+    EmitResult { value, ty: "i64", had_error: false, error_message: "" }
+}
+
+export fn ok_emit_str(value: ptr) -> EmitResult {
+    EmitResult { value, ty: "str", had_error: false, error_message: "" }
+}
+
+export fn err_emit(message: string) -> EmitResult {
+    EmitResult { value: null_ptr_val(), ty: "i64", had_error: true, error_message: "codegen error: " + message }
+}
+
+export type StmtResult = {
+    env: VarEnv,
+    had_error: bool,
+    error_message: string,
+}
+
+export fn ok_stmt(env: VarEnv) -> StmtResult {
+    StmtResult { env, had_error: false, error_message: "" }
+}
+
+export fn err_stmt(message: string) -> StmtResult {
+    StmtResult { env: VarEnv.End, had_error: true, error_message: message }
+}
+
+export fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
+    StmtResult { env: VarEnv.End, had_error: true, error_message: r.error_message }
+}
+
+// ── Pure leaf helpers ──
+//
+// These are the small string and list utilities that everything
+// uses but nothing depends on (no global state, no other helpers
+// from codegen.fg). They live here because moving them up out of
+// codegen.fg unblocks feature-codegen extraction without dragging
+// the registry state along with them.
+
+export fn advance_field_list(fields: FieldList) -> FieldList {
+    match fields {
+        .End -> FieldList.End
+        .Node(_, _, next) -> next
+    }
+}
+
+export fn field_type_at(fields: FieldList, idx: int) -> string {
+    match fields {
+        .End -> "i64"
+        .Node(_, ty, next) -> {
+            if idx <= 0 {
+                return ty
+            }
+            field_type_at(next, idx - 1)
+        }
+    }
+}
+
+export fn strip_enum_prefix(ty: string) -> string {
+    if ty.length < 6 {
+        return ""
+    }
+    let head = ty.substring(0, 5)
+    if head != "enum:" {
+        return ""
+    }
+    ty.substring(5, ty.length)
+}

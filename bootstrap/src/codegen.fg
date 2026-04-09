@@ -1,4 +1,5 @@
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload}
+use core.cg.{Codegen, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix}
 
 // ── Direct C extern declarations ──
 //
@@ -79,23 +80,11 @@ export type CodegenResult = {
     error_message: string,
 }
 
-export type Codegen = {
-    ctx: ptr,
-    module: ptr,
-    builder: ptr,
-    // The function whose body the builder is currently positioned in.
-    // append_basic_block needs this; codegen for `if`/`while` and
-    // function bodies all use it.
-    current_fn: ptr,
-    i64_type: ptr,
-    i1_type: ptr,
-    ptr_type: ptr,
-}
-
-export fn null_ptr_val() -> ptr {
-    let n: ptr = null
-    n
-}
+// Codegen, EmitResult, StmtResult, ok_emit, err_emit, ok_stmt,
+// err_stmt, err_stmt_from_expr, null_ptr_val, advance_field_list,
+// field_type_at, strip_enum_prefix all moved to core/cg.fg as
+// part of Phase 4b of the feature migration. They're imported via
+// the `use core.cg.{...}` line near the top of this file.
 
 // ── Struct registry ──
 //
@@ -448,46 +437,8 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 
 // ── Helpers ──
 
-export type EmitResult = {
-    value: ptr,
-    // "i64" or "str". `str` values are stored as i64-encoded
-    // pointers (ptrtoint) and decoded back to `ptr` at use sites
-    // (println, concat). The tag tells `+` whether to emit an i64
-    // add or a string concat.
-    ty: string,
-    had_error: bool,
-    error_message: string,
-}
-
-export fn ok_emit(value: ptr) -> EmitResult {
-    EmitResult { value, ty: "i64", had_error: false, error_message: "" }
-}
-
-export fn ok_emit_str(value: ptr) -> EmitResult {
-    EmitResult { value, ty: "str", had_error: false, error_message: "" }
-}
-
-export fn err_emit(message: string) -> EmitResult {
-    EmitResult { value: null_ptr_val(), ty: "i64", had_error: true, error_message: "codegen error: " + message }
-}
-
-export type StmtResult = {
-    env: VarEnv,
-    had_error: bool,
-    error_message: string,
-}
-
-export fn ok_stmt(env: VarEnv) -> StmtResult {
-    StmtResult { env, had_error: false, error_message: "" }
-}
-
-export fn err_stmt(message: string) -> StmtResult {
-    StmtResult { env: VarEnv.End, had_error: true, error_message: message }
-}
-
-export fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
-    StmtResult { env: VarEnv.End, had_error: true, error_message: r.error_message }
-}
+// EmitResult, StmtResult, and the ok_*/err_* helpers moved to
+// core/cg.fg. See note above the deleted Codegen definition.
 
 // ── Struct declaration pass ──
 
@@ -1563,35 +1514,8 @@ fn bind_pattern_payload_loop(cg: Codegen, env: VarEnv, st_ty: ptr, subj_ptr: ptr
     }
 }
 
-export fn advance_field_list(fields: FieldList) -> FieldList {
-    match fields {
-        .End -> FieldList.End
-        .Node(_, _, next) -> next
-    }
-}
-
-export fn field_type_at(fields: FieldList, idx: int) -> string {
-    match fields {
-        .End -> "i64"
-        .Node(_, ty, next) -> {
-            if idx <= 0 {
-                return ty
-            }
-            field_type_at(next, idx - 1)
-        }
-    }
-}
-
-export fn strip_enum_prefix(ty: string) -> string {
-    if ty.length < 6 {
-        return ""
-    }
-    let head = ty.substring(0, 5)
-    if head != "enum:" {
-        return ""
-    }
-    ty.substring(5, ty.length)
-}
+// advance_field_list, field_type_at, strip_enum_prefix moved to
+// core/cg.fg.
 
 // "struct:Name" → "Name"; anything else → "".
 fn strip_struct_prefix(ty: string) -> string {
