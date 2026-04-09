@@ -1,0 +1,19 @@
+type Point = {
+    x: int,
+    y: int,
+}
+
+impl Point {
+    fn move_right(self, dx: int) {
+        self.x = self.x + dx
+    }
+}
+
+fn main() {
+    mut p = Point { x: 1, y: 2 }
+    println(string(p.x))
+    p.move_right(10)
+    println(string(p.x))
+    p.y = 99
+    println(string(p.y))
+}

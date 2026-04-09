@@ -1,0 +1,13 @@
+fn main() {
+    mut i = 0
+    mut sum = 0
+    while i < 100 {
+        if i == 5 {
+            break
+        }
+        sum = sum + i
+        i = i + 1
+    }
+    println(string(sum))
+    println(string(i))
+}

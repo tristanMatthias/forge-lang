@@ -504,7 +504,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .Grouping(inner) -> emit_expr(ctx, env, inner)
         .Unary(operator, right) -> emit_unary(ctx, env, operator, right)
         .Binary(left, operator, right) -> emit_binary(ctx, env, left, operator, right)
-        .Logical(left, operator, right) -> emit_binary(ctx, env, left, operator, right)
+        .Logical(left, operator, right) -> emit_logical(ctx, env, left, operator, right)
         .Ident(name) -> {
             let local = env_lookup(env, name)
             if local.found {
@@ -1211,23 +1211,63 @@ fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, operator: string, right: Expr)
         return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sge_ext"))
     }
 
+    err_emit("unsupported binary operator `" + operator + "`")
+}
+
+// Short-circuit evaluation for && and ||.
+//
+// For `a && b`:
+//   evaluate a → to_bool → if false, result is 0, else evaluate b → to_bool
+//
+// For `a || b`:
+//   evaluate a → to_bool → if true, result is 1, else evaluate b → to_bool
+//
+// Uses cond_br + phi to avoid evaluating the right side when unnecessary.
+fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, operator: string, right: Expr) -> EmitResult {
+    let left_result = emit_expr(ctx, env, left)
+    if left_result.had_error { return left_result }
+
+    // Convert left to bool (i1): lhs != 0
+    let l_bool = forge_llvm_build_icmp(ctx.builder, 33, left_result.value, const_i64(ctx, 0), "l_bool")
+    let left_bb = forge_llvm_get_insert_block(ctx.builder)
+
+    // Create basic blocks for the right side and the merge point
+    let rhs_bb = new_bb(ctx, "sc_rhs")
+    let merge_bb = new_bb(ctx, "sc_merge")
+
+    // Branch: for &&, skip rhs if lhs is false; for ||, skip rhs if lhs is true
     if operator == "&&" {
-        // Eager-bitwise lowering — short-circuit can come later.
-        let l_bool = forge_llvm_build_icmp(ctx.builder, 33, lhs, const_i64(ctx, 0), "l_bool")
-        let r_bool = forge_llvm_build_icmp(ctx.builder, 33, rhs, const_i64(ctx, 0), "r_bool")
-        let l_ext = forge_llvm_build_zext(ctx.builder, l_bool, ctx.i64_type, "l_ext")
-        let r_ext = forge_llvm_build_zext(ctx.builder, r_bool, ctx.i64_type, "r_ext")
-        return ok_emit(forge_llvm_build_mul(ctx.builder, l_ext, r_ext, "and"))
-    }
-    if operator == "||" {
-        let l_bool = forge_llvm_build_icmp(ctx.builder, 33, lhs, const_i64(ctx, 0), "l_bool")
-        let r_bool = forge_llvm_build_icmp(ctx.builder, 33, rhs, const_i64(ctx, 0), "r_bool")
-        let l_ext = forge_llvm_build_zext(ctx.builder, l_bool, ctx.i64_type, "l_ext")
-        let r_ext = forge_llvm_build_zext(ctx.builder, r_bool, ctx.i64_type, "r_ext")
-        let sum = forge_llvm_build_add(ctx.builder, l_ext, r_ext, "or_sum")
-        let nonzero = forge_llvm_build_icmp(ctx.builder, 33, sum, const_i64(ctx, 0), "or_cmp")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, nonzero, ctx.i64_type, "or"))
+        forge_llvm_build_cond_br(ctx.builder, l_bool, rhs_bb, merge_bb)
+    } else {
+        forge_llvm_build_cond_br(ctx.builder, l_bool, merge_bb, rhs_bb)
     }
 
-    err_emit("unsupported binary operator `" + operator + "`")
+    // Emit rhs in the rhs_bb
+    forge_llvm_position_at_end(ctx.builder, rhs_bb)
+    let right_result = emit_expr(ctx, env, right)
+    if right_result.had_error { return right_result }
+    let r_bool = forge_llvm_build_icmp(ctx.builder, 33, right_result.value, const_i64(ctx, 0), "r_bool")
+    let rhs_end_bb = forge_llvm_get_insert_block(ctx.builder)
+    forge_llvm_build_br(ctx.builder, merge_bb)
+
+    // Merge: phi node picks the result
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let phi = forge_llvm_build_phi(ctx.builder, forge_llvm_int1_type(ctx.lc), "sc_phi")
+
+    if operator == "&&" {
+        // From left_bb (short-circuit false): result is false (0)
+        let false_val = forge_llvm_const_int(forge_llvm_int1_type(ctx.lc), 0, 0)
+        forge_llvm_add_incoming(phi, false_val, left_bb)
+        // From rhs_end_bb: result is r_bool
+        forge_llvm_add_incoming(phi, r_bool, rhs_end_bb)
+    } else {
+        // From left_bb (short-circuit true): result is true (1)
+        let true_val = forge_llvm_const_int(forge_llvm_int1_type(ctx.lc), 1, 0)
+        forge_llvm_add_incoming(phi, true_val, left_bb)
+        // From rhs_end_bb: result is r_bool
+        forge_llvm_add_incoming(phi, r_bool, rhs_end_bb)
+    }
+
+    // Extend i1 → i64 for the Forge type system
+    ok_emit(forge_llvm_build_zext(ctx.builder, phi, ctx.i64_type, "sc_ext"))
 }

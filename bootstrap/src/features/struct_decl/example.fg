@@ -1,0 +1,13 @@
+// Canonical example of `type` (struct) declarations and field access.
+
+type Point = {
+    x: int
+    y: int
+}
+
+fn main() {
+    let p = Point { x: 3, y: 4 }
+    println(string(p.x))
+    println(string(p.y))
+    println(string(p.x + p.y))
+}

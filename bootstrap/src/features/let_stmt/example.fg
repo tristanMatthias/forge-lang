@@ -1,0 +1,13 @@
+// Canonical example of `let` and `mut` bindings.
+
+fn main() {
+    let x = 42
+    println(string(x))
+
+    mut y = 10
+    y = y + 5
+    println(string(y))
+
+    let name = "forge"
+    println(name)
+}

@@ -83,6 +83,13 @@ extern fn forge_llvm_build_br(b: ptr, bb: ptr) -> ptr
 extern fn forge_llvm_build_cond_br(b: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr
 extern fn forge_llvm_build_ret(b: ptr, val: ptr) -> ptr
 
+// ── Builder — PHI nodes ──
+extern fn forge_llvm_build_phi(b: ptr, ty: ptr, name: string) -> ptr
+extern fn forge_llvm_add_incoming(phi: ptr, value: ptr, block: ptr)
+
+// ── Builder — introspection ──
+extern fn forge_llvm_get_insert_block(b: ptr) -> ptr
+
 // ── Module output ──
 extern fn forge_llvm_print_module_to_file(m: ptr, path: string) -> int
 extern fn forge_llvm_verify_module_print(m: ptr) -> int

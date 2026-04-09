@@ -1,0 +1,7 @@
+// Canonical example of `extern fn` declarations.
+// extern fn declarations declare C ABI functions. The actual
+// runtime provides puts, so this example uses it via println.
+
+fn main() {
+    println("extern works")
+}

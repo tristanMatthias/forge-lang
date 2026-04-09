@@ -946,6 +946,7 @@ pub extern "C" fn forge_llvm_build_ret(builder: LLVMPtr, value: LLVMPtr) -> LLVM
                         return LLVMBuildRet(builder, coerced);
                     }
                     // If coercion produced wrong type, use undef
+                    eprintln!("[std-llvm] build_ret: coercion produced wrong type, returning undef");
                     return LLVMBuildRet(builder, LLVMGetUndef(ret_ty));
                 }
             }
@@ -966,6 +967,7 @@ pub extern "C" fn forge_llvm_build_ret_void(builder: LLVMPtr) -> LLVMPtr {
                 let ret_ty = LLVMGetReturnType(fn_ty);
                 let ret_kind = LLVMGetTypeKind(ret_ty);
                 if ret_kind != 0 { // 0 = VoidTypeKind
+                    eprintln!("[std-llvm] build_ret_void: function expects non-void return, returning undef");
                     return LLVMBuildRet(builder, LLVMGetUndef(ret_ty));
                 }
             }
@@ -1028,7 +1030,10 @@ unsafe fn ensure_i64(builder: LLVMPtr, val: LLVMPtr) -> LLVMPtr {
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if builder.is_null() || lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    if builder.is_null() || lhs.is_null() || rhs.is_null() {
+        eprintln!("[std-llvm] build_add: null operand (builder={:p} lhs={:p} rhs={:p})", builder, lhs, rhs);
+        return std::ptr::null_mut();
+    }
     // Try to coerce both operands to i64 first
     let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
@@ -1067,27 +1072,36 @@ pub extern "C" fn forge_llvm_build_add(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
                 }
             }
         }
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_add: type guard failed (not integer operands)");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildAdd(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sub(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if builder.is_null() || lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    if builder.is_null() || lhs.is_null() || rhs.is_null() {
+        eprintln!("[std-llvm] build_sub: null operand (builder={:p} lhs={:p} rhs={:p})", builder, lhs, rhs);
+        return std::ptr::null_mut();
+    }
     let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_sub: type guard failed");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildSub(builder, lhs, rhs, safe_name(name)) }
 }
 
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_mul(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
-    if lhs.is_null() || rhs.is_null() { return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) }); }
+    if lhs.is_null() || rhs.is_null() {
+        eprintln!("[std-llvm] build_mul: null operand (lhs={:p} rhs={:p})", lhs, rhs);
+        return std::ptr::null_mut();
+    }
     let (lhs, rhs) = unsafe { (ensure_i64(builder, lhs), ensure_i64(builder, rhs)) };
     if !guard_int_binop(lhs, rhs) {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_mul: type guard failed");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildMul(builder, lhs, rhs, safe_name(name)) }
 }
@@ -1387,7 +1401,8 @@ pub extern "C" fn forge_llvm_build_cond_br(builder: LLVMPtr, cond: LLVMPtr, then
 pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     bld_trace("build_icmp", builder, std::ptr::null_mut());
     if builder.is_null() || lhs.is_null() || rhs.is_null() {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i1, 0, 0) });
+        eprintln!("[std-llvm] build_icmp: null operand (builder={:p} lhs={:p} rhs={:p})", builder, lhs, rhs);
+        return std::ptr::null_mut();
     }
     unsafe {
         // Coerce both operands to i64 for comparison
@@ -1438,12 +1453,14 @@ pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: L
     bld_trace("build_call", builder, f);
     if builder.is_null() || fn_type.is_null() || f.is_null() { return std::ptr::null_mut(); }
     if num_args > 0 && args.is_null() { return std::ptr::null_mut(); }
-    unsafe {
-        static mut BC_TRACE: i32 = 200;
-        if BC_TRACE > 0 {
-            let s = if !name.is_null() { std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?") } else { "?" };
-            eprintln!("  [BC] f={:p} args={} name={}", f, num_args, s);
-            BC_TRACE -= 1;
+    if bld_trace_enabled() {
+        unsafe {
+            static mut BC_TRACE: i32 = 200;
+            if BC_TRACE > 0 {
+                let s = if !name.is_null() { std::ffi::CStr::from_ptr(name).to_str().unwrap_or("?") } else { "?" };
+                eprintln!("  [BC] f={:p} args={} name={}", f, num_args, s);
+                BC_TRACE -= 1;
+            }
         }
     }
     // Auto-coerce arguments: if param expects ptr but arg is i64 (or vice versa), convert
@@ -1893,7 +1910,8 @@ pub extern "C" fn forge_llvm_build_extract_value(builder: LLVMPtr, agg: LLVMPtr,
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_sdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     if !guard_int_binop(lhs, rhs) {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_sdiv: type guard failed");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildSDiv(builder, lhs, rhs, safe_name(name)) }
 }
@@ -1901,7 +1919,8 @@ pub extern "C" fn forge_llvm_build_sdiv(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLV
 #[no_mangle]
 pub extern "C" fn forge_llvm_build_srem(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     if !guard_int_binop(lhs, rhs) {
-        return TYPE_CACHE.with(|c| unsafe { LLVMConstInt(c.borrow().i64, 0, 0) });
+        eprintln!("[std-llvm] build_srem: type guard failed");
+        return std::ptr::null_mut();
     }
     unsafe { LLVMBuildSRem(builder, lhs, rhs, safe_name(name)) }
 }
@@ -1951,8 +1970,9 @@ pub extern "C" fn forge_llvm_build_zext(builder: LLVMPtr, val: LLVMPtr, dest_ty:
         if val_kind == 12 { // PointerTypeKind — use ptrtoint instead of zext
             return LLVMBuildPtrToInt(builder, val, dest_ty, safe_name(name));
         }
-        if val_kind != 8 { // Not integer — return i64 0
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+        if val_kind != 8 { // Not integer — can't zext
+            eprintln!("[std-llvm] build_zext: value is not integer (kind={})", val_kind);
+            return std::ptr::null_mut();
         }
         LLVMBuildZExt(builder, val, dest_ty, safe_name(name))
     }
@@ -1969,9 +1989,9 @@ pub extern "C" fn forge_llvm_build_trunc(builder: LLVMPtr, val: LLVMPtr, dest_ty
     let dest_ty = ensure_int_type(dest_ty);
     unsafe {
         let val_kind = LLVMGetTypeKind(LLVMTypeOf(val));
-        if val_kind != 8 { // Not integer — can't trunc, return i1 0
-            let i1 = TYPE_CACHE.with(|c| c.borrow().i1);
-            return LLVMConstInt(i1, 0, 0);
+        if val_kind != 8 { // Not integer — can't trunc
+            eprintln!("[std-llvm] build_trunc: value is not integer (kind={})", val_kind);
+            return std::ptr::null_mut();
         }
         LLVMBuildTrunc(builder, val, dest_ty, safe_name(name))
     }
@@ -2047,7 +2067,8 @@ pub extern "C" fn forge_llvm_build_int_to_ptr(builder: LLVMPtr, val: LLVMPtr, de
 pub extern "C" fn forge_llvm_build_and(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe {
         if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+            eprintln!("[std-llvm] build_and: type mismatch or non-integer operands");
+            return std::ptr::null_mut();
         }
         LLVMBuildAnd(builder, lhs, rhs, safe_name(name))
     }
@@ -2057,7 +2078,8 @@ pub extern "C" fn forge_llvm_build_and(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
 pub extern "C" fn forge_llvm_build_or(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe {
         if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+            eprintln!("[std-llvm] build_or: type mismatch or non-integer operands");
+            return std::ptr::null_mut();
         }
         LLVMBuildOr(builder, lhs, rhs, safe_name(name))
     }
@@ -2067,7 +2089,8 @@ pub extern "C" fn forge_llvm_build_or(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMP
 pub extern "C" fn forge_llvm_build_xor(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe {
         if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+            eprintln!("[std-llvm] build_xor: type mismatch or non-integer operands");
+            return std::ptr::null_mut();
         }
         LLVMBuildXor(builder, lhs, rhs, safe_name(name))
     }
@@ -2077,7 +2100,8 @@ pub extern "C" fn forge_llvm_build_xor(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVM
 pub extern "C" fn forge_llvm_build_shl(builder: LLVMPtr, lhs: LLVMPtr, rhs: LLVMPtr, name: *const c_char) -> LLVMPtr {
     unsafe {
         if LLVMTypeOf(lhs) != LLVMTypeOf(rhs) || LLVMGetTypeKind(LLVMTypeOf(lhs)) != 8 {
-            return TYPE_CACHE.with(|c| LLVMConstInt(c.borrow().i64, 0, 0));
+            eprintln!("[std-llvm] build_shl: type mismatch or non-integer operands");
+            return std::ptr::null_mut();
         }
         LLVMBuildShl(builder, lhs, rhs, safe_name(name))
     }
