@@ -672,7 +672,130 @@ fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
         .FieldAccess(obj, field) -> emit_field_access(cg, env, obj, field)
         .EnumCtor(type_name, variant, args) -> emit_enum_ctor(cg, env, type_name, variant, args)
         .Index(obj, idx) -> emit_index(cg, env, obj, idx)
+        .Block(body) -> emit_block_expr(cg, env, body)
+        .MatchExpr(subject, arms) -> emit_match_expr(cg, env, subject, arms)
         _ -> err_emit("unsupported expression type")
+    }
+}
+
+fn emit_block_expr(cg: Codegen, env: VarEnv, stmts: StmtList) -> EmitResult {
+    // A block expression's value is the value of the LAST
+    // statement, if that statement is a `Stmt.Expr`. Anything
+    // else (return, let, while, ...) yields i64 0. Each non-last
+    // statement is executed for its side effects.
+    emit_block_loop(cg, env, stmts, llvm.const_int(cg.i64_type, 0, 0), "i64")
+}
+
+fn emit_block_loop(cg: Codegen, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: string) -> EmitResult {
+    match stmts {
+        .End -> EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
+        .Node(stmt, next) -> {
+            // If this stmt is the last one and it's a Stmt.Expr,
+            // emit it as an expression and use its value as the
+            // block's value.
+            match next {
+                .End -> {
+                    match stmt {
+                        .Expr(e) -> {
+                            let r = emit_expr(cg, env, e)
+                            if r.had_error {
+                                return r
+                            }
+                            EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
+                        }
+                        _ -> {
+                            let s = emit_stmt(cg, env, stmt)
+                            if s.had_error {
+                                return err_emit(s.error_message)
+                            }
+                            EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
+                        }
+                    }
+                }
+                _ -> {
+                    let s = emit_stmt(cg, env, stmt)
+                    if s.had_error {
+                        return err_emit(s.error_message)
+                    }
+                    emit_block_loop(cg, s.env, next, last_val, last_ty)
+                }
+            }
+        }
+    }
+}
+
+fn emit_match_expr(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchArmList) -> EmitResult {
+    let r = emit_expr(cg, env, subject)
+    if r.had_error {
+        return r
+    }
+    let enum_name = strip_enum_prefix(r.ty)
+    if enum_name == "" {
+        return err_emit("match subject is not an enum (ty=" + r.ty + ")")
+    }
+    let lookup = enum_reg_lookup(enum_name)
+    if !lookup.found {
+        return err_emit("unknown enum `" + enum_name + "`")
+    }
+    let st_ty = llvm.get_type_by_name(cg.ctx, enum_name)
+    let subj_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "match_subj")
+    let tag_gep = llvm.build_struct_gep2(cg.builder, st_ty, subj_ptr, 0, "tag_ptr")
+    let tag_val = llvm.build_load(cg.builder, llvm.int8_type(cg.ctx), tag_gep, "tag")
+
+    // Allocate a result slot. Each arm stores its value here, and
+    // we load from it after the merge block.
+    let result_slot = llvm.build_alloca(cg.builder, cg.i64_type, "match_result")
+    llvm.build_store(cg.builder, llvm.const_int(cg.i64_type, 0, 0), result_slot)
+
+    let merge_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "match_end")
+    let arm_result = emit_match_expr_arms(cg, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)
+    if arm_result.had_error {
+        return arm_result
+    }
+    llvm.position_at_end(cg.builder, merge_bb)
+    let loaded = llvm.build_load(cg.builder, cg.i64_type, result_slot, "match_val")
+    ok_emit(loaded)
+}
+
+fn emit_match_expr_arms(cg: Codegen, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
+    match arms {
+        .End -> {
+            if !llvm.block_has_terminator(cg.builder) {
+                llvm.build_br(cg.builder, merge_bb)
+            }
+            ok_emit(null_ptr_val())
+        }
+        .Node(pattern, body, next) -> {
+            let arm_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "march_arm")
+            let next_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "march_next")
+            match pattern {
+                .Wildcard -> llvm.build_br(cg.builder, arm_bb)
+                .Variant(vname, _) -> {
+                    let v = variant_lookup(variants, vname)
+                    if !v.found {
+                        return err_emit("pattern references unknown variant `" + vname + "`")
+                    }
+                    let want_tag = llvm.const_int(llvm.int8_type(cg.ctx), v.tag, 0)
+                    let cmp = llvm.build_icmp(cg.builder, 32, tag_val, want_tag, "tag_eq")
+                    llvm.build_cond_br(cg.builder, cmp, arm_bb, next_bb)
+                }
+            }
+            llvm.position_at_end(cg.builder, arm_bb)
+            let arm_env = bind_pattern_payload(cg, env, pattern, st_ty, subj_ptr, variants)
+            let body_result = emit_expr(cg, arm_env, body)
+            if body_result.had_error {
+                return body_result
+            }
+            // Store the value into the result slot, then branch
+            // to merge if not already terminated by a return inside
+            // the body.
+            if !llvm.block_has_terminator(cg.builder) {
+                llvm.build_store(cg.builder, body_result.value, result_slot)
+                llvm.build_br(cg.builder, merge_bb)
+            }
+            llvm.position_at_end(cg.builder, next_bb)
+            emit_match_expr_arms(cg, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)
+        }
     }
 }
 
@@ -898,12 +1021,14 @@ fn emit_match_arms(cg: Codegen, env: VarEnv, arms: MatchArmList, st_ty: ptr, sub
                     llvm.build_cond_br(cg.builder, cmp, arm_bb, next_bb)
                 }
             }
-            // Emit the arm body, with payload bindings if any.
+            // Emit the arm body (now an Expr — we discard the value
+            // because this is the statement form). With payload
+            // bindings if any.
             llvm.position_at_end(cg.builder, arm_bb)
             let arm_env = bind_pattern_payload(cg, env, pattern, st_ty, subj_ptr, variants)
-            let body_result = emit_stmt(cg, arm_env, body)
+            let body_result = emit_expr(cg, arm_env, body)
             if body_result.had_error {
-                return body_result
+                return err_stmt(body_result.error_message)
             }
             if !llvm.block_has_terminator(cg.builder) {
                 llvm.build_br(cg.builder, merge_bb)

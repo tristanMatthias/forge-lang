@@ -43,9 +43,11 @@ export enum Pattern {
 }
 
 // Arms of a match expression/statement, terminated by `End`.
+// Body is an Expr — single-expression arms are common, and a brace
+// block is itself an Expr.Block.
 export enum MatchArmList {
     End
-    Node(pattern: Pattern, body: Stmt, next: MatchArmList)
+    Node(pattern: Pattern, body: Expr, next: MatchArmList)
 }
 
 export enum Expr {
@@ -64,6 +66,8 @@ export enum Expr {
     FieldAccess(obj: Expr, field: string)
     EnumCtor(type_name: string, variant: string, args: ExprList)
     Index(obj: Expr, idx: Expr)
+    Block(body: StmtList)
+    MatchExpr(subject: Expr, arms: MatchArmList)
 }
 
 export enum Stmt {
@@ -281,6 +285,8 @@ export fn render_expr(expr: Expr) -> string {
         .FieldAccess(obj, field) -> "(field " + render_expr(obj) + " " + field + ")"
         .EnumCtor(type_name, variant, args) -> "(ctor " + type_name + "." + variant + " " + render_expr_list(args) + ")"
         .Index(obj, idx) -> "(index " + render_expr(obj) + " " + render_expr(idx) + ")"
+        .Block(body) -> "(block-expr " + render_stmt_list(body) + ")"
+        .MatchExpr(subject, arms) -> "(match-expr " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"
     }
 }
 
@@ -411,7 +417,7 @@ export fn render_match_arm_list(arms: MatchArmList) -> string {
     match arms {
         .End -> "()"
         .Node(pattern, body, next) -> {
-            let head = render_pattern(pattern) + " -> " + render_stmt(body)
+            let head = render_pattern(pattern) + " -> " + render_expr(body)
             let tail = render_match_arm_tail(next)
             "(" + head + tail + ")"
         }
@@ -421,7 +427,7 @@ export fn render_match_arm_list(arms: MatchArmList) -> string {
 fn render_match_arm_tail(arms: MatchArmList) -> string {
     match arms {
         .End -> ""
-        .Node(pattern, body, next) -> "; " + render_pattern(pattern) + " -> " + render_stmt(body) + render_match_arm_tail(next)
+        .Node(pattern, body, next) -> "; " + render_pattern(pattern) + " -> " + render_expr(body) + render_match_arm_tail(next)
     }
 }
 

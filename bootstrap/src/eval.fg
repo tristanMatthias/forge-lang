@@ -503,6 +503,8 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .FieldAccess(_, _) -> error_result(runtime, "field access is not supported by the tree-walk evaluator")
         .EnumCtor(_, _, _) -> error_result(runtime, "enum constructors are not supported by the tree-walk evaluator")
         .Index(_, _) -> error_result(runtime, "index expressions are not supported by the tree-walk evaluator")
+        .Block(_) -> error_result(runtime, "block expressions are not supported by the tree-walk evaluator")
+        .MatchExpr(_, _) -> error_result(runtime, "match expressions are not supported by the tree-walk evaluator")
     }
 }
 

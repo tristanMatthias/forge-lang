@@ -1,0 +1,11 @@
+enum Op {
+    Add(a: i64, b: i64),
+    Mul(a: i64, b: i64)
+}
+
+let op = Op.Mul(6, 7)
+let result = match op {
+    .Add(a, b) -> a + b
+    .Mul(a, b) -> a * b
+}
+return result

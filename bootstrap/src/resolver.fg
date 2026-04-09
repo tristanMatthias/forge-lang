@@ -240,7 +240,7 @@ fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
             // scope that's only visible inside this arm's body.
             let entered = enter_resolve_scope(r)
             let with_bindings = declare_pattern_bindings(entered, pattern)
-            let after_body = resolve_stmt(with_bindings, body)
+            let after_body = resolve_expr(with_bindings, body)
             let exited = exit_resolve_scope(after_body)
             resolve_match_arms(exited, next)
         }
@@ -339,6 +339,15 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .Index(obj, idx) -> {
             let after_obj = resolve_expr(r, obj)
             resolve_expr(after_obj, idx)
+        }
+        .Block(body) -> {
+            let entered = enter_resolve_scope(r)
+            let after = resolve_stmt_list(entered, body)
+            exit_resolve_scope(after)
+        }
+        .MatchExpr(subject, arms) -> {
+            let after_subject = resolve_expr(r, subject)
+            resolve_match_arms(after_subject, arms)
         }
     }
 }
