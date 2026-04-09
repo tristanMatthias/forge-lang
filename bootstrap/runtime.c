@@ -439,22 +439,24 @@ void* forge_str_split(const char* s, const char* sep) {
 typedef int64_t (*ForgeFn1)(int64_t);
 typedef int64_t (*ForgeFn2)(int64_t, int64_t);
 
+// Forward declarations for closure trampolines
+int64_t forge_closure_call_1(int64_t closure, int64_t a0);
+int64_t forge_closure_call_2(int64_t closure, int64_t a0, int64_t a1);
+
 void* forge_array_map(void* arr, int64_t fn_ptr) {
     ForgeArray* src = (ForgeArray*)arr;
-    ForgeFn1 f = (ForgeFn1)(uintptr_t)fn_ptr;
     void* dst = forge_array_new();
     for (int64_t i = 0; i < src->len; i++) {
-        forge_array_push(dst, f(src->data[i]));
+        forge_array_push(dst, forge_closure_call_1(fn_ptr, src->data[i]));
     }
     return dst;
 }
 
 void* forge_array_filter(void* arr, int64_t fn_ptr) {
     ForgeArray* src = (ForgeArray*)arr;
-    ForgeFn1 f = (ForgeFn1)(uintptr_t)fn_ptr;
     void* dst = forge_array_new();
     for (int64_t i = 0; i < src->len; i++) {
-        if (f(src->data[i])) {
+        if (forge_closure_call_1(fn_ptr, src->data[i])) {
             forge_array_push(dst, src->data[i]);
         }
     }
@@ -463,18 +465,92 @@ void* forge_array_filter(void* arr, int64_t fn_ptr) {
 
 int64_t forge_array_reduce(void* arr, int64_t initial, int64_t fn_ptr) {
     ForgeArray* src = (ForgeArray*)arr;
-    ForgeFn2 f = (ForgeFn2)(uintptr_t)fn_ptr;
     int64_t acc = initial;
     for (int64_t i = 0; i < src->len; i++) {
-        acc = f(acc, src->data[i]);
+        acc = forge_closure_call_2(fn_ptr, acc, src->data[i]);
     }
     return acc;
 }
 
 void forge_array_foreach(void* arr, int64_t fn_ptr) {
     ForgeArray* src = (ForgeArray*)arr;
-    ForgeFn1 f = (ForgeFn1)(uintptr_t)fn_ptr;
     for (int64_t i = 0; i < src->len; i++) {
-        f(src->data[i]);
+        forge_closure_call_1(fn_ptr, src->data[i]);
     }
+}
+
+// ─── Closure support ──────────────────────────────────────────────
+// A closure with captures is stored as a ForgeArray:
+//   [0] = fn_ptr (intptr_t)
+//   [1..N] = captured values
+// A non-capturing closure is a bare function pointer (int64_t).
+//
+// forge_closure_call dispatches: if the value looks like a ForgeArray
+// (has a valid length field), unpack fn_ptr + captures and call with
+// both user args and captures. Otherwise call directly.
+
+// Tagged closure: first element of ForgeArray is a magic sentinel.
+// Non-capturing lambdas: bare function pointer (positive code address).
+// Capturing closures: ForgeArray with data[0] = CLOSURE_TAG, data[1] = fn_ptr, data[2..] = captures.
+#define FORGE_CLOSURE_TAG ((int64_t)-559038737)
+
+int64_t forge_closure_get_fn(int64_t closure_val) {
+    ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_val;
+        if (arr && arr->len >= 2 && arr->data && arr->data[0] == FORGE_CLOSURE_TAG) {
+        return arr->data[1]; // fn_ptr is second element (after tag)
+    }
+    return closure_val; // bare fn pointer
+}
+
+int64_t forge_closure_get_capture(int64_t closure_val, int64_t idx) {
+    ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_val;
+    if (arr && arr->len > idx + 2 && arr->data && arr->data[0] == FORGE_CLOSURE_TAG) {
+        return arr->data[idx + 2]; // captures start at index 2
+    }
+    return 0;
+}
+
+int64_t forge_closure_num_captures(int64_t closure_val) {
+    ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_val;
+        if (arr && arr->len >= 2 && arr->data && arr->data[0] == FORGE_CLOSURE_TAG) {
+        return arr->len - 2; // total elements minus tag and fn_ptr
+    }
+    return 0;
+}
+
+// Generic closure call: handles both bare fn pointers and closure arrays.
+// Supports up to 8 user args and 8 captured values.
+int64_t forge_closure_call_1(int64_t closure, int64_t a0) {
+    int64_t n = forge_closure_num_captures(closure);
+    int64_t fn = forge_closure_get_fn(closure);
+    typedef int64_t (*Fn1)(int64_t);
+    typedef int64_t (*Fn2)(int64_t, int64_t);
+    typedef int64_t (*Fn3)(int64_t, int64_t, int64_t);
+    if (n == 0) return ((Fn1)(uintptr_t)fn)(a0);
+    if (n == 1) return ((Fn2)(uintptr_t)fn)(a0, forge_closure_get_capture(closure, 0));
+    if (n == 2) return ((Fn3)(uintptr_t)fn)(a0, forge_closure_get_capture(closure, 0), forge_closure_get_capture(closure, 1));
+    return ((Fn1)(uintptr_t)fn)(a0); // fallback
+}
+
+int64_t forge_closure_call_2(int64_t closure, int64_t a0, int64_t a1) {
+    int64_t n = forge_closure_num_captures(closure);
+    int64_t fn = forge_closure_get_fn(closure);
+    typedef int64_t (*Fn2)(int64_t, int64_t);
+    typedef int64_t (*Fn3)(int64_t, int64_t, int64_t);
+    typedef int64_t (*Fn4)(int64_t, int64_t, int64_t, int64_t);
+    if (n == 0) return ((Fn2)(uintptr_t)fn)(a0, a1);
+    if (n == 1) return ((Fn3)(uintptr_t)fn)(a0, a1, forge_closure_get_capture(closure, 0));
+    if (n == 2) return ((Fn4)(uintptr_t)fn)(a0, a1, forge_closure_get_capture(closure, 0), forge_closure_get_capture(closure, 1));
+    return ((Fn2)(uintptr_t)fn)(a0, a1); // fallback
+}
+
+int64_t forge_closure_call_0(int64_t closure) {
+    int64_t n = forge_closure_num_captures(closure);
+    int64_t fn = forge_closure_get_fn(closure);
+    typedef int64_t (*Fn0)(void);
+    typedef int64_t (*Fn1)(int64_t);
+    if (n == 0) return ((Fn0)(uintptr_t)fn)();
+    if (n == 1) return ((Fn1)(uintptr_t)fn)(forge_closure_get_capture(closure, 0));
+    if (n == 2) { typedef int64_t (*Fn2x)(int64_t, int64_t); return ((Fn2x)(uintptr_t)fn)(forge_closure_get_capture(closure, 0), forge_closure_get_capture(closure, 1)); }
+    return ((Fn0)(uintptr_t)fn)(); // fallback
 }

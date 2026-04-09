@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, ValueType, TypeList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures}
 use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, const_i64, to_ptr, to_i64, ctx_with_fn, get_fn, call_0, call_2}
 use codegen.{emit_expr}
 
@@ -170,19 +170,21 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     // Pack: [fn_ptr, cap1, cap2, ...] into an array. The C runtime's
     // map/filter/reduce only support simple fn pointers (no closures).
     // For direct calls, we build the full argument list.
-    if num_captures > 0 {
-        // Store fn_ptr and captured values in an array
-        let arr_fn = get_fn(ctx, "forge_array_new")
-        let push_fn = get_fn(ctx, "forge_array_push")
-        let closure_arr = call_0(ctx, arr_fn, "closure")
-        let fn_ptr = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
-        call_2(ctx, push_fn, closure_arr, fn_ptr, "")
-        push_captured_values(ctx, captures, closure_arr, push_fn)
-        return EmitResult { value: closure_arr, ty: ValueType.Fn, had_error: false, error_message: "" }
-    }
-
+    // ALL lambdas use closure arrays: [TAG, fn_ptr, cap1, cap2, ...]
+    // Even non-capturing ones: [TAG, fn_ptr]. This ensures uniform
+    // representation — no runtime heuristics needed.
+    let arr_fn = get_fn(ctx, "forge_array_new")
+    let push_fn = get_fn(ctx, "forge_array_push")
+    let closure_arr = call_0(ctx, arr_fn, "closure")
+    let tag = const_i64(ctx, -559038737)  // FORGE_CLOSURE_TAG = 0xDEADBEEF negated, fits in 32-bit
+    call_2(ctx, push_fn, closure_arr, tag, "")
     let fn_ptr = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
-    EmitResult { value: fn_ptr, ty: ValueType.Fn, had_error: false, error_message: "" }
+    call_2(ctx, push_fn, closure_arr, fn_ptr, "")
+    if num_captures > 0 {
+        push_captured_values(ctx, captures, closure_arr, push_fn)
+    }
+    let closure_i64 = to_i64(ctx, closure_arr, "closure_i64")
+    EmitResult { value: closure_i64, ty: ValueType.Fn, had_error: false, error_message: "" }
 }
 
 fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val: ptr, idx: int) -> VarEnv {
@@ -229,35 +231,98 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_typ
 // Load the pointer, cast to fn ptr, build indirect call.
 export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, args: ExprList) -> EmitResult {
     let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, alloca, name)
+    let local = env_lookup(env, name)
+    let num_caps = vtype_closure_captures(local.ty)
+    if num_caps > 0 {
+        return emit_closure_call(ctx, env, fn_i64, args, num_caps)
+    }
     emit_indirect_call_value(ctx, env, fn_i64, args)
 }
 
-export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, name: string, args: ExprList) -> EmitResult {
+export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, name: string, args: ExprList, ty: ValueType) -> EmitResult {
     let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, global, name)
+    let num_caps = vtype_closure_captures(ty)
+    if num_caps > 0 {
+        return emit_closure_call(ctx, env, fn_i64, args, num_caps)
+    }
     emit_indirect_call_value(ctx, env, fn_i64, args)
 }
 
-fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> EmitResult {
-    let fn_ptr = forge_llvm_build_int_to_ptr(ctx.builder, fn_i64, ctx.ptr_type, "fn_ptr")
-    let arg_count = expr_list_length(args)
+// Call a closure with captures. The closure value is a ForgeArray:
+// [0] = fn_ptr, [1..N] = captured values.
+// We unpack fn_ptr, evaluate user args, append captures, and call.
+fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, num_captures: int) -> EmitResult {
+    // closure_val is an i64 encoding a ForgeArray pointer.
+    // Convert to ptr for forge_array_get calls.
+    let closure_ptr = to_ptr(ctx, closure_val, "closure_ptr")
+    // Load fn_ptr from closure array[0]
+    let get_fn_call = call_2(ctx, get_fn(ctx, "forge_array_get"), closure_ptr, const_i64(ctx, 0), "closure_fn")
+    let fn_ptr = forge_llvm_build_int_to_ptr(ctx.builder, get_fn_call, ctx.ptr_type, "fn_ptr")
 
-    // Build the function type: (i64, i64, ...) -> i64
-    let param_arr = forge_llvm_type_array_new(arg_count)
-    fill_i64_params(param_arr, ctx.i64_type, 0, arg_count)
-    let fn_type = forge_llvm_function_type(ctx.i64_type, param_arr, arg_count, 0)
+    let user_arg_count = expr_list_length(args)
+    let total_args = user_arg_count + num_captures
+
+    let param_arr = forge_llvm_type_array_new(total_args)
+    fill_i64_params(param_arr, ctx.i64_type, 0, total_args)
+    let fn_type = forge_llvm_function_type(ctx.i64_type, param_arr, total_args, 0)
     forge_llvm_type_array_free(param_arr)
 
-    // Evaluate args into a value array
-    let val_arr = forge_llvm_value_array_new(arg_count)
+    let val_arr = forge_llvm_value_array_new(total_args)
+    // Fill user args
     let fill = fill_lambda_args(ctx, env, val_arr, args, 0)
     if fill.had_error {
         forge_llvm_value_array_free(val_arr)
         return fill
     }
+    // Fill captures from closure array
+    fill_closure_captures(ctx, val_arr, closure_ptr, user_arg_count, num_captures, 0)
 
-    let result = forge_llvm_build_call(ctx.builder, fn_type, fn_ptr, val_arr, arg_count, "lambda_call")
+    let result = forge_llvm_build_call(ctx.builder, fn_type, fn_ptr, val_arr, total_args, "closure_call")
     forge_llvm_value_array_free(val_arr)
     ok_emit(result)
+}
+
+fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int, i: int) {
+    if i >= count { return }
+    let cap_val = call_2(ctx, get_fn(ctx, "forge_array_get"), closure_val, const_i64(ctx, i + 1), "cap")
+    forge_llvm_value_array_set(val_arr, start_idx + i, cap_val)
+    fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
+}
+
+fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> EmitResult {
+    // All lambdas are closure arrays [TAG, fn_ptr, cap1, ...].
+    // Use C trampolines that unpack the array and call with the right arity.
+    let arg_count = expr_list_length(args)
+
+    if arg_count == 0 {
+        return ok_emit(call_1(ctx, get_fn(ctx, "forge_closure_call_0"), fn_i64, "ccall"))
+    }
+    if arg_count == 1 {
+        match args {
+            .Node(arg, _) -> {
+                let a0 = emit_expr(ctx, env, arg)
+                if a0.had_error { return a0 }
+                return ok_emit(call_2(ctx, get_fn(ctx, "forge_closure_call_1"), fn_i64, a0.value, "ccall"))
+            }
+            _ -> { return err_emit("expected 1 arg") }
+        }
+    }
+    // 2+ args
+    match args {
+        .Node(arg0, rest) -> {
+            let a0 = emit_expr(ctx, env, arg0)
+            if a0.had_error { return a0 }
+            match rest {
+                .Node(arg1, _) -> {
+                    let a1 = emit_expr(ctx, env, arg1)
+                    if a1.had_error { return a1 }
+                    return ok_emit(call_3(ctx, get_fn(ctx, "forge_closure_call_2"), fn_i64, a0.value, a1.value, "ccall"))
+                }
+                _ -> { return err_emit("expected 2 args") }
+            }
+        }
+        _ -> err_emit("expected args")
+    }
 }
 
 fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {

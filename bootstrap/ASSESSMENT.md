@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (131 total: 83 done, 38 todo, 10 n/a)
+## Feature Progress (131 total: 85 done, 33 todo, 10 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -8,7 +8,7 @@
 | 2 | mut binding | ✅ | |
 | 3 | const binding | ✅ | parsed as let |
 | 4 | type annotation | ✅ | |
-| 5 | immutability enforcement | 🔲 | |
+| 5 | immutability enforcement | ✅ | resolver rejects let reassignment | |
 | 6 | field mutability | ✅ | parsed, not enforced |
 | 7 | shorthand fields | ✅ | |
 | 8 | int (i64) | ✅ | |
@@ -42,7 +42,7 @@
 | 36 | wildcard pattern | ✅ | |
 | 37 | variant binding | ✅ | |
 | 38 | nested patterns | 🔲 | |
-| 39 | match guards | 🔲 | |
+| 39 | match guards | ✅ | pattern if cond -> body | |
 | 40 | match tables | 🔲 | |
 | 41 | `is` keyword | 🔲 | |
 | 42 | contextual resolution | 🔲 | |

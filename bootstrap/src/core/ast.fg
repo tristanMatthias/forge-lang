@@ -74,6 +74,7 @@ export enum ValueType {
     List(elem: ValueType),
     Map,
     Fn,
+    Closure(num_captures: int),
     Void,
 }
 
@@ -109,7 +110,11 @@ export fn vtype_is_map(t: ValueType) -> bool {
 }
 
 export fn vtype_is_fn(t: ValueType) -> bool {
-    match t { .Fn -> true, _ -> false }
+    match t { .Fn -> true, .Closure(_) -> true, _ -> false }
+}
+
+export fn vtype_closure_captures(t: ValueType) -> int {
+    match t { .Closure(n) -> n, _ -> 0 }
 }
 
 export fn vtype_struct_name(t: ValueType) -> string {
@@ -132,6 +137,7 @@ export fn vtype_display(t: ValueType) -> string {
         .List(_) -> "List"
         .Map -> "Map"
         .Fn -> "fn"
+        .Closure(_) -> "fn"
         .Void -> "void"
     }
 }

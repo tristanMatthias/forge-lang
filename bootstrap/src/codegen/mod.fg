@@ -153,6 +153,35 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(arr_slice_arr)
     forge_llvm_add_function(m, "forge_array_slice", arr_slice_type)
 
+    // C-runtime: closure helpers
+    // forge_closure_get_fn(i64) → i64
+    // forge_closure_num_captures(i64) → i64
+    // forge_closure_get_capture(i64, i64) → i64
+    let cl_1_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(cl_1_arr, 0, i64t)
+    let cl_i64_to_i64 = forge_llvm_function_type(i64t, cl_1_arr, 1, 0)
+    forge_llvm_type_array_free(cl_1_arr)
+    forge_llvm_add_function(m, "forge_closure_get_fn", cl_i64_to_i64)
+    forge_llvm_add_function(m, "forge_closure_num_captures", cl_i64_to_i64)
+    forge_llvm_add_function(m, "forge_closure_get_capture", arr_get_type)
+    // Closure trampolines: (i64, i64...) → i64
+    forge_llvm_add_function(m, "forge_closure_call_0", cl_i64_to_i64)
+
+    let cl_2_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(cl_2_arr, 0, i64t)
+    forge_llvm_type_array_set(cl_2_arr, 1, i64t)
+    let cl_2_type = forge_llvm_function_type(i64t, cl_2_arr, 2, 0)
+    forge_llvm_type_array_free(cl_2_arr)
+    forge_llvm_add_function(m, "forge_closure_call_1", cl_2_type)
+
+    let cl_3_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(cl_3_arr, 0, i64t)
+    forge_llvm_type_array_set(cl_3_arr, 1, i64t)
+    forge_llvm_type_array_set(cl_3_arr, 2, i64t)
+    let cl_3_type = forge_llvm_function_type(i64t, cl_3_arr, 3, 0)
+    forge_llvm_type_array_free(cl_3_arr)
+    forge_llvm_add_function(m, "forge_closure_call_2", cl_3_type)
+
     // C-runtime: higher-order list operations (map, filter, reduce, foreach)
     // All take (ptr arr, i64 fn_ptr) and return ptr or i64.
     let arr_ho_arr = forge_llvm_type_array_new(2)
@@ -1031,11 +1060,19 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
 
 
 fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
-    // Destructure callee exactly once.
     match callee {
         .Ident(name) -> emit_call_named(ctx, env, name, args)
         .FieldAccess(obj, method) -> emit_method_call(ctx, env, obj, method, args)
-        _ -> err_emit("only direct function calls are supported")
+        _ -> {
+            // Expression callee: evaluate it and call indirectly.
+            let callee_r = emit_expr(ctx, env, callee)
+            if callee_r.had_error { return callee_r }
+            let num_caps = vtype_closure_captures(callee_r.ty)
+            if num_caps > 0 {
+                return emit_closure_call(ctx, env, callee_r.value, args, num_caps)
+            }
+            emit_indirect_call_value(ctx, env, callee_r.value, args)
+        }
     }
 }
 
@@ -1168,6 +1205,22 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
     let mangled = owner + "__" + method
     let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
     if fn_val == null {
+        // Not a method — check if it's a struct field with fn type.
+        // e.g. handler.action(25) where action: fn(int) -> int
+        if type_name != "" {
+            let s_lookup = struct_reg_lookup(ctx.structs, type_name)
+            if s_lookup.found {
+                let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(s_lookup.fields, method))
+                if vtype_is_fn(field_ty) {
+                    // Load the field value (fn pointer) and call indirectly
+                    let st_ty = forge_llvm_get_type_by_name(ctx.lc, type_name)
+                    let obj_ptr = to_ptr(ctx, r.value, "fn_field_obj")
+                    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, field_index_of(s_lookup.fields, method), "fn_field_ptr")
+                    let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "fn_field_val")
+                    return emit_indirect_call_value(ctx, env, fn_i64, args)
+                }
+            }
+        }
         return err_emit("undefined method `" + owner + "." + method + "`")
     }
     // Build arg array with self prepended.
@@ -1214,7 +1267,7 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
         }
         let g = toplevel_lookup(ctx.top_level_vars, name)
         if g.found && vtype_is_fn(g.ty) {
-            return emit_indirect_call_from_global(ctx, env, g.llvm_global, name, args)
+            return emit_indirect_call_from_global(ctx, env, g.llvm_global, name, args, g.ty)
         }
         return err_emit("undefined function `" + name + "`")
     }
