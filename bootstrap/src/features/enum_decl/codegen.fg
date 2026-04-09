@@ -6,7 +6,7 @@ use codegen.{emit_expr}
 
 
 export fn emit_enum_ctor(cg: Codegen, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
-    let enum_l = enum_reg_lookup(type_name)
+    let enum_l = enum_reg_lookup(cg.enums, type_name)
     if !enum_l.found {
         return err_emit("undefined enum type `" + type_name + "`")
     }

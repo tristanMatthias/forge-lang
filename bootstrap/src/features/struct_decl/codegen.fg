@@ -6,7 +6,7 @@ use codegen.{emit_expr}
 
 
 export fn emit_struct_lit(cg: Codegen, env: VarEnv, name: string, inits: FieldInitList) -> EmitResult {
-    let lookup = struct_reg_lookup(name)
+    let lookup = struct_reg_lookup(cg.structs, name)
     if !lookup.found {
         return err_emit("undefined struct type `" + name + "`")
     }

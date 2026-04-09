@@ -14,7 +14,7 @@ export fn emit_match_expr(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchAr
     if enum_name == "" {
         return err_emit("match subject is not an enum (ty=" + r.ty + ")")
     }
-    let lookup = enum_reg_lookup(enum_name)
+    let lookup = enum_reg_lookup(cg.enums, enum_name)
     if !lookup.found { return err_emit("unknown enum `" + enum_name + "`") }
     let st_ty = forge_llvm_get_type_by_name(cg.ctx, enum_name)
     let subj_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "match_subj")
@@ -86,7 +86,7 @@ export fn emit_match(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchArmList
         }
         return err_stmt("codegen error: match subject is not an enum (ty=" + r.ty + ") subj=" + dbg)
     }
-    let lookup = enum_reg_lookup(enum_name)
+    let lookup = enum_reg_lookup(cg.enums, enum_name)
     if !lookup.found { return err_stmt("codegen error: unknown enum `" + enum_name + "`") }
     let st_ty = forge_llvm_get_type_by_name(cg.ctx, enum_name)
     let subj_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "match_subj")
@@ -157,7 +157,7 @@ fn bind_pattern_payload_loop(cg: Codegen, env: VarEnv, st_ty: ptr, subj_ptr: ptr
             let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, gep, name)
             let alloca = forge_llvm_build_alloca(cg.builder, cg.i64_type, name)
             forge_llvm_build_store(cg.builder, loaded, alloca)
-            let field_ty = translate_param_type(field_type_at(fields, 0))
+            let field_ty = translate_param_type(cg.structs, cg.enums, field_type_at(fields, 0))
             let extended = env_extend(env, name, alloca, field_ty)
             bind_pattern_payload_loop(cg, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
         }

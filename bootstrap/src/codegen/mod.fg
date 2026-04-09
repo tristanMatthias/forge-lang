@@ -1,5 +1,5 @@
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload}
-use core.cg.{Codegen, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix, strip_struct_prefix, EnumLookup, StructLookup, enum_reg_lookup, enum_reg_extend, struct_reg_lookup, struct_reg_extend, translate_param_type, CG_STRUCTS, CG_ENUMS}
+use core.cg.{Codegen, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix, strip_struct_prefix, EnumLookup, StructLookup, StructReg, EnumReg, enum_reg_lookup, struct_reg_lookup, translate_param_type}
 
 // ── Direct C extern declarations ──
 //
@@ -224,21 +224,21 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(exit_param_arr)
     forge_llvm_add_function(m, "exit", exit_type)
 
-    // Reset and rebuild the per-compile registries.
-    CG_STRUCTS = StructReg.End
-    CG_ENUMS = EnumReg.End
+    // Build the per-compile registries by walking the AST once.
+    // These are threaded through Codegen as immutable data — no
+    // mutable globals.
+    let structs = declare_structs(ctx, i64t, stmts, StructReg.End)
+    let enums = declare_enums(ctx, i64t, stmts, EnumReg.End)
     CG_LOOPS = LoopStack.End
     CG_FN_RETS = FnRetTypes.End
     CG_GLOBALS = GlobalReg.End
-    declare_structs(ctx, i64t, stmts)
-    declare_enums(ctx, i64t, stmts)
-    declare_globals(m, ctx, i64t, stmts)
+    declare_globals(m, ctx, i64t, structs, enums, stmts)
 
     // Pass 1: declare every user-defined function as an LLVM
     // prototype so call sites (which may appear before the
     // declaration in source order) can resolve them by name via
     // `llvm.get_named_function`.
-    declare_functions(m, ctx, i64t, stmts)
+    declare_functions(m, ctx, i64t, structs, enums, stmts)
 
     // Synthesize a wrapper function for the top-level non-function
     // statements. If the source already defines its own `fn main`,
@@ -263,6 +263,8 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         i64_type: i64t,
         i1_type: i1t,
         ptr_type: pt,
+        structs,
+        enums,
     }
 
     // Pass 2: emit each user-defined function's body, then emit
@@ -322,27 +324,23 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 
 // ── Struct declaration pass ──
 
-fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList) {
+fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> StructReg {
     match stmts {
-        .End -> {}
+        .End -> reg
         .Node(stmt, next) -> {
-            match stmt {
+            let updated = match stmt {
                 .TypeDecl(name, fields) -> {
-                    // Build a named LLVM struct type with N i64 slots.
-                    // Every bootstrap value lives in an i64 slot
-                    // (str values are pointer-encoded), so a struct
-                    // is just an array of i64s with named offsets.
                     let count = field_list_length(fields)
                     let field_arr = forge_llvm_type_array_new(count)
                     fill_i64_param_array(field_arr, i64t, 0, count)
                     let st = forge_llvm_struct_create_named(ctx, name)
                     forge_llvm_struct_set_body(st, field_arr, count, 0)
                     forge_llvm_type_array_free(field_arr)
-                    struct_reg_extend(name, fields)
+                    StructReg.Node(name, fields, reg)
                 }
-                _ -> {}
+                _ -> reg
             }
-            declare_structs(ctx, i64t, next)
+            declare_structs(ctx, i64t, next, updated)
         }
     }
 }
@@ -356,7 +354,7 @@ fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList) {
 // initializers may reference user functions and structs that
 // haven't been emitted yet.
 
-fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
+fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList) {
     match stmts {
         .End -> {}
         .Node(stmt, next) -> {
@@ -364,32 +362,28 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
                 .Let(name, ty, _) -> {
                     let g = forge_llvm_add_global(m, i64t, name)
                     forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
-                    global_register(name, g, translate_param_type(ty))
+                    global_register(name, g, translate_param_type(structs, enums, ty))
                 }
                 .Mut(name, ty, _) -> {
                     let g = forge_llvm_add_global(m, i64t, name)
                     forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
-                    global_register(name, g, translate_param_type(ty))
+                    global_register(name, g, translate_param_type(structs, enums, ty))
                 }
                 _ -> {}
             }
-            declare_globals(m, ctx, i64t, next)
+            declare_globals(m, ctx, i64t, structs, enums, next)
         }
     }
 }
 
 // ── Enum declaration pass ──
 
-fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList) {
+fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg {
     match stmts {
-        .End -> {}
+        .End -> reg
         .Node(stmt, next) -> {
-            match stmt {
+            let updated = match stmt {
                 .EnumDecl(name, variants) -> {
-                    // Each enum is laid out as `{i8 tag, i64 x N}`
-                    // where N = max number of fields across variants.
-                    // Field types are erased to i64 — strings are
-                    // pointer-encoded already.
                     let max_fields = variant_max_payload(variants)
                     let total_fields = max_fields + 1
                     let field_arr = forge_llvm_type_array_new(total_fields)
@@ -398,11 +392,11 @@ fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList) {
                     let st = forge_llvm_struct_create_named(ctx, name)
                     forge_llvm_struct_set_body(st, field_arr, total_fields, 0)
                     forge_llvm_type_array_free(field_arr)
-                    enum_reg_extend(name, variants)
+                    EnumReg.Node(name, variants, reg)
                 }
-                _ -> {}
+                _ -> reg
             }
-            declare_enums(ctx, i64t, next)
+            declare_enums(ctx, i64t, next, updated)
         }
     }
 }
@@ -417,7 +411,7 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 
 // ── Function declaration pass ──
 
-fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
+fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList) {
     match stmts {
         .End -> {}
         .Node(stmt, next) -> {
@@ -429,25 +423,21 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
                     let fn_type = forge_llvm_function_type(i64t, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
-                    fn_ret_register(name, translate_param_type(ret_ty))
+                    fn_ret_register(name, translate_param_type(structs, enums, ret_ty))
                 }
                 .ExternFn(name, params, ret_ty) -> {
-                    // Same shape as a normal function declaration:
-                    // every parameter and the return value are i64
-                    // in the bootstrap MVP. Codegen calls this via
-                    // get_named_function in emit_call_named.
                     let arity = param_list_length(params)
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_i64_param_array(param_arr, i64t, 0, arity)
                     let fn_type = forge_llvm_function_type(i64t, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
-                    fn_ret_register(name, translate_param_type(ret_ty))
+                    fn_ret_register(name, translate_param_type(structs, enums, ret_ty))
                 }
-                .Impl(_, methods) -> declare_functions(m, ctx, i64t, methods)
+                .Impl(_, methods) -> declare_functions(m, ctx, i64t, structs, enums, methods)
                 _ -> {}
             }
-            declare_functions(m, ctx, i64t, next)
+            declare_functions(m, ctx, i64t, structs, enums, next)
         }
     }
 }
@@ -697,7 +687,7 @@ fn emit_field_assign(cg: Codegen, env: VarEnv, obj: Expr, field: string, value: 
     if struct_name == "" {
         return err_emit("field assignment on non-struct value (ty=" + r.ty + ")")
     }
-    let lookup = struct_reg_lookup(struct_name)
+    let lookup = struct_reg_lookup(cg.structs, struct_name)
     if !lookup.found {
         return err_emit("unknown struct `" + struct_name + "`")
     }
@@ -864,7 +854,7 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     // FieldAccess(Ident(EnumName), Variant).
     match obj {
         .Ident(head) -> {
-            let enum_l = enum_reg_lookup(head)
+            let enum_l = enum_reg_lookup(cg.enums, head)
             if enum_l.found {
                 return emit_enum_ctor(cg, env, head, field, ExprList.End)
             }
@@ -895,7 +885,7 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     if struct_name == "" {
         return err_emit("field access on non-struct value (ty=" + r.ty + ", field=" + field + ")")
     }
-    let lookup = struct_reg_lookup(struct_name)
+    let lookup = struct_reg_lookup(cg.structs, struct_name)
     if !lookup.found {
         return err_emit("unknown struct `" + struct_name + "`")
     }
@@ -907,7 +897,7 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     let obj_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "obj_ptr")
     let gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, obj_ptr, idx, "fld_ptr")
     let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, gep, field)
-    let field_ty = translate_param_type(field_type_of(lookup.fields, field))
+    let field_ty = translate_param_type(cg.structs, cg.enums, field_type_of(lookup.fields, field))
     EmitResult { value: loaded, ty: field_ty, had_error: false, error_message: "" }
 }
 
