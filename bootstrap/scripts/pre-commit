@@ -49,3 +49,17 @@ if [ -n "$src_relevant" ]; then
   fi
   echo "[pre-commit] self-host fixed point holds"
 fi
+
+# Verify the seed IR exists and hasn't been deleted.
+# This is our lifeline — without it we can't bootstrap from scratch.
+seed_relevant=$(echo "$staged" | grep -E '^bootstrap/seed/' || true)
+if [ -n "$seed_relevant" ] || [ -n "$src_relevant" ]; then
+  if [ ! -f bootstrap/seed/seed.ll ]; then
+    echo
+    echo "[pre-commit] SEED IR MISSING — commit blocked"
+    echo "[pre-commit] bootstrap/seed/seed.ll is the bootstrap lifeline."
+    echo "[pre-commit] Without it, the project cannot be built from scratch."
+    echo "[pre-commit] Restore it before committing."
+    exit 1
+  fi
+fi
