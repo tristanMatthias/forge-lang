@@ -36,44 +36,45 @@ This gives us:
 
 ## Usage
 
-Build the bootstrap compiler with the Rust host compiler:
+The everyday entry point is the `Makefile`:
 
 ```bash
-forge/target/release/forgec build bootstrap --dev -o bootstrap/build/bootstrapc
+cd bootstrap
+make              # build the bootstrap compiler
+make test         # run regression suite + self-host fixed-point check
+make run FILE=examples/hello.fg
+                  # compile and run a Forge program
+make selfhost     # verify bs2 and bs3 emit byte-identical IR
+make clean        # remove build artifacts
+make help         # list all targets
 ```
 
-Print tokens for a Forge source file:
+The Makefile is a thin wrapper over `scripts/diagnose.sh`, which is
+the full diagnostic system (~25 modes). Run `bash scripts/diagnose.sh
+--help` to see everything: ASan builds, line bisection, IR diffing,
+function ranking, IR scoring, etc.
+
+Install the pre-commit hook (recommended — blocks commits that break
+the regression suite or the self-host fixed point):
 
 ```bash
-bootstrap/build/bootstrapc tokens bootstrap/tests/scanner/basic_function.fg
+make install-hooks
 ```
 
-Parse an expression file and print its AST:
+### Self-hosting
 
-```bash
-bootstrap/build/bootstrapc expr bootstrap/tests/expr/arithmetic_precedence.fg
+The bootstrap compiler is self-hosted as of commit `3814cce`: it can
+compile its own source code into a binary that produces byte-identical
+IR. The chain is:
+
+```
+Host (Rust) → stage1 (build/bootstrapc)
+                ↓ compiles bootstrap source
+              bs2 (build/bs2)              ← the binary you actually use
+                ↓ compiles bootstrap source
+              bs3 (build/bs3)              ← byte-identical to bs2
 ```
 
-Parse a statement file and print its AST:
-
-```bash
-bootstrap/build/bootstrapc program bootstrap/tests/program/vars_and_assignment.fg
-```
-
-Evaluate an expression file and print its result:
-
-```bash
-bootstrap/build/bootstrapc eval bootstrap/tests/eval/arithmetic_precedence.fg
-```
-
-Execute a statement file and print its final value:
-
-```bash
-bootstrap/build/bootstrapc run bootstrap/tests/run/mutable_assignment.fg
-```
-
-Run the bootstrap test suite:
-
-```bash
-bash bootstrap/scripts/test.sh
-```
+`make test` verifies both invariants — that bs2 produces correct
+output for captured test programs, and that bs2 and bs3 are
+self-consistent.
