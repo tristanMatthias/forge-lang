@@ -1,5 +1,5 @@
 use parser.{parse_expression_source, parse_program_source}
-use ast.{Expr, ExprList, Stmt, StmtList, ParamList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList}
 
 // `float` is a host built-in that the bootstrap evaluator uses to
 // parse numeric literal strings. The bootstrap codegen doesn't

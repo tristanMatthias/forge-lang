@@ -36,7 +36,6 @@ fn write_file(path: string, content: string) -> int { forge_selfhost_write_file(
 
 mod core
 mod scanner
-mod ast
 mod parser
 mod eval
 mod resolver
@@ -44,7 +43,7 @@ mod codegen
 
 use scanner.{scan_source, render_tokens}
 use parser.{parse_expression_source, parse_program_source}
-use ast.{render_expr, render_stmt_list}
+use core.ast.{render_expr, render_stmt_list}
 use eval.{eval_expression_source, execute_program_source, render_value}
 use resolver.{resolve_program}
 use codegen.{compile_program}

@@ -1,4 +1,4 @@
-use ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern}
 
 export type ResolveResult = {
     had_error: bool,
