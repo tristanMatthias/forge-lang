@@ -1,0 +1,17 @@
+// Tuple elements in match — does type flow through?
+enum Color { Red, Green, Blue(shade: int) }
+let pair = (Color.Red, Color.Blue(42))
+// Access first element and match on it
+let first = pair.0
+match first {
+    .Red -> println("red")
+    .Green -> println("green")
+    .Blue(s) -> println(string(s))
+}
+// Access second and match
+let second = pair.1
+match second {
+    .Red -> println("red")
+    .Green -> println("green")
+    .Blue(s) -> println(`blue ${string(s)}`)
+}

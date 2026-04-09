@@ -12,9 +12,107 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, param_list_length, ValueType}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, ValueType, TypeList}
 use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, const_i64, to_ptr, to_i64, ctx_with_fn, get_fn, call_0, call_2}
 use codegen.{emit_expr}
+
+// ── Capture detection ──
+
+enum CaptureList {
+    End,
+    Node(name: string, alloca: ptr, ty: ValueType, next: CaptureList),
+}
+
+fn capture_list_len(list: CaptureList) -> int {
+    match list {
+        .End -> 0
+        .Node(_, _, _, next) -> 1 + capture_list_len(next)
+    }
+}
+
+fn is_param(params: ParamList, name: string) -> bool {
+    match params {
+        .End -> false
+        .Node(pname, _, next) -> {
+            if pname == name { return true }
+            is_param(next, name)
+        }
+    }
+}
+
+fn is_captured(captures: CaptureList, name: string) -> bool {
+    match captures {
+        .End -> false
+        .Node(cname, _, _, next) -> {
+            if cname == name { return true }
+            is_captured(next, name)
+        }
+    }
+}
+
+fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+    match expr {
+        .Ident(name) -> {
+            if is_param(params, name) { return captures }
+            if is_captured(captures, name) { return captures }
+            let lookup = env_lookup(env, name)
+            if !lookup.found { return captures }
+            CaptureList.Node(name, lookup.alloca, lookup.ty, captures)
+        }
+        .Binary(left, _, right) -> {
+            let c1 = find_captures(left, params, env, captures)
+            find_captures(right, params, env, c1)
+        }
+        .Unary(_, right) -> find_captures(right, params, env, captures)
+        .Logical(left, _, right) -> {
+            let c1 = find_captures(left, params, env, captures)
+            find_captures(right, params, env, c1)
+        }
+        .Call(callee, args) -> {
+            let c1 = find_captures(callee, params, env, captures)
+            find_captures_list(args, params, env, c1)
+        }
+        .Grouping(inner) -> find_captures(inner, params, env, captures)
+        .IfExpr(c, t, e) -> {
+            let c1 = find_captures(c, params, env, captures)
+            let c2 = find_captures(t, params, env, c1)
+            find_captures(e, params, env, c2)
+        }
+        .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
+        .Assign(_, value) -> find_captures(value, params, env, captures)
+        .Index(obj, idx) -> {
+            let c1 = find_captures(obj, params, env, captures)
+            find_captures(idx, params, env, c1)
+        }
+        _ -> captures
+    }
+}
+
+fn find_captures_list(exprs: ExprList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+    match exprs {
+        .End -> captures
+        .Node(expr, next) -> {
+            let c1 = find_captures(expr, params, env, captures)
+            find_captures_list(next, params, env, c1)
+        }
+    }
+}
+
+fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+    match stmts {
+        .End -> captures
+        .Node(stmt, next) -> {
+            let c1 = match stmt {
+                .Expr(e) -> find_captures(e, params, env, captures)
+                .Return(e) -> find_captures(e, params, env, captures)
+                .Let(_, _, init) -> find_captures(init, params, env, captures)
+                .Mut(_, _, init) -> find_captures(init, params, env, captures)
+                _ -> captures
+            }
+            find_captures_stmts(next, params, env, c1)
+        }
+    }
+}
 
 // Global lambda counter for unique names.
 // This is the ONE allowed mutable global — it's a monotonic counter
@@ -34,7 +132,10 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     LAMBDA_COUNTER = LAMBDA_COUNTER + 1
     let name = "__lambda_" + string(id)
 
-    let arity = param_list_length(params)
+    // Detect captured variables from the enclosing scope
+    let captures = find_captures(body, params, env, CaptureList.End)
+    let num_captures = capture_list_len(captures)
+    let arity = param_list_length(params) + num_captures
 
     let param_arr = forge_llvm_type_array_new(arity)
     fill_i64_params(param_arr, ctx.i64_type, 0, arity)
@@ -47,7 +148,10 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
     forge_llvm_position_at_end(ctx.builder, entry)
 
-    let body_env = bind_lambda_params_typed(ctx, env, params, fn_val, 0, param_types)
+    // Bind declared params first, then captured vars as extra params
+    let num_declared = param_list_length(params)
+    let env_with_params = bind_lambda_params_typed(ctx, env, params, fn_val, 0, param_types)
+    let body_env = bind_captures_as_params(ctx, env_with_params, captures, fn_val, num_declared)
 
     let body_ctx = ctx_with_fn(ctx, fn_val)
     let result = emit_expr(body_ctx, body_env, body)
@@ -62,8 +166,47 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
 
     forge_llvm_position_at_end(ctx.builder, saved_bb)
 
+    // If there are captures, we need to pass the captured values at call time.
+    // Pack: [fn_ptr, cap1, cap2, ...] into an array. The C runtime's
+    // map/filter/reduce only support simple fn pointers (no closures).
+    // For direct calls, we build the full argument list.
+    if num_captures > 0 {
+        // Store fn_ptr and captured values in an array
+        let arr_fn = get_fn(ctx, "forge_array_new")
+        let push_fn = get_fn(ctx, "forge_array_push")
+        let closure_arr = call_0(ctx, arr_fn, "closure")
+        let fn_ptr = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
+        call_2(ctx, push_fn, closure_arr, fn_ptr, "")
+        push_captured_values(ctx, captures, closure_arr, push_fn)
+        return EmitResult { value: closure_arr, ty: ValueType.Fn, had_error: false, error_message: "" }
+    }
+
     let fn_ptr = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
     EmitResult { value: fn_ptr, ty: ValueType.Fn, had_error: false, error_message: "" }
+}
+
+fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val: ptr, idx: int) -> VarEnv {
+    match captures {
+        .End -> env
+        .Node(name, _, ty, next) -> {
+            let param_val = forge_llvm_get_param(fn_val, idx)
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
+            forge_llvm_build_store(ctx.builder, param_val, alloca)
+            let new_env = env_extend(env, name, alloca, ty)
+            bind_captures_as_params(ctx, new_env, next, fn_val, idx + 1)
+        }
+    }
+}
+
+fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr, push_fn: ptr) {
+    match captures {
+        .End -> {}
+        .Node(_, alloca, _, next) -> {
+            let val = forge_llvm_build_load(ctx.builder, ctx.i64_type, alloca, "cap_val")
+            call_2(ctx, push_fn, arr, val, "")
+            push_captured_values(ctx, next, arr, push_fn)
+        }
+    }
 }
 
 // Emit a lambda argument with typed parameters. If the argument

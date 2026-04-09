@@ -1,0 +1,8 @@
+// for-in on split results (string list)
+let csv = "alice,bob,carol"
+let names = csv.split(",")
+for name in names {
+    // name should be typed as Str
+    println(name.upper())
+    println(string(name.length))
+}

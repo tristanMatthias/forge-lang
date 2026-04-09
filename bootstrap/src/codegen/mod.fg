@@ -134,7 +134,14 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(arr_len_arr)
     forge_llvm_add_function(m, "forge_array_len", arr_len_type)
 
-    forge_llvm_add_function(m, "forge_array_set", arr_push_type)
+    // forge_array_set(ptr, i64, i64) → void (3 args: arr, idx, val)
+    let arr_set_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(arr_set_arr, 0, pt)
+    forge_llvm_type_array_set(arr_set_arr, 1, i64t)
+    forge_llvm_type_array_set(arr_set_arr, 2, i64t)
+    let arr_set_type = forge_llvm_function_type(forge_llvm_void_type(lc), arr_set_arr, 3, 0)
+    forge_llvm_type_array_free(arr_set_arr)
+    forge_llvm_add_function(m, "forge_array_set", arr_set_type)
     forge_llvm_add_function(m, "forge_array_pop", arr_len_type)
 
     // forge_array_slice(ptr, i64, i64) → ptr
@@ -1095,7 +1102,12 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
         }
         if method == "get" {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, arg_r.value, "list_get"))
+            let elem_ty = vtype_list_elem(r.ty)
+            return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, arg_r.value, "list_get"), elem_ty)
+        }
+        if method == "set" {
+            // list.set(index, value) → forge_array_set(list, index, value)
+            return emit_list_set(ctx, env, r.value, args)
         }
         if method == "map" || method == "filter" {
             let elem_ty = vtype_list_elem(r.ty)
@@ -1325,6 +1337,25 @@ fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
 
     ok_emit_str(to_i64(ctx, buf, "concat_i64"))
+}
+
+fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> EmitResult {
+    match args {
+        .Node(idx_expr, rest) -> {
+            match rest {
+                .Node(val_expr, _) -> {
+                    let idx_r = emit_expr(ctx, env, idx_expr)
+                    if idx_r.had_error { return idx_r }
+                    let val_r = emit_expr(ctx, env, val_expr)
+                    if val_r.had_error { return val_r }
+                    call_3(ctx, get_fn(ctx, "forge_array_set"), list, idx_r.value, val_r.value, "")
+                    ok_emit(list)
+                }
+                _ -> err_emit("list.set expects 2 arguments: index and value")
+            }
+        }
+        _ -> err_emit("list.set expects 2 arguments: index and value")
+    }
 }
 
 fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitResult {

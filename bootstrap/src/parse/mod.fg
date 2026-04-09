@@ -902,7 +902,13 @@ impl Parser {
                 // template expressions are not supported).
                 let expr_start = i + 2
                 mut j = expr_start
-                while j < len && raw[j] != "}" {
+                mut brace_depth = 0
+                while j < len {
+                    if raw[j] == "{" { brace_depth = brace_depth + 1 }
+                    if raw[j] == "}" {
+                        if brace_depth == 0 { break }
+                        brace_depth = brace_depth - 1
+                    }
                     j = j + 1
                 }
                 if j >= len {
