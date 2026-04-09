@@ -57,7 +57,7 @@ Status key:
 | struct literal | `Foo { x: 1, y: 2 }` | ✅ | |
 | field access | `obj.field` | ✅ | |
 | field assign | `obj.field = val` | ✅ | |
-| `with` expression | `obj with { field: val }` | 🔲 | functional update |
+| `with` expression | `obj with { field: val }` | ✅ | functional update, dogfooded |
 | traits | `trait Name { fn method(self) }` | ✅ | parsed, no dynamic dispatch |
 | impl for trait | `impl Trait for Type { }` | ✅ | desugars to Type__method |
 | impl block | `impl Type { fn method(self) }` | ✅ | desugars to Type__method |
@@ -131,7 +131,7 @@ Status key:
 | optional chaining | `expr?.field` | ✅ | short-circuit branch |
 | null coalescing | `expr ?? default` | ✅ | short-circuit branch |
 | null throw | `expr ?? throw .error` | 🔲 | |
-| error propagation | `expr?` (Result) | 🔲 | |
+| error propagation | `expr?` | ✅ | dogfooded (98 patterns) |
 | catch blocks | `catch { body }` | 🔲 | |
 
 ## Collections
@@ -140,8 +140,8 @@ Status key:
 |---|---|---|---|
 | list literal | `[1, 2, 3]` | 🔲 | bootstrap uses recursive enums |
 | map literal | `{ "a": 1 }` | 🔲 | |
-| tuple literal | `(a, b, c)` | 🔲 | |
-| tuple destructuring | `let (x, y) = pair` | 🔲 | |
+| tuple literal | `(a, b, c)` | ✅ | with type tracking |
+| tuple destructuring | `let (x, y) = pair` | ✅ | |
 | slicing | `list[start..end]` | 🔲 | |
 | list methods | `.push`, `.map`, `.filter`, etc. | 🔲 | |
 | map methods | `.has`, `.get`, `.keys` | 🔲 | |
@@ -240,13 +240,13 @@ Status key:
 | Variables & Bindings | 7 | 5 | 2 | 0 |
 | Primitive Types | 7 | 4 | 3 | 0 |
 | Functions | 9 | 5 | 4 | 0 |
-| Structs & Types | 8 | 7 | 1 | 0 |
+| Structs & Types | 8 | 8 | 0 | 0 |
 | Enums & Matching | 11 | 5 | 6 | 0 |
 | Control Flow | 8 | 5 | 3 | 0 |
 | Operators | 8 | 3 | 5 | 0 |
 | Strings | 11 | 5 | 6 | 0 |
-| Null Safety | 8 | 5 | 3 | 0 |
-| Collections | 7 | 0 | 7 | 0 |
+| Null Safety | 8 | 6 | 2 | 0 |
+| Collections | 7 | 2 | 5 | 0 |
 | Modules & Imports | 5 | 4 | 1 | 0 |
 | I/O & Runtime | 12 | 7 | 5 | 0 |
 | Concurrency | 4 | 0 | 4 | 0 |
@@ -254,7 +254,7 @@ Status key:
 | Testing | 4 | 0 | 4 | 0 |
 | Pointer Ops | 4 | 0 | 4 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **59** | **62** | **10** |
+| **TOTAL** | **131** | **63** | **58** | **10** |
 
 ## Dogfooding Rule
 
