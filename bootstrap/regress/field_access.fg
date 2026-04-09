@@ -1,0 +1,1 @@
+fn main() { let t = "x" let n = t.length }

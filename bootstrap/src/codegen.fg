@@ -1058,33 +1058,82 @@ fn emit_block_expr(cg: Codegen, env: VarEnv, stmts: StmtList) -> EmitResult {
     emit_block_loop(cg, env, stmts, forge_llvm_const_int(cg.i64_type, 0, 0), "i64")
 }
 
+// A statement in tail position of a block expression must yield a
+// value, even when the parser modeled it as a Stmt rather than an
+// Expr. This dispatches each kind of "value-bearing" statement to the
+// matching expression-emission helper, recursing through nested
+// blocks/ifs as needed. Anything that has no value (let/while/return)
+// falls through to emit_stmt and the caller's default last_val.
+fn emit_stmt_as_value(cg: Codegen, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: string) -> EmitResult {
+    match stmt {
+        .Expr(e) -> emit_expr(cg, env, e)
+        .Block(body) -> emit_block_expr(cg, env, body)
+        .Match(subject, arms) -> emit_match_expr(cg, env, subject, arms)
+        .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(cg, env, condition, then_branch, else_branch)
+        _ -> {
+            let s = emit_stmt(cg, env, stmt)
+            if s.had_error {
+                return err_emit(s.error_message)
+            }
+            EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
+        }
+    }
+}
+
+// Mirror of emit_if_expr for the case where the if was parsed as a
+// statement (Stmt.If with Stmt branches) but appears in tail position
+// of a block expression. We need to phi the branch values back out,
+// recursing into emit_stmt_as_value so nested blocks/matches/ifs in
+// the branches also propagate their values.
+fn emit_stmt_if_as_value(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
+    let cond = emit_expr(cg, env, condition)
+    if cond.had_error {
+        return cond
+    }
+    let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "sif_cond")
+    let then_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "sif_then")
+    let else_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "sif_else")
+    let merge_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "sif_end")
+    let result_slot = forge_llvm_build_alloca(cg.builder, cg.i64_type, "sif_result")
+    forge_llvm_build_store(cg.builder, forge_llvm_const_int(cg.i64_type, 0, 0), result_slot)
+    forge_llvm_build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
+
+    forge_llvm_position_at_end(cg.builder, then_bb)
+    let zero = forge_llvm_const_int(cg.i64_type, 0, 0)
+    let t = emit_stmt_as_value(cg, env, then_branch, zero, "i64")
+    if t.had_error {
+        return t
+    }
+    if forge_llvm_block_has_terminator(cg.builder) == 0 {
+        forge_llvm_build_store(cg.builder, t.value, result_slot)
+        forge_llvm_build_br(cg.builder, merge_bb)
+    }
+
+    forge_llvm_position_at_end(cg.builder, else_bb)
+    if else_branch != null {
+        let e = emit_stmt_as_value(cg, env, else_branch!, zero, "i64")
+        if e.had_error {
+            return e
+        }
+        if forge_llvm_block_has_terminator(cg.builder) == 0 {
+            forge_llvm_build_store(cg.builder, e.value, result_slot)
+            forge_llvm_build_br(cg.builder, merge_bb)
+        }
+    } else {
+        forge_llvm_build_br(cg.builder, merge_bb)
+    }
+
+    forge_llvm_position_at_end(cg.builder, merge_bb)
+    let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, result_slot, "sif_val")
+    EmitResult { value: loaded, ty: t.ty, had_error: false, error_message: "" }
+}
+
 fn emit_block_loop(cg: Codegen, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: string) -> EmitResult {
     match stmts {
         .End -> EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
         .Node(stmt, next) -> {
-            // If this stmt is the last one and it's a Stmt.Expr,
-            // emit it as an expression and use its value as the
-            // block's value.
             match next {
-                .End -> {
-                    match stmt {
-                        .Expr(e) -> {
-                            let r = emit_expr(cg, env, e)
-                            if r.had_error {
-                                return r
-                            }
-                            EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
-                        }
-                        .Match(subject, arms) -> emit_match_expr(cg, env, subject, arms)
-                        _ -> {
-                            let s = emit_stmt(cg, env, stmt)
-                            if s.had_error {
-                                return err_emit(s.error_message)
-                            }
-                            EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
-                        }
-                    }
-                }
+                .End -> emit_stmt_as_value(cg, env, stmt, last_val, last_ty)
                 _ -> {
                     let s = emit_stmt(cg, env, stmt)
                     if s.had_error {

@@ -459,6 +459,7 @@ extern "C" {
     fn LLVMStructSetBody(struct_type: LLVMPtr, element_types: *mut LLVMPtr, element_count: c_uint, packed: c_int);
     fn LLVMStructGetTypeAtIndex(struct_type: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMCountStructElementTypes(struct_type: LLVMPtr) -> c_uint;
+    fn LLVMIsLiteralStruct(struct_type: LLVMPtr) -> c_int;
     fn LLVMGetStructName(struct_type: LLVMPtr) -> *const c_char;
 
     // Functions
@@ -546,6 +547,7 @@ extern "C" {
     fn LLVMGetAllocatedType(alloca: LLVMPtr) -> LLVMPtr;
     fn LLVMGetStructElementTypes(struct_type: LLVMPtr, dest: *mut LLVMPtr);
     fn LLVMGetInstructionOpcode(inst: LLVMPtr) -> c_uint;
+    fn LLVMIsAInstruction(val: LLVMPtr) -> LLVMPtr;
     fn LLVMGetOperand(val: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMBuildLoad2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr;
 
@@ -1170,7 +1172,15 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
     // instead of `%47`, `%49`, `%2` — 10x faster IR reading forever.
     let llvm_name = unsafe { validate_named(name) };
     let result = unsafe { LLVMBuildAlloca(builder, ty, llvm_name) };
-    // Auto-cache: store alloca in C-side cache (bypasses Forge variable clobbering)
+    // Auto-cache: only store EXPLICITLY armed source-variable allocas in the
+    // C-side cache. Caching every named alloca polluted the source-variable
+    // namespace with internal temporaries like `ca`, so later `emit_ident("ca")`
+    // could resolve to a helper scratch alloca instead of the user's variable.
+    //
+    // Real source variables and params are registered explicitly by Forge code
+    // via `forge_alloca_cache_set(...)` immediately after allocation. The
+    // armed path remains for any callers that intentionally opt into pending
+    // alloca naming, but internal temps no longer become user-visible vars.
     if !result.is_null() {
         extern "C" {
             fn forge_alloca_cache_set_raw(name_ptr: *const c_char, name_len: i64, ptr: *mut c_void) -> i64;
@@ -1187,26 +1197,7 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
         }
         let armed = unsafe { forge_check_pending_alloca() };
         if armed != 0 {
-            // define_var: ALWAYS use pending name (direct name from Forge is corrupted)
-            unsafe {
-                if forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64 {
-                    cache_name = forge_pending_alloca_name.as_ptr();
-                    cache_len = forge_pending_alloca_name_len;
-                }
-            }
-        }
-        // For non-define_var allocas: try direct name
-        if cache_len == 0 && !name.is_null() {
-            let name_bytes = unsafe { std::ffi::CStr::from_ptr(name).to_bytes() };
-            let valid = !name_bytes.is_empty() && name_bytes.len() < 64 &&
-                name_bytes.iter().all(|&b| b >= b'!' && b <= b'~');
-            if valid {
-                cache_name = name;
-                cache_len = name_bytes.len() as i64;
-            }
-        }
-        // Last fallback: pending name for params (from forge_param_name_get)
-        if cache_len == 0 {
+            // Explicitly armed source-variable path.
             unsafe {
                 if forge_pending_alloca_name_len > 0 && forge_pending_alloca_name_len < 64 {
                     cache_name = forge_pending_alloca_name.as_ptr();
@@ -1256,25 +1247,27 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
         if ptr_ty.is_null() { return std::ptr::null_mut(); }
         let ptr_kind = LLVMGetTypeKind(ptr_ty);
         if ptr_kind != 12 { return std::ptr::null_mut(); }
-        // If storing i1 (boolean), zero-extend to i64 first
-        // (prevents garbage upper bits when loaded back as i64)
+        // Detect whether the destination is an alloca with a known
+        // element type. ONLY in that case may we widen the value to
+        // match the alloca's width — for any other destination
+        // (malloc'd buffer, GEP into a struct, foreign pointer) we
+        // MUST store at the value's natural width, since auto-widening
+        // would write past the end of the destination. (Storing an i8
+        // into a 2-byte malloc as i64 = an 8-byte write = silent
+        // heap corruption: spent a whole session chasing that one.)
         let val_ty = LLVMTypeOf(val);
         let val_kind = LLVMGetTypeKind(val_ty);
-        // Try to get the alloca's type for compatibility check (only for alloca instructions)
         let opcode_pre = LLVMGetInstructionOpcode(ptr);
         let alloca_ty = if opcode_pre == 26 { LLVMGetAllocatedType(ptr) } else { std::ptr::null_mut() };
         let alloca_kind = if !alloca_ty.is_null() { LLVMGetTypeKind(alloca_ty) } else { 0 };
         let mut real_val = val;
-        // Widen narrow ints to match alloca type (only if alloca is wider)
-        if val_kind == 8 { // IntegerTypeKind
+        // Widen narrow ints ONLY when destination is an alloca with
+        // a known wider integer element type.
+        if val_kind == 8 && !alloca_ty.is_null() && alloca_kind == 8 {
             let bit_width = LLVMGetIntTypeWidth(val_ty);
-            let target_ty = if !alloca_ty.is_null() && alloca_kind == 8 { alloca_ty }
-                else { TYPE_CACHE.with(|c| c.borrow().i64) };
-            let target_width = if !target_ty.is_null() && LLVMGetTypeKind(target_ty) == 8 {
-                LLVMGetIntTypeWidth(target_ty)
-            } else { 64 };
+            let target_width = LLVMGetIntTypeWidth(alloca_ty);
             if bit_width < target_width {
-                real_val = LLVMBuildZExt(builder, val, target_ty, safe_name(std::ptr::null()));
+                real_val = LLVMBuildZExt(builder, val, alloca_ty, safe_name(std::ptr::null()));
             }
         }
         // Only check type compat for ALLOCA instructions (opcode 26), not GEP results
@@ -1423,6 +1416,7 @@ pub extern "C" fn forge_llvm_build_icmp(builder: LLVMPtr, pred: c_int, lhs: LLVM
 pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: LLVMPtr, args: *mut LLVMPtr, num_args: c_int, name: *const c_char) -> LLVMPtr {
     bld_trace("build_call", builder, f);
     if builder.is_null() || fn_type.is_null() || f.is_null() { return std::ptr::null_mut(); }
+    if num_args > 0 && args.is_null() { return std::ptr::null_mut(); }
     unsafe {
         static mut BC_TRACE: i32 = 200;
         if BC_TRACE > 0 {
@@ -1433,7 +1427,6 @@ pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: L
     }
     // Auto-coerce arguments: if param expects ptr but arg is i64 (or vice versa), convert
     unsafe {
-        // Get expected param types
         let n = num_args as usize;
         let param_tys_layout = std::alloc::Layout::array::<LLVMPtr>(n.max(1)).unwrap();
         let param_tys = std::alloc::alloc_zeroed(param_tys_layout) as *mut LLVMPtr;
@@ -1475,16 +1468,23 @@ pub extern "C" fn forge_llvm_build_call(builder: LLVMPtr, fn_type: LLVMPtr, f: L
                 }
             }
             // i64 → struct coercion: the i64 was loaded from an alloca that
-            // actually holds a struct. Re-derive from the load's source operand.
+            // actually holds a struct. Re-derive from the load's source
+            // operand. Only safe to call GetInstructionOpcode/GetOperand
+            // when `arg` is actually an instruction — function parameters
+            // and constants are not, and calling GetOperand on them
+            // segfaults inside LLVM. LLVMIsAInstruction returns the value
+            // cast to Instruction* (or null if it isn't one).
             if param_kind == 10 && arg_kind == 8 {
-                let opcode = LLVMGetInstructionOpcode(arg);
                 let mut fixed = false;
-                // Try to reload from source alloca (opcode 27=Load, 33=Load2)
-                if opcode == 27 || opcode == 33 {
-                    let src_ptr = LLVMGetOperand(arg, 0);
-                    if !src_ptr.is_null() {
-                        *args.add(i) = LLVMBuildLoad2(builder, param_ty, src_ptr, b"reload\0".as_ptr() as *const c_char);
-                        fixed = true;
+                if !LLVMIsAInstruction(arg).is_null() {
+                    let opcode = LLVMGetInstructionOpcode(arg);
+                    // Try to reload from source alloca (opcode 27=Load, 33=Load2)
+                    if opcode == 27 || opcode == 33 {
+                        let src_ptr = LLVMGetOperand(arg, 0);
+                        if !src_ptr.is_null() {
+                            *args.add(i) = LLVMBuildLoad2(builder, param_ty, src_ptr, b"reload\0".as_ptr() as *const c_char);
+                            fixed = true;
+                        }
                     }
                 }
                 // Fallback: use undef to prevent LLVM assertion (produces garbage but doesn't crash)
@@ -1720,12 +1720,19 @@ pub extern "C" fn forge_llvm_count_struct_element_types(struct_type: LLVMPtr) ->
     unsafe { LLVMCountStructElementTypes(struct_type) as c_int }
 }
 
+#[no_mangle]
+pub extern "C" fn forge_llvm_is_literal_struct(struct_type: LLVMPtr) -> c_int {
+    if struct_type.is_null() { return 0; }
+    unsafe { if LLVMIsLiteralStruct(struct_type) != 0 { 1 } else { 0 } }
+}
+
 /// Get the name of a named struct type as a ForgeString.
 /// Returns empty string for anonymous structs.
 #[no_mangle]
 pub extern "C" fn forge_llvm_get_struct_name(struct_type: LLVMPtr) -> i64 {
     if struct_type.is_null() { return 0; }
     unsafe {
+        if LLVMIsLiteralStruct(struct_type) != 0 { return 0; }
         let name = LLVMGetStructName(struct_type);
         if name.is_null() { return 0; }
         // Return as i64 pointer to the static LLVM string (no allocation needed)
