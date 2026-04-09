@@ -1,0 +1,94 @@
+// Guards on enums with complex conditions
+enum Expr {
+    Num(n: int),
+    Add(a: Expr, b: Expr),
+}
+
+fn eval(e: Expr) -> int {
+    match e {
+        .Num(n) -> n
+        .Add(a, b) -> eval(a) + eval(b)
+    }
+}
+
+fn classify_expr(e: Expr) -> string {
+    match e {
+        .Num(n) if n == 0 -> "zero"
+        .Num(n) if n > 0 && n < 10 -> "small positive"
+        .Num(n) if n >= 10 -> "large positive"
+        .Num(_) -> "negative"
+        .Add(a, b) if eval(a) + eval(b) > 100 -> "big sum"
+        .Add(_, _) -> "sum"
+    }
+}
+
+println(classify_expr(Expr.Num(0)))
+println(classify_expr(Expr.Num(5)))
+println(classify_expr(Expr.Num(42)))
+println(classify_expr(Expr.Num(-3)))
+println(classify_expr(Expr.Add(Expr.Num(50), Expr.Num(60))))
+println(classify_expr(Expr.Add(Expr.Num(1), Expr.Num(2))))
+
+// Primitive match as expression in complex positions
+fn abs(x: int) -> int {
+    match x {
+        _ if x >= 0 -> x
+        _ -> -x
+    }
+}
+println(string(abs(42)))
+println(string(abs(-42)))
+
+// Primitive match with string methods
+fn categorize(s: string) -> string {
+    match s {
+        _ if s.length == 0 -> "empty"
+        _ if s.length < 5 -> "short"
+        _ if s.contains(" ") -> "multi-word"
+        _ -> "single word"
+    }
+}
+println(categorize(""))
+println(categorize("hi"))
+println(categorize("hello world"))
+println(categorize("supercalifragilistic"))
+
+// Match guard + list operations
+let scores = [95, 82, 67, 91, 43, 78]
+mut grades = []
+for s in scores {
+    let grade = match s {
+        _ if s >= 90 -> "A"
+        _ if s >= 80 -> "B"
+        _ if s >= 70 -> "C"
+        _ if s >= 60 -> "D"
+        _ -> "F"
+    }
+    grades.push(grade)
+}
+for g in grades {
+    println(g)
+}
+
+// Nested match: enum + guard + primitive
+enum Response {
+    Success(code: int),
+    Error(code: int, msg: string),
+}
+
+fn describe_response(r: Response) -> string {
+    match r {
+        .Success(code) if code == 200 -> "OK"
+        .Success(code) if code == 201 -> "Created"
+        .Success(code) -> `Success ${string(code)}`
+        .Error(code, msg) if code >= 500 -> `Server error: ${msg}`
+        .Error(code, msg) if code == 404 -> "Not found"
+        .Error(code, msg) -> `Error ${string(code)}: ${msg}`
+    }
+}
+println(describe_response(Response.Success(200)))
+println(describe_response(Response.Success(201)))
+println(describe_response(Response.Success(302)))
+println(describe_response(Response.Error(500, "internal")))
+println(describe_response(Response.Error(404, "missing")))
+println(describe_response(Response.Error(403, "forbidden")))

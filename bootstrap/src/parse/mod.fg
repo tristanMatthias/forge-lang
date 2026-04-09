@@ -28,6 +28,7 @@ export type Parser = {
     mut current_lexeme: string,
     mut current_line: int,
     mut current_column: int,
+    mut prev_line: int,
     mut had_error: bool,
     mut error_message: string,
     // When false, `Ident { ... }` is parsed as Ident followed by a
@@ -178,6 +179,7 @@ export fn parser_new(source: string) -> Parser {
         current_kind: "",
         current_lexeme: "",
         current_line: 1,
+        prev_line: 1,
         current_column: 1,
         had_error: false,
         error_message: "",
@@ -632,7 +634,9 @@ impl Parser {
         let expr = self.parse_primary()?
 
         mut result = expr
-        while self.check("left_paren") || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || self.check("left_bracket") || self.check("question_dot") || self.check("question") {
+        // If [ appears on a DIFFERENT line than the previous token,
+        // it's a new statement (list literal), not postfix indexing.
+        while self.check("left_paren") || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || (self.check("left_bracket") && self.current_line == self.prev_line) || self.check("question_dot") || self.check("question") {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check("bang") {
@@ -1061,6 +1065,7 @@ impl Parser {
     }
 
     fn advance(self) {
+        self.prev_line = self.current_line
         self.advance_token()
     }
 

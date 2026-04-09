@@ -1,0 +1,73 @@
+// Ultimate combo: immutability + guards + primitives + closures + lists + maps + templates + with + tuples
+type Config = {
+    name: string,
+    level: int,
+    debug: int,
+}
+
+let base_config = Config { name: "default", level: 1, debug: 0 }
+let dev_config = base_config with { name: "dev", debug: 1, level: 3 }
+let prod_config = base_config with { name: "prod", level: 5 }
+
+// Immutable configs, mutable processing state
+mut processed = 0
+let configs = [base_config, dev_config, prod_config]
+for cfg in configs {
+    let label = match cfg.level {
+        _ if cfg.level >= 5 -> "critical"
+        _ if cfg.level >= 3 -> "important"
+        _ -> "normal"
+    }
+    println(`${cfg.name}: ${label}`)
+    processed = processed + 1
+}
+println(string(processed))
+
+// Map + guard + lambda
+let status_codes = {"200": "OK", "404": "Not Found", "500": "Error"}
+let keys = status_codes.keys()
+mut error_count = 0
+for k in keys {
+    let code = int(k)
+    let severity = match code {
+        _ if code >= 500 -> "critical"
+        _ if code >= 400 -> "warning"
+        _ -> "ok"
+    }
+    if severity != "ok" {
+        error_count = error_count + 1
+    }
+}
+println(string(error_count))
+
+// Tuple destructuring + guard
+let (x, y) = (42, -7)
+let quadrant = match x {
+    _ if x > 0 && y > 0 -> "Q1"
+    _ if x < 0 && y > 0 -> "Q2"
+    _ if x < 0 && y < 0 -> "Q3"
+    _ -> "Q4"
+}
+println(quadrant)
+
+// Pipeline with filter using guard-like logic
+let data = [1, -2, 3, -4, 5, -6, 7, -8, 9, -10]
+let positive = data.filter((x) -> x > 0)
+let total = positive.reduce(0, (a, b) -> a + b)
+println(string(total))
+
+// String operations + match
+let words = "hello world foo bar".split(" ")
+mut long_words = []
+for w in words {
+    let keep = match w {
+        _ if w.length >= 4 -> 1
+        _ -> 0
+    }
+    if keep == 1 {
+        long_words.push(w.upper())
+    }
+}
+for lw in long_words {
+    println(lw)
+}
