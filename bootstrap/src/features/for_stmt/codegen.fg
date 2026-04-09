@@ -1,0 +1,59 @@
+// WHY: emits LLVM IR for `for variable in start..end { body }` with
+// break/continue support via the scoped loop stack in Ctx.
+
+use core.ast.{Expr, Stmt, VarEnv, env_extend}
+use core.cg.{Ctx, LoopStack, StmtResult, ok_stmt, err_stmt_from_expr, ctx_with_loops}
+use codegen.{emit_expr, emit_stmt}
+
+export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> StmtResult {
+    // Evaluate start and end once, store in allocas
+    let start_r = emit_expr(ctx, env, start)
+    if start_r.had_error { return err_stmt_from_expr(start_r) }
+
+    let end_r = emit_expr(ctx, env, end)
+    if end_r.had_error { return err_stmt_from_expr(end_r) }
+
+    let counter = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, variable)
+    forge_llvm_build_store(ctx.builder, start_r.value, counter)
+
+    let end_alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "for_end")
+    forge_llvm_build_store(ctx.builder, end_r.value, end_alloca)
+
+    let body_env = env_extend(env, variable, counter, "i64")
+
+    // Basic blocks: condition, body, increment, exit
+    let cond_bb = new_bb(ctx, "for.cond")
+    let body_bb = new_bb(ctx, "for.body")
+    let incr_bb = new_bb(ctx, "for.incr")
+    let exit_bb = new_bb(ctx, "for.exit")
+    forge_llvm_build_br(ctx.builder, cond_bb)
+
+    // Condition: counter < end
+    forge_llvm_position_at_end(ctx.builder, cond_bb)
+    let cur = forge_llvm_build_load(ctx.builder, ctx.i64_type, counter, variable)
+    let lim = forge_llvm_build_load(ctx.builder, ctx.i64_type, end_alloca, "for_end_val")
+    // icmp predicate 40 = SLT (signed less than)
+    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 40, cur, lim, "for_cmp")
+    forge_llvm_build_cond_br(ctx.builder, cond_i1, body_bb, exit_bb)
+
+    // Body — continue jumps to incr_bb, break jumps to exit_bb
+    forge_llvm_position_at_end(ctx.builder, body_bb)
+    let body_ctx = ctx_with_loops(ctx, LoopStack.Frame(incr_bb, exit_bb, ctx.loops))
+    let body_result = emit_stmt(body_ctx, body_env, body)
+    if body_result.had_error { return body_result }
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_br(ctx.builder, incr_bb)
+    }
+
+    // Increment: counter = counter + 1
+    forge_llvm_position_at_end(ctx.builder, incr_bb)
+    let old = forge_llvm_build_load(ctx.builder, ctx.i64_type, counter, variable)
+    let one = const_i64(ctx, 1)
+    let next = forge_llvm_build_add(ctx.builder, old, one, "for_next")
+    forge_llvm_build_store(ctx.builder, next, counter)
+    forge_llvm_build_br(ctx.builder, cond_bb)
+
+    // Exit
+    forge_llvm_position_at_end(ctx.builder, exit_bb)
+    ok_stmt(env)
+}
