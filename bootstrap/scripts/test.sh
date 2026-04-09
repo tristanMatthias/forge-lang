@@ -150,13 +150,17 @@ for input in "$BOOTSTRAP_DIR"/tests/compile/*.fg; do
     cat "$stderr_log"
     exit 1
   fi
+  stdout_log="$BUILD_DIR/$name.stdout"
   set +e
-  "$bin_path"
+  "$bin_path" > "$stdout_log"
   actual_exit=$?
   set -e
   if [ "$actual_exit" != "$expected_exit" ]; then
     echo "FAIL: expected exit $expected_exit, got $actual_exit"
     exit 1
+  fi
+  if [ -f "$BOOTSTRAP_DIR/tests/compile/$name.stdout" ]; then
+    diff -u "$BOOTSTRAP_DIR/tests/compile/$name.stdout" "$stdout_log"
   fi
   cases=$((cases + 1))
 done

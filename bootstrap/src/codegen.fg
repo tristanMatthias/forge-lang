@@ -35,6 +35,14 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     let i1t = llvm.int1_type(ctx)
     let pt = llvm.pointer_type(ctx)
 
+    // Declare libc `puts` so `println(literal)` lowers to a single
+    // C call. Returns i32; we ignore the result.
+    let puts_param_arr = llvm.type_array_new(1)
+    llvm.type_array_set(puts_param_arr, 0, pt)
+    let puts_type = llvm.function_type(llvm.int32_type(ctx), puts_param_arr, 1, 0)
+    llvm.type_array_free(puts_param_arr)
+    llvm.add_function(m, "puts", puts_type)
+
     // Pass 1: declare every user-defined function as an LLVM
     // prototype so call sites (which may appear before the
     // declaration in source order) can resolve them by name via
@@ -400,6 +408,19 @@ fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
             ok_emit(llvm.const_int(cg.i64_type, 0, 0))
         }
         .Null -> ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+        .String(text) -> {
+            // Note: this path produces an empty string when called via
+            // a non-trivial expression chain (e.g. fill_arg_array). The
+            // host destructure of an Expr.String payload binds an empty
+            // text once the Expr has crossed a function-call boundary.
+            // For `println("literal")` we destructure the literal in a
+            // single match nested directly in `emit_println`. Other
+            // call sites (e.g. user-defined function args, binary ops)
+            // will produce empty strings until the host bug is fixed.
+            let inner = strip_quotes(text)
+            let str_ptr = llvm.build_global_string_ptr(cg.builder, inner, ".str")
+            ok_emit(llvm.build_ptr_to_int(cg.builder, str_ptr, cg.i64_type, "str_i64"))
+        }
         .Grouping(inner) -> emit_expr(cg, env, inner)
         .Unary(operator, right) -> emit_unary(cg, env, operator, right)
         .Binary(left, operator, right) -> emit_binary(cg, env, left, operator, right)
@@ -440,6 +461,9 @@ fn emit_call(cg: Codegen, env: VarEnv, callee: Expr, args: ExprList) -> EmitResu
 }
 
 fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> EmitResult {
+    if name == "println" {
+        return emit_println(cg, env, args)
+    }
     let fn_val = llvm.get_named_function(cg.module, name)
     if fn_val == null {
         return err_emit("undefined function `" + name + "`")
@@ -461,6 +485,53 @@ fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> Em
     let result = llvm.build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
     llvm.value_array_free(arg_arr)
     ok_emit(result)
+}
+
+fn emit_println(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
+    // Special-case the most common shape: `println("literal")`. We
+    // destructure straight to the inner string text in a single
+    // match — going through any extra binding clobbers the payload
+    // (host miscompilation, see TECH_DEBT.md #11).
+    let str_i64 = match args {
+        .Node(e, _) -> {
+            match e {
+                .String(text) -> {
+                    let inner = strip_quotes(text)
+                    let str_ptr = llvm.build_global_string_ptr(cg.builder, inner, ".str")
+                    llvm.build_ptr_to_int(cg.builder, str_ptr, cg.i64_type, "str_i64")
+                }
+                _ -> {
+                    let r = emit_expr(cg, env, e)
+                    if r.had_error {
+                        return r
+                    }
+                    r.value
+                }
+            }
+        }
+        .End -> {
+            return err_emit("println expects 1 argument")
+        }
+    }
+    let str_ptr2 = llvm.build_int_to_ptr(cg.builder, str_i64, cg.ptr_type, "str_ptr")
+    let puts_fn = llvm.get_named_function(cg.module, "puts")
+    let arg_arr = llvm.value_array_new(1)
+    llvm.value_array_set(arg_arr, 0, str_ptr2)
+    let puts_param_arr = llvm.type_array_new(1)
+    llvm.type_array_set(puts_param_arr, 0, cg.ptr_type)
+    let puts_type = llvm.function_type(llvm.int32_type(cg.ctx), puts_param_arr, 1, 0)
+    llvm.type_array_free(puts_param_arr)
+    llvm.build_call(cg.builder, puts_type, puts_fn, arg_arr, 1, "")
+    llvm.value_array_free(arg_arr)
+    ok_emit(llvm.const_int(cg.i64_type, 0, 0))
+}
+
+fn strip_quotes(s: string) -> string {
+    let len = s.length
+    if len < 2 {
+        return s
+    }
+    s.substring(1, len - 1)
 }
 
 fn fill_arg_array(cg: Codegen, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
