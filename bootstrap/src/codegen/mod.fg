@@ -29,22 +29,8 @@ export type CodegenResult = {
     error_message: string,
 }
 
-// Ctx, EmitResult, StmtResult, ok_emit, err_emit, ok_stmt,
-// err_stmt, err_stmt_from_expr, null_ptr_val, advance_field_list,
-// field_type_at, strip_enum_prefix all moved to core/cg.fg as
-// part of Phase 4b of the feature migration. They're imported via
-// the `use core.cg.{...}` line near the top of this file.
-
-// StructReg, CG_STRUCTS, struct_reg_lookup, struct_reg_extend,
-// EnumReg, CG_ENUMS, enum_reg_lookup, enum_reg_extend,
-// translate_param_type, strip_struct_prefix all moved to core/cg.fg.
-
-// Function return type registry. The bootstrap MVP doesn't carry
-// All registries live in core/cg.fg as fields on the Ctx struct.
-// Zero mutable globals.
-
-
-// EnumReg, CG_ENUMS, enum_reg_lookup, enum_reg_extend — see core/cg.fg note above.
+// Shared types (Ctx, EmitResult, StmtResult, registries, helpers)
+// live in core/cg.fg and are imported at the top of this file.
 
 export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult {
     let lc = forge_llvm_context_create()
@@ -207,8 +193,6 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 
 // ── Helpers ──
 
-// EmitResult, StmtResult, and the ok_*/err_* helpers moved to
-// core/ctx.fg. See note above the deleted Ctx definition.
 
 // ── Struct declaration pass ──
 
@@ -341,8 +325,6 @@ fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
 // ── Function body pass ──
 
 // emit_function_bodies, emit_function_body, bind_params_inline → features/fn_decl/codegen.fg
-
-// translate_param_type — moved to core/ctx.fg.
 
 // ── Top-level pass (skips function decls) ──
 
@@ -480,10 +462,6 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     }
 }
 
-// emit_var_decl → features/let_stmt/codegen.fg
-// emit_if      → features/if_stmt/codegen.fg
-// emit_while   → features/while_stmt/codegen.fg
-
 // ── Number literal parsing ──
 
 fn parse_int_literal(text: string) -> int {
@@ -551,10 +529,24 @@ fn parse_octal(digits: string) -> int {
     mut result = 0
     mut i = 0
     while i < digits.length {
-        result = result * 8 + hex_digit_value(digits[i])
+        result = result * 8 + decimal_digit_value(digits[i])
         i = i + 1
     }
     result
+}
+
+fn decimal_digit_value(ch: string) -> int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    0
 }
 
 // ── Expression emission ──
@@ -788,11 +780,7 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
     }
 }
 
-// emit_match_expr, emit_match_expr_arms, emit_match, emit_match_arms,
-// bind_pattern_payload, bind_pattern_payload_loop all moved to
-// features/match/codegen.fg. The dispatchers below call emit_match
-// and emit_match_expr by name — Forge resolves them globally across
-// the module tree, same as it does for cross-file impl blocks.
+// Match codegen lives in features/match/codegen.fg.
 
 fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     let r = emit_expr(ctx, env, obj)
@@ -873,15 +861,6 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
 
 // emit_enum_ctor, malloc_enum_bytes, fill_enum_payload → features/enum_decl/codegen.fg
 
-
-// emit_match, emit_match_arms, bind_pattern_payload,
-// bind_pattern_payload_loop — see features/match/codegen.fg.
-
-// advance_field_list, field_type_at, strip_enum_prefix moved to
-// core/ctx.fg.
-
-// "struct:Name" → "Name"; anything else → "".
-// strip_struct_prefix — moved to core/ctx.fg.
 
 fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
     // Destructure callee exactly once.

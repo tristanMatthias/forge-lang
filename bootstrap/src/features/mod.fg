@@ -16,5 +16,6 @@ mod fn_decl
 mod struct_decl
 mod enum_decl
 mod impl_decl
+mod generics
 mod null_safety
 mod trait_decl

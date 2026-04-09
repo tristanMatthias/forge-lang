@@ -78,12 +78,12 @@ fn expr_is_ident(e: Expr) -> bool {
 
 fn expr_is_upper_ident(e: Expr) -> bool {
     match e {
-        .Ident(n) -> starts_with_upper_p(n)
+        .Ident(n) -> p_starts_with_upper(n)
         _ -> false
     }
 }
 
-fn starts_with_upper_p(name: string) -> bool {
+fn p_starts_with_upper(name: string) -> bool {
     if name.length < 1 {
         return false
     }
@@ -272,8 +272,6 @@ impl Parser {
         self.parse_statement()
     }
 
-    // parse_extern_declaration moved to features/extern_decl/parser.fg.
-
     fn parse_use_or_mod_skip(self) -> Stmt? {
         // Skip everything until we hit a top-level token that
         // could start a new declaration. This is intentionally
@@ -289,18 +287,8 @@ impl Parser {
         Stmt.NoOp
     }
 
-    // parse_impl_declaration, parse_impl_methods,
-    // parse_method_declaration, parse_method_param_list moved to
-    // features/impl_decl/parser.fg.
-
-    // parse_enum_declaration, parse_variant_list, finish_variant,
-    // parse_field_list_until_paren moved to features/enum_decl/parser.fg.
-
-    // parse_type_declaration and parse_field_list moved to
-    // features/struct_decl/parser.fg.
-
-    // parse_let_statement and parse_mut_statement moved to
-    // features/let_stmt/parser.fg.
+    // Feature-specific parsers live in features/*/parser.fg.
+    // They extend Parser via `impl Parser { ... }` blocks.
 
     fn parse_statement(self) -> Stmt? {
         if self.check("left_brace") {
@@ -347,21 +335,6 @@ impl Parser {
         if expr == null { return null }
         Stmt.Expr(expr!)
     }
-
-    // parse_match_statement, parse_match_arm_list, parse_pattern
-    // moved to features/match/parser.fg (Phase 4 of the feature
-    // migration). The dispatcher above still calls
-    // self.parse_match_statement() — Forge resolves methods
-    // globally across all impl Parser blocks, so the move is
-    // transparent at the call site.
-
-    // parse_if_statement moved to features/if_stmt/parser.fg.
-    // parse_while_statement moved to features/while_stmt/parser.fg.
-
-    // parse_function_declaration, parse_param_list, finish_param
-    // moved to features/fn_decl/parser.fg.
-
-    // parse_return_statement moved to features/return_stmt/parser.fg.
 
     fn parse_expression(self) -> Expr? {
         self.parse_assignment()
@@ -615,7 +588,7 @@ impl Parser {
                 // (Forge convention: types are PascalCase).
                 let type_name = match result {
                     .Ident(n) -> {
-                        if starts_with_upper_p(n) {
+                        if p_starts_with_upper(n) {
                             n
                         } else {
                             ""
@@ -640,8 +613,6 @@ impl Parser {
 
         result
     }
-
-    // parse_field_init_list moved to features/struct_decl/parser.fg.
 
     fn parse_arg_list(self) -> ExprList? {
         // Inside a paren-bounded arg list we're unambiguously not
@@ -816,11 +787,6 @@ impl Parser {
         }
         Expr.Block(body!)
     }
-
-    // parse_if_expression moved to features/if_stmt/parser.fg.
-
-    // parse_match_expression moved to features/match/parser.fg
-    // (Phase 4 of the feature migration). Same note as above.
 
     fn check(self, kind: string) -> bool {
         self.current_kind == kind
