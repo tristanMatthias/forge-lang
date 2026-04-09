@@ -979,63 +979,7 @@ fn emit_index(cg: Codegen, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     ok_emit_str(result_i64)
 }
 
-fn emit_struct_lit(cg: Codegen, env: VarEnv, name: string, inits: FieldInitList) -> EmitResult {
-    let lookup = struct_reg_lookup(name)
-    if !lookup.found {
-        return err_emit("undefined struct type `" + name + "`")
-    }
-    let st_ty = forge_llvm_get_type_by_name(cg.ctx, name)
-    if st_ty == null {
-        return err_emit("LLVM struct type `" + name + "` not declared")
-    }
-    // Heap-allocate the struct so it survives across function
-    // returns (a stack alloca would be a dangling pointer once the
-    // creating frame is popped). Bootstrap leaks: the compiler
-    // runs once and the OS reclaims everything.
-    let buf = malloc_struct_bytes(cg, lookup.fields)
-    let fill = fill_struct_fields(cg, env, st_ty, buf, inits, lookup.fields)
-    if fill.had_error {
-        return fill
-    }
-    let as_i64 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "struct_i64")
-    EmitResult { value: as_i64, ty: "struct:" + name, had_error: false, error_message: "" }
-}
-
-// malloc(field_count * 8 bytes) — every struct field is an i64
-// slot (strings/structs/enums are pointer-encoded).
-fn malloc_struct_bytes(cg: Codegen, fields: FieldList) -> ptr {
-    let count = field_list_length(fields)
-    let size = forge_llvm_const_int(cg.i64_type, count * 8, 0)
-    let malloc_fn = forge_llvm_get_named_function(cg.module, "malloc")
-    let pa = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(pa, 0, cg.i64_type)
-    let malloc_type = forge_llvm_function_type(cg.ptr_type, pa, 1, 0)
-    forge_llvm_type_array_free(pa)
-    let arr = forge_llvm_value_array_new(1)
-    forge_llvm_value_array_set(arr, 0, size)
-    let buf = forge_llvm_build_call(cg.builder, malloc_type, malloc_fn, arr, 1, "struct_buf")
-    forge_llvm_value_array_free(arr)
-    buf
-}
-
-fn fill_struct_fields(cg: Codegen, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> EmitResult {
-    match inits {
-        .End -> ok_emit(null_ptr_val())
-        .Node(field_name, value, next) -> {
-            let idx = field_index_of(fields, field_name)
-            if idx < 0 {
-                return err_emit("unknown field `" + field_name + "`")
-            }
-            let r = emit_expr(cg, env, value)
-            if r.had_error {
-                return r
-            }
-            let gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, alloca, idx, "fld_ptr")
-            forge_llvm_build_store(cg.builder, r.value, gep)
-            fill_struct_fields(cg, env, st_ty, alloca, next, fields)
-        }
-    }
-}
+// emit_struct_lit, malloc_struct_bytes, fill_struct_fields → features/struct_decl/codegen.fg
 
 fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> EmitResult {
     // Special case: bare `EnumName.Variant` (zero-arg enum
@@ -1090,64 +1034,8 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     EmitResult { value: loaded, ty: field_ty, had_error: false, error_message: "" }
 }
 
-fn emit_enum_ctor(cg: Codegen, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
-    let enum_l = enum_reg_lookup(type_name)
-    if !enum_l.found {
-        return err_emit("undefined enum type `" + type_name + "`")
-    }
-    let v = variant_lookup(enum_l.variants, variant)
-    if !v.found {
-        return err_emit("enum `" + type_name + "` has no variant `" + variant + "`")
-    }
-    let st_ty = forge_llvm_get_type_by_name(cg.ctx, type_name)
-    if st_ty == null {
-        return err_emit("LLVM enum type `" + type_name + "` not declared")
-    }
-    // Heap-allocate the enum so it survives across function returns.
-    let buf = malloc_enum_bytes(cg, enum_l.variants)
-    let tag_gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, buf, 0, "tag_ptr")
-    let tag_val = forge_llvm_const_int(forge_llvm_int8_type(cg.ctx), v.tag, 0)
-    forge_llvm_build_store(cg.builder, tag_val, tag_gep)
-    let fill = fill_enum_payload(cg, env, st_ty, buf, args, 0)
-    if fill.had_error {
-        return fill
-    }
-    let as_i64 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "enum_i64")
-    EmitResult { value: as_i64, ty: "enum:" + type_name, had_error: false, error_message: "" }
-}
+// emit_enum_ctor, malloc_enum_bytes, fill_enum_payload → features/enum_decl/codegen.fg
 
-// malloc((max_payload + 1) * 8 bytes) — one i64 for the tag plus
-// one i64 per payload slot. The tag is technically i8 but the
-// LLVM struct layout aligns the next field to 8 bytes.
-fn malloc_enum_bytes(cg: Codegen, variants: VariantList) -> ptr {
-    let max_payload = variant_max_payload(variants)
-    let size = forge_llvm_const_int(cg.i64_type, (max_payload + 1) * 8, 0)
-    let malloc_fn = forge_llvm_get_named_function(cg.module, "malloc")
-    let pa = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(pa, 0, cg.i64_type)
-    let malloc_type = forge_llvm_function_type(cg.ptr_type, pa, 1, 0)
-    forge_llvm_type_array_free(pa)
-    let arr = forge_llvm_value_array_new(1)
-    forge_llvm_value_array_set(arr, 0, size)
-    let buf = forge_llvm_build_call(cg.builder, malloc_type, malloc_fn, arr, 1, "enum_buf")
-    forge_llvm_value_array_free(arr)
-    buf
-}
-
-fn fill_enum_payload(cg: Codegen, env: VarEnv, st_ty: ptr, alloca: ptr, args: ExprList, idx: int) -> EmitResult {
-    match args {
-        .End -> ok_emit(null_ptr_val())
-        .Node(expr, next) -> {
-            let r = emit_expr(cg, env, expr)
-            if r.had_error {
-                return r
-            }
-            let gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, alloca, idx + 1, "payload_ptr")
-            forge_llvm_build_store(cg.builder, r.value, gep)
-            fill_enum_payload(cg, env, st_ty, alloca, next, idx + 1)
-        }
-    }
-}
 
 // emit_match, emit_match_arms, bind_pattern_payload,
 // bind_pattern_payload_loop — see features/match/codegen.fg.

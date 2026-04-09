@@ -1,0 +1,72 @@
+// WHY: emits enum constructors (heap-allocated tagged unions).
+
+use core.ast.{Expr, ExprList, VariantList, VarEnv, variant_lookup, variant_max_payload}
+use core.cg.{Codegen, EmitResult, ok_emit, err_emit, null_ptr_val, enum_reg_lookup}
+use codegen.{emit_expr}
+
+extern fn forge_llvm_get_type_by_name(ctx: ptr, name: string) -> ptr
+extern fn forge_llvm_int8_type(ctx: ptr) -> ptr
+extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+extern fn forge_llvm_build_ptr_to_int(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_struct_gep2(b: ptr, ty: ptr, ptr_val: ptr, idx: int, name: string) -> ptr
+extern fn forge_llvm_build_store(b: ptr, val: ptr, ptr_val: ptr) -> ptr
+extern fn forge_llvm_build_call(b: ptr, fn_type: ptr, fn_val: ptr, args: ptr, count: int, name: string) -> ptr
+extern fn forge_llvm_get_named_function(m: ptr, name: string) -> ptr
+extern fn forge_llvm_function_type(ret: ptr, params: ptr, count: int, is_var: int) -> ptr
+extern fn forge_llvm_type_array_new(count: int) -> ptr
+extern fn forge_llvm_type_array_set(arr: ptr, idx: int, ty: ptr)
+extern fn forge_llvm_type_array_free(arr: ptr)
+extern fn forge_llvm_value_array_new(count: int) -> ptr
+extern fn forge_llvm_value_array_set(arr: ptr, idx: int, val: ptr)
+extern fn forge_llvm_value_array_free(arr: ptr)
+
+export fn emit_enum_ctor(cg: Codegen, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
+    let enum_l = enum_reg_lookup(type_name)
+    if !enum_l.found {
+        return err_emit("undefined enum type `" + type_name + "`")
+    }
+    let v = variant_lookup(enum_l.variants, variant)
+    if !v.found {
+        return err_emit("enum `" + type_name + "` has no variant `" + variant + "`")
+    }
+    let st_ty = forge_llvm_get_type_by_name(cg.ctx, type_name)
+    if st_ty == null {
+        return err_emit("LLVM enum type `" + type_name + "` not declared")
+    }
+    let buf = malloc_enum_bytes(cg, enum_l.variants)
+    let tag_gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, buf, 0, "tag_ptr")
+    let tag_val = forge_llvm_const_int(forge_llvm_int8_type(cg.ctx), v.tag, 0)
+    forge_llvm_build_store(cg.builder, tag_val, tag_gep)
+    let fill = fill_enum_payload(cg, env, st_ty, buf, args, 0)
+    if fill.had_error { return fill }
+    let as_i64 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "enum_i64")
+    EmitResult { value: as_i64, ty: "enum:" + type_name, had_error: false, error_message: "" }
+}
+
+export fn malloc_enum_bytes(cg: Codegen, variants: VariantList) -> ptr {
+    let max_payload = variant_max_payload(variants)
+    let size = forge_llvm_const_int(cg.i64_type, (max_payload + 1) * 8, 0)
+    let malloc_fn = forge_llvm_get_named_function(cg.module, "malloc")
+    let pa = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(pa, 0, cg.i64_type)
+    let malloc_type = forge_llvm_function_type(cg.ptr_type, pa, 1, 0)
+    forge_llvm_type_array_free(pa)
+    let arr = forge_llvm_value_array_new(1)
+    forge_llvm_value_array_set(arr, 0, size)
+    let buf = forge_llvm_build_call(cg.builder, malloc_type, malloc_fn, arr, 1, "enum_buf")
+    forge_llvm_value_array_free(arr)
+    buf
+}
+
+fn fill_enum_payload(cg: Codegen, env: VarEnv, st_ty: ptr, alloca: ptr, args: ExprList, idx: int) -> EmitResult {
+    match args {
+        .End -> ok_emit(null_ptr_val())
+        .Node(expr, next) -> {
+            let r = emit_expr(cg, env, expr)
+            if r.had_error { return r }
+            let gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, alloca, idx + 1, "epay_ptr")
+            forge_llvm_build_store(cg.builder, r.value, gep)
+            fill_enum_payload(cg, env, st_ty, alloca, next, idx + 1)
+        }
+    }
+}

@@ -1,0 +1,66 @@
+// WHY: emits struct literal construction and field-filling.
+
+use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length}
+use core.cg.{Codegen, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup}
+use codegen.{emit_expr}
+
+extern fn forge_llvm_get_type_by_name(ctx: ptr, name: string) -> ptr
+extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+extern fn forge_llvm_build_ptr_to_int(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_struct_gep2(b: ptr, ty: ptr, ptr_val: ptr, idx: int, name: string) -> ptr
+extern fn forge_llvm_build_store(b: ptr, val: ptr, ptr_val: ptr) -> ptr
+extern fn forge_llvm_build_call(b: ptr, fn_type: ptr, fn_val: ptr, args: ptr, count: int, name: string) -> ptr
+extern fn forge_llvm_get_named_function(m: ptr, name: string) -> ptr
+extern fn forge_llvm_function_type(ret: ptr, params: ptr, count: int, is_var: int) -> ptr
+extern fn forge_llvm_type_array_new(count: int) -> ptr
+extern fn forge_llvm_type_array_set(arr: ptr, idx: int, ty: ptr)
+extern fn forge_llvm_type_array_free(arr: ptr)
+extern fn forge_llvm_value_array_new(count: int) -> ptr
+extern fn forge_llvm_value_array_set(arr: ptr, idx: int, val: ptr)
+extern fn forge_llvm_value_array_free(arr: ptr)
+
+export fn emit_struct_lit(cg: Codegen, env: VarEnv, name: string, inits: FieldInitList) -> EmitResult {
+    let lookup = struct_reg_lookup(name)
+    if !lookup.found {
+        return err_emit("undefined struct type `" + name + "`")
+    }
+    let st_ty = forge_llvm_get_type_by_name(cg.ctx, name)
+    if st_ty == null {
+        return err_emit("LLVM struct type `" + name + "` not declared")
+    }
+    let buf = malloc_struct_bytes(cg, lookup.fields)
+    let fill = fill_struct_fields(cg, env, st_ty, buf, inits, lookup.fields)
+    if fill.had_error { return fill }
+    let as_i64 = forge_llvm_build_ptr_to_int(cg.builder, buf, cg.i64_type, "struct_i64")
+    EmitResult { value: as_i64, ty: "struct:" + name, had_error: false, error_message: "" }
+}
+
+fn malloc_struct_bytes(cg: Codegen, fields: FieldList) -> ptr {
+    let count = field_list_length(fields)
+    let size = forge_llvm_const_int(cg.i64_type, count * 8, 0)
+    let malloc_fn = forge_llvm_get_named_function(cg.module, "malloc")
+    let pa = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(pa, 0, cg.i64_type)
+    let malloc_type = forge_llvm_function_type(cg.ptr_type, pa, 1, 0)
+    forge_llvm_type_array_free(pa)
+    let arr = forge_llvm_value_array_new(1)
+    forge_llvm_value_array_set(arr, 0, size)
+    let buf = forge_llvm_build_call(cg.builder, malloc_type, malloc_fn, arr, 1, "struct_buf")
+    forge_llvm_value_array_free(arr)
+    buf
+}
+
+fn fill_struct_fields(cg: Codegen, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> EmitResult {
+    match inits {
+        .End -> ok_emit(null_ptr_val())
+        .Node(field_name, value, next) -> {
+            let idx = field_index_of(fields, field_name)
+            if idx < 0 { return err_emit("unknown field `" + field_name + "`") }
+            let r = emit_expr(cg, env, value)
+            if r.had_error { return r }
+            let gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, alloca, idx, "fld_ptr")
+            forge_llvm_build_store(cg.builder, r.value, gep)
+            fill_struct_fields(cg, env, st_ty, alloca, next, fields)
+        }
+    }
+}
