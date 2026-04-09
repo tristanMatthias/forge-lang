@@ -128,7 +128,7 @@ temporarily and fix it next commit".
 | 5.1 | Extract return into features/return_stmt/ | ✅ done |
 | 5.2 | Extract if/while/extern parsers | ✅ done |
 | 5.3 | Extract let, fn, struct, enum, impl parsers | ✅ done |
-| 6 | Collapse parser.fg into parse/ | 🟡 next |
+| 6 | Collapse parser.fg into parse/ | ✅ done |
 | 7 | Collapse codegen.fg into emit/ | ⏳ pending |
 | 8 | Cg fluent helper layer + Compiler context refactor | ⏳ pending |
 | 9 | Per-feature WHY/grammar + assembled GRAMMAR.md | ⏳ pending |
