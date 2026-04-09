@@ -51,6 +51,39 @@ operators this becomes measurable.
 **Plan:** Parse-time conversion to a `BinaryOp` enum. Quick refactor,
 do before adding bitwise operators.
 
+### 4. Recursive enum lists instead of real collections
+
+**Severity:** low (cosmetic)
+**Impact:** ExprList, StmtList, ParamList, VarEnv are linked lists
+
+The AST uses recursive enums (e.g. `ExprList.Node(expr, next)`)
+instead of the `List` we just built. This was because the Rust host
+compiler's `List.push()` was broken. Now that we have our own
+`forge_array_*` runtime, we COULD migrate — but the recursive
+enums work fine for AST sizes. Not urgent.
+
+**Plan:** Consider migrating when/if performance matters. The linked
+lists are actually idiomatic for immutable scope stacks (VarEnv).
+
+### 5. return not allowed in bare match arms
+
+**Severity:** low
+**Impact:** must wrap return in braces: `_ -> { return x }`
+
+The parser rejects `_ -> return x` because match arm bodies expect
+expressions and `return` is a statement. The braces workaround is
+fine and doesn't hurt readability.
+
+**Plan:** Fix the parser to accept statements in bare match arm
+position. Low priority — the braces are idiomatic anyway.
+
+### 6. Stmt.Return naming (was Ret)
+
+**Severity:** none (RESOLVED)
+
+Previously `Return` was renamed to `Ret` because the Rust host
+compiler rejected it. Now resolved — variant is `Stmt.Return`.
+
 ## Closed (previously from Rust host era)
 
 Items 1–9 from the old TECH_DEBT.md related to the Rust host compiler

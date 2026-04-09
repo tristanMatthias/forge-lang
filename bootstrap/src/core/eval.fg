@@ -416,14 +416,14 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             let next_runtime = define_function(runtime, name, params, body)
             ok_result(next_runtime, value_null())
         }
-        .Ret(value) -> {
+        .Return(value) -> {
             let val_result = eval_expr(runtime, value)
             if val_result.had_error {
                 return val_result
             }
             make_return(val_result.runtime, val_result.value)
         }
-        .RetEmpty -> {
+        .ReturnEmpty -> {
             make_return(runtime, value_null())
         }
         .TypeDecl(_, _) -> {

@@ -473,7 +473,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             }
             ok_stmt(env)
         }
-        .Ret(value) -> {
+        .Return(value) -> {
             let r = emit_expr(ctx, env, value)
             if r.had_error {
                 return err_stmt_from_expr(r)
@@ -481,7 +481,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             forge_llvm_build_ret(ctx.builder, r.value)
             ok_stmt(env)
         }
-        .RetEmpty -> {
+        .ReturnEmpty -> {
             forge_llvm_build_ret(ctx.builder, const_i64(ctx, 0))
             ok_stmt(env)
         }

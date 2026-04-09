@@ -278,8 +278,8 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after_body = resolve_stmt_list(with_params, body)
             exit_resolve_scope(after_body)
         }
-        .Ret(value) -> resolve_expr(r, value)
-        .RetEmpty -> r
+        .Return(value) -> resolve_expr(r, value)
+        .ReturnEmpty -> r
         .TypeDecl(_, _) -> r
         .EnumDecl(_, _) -> r
         .Match(subject, arms) -> {

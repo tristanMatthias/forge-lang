@@ -96,8 +96,8 @@ export enum Stmt {
     // into its internal value-type tag and uses it to set the
     // result type of `call(fn)` so chained calls preserve typing.
     Function(name: string, params: ParamList, ret_ty: string, body: StmtList)
-    Ret(value: Expr)
-    RetEmpty
+    Return(value: Expr)
+    ReturnEmpty
     TypeDecl(name: string, fields: FieldList)
     EnumDecl(name: string, variants: VariantList)
     Match(subject: Expr, arms: MatchArmList)
@@ -409,8 +409,8 @@ export fn render_stmt(stmt: Stmt) -> string {
         .While(condition, body) -> "(while " + render_expr(condition) + " " + render_stmt(body) + ")"
         .For(variable, start, end, body) -> "(for " + variable + " " + render_expr(start) + ".." + render_expr(end) + " " + render_stmt(body) + ")"
         .Function(name, params, ret_ty, body) -> "(fn " + name + " " + render_param_list(params) + " -> " + ret_ty + " " + render_stmt_list(body) + ")"
-        .Ret(value) -> "(return " + render_expr(value) + ")"
-        .RetEmpty -> "(return)"
+        .Return(value) -> "(return " + render_expr(value) + ")"
+        .ReturnEmpty -> "(return)"
         .TypeDecl(name, fields) -> "(type " + name + " " + render_field_list(fields) + ")"
         .EnumDecl(name, variants) -> "(enum " + name + " " + render_variant_list(variants) + ")"
         .Match(subject, arms) -> "(match " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"

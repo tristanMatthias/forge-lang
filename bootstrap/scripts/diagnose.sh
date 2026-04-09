@@ -212,13 +212,13 @@ ensure_bs2_asan() {
   ensure_seed
   ensure_runtime_asan
   if [ ! -x "$BS2_ASAN" ] || [ "$BS2" -nt "$BS2_ASAN" ]; then
-    log "compiling bootstrap/src/main.fg with stage1 (for ASan)"
-    "$STAGE1" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_asan.codegen.log" 2>&1 \
+    log "compiling bootstrap/src/main.fg with seed (for ASan)"
+    "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_asan.codegen.log" 2>&1 \
       || { cat "$BUILD_DIR/bs2_asan.codegen.log" >&2; die "bs2_asan codegen failed"; }
     log "linking $BS2_ASAN with -fsanitize=address"
     cc -fsanitize=address -g -o "$BS2_ASAN" \
-       "$BOOTSTRAP_DIR/src/main.fg.ll" "$RUNTIME_ASAN_O" \
-       "$STDLLVM_A" "$STDPROC_A" $LLVM_LIBS_LDFLAGS 2>"$BUILD_DIR/bs2_asan.link.log" \
+       "$BOOTSTRAP_DIR/src/main.fg.ll" "$RUNTIME_ASAN_O" "$STDLLVM_A" \
+       -L"$LLVM_PREFIX/lib" -lLLVM-19 -lc++ 2>"$BUILD_DIR/bs2_asan.link.log" \
       || { cat "$BUILD_DIR/bs2_asan.link.log" >&2; die "bs2_asan link failed"; }
     ok "built $BS2_ASAN"
   fi
@@ -240,10 +240,7 @@ ensure_bs3() {
 # ─────────────────────────────────────────────────────────────────────
 
 mode_build() {
-  ensure_host_compiler
-  ensure_stdlibs
-  log "running scripts/test.sh"
-  bash "$SCRIPT_DIR/test.sh"
+  ensure_bs2
 }
 
 mode_build_runtime() { ensure_runtime; ok "$RUNTIME_O"; }
@@ -311,23 +308,19 @@ mode_ll() {
 
 mode_diff() {
   local fg="$1"; [ -f "$fg" ] || die "no such file: $fg"
-  ensure_stage1; ensure_bs2
-  local s1_ll="$BUILD_DIR/$(basename "$fg").stage1.ll"
+  ensure_bs2; ensure_bs3
   local b2_ll="$BUILD_DIR/$(basename "$fg").bs2.ll"
-  cp "$fg" "$BUILD_DIR/_tmp_s1.fg"
-  cp "$fg" "$BUILD_DIR/_tmp_b2.fg"
-  "$STAGE1" compile "$BUILD_DIR/_tmp_s1.fg" >/dev/null \
-    || die "stage1 codegen failed"
-  "$BS2"    compile "$BUILD_DIR/_tmp_b2.fg" >/dev/null 2>&1 \
-    || die "bs2 codegen failed (it crashed or errored on this input)"
-  mv "$BUILD_DIR/_tmp_s1.fg.ll" "$s1_ll"
-  mv "$BUILD_DIR/_tmp_b2.fg.ll" "$b2_ll"
-  log "stage1: $s1_ll"
-  log "bs2:    $b2_ll"
-  if diff -u "$s1_ll" "$b2_ll" >/dev/null; then
+  local b3_ll="$BUILD_DIR/$(basename "$fg").bs3.ll"
+  "$BS2" compile "$fg" >/dev/null 2>&1 || die "bs2 codegen failed"
+  cp "$fg.ll" "$b2_ll"
+  "$BS3" compile "$fg" >/dev/null 2>&1 || die "bs3 codegen failed"
+  cp "$fg.ll" "$b3_ll"
+  log "bs2: $b2_ll"
+  log "bs3: $b3_ll"
+  if diff -u "$b2_ll" "$b3_ll" >/dev/null; then
     ok "IR is byte-identical"
   else
-    diff -u "$s1_ll" "$b2_ll" | head -200
+    diff -u "$b2_ll" "$b3_ll" | head -200
   fi
 }
 
@@ -335,13 +328,13 @@ mode_diff_fn() {
   local fg="$1" fn="$2"
   [ -f "$fg" ] || die "no such file: $fg"
   [ -n "$fn" ] || die "--diff-fn requires <file.fg> <fn-name>"
-  ensure_stage1; ensure_bs2
-  local s1_ll="$BUILD_DIR/$(basename "$fg").stage1.ll"
+  ensure_bs2; ensure_bs3
   local b2_ll="$BUILD_DIR/$(basename "$fg").bs2.ll"
-  "$STAGE1" compile "$fg" >/dev/null
-  cp "$fg.ll" "$s1_ll"
+  local b3_ll="$BUILD_DIR/$(basename "$fg").bs3.ll"
   "$BS2" compile "$fg" >/dev/null 2>&1 || die "bs2 codegen failed"
   cp "$fg.ll" "$b2_ll"
+  "$BS3" compile "$fg" >/dev/null 2>&1 || die "bs3 codegen failed"
+  cp "$fg.ll" "$b3_ll"
   extract_fn() {
     awk -v fn="$1" '
       $0 ~ "define .*@"fn"\\(" { in_fn=1 }
@@ -484,8 +477,8 @@ mode_rank() {
   case "$arg" in
     *.ll) ll="$arg" ;;
     *.fg)
-      ensure_stage1
-      "$STAGE1" compile "$arg" >/dev/null 2>&1 || die "stage1 codegen failed"
+      ensure_bs2
+      "$BS2" compile "$arg" >/dev/null 2>&1 || die "bs2 codegen failed"
       ll="$arg.ll"
       ;;
     *) die "--rank: pass a .fg or .ll file" ;;

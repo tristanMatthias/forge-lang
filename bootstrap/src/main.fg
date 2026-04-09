@@ -1,18 +1,5 @@
-use @std.process
-// Load-bearing import: the host compiler's package prescan only walks
-// the entry file's tokens, so even though codegen.fg is the actual
-// caller of `@std.llvm` we have to declare the dependency here too
-// (otherwise the package is not loaded and link `-u` symbols are not
-// emitted). See bootstrap/TECH_DEBT.md #10.
-use @std.llvm
-
-// Direct C externs for the small set of host process helpers we
-// need at the entry point. The bootstrap codegen doesn't model
-// the @std.process package's List<string> argv shape, so we use
-// the lower-level forge_selfhost_argc / forge_selfhost_get_arg
-// runtime helpers (defined in forge/stdlib/runtime.c) and libc
-// exit directly. The host compiler also accepts these because
-// they are just C symbols.
+// C externs for process helpers and file I/O.
+// These are provided by bootstrap/runtime.c.
 extern fn forge_selfhost_argc() -> int
 extern fn forge_selfhost_get_arg_cstr(idx: int) -> string
 extern fn forge_selfhost_trace(s: string)

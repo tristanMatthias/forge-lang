@@ -8,10 +8,10 @@ impl Parser {
         self.advance()
 
         if self.check("right_brace") || self.check("eof") {
-            return Stmt.RetEmpty
+            return Stmt.ReturnEmpty
         }
 
         let value = self.parse_expression()?
-        Stmt.Ret(value)
+        Stmt.Return(value)
     }
 }
