@@ -1,15 +1,14 @@
-// WHY: codegen for list literals [1, 2, 3] and list operations.
+// WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
 // Lists are backed by the C-runtime forge_array_* functions.
 
-use core.ast.{Expr, ExprList, VarEnv, ValueType}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, get_fn, call_0, call_2}
+use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList}
+use core.cg.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, get_fn, call_0, call_2, call_3}
 use codegen.{emit_expr}
 
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
     let arr_fn = get_fn(ctx, "forge_array_new")
     let push_fn = get_fn(ctx, "forge_array_push")
     let arr = call_0(ctx, arr_fn, "list")
-    // Emit first element to infer element type, then push rest
     match elements {
         .End -> EmitResult { value: arr, ty: ValueType.List(ValueType.Int), had_error: false, error_message: "" }
         .Node(expr, next) -> {
@@ -30,5 +29,30 @@ fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, push_
             call_2(ctx, push_fn, arr, r.value, "")
             push_list_elements(ctx, env, next, arr, push_fn, elem_ty)
         }
+    }
+}
+
+export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: ExprList, elem_ty: ValueType) -> EmitResult {
+    match args {
+        .Node(init_expr, rest) -> {
+            match rest {
+                .Node(fn_expr, _) -> {
+                    let init_r = emit_expr(ctx, env, init_expr)
+                    if init_r.had_error { return init_r }
+                    // Reduce fn takes (acc, elem) — acc type from init, elem from list
+                    let fn_r = match fn_expr {
+                        .Lambda(params, body) -> {
+                            emit_lambda_typed(ctx, env, params, body, TypeList.Node(init_r.ty, TypeList.Node(elem_ty, TypeList.End)))
+                        }
+                        _ -> emit_expr(ctx, env, fn_expr)
+                    }
+                    if fn_r.had_error { return fn_r }
+                    let result = call_3(ctx, get_fn(ctx, "forge_array_reduce"), list_val, init_r.value, fn_r.value, "reduce")
+                    ok_emit(result)
+                }
+                _ -> err_emit("reduce expects 2 arguments: initial value and function")
+            }
+        }
+        _ -> err_emit("reduce expects 2 arguments: initial value and function")
     }
 }

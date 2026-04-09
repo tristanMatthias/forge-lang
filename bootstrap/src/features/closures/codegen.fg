@@ -21,51 +21,65 @@ use codegen.{emit_expr}
 // that never resets. Thread-safe because the bootstrap is single-threaded.
 export mut LAMBDA_COUNTER = 0
 
+// Compile a lambda with default parameter types (all Int).
 export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> EmitResult {
+    emit_lambda_typed(ctx, env, params, body, TypeList.End)
+}
+
+// Compile a lambda with explicit parameter types.
+// Used by .map/.filter/.reduce to pass the list's element type
+// so that int(x) / x.length / etc. work correctly inside the lambda.
+export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr, param_types: TypeList) -> EmitResult {
     let id = LAMBDA_COUNTER
     LAMBDA_COUNTER = LAMBDA_COUNTER + 1
     let name = "__lambda_" + string(id)
 
     let arity = param_list_length(params)
 
-    // Declare the lifted function: all params are i64, returns i64.
     let param_arr = forge_llvm_type_array_new(arity)
     fill_i64_params(param_arr, ctx.i64_type, 0, arity)
     let fn_type = forge_llvm_function_type(ctx.i64_type, param_arr, arity, 0)
     forge_llvm_type_array_free(param_arr)
     let fn_val = forge_llvm_add_function(ctx.module, name, fn_type)
 
-    // Save current builder position.
     let saved_bb = forge_llvm_get_insert_block(ctx.builder)
-    let saved_fn = ctx.current_fn
 
-    // Build the lambda body in a new entry block.
     let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
     forge_llvm_position_at_end(ctx.builder, entry)
 
-    // Bind parameters to allocas.
-    let body_env = bind_lambda_params(ctx, env, params, fn_val, 0)
+    let body_env = bind_lambda_params_typed(ctx, env, params, fn_val, 0, param_types)
 
-    // Emit the body expression.
     let body_ctx = ctx_with_fn(ctx, fn_val)
     let result = emit_expr(body_ctx, body_env, body)
     if result.had_error {
-        // Restore position even on error.
         forge_llvm_position_at_end(ctx.builder, saved_bb)
         return result
     }
 
-    // Return the body's value.
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_ret(ctx.builder, result.value)
     }
 
-    // Restore builder to the caller's position.
     forge_llvm_position_at_end(ctx.builder, saved_bb)
 
-    // Return the function pointer as an i64.
     let fn_ptr = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
     EmitResult { value: fn_ptr, ty: ValueType.Fn, had_error: false, error_message: "" }
+}
+
+// Emit a lambda argument with typed parameters. If the argument
+// expression is a Lambda, compile it with explicit param types so
+// that type-dependent operations (int(x), x.length, x.upper())
+// work correctly inside the lambda body.
+export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_types: TypeList) -> EmitResult {
+    match args {
+        .End -> err_emit("expected 1 argument, got 0")
+        .Node(expr, _) -> {
+            match expr {
+                .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, param_types)
+                _ -> emit_expr(ctx, env, expr)
+            }
+        }
+    }
 }
 
 // Call a function pointer stored in a local variable.
@@ -121,15 +135,24 @@ fn fill_i64_params(arr: ptr, i64t: ptr, idx: int, count: int) {
     fill_i64_params(arr, i64t, idx + 1, count)
 }
 
-fn bind_lambda_params(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int) -> VarEnv {
+fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int, types: TypeList) -> VarEnv {
     match params {
         .End -> env
         .Node(name, _, next) -> {
             let param_val = forge_llvm_get_param(fn_val, idx)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, param_val, alloca)
-            let new_env = env_extend(env, name, alloca, ValueType.Int)
-            bind_lambda_params(ctx, new_env, next, fn_val, idx + 1)
+            // Use the provided type if available, else default to Int
+            let ty = match types {
+                .Node(t, _) -> t
+                .End -> ValueType.Int
+            }
+            let rest_types = match types {
+                .Node(_, rest) -> rest
+                .End -> TypeList.End
+            }
+            let new_env = env_extend(env, name, alloca, ty)
+            bind_lambda_params_typed(ctx, new_env, next, fn_val, idx + 1, rest_types)
         }
     }
 }

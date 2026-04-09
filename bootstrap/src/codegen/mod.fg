@@ -1098,20 +1098,23 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             return ok_emit(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, arg_r.value, "list_get"))
         }
         if method == "map" || method == "filter" {
-            let arg_r = emit_single_arg(ctx, env, args)?
+            let elem_ty = vtype_list_elem(r.ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
+            if arg_r.had_error { return arg_r }
             let fn_name = "forge_array_" + method
             let result = call_2(ctx, get_fn(ctx, fn_name), r.value, arg_r.value, method)
-            let elem_ty = vtype_list_elem(r.ty)
             return EmitResult { value: result, ty: ValueType.List(elem_ty), had_error: false, error_message: "" }
         }
         if method == "foreach" {
-            let arg_r = emit_single_arg(ctx, env, args)?
+            let elem_ty = vtype_list_elem(r.ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
+            if arg_r.had_error { return arg_r }
             call_2(ctx, get_fn(ctx, "forge_array_foreach"), r.value, arg_r.value, "")
             return ok_emit(const_i64(ctx, 0))
         }
         if method == "reduce" {
-            // reduce(initial, fn) — 2 args
-            return emit_list_reduce(ctx, env, r.value, args)
+            let elem_ty = vtype_list_elem(r.ty)
+            return emit_list_reduce_typed(ctx, env, r.value, args, elem_ty)
         }
         return err_emit("list method `" + method + "` not implemented")
     }
@@ -1355,24 +1358,7 @@ fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
     }
 }
 
-fn emit_list_reduce(ctx: Ctx, env: VarEnv, list_val: ptr, args: ExprList) -> EmitResult {
-    match args {
-        .Node(init_expr, rest) -> {
-            match rest {
-                .Node(fn_expr, _) -> {
-                    let init_r = emit_expr(ctx, env, init_expr)
-                    if init_r.had_error { return init_r }
-                    let fn_r = emit_expr(ctx, env, fn_expr)
-                    if fn_r.had_error { return fn_r }
-                    let result = call_3(ctx, get_fn(ctx, "forge_array_reduce"), list_val, init_r.value, fn_r.value, "reduce")
-                    ok_emit(result)
-                }
-                _ -> err_emit("reduce expects 2 arguments: initial value and function")
-            }
-        }
-        _ -> err_emit("reduce expects 2 arguments: initial value and function")
-    }
-}
+
 
 // Evaluate a single-argument method call. Returns the EmitResult for that arg.
 fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
