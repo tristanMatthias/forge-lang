@@ -36,6 +36,7 @@ fn write_file(path: string, content: string) -> int { forge_selfhost_write_file(
 
 mod core
 mod parser
+mod features
 mod codegen
 
 use core.scanner.{scan_source, render_tokens}

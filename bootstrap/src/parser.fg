@@ -591,71 +591,12 @@ impl Parser {
         Stmt.Expr(expr!)
     }
 
-    fn parse_match_statement(self) -> Stmt? {
-        self.advance()
-        let saved = self.allow_struct_lit
-        self.allow_struct_lit = false
-        let subject = self.parse_expression()
-        self.allow_struct_lit = saved
-        if subject == null { return null }
-        if !self.consume("left_brace", "expected `{` after match subject") {
-            return null
-        }
-        let arms = self.parse_match_arm_list()
-        if arms == null { return null }
-        if !self.consume("right_brace", "expected `}` after match arms") {
-            return null
-        }
-        Stmt.Match(subject!, arms!)
-    }
-
-    fn parse_match_arm_list(self) -> MatchArmList? {
-        if self.check("right_brace") {
-            return MatchArmList.End
-        }
-        let pattern = self.parse_pattern()
-        if pattern == null { return null }
-        if !self.consume("arrow", "expected `->` after pattern") {
-            return null
-        }
-        // Disable `.field` postfix consumption while parsing the
-        // arm body so the next sibling pattern (`.Variant(...)`)
-        // isn't gobbled into the body. Brace-block bodies
-        // re-enable the flag inside their statement list.
-        let saved = self.allow_dot_postfix
-        self.allow_dot_postfix = false
-        let body = self.parse_expression()
-        self.allow_dot_postfix = saved
-        if body == null { return null }
-        if self.check("comma") {
-            self.advance()
-        }
-        let rest = self.parse_match_arm_list()
-        if rest == null { return null }
-        MatchArmList.Node(pattern!, body!, rest!)
-    }
-
-    fn parse_pattern(self) -> Pattern? {
-        if self.check("identifier") && self.current_lexeme == "_" {
-            self.advance()
-            return Pattern.Wildcard
-        }
-        if !self.consume("dot", "expected `.` or `_` to start pattern") {
-            return null
-        }
-        let name = self.consume_identifier("expected variant name in pattern")
-        if name == null { return null }
-        if !self.check("left_paren") {
-            return Pattern.Variant(name!, ParamList.End)
-        }
-        self.advance()
-        let bindings = self.parse_param_list()
-        if bindings == null { return null }
-        if !self.consume("right_paren", "expected `)` after binding list") {
-            return null
-        }
-        Pattern.Variant(name!, bindings!)
-    }
+    // parse_match_statement, parse_match_arm_list, parse_pattern
+    // moved to features/match/parser.fg (Phase 4 of the feature
+    // migration). The dispatcher above still calls
+    // self.parse_match_statement() — Forge resolves methods
+    // globally across all impl Parser blocks, so the move is
+    // transparent at the call site.
 
     fn parse_if_statement(self) -> Stmt? {
         self.advance()
@@ -1192,23 +1133,8 @@ impl Parser {
         Expr.IfExpr(condition!, then_branch!, else_branch!)
     }
 
-    fn parse_match_expression(self) -> Expr? {
-        self.advance()
-        let saved_struct = self.allow_struct_lit
-        self.allow_struct_lit = false
-        let subject = self.parse_expression()
-        self.allow_struct_lit = saved_struct
-        if subject == null { return null }
-        if !self.consume("left_brace", "expected `{` after match subject") {
-            return null
-        }
-        let arms = self.parse_match_arm_list()
-        if arms == null { return null }
-        if !self.consume("right_brace", "expected `}` after match arms") {
-            return null
-        }
-        Expr.MatchExpr(subject!, arms!)
-    }
+    // parse_match_expression moved to features/match/parser.fg
+    // (Phase 4 of the feature migration). Same note as above.
 
     fn check(self, kind: string) -> bool {
         self.current_kind == kind

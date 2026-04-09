@@ -1,0 +1,22 @@
+// Canonical example of `match`. Exercises both nullary and payload
+// patterns plus a wildcard.
+
+enum Shape {
+    Circle(radius: int)
+    Square(side: int)
+    Unknown
+}
+
+fn area(s: Shape) -> int {
+    match s {
+        .Circle(r) -> r * r * 3
+        .Square(side) -> side * side
+        .Unknown -> 0
+    }
+}
+
+fn main() {
+    println(string(area(Shape.Circle(5))))
+    println(string(area(Shape.Square(4))))
+    println(string(area(Shape.Unknown)))
+}

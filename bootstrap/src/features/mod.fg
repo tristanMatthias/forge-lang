@@ -1,0 +1,4 @@
+// WHY: aggregator for all language features. Each subdirectory is
+// one feature with its own parser.fg, codegen.fg, example.fg.
+
+mod match
