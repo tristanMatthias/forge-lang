@@ -475,6 +475,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             forge_llvm_build_br(ctx.builder, frame.cond_bb)
             ok_stmt(env)
         }
+        .TraitDecl(_, _) -> ok_stmt(env)  // trait decls are type metadata, no codegen
         _ -> err_stmt("codegen error: unsupported statement type")
     }
 }

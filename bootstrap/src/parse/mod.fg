@@ -265,6 +265,10 @@ impl Parser {
             return self.parse_extern_declaration()
         }
 
+        if self.check("kw_trait") {
+            return self.parse_trait_declaration()
+        }
+
         self.parse_statement()
     }
 
@@ -277,7 +281,7 @@ impl Parser {
         // disappear into the void.
         self.advance()
         while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") {
+            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") || self.check("kw_trait") {
                 break
             }
             self.advance()

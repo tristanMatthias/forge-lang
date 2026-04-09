@@ -284,6 +284,7 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .ExternFn(name, _, _) -> declare_function(r, name)
         .Break -> r
         .Continue -> r
+        .TraitDecl(_, _) -> r  // trait declarations are no-ops
     }
 }
 

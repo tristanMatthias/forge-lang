@@ -1,0 +1,6 @@
+// WHY: trait declarations — `trait Name { fn method(self) -> Type }`.
+// In the bootstrap, traits are parsed and stored but don't affect
+// codegen. Method dispatch uses name-mangling (Type__method) via
+// the existing impl block mechanism.
+
+mod parser

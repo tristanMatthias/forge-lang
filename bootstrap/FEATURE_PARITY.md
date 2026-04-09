@@ -58,8 +58,8 @@ Status key:
 | field access | `obj.field` | ✅ | |
 | field assign | `obj.field = val` | ✅ | |
 | `with` expression | `obj with { field: val }` | 🔲 | functional update |
-| traits | `trait Name { fn method(self) }` | 🔲 | **high priority** |
-| impl for trait | `impl Trait for Type { }` | 🔲 | needs traits |
+| traits | `trait Name { fn method(self) }` | ✅ | parsed, no dynamic dispatch |
+| impl for trait | `impl Trait for Type { }` | ✅ | desugars to Type__method |
 | impl block | `impl Type { fn method(self) }` | ✅ | desugars to Type__method |
 
 ## Enums & Pattern Matching
@@ -240,7 +240,7 @@ Status key:
 | Variables & Bindings | 7 | 5 | 2 | 0 |
 | Primitive Types | 7 | 4 | 3 | 0 |
 | Functions | 9 | 5 | 4 | 0 |
-| Structs & Types | 8 | 5 | 3 | 0 |
+| Structs & Types | 8 | 7 | 1 | 0 |
 | Enums & Matching | 11 | 5 | 6 | 0 |
 | Control Flow | 8 | 5 | 3 | 0 |
 | Operators | 8 | 3 | 5 | 0 |
@@ -254,7 +254,7 @@ Status key:
 | Testing | 4 | 0 | 4 | 0 |
 | Pointer Ops | 4 | 0 | 4 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **57** | **64** | **10** |
+| **TOTAL** | **131** | **59** | **62** | **10** |
 
 ## Dogfooding Rule
 

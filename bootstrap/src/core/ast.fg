@@ -97,6 +97,7 @@ export enum Stmt {
     ExternFn(name: string, params: ParamList, ret_ty: string)
     Break
     Continue
+    TraitDecl(name: string, methods: StmtList)
 }
 
 export enum StmtList {
@@ -403,6 +404,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .ExternFn(name, params, ret_ty) -> "(extern " + name + " " + render_param_list(params) + " -> " + ret_ty + ")"
         .Break -> "(break)"
         .Continue -> "(continue)"
+        .TraitDecl(name, methods) -> "(trait " + name + " " + render_stmt_list(methods) + ")"
     }
 }
 
