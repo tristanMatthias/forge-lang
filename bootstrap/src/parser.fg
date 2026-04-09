@@ -79,6 +79,7 @@ fn keyword_kind(text: string) -> string {
     if text == "use" { return "kw_use" }
     if text == "mod" { return "kw_mod" }
     if text == "impl" { return "kw_impl" }
+    if text == "extern" { return "kw_extern" }
     return "identifier"
 }
 
@@ -220,7 +221,34 @@ impl Parser {
             return self.parse_impl_declaration()
         }
 
+        if self.check("kw_extern") {
+            return self.parse_extern_declaration()
+        }
+
         self.parse_statement()
+    }
+
+    fn parse_extern_declaration(self) -> Stmt? {
+        self.advance()
+        if !self.consume("kw_fn", "expected `fn` after `extern`") {
+            return null
+        }
+        let name = self.consume_identifier("expected extern fn name")
+        if name == null { return null }
+        if !self.consume("left_paren", "expected `(` after extern fn name") {
+            return null
+        }
+        let params = self.parse_param_list()
+        if params == null { return null }
+        if !self.consume("right_paren", "expected `)` after parameters") {
+            return null
+        }
+        if self.check("arrow") {
+            self.advance()
+            let _ret = self.consume_type("expected return type after `->`")
+            if _ret == null { return null }
+        }
+        Stmt.ExternFn(name!, params!)
     }
 
     fn parse_use_or_mod_skip(self) -> Stmt? {
@@ -285,7 +313,7 @@ impl Parser {
         }
         if self.check("arrow") {
             self.advance()
-            let _ret = self.consume_identifier("expected return type after `->`")
+            let _ret = self.consume_type("expected return type after `->`")
             if _ret == null { return null }
         }
         if !self.consume("left_brace", "expected `{` after method parameters") {
@@ -311,7 +339,7 @@ impl Parser {
             // Optional `: Type` after self — discarded.
             if self.check("colon") {
                 self.advance()
-                let _ty = self.consume_identifier("expected type after `:`")
+                let _ty = self.consume_type("expected type after `:`")
                 if _ty == null { return null }
             }
             // self is followed by either `,` (more params) or `)`.
@@ -374,12 +402,16 @@ impl Parser {
         if self.check("right_paren") {
             return FieldList.End
         }
+        // Optional `mut` modifier — ignored for now.
+        if self.check("kw_mut") {
+            self.advance()
+        }
         let name = self.consume_identifier("expected field name")
         if name == null { return null }
         if !self.consume("colon", "expected `:` after field name") {
             return null
         }
-        let ty = self.consume_identifier("expected field type")
+        let ty = self.consume_type("expected field type")
         if ty == null { return null }
         if self.check("comma") {
             self.advance()
@@ -412,12 +444,16 @@ impl Parser {
         if self.check("right_brace") {
             return FieldList.End
         }
+        // Optional `mut` modifier — ignored for now.
+        if self.check("kw_mut") {
+            self.advance()
+        }
         let name = self.consume_identifier("expected field name")
         if name == null { return null }
         if !self.consume("colon", "expected `:` after field name") {
             return null
         }
-        let ty = self.consume_identifier("expected field type")
+        let ty = self.consume_type("expected field type")
         if ty == null { return null }
         if self.check("comma") {
             self.advance()
@@ -617,7 +653,7 @@ impl Parser {
         // parse cleanly.
         if self.check("arrow") {
             self.advance()
-            let _ret = self.consume_identifier("expected return type after `->`")
+            let _ret = self.consume_type("expected return type after `->`")
             if _ret == null { return null }
         }
 
@@ -647,7 +683,7 @@ impl Parser {
         // translates the textual type into its internal value tag.
         if self.check("colon") {
             self.advance()
-            let ty = self.consume_identifier("expected parameter type after `:`")
+            let ty = self.consume_type("expected parameter type after `:`")
             if ty == null { return null }
             return self.finish_param(name!, ty!)
         }
@@ -815,7 +851,23 @@ impl Parser {
         if expr == null { return null }
 
         mut result = expr!
-        while self.check("left_paren") || self.check("dot") {
+        while self.check("left_paren") || self.check("dot") || self.check("bang") || self.check("left_bracket") {
+            // Force-unwrap `expr!` is a no-op pass-through since we
+            // don't track nullability in the value tag.
+            while self.check("bang") {
+                self.advance()
+            }
+            if self.check("left_bracket") {
+                self.advance()
+                let idx = self.parse_expression()
+                if idx == null { return null }
+                if !self.consume("right_bracket", "expected `]` after index") {
+                    return null
+                }
+                result = Expr.Index(result, idx!)
+            } else if !self.check("left_paren") && !self.check("dot") {
+                return result
+            } else {
             if self.check("left_paren") {
                 self.advance()
                 let args = self.parse_arg_list()
@@ -853,6 +905,7 @@ impl Parser {
                 } else {
                     result = Expr.FieldAccess(result, field!)
                 }
+            }
             }
         }
 
@@ -983,6 +1036,22 @@ impl Parser {
         null
     }
 
+    // Consume a type reference: identifier optionally followed by `?`.
+    // The trailing `?` (nullable) is currently erased — we just
+    // return the underlying name.
+    fn consume_type(self, message: string) -> string? {
+        if !self.check("identifier") {
+            self.set_error(message)
+            return null
+        }
+        let name = self.current_lexeme
+        self.advance()
+        if self.check("question") {
+            self.advance()
+        }
+        name
+    }
+
     fn advance_token(self) {
         self.skip_whitespace_and_comments()
 
@@ -1043,6 +1112,18 @@ impl Parser {
         }
         if ch == "." {
             self.set_current("dot", ".")
+            return
+        }
+        if ch == "?" {
+            self.set_current("question", "?")
+            return
+        }
+        if ch == "[" {
+            self.set_current("left_bracket", "[")
+            return
+        }
+        if ch == "]" {
+            self.set_current("right_bracket", "]")
             return
         }
 
@@ -1122,13 +1203,34 @@ impl Parser {
     }
 
     fn scan_string_token(self) {
+        // Build the lexeme with escapes resolved. Surrounding quotes
+        // are kept so codegen.fg's strip_quotes still works.
+        mut content = "\""
         while !self.is_at_end() && self.peek_char() != "\"" {
             if self.peek_char() == "\\" {
                 self.advance_char()
-                if !self.is_at_end() {
-                    self.advance_char()
+                if self.is_at_end() {
+                    break
+                }
+                let esc = self.peek_char()
+                self.advance_char()
+                if esc == "n" {
+                    content = content + "\n"
+                } else if esc == "t" {
+                    content = content + "\t"
+                } else if esc == "r" {
+                    content = content + "\r"
+                } else if esc == "\\" {
+                    content = content + "\\"
+                } else if esc == "\"" {
+                    content = content + "\""
+                } else if esc == "0" {
+                    content = content + "\0"
+                } else {
+                    content = content + "\\" + esc
                 }
             } else {
+                content = content + self.peek_char()
                 self.advance_char()
             }
         }
@@ -1140,7 +1242,8 @@ impl Parser {
         }
 
         self.advance_char()
-        self.set_current("string", self.source.substring(self.start, self.current))
+        content = content + "\""
+        self.set_current("string", content)
     }
 
     fn scan_number_token(self) {

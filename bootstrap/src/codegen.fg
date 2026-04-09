@@ -143,6 +143,13 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     llvm.type_array_free(memcpy_param_arr)
     llvm.add_function(m, "memcpy", memcpy_type)
 
+    let strcmp_param_arr = llvm.type_array_new(2)
+    llvm.type_array_set(strcmp_param_arr, 0, pt)
+    llvm.type_array_set(strcmp_param_arr, 1, pt)
+    let strcmp_type = llvm.function_type(llvm.int32_type(ctx), strcmp_param_arr, 2, 0)
+    llvm.type_array_free(strcmp_param_arr)
+    llvm.add_function(m, "strcmp", strcmp_type)
+
     // Reset and rebuild the per-compile struct/enum registries.
     CG_STRUCTS = StructReg.End
     CG_ENUMS = EnumReg.End
@@ -347,6 +354,18 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
                     llvm.type_array_free(param_arr)
                     llvm.add_function(m, name, fn_type)
                 }
+                .ExternFn(name, params) -> {
+                    // Same shape as a normal function declaration:
+                    // every parameter and the return value are i64
+                    // in the bootstrap MVP. Codegen calls this via
+                    // get_named_function in emit_call_named.
+                    let arity = param_list_length(params)
+                    let param_arr = llvm.type_array_new(arity)
+                    fill_i64_param_array(param_arr, i64t, 0, arity)
+                    let fn_type = llvm.function_type(i64t, param_arr, arity, 0)
+                    llvm.type_array_free(param_arr)
+                    llvm.add_function(m, name, fn_type)
+                }
                 .Impl(_, methods) -> declare_functions(m, ctx, i64t, methods)
                 _ -> {}
             }
@@ -521,6 +540,7 @@ fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
         .Match(subject, arms) -> emit_match(cg, env, subject, arms)
         .Impl(_, _) -> ok_stmt(env)
         .NoOp -> ok_stmt(env)
+        .ExternFn(_, _) -> ok_stmt(env)
         _ -> err_stmt("codegen error: unsupported statement type")
     }
 }
@@ -651,8 +671,47 @@ fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
         .StructLit(name, inits) -> emit_struct_lit(cg, env, name, inits)
         .FieldAccess(obj, field) -> emit_field_access(cg, env, obj, field)
         .EnumCtor(type_name, variant, args) -> emit_enum_ctor(cg, env, type_name, variant, args)
+        .Index(obj, idx) -> emit_index(cg, env, obj, idx)
         _ -> err_emit("unsupported expression type")
     }
+}
+
+fn emit_index(cg: Codegen, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
+    let r = emit_expr(cg, env, obj)
+    if r.had_error {
+        return r
+    }
+    if r.ty != "str" {
+        return err_emit("indexing on non-string value (ty=" + r.ty + ")")
+    }
+    let i_r = emit_expr(cg, env, idx)
+    if i_r.had_error {
+        return i_r
+    }
+    // Allocate a 2-byte buffer (1 char + nul), copy the byte at
+    // src+i, set buf[1]=0. Returns a fresh str.
+    let src_int = r.value
+    let off_int = llvm.build_add(cg.builder, src_int, i_r.value, "idx_off_int")
+    let off_ptr = llvm.build_int_to_ptr(cg.builder, off_int, cg.ptr_type, "idx_off")
+    let byte = llvm.build_load(cg.builder, llvm.int8_type(cg.ctx), off_ptr, "idx_byte")
+    let malloc_fn = llvm.get_named_function(cg.module, "malloc")
+    let mpa = llvm.type_array_new(1)
+    llvm.type_array_set(mpa, 0, cg.i64_type)
+    let malloc_type = llvm.function_type(cg.ptr_type, mpa, 1, 0)
+    llvm.type_array_free(mpa)
+    let m_arr = llvm.value_array_new(1)
+    llvm.value_array_set(m_arr, 0, llvm.const_int(cg.i64_type, 2, 0))
+    let buf = llvm.build_call(cg.builder, malloc_type, malloc_fn, m_arr, 1, "idx_buf")
+    llvm.value_array_free(m_arr)
+    llvm.build_store(cg.builder, byte, buf)
+    // buf[1] = 0
+    let buf_int = llvm.build_ptr_to_int(cg.builder, buf, cg.i64_type, "idx_buf_int")
+    let one = llvm.const_int(cg.i64_type, 1, 0)
+    let nul_int = llvm.build_add(cg.builder, buf_int, one, "idx_nul_int")
+    let nul_ptr = llvm.build_int_to_ptr(cg.builder, nul_int, cg.ptr_type, "idx_nul")
+    llvm.build_store(cg.builder, llvm.const_int(llvm.int8_type(cg.ctx), 0, 0), nul_ptr)
+    let result_i64 = llvm.build_ptr_to_int(cg.builder, buf, cg.i64_type, "idx_result")
+    ok_emit_str(result_i64)
 }
 
 fn emit_struct_lit(cg: Codegen, env: VarEnv, name: string, inits: FieldInitList) -> EmitResult {
@@ -967,6 +1026,9 @@ fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: E
             llvm.value_array_free(arr)
             return ok_emit(len)
         }
+        if method == "substring" {
+            return emit_substring(cg, env, r.value, args)
+        }
         return err_emit("string method `" + method + "` not implemented")
     }
     // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
@@ -1142,6 +1204,92 @@ fn emit_concat(cg: Codegen, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     ok_emit_str(result_i64)
 }
 
+fn emit_substring(cg: Codegen, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
+    // Expect exactly two integer args: start and end (exclusive).
+    // Destructure exactly once — repeated `match args` corrupts
+    // the inner payloads (host-compiler issue).
+    match args {
+        .End -> err_emit("substring expects 2 args, got 0")
+        .Node(start_arg, rest) -> {
+            match rest {
+                .End -> err_emit("substring expects 2 args, got 1")
+                .Node(end_arg, _) -> emit_substring_inner(cg, env, str_i64, start_arg, end_arg)
+            }
+        }
+    }
+}
+
+fn emit_substring_inner(cg: Codegen, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> EmitResult {
+    let start_r = emit_expr(cg, env, start_arg)
+    if start_r.had_error {
+        return start_r
+    }
+    let end_r = emit_expr(cg, env, end_arg)
+    if end_r.had_error {
+        return end_r
+    }
+    let str_ptr = llvm.build_int_to_ptr(cg.builder, str_i64, cg.ptr_type, "sub_src")
+    let len = llvm.build_sub(cg.builder, end_r.value, start_r.value, "sub_len")
+    let one = llvm.const_int(cg.i64_type, 1, 0)
+    let alloc_size = llvm.build_add(cg.builder, len, one, "sub_alloc")
+    // malloc(alloc_size)
+    let malloc_fn = llvm.get_named_function(cg.module, "malloc")
+    let mpa = llvm.type_array_new(1)
+    llvm.type_array_set(mpa, 0, cg.i64_type)
+    let malloc_type = llvm.function_type(cg.ptr_type, mpa, 1, 0)
+    llvm.type_array_free(mpa)
+    let m_arr = llvm.value_array_new(1)
+    llvm.value_array_set(m_arr, 0, alloc_size)
+    let buf = llvm.build_call(cg.builder, malloc_type, malloc_fn, m_arr, 1, "sub_buf")
+    llvm.value_array_free(m_arr)
+    // memcpy(buf, src + start, len)
+    let src_int = llvm.build_ptr_to_int(cg.builder, str_ptr, cg.i64_type, "sub_src_int")
+    let off_int = llvm.build_add(cg.builder, src_int, start_r.value, "sub_off_int")
+    let off_ptr = llvm.build_int_to_ptr(cg.builder, off_int, cg.ptr_type, "sub_off")
+    let memcpy_fn = llvm.get_named_function(cg.module, "memcpy")
+    let mcpa = llvm.type_array_new(3)
+    llvm.type_array_set(mcpa, 0, cg.ptr_type)
+    llvm.type_array_set(mcpa, 1, cg.ptr_type)
+    llvm.type_array_set(mcpa, 2, cg.i64_type)
+    let memcpy_type = llvm.function_type(cg.ptr_type, mcpa, 3, 0)
+    llvm.type_array_free(mcpa)
+    let mc_arr = llvm.value_array_new(3)
+    llvm.value_array_set(mc_arr, 0, buf)
+    llvm.value_array_set(mc_arr, 1, off_ptr)
+    llvm.value_array_set(mc_arr, 2, len)
+    llvm.build_call(cg.builder, memcpy_type, memcpy_fn, mc_arr, 3, "")
+    llvm.value_array_free(mc_arr)
+    // Null-terminate at buf[len].
+    let buf_int2 = llvm.build_ptr_to_int(cg.builder, buf, cg.i64_type, "sub_buf_int")
+    let nul_int = llvm.build_add(cg.builder, buf_int2, len, "sub_nul_int")
+    let nul_ptr = llvm.build_int_to_ptr(cg.builder, nul_int, cg.ptr_type, "sub_nul")
+    llvm.build_store(cg.builder, llvm.const_int(llvm.int8_type(cg.ctx), 0, 0), nul_ptr)
+    let result_i64 = llvm.build_ptr_to_int(cg.builder, buf, cg.i64_type, "sub_result")
+    ok_emit_str(result_i64)
+}
+
+fn emit_str_eq(cg: Codegen, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult {
+    let lhs_ptr = llvm.build_int_to_ptr(cg.builder, lhs_i64, cg.ptr_type, "streq_l")
+    let rhs_ptr = llvm.build_int_to_ptr(cg.builder, rhs_i64, cg.ptr_type, "streq_r")
+    let strcmp_fn = llvm.get_named_function(cg.module, "strcmp")
+    let pa = llvm.type_array_new(2)
+    llvm.type_array_set(pa, 0, cg.ptr_type)
+    llvm.type_array_set(pa, 1, cg.ptr_type)
+    let strcmp_type = llvm.function_type(llvm.int32_type(cg.ctx), pa, 2, 0)
+    llvm.type_array_free(pa)
+    let arr = llvm.value_array_new(2)
+    llvm.value_array_set(arr, 0, lhs_ptr)
+    llvm.value_array_set(arr, 1, rhs_ptr)
+    let result32 = llvm.build_call(cg.builder, strcmp_type, strcmp_fn, arr, 2, "strcmp_call")
+    llvm.value_array_free(arr)
+    // Compare strcmp result against 0 (i32). For == we want eq;
+    // for != we want ne. The result of icmp is i1; zext to i64.
+    let zero32 = llvm.const_int(llvm.int32_type(cg.ctx), 0, 0)
+    let pred = if invert { 33 } else { 32 }
+    let cmp = llvm.build_icmp(cg.builder, pred, result32, zero32, "streq_cmp")
+    ok_emit(llvm.build_zext(cg.builder, cmp, cg.i64_type, "streq_ext"))
+}
+
 fn strip_quotes(s: string) -> string {
     let len = s.length
     if len < 2 {
@@ -1212,10 +1360,16 @@ fn emit_binary(cg: Codegen, env: VarEnv, left: Expr, operator: string, right: Ex
     // Comparisons: icmp returns i1, zext to i64
     // pred: 32=eq, 33=ne, 38=sgt, 39=sge, 40=slt, 41=sle
     if operator == "==" {
+        if left_result.ty == "str" || right_result.ty == "str" {
+            return emit_str_eq(cg, lhs, rhs, false)
+        }
         let cmp = llvm.build_icmp(cg.builder, 32, lhs, rhs, "eq")
         return ok_emit(llvm.build_zext(cg.builder, cmp, cg.i64_type, "eq_ext"))
     }
     if operator == "!=" {
+        if left_result.ty == "str" || right_result.ty == "str" {
+            return emit_str_eq(cg, lhs, rhs, true)
+        }
         let cmp = llvm.build_icmp(cg.builder, 33, lhs, rhs, "ne")
         return ok_emit(llvm.build_zext(cg.builder, cmp, cg.i64_type, "ne_ext"))
     }

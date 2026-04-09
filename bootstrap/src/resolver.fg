@@ -225,6 +225,7 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         }
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
         .NoOp -> r
+        .ExternFn(name, _) -> declare_function(r, name)
     }
 }
 
@@ -335,6 +336,10 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             }
         }
         .EnumCtor(_, _, args) -> resolve_expr_list(r, args)
+        .Index(obj, idx) -> {
+            let after_obj = resolve_expr(r, obj)
+            resolve_expr(after_obj, idx)
+        }
     }
 }
 

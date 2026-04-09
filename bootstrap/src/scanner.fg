@@ -78,6 +78,7 @@ fn keyword_kind(text: string) -> string {
     if text == "match" { return "kw_match" }
     if text == "export" { return "kw_export" }
     if text == "impl" { return "kw_impl" }
+    if text == "extern" { return "kw_extern" }
     return "identifier"
 }
 
@@ -311,13 +312,36 @@ impl Scanner {
     }
 
     fn scan_string(self) -> Token {
+        // Build the string content with escapes resolved. The
+        // resulting lexeme INCLUDES the surrounding quotes so the
+        // existing strip_quotes path in codegen.fg keeps working.
+        mut content = "\""
         while !self.is_at_end() && self.peek() != "\"" {
             if self.peek() == "\\" {
                 self.advance()
-                if !self.is_at_end() {
-                    self.advance()
+                if self.is_at_end() {
+                    break
+                }
+                let esc = self.peek()
+                self.advance()
+                if esc == "n" {
+                    content = content + "\n"
+                } else if esc == "t" {
+                    content = content + "\t"
+                } else if esc == "r" {
+                    content = content + "\r"
+                } else if esc == "\\" {
+                    content = content + "\\"
+                } else if esc == "\"" {
+                    content = content + "\""
+                } else if esc == "0" {
+                    content = content + "\0"
+                } else {
+                    // Unknown escape — keep verbatim.
+                    content = content + "\\" + esc
                 }
             } else {
+                content = content + self.peek()
                 self.advance()
             }
         }
@@ -328,7 +352,8 @@ impl Scanner {
         }
 
         self.advance()
-        self.make_token("string")
+        content = content + "\""
+        self.make_token_with_lexeme("string", content)
     }
 
     fn scan_number(self) -> Token {

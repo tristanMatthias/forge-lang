@@ -63,6 +63,7 @@ export enum Expr {
     StructLit(name: string, inits: FieldInitList)
     FieldAccess(obj: Expr, field: string)
     EnumCtor(type_name: string, variant: string, args: ExprList)
+    Index(obj: Expr, idx: Expr)
 }
 
 export enum Stmt {
@@ -80,6 +81,7 @@ export enum Stmt {
     Match(subject: Expr, arms: MatchArmList)
     Impl(type_name: string, methods: StmtList)
     NoOp
+    ExternFn(name: string, params: ParamList)
 }
 
 export enum StmtList {
@@ -278,6 +280,7 @@ export fn render_expr(expr: Expr) -> string {
         .StructLit(name, inits) -> "(struct " + name + " " + render_field_init_list(inits) + ")"
         .FieldAccess(obj, field) -> "(field " + render_expr(obj) + " " + field + ")"
         .EnumCtor(type_name, variant, args) -> "(ctor " + type_name + "." + variant + " " + render_expr_list(args) + ")"
+        .Index(obj, idx) -> "(index " + render_expr(obj) + " " + render_expr(idx) + ")"
     }
 }
 
@@ -375,6 +378,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Match(subject, arms) -> "(match " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"
         .Impl(name, methods) -> "(impl " + name + " " + render_stmt_list(methods) + ")"
         .NoOp -> "(noop)"
+        .ExternFn(name, params) -> "(extern " + name + " " + render_param_list(params) + ")"
     }
 }
 
