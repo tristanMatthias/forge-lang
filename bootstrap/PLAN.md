@@ -14,6 +14,10 @@ The roadmap below follows the book chapter progression where that is appropriate
 - No "temporary" feature work that is not required for self-hosting.
 - Every milestone must build and test cleanly before the next one starts.
 - Host-compiler limitations belong in [TECH_DEBT.md](/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/TECH_DEBT.md), not hidden in code comments.
+- **When the bootstrap is forced to do something awkward to dodge a host-compiler bug, FIX THE HOST FIRST whenever the host fix is small and well-understood.** The host compiler lives at `forge/packages/forgec-rust/` and is plain Rust — most bugs we hit while writing bootstrap code are localised (a single match arm, a missing target-type hint, a bad codegen path) and take less time to fix at the source than to work around three different ways. Workarounds in `bootstrap/src/` are only acceptable when:
+  1. The host fix is genuinely large or risky, AND
+  2. The workaround is recorded in `TECH_DEBT.md` with a clear undo plan.
+  Otherwise: change `forge/packages/forgec-rust/`, rebuild forgec, retest bootstrap, and commit the host fix as its own commit. This is faster overall and stops bootstrap from accreting hacks that we then have to clean up before the second-generation build can succeed.
 
 ## Definition Of Done
 
@@ -316,7 +320,7 @@ Crafting Interpreters reference: Chapter 30.
 - [x] Emit variables, assignment, and block scoping
 - [x] Emit control flow (if/else, while)
 - [x] Emit function definitions and calls
-- [ ] Emit string operations via runtime linkage
+- [x] Emit string literals + `println` + string concat (`+`) via libc
 - [ ] Emit structs and enums (tagged unions)
 - [ ] Emit match expressions as conditional branches
 - [ ] Emit module imports and cross-file compilation

@@ -35,13 +35,36 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     let i1t = llvm.int1_type(ctx)
     let pt = llvm.pointer_type(ctx)
 
-    // Declare libc `puts` so `println(literal)` lowers to a single
-    // C call. Returns i32; we ignore the result.
+    // Declare libc helpers we lower string ops onto.
+    //   puts(ptr) -> i32        — for println(str)
+    //   strlen(ptr) -> i64
+    //   malloc(i64) -> ptr
+    //   memcpy(ptr, ptr, i64) -> ptr
     let puts_param_arr = llvm.type_array_new(1)
     llvm.type_array_set(puts_param_arr, 0, pt)
     let puts_type = llvm.function_type(llvm.int32_type(ctx), puts_param_arr, 1, 0)
     llvm.type_array_free(puts_param_arr)
     llvm.add_function(m, "puts", puts_type)
+
+    let strlen_param_arr = llvm.type_array_new(1)
+    llvm.type_array_set(strlen_param_arr, 0, pt)
+    let strlen_type = llvm.function_type(i64t, strlen_param_arr, 1, 0)
+    llvm.type_array_free(strlen_param_arr)
+    llvm.add_function(m, "strlen", strlen_type)
+
+    let malloc_param_arr = llvm.type_array_new(1)
+    llvm.type_array_set(malloc_param_arr, 0, i64t)
+    let malloc_type = llvm.function_type(pt, malloc_param_arr, 1, 0)
+    llvm.type_array_free(malloc_param_arr)
+    llvm.add_function(m, "malloc", malloc_type)
+
+    let memcpy_param_arr = llvm.type_array_new(3)
+    llvm.type_array_set(memcpy_param_arr, 0, pt)
+    llvm.type_array_set(memcpy_param_arr, 1, pt)
+    llvm.type_array_set(memcpy_param_arr, 2, i64t)
+    let memcpy_type = llvm.function_type(pt, memcpy_param_arr, 3, 0)
+    llvm.type_array_free(memcpy_param_arr)
+    llvm.add_function(m, "memcpy", memcpy_type)
 
     // Pass 1: declare every user-defined function as an LLVM
     // prototype so call sites (which may appear before the
@@ -123,16 +146,25 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 
 type EmitResult = {
     value: ptr,
+    // "i64" or "str". `str` values are stored as i64-encoded
+    // pointers (ptrtoint) and decoded back to `ptr` at use sites
+    // (println, concat). The tag tells `+` whether to emit an i64
+    // add or a string concat.
+    ty: string,
     had_error: bool,
     error_message: string,
 }
 
 fn ok_emit(value: ptr) -> EmitResult {
-    EmitResult { value, had_error: false, error_message: "" }
+    EmitResult { value, ty: "i64", had_error: false, error_message: "" }
+}
+
+fn ok_emit_str(value: ptr) -> EmitResult {
+    EmitResult { value, ty: "str", had_error: false, error_message: "" }
 }
 
 fn err_emit(message: string) -> EmitResult {
-    EmitResult { value: null_ptr_val(), had_error: true, error_message: "codegen error: " + message }
+    EmitResult { value: null_ptr_val(), ty: "i64", had_error: true, error_message: "codegen error: " + message }
 }
 
 type StmtResult = {
@@ -240,7 +272,8 @@ fn bind_params_inline(builder: ptr, i64t: ptr, fn_val: ptr, params: ParamList, i
             let arg = llvm.get_param(fn_val, idx)
             let alloca = llvm.build_alloca(builder, i64t, name)
             llvm.build_store(builder, arg, alloca)
-            bind_params_inline(builder, i64t, fn_val, next, idx + 1, env_extend(env, name, alloca))
+            // Function parameters are i64 by default in the MVP.
+            bind_params_inline(builder, i64t, fn_val, next, idx + 1, env_extend(env, name, alloca, "i64"))
         }
     }
 }
@@ -322,7 +355,7 @@ fn emit_var_decl(cg: Codegen, env: VarEnv, name: string, initializer: Expr) -> S
     }
     let alloca = llvm.build_alloca(cg.builder, cg.i64_type, name)
     llvm.build_store(cg.builder, r.value, alloca)
-    ok_stmt(env_extend(env, name, alloca))
+    ok_stmt(env_extend(env, name, alloca, r.ty))
 }
 
 fn emit_if(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> StmtResult {
@@ -409,40 +442,33 @@ fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
         }
         .Null -> ok_emit(llvm.const_int(cg.i64_type, 0, 0))
         .String(text) -> {
-            // Note: this path produces an empty string when called via
-            // a non-trivial expression chain (e.g. fill_arg_array). The
-            // host destructure of an Expr.String payload binds an empty
-            // text once the Expr has crossed a function-call boundary.
-            // For `println("literal")` we destructure the literal in a
-            // single match nested directly in `emit_println`. Other
-            // call sites (e.g. user-defined function args, binary ops)
-            // will produce empty strings until the host bug is fixed.
             let inner = strip_quotes(text)
             let str_ptr = llvm.build_global_string_ptr(cg.builder, inner, ".str")
-            ok_emit(llvm.build_ptr_to_int(cg.builder, str_ptr, cg.i64_type, "str_i64"))
+            ok_emit_str(llvm.build_ptr_to_int(cg.builder, str_ptr, cg.i64_type, "str_i64"))
         }
         .Grouping(inner) -> emit_expr(cg, env, inner)
         .Unary(operator, right) -> emit_unary(cg, env, operator, right)
         .Binary(left, operator, right) -> emit_binary(cg, env, left, operator, right)
         .Logical(left, operator, right) -> emit_binary(cg, env, left, operator, right)
         .Ident(name) -> {
-            let alloca = env_lookup(env, name)
-            if alloca == null {
+            let lookup = env_lookup(env, name)
+            if !lookup.found {
                 return err_emit("undefined variable `" + name + "`")
             }
-            ok_emit(llvm.build_load(cg.builder, cg.i64_type, alloca, name))
+            let loaded = llvm.build_load(cg.builder, cg.i64_type, lookup.alloca, name)
+            EmitResult { value: loaded, ty: lookup.ty, had_error: false, error_message: "" }
         }
         .Assign(name, value) -> {
-            let alloca = env_lookup(env, name)
-            if alloca == null {
+            let lookup = env_lookup(env, name)
+            if !lookup.found {
                 return err_emit("assignment to undefined variable `" + name + "`")
             }
             let r = emit_expr(cg, env, value)
             if r.had_error {
                 return r
             }
-            llvm.build_store(cg.builder, r.value, alloca)
-            ok_emit(r.value)
+            llvm.build_store(cg.builder, r.value, lookup.alloca)
+            EmitResult { value: r.value, ty: lookup.ty, had_error: false, error_message: "" }
         }
         .Call(callee, args) -> emit_call(cg, env, callee, args)
         _ -> err_emit("unsupported expression type")
@@ -526,6 +552,78 @@ fn emit_println(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
     ok_emit(llvm.const_int(cg.i64_type, 0, 0))
 }
 
+fn emit_concat(cg: Codegen, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
+    // Decode the i64-encoded operands back to ptrs.
+    let lhs_ptr = llvm.build_int_to_ptr(cg.builder, lhs_i64, cg.ptr_type, "concat_l")
+    let rhs_ptr = llvm.build_int_to_ptr(cg.builder, rhs_i64, cg.ptr_type, "concat_r")
+
+    // strlen each side.
+    let strlen_fn = llvm.get_named_function(cg.module, "strlen")
+    let strlen_param_arr = llvm.type_array_new(1)
+    llvm.type_array_set(strlen_param_arr, 0, cg.ptr_type)
+    let strlen_type = llvm.function_type(cg.i64_type, strlen_param_arr, 1, 0)
+    llvm.type_array_free(strlen_param_arr)
+
+    let l_arr = llvm.value_array_new(1)
+    llvm.value_array_set(l_arr, 0, lhs_ptr)
+    let lhs_len = llvm.build_call(cg.builder, strlen_type, strlen_fn, l_arr, 1, "lhs_len")
+    llvm.value_array_free(l_arr)
+
+    let r_arr = llvm.value_array_new(1)
+    llvm.value_array_set(r_arr, 0, rhs_ptr)
+    let rhs_len = llvm.build_call(cg.builder, strlen_type, strlen_fn, r_arr, 1, "rhs_len")
+    llvm.value_array_free(r_arr)
+
+    // total = lhs_len + rhs_len; alloc = total + 1 (null terminator)
+    let total = llvm.build_add(cg.builder, lhs_len, rhs_len, "concat_total")
+    let one = llvm.const_int(cg.i64_type, 1, 0)
+    let alloc_size = llvm.build_add(cg.builder, total, one, "concat_size")
+
+    // malloc(alloc_size)
+    let malloc_fn = llvm.get_named_function(cg.module, "malloc")
+    let malloc_param_arr = llvm.type_array_new(1)
+    llvm.type_array_set(malloc_param_arr, 0, cg.i64_type)
+    let malloc_type = llvm.function_type(cg.ptr_type, malloc_param_arr, 1, 0)
+    llvm.type_array_free(malloc_param_arr)
+
+    let m_arr = llvm.value_array_new(1)
+    llvm.value_array_set(m_arr, 0, alloc_size)
+    let buf = llvm.build_call(cg.builder, malloc_type, malloc_fn, m_arr, 1, "concat_buf")
+    llvm.value_array_free(m_arr)
+
+    // memcpy(buf, lhs_ptr, lhs_len)
+    let memcpy_fn = llvm.get_named_function(cg.module, "memcpy")
+    let memcpy_param_arr = llvm.type_array_new(3)
+    llvm.type_array_set(memcpy_param_arr, 0, cg.ptr_type)
+    llvm.type_array_set(memcpy_param_arr, 1, cg.ptr_type)
+    llvm.type_array_set(memcpy_param_arr, 2, cg.i64_type)
+    let memcpy_type = llvm.function_type(cg.ptr_type, memcpy_param_arr, 3, 0)
+    llvm.type_array_free(memcpy_param_arr)
+
+    let mc1_arr = llvm.value_array_new(3)
+    llvm.value_array_set(mc1_arr, 0, buf)
+    llvm.value_array_set(mc1_arr, 1, lhs_ptr)
+    llvm.value_array_set(mc1_arr, 2, lhs_len)
+    llvm.build_call(cg.builder, memcpy_type, memcpy_fn, mc1_arr, 3, "")
+    llvm.value_array_free(mc1_arr)
+
+    // memcpy(buf + lhs_len, rhs_ptr, rhs_len + 1)  — copies rhs and the trailing NUL
+    let buf_int = llvm.build_ptr_to_int(cg.builder, buf, cg.i64_type, "buf_int")
+    let dst2_int = llvm.build_add(cg.builder, buf_int, lhs_len, "dst2_int")
+    let dst2 = llvm.build_int_to_ptr(cg.builder, dst2_int, cg.ptr_type, "dst2")
+    let rhs_len_plus_1 = llvm.build_add(cg.builder, rhs_len, one, "rhs_len_p1")
+
+    let mc2_arr = llvm.value_array_new(3)
+    llvm.value_array_set(mc2_arr, 0, dst2)
+    llvm.value_array_set(mc2_arr, 1, rhs_ptr)
+    llvm.value_array_set(mc2_arr, 2, rhs_len_plus_1)
+    llvm.build_call(cg.builder, memcpy_type, memcpy_fn, mc2_arr, 3, "")
+    llvm.value_array_free(mc2_arr)
+
+    let result_i64 = llvm.build_ptr_to_int(cg.builder, buf, cg.i64_type, "concat_i64")
+    ok_emit_str(result_i64)
+}
+
 fn strip_quotes(s: string) -> string {
     let len = s.length
     if len < 2 {
@@ -580,7 +678,15 @@ fn emit_binary(cg: Codegen, env: VarEnv, left: Expr, operator: string, right: Ex
     }
     let rhs = right_result.value
 
-    if operator == "+" { return ok_emit(llvm.build_add(cg.builder, lhs, rhs, "add")) }
+    if operator == "+" {
+        // Dispatch + on operand types: if either side is a string,
+        // emit a string concat sequence (strlen+strlen+malloc+memcpy
+        // ×2 + null-terminate). Otherwise it's an integer add.
+        if left_result.ty == "str" || right_result.ty == "str" {
+            return emit_concat(cg, lhs, rhs)
+        }
+        return ok_emit(llvm.build_add(cg.builder, lhs, rhs, "add"))
+    }
     if operator == "-" { return ok_emit(llvm.build_sub(cg.builder, lhs, rhs, "sub")) }
     if operator == "*" { return ok_emit(llvm.build_mul(cg.builder, lhs, rhs, "mul")) }
     if operator == "/" { return ok_emit(llvm.build_sdiv(cg.builder, lhs, rhs, "div")) }

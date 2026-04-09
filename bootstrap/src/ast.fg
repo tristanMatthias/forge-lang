@@ -42,28 +42,39 @@ export enum StmtList {
 // Recursive variable environment used by codegen.
 // We can't use `List` here because host `List.push()` corrupts
 // the bootstrap path — see TECH_DEBT.md #1.
+//
+// `ty` is one of "i64" or "str" — bootstrap MVP only has those two
+// value types and they're both stored in i64-shaped allocas (str
+// values are pointer-encoded into the i64 slot via ptrtoint). The
+// tag tells `+` whether to emit an i64 add or a string concat.
 export enum VarEnv {
     End
-    Node(name: string, alloca: ptr, next: VarEnv)
+    Node(name: string, alloca: ptr, ty: string, next: VarEnv)
 }
 
-export fn env_lookup(env: VarEnv, name: string) -> ptr {
+export type VarLookup = {
+    found: bool,
+    alloca: ptr,
+    ty: string,
+}
+
+export fn env_lookup(env: VarEnv, name: string) -> VarLookup {
     match env {
         .End -> {
             let n: ptr = null
-            n
+            VarLookup { found: false, alloca: n, ty: "i64" }
         }
-        .Node(n, alloca, next) -> {
+        .Node(n, alloca, ty, next) -> {
             if n == name {
-                return alloca
+                return VarLookup { found: true, alloca, ty }
             }
             env_lookup(next, name)
         }
     }
 }
 
-export fn env_extend(env: VarEnv, name: string, alloca: ptr) -> VarEnv {
-    VarEnv.Node(name, alloca, env)
+export fn env_extend(env: VarEnv, name: string, alloca: ptr, ty: string) -> VarEnv {
+    VarEnv.Node(name, alloca, ty, env)
 }
 
 // Function symbol table — name → (LLVM function value, arity).
