@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup}
-use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, null_ptr_val, enum_reg_lookup, strip_enum_prefix, translate_param_type, field_type_at, advance_field_list}
+use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, null_ptr_val, enum_reg_lookup, strip_enum_prefix, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, to_ptr}
 use codegen.{emit_expr}
 
 
@@ -17,12 +17,12 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
     let lookup = enum_reg_lookup(ctx.enums, enum_name)
     if !lookup.found { return err_emit("unknown enum `" + enum_name + "`") }
     let st_ty = forge_llvm_get_type_by_name(ctx.ctx, enum_name)
-    let subj_ptr = forge_llvm_build_int_to_ptr(ctx.builder, r.value, ctx.ptr_type, "match_subj")
+    let subj_ptr = to_ptr(ctx, r.value, "match_subj")
     let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, 0, "tag_ptr")
     let tag_val = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.ctx), tag_gep, "tag")
     let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "match_result")
-    forge_llvm_build_store(ctx.builder, forge_llvm_const_int(ctx.i64_type, 0, 0), result_slot)
-    let merge_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "match_end")
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
+    let merge_bb = new_bb(ctx, "match_end")
     let arm_result = emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)
     if arm_result.had_error { return arm_result }
     forge_llvm_position_at_end(ctx.builder, merge_bb)
@@ -39,14 +39,14 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             EmitResult { value: null_ptr_val(), ty: "i64", had_error: false, error_message: "" }
         }
         .Node(pattern, body, next) -> {
-            let arm_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "march_arm")
-            let next_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "march_next")
+            let arm_bb = new_bb(ctx, "march_arm")
+            let next_bb = new_bb(ctx, "march_next")
             match pattern {
                 .Wildcard -> forge_llvm_build_br(ctx.builder, arm_bb)
                 .Variant(vname, _) -> {
                     let v = variant_lookup(variants, vname)
                     if !v.found { return err_emit("pattern references unknown variant `" + vname + "`") }
-                    let want_tag = forge_llvm_const_int(forge_llvm_int8_type(ctx.ctx), v.tag, 0)
+                    let want_tag = const_i8(ctx, v.tag)
                     let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, want_tag, "tag_eq")
                     forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
                 }
@@ -89,10 +89,10 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
     let lookup = enum_reg_lookup(ctx.enums, enum_name)
     if !lookup.found { return err_stmt("codegen error: unknown enum `" + enum_name + "`") }
     let st_ty = forge_llvm_get_type_by_name(ctx.ctx, enum_name)
-    let subj_ptr = forge_llvm_build_int_to_ptr(ctx.builder, r.value, ctx.ptr_type, "match_subj")
+    let subj_ptr = to_ptr(ctx, r.value, "match_subj")
     let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, 0, "tag_ptr")
     let tag_val = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.ctx), tag_gep, "tag")
-    let merge_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "match_end")
+    let merge_bb = new_bb(ctx, "match_end")
     let arm_result = emit_match_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)
     if arm_result.had_error { return arm_result }
     forge_llvm_position_at_end(ctx.builder, merge_bb)
@@ -108,14 +108,14 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
             ok_stmt(env)
         }
         .Node(pattern, body, next) -> {
-            let arm_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "match_arm")
-            let next_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "match_next")
+            let arm_bb = new_bb(ctx, "match_arm")
+            let next_bb = new_bb(ctx, "match_next")
             match pattern {
                 .Wildcard -> forge_llvm_build_br(ctx.builder, arm_bb)
                 .Variant(vname, _) -> {
                     let v = variant_lookup(variants, vname)
                     if !v.found { return err_stmt("codegen error: pattern references unknown variant `" + vname + "`") }
-                    let want_tag = forge_llvm_const_int(forge_llvm_int8_type(ctx.ctx), v.tag, 0)
+                    let want_tag = const_i8(ctx, v.tag)
                     let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, want_tag, "tag_eq")
                     forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
                 }

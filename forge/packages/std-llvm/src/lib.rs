@@ -1134,6 +1134,15 @@ pub extern "C" fn forge_llvm_verify_module_print(m: LLVMPtr) -> i64 {
     }
 }
 
+/// Get the function type of a function value. Used by the bootstrap's
+/// Cg helper layer so call sites don't need to manually rebuild the
+/// function type from parameter arrays.
+#[no_mangle]
+pub extern "C" fn forge_llvm_fn_type_of(fn_val: LLVMPtr) -> LLVMPtr {
+    if fn_val.is_null() { return std::ptr::null_mut(); }
+    unsafe { LLVMGlobalGetValueType(fn_val) }
+}
+
 /// Verify module and write errors to a file.
 /// Returns 0 if valid, number of error lines if errors found.
 #[no_mangle]

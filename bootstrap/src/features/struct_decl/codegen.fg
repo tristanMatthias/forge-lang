@@ -17,7 +17,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     let buf = malloc_struct_bytes(ctx, lookup.fields)
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)
     if fill.had_error { return fill }
-    let as_i64 = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "struct_i64")
+    let as_i64 = to_i64(ctx, buf, "struct_i64")
     EmitResult { value: as_i64, ty: "struct:" + name, had_error: false, error_message: "" }
 }
 

@@ -20,11 +20,11 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     }
     let buf = malloc_enum_bytes(ctx, enum_l.variants)
     let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, buf, 0, "tag_ptr")
-    let tag_val = forge_llvm_const_int(forge_llvm_int8_type(ctx.ctx), v.tag, 0)
+    let tag_val = const_i8(ctx, v.tag)
     forge_llvm_build_store(ctx.builder, tag_val, tag_gep)
     let fill = fill_enum_payload(ctx, env, st_ty, buf, args, 0)
     if fill.had_error { return fill }
-    let as_i64 = forge_llvm_build_ptr_to_int(ctx.builder, buf, ctx.i64_type, "enum_i64")
+    let as_i64 = to_i64(ctx, buf, "enum_i64")
     EmitResult { value: as_i64, ty: "enum:" + type_name, had_error: false, error_message: "" }
 }
 

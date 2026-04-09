@@ -46,7 +46,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
         loops: ctx.loops,
     }
 
-    let r = emit_block_loop(body_cg, env, body, forge_llvm_const_int(ctx.i64_type, 0, 0), "i64")
+    let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), "i64")
     if r.had_error { return err_stmt(r.error_message) }
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_ret(ctx.builder, r.value)

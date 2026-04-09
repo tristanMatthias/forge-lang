@@ -42,6 +42,7 @@ extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
 extern fn forge_llvm_add_function(m: ptr, name: string, fn_type: ptr) -> ptr
 extern fn forge_llvm_get_named_function(m: ptr, name: string) -> ptr
 extern fn forge_llvm_get_param(fn_val: ptr, idx: int) -> ptr
+extern fn forge_llvm_fn_type_of(fn_val: ptr) -> ptr
 
 // ── Globals ──
 extern fn forge_llvm_add_global(m: ptr, ty: ptr, name: string) -> ptr

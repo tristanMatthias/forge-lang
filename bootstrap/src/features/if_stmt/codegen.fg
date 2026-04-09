@@ -10,10 +10,10 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
     if cond.had_error {
         return err_stmt_from_expr(cond)
     }
-    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, forge_llvm_const_int(ctx.i64_type, 0, 0), "if_cond")
-    let then_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "then")
-    let else_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "else")
-    let merge_bb = forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, "ifcont")
+    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, const_i64(ctx, 0), "if_cond")
+    let then_bb = new_bb(ctx, "then")
+    let else_bb = new_bb(ctx, "else")
+    let merge_bb = new_bb(ctx, "ifcont")
     forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
 
     forge_llvm_position_at_end(ctx.builder, then_bb)

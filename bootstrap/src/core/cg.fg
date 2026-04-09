@@ -278,3 +278,103 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     }
     "i64"
 }
+
+// ── Cg helpers ──
+//
+// Fluent wrappers that compress the LLVM builder boilerplate.
+// Each eliminates ~5-8 lines of type-array/value-array ceremony.
+// Pure Forge functions calling the C externs from core/llvm.fg.
+
+// Look up a module-level function by name.
+export fn get_fn(ctx: Ctx, name: string) -> ptr {
+    forge_llvm_get_named_function(ctx.module, name)
+}
+
+// Call a 0-arg function by value. Infers the function type from
+// the LLVM function value itself (no manual type-array needed).
+export fn call_0(ctx: Ctx, fn_val: ptr, name: string) -> ptr {
+    let ft = forge_llvm_fn_type_of(fn_val)
+    let arr = forge_llvm_value_array_new(0)
+    let result = forge_llvm_build_call(ctx.builder, ft, fn_val, arr, 0, name)
+    forge_llvm_value_array_free(arr)
+    result
+}
+
+// Call a 1-arg function by value.
+export fn call_1(ctx: Ctx, fn_val: ptr, a0: ptr, name: string) -> ptr {
+    let ft = forge_llvm_fn_type_of(fn_val)
+    let arr = forge_llvm_value_array_new(1)
+    forge_llvm_value_array_set(arr, 0, a0)
+    let result = forge_llvm_build_call(ctx.builder, ft, fn_val, arr, 1, name)
+    forge_llvm_value_array_free(arr)
+    result
+}
+
+// Call a 2-arg function by value.
+export fn call_2(ctx: Ctx, fn_val: ptr, a0: ptr, a1: ptr, name: string) -> ptr {
+    let ft = forge_llvm_fn_type_of(fn_val)
+    let arr = forge_llvm_value_array_new(2)
+    forge_llvm_value_array_set(arr, 0, a0)
+    forge_llvm_value_array_set(arr, 1, a1)
+    let result = forge_llvm_build_call(ctx.builder, ft, fn_val, arr, 2, name)
+    forge_llvm_value_array_free(arr)
+    result
+}
+
+// Call a 3-arg function by value.
+export fn call_3(ctx: Ctx, fn_val: ptr, a0: ptr, a1: ptr, a2: ptr, name: string) -> ptr {
+    let ft = forge_llvm_fn_type_of(fn_val)
+    let arr = forge_llvm_value_array_new(3)
+    forge_llvm_value_array_set(arr, 0, a0)
+    forge_llvm_value_array_set(arr, 1, a1)
+    forge_llvm_value_array_set(arr, 2, a2)
+    let result = forge_llvm_build_call(ctx.builder, ft, fn_val, arr, 3, name)
+    forge_llvm_value_array_free(arr)
+    result
+}
+
+// Call a 4-arg function by value (snprintf).
+export fn call_4(ctx: Ctx, fn_val: ptr, a0: ptr, a1: ptr, a2: ptr, a3: ptr, name: string) -> ptr {
+    let ft = forge_llvm_fn_type_of(fn_val)
+    let arr = forge_llvm_value_array_new(4)
+    forge_llvm_value_array_set(arr, 0, a0)
+    forge_llvm_value_array_set(arr, 1, a1)
+    forge_llvm_value_array_set(arr, 2, a2)
+    forge_llvm_value_array_set(arr, 3, a3)
+    let result = forge_llvm_build_call(ctx.builder, ft, fn_val, arr, 4, name)
+    forge_llvm_value_array_free(arr)
+    result
+}
+
+// Convenience: look up a function by name and call it with 1 arg.
+export fn call_named_1(ctx: Ctx, name: string, a0: ptr, result_name: string) -> ptr {
+    call_1(ctx, get_fn(ctx, name), a0, result_name)
+}
+
+// malloc(size) → ptr
+export fn cg_malloc(ctx: Ctx, size: ptr) -> ptr {
+    call_named_1(ctx, "malloc", size, "buf")
+}
+
+// Allocate a new basic block and position the builder at its end.
+export fn new_bb(ctx: Ctx, name: string) -> ptr {
+    forge_llvm_append_basic_block(ctx.ctx, ctx.current_fn, name)
+}
+
+// Shorthand for common constants.
+export fn const_i64(ctx: Ctx, value: int) -> ptr {
+    forge_llvm_const_int(ctx.i64_type, value, 0)
+}
+
+export fn const_i8(ctx: Ctx, value: int) -> ptr {
+    forge_llvm_const_int(forge_llvm_int8_type(ctx.ctx), value, 0)
+}
+
+// i64 ↔ ptr conversions (the bootstrap's value model).
+export fn to_ptr(ctx: Ctx, val: ptr, name: string) -> ptr {
+    forge_llvm_build_int_to_ptr(ctx.builder, val, ctx.ptr_type, name)
+}
+
+export fn to_i64(ctx: Ctx, val: ptr, name: string) -> ptr {
+    forge_llvm_build_ptr_to_int(ctx.builder, val, ctx.i64_type, name)
+}
