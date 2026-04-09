@@ -7,7 +7,8 @@ impl Parser {
     fn parse_for_statement(self) -> Stmt? {
         self.advance()
 
-        let name = self.consume_identifier("expected variable name after `for`")?
+        let name = self.consume_identifier("expected variable name after `for`")
+        if name == null { return null }
 
         if !self.consume("kw_in", "expected `in` after loop variable") {
             return null
@@ -34,8 +35,9 @@ impl Parser {
             return null
         }
 
-        let body = self.parse_statement()?
+        let body = self.parse_statement()
+        if body == null { return null }
 
-        Stmt.For(name, start!, end!, body)
+        Stmt.For(name!, start!, end!, body!)
     }
 }
