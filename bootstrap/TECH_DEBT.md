@@ -51,7 +51,33 @@ operators this becomes measurable.
 **Plan:** Parse-time conversion to a `BinaryOp` enum. Quick refactor,
 do before adding bitwise operators.
 
-### 4. Recursive enum lists instead of real collections
+### 4. VarLookup/FnLookup structs (was nullable return workaround)
+
+**Severity:** low (cosmetic)
+**Impact:** `env_lookup` returns `VarLookup { found, alloca, ty }`
+instead of just `ptr?`
+
+Originally worked around Rust host bug #6 (nullable returns from
+recursive enum matching corrupted values). Our compiler handles
+this correctly now — verified with test. The struct pattern is
+slightly verbose but clear. Could migrate to `?`-based returns.
+
+**Plan:** Optional cleanup. The struct pattern is actually readable.
+
+### 5. Tagged Value struct in eval.fg (was enum payload workaround)
+
+**Severity:** low (cosmetic)
+**Impact:** eval.fg uses `type Value = { tag, int_val, str_val, ... }`
+instead of an enum
+
+Originally worked around Rust host bug #5 (enum payloads unreliable
+across function boundaries). Our compiler handles enum payloads fine.
+The eval is rarely used (only for the `eval` command).
+
+**Plan:** Optional cleanup. Low priority since eval is not the
+primary codegen path.
+
+### 6. Recursive enum lists instead of real collections (cosmetic)
 
 **Severity:** low (cosmetic)
 **Impact:** ExprList, StmtList, ParamList, VarEnv are linked lists
@@ -65,7 +91,7 @@ enums work fine for AST sizes. Not urgent.
 **Plan:** Consider migrating when/if performance matters. The linked
 lists are actually idiomatic for immutable scope stacks (VarEnv).
 
-### 5. return not allowed in bare match arms
+### 7. return not allowed in bare match arms
 
 **Severity:** low
 **Impact:** must wrap return in braces: `_ -> { return x }`
@@ -77,7 +103,7 @@ fine and doesn't hurt readability.
 **Plan:** Fix the parser to accept statements in bare match arm
 position. Low priority — the braces are idiomatic anyway.
 
-### 6. Stmt.Return naming (was Ret)
+### 8. Stmt.Return naming (was Ret)
 
 **Severity:** none (RESOLVED)
 
