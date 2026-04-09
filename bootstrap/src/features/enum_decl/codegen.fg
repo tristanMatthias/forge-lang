@@ -14,7 +14,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     if !v.found {
         return err_emit("enum `" + type_name + "` has no variant `" + variant + "`")
     }
-    let st_ty = forge_llvm_get_type_by_name(ctx.ctx, type_name)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, type_name)
     if st_ty == null {
         return err_emit("LLVM enum type `" + type_name + "` not declared")
     }

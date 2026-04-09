@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 
 use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend}
-use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_param_type}
+use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_param_type, ctx_with_fn}
 use codegen.{emit_block_loop}
 
 
@@ -25,26 +25,13 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     if fn_val == null {
         return err_stmt("codegen error: function `" + name + "` was not declared in pass 1")
     }
-    let entry = forge_llvm_append_basic_block(ctx.ctx, fn_val, "entry")
+    let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
     forge_llvm_position_at_end(ctx.builder, entry)
 
     let empty_env: VarEnv = VarEnv.End
     let env = bind_params_inline(ctx, fn_val, params, 0, empty_env)
 
-    let body_cg = Ctx {
-        ctx: ctx.ctx,
-        module: ctx.module,
-        builder: ctx.builder,
-        current_fn: fn_val,
-        i64_type: ctx.i64_type,
-        i1_type: ctx.i1_type,
-        ptr_type: ctx.ptr_type,
-        structs: ctx.structs,
-        enums: ctx.enums,
-        fn_rets: ctx.fn_rets,
-        top_level_vars: ctx.top_level_vars,
-        loops: ctx.loops,
-    }
+    let body_cg = ctx_with_fn(ctx, fn_val)
 
     let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), "i64")
     if r.had_error { return err_stmt(r.error_message) }

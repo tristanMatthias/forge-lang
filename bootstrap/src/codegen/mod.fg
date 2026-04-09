@@ -141,7 +141,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_position_at_end(builder, entry)
 
     let ctx = Ctx {
-        ctx: lc,
+        lc,
         module: m,
         builder,
         current_fn: main_fn,
@@ -161,7 +161,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     if body_result.had_error {
         forge_llvm_dispose_builder(builder)
         forge_llvm_module_dispose(m)
-        forge_llvm_context_dispose(ctx.ctx)
+        forge_llvm_context_dispose(ctx.lc)
         return CodegenResult { had_error: true, error_message: body_result.error_message }
     }
 
@@ -174,7 +174,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     if result.had_error {
         forge_llvm_dispose_builder(builder)
         forge_llvm_module_dispose(m)
-        forge_llvm_context_dispose(ctx.ctx)
+        forge_llvm_context_dispose(ctx.lc)
         return CodegenResult { had_error: true, error_message: result.error_message }
     }
 
@@ -188,7 +188,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     if verify != 0 {
         forge_llvm_dispose_builder(builder)
         forge_llvm_module_dispose(m)
-        forge_llvm_context_dispose(ctx.ctx)
+        forge_llvm_context_dispose(ctx.lc)
         return CodegenResult { had_error: true, error_message: "codegen error: LLVM module verification failed" }
     }
 
@@ -196,7 +196,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 
     forge_llvm_dispose_builder(builder)
     forge_llvm_module_dispose(m)
-    forge_llvm_context_dispose(ctx.ctx)
+    forge_llvm_context_dispose(ctx.lc)
 
     if write_result != 0 {
         return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to " + output_path }
@@ -399,20 +399,7 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLe
     }
     forge_llvm_build_store(ctx.builder, r.value, g.llvm_global)
     let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
-    let updated_cg = Ctx {
-        ctx: ctx.ctx,
-        module: ctx.module,
-        builder: ctx.builder,
-        current_fn: ctx.current_fn,
-        i64_type: ctx.i64_type,
-        i1_type: ctx.i1_type,
-        ptr_type: ctx.ptr_type,
-        structs: ctx.structs,
-        enums: ctx.enums,
-        fn_rets: ctx.fn_rets,
-        top_level_vars: updated_top,
-        loops: ctx.loops,
-    }
+    let updated_cg = ctx_with_top_level(ctx, updated_top)
     TopLevelResult { ctx: updated_cg, env, had_error: false, error_message: "" }
 }
 
@@ -616,7 +603,7 @@ fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Exp
     if idx < 0 {
         return err_emit("unknown field `" + field + "` on struct `" + struct_name + "`")
     }
-    let st_ty = forge_llvm_get_type_by_name(ctx.ctx, struct_name)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
     let obj_ptr = to_ptr(ctx, r.value, "fa_ptr")
     let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fa_fld")
     let v = emit_expr(ctx, env, value)
@@ -746,7 +733,7 @@ fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     let src_int = r.value
     let off_int = forge_llvm_build_add(ctx.builder, src_int, i_r.value, "idx_off_int")
     let off_ptr = to_ptr(ctx, off_int, "idx_off")
-    let byte = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.ctx), off_ptr, "idx_byte")
+    let byte = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), off_ptr, "idx_byte")
     let buf = cg_malloc(ctx, const_i64(ctx, 2))
     forge_llvm_build_store(ctx.builder, byte, buf)
     // buf[1] = 0
@@ -798,7 +785,7 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
     if idx < 0 {
         return err_emit("unknown field `" + field + "` on struct `" + struct_name + "`")
     }
-    let st_ty = forge_llvm_get_type_by_name(ctx.ctx, struct_name)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
     let obj_ptr = to_ptr(ctx, r.value, "obj_ptr")
     let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fld_ptr")
     let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, field)
@@ -1095,7 +1082,7 @@ fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult
     let result32 = call_2(ctx, get_fn(ctx, "strcmp"), lhs_ptr, rhs_ptr, "strcmp_call")
     // Compare strcmp result against 0 (i32). For == we want eq;
     // for != we want ne. The result of icmp is i1; zext to i64.
-    let zero32 = forge_llvm_const_int(forge_llvm_int32_type(ctx.ctx), 0, 0)
+    let zero32 = forge_llvm_const_int(forge_llvm_int32_type(ctx.lc), 0, 0)
     let pred = if invert { 33 } else { 32 }
     let cmp = forge_llvm_build_icmp(ctx.builder, pred, result32, zero32, "streq_cmp")
     ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "streq_ext"))

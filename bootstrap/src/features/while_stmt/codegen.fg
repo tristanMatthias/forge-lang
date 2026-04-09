@@ -2,7 +2,7 @@
 // support via the scoped loop stack in Ctx.
 
 use core.ast.{Expr, Stmt, VarEnv}
-use core.cg.{Ctx, LoopStack, StmtResult, ok_stmt, err_stmt_from_expr}
+use core.cg.{Ctx, LoopStack, StmtResult, ok_stmt, err_stmt_from_expr, ctx_with_loops}
 use codegen.{emit_expr, emit_stmt}
 
 export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
@@ -20,20 +20,7 @@ export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Stmt
     // Scoped loop stack: create a new Ctx with this loop's
     // frame pushed. The body sees it; the outer cg is unchanged.
     forge_llvm_position_at_end(ctx.builder, body_bb)
-    let body_cg = Ctx {
-        ctx: ctx.ctx,
-        module: ctx.module,
-        builder: ctx.builder,
-        current_fn: ctx.current_fn,
-        i64_type: ctx.i64_type,
-        i1_type: ctx.i1_type,
-        ptr_type: ctx.ptr_type,
-        structs: ctx.structs,
-        enums: ctx.enums,
-        fn_rets: ctx.fn_rets,
-        top_level_vars: ctx.top_level_vars,
-        loops: LoopStack.Frame(cond_bb, exit_bb, ctx.loops),
-    }
+    let body_cg = ctx_with_loops(ctx, LoopStack.Frame(cond_bb, exit_bb, ctx.loops))
     let body_result = emit_stmt(body_cg, env, body)
     if body_result.had_error { return body_result }
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {

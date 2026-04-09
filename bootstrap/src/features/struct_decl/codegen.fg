@@ -10,7 +10,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     if !lookup.found {
         return err_emit("undefined struct type `" + name + "`")
     }
-    let st_ty = forge_llvm_get_type_by_name(ctx.ctx, name)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, name)
     if st_ty == null {
         return err_emit("LLVM struct type `" + name + "` not declared")
     }
