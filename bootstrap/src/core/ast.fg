@@ -146,12 +146,13 @@ fn typelist_at(list: TypeList, idx: int) -> ValueType {
 // ── Operators ──
 
 export enum BinOp {
-    Add, Sub, Mul, Div,
+    Add, Sub, Mul, Div, Mod,
     Eq, Ne, Lt, Le, Gt, Ge,
+    BitAnd, BitOr, BitXor, Shl, Shr,
 }
 
 export enum UnOp {
-    Neg, Not,
+    Neg, Not, BitNot,
 }
 
 export enum LogicOp {
@@ -164,12 +165,18 @@ export fn binop_str(op: BinOp) -> string {
         .Sub -> "-"
         .Mul -> "*"
         .Div -> "/"
+        .Mod -> "%"
         .Eq -> "=="
         .Ne -> "!="
         .Lt -> "<"
         .Le -> "<="
         .Gt -> ">"
         .Ge -> ">="
+        .BitAnd -> "&"
+        .BitOr -> "|"
+        .BitXor -> "^"
+        .Shl -> "<<"
+        .Shr -> ">>"
     }
 }
 
@@ -177,6 +184,7 @@ export fn unop_str(op: UnOp) -> string {
     match op {
         .Neg -> "-"
         .Not -> "!"
+        .BitNot -> "~"
     }
 }
 
@@ -225,6 +233,7 @@ export enum Stmt {
     If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
     While(condition: Expr, body: Stmt)
     For(variable: string, start: Expr, end: Expr, body: Stmt)
+    ForIn(variable: string, collection: Expr, body: Stmt)
     // `ret_ty` is the textual return type as written in source
     // (e.g. "i64", "str", "Stmt", "i64?"). Codegen translates this
     // into its internal value-type tag and uses it to set the
@@ -543,6 +552,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         }
         .While(condition, body) -> "(while " + render_expr(condition) + " " + render_stmt(body) + ")"
         .For(variable, start, end, body) -> "(for " + variable + " " + render_expr(start) + ".." + render_expr(end) + " " + render_stmt(body) + ")"
+        .ForIn(variable, collection, body) -> "(for-in " + variable + " " + render_expr(collection) + " " + render_stmt(body) + ")"
         .Function(name, params, ret_ty, body) -> "(fn " + name + " " + render_param_list(params) + " -> " + ret_ty + " " + render_stmt_list(body) + ")"
         .Return(value) -> "(return " + render_expr(value) + ")"
         .ReturnEmpty -> "(return)"

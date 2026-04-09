@@ -442,6 +442,7 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
         .TraitDecl(_, _) -> ok_result(runtime, 0)
         .LetDestructure(_, _) -> error_result(runtime, "destructuring is not supported by the tree-walk evaluator")
+        .ForIn(_, _, _) -> error_result(runtime, "for-in is not supported by the tree-walk evaluator")
     }
 }
 

@@ -2,7 +2,7 @@
 // break/continue support via the scoped loop stack in Ctx.
 
 use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType}
-use core.cg.{Ctx, LoopStack, StmtResult, ok_stmt, err_stmt_from_expr, ctx_with_loops}
+use core.cg.{Ctx, LoopStack, StmtResult, ok_stmt, err_stmt_from_expr, ctx_with_loops, const_i64, get_fn, call_1, call_2}
 use codegen.{emit_expr, emit_stmt}
 
 export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> StmtResult {
@@ -50,6 +50,67 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
     let old = forge_llvm_build_load(ctx.builder, ctx.i64_type, counter, variable)
     let one = const_i64(ctx, 1)
     let next = forge_llvm_build_add(ctx.builder, old, one, "for_next")
+    forge_llvm_build_store(ctx.builder, next, counter)
+    forge_llvm_build_br(ctx.builder, cond_bb)
+
+    // Exit
+    forge_llvm_position_at_end(ctx.builder, exit_bb)
+    ok_stmt(env)
+}
+
+// for x in collection { body } — desugars to index-based iteration:
+//   let __len = forge_array_len(collection)
+//   for __i in 0..__len {
+//       let x = forge_array_get(collection, __i)
+//       body
+//   }
+export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr, body: Stmt) -> StmtResult {
+    let coll_r = emit_expr(ctx, env, collection)
+    if coll_r.had_error { return err_stmt_from_expr(coll_r) }
+
+    // Get length
+    let len_val = call_1(ctx, get_fn(ctx, "forge_array_len"), coll_r.value, "forin_len")
+    let len_alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "forin_len")
+    forge_llvm_build_store(ctx.builder, len_val, len_alloca)
+
+    // Counter alloca
+    let counter = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "forin_i")
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), counter)
+
+    // Element alloca
+    let elem_alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, variable)
+    let body_env = env_extend(env, variable, elem_alloca, ValueType.Int)
+
+    // Basic blocks
+    let cond_bb = new_bb(ctx, "forin.cond")
+    let body_bb = new_bb(ctx, "forin.body")
+    let incr_bb = new_bb(ctx, "forin.incr")
+    let exit_bb = new_bb(ctx, "forin.exit")
+    forge_llvm_build_br(ctx.builder, cond_bb)
+
+    // Condition: counter < len
+    forge_llvm_position_at_end(ctx.builder, cond_bb)
+    let cur = forge_llvm_build_load(ctx.builder, ctx.i64_type, counter, "forin_i_val")
+    let lim = forge_llvm_build_load(ctx.builder, ctx.i64_type, len_alloca, "forin_len_val")
+    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 40, cur, lim, "forin_cmp")
+    forge_llvm_build_cond_br(ctx.builder, cond_i1, body_bb, exit_bb)
+
+    // Body: load element, then execute body
+    forge_llvm_position_at_end(ctx.builder, body_bb)
+    let elem = call_2(ctx, get_fn(ctx, "forge_array_get"), coll_r.value, cur, "forin_elem")
+    forge_llvm_build_store(ctx.builder, elem, elem_alloca)
+
+    let body_ctx = ctx_with_loops(ctx, LoopStack.Frame(incr_bb, exit_bb, ctx.loops))
+    let body_result = emit_stmt(body_ctx, body_env, body)
+    if body_result.had_error { return body_result }
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_br(ctx.builder, incr_bb)
+    }
+
+    // Increment
+    forge_llvm_position_at_end(ctx.builder, incr_bb)
+    let old = forge_llvm_build_load(ctx.builder, ctx.i64_type, counter, "forin_i_old")
+    let next = forge_llvm_build_add(ctx.builder, old, const_i64(ctx, 1), "forin_next")
     forge_llvm_build_store(ctx.builder, next, counter)
     forge_llvm_build_br(ctx.builder, cond_bb)
 

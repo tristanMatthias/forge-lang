@@ -1,0 +1,3 @@
+println(string(1_000_000))
+println(string(0xFF_FF))
+println(string(0b1010_0101))

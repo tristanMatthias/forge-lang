@@ -1,4 +1,5 @@
-// WHY: parses `for variable in start..end { body }`.
+// WHY: parses `for variable in start..end { body }` (range)
+// and `for variable in collection { body }` (for-in iteration).
 
 use core.ast.{Stmt}
 use parse.{Parser}
@@ -15,27 +16,33 @@ impl Parser {
 
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let start = self.parse_expression()
+        let expr = self.parse_expression()
         self.allow_struct_lit = saved
-        if start == null { return null }
+        if expr == null { return null }
 
-        if !self.consume("dot_dot", "expected `..` in range") {
-            return null
+        // Range form: `for x in start..end { body }`
+        if self.check("dot_dot") {
+            self.advance()
+            let saved2 = self.allow_struct_lit
+            self.allow_struct_lit = false
+            let end = self.parse_expression()
+            self.allow_struct_lit = saved2
+            if end == null { return null }
+
+            if !self.check("left_brace") {
+                self.set_error("expected `{` after for range")
+                return null
+            }
+            let body = self.parse_statement()?
+            return Stmt.For(name, expr!, end!, body)
         }
 
-        let saved2 = self.allow_struct_lit
-        self.allow_struct_lit = false
-        let end = self.parse_expression()
-        self.allow_struct_lit = saved2
-        if end == null { return null }
-
+        // Collection form: `for x in list { body }`
         if !self.check("left_brace") {
-            self.set_error("expected `{` after for range")
+            self.set_error("expected `{` or `..` after for expression")
             return null
         }
-
         let body = self.parse_statement()?
-
-        Stmt.For(name, start!, end!, body)
+        Stmt.ForIn(name, expr!, body)
     }
 }

@@ -295,6 +295,14 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after_body = resolve_stmt(defined, body)
             exit_resolve_scope(after_body)
         }
+        .ForIn(variable, collection, body) -> {
+            let after_coll = resolve_expr(r, collection)
+            let entered = enter_resolve_scope(after_coll)
+            let declared = declare_name(entered, variable)
+            let defined = define_name(declared, variable)
+            let after_body = resolve_stmt(defined, body)
+            exit_resolve_scope(after_body)
+        }
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
         .NoOp -> r
         .ExternFn(name, _, _) -> declare_function(r, name)

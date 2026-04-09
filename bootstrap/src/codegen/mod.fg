@@ -523,6 +523,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
         .While(condition, body) -> emit_while(ctx, env, condition, body)
         .For(variable, start, end, body) -> emit_for(ctx, env, variable, start, end, body)
+        .ForIn(variable, collection, body) -> emit_for_in(ctx, env, variable, collection, body)
         // These are handled in pre-passes (register_types, register_fns); no IR here
         .TypeDecl(_, _) -> ok_stmt(env)
         .EnumDecl(_, _) -> ok_stmt(env)
@@ -554,20 +555,33 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 
 // ── Number literal parsing ──
 
+fn strip_underscores(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        if s[i] != "_" {
+            out = out + s[i]
+        }
+        i = i + 1
+    }
+    out
+}
+
 fn parse_int_literal(text: string) -> int {
-    if text.length > 2 {
-        let prefix = text.substring(0, 2)
+    let clean = strip_underscores(text)
+    if clean.length > 2 {
+        let prefix = clean.substring(0, 2)
         if prefix == "0x" || prefix == "0X" {
-            return parse_hex(text.substring(2, text.length))
+            return parse_hex(clean.substring(2, clean.length))
         }
         if prefix == "0b" || prefix == "0B" {
-            return parse_binary(text.substring(2, text.length))
+            return parse_binary(clean.substring(2, clean.length))
         }
         if prefix == "0o" || prefix == "0O" {
-            return parse_octal(text.substring(2, text.length))
+            return parse_octal(clean.substring(2, clean.length))
         }
     }
-    int(text)
+    int(clean)
 }
 
 fn hex_digit_value(ch: string) -> int {
@@ -1397,6 +1411,7 @@ fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult {
             let cmp = forge_llvm_build_icmp(ctx.builder, 32, r.value, const_i64(ctx, 0), "not_cmp")
             ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "not"))
         }
+        .BitNot -> ok_emit(forge_llvm_build_not(ctx.builder, r.value, "bnot"))
     }
 }
 
@@ -1427,6 +1442,12 @@ fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> Emi
         .Sub -> ok_emit(forge_llvm_build_sub(ctx.builder, lhs, rhs, "sub"))
         .Mul -> ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul"))
         .Div -> ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div"))
+        .Mod -> ok_emit(forge_llvm_build_srem(ctx.builder, lhs, rhs, "mod"))
+        .BitAnd -> ok_emit(forge_llvm_build_and(ctx.builder, lhs, rhs, "band"))
+        .BitOr -> ok_emit(forge_llvm_build_or(ctx.builder, lhs, rhs, "bor"))
+        .BitXor -> ok_emit(forge_llvm_build_xor(ctx.builder, lhs, rhs, "bxor"))
+        .Shl -> ok_emit(forge_llvm_build_shl(ctx.builder, lhs, rhs, "shl"))
+        .Shr -> ok_emit(forge_llvm_build_ashr(ctx.builder, lhs, rhs, "shr"))
         .Eq -> {
             if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, false) }
             let cmp = forge_llvm_build_icmp(ctx.builder, 32, lhs, rhs, "eq")

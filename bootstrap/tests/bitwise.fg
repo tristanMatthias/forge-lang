@@ -1,0 +1,9 @@
+// Bitwise operators
+println(string(0xFF & 0x0F))
+println(string(0xF0 | 0x0F))
+println(string(0xFF ^ 0x0F))
+println(string(1 << 4))
+println(string(256 >> 4))
+println(string(~0))
+println(string(10 % 3))
+println(string(17 % 5))

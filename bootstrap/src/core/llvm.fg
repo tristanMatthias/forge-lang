@@ -58,6 +58,13 @@ extern fn forge_llvm_build_add(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn forge_llvm_build_sub(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn forge_llvm_build_mul(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
 extern fn forge_llvm_build_sdiv(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_srem(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_and(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_or(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_xor(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_shl(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_ashr(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_not(b: ptr, val: ptr, name: string) -> ptr
 
 // ── Builder — comparison ──
 extern fn forge_llvm_build_icmp(b: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
