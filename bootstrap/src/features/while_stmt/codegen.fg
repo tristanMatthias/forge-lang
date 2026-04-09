@@ -1,0 +1,39 @@
+// WHY: emits LLVM IR for `while cond { body }` with break/continue
+// support via the loop stack.
+
+use core.ast.{Expr, Stmt, VarEnv}
+use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt_from_expr}
+use codegen.{emit_expr, emit_stmt, loops_push, loops_pop}
+
+extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+extern fn forge_llvm_build_icmp(b: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_cond_br(b: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr
+extern fn forge_llvm_build_br(b: ptr, bb: ptr) -> ptr
+extern fn forge_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
+extern fn forge_llvm_position_at_end(b: ptr, bb: ptr)
+extern fn forge_llvm_block_has_terminator(b: ptr) -> int
+
+export fn emit_while(cg: Codegen, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
+    let cond_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "while.cond")
+    let body_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "while.body")
+    let exit_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "while.exit")
+    forge_llvm_build_br(cg.builder, cond_bb)
+
+    forge_llvm_position_at_end(cg.builder, cond_bb)
+    let cond = emit_expr(cg, env, condition)
+    if cond.had_error { return err_stmt_from_expr(cond) }
+    let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "while_cond")
+    forge_llvm_build_cond_br(cg.builder, cond_i1, body_bb, exit_bb)
+
+    forge_llvm_position_at_end(cg.builder, body_bb)
+    loops_push(cond_bb, exit_bb)
+    let body_result = emit_stmt(cg, env, body)
+    loops_pop()
+    if body_result.had_error { return body_result }
+    if forge_llvm_block_has_terminator(cg.builder) == 0 {
+        forge_llvm_build_br(cg.builder, cond_bb)
+    }
+
+    forge_llvm_position_at_end(cg.builder, exit_bb)
+    ok_stmt(env)
+}

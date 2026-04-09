@@ -1,0 +1,44 @@
+// WHY: emits LLVM IR for `if` as a statement (with optional else).
+
+use core.ast.{Expr, Stmt, VarEnv}
+use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt_from_expr}
+use codegen.{emit_expr, emit_stmt}
+
+extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+extern fn forge_llvm_build_icmp(b: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_cond_br(b: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr
+extern fn forge_llvm_build_br(b: ptr, bb: ptr) -> ptr
+extern fn forge_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
+extern fn forge_llvm_position_at_end(b: ptr, bb: ptr)
+extern fn forge_llvm_block_has_terminator(b: ptr) -> int
+
+export fn emit_if(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> StmtResult {
+    let cond = emit_expr(cg, env, condition)
+    if cond.had_error {
+        return err_stmt_from_expr(cond)
+    }
+    let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "if_cond")
+    let then_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "then")
+    let else_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "else")
+    let merge_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "ifcont")
+    forge_llvm_build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
+
+    forge_llvm_position_at_end(cg.builder, then_bb)
+    let then_result = emit_stmt(cg, env, then_branch)
+    if then_result.had_error { return then_result }
+    if forge_llvm_block_has_terminator(cg.builder) == 0 {
+        forge_llvm_build_br(cg.builder, merge_bb)
+    }
+
+    forge_llvm_position_at_end(cg.builder, else_bb)
+    if else_branch != null {
+        let else_result = emit_stmt(cg, env, else_branch!)
+        if else_result.had_error { return else_result }
+    }
+    if forge_llvm_block_has_terminator(cg.builder) == 0 {
+        forge_llvm_build_br(cg.builder, merge_bb)
+    }
+
+    forge_llvm_position_at_end(cg.builder, merge_bb)
+    ok_stmt(env)
+}

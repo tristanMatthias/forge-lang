@@ -173,11 +173,11 @@ enum LoopStack {
 
 mut CG_LOOPS: LoopStack = LoopStack.End
 
-fn loops_push(cond_bb: ptr, exit_bb: ptr) {
+export fn loops_push(cond_bb: ptr, exit_bb: ptr) {
     CG_LOOPS = LoopStack.Frame(cond_bb, exit_bb, CG_LOOPS)
 }
 
-fn loops_pop() {
+export fn loops_pop() {
     match CG_LOOPS {
         .End -> {}
         .Frame(_, _, next) -> CG_LOOPS = next
@@ -643,7 +643,7 @@ fn emit_stmt_list(cg: Codegen, env: VarEnv, stmts: StmtList) -> StmtResult {
     }
 }
 
-fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
+export fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
         .Expr(expr) -> {
             let r = emit_expr(cg, env, expr)
@@ -702,85 +702,9 @@ fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
     }
 }
 
-fn emit_var_decl(cg: Codegen, env: VarEnv, name: string, initializer: Expr) -> StmtResult {
-    let r = emit_expr(cg, env, initializer)
-    if r.had_error {
-        return err_stmt_from_expr(r)
-    }
-    let alloca = forge_llvm_build_alloca(cg.builder, cg.i64_type, name)
-    forge_llvm_build_store(cg.builder, r.value, alloca)
-    ok_stmt(env_extend(env, name, alloca, r.ty))
-}
-
-fn emit_if(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> StmtResult {
-    let cond = emit_expr(cg, env, condition)
-    if cond.had_error {
-        return err_stmt_from_expr(cond)
-    }
-    // Truncate i64 → i1 for the branch.
-    let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "if_cond")
-
-    let then_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "then")
-    let else_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "else")
-    let merge_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "ifcont")
-
-    forge_llvm_build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
-
-    // Then branch
-    forge_llvm_position_at_end(cg.builder, then_bb)
-    let then_result = emit_stmt(cg, env, then_branch)
-    if then_result.had_error {
-        return then_result
-    }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_br(cg.builder, merge_bb)
-    }
-
-    // Else branch
-    forge_llvm_position_at_end(cg.builder, else_bb)
-    if else_branch != null {
-        let else_result = emit_stmt(cg, env, else_branch!)
-        if else_result.had_error {
-            return else_result
-        }
-    }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_br(cg.builder, merge_bb)
-    }
-
-    forge_llvm_position_at_end(cg.builder, merge_bb)
-    ok_stmt(env)
-}
-
-fn emit_while(cg: Codegen, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
-    let cond_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "while.cond")
-    let body_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "while.body")
-    let exit_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "while.exit")
-
-    forge_llvm_build_br(cg.builder, cond_bb)
-
-    forge_llvm_position_at_end(cg.builder, cond_bb)
-    let cond = emit_expr(cg, env, condition)
-    if cond.had_error {
-        return err_stmt_from_expr(cond)
-    }
-    let cond_i1 = forge_llvm_build_icmp(cg.builder, 33, cond.value, forge_llvm_const_int(cg.i64_type, 0, 0), "while_cond")
-    forge_llvm_build_cond_br(cg.builder, cond_i1, body_bb, exit_bb)
-
-    forge_llvm_position_at_end(cg.builder, body_bb)
-    loops_push(cond_bb, exit_bb)
-    let body_result = emit_stmt(cg, env, body)
-    loops_pop()
-    if body_result.had_error {
-        return body_result
-    }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_br(cg.builder, cond_bb)
-    }
-
-    forge_llvm_position_at_end(cg.builder, exit_bb)
-    ok_stmt(env)
-}
+// emit_var_decl → features/let_stmt/codegen.fg
+// emit_if      → features/if_stmt/codegen.fg
+// emit_while   → features/while_stmt/codegen.fg
 
 // ── Expression emission ──
 
