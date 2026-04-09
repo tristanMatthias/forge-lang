@@ -177,10 +177,54 @@ Steps for adding a new language feature, in order:
 5. Write `codegen.fg` with an `emit_<name>` function.
 6. Add one line to `emit/stmt.fg`'s dispatcher likewise.
 7. Write `example.fg` and `expected.out` (canonical usage).
-8. Run `make test`. If it passes, commit.
-9. Run `make selfhost`. If it passes, commit.
-10. Verify the feature appears in the assembled `GRAMMAR.md` after
+8. Add the example as a regression test via
+   `bash scripts/diagnose.sh --regress-add <name> <example.fg>`.
+9. Write **combination tests** that exercise the new feature
+   interacting with every existing feature it could touch.
+   Add each as a regression test. See "Testing rules" below.
+10. Run `make test`. If it passes, commit.
+11. Run `make selfhost`. If it passes, commit.
+12. Dogfood: refactor bootstrap source to USE the new feature
+    (see FEATURE_PARITY.md § Dogfooding Rule).
+13. Verify the feature appears in the assembled `GRAMMAR.md` after
     `make grammar`.
+
+## Testing rules
+
+Every feature needs **three layers** of test coverage:
+
+### 1. Per-feature example (`features/<name>/example.fg`)
+The canonical happy-path usage. Covers the basic syntax and
+one or two variations.
+
+### 2. Edge-case regression tests (`regress/<name>_*.fg`)
+Boundary conditions, empty inputs, deeply nested usage,
+error paths. One `.fg` + `.out` pair per scenario.
+
+### 3. Combination matrix tests (`regress/combo_*.fg`)
+**When you add feature X, write a test combining X with every
+other feature it could interact with.** The goal is to catch
+bugs at feature boundaries — the places where two features'
+codegen, type tracking, or control flow intersect.
+
+The combination matrix for a new feature X should cover AT LEAST:
+- X + structs (field access, mutation)
+- X + enums + match (pattern matching)
+- X + for/while loops (control flow nesting)
+- X + functions (as argument, return value, in body)
+- X + string templates (interpolation)
+- X + null safety (`??`, `?.`)
+- X + if-expressions (as value)
+- X + pipe operator (`|>`)
+
+Not every combination will be meaningful — use judgment. But the
+default is to TEST IT. We've found bugs at every feature boundary
+we've tested (template + sub-parser, `??` + string types,
+for + break + continue). The ones we don't test are where the
+next bug hides.
+
+Tests that trigger known stage1 codegen divergences get a
+`.bs2only` sidecar file (see `regress/template_expr.bs2only`).
 
 Removing a feature is `rm -r features/<name>/` plus removing the
 two dispatcher lines plus a `make test`.
