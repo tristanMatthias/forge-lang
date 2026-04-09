@@ -741,6 +741,20 @@ impl Parser {
             return Expr.Grouping(expr!)
         }
 
+        // List literal: [expr, expr, ...]
+        if self.check("left_bracket") {
+            self.advance()
+            if self.check("right_bracket") {
+                self.advance()
+                return Expr.ListLit(ExprList.End)
+            }
+            let elements = self.parse_list_elements()?
+            if !self.consume("right_bracket", "expected `]` after list") {
+                return null
+            }
+            return Expr.ListLit(elements)
+        }
+
         if self.check("kw_match") {
             return self.parse_match_expression()
         }
@@ -832,6 +846,20 @@ impl Parser {
             result = Expr.String("\"\"")
         }
         result
+    }
+
+    fn parse_list_elements(self) -> ExprList? {
+        let expr = self.parse_expression()?
+        if self.check("comma") {
+            self.advance()
+            if self.check("right_bracket") {
+                // Trailing comma: [1, 2,]
+                return ExprList.Node(expr, ExprList.End)
+            }
+            let rest = self.parse_list_elements()?
+            return ExprList.Node(expr, rest)
+        }
+        ExprList.Node(expr, ExprList.End)
     }
 
     fn parse_tuple_rest(self) -> ExprList? {

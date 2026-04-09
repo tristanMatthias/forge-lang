@@ -110,6 +110,63 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(exit_param_arr)
     forge_llvm_add_function(m, "exit", exit_type)
 
+    // C-runtime: dynamic arrays (forge_array_*)
+    let arr_new_type = forge_llvm_function_type(pt, forge_llvm_type_array_new(0), 0, 0)
+    forge_llvm_add_function(m, "forge_array_new", arr_new_type)
+
+    let arr_push_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(arr_push_arr, 0, pt)
+    forge_llvm_type_array_set(arr_push_arr, 1, i64t)
+    let arr_push_type = forge_llvm_function_type(forge_llvm_void_type(lc), arr_push_arr, 2, 0)
+    forge_llvm_type_array_free(arr_push_arr)
+    forge_llvm_add_function(m, "forge_array_push", arr_push_type)
+
+    let arr_get_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(arr_get_arr, 0, pt)
+    forge_llvm_type_array_set(arr_get_arr, 1, i64t)
+    let arr_get_type = forge_llvm_function_type(i64t, arr_get_arr, 2, 0)
+    forge_llvm_type_array_free(arr_get_arr)
+    forge_llvm_add_function(m, "forge_array_get", arr_get_type)
+
+    let arr_len_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(arr_len_arr, 0, pt)
+    let arr_len_type = forge_llvm_function_type(i64t, arr_len_arr, 1, 0)
+    forge_llvm_type_array_free(arr_len_arr)
+    forge_llvm_add_function(m, "forge_array_len", arr_len_type)
+
+    forge_llvm_add_function(m, "forge_array_set", arr_push_type)
+    forge_llvm_add_function(m, "forge_array_pop", arr_len_type)
+
+    // C-runtime: string methods
+    let str2_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(str2_arr, 0, pt)
+    forge_llvm_type_array_set(str2_arr, 1, pt)
+    let str_str_to_i64 = forge_llvm_function_type(i64t, str2_arr, 2, 0)
+    let str_str_to_str = forge_llvm_function_type(pt, str2_arr, 2, 0)
+    forge_llvm_type_array_free(str2_arr)
+
+    forge_llvm_add_function(m, "forge_str_contains", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_str_starts_with", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_str_ends_with", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_str_index_of", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_str_split", str_str_to_str)
+
+    let str3_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(str3_arr, 0, pt)
+    forge_llvm_type_array_set(str3_arr, 1, pt)
+    forge_llvm_type_array_set(str3_arr, 2, pt)
+    let str3_to_str = forge_llvm_function_type(pt, str3_arr, 3, 0)
+    forge_llvm_type_array_free(str3_arr)
+    forge_llvm_add_function(m, "forge_str_replace", str3_to_str)
+
+    let str1_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(str1_arr, 0, pt)
+    let str_to_str = forge_llvm_function_type(pt, str1_arr, 1, 0)
+    forge_llvm_type_array_free(str1_arr)
+    forge_llvm_add_function(m, "forge_str_trim", str_to_str)
+    forge_llvm_add_function(m, "forge_str_to_upper", str_to_str)
+    forge_llvm_add_function(m, "forge_str_to_lower", str_to_str)
+
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
@@ -626,6 +683,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .Tuple(elements) -> emit_tuple(ctx, env, elements)
         .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx)
         .With(obj, overrides) -> emit_with(ctx, env, obj, overrides)
+        .ListLit(elements) -> emit_list_lit(ctx, env, elements)
         _ -> err_emit("unsupported expression type")
     }
 }
@@ -799,8 +857,14 @@ fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     if r.had_error {
         return r
     }
+    // List indexing: list[i] → forge_array_get(list, i)
+    if r.ty == "list" {
+        let i_r = emit_expr(ctx, env, idx)
+        if i_r.had_error { return i_r }
+        return ok_emit(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, i_r.value, "list_idx"))
+    }
     if r.ty != "str" && r.ty != "string" {
-        return err_emit("indexing on non-string value (ty=" + r.ty + ")")
+        return err_emit("indexing on non-string/list value (ty=" + r.ty + ")")
     }
     let i_r = emit_expr(ctx, env, idx)
     if i_r.had_error {
@@ -847,8 +911,11 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
     // String property access — `s.length` is a libc strlen.
     if r.ty == "str" && field == "length" {
         let str_ptr = to_ptr(ctx, r.value, "len_arg")
-        let len = call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call")
-        return ok_emit(len)
+        return ok_emit(call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call"))
+    }
+    // List property access — `list.length`
+    if r.ty == "list" && field == "length" {
+        return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), r.value, "list_len"))
     }
     // The object's ty tag tells us which struct it is.
     let struct_name = strip_struct_prefix(r.ty)
@@ -894,13 +961,61 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
     if r.ty == "str" {
         if method == "length" {
             let str_ptr = to_ptr(ctx, r.value, "len_arg")
-            let len = call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call")
-            return ok_emit(len)
+            return ok_emit(call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call"))
         }
         if method == "substring" {
             return emit_substring(ctx, env, r.value, args)
         }
+        // String methods backed by C runtime
+        if method == "contains" || method == "starts_with" || method == "ends_with" || method == "index_of" {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let fn_name = "forge_str_" + method
+            let str_ptr = to_ptr(ctx, r.value, "str_self")
+            let arg_ptr = to_ptr(ctx, arg_r.value, "str_arg")
+            return ok_emit(call_2(ctx, get_fn(ctx, fn_name), str_ptr, arg_ptr, method))
+        }
+        if method == "replace" {
+            return emit_str_replace(ctx, env, r.value, args)
+        }
+        if method == "trim" {
+            let str_ptr = to_ptr(ctx, r.value, "str_self")
+            return ok_emit_str(to_i64(ctx, call_1(ctx, get_fn(ctx, "forge_str_trim"), str_ptr, "trimmed"), "trim_i64"))
+        }
+        if method == "to_upper" || method == "upper" {
+            let str_ptr = to_ptr(ctx, r.value, "str_self")
+            return ok_emit_str(to_i64(ctx, call_1(ctx, get_fn(ctx, "forge_str_to_upper"), str_ptr, "upper"), "upper_i64"))
+        }
+        if method == "to_lower" || method == "lower" {
+            let str_ptr = to_ptr(ctx, r.value, "str_self")
+            return ok_emit_str(to_i64(ctx, call_1(ctx, get_fn(ctx, "forge_str_to_lower"), str_ptr, "lower"), "lower_i64"))
+        }
+        if method == "split" {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let str_ptr = to_ptr(ctx, r.value, "str_self")
+            let sep_ptr = to_ptr(ctx, arg_r.value, "sep_arg")
+            let result = call_2(ctx, get_fn(ctx, "forge_str_split"), str_ptr, sep_ptr, "split_result")
+            return EmitResult { value: result, ty: "list", had_error: false, error_message: "" }
+        }
         return err_emit("string method `" + method + "` not implemented")
+    }
+    // List methods backed by C runtime
+    if r.ty == "list" {
+        if method == "length" || method == "len" {
+            return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), r.value, "list_len"))
+        }
+        if method == "push" {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            call_2(ctx, get_fn(ctx, "forge_array_push"), r.value, arg_r.value, "")
+            return ok_emit(r.value)
+        }
+        if method == "pop" {
+            return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_pop"), r.value, "list_pop"))
+        }
+        if method == "get" {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, arg_r.value, "list_get"))
+        }
+        return err_emit("list method `" + method + "` not implemented")
     }
     // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
     let type_name = strip_struct_prefix(r.ty)
@@ -1082,6 +1197,36 @@ fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
 
     ok_emit_str(to_i64(ctx, buf, "concat_i64"))
+}
+
+// Evaluate a single-argument method call. Returns the EmitResult for that arg.
+fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+    match args {
+        .End -> err_emit("expected 1 argument, got 0")
+        .Node(expr, _) -> emit_expr(ctx, env, expr)
+    }
+}
+
+fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
+    match args {
+        .Node(from_expr, rest) -> {
+            match rest {
+                .Node(to_expr, _) -> {
+                    let from_r = emit_expr(ctx, env, from_expr)
+                    if from_r.had_error { return from_r }
+                    let to_r = emit_expr(ctx, env, to_expr)
+                    if to_r.had_error { return to_r }
+                    let str_ptr = to_ptr(ctx, str_i64, "rep_self")
+                    let from_ptr = to_ptr(ctx, from_r.value, "rep_from")
+                    let to_ptr_v = to_ptr(ctx, to_r.value, "rep_to")
+                    let result = call_3(ctx, get_fn(ctx, "forge_str_replace"), str_ptr, from_ptr, to_ptr_v, "replaced")
+                    ok_emit_str(to_i64(ctx, result, "rep_i64"))
+                }
+                _ -> err_emit("replace expects 2 arguments")
+            }
+        }
+        _ -> err_emit("replace expects 2 arguments")
+    }
 }
 
 fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {

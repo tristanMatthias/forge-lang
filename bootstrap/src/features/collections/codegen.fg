@@ -1,0 +1,30 @@
+// WHY: codegen for list literals [1, 2, 3] and list operations.
+// Lists are backed by the C-runtime forge_array_* functions
+// (dynamic arrays of i64 values).
+
+use core.ast.{Expr, ExprList, VarEnv, expr_list_length}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, const_i64, to_ptr, to_i64, get_fn, call_0, call_1, call_2}
+use codegen.{emit_expr}
+
+export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
+    // Create a new array and push each element
+    let arr_fn = get_fn(ctx, "forge_array_new")
+    let push_fn = get_fn(ctx, "forge_array_push")
+    let arr = call_0(ctx, arr_fn, "list")
+    push_list_elements(ctx, env, elements, arr, push_fn)
+}
+
+fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, push_fn: ptr) -> EmitResult {
+    match elements {
+        .End -> {
+            // Return the array pointer as i64
+            EmitResult { value: arr, ty: "list", had_error: false, error_message: "" }
+        }
+        .Node(expr, next) -> {
+            let r = emit_expr(ctx, env, expr)
+            if r.had_error { return r }
+            call_2(ctx, push_fn, arr, r.value, "")
+            push_list_elements(ctx, env, next, arr, push_fn)
+        }
+    }
+}

@@ -21,3 +21,4 @@ mod null_safety
 mod trait_decl
 mod tuples
 mod with_expr
+mod list_lit
