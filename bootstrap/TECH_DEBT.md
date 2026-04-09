@@ -24,20 +24,12 @@ LLVM's C API directly (`LLVMBuildAdd`, `LLVMBuildAlloca`, etc.).
 Drop `libforge_llvm.a` entirely. This makes the bootstrap depend
 only on LLVM 19 + a C compiler — no Rust at all.
 
-### 2. String type tags (ty: string)
+### ~~2. String type tags (ty: string)~~ (FIXED)
 
-**Severity:** medium
-**Impact:** fragile CSV parsing, no type safety, runtime errors on typos
+**Status:** fixed (April 9 2026)
 
-Types are encoded as strings: `"i64"`, `"str"`, `"enum:Name"`,
-`"struct:Name"`, `"tuple:ty1,ty2"`, `"list"`. This means:
-- Typos in type tags are silent runtime bugs
-- Nested tuple types require CSV parsing
-- No exhaustiveness checking
-
-**Plan:** Replace `ty: string` with a `ValueType` enum. This is a
-large refactor that touches every emit function. Do it before
-feature #20.
+**Resolution:** `ValueType` enum replaces all string type tags.
+Pattern matching instead of CSV parsing. 15 files, 82/82 tests pass.
 
 ### ~~3. Operator string dispatch~~ (FIXED)
 

@@ -130,7 +130,7 @@
 | # | Issue | Status | Impact |
 |---|-------|--------|--------|
 | 1 | Ctx copy-helper boilerplate | ✅ FIXED | `with` expressions eliminate field-listing |
-| 2 | String type tags (ty: string) | 🔲 TODO | CSV parsing fragile at scale, needs ValueType enum |
+| 2 | String type tags (ty: string) | ✅ FIXED | ValueType enum, pattern matching, no CSV parsing |
 | 3 | String-based operator dispatch | ✅ FIXED | BinOp/UnOp/LogicOp enums, match dispatch |
 | 4 | emit_expr/emit_stmt dispatcher size | ⏳ OK for now | 25 arms, manageable to ~50 |
 | 5 | VarEnv O(n) lookup | ⏳ OK for now | Not bottleneck yet |
