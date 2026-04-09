@@ -321,7 +321,8 @@ Crafting Interpreters reference: Chapter 30.
 - [x] Emit control flow (if/else, while)
 - [x] Emit function definitions and calls
 - [x] Emit string literals + `println` + string concat (`+`) via libc
-- [ ] Emit structs and enums (tagged unions)
+- [x] Emit struct types, struct literals, and field access
+- [ ] Emit enums (tagged unions)
 - [ ] Emit match expressions as conditional branches
 - [ ] Emit module imports and cross-file compilation
 - [ ] Compile the bootstrap compiler source with itself

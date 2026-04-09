@@ -1,0 +1,4 @@
+type Greeting = { msg: str, count: i64 }
+let g = Greeting { msg: "hello, struct", count: 7 }
+println(g.msg)
+return g.count

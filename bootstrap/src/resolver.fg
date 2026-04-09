@@ -1,0 +1,311 @@
+use ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList}
+
+export type ResolveResult = {
+    had_error: bool,
+    error_message: string,
+}
+
+enum ScopeEntry {
+    End
+    Node(name: string, defined: bool, depth: int, next: ScopeEntry)
+}
+
+enum FnEntry {
+    End
+    Node(name: string, next: FnEntry)
+}
+
+type Resolver = {
+    scopes: ScopeEntry,
+    functions: FnEntry,
+    depth: int,
+    had_error: bool,
+    error_message: string,
+}
+
+export fn resolve_program(stmts: StmtList) -> ResolveResult {
+    mut r = resolver_new()
+    r = resolve_stmt_list(r, stmts)
+    ResolveResult {
+        had_error: r.had_error,
+        error_message: r.error_message,
+    }
+}
+
+fn resolver_new() -> Resolver {
+    Resolver {
+        scopes: ScopeEntry.End,
+        functions: FnEntry.End,
+        depth: 0,
+        had_error: false,
+        error_message: "",
+    }
+}
+
+fn set_resolve_error(r: Resolver, message: string) -> Resolver {
+    if r.had_error {
+        return r
+    }
+    Resolver {
+        scopes: r.scopes,
+        functions: r.functions,
+        depth: r.depth,
+        had_error: true,
+        error_message: "resolve error: " + message,
+    }
+}
+
+fn enter_resolve_scope(r: Resolver) -> Resolver {
+    Resolver {
+        scopes: r.scopes,
+        functions: r.functions,
+        depth: r.depth + 1,
+        had_error: r.had_error,
+        error_message: r.error_message,
+    }
+}
+
+fn exit_resolve_scope(r: Resolver) -> Resolver {
+    Resolver {
+        scopes: pop_resolve_scope(r.scopes, r.depth),
+        functions: r.functions,
+        depth: r.depth - 1,
+        had_error: r.had_error,
+        error_message: r.error_message,
+    }
+}
+
+fn pop_resolve_scope(entries: ScopeEntry, depth: int) -> ScopeEntry {
+    match entries {
+        .End -> ScopeEntry.End
+        .Node(name, defined, entry_depth, next) -> {
+            if entry_depth == depth {
+                return pop_resolve_scope(next, depth)
+            }
+            ScopeEntry.Node(name, defined, entry_depth, next)
+        }
+    }
+}
+
+fn declare_name(r: Resolver, name: string) -> Resolver {
+    Resolver {
+        scopes: ScopeEntry.Node(name, false, r.depth, r.scopes),
+        functions: r.functions,
+        depth: r.depth,
+        had_error: r.had_error,
+        error_message: r.error_message,
+    }
+}
+
+fn define_name(r: Resolver, name: string) -> Resolver {
+    Resolver {
+        scopes: mark_defined(r.scopes, name, r.depth),
+        functions: r.functions,
+        depth: r.depth,
+        had_error: r.had_error,
+        error_message: r.error_message,
+    }
+}
+
+fn mark_defined(entries: ScopeEntry, name: string, depth: int) -> ScopeEntry {
+    match entries {
+        .End -> ScopeEntry.End
+        .Node(entry_name, defined, entry_depth, next) -> {
+            if entry_name == name && entry_depth == depth {
+                return ScopeEntry.Node(entry_name, true, entry_depth, next)
+            }
+            ScopeEntry.Node(entry_name, defined, entry_depth, mark_defined(next, name, depth))
+        }
+    }
+}
+
+fn declare_function(r: Resolver, name: string) -> Resolver {
+    Resolver {
+        scopes: r.scopes,
+        functions: FnEntry.Node(name, r.functions),
+        depth: r.depth,
+        had_error: r.had_error,
+        error_message: r.error_message,
+    }
+}
+
+type NameLookup = {
+    found: bool,
+    defined: bool,
+}
+
+fn lookup_name(entries: ScopeEntry, name: string) -> NameLookup {
+    match entries {
+        .End -> NameLookup { found: false, defined: false }
+        .Node(entry_name, defined, _, next) -> {
+            if entry_name == name {
+                return NameLookup { found: true, defined }
+            }
+            lookup_name(next, name)
+        }
+    }
+}
+
+fn lookup_fn(fns: FnEntry, name: string) -> bool {
+    match fns {
+        .End -> false
+        .Node(fn_name, next) -> {
+            if fn_name == name {
+                return true
+            }
+            lookup_fn(next, name)
+        }
+    }
+}
+
+fn is_builtin(name: string) -> bool {
+    name == "println" || name == "string"
+}
+
+fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
+    if r.had_error {
+        return r
+    }
+    match stmts {
+        .End -> r
+        .Node(stmt, next) -> {
+            let after = resolve_stmt(r, stmt)
+            resolve_stmt_list(after, next)
+        }
+    }
+}
+
+fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    if r.had_error {
+        return r
+    }
+    match stmt {
+        .Let(name, initializer) -> {
+            let declared = declare_name(r, name)
+            let after_init = resolve_expr(declared, initializer)
+            define_name(after_init, name)
+        }
+        .Mut(name, initializer) -> {
+            let declared = declare_name(r, name)
+            let after_init = resolve_expr(declared, initializer)
+            define_name(after_init, name)
+        }
+        .Expr(expr) -> resolve_expr(r, expr)
+        .Block(body) -> {
+            let entered = enter_resolve_scope(r)
+            let after = resolve_stmt_list(entered, body)
+            exit_resolve_scope(after)
+        }
+        .If(condition, then_branch, else_branch) -> {
+            let after_cond = resolve_expr(r, condition)
+            let after_then = resolve_stmt(after_cond, then_branch)
+            if else_branch != null {
+                return resolve_stmt(after_then, else_branch!)
+            }
+            after_then
+        }
+        .While(condition, body) -> {
+            let after_cond = resolve_expr(r, condition)
+            resolve_stmt(after_cond, body)
+        }
+        .Function(name, params, body) -> {
+            let with_fn = declare_function(r, name)
+            let entered = enter_resolve_scope(with_fn)
+            let with_params = declare_params(entered, params)
+            let after_body = resolve_stmt_list(with_params, body)
+            exit_resolve_scope(after_body)
+        }
+        .Ret(value) -> resolve_expr(r, value)
+        .RetEmpty -> r
+        .TypeDecl(_, _) -> r
+    }
+}
+
+fn declare_params(r: Resolver, params: ParamList) -> Resolver {
+    match params {
+        .End -> r
+        .Node(name, next) -> {
+            let declared = declare_name(r, name)
+            let defined = define_name(declared, name)
+            declare_params(defined, next)
+        }
+    }
+}
+
+fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    if r.had_error {
+        return r
+    }
+    match expr {
+        .Number(_) -> r
+        .String(_) -> r
+        .Bool(_) -> r
+        .Null -> r
+        .Ident(name) -> {
+            if is_builtin(name) {
+                return r
+            }
+            let result = lookup_name(r.scopes, name)
+            if result.found {
+                if !result.defined {
+                    return set_resolve_error(r, "cannot read variable `" + name + "` in its own initializer")
+                }
+                return r
+            }
+            if lookup_fn(r.functions, name) {
+                return r
+            }
+            set_resolve_error(r, "undefined variable `" + name + "`")
+        }
+        .Assign(name, value) -> {
+            let after_value = resolve_expr(r, value)
+            let result = lookup_name(after_value.scopes, name)
+            if !result.found {
+                return set_resolve_error(after_value, "undefined variable `" + name + "`")
+            }
+            after_value
+        }
+        .Grouping(inner) -> resolve_expr(r, inner)
+        .Unary(_, right) -> resolve_expr(r, right)
+        .Binary(left, _, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        .Logical(left, _, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        .Call(callee, args) -> {
+            let after_callee = resolve_expr(r, callee)
+            resolve_expr_list(after_callee, args)
+        }
+        .StructLit(_, inits) -> resolve_field_init_list(r, inits)
+        .FieldAccess(obj, _) -> resolve_expr(r, obj)
+    }
+}
+
+fn resolve_field_init_list(r: Resolver, inits: FieldInitList) -> Resolver {
+    if r.had_error {
+        return r
+    }
+    match inits {
+        .End -> r
+        .Node(_, value, next) -> {
+            let after = resolve_expr(r, value)
+            resolve_field_init_list(after, next)
+        }
+    }
+}
+
+fn resolve_expr_list(r: Resolver, exprs: ExprList) -> Resolver {
+    if r.had_error {
+        return r
+    }
+    match exprs {
+        .End -> r
+        .Node(expr, next) -> {
+            let after = resolve_expr(r, expr)
+            resolve_expr_list(after, next)
+        }
+    }
+}

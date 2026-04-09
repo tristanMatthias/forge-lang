@@ -8,6 +8,20 @@ export enum ParamList {
     Node(name: string, next: ParamList)
 }
 
+// Struct field declaration list — used in `type Foo = { f1: i64, f2: str }`.
+// `ty` is the textual type name, restricted to "i64"/"str" for the
+// MVP (mirroring VarEnv's value-type tag).
+export enum FieldList {
+    End
+    Node(name: string, ty: string, next: FieldList)
+}
+
+// Field initializer list — used in `Foo { f1: 1, f2: "hi" }`.
+export enum FieldInitList {
+    End
+    Node(name: string, value: Expr, next: FieldInitList)
+}
+
 export enum Expr {
     Number(value: string)
     String(value: string)
@@ -20,6 +34,8 @@ export enum Expr {
     Binary(left: Expr, operator: string, right: Expr)
     Logical(left: Expr, operator: string, right: Expr)
     Call(callee: Expr, args: ExprList)
+    StructLit(name: string, inits: FieldInitList)
+    FieldAccess(obj: Expr, field: string)
 }
 
 export enum Stmt {
@@ -32,6 +48,7 @@ export enum Stmt {
     Function(name: string, params: ParamList, body: StmtList)
     Ret(value: Expr)
     RetEmpty
+    TypeDecl(name: string, fields: FieldList)
 }
 
 export enum StmtList {
@@ -122,6 +139,50 @@ export fn expr_list_length(exprs: ExprList) -> int {
     }
 }
 
+export fn field_list_length(fields: FieldList) -> int {
+    match fields {
+        .End -> 0
+        .Node(_, _, next) -> 1 + field_list_length(next)
+    }
+}
+
+export fn field_init_length(inits: FieldInitList) -> int {
+    match inits {
+        .End -> 0
+        .Node(_, _, next) -> 1 + field_init_length(next)
+    }
+}
+
+// Returns the zero-based index of `name` in `fields`, or -1.
+export fn field_index_of(fields: FieldList, name: string) -> int {
+    field_index_of_loop(fields, name, 0)
+}
+
+fn field_index_of_loop(fields: FieldList, name: string, idx: int) -> int {
+    match fields {
+        .End -> -1
+        .Node(n, _, next) -> {
+            if n == name {
+                return idx
+            }
+            field_index_of_loop(next, name, idx + 1)
+        }
+    }
+}
+
+// Returns the textual type ("i64"/"str") for field `name`, or "i64".
+export fn field_type_of(fields: FieldList, name: string) -> string {
+    match fields {
+        .End -> "i64"
+        .Node(n, ty, next) -> {
+            if n == name {
+                return ty
+            }
+            field_type_of(next, name)
+        }
+    }
+}
+
 export fn render_expr(expr: Expr) -> string {
     match expr {
         .Number(value) -> value
@@ -135,6 +196,44 @@ export fn render_expr(expr: Expr) -> string {
         .Binary(left, operator, right) -> "(" + operator + " " + render_expr(left) + " " + render_expr(right) + ")"
         .Logical(left, operator, right) -> "(" + operator + " " + render_expr(left) + " " + render_expr(right) + ")"
         .Call(callee, args) -> "(call " + render_expr(callee) + " " + render_expr_list(args) + ")"
+        .StructLit(name, inits) -> "(struct " + name + " " + render_field_init_list(inits) + ")"
+        .FieldAccess(obj, field) -> "(field " + render_expr(obj) + " " + field + ")"
+    }
+}
+
+export fn render_field_init_list(inits: FieldInitList) -> string {
+    match inits {
+        .End -> "()"
+        .Node(name, value, next) -> {
+            let head = name + "=" + render_expr(value)
+            let tail = render_field_init_tail(next)
+            "(" + head + tail + ")"
+        }
+    }
+}
+
+fn render_field_init_tail(inits: FieldInitList) -> string {
+    match inits {
+        .End -> ""
+        .Node(name, value, next) -> ", " + name + "=" + render_expr(value) + render_field_init_tail(next)
+    }
+}
+
+export fn render_field_list(fields: FieldList) -> string {
+    match fields {
+        .End -> "()"
+        .Node(name, ty, next) -> {
+            let head = name + ":" + ty
+            let tail = render_field_list_tail(next)
+            "(" + head + tail + ")"
+        }
+    }
+}
+
+fn render_field_list_tail(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, ty, next) -> ", " + name + ":" + ty + render_field_list_tail(next)
     }
 }
 
@@ -191,6 +290,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Function(name, params, body) -> "(fn " + name + " " + render_param_list(params) + " " + render_stmt_list(body) + ")"
         .Ret(value) -> "(return " + render_expr(value) + ")"
         .RetEmpty -> "(return)"
+        .TypeDecl(name, fields) -> "(type " + name + " " + render_field_list(fields) + ")"
     }
 }
 

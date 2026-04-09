@@ -1,4 +1,4 @@
-use ast.{Expr, Stmt, StmtList}
+use ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList}
 
 export type ParseResult = {
     expr: Expr?,
@@ -24,6 +24,11 @@ export type Parser = {
     mut current_column: int,
     mut had_error: bool,
     mut error_message: string,
+    // When false, `Ident { ... }` is parsed as Ident followed by a
+    // separate block (used inside `if`/`while` conditions to avoid
+    // grabbing the loop body brace as a struct literal). When true,
+    // `Ident { ... }` becomes a struct literal expression.
+    mut allow_struct_lit: bool,
 }
 
 export fn parse_expression_source(source: string) -> ParseResult {
@@ -49,11 +54,16 @@ fn is_alpha_numeric(ch: string) -> bool {
 }
 
 fn keyword_kind(text: string) -> string {
+    if text == "else" { return "kw_else" }
     if text == "false" { return "kw_false" }
+    if text == "fn" { return "kw_fn" }
+    if text == "if" { return "kw_if" }
     if text == "let" { return "kw_let" }
     if text == "mut" { return "kw_mut" }
     if text == "null" { return "kw_null" }
+    if text == "return" { return "kw_return" }
     if text == "true" { return "kw_true" }
+    if text == "while" { return "kw_while" }
     return "identifier"
 }
 
@@ -70,6 +80,7 @@ export fn parser_new(source: string) -> Parser {
         current_column: 1,
         had_error: false,
         error_message: "",
+        allow_struct_lit: true,
     }
     parser.advance_token()
     parser
@@ -152,6 +163,10 @@ impl Parser {
     }
 
     fn parse_declaration(self) -> Stmt? {
+        if self.check("kw_fn") {
+            return self.parse_function_declaration()
+        }
+
         if self.check("kw_let") {
             return self.parse_let_statement()
         }
@@ -160,7 +175,49 @@ impl Parser {
             return self.parse_mut_statement()
         }
 
+        if self.check("kw_type") {
+            return self.parse_type_declaration()
+        }
+
         self.parse_statement()
+    }
+
+    fn parse_type_declaration(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected type name")
+        if name == null { return null }
+        if !self.consume("equal", "expected `=` after type name") {
+            return null
+        }
+        if !self.consume("left_brace", "expected `{` after `=`") {
+            return null
+        }
+        let fields = self.parse_field_list()
+        if fields == null { return null }
+        if !self.consume("right_brace", "expected `}` after fields") {
+            return null
+        }
+        Stmt.TypeDecl(name!, fields!)
+    }
+
+    fn parse_field_list(self) -> FieldList? {
+        if self.check("right_brace") {
+            return FieldList.End
+        }
+        let name = self.consume_identifier("expected field name")
+        if name == null { return null }
+        if !self.consume("colon", "expected `:` after field name") {
+            return null
+        }
+        let ty = self.consume_identifier("expected field type")
+        if ty == null { return null }
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_field_list()
+            if rest == null { return null }
+            return FieldList.Node(name!, ty!, rest!)
+        }
+        FieldList.Node(name!, ty!, FieldList.End)
     }
 
     fn parse_let_statement(self) -> Stmt? {
@@ -198,9 +255,125 @@ impl Parser {
             return Stmt.Block(body!)
         }
 
+        if self.check("kw_if") {
+            return self.parse_if_statement()
+        }
+
+        if self.check("kw_while") {
+            return self.parse_while_statement()
+        }
+
+        if self.check("kw_return") {
+            return self.parse_return_statement()
+        }
+
         let expr = self.parse_expression()
         if expr == null { return null }
         Stmt.Expr(expr!)
+    }
+
+    fn parse_if_statement(self) -> Stmt? {
+        self.advance()
+        let saved = self.allow_struct_lit
+        self.allow_struct_lit = false
+        let condition = self.parse_expression()
+        self.allow_struct_lit = saved
+        if condition == null { return null }
+
+        if !self.check("left_brace") {
+            self.set_error("expected `{` after if condition")
+            return null
+        }
+
+        let then_branch = self.parse_statement()
+        if then_branch == null { return null }
+
+        if self.check("kw_else") {
+            self.advance()
+            let else_branch = self.parse_statement()
+            if else_branch == null { return null }
+            return Stmt.If(condition!, then_branch!, else_branch)
+        }
+
+        Stmt.If(condition!, then_branch!, null)
+    }
+
+    fn parse_while_statement(self) -> Stmt? {
+        self.advance()
+        let saved = self.allow_struct_lit
+        self.allow_struct_lit = false
+        let condition = self.parse_expression()
+        self.allow_struct_lit = saved
+        if condition == null { return null }
+
+        if !self.check("left_brace") {
+            self.set_error("expected `{` after while condition")
+            return null
+        }
+
+        let body = self.parse_statement()
+        if body == null { return null }
+
+        Stmt.While(condition!, body!)
+    }
+
+    fn parse_function_declaration(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected function name")
+        if name == null { return null }
+        if !self.consume("left_paren", "expected `(` after function name") {
+            return null
+        }
+
+        let params = self.parse_param_list()
+        if params == null { return null }
+
+        if !self.consume("right_paren", "expected `)` after parameters") {
+            return null
+        }
+
+        if !self.consume("left_brace", "expected `{` after function parameters") {
+            return null
+        }
+
+        let body = self.parse_statement_list(true)
+        if body == null { return null }
+
+        if !self.consume("right_brace", "expected `}` after function body") {
+            return null
+        }
+
+        Stmt.Function(name!, params!, body!)
+    }
+
+    fn parse_param_list(self) -> ParamList? {
+        if self.check("right_paren") {
+            return ParamList.End
+        }
+
+        let name = self.consume_identifier("expected parameter name")
+        if name == null { return null }
+
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_param_list()
+            if rest == null { return null }
+            return ParamList.Node(name!, rest!)
+        }
+
+        ParamList.Node(name!, ParamList.End)
+    }
+
+    fn parse_return_statement(self) -> Stmt? {
+        self.advance()
+
+        if self.check("right_brace") || self.check("eof") {
+            return Stmt.RetEmpty
+        }
+
+        let value = self.parse_expression()
+        if value == null { return null }
+        Stmt.Ret(value!)
     }
 
     fn parse_expression(self) -> Expr? {
@@ -208,7 +381,7 @@ impl Parser {
     }
 
     fn parse_assignment(self) -> Expr? {
-        let left = self.parse_equality()
+        let left = self.parse_or()
         if left == null { return null }
 
         if !self.check("equal") {
@@ -226,6 +399,38 @@ impl Parser {
                 null
             }
         }
+    }
+
+    fn parse_or(self) -> Expr? {
+        let left = self.parse_and()
+        if left == null { return null }
+
+        mut expr = left!
+        while self.check("pipe_pipe") {
+            let operator = self.current_lexeme
+            self.advance()
+            let right = self.parse_and()
+            if right == null { return null }
+            expr = Expr.Logical(expr, operator, right!)
+        }
+
+        expr
+    }
+
+    fn parse_and(self) -> Expr? {
+        let left = self.parse_equality()
+        if left == null { return null }
+
+        mut expr = left!
+        while self.check("amp_amp") {
+            let operator = self.current_lexeme
+            self.advance()
+            let right = self.parse_equality()
+            if right == null { return null }
+            expr = Expr.Logical(expr, operator, right!)
+        }
+
+        expr
     }
 
     fn parse_equality(self) -> Expr? {
@@ -301,7 +506,70 @@ impl Parser {
             return Expr.Unary(operator, right!)
         }
 
-        self.parse_primary()
+        self.parse_call()
+    }
+
+    fn parse_call(self) -> Expr? {
+        let expr = self.parse_primary()
+        if expr == null { return null }
+
+        mut result = expr!
+        while self.check("left_paren") || self.check("dot") {
+            if self.check("left_paren") {
+                self.advance()
+                let args = self.parse_arg_list()
+                if args == null { return null }
+                if !self.consume("right_paren", "expected `)` after arguments") {
+                    return null
+                }
+                result = Expr.Call(result, args!)
+            } else {
+                self.advance()
+                let field = self.consume_identifier("expected field name after `.`")
+                if field == null { return null }
+                result = Expr.FieldAccess(result, field!)
+            }
+        }
+
+        result
+    }
+
+    fn parse_field_init_list(self) -> FieldInitList? {
+        if self.check("right_brace") {
+            return FieldInitList.End
+        }
+        let name = self.consume_identifier("expected field name")
+        if name == null { return null }
+        if !self.consume("colon", "expected `:` after field name") {
+            return null
+        }
+        let value = self.parse_expression()
+        if value == null { return null }
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_field_init_list()
+            if rest == null { return null }
+            return FieldInitList.Node(name!, value!, rest!)
+        }
+        FieldInitList.Node(name!, value!, FieldInitList.End)
+    }
+
+    fn parse_arg_list(self) -> ExprList? {
+        if self.check("right_paren") {
+            return ExprList.End
+        }
+
+        let expr = self.parse_expression()
+        if expr == null { return null }
+
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_arg_list()
+            if rest == null { return null }
+            return ExprList.Node(expr!, rest!)
+        }
+
+        ExprList.Node(expr!, ExprList.End)
     }
 
     fn parse_primary(self) -> Expr? {
@@ -331,6 +599,15 @@ impl Parser {
         if self.check("identifier") {
             let name = self.current_lexeme
             self.advance()
+            if self.allow_struct_lit && self.check("left_brace") {
+                self.advance()
+                let inits = self.parse_field_init_list()
+                if inits == null { return null }
+                if !self.consume("right_brace", "expected `}` after struct fields") {
+                    return null
+                }
+                return Expr.StructLit(name, inits!)
+            }
             return Expr.Ident(name)
         }
 
@@ -389,6 +666,10 @@ impl Parser {
 
         let ch = self.advance_char()
 
+        if ch == "," {
+            self.set_current("comma", ",")
+            return
+        }
         if ch == "(" {
             self.set_current("left_paren", "(")
             return
@@ -419,6 +700,34 @@ impl Parser {
         }
         if ch == "/" {
             self.set_current("slash", "/")
+            return
+        }
+        if ch == ":" {
+            self.set_current("colon", ":")
+            return
+        }
+        if ch == "." {
+            self.set_current("dot", ".")
+            return
+        }
+
+        if ch == "&" {
+            if self.match_next("&") {
+                self.set_current("amp_amp", "&&")
+                return
+            }
+            self.set_error("unexpected character `&`")
+            self.set_current("error", "&")
+            return
+        }
+
+        if ch == "|" {
+            if self.match_next("|") {
+                self.set_current("pipe_pipe", "||")
+                return
+            }
+            self.set_error("unexpected character `|`")
+            self.set_current("error", "|")
             return
         }
 

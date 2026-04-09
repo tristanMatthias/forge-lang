@@ -73,6 +73,9 @@ fn keyword_kind(text: string) -> string {
     if text == "true" { return "kw_true" }
     if text == "use" { return "kw_use" }
     if text == "while" { return "kw_while" }
+    if text == "type" { return "kw_type" }
+    if text == "enum" { return "kw_enum" }
+    if text == "match" { return "kw_match" }
     return "identifier"
 }
 
