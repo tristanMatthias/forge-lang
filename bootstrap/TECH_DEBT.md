@@ -276,10 +276,10 @@ their `-Wl,-u` flags are not emitted (see #9).
 - once that lands, delete the `use @std.llvm` line from `main.fg` and
   the surrounding comment
 
-### 11. Re-matching the same enum value produces a corrupted payload
+### 11. Re-matching the same enum value produces a corrupted payload [FIXED — was a misdiagnosis]
 
-**Status:** open
-**Severity:** high
+**Status:** fixed in host (root cause was #14, not double-match)
+**Severity:** was high
 **Where observed:** codegen.fg `emit_call`, April 8 2026
 
 A function that does:
@@ -310,10 +310,10 @@ enum payload pointer after the first destructure.
 - fix the host so a value can be matched against multiple times
   without payload corruption
 
-### 12. Recursive enum fields on a struct don't survive cross-function calls
+### 12. Recursive enum fields on a struct don't survive cross-function calls [FIXED — was a misdiagnosis]
 
-**Status:** open
-**Severity:** high
+**Status:** fixed in host (root cause was #14, not enum-on-struct)
+**Severity:** was high
 **Where observed:** codegen.fg `Codegen.fns: FnEnv`, April 8 2026
 
 When a struct contains an `enum` field (e.g. `Codegen.fns: FnEnv`)
@@ -343,10 +343,10 @@ survive between functions.
   per-function metadata (return type, parameter types, source span)
   alongside the LLVM value
 
-### 13. Passing a recursive enum payload directly into a helper crashes
+### 13. Passing a recursive enum payload directly into a helper crashes [FIXED — was a misdiagnosis]
 
-**Status:** open
-**Severity:** high
+**Status:** fixed in host (root cause was #14, not enum-payload-passing)
+**Severity:** was high
 **Where observed:** codegen.fg `bind_params`, April 8 2026
 
 `bind_params(cg, fn_val, params, 0, env)` consistently segfaults
@@ -368,6 +368,45 @@ unchanged.
 - fix the host so an enum payload bound by a `match` arm can be
   passed by value into another function without corrupting the call
   frame
+
+### 14. `null` literal in an enum-variant constructor arg lowers as Nullable, not as the field's actual LLVM type [FIXED]
+
+**Status:** fixed in `forge/packages/forgec-rust/codegen/codegen/literals.rs`, April 8 2026
+**Severity:** was high — caused TECH_DEBT #11/#12/#13 misdiagnoses
+
+When compiling `Enum.Variant("name", null, ...)` where the second
+field is declared as `ptr`, the host previously emitted the `null`
+literal as a `{i8, i64}` Nullable struct (the legacy fallback in
+`compile_expr` for `Expr::NullLit` when no target type hint is
+available). LLVM then refused the `insertvalue` because the
+Nullable shape doesn't match the variant struct's `ptr` slot:
+
+    Invalid InsertValueInst operands!
+    %vfield1 = insertvalue { %ForgeString, ptr, i64 } %vfield,
+                            { i8, i64 } zeroinitializer, 1
+
+This silent type confusion was the actual root cause of every
+"enum payload corrupted across function calls" symptom we
+attributed to #11/#12/#13. As soon as those symptoms appeared we
+worked around them at the call site instead of debugging the
+construction site, and the workarounds happened to also avoid
+constructing enums with `null` ptr fields.
+
+**What we did**
+
+- in the enum-construct loop in `literals.rs`, set
+  `struct_target_type` to the variant field's declared `Type`
+  before compiling each non-boxed arg, so the `null` literal lowers
+  to the field's real LLVM type (a real `ptr null` for `ptr`,
+  the right `Nullable<T>` shape for `T?`, etc.)
+- restore the previous `struct_target_type` after each arg
+
+**What must happen later**
+
+- consider extending the same fix to other constructor sites that
+  may compile expressions in a context where the target type is
+  known but isn't propagated (struct field defaults, function
+  params, return positions)
 
 ## Related existing documents
 
