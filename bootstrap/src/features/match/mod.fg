@@ -1,7 +1,4 @@
 // WHY: aggregator for the match feature's parser and codegen.
-// codegen.fg arrives in Phase 4b once the shared codegen helpers
-// are exported (currently codegen.fg has a lot of internal types
-// that need `export` annotations to be importable from a feature
-// directory).
 
 mod parser
+mod codegen

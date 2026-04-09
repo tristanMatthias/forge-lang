@@ -1,0 +1,179 @@
+// WHY: emits LLVM IR for `match` as both a statement and an expression.
+
+use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup}
+use core.cg.{Codegen, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, null_ptr_val, enum_reg_lookup, strip_enum_prefix, translate_param_type, field_type_at, advance_field_list}
+use codegen.{emit_expr}
+
+extern fn forge_llvm_get_type_by_name(ctx: ptr, name: string) -> ptr
+extern fn forge_llvm_int8_type(ctx: ptr) -> ptr
+extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+extern fn forge_llvm_build_int_to_ptr(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_struct_gep2(b: ptr, ty: ptr, ptr_val: ptr, idx: int, name: string) -> ptr
+extern fn forge_llvm_build_load(b: ptr, ty: ptr, ptr_val: ptr, name: string) -> ptr
+extern fn forge_llvm_build_store(b: ptr, val: ptr, ptr_val: ptr) -> ptr
+extern fn forge_llvm_build_alloca(b: ptr, ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_icmp(b: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_cond_br(b: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr
+extern fn forge_llvm_build_br(b: ptr, bb: ptr) -> ptr
+extern fn forge_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
+extern fn forge_llvm_position_at_end(b: ptr, bb: ptr)
+extern fn forge_llvm_block_has_terminator(b: ptr) -> int
+
+// ── Match as expression ──
+
+export fn emit_match_expr(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchArmList) -> EmitResult {
+    let r = emit_expr(cg, env, subject)
+    if r.had_error { return r }
+    let enum_name = strip_enum_prefix(r.ty)
+    if enum_name == "" {
+        return err_emit("match subject is not an enum (ty=" + r.ty + ")")
+    }
+    let lookup = enum_reg_lookup(enum_name)
+    if !lookup.found { return err_emit("unknown enum `" + enum_name + "`") }
+    let st_ty = forge_llvm_get_type_by_name(cg.ctx, enum_name)
+    let subj_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "match_subj")
+    let tag_gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, subj_ptr, 0, "tag_ptr")
+    let tag_val = forge_llvm_build_load(cg.builder, forge_llvm_int8_type(cg.ctx), tag_gep, "tag")
+    let result_slot = forge_llvm_build_alloca(cg.builder, cg.i64_type, "match_result")
+    forge_llvm_build_store(cg.builder, forge_llvm_const_int(cg.i64_type, 0, 0), result_slot)
+    let merge_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "match_end")
+    let arm_result = emit_match_expr_arms(cg, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)
+    if arm_result.had_error { return arm_result }
+    forge_llvm_position_at_end(cg.builder, merge_bb)
+    let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, result_slot, "match_val")
+    EmitResult { value: loaded, ty: arm_result.ty, had_error: false, error_message: "" }
+}
+
+fn emit_match_expr_arms(cg: Codegen, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
+    match arms {
+        .End -> {
+            if forge_llvm_block_has_terminator(cg.builder) == 0 {
+                forge_llvm_build_br(cg.builder, merge_bb)
+            }
+            EmitResult { value: null_ptr_val(), ty: "i64", had_error: false, error_message: "" }
+        }
+        .Node(pattern, body, next) -> {
+            let arm_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "march_arm")
+            let next_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "march_next")
+            match pattern {
+                .Wildcard -> forge_llvm_build_br(cg.builder, arm_bb)
+                .Variant(vname, _) -> {
+                    let v = variant_lookup(variants, vname)
+                    if !v.found { return err_emit("pattern references unknown variant `" + vname + "`") }
+                    let want_tag = forge_llvm_const_int(forge_llvm_int8_type(cg.ctx), v.tag, 0)
+                    let cmp = forge_llvm_build_icmp(cg.builder, 32, tag_val, want_tag, "tag_eq")
+                    forge_llvm_build_cond_br(cg.builder, cmp, arm_bb, next_bb)
+                }
+            }
+            forge_llvm_position_at_end(cg.builder, arm_bb)
+            let arm_env = bind_pattern_payload(cg, env, pattern, st_ty, subj_ptr, variants)
+            let body_result = emit_expr(cg, arm_env, body)
+            if body_result.had_error { return body_result }
+            if forge_llvm_block_has_terminator(cg.builder) == 0 {
+                forge_llvm_build_store(cg.builder, body_result.value, result_slot)
+                forge_llvm_build_br(cg.builder, merge_bb)
+            }
+            forge_llvm_position_at_end(cg.builder, next_bb)
+            let _rest = emit_match_expr_arms(cg, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)
+            EmitResult { value: body_result.value, ty: body_result.ty, had_error: false, error_message: "" }
+        }
+    }
+}
+
+// ── Match as statement ──
+
+export fn emit_match(cg: Codegen, env: VarEnv, subject: Expr, arms: MatchArmList) -> StmtResult {
+    let r = emit_expr(cg, env, subject)
+    if r.had_error { return err_stmt_from_expr(r) }
+    let enum_name = strip_enum_prefix(r.ty)
+    if enum_name == "" {
+        let dbg = match subject {
+            .Ident(n) -> "ident " + n
+            .Call(callee, _) -> {
+                match callee {
+                    .Ident(cn) -> "call " + cn
+                    _ -> "call other"
+                }
+            }
+            .FieldAccess(_, f) -> "field " + f
+            _ -> "other"
+        }
+        return err_stmt("codegen error: match subject is not an enum (ty=" + r.ty + ") subj=" + dbg)
+    }
+    let lookup = enum_reg_lookup(enum_name)
+    if !lookup.found { return err_stmt("codegen error: unknown enum `" + enum_name + "`") }
+    let st_ty = forge_llvm_get_type_by_name(cg.ctx, enum_name)
+    let subj_ptr = forge_llvm_build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "match_subj")
+    let tag_gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, subj_ptr, 0, "tag_ptr")
+    let tag_val = forge_llvm_build_load(cg.builder, forge_llvm_int8_type(cg.ctx), tag_gep, "tag")
+    let merge_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "match_end")
+    let arm_result = emit_match_arms(cg, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)
+    if arm_result.had_error { return arm_result }
+    forge_llvm_position_at_end(cg.builder, merge_bb)
+    ok_stmt(env)
+}
+
+fn emit_match_arms(cg: Codegen, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> StmtResult {
+    match arms {
+        .End -> {
+            if forge_llvm_block_has_terminator(cg.builder) == 0 {
+                forge_llvm_build_br(cg.builder, merge_bb)
+            }
+            ok_stmt(env)
+        }
+        .Node(pattern, body, next) -> {
+            let arm_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "match_arm")
+            let next_bb = forge_llvm_append_basic_block(cg.ctx, cg.current_fn, "match_next")
+            match pattern {
+                .Wildcard -> forge_llvm_build_br(cg.builder, arm_bb)
+                .Variant(vname, _) -> {
+                    let v = variant_lookup(variants, vname)
+                    if !v.found { return err_stmt("codegen error: pattern references unknown variant `" + vname + "`") }
+                    let want_tag = forge_llvm_const_int(forge_llvm_int8_type(cg.ctx), v.tag, 0)
+                    let cmp = forge_llvm_build_icmp(cg.builder, 32, tag_val, want_tag, "tag_eq")
+                    forge_llvm_build_cond_br(cg.builder, cmp, arm_bb, next_bb)
+                }
+            }
+            forge_llvm_position_at_end(cg.builder, arm_bb)
+            let arm_env = bind_pattern_payload(cg, env, pattern, st_ty, subj_ptr, variants)
+            let body_result = emit_expr(cg, arm_env, body)
+            if body_result.had_error { return err_stmt(body_result.error_message) }
+            if forge_llvm_block_has_terminator(cg.builder) == 0 {
+                forge_llvm_build_br(cg.builder, merge_bb)
+            }
+            forge_llvm_position_at_end(cg.builder, next_bb)
+            emit_match_arms(cg, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb)
+        }
+    }
+}
+
+// ── Pattern payload binding ──
+
+fn bind_pattern_payload(cg: Codegen, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList) -> VarEnv {
+    match pattern {
+        .Wildcard -> env
+        .Variant(vname, bindings) -> {
+            let v = variant_lookup(variants, vname)
+            if !v.found { return env }
+            bind_pattern_payload_loop(cg, env, st_ty, subj_ptr, bindings, v.fields, 0)
+        }
+    }
+}
+
+fn bind_pattern_payload_loop(cg: Codegen, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: FieldList, idx: int) -> VarEnv {
+    match bindings {
+        .End -> env
+        .Node(name, _, next_b) -> {
+            if name == "_" {
+                return bind_pattern_payload_loop(cg, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
+            }
+            let gep = forge_llvm_build_struct_gep2(cg.builder, st_ty, subj_ptr, idx + 1, "pbind_ptr")
+            let loaded = forge_llvm_build_load(cg.builder, cg.i64_type, gep, name)
+            let alloca = forge_llvm_build_alloca(cg.builder, cg.i64_type, name)
+            forge_llvm_build_store(cg.builder, loaded, alloca)
+            let field_ty = translate_param_type(field_type_at(fields, 0))
+            let extended = env_extend(env, name, alloca, field_ty)
+            bind_pattern_payload_loop(cg, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
+        }
+    }
+}

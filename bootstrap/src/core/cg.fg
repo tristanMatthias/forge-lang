@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{VarEnv, FieldList}
+use core.ast.{VarEnv, FieldList, VariantList}
 
 // ── Codegen context ──
 //
@@ -123,4 +123,110 @@ export fn strip_enum_prefix(ty: string) -> string {
         return ""
     }
     ty.substring(5, ty.length)
+}
+
+export fn strip_struct_prefix(ty: string) -> string {
+    if ty.length < 8 {
+        return ""
+    }
+    let head = ty.substring(0, 7)
+    if head != "struct:" {
+        return ""
+    }
+    ty.substring(7, ty.length)
+}
+
+// ── Registries ──
+//
+// Struct and enum registries track the declared types and their
+// field/variant layouts. LLVM has the named struct types but doesn't
+// carry Forge-level field names or variant tags — that's our job.
+//
+// These are mutable globals, which violates the "no mutable globals"
+// aspiration. They'll move into a Compiler context struct in a
+// future refactor. For now they live here so that both codegen/mod.fg
+// and features/<X>/codegen.fg can access them one-way via core.cg.
+
+enum StructReg {
+    End
+    Node(name: string, fields: FieldList, next: StructReg)
+}
+
+export mut CG_STRUCTS: StructReg = StructReg.End
+
+export type StructLookup = {
+    found: bool,
+    fields: FieldList,
+}
+
+export fn struct_reg_lookup(name: string) -> StructLookup {
+    struct_reg_lookup_loop(CG_STRUCTS, name)
+}
+
+fn struct_reg_lookup_loop(reg: StructReg, name: string) -> StructLookup {
+    match reg {
+        .End -> StructLookup { found: false, fields: FieldList.End }
+        .Node(n, fields, next) -> {
+            if n == name {
+                return StructLookup { found: true, fields }
+            }
+            struct_reg_lookup_loop(next, name)
+        }
+    }
+}
+
+export fn struct_reg_extend(name: string, fields: FieldList) {
+    CG_STRUCTS = StructReg.Node(name, fields, CG_STRUCTS)
+}
+
+enum EnumReg {
+    End
+    Node(name: string, variants: VariantList, next: EnumReg)
+}
+
+export mut CG_ENUMS: EnumReg = EnumReg.End
+
+export type EnumLookup = {
+    found: bool,
+    variants: VariantList,
+}
+
+export fn enum_reg_lookup(name: string) -> EnumLookup {
+    enum_reg_lookup_loop(CG_ENUMS, name)
+}
+
+fn enum_reg_lookup_loop(reg: EnumReg, name: string) -> EnumLookup {
+    match reg {
+        .End -> EnumLookup { found: false, variants: VariantList.End }
+        .Node(n, variants, next) -> {
+            if n == name {
+                return EnumLookup { found: true, variants }
+            }
+            enum_reg_lookup_loop(next, name)
+        }
+    }
+}
+
+export fn enum_reg_extend(name: string, variants: VariantList) {
+    CG_ENUMS = EnumReg.Node(name, variants, CG_ENUMS)
+}
+
+// translate_param_type: converts Forge type names to the internal
+// string tag used by EmitResult.ty. Uses the registries above.
+export fn translate_param_type(ty: string) -> string {
+    if ty == "str" { return "str" }
+    if ty == "string" { return "str" }
+    if ty == "i64" { return "i64" }
+    if ty == "int" { return "i64" }
+    if ty == "bool" { return "i64" }
+    if ty == "ptr" { return "i64" }
+    let enum_l = enum_reg_lookup(ty)
+    if enum_l.found {
+        return "enum:" + ty
+    }
+    let struct_l = struct_reg_lookup(ty)
+    if struct_l.found {
+        return "struct:" + ty
+    }
+    "i64"
 }
