@@ -4,7 +4,7 @@
 // equality → comparison → term → factor → unary → call → primary.
 // Feature-specific parsers extend Parser via cross-file impl blocks.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp}
 
 export type ParseResult = {
     expr: Expr?,
@@ -441,10 +441,9 @@ impl Parser {
 
         mut expr = left
         while self.check("pipe_pipe") || self.check("kw_or") {
-            let operator = "||"
             self.advance()
             let right = self.parse_and()?
-            expr = Expr.Logical(expr, operator, right)
+            expr = Expr.Logical(expr, LogicOp.Or, right)
         }
 
         expr
@@ -455,10 +454,9 @@ impl Parser {
 
         mut expr = left
         while self.check("amp_amp") || self.check("kw_and") {
-            let operator = "&&"
             self.advance()
             let right = self.parse_equality()?
-            expr = Expr.Logical(expr, operator, right)
+            expr = Expr.Logical(expr, LogicOp.And, right)
         }
 
         expr
@@ -469,10 +467,10 @@ impl Parser {
 
         mut expr = left
         while self.check("equal_equal") || self.check("bang_equal") {
-            let operator = self.current_lexeme
+            let op = if self.check("equal_equal") { BinOp.Eq } else { BinOp.Ne }
             self.advance()
             let right = self.parse_comparison()?
-            expr = Expr.Binary(expr, operator, right)
+            expr = Expr.Binary(expr, op, right)
         }
 
         expr
@@ -483,10 +481,13 @@ impl Parser {
 
         mut expr = left
         while self.check("greater") || self.check("greater_equal") || self.check("less") || self.check("less_equal") {
-            let operator = self.current_lexeme
+            let op = if self.check("less") { BinOp.Lt }
+                else if self.check("less_equal") { BinOp.Le }
+                else if self.check("greater") { BinOp.Gt }
+                else { BinOp.Ge }
             self.advance()
             let right = self.parse_term()?
-            expr = Expr.Binary(expr, operator, right)
+            expr = Expr.Binary(expr, op, right)
         }
 
         expr
@@ -497,10 +498,10 @@ impl Parser {
 
         mut expr = left
         while self.check("plus") || self.check("minus") {
-            let operator = self.current_lexeme
+            let op = if self.check("plus") { BinOp.Add } else { BinOp.Sub }
             self.advance()
             let right = self.parse_factor()?
-            expr = Expr.Binary(expr, operator, right)
+            expr = Expr.Binary(expr, op, right)
         }
 
         expr
@@ -511,10 +512,10 @@ impl Parser {
 
         mut expr = left
         while self.check("star") || self.check("slash") {
-            let operator = self.current_lexeme
+            let op = if self.check("star") { BinOp.Mul } else { BinOp.Div }
             self.advance()
             let right = self.parse_unary()?
-            expr = Expr.Binary(expr, operator, right)
+            expr = Expr.Binary(expr, op, right)
         }
 
         expr
@@ -522,10 +523,10 @@ impl Parser {
 
     fn parse_unary(self) -> Expr? {
         if self.check("bang") || self.check("minus") || self.check("kw_not") {
-            let operator = if self.check("kw_not") { "!" } else { self.current_lexeme }
+            let op = if self.check("minus") { UnOp.Neg } else { UnOp.Not }
             self.advance()
             let right = self.parse_unary()?
-            return Expr.Unary(operator, right)
+            return Expr.Unary(op, right)
         }
 
         mut expr = self.parse_call()?
@@ -825,7 +826,7 @@ impl Parser {
                     if result == null {
                         result = str_expr
                     } else {
-                        result = Expr.Binary(result!, "+", str_expr)
+                        result = Expr.Binary(result!, BinOp.Add, str_expr)
                     }
                 }
                 // Find matching `}` (no nesting — braces inside
@@ -860,7 +861,7 @@ impl Parser {
                 if result == null {
                     result = str_call
                 } else {
-                    result = Expr.Binary(result!, "+", str_call)
+                    result = Expr.Binary(result!, BinOp.Add, str_call)
                 }
                 i = j + 1
                 text_start = i
@@ -875,7 +876,7 @@ impl Parser {
             if result == null {
                 result = str_expr
             } else {
-                result = Expr.Binary(result!, "+", str_expr)
+                result = Expr.Binary(result!, BinOp.Add, str_expr)
             }
         }
         if result == null {

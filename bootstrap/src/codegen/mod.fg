@@ -660,9 +660,9 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
             ok_emit_str(to_i64(ctx, str_ptr, "str_i64"))
         }
         .Grouping(inner) -> emit_expr(ctx, env, inner)
-        .Unary(operator, right) -> emit_unary(ctx, env, operator, right)
-        .Binary(left, operator, right) -> emit_binary(ctx, env, left, operator, right)
-        .Logical(left, operator, right) -> emit_logical(ctx, env, left, operator, right)
+        .Unary(op, right) -> emit_unary(ctx, env, op, right)
+        .Binary(left, op, right) -> emit_binary(ctx, env, left, op, right)
+        .Logical(left, op, right) -> emit_logical(ctx, env, left, op, right)
         .Ident(name) -> {
             let local = env_lookup(env, name)
             if local.found {
@@ -1393,23 +1393,17 @@ fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> 
     }
 }
 
-fn emit_unary(ctx: Ctx, env: VarEnv, operator: string, right: Expr) -> EmitResult {
-    let right_result = emit_expr(ctx, env, right)
-    if right_result.had_error {
-        return right_result
-    }
+fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult {
+    let r = emit_expr(ctx, env, right)
+    if r.had_error { return r }
 
-    if operator == "-" {
-        let zero = const_i64(ctx, 0)
-        return ok_emit(forge_llvm_build_sub(ctx.builder, zero, right_result.value, "neg"))
+    match op {
+        .Neg -> ok_emit(forge_llvm_build_sub(ctx.builder, const_i64(ctx, 0), r.value, "neg"))
+        .Not -> {
+            let cmp = forge_llvm_build_icmp(ctx.builder, 32, r.value, const_i64(ctx, 0), "not_cmp")
+            ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "not"))
+        }
     }
-
-    if operator == "!" {
-        let cmp = forge_llvm_build_icmp(ctx.builder, 32, right_result.value, const_i64(ctx, 0), "not_cmp")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "not"))
-    }
-
-    err_emit("unsupported unary operator `" + operator + "`")
 }
 
 fn is_null_literal(e: Expr) -> bool {
@@ -1419,82 +1413,57 @@ fn is_null_literal(e: Expr) -> bool {
     }
 }
 
-fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, operator: string, right: Expr) -> EmitResult {
+fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> EmitResult {
     let left_result = emit_expr(ctx, env, left)
-    if left_result.had_error {
-        return left_result
-    }
+    if left_result.had_error { return left_result }
     let lhs = left_result.value
 
     let right_result = emit_expr(ctx, env, right)
-    if right_result.had_error {
-        return right_result
-    }
+    if right_result.had_error { return right_result }
     let rhs = right_result.value
 
-    // Comparing against a null literal must always be a plain pointer/i64
-    // icmp — never strcmp, which would deref the NULL side and crash.
     let null_cmp = is_null_literal(left) || is_null_literal(right)
+    let is_str = left_result.ty == "str" || right_result.ty == "str"
 
-    if operator == "+" {
-        // Dispatch + on operand types: if either side is a string,
-        // emit a string concat sequence (strlen+strlen+malloc+memcpy
-        // ×2 + null-terminate). Otherwise it's an integer add.
-        if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_concat(ctx, lhs, rhs)
+    match op {
+        .Add -> {
+            if is_str { return emit_concat(ctx, lhs, rhs) }
+            ok_emit(forge_llvm_build_add(ctx.builder, lhs, rhs, "add"))
         }
-        return ok_emit(forge_llvm_build_add(ctx.builder, lhs, rhs, "add"))
-    }
-    if operator == "-" { return ok_emit(forge_llvm_build_sub(ctx.builder, lhs, rhs, "sub")) }
-    if operator == "*" { return ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul")) }
-    if operator == "/" { return ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div")) }
-
-    // Comparisons: icmp returns i1, zext to i64
-    // pred: 32=eq, 33=ne, 38=sgt, 39=sge, 40=slt, 41=sle
-    if operator == "==" {
-        if !null_cmp && (left_result.ty == "str" || right_result.ty == "str") {
-            return emit_str_eq(ctx, lhs, rhs, false)
+        .Sub -> ok_emit(forge_llvm_build_sub(ctx.builder, lhs, rhs, "sub"))
+        .Mul -> ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul"))
+        .Div -> ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div"))
+        .Eq -> {
+            if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, false) }
+            let cmp = forge_llvm_build_icmp(ctx.builder, 32, lhs, rhs, "eq")
+            ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "eq_ext"))
         }
-        let cmp = forge_llvm_build_icmp(ctx.builder, 32, lhs, rhs, "eq")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "eq_ext"))
-    }
-    if operator == "!=" {
-        if !null_cmp && (left_result.ty == "str" || right_result.ty == "str") {
-            return emit_str_eq(ctx, lhs, rhs, true)
+        .Ne -> {
+            if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, true) }
+            let cmp = forge_llvm_build_icmp(ctx.builder, 33, lhs, rhs, "ne")
+            ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "ne_ext"))
         }
-        let cmp = forge_llvm_build_icmp(ctx.builder, 33, lhs, rhs, "ne")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "ne_ext"))
-    }
-    if operator == "<" {
-        if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_str_cmp(ctx, lhs, rhs, 40)
+        .Lt -> {
+            if is_str { return emit_str_cmp(ctx, lhs, rhs, 40) }
+            let cmp = forge_llvm_build_icmp(ctx.builder, 40, lhs, rhs, "slt")
+            ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "slt_ext"))
         }
-        let cmp = forge_llvm_build_icmp(ctx.builder, 40, lhs, rhs, "slt")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "slt_ext"))
-    }
-    if operator == "<=" {
-        if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_str_cmp(ctx, lhs, rhs, 41)
+        .Le -> {
+            if is_str { return emit_str_cmp(ctx, lhs, rhs, 41) }
+            let cmp = forge_llvm_build_icmp(ctx.builder, 41, lhs, rhs, "sle")
+            ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sle_ext"))
         }
-        let cmp = forge_llvm_build_icmp(ctx.builder, 41, lhs, rhs, "sle")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sle_ext"))
-    }
-    if operator == ">" {
-        if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_str_cmp(ctx, lhs, rhs, 38)
+        .Gt -> {
+            if is_str { return emit_str_cmp(ctx, lhs, rhs, 38) }
+            let cmp = forge_llvm_build_icmp(ctx.builder, 38, lhs, rhs, "sgt")
+            ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sgt_ext"))
         }
-        let cmp = forge_llvm_build_icmp(ctx.builder, 38, lhs, rhs, "sgt")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sgt_ext"))
-    }
-    if operator == ">=" {
-        if left_result.ty == "str" || right_result.ty == "str" {
-            return emit_str_cmp(ctx, lhs, rhs, 39)
+        .Ge -> {
+            if is_str { return emit_str_cmp(ctx, lhs, rhs, 39) }
+            let cmp = forge_llvm_build_icmp(ctx.builder, 39, lhs, rhs, "sge")
+            ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sge_ext"))
         }
-        let cmp = forge_llvm_build_icmp(ctx.builder, 39, lhs, rhs, "sge")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sge_ext"))
     }
-
-    err_emit("unsupported binary operator `" + operator + "`")
 }
 
 // Short-circuit evaluation for && and ||.
@@ -1506,26 +1475,22 @@ fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, operator: string, right: Expr)
 //   evaluate a → to_bool → if true, result is 1, else evaluate b → to_bool
 //
 // Uses cond_br + phi to avoid evaluating the right side when unnecessary.
-fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, operator: string, right: Expr) -> EmitResult {
+fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Expr) -> EmitResult {
     let left_result = emit_expr(ctx, env, left)
     if left_result.had_error { return left_result }
 
-    // Convert left to bool (i1): lhs != 0
     let l_bool = forge_llvm_build_icmp(ctx.builder, 33, left_result.value, const_i64(ctx, 0), "l_bool")
     let left_bb = forge_llvm_get_insert_block(ctx.builder)
 
-    // Create basic blocks for the right side and the merge point
     let rhs_bb = new_bb(ctx, "sc_rhs")
     let merge_bb = new_bb(ctx, "sc_merge")
 
-    // Branch: for &&, skip rhs if lhs is false; for ||, skip rhs if lhs is true
-    if operator == "&&" {
-        forge_llvm_build_cond_br(ctx.builder, l_bool, rhs_bb, merge_bb)
-    } else {
-        forge_llvm_build_cond_br(ctx.builder, l_bool, merge_bb, rhs_bb)
+    // &&: skip rhs if false. ||: skip rhs if true.
+    match op {
+        .And -> forge_llvm_build_cond_br(ctx.builder, l_bool, rhs_bb, merge_bb)
+        .Or -> forge_llvm_build_cond_br(ctx.builder, l_bool, merge_bb, rhs_bb)
     }
 
-    // Emit rhs in the rhs_bb
     forge_llvm_position_at_end(ctx.builder, rhs_bb)
     let right_result = emit_expr(ctx, env, right)
     if right_result.had_error { return right_result }
@@ -1533,24 +1498,15 @@ fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, operator: string, right: Expr
     let rhs_end_bb = forge_llvm_get_insert_block(ctx.builder)
     forge_llvm_build_br(ctx.builder, merge_bb)
 
-    // Merge: phi node picks the result
     forge_llvm_position_at_end(ctx.builder, merge_bb)
     let phi = forge_llvm_build_phi(ctx.builder, forge_llvm_int1_type(ctx.lc), "sc_phi")
 
-    if operator == "&&" {
-        // From left_bb (short-circuit false): result is false (0)
-        let false_val = forge_llvm_const_int(forge_llvm_int1_type(ctx.lc), 0, 0)
-        forge_llvm_add_incoming(phi, false_val, left_bb)
-        // From rhs_end_bb: result is r_bool
-        forge_llvm_add_incoming(phi, r_bool, rhs_end_bb)
-    } else {
-        // From left_bb (short-circuit true): result is true (1)
-        let true_val = forge_llvm_const_int(forge_llvm_int1_type(ctx.lc), 1, 0)
-        forge_llvm_add_incoming(phi, true_val, left_bb)
-        // From rhs_end_bb: result is r_bool
-        forge_llvm_add_incoming(phi, r_bool, rhs_end_bb)
+    let sc_val = match op {
+        .And -> forge_llvm_const_int(forge_llvm_int1_type(ctx.lc), 0, 0)
+        .Or -> forge_llvm_const_int(forge_llvm_int1_type(ctx.lc), 1, 0)
     }
+    forge_llvm_add_incoming(phi, sc_val, left_bb)
+    forge_llvm_add_incoming(phi, r_bool, rhs_end_bb)
 
-    // Extend i1 → i64 for the Forge type system
     ok_emit(forge_llvm_build_zext(ctx.builder, phi, ctx.i64_type, "sc_ext"))
 }

@@ -515,9 +515,9 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             ok_result(next_runtime, value_result.value)
         }
         .Grouping(inner) -> eval_expr(runtime, inner)
-        .Unary(operator, right) -> eval_unary(runtime, operator, right)
-        .Binary(left, operator, right) -> eval_binary(runtime, left, operator, right)
-        .Logical(left, operator, right) -> eval_logical(runtime, left, operator, right)
+        .Unary(op, right) -> eval_unary(runtime, op, right)
+        .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
+        .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
         .Call(callee, args) -> eval_call(runtime, callee, args)
         .StructLit(_, _) -> error_result(runtime, "struct literals are not supported by the tree-walk evaluator")
         .FieldAccess(_, _) -> error_result(runtime, "field access is not supported by the tree-walk evaluator")
@@ -693,101 +693,80 @@ fn call_builtin(runtime: Runtime, name: string, args: ValueList) -> StepResult {
     error_result(runtime, "unknown builtin `" + name + "`")
 }
 
-fn eval_unary(runtime: Runtime, operator: string, right: Expr) -> StepResult {
+fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
     let right_result = eval_expr(runtime, right)
     if right_result.had_error {
         return right_result
     }
 
     let value = right_result.value
-    if operator == "-" {
-        let number_text = as_number_text(value)
-        if number_text == null {
-            return error_result(right_result.runtime, "operand must be a number")
+    match op {
+        .Neg -> {
+            let number_text = as_number_text(value)
+            if number_text == null {
+                return error_result(right_result.runtime, "operand must be a number")
+            }
+            ok_result(right_result.runtime, value_number(render_number(0.0 - float(number_text!))))
         }
-        return ok_result(right_result.runtime, value_number(render_number(0.0 - float(number_text!))))
+        .Not -> ok_result(right_result.runtime, value_bool(!is_truthy(value)))
     }
-
-    if operator == "!" {
-        return ok_result(right_result.runtime, value_bool(!is_truthy(value)))
-    }
-
-    error_result(right_result.runtime, "unsupported unary operator `" + operator + "`")
 }
 
-fn eval_binary(runtime: Runtime, left: Expr, operator: string, right: Expr) -> StepResult {
+fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResult {
     let left_result = eval_expr(runtime, left)
-    if left_result.had_error {
-        return left_result
-    }
+    if left_result.had_error { return left_result }
 
     let left_value = left_result.value
-    let left_runtime = left_result.runtime
-
-    let right_result = eval_expr(left_runtime, right)
-    if right_result.had_error {
-        return right_result
-    }
+    let right_result = eval_expr(left_result.runtime, right)
+    if right_result.had_error { return right_result }
 
     let right_value = right_result.value
+    let rt = right_result.runtime
 
-    if operator == "+" {
-        return eval_plus(right_result.runtime, left_value, right_value)
-    }
-
-    if operator == "-" || operator == "*" || operator == "/" || operator == "<" || operator == "<=" || operator == ">" || operator == ">=" {
-        let left_text = as_number_text(left_value)
-        if left_text == null {
-            return error_result(right_result.runtime, "operand must be a number")
+    match op {
+        .Add -> eval_plus(rt, left_value, right_value)
+        .Eq -> ok_result(rt, value_bool(values_equal(left_value, right_value)))
+        .Ne -> ok_result(rt, value_bool(!values_equal(left_value, right_value)))
+        _ -> {
+            let left_text = as_number_text(left_value)
+            if left_text == null {
+                return error_result(rt, "operand must be a number")
+            }
+            let right_text = as_number_text(right_value)
+            if right_text == null {
+                return error_result(rt, "operand must be a number")
+            }
+            let l = float(left_text!)
+            let r = float(right_text!)
+            match op {
+                .Sub -> ok_result(rt, value_number(render_number(l - r)))
+                .Mul -> ok_result(rt, value_number(render_number(l * r)))
+                .Div -> ok_result(rt, value_number(render_number(l / r)))
+                .Lt -> ok_result(rt, value_bool(l < r))
+                .Le -> ok_result(rt, value_bool(l <= r))
+                .Gt -> ok_result(rt, value_bool(l > r))
+                .Ge -> ok_result(rt, value_bool(l >= r))
+                _ -> error_result(rt, "unsupported binary operator")
+            }
         }
-
-        let right_text = as_number_text(right_value)
-        if right_text == null {
-            return error_result(right_result.runtime, "operand must be a number")
-        }
-
-        let left_num = float(left_text!)
-        let right_num = float(right_text!)
-
-        if operator == "-" { return ok_result(right_result.runtime, value_number(render_number(left_num - right_num))) }
-        if operator == "*" { return ok_result(right_result.runtime, value_number(render_number(left_num * right_num))) }
-        if operator == "/" { return ok_result(right_result.runtime, value_number(render_number(left_num / right_num))) }
-        if operator == "<" { return ok_result(right_result.runtime, value_bool(left_num < right_num)) }
-        if operator == "<=" { return ok_result(right_result.runtime, value_bool(left_num <= right_num)) }
-        if operator == ">" { return ok_result(right_result.runtime, value_bool(left_num > right_num)) }
-        if operator == ">=" { return ok_result(right_result.runtime, value_bool(left_num >= right_num)) }
     }
-
-    if operator == "==" {
-        return ok_result(right_result.runtime, value_bool(values_equal(left_value, right_value)))
-    }
-
-    if operator == "!=" {
-        return ok_result(right_result.runtime, value_bool(!values_equal(left_value, right_value)))
-    }
-
-    error_result(right_result.runtime, "unsupported binary operator `" + operator + "`")
 }
 
-fn eval_logical(runtime: Runtime, left: Expr, operator: string, right: Expr) -> StepResult {
+fn eval_logical(runtime: Runtime, left: Expr, op: LogicOp, right: Expr) -> StepResult {
     let left_result = eval_expr(runtime, left)
-    if left_result.had_error {
-        return left_result
-    }
+    if left_result.had_error { return left_result }
 
     let left_truthy = is_truthy(left_result.value)
-
-    if operator == "||" {
-        if left_truthy {
-            return left_result
+    match op {
+        .Or -> {
+            if left_truthy { return left_result }
+            eval_expr(left_result.runtime, right)
         }
-        return eval_expr(left_result.runtime, right)
+        .And -> {
+            if !left_truthy { return left_result }
+            eval_expr(left_result.runtime, right)
+        }
     }
-
-    if !left_truthy {
-        return left_result
-    }
-    eval_expr(left_result.runtime, right)
 }
 
 fn eval_plus(runtime: Runtime, left: Value, right: Value) -> StepResult {

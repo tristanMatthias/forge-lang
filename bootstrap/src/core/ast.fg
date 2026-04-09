@@ -54,6 +54,48 @@ export enum MatchArmList {
     Node(pattern: Pattern, body: Expr, next: MatchArmList)
 }
 
+export enum BinOp {
+    Add, Sub, Mul, Div,
+    Eq, Ne, Lt, Le, Gt, Ge,
+}
+
+export enum UnOp {
+    Neg, Not,
+}
+
+export enum LogicOp {
+    And, Or,
+}
+
+export fn binop_str(op: BinOp) -> string {
+    match op {
+        .Add -> "+"
+        .Sub -> "-"
+        .Mul -> "*"
+        .Div -> "/"
+        .Eq -> "=="
+        .Ne -> "!="
+        .Lt -> "<"
+        .Le -> "<="
+        .Gt -> ">"
+        .Ge -> ">="
+    }
+}
+
+export fn unop_str(op: UnOp) -> string {
+    match op {
+        .Neg -> "-"
+        .Not -> "!"
+    }
+}
+
+export fn logicop_str(op: LogicOp) -> string {
+    match op {
+        .And -> "&&"
+        .Or -> "||"
+    }
+}
+
 export enum Expr {
     Number(value: string)
     String(value: string)
@@ -62,9 +104,9 @@ export enum Expr {
     Ident(name: string)
     Assign(name: string, value: Expr)
     Grouping(expr: Expr)
-    Unary(operator: string, right: Expr)
-    Binary(left: Expr, operator: string, right: Expr)
-    Logical(left: Expr, operator: string, right: Expr)
+    Unary(op: UnOp, right: Expr)
+    Binary(left: Expr, op: BinOp, right: Expr)
+    Logical(left: Expr, op: LogicOp, right: Expr)
     Call(callee: Expr, args: ExprList)
     StructLit(name: string, inits: FieldInitList)
     FieldAccess(obj: Expr, field: string)
@@ -300,9 +342,9 @@ export fn render_expr(expr: Expr) -> string {
         .Ident(name) -> name
         .Assign(name, value) -> "(assign " + name + " " + render_expr(value) + ")"
         .Grouping(inner) -> "(group " + render_expr(inner) + ")"
-        .Unary(operator, right) -> "(" + operator + " " + render_expr(right) + ")"
-        .Binary(left, operator, right) -> "(" + operator + " " + render_expr(left) + " " + render_expr(right) + ")"
-        .Logical(left, operator, right) -> "(" + operator + " " + render_expr(left) + " " + render_expr(right) + ")"
+        .Unary(op, right) -> "(" + unop_str(op) + " " + render_expr(right) + ")"
+        .Binary(left, op, right) -> "(" + binop_str(op) + " " + render_expr(left) + " " + render_expr(right) + ")"
+        .Logical(left, op, right) -> "(" + logicop_str(op) + " " + render_expr(left) + " " + render_expr(right) + ")"
         .Call(callee, args) -> "(call " + render_expr(callee) + " " + render_expr_list(args) + ")"
         .StructLit(name, inits) -> "(struct " + name + " " + render_field_init_list(inits) + ")"
         .FieldAccess(obj, field) -> "(field " + render_expr(obj) + " " + field + ")"
