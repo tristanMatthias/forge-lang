@@ -653,6 +653,16 @@ impl Parser {
             } else if self.check("left_bracket") {
                 self.advance()
                 let idx = self.parse_expression()?
+                // Slice: list[start..end]
+                if self.check("dot_dot") {
+                    self.advance()
+                    let end = self.parse_expression()?
+                    if !self.consume("right_bracket", "expected `]` after slice") {
+                        return null
+                    }
+                    result = Expr.Slice(result, idx, end)
+                    continue
+                }
                 if !self.consume("right_bracket", "expected `]` after index") {
                     return null
                 }

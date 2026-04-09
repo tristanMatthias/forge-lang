@@ -466,6 +466,11 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .TupleIndex(obj, _) -> resolve_expr(r, obj)
         .ListLit(elements) -> resolve_expr_list(r, elements)
         .MapLit(entries) -> resolve_expr_list(r, entries)
+        .Slice(obj, start, end) -> {
+            let a = resolve_expr(r, obj)
+            let b = resolve_expr(a, start)
+            resolve_expr(b, end)
+        }
         .Lambda(params, body) -> {
             let entered = enter_resolve_scope(r)
             let with_params = declare_params(entered, params)

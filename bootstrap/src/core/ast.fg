@@ -231,6 +231,7 @@ export enum Expr {
     Lambda(params: ParamList, body: Expr)
     // Entries is a flat list: key1, val1, key2, val2, ...
     MapLit(entries: ExprList)
+    Slice(obj: Expr, start: Expr, end: Expr)
 }
 
 export enum Stmt {
@@ -471,6 +472,7 @@ export fn render_expr(expr: Expr) -> string {
         .ListLit(elements) -> "(list " + render_expr_list(elements) + ")"
         .Lambda(params, body) -> "(lambda " + render_param_list(params) + " " + render_expr(body) + ")"
         .MapLit(entries) -> "(map " + render_expr_list(entries) + ")"
+        .Slice(obj, start, end) -> "(slice " + render_expr(obj) + " " + render_expr(start) + ".." + render_expr(end) + ")"
     }
 }
 

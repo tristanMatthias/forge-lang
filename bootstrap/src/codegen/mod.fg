@@ -137,6 +137,15 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_array_set", arr_push_type)
     forge_llvm_add_function(m, "forge_array_pop", arr_len_type)
 
+    // forge_array_slice(ptr, i64, i64) → ptr
+    let arr_slice_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(arr_slice_arr, 0, pt)
+    forge_llvm_type_array_set(arr_slice_arr, 1, i64t)
+    forge_llvm_type_array_set(arr_slice_arr, 2, i64t)
+    let arr_slice_type = forge_llvm_function_type(pt, arr_slice_arr, 3, 0)
+    forge_llvm_type_array_free(arr_slice_arr)
+    forge_llvm_add_function(m, "forge_array_slice", arr_slice_type)
+
     // C-runtime: higher-order list operations (map, filter, reduce, foreach)
     // All take (ptr arr, i64 fn_ptr) and return ptr or i64.
     let arr_ho_arr = forge_llvm_type_array_new(2)
@@ -751,6 +760,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .ListLit(elements) -> emit_list_lit(ctx, env, elements)
         .Lambda(params, body) -> emit_lambda(ctx, env, params, body)
         .MapLit(entries) -> emit_map_lit(ctx, env, entries)
+        .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
         _ -> err_emit("unsupported expression type")
     }
 }
@@ -1310,6 +1320,17 @@ fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
 
     ok_emit_str(to_i64(ctx, buf, "concat_i64"))
+}
+
+fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitResult {
+    let obj_r = emit_expr(ctx, env, obj)
+    if obj_r.had_error { return obj_r }
+    let start_r = emit_expr(ctx, env, start)
+    if start_r.had_error { return start_r }
+    let end_r = emit_expr(ctx, env, end)
+    if end_r.had_error { return end_r }
+    let result = call_3(ctx, get_fn(ctx, "forge_array_slice"), obj_r.value, start_r.value, end_r.value, "slice")
+    ok_emit_typed(result, ValueType.List)
 }
 
 fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
