@@ -1,7 +1,8 @@
-// WHY: codegen for null safety operators `??` and `?.`.
+// WHY: codegen for null safety operators `??`, `?.`, and `?`.
 //
 // `a ?? b`   → short-circuit: if a != 0 then a else b
 // `a?.field` → if a == 0 then 0 else a.field
+// `a?`       → if a == 0 then return 0 from enclosing fn, else a
 //
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to simple i64 null-check branches.
@@ -82,4 +83,23 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     let final_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "oc_val")
     let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
     EmitResult { value: final_val, ty: field_ty, had_error: false, error_message: "" }
+}
+
+export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
+    let r = emit_expr(ctx, env, inner)
+    if r.had_error { return r }
+
+    // If value is null (0), return null from the enclosing function.
+    let is_null = forge_llvm_build_icmp(ctx.builder, 32, r.value, const_i64(ctx, 0), "try_null")
+    let cont_bb = new_bb(ctx, "try_ok")
+    let ret_bb = new_bb(ctx, "try_ret")
+    forge_llvm_build_cond_br(ctx.builder, is_null, ret_bb, cont_bb)
+
+    // Null path: return 0 (null) from the current function.
+    forge_llvm_position_at_end(ctx.builder, ret_bb)
+    forge_llvm_build_ret(ctx.builder, const_i64(ctx, 0))
+
+    // Non-null path: continue with the value.
+    forge_llvm_position_at_end(ctx.builder, cont_bb)
+    EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
 }

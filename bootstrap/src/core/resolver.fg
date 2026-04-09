@@ -438,6 +438,7 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             resolve_expr(after_left, right)
         }
         .OptionalChain(obj, _) -> resolve_expr(r, obj)
+        .Try(inner) -> resolve_expr(r, inner)
     }
 }
 

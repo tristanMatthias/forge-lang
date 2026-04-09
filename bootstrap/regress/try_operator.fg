@@ -1,0 +1,21 @@
+fn find(name: string) -> string? {
+    if name == "alice" {
+        return "found alice"
+    }
+    null
+}
+
+fn greet(name: string) -> string? {
+    let found = find(name)?
+    "hello " + found
+}
+
+let r1 = greet("alice")
+if r1 != null {
+    println(r1!)
+}
+
+let r2 = greet("bob")
+if r2 == null {
+    println("bob not found")
+}

@@ -76,6 +76,7 @@ export enum Expr {
     IfExpr(condition: Expr, then_branch: Expr, else_branch: Expr)
     NullCoalesce(left: Expr, right: Expr)
     OptionalChain(obj: Expr, field: string)
+    Try(expr: Expr)
 }
 
 export enum Stmt {
@@ -307,6 +308,7 @@ export fn render_expr(expr: Expr) -> string {
         .IfExpr(c, t, e) -> "(if-expr " + render_expr(c) + " " + render_expr(t) + " " + render_expr(e) + ")"
         .NullCoalesce(left, right) -> "(?? " + render_expr(left) + " " + render_expr(right) + ")"
         .OptionalChain(obj, field) -> "(?. " + render_expr(obj) + " " + field + ")"
+        .Try(inner) -> "(? " + render_expr(inner) + ")"
     }
 }
 
