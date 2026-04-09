@@ -1,3 +1,9 @@
+// WHY: recursive-descent parser with integrated lexer. Scans source
+// text one token at a time and builds an AST. Precedence is encoded
+// in the call chain: assignment → pipe → null_coalesce → or → and →
+// equality → comparison → term → factor → unary → call → primary.
+// Feature-specific parsers extend Parser via cross-file impl blocks.
+
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList}
 
 export type ParseResult = {

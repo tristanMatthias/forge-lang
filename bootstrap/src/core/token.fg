@@ -1,3 +1,7 @@
+// WHY: token representation — used by the standalone scanner (core/scanner.fg)
+// for the `tokens` command. The parser has its own built-in lexer and does
+// not use these types.
+
 export type Token = {
     kind: string,
     lexeme: string,

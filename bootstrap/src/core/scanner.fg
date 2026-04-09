@@ -1,3 +1,8 @@
+// WHY: standalone tokenizer — produces a rendered token stream for
+// the `tokens` command. Separate from the parser's built-in lexer
+// because the parser scans one token at a time during recursive
+// descent, whereas this module materializes the full stream.
+
 use token.{Token, token_new, token_render, token_render_struct}
 
 export type ScanResult = {

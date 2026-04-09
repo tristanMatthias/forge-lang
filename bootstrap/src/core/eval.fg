@@ -1,3 +1,8 @@
+// WHY: tree-walk expression evaluator — used by `eval` and `check`
+// commands. Interprets AST directly without LLVM, so it works even
+// when codegen would fail. Limited to expressions + simple
+// statements; complex features (match, for, etc.) are codegen-only.
+
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList}
 

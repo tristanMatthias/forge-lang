@@ -1,3 +1,10 @@
+// WHY: main LLVM IR emission — three-pass compilation:
+//   1. Declare all types, globals, and function signatures
+//   2. Emit function bodies
+//   3. Emit top-level statements into main()
+// Feature-specific codegen lives in features/*/codegen.fg and is
+// resolved globally by the host compiler's cross-file impl lookup.
+
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload}
 use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix, strip_struct_prefix, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc}
 

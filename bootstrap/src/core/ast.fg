@@ -1,3 +1,7 @@
+// WHY: AST node definitions — the single source of truth for Expr,
+// Stmt, Pattern, and their recursive list types. Pure data only;
+// all logic (parsing, resolution, codegen) lives elsewhere.
+
 export enum ExprList {
     End
     Node(expr: Expr, next: ExprList)
