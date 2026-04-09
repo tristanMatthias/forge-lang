@@ -73,8 +73,8 @@ export enum Expr {
 }
 
 export enum Stmt {
-    Let(name: string, initializer: Expr)
-    Mut(name: string, initializer: Expr)
+    Let(name: string, ty: string, initializer: Expr)
+    Mut(name: string, ty: string, initializer: Expr)
     Expr(expr: Expr)
     Block(body: StmtList)
     If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
@@ -373,8 +373,8 @@ fn render_param_list_tail(params: ParamList) -> string {
 
 export fn render_stmt(stmt: Stmt) -> string {
     match stmt {
-        .Let(name, initializer) -> "(let " + name + " " + render_expr(initializer) + ")"
-        .Mut(name, initializer) -> "(mut " + name + " " + render_expr(initializer) + ")"
+        .Let(name, ty, initializer) -> "(let " + name + ":" + ty + " " + render_expr(initializer) + ")"
+        .Mut(name, ty, initializer) -> "(mut " + name + ":" + ty + " " + render_expr(initializer) + ")"
         .Expr(expr) -> "(expr " + render_expr(expr) + ")"
         .Block(body) -> "(block " + render_stmt_list(body) + ")"
         .If(condition, then_branch, else_branch) -> {

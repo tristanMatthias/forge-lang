@@ -11,7 +11,7 @@ The implementation strategy follows the front-end progression from *Crafting Int
 - add a tree-walk expression evaluator
 - add declarations and control flow
 - add semantic checks for the tiny self-host subset
-- add code generation only after the front end is boring and correct
+- add LLVM IR codegen (not a bytecode VM — we emit native code via the LLVM C API)
 
 The source language subset for this bootstrap lane stays intentionally small: local modules, functions, variables, literals, calls, conditionals, loops, returns, and comments. Anything outside that subset is deferred until the compiler can build itself reliably.
 
@@ -23,7 +23,7 @@ The current milestones implement:
 - a standalone `expr` command that parses expressions and prints a normalized AST form
 - a standalone `program` command that parses statement files and prints a normalized AST form
 - a standalone `eval` command that evaluates expressions using the Chapter 7 tree-walk model
-- a standalone `run` command that executes the Chapter 8 statement subset with lexical scope
+- a standalone `run` command that executes the Chapter 8 statement subset with lexical scope, plus Chapter 9 control flow (`if`/`else`, `while`)
 
 This gives us:
 

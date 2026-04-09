@@ -282,7 +282,7 @@ impl Parser {
         // disappear into the void.
         self.advance()
         while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_match") || self.check("kw_return") {
+            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") {
                 break
             }
             self.advance()
@@ -510,11 +510,13 @@ impl Parser {
         }
         let name = self.consume_identifier("expected variable name")
         if name == null { return null }
-        // Optional `: Type` annotation — discarded for now.
-        if self.check("colon") {
+        let ty = if self.check("colon") {
             self.advance()
-            let _ty = self.consume_type("expected type after `:`")
-            if _ty == null { return null }
+            let t = self.consume_type("expected type after `:`")
+            if t == null { return null }
+            t!
+        } else {
+            "i64"
         }
         if !self.consume("equal", "expected `=` after variable name") {
             return null
@@ -522,26 +524,29 @@ impl Parser {
         let initializer = self.parse_expression()
         if initializer == null { return null }
         if is_mut {
-            return Stmt.Mut(name!, initializer!)
+            return Stmt.Mut(name!, ty, initializer!)
         }
-        Stmt.Let(name!, initializer!)
+        Stmt.Let(name!, ty, initializer!)
     }
 
     fn parse_mut_statement(self) -> Stmt? {
         self.advance()
         let name = self.consume_identifier("expected variable name")
         if name == null { return null }
-        if self.check("colon") {
+        let ty = if self.check("colon") {
             self.advance()
-            let _ty = self.consume_type("expected type after `:`")
-            if _ty == null { return null }
+            let t = self.consume_type("expected type after `:`")
+            if t == null { return null }
+            t!
+        } else {
+            "i64"
         }
         if !self.consume("equal", "expected `=` after variable name") {
             return null
         }
         let initializer = self.parse_expression()
         if initializer == null { return null }
-        Stmt.Mut(name!, initializer!)
+        Stmt.Mut(name!, ty, initializer!)
     }
 
     fn parse_statement(self) -> Stmt? {

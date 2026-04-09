@@ -1,0 +1,1 @@
+resolve error: cannot read variable `a` in its own initializer

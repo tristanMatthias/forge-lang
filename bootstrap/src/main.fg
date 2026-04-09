@@ -6,6 +6,34 @@ use @std.process
 // emitted). See bootstrap/TECH_DEBT.md #10.
 use @std.llvm
 
+// Direct C externs for the small set of host process helpers we
+// need at the entry point. The bootstrap codegen doesn't model
+// the @std.process package's List<string> argv shape, so we use
+// the lower-level forge_selfhost_argc / forge_selfhost_get_arg
+// runtime helpers (defined in forge/stdlib/runtime.c) and libc
+// exit directly. The host compiler also accepts these because
+// they are just C symbols.
+extern fn forge_selfhost_argc() -> int
+extern fn forge_selfhost_get_arg_cstr(idx: int) -> string
+extern fn forge_selfhost_trace(s: string)
+extern fn forge_selfhost_trace_int(label: string, val: int)
+extern fn exit(code: int)
+
+// File-system builtins. The bootstrap codegen passes strings as a
+// single i64 (the C-string pointer) rather than the host's
+// ForgeString {ptr, len} struct, so we link against the
+// forge_selfhost_* C-wrappers in stdlib/runtime.c that take plain
+// `const char*` arguments.
+extern fn forge_selfhost_file_exists(path: string) -> int
+extern fn forge_selfhost_read_file(path: string) -> string
+extern fn forge_selfhost_write_file(path: string, content: string) -> int
+
+// Convenience aliases so the rest of the bootstrap source can keep
+// using the short names.
+fn file_exists(path: string) -> int { forge_selfhost_file_exists(path) }
+fn read_file(path: string) -> string { forge_selfhost_read_file(path) }
+fn write_file(path: string, content: string) -> int { forge_selfhost_write_file(path, content) }
+
 mod token
 mod scanner
 mod ast
@@ -28,7 +56,7 @@ fn print_usage() {
 
 fn fail(message: string) {
     eprintln(message)
-    process.exit(1)
+    exit(1)
 }
 
 // Returns the directory portion of a path, with trailing slash, or
@@ -113,14 +141,13 @@ fn extract_mod_name(line: string) -> string {
 }
 
 fn main() {
-    let args = process.args()
-    if args.length < 3 {
+    if forge_selfhost_argc() < 3 {
         print_usage()
-        process.exit(1)
+        exit(1)
     }
 
-    let command = args[1]
-    let path = args[2]
+    let command = forge_selfhost_get_arg_cstr(1)
+    let path = forge_selfhost_get_arg_cstr(2)
     if !file_exists(path) {
         fail("error: file not found: " + path)
     }
@@ -180,10 +207,6 @@ fn main() {
     }
 
     if command == "compile" {
-        // Pre-process `mod foo` declarations: each one is replaced
-        // by the contents of `<dir>/foo.fg` so the parser sees a
-        // single concatenated source. Single-file inputs without
-        // any `mod` lines pass through unchanged.
         let merged = preprocess_modules(source, path)
         let parsed = parse_program_source(merged)
         if parsed.had_error || parsed.stmts == null {
@@ -214,5 +237,5 @@ fn main() {
     }
 
     print_usage()
-    process.exit(1)
+    exit(1)
 }

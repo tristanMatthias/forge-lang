@@ -1,0 +1,14 @@
+mut result = ""
+if true && true {
+    result = result + "a"
+}
+if true && false {
+    result = result + "b"
+}
+if false || true {
+    result = result + "c"
+}
+if false || false {
+    result = result + "d"
+}
+result

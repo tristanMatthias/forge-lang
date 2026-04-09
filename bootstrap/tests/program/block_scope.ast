@@ -1,5 +1,5 @@
-(mut total 1)
+(mut total:i64 1)
 (block (expr (assign total (+ total 2)))
-(let inner total)
+(let inner:i64 total)
 (expr inner))
 (expr total)

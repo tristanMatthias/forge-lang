@@ -1,0 +1,10 @@
+mut result = 0
+if true {
+    result = 1
+}
+if false {
+    result = 2
+} else {
+    result = 3
+}
+result

@@ -25,9 +25,6 @@ type Resolver = {
 
 export fn resolve_program(stmts: StmtList) -> ResolveResult {
     mut r = resolver_new()
-    // Pre-pass: collect all top-level function names so forward
-    // references work. (declare_functions in codegen does the
-    // equivalent for the LLVM module.)
     r = collect_function_names(r, stmts)
     r = resolve_stmt_list(r, stmts)
     ResolveResult {
@@ -217,12 +214,12 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         return r
     }
     match stmt {
-        .Let(name, initializer) -> {
+        .Let(name, _, initializer) -> {
             let declared = declare_name(r, name)
             let after_init = resolve_expr(declared, initializer)
             define_name(after_init, name)
         }
-        .Mut(name, initializer) -> {
+        .Mut(name, _, initializer) -> {
             let declared = declare_name(r, name)
             let after_init = resolve_expr(declared, initializer)
             define_name(after_init, name)

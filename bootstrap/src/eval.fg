@@ -1,6 +1,17 @@
 use parser.{parse_expression_source, parse_program_source}
 use ast.{Expr, ExprList, Stmt, StmtList, ParamList}
 
+// `float` is a host built-in that the bootstrap evaluator uses to
+// parse numeric literal strings. The bootstrap codegen doesn't
+// model floats so we declare it as an i64-returning extern that
+// links to the forge_selfhost_string_to_float C-wrapper (which
+// takes `const char*` to match the bootstrap's calling
+// convention); the wrapper `fn float(s)` lets the rest of the
+// source keep using the short name.
+extern fn forge_selfhost_string_to_float(s: string) -> int
+
+fn float(s: string) -> int { forge_selfhost_string_to_float(s) }
+
 export type Value = {
     kind: string,
     number_text: string,
@@ -338,7 +349,7 @@ fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
 
 fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
-        .Let(name, initializer) -> {
+        .Let(name, _, initializer) -> {
             let init = eval_expr(runtime, initializer)
             if init.had_error {
                 return init
@@ -347,7 +358,7 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             let next_runtime = define_binding(init.runtime, name, false, init.value)
             ok_result(next_runtime, value_null())
         }
-        .Mut(name, initializer) -> {
+        .Mut(name, _, initializer) -> {
             let init = eval_expr(runtime, initializer)
             if init.had_error {
                 return init
