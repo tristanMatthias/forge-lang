@@ -513,79 +513,7 @@ fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
 
 // ── Function body pass ──
 
-fn emit_function_bodies(cg: Codegen, stmts: StmtList) -> StmtResult {
-    match stmts {
-        .End -> ok_stmt(VarEnv.End)
-        .Node(stmt, next) -> {
-            let r = match stmt {
-                .Function(name, params, _, body) -> emit_function_body(cg, name, params, body)
-                .Impl(_, methods) -> emit_function_bodies(cg, methods)
-                _ -> ok_stmt(VarEnv.End)
-            }
-            if r.had_error {
-                return r
-            }
-            emit_function_bodies(cg, next)
-        }
-    }
-}
-
-fn emit_function_body(cg: Codegen, name: string, params: ParamList, body: StmtList) -> StmtResult {
-    let fn_val = forge_llvm_get_named_function(cg.module, name)
-    if fn_val == null {
-        return err_stmt("codegen error: function `" + name + "` was not declared in pass 1")
-    }
-
-    let entry = forge_llvm_append_basic_block(cg.ctx, fn_val, "entry")
-    forge_llvm_position_at_end(cg.builder, entry)
-
-    let empty_env: VarEnv = VarEnv.End
-    let env = bind_params_inline(cg.builder, cg.i64_type, fn_val, params, 0, empty_env)
-
-    let body_cg = Codegen {
-        ctx: cg.ctx,
-        module: cg.module,
-        builder: cg.builder,
-        current_fn: fn_val,
-        i64_type: cg.i64_type,
-        i1_type: cg.i1_type,
-        ptr_type: cg.ptr_type,
-    }
-
-    // Treat the function body as a block expression: walk each
-    // statement, and if the last one is an expression statement
-    // its value becomes the function's implicit return value.
-    // This matches Forge's semantics ("a function returns its
-    // last expression unless an explicit `return` says otherwise")
-    // and fixes single-expression wrapper bodies like
-    // `fn file_exists(p) { forge_selfhost_file_exists(p) }`.
-    let r = emit_block_loop(body_cg, env, body, forge_llvm_const_int(cg.i64_type, 0, 0), "i64")
-    if r.had_error {
-        return err_stmt(r.error_message)
-    }
-    if forge_llvm_block_has_terminator(cg.builder) == 0 {
-        forge_llvm_build_ret(cg.builder, r.value)
-    }
-    ok_stmt(VarEnv.End)
-}
-
-fn bind_params_inline(builder: ptr, i64t: ptr, fn_val: ptr, params: ParamList, idx: int, env: VarEnv) -> VarEnv {
-    match params {
-        .End -> env
-        .Node(name, ty, next) -> {
-            let arg = forge_llvm_get_param(fn_val, idx)
-            let alloca = forge_llvm_build_alloca(builder, i64t, name)
-            forge_llvm_build_store(builder, arg, alloca)
-            // Translate the user-facing type annotation into the
-            // codegen's internal value tag. "str" stays as-is,
-            // anything starting with uppercase is assumed to be a
-            // struct or enum and tagged accordingly so that field
-            // access and match can find the right registry entry.
-            let internal_ty = translate_param_type(ty)
-            bind_params_inline(builder, i64t, fn_val, next, idx + 1, env_extend(env, name, alloca, internal_ty))
-        }
-    }
-}
+// emit_function_bodies, emit_function_body, bind_params_inline → features/fn_decl/codegen.fg
 
 // translate_param_type — moved to core/cg.fg.
 
@@ -917,7 +845,7 @@ fn emit_stmt_if_as_value(cg: Codegen, env: VarEnv, condition: Expr, then_branch:
     EmitResult { value: loaded, ty: t.ty, had_error: false, error_message: "" }
 }
 
-fn emit_block_loop(cg: Codegen, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: string) -> EmitResult {
+export fn emit_block_loop(cg: Codegen, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: string) -> EmitResult {
     match stmts {
         .End -> EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
         .Node(stmt, next) -> {

@@ -1,0 +1,72 @@
+// WHY: emits function bodies and binds parameters into the body scope.
+
+use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend}
+use core.cg.{Codegen, StmtResult, ok_stmt, err_stmt, translate_param_type}
+use codegen.{emit_block_loop}
+
+extern fn forge_llvm_get_named_function(m: ptr, name: string) -> ptr
+extern fn forge_llvm_get_param(fn_val: ptr, idx: int) -> ptr
+extern fn forge_llvm_append_basic_block(ctx: ptr, fn_val: ptr, name: string) -> ptr
+extern fn forge_llvm_position_at_end(b: ptr, bb: ptr)
+extern fn forge_llvm_build_alloca(b: ptr, ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_store(b: ptr, val: ptr, ptr_val: ptr) -> ptr
+extern fn forge_llvm_build_ret(b: ptr, val: ptr) -> ptr
+extern fn forge_llvm_const_int(ty: ptr, value: int, sign_extend: int) -> ptr
+extern fn forge_llvm_block_has_terminator(b: ptr) -> int
+
+export fn emit_function_bodies(cg: Codegen, stmts: StmtList) -> StmtResult {
+    match stmts {
+        .End -> ok_stmt(VarEnv.End)
+        .Node(stmt, next) -> {
+            let r = match stmt {
+                .Function(name, params, _, body) -> emit_function_body(cg, name, params, body)
+                .Impl(_, methods) -> emit_function_bodies(cg, methods)
+                _ -> ok_stmt(VarEnv.End)
+            }
+            if r.had_error { return r }
+            emit_function_bodies(cg, next)
+        }
+    }
+}
+
+export fn emit_function_body(cg: Codegen, name: string, params: ParamList, body: StmtList) -> StmtResult {
+    let fn_val = forge_llvm_get_named_function(cg.module, name)
+    if fn_val == null {
+        return err_stmt("codegen error: function `" + name + "` was not declared in pass 1")
+    }
+    let entry = forge_llvm_append_basic_block(cg.ctx, fn_val, "entry")
+    forge_llvm_position_at_end(cg.builder, entry)
+
+    let empty_env: VarEnv = VarEnv.End
+    let env = bind_params_inline(cg.builder, cg.i64_type, fn_val, params, 0, empty_env)
+
+    let body_cg = Codegen {
+        ctx: cg.ctx,
+        module: cg.module,
+        builder: cg.builder,
+        current_fn: fn_val,
+        i64_type: cg.i64_type,
+        i1_type: cg.i1_type,
+        ptr_type: cg.ptr_type,
+    }
+
+    let r = emit_block_loop(body_cg, env, body, forge_llvm_const_int(cg.i64_type, 0, 0), "i64")
+    if r.had_error { return err_stmt(r.error_message) }
+    if forge_llvm_block_has_terminator(cg.builder) == 0 {
+        forge_llvm_build_ret(cg.builder, r.value)
+    }
+    ok_stmt(VarEnv.End)
+}
+
+fn bind_params_inline(builder: ptr, i64t: ptr, fn_val: ptr, params: ParamList, idx: int, env: VarEnv) -> VarEnv {
+    match params {
+        .End -> env
+        .Node(name, ty, next) -> {
+            let arg = forge_llvm_get_param(fn_val, idx)
+            let alloca = forge_llvm_build_alloca(builder, i64t, name)
+            forge_llvm_build_store(builder, arg, alloca)
+            let internal_ty = translate_param_type(ty)
+            bind_params_inline(builder, i64t, fn_val, next, idx + 1, env_extend(env, name, alloca, internal_ty))
+        }
+    }
+}
