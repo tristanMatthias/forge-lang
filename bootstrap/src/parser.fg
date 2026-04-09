@@ -57,6 +57,20 @@ fn is_alpha_numeric(ch: string) -> bool {
     is_alpha(ch) || is_digit(ch)
 }
 
+fn expr_is_ident(e: Expr) -> bool {
+    match e {
+        .Ident(_) -> true
+        _ -> false
+    }
+}
+
+fn expr_is_upper_ident(e: Expr) -> bool {
+    match e {
+        .Ident(n) -> starts_with_upper_p(n)
+        _ -> false
+    }
+}
+
 fn starts_with_upper_p(name: string) -> bool {
     if name.length < 1 {
         return false
@@ -396,6 +410,15 @@ impl Parser {
     fn finish_variant(self, name: string, fields: FieldList) -> VariantList? {
         if self.check("comma") {
             self.advance()
+        }
+        // Accept either comma-separated OR newline-separated
+        // variants. After consuming the optional comma, if we
+        // immediately see a `}` we're done. Otherwise, the next
+        // identifier starts another variant.
+        if self.check("right_brace") {
+            return VariantList.Node(name, fields, VariantList.End)
+        }
+        if self.check("identifier") {
             let rest = self.parse_variant_list()
             if rest == null { return null }
             return VariantList.Node(name, fields, rest!)
@@ -471,13 +494,28 @@ impl Parser {
 
     fn parse_let_statement(self) -> Stmt? {
         self.advance()
+        // Optional `mut` modifier — `let mut x = ...` is equivalent
+        // to `mut x = ...` in our model.
+        let is_mut = self.check("kw_mut")
+        if is_mut {
+            self.advance()
+        }
         let name = self.consume_identifier("expected variable name")
         if name == null { return null }
+        // Optional `: Type` annotation — discarded for now.
+        if self.check("colon") {
+            self.advance()
+            let _ty = self.consume_type("expected type after `:`")
+            if _ty == null { return null }
+        }
         if !self.consume("equal", "expected `=` after variable name") {
             return null
         }
         let initializer = self.parse_expression()
         if initializer == null { return null }
+        if is_mut {
+            return Stmt.Mut(name!, initializer!)
+        }
         Stmt.Let(name!, initializer!)
     }
 
@@ -485,6 +523,11 @@ impl Parser {
         self.advance()
         let name = self.consume_identifier("expected variable name")
         if name == null { return null }
+        if self.check("colon") {
+            self.advance()
+            let _ty = self.consume_type("expected type after `:`")
+            if _ty == null { return null }
+        }
         if !self.consume("equal", "expected `=` after variable name") {
             return null
         }
@@ -735,6 +778,7 @@ impl Parser {
 
         match left! {
             .Ident(name) -> Expr.Assign(name, value!)
+            .FieldAccess(obj, field) -> Expr.FieldAssign(obj, field, value!)
             _ -> {
                 self.set_error("invalid assignment target")
                 null
@@ -850,12 +894,27 @@ impl Parser {
         self.parse_call()
     }
 
+    // Peek at the source character immediately after the current
+    // `.` token to see whether the next identifier starts with an
+    // uppercase letter. Used to disambiguate match-arm pattern
+    // separators (`.UpperIdent` is always an enum constructor and
+    // can be safely consumed) from sibling patterns (`.endOfArm`
+    // is a field/method which we want to suppress in arm bodies).
+    fn peek_next_is_upper(self) -> bool {
+        // self.current is the position right after the `.` token.
+        if self.current >= self.source.length {
+            return false
+        }
+        let ch = self.source[self.current]
+        ch >= "A" && ch <= "Z"
+    }
+
     fn parse_call(self) -> Expr? {
         let expr = self.parse_primary()
         if expr == null { return null }
 
         mut result = expr!
-        while self.check("left_paren") || (self.check("dot") && self.allow_dot_postfix) || self.check("bang") || self.check("left_bracket") {
+        while self.check("left_paren") || (self.check("dot") && (self.allow_dot_postfix || (self.peek_next_is_upper() && expr_is_upper_ident(result)))) || self.check("bang") || self.check("left_bracket") {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check("bang") {
@@ -1013,6 +1072,10 @@ impl Parser {
             return self.parse_match_expression()
         }
 
+        if self.check("kw_if") {
+            return self.parse_if_expression()
+        }
+
         if self.check("left_brace") {
             return self.parse_block_expression()
         }
@@ -1035,6 +1098,40 @@ impl Parser {
             return null
         }
         Expr.Block(body!)
+    }
+
+    fn parse_if_expression(self) -> Expr? {
+        self.advance()
+        let saved = self.allow_struct_lit
+        self.allow_struct_lit = false
+        let condition = self.parse_expression()
+        self.allow_struct_lit = saved
+        if condition == null { return null }
+        if !self.check("left_brace") {
+            self.set_error("expected `{` after if condition")
+            return null
+        }
+        let then_branch = self.parse_block_expression()
+        if then_branch == null { return null }
+        if !self.check("kw_else") {
+            return Expr.IfExpr(condition!, then_branch!, Expr.Number("0"))
+        }
+        self.advance()
+        // Else can be either a block, another if-expression
+        // (`else if`), or a single expression.
+        if self.check("kw_if") {
+            let else_branch = self.parse_if_expression()
+            if else_branch == null { return null }
+            return Expr.IfExpr(condition!, then_branch!, else_branch!)
+        }
+        if self.check("left_brace") {
+            let else_branch = self.parse_block_expression()
+            if else_branch == null { return null }
+            return Expr.IfExpr(condition!, then_branch!, else_branch!)
+        }
+        let else_branch = self.parse_expression()
+        if else_branch == null { return null }
+        Expr.IfExpr(condition!, then_branch!, else_branch!)
     }
 
     fn parse_match_expression(self) -> Expr? {
@@ -1162,6 +1259,10 @@ impl Parser {
         }
         if ch == "?" {
             self.set_current("question", "?")
+            return
+        }
+        if ch == "@" {
+            self.set_current("at", "@")
             return
         }
         if ch == "[" {

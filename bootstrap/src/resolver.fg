@@ -25,10 +25,42 @@ type Resolver = {
 
 export fn resolve_program(stmts: StmtList) -> ResolveResult {
     mut r = resolver_new()
+    // Pre-pass: collect all top-level function names so forward
+    // references work. (declare_functions in codegen does the
+    // equivalent for the LLVM module.)
+    r = collect_function_names(r, stmts)
     r = resolve_stmt_list(r, stmts)
     ResolveResult {
         had_error: r.had_error,
         error_message: r.error_message,
+    }
+}
+
+fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
+    match stmts {
+        .End -> r
+        .Node(stmt, next) -> {
+            let after = match stmt {
+                .Function(name, _, _) -> declare_function(r, name)
+                .ExternFn(name, _) -> declare_function(r, name)
+                .Impl(type_name, methods) -> collect_method_names(r, type_name, methods)
+                _ -> r
+            }
+            collect_function_names(after, next)
+        }
+    }
+}
+
+fn collect_method_names(r: Resolver, type_name: string, methods: StmtList) -> Resolver {
+    match methods {
+        .End -> r
+        .Node(stmt, next) -> {
+            let after = match stmt {
+                .Function(name, _, _) -> declare_function(r, name)
+                _ -> r
+            }
+            collect_method_names(after, type_name, next)
+        }
     }
 }
 
@@ -348,6 +380,15 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .MatchExpr(subject, arms) -> {
             let after_subject = resolve_expr(r, subject)
             resolve_match_arms(after_subject, arms)
+        }
+        .FieldAssign(obj, _, value) -> {
+            let after_obj = resolve_expr(r, obj)
+            resolve_expr(after_obj, value)
+        }
+        .IfExpr(c, t, e) -> {
+            let after_c = resolve_expr(r, c)
+            let after_t = resolve_expr(after_c, t)
+            resolve_expr(after_t, e)
         }
     }
 }

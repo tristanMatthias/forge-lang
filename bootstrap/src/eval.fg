@@ -505,6 +505,8 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .Index(_, _) -> error_result(runtime, "index expressions are not supported by the tree-walk evaluator")
         .Block(_) -> error_result(runtime, "block expressions are not supported by the tree-walk evaluator")
         .MatchExpr(_, _) -> error_result(runtime, "match expressions are not supported by the tree-walk evaluator")
+        .FieldAssign(_, _, _) -> error_result(runtime, "field assignment is not supported by the tree-walk evaluator")
+        .IfExpr(_, _, _) -> error_result(runtime, "if expressions are not supported by the tree-walk evaluator")
     }
 }
 

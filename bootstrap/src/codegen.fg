@@ -150,6 +150,30 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     llvm.type_array_free(strcmp_param_arr)
     llvm.add_function(m, "strcmp", strcmp_type)
 
+    // snprintf(buf, size, fmt, ...) declared as variadic for the
+    // string() builtin's int → str conversion.
+    let snprintf_param_arr = llvm.type_array_new(3)
+    llvm.type_array_set(snprintf_param_arr, 0, pt)
+    llvm.type_array_set(snprintf_param_arr, 1, i64t)
+    llvm.type_array_set(snprintf_param_arr, 2, pt)
+    let snprintf_type = llvm.function_type(llvm.int32_type(ctx), snprintf_param_arr, 3, 1)
+    llvm.type_array_free(snprintf_param_arr)
+    llvm.add_function(m, "snprintf", snprintf_type)
+
+    // atoi(str) -> i32 for the int() builtin.
+    let atoi_param_arr = llvm.type_array_new(1)
+    llvm.type_array_set(atoi_param_arr, 0, pt)
+    let atoi_type = llvm.function_type(llvm.int32_type(ctx), atoi_param_arr, 1, 0)
+    llvm.type_array_free(atoi_param_arr)
+    llvm.add_function(m, "atoi", atoi_type)
+
+    // exit(int) for process.exit
+    let exit_param_arr = llvm.type_array_new(1)
+    llvm.type_array_set(exit_param_arr, 0, llvm.int32_type(ctx))
+    let exit_type = llvm.function_type(llvm.void_type(ctx), exit_param_arr, 1, 0)
+    llvm.type_array_free(exit_param_arr)
+    llvm.add_function(m, "exit", exit_type)
+
     // Reset and rebuild the per-compile struct/enum registries.
     CG_STRUCTS = StructReg.End
     CG_ENUMS = EnumReg.End
@@ -453,6 +477,7 @@ fn bind_params_inline(builder: ptr, i64t: ptr, fn_val: ptr, params: ParamList, i
 
 fn translate_param_type(ty: string) -> string {
     if ty == "str" { return "str" }
+    if ty == "string" { return "str" }
     if ty == "i64" { return "i64" }
     if ty == "int" { return "i64" }
     if ty == "bool" { return "i64" }
@@ -674,8 +699,76 @@ fn emit_expr(cg: Codegen, env: VarEnv, expr: Expr) -> EmitResult {
         .Index(obj, idx) -> emit_index(cg, env, obj, idx)
         .Block(body) -> emit_block_expr(cg, env, body)
         .MatchExpr(subject, arms) -> emit_match_expr(cg, env, subject, arms)
+        .FieldAssign(obj, field, value) -> emit_field_assign(cg, env, obj, field, value)
+        .IfExpr(c, t, e) -> emit_if_expr(cg, env, c, t, e)
         _ -> err_emit("unsupported expression type")
     }
+}
+
+fn emit_if_expr(cg: Codegen, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
+    let cond = emit_expr(cg, env, condition)
+    if cond.had_error {
+        return cond
+    }
+    let cond_i1 = llvm.build_icmp(cg.builder, 33, cond.value, llvm.const_int(cg.i64_type, 0, 0), "ife_cond")
+    let then_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "ife_then")
+    let else_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "ife_else")
+    let merge_bb = llvm.append_basic_block(cg.ctx, cg.current_fn, "ife_end")
+    let result_slot = llvm.build_alloca(cg.builder, cg.i64_type, "ife_result")
+    llvm.build_store(cg.builder, llvm.const_int(cg.i64_type, 0, 0), result_slot)
+    llvm.build_cond_br(cg.builder, cond_i1, then_bb, else_bb)
+
+    llvm.position_at_end(cg.builder, then_bb)
+    let t = emit_expr(cg, env, then_branch)
+    if t.had_error {
+        return t
+    }
+    if !llvm.block_has_terminator(cg.builder) {
+        llvm.build_store(cg.builder, t.value, result_slot)
+        llvm.build_br(cg.builder, merge_bb)
+    }
+
+    llvm.position_at_end(cg.builder, else_bb)
+    let e = emit_expr(cg, env, else_branch)
+    if e.had_error {
+        return e
+    }
+    if !llvm.block_has_terminator(cg.builder) {
+        llvm.build_store(cg.builder, e.value, result_slot)
+        llvm.build_br(cg.builder, merge_bb)
+    }
+
+    llvm.position_at_end(cg.builder, merge_bb)
+    let loaded = llvm.build_load(cg.builder, cg.i64_type, result_slot, "ife_val")
+    ok_emit(loaded)
+}
+
+fn emit_field_assign(cg: Codegen, env: VarEnv, obj: Expr, field: string, value: Expr) -> EmitResult {
+    let r = emit_expr(cg, env, obj)
+    if r.had_error {
+        return r
+    }
+    let struct_name = strip_struct_prefix(r.ty)
+    if struct_name == "" {
+        return err_emit("field assignment on non-struct value (ty=" + r.ty + ")")
+    }
+    let lookup = struct_reg_lookup(struct_name)
+    if !lookup.found {
+        return err_emit("unknown struct `" + struct_name + "`")
+    }
+    let idx = field_index_of(lookup.fields, field)
+    if idx < 0 {
+        return err_emit("unknown field `" + field + "` on struct `" + struct_name + "`")
+    }
+    let st_ty = llvm.get_type_by_name(cg.ctx, struct_name)
+    let obj_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "fa_ptr")
+    let gep = llvm.build_struct_gep2(cg.builder, st_ty, obj_ptr, idx, "fa_fld")
+    let v = emit_expr(cg, env, value)
+    if v.had_error {
+        return v
+    }
+    llvm.build_store(cg.builder, v.value, gep)
+    ok_emit(v.value)
 }
 
 fn emit_block_expr(cg: Codegen, env: VarEnv, stmts: StmtList) -> EmitResult {
@@ -898,6 +991,20 @@ fn emit_field_access(cg: Codegen, env: VarEnv, obj: Expr, field: string) -> Emit
     let r = emit_expr(cg, env, obj)
     if r.had_error {
         return r
+    }
+    // String property access — `s.length` is a libc strlen.
+    if r.ty == "str" && field == "length" {
+        let str_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "len_arg")
+        let strlen_fn = llvm.get_named_function(cg.module, "strlen")
+        let pa = llvm.type_array_new(1)
+        llvm.type_array_set(pa, 0, cg.ptr_type)
+        let strlen_ty = llvm.function_type(cg.i64_type, pa, 1, 0)
+        llvm.type_array_free(pa)
+        let arr = llvm.value_array_new(1)
+        llvm.value_array_set(arr, 0, str_ptr)
+        let len = llvm.build_call(cg.builder, strlen_ty, strlen_fn, arr, 1, "strlen_call")
+        llvm.value_array_free(arr)
+        return ok_emit(len)
     }
     // The object's ty tag tells us which struct it is.
     let struct_name = strip_struct_prefix(r.ty)
@@ -1195,6 +1302,17 @@ fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> Em
     if name == "println" {
         return emit_println(cg, env, args)
     }
+    if name == "eprintln" {
+        // Same as println for the MVP — go to stdout. Bootstrap
+        // source uses eprintln only for diagnostics.
+        return emit_println(cg, env, args)
+    }
+    if name == "string" {
+        return emit_int_to_string(cg, env, args)
+    }
+    if name == "int" {
+        return emit_string_to_int(cg, env, args)
+    }
     let fn_val = llvm.get_named_function(cg.module, name)
     if fn_val == null {
         return err_emit("undefined function `" + name + "`")
@@ -1216,6 +1334,80 @@ fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> Em
     let result = llvm.build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
     llvm.value_array_free(arg_arr)
     ok_emit(result)
+}
+
+fn emit_int_to_string(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
+    // string(i64) → str via snprintf into a 32-byte malloc'd buffer.
+    match args {
+        .End -> err_emit("string() expects 1 arg")
+        .Node(arg, _) -> {
+            let r = emit_expr(cg, env, arg)
+            if r.had_error {
+                return r
+            }
+            // If the value is already a str, pass it through.
+            if r.ty == "str" {
+                return r
+            }
+            // malloc(32)
+            let malloc_fn = llvm.get_named_function(cg.module, "malloc")
+            let mpa = llvm.type_array_new(1)
+            llvm.type_array_set(mpa, 0, cg.i64_type)
+            let malloc_type = llvm.function_type(cg.ptr_type, mpa, 1, 0)
+            llvm.type_array_free(mpa)
+            let m_arr = llvm.value_array_new(1)
+            llvm.value_array_set(m_arr, 0, llvm.const_int(cg.i64_type, 32, 0))
+            let buf = llvm.build_call(cg.builder, malloc_type, malloc_fn, m_arr, 1, "i2s_buf")
+            llvm.value_array_free(m_arr)
+            // snprintf(buf, 32, "%lld", value)
+            let fmt = llvm.build_global_string_ptr(cg.builder, "%lld", ".i2s_fmt")
+            let snprintf_fn = llvm.get_named_function(cg.module, "snprintf")
+            let spa = llvm.type_array_new(3)
+            llvm.type_array_set(spa, 0, cg.ptr_type)
+            llvm.type_array_set(spa, 1, cg.i64_type)
+            llvm.type_array_set(spa, 2, cg.ptr_type)
+            let snprintf_type = llvm.function_type(llvm.int32_type(cg.ctx), spa, 3, 1)
+            llvm.type_array_free(spa)
+            let s_arr = llvm.value_array_new(4)
+            llvm.value_array_set(s_arr, 0, buf)
+            llvm.value_array_set(s_arr, 1, llvm.const_int(cg.i64_type, 32, 0))
+            llvm.value_array_set(s_arr, 2, fmt)
+            llvm.value_array_set(s_arr, 3, r.value)
+            llvm.build_call(cg.builder, snprintf_type, snprintf_fn, s_arr, 4, "")
+            llvm.value_array_free(s_arr)
+            let result_i64 = llvm.build_ptr_to_int(cg.builder, buf, cg.i64_type, "i2s_result")
+            ok_emit_str(result_i64)
+        }
+    }
+}
+
+fn emit_string_to_int(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {
+    // int(str) → i64 via libc atoi.
+    match args {
+        .End -> err_emit("int() expects 1 arg")
+        .Node(arg, _) -> {
+            let r = emit_expr(cg, env, arg)
+            if r.had_error {
+                return r
+            }
+            if r.ty != "str" {
+                // Already an int — pass through.
+                return r
+            }
+            let str_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "atoi_arg")
+            let atoi_fn = llvm.get_named_function(cg.module, "atoi")
+            let pa = llvm.type_array_new(1)
+            llvm.type_array_set(pa, 0, cg.ptr_type)
+            let atoi_type = llvm.function_type(llvm.int32_type(cg.ctx), pa, 1, 0)
+            llvm.type_array_free(pa)
+            let arr = llvm.value_array_new(1)
+            llvm.value_array_set(arr, 0, str_ptr)
+            let result32 = llvm.build_call(cg.builder, atoi_type, atoi_fn, arr, 1, "atoi_call")
+            llvm.value_array_free(arr)
+            // Sign-extend i32 → i64.
+            ok_emit(llvm.build_sext(cg.builder, result32, cg.i64_type, "atoi_ext"))
+        }
+    }
 }
 
 fn emit_println(cg: Codegen, env: VarEnv, args: ExprList) -> EmitResult {

@@ -31,6 +31,87 @@ fn fail(message: string) {
     process.exit(1)
 }
 
+// Returns the directory portion of a path, with trailing slash, or
+// "" if the path has no slash.
+fn dirname(path: string) -> string {
+    let len = path.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if path[prev] == "/" {
+            return path.substring(0, i)
+        }
+        i = prev
+    }
+    ""
+}
+
+// Walk the source line by line. For each `mod foo` line, replace it
+// with the content of `<dir>/foo.fg`. Other lines pass through.
+fn preprocess_modules(source: string, entry_path: string) -> string {
+    let dir = dirname(entry_path)
+    mut out = ""
+    mut i = 0
+    let n = source.length
+    while i < n {
+        let line_start = i
+        while i < n {
+            if source[i] == "\n" {
+                i = i + 1
+                break
+            }
+            i = i + 1
+        }
+        let line = source.substring(line_start, i)
+        let mod_name = extract_mod_name(line)
+        if mod_name == "" {
+            out = out + line
+        } else {
+            let mod_path = dir + mod_name + ".fg"
+            if file_exists(mod_path) {
+                let mod_src = read_file(mod_path)
+                out = out + "// === module " + mod_name + " ===\n"
+                out = out + mod_src
+                out = out + "\n"
+            } else {
+                out = out + "// === module " + mod_name + " (not found) ===\n"
+            }
+        }
+    }
+    out
+}
+
+// If `line` starts with `mod <name>`, return `<name>`. Otherwise "".
+// Trims leading whitespace.
+fn extract_mod_name(line: string) -> string {
+    let len = line.length
+    mut i = 0
+    while i < len {
+        let ch = line[i]
+        if ch != " " && ch != "\t" {
+            break
+        }
+        i = i + 1
+    }
+    if i + 4 > len {
+        return ""
+    }
+    if line[i] != "m" { return "" }
+    if line[i + 1] != "o" { return "" }
+    if line[i + 2] != "d" { return "" }
+    if line[i + 3] != " " { return "" }
+    mut j = i + 4
+    let name_start = j
+    while j < len {
+        let ch = line[j]
+        if ch == " " || ch == "\n" || ch == "\t" || ch == "\r" {
+            break
+        }
+        j = j + 1
+    }
+    line.substring(name_start, j)
+}
+
 fn main() {
     let args = process.args()
     if args.length < 3 {
@@ -99,7 +180,12 @@ fn main() {
     }
 
     if command == "compile" {
-        let parsed = parse_program_source(source)
+        // Pre-process `mod foo` declarations: each one is replaced
+        // by the contents of `<dir>/foo.fg` so the parser sees a
+        // single concatenated source. Single-file inputs without
+        // any `mod` lines pass through unchanged.
+        let merged = preprocess_modules(source, path)
+        let parsed = parse_program_source(merged)
         if parsed.had_error || parsed.stmts == null {
             fail(parsed.error_message)
         }

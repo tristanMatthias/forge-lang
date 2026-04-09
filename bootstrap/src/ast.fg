@@ -68,6 +68,8 @@ export enum Expr {
     Index(obj: Expr, idx: Expr)
     Block(body: StmtList)
     MatchExpr(subject: Expr, arms: MatchArmList)
+    FieldAssign(obj: Expr, field: string, value: Expr)
+    IfExpr(condition: Expr, then_branch: Expr, else_branch: Expr)
 }
 
 export enum Stmt {
@@ -287,6 +289,8 @@ export fn render_expr(expr: Expr) -> string {
         .Index(obj, idx) -> "(index " + render_expr(obj) + " " + render_expr(idx) + ")"
         .Block(body) -> "(block-expr " + render_stmt_list(body) + ")"
         .MatchExpr(subject, arms) -> "(match-expr " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"
+        .FieldAssign(obj, field, value) -> "(field-assign " + render_expr(obj) + " " + field + " " + render_expr(value) + ")"
+        .IfExpr(c, t, e) -> "(if-expr " + render_expr(c) + " " + render_expr(t) + " " + render_expr(e) + ")"
     }
 }
 
