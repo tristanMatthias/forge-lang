@@ -20,20 +20,18 @@ impl Parser {
         if !self.consume("left_brace", "expected `{` after match subject") {
             return null
         }
-        let arms = self.parse_match_arm_list()
-        if arms == null { return null }
+        let arms = self.parse_match_arm_list()?
         if !self.consume("right_brace", "expected `}` after match arms") {
             return null
         }
-        Stmt.Match(subject!, arms!)
+        Stmt.Match(subject!, arms)
     }
 
     fn parse_match_arm_list(self) -> MatchArmList? {
         if self.check("right_brace") {
             return MatchArmList.End
         }
-        let pattern = self.parse_pattern()
-        if pattern == null { return null }
+        let pattern = self.parse_pattern()?
         if !self.consume("arrow", "expected `->` after pattern") {
             return null
         }
@@ -49,9 +47,8 @@ impl Parser {
         if self.check("comma") {
             self.advance()
         }
-        let rest = self.parse_match_arm_list()
-        if rest == null { return null }
-        MatchArmList.Node(pattern!, body!, rest!)
+        let rest = self.parse_match_arm_list()?
+        MatchArmList.Node(pattern, body!, rest)
     }
 
     fn parse_pattern(self) -> Pattern? {
@@ -62,18 +59,16 @@ impl Parser {
         if !self.consume("dot", "expected `.` or `_` to start pattern") {
             return null
         }
-        let name = self.consume_identifier("expected variant name in pattern")
-        if name == null { return null }
+        let name = self.consume_identifier("expected variant name in pattern")?
         if !self.check("left_paren") {
-            return Pattern.Variant(name!, ParamList.End)
+            return Pattern.Variant(name, ParamList.End)
         }
         self.advance()
-        let bindings = self.parse_param_list()
-        if bindings == null { return null }
+        let bindings = self.parse_param_list()?
         if !self.consume("right_paren", "expected `)` after binding list") {
             return null
         }
-        Pattern.Variant(name!, bindings!)
+        Pattern.Variant(name, bindings)
     }
 
     fn parse_match_expression(self) -> Expr? {
@@ -86,11 +81,10 @@ impl Parser {
         if !self.consume("left_brace", "expected `{` after match subject") {
             return null
         }
-        let arms = self.parse_match_arm_list()
-        if arms == null { return null }
+        let arms = self.parse_match_arm_list()?
         if !self.consume("right_brace", "expected `}` after match arms") {
             return null
         }
-        Expr.MatchExpr(subject!, arms!)
+        Expr.MatchExpr(subject!, arms)
     }
 }

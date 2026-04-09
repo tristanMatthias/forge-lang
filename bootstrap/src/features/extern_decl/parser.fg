@@ -9,24 +9,21 @@ impl Parser {
         if !self.consume("kw_fn", "expected `fn` after `extern`") {
             return null
         }
-        let name = self.consume_identifier("expected extern fn name")
-        if name == null { return null }
+        let name = self.consume_identifier("expected extern fn name")?
         if !self.consume("left_paren", "expected `(` after extern fn name") {
             return null
         }
-        let params = self.parse_param_list()
-        if params == null { return null }
+        let params = self.parse_param_list()?
         if !self.consume("right_paren", "expected `)` after parameters") {
             return null
         }
         let ret_ty = if self.check("arrow") {
             self.advance()
-            let r = self.consume_type("expected return type after `->`")
-            if r == null { return null }
-            r!
+            let r = self.consume_type("expected return type after `->`")?
+            r
         } else {
             "i64"
         }
-        Stmt.ExternFn(name!, params!, ret_ty)
+        Stmt.ExternFn(name, params, ret_ty)
     }
 }

@@ -238,13 +238,11 @@ impl Parser {
             return null
         }
 
-        let stmt = self.parse_declaration()
-        if stmt == null { return null }
+        let stmt = self.parse_declaration()?
 
-        let next = self.parse_statement_list(stop_at_right_brace)
-        if next == null { return null }
+        let next = self.parse_statement_list(stop_at_right_brace)?
 
-        StmtList.Node(stmt!, next!)
+        StmtList.Node(stmt, next)
     }
 
     fn parse_declaration(self) -> Stmt? {
@@ -322,12 +320,11 @@ impl Parser {
     fn parse_statement(self) -> Stmt? {
         if self.check("left_brace") {
             self.advance()
-            let body = self.parse_statement_list(true)
-            if body == null { return null }
+            let body = self.parse_statement_list(true)?
             if !self.consume("right_brace", "expected `}` after block") {
                 return null
             }
-            return Stmt.Block(body!)
+            return Stmt.Block(body)
         }
 
         if self.check("kw_if") {
@@ -360,9 +357,8 @@ impl Parser {
             return Stmt.Continue
         }
 
-        let expr = self.parse_expression()
-        if expr == null { return null }
-        Stmt.Expr(expr!)
+        let expr = self.parse_expression()?
+        Stmt.Expr(expr)
     }
 
     fn parse_expression(self) -> Expr? {
@@ -370,20 +366,18 @@ impl Parser {
     }
 
     fn parse_assignment(self) -> Expr? {
-        let left = self.parse_pipe()
-        if left == null { return null }
+        let left = self.parse_pipe()?
 
         if !self.check("equal") {
             return left
         }
 
         self.advance()
-        let value = self.parse_assignment()
-        if value == null { return null }
+        let value = self.parse_assignment()?
 
-        match left! {
-            .Ident(name) -> Expr.Assign(name, value!)
-            .FieldAccess(obj, field) -> Expr.FieldAssign(obj, field, value!)
+        match left {
+            .Ident(name) -> Expr.Assign(name, value)
+            .FieldAccess(obj, field) -> Expr.FieldAssign(obj, field, value)
             _ -> {
                 self.set_error("invalid assignment target")
                 null
@@ -392,21 +386,19 @@ impl Parser {
     }
 
     fn parse_pipe(self) -> Expr? {
-        let left = self.parse_null_coalesce()
-        if left == null { return null }
+        let left = self.parse_null_coalesce()?
 
-        mut expr = left!
+        mut expr = left
         while self.check("pipe_gt") {
             self.advance()
-            let rhs = self.parse_or()
-            if rhs == null { return null }
+            let rhs = self.parse_or()?
             // Desugar: `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`
-            match rhs! {
+            match rhs {
                 .Call(callee, args) -> {
                     expr = Expr.Call(callee, ExprList.Node(expr, args))
                 }
                 _ -> {
-                    expr = Expr.Call(rhs!, ExprList.Node(expr, ExprList.End))
+                    expr = Expr.Call(rhs, ExprList.Node(expr, ExprList.End))
                 }
             }
         }
@@ -415,111 +407,97 @@ impl Parser {
     }
 
     fn parse_null_coalesce(self) -> Expr? {
-        let left = self.parse_or()
-        if left == null { return null }
+        let left = self.parse_or()?
 
-        mut expr = left!
+        mut expr = left
         while self.check("question_question") {
             self.advance()
-            let right = self.parse_or()
-            if right == null { return null }
-            expr = Expr.NullCoalesce(expr, right!)
+            let right = self.parse_or()?
+            expr = Expr.NullCoalesce(expr, right)
         }
 
         expr
     }
 
     fn parse_or(self) -> Expr? {
-        let left = self.parse_and()
-        if left == null { return null }
+        let left = self.parse_and()?
 
-        mut expr = left!
+        mut expr = left
         while self.check("pipe_pipe") || self.check("kw_or") {
             let operator = "||"
             self.advance()
-            let right = self.parse_and()
-            if right == null { return null }
-            expr = Expr.Logical(expr, operator, right!)
+            let right = self.parse_and()?
+            expr = Expr.Logical(expr, operator, right)
         }
 
         expr
     }
 
     fn parse_and(self) -> Expr? {
-        let left = self.parse_equality()
-        if left == null { return null }
+        let left = self.parse_equality()?
 
-        mut expr = left!
+        mut expr = left
         while self.check("amp_amp") || self.check("kw_and") {
             let operator = "&&"
             self.advance()
-            let right = self.parse_equality()
-            if right == null { return null }
-            expr = Expr.Logical(expr, operator, right!)
+            let right = self.parse_equality()?
+            expr = Expr.Logical(expr, operator, right)
         }
 
         expr
     }
 
     fn parse_equality(self) -> Expr? {
-        let left = self.parse_comparison()
-        if left == null { return null }
+        let left = self.parse_comparison()?
 
-        mut expr = left!
+        mut expr = left
         while self.check("equal_equal") || self.check("bang_equal") {
             let operator = self.current_lexeme
             self.advance()
-            let right = self.parse_comparison()
-            if right == null { return null }
-            expr = Expr.Binary(expr, operator, right!)
+            let right = self.parse_comparison()?
+            expr = Expr.Binary(expr, operator, right)
         }
 
         expr
     }
 
     fn parse_comparison(self) -> Expr? {
-        let left = self.parse_term()
-        if left == null { return null }
+        let left = self.parse_term()?
 
-        mut expr = left!
+        mut expr = left
         while self.check("greater") || self.check("greater_equal") || self.check("less") || self.check("less_equal") {
             let operator = self.current_lexeme
             self.advance()
-            let right = self.parse_term()
-            if right == null { return null }
-            expr = Expr.Binary(expr, operator, right!)
+            let right = self.parse_term()?
+            expr = Expr.Binary(expr, operator, right)
         }
 
         expr
     }
 
     fn parse_term(self) -> Expr? {
-        let left = self.parse_factor()
-        if left == null { return null }
+        let left = self.parse_factor()?
 
-        mut expr = left!
+        mut expr = left
         while self.check("plus") || self.check("minus") {
             let operator = self.current_lexeme
             self.advance()
-            let right = self.parse_factor()
-            if right == null { return null }
-            expr = Expr.Binary(expr, operator, right!)
+            let right = self.parse_factor()?
+            expr = Expr.Binary(expr, operator, right)
         }
 
         expr
     }
 
     fn parse_factor(self) -> Expr? {
-        let left = self.parse_unary()
-        if left == null { return null }
+        let left = self.parse_unary()?
 
-        mut expr = left!
+        mut expr = left
         while self.check("star") || self.check("slash") {
             let operator = self.current_lexeme
             self.advance()
-            let right = self.parse_unary()
-            if right == null { return null }
-            expr = Expr.Binary(expr, operator, right!)
+            let right = self.parse_unary()?
+            expr = Expr.Binary(expr, operator, right)
         }
 
         expr
@@ -529,9 +507,8 @@ impl Parser {
         if self.check("bang") || self.check("minus") || self.check("kw_not") {
             let operator = if self.check("kw_not") { "!" } else { self.current_lexeme }
             self.advance()
-            let right = self.parse_unary()
-            if right == null { return null }
-            return Expr.Unary(operator, right!)
+            let right = self.parse_unary()?
+            return Expr.Unary(operator, right)
         }
 
         self.parse_call()
@@ -572,10 +549,9 @@ impl Parser {
     }
 
     fn parse_call(self) -> Expr? {
-        let expr = self.parse_primary()
-        if expr == null { return null }
+        let expr = self.parse_primary()?
 
-        mut result = expr!
+        mut result = expr
         while self.check("left_paren") || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || self.check("left_bracket") || self.check("question_dot") || self.check("question") {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
@@ -592,32 +568,28 @@ impl Parser {
             // Optional chaining: `expr?.field`
             if self.check("question_dot") {
                 self.advance()
-                let field = self.consume_identifier("expected field name after `?.`")
-                if field == null { return null }
-                result = Expr.OptionalChain(result, field!)
+                let field = self.consume_identifier("expected field name after `?.`")?
+                result = Expr.OptionalChain(result, field)
             } else if self.check("left_bracket") {
                 self.advance()
-                let idx = self.parse_expression()
-                if idx == null { return null }
+                let idx = self.parse_expression()?
                 if !self.consume("right_bracket", "expected `]` after index") {
                     return null
                 }
-                result = Expr.Index(result, idx!)
+                result = Expr.Index(result, idx)
             } else if !self.check("left_paren") && !self.check("dot") {
                 return result
             } else {
             if self.check("left_paren") {
                 self.advance()
-                let args = self.parse_arg_list()
-                if args == null { return null }
+                let args = self.parse_arg_list()?
                 if !self.consume("right_paren", "expected `)` after arguments") {
                     return null
                 }
-                result = Expr.Call(result, args!)
+                result = Expr.Call(result, args)
             } else {
                 self.advance()
-                let field = self.consume_identifier("expected field name after `.`")
-                if field == null { return null }
+                let field = self.consume_identifier("expected field name after `.`")?
                 // Detect enum constructor: `Type.Variant(args)`. We
                 // distinguish from method calls by requiring the
                 // head Ident to start with an uppercase letter
@@ -634,14 +606,13 @@ impl Parser {
                 }
                 if type_name != "" && self.check("left_paren") {
                     self.advance()
-                    let args = self.parse_arg_list()
-                    if args == null { return null }
+                    let args = self.parse_arg_list()?
                     if !self.consume("right_paren", "expected `)` after arguments") {
                         return null
                     }
-                    result = Expr.EnumCtor(type_name, field!, args!)
+                    result = Expr.EnumCtor(type_name, field, args)
                 } else {
-                    result = Expr.FieldAccess(result, field!)
+                    result = Expr.FieldAccess(result, field)
                 }
             }
             }
@@ -666,17 +637,15 @@ impl Parser {
             return ExprList.End
         }
 
-        let expr = self.parse_expression()
-        if expr == null { return null }
+        let expr = self.parse_expression()?
 
         if self.check("comma") {
             self.advance()
-            let rest = self.parse_arg_list_inner()
-            if rest == null { return null }
-            return ExprList.Node(expr!, rest!)
+            let rest = self.parse_arg_list_inner()?
+            return ExprList.Node(expr, rest)
         }
 
-        ExprList.Node(expr!, ExprList.End)
+        ExprList.Node(expr, ExprList.End)
     }
 
     fn parse_primary(self) -> Expr? {
@@ -714,12 +683,11 @@ impl Parser {
             self.advance()
             if self.allow_struct_lit && self.check("left_brace") {
                 self.advance()
-                let inits = self.parse_field_init_list()
-                if inits == null { return null }
+                let inits = self.parse_field_init_list()?
                 if !self.consume("right_brace", "expected `}` after struct fields") {
                     return null
                 }
-                return Expr.StructLit(name, inits!)
+                return Expr.StructLit(name, inits)
             }
             return Expr.Ident(name)
         }

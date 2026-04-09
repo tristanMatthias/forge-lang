@@ -11,8 +11,7 @@ impl Parser {
             return Stmt.RetEmpty
         }
 
-        let value = self.parse_expression()
-        if value == null { return null }
-        Stmt.Ret(value!)
+        let value = self.parse_expression()?
+        Stmt.Ret(value)
     }
 }

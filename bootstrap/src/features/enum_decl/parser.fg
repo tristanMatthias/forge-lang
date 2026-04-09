@@ -7,8 +7,7 @@ use parse.{Parser}
 impl Parser {
     fn parse_enum_declaration(self) -> Stmt? {
         self.advance()
-        let name = self.consume_identifier("expected enum name")
-        if name == null { return null }
+        let name = self.consume_identifier("expected enum name")?
         // Optional generic parameters: enum Result<T, E> { ... }
         if self.check("less") {
             self.skip_angle_brackets()
@@ -16,31 +15,28 @@ impl Parser {
         if !self.consume("left_brace", "expected `{` after enum name") {
             return null
         }
-        let variants = self.parse_variant_list()
-        if variants == null { return null }
+        let variants = self.parse_variant_list()?
         if !self.consume("right_brace", "expected `}` after variants") {
             return null
         }
-        Stmt.EnumDecl(name!, variants!)
+        Stmt.EnumDecl(name, variants)
     }
 
     fn parse_variant_list(self) -> VariantList? {
         if self.check("right_brace") {
             return VariantList.End
         }
-        let name = self.consume_identifier("expected variant name")
-        if name == null { return null }
+        let name = self.consume_identifier("expected variant name")?
         // Optional payload: `(name: ty, name: ty)`
         if self.check("left_paren") {
             self.advance()
-            let fields = self.parse_field_list_until_paren()
-            if fields == null { return null }
+            let fields = self.parse_field_list_until_paren()?
             if !self.consume("right_paren", "expected `)` after variant fields") {
                 return null
             }
-            return self.finish_variant(name!, fields!)
+            return self.finish_variant(name, fields)
         }
-        self.finish_variant(name!, FieldList.End)
+        self.finish_variant(name, FieldList.End)
     }
 
     fn finish_variant(self, name: string, fields: FieldList) -> VariantList? {
@@ -55,9 +51,8 @@ impl Parser {
             return VariantList.Node(name, fields, VariantList.End)
         }
         if self.check("identifier") {
-            let rest = self.parse_variant_list()
-            if rest == null { return null }
-            return VariantList.Node(name, fields, rest!)
+            let rest = self.parse_variant_list()?
+            return VariantList.Node(name, fields, rest)
         }
         VariantList.Node(name, fields, VariantList.End)
     }
@@ -70,19 +65,16 @@ impl Parser {
         if self.check("kw_mut") {
             self.advance()
         }
-        let name = self.consume_identifier("expected field name")
-        if name == null { return null }
+        let name = self.consume_identifier("expected field name")?
         if !self.consume("colon", "expected `:` after field name") {
             return null
         }
-        let ty = self.consume_type("expected field type")
-        if ty == null { return null }
+        let ty = self.consume_type("expected field type")?
         if self.check("comma") {
             self.advance()
-            let rest = self.parse_field_list_until_paren()
-            if rest == null { return null }
-            return FieldList.Node(name!, ty!, rest!)
+            let rest = self.parse_field_list_until_paren()?
+            return FieldList.Node(name, ty, rest)
         }
-        FieldList.Node(name!, ty!, FieldList.End)
+        FieldList.Node(name, ty, FieldList.End)
     }
 }

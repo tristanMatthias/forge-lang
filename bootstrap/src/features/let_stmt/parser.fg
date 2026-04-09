@@ -12,44 +12,38 @@ impl Parser {
         if is_mut {
             self.advance()
         }
-        let name = self.consume_identifier("expected variable name")
-        if name == null { return null }
+        let name = self.consume_identifier("expected variable name")?
         let ty = if self.check("colon") {
             self.advance()
-            let t = self.consume_type("expected type after `:`")
-            if t == null { return null }
-            t!
+            let t = self.consume_type("expected type after `:`")?
+            t
         } else {
             "i64"
         }
         if !self.consume("equal", "expected `=` after variable name") {
             return null
         }
-        let initializer = self.parse_expression()
-        if initializer == null { return null }
+        let initializer = self.parse_expression()?
         if is_mut {
-            return Stmt.Mut(name!, ty, initializer!)
+            return Stmt.Mut(name, ty, initializer)
         }
-        Stmt.Let(name!, ty, initializer!)
+        Stmt.Let(name, ty, initializer)
     }
 
     fn parse_mut_statement(self) -> Stmt? {
         self.advance()
-        let name = self.consume_identifier("expected variable name")
-        if name == null { return null }
+        let name = self.consume_identifier("expected variable name")?
         let ty = if self.check("colon") {
             self.advance()
-            let t = self.consume_type("expected type after `:`")
-            if t == null { return null }
-            t!
+            let t = self.consume_type("expected type after `:`")?
+            t
         } else {
             "i64"
         }
         if !self.consume("equal", "expected `=` after variable name") {
             return null
         }
-        let initializer = self.parse_expression()
-        if initializer == null { return null }
-        Stmt.Mut(name!, ty, initializer!)
+        let initializer = self.parse_expression()?
+        Stmt.Mut(name, ty, initializer)
     }
 }

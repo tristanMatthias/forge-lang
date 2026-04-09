@@ -11,8 +11,7 @@ impl Parser {
         if self.check("less") {
             self.skip_angle_brackets()
         }
-        let type_name = self.consume_identifier("expected type name after `impl`")
-        if type_name == null { return null }
+        let type_name = self.consume_identifier("expected type name after `impl`")?
         // Skip generic args on the type name: `impl Foo<T> { ... }`
         if self.check("less") {
             self.skip_angle_brackets()
@@ -20,25 +19,23 @@ impl Parser {
         // Handle `impl Trait for Type { ... }` — the trait name is
         // discarded for now; methods are still desugared to
         // `Type__method`. Full trait dispatch comes later.
-        mut target_name = type_name!
+        mut target_name = type_name
         if self.check("kw_for") {
             self.advance()
-            let for_type = self.consume_identifier("expected type name after `for`")
-            if for_type == null { return null }
+            let for_type = self.consume_identifier("expected type name after `for`")?
             if self.check("less") {
                 self.skip_angle_brackets()
             }
-            target_name = for_type!
+            target_name = for_type
         }
         if !self.consume("left_brace", "expected `{` after impl type name") {
             return null
         }
-        let methods = self.parse_impl_methods(target_name)
-        if methods == null { return null }
+        let methods = self.parse_impl_methods(target_name)?
         if !self.consume("right_brace", "expected `}` after impl block") {
             return null
         }
-        Stmt.Impl(target_name, methods!)
+        Stmt.Impl(target_name, methods)
     }
 
     fn parse_impl_methods(self, type_name: string) -> StmtList? {
@@ -49,47 +46,41 @@ impl Parser {
             self.set_error("expected `fn` inside impl block")
             return null
         }
-        let method = self.parse_method_declaration(type_name)
-        if method == null { return null }
-        let rest = self.parse_impl_methods(type_name)
-        if rest == null { return null }
-        StmtList.Node(method!, rest!)
+        let method = self.parse_method_declaration(type_name)?
+        let rest = self.parse_impl_methods(type_name)?
+        StmtList.Node(method, rest)
     }
 
     fn parse_method_declaration(self, type_name: string) -> Stmt? {
         self.advance()
-        let name = self.consume_identifier("expected method name")
-        if name == null { return null }
+        let name = self.consume_identifier("expected method name")?
         if !self.consume("left_paren", "expected `(` after method name") {
             return null
         }
         // The first parameter is conventionally `self` (implicitly
         // typed as the impl's owner type). Skip it if present and
         // synthesize a properly-typed self param ourselves.
-        let params = self.parse_method_param_list(type_name)
-        if params == null { return null }
+        let params = self.parse_method_param_list(type_name)?
         if !self.consume("right_paren", "expected `)` after parameters") {
             return null
         }
         let ret_ty = if self.check("arrow") {
             self.advance()
-            let r = self.consume_type("expected return type after `->`")
-            if r == null { return null }
-            r!
+            let r = self.consume_type("expected return type after `->`")?
+            r
         } else {
             "i64"
         }
         if !self.consume("left_brace", "expected `{` after method parameters") {
             return null
         }
-        let body = self.parse_statement_list(true)
-        if body == null { return null }
+        let body = self.parse_statement_list(true)?
         if !self.consume("right_brace", "expected `}` after method body") {
             return null
         }
         // Desugar to a top-level function named `Type__method`.
-        let mangled = type_name + "__" + name!
-        Stmt.Function(mangled, params!, ret_ty, body!)
+        let mangled = type_name + "__" + name
+        Stmt.Function(mangled, params, ret_ty, body)
     }
 
     fn parse_method_param_list(self, type_name: string) -> ParamList? {
@@ -102,15 +93,13 @@ impl Parser {
             // Optional `: Type` after self — discarded.
             if self.check("colon") {
                 self.advance()
-                let _ty = self.consume_type("expected type after `:`")
-                if _ty == null { return null }
+                let _ty = self.consume_type("expected type after `:`")?
             }
             // self is followed by either `,` (more params) or `)`.
             if self.check("comma") {
                 self.advance()
-                let rest = self.parse_param_list()
-                if rest == null { return null }
-                return ParamList.Node("self", type_name, rest!)
+                let rest = self.parse_param_list()?
+                return ParamList.Node("self", type_name, rest)
             }
             return ParamList.Node("self", type_name, ParamList.End)
         }

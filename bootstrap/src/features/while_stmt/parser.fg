@@ -17,9 +17,8 @@ impl Parser {
             return null
         }
 
-        let body = self.parse_statement()
-        if body == null { return null }
+        let body = self.parse_statement()?
 
-        Stmt.While(condition!, body!)
+        Stmt.While(condition!, body)
     }
 }
