@@ -465,6 +465,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             ok_stmt(env)
         }
         .TraitDecl(_, _) -> ok_stmt(env)  // trait decls are type metadata, no codegen
+        .LetDestructure(names, initializer) -> emit_let_destructure(ctx, env, names, initializer)
         _ -> err_stmt("codegen error: unsupported statement type")
     }
 }
@@ -622,6 +623,8 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right)
         .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field)
         .Try(inner) -> emit_try(ctx, env, inner)
+        .Tuple(elements) -> emit_tuple(ctx, env, elements)
+        .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx)
         _ -> err_emit("unsupported expression type")
     }
 }

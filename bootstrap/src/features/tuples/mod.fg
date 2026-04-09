@@ -1,0 +1,5 @@
+// WHY: tuple literals `(a, b, c)`, tuple indexing `t.0`, and
+// destructuring `let (x, y) = expr`. Tuples are heap-allocated
+// i64 buffers with compile-time known arity.
+
+mod codegen

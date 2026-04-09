@@ -1,0 +1,76 @@
+// WHY: codegen for tuple literals, tuple indexing, and let-destructuring.
+//
+// In the bootstrap's i64 model, a tuple (a, b, c) is a heap-allocated
+// buffer of i64 values. Tuple index t.0 loads from offset 0*8, etc.
+// Destructuring `let (x, y) = expr` loads each element into a local.
+//
+// Memory layout: malloc(count * 8), each element at offset idx*8.
+// Pointers are encoded as i64 via ptrtoint/inttoptr as usual.
+
+use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length}
+use core.cg.{Ctx, EmitResult, StmtResult, ok_emit, err_emit, ok_stmt, err_stmt_from_expr, const_i64, to_ptr, to_i64, cg_malloc}
+use codegen.{emit_expr}
+
+// Load i64 from ptr + offset*8
+fn tuple_load(ctx: Ctx, base: ptr, idx: int, name: string) -> ptr {
+    let base_int = forge_llvm_build_ptr_to_int(ctx.builder, base, ctx.i64_type, "tup_base")
+    let offset = const_i64(ctx, idx * 8)
+    let addr = forge_llvm_build_add(ctx.builder, base_int, offset, "tup_addr")
+    let slot_ptr = forge_llvm_build_int_to_ptr(ctx.builder, addr, ctx.ptr_type, "tup_slot")
+    forge_llvm_build_load(ctx.builder, ctx.i64_type, slot_ptr, name)
+}
+
+// Store i64 to ptr + offset*8
+fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) {
+    let base_int = forge_llvm_build_ptr_to_int(ctx.builder, base, ctx.i64_type, "ts_base")
+    let offset = const_i64(ctx, idx * 8)
+    let addr = forge_llvm_build_add(ctx.builder, base_int, offset, "ts_addr")
+    let slot_ptr = forge_llvm_build_int_to_ptr(ctx.builder, addr, ctx.ptr_type, "ts_slot")
+    forge_llvm_build_store(ctx.builder, value, slot_ptr)
+}
+
+export fn emit_tuple(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
+    let count = expr_list_length(elements)
+    let buf = cg_malloc(ctx, const_i64(ctx, count * 8))
+    store_tuple_elements(ctx, env, elements, buf, 0)
+}
+
+fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx: int) -> EmitResult {
+    match elements {
+        .End -> ok_emit(to_i64(ctx, buf, "tuple_i64"))
+        .Node(expr, next) -> {
+            let r = emit_expr(ctx, env, expr)
+            if r.had_error { return r }
+            tuple_store(ctx, buf, idx, r.value)
+            store_tuple_elements(ctx, env, next, buf, idx + 1)
+        }
+    }
+}
+
+export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> EmitResult {
+    let r = emit_expr(ctx, env, obj)
+    if r.had_error { return r }
+    let ptr = to_ptr(ctx, r.value, "tup_ptr")
+    let loaded = tuple_load(ctx, ptr, idx, "tup_val")
+    ok_emit(loaded)
+}
+
+export fn emit_let_destructure(ctx: Ctx, env: VarEnv, names: ParamList, initializer: Expr) -> StmtResult {
+    let r = emit_expr(ctx, env, initializer)
+    if r.had_error { return err_stmt_from_expr(r) }
+    let ptr = to_ptr(ctx, r.value, "destruct_ptr")
+    destructure_names(ctx, env, names, ptr, 0)
+}
+
+fn destructure_names(ctx: Ctx, env: VarEnv, names: ParamList, base: ptr, idx: int) -> StmtResult {
+    match names {
+        .End -> ok_stmt(env)
+        .Node(name, _, next) -> {
+            let loaded = tuple_load(ctx, base, idx, name)
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
+            forge_llvm_build_store(ctx.builder, loaded, alloca)
+            let new_env = env_extend(env, name, alloca, "i64")
+            destructure_names(ctx, new_env, next, base, idx + 1)
+        }
+    }
+}

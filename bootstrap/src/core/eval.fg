@@ -441,6 +441,7 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
         .TraitDecl(_, _) -> ok_result(runtime, 0)
+        .LetDestructure(_, _) -> error_result(runtime, "destructuring is not supported by the tree-walk evaluator")
     }
 }
 
@@ -529,6 +530,8 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .NullCoalesce(_, _) -> error_result(runtime, "null coalesce is not supported by the tree-walk evaluator")
         .OptionalChain(_, _) -> error_result(runtime, "optional chain is not supported by the tree-walk evaluator")
         .Try(_) -> error_result(runtime, "try operator is not supported by the tree-walk evaluator")
+        .Tuple(_) -> error_result(runtime, "tuples are not supported by the tree-walk evaluator")
+        .TupleIndex(_, _) -> error_result(runtime, "tuple indexing is not supported by the tree-walk evaluator")
     }
 }
 

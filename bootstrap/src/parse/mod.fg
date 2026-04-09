@@ -589,6 +589,13 @@ impl Parser {
                 result = Expr.Call(result, args)
             } else {
                 self.advance()
+                // Tuple index: `t.0`, `t.1` — number after dot
+                if self.check("number") {
+                    let idx_text = self.current_lexeme
+                    self.advance()
+                    result = Expr.TupleIndex(result, int(idx_text))
+                    continue
+                }
                 let field = self.consume_identifier("expected field name after `.`")?
                 // Detect enum constructor: `Type.Variant(args)`. We
                 // distinguish from method calls by requiring the
@@ -696,9 +703,24 @@ impl Parser {
             self.advance()
             let saved = self.allow_dot_postfix
             self.allow_dot_postfix = true
+            // Empty tuple: ()
+            if self.check("right_paren") {
+                self.allow_dot_postfix = saved
+                self.advance()
+                return Expr.Tuple(ExprList.End)
+            }
             let expr = self.parse_expression()
             self.allow_dot_postfix = saved
             if expr == null { return null }
+            // Tuple: (a, b, ...) — comma after first element
+            if self.check("comma") {
+                self.advance()
+                let rest = self.parse_tuple_rest()?
+                if !self.consume("right_paren", "expected `)` after tuple") {
+                    return null
+                }
+                return Expr.Tuple(ExprList.Node(expr!, rest))
+            }
             if !self.consume("right_paren", "expected `)` after expression") {
                 return null
             }
@@ -796,6 +818,20 @@ impl Parser {
             result = Expr.String("\"\"")
         }
         result
+    }
+
+    fn parse_tuple_rest(self) -> ExprList? {
+        // After the first comma in a tuple. Parse remaining elements.
+        if self.check("right_paren") {
+            return ExprList.End
+        }
+        let expr = self.parse_expression()?
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_tuple_rest()?
+            return ExprList.Node(expr, rest)
+        }
+        ExprList.Node(expr, ExprList.End)
     }
 
     fn parse_block_expression(self) -> Expr? {

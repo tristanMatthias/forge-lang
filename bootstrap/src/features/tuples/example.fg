@@ -1,0 +1,5 @@
+let pair = (10, 20)
+println(string(pair.0 + pair.1))
+
+let (x, y, z) = (1, 2, 3)
+println(string(x + y + z))

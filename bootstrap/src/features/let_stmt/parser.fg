@@ -1,6 +1,6 @@
 // WHY: parses `let` and `mut` variable bindings.
 
-use core.ast.{Stmt}
+use core.ast.{Stmt, ParamList}
 use parse.{Parser}
 
 impl Parser {
@@ -11,6 +11,10 @@ impl Parser {
         let is_mut = self.check("kw_mut")
         if is_mut {
             self.advance()
+        }
+        // Destructuring: `let (x, y) = expr`
+        if self.check("left_paren") {
+            return self.parse_let_destructure()
         }
         let name = self.consume_identifier("expected variable name")?
         let ty = if self.check("colon") {
@@ -45,5 +49,31 @@ impl Parser {
         }
         let initializer = self.parse_expression()?
         Stmt.Mut(name, ty, initializer)
+    }
+
+    fn parse_let_destructure(self) -> Stmt? {
+        self.advance()  // consume `(`
+        let names = self.parse_destructure_names()?
+        if !self.consume("right_paren", "expected `)` after destructure names") {
+            return null
+        }
+        if !self.consume("equal", "expected `=` after destructure pattern") {
+            return null
+        }
+        let initializer = self.parse_expression()?
+        Stmt.LetDestructure(names, initializer)
+    }
+
+    fn parse_destructure_names(self) -> ParamList? {
+        if self.check("right_paren") {
+            return ParamList.End
+        }
+        let name = self.consume_identifier("expected variable name in destructure")?
+        if self.check("comma") {
+            self.advance()
+            let rest = self.parse_destructure_names()?
+            return ParamList.Node(name, "i64", rest)
+        }
+        ParamList.Node(name, "i64", ParamList.End)
     }
 }

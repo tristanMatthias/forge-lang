@@ -77,6 +77,8 @@ export enum Expr {
     NullCoalesce(left: Expr, right: Expr)
     OptionalChain(obj: Expr, field: string)
     Try(expr: Expr)
+    Tuple(elements: ExprList)
+    TupleIndex(obj: Expr, index: int)
 }
 
 export enum Stmt {
@@ -103,6 +105,7 @@ export enum Stmt {
     Break
     Continue
     TraitDecl(name: string, methods: StmtList)
+    LetDestructure(names: ParamList, initializer: Expr)
 }
 
 export enum StmtList {
@@ -309,6 +312,8 @@ export fn render_expr(expr: Expr) -> string {
         .NullCoalesce(left, right) -> "(?? " + render_expr(left) + " " + render_expr(right) + ")"
         .OptionalChain(obj, field) -> "(?. " + render_expr(obj) + " " + field + ")"
         .Try(inner) -> "(? " + render_expr(inner) + ")"
+        .Tuple(elements) -> "(tuple " + render_expr_list(elements) + ")"
+        .TupleIndex(obj, idx) -> "(tuple-idx " + render_expr(obj) + " " + string(idx) + ")"
     }
 }
 
@@ -411,6 +416,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Break -> "(break)"
         .Continue -> "(continue)"
         .TraitDecl(name, methods) -> "(trait " + name + " " + render_stmt_list(methods) + ")"
+        .LetDestructure(names, initializer) -> "(let-destruct " + render_param_list(names) + " " + render_expr(initializer) + ")"
     }
 }
 

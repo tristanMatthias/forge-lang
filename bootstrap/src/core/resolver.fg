@@ -151,6 +151,17 @@ fn define_name(r: Resolver, name: string) -> Resolver {
     }
 }
 
+fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
+    match params {
+        .End -> r
+        .Node(name, _, next) -> {
+            let after = declare_name(r, name)
+            let defined = define_name(after, name)
+            define_param_names(defined, next)
+        }
+    }
+}
+
 fn mark_defined(entries: ScopeEntry, name: string, depth: int) -> ScopeEntry {
     match entries {
         .End -> ScopeEntry.End
@@ -290,6 +301,10 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .Break -> r
         .Continue -> r
         .TraitDecl(_, _) -> r  // trait declarations are no-ops
+        .LetDestructure(names, initializer) -> {
+            let after_init = resolve_expr(r, initializer)
+            define_param_names(after_init, names)
+        }
     }
 }
 
@@ -439,6 +454,8 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         }
         .OptionalChain(obj, _) -> resolve_expr(r, obj)
         .Try(inner) -> resolve_expr(r, inner)
+        .Tuple(elements) -> resolve_expr_list(r, elements)
+        .TupleIndex(obj, _) -> resolve_expr(r, obj)
     }
 }
 
