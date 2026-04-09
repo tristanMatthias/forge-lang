@@ -1,6 +1,6 @@
 // WHY: emits enum constructors (heap-allocated tagged unions).
 
-use core.ast.{Expr, ExprList, VariantList, VarEnv, variant_lookup, variant_max_payload}
+use core.ast.{Expr, ExprList, VariantList, VarEnv, variant_lookup, variant_max_payload, ValueType}
 use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, enum_reg_lookup}
 use codegen.{emit_expr}
 
@@ -25,7 +25,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     let fill = fill_enum_payload(ctx, env, st_ty, buf, args, 0)
     if fill.had_error { return fill }
     let as_i64 = to_i64(ctx, buf, "enum_i64")
-    EmitResult { value: as_i64, ty: "enum:" + type_name, had_error: false, error_message: "" }
+    EmitResult { value: as_i64, ty: ValueType.Enum(type_name), had_error: false, error_message: "" }
 }
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {

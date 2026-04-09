@@ -4,11 +4,11 @@
 // buffer of i64 values. Tuple index t.0 loads from offset 0*8, etc.
 // Destructuring `let (x, y) = expr` loads each element into a local.
 //
-// Type tracking: tuple EmitResult carries a type tag of the form
-// "tuple:ty1,ty2,ty3" so that tuple indexing can return the correct
-// element type (critical for match on enum tuple elements).
+// Type tracking: tuple EmitResult carries a ValueType.Tuple(TypeList)
+// so that tuple indexing can return the correct element type
+// (critical for match on enum tuple elements).
 
-use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length}
+use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, TypeList, vtype_tuple_at}
 use core.cg.{Ctx, EmitResult, StmtResult, ok_emit, err_emit, ok_stmt, err_stmt_from_expr, const_i64, to_ptr, to_i64, cg_malloc}
 use codegen.{emit_expr}
 
@@ -30,64 +30,34 @@ fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) {
     forge_llvm_build_store(ctx.builder, value, slot_ptr)
 }
 
-// ── Type tag helpers ──
-
-// Build "tuple:ty1,ty2,ty3" from element EmitResults.
-fn tuple_type_tag(types: string) -> string {
-    "tuple:" + types
-}
-
-// Extract the nth type from "tuple:ty1,ty2,ty3" (0-indexed).
-fn tuple_element_type(tag: string, idx: int) -> string {
-    if tag.length < 7 { return "i64" }
-    let prefix = tag.substring(0, 6)
-    if prefix != "tuple:" { return "i64" }
-    let types_str = tag.substring(6, tag.length)
-    extract_nth_csv(types_str, idx)
-}
-
-// Extract the nth comma-separated value from a string.
-fn extract_nth_csv(s: string, n: int) -> string {
-    mut start = 0
-    mut count = 0
-    mut i = 0
-    while i < s.length {
-        if s[i] == "," {
-            if count == n {
-                return s.substring(start, i)
-            }
-            count = count + 1
-            start = i + 1
-        }
-        i = i + 1
-    }
-    if count == n {
-        return s.substring(start, s.length)
-    }
-    "i64"
-}
-
 // ── Emit functions ──
 
 export fn emit_tuple(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
     let count = expr_list_length(elements)
     let buf = cg_malloc(ctx, const_i64(ctx, count * 8))
-    store_tuple_elements(ctx, env, elements, buf, 0, "")
+    store_tuple_elements(ctx, env, elements, buf, 0, TypeList.End)
 }
 
-fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx: int, types_acc: string) -> EmitResult {
+fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx: int, types_acc: TypeList) -> EmitResult {
     match elements {
         .End -> {
-            let ty = tuple_type_tag(types_acc)
+            let ty = ValueType.Tuple(reverse_type_list(types_acc, TypeList.End))
             EmitResult { value: to_i64(ctx, buf, "tuple_i64"), ty, had_error: false, error_message: "" }
         }
         .Node(expr, next) -> {
             let r = emit_expr(ctx, env, expr)
             if r.had_error { return r }
             tuple_store(ctx, buf, idx, r.value)
-            let new_types = if idx == 0 { r.ty } else { types_acc + "," + r.ty }
+            let new_types = TypeList.Node(r.ty, types_acc)
             store_tuple_elements(ctx, env, next, buf, idx + 1, new_types)
         }
+    }
+}
+
+fn reverse_type_list(list: TypeList, acc: TypeList) -> TypeList {
+    match list {
+        .End -> acc
+        .Node(ty, next) -> reverse_type_list(next, TypeList.Node(ty, acc))
     }
 }
 
@@ -96,7 +66,7 @@ export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> EmitRe
     if r.had_error { return r }
     let ptr = to_ptr(ctx, r.value, "tup_ptr")
     let loaded = tuple_load(ctx, ptr, idx, "tup_val")
-    let elem_ty = tuple_element_type(r.ty, idx)
+    let elem_ty = vtype_tuple_at(r.ty, idx)
     EmitResult { value: loaded, ty: elem_ty, had_error: false, error_message: "" }
 }
 
@@ -107,14 +77,14 @@ export fn emit_let_destructure(ctx: Ctx, env: VarEnv, names: ParamList, initiali
     destructure_names(ctx, env, names, ptr, r.ty, 0)
 }
 
-fn destructure_names(ctx: Ctx, env: VarEnv, names: ParamList, base: ptr, tuple_ty: string, idx: int) -> StmtResult {
+fn destructure_names(ctx: Ctx, env: VarEnv, names: ParamList, base: ptr, tuple_ty: ValueType, idx: int) -> StmtResult {
     match names {
         .End -> ok_stmt(env)
         .Node(name, _, next) -> {
             let loaded = tuple_load(ctx, base, idx, name)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, loaded, alloca)
-            let elem_ty = tuple_element_type(tuple_ty, idx)
+            let elem_ty = vtype_tuple_at(tuple_ty, idx)
             let new_env = env_extend(env, name, alloca, elem_ty)
             destructure_names(ctx, new_env, next, base, tuple_ty, idx + 1)
         }

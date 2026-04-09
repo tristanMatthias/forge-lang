@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, param_list_length}
+use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, param_list_length, ValueType}
 use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, const_i64, to_ptr, to_i64, ctx_with_fn, get_fn, call_0, call_2}
 use codegen.{emit_expr}
 
@@ -65,7 +65,7 @@ export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> E
 
     // Return the function pointer as an i64.
     let fn_ptr = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
-    EmitResult { value: fn_ptr, ty: "fn", had_error: false, error_message: "" }
+    EmitResult { value: fn_ptr, ty: ValueType.Fn, had_error: false, error_message: "" }
 }
 
 // Call a function pointer stored in a local variable.
@@ -128,7 +128,7 @@ fn bind_lambda_params(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx
             let param_val = forge_llvm_get_param(fn_val, idx)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, param_val, alloca)
-            let new_env = env_extend(env, name, alloca, "i64")
+            let new_env = env_extend(env, name, alloca, ValueType.Int)
             bind_lambda_params(ctx, new_env, next, fn_val, idx + 1)
         }
     }

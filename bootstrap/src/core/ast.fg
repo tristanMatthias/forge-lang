@@ -54,6 +54,97 @@ export enum MatchArmList {
     Node(pattern: Pattern, body: Expr, next: MatchArmList)
 }
 
+// ── Value types ──
+// Every compiled value carries a ValueType that tells codegen how
+// to dispatch operations. No more string tags or CSV parsing.
+
+export enum TypeList {
+    End,
+    Node(ty: ValueType, next: TypeList),
+}
+
+export enum ValueType {
+    Int,
+    Str,
+    Bool,
+    Ptr,
+    Struct(name: string),
+    Enum(name: string),
+    Tuple(elements: TypeList),
+    List,
+    Fn,
+    Void,
+}
+
+export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
+    match a {
+        .Int -> match b { .Int -> true, _ -> false }
+        .Str -> match b { .Str -> true, _ -> false }
+        .Bool -> match b { .Bool -> true, _ -> false }
+        .Ptr -> match b { .Ptr -> true, _ -> false }
+        .List -> match b { .List -> true, _ -> false }
+        .Fn -> match b { .Fn -> true, _ -> false }
+        .Void -> match b { .Void -> true, _ -> false }
+        .Struct(n1) -> match b { .Struct(n2) -> n1 == n2, _ -> false }
+        .Enum(n1) -> match b { .Enum(n2) -> n1 == n2, _ -> false }
+        _ -> false
+    }
+}
+
+export fn vtype_is_str(t: ValueType) -> bool {
+    match t { .Str -> true, _ -> false }
+}
+
+export fn vtype_is_list(t: ValueType) -> bool {
+    match t { .List -> true, _ -> false }
+}
+
+export fn vtype_is_fn(t: ValueType) -> bool {
+    match t { .Fn -> true, _ -> false }
+}
+
+export fn vtype_struct_name(t: ValueType) -> string {
+    match t { .Struct(n) -> n, _ -> "" }
+}
+
+export fn vtype_enum_name(t: ValueType) -> string {
+    match t { .Enum(n) -> n, _ -> "" }
+}
+
+export fn vtype_display(t: ValueType) -> string {
+    match t {
+        .Int -> "int"
+        .Str -> "string"
+        .Bool -> "bool"
+        .Ptr -> "ptr"
+        .Struct(n) -> n
+        .Enum(n) -> n
+        .Tuple(_) -> "(tuple)"
+        .List -> "List"
+        .Fn -> "fn"
+        .Void -> "void"
+    }
+}
+
+export fn vtype_tuple_at(t: ValueType, idx: int) -> ValueType {
+    match t {
+        .Tuple(types) -> typelist_at(types, idx)
+        _ -> ValueType.Int
+    }
+}
+
+fn typelist_at(list: TypeList, idx: int) -> ValueType {
+    match list {
+        .End -> ValueType.Int
+        .Node(ty, next) -> {
+            if idx <= 0 { return ty }
+            typelist_at(next, idx - 1)
+        }
+    }
+}
+
+// ── Operators ──
+
 export enum BinOp {
     Add, Sub, Mul, Div,
     Eq, Ne, Lt, Le, Gt, Ge,
@@ -168,20 +259,20 @@ export enum StmtList {
 // tag tells `+` whether to emit an i64 add or a string concat.
 export enum VarEnv {
     End
-    Node(name: string, alloca: ptr, ty: string, next: VarEnv)
+    Node(name: string, alloca: ptr, ty: ValueType, next: VarEnv)
 }
 
 export type VarLookup = {
     found: bool,
     alloca: ptr,
-    ty: string,
+    ty: ValueType,
 }
 
 export fn env_lookup(env: VarEnv, name: string) -> VarLookup {
     match env {
         .End -> {
             let n: ptr = null
-            VarLookup { found: false, alloca: n, ty: "i64" }
+            VarLookup { found: false, alloca: n, ty: ValueType.Int }
         }
         .Node(n, alloca, ty, next) -> {
             if n == name {
@@ -192,7 +283,7 @@ export fn env_lookup(env: VarEnv, name: string) -> VarLookup {
     }
 }
 
-export fn env_extend(env: VarEnv, name: string, alloca: ptr, ty: string) -> VarEnv {
+export fn env_extend(env: VarEnv, name: string, alloca: ptr, ty: ValueType) -> VarEnv {
     VarEnv.Node(name, alloca, ty, env)
 }
 

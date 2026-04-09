@@ -1,6 +1,6 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 
-use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend}
+use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend, ValueType}
 use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_param_type, ctx_with_fn}
 use codegen.{emit_block_loop}
 
@@ -33,7 +33,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 
     let body_cg = ctx_with_fn(ctx, fn_val)
 
-    let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), "i64")
+    let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), ValueType.Int)
     if r.had_error { return err_stmt(r.error_message) }
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_ret(ctx.builder, r.value)

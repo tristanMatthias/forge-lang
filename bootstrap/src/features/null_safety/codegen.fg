@@ -7,8 +7,8 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to simple i64 null-check branches.
 
-use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, strip_struct_prefix, struct_reg_lookup, translate_param_type, new_bb, const_i64, to_ptr}
+use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, new_bb, const_i64, to_ptr}
 use codegen.{emit_expr}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
@@ -33,9 +33,9 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     forge_llvm_position_at_end(ctx.builder, merge_bb)
     let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "nc_val")
     // Merge type: prefer the more specific type. If left is a bare
-    // null (type "i64"), use the right side's type. Otherwise use
+    // null (type Int), use the right side's type. Otherwise use
     // the left's type (the non-null value determines the type).
-    let merged_ty = if l.ty == "i64" && r.ty == "str" { "str" } else { l.ty }
+    let merged_ty = if vtype_eq(l.ty, ValueType.Int) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
     EmitResult { value: loaded, ty: merged_ty, had_error: false, error_message: "" }
 }
 
@@ -53,7 +53,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
 
     // Access the field (only reached when obj is non-null).
     forge_llvm_position_at_end(ctx.builder, access_bb)
-    let struct_name = strip_struct_prefix(r.ty)
+    let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
         // For non-struct types (e.g. strings), fall back to
         // returning the value itself. ?. on a non-struct is

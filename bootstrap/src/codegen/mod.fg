@@ -5,8 +5,8 @@
 // Feature-specific codegen lives in features/*/codegen.fg and is
 // resolved globally by the host compiler's cross-file impl lookup.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload}
-use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, strip_enum_prefix, strip_struct_prefix, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_struct_name, vtype_enum_name, vtype_display}
+use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc}
 
 // ── Direct C extern declarations ──
 //
@@ -757,9 +757,9 @@ fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Exp
     if r.had_error {
         return r
     }
-    let struct_name = strip_struct_prefix(r.ty)
+    let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
-        return err_emit("field assignment on non-struct value (ty=" + r.ty + ")")
+        return err_emit("field assignment on non-struct value (ty=" + vtype_display(r.ty) + ")")
     }
     let lookup = struct_reg_lookup(ctx.structs, struct_name)
     if !lookup.found {
@@ -785,7 +785,7 @@ fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
     // statement, if that statement is a `Stmt.Expr`. Anything
     // else (return, let, while, ...) yields i64 0. Each non-last
     // statement is executed for its side effects.
-    emit_block_loop(ctx, env, stmts, const_i64(ctx, 0), "i64")
+    emit_block_loop(ctx, env, stmts, const_i64(ctx, 0), ValueType.Int)
 }
 
 // A statement in tail position of a block expression must yield a
@@ -794,7 +794,7 @@ fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
 // matching expression-emission helper, recursing through nested
 // blocks/ifs as needed. Anything that has no value (let/while/return)
 // falls through to emit_stmt and the caller's default last_val.
-fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: string) -> EmitResult {
+fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> EmitResult {
     match stmt {
         .Expr(e) -> emit_expr(ctx, env, e)
         .Block(body) -> emit_block_expr(ctx, env, body)
@@ -830,7 +830,7 @@ fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: St
 
     forge_llvm_position_at_end(ctx.builder, then_bb)
     let zero = const_i64(ctx, 0)
-    let t = emit_stmt_as_value(ctx, env, then_branch, zero, "i64")
+    let t = emit_stmt_as_value(ctx, env, then_branch, zero, ValueType.Int)
     if t.had_error {
         return t
     }
@@ -841,7 +841,7 @@ fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: St
 
     forge_llvm_position_at_end(ctx.builder, else_bb)
     if else_branch != null {
-        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, "i64")
+        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, ValueType.Int)
         if e.had_error {
             return e
         }
@@ -858,7 +858,7 @@ fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: St
     EmitResult { value: loaded, ty: t.ty, had_error: false, error_message: "" }
 }
 
-export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: string) -> EmitResult {
+export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> EmitResult {
     match stmts {
         .End -> EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
         .Node(stmt, next) -> {
@@ -884,13 +884,13 @@ fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
         return r
     }
     // List indexing: list[i] → forge_array_get(list, i)
-    if r.ty == "list" {
+    if vtype_is_list(r.ty) {
         let i_r = emit_expr(ctx, env, idx)
         if i_r.had_error { return i_r }
         return ok_emit(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, i_r.value, "list_idx"))
     }
-    if r.ty != "str" && r.ty != "string" {
-        return err_emit("indexing on non-string/list value (ty=" + r.ty + ")")
+    if !vtype_is_str(r.ty) {
+        return err_emit("indexing on non-string/list value (ty=" + vtype_display(r.ty) + ")")
     }
     let i_r = emit_expr(ctx, env, idx)
     if i_r.had_error {
@@ -935,18 +935,18 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
         return r
     }
     // String property access — `s.length` is a libc strlen.
-    if r.ty == "str" && field == "length" {
+    if vtype_is_str(r.ty) && field == "length" {
         let str_ptr = to_ptr(ctx, r.value, "len_arg")
         return ok_emit(call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call"))
     }
     // List property access — `list.length`
-    if r.ty == "list" && field == "length" {
+    if vtype_is_list(r.ty) && field == "length" {
         return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), r.value, "list_len"))
     }
     // The object's ty tag tells us which struct it is.
-    let struct_name = strip_struct_prefix(r.ty)
+    let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
-        return err_emit("field access on non-struct value (ty=" + r.ty + ", field=" + field + ")")
+        return err_emit("field access on non-struct value (ty=" + vtype_display(r.ty) + ", field=" + field + ")")
     }
     let lookup = struct_reg_lookup(ctx.structs, struct_name)
     if !lookup.found {
@@ -984,7 +984,7 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
     if r.had_error {
         return r
     }
-    if r.ty == "str" {
+    if vtype_is_str(r.ty) {
         if method == "length" {
             let str_ptr = to_ptr(ctx, r.value, "len_arg")
             return ok_emit(call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call"))
@@ -1020,12 +1020,12 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             let str_ptr = to_ptr(ctx, r.value, "str_self")
             let sep_ptr = to_ptr(ctx, arg_r.value, "sep_arg")
             let result = call_2(ctx, get_fn(ctx, "forge_str_split"), str_ptr, sep_ptr, "split_result")
-            return EmitResult { value: result, ty: "list", had_error: false, error_message: "" }
+            return EmitResult { value: result, ty: ValueType.List, had_error: false, error_message: "" }
         }
         return err_emit("string method `" + method + "` not implemented")
     }
     // List methods backed by C runtime
-    if r.ty == "list" {
+    if vtype_is_list(r.ty) {
         if method == "length" || method == "len" {
             return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), r.value, "list_len"))
         }
@@ -1045,7 +1045,7 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             let arg_r = emit_single_arg(ctx, env, args)?
             let fn_name = "forge_array_" + method
             let result = call_2(ctx, get_fn(ctx, fn_name), r.value, arg_r.value, method)
-            return EmitResult { value: result, ty: "list", had_error: false, error_message: "" }
+            return EmitResult { value: result, ty: ValueType.List, had_error: false, error_message: "" }
         }
         if method == "foreach" {
             let arg_r = emit_single_arg(ctx, env, args)?
@@ -1059,15 +1059,15 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
         return err_emit("list method `" + method + "` not implemented")
     }
     // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
-    let type_name = strip_struct_prefix(r.ty)
-    let enum_name = strip_enum_prefix(r.ty)
+    let type_name = vtype_struct_name(r.ty)
+    let enum_name = vtype_enum_name(r.ty)
     let owner = if type_name != "" {
         type_name
     } else {
         enum_name
     }
     if owner == "" {
-        return err_emit("method call on non-struct/enum value (ty=" + r.ty + ")")
+        return err_emit("method call on non-struct/enum value (ty=" + vtype_display(r.ty) + ")")
     }
     let mangled = owner + "__" + method
     let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
@@ -1091,10 +1091,7 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
     let result = forge_llvm_build_call(ctx.builder, fn_type, fn_val, arg_arr, arg_count, "methcall")
     forge_llvm_value_array_free(arg_arr)
     let ret_ty = fn_ret_lookup(ctx.fn_rets, mangled)
-    if ret_ty == "" {
-        return ok_emit(result)
-    }
-    EmitResult { value: result, ty: ret_ty, had_error: false, error_message: "" }
+    ok_emit_typed(result, ret_ty)
 }
 
 fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitResult {
@@ -1116,11 +1113,11 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
     if fn_val == null {
         // Not a named function — might be a lambda stored in a variable.
         let local = env_lookup(env, name)
-        if local.found && local.ty == "fn" {
+        if local.found && vtype_is_fn(local.ty) {
             return emit_indirect_call(ctx, env, local.alloca, name, args)
         }
         let g = toplevel_lookup(ctx.top_level_vars, name)
-        if g.found && g.ty == "fn" {
+        if g.found && vtype_is_fn(g.ty) {
             return emit_indirect_call_from_global(ctx, env, g.llvm_global, name, args)
         }
         return err_emit("undefined function `" + name + "`")
@@ -1142,10 +1139,7 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
     let result = forge_llvm_build_call(ctx.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
     forge_llvm_value_array_free(arg_arr)
     let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
-    if ret_ty == "" {
-        return ok_emit(result)
-    }
-    EmitResult { value: result, ty: ret_ty, had_error: false, error_message: "" }
+    ok_emit_typed(result, ret_ty)
 }
 
 fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
@@ -1158,7 +1152,7 @@ fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
                 return r
             }
             // If the value is already a str, pass it through.
-            if r.ty == "str" {
+            if vtype_is_str(r.ty) {
                 return r
             }
             // malloc(32)
@@ -1181,7 +1175,7 @@ fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             if r.had_error {
                 return r
             }
-            if r.ty != "str" {
+            if !vtype_is_str(r.ty) {
                 // Already an int — pass through.
                 return r
             }
@@ -1423,7 +1417,7 @@ fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> Emi
     let rhs = right_result.value
 
     let null_cmp = is_null_literal(left) || is_null_literal(right)
-    let is_str = left_result.ty == "str" || right_result.ty == "str"
+    let is_str = vtype_is_str(left_result.ty) || vtype_is_str(right_result.ty)
 
     match op {
         .Add -> {
