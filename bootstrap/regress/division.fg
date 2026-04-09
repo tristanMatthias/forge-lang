@@ -1,0 +1,11 @@
+// Division and modulo-like operations
+println(string(100 / 3))
+println(string(10 / 2))
+println(string(-15 / 4))
+println(string(7 / 1))
+
+// Chained arithmetic
+println(string(2 + 3 * 4))
+println(string((2 + 3) * 4))
+println(string(100 - 50 - 25))
+println(string(100 - (50 - 25)))

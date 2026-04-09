@@ -1,0 +1,13 @@
+// Force unwrap operator (currently no-op in bootstrap)
+let x = 42
+let y = x!
+println(string(y))
+
+// Force unwrap on a non-null value
+let s = "hello"
+let s2 = s!
+println(s2)
+
+// Chained force unwrap
+let z = 99!!!!
+println(string(z))

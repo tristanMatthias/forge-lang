@@ -1,0 +1,30 @@
+// COMBO: trait + generic syntax + pipe + templates
+trait Describable {
+    fn describe(self) -> string
+}
+
+type Circle = { radius: int }
+type Square = { side: int }
+
+impl Describable for Circle {
+    fn describe(self) -> string {
+        `circle(${string(self.radius)})`
+    }
+}
+
+impl Describable for Square {
+    fn describe(self) -> string {
+        `square(${string(self.side)})`
+    }
+}
+
+fn print_desc(s: string) -> string {
+    println(s)
+    s
+}
+
+// Pipe the description through print
+let c = Circle { radius: 5 }
+let s = Square { side: 4 }
+c.describe() |> print_desc
+s.describe() |> print_desc

@@ -1,0 +1,13 @@
+fn double(x: int) -> int {
+    x * 2
+}
+
+fn add(x: int, y: int) -> int {
+    x + y
+}
+
+let result = 5 |> double
+println(string(result))
+
+let result2 = 3 |> add(7)
+println(string(result2))

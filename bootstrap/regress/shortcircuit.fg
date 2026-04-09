@@ -1,0 +1,26 @@
+// Short-circuit && and ||
+// If short-circuit works, side effects only happen when needed
+mut x = 0
+
+// false && expr — should NOT evaluate right side
+fn side_effect() -> int {
+    x = x + 1
+    1
+}
+
+// true || expr — should NOT evaluate right side
+if false && side_effect() == 1 {
+    println("bad")
+}
+println(string(x))
+
+if true || side_effect() == 1 {
+    println("ok")
+}
+println(string(x))
+
+// true && expr — SHOULD evaluate right side
+if true && side_effect() == 1 {
+    println("ok2")
+}
+println(string(x))

@@ -1,0 +1,15 @@
+// Complex if-expressions
+// Nested ternary-style
+let x = 15
+let label = if x > 20 { "high" } else if x > 10 { "mid" } else { "low" }
+println(label)
+
+// If-expression in function call
+fn greet(msg: string) { println(msg) }
+greet(if true { "yes" } else { "no" })
+
+// If-expression as struct field value
+type Pair = { a: int, b: int }
+let p = Pair { a: if true { 1 } else { 0 }, b: if false { 1 } else { 0 } }
+println(string(p.a))
+println(string(p.b))

@@ -1,0 +1,9 @@
+// Type annotations on variables
+let x: int = 42
+let s: string = "hello"
+let b: bool = true
+let p: ptr = null
+println(string(x))
+println(s)
+println(string(b))
+println(string(p ?? 0))

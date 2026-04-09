@@ -1,0 +1,10 @@
+// Empty string edge cases
+let empty = ""
+println(string(empty.length))
+println(string(empty == ""))
+println(string(empty != "hello"))
+
+// Concat with empty
+let result = "" + "hello" + "" + " world" + ""
+println(result)
+println(string(result.length))

@@ -1,0 +1,18 @@
+// Enum variants with multiple payloads
+enum Result {
+    Ok(value: int),
+    Err(code: int, msg: string),
+}
+
+let ok = Result.Ok(42)
+let err = Result.Err(404, "not found")
+
+match ok {
+    .Ok(v) -> println(string(v))
+    .Err(code, msg) -> println("error: " + msg)
+}
+
+match err {
+    .Ok(v) -> println(string(v))
+    .Err(code, msg) -> println(string(code) + ": " + msg)
+}

@@ -1,0 +1,25 @@
+// Nested match expressions
+enum Outer { A(x: int), B }
+enum Inner { X, Y(v: int) }
+
+fn classify(o: Outer, i: Inner) -> int {
+    match o {
+        .A(x) -> {
+            match i {
+                .X -> x
+                .Y(v) -> x + v
+            }
+        }
+        .B -> {
+            match i {
+                .X -> -1
+                .Y(v) -> v * 10
+            }
+        }
+    }
+}
+
+println(string(classify(Outer.A(5), Inner.X)))
+println(string(classify(Outer.A(5), Inner.Y(3))))
+println(string(classify(Outer.B, Inner.X)))
+println(string(classify(Outer.B, Inner.Y(7))))

@@ -1,0 +1,5 @@
+// String escape sequences
+println("hello\nworld")
+println("tab\there")
+println("quote\"inside")
+println("back\\slash")

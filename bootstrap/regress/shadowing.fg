@@ -1,0 +1,14 @@
+// Variable shadowing
+let x = 10
+println(string(x))
+
+{
+    let x = 20
+    println(string(x))
+    {
+        let x = 30
+        println(string(x))
+    }
+    println(string(x))
+}
+println(string(x))

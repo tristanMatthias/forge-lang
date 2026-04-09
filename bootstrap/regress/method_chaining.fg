@@ -1,0 +1,9 @@
+// Method chaining via string operations
+let s = "hello world"
+let sub = s.substring(0, 5)
+println(sub)
+println(string(sub.length))
+
+// Chain length after substring
+let len = "abcdef".substring(1, 4).length
+println(string(len))

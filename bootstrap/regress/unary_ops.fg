@@ -1,0 +1,11 @@
+// Unary operators
+println(string(-42))
+println(string(-(-10)))
+println(string(!0))
+println(string(!1))
+println(string(not true))
+println(string(not false))
+
+// Unary combined with binary
+println(string(-5 + 10))
+println(string(-(5 + 10)))

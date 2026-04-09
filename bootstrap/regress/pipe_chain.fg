@@ -1,0 +1,18 @@
+// Chained pipe operator
+fn add1(n: int) -> int { n + 1 }
+fn double(n: int) -> int { n * 2 }
+fn square(n: int) -> int { n * n }
+
+// 5 -> 6 -> 12 -> 144
+let result = 5 |> add1 |> double |> square
+println(string(result))
+
+// Pipe with partial application
+fn add(a: int, b: int) -> int { a + b }
+let r2 = 10 |> add(5)
+println(string(r2))
+
+// Pipe into string
+fn to_str(n: int) -> string { string(n) }
+let s = 42 |> to_str
+println(s)
