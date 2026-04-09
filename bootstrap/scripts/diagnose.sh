@@ -507,16 +507,22 @@ mode_rank() {
 
 mode_regress() {
   ensure_bs2
-  ensure_stage1
-  mkdir -p "$REGRESS_DIR"
   local pass=0 fail=0
   shopt -s nullglob
 
-  # Build the test list: top-level *.fg files AND directories
-  # containing main.fg. The directory form lets us test multi-file
-  # fixtures (e.g. nested module resolution).
+  # Build the test list from three locations:
+  #   1. src/features/*/tests/*.fg   — per-feature tests
+  #   2. src/features/*/example.fg   — feature examples
+  #   3. tests/*.fg                  — cross-cutting + combo tests
+  #   4. regress/*/main.fg           — multi-file fixtures (legacy)
   local test_specs=()
-  for fg in "$REGRESS_DIR"/*.fg; do
+  for fg in "$BOOTSTRAP_DIR"/src/features/*/tests/*.fg; do
+    test_specs+=("$fg")
+  done
+  for fg in "$BOOTSTRAP_DIR"/src/features/*/example.fg; do
+    [ -f "$(dirname "$fg")/expected.out" ] && test_specs+=("$fg")
+  done
+  for fg in "$BOOTSTRAP_DIR"/tests/*.fg; do
     test_specs+=("$fg")
   done
   for d in "$REGRESS_DIR"/*/; do
@@ -526,23 +532,23 @@ mode_regress() {
   done
 
   for fg in "${test_specs[@]}"; do
-    local name expected actual bin actual_s1 bin_s1 expected_dir
+    local name expected actual bin
     if [[ "$fg" == */main.fg ]]; then
-      # Directory test: name comes from the directory, .out lives next to main.fg.
-      expected_dir=$(dirname "$fg")
+      # Directory test: name from the directory, .out lives next to main.fg.
+      local expected_dir; expected_dir=$(dirname "$fg")
       name=$(basename "$expected_dir")
       expected="$expected_dir/expected.out"
+    elif [[ "$fg" == */example.fg ]]; then
+      # Feature example: name from the feature dir, .out is expected.out.
+      local feat_dir; feat_dir=$(dirname "$fg")
+      name=$(basename "$feat_dir")
+      expected="$feat_dir/expected.out"
     else
+      # Named test: .out is a sibling file with same basename.
       name=$(basename "$fg" .fg)
-      expected="$REGRESS_DIR/$name.out"
+      expected="$(dirname "$fg")/$name.out"
     fi
-    [ -f "$expected" ] || { warn "$name: missing expected.out, skipping"; continue; }
-
-    # Some tests use features that trigger known stage1 codegen
-    # divergences (e.g., sub-parser in template expressions). These
-    # are marked with a `.bs2only` sidecar file and skip the stage1
-    # cross-check. The bs2 path still runs and validates against
-    # expected output.
+    [ -f "$expected" ] || { warn "$name: missing .out, skipping"; continue; }
     # Compile, link, run with bs2, compare against expected output.
     bin="$BUILD_DIR/regress_$name.bin"
     if ! "$BS2" compile "$fg" >"$BUILD_DIR/regress_$name.codegen.log" 2>&1; then
@@ -569,11 +575,11 @@ mode_regress() {
 }
 
 mode_regress_add() {
-  local name="$1" fg="$2"
-  [ -n "$name" ] || die "--regress-add requires <name> <file.fg>"
+  local name="$1" fg="$2" dest_dir="${3:-$BOOTSTRAP_DIR/tests}"
+  [ -n "$name" ] || die "--regress-add requires <name> <file.fg> [dest_dir]"
   [ -f "$fg" ] || die "no such file: $fg"
   ensure_bs2
-  mkdir -p "$REGRESS_DIR"
+  mkdir -p "$dest_dir"
   local stage="$BUILD_DIR/_capture_$name.fg"
   cp "$fg" "$stage"
   log "compiling with bs2 to capture expected output"
@@ -588,23 +594,28 @@ mode_regress_add() {
   fi
   local out
   out=$("$bin" 2>&1) || true
-  cp "$fg" "$REGRESS_DIR/$name.fg"
-  printf '%s\n' "$out" >"$REGRESS_DIR/$name.out"
+  cp "$fg" "$dest_dir/$name.fg"
+  printf '%s\n' "$out" >"$dest_dir/$name.out"
   rm -f "$stage" "$stage.ll" "$bin"
-  ok "captured: regress/$name.fg + regress/$name.out"
+  ok "captured: $dest_dir/$name.fg + $dest_dir/$name.out"
   echo "expected output:"
-  sed 's/^/    /' "$REGRESS_DIR/$name.out"
+  sed 's/^/    /' "$dest_dir/$name.out"
 }
 
 mode_regress_list() {
   shopt -s nullglob
-  local any=0
-  for fg in "$REGRESS_DIR"/*.fg; do
-    any=1
-    local name; name=$(basename "$fg" .fg)
-    printf "  %s\n" "$name"
+  echo "Feature tests:"
+  for fg in "$BOOTSTRAP_DIR"/src/features/*/tests/*.fg; do
+    printf "  %s/%s\n" "$(basename "$(dirname "$(dirname "$fg")")")" "$(basename "$fg" .fg)"
   done
-  [ "$any" -eq 0 ] && warn "no regression tests in $REGRESS_DIR"
+  echo "Core tests:"
+  for fg in "$BOOTSTRAP_DIR"/tests/*.fg; do
+    printf "  %s\n" "$(basename "$fg" .fg)"
+  done
+  echo "Legacy fixtures:"
+  for d in "$REGRESS_DIR"/*/; do
+    [ -f "${d}main.fg" ] && printf "  %s\n" "$(basename "$d")"
+  done
 }
 
 # ─────────────────────────────────────────────────────────────────────
