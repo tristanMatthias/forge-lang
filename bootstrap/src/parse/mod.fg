@@ -97,6 +97,29 @@ fn p_starts_with_upper(name: string) -> bool {
     head >= "A" && head <= "Z"
 }
 
+// Check if a template interpolation content is a simple identifier
+// (letters, digits, underscores only). Simple idents don't need a
+// sub-parser — they're just Expr.Ident.
+fn template_is_simple_ident(s: string) -> bool {
+    if s.length == 0 { return false }
+    mut i = 0
+    while i < s.length {
+        let ch = s[i]
+        if !p_is_alpha_numeric(ch) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+// Parse a sub-expression from a string (used by template desugaring).
+// Creates its own parser instance to avoid mutating the parent.
+fn parse_template_expr(source: string) -> Expr? {
+    mut p = parser_new(source)
+    p.parse_expression()
+}
+
 fn p_keyword_kind(text: string) -> string {
     if text == "and" { return "kw_and" }
     if text == "const" { return "kw_const" }
@@ -755,13 +778,21 @@ impl Parser {
                     self.set_error("unterminated template expression in string")
                     return null
                 }
-                // Parse the content between ${ and } as a real expression.
+                // Parse the content between ${ and } as an expression.
+                // Simple identifiers become Expr.Ident directly. Complex
+                // expressions (containing parens, dots, operators) use a
+                // sub-parser. This split avoids creating a Parser struct
+                // for the common case.
                 let sub_source = raw.substring(expr_start, j)
-                mut sub_parser = parser_new(sub_source)
-                let parsed = sub_parser.parse_expression()
-                if parsed == null {
-                    self.set_error("invalid expression in template: " + sub_source)
-                    return null
+                let parsed = if template_is_simple_ident(sub_source) {
+                    Expr.Ident(sub_source)
+                } else {
+                    let sub_result = parse_template_expr(sub_source)
+                    if sub_result == null {
+                        self.set_error("invalid expression in template: " + sub_source)
+                        return null
+                    }
+                    sub_result!
                 }
                 // Wrap in string() call for automatic conversion.
                 let str_call = Expr.Call(Expr.Ident("string"), ExprList.Node(parsed!, ExprList.End))

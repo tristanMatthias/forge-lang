@@ -31,8 +31,11 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
 
     forge_llvm_position_at_end(ctx.builder, merge_bb)
     let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "nc_val")
-    // Propagate the left type (if non-null, the result has left's type).
-    EmitResult { value: loaded, ty: l.ty, had_error: false, error_message: "" }
+    // Merge type: prefer the more specific type. If left is a bare
+    // null (type "i64"), use the right side's type. Otherwise use
+    // the left's type (the non-null value determines the type).
+    let merged_ty = if l.ty == "i64" && r.ty == "str" { "str" } else { l.ty }
+    EmitResult { value: loaded, ty: merged_ty, had_error: false, error_message: "" }
 }
 
 export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitResult {
