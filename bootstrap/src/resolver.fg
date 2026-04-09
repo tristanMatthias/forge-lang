@@ -223,6 +223,8 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after_subject = resolve_expr(r, subject)
             resolve_match_arms(after_subject, arms)
         }
+        .Impl(_, methods) -> resolve_stmt_list(r, methods)
+        .NoOp -> r
     }
 }
 

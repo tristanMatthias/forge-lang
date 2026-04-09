@@ -78,6 +78,8 @@ export enum Stmt {
     TypeDecl(name: string, fields: FieldList)
     EnumDecl(name: string, variants: VariantList)
     Match(subject: Expr, arms: MatchArmList)
+    Impl(type_name: string, methods: StmtList)
+    NoOp
 }
 
 export enum StmtList {
@@ -371,6 +373,8 @@ export fn render_stmt(stmt: Stmt) -> string {
         .TypeDecl(name, fields) -> "(type " + name + " " + render_field_list(fields) + ")"
         .EnumDecl(name, variants) -> "(enum " + name + " " + render_variant_list(variants) + ")"
         .Match(subject, arms) -> "(match " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"
+        .Impl(name, methods) -> "(impl " + name + " " + render_stmt_list(methods) + ")"
+        .NoOp -> "(noop)"
     }
 }
 

@@ -1,0 +1,13 @@
+type Point = { x: i64, y: i64 }
+
+impl Point {
+    fn sum(self) -> i64 {
+        return self.x + self.y
+    }
+    fn scale(self, k: i64) -> i64 {
+        return self.x * k + self.y * k
+    }
+}
+
+let p = Point { x: 10, y: 32 }
+return p.sum()

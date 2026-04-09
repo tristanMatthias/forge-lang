@@ -324,8 +324,34 @@ Crafting Interpreters reference: Chapter 30.
 - [x] Emit struct types, struct literals, and field access
 - [x] Emit enums (tagged unions) with constructors
 - [x] Emit match statements as conditional branches with payload binding
+- [x] `impl Type { fn name(self, ...) }` desugars to `Type__name(self, ...)`
+- [x] Method-call dispatch via `obj.method(args)` based on value type tag
+- [x] `use ...` and `mod ...` parse as no-ops (single-file MVP)
+- [x] `export` keyword as no-op modifier
+- [x] Struct-literal field-init shorthand `Foo { name }`
+- [x] Typed function parameters and return type annotations
 - [ ] Emit module imports and cross-file compilation
 - [ ] Compile the bootstrap compiler source with itself
+
+### Remaining bootstrap-source-syntax gaps
+
+To actually feed `bootstrap/src/*.fg` into the bootstrap compiler we still need:
+
+- [ ] Indexing: `text[i]` returning a single-char string or i64 byte
+- [ ] String equality and comparison via `==` / `!=` (currently only ints)
+- [ ] String method `.length` (✅ partial — only works on direct exprs of `str` type)
+- [ ] String method `.substring(start, end)`
+- [ ] `for x in iter` loops
+- [ ] Block expressions (so a brace block can return its last expression)
+- [ ] Match-as-expression with non-block bodies (`.Variant(x) -> expr`)
+- [ ] Nullable types `T?` parsed and lowered
+- [ ] Force-unwrap operator `expr!`
+- [ ] Negative integer literals
+- [ ] List literals and operations (`List<T>`, `.push`, `.length`, indexing)
+- [ ] String escapes inside literals (`\n`, `\t`, `\\`, `\"`)
+- [ ] Multi-file modules (concatenation OR proper module system)
+- [ ] `extern fn` declarations
+- [ ] Builtin functions: `int(text)`, `string(value)`, `read_file`, `write_file`, etc.
 
 ### Milestone 4: Fixed-Point Self-Host
 

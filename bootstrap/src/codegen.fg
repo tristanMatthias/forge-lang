@@ -347,6 +347,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, stmts: StmtList) {
                     llvm.type_array_free(param_arr)
                     llvm.add_function(m, name, fn_type)
                 }
+                .Impl(_, methods) -> declare_functions(m, ctx, i64t, methods)
                 _ -> {}
             }
             declare_functions(m, ctx, i64t, next)
@@ -370,6 +371,7 @@ fn emit_function_bodies(cg: Codegen, stmts: StmtList) -> StmtResult {
         .Node(stmt, next) -> {
             let r = match stmt {
                 .Function(name, params, body) -> emit_function_body(cg, name, params, body)
+                .Impl(_, methods) -> emit_function_bodies(cg, methods)
                 _ -> ok_stmt(VarEnv.End)
             }
             if r.had_error {
@@ -517,6 +519,8 @@ fn emit_stmt(cg: Codegen, env: VarEnv, stmt: Stmt) -> StmtResult {
         .TypeDecl(_, _) -> ok_stmt(env)
         .EnumDecl(_, _) -> ok_stmt(env)
         .Match(subject, arms) -> emit_match(cg, env, subject, arms)
+        .Impl(_, _) -> ok_stmt(env)
+        .NoOp -> ok_stmt(env)
         _ -> err_stmt("codegen error: unsupported statement type")
     }
 }
@@ -933,14 +937,71 @@ fn strip_struct_prefix(ty: string) -> string {
 }
 
 fn emit_call(cg: Codegen, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
-    // Destructure callee exactly once. Repeated `match` of the same
-    // enum value miscompiles in the host: the second destructure
-    // produces a corrupted payload (an empty string in this case),
-    // which makes the function lookup silently fail.
+    // Destructure callee exactly once.
     match callee {
         .Ident(name) -> emit_call_named(cg, env, name, args)
+        .FieldAccess(obj, method) -> emit_method_call(cg, env, obj, method, args)
         _ -> err_emit("only direct function calls are supported")
     }
+}
+
+fn emit_method_call(cg: Codegen, env: VarEnv, obj: Expr, method: string, args: ExprList) -> EmitResult {
+    // Special-case `.length` and `.substring` on strings — these are
+    // emitted via libc strlen / a custom substring helper rather than
+    // dispatched as methods.
+    let r = emit_expr(cg, env, obj)
+    if r.had_error {
+        return r
+    }
+    if r.ty == "str" {
+        if method == "length" {
+            let str_ptr = llvm.build_int_to_ptr(cg.builder, r.value, cg.ptr_type, "len_arg")
+            let strlen_fn = llvm.get_named_function(cg.module, "strlen")
+            let pa = llvm.type_array_new(1)
+            llvm.type_array_set(pa, 0, cg.ptr_type)
+            let strlen_ty = llvm.function_type(cg.i64_type, pa, 1, 0)
+            llvm.type_array_free(pa)
+            let arr = llvm.value_array_new(1)
+            llvm.value_array_set(arr, 0, str_ptr)
+            let len = llvm.build_call(cg.builder, strlen_ty, strlen_fn, arr, 1, "strlen_call")
+            llvm.value_array_free(arr)
+            return ok_emit(len)
+        }
+        return err_emit("string method `" + method + "` not implemented")
+    }
+    // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
+    let type_name = strip_struct_prefix(r.ty)
+    let enum_name = strip_enum_prefix(r.ty)
+    let owner = if type_name != "" {
+        type_name
+    } else {
+        enum_name
+    }
+    if owner == "" {
+        return err_emit("method call on non-struct/enum value (ty=" + r.ty + ")")
+    }
+    let mangled = owner + "__" + method
+    let fn_val = llvm.get_named_function(cg.module, mangled)
+    if fn_val == null {
+        return err_emit("undefined method `" + owner + "." + method + "`")
+    }
+    // Build arg array with self prepended.
+    let extra_count = expr_list_length(args)
+    let arg_count = extra_count + 1
+    let arg_arr = llvm.value_array_new(arg_count)
+    llvm.value_array_set(arg_arr, 0, r.value)
+    let fill = fill_arg_array(cg, env, arg_arr, args, 1)
+    if fill.had_error {
+        llvm.value_array_free(arg_arr)
+        return fill
+    }
+    let param_arr = llvm.type_array_new(arg_count)
+    fill_i64_param_array(param_arr, cg.i64_type, 0, arg_count)
+    let fn_type = llvm.function_type(cg.i64_type, param_arr, arg_count, 0)
+    llvm.type_array_free(param_arr)
+    let result = llvm.build_call(cg.builder, fn_type, fn_val, arg_arr, arg_count, "methcall")
+    llvm.value_array_free(arg_arr)
+    ok_emit(result)
 }
 
 fn emit_call_named(cg: Codegen, env: VarEnv, name: string, args: ExprList) -> EmitResult {

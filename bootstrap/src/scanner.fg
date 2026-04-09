@@ -77,6 +77,7 @@ fn keyword_kind(text: string) -> string {
     if text == "enum" { return "kw_enum" }
     if text == "match" { return "kw_match" }
     if text == "export" { return "kw_export" }
+    if text == "impl" { return "kw_impl" }
     return "identifier"
 }
 

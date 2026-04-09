@@ -419,6 +419,8 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         }
         .EnumDecl(_, _) -> ok_result(runtime, value_null())
         .Match(_, _) -> error_result(runtime, "match statements are not supported by the tree-walk evaluator")
+        .Impl(_, _) -> ok_result(runtime, value_null())
+        .NoOp -> ok_result(runtime, value_null())
     }
 }
 
