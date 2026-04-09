@@ -2,7 +2,7 @@
 // method is desugared to a free function named `Type__method`.
 
 use core.ast.{Stmt, StmtList, ParamList}
-use parser.{Parser}
+use parse.{Parser}
 
 impl Parser {
     fn parse_impl_declaration(self) -> Stmt? {

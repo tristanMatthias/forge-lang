@@ -1,7 +1,7 @@
 // WHY: parses `extern fn name(params) -> Type` declarations.
 
 use core.ast.{Stmt}
-use parser.{Parser}
+use parse.{Parser}
 
 impl Parser {
     fn parse_extern_declaration(self) -> Stmt? {

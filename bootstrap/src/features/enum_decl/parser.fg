@@ -2,7 +2,7 @@
 // list syntax (with optional payload fields).
 
 use core.ast.{Stmt, FieldList, VariantList}
-use parser.{Parser}
+use parse.{Parser}
 
 impl Parser {
     fn parse_enum_declaration(self) -> Stmt? {

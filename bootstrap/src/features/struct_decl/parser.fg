@@ -2,7 +2,7 @@
 // supporting field grammars (declaration + literal init).
 
 use core.ast.{Stmt, Expr, FieldList, FieldInitList}
-use parser.{Parser}
+use parse.{Parser}
 
 impl Parser {
     fn parse_type_declaration(self) -> Stmt? {

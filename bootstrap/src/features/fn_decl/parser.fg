@@ -2,7 +2,7 @@
 // they introduce.
 
 use core.ast.{Stmt, ParamList}
-use parser.{Parser}
+use parse.{Parser}
 
 impl Parser {
     fn parse_function_declaration(self) -> Stmt? {

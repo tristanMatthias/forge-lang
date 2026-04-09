@@ -1,4 +1,4 @@
-use parser.{parse_expression_source, parse_program_source}
+use parse.{parse_expression_source, parse_program_source}
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList}
 
 // `float` is a host built-in that the bootstrap evaluator uses to

@@ -7,7 +7,7 @@
 //   related:                features/match/codegen.fg, core.ast.{Pattern, MatchArmList}
 
 use core.ast.{Stmt, Expr, Pattern, MatchArmList, ParamList}
-use parser.{Parser}
+use parse.{Parser}
 
 impl Parser {
     fn parse_match_statement(self) -> Stmt? {

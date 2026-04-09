@@ -1,7 +1,7 @@
 // WHY: parses `if` as both a statement and an expression form.
 
 use core.ast.{Stmt, Expr}
-use parser.{Parser}
+use parse.{Parser}
 
 impl Parser {
     fn parse_if_statement(self) -> Stmt? {
