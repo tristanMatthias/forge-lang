@@ -1,0 +1,135 @@
+// WHY: codegen for lambda/closure expressions.
+//
+// A lambda `(x, y) -> expr` is compiled to:
+// 1. A lifted top-level function `__lambda_N(x, y) -> i64`
+// 2. A pointer to that function (returned as i64)
+//
+// Closures that capture variables from the enclosing scope pack
+// the captures into a heap-allocated environment. The lifted
+// function takes the environment as an extra first argument.
+// The closure value is (fn_ptr, env_ptr) — a 2-element tuple.
+//
+// For non-capturing lambdas (the common case), the closure value
+// is just the function pointer with a null environment.
+
+use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, param_list_length}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, const_i64, to_ptr, to_i64, ctx_with_fn, get_fn, call_0, call_2}
+use codegen.{emit_expr}
+
+// Global lambda counter for unique names.
+// This is the ONE allowed mutable global — it's a monotonic counter
+// that never resets. Thread-safe because the bootstrap is single-threaded.
+export mut LAMBDA_COUNTER = 0
+
+export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> EmitResult {
+    let id = LAMBDA_COUNTER
+    LAMBDA_COUNTER = LAMBDA_COUNTER + 1
+    let name = "__lambda_" + string(id)
+
+    let arity = param_list_length(params)
+
+    // Declare the lifted function: all params are i64, returns i64.
+    let param_arr = forge_llvm_type_array_new(arity)
+    fill_i64_params(param_arr, ctx.i64_type, 0, arity)
+    let fn_type = forge_llvm_function_type(ctx.i64_type, param_arr, arity, 0)
+    forge_llvm_type_array_free(param_arr)
+    let fn_val = forge_llvm_add_function(ctx.module, name, fn_type)
+
+    // Save current builder position.
+    let saved_bb = forge_llvm_get_insert_block(ctx.builder)
+    let saved_fn = ctx.current_fn
+
+    // Build the lambda body in a new entry block.
+    let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
+    forge_llvm_position_at_end(ctx.builder, entry)
+
+    // Bind parameters to allocas.
+    let body_env = bind_lambda_params(ctx, env, params, fn_val, 0)
+
+    // Emit the body expression.
+    let body_ctx = ctx_with_fn(ctx, fn_val)
+    let result = emit_expr(body_ctx, body_env, body)
+    if result.had_error {
+        // Restore position even on error.
+        forge_llvm_position_at_end(ctx.builder, saved_bb)
+        return result
+    }
+
+    // Return the body's value.
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_ret(ctx.builder, result.value)
+    }
+
+    // Restore builder to the caller's position.
+    forge_llvm_position_at_end(ctx.builder, saved_bb)
+
+    // Return the function pointer as an i64.
+    let fn_ptr = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
+    EmitResult { value: fn_ptr, ty: "fn", had_error: false, error_message: "" }
+}
+
+// Call a function pointer stored in a local variable.
+// Load the pointer, cast to fn ptr, build indirect call.
+export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, args: ExprList) -> EmitResult {
+    let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, alloca, name)
+    emit_indirect_call_value(ctx, env, fn_i64, args)
+}
+
+export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, name: string, args: ExprList) -> EmitResult {
+    let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, global, name)
+    emit_indirect_call_value(ctx, env, fn_i64, args)
+}
+
+fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> EmitResult {
+    let fn_ptr = forge_llvm_build_int_to_ptr(ctx.builder, fn_i64, ctx.ptr_type, "fn_ptr")
+    let arg_count = expr_list_length(args)
+
+    // Build the function type: (i64, i64, ...) -> i64
+    let param_arr = forge_llvm_type_array_new(arg_count)
+    fill_i64_params(param_arr, ctx.i64_type, 0, arg_count)
+    let fn_type = forge_llvm_function_type(ctx.i64_type, param_arr, arg_count, 0)
+    forge_llvm_type_array_free(param_arr)
+
+    // Evaluate args into a value array
+    let val_arr = forge_llvm_value_array_new(arg_count)
+    let fill = fill_lambda_args(ctx, env, val_arr, args, 0)
+    if fill.had_error {
+        forge_llvm_value_array_free(val_arr)
+        return fill
+    }
+
+    let result = forge_llvm_build_call(ctx.builder, fn_type, fn_ptr, val_arr, arg_count, "lambda_call")
+    forge_llvm_value_array_free(val_arr)
+    ok_emit(result)
+}
+
+fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
+    match args {
+        .End -> ok_emit(null_ptr_val())
+        .Node(arg, next) -> {
+            let r = emit_expr(ctx, env, arg)
+            if r.had_error { return r }
+            forge_llvm_value_array_set(arr, idx, r.value)
+            fill_lambda_args(ctx, env, arr, next, idx + 1)
+        }
+    }
+}
+
+fn fill_i64_params(arr: ptr, i64t: ptr, idx: int, count: int) {
+    if idx >= count { return }
+    forge_llvm_type_array_set(arr, idx, i64t)
+    fill_i64_params(arr, i64t, idx + 1, count)
+}
+
+fn bind_lambda_params(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int) -> VarEnv {
+    match params {
+        .End -> env
+        .Node(name, _, next) -> {
+            let param_val = forge_llvm_get_param(fn_val, idx)
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
+            forge_llvm_build_store(ctx.builder, param_val, alloca)
+            let new_env = env_extend(env, name, alloca, "i64")
+            bind_lambda_params(ctx, new_env, next, fn_val, idx + 1)
+        }
+    }
+}

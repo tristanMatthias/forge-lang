@@ -457,6 +457,12 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .Tuple(elements) -> resolve_expr_list(r, elements)
         .TupleIndex(obj, _) -> resolve_expr(r, obj)
         .ListLit(elements) -> resolve_expr_list(r, elements)
+        .Lambda(params, body) -> {
+            let entered = enter_resolve_scope(r)
+            let with_params = declare_params(entered, params)
+            let after_body = resolve_expr(with_params, body)
+            exit_resolve_scope(after_body)
+        }
         .With(obj, overrides) -> {
             let after_obj = resolve_expr(r, obj)
             resolve_field_init_list(after_obj, overrides)

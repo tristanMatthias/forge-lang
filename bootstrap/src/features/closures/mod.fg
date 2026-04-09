@@ -1,0 +1,6 @@
+// WHY: closures/lambdas — `(x) -> x * 2`. Lambdas are lifted into
+// top-level functions and their pointers are passed as i64 values.
+// This enables higher-order functions, .map/.filter on lists, and
+// callback patterns.
+
+mod codegen

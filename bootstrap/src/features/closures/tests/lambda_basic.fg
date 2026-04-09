@@ -1,0 +1,26 @@
+// Basic lambda
+let double = (x) -> x * 2
+println(string(double(5)))
+
+// Lambda with multiple params
+let add = (a, b) -> a + b
+println(string(add(3, 4)))
+
+// List.map with lambda
+let nums = [1, 2, 3, 4, 5]
+let doubled = nums.map((x) -> x * 2)
+println(string(doubled[0]))
+println(string(doubled[4]))
+
+// List.filter — check if even (x % 2 == 0 approximated)
+let big = nums.filter((x) -> x > 3)
+println(string(big.length))
+println(string(big[0]))
+
+// List.reduce
+let sum = nums.reduce(0, (acc, x) -> acc + x)
+println(string(sum))
+
+// Zero-arg lambda
+let greet = () -> 42
+println(string(greet()))

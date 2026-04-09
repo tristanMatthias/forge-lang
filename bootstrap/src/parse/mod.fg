@@ -89,6 +89,22 @@ fn expr_is_upper_ident(e: Expr) -> bool {
     }
 }
 
+// Convert a list of Ident expressions into a ParamList (for lambda parsing).
+// (x, y) -> ... parses the parens as expressions first, then reinterprets
+// the Ident names as parameter names when -> is seen.
+fn exprs_to_params(exprs: ExprList) -> ParamList {
+    match exprs {
+        .End -> ParamList.End
+        .Node(expr, next) -> {
+            let name = match expr {
+                .Ident(n) -> n
+                _ -> "_"  // non-ident in lambda params — use placeholder
+            }
+            ParamList.Node(name, "i64", exprs_to_params(next))
+        }
+    }
+}
+
 fn p_starts_with_upper(name: string) -> bool {
     if name.length < 1 {
         return false
@@ -717,26 +733,46 @@ impl Parser {
             self.advance()
             let saved = self.allow_dot_postfix
             self.allow_dot_postfix = true
-            // Empty tuple: ()
+            // Empty parens: () → could be empty tuple or zero-arg lambda
             if self.check("right_paren") {
                 self.allow_dot_postfix = saved
                 self.advance()
+                // () -> expr  is a zero-arg lambda
+                if self.check("arrow") {
+                    self.advance()
+                    let body = self.parse_lambda_body()?
+                    return Expr.Lambda(ParamList.End, body)
+                }
                 return Expr.Tuple(ExprList.End)
             }
             let expr = self.parse_expression()
             self.allow_dot_postfix = saved
             if expr == null { return null }
-            // Tuple: (a, b, ...) — comma after first element
+            // (a, b, ...) — comma after first: tuple or multi-param lambda
             if self.check("comma") {
                 self.advance()
                 let rest = self.parse_tuple_rest()?
                 if !self.consume("right_paren", "expected `)` after tuple") {
                     return null
                 }
+                // (a, b) -> expr  is a lambda
+                if self.check("arrow") {
+                    self.advance()
+                    let params = exprs_to_params(ExprList.Node(expr!, rest))
+                    let body = self.parse_lambda_body()?
+                    return Expr.Lambda(params, body)
+                }
                 return Expr.Tuple(ExprList.Node(expr!, rest))
             }
             if !self.consume("right_paren", "expected `)` after expression") {
                 return null
+            }
+            // (x) -> expr  is a single-param lambda
+            if self.check("arrow") {
+                self.advance()
+                let params = exprs_to_params(ExprList.Node(expr!, ExprList.End))
+                let body = self.parse_lambda_body()?
+                return Expr.Lambda(params, body)
             }
             return Expr.Grouping(expr!)
         }
@@ -846,6 +882,14 @@ impl Parser {
             result = Expr.String("\"\"")
         }
         result
+    }
+
+    fn parse_lambda_body(self) -> Expr? {
+        // Lambda body: either a block { ... } or a single expression.
+        if self.check("left_brace") {
+            return self.parse_block_expression()
+        }
+        self.parse_expression()
     }
 
     fn parse_list_elements(self) -> ExprList? {

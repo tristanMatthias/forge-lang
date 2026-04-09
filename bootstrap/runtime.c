@@ -433,3 +433,48 @@ void* forge_str_split(const char* s, const char* sep) {
     }
     return arr;
 }
+
+// ─── Higher-order list operations ─────────────────────────────────
+
+typedef int64_t (*ForgeFn1)(int64_t);
+typedef int64_t (*ForgeFn2)(int64_t, int64_t);
+
+void* forge_array_map(void* arr, int64_t fn_ptr) {
+    ForgeArray* src = (ForgeArray*)arr;
+    ForgeFn1 f = (ForgeFn1)(uintptr_t)fn_ptr;
+    void* dst = forge_array_new();
+    for (int64_t i = 0; i < src->len; i++) {
+        forge_array_push(dst, f(src->data[i]));
+    }
+    return dst;
+}
+
+void* forge_array_filter(void* arr, int64_t fn_ptr) {
+    ForgeArray* src = (ForgeArray*)arr;
+    ForgeFn1 f = (ForgeFn1)(uintptr_t)fn_ptr;
+    void* dst = forge_array_new();
+    for (int64_t i = 0; i < src->len; i++) {
+        if (f(src->data[i])) {
+            forge_array_push(dst, src->data[i]);
+        }
+    }
+    return dst;
+}
+
+int64_t forge_array_reduce(void* arr, int64_t initial, int64_t fn_ptr) {
+    ForgeArray* src = (ForgeArray*)arr;
+    ForgeFn2 f = (ForgeFn2)(uintptr_t)fn_ptr;
+    int64_t acc = initial;
+    for (int64_t i = 0; i < src->len; i++) {
+        acc = f(acc, src->data[i]);
+    }
+    return acc;
+}
+
+void forge_array_foreach(void* arr, int64_t fn_ptr) {
+    ForgeArray* src = (ForgeArray*)arr;
+    ForgeFn1 f = (ForgeFn1)(uintptr_t)fn_ptr;
+    for (int64_t i = 0; i < src->len; i++) {
+        f(src->data[i]);
+    }
+}

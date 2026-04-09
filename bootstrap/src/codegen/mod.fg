@@ -137,6 +137,31 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_array_set", arr_push_type)
     forge_llvm_add_function(m, "forge_array_pop", arr_len_type)
 
+    // C-runtime: higher-order list operations (map, filter, reduce, foreach)
+    // All take (ptr arr, i64 fn_ptr) and return ptr or i64.
+    let arr_ho_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(arr_ho_arr, 0, pt)
+    forge_llvm_type_array_set(arr_ho_arr, 1, i64t)
+    let arr_map_type = forge_llvm_function_type(pt, arr_ho_arr, 2, 0)
+    forge_llvm_type_array_free(arr_ho_arr)
+    forge_llvm_add_function(m, "forge_array_map", arr_map_type)
+    forge_llvm_add_function(m, "forge_array_filter", arr_map_type)
+
+    let arr_fe_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(arr_fe_arr, 0, pt)
+    forge_llvm_type_array_set(arr_fe_arr, 1, i64t)
+    let arr_fe_type = forge_llvm_function_type(forge_llvm_void_type(lc), arr_fe_arr, 2, 0)
+    forge_llvm_type_array_free(arr_fe_arr)
+    forge_llvm_add_function(m, "forge_array_foreach", arr_fe_type)
+
+    let arr_red_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(arr_red_arr, 0, pt)
+    forge_llvm_type_array_set(arr_red_arr, 1, i64t)
+    forge_llvm_type_array_set(arr_red_arr, 2, i64t)
+    let arr_reduce_type = forge_llvm_function_type(i64t, arr_red_arr, 3, 0)
+    forge_llvm_type_array_free(arr_red_arr)
+    forge_llvm_add_function(m, "forge_array_reduce", arr_reduce_type)
+
     // C-runtime: string methods
     let str2_arr = forge_llvm_type_array_new(2)
     forge_llvm_type_array_set(str2_arr, 0, pt)
@@ -684,6 +709,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx)
         .With(obj, overrides) -> emit_with(ctx, env, obj, overrides)
         .ListLit(elements) -> emit_list_lit(ctx, env, elements)
+        .Lambda(params, body) -> emit_lambda(ctx, env, params, body)
         _ -> err_emit("unsupported expression type")
     }
 }
@@ -1015,6 +1041,21 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             let arg_r = emit_single_arg(ctx, env, args)?
             return ok_emit(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, arg_r.value, "list_get"))
         }
+        if method == "map" || method == "filter" {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let fn_name = "forge_array_" + method
+            let result = call_2(ctx, get_fn(ctx, fn_name), r.value, arg_r.value, method)
+            return EmitResult { value: result, ty: "list", had_error: false, error_message: "" }
+        }
+        if method == "foreach" {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            call_2(ctx, get_fn(ctx, "forge_array_foreach"), r.value, arg_r.value, "")
+            return ok_emit(const_i64(ctx, 0))
+        }
+        if method == "reduce" {
+            // reduce(initial, fn) — 2 args
+            return emit_list_reduce(ctx, env, r.value, args)
+        }
         return err_emit("list method `" + method + "` not implemented")
     }
     // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
@@ -1073,6 +1114,15 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
     }
     let fn_val = forge_llvm_get_named_function(ctx.module, name)
     if fn_val == null {
+        // Not a named function — might be a lambda stored in a variable.
+        let local = env_lookup(env, name)
+        if local.found && local.ty == "fn" {
+            return emit_indirect_call(ctx, env, local.alloca, name, args)
+        }
+        let g = toplevel_lookup(ctx.top_level_vars, name)
+        if g.found && g.ty == "fn" {
+            return emit_indirect_call_from_global(ctx, env, g.llvm_global, name, args)
+        }
         return err_emit("undefined function `" + name + "`")
     }
 
@@ -1197,6 +1247,25 @@ fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
 
     ok_emit_str(to_i64(ctx, buf, "concat_i64"))
+}
+
+fn emit_list_reduce(ctx: Ctx, env: VarEnv, list_val: ptr, args: ExprList) -> EmitResult {
+    match args {
+        .Node(init_expr, rest) -> {
+            match rest {
+                .Node(fn_expr, _) -> {
+                    let init_r = emit_expr(ctx, env, init_expr)
+                    if init_r.had_error { return init_r }
+                    let fn_r = emit_expr(ctx, env, fn_expr)
+                    if fn_r.had_error { return fn_r }
+                    let result = call_3(ctx, get_fn(ctx, "forge_array_reduce"), list_val, init_r.value, fn_r.value, "reduce")
+                    ok_emit(result)
+                }
+                _ -> err_emit("reduce expects 2 arguments: initial value and function")
+            }
+        }
+        _ -> err_emit("reduce expects 2 arguments: initial value and function")
+    }
 }
 
 // Evaluate a single-argument method call. Returns the EmitResult for that arg.
