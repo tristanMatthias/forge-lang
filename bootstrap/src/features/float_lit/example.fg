@@ -39,4 +39,12 @@ fn main() {
     if 3.0 == 3.0 {
         println("eq")
     }
+
+    // Float pattern matching
+    let val = 3.14
+    match val {
+        1.0 -> println("one")
+        3.14 -> println("pi")
+        _ -> println("other")
+    }
 }

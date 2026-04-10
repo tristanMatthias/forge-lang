@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
-use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, get_fn, call_2}
+use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, to_f64, get_fn, call_1, call_2}
 use codegen.{emit_expr}
 
 
@@ -208,6 +208,15 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
             let cmp_result = call_2(ctx, get_fn(ctx, "strcmp"), subj_ptr, lit_ptr, "strcmp_r")
             forge_llvm_build_icmp(ctx.builder, 32, cmp_result, const_i64(ctx, 0), "str_eq")
         }
+        .LitFloat(val) -> {
+            // Parse the float literal string → i64 bits, then compare as f64
+            let lit_str = forge_llvm_build_global_string_ptr(ctx.builder, val, ".flit_str")
+            let lit_bits = call_1(ctx, get_fn(ctx, "forge_float_parse"), lit_str, "flit_bits")
+            let subj_f64 = to_f64(ctx, subj.value, "subj_f64")
+            let lit_f64 = forge_llvm_build_bitcast(ctx.builder, lit_bits, forge_llvm_double_type(ctx.lc), "lit_f64")
+            // OEQ = 1 (ordered equal)
+            forge_llvm_build_fcmp(ctx.builder, 1, subj_f64, lit_f64, "flit_eq")
+        }
         _ -> {
             // Wildcard / Variant — should not reach here
             const_i64(ctx, 1)
@@ -220,6 +229,7 @@ fn is_literal_pattern(pattern: Pattern) -> bool {
         .LitString(_) -> true
         .LitInt(_) -> true
         .LitBool(_) -> true
+        .LitFloat(_) -> true
         _ -> false
     }
 }

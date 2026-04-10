@@ -769,7 +769,7 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ render_bag re-enabled in compile path (TECH_DEBT #21 FIXED)
 - ✅ Source spans on AST nodes via SExpr/SStmt wrappers (TECH_DEBT #18 DONE)
 
-### Phase 1: IN PROGRESS
+### Phase 1: COMPLETE
 - ✅ Type checker created (`src/typeck/mod.fg`, top-level module)
 - ✅ Walks ALL expression/statement forms
 - ✅ Function body checking works

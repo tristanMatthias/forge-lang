@@ -58,6 +58,7 @@ export enum Pattern {
     LitString(value: string)
     LitInt(value: int)
     LitBool(value: bool)
+    LitFloat(value: string)
 }
 
 // Arms of a match expression/statement, terminated by `End`.

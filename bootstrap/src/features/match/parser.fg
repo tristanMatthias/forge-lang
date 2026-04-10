@@ -73,6 +73,11 @@ impl Parser {
             self.advance()
             return Pattern.LitInt(val)
         }
+        if self.check("float") {
+            let val = self.current_lexeme
+            self.advance()
+            return Pattern.LitFloat(val)
+        }
         if self.check("kw_true") {
             self.advance()
             return Pattern.LitBool(true)
