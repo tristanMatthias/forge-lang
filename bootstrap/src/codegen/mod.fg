@@ -1145,6 +1145,13 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             let result = call_2(ctx, get_fn(ctx, "forge_str_split"), str_ptr, sep_ptr, "split_result")
             return EmitResult { value: result, ty: ValueType.List(ValueType.Str), had_error: false, error_message: "" }
         }
+        if method == "char_code" {
+            // str.char_code() → int (first byte as integer)
+            let str_ptr = to_ptr(ctx, r.value, "str_self")
+            let byte_val = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), str_ptr, "char_byte")
+            let as_i64 = forge_llvm_build_zext(ctx.builder, byte_val, ctx.i64_type, "char_code")
+            return ok_emit(as_i64)
+        }
         return err_emit("string method `" + method + "` not implemented")
     }
     // List methods backed by C runtime
