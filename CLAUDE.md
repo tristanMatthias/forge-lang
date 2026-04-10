@@ -454,7 +454,12 @@ Prefix with module name if ambiguous: `tc_bind_params`, not `bind_params`.
    optimizer to generate wrong code at -O2. Use `-O1` until fixed.
    The fix is in `libforge_llvm.a` (Rust LLVM wrapper).
 
-3. **Seed bootstrap chicken-and-egg.** Adding a new module requires:
+3. **Seed bootstrap chicken-and-egg.** Any change that modifies
+   enum/struct field types in container types (ExprList, StmtList,
+   MatchArmList, etc.) requires a TWO-PHASE bootstrap:
+   (a) Phase A: add new types WITHOUT changing containers → update seed
+   (b) Phase B: change containers → the Phase A seed can compile it
+   Adding a new module requires:
    (a) compile WITHOUT the module → update seed → (b) compile WITH
    the module → update seed. If the new module has errors, the OLD
    seed binary crashes trying to render them. Always remove
@@ -464,6 +469,42 @@ Prefix with module name if ambiguous: `tc_bind_params`, not `bind_params`.
    render_list is recursive. 100+ diagnostics = stack overflow. The
    limit is 10 (render_first_n). If you hit this, the resolver is
    producing too many errors — fix the source, don't increase the limit.
+
+## Patterns That Waste Time — RECOGNIZE AND AVOID
+
+These patterns have cost hours of debugging. Recognize them IMMEDIATELY
+and apply the known fix instead of investigating from scratch.
+
+### "undefined variable X" when compiling new source with old seed
+**Symptom:** the old seed's resolver reports an undefined variable
+that clearly IS defined in the new source.
+**Root cause:** you changed a container type (ExprList, StmtList,
+MatchArmList, etc.) to hold a different inner type. The old seed's
+resolver destructures the old layout but gets the new data.
+**Fix:** two-phase bootstrap. Phase A: add new types WITHOUT changing
+containers, update seed. Phase B: change containers.
+
+### Build works for small files but fails on main.fg
+**Symptom:** `./build/bs2 compile /tmp/small.fg` works, but
+`./build/bs2 compile src/main.fg` crashes or errors.
+**Root cause:** the merged source has 8000+ lines. Issues that
+don't appear in small files: function name collisions, scope depth
+limits, stack overflow from recursive rendering, enum variant
+ordering mismatches.
+**Fix:** check for name collisions first (`grep -rn "fn <name>" src/`).
+Then check if the error is from the old seed vs the new source
+(struct layout mismatch). Use LLDB to find the exact crash point.
+
+### Naming: avoid shadowing function names with pattern variables
+**Rule:** never use `sexpr`, `sstmt`, `expr`, `stmt` as pattern
+variable names — they shadow function/type names and confuse the
+resolver. Use short prefixes: `se` for SExpr, `ss` for SStmt,
+`sv` for SExpr in value position.
+
+### Seed cycle takes 3+ minutes — don't debug by adding eprints
+**Rule:** use LLDB or C-side trace functions (forge_trace_ptr,
+forge_dump_stmt). Never add eprintln traces that require a full
+seed rebuild to test. Each seed cycle is 3 minutes of dead time.
 
 ## ABSOLUTE RULES (from user, non-negotiable)
 
