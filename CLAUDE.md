@@ -375,6 +375,84 @@ This prevents the user from losing track of what's happening between session rep
 
 17. **Use Map<string, ptr> for variable lookup, not parallel lists.** Variables should be stored in `Codegen.vars: Map<string, ptr>` (name → alloca). If Map has corruption bugs, fix the Map implementation in runtime.c — don't replace it with parallel List<string>/List<ptr> globals.
 
+## Debugging — MANDATORY PROTOCOL
+
+When you hit a segfault or crash in the bootstrap compiler, follow this
+protocol. Do NOT guess, do NOT add eprintln traces that require seed
+cycles, do NOT chase theories without evidence.
+
+### Step 1: LLDB first (< 30 seconds)
+```bash
+lldb -b \
+  -o 'target create ./build/bs2' \
+  -o 'settings set -- target.run-args check /tmp/test.fg' \
+  -o 'run' \
+  -o 'bt' \
+  -o 'register read x0 x1 x8 x9' \
+  -o 'disassemble --pc --count 5'
+```
+This tells you the EXACT crash instruction, which register has the bad
+value, and the full call stack. Takes 5 seconds, no rebuild needed.
+
+### Step 2: Validate the pointer
+Use `forge_trace_ptr(label, value)` in Forge source or check the address
+range in LLDB:
+- `0x100000000-0x200000000` → bump arena (valid)
+- `0x600000000000` range → system heap (valid)
+- `< 0x100000` → INVALID (null-ish, likely corrupt enum field)
+- Stack addresses → near sp register value
+
+### Step 3: Check -O0 vs -O2
+```bash
+$LLC -O0 -filetype=obj seed/seed.ll -o build/test.o && cc -o build/test ...
+```
+If -O0 works but -O2 crashes, it's an alignment/optimization bug.
+The bootstrap emits `align 4` for i64 loads (should be `align 8`).
+
+### Step 4: Check struct arg corruption
+If the crash is in a function that takes TWO struct arguments, the
+second arg is likely corrupt. This is a known codegen bug (#16 in
+TECH_DEBT.md). **Inline the function body** to work around it.
+
+### Available C-side tools (runtime.c)
+```forge
+forge_trace_ptr(label, value)       // prints ptr + region (bump/heap/stack)
+forge_dump_stmt(label, stmt)        // prints Stmt tag name + field values
+forge_dump_stmt_list(label, list)   // prints StmtList structure
+forge_selfhost_trace_int(label, n)  // prints label + i64 to stderr
+```
+
+### Rules
+- **NEVER do more than ONE seed cycle to diagnose a crash.** Use LLDB.
+- **NEVER guess the cause.** Read the register values. Read the IR.
+- **NEVER chase heap corruption without first testing -O0.**
+- **NEVER pass two large structs to a function.** Inline or restructure.
+- **Log EVERY crash diagnosis in TECH_DEBT.md** with the root cause,
+  LLDB output, and fix. Future agents need this history.
+
+## Known Bootstrap Pitfalls
+
+1. **Two-struct-arg calling convention bug.** Any function taking two
+   struct parameters where the first has 4+ fields will corrupt the
+   second argument. Inline the function or pass one arg as a global.
+   See TECH_DEBT #16.
+
+2. **`align 4` on i64 loads.** The codegen emits `align 4` instead of
+   `align 8` for all i64 load/store instructions. This causes LLVM's
+   optimizer to generate wrong code at -O2. Use `-O1` until fixed.
+   The fix is in `libforge_llvm.a` (Rust LLVM wrapper).
+
+3. **Seed bootstrap chicken-and-egg.** Adding a new module requires:
+   (a) compile WITHOUT the module → update seed → (b) compile WITH
+   the module → update seed. If the new module has errors, the OLD
+   seed binary crashes trying to render them. Always remove
+   `render_bag` from the compile path before adding new modules.
+
+4. **render_list stack overflow.** DiagnosticList is a linked list.
+   render_list is recursive. 100+ diagnostics = stack overflow. The
+   limit is 10 (render_first_n). If you hit this, the resolver is
+   producing too many errors — fix the source, don't increase the limit.
+
 ## ABSOLUTE RULES (from user, non-negotiable)
 
 1. **NEVER say "that's a bigger change" as a reason to skip work.** Do the work. If it needs 200 lines, write 200 lines. If it needs restructuring, restructure. No deferring.

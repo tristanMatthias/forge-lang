@@ -172,69 +172,52 @@ the type first: `use core.ast.{BinOp}` then `fn foo(x: BinOp)`.
 **Fix:** Support dotted type names in `consume_type` parser function.
 Low priority since the import workaround is clean.
 
-### 14. check_stmt crashes on Function body checking (CRITICAL)
+### ~~14. Struct args corrupt second parameter~~ (FIXED)
 
-**UPDATE:** The bump allocator (item #15) did NOT fix this. The crash
-persists even with monotonic allocation. It is NOT heap corruption.
-The crash is in `bind_params` accessing the `params` field of a
-`Function` Stmt variant — the pointer is garbage (0x120a8).
+**Status:** fixed (April 10 2026)
 
-The crash only happens for SMALL programs compiled via `check` mode.
-The full compiler source compiles fine via `compile` mode (which
-doesn't call the type checker). This suggests the bug is specific to
-how the type checker traverses small StmtLists, not a general enum
-field access issue.
+**Root cause:** The bootstrap's calling convention passes structs as
+single i64 pointers. When a function takes two struct arguments (e.g.
+`bind_params(tc: TC, params: ParamList)`), the function prologue
+clobbers the register holding the second argument while accessing
+fields of the first struct via GEP. This only happens when the first
+struct has 6+ fields.
 
-**Current workaround:** `.Function` arm returns `tc` unchanged (skips
-function body checking entirely).
+**How it was found:** LLDB showed `params` was valid at the call site
+(`forge_selfhost_trace_int` printed the correct pointer) but garbage
+inside `bind_params`. Inlining the function body eliminated the crash,
+confirming the bug was at the function call boundary, not in the logic.
 
-### 14b. Original diagnosis — Enum field corruption on re-traversal
+**Fix:** Inlined `bind_params` into the Function arm of `check_stmt`.
 
-**Severity:** critical (blocks type checker function body checking)
-**Impact:** when the same `StmtList` is traversed twice, enum payload
-fields read as corrupt pointers on the second pass
+**Proper fix needed:** The codegen should use LLVM's `byval` attribute
+or splat struct fields into separate arguments. See item #16.
 
-**Reproduction:**
-```forge
-export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
-    let tc0 = tc_new()
-    let tc1 = collect_decls(tc0, stmts)   // pass 1: reads Function params OK
-    let tc2 = check_stmts(tc1, stmts)     // pass 2: Function params = 0x120a8 (garbage)
-}
+### 16. Two-struct-arg calling convention bug (SYSTEMATIC)
+
+**Severity:** high (any function with two struct args is at risk)
+**Impact:** the second argument is silently corrupted when the first
+is a large struct (6+ fields accessed via GEP)
+
+**Known affected patterns:**
+- `fn foo(tc: TC, params: ParamList)` — TC has 6 fields
+- Any function taking `(Ctx, ...)` where Ctx has 12 fields
+  (these work because Ctx fields are accessed via the pointer
+  directly, but fragile)
+
+**Audit needed:** grep for all functions that take two struct arguments
+where the first struct has 4+ fields. These are all potential crash sites.
+
+**Proper fix:** Change the codegen to either:
+1. Use LLVM `byval` attribute on struct pointer args
+2. Splat struct fields into separate register arguments (C ABI)
+3. Always pass structs via explicit alloca (caller allocates on stack,
+   callee receives pointer, guaranteed not to alias registers)
+
+**Audit command:**
+```bash
+grep "fn.*tc: TC.*params:\|fn.*ctx: Ctx.*env:" src/**/*.fg
 ```
-
-The `Function(name, params, ret_ty, body)` variant's `params` field
-(GEP index 2 of `%Stmt`) returns a valid ParamList pointer during
-`collect_decls` but returns `0x120a8` (invalid) during `check_stmts`.
-
-**LLDB output:**
-```
-stop reason = EXC_BAD_ACCESS (code=1, address=0x120a8)
-frame #0: bind_params + 96
-ldrb w10, [x9]   // x9 = 0x120a8 = corrupt ParamList pointer
-```
-
-**IR analysis:**
-- `%Stmt = type { i8, i64, i64, i64, i64 }` — correct layout
-- `%223 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2` — correct index
-- The Stmt pointer `%4` is the same in both passes (same StmtList)
-- Pass 1 reads valid data, pass 2 reads garbage
-
-**Hypothesis:** The `with` expression in `collect_decls` (which mallocs
-a new TC struct and copies fields) may be corrupting adjacent heap
-memory. Or the FnTypeEntry construction is overwriting the StmtList
-node's memory. Needs heap debugging with guard pages or valgrind.
-
-**Current workaround:** `check_stmt` skips `.Function` bodies entirely.
-Type checking only works for top-level code.
-
-**Fix path:**
-1. Build with `-fsanitize=address` (didn't catch it — not a buffer overflow)
-2. Try valgrind or guard malloc (`MallocGuardEdges=1`)
-3. Compare IR for `collect_decls` vs `check_stmts` — both do
-   `.Function(name, params, ret_ty, _)` destructuring, diff the generated GEP
-4. Check if `malloc(48)` in `with` is the right size for TC (6 fields × 8 = 48 ✓)
-5. Check if FnTypeEntry.Node construction overwrites adjacent memory
 
 ### 15. Bump allocator (STEPPING STONE — will be removed)
 
