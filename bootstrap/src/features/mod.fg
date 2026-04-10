@@ -25,3 +25,4 @@ mod list_lit
 mod closures
 mod map_lit
 mod defer_stmt
+mod registry_handlers

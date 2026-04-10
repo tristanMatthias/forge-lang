@@ -10,7 +10,7 @@
 
 use core.ast.{Expr, Stmt, ValueType, VarEnv, TypeList}
 use core.cg.{Ctx, EmitResult, StmtResult, err_emit, err_stmt}
-use codegen.{emit_is_check_feature}
+use features.registry_handlers.{reg_emit_struct_lit, reg_emit_field_access, reg_emit_enum_ctor, reg_emit_index, reg_emit_block_expr, reg_emit_match_expr, reg_emit_field_assign, reg_emit_if_expr, reg_emit_null_coalesce, reg_emit_optional_chain, reg_emit_try, reg_emit_tuple, reg_emit_tuple_index, reg_emit_with, reg_emit_list_lit, reg_emit_lambda, reg_emit_map_lit, reg_emit_slice, reg_emit_is_check}
 
 // C-side helpers to extract enum discriminant tags.
 extern fn forge_expr_tag(expr: int) -> int
@@ -122,11 +122,27 @@ export fn dispatch_stmt(reg: StmtRegistry, tag: int, ctx: Ctx, env: VarEnv, stmt
 
 export fn build_expr_registry() -> ExprRegistry {
     mut reg = ExprRegistry.End
-    // Features register here. Each line replaces a match arm in emit_expr.
-    // To migrate a feature: create an export fn wrapper in its codegen.fg,
-    // register it here, remove the match arm from codegen/mod.fg.
-    // Tag 30 = Expr.IsCheck (see tag constants above for reference)
-    reg = register_expr(reg, "is", 30, emit_is_check_feature)
+    // Each line replaces a match arm in emit_expr. Tags must match
+    // the Expr enum variant order in ast.fg.
+    reg = register_expr(reg, "struct_lit",      11, reg_emit_struct_lit)
+    reg = register_expr(reg, "field_access",    12, reg_emit_field_access)
+    reg = register_expr(reg, "enum_ctor",       13, reg_emit_enum_ctor)
+    reg = register_expr(reg, "index",           14, reg_emit_index)
+    reg = register_expr(reg, "block",           15, reg_emit_block_expr)
+    reg = register_expr(reg, "match_expr",      16, reg_emit_match_expr)
+    reg = register_expr(reg, "field_assign",    17, reg_emit_field_assign)
+    reg = register_expr(reg, "if_expr",         18, reg_emit_if_expr)
+    reg = register_expr(reg, "null_coalesce",   19, reg_emit_null_coalesce)
+    reg = register_expr(reg, "optional_chain",  20, reg_emit_optional_chain)
+    reg = register_expr(reg, "try",             21, reg_emit_try)
+    reg = register_expr(reg, "tuple",           22, reg_emit_tuple)
+    reg = register_expr(reg, "tuple_index",     23, reg_emit_tuple_index)
+    reg = register_expr(reg, "with",            24, reg_emit_with)
+    reg = register_expr(reg, "list_lit",        25, reg_emit_list_lit)
+    reg = register_expr(reg, "lambda",          26, reg_emit_lambda)
+    reg = register_expr(reg, "map_lit",         27, reg_emit_map_lit)
+    reg = register_expr(reg, "slice",           28, reg_emit_slice)
+    reg = register_expr(reg, "is",              30, reg_emit_is_check)
     reg
 }
 

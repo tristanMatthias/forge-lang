@@ -1,0 +1,89 @@
+// WHY: registry-compatible wrapper functions for expression features.
+// Each wrapper takes (Ctx, VarEnv, Expr) -> EmitResult, destructures
+// the Expr, and delegates to the existing feature handler.
+//
+// AGENT:
+//   read this file when:    migrating a feature to the registry
+//   do NOT read this file when:   implementing feature logic (go to features/<name>/codegen.fg)
+
+// All functions referenced here are visible via the bootstrap's
+// single-compilation-unit model. No imports needed.
+
+// Each function follows the same pattern:
+//   match expr { .Variant(fields) -> handler(ctx, env, fields), _ -> err }
+
+export fn reg_emit_struct_lit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .StructLit(name, inits) -> emit_struct_lit(ctx, env, name, inits), _ -> err_emit("expected StructLit") }
+}
+
+export fn reg_emit_field_access(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .FieldAccess(obj, field) -> emit_field_access(ctx, env, obj, field), _ -> err_emit("expected FieldAccess") }
+}
+
+export fn reg_emit_enum_ctor(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .EnumCtor(tn, v, args) -> emit_enum_ctor(ctx, env, tn, v, args), _ -> err_emit("expected EnumCtor") }
+}
+
+export fn reg_emit_index(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .Index(obj, idx) -> emit_index(ctx, env, obj, idx), _ -> err_emit("expected Index") }
+}
+
+export fn reg_emit_block_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .Block(body) -> emit_block_expr(ctx, env, body), _ -> err_emit("expected Block") }
+}
+
+export fn reg_emit_match_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms), _ -> err_emit("expected MatchExpr") }
+}
+
+export fn reg_emit_field_assign(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value), _ -> err_emit("expected FieldAssign") }
+}
+
+export fn reg_emit_if_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .IfExpr(c, t, e) -> emit_if_expr(ctx, env, c, t, e), _ -> err_emit("expected IfExpr") }
+}
+
+export fn reg_emit_null_coalesce(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right), _ -> err_emit("expected NullCoalesce") }
+}
+
+export fn reg_emit_optional_chain(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field), _ -> err_emit("expected OptionalChain") }
+}
+
+export fn reg_emit_try(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .Try(inner) -> emit_try(ctx, env, inner), _ -> err_emit("expected Try") }
+}
+
+export fn reg_emit_tuple(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .Tuple(elements) -> emit_tuple(ctx, env, elements), _ -> err_emit("expected Tuple") }
+}
+
+export fn reg_emit_tuple_index(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx), _ -> err_emit("expected TupleIndex") }
+}
+
+export fn reg_emit_with(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .With(obj, overrides) -> emit_with(ctx, env, obj, overrides), _ -> err_emit("expected With") }
+}
+
+export fn reg_emit_list_lit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .ListLit(elements) -> emit_list_lit(ctx, env, elements), _ -> err_emit("expected ListLit") }
+}
+
+export fn reg_emit_lambda(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .Lambda(params, body) -> emit_lambda(ctx, env, params, body), _ -> err_emit("expected Lambda") }
+}
+
+export fn reg_emit_map_lit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .MapLit(entries) -> emit_map_lit(ctx, env, entries), _ -> err_emit("expected MapLit") }
+}
+
+export fn reg_emit_slice(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end), _ -> err_emit("expected Slice") }
+}
+
+export fn reg_emit_is_check(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname), _ -> err_emit("expected IsCheck") }
+}
