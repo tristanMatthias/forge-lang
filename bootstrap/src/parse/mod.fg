@@ -1235,17 +1235,35 @@ impl Parser {
         // Returns "fn" for simple fn, "fn->RetType" for fn with return type
         if self.check("kw_fn") {
             self.advance()
+            // Parse fn type: fn, fn(A, B) -> C, fn -> C
+            mut param_str = ""
             if self.check("left_paren") {
                 self.advance()
+                mut first = true
                 while !self.check("right_paren") && !self.check("eof") {
-                    self.advance()
+                    if !first {
+                        if self.check("comma") { self.advance() }
+                    }
+                    first = false
+                    let pty = self.consume_type("expected parameter type")?
+                    if param_str == "" {
+                        param_str = pty
+                    } else {
+                        param_str = param_str + "," + pty
+                    }
                 }
                 if self.check("right_paren") { self.advance() }
             }
             if self.check("arrow") {
                 self.advance()
                 let ret = self.consume_type("expected return type after `->`")?
+                if param_str != "" {
+                    return "fn(" + param_str + ")->" + ret
+                }
                 return "fn->" + ret
+            }
+            if param_str != "" {
+                return "fn(" + param_str + ")"
             }
             return "fn"
         }

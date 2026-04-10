@@ -100,6 +100,7 @@ export enum ValueType {
     Closure(num_captures: int, ret: ValueType),
     Void,
     Float,
+    FnTyped(params: TypeList, ret: ValueType),
 }
 
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
@@ -114,6 +115,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Struct(n1) -> match b { .Struct(n2) -> n1 == n2, _ -> false }
         .Enum(n1) -> match b { .Enum(n2) -> n1 == n2, _ -> false }
         .Float -> match b { .Float -> true, _ -> false }
+        .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
         _ -> false
     }
 }
@@ -135,11 +137,15 @@ export fn vtype_is_map(t: ValueType) -> bool {
 }
 
 export fn vtype_is_fn(t: ValueType) -> bool {
-    match t { .Fn(_) -> true, .Closure(_, _) -> true, _ -> false }
+    match t { .Fn(_) -> true, .Closure(_, _) -> true, .FnTyped(_, _) -> true, _ -> false }
 }
 
 export fn vtype_fn_ret(t: ValueType) -> ValueType {
-    match t { .Fn(r) -> r, .Closure(_, r) -> r, _ -> ValueType.Int }
+    match t { .Fn(r) -> r, .Closure(_, r) -> r, .FnTyped(_, r) -> r, _ -> ValueType.Int }
+}
+
+export fn vtype_fn_params(t: ValueType) -> TypeList {
+    match t { .FnTyped(p, _) -> p, _ -> TypeList.End }
 }
 
 export fn vtype_closure_captures(t: ValueType) -> int {
@@ -169,6 +175,21 @@ export fn vtype_display(t: ValueType) -> string {
         .Closure(_, _) -> "fn"
         .Void -> "void"
         .Float -> "float"
+        .FnTyped(params, ret) -> "fn(" + render_type_list(params) + ") -> " + vtype_display(ret)
+    }
+}
+
+export fn render_type_list(tl: TypeList) -> string {
+    match tl {
+        .End -> ""
+        .Node(ty, next) -> {
+            let rest = render_type_list(next)
+            if rest == "" {
+                vtype_display(ty)
+            } else {
+                vtype_display(ty) + ", " + rest
+            }
+        }
     }
 }
 

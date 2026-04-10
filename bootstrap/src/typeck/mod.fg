@@ -177,17 +177,63 @@ fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
 
 // ── Type string translation ──
 
+fn tc_find_close_paren(s: string, start: int) -> int {
+    mut depth = 1
+    mut i = start
+    while i < s.length && depth > 0 {
+        let ch = s.substring(i, i + 1)
+        if ch == "(" { depth = depth + 1 }
+        if ch == ")" { depth = depth - 1 }
+        if depth > 0 { i = i + 1 }
+    }
+    i
+}
+
+fn tc_parse_type_list_str(tc: TC, s: string) -> TypeList {
+    if s == "" { return TypeList.End }
+    mut depth = 0
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "(" { depth = depth + 1 }
+        if ch == ")" { depth = depth - 1 }
+        if ch == "," && depth == 0 {
+            let head = s.substring(0, i)
+            let tail = s.substring(i + 1, s.length)
+            return TypeList.Node(translate_type(tc, head), tc_parse_type_list_str(tc, tail))
+        }
+        i = i + 1
+    }
+    TypeList.Node(translate_type(tc, s), TypeList.End)
+}
+
 fn translate_type(tc: TC, ty: string) -> ValueType {
     if ty == "str" || ty == "string" { return ValueType.Str }
     if ty == "i64" || ty == "int" { return ValueType.Int }
     if ty == "bool" { return ValueType.Bool }
     if ty == "ptr" { return ValueType.Ptr }
     if ty == "fn" { return ValueType.Fn(ValueType.Int) }
+    if ty == "float" || ty == "f64" { return ValueType.Float }
     if ty == "List" { return ValueType.List(ValueType.Int) }
     if ty == "Map" { return ValueType.Map }
-    if ty.length > 4 && ty.substring(0, 4) == "fn->" {
-        let ret_name = ty.substring(4, ty.length)
-        return ValueType.Fn(translate_type(tc, ret_name))
+    if ty.length > 2 && ty.substring(0, 2) == "fn" {
+        let rest = ty.substring(2, ty.length)
+        if rest.length > 0 && rest.substring(0, 1) == "(" {
+            let close_idx = tc_find_close_paren(rest, 1)
+            let params_str = rest.substring(1, close_idx)
+            let param_types = tc_parse_type_list_str(tc, params_str)
+            let after_paren = rest.substring(close_idx + 1, rest.length)
+            let ret_ty = if after_paren.length > 2 && after_paren.substring(0, 2) == "->" {
+                translate_type(tc, after_paren.substring(2, after_paren.length))
+            } else {
+                ValueType.Void
+            }
+            return ValueType.FnTyped(param_types, ret_ty)
+        }
+        if rest.length > 2 && rest.substring(0, 2) == "->" {
+            return ValueType.Fn(translate_type(tc, rest.substring(2, rest.length)))
+        }
+        return ValueType.Fn(ValueType.Int)
     }
     if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty) }
     if struct_type_has(tc.structs, ty) { return ValueType.Struct(ty) }
