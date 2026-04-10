@@ -172,6 +172,54 @@ the type first: `use core.ast.{BinOp}` then `fn foo(x: BinOp)`.
 **Fix:** Support dotted type names in `consume_type` parser function.
 Low priority since the import workaround is clean.
 
+### 14. Enum field corruption on re-traversal (CRITICAL codegen bug)
+
+**Severity:** critical (blocks type checker function body checking)
+**Impact:** when the same `StmtList` is traversed twice, enum payload
+fields read as corrupt pointers on the second pass
+
+**Reproduction:**
+```forge
+export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
+    let tc0 = tc_new()
+    let tc1 = collect_decls(tc0, stmts)   // pass 1: reads Function params OK
+    let tc2 = check_stmts(tc1, stmts)     // pass 2: Function params = 0x120a8 (garbage)
+}
+```
+
+The `Function(name, params, ret_ty, body)` variant's `params` field
+(GEP index 2 of `%Stmt`) returns a valid ParamList pointer during
+`collect_decls` but returns `0x120a8` (invalid) during `check_stmts`.
+
+**LLDB output:**
+```
+stop reason = EXC_BAD_ACCESS (code=1, address=0x120a8)
+frame #0: bind_params + 96
+ldrb w10, [x9]   // x9 = 0x120a8 = corrupt ParamList pointer
+```
+
+**IR analysis:**
+- `%Stmt = type { i8, i64, i64, i64, i64 }` — correct layout
+- `%223 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2` — correct index
+- The Stmt pointer `%4` is the same in both passes (same StmtList)
+- Pass 1 reads valid data, pass 2 reads garbage
+
+**Hypothesis:** The `with` expression in `collect_decls` (which mallocs
+a new TC struct and copies fields) may be corrupting adjacent heap
+memory. Or the FnTypeEntry construction is overwriting the StmtList
+node's memory. Needs heap debugging with guard pages or valgrind.
+
+**Current workaround:** `check_stmt` skips `.Function` bodies entirely.
+Type checking only works for top-level code.
+
+**Fix path:**
+1. Build with `-fsanitize=address` (didn't catch it — not a buffer overflow)
+2. Try valgrind or guard malloc (`MallocGuardEdges=1`)
+3. Compare IR for `collect_decls` vs `check_stmts` — both do
+   `.Function(name, params, ret_ty, _)` destructuring, diff the generated GEP
+4. Check if `malloc(48)` in `with` is the right size for TC (6 fields × 8 = 48 ✓)
+5. Check if FnTypeEntry.Node construction overwrites adjacent memory
+
 ## Closed (previously from Rust host era)
 
 Items 1–9 from the old TECH_DEBT.md related to the Rust host compiler
