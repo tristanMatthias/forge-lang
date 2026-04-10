@@ -223,7 +223,6 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
 }
 
 fn check_stmt(tc: TC, stmt: Stmt) -> TC {
-    eprintln("[typeck] check_stmt")
     match stmt {
         .Let(name, ty_str, init) -> {
             let r = check_expr(tc, init)
@@ -277,7 +276,19 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let after = check_stmt(bound, body)
             tc_exit(after)
         }
-        .Function(_, _, _, _) -> tc  // BUG #14: crashes in bind_params
+        .Function(name, params, ret_ty, body) -> {
+            // Inline bind_params to avoid function call boundary issue
+            let inner = tc_enter(tc)
+            let with_params = match params {
+                .End -> inner
+                .Node(pname, pty, _) -> {
+                    let pt = if pty.length > 0 { translate_type(inner, pty) } else { ValueType.Int }
+                    tc_bind(inner, pname, pt)
+                }
+            }
+            let checked = check_stmts(with_params, body)
+            tc_exit(checked)
+        }
         .Match(subject, arms) -> {
             let s = check_expr(tc, subject)
             check_match_arms(s.tc, arms)
