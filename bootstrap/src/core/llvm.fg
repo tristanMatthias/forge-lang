@@ -75,8 +75,18 @@ extern fn forge_llvm_build_sext(b: ptr, val: ptr, dest_ty: ptr, name: string) ->
 extern fn forge_llvm_build_ptr_to_int(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
 extern fn forge_llvm_build_int_to_ptr(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
 extern fn forge_llvm_build_si_to_fp(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fp_to_si(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
 extern fn forge_llvm_build_bitcast(b: ptr, val: ptr, dest_ty: ptr, name: string) -> ptr
 extern fn forge_llvm_double_type(ctx: ptr) -> ptr
+
+// ── Builder — float arithmetic ──
+extern fn forge_llvm_build_fadd(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fsub(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fmul(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fdiv(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_frem(b: ptr, lhs: ptr, rhs: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fneg(b: ptr, val: ptr, name: string) -> ptr
+extern fn forge_llvm_build_fcmp(b: ptr, pred: int, lhs: ptr, rhs: ptr, name: string) -> ptr
 
 // ── Builder — memory ──
 extern fn forge_llvm_build_alloca(b: ptr, ty: ptr, name: string) -> ptr

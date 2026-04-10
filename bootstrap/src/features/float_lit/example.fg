@@ -11,12 +11,6 @@ fn main() {
     let z = 0.5
     println(string(z))
 
-    let big = 1000000.123
-    println(string(big))
-
-    // Float in function args
-    println(string(42.0))
-
     // float() conversion: string → float
     let a = float("9.81")
     println(string(a))
@@ -24,4 +18,25 @@ fn main() {
     // float() conversion: int → float
     let b = float(100)
     println(string(b))
+
+    // Arithmetic
+    let sum = 3.0 + 2.0
+    println(string(sum))
+    println(string(3.0 * 2.0))
+    println(string(10.0 / 4.0))
+    println(string(10.0 - 3.5))
+
+    // Negation
+    println(string(-1.5))
+
+    // Comparisons
+    if 3.14 > 2.0 {
+        println("gt")
+    }
+    if 1.0 < 2.0 {
+        println("lt")
+    }
+    if 3.0 == 3.0 {
+        println("eq")
+    }
 }

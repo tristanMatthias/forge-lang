@@ -311,6 +311,13 @@ The resolver would find them via normal function pre-declaration,
 and the codegen would intercept them in `emit_call_named` as today.
 No hardcoded list needed.
 
+### ~~24. Float arithmetic uses integer LLVM instructions~~ (FIXED)
+
+**Status:** fixed (April 10 2026)
+Float binary ops (+ - * / % == != < <= > >=) and unary negation now
+use fadd/fsub/fmul/fdiv/frem/fcmp/fneg instructions. Int operands
+are auto-promoted to float via sitofp when mixed with float.
+
 ## Closed (previously from Rust host era)
 
 Items 1–9 from the old TECH_DEBT.md related to the Rust host compiler

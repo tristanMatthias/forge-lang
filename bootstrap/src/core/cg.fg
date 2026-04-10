@@ -394,3 +394,12 @@ export fn to_ptr(ctx: Ctx, val: ptr, name: string) -> ptr {
 export fn to_i64(ctx: Ctx, val: ptr, name: string) -> ptr {
     forge_llvm_build_ptr_to_int(ctx.builder, val, ctx.i64_type, name)
 }
+
+// i64 ↔ f64 conversions (float values stored as bitcast i64).
+export fn to_f64(ctx: Ctx, val: ptr, name: string) -> ptr {
+    forge_llvm_build_bitcast(ctx.builder, val, forge_llvm_double_type(ctx.lc), name)
+}
+
+export fn f64_to_i64(ctx: Ctx, val: ptr, name: string) -> ptr {
+    forge_llvm_build_bitcast(ctx.builder, val, ctx.i64_type, name)
+}
