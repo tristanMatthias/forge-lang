@@ -56,7 +56,7 @@ impl Parser {
             let r = self.consume_type("expected return type after `->`")?
             r
         } else {
-            "i64"
+            ""
         }
         // Trait methods are signatures only — reuse ExternFn to
         // represent "declaration without a body".
