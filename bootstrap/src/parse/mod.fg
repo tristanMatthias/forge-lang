@@ -173,6 +173,43 @@ fn wrap_in_it_lambda(expr: Expr) -> Expr {
     Expr.Lambda(ParamList.Node("it", "", ParamList.End), expr)
 }
 
+// Context-sensitive help text for common parse errors.
+fn parse_error_help(message: string, lexeme: string) -> string {
+    if message.contains("expected `{`") {
+        return "blocks require braces: `if cond { ... }`, `fn name() { ... }`"
+    }
+    if message.contains("expected expression") {
+        if lexeme == "}" { return "unexpected `}` — check for missing expression or extra closing brace" }
+        if lexeme == ";" { return "Forge doesn't use semicolons — remove the `;`" }
+        return "expected a value, variable, or expression here"
+    }
+    if message.contains("expected `)`") {
+        return "check for mismatched parentheses"
+    }
+    if message.contains("expected `]`") {
+        return "check for mismatched brackets in list or index expression"
+    }
+    if message.contains("expected `}`") {
+        return "check for mismatched braces — every `{` needs a matching `}`"
+    }
+    if message.contains("unterminated string") {
+        return "add a closing `\"` to end the string literal"
+    }
+    if message.contains("unterminated template") {
+        return "add a closing backtick to end the template string"
+    }
+    if message.contains("expected `->` after pattern") {
+        return "match arms use `->` between pattern and body: `.Variant -> expr`"
+    }
+    if message.contains("expected variable name") {
+        return "for loops need a variable: `for x in collection { ... }`"
+    }
+    if message.contains("expected `in`") {
+        return "for loops use `in`: `for x in list { ... }` or `for i in 0..10 { ... }`"
+    }
+    ""
+}
+
 fn p_starts_with_upper(name: string) -> bool {
     if name.length < 1 {
         return false
@@ -1629,9 +1666,13 @@ impl Parser {
         }
         self.had_error = true
         self.error_message = "parse error at " + string(self.current_line) + ":" + string(self.current_column) + ": " + message
-        // Report structured diagnostic
+        // Report structured diagnostic with context-sensitive help
         let sp = span_new(self.current_start, self.current, self.current_line, self.current_column)
-        let diag = diag_error("F0001", message, sp)
+        mut diag = diag_error("F0001", message, sp)
+        let help = parse_error_help(message, self.current_lexeme)
+        if help.length > 0 {
+            diag = diag_with_help(diag, help)
+        }
         self.bag = bag_report(self.bag, diag)
     }
 }

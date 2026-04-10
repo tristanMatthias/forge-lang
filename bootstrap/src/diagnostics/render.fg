@@ -1,12 +1,28 @@
 // WHY: renders Diagnostics to stderr with source context.
-// Shows the error code, message, source location, underlined
-// span, and help text. No external dependencies.
+// Inspired by rustc and Elm — clear, beautiful, actionable.
 
 use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, Span, Severity, severity_str}
 
+// ── ANSI colors ──
+
+fn color_red(s: string) -> string { "\x1b[1;31m" + s + "\x1b[0m" }
+fn color_yellow(s: string) -> string { "\x1b[1;33m" + s + "\x1b[0m" }
+fn color_cyan(s: string) -> string { "\x1b[1;36m" + s + "\x1b[0m" }
+fn color_bold(s: string) -> string { "\x1b[1m" + s + "\x1b[0m" }
+fn color_dim(s: string) -> string { "\x1b[2m" + s + "\x1b[0m" }
+fn color_blue(s: string) -> string { "\x1b[1;34m" + s + "\x1b[0m" }
+
+fn severity_color(sev: Severity, text: string) -> string {
+    match sev {
+        .Error -> color_red(text)
+        .Warning -> color_yellow(text)
+        .Info -> color_cyan(text)
+        .Hint -> color_blue(text)
+    }
+}
+
 // ── Line extraction ──
 
-// Extract line number `target` (1-based) from source text.
 fn extract_line(source: string, target: int) -> string {
     if target <= 0 { return "" }
     mut line_num = 1
@@ -22,15 +38,14 @@ fn extract_line(source: string, target: int) -> string {
         }
         i = i + 1
     }
-    // Last line (no trailing newline)
     if line_num == target {
         return source.substring(line_start, source.length)
     }
     ""
 }
 
-// Repeat a character `n` times.
 fn repeat_char(ch: string, n: int) -> string {
+    if n <= 0 { return "" }
     mut out = ""
     mut i = 0
     while i < n {
@@ -40,7 +55,6 @@ fn repeat_char(ch: string, n: int) -> string {
     out
 }
 
-// Format a line number with padding for the gutter.
 fn gutter(line: int, width: int) -> string {
     let s = string(line)
     let pad = width - s.length
@@ -49,7 +63,7 @@ fn gutter(line: int, width: int) -> string {
 
 fn gutter_width(line: int) -> int {
     let s = string(line)
-    if s.length < 3 { return 3 }
+    if s.length < 4 { return 4 }
     s.length
 }
 
@@ -60,30 +74,38 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
     let line = diag.span.line
     let col = diag.span.col
     let w = gutter_width(line)
+    let bar = color_blue("|")
+    let blank_gutter = repeat_char(" ", w)
 
     // Header: error[F0012]: message
-    eprintln(`${sev}[${diag.code}]: ${diag.message}`)
+    let header = severity_color(diag.severity, `${sev}[${diag.code}]`)
+    eprintln(`${header}${color_bold(": " + diag.message)}`)
 
-    // Location: --> file.fg:5:10
     if line > 0 {
-        eprintln(`${repeat_char(" ", w)}--> ${filename}:${string(line)}:${string(col)}`)
+        // Location: ──> file.fg:5:10
+        eprintln(`  ${blank_gutter}${color_blue("-->")} ${filename}:${string(line)}:${string(col)}`)
+
+        // Blank gutter line
+        eprintln(`  ${blank_gutter} ${bar}`)
 
         // Source line with gutter
         let src_line = extract_line(source, line)
-        eprintln(`${repeat_char(" ", w)} |`)
-        eprintln(`${gutter(line, w)} | ${src_line}`)
+        eprintln(`  ${color_blue(gutter(line, w))} ${bar} ${src_line}`)
 
-        // Underline
+        // Underline with carets
         let span_len = diag.span.end - diag.span.start
         let underline_len = if span_len > 0 { span_len } else { 1 }
         let padding = repeat_char(" ", col - 1)
         let underline = repeat_char("^", underline_len)
-        eprintln(`${repeat_char(" ", w)} | ${padding}${underline}`)
+        eprintln(`  ${blank_gutter} ${bar} ${padding}${severity_color(diag.severity, underline)}`)
+
+        // Blank gutter line after
+        eprintln(`  ${blank_gutter} ${bar}`)
     }
 
     // Help text
     if diag.help.length > 0 {
-        eprintln(`${repeat_char(" ", w)} = help: ${diag.help}`)
+        eprintln(`  ${blank_gutter} ${color_blue("=")} ${color_bold("help:")} ${diag.help}`)
     }
 
     eprintln("")
@@ -92,19 +114,23 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
 // ── Bag rendering ──
 
 export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
+    eprintln("")
     render_list(source, filename, bag.diagnostics)
     if bag.error_count > 0 || bag.warning_count > 0 {
         mut parts = ""
         if bag.error_count > 0 {
-            parts = string(bag.error_count) + " error"
+            parts = color_red(string(bag.error_count) + " error")
             if bag.error_count > 1 { parts = parts + "s" }
+            parts = parts + "\x1b[0m"
         }
         if bag.warning_count > 0 {
             if parts.length > 0 { parts = parts + " and " }
-            parts = parts + string(bag.warning_count) + " warning"
+            parts = parts + color_yellow(string(bag.warning_count) + " warning")
             if bag.warning_count > 1 { parts = parts + "s" }
+            parts = parts + "\x1b[0m"
         }
-        eprintln(`Found ${parts}.`)
+        eprintln(`${color_bold("Found")} ${parts}${color_bold(".")}`)
+        eprintln("")
     }
 }
 
@@ -112,7 +138,6 @@ fn render_list(source: string, filename: string, list: DiagnosticList) {
     match list {
         .End -> {}
         .Node(diag, next) -> {
-            // Render in reverse order (oldest first) by recursing first
             render_list(source, filename, next)
             render_diagnostic(source, filename, diag)
         }
