@@ -1,0 +1,21 @@
+// Pipe operator with complex chains
+fn double(x: int) -> int { x * 2 }
+fn add_one(x: int) -> int { x + 1 }
+fn to_str(x: int) -> string { string(x) }
+
+let result = 5 |> double |> add_one |> to_str
+println(result)
+
+// Pipe with methods
+let nums = [1, 2, 3, 4, 5]
+let sum = nums
+    .map((x) -> { x * x })
+    .filter((x) -> { x > 5 })
+    .reduce(0, (acc, x) -> { acc + x })
+println(string(sum))
+
+// Pipe with string operations
+fn greet(name: string) -> string { "Hello " + name }
+fn exclaim(s: string) -> string { s + "!" }
+let msg = "World" |> greet |> exclaim
+println(msg)

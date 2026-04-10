@@ -1,0 +1,37 @@
+// Edge case: empty list
+let empty: List = []
+println(string(empty.length))
+
+// Edge case: single element list
+let single = [42]
+println(string(single[0]))
+println(string(single.length))
+
+// Edge case: deeply nested struct access
+type Inner = { value: int }
+type Middle = { inner: Inner }
+type Outer = { middle: Middle }
+
+let o = Outer { middle: Middle { inner: Inner { value: 99 } } }
+println(string(o.middle.inner.value))
+
+// Edge case: match with only wildcard
+let x = 5
+let r = match x {
+    _ -> "catch all"
+}
+println(r)
+
+// Edge case: multiple return paths
+fn abs(n: int) -> int {
+    if n < 0 { return -n }
+    n
+}
+println(string(abs(-7)))
+println(string(abs(3)))
+
+// Edge case: string comparison
+let yes = "abc" == "abc"
+let no = "abc" == "def"
+println(string(yes))
+println(string(no))
