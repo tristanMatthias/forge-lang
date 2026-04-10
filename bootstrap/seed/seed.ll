@@ -12722,80 +12722,94 @@ bb927:
   store i64 %1, ptr %code, align 8
   %message = alloca i64, align 8
   store i64 %2, ptr %message, align 8
-  %3 = load i64, ptr %r, align 8
-  %4 = call ptr @forge_bump_alloc(i64 48)
-  %5 = inttoptr i64 %3 to ptr
-  %6 = getelementptr inbounds %Resolver, ptr %5, i32 0, i32 0
-  %7 = load i64, ptr %6, align 8
-  %8 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 0
-  store i64 %7, ptr %8, align 8
-  %9 = getelementptr inbounds %Resolver, ptr %5, i32 0, i32 1
-  %10 = load i64, ptr %9, align 8
-  %11 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 1
-  store i64 %10, ptr %11, align 8
-  %12 = getelementptr inbounds %Resolver, ptr %5, i32 0, i32 2
-  %13 = load i64, ptr %12, align 8
-  %14 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 2
-  store i64 %13, ptr %14, align 8
-  %15 = getelementptr inbounds %Resolver, ptr %5, i32 0, i32 3
-  %16 = load i64, ptr %15, align 8
-  %17 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 3
-  store i64 %16, ptr %17, align 8
-  %18 = getelementptr inbounds %Resolver, ptr %5, i32 0, i32 4
-  %19 = load i64, ptr %18, align 8
-  %20 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 4
-  store i64 %19, ptr %20, align 8
-  %21 = getelementptr inbounds %Resolver, ptr %5, i32 0, i32 5
-  %22 = load i64, ptr %21, align 8
-  %23 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 5
-  store i64 %22, ptr %23, align 8
-  %24 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 3
-  store i64 1, ptr %24, align 8
-  %25 = load i64, ptr %r, align 8
-  %26 = inttoptr i64 %25 to ptr
-  %27 = getelementptr inbounds %Resolver, ptr %26, i32 0, i32 4
-  %28 = load i64, ptr %27, align 8
-  %29 = inttoptr i64 %28 to ptr
-  %30 = call i64 @strlen(ptr %29)
-  %31 = icmp eq i64 %30, 0
-  %32 = zext i1 %31 to i64
-  %33 = icmp ne i64 %32, 0
+  %3 = load i64, ptr %code, align 8
+  %4 = load i64, ptr %message, align 8
+  %5 = call i64 @span_dummy()
+  %6 = call i64 @diag_error(i64 %3, i64 %4, i64 %5)
+  %diag = alloca i64, align 8
+  store i64 %6, ptr %diag, align 8
+  %7 = load i64, ptr %r, align 8
+  %8 = call ptr @forge_bump_alloc(i64 48)
+  %9 = inttoptr i64 %7 to ptr
+  %10 = getelementptr inbounds %Resolver, ptr %9, i32 0, i32 0
+  %11 = load i64, ptr %10, align 8
+  %12 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 0
+  store i64 %11, ptr %12, align 8
+  %13 = getelementptr inbounds %Resolver, ptr %9, i32 0, i32 1
+  %14 = load i64, ptr %13, align 8
+  %15 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 1
+  store i64 %14, ptr %15, align 8
+  %16 = getelementptr inbounds %Resolver, ptr %9, i32 0, i32 2
+  %17 = load i64, ptr %16, align 8
+  %18 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 2
+  store i64 %17, ptr %18, align 8
+  %19 = getelementptr inbounds %Resolver, ptr %9, i32 0, i32 3
+  %20 = load i64, ptr %19, align 8
+  %21 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 3
+  store i64 %20, ptr %21, align 8
+  %22 = getelementptr inbounds %Resolver, ptr %9, i32 0, i32 4
+  %23 = load i64, ptr %22, align 8
+  %24 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 4
+  store i64 %23, ptr %24, align 8
+  %25 = getelementptr inbounds %Resolver, ptr %9, i32 0, i32 5
+  %26 = load i64, ptr %25, align 8
+  %27 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 5
+  store i64 %26, ptr %27, align 8
+  %28 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 3
+  store i64 1, ptr %28, align 8
+  %29 = load i64, ptr %r, align 8
+  %30 = inttoptr i64 %29 to ptr
+  %31 = getelementptr inbounds %Resolver, ptr %30, i32 0, i32 4
+  %32 = load i64, ptr %31, align 8
+  %33 = inttoptr i64 %32 to ptr
+  %34 = call i64 @strlen(ptr %33)
+  %35 = icmp eq i64 %34, 0
+  %36 = zext i1 %35 to i64
+  %37 = icmp ne i64 %36, 0
   %ife_result = alloca i64, align 8
   store i64 0, ptr %ife_result, align 8
-  br i1 %33, label %bb928, label %bb929
+  br i1 %37, label %bb928, label %bb929
 
 bb928:                                            ; preds = %bb927
-  %34 = load i64, ptr %message, align 8
-  %35 = inttoptr i64 %34 to ptr
-  %36 = call i64 @strlen(ptr @429)
-  %37 = call i64 @strlen(ptr %35)
-  %38 = add i64 %36, %37
-  %39 = add i64 %38, 1
-  %40 = call ptr @forge_bump_alloc(i64 %39)
-  %41 = call ptr @memcpy(ptr %40, ptr @429, i64 %36)
-  %42 = ptrtoint ptr %40 to i64
-  %43 = add i64 %42, %36
-  %44 = inttoptr i64 %43 to ptr
-  %45 = add i64 %37, 1
-  %46 = call ptr @memcpy(ptr %44, ptr %35, i64 %45)
-  %47 = ptrtoint ptr %40 to i64
-  store i64 %47, ptr %ife_result, align 8
-  br label %bb930
-
-bb929:                                            ; preds = %bb927
-  %48 = load i64, ptr %r, align 8
-  %49 = inttoptr i64 %48 to ptr
-  %50 = getelementptr inbounds %Resolver, ptr %49, i32 0, i32 4
-  %51 = load i64, ptr %50, align 8
+  %38 = load i64, ptr %message, align 8
+  %39 = inttoptr i64 %38 to ptr
+  %40 = call i64 @strlen(ptr @429)
+  %41 = call i64 @strlen(ptr %39)
+  %42 = add i64 %40, %41
+  %43 = add i64 %42, 1
+  %44 = call ptr @forge_bump_alloc(i64 %43)
+  %45 = call ptr @memcpy(ptr %44, ptr @429, i64 %40)
+  %46 = ptrtoint ptr %44 to i64
+  %47 = add i64 %46, %40
+  %48 = inttoptr i64 %47 to ptr
+  %49 = add i64 %41, 1
+  %50 = call ptr @memcpy(ptr %48, ptr %39, i64 %49)
+  %51 = ptrtoint ptr %44 to i64
   store i64 %51, ptr %ife_result, align 8
   br label %bb930
 
+bb929:                                            ; preds = %bb927
+  %52 = load i64, ptr %r, align 8
+  %53 = inttoptr i64 %52 to ptr
+  %54 = getelementptr inbounds %Resolver, ptr %53, i32 0, i32 4
+  %55 = load i64, ptr %54, align 8
+  store i64 %55, ptr %ife_result, align 8
+  br label %bb930
+
 bb930:                                            ; preds = %bb929, %bb928
-  %52 = load i64, ptr %ife_result, align 8
-  %53 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 4
-  store i64 %52, ptr %53, align 8
-  %54 = ptrtoint ptr %4 to i64
-  ret i64 %54
+  %56 = load i64, ptr %ife_result, align 8
+  %57 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 4
+  store i64 %56, ptr %57, align 8
+  %58 = load i64, ptr %r, align 8
+  %59 = inttoptr i64 %58 to ptr
+  %60 = getelementptr inbounds %Resolver, ptr %59, i32 0, i32 5
+  %61 = load i64, ptr %60, align 8
+  %62 = load i64, ptr %diag, align 8
+  %63 = call i64 @bag_report(i64 %61, i64 %62)
+  %64 = getelementptr inbounds %Resolver, ptr %8, i32 0, i32 5
+  store i64 %63, ptr %64, align 8
+  %65 = ptrtoint ptr %8 to i64
+  ret i64 %65
 }
 
 define i64 @enter_resolve_scope(i64 %0) {
@@ -66298,7 +66312,7 @@ bb6107:                                           ; preds = %bb6106
   %271 = icmp eq i64 %270, 0
   %272 = zext i1 %271 to i64
   %273 = icmp ne i64 %272, 0
-  br i1 %273, label %bb6119, label %bb6120
+  br i1 %273, label %bb6125, label %bb6126
 
 bb6108:                                           ; preds = %bb6105
   %274 = load i64, ptr %parsed4, align 8
@@ -66319,140 +66333,184 @@ bb6109:                                           ; preds = %bb6108, %bb6105
 bb6110:                                           ; preds = %bb6109
   %284 = load i64, ptr %parsed4, align 8
   %285 = inttoptr i64 %284 to ptr
-  %286 = getelementptr inbounds %ProgramParseResult, ptr %285, i32 0, i32 2
+  %286 = getelementptr inbounds %ProgramParseResult, ptr %285, i32 0, i32 3
   %287 = load i64, ptr %286, align 8
-  %288 = call i64 @fail(i64 %287)
-  br label %bb6112
+  %288 = call i64 @bag_has_errors(i64 %287)
+  %289 = icmp ne i64 %288, 0
+  br i1 %289, label %bb6113, label %bb6114
 
 bb6111:                                           ; preds = %bb6109
   br label %bb6112
 
-bb6112:                                           ; preds = %bb6111, %bb6110
-  %289 = load i64, ptr %parsed4, align 8
-  %290 = inttoptr i64 %289 to ptr
-  %291 = getelementptr inbounds %ProgramParseResult, ptr %290, i32 0, i32 0
-  %292 = load i64, ptr %291, align 8
-  %293 = call i64 @resolve_program(i64 %292)
-  store i64 %293, ptr %resolved5, align 8
-  %294 = load i64, ptr %resolved5, align 8
-  %295 = inttoptr i64 %294 to ptr
-  %296 = getelementptr inbounds %ResolveResult, ptr %295, i32 0, i32 0
-  %297 = load i64, ptr %296, align 8
-  %298 = icmp ne i64 %297, 0
-  br i1 %298, label %bb6113, label %bb6114
+bb6112:                                           ; preds = %bb6111, %bb6115
+  %290 = load i64, ptr %parsed4, align 8
+  %291 = inttoptr i64 %290 to ptr
+  %292 = getelementptr inbounds %ProgramParseResult, ptr %291, i32 0, i32 0
+  %293 = load i64, ptr %292, align 8
+  %294 = call i64 @resolve_program(i64 %293)
+  store i64 %294, ptr %resolved5, align 8
+  %295 = load i64, ptr %resolved5, align 8
+  %296 = inttoptr i64 %295 to ptr
+  %297 = getelementptr inbounds %ResolveResult, ptr %296, i32 0, i32 0
+  %298 = load i64, ptr %297, align 8
+  %299 = icmp ne i64 %298, 0
+  br i1 %299, label %bb6116, label %bb6117
 
-bb6113:                                           ; preds = %bb6112
-  %299 = load i64, ptr %resolved5, align 8
-  %300 = inttoptr i64 %299 to ptr
-  %301 = getelementptr inbounds %ResolveResult, ptr %300, i32 0, i32 1
-  %302 = load i64, ptr %301, align 8
-  %303 = call i64 @fail(i64 %302)
+bb6113:                                           ; preds = %bb6110
+  %300 = load i64, ptr %merged, align 8
+  %301 = load i64, ptr %path, align 8
+  %302 = load i64, ptr %parsed4, align 8
+  %303 = inttoptr i64 %302 to ptr
+  %304 = getelementptr inbounds %ProgramParseResult, ptr %303, i32 0, i32 3
+  %305 = load i64, ptr %304, align 8
+  %306 = call i64 @render_bag(i64 %300, i64 %301, i64 %305)
   br label %bb6115
 
-bb6114:                                           ; preds = %bb6112
+bb6114:                                           ; preds = %bb6110
   br label %bb6115
 
 bb6115:                                           ; preds = %bb6114, %bb6113
-  %304 = load i64, ptr %path, align 8
-  %305 = inttoptr i64 %304 to ptr
-  %306 = call i64 @strlen(ptr %305)
-  %307 = call i64 @strlen(ptr @2046)
-  %308 = add i64 %306, %307
-  %309 = add i64 %308, 1
-  %310 = call ptr @forge_bump_alloc(i64 %309)
-  %311 = call ptr @memcpy(ptr %310, ptr %305, i64 %306)
-  %312 = ptrtoint ptr %310 to i64
-  %313 = add i64 %312, %306
-  %314 = inttoptr i64 %313 to ptr
-  %315 = add i64 %307, 1
-  %316 = call ptr @memcpy(ptr %314, ptr @2046, i64 %315)
-  %317 = ptrtoint ptr %310 to i64
-  store i64 %317, ptr %output, align 8
-  %318 = load i64, ptr %parsed4, align 8
+  %307 = load i64, ptr %parsed4, align 8
+  %308 = inttoptr i64 %307 to ptr
+  %309 = getelementptr inbounds %ProgramParseResult, ptr %308, i32 0, i32 2
+  %310 = load i64, ptr %309, align 8
+  %311 = call i64 @fail(i64 %310)
+  br label %bb6112
+
+bb6116:                                           ; preds = %bb6112
+  %312 = load i64, ptr %resolved5, align 8
+  %313 = inttoptr i64 %312 to ptr
+  %314 = getelementptr inbounds %ResolveResult, ptr %313, i32 0, i32 2
+  %315 = load i64, ptr %314, align 8
+  %316 = call i64 @bag_has_errors(i64 %315)
+  %317 = icmp ne i64 %316, 0
+  br i1 %317, label %bb6119, label %bb6120
+
+bb6117:                                           ; preds = %bb6112
+  br label %bb6118
+
+bb6118:                                           ; preds = %bb6117, %bb6121
+  %318 = load i64, ptr %path, align 8
   %319 = inttoptr i64 %318 to ptr
-  %320 = getelementptr inbounds %ProgramParseResult, ptr %319, i32 0, i32 0
-  %321 = load i64, ptr %320, align 8
-  %322 = load i64, ptr %output, align 8
-  %323 = call i64 @compile_program(i64 %321, i64 %322)
-  store i64 %323, ptr %compiled, align 8
-  %324 = load i64, ptr %compiled, align 8
-  %325 = inttoptr i64 %324 to ptr
-  %326 = getelementptr inbounds %CodegenResult, ptr %325, i32 0, i32 0
-  %327 = load i64, ptr %326, align 8
-  %328 = icmp ne i64 %327, 0
-  br i1 %328, label %bb6116, label %bb6117
+  %320 = call i64 @strlen(ptr %319)
+  %321 = call i64 @strlen(ptr @2046)
+  %322 = add i64 %320, %321
+  %323 = add i64 %322, 1
+  %324 = call ptr @forge_bump_alloc(i64 %323)
+  %325 = call ptr @memcpy(ptr %324, ptr %319, i64 %320)
+  %326 = ptrtoint ptr %324 to i64
+  %327 = add i64 %326, %320
+  %328 = inttoptr i64 %327 to ptr
+  %329 = add i64 %321, 1
+  %330 = call ptr @memcpy(ptr %328, ptr @2046, i64 %329)
+  %331 = ptrtoint ptr %324 to i64
+  store i64 %331, ptr %output, align 8
+  %332 = load i64, ptr %parsed4, align 8
+  %333 = inttoptr i64 %332 to ptr
+  %334 = getelementptr inbounds %ProgramParseResult, ptr %333, i32 0, i32 0
+  %335 = load i64, ptr %334, align 8
+  %336 = load i64, ptr %output, align 8
+  %337 = call i64 @compile_program(i64 %335, i64 %336)
+  store i64 %337, ptr %compiled, align 8
+  %338 = load i64, ptr %compiled, align 8
+  %339 = inttoptr i64 %338 to ptr
+  %340 = getelementptr inbounds %CodegenResult, ptr %339, i32 0, i32 0
+  %341 = load i64, ptr %340, align 8
+  %342 = icmp ne i64 %341, 0
+  br i1 %342, label %bb6122, label %bb6123
 
-bb6116:                                           ; preds = %bb6115
-  %329 = load i64, ptr %compiled, align 8
-  %330 = inttoptr i64 %329 to ptr
-  %331 = getelementptr inbounds %CodegenResult, ptr %330, i32 0, i32 1
-  %332 = load i64, ptr %331, align 8
-  %333 = call i64 @fail(i64 %332)
-  br label %bb6118
-
-bb6117:                                           ; preds = %bb6115
-  br label %bb6118
-
-bb6118:                                           ; preds = %bb6117, %bb6116
-  %334 = load i64, ptr %output, align 8
-  %335 = inttoptr i64 %334 to ptr
-  %336 = call i32 @puts(ptr %335)
-  ret i64 0
-
-bb6119:                                           ; preds = %bb6107
-  %337 = load i64, ptr %source, align 8
-  %338 = call i64 @execute_program_source(i64 %337)
-  store i64 %338, ptr %result6, align 8
-  %339 = load i64, ptr %result6, align 8
-  %340 = inttoptr i64 %339 to ptr
-  %341 = getelementptr inbounds %EvalResult, ptr %340, i32 0, i32 1
-  %342 = load i64, ptr %341, align 8
-  %343 = icmp ne i64 %342, 0
-  br i1 %343, label %bb6123, label %bb6122
-
-bb6120:                                           ; preds = %bb6107
+bb6119:                                           ; preds = %bb6116
+  %343 = load i64, ptr %merged, align 8
+  %344 = load i64, ptr %path, align 8
+  %345 = load i64, ptr %resolved5, align 8
+  %346 = inttoptr i64 %345 to ptr
+  %347 = getelementptr inbounds %ResolveResult, ptr %346, i32 0, i32 2
+  %348 = load i64, ptr %347, align 8
+  %349 = call i64 @render_bag(i64 %343, i64 %344, i64 %348)
   br label %bb6121
 
-bb6121:                                           ; preds = %bb6120
-  %344 = call i64 @print_usage()
-  %345 = call i64 @exit(i64 1)
-  ret i64 %345
+bb6120:                                           ; preds = %bb6116
+  br label %bb6121
 
-bb6122:                                           ; preds = %bb6119
-  %346 = load i64, ptr %result6, align 8
-  %347 = inttoptr i64 %346 to ptr
-  %348 = getelementptr inbounds %EvalResult, ptr %347, i32 0, i32 0
-  %349 = load i64, ptr %348, align 8
-  %350 = icmp eq i64 %349, 0
-  %351 = zext i1 %350 to i64
-  %352 = icmp ne i64 %351, 0
-  br label %bb6123
+bb6121:                                           ; preds = %bb6120, %bb6119
+  %350 = load i64, ptr %resolved5, align 8
+  %351 = inttoptr i64 %350 to ptr
+  %352 = getelementptr inbounds %ResolveResult, ptr %351, i32 0, i32 1
+  %353 = load i64, ptr %352, align 8
+  %354 = call i64 @fail(i64 %353)
+  br label %bb6118
 
-bb6123:                                           ; preds = %bb6122, %bb6119
-  %353 = phi i1 [ true, %bb6119 ], [ %352, %bb6122 ]
-  %354 = zext i1 %353 to i64
-  %355 = icmp ne i64 %354, 0
-  br i1 %355, label %bb6124, label %bb6125
+bb6122:                                           ; preds = %bb6118
+  %355 = load i64, ptr %compiled, align 8
+  %356 = inttoptr i64 %355 to ptr
+  %357 = getelementptr inbounds %CodegenResult, ptr %356, i32 0, i32 1
+  %358 = load i64, ptr %357, align 8
+  %359 = call i64 @fail(i64 %358)
+  br label %bb6124
 
-bb6124:                                           ; preds = %bb6123
-  %356 = load i64, ptr %result6, align 8
-  %357 = inttoptr i64 %356 to ptr
-  %358 = getelementptr inbounds %EvalResult, ptr %357, i32 0, i32 2
-  %359 = load i64, ptr %358, align 8
-  %360 = call i64 @fail(i64 %359)
-  br label %bb6126
+bb6123:                                           ; preds = %bb6118
+  br label %bb6124
 
-bb6125:                                           ; preds = %bb6123
-  br label %bb6126
+bb6124:                                           ; preds = %bb6123, %bb6122
+  %360 = load i64, ptr %output, align 8
+  %361 = inttoptr i64 %360 to ptr
+  %362 = call i32 @puts(ptr %361)
+  ret i64 0
 
-bb6126:                                           ; preds = %bb6125, %bb6124
-  %361 = load i64, ptr %result6, align 8
-  %362 = inttoptr i64 %361 to ptr
-  %363 = getelementptr inbounds %EvalResult, ptr %362, i32 0, i32 0
-  %364 = load i64, ptr %363, align 8
-  %365 = call i64 @render_value(i64 %364)
+bb6125:                                           ; preds = %bb6107
+  %363 = load i64, ptr %source, align 8
+  %364 = call i64 @execute_program_source(i64 %363)
+  store i64 %364, ptr %result6, align 8
+  %365 = load i64, ptr %result6, align 8
   %366 = inttoptr i64 %365 to ptr
-  %367 = call i32 @puts(ptr %366)
+  %367 = getelementptr inbounds %EvalResult, ptr %366, i32 0, i32 1
+  %368 = load i64, ptr %367, align 8
+  %369 = icmp ne i64 %368, 0
+  br i1 %369, label %bb6129, label %bb6128
+
+bb6126:                                           ; preds = %bb6107
+  br label %bb6127
+
+bb6127:                                           ; preds = %bb6126
+  %370 = call i64 @print_usage()
+  %371 = call i64 @exit(i64 1)
+  ret i64 %371
+
+bb6128:                                           ; preds = %bb6125
+  %372 = load i64, ptr %result6, align 8
+  %373 = inttoptr i64 %372 to ptr
+  %374 = getelementptr inbounds %EvalResult, ptr %373, i32 0, i32 0
+  %375 = load i64, ptr %374, align 8
+  %376 = icmp eq i64 %375, 0
+  %377 = zext i1 %376 to i64
+  %378 = icmp ne i64 %377, 0
+  br label %bb6129
+
+bb6129:                                           ; preds = %bb6128, %bb6125
+  %379 = phi i1 [ true, %bb6125 ], [ %378, %bb6128 ]
+  %380 = zext i1 %379 to i64
+  %381 = icmp ne i64 %380, 0
+  br i1 %381, label %bb6130, label %bb6131
+
+bb6130:                                           ; preds = %bb6129
+  %382 = load i64, ptr %result6, align 8
+  %383 = inttoptr i64 %382 to ptr
+  %384 = getelementptr inbounds %EvalResult, ptr %383, i32 0, i32 2
+  %385 = load i64, ptr %384, align 8
+  %386 = call i64 @fail(i64 %385)
+  br label %bb6132
+
+bb6131:                                           ; preds = %bb6129
+  br label %bb6132
+
+bb6132:                                           ; preds = %bb6131, %bb6130
+  %387 = load i64, ptr %result6, align 8
+  %388 = inttoptr i64 %387 to ptr
+  %389 = getelementptr inbounds %EvalResult, ptr %388, i32 0, i32 0
+  %390 = load i64, ptr %389, align 8
+  %391 = call i64 @render_value(i64 %390)
+  %392 = inttoptr i64 %391 to ptr
+  %393 = call i32 @puts(ptr %392)
   ret i64 0
 }
 

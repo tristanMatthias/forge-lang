@@ -268,29 +268,22 @@ every match site (~100+ locations).
 SpanTable indexed by ExprId). Update all construction sites in the
 parser to record spans.
 
-### 19. Type checker: `bind_params` inlined in Function arm
+### ~~19. Type checker: `bind_params` inlined in Function arm~~ (FIXED)
 
-**Severity:** low (workaround for fixed bug)
-**Impact:** the typeck Function arm inlines param binding instead of
-calling `tc_bind_params`. This was a workaround for the name collision
-bug (#14) which is now fixed. The inline can be replaced with a
-proper function call.
+**Status:** fixed. `tc_bind_params` is now a proper function call.
+The name collision with `eval.fg`'s `bind_params` was resolved by
+renaming to `tc_bind_params`.
 
-### 20. Resolver bag reporting disabled
+### ~~20. Resolver bag reporting disabled~~ (FIXED)
 
-**Severity:** medium (resolver errors don't show structured diagnostics)
-**Impact:** `resolve_report` builds Diagnostics but doesn't add them
-to the bag. The render_bag call for resolver errors was removed from
-the compile path. Resolver errors show only the old-style string
-message.
+**Status:** fixed. `resolve_report` now adds diagnostics to the bag.
+Both parse and resolver errors render structured diagnostics in
+compile mode. The render_first_n limit (10) prevents stack overflow.
 
-### 21. render_bag removed from compile path
+### ~~21. render_bag removed from compile path~~ (FIXED)
 
-**Severity:** medium (compile-mode errors lack structured diagnostics)
-**Impact:** the compile command's parse error path doesn't call
-`render_bag`. Only the check command renders structured diagnostics.
-This was removed because the renderer crashed on large inputs during
-the typeck bootstrap.
+**Status:** fixed. render_bag re-enabled for both parse and resolver
+error paths in the compile command.
 
 ### 22. Remaining `malloc` calls in struct/enum constructors
 

@@ -230,10 +230,16 @@ fn main() {
         let merged = preprocess_modules(source, path)
         let parsed = parse_program_source(merged)
         if parsed.had_error || parsed.stmts == null {
+            if bag_has_errors(parsed.bag) {
+                render_bag(merged, path, parsed.bag)
+            }
             fail(parsed.error_message)
         }
         let resolved = resolve_program(parsed.stmts!)
         if resolved.had_error {
+            if bag_has_errors(resolved.bag) {
+                render_bag(merged, path, resolved.bag)
+            }
             fail(resolved.error_message)
         }
         let output = path + ".ll"

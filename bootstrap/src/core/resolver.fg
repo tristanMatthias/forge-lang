@@ -96,12 +96,11 @@ fn set_resolve_error(r: Resolver, message: string) -> Resolver {
 }
 
 fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
-    // NOTE: bag reporting disabled until span tracking is added to
-    // resolver. The bag_report + render_diagnostic path crashes on
-    // large inputs due to a struct layout issue being investigated.
+    let diag = diag_error(code, message, span_dummy())
     r with {
         had_error: true,
         error_message: if r.error_message.length == 0 { "resolve error: " + message } else { r.error_message },
+        bag: bag_report(r.bag, diag),
     }
 }
 
