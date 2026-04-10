@@ -22,7 +22,7 @@ impl Parser {
             let t = self.consume_type("expected type after `:`")?
             t
         } else {
-            "i64"
+            ""
         }
         if !self.consume("equal", "expected `=` after variable name") {
             return null
@@ -42,7 +42,7 @@ impl Parser {
             let t = self.consume_type("expected type after `:`")?
             t
         } else {
-            "i64"
+            ""
         }
         if !self.consume("equal", "expected `=` after variable name") {
             return null

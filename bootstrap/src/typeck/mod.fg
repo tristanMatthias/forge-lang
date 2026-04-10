@@ -605,11 +605,25 @@ fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     }
     if struct_name.length > 0 {
         let fields = struct_type_lookup(o.tc.structs, struct_name)
+        if !tc_field_exists(fields, field) {
+            let msg = "no field `" + field + "` on type `" + struct_name + "`"
+            return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), ValueType.Int)
+        }
         let field_ty = field_type_in(o.tc, fields, field)
         return tc_er(o.tc, field_ty)
     }
     // Map .get is handled in method call
     tc_er(o.tc, ValueType.Int)
+}
+
+fn tc_field_exists(fields: FieldList, name: string) -> bool {
+    match fields {
+        .End -> false
+        .Node(fname, _, next) -> {
+            if fname == name { return true }
+            tc_field_exists(next, name)
+        }
+    }
 }
 
 fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
