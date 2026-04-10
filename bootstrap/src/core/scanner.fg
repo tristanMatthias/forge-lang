@@ -74,35 +74,8 @@ fn is_octal_digit(ch: string) -> bool {
     ch >= "0" && ch <= "7"
 }
 
-fn keyword_kind(text: string) -> string {
-    if text == "and" { return "kw_and" }
-    if text == "const" { return "kw_const" }
-    if text == "else" { return "kw_else" }
-    if text == "false" { return "kw_false" }
-    if text == "fn" { return "kw_fn" }
-    if text == "for" { return "kw_for" }
-    if text == "if" { return "kw_if" }
-    if text == "let" { return "kw_let" }
-    if text == "mod" { return "kw_mod" }
-    if text == "mut" { return "kw_mut" }
-    if text == "not" { return "kw_not" }
-    if text == "null" { return "kw_null" }
-    if text == "or" { return "kw_or" }
-    if text == "return" { return "kw_return" }
-    if text == "true" { return "kw_true" }
-    if text == "use" { return "kw_use" }
-    if text == "while" { return "kw_while" }
-    if text == "type" { return "kw_type" }
-    if text == "enum" { return "kw_enum" }
-    if text == "match" { return "kw_match" }
-    if text == "export" { return "kw_export" }
-    if text == "impl" { return "kw_impl" }
-    if text == "extern" { return "kw_extern" }
-    if text == "break" { return "kw_break" }
-    if text == "continue" { return "kw_continue" }
-    if text == "is" { return "kw_is" }
-    return "identifier"
-}
+// keyword_kind is defined in parse/mod.fg as p_keyword_kind.
+// Single source of truth — no duplicate list. (TECH_DEBT #25 fix)
 
 impl Scanner {
     fn is_at_end(self) -> bool {
@@ -461,6 +434,6 @@ impl Scanner {
         }
 
         let text = self.current_lexeme()
-        self.make_token_with_lexeme(keyword_kind(text), text)
+        self.make_token_with_lexeme(p_keyword_kind(text), text)
     }
 }
