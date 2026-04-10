@@ -779,3 +779,19 @@ void forge_eprintln(const char* s) {
     fputs(s, stderr);
     fputc('\n', stderr);
 }
+
+// ── Float support ──
+int64_t forge_float_parse(const char* s) {
+    double d = strtod(s, NULL);
+    int64_t result;
+    memcpy(&result, &d, sizeof(result));
+    return result;
+}
+
+const char* forge_float_to_string(int64_t bits) {
+    double d;
+    memcpy(&d, &bits, sizeof(d));
+    char* buf = (char*)malloc(32);
+    snprintf(buf, 32, "%g", d);
+    return buf;
+}

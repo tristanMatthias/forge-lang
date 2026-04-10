@@ -90,6 +90,7 @@ export enum ValueType {
     Fn(ret: ValueType),
     Closure(num_captures: int, ret: ValueType),
     Void,
+    Float,
 }
 
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
@@ -103,6 +104,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Void -> match b { .Void -> true, _ -> false }
         .Struct(n1) -> match b { .Struct(n2) -> n1 == n2, _ -> false }
         .Enum(n1) -> match b { .Enum(n2) -> n1 == n2, _ -> false }
+        .Float -> match b { .Float -> true, _ -> false }
         _ -> false
     }
 }
@@ -157,6 +159,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Fn(_) -> "fn"
         .Closure(_, _) -> "fn"
         .Void -> "void"
+        .Float -> "float"
     }
 }
 
@@ -260,6 +263,7 @@ export enum Expr {
     // Entries is a flat list: key1, val1, key2, val2, ...
     MapLit(entries: ExprList)
     Slice(obj: Expr, start: Expr, end: Expr)
+    FloatLit(value: string)
 }
 
 export enum Stmt {
@@ -501,6 +505,7 @@ export fn render_expr(expr: Expr) -> string {
         .ListLit(elements) -> "(list " + render_expr_list(elements) + ")"
         .Lambda(params, body) -> "(lambda " + render_param_list(params) + " " + render_expr(body) + ")"
         .MapLit(entries) -> "(map " + render_expr_list(entries) + ")"
+        .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice " + render_expr(obj) + " " + render_expr(start) + ".." + render_expr(end) + ")"
     }
 }

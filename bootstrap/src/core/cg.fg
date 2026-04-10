@@ -254,6 +254,7 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     if ty == "string" { return ValueType.Str }
     if ty == "i64" { return ValueType.Int }
     if ty == "int" { return ValueType.Int }
+    if ty == "float" || ty == "f64" { return ValueType.Float }
     if ty == "bool" { return ValueType.Bool }
     if ty == "ptr" { return ValueType.Ptr }
     if ty == "fn" { return ValueType.Fn(ValueType.Int) }
