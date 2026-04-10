@@ -765,8 +765,8 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ Error recovery (parser synchronizes + continues)
 - ✅ `\x` hex escapes in lexer (for ANSI codes)
 - ✅ Levenshtein distance for suggestions
-- ⚠️ Resolver bag reporting disabled (TECH_DEBT #20)
-- ⚠️ render_bag removed from compile path (TECH_DEBT #21)
+- ✅ Resolver bag reporting re-enabled (TECH_DEBT #20 FIXED)
+- ✅ render_bag re-enabled in compile path (TECH_DEBT #21 FIXED)
 - ⚠️ No source spans on AST nodes (TECH_DEBT #18)
 
 ### Phase 1: IN PROGRESS
