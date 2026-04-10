@@ -97,6 +97,40 @@ position. Low priority — the braces are idiomatic anyway.
 Previously `Return` was renamed to `Ret` because the Rust host
 compiler rejected it. Now resolved — variant is `Stmt.Return`.
 
+### 9. DiagCode parallel match blocks
+
+**Severity:** medium (DRY violation)
+**Impact:** `diag_code_str` and `diag_code_help` are two separate match
+blocks over the same enum, kept in sync manually
+
+Currently each `DiagCode` variant requires editing two match blocks —
+one for the code string (`"F0010"`) and one for the help text. Adding
+a variant = 3 lines across 2 functions instead of 1.
+
+**Fix:** Collapse into a single `error_def(code: DiagCode) -> ErrorDef`
+match that returns `ErrorDef { code: string, help: string }`. One match,
+each arm returns all metadata for that error on a single line. Blocked
+on the current mid-refactor state — finish wiring `DiagCode` enum into
+parser/resolver first, then collapse.
+
+### 10. Forge needs associated enum data
+
+**Severity:** medium (language gap)
+**Impact:** forces the parallel-match pattern above
+
+Forge enums can't carry static metadata per variant. Rust has
+`impl DiagCode { fn help(&self) -> &str { match self { ... } } }` and
+Swift has computed properties on enum cases. Forge has neither — you
+must write a standalone function with a match. This is the root cause
+of debt item #9. Eventually the language should support one of:
+
+- `impl` on enums with `self` dispatch (already parsed, not codegen'd for enums)
+- Static associated data: `enum Thing { Value { label: "x" } }`
+- Derive-style attribute: `@display enum DiagCode { ... }`
+
+**Plan:** Add enum impl codegen support (we already parse `impl EnumName`).
+Then `diag_code_str` and `diag_code_help` become methods on `DiagCode`.
+
 ## Closed (previously from Rust host era)
 
 Items 1–9 from the old TECH_DEBT.md related to the Rust host compiler
