@@ -636,7 +636,7 @@ impl Parser {
         mut result = expr
         // If [ appears on a DIFFERENT line than the previous token,
         // it's a new statement (list literal), not postfix indexing.
-        while self.check("left_paren") || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || (self.check("left_bracket") && self.current_line == self.prev_line) || self.check("question_dot") || self.check("question") {
+        while (self.check("left_paren") && self.current_line == self.prev_line) || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || (self.check("left_bracket") && self.current_line == self.prev_line) || self.check("question_dot") || self.check("question") {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check("bang") {

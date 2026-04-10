@@ -98,6 +98,14 @@ fn find_captures_list(exprs: ExprList, params: ParamList, env: VarEnv, captures:
     }
 }
 
+fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+    match stmt {
+        .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
+        .Expr(e) -> find_captures(e, params, env, captures)
+        _ -> captures
+    }
+}
+
 fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match stmts {
         .End -> captures
@@ -107,6 +115,21 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
                 .Return(e) -> find_captures(e, params, env, captures)
                 .Let(_, _, init) -> find_captures(init, params, env, captures)
                 .Mut(_, _, init) -> find_captures(init, params, env, captures)
+                .If(cond, then_branch, _) -> {
+                    let cc = find_captures(cond, params, env, captures)
+                    find_captures_stmt_body(then_branch, params, env, cc)
+                }
+                .While(cond, body) -> {
+                    let cc = find_captures(cond, params, env, captures)
+                    find_captures_stmt_body(body, params, env, cc)
+                }
+                .For(_, start, end, body) -> {
+                    let cc = find_captures(start, params, env, captures)
+                    let cc2 = find_captures(end, params, env, cc)
+                    find_captures_stmt_body(body, params, env, cc2)
+                }
+                .Block(inner_stmts) -> find_captures_stmts(inner_stmts, params, env, captures)
+                .Match(subject, _) -> find_captures(subject, params, env, captures)
                 _ -> captures
             }
             find_captures_stmts(next, params, env, c1)

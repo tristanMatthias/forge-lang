@@ -1,0 +1,9 @@
+// Nullable closure
+fn maybe_transform(use_double: int) -> fn(int) -> int {
+    if use_double == 1 { return (x) -> x * 2 }
+    (x) -> x
+}
+let t1 = maybe_transform(1)
+let t2 = maybe_transform(0)
+println(string(t1(5)))
+println(string(t2(5)))

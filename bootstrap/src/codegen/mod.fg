@@ -329,7 +329,6 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         forge_llvm_build_ret(builder, forge_llvm_const_int(i64t, 0, 0))
     }
 
-    // Verify
     let verify = forge_llvm_verify_module_print(m)
     if verify != 0 {
         forge_llvm_dispose_builder(builder)
