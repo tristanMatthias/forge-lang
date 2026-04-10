@@ -327,15 +327,22 @@ impl Parser {
         }
 
         if !stop_at_right_brace && self.check("right_brace") {
-            self.set_error("unexpected `}`")
-            return null
+            // Report but recover — skip the `}` and keep going
+            self.report(DiagCode.MismatchedBrace, "unexpected `}`")
+            self.advance()
+            return self.parse_statement_list(stop_at_right_brace)
         }
 
-        let stmt = self.parse_declaration()?
+        let stmt = self.parse_declaration()
+        if stmt == null {
+            // Error already reported — synchronize and continue
+            self.synchronize()
+            return self.parse_statement_list(stop_at_right_brace)
+        }
 
         let next = self.parse_statement_list(stop_at_right_brace)?
 
-        StmtList.Node(stmt, next)
+        StmtList.Node(stmt!, next)
     }
 
     fn parse_declaration(self) -> Stmt? {
@@ -1637,11 +1644,27 @@ impl Parser {
     }
 
     fn report(self, code: DiagCode, message: string) {
-        if self.had_error { return }
-        self.had_error = true
-        self.error_message = "parse error at " + string(self.current_line) + ":" + string(self.current_column) + ": " + message
+        // Always add to the bag — even if we already had an error.
+        // This lets us show ALL parse errors, not just the first.
         let sp = span_new(self.current_start, self.current, self.current_line, self.current_column)
         let diag = diag_error(code, message, sp)
         self.bag = bag_report(self.bag, diag)
+        // Set had_error + message for backward compat (first error wins)
+        if !self.had_error {
+            self.had_error = true
+            self.error_message = "parse error at " + string(self.current_line) + ":" + string(self.current_column) + ": " + message
+        }
+    }
+
+    // Panic-mode recovery: skip tokens until we find something that
+    // looks like the start of a new statement. This lets us resume
+    // parsing and find more errors.
+    fn synchronize(self) {
+        while !self.check("eof") {
+            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_trait") || self.check("kw_defer") || self.check("right_brace") {
+                return
+            }
+            self.advance()
+        }
     }
 }
