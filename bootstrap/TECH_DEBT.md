@@ -172,7 +172,23 @@ the type first: `use core.ast.{BinOp}` then `fn foo(x: BinOp)`.
 **Fix:** Support dotted type names in `consume_type` parser function.
 Low priority since the import workaround is clean.
 
-### 14. Enum field corruption on re-traversal (CRITICAL codegen bug)
+### 14. check_stmt crashes on Function body checking (CRITICAL)
+
+**UPDATE:** The bump allocator (item #15) did NOT fix this. The crash
+persists even with monotonic allocation. It is NOT heap corruption.
+The crash is in `bind_params` accessing the `params` field of a
+`Function` Stmt variant — the pointer is garbage (0x120a8).
+
+The crash only happens for SMALL programs compiled via `check` mode.
+The full compiler source compiles fine via `compile` mode (which
+doesn't call the type checker). This suggests the bug is specific to
+how the type checker traverses small StmtLists, not a general enum
+field access issue.
+
+**Current workaround:** `.Function` arm returns `tc` unchanged (skips
+function body checking entirely).
+
+### 14b. Original diagnosis — Enum field corruption on re-traversal
 
 **Severity:** critical (blocks type checker function body checking)
 **Impact:** when the same `StmtList` is traversed twice, enum payload
@@ -219,6 +235,31 @@ Type checking only works for top-level code.
    `.Function(name, params, ret_ty, _)` destructuring, diff the generated GEP
 4. Check if `malloc(48)` in `with` is the right size for TC (6 fields × 8 = 48 ✓)
 5. Check if FnTypeEntry.Node construction overwrites adjacent memory
+
+### 15. Bump allocator (STEPPING STONE — will be removed)
+
+**Severity:** low (intentional temporary solution)
+**Impact:** all struct/enum/with allocations use a monotonic bump
+allocator (512MB arena, no free, no reuse). Prevents heap corruption
+class of bugs but wastes memory.
+
+**What it replaces:** `malloc` for value-type allocations. Array/map
+code still uses system malloc (needs realloc).
+
+**Memory strategy roadmap:**
+1. **Now:** bump allocator (no corruption, no free, process exits)
+2. **Next:** Application-level ref-counting (automatic, deterministic,
+   no GC — the default Forge memory model)
+3. **Then:** Systems-level ownership tracking (Rust-style, zero overhead,
+   compiler-checked lifetimes)
+4. **Later:** Bare-level manual allocation (you call alloc/free)
+5. **Eventually:** Hardware-level volatile (memory-mapped I/O)
+
+See `docs/idea_scoped_abstraction_levels.md` for the full vision.
+
+**When to remove:** when Application-level ref-counting is implemented
+in the real compiler. The bump allocator is bootstrap-only — it never
+ships in any user-facing binary.
 
 ## Closed (previously from Rust host era)
 

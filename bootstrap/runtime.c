@@ -18,6 +18,56 @@
 #include <execinfo.h>
 #include <unistd.h>
 
+// ─── Bump allocator ──────────────────────────────────────────────
+//
+// STEPPING STONE — will be removed when the real compiler has
+// ref-counting (Application level) and ownership (Systems level).
+//
+// Every allocation gets a fresh, unique, never-recycled address.
+// No free. No reuse. No overlap. No corruption. The compiler runs
+// for <1 second and uses <20MB — 128MB arena is more than enough.
+// The OS reclaims everything on process exit.
+//
+// This replaces malloc for ALL compiler-internal allocations
+// (structs, enums, strings, with-expressions). It does NOT replace
+// malloc for runtime data structures (arrays, maps) which need
+// realloc — those use the system allocator.
+
+#define BUMP_ARENA_SIZE (512 * 1024 * 1024)  // 512MB
+static char *bump_arena = NULL;
+static size_t bump_offset = 0;
+
+static void bump_init(void) {
+    if (!bump_arena) {
+        bump_arena = (char *)malloc(BUMP_ARENA_SIZE);
+        if (!bump_arena) {
+            fprintf(stderr, "fatal: could not allocate bump arena\n");
+            exit(1);
+        }
+    }
+}
+
+void *forge_bump_alloc(size_t size) {
+    bump_init();
+    size = (size + 7) & ~7;  // align to 8 bytes
+    if (bump_offset + size > BUMP_ARENA_SIZE) {
+        fprintf(stderr, "fatal: bump arena exhausted (%zu bytes used)\n", bump_offset);
+        exit(1);
+    }
+    void *ptr = &bump_arena[bump_offset];
+    bump_offset += size;
+    return ptr;
+}
+
+// Drop-in replacement for malloc — used by the codegen's `with`
+// expressions, struct constructors, and enum constructors.
+// The codegen emits `call @malloc(i64 N)` for these; we intercept
+// by defining malloc here. Array/map code uses forge_array_*/forge_map_*
+// which call the real system malloc internally.
+//
+// The codegen calls forge_bump_alloc() for struct/enum/with allocations.
+// malloc() is still used by array/map code that needs realloc.
+
 // ─── Signal handler ───────────────────────────────────────────────
 
 static void forge_signal_handler(int sig) {

@@ -276,15 +276,7 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let after = check_stmt(bound, body)
             tc_exit(after)
         }
-        .Function(_, _, _, _) -> {
-            // SKIP: Function body checking crashes due to a codegen bug
-            // where the Stmt's params field reads as a corrupt pointer
-            // after the declaration pass. The params are valid during
-            // collect_decls (pass 1) but corrupt when re-read in pass 2.
-            // Filed as codegen bug — investigate Stmt enum field access
-            // across multiple traversals of the same StmtList.
-            tc
-        }
+        .Function(_, _, _, _) -> tc  // BLOCKED: crashes in bind_params (bug #14)
         .Match(subject, arms) -> {
             let s = check_expr(tc, subject)
             check_match_arms(s.tc, arms)

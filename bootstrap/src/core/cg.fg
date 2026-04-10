@@ -364,9 +364,11 @@ export fn call_named_1(ctx: Ctx, name: string, a0: ptr, result_name: string) -> 
     call_1(ctx, get_fn(ctx, name), a0, result_name)
 }
 
-// malloc(size) → ptr
+// Allocate memory for structs, enums, with-expressions.
+// Uses bump allocator (no free, no reuse, no corruption).
+// malloc is still declared for array/map code that needs realloc.
 export fn cg_malloc(ctx: Ctx, size: ptr) -> ptr {
-    call_named_1(ctx, "malloc", size, "buf")
+    call_named_1(ctx, "forge_bump_alloc", size, "buf")
 }
 
 // Allocate a new basic block and position the builder at its end.

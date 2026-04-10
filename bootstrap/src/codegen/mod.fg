@@ -71,6 +71,14 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(malloc_param_arr)
     forge_llvm_add_function(m, "malloc", malloc_type)
 
+    // Bump allocator — used by cg_malloc for struct/enum/with allocations.
+    // Same signature as malloc: (i64) -> ptr
+    let bump_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(bump_param_arr, 0, i64t)
+    let bump_type = forge_llvm_function_type(pt, bump_param_arr, 1, 0)
+    forge_llvm_type_array_free(bump_param_arr)
+    forge_llvm_add_function(m, "forge_bump_alloc", bump_type)
+
     let memcpy_param_arr = forge_llvm_type_array_new(3)
     forge_llvm_type_array_set(memcpy_param_arr, 0, pt)
     forge_llvm_type_array_set(memcpy_param_arr, 1, pt)
