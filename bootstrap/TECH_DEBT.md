@@ -131,6 +131,47 @@ of debt item #9. Eventually the language should support one of:
 **Plan:** Add enum impl codegen support (we already parse `impl EnumName`).
 Then `diag_code_str` and `diag_code_help` become methods on `DiagCode`.
 
+### 11. render_diagnostic crashes on bad input
+
+**Severity:** high (blocks bootstrap)
+**Impact:** any diagnostic with a dummy span or corrupt data crashes
+the entire compiler. This blocked the type checker bootstrap for 30+
+minutes across multiple seed cycles.
+
+Three compounding bugs:
+1. `render_diagnostic` crashes when `col == 0` (substring with negative index)
+2. `render_list` stack-overflows on 100+ diagnostics (recursive linked list)
+3. Parse/resolve errors masked by crash — can't see the real error
+
+**Fix:** Make `render_diagnostic` crash-proof. Guard every field access.
+Use iterative rendering (or hard limit). Add a C-side `forge_safe_render`
+that catches SIGSEGV and prints a fallback message.
+
+### 12. Seed bootstrap requires multiple manual cycles
+
+**Severity:** medium (DX pain)
+**Impact:** adding a new module requires: disable module → update seed →
+re-enable module → update seed. If any step crashes, diagnosis is hard
+because the crash is in the OLD seed binary, not the new code.
+
+**Fix:**
+1. `make` should catch compilation crashes and print the error message
+   instead of just "bs2 codegen failed"
+2. Add `--dry-run` mode (parse + resolve only, no codegen) for validating
+   new source before committing to a seed cycle
+3. The Makefile should detect resolver errors and skip render_bag
+4. Consider a "bridge" compilation mode that compiles new modules with
+   the old seed but links them separately
+
+### 13. Dotted types not supported in parameters
+
+**Severity:** low (easy workaround)
+**Impact:** `fn foo(x: core.ast.BinOp)` fails to parse. Must import
+the type first: `use core.ast.{BinOp}` then `fn foo(x: BinOp)`.
+
+**Fix:** Support dotted type names in `consume_type` parser function.
+Low priority since the import workaround is clean.
+
 ## Closed (previously from Rust host era)
 
 Items 1–9 from the old TECH_DEBT.md related to the Rust host compiler
