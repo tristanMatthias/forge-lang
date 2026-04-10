@@ -276,7 +276,7 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let after = check_stmt(bound, body)
             tc_exit(after)
         }
-        .Function(_, _, _, _) -> tc  // BLOCKED: crashes in bind_params (bug #14)
+        .Function(_, _, _, _) -> tc  // BUG #14: crashes in bind_params
         .Match(subject, arms) -> {
             let s = check_expr(tc, subject)
             check_match_arms(s.tc, arms)
