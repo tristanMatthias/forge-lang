@@ -202,6 +202,7 @@ fn is_builtin(name: string) -> bool {
     if name == "eprintln" { return true }
     if name == "string" { return true }
     if name == "int" { return true }
+    if name == "panic" { return true }
     if name == "self" { return true }
     false
 }

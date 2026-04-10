@@ -272,6 +272,26 @@ The `malloc_struct_bytes` and `malloc_enum_bytes` functions were
 fixed, but the SEED hasn't been fully regenerated to eliminate all
 old `malloc` patterns.
 
+### 23. Hardcoded `is_builtin` list in resolver
+
+**Severity:** medium (doesn't scale)
+**Impact:** every new builtin function (println, string, int, panic,
+etc.) requires adding a line to `is_builtin()` in resolver.fg. This
+is a maintenance trap — the resolver and codegen must stay in sync
+manually.
+
+**Proper fix:** declare builtins as `extern fn` in a prelude that
+gets prepended to every program before parsing:
+```forge
+extern fn println(s: string)
+extern fn string(x: int) -> string
+extern fn int(s: string) -> int
+extern fn panic(msg: string)
+```
+The resolver would find them via normal function pre-declaration,
+and the codegen would intercept them in `emit_call_named` as today.
+No hardcoded list needed.
+
 ## Closed (previously from Rust host era)
 
 Items 1–9 from the old TECH_DEBT.md related to the Rust host compiler

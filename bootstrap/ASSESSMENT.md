@@ -80,7 +80,7 @@
 | 73 | force unwrap (!) | ✅ | |
 | 74 | optional chaining (?.) | ✅ | |
 | 75 | null coalescing (??) | ✅ | |
-| 76 | null throw | 🔲 | |
+| 76 | null throw / panic | ✅ | `panic("msg")`, `x ?? panic("err")` |
 | 77 | error propagation (?) | ✅ | dogfooded (98 patterns) |
 | 78 | catch blocks | 🔲 | |
 | 79 | list literal | ✅ | [1,2,3] via forge_array_* | |

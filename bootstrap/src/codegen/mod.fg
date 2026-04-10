@@ -1296,6 +1296,9 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
     if name == "int" {
         return emit_string_to_int(ctx, env, args)
     }
+    if name == "panic" {
+        return emit_panic(ctx, env, args)
+    }
     let fn_val = forge_llvm_get_named_function(ctx.module, name)
     if fn_val == null {
         // Not a named function — might be a lambda stored in a variable.
@@ -1370,6 +1373,26 @@ fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             let result32 = call_1(ctx, get_fn(ctx, "atoi"), str_ptr, "atoi_call")
             // Sign-extend i32 → i64.
             ok_emit(forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "atoi_ext"))
+        }
+    }
+}
+
+fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+    match args {
+        .End -> err_emit("panic() expects 1 argument")
+        .Node(arg, _) -> {
+            let r = emit_expr(ctx, env, arg)
+            if r.had_error { return r }
+            // Print "panic: <message>\n" to stderr via puts
+            let prefix = forge_llvm_build_global_string_ptr(ctx.builder, "panic: ", ".panic_prefix")
+            let prefix_i64 = to_i64(ctx, prefix, "prefix_i64")
+            let msg = emit_concat(ctx, prefix_i64, r.value)
+            let msg_ptr = to_ptr(ctx, msg.value, "panic_msg")
+            call_1(ctx, get_fn(ctx, "puts"), msg_ptr, "")
+            // exit(1)
+            call_1(ctx, get_fn(ctx, "exit"), const_i64(ctx, 1), "")
+            // Unreachable — but return a value for the type system
+            ok_emit(const_i64(ctx, 0))
         }
     }
 }
