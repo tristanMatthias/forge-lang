@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (131 total: 91 done, 27 todo, 10 n/a)
+## Feature Progress (131 total: 95 done, 23 todo, 10 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -24,7 +24,7 @@
 | 18 | extern fn | ✅ | |
 | 19 | fn types | ✅ | ValueType.Fn(ret) carries return type |
 | 20 | closures / lambdas | ✅ | lifted functions + indirect calls |
-| 21 | `it` parameter | 🔲 | needs closures |
+| 21 | `it` parameter | ✅ | parser sugar: `list.map(it * 2)` |
 | 22 | generics | ✅ | parsed, erased |
 | 23 | generic constraints | 🔲 | |
 | 24 | type declaration | ✅ | |
@@ -54,7 +54,7 @@
 | 47 | for-range | ✅ | |
 | 48 | break / continue | ✅ | |
 | 49 | expression blocks | ✅ | |
-| 50 | defer | 🔲 | |
+| 50 | defer | ✅ | LIFO order, works with early return |
 | 51 | arithmetic | ✅ | |
 | 52 | comparison | ✅ | |
 | 53 | logical (&&/\|\|) | ✅ | short-circuit |
@@ -62,7 +62,7 @@
 | 55 | unary | ✅ | |
 | 56 | bitwise | ✅ | &, |, ^, <<, >>, ~, % | |
 | 57 | pipe | ✅ | |
-| 58 | ranges | 🔲 | |
+| 58 | ranges | ✅ | `for i in 0..10 { }` |
 | 59 | type operators | 🔲 | |
 | 60 | string literals | ✅ | |
 | 61 | string concat | ✅ | |
