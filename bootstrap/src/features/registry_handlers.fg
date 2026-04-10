@@ -87,3 +87,42 @@ export fn reg_emit_slice(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
 export fn reg_emit_is_check(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname), _ -> err_emit("expected IsCheck") }
 }
+
+// ── Statement handlers ──
+
+use core.ast.{Stmt, StmtList, ParamList, SExpr}
+use core.cg.{StmtResult, ok_stmt, err_stmt}
+
+export fn reg_emit_if(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .If(cond, then_b, else_b) -> emit_if(ctx, env, cond, then_b, else_b), _ -> err_stmt("expected If") }
+}
+
+export fn reg_emit_while(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .While(cond, body) -> emit_while(ctx, env, cond, body), _ -> err_stmt("expected While") }
+}
+
+export fn reg_emit_for(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .For(var, start, end, body) -> emit_for(ctx, env, var, start, end, body), _ -> err_stmt("expected For") }
+}
+
+export fn reg_emit_for_in(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .ForIn(var, coll, body) -> emit_for_in(ctx, env, var, coll, body), _ -> err_stmt("expected ForIn") }
+}
+
+export fn reg_emit_match_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .Match(subject, arms) -> emit_match(ctx, env, subject, arms), _ -> err_stmt("expected Match") }
+}
+
+export fn reg_emit_let_destructure(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .LetDestructure(names, init) -> emit_let_destructure(ctx, env, names, init), _ -> err_stmt("expected LetDestructure") }
+}
+
+export fn reg_emit_defer(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt {
+        .Defer(body) -> {
+            defer_push(sexpr_dummy(body))
+            ok_stmt(env)
+        }
+        _ -> err_stmt("expected Defer")
+    }
+}

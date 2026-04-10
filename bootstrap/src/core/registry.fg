@@ -10,7 +10,7 @@
 
 use core.ast.{Expr, Stmt, ValueType, VarEnv, TypeList}
 use core.cg.{Ctx, EmitResult, StmtResult, err_emit, err_stmt}
-use features.registry_handlers.{reg_emit_struct_lit, reg_emit_field_access, reg_emit_enum_ctor, reg_emit_index, reg_emit_block_expr, reg_emit_match_expr, reg_emit_field_assign, reg_emit_if_expr, reg_emit_null_coalesce, reg_emit_optional_chain, reg_emit_try, reg_emit_tuple, reg_emit_tuple_index, reg_emit_with, reg_emit_list_lit, reg_emit_lambda, reg_emit_map_lit, reg_emit_slice, reg_emit_is_check}
+use features.registry_handlers.{reg_emit_struct_lit, reg_emit_field_access, reg_emit_enum_ctor, reg_emit_index, reg_emit_block_expr, reg_emit_match_expr, reg_emit_field_assign, reg_emit_if_expr, reg_emit_null_coalesce, reg_emit_optional_chain, reg_emit_try, reg_emit_tuple, reg_emit_tuple_index, reg_emit_with, reg_emit_list_lit, reg_emit_lambda, reg_emit_map_lit, reg_emit_slice, reg_emit_is_check, reg_emit_if, reg_emit_while, reg_emit_for, reg_emit_for_in, reg_emit_match_stmt, reg_emit_let_destructure, reg_emit_defer}
 
 // C-side helpers to extract enum discriminant tags.
 extern fn forge_expr_tag(expr: int) -> int
@@ -148,5 +148,12 @@ export fn build_expr_registry() -> ExprRegistry {
 
 export fn build_stmt_registry() -> StmtRegistry {
     mut reg = StmtRegistry.End
+    reg = register_stmt(reg, "if",              4, reg_emit_if)
+    reg = register_stmt(reg, "while",           5, reg_emit_while)
+    reg = register_stmt(reg, "for",             6, reg_emit_for)
+    reg = register_stmt(reg, "for_in",          7, reg_emit_for_in)
+    reg = register_stmt(reg, "match",           13, reg_emit_match_stmt)
+    reg = register_stmt(reg, "let_destructure", 20, reg_emit_let_destructure)
+    reg = register_stmt(reg, "defer",           21, reg_emit_defer)
     reg
 }

@@ -7,7 +7,7 @@
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display, SStmt, SExpr, sexpr_dummy}
 use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
-use core.registry.{build_expr_registry, build_stmt_registry, dispatch_expr, forge_expr_tag}
+use core.registry.{build_expr_registry, build_stmt_registry, dispatch_expr, dispatch_stmt, forge_expr_tag, forge_stmt_tag}
 
 // ── Direct C extern declarations ──
 //
@@ -637,17 +637,14 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             // Block exits restore the outer scope.
             ok_stmt(env)
         }
-        .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
-        .While(condition, body) -> emit_while(ctx, env, condition, body)
-        .For(variable, start, end, body) -> emit_for(ctx, env, variable, start, end, body)
-        .ForIn(variable, collection, body) -> emit_for_in(ctx, env, variable, collection, body)
-        // These are handled in pre-passes (register_types, register_fns); no IR here
+        // Declaration statements: handled in pre-passes, no IR emitted
         .TypeDecl(_, _) -> ok_stmt(env)
         .EnumDecl(_, _) -> ok_stmt(env)
         .Impl(_, _) -> ok_stmt(env)
         .ExternFn(_, _, _) -> ok_stmt(env)
         .NoOp -> ok_stmt(env)
-        .Match(subject, arms) -> emit_match(ctx, env, subject, arms)
+        .TraitDecl(_, _) -> ok_stmt(env)
+        // Loop control: must stay in core (needs access to LoopStack)
         .Break -> {
             let frame = loops_top(ctx.loops)
             if !frame.found {
@@ -664,13 +661,15 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             forge_llvm_build_br(ctx.builder, frame.cond_bb)
             ok_stmt(env)
         }
-        .TraitDecl(_, _) -> ok_stmt(env)  // trait decls are type metadata, no codegen
-        .LetDestructure(names, initializer) -> emit_let_destructure(ctx, env, names, initializer)
-        .Defer(body) -> {
-            defer_push(sexpr_dummy(body))
-            ok_stmt(env)
+        // All other statement types dispatch through the feature registry.
+        _ -> {
+            let tag = forge_stmt_tag(stmt)
+            let result = dispatch_stmt(ctx.stmt_features, tag, ctx, env, stmt)
+            if result != null {
+                return result!
+            }
+            err_stmt("codegen error: unsupported statement type (tag=" + string(tag) + ")")
         }
-        _ -> err_stmt("codegen error: unsupported statement type")
     }
 }
 
