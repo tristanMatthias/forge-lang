@@ -1,5 +1,6 @@
 // WHY: renders Diagnostics to stderr with source context.
-// Inspired by rustc and Elm — clear, beautiful, actionable.
+// Hybrid design inspired by ariadne (box frame), miette (severity
+// symbols), Roc (Unicode separators), and codespan (connecting carets).
 
 use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, Span, Severity, severity_str, diag_code_str}
 
@@ -11,6 +12,7 @@ fn color_cyan(s: string) -> string { "\x1b[1;36m" + s + "\x1b[0m" }
 fn color_bold(s: string) -> string { "\x1b[1m" + s + "\x1b[0m" }
 fn color_dim(s: string) -> string { "\x1b[2m" + s + "\x1b[0m" }
 fn color_blue(s: string) -> string { "\x1b[1;34m" + s + "\x1b[0m" }
+fn color_magenta(s: string) -> string { "\x1b[1;35m" + s + "\x1b[0m" }
 
 fn severity_color(sev: Severity, text: string) -> string {
     match sev {
@@ -20,6 +22,25 @@ fn severity_color(sev: Severity, text: string) -> string {
         .Hint -> color_blue(text)
     }
 }
+
+fn severity_symbol(sev: Severity) -> string {
+    match sev {
+        .Error -> color_red("\xc3\x97")      // × (U+00D7)
+        .Warning -> color_yellow("\xe2\x9a\xa0")  // ⚠ (U+26A0)
+        .Info -> color_cyan("i")
+        .Hint -> color_blue("\xe2\x98\x9e")   // ☞ (U+261E)
+    }
+}
+
+// ── Unicode box drawing ──
+
+fn chr_vbar() -> string { "\xe2\x94\x82" }         // │ U+2502
+fn chr_hbar() -> string { "\xe2\x94\x80" }         // ─ U+2500
+fn chr_ltop() -> string { "\xe2\x95\xad" }         // ╭ U+256D
+fn chr_lbot() -> string { "\xe2\x95\xb0" }         // ╰ U+2570
+fn chr_rbot() -> string { "\xe2\x95\xaf" }         // ╯ U+256F
+fn chr_caret() -> string { "\xe2\x94\xac" }        // ┬ U+252C
+fn chr_dot() -> string { "\xc2\xb7" }              // · U+00B7
 
 // ── Line extraction ──
 
@@ -55,6 +76,10 @@ fn repeat_char(ch: string, n: int) -> string {
     out
 }
 
+fn repeat_hbar(n: int) -> string {
+    repeat_char(chr_hbar(), n)
+}
+
 fn gutter(line: int, width: int) -> string {
     let s = string(line)
     let pad = width - s.length
@@ -63,50 +88,68 @@ fn gutter(line: int, width: int) -> string {
 
 fn gutter_width(line: int) -> int {
     let s = string(line)
-    if s.length < 4 { return 4 }
+    if s.length < 3 { return 3 }
     s.length
 }
 
 // ── Single diagnostic rendering ──
 
 export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) {
-    let sev = severity_str(diag.severity)
     let line = diag.span.line
     let col = diag.span.col
     let w = gutter_width(line)
-    let bar = color_blue("|")
-    let blank_gutter = repeat_char(" ", w)
-
-    // Header: error[F0012]: message
+    let vbar = color_blue(chr_vbar())
+    let pad = repeat_char(" ", w)
     let code_str = diag_code_str(diag.code)
+
+    // Header:  × error[F0010]: expected `{` after if condition
+    let sym = severity_symbol(diag.severity)
+    let sev = severity_str(diag.severity)
     let header = severity_color(diag.severity, `${sev}[${code_str}]`)
-    eprintln(`${header}${color_bold(": " + diag.message)}`)
+    eprintln(`  ${sym} ${header}${color_bold(": " + diag.message)}`)
 
     if line > 0 {
-        // Location: ──> file.fg:5:10
-        eprintln(`  ${blank_gutter}${color_blue("-->")} ${filename}:${string(line)}:${string(col)}`)
+        // Box top: ╭─[file.fg:2:5]
+        let loc = `${filename}:${string(line)}:${string(col)}`
+        eprintln(`  ${pad} ${color_blue(chr_ltop() + chr_hbar())}[${loc}]`)
 
-        // Blank gutter line
-        eprintln(`  ${blank_gutter} ${bar}`)
+        // Blank gutter
+        eprintln(`  ${pad} ${vbar}`)
 
-        // Source line with gutter
+        // Source line
         let src_line = extract_line(source, line)
-        eprintln(`  ${color_blue(gutter(line, w))} ${bar} ${src_line}`)
+        eprintln(`  ${color_blue(gutter(line, w))} ${vbar} ${src_line}`)
 
-        // Underline with carets
+        // Caret line:  · │   ──┬──
         let span_len = diag.span.end - diag.span.start
         let underline_len = if span_len > 0 { span_len } else { 1 }
-        let padding = repeat_char(" ", col - 1)
-        let underline = repeat_char("^", underline_len)
-        eprintln(`  ${blank_gutter} ${bar} ${padding}${severity_color(diag.severity, underline)}`)
+        let before = repeat_char(" ", col - 1)
 
-        // Blank gutter line after
-        eprintln(`  ${blank_gutter} ${bar}`)
+        if underline_len == 1 {
+            // Single char: just ┬
+            let caret = severity_color(diag.severity, chr_caret())
+            eprintln(`  ${color_blue(pad + " " + chr_dot())} ${before}${caret}`)
+        } else {
+            // Multi char: ──┬──
+            let half = underline_len / 2
+            let left_bars = repeat_hbar(half)
+            let right_bars = repeat_hbar(underline_len - half - 1)
+            let caret_line = severity_color(diag.severity, left_bars + chr_caret() + right_bars)
+            eprintln(`  ${color_blue(pad + " " + chr_dot())} ${before}${caret_line}`)
+        }
+
+        // Label line:  · │   ╰── message
+        let label_pad = repeat_char(" ", col - 1 + underline_len / 2)
+        let connector = severity_color(diag.severity, chr_lbot() + chr_hbar() + chr_hbar())
+        eprintln(`  ${color_blue(pad + " " + chr_dot())} ${label_pad}${connector} ${diag.message}`)
+
+        // Box bottom: ───╯
+        eprintln(`${repeat_char(chr_hbar(), w + 3)}${color_blue(chr_rbot())}`)
     }
 
     // Help text
     if diag.help.length > 0 {
-        eprintln(`  ${blank_gutter} ${color_blue("=")} ${color_bold("help:")} ${diag.help}`)
+        eprintln(`  ${color_bold("help:")} ${diag.help}`)
     }
 
     eprintln("")
