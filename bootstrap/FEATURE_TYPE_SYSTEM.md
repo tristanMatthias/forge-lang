@@ -779,10 +779,10 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ Wired into `check` command with rendering
 - ✅ Resolver + parse diagnostics re-enabled in compile mode
 - ✅ Parser default type changed from "i64" to "" (enables type inference)
+- ✅ Type checker runs in both check AND compile modes (zero false positives)
 - ⚠️ No source spans on diagnostics (TECH_DEBT #18)
 - ❌ No type annotations on AST nodes
 - ❌ Codegen still has all vtype_is_* calls (0 removed)
-- ❌ Type checker silent during compile (only runs in check mode)
 
 ### Phase 2: NOT STARTED
 
