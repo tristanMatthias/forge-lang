@@ -31,7 +31,7 @@ impl Parser {
             let r = self.consume_type("expected return type after `->`")?
             r
         } else {
-            "i64"
+            ""
         }
 
         if !self.consume("left_brace", "expected `{` after function parameters") {

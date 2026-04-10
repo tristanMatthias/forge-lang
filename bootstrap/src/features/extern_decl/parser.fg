@@ -22,7 +22,7 @@ impl Parser {
             let r = self.consume_type("expected return type after `->`")?
             r
         } else {
-            "i64"
+            ""
         }
         Stmt.ExternFn(name, params, ret_ty)
     }
