@@ -64,22 +64,86 @@ export enum LabelList {
     Node(label: Label, next: LabelList)
 }
 
+// ── Error codes ──
+// Each error has an enum variant. All metadata (code string, help
+// text) is returned from a single `error_def` match — one place
+// to add a new error, one line per variant.
+
+export enum DiagCode {
+    // Syntax / Lexer (F00xx)
+    SyntaxError
+    ExpectedBlock
+    MismatchedParen
+    MismatchedBracket
+    MismatchedBrace
+    ExpectedArrow
+    UnterminatedString
+    UnterminatedTemplate
+    ExpectedForVar
+    ExpectedIn
+    ExpectedExpression
+    UnexpectedSemicolon
+    // Name resolution (F01xx)
+    UndefinedVariable
+    ImmutableAssign
+    // Type checking (F02xx) — reserved for Phase 1
+    TypeMismatch
+    WrongArgCount
+    // Internal (F09xx)
+    InternalError
+}
+
+export type ErrorDef = { code: string, help: string }
+
+// Single source of truth for all error metadata.
+// Add a new error = 1 enum variant + 1 match arm here.
+export fn error_def(d: DiagCode) -> ErrorDef {
+    match d {
+        .SyntaxError         -> ErrorDef { code: "F0001", help: "" }
+        .ExpectedBlock       -> ErrorDef { code: "F0010", help: "blocks require braces: `if cond { ... }`, `fn name() { ... }`" }
+        .MismatchedParen     -> ErrorDef { code: "F0011", help: "check for mismatched parentheses" }
+        .MismatchedBracket   -> ErrorDef { code: "F0012", help: "check for mismatched brackets in list or index expression" }
+        .MismatchedBrace     -> ErrorDef { code: "F0013", help: "check for mismatched braces — every `{` needs a matching `}`" }
+        .ExpectedArrow       -> ErrorDef { code: "F0014", help: "match arms use `->` between pattern and body: `.Variant -> expr`" }
+        .UnterminatedString  -> ErrorDef { code: "F0020", help: "add a closing `\"` to end the string literal" }
+        .UnterminatedTemplate -> ErrorDef { code: "F0021", help: "add a closing backtick to end the template string" }
+        .ExpectedForVar      -> ErrorDef { code: "F0030", help: "for loops need a variable: `for x in collection { ... }`" }
+        .ExpectedIn          -> ErrorDef { code: "F0031", help: "for loops use `in`: `for x in list { ... }` or `for i in 0..10 { ... }`" }
+        .ExpectedExpression  -> ErrorDef { code: "F0040", help: "expected a value, variable, or expression here" }
+        .UnexpectedSemicolon -> ErrorDef { code: "F0041", help: "Forge doesn't use semicolons — remove the `;`" }
+        .UndefinedVariable   -> ErrorDef { code: "F0100", help: "" }
+        .ImmutableAssign     -> ErrorDef { code: "F0101", help: "declare with `mut` instead of `let` to allow reassignment" }
+        .TypeMismatch        -> ErrorDef { code: "F0200", help: "" }
+        .WrongArgCount       -> ErrorDef { code: "F0201", help: "" }
+        .InternalError       -> ErrorDef { code: "F0999", help: "" }
+    }
+}
+
+export fn diag_code_str(code: DiagCode) -> string {
+    error_def(code).code
+}
+
+export fn diag_code_help(code: DiagCode) -> string {
+    error_def(code).help
+}
+
 // ── Diagnostic ──
 
 export type Diagnostic = {
-    code: string,
+    code: DiagCode,
     severity: Severity,
     message: string,
     span: Span,
-    help: string,       // empty string = no help
+    help: string,       // empty string = use default from code
 }
 
-export fn diag_error(code: string, message: string, span: Span) -> Diagnostic {
-    Diagnostic { code, severity: Severity.Error, message, span, help: "" }
+// Create an error diagnostic. Help text auto-filled from the code.
+export fn diag_error(code: DiagCode, message: string, span: Span) -> Diagnostic {
+    Diagnostic { code, severity: Severity.Error, message, span, help: diag_code_help(code) }
 }
 
-export fn diag_warning(code: string, message: string, span: Span) -> Diagnostic {
-    Diagnostic { code, severity: Severity.Warning, message, span, help: "" }
+export fn diag_warning(code: DiagCode, message: string, span: Span) -> Diagnostic {
+    Diagnostic { code, severity: Severity.Warning, message, span, help: diag_code_help(code) }
 }
 
 export fn diag_with_help(d: Diagnostic, help: string) -> Diagnostic {

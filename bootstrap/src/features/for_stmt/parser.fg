@@ -3,6 +3,7 @@
 
 use core.ast.{Stmt}
 use parse.{Parser}
+use diagnostics.{DiagCode}
 
 impl Parser {
     fn parse_for_statement(self) -> Stmt? {
@@ -30,7 +31,7 @@ impl Parser {
             if end == null { return null }
 
             if !self.check("left_brace") {
-                self.set_error("expected `{` after for range")
+                self.report(DiagCode.ExpectedBlock, "expected `{` after for range")
                 return null
             }
             let body = self.parse_statement()?
@@ -39,7 +40,7 @@ impl Parser {
 
         // Collection form: `for x in list { body }`
         if !self.check("left_brace") {
-            self.set_error("expected `{` or `..` after for expression")
+            self.report(DiagCode.ExpectedBlock, "expected `{` or `..` after for expression")
             return null
         }
         let body = self.parse_statement()?

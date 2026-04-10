@@ -1,7 +1,7 @@
 // WHY: renders Diagnostics to stderr with source context.
 // Inspired by rustc and Elm — clear, beautiful, actionable.
 
-use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, Span, Severity, severity_str}
+use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, Span, Severity, severity_str, diag_code_str}
 
 // ── ANSI colors ──
 
@@ -78,7 +78,8 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
     let blank_gutter = repeat_char(" ", w)
 
     // Header: error[F0012]: message
-    let header = severity_color(diag.severity, `${sev}[${diag.code}]`)
+    let code_str = diag_code_str(diag.code)
+    let header = severity_color(diag.severity, `${sev}[${code_str}]`)
     eprintln(`${header}${color_bold(": " + diag.message)}`)
 
     if line > 0 {

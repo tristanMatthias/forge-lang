@@ -5,7 +5,7 @@
 // Feature-specific parsers extend Parser via cross-file impl blocks.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp}
-use diagnostics.{Span, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
+use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
 export type ParseResult = {
     expr: Expr?,
@@ -171,43 +171,6 @@ fn stmt_list_contains_it(list: StmtList) -> bool {
 // Wrap an expression in an implicit `(it) -> { expr }` lambda.
 fn wrap_in_it_lambda(expr: Expr) -> Expr {
     Expr.Lambda(ParamList.Node("it", "", ParamList.End), expr)
-}
-
-// Context-sensitive help text for common parse errors.
-fn parse_error_help(message: string, lexeme: string) -> string {
-    if message.contains("expected `{`") {
-        return "blocks require braces: `if cond { ... }`, `fn name() { ... }`"
-    }
-    if message.contains("expected expression") {
-        if lexeme == "}" { return "unexpected `}` — check for missing expression or extra closing brace" }
-        if lexeme == ";" { return "Forge doesn't use semicolons — remove the `;`" }
-        return "expected a value, variable, or expression here"
-    }
-    if message.contains("expected `)`") {
-        return "check for mismatched parentheses"
-    }
-    if message.contains("expected `]`") {
-        return "check for mismatched brackets in list or index expression"
-    }
-    if message.contains("expected `}`") {
-        return "check for mismatched braces — every `{` needs a matching `}`"
-    }
-    if message.contains("unterminated string") {
-        return "add a closing `\"` to end the string literal"
-    }
-    if message.contains("unterminated template") {
-        return "add a closing backtick to end the template string"
-    }
-    if message.contains("expected `->` after pattern") {
-        return "match arms use `->` between pattern and body: `.Variant -> expr`"
-    }
-    if message.contains("expected variable name") {
-        return "for loops need a variable: `for x in collection { ... }`"
-    }
-    if message.contains("expected `in`") {
-        return "for loops use `in`: `for x in list { ... }` or `for i in 0..10 { ... }`"
-    }
-    ""
 }
 
 fn p_starts_with_upper(name: string) -> bool {
@@ -1016,7 +979,11 @@ impl Parser {
             return self.parse_block_expression()
         }
 
-        self.set_error("expected expression")
+        if self.current_lexeme == ";" {
+            self.report(DiagCode.UnexpectedSemicolon, "unexpected `;`")
+        } else {
+            self.report(DiagCode.ExpectedExpression, "expected expression")
+        }
         null
     }
 
@@ -1517,7 +1484,7 @@ impl Parser {
         }
 
         if self.is_at_end() {
-            self.set_error("unterminated string")
+            self.report(DiagCode.UnterminatedString, "unterminated string")
             self.set_current("error", "")
             return
         }
@@ -1537,7 +1504,7 @@ impl Parser {
             self.advance_char()
         }
         if self.is_at_end() {
-            self.set_error("unterminated template string")
+            self.report(DiagCode.UnterminatedTemplate, "unterminated template string")
             self.set_current("error", "")
             return
         }
@@ -1661,18 +1628,15 @@ impl Parser {
     }
 
     fn set_error(self, message: string) {
-        if self.had_error {
-            return
-        }
+        self.report(DiagCode.SyntaxError, message)
+    }
+
+    fn report(self, code: DiagCode, message: string) {
+        if self.had_error { return }
         self.had_error = true
         self.error_message = "parse error at " + string(self.current_line) + ":" + string(self.current_column) + ": " + message
-        // Report structured diagnostic with context-sensitive help
         let sp = span_new(self.current_start, self.current, self.current_line, self.current_column)
-        mut diag = diag_error("F0001", message, sp)
-        let help = parse_error_help(message, self.current_lexeme)
-        if help.length > 0 {
-            diag = diag_with_help(diag, help)
-        }
+        let diag = diag_error(code, message, sp)
         self.bag = bag_report(self.bag, diag)
     }
 }
