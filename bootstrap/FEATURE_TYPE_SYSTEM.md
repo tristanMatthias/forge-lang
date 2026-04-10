@@ -767,7 +767,7 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ Levenshtein distance for suggestions
 - ✅ Resolver bag reporting re-enabled (TECH_DEBT #20 FIXED)
 - ✅ render_bag re-enabled in compile path (TECH_DEBT #21 FIXED)
-- ⚠️ No source spans on AST nodes (TECH_DEBT #18)
+- ✅ Source spans on AST nodes via SExpr/SStmt wrappers (TECH_DEBT #18 DONE)
 
 ### Phase 1: IN PROGRESS
 - ✅ Type checker created (`src/typeck/mod.fg`, top-level module)
@@ -789,7 +789,7 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ String indexing returns Str (not Int fallback)
 - ✅ False positives reduced from 10 to 1 on self-compilation
 - ✅ Parser default types fixed across fn/impl/extern/let/mut
-- ⚠️ No source spans on diagnostics (TECH_DEBT #18)
+- ✅ Source spans on diagnostics — errors show line:col + source context (TECH_DEBT #18 DONE)
 - ⚠️ No type annotations on AST nodes — but codegen already tracks
   types via EmitResult.ty, so this is a DRY improvement not a correctness fix
 - ⚠️ Codegen still has 27 vtype_is_* calls — but these dispatch on
