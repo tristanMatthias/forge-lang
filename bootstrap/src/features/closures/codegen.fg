@@ -334,39 +334,16 @@ fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, n
 }
 
 fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> EmitResult {
-    // Unified indirect call — handles BOTH bare fn pointers AND closure
-    // arrays transparently. No arity limits, no C trampolines.
+    // Indirect call for values with unknown closure status at compile time.
+    // This happens when a fn returns a closure but the return type says
+    // Fn/FnTyped (the type system can't distinguish bare ptrs from
+    // closure arrays through function boundaries).
     //
-    // 1. Call forge_closure_get_fn to extract the fn pointer (works for both)
-    // 2. Call forge_closure_num_captures to get capture count (0 for bare ptrs)
-    // 3. Build a value array with [user_args..., captures...]
-    // 4. Emit a direct LLVM indirect call
+    // Uses forge_closure_call_N trampolines which handle both bare
+    // function pointers and closure arrays at runtime via
+    // forge_closure_dispatch in runtime.c. Supports up to 8 total
+    // args (user + captures).
     let user_arg_count = expr_list_length(args)
-
-    let resolved_fn = call_1(ctx, get_fn(ctx, "forge_closure_get_fn"), fn_i64, "resolved_fn")
-    let fn_ptr = forge_llvm_build_int_to_ptr(ctx.builder, resolved_fn, ctx.ptr_type, "fn_ptr")
-    let num_caps = call_1(ctx, get_fn(ctx, "forge_closure_num_captures"), fn_i64, "num_caps")
-
-    // We need to handle two cases at COMPILE TIME since LLVM call
-    // instructions need a fixed arg count. But num_caps is a runtime value.
-    // Solution: for the general case, use the maximum possible capture
-    // count. But we don't know it at compile time.
-    //
-    // Practical approach: since this path is for values whose type says
-    // Fn (not Closure), AND closures that pass through return values lose
-    // their Closure type, we use forge_closure_call_N C trampolines only
-    // when the type is ambiguous. For known-bare-fn calls (from Ident
-    // resolution of named functions), we skip to direct call.
-    //
-    // For now: use forge_closure_call_N for any indirect call that
-    // MIGHT be a closure. This is the safe path.
-
-    // Fast path: if we KNOW it's a bare fn pointer (type == Fn from a
-    // named function reference), do a direct call with no capture handling.
-    // This is the common case for the feature registry.
-
-    // Slow path: use the appropriate forge_closure_call_N trampoline.
-    // These handle both bare ptrs and closure arrays at runtime.
     if user_arg_count == 0 {
         return ok_emit(call_1(ctx, get_fn(ctx, "forge_closure_call_0"), fn_i64, "ccall"))
     }
