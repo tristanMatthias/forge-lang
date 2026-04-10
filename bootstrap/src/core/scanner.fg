@@ -100,6 +100,7 @@ fn keyword_kind(text: string) -> string {
     if text == "extern" { return "kw_extern" }
     if text == "break" { return "kw_break" }
     if text == "continue" { return "kw_continue" }
+    if text == "is" { return "kw_is" }
     return "identifier"
 }
 

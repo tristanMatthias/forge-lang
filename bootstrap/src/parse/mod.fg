@@ -234,6 +234,7 @@ fn p_keyword_kind(text: string) -> string {
     if text == "defer" { return "kw_defer" }
     if text == "trait" { return "kw_trait" }
     if text == "with" { return "kw_with" }
+    if text == "is" { return "kw_is" }
     return "identifier"
 }
 
@@ -551,6 +552,15 @@ impl Parser {
 
     fn parse_equality(self) -> Expr? {
         let left = self.parse_bitwise_or()?
+
+        if self.check("kw_is") {
+            self.advance()
+            if !self.consume("dot", "expected `.Variant` after `is`") {
+                return null
+            }
+            let vname = self.consume_identifier("expected variant name after `is .`")?
+            return Expr.IsCheck(left, vname)
+        }
 
         mut expr = left
         while self.check("equal_equal") || self.check("bang_equal") {

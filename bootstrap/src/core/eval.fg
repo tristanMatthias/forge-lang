@@ -539,6 +539,7 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .Lambda(_, _) -> error_result(runtime, "lambdas are not supported by the tree-walk evaluator")
         .MapLit(_) -> error_result(runtime, "map literals are not supported by the tree-walk evaluator")
         .Slice(_, _, _) -> error_result(runtime, "slicing is not supported by the tree-walk evaluator")
+        .IsCheck(_, _) -> error_result(runtime, "is-check is not supported by the tree-walk evaluator")
     }
 }
 

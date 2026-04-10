@@ -273,6 +273,7 @@ export enum Expr {
     MapLit(entries: ExprList)
     Slice(obj: Expr, start: Expr, end: Expr)
     FloatLit(value: string)
+    IsCheck(subject: Expr, variant_name: string)
 }
 
 export enum Stmt {
@@ -516,6 +517,7 @@ export fn render_expr(expr: Expr) -> string {
         .MapLit(entries) -> "(map " + render_expr_list(entries) + ")"
         .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice " + render_expr(obj) + " " + render_expr(start) + ".." + render_expr(end) + ")"
+        .IsCheck(subject, vname) -> "(is " + render_expr(subject) + " ." + vname + ")"
     }
 }
 

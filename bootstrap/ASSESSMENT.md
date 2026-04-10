@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 90 done, 26 todo, 10 n/a, 6 partial)
+## Feature Progress (132 total: 92 done, 24 todo, 10 n/a, 6 partial)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -45,7 +45,7 @@
 | 39 | match guards | ✅ | pattern if cond -> body |
 | 39b | literal patterns | ✅ | string/int/bool in match arms |
 | 40 | match tables | 🔲 | |
-| 41 | `is` keyword | 🔲 | |
+| 41 | `is` keyword | ✅ | `value is .Variant` returns bool |
 | 42 | contextual resolution | 🔲 | |
 | 43 | if / else | ✅ | stmt + expr |
 | 44 | else if | ✅ | |

@@ -563,6 +563,10 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let v = check_expr(tc, value)
             tc_er(v.tc, v.ty)
         }
+        .IsCheck(subject, _) -> {
+            let s = check_expr(tc, subject)
+            tc_er(s.tc, ValueType.Bool)
+        }
         _ -> tc_er(tc, ValueType.Int)
     }
 }

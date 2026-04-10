@@ -311,6 +311,19 @@ The resolver would find them via normal function pre-declaration,
 and the codegen would intercept them in `emit_call_named` as today.
 No hardcoded list needed.
 
+### 25. Duplicate keyword lists (scanner.fg + parse/mod.fg)
+
+**Severity:** medium (silent bugs when adding keywords)
+**Impact:** `keyword_kind` in `scanner.fg` and `p_keyword_kind` in
+`parse/mod.fg` are separate copies of the same keyword→token-kind
+mapping. The parser uses `p_keyword_kind`. Adding a keyword to only
+one list means it silently doesn't work. Cost us hours debugging the
+`is` keyword.
+
+**Proper fix:** Delete `keyword_kind` from `scanner.fg` (it's dead code
+since the parser has its own). Or consolidate into a single function
+that both import.
+
 ### ~~24. Float arithmetic uses integer LLVM instructions~~ (FIXED)
 
 **Status:** fixed (April 10 2026)

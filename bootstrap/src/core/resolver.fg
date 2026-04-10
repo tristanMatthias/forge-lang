@@ -481,6 +481,7 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             let after_obj = resolve_expr(r, obj)
             resolve_field_init_list(after_obj, overrides)
         }
+        .IsCheck(subject, _) -> resolve_expr(r, subject)
     }
 }
 
