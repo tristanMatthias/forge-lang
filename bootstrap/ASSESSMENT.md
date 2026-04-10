@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (131 total: 95 done, 23 todo, 10 n/a)
+## Feature Progress (132 total: 87 done, 29 todo, 10 n/a, 6 partial)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
