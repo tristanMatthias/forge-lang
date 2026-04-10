@@ -1,6 +1,7 @@
 // Float literal support — f64 values stored as i64 bit patterns.
 
 fn main() {
+    // Float literals
     let x = 3.14
     println(string(x))
 
@@ -15,4 +16,12 @@ fn main() {
 
     // Float in function args
     println(string(42.0))
+
+    // float() conversion: string → float
+    let a = float("9.81")
+    println(string(a))
+
+    // float() conversion: int → float
+    let b = float(100)
+    println(string(b))
 }

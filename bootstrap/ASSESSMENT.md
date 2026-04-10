@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 87 done, 29 todo, 10 n/a, 6 partial)
+## Feature Progress (132 total: 89 done, 27 todo, 10 n/a, 6 partial)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -12,7 +12,7 @@
 | 6 | field mutability | ✅ | parsed, not enforced |
 | 7 | shorthand fields | ✅ | |
 | 8 | int (i64) | ✅ | |
-| 9 | float (f64) | 🔲 | |
+| 9 | float (f64) | ✅ | literals, string(), type checker |
 | 10 | string | ✅ | |
 | 11 | bool | ✅ | |
 | 12 | null | ✅ | |
@@ -99,7 +99,7 @@
 | 92 | eprintln / eprint | ✅ | now actually writes to stderr |
 | 93 | string() conversion | ✅ | |
 | 94 | int() conversion | ✅ | |
-| 95 | float() conversion | 🔲 | |
+| 95 | float() conversion | ✅ | string→float, int→float |
 | 96 | file_exists | ✅ | compiler-only; user programs need `extern fn` |
 | 97 | read_file | ✅ | compiler-only; user programs need `extern fn` |
 | 98 | write_file | ✅ | compiler-only; user programs need `extern fn` |

@@ -1315,6 +1315,9 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
     if name == "int" {
         return emit_string_to_int(ctx, env, args)
     }
+    if name == "float" {
+        return emit_string_to_float(ctx, env, args)
+    }
     if name == "panic" {
         return emit_panic(ctx, env, args)
     }
@@ -1396,6 +1399,28 @@ fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             let result32 = call_1(ctx, get_fn(ctx, "atoi"), str_ptr, "atoi_call")
             // Sign-extend i32 → i64.
             ok_emit(forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "atoi_ext"))
+        }
+    }
+}
+
+fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+    // float(str) → f64 bits via forge_float_parse.
+    // float(int) → f64 bits via int-to-double cast + bitcast.
+    match args {
+        .End -> err_emit("float() expects 1 arg")
+        .Node(se, _) -> {
+            let r = emit_expr(ctx, env, se.node)
+            if r.had_error { return r }
+            if vtype_eq(r.ty, ValueType.Float) {
+                return r
+            }
+            if vtype_is_str(r.ty) {
+                let str_ptr = to_ptr(ctx, r.value, "f_parse_arg")
+                return ok_emit_typed(call_1(ctx, get_fn(ctx, "forge_float_parse"), str_ptr, "f_bits"), ValueType.Float)
+            }
+            // Int → float: use sitofp + bitcast
+            let dbl = forge_llvm_build_si_to_fp(ctx.builder, r.value, forge_llvm_double_type(ctx.lc), "i2f")
+            ok_emit_typed(forge_llvm_build_bitcast(ctx.builder, dbl, ctx.i64_type, "f_bits"), ValueType.Float)
         }
     }
 }
