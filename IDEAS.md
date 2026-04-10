@@ -52,6 +52,7 @@ std/mobile
   - @syntax should be removed and just part of component creation
 - What could be done with control flow graphs? Vizualize? Deployment analytics? 
 - Remove "self" in components
+- Read up more on https://martinfowler.com/articles/mechanical-sympathy-principles.html and this entire website
 ### New compiler (forgec)
 - new_thing/thing_new is an antipattern, we need a better init/constructor story
 

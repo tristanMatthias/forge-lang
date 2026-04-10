@@ -233,7 +233,26 @@ overriding the inferred `Struct("Foo")` from the initializer. Fix:
 changed parser default from `"i64"` to `""` (empty). Applied across
 `let`, `mut`, `fn`, `impl`, `extern`, `trait` parsers.
 
-### 18. Type checker: no source spans on diagnostics
+### 18. Type checker: no source spans on diagnostics (BLOCKED)
+
+**Status:** blocked by bootstrap chicken-and-egg
+
+**The wrapper struct approach (SExpr/SStmt) was attempted** — all ~200
+edits across 22 files were made, but the bootstrap fails because
+changing ExprList/StmtList/MatchArmList container types causes the
+OLD seed's resolver to read the wrong data layout (it destructures
+.Node(pattern, guard: Expr, body: Expr) but gets SExpr values).
+
+**Fix path:** two-phase bootstrap:
+1. Phase A: add SExpr/SStmt types + helper functions to ast.fg WITHOUT
+   changing any container types. Update seed.
+2. Phase B: change container types (ExprList, StmtList, FieldInitList,
+   MatchArmList). The Phase A seed understands the new types so it
+   can compile Phase B code correctly.
+
+**Alternative:** C-side span table (simpler but adds global state).
+
+### 18b. Original description — Type checker: no source spans on diagnostics
 
 **Severity:** medium (DX limitation)
 **Impact:** type checker errors show the error code and message but
