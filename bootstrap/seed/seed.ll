@@ -1495,631 +1495,630 @@ source_filename = "bootstrap"
 @1414 = private unnamed_addr constant [8 x i8] c"tag_ptr\00", align 1
 @1415 = private unnamed_addr constant [9 x i8] c"enum_i64\00", align 1
 @1416 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1417 = private unnamed_addr constant [7 x i8] c"malloc\00", align 1
-@1418 = private unnamed_addr constant [9 x i8] c"enum_buf\00", align 1
-@1419 = private unnamed_addr constant [9 x i8] c"epay_ptr\00", align 1
+@1417 = private unnamed_addr constant [9 x i8] c"epay_ptr\00", align 1
+@1418 = private unnamed_addr constant [5 x i8] c"less\00", align 1
+@1419 = private unnamed_addr constant [32 x i8] c"expected type name after `impl`\00", align 1
 @1420 = private unnamed_addr constant [5 x i8] c"less\00", align 1
-@1421 = private unnamed_addr constant [32 x i8] c"expected type name after `impl`\00", align 1
-@1422 = private unnamed_addr constant [5 x i8] c"less\00", align 1
-@1423 = private unnamed_addr constant [7 x i8] c"kw_for\00", align 1
-@1424 = private unnamed_addr constant [31 x i8] c"expected type name after `for`\00", align 1
-@1425 = private unnamed_addr constant [5 x i8] c"less\00", align 1
-@1426 = private unnamed_addr constant [11 x i8] c"left_brace\00", align 1
-@1427 = private unnamed_addr constant [34 x i8] c"expected `{` after impl type name\00", align 1
+@1421 = private unnamed_addr constant [7 x i8] c"kw_for\00", align 1
+@1422 = private unnamed_addr constant [31 x i8] c"expected type name after `for`\00", align 1
+@1423 = private unnamed_addr constant [5 x i8] c"less\00", align 1
+@1424 = private unnamed_addr constant [11 x i8] c"left_brace\00", align 1
+@1425 = private unnamed_addr constant [34 x i8] c"expected `{` after impl type name\00", align 1
+@1426 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
+@1427 = private unnamed_addr constant [30 x i8] c"expected `}` after impl block\00", align 1
 @1428 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
-@1429 = private unnamed_addr constant [30 x i8] c"expected `}` after impl block\00", align 1
-@1430 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
-@1431 = private unnamed_addr constant [6 x i8] c"kw_fn\00", align 1
-@1432 = private unnamed_addr constant [32 x i8] c"expected `fn` inside impl block\00", align 1
-@1433 = private unnamed_addr constant [21 x i8] c"expected method name\00", align 1
-@1434 = private unnamed_addr constant [11 x i8] c"left_paren\00", align 1
-@1435 = private unnamed_addr constant [31 x i8] c"expected `(` after method name\00", align 1
-@1436 = private unnamed_addr constant [12 x i8] c"right_paren\00", align 1
-@1437 = private unnamed_addr constant [30 x i8] c"expected `)` after parameters\00", align 1
-@1438 = private unnamed_addr constant [6 x i8] c"arrow\00", align 1
-@1439 = private unnamed_addr constant [32 x i8] c"expected return type after `->`\00", align 1
-@1440 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
-@1441 = private unnamed_addr constant [11 x i8] c"left_brace\00", align 1
-@1442 = private unnamed_addr constant [37 x i8] c"expected `{` after method parameters\00", align 1
-@1443 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
-@1444 = private unnamed_addr constant [31 x i8] c"expected `}` after method body\00", align 1
-@1445 = private unnamed_addr constant [3 x i8] c"__\00", align 1
-@1446 = private unnamed_addr constant [12 x i8] c"right_paren\00", align 1
-@1447 = private unnamed_addr constant [11 x i8] c"identifier\00", align 1
-@1448 = private unnamed_addr constant [5 x i8] c"self\00", align 1
-@1449 = private unnamed_addr constant [6 x i8] c"colon\00", align 1
-@1450 = private unnamed_addr constant [24 x i8] c"expected type after `:`\00", align 1
-@1451 = private unnamed_addr constant [6 x i8] c"comma\00", align 1
-@1452 = private unnamed_addr constant [5 x i8] c"self\00", align 1
-@1453 = private unnamed_addr constant [5 x i8] c"self\00", align 1
-@1454 = private unnamed_addr constant [8 x i8] c"nc_null\00", align 1
-@1455 = private unnamed_addr constant [7 x i8] c"nc_rhs\00", align 1
-@1456 = private unnamed_addr constant [7 x i8] c"nc_end\00", align 1
-@1457 = private unnamed_addr constant [10 x i8] c"nc_result\00", align 1
-@1458 = private unnamed_addr constant [7 x i8] c"nc_val\00", align 1
-@1459 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1460 = private unnamed_addr constant [8 x i8] c"oc_null\00", align 1
-@1461 = private unnamed_addr constant [10 x i8] c"oc_access\00", align 1
-@1462 = private unnamed_addr constant [7 x i8] c"oc_end\00", align 1
-@1463 = private unnamed_addr constant [10 x i8] c"oc_result\00", align 1
+@1429 = private unnamed_addr constant [6 x i8] c"kw_fn\00", align 1
+@1430 = private unnamed_addr constant [32 x i8] c"expected `fn` inside impl block\00", align 1
+@1431 = private unnamed_addr constant [21 x i8] c"expected method name\00", align 1
+@1432 = private unnamed_addr constant [11 x i8] c"left_paren\00", align 1
+@1433 = private unnamed_addr constant [31 x i8] c"expected `(` after method name\00", align 1
+@1434 = private unnamed_addr constant [12 x i8] c"right_paren\00", align 1
+@1435 = private unnamed_addr constant [30 x i8] c"expected `)` after parameters\00", align 1
+@1436 = private unnamed_addr constant [6 x i8] c"arrow\00", align 1
+@1437 = private unnamed_addr constant [32 x i8] c"expected return type after `->`\00", align 1
+@1438 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
+@1439 = private unnamed_addr constant [11 x i8] c"left_brace\00", align 1
+@1440 = private unnamed_addr constant [37 x i8] c"expected `{` after method parameters\00", align 1
+@1441 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
+@1442 = private unnamed_addr constant [31 x i8] c"expected `}` after method body\00", align 1
+@1443 = private unnamed_addr constant [3 x i8] c"__\00", align 1
+@1444 = private unnamed_addr constant [12 x i8] c"right_paren\00", align 1
+@1445 = private unnamed_addr constant [11 x i8] c"identifier\00", align 1
+@1446 = private unnamed_addr constant [5 x i8] c"self\00", align 1
+@1447 = private unnamed_addr constant [6 x i8] c"colon\00", align 1
+@1448 = private unnamed_addr constant [24 x i8] c"expected type after `:`\00", align 1
+@1449 = private unnamed_addr constant [6 x i8] c"comma\00", align 1
+@1450 = private unnamed_addr constant [5 x i8] c"self\00", align 1
+@1451 = private unnamed_addr constant [5 x i8] c"self\00", align 1
+@1452 = private unnamed_addr constant [8 x i8] c"nc_null\00", align 1
+@1453 = private unnamed_addr constant [7 x i8] c"nc_rhs\00", align 1
+@1454 = private unnamed_addr constant [7 x i8] c"nc_end\00", align 1
+@1455 = private unnamed_addr constant [10 x i8] c"nc_result\00", align 1
+@1456 = private unnamed_addr constant [7 x i8] c"nc_val\00", align 1
+@1457 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1458 = private unnamed_addr constant [8 x i8] c"oc_null\00", align 1
+@1459 = private unnamed_addr constant [10 x i8] c"oc_access\00", align 1
+@1460 = private unnamed_addr constant [7 x i8] c"oc_end\00", align 1
+@1461 = private unnamed_addr constant [10 x i8] c"oc_result\00", align 1
+@1462 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1463 = private unnamed_addr constant [7 x i8] c"oc_val\00", align 1
 @1464 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1465 = private unnamed_addr constant [7 x i8] c"oc_val\00", align 1
-@1466 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1467 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
-@1468 = private unnamed_addr constant [20 x i8] c"` in optional chain\00", align 1
-@1469 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
-@1470 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
-@1471 = private unnamed_addr constant [20 x i8] c"` in optional chain\00", align 1
-@1472 = private unnamed_addr constant [7 x i8] c"oc_ptr\00", align 1
-@1473 = private unnamed_addr constant [7 x i8] c"oc_fld\00", align 1
-@1474 = private unnamed_addr constant [7 x i8] c"oc_val\00", align 1
-@1475 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1476 = private unnamed_addr constant [9 x i8] c"try_null\00", align 1
-@1477 = private unnamed_addr constant [7 x i8] c"try_ok\00", align 1
-@1478 = private unnamed_addr constant [8 x i8] c"try_ret\00", align 1
-@1479 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1480 = private unnamed_addr constant [20 x i8] c"expected trait name\00", align 1
-@1481 = private unnamed_addr constant [5 x i8] c"less\00", align 1
-@1482 = private unnamed_addr constant [11 x i8] c"left_brace\00", align 1
-@1483 = private unnamed_addr constant [30 x i8] c"expected `{` after trait name\00", align 1
+@1465 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
+@1466 = private unnamed_addr constant [20 x i8] c"` in optional chain\00", align 1
+@1467 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
+@1468 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
+@1469 = private unnamed_addr constant [20 x i8] c"` in optional chain\00", align 1
+@1470 = private unnamed_addr constant [7 x i8] c"oc_ptr\00", align 1
+@1471 = private unnamed_addr constant [7 x i8] c"oc_fld\00", align 1
+@1472 = private unnamed_addr constant [7 x i8] c"oc_val\00", align 1
+@1473 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1474 = private unnamed_addr constant [9 x i8] c"try_null\00", align 1
+@1475 = private unnamed_addr constant [7 x i8] c"try_ok\00", align 1
+@1476 = private unnamed_addr constant [8 x i8] c"try_ret\00", align 1
+@1477 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1478 = private unnamed_addr constant [20 x i8] c"expected trait name\00", align 1
+@1479 = private unnamed_addr constant [5 x i8] c"less\00", align 1
+@1480 = private unnamed_addr constant [11 x i8] c"left_brace\00", align 1
+@1481 = private unnamed_addr constant [30 x i8] c"expected `{` after trait name\00", align 1
+@1482 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
+@1483 = private unnamed_addr constant [30 x i8] c"expected `}` after trait body\00", align 1
 @1484 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
-@1485 = private unnamed_addr constant [30 x i8] c"expected `}` after trait body\00", align 1
-@1486 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
-@1487 = private unnamed_addr constant [6 x i8] c"kw_fn\00", align 1
-@1488 = private unnamed_addr constant [30 x i8] c"expected `fn` in trait method\00", align 1
-@1489 = private unnamed_addr constant [21 x i8] c"expected method name\00", align 1
-@1490 = private unnamed_addr constant [5 x i8] c"less\00", align 1
-@1491 = private unnamed_addr constant [11 x i8] c"left_paren\00", align 1
-@1492 = private unnamed_addr constant [31 x i8] c"expected `(` after method name\00", align 1
-@1493 = private unnamed_addr constant [12 x i8] c"right_paren\00", align 1
-@1494 = private unnamed_addr constant [30 x i8] c"expected `)` after parameters\00", align 1
-@1495 = private unnamed_addr constant [6 x i8] c"arrow\00", align 1
-@1496 = private unnamed_addr constant [32 x i8] c"expected return type after `->`\00", align 1
-@1497 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
-@1498 = private unnamed_addr constant [9 x i8] c"tup_base\00", align 1
-@1499 = private unnamed_addr constant [9 x i8] c"tup_addr\00", align 1
-@1500 = private unnamed_addr constant [9 x i8] c"tup_slot\00", align 1
-@1501 = private unnamed_addr constant [8 x i8] c"ts_base\00", align 1
-@1502 = private unnamed_addr constant [8 x i8] c"ts_addr\00", align 1
-@1503 = private unnamed_addr constant [8 x i8] c"ts_slot\00", align 1
-@1504 = private unnamed_addr constant [10 x i8] c"tuple_i64\00", align 1
-@1505 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1506 = private unnamed_addr constant [8 x i8] c"tup_ptr\00", align 1
-@1507 = private unnamed_addr constant [8 x i8] c"tup_val\00", align 1
+@1485 = private unnamed_addr constant [6 x i8] c"kw_fn\00", align 1
+@1486 = private unnamed_addr constant [30 x i8] c"expected `fn` in trait method\00", align 1
+@1487 = private unnamed_addr constant [21 x i8] c"expected method name\00", align 1
+@1488 = private unnamed_addr constant [5 x i8] c"less\00", align 1
+@1489 = private unnamed_addr constant [11 x i8] c"left_paren\00", align 1
+@1490 = private unnamed_addr constant [31 x i8] c"expected `(` after method name\00", align 1
+@1491 = private unnamed_addr constant [12 x i8] c"right_paren\00", align 1
+@1492 = private unnamed_addr constant [30 x i8] c"expected `)` after parameters\00", align 1
+@1493 = private unnamed_addr constant [6 x i8] c"arrow\00", align 1
+@1494 = private unnamed_addr constant [32 x i8] c"expected return type after `->`\00", align 1
+@1495 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
+@1496 = private unnamed_addr constant [9 x i8] c"tup_base\00", align 1
+@1497 = private unnamed_addr constant [9 x i8] c"tup_addr\00", align 1
+@1498 = private unnamed_addr constant [9 x i8] c"tup_slot\00", align 1
+@1499 = private unnamed_addr constant [8 x i8] c"ts_base\00", align 1
+@1500 = private unnamed_addr constant [8 x i8] c"ts_addr\00", align 1
+@1501 = private unnamed_addr constant [8 x i8] c"ts_slot\00", align 1
+@1502 = private unnamed_addr constant [10 x i8] c"tuple_i64\00", align 1
+@1503 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1504 = private unnamed_addr constant [8 x i8] c"tup_ptr\00", align 1
+@1505 = private unnamed_addr constant [8 x i8] c"tup_val\00", align 1
+@1506 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1507 = private unnamed_addr constant [13 x i8] c"destruct_ptr\00", align 1
 @1508 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1509 = private unnamed_addr constant [13 x i8] c"destruct_ptr\00", align 1
-@1510 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1511 = private unnamed_addr constant [40 x i8] c"`with` requires a struct value (got ty=\00", align 1
-@1512 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@1513 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
-@1514 = private unnamed_addr constant [21 x i8] c"` in with expression\00", align 1
-@1515 = private unnamed_addr constant [9 x i8] c"with_src\00", align 1
-@1516 = private unnamed_addr constant [12 x i8] c"with_result\00", align 1
-@1517 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1518 = private unnamed_addr constant [12 x i8] c"with_cp_src\00", align 1
-@1519 = private unnamed_addr constant [12 x i8] c"with_cp_val\00", align 1
-@1520 = private unnamed_addr constant [12 x i8] c"with_cp_dst\00", align 1
-@1521 = private unnamed_addr constant [9 x i8] c"with_ovr\00", align 1
-@1522 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
-@1523 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
-@1524 = private unnamed_addr constant [5 x i8] c"list\00", align 1
+@1509 = private unnamed_addr constant [40 x i8] c"`with` requires a struct value (got ty=\00", align 1
+@1510 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@1511 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
+@1512 = private unnamed_addr constant [21 x i8] c"` in with expression\00", align 1
+@1513 = private unnamed_addr constant [9 x i8] c"with_src\00", align 1
+@1514 = private unnamed_addr constant [12 x i8] c"with_result\00", align 1
+@1515 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1516 = private unnamed_addr constant [12 x i8] c"with_cp_src\00", align 1
+@1517 = private unnamed_addr constant [12 x i8] c"with_cp_val\00", align 1
+@1518 = private unnamed_addr constant [12 x i8] c"with_cp_dst\00", align 1
+@1519 = private unnamed_addr constant [9 x i8] c"with_ovr\00", align 1
+@1520 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
+@1521 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
+@1522 = private unnamed_addr constant [5 x i8] c"list\00", align 1
+@1523 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1524 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @1525 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @1526 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1527 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1528 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1529 = private unnamed_addr constant [19 x i8] c"forge_array_reduce\00", align 1
-@1530 = private unnamed_addr constant [7 x i8] c"reduce\00", align 1
-@1531 = private unnamed_addr constant [55 x i8] c"reduce expects 2 arguments: initial value and function\00", align 1
-@1532 = private unnamed_addr constant [55 x i8] c"reduce expects 2 arguments: initial value and function\00", align 1
-@1533 = private unnamed_addr constant [10 x i8] c"__lambda_\00", align 1
-@1534 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@1535 = private unnamed_addr constant [6 x i8] c"entry\00", align 1
-@1536 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
-@1537 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
-@1538 = private unnamed_addr constant [8 x i8] c"closure\00", align 1
+@1527 = private unnamed_addr constant [19 x i8] c"forge_array_reduce\00", align 1
+@1528 = private unnamed_addr constant [7 x i8] c"reduce\00", align 1
+@1529 = private unnamed_addr constant [55 x i8] c"reduce expects 2 arguments: initial value and function\00", align 1
+@1530 = private unnamed_addr constant [55 x i8] c"reduce expects 2 arguments: initial value and function\00", align 1
+@1531 = private unnamed_addr constant [10 x i8] c"__lambda_\00", align 1
+@1532 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@1533 = private unnamed_addr constant [6 x i8] c"entry\00", align 1
+@1534 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
+@1535 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
+@1536 = private unnamed_addr constant [8 x i8] c"closure\00", align 1
+@1537 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1538 = private unnamed_addr constant [11 x i8] c"lambda_ptr\00", align 1
 @1539 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1540 = private unnamed_addr constant [11 x i8] c"lambda_ptr\00", align 1
+@1540 = private unnamed_addr constant [12 x i8] c"closure_i64\00", align 1
 @1541 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1542 = private unnamed_addr constant [12 x i8] c"closure_i64\00", align 1
+@1542 = private unnamed_addr constant [8 x i8] c"cap_val\00", align 1
 @1543 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1544 = private unnamed_addr constant [8 x i8] c"cap_val\00", align 1
-@1545 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1546 = private unnamed_addr constant [27 x i8] c"expected 1 argument, got 0\00", align 1
-@1547 = private unnamed_addr constant [12 x i8] c"closure_ptr\00", align 1
-@1548 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
-@1549 = private unnamed_addr constant [11 x i8] c"closure_fn\00", align 1
-@1550 = private unnamed_addr constant [7 x i8] c"fn_ptr\00", align 1
-@1551 = private unnamed_addr constant [13 x i8] c"closure_call\00", align 1
-@1552 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
-@1553 = private unnamed_addr constant [4 x i8] c"cap\00", align 1
-@1554 = private unnamed_addr constant [21 x i8] c"forge_closure_call_0\00", align 1
+@1544 = private unnamed_addr constant [27 x i8] c"expected 1 argument, got 0\00", align 1
+@1545 = private unnamed_addr constant [12 x i8] c"closure_ptr\00", align 1
+@1546 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
+@1547 = private unnamed_addr constant [11 x i8] c"closure_fn\00", align 1
+@1548 = private unnamed_addr constant [7 x i8] c"fn_ptr\00", align 1
+@1549 = private unnamed_addr constant [13 x i8] c"closure_call\00", align 1
+@1550 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
+@1551 = private unnamed_addr constant [4 x i8] c"cap\00", align 1
+@1552 = private unnamed_addr constant [21 x i8] c"forge_closure_call_0\00", align 1
+@1553 = private unnamed_addr constant [6 x i8] c"ccall\00", align 1
+@1554 = private unnamed_addr constant [21 x i8] c"forge_closure_call_1\00", align 1
 @1555 = private unnamed_addr constant [6 x i8] c"ccall\00", align 1
-@1556 = private unnamed_addr constant [21 x i8] c"forge_closure_call_1\00", align 1
-@1557 = private unnamed_addr constant [6 x i8] c"ccall\00", align 1
-@1558 = private unnamed_addr constant [15 x i8] c"expected 1 arg\00", align 1
-@1559 = private unnamed_addr constant [21 x i8] c"forge_closure_call_2\00", align 1
-@1560 = private unnamed_addr constant [6 x i8] c"ccall\00", align 1
-@1561 = private unnamed_addr constant [16 x i8] c"expected 2 args\00", align 1
-@1562 = private unnamed_addr constant [14 x i8] c"expected args\00", align 1
-@1563 = private unnamed_addr constant [19 x i8] c"forge_map_new_cstr\00", align 1
-@1564 = private unnamed_addr constant [19 x i8] c"forge_map_set_cstr\00", align 1
-@1565 = private unnamed_addr constant [4 x i8] c"map\00", align 1
-@1566 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1567 = private unnamed_addr constant [34 x i8] c"map literal has key without value\00", align 1
-@1568 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
-@1569 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1570 = private unnamed_addr constant [4 x i8] c"str\00", align 1
-@1571 = private unnamed_addr constant [7 x i8] c"string\00", align 1
-@1572 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
-@1573 = private unnamed_addr constant [4 x i8] c"int\00", align 1
-@1574 = private unnamed_addr constant [5 x i8] c"bool\00", align 1
-@1575 = private unnamed_addr constant [4 x i8] c"ptr\00", align 1
-@1576 = private unnamed_addr constant [3 x i8] c"fn\00", align 1
-@1577 = private unnamed_addr constant [5 x i8] c"List\00", align 1
-@1578 = private unnamed_addr constant [4 x i8] c"Map\00", align 1
-@1579 = private unnamed_addr constant [5 x i8] c"fn->\00", align 1
-@1580 = private unnamed_addr constant [47 x i8] c"if-expression branches have different types: `\00", align 1
-@1581 = private unnamed_addr constant [7 x i8] c"` vs `\00", align 1
-@1582 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@1583 = private unnamed_addr constant [7 x i8] c"string\00", align 1
-@1584 = private unnamed_addr constant [4 x i8] c"int\00", align 1
-@1585 = private unnamed_addr constant [8 x i8] c"println\00", align 1
-@1586 = private unnamed_addr constant [9 x i8] c"eprintln\00", align 1
-@1587 = private unnamed_addr constant [6 x i8] c"print\00", align 1
-@1588 = private unnamed_addr constant [7 x i8] c"eprint\00", align 1
-@1589 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1590 = private unnamed_addr constant [10 x i8] c"substring\00", align 1
-@1591 = private unnamed_addr constant [5 x i8] c"trim\00", align 1
-@1592 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
-@1593 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
-@1594 = private unnamed_addr constant [8 x i8] c"replace\00", align 1
-@1595 = private unnamed_addr constant [9 x i8] c"contains\00", align 1
-@1596 = private unnamed_addr constant [12 x i8] c"starts_with\00", align 1
-@1597 = private unnamed_addr constant [10 x i8] c"ends_with\00", align 1
-@1598 = private unnamed_addr constant [9 x i8] c"index_of\00", align 1
-@1599 = private unnamed_addr constant [6 x i8] c"split\00", align 1
-@1600 = private unnamed_addr constant [10 x i8] c"char_code\00", align 1
-@1601 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1602 = private unnamed_addr constant [5 x i8] c"push\00", align 1
-@1603 = private unnamed_addr constant [4 x i8] c"pop\00", align 1
-@1604 = private unnamed_addr constant [4 x i8] c"get\00", align 1
-@1605 = private unnamed_addr constant [4 x i8] c"map\00", align 1
-@1606 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
-@1607 = private unnamed_addr constant [7 x i8] c"reduce\00", align 1
-@1608 = private unnamed_addr constant [8 x i8] c"foreach\00", align 1
-@1609 = private unnamed_addr constant [4 x i8] c"get\00", align 1
-@1610 = private unnamed_addr constant [4 x i8] c"has\00", align 1
-@1611 = private unnamed_addr constant [4 x i8] c"set\00", align 1
-@1612 = private unnamed_addr constant [5 x i8] c"keys\00", align 1
-@1613 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1614 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1615 = private unnamed_addr constant [3 x i8] c"__\00", align 1
+@1556 = private unnamed_addr constant [15 x i8] c"expected 1 arg\00", align 1
+@1557 = private unnamed_addr constant [21 x i8] c"forge_closure_call_2\00", align 1
+@1558 = private unnamed_addr constant [6 x i8] c"ccall\00", align 1
+@1559 = private unnamed_addr constant [16 x i8] c"expected 2 args\00", align 1
+@1560 = private unnamed_addr constant [14 x i8] c"expected args\00", align 1
+@1561 = private unnamed_addr constant [19 x i8] c"forge_map_new_cstr\00", align 1
+@1562 = private unnamed_addr constant [19 x i8] c"forge_map_set_cstr\00", align 1
+@1563 = private unnamed_addr constant [4 x i8] c"map\00", align 1
+@1564 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1565 = private unnamed_addr constant [34 x i8] c"map literal has key without value\00", align 1
+@1566 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
+@1567 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1568 = private unnamed_addr constant [4 x i8] c"str\00", align 1
+@1569 = private unnamed_addr constant [7 x i8] c"string\00", align 1
+@1570 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
+@1571 = private unnamed_addr constant [4 x i8] c"int\00", align 1
+@1572 = private unnamed_addr constant [5 x i8] c"bool\00", align 1
+@1573 = private unnamed_addr constant [4 x i8] c"ptr\00", align 1
+@1574 = private unnamed_addr constant [3 x i8] c"fn\00", align 1
+@1575 = private unnamed_addr constant [5 x i8] c"List\00", align 1
+@1576 = private unnamed_addr constant [4 x i8] c"Map\00", align 1
+@1577 = private unnamed_addr constant [5 x i8] c"fn->\00", align 1
+@1578 = private unnamed_addr constant [20 x i8] c"[typeck] check_stmt\00", align 1
+@1579 = private unnamed_addr constant [47 x i8] c"if-expression branches have different types: `\00", align 1
+@1580 = private unnamed_addr constant [7 x i8] c"` vs `\00", align 1
+@1581 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1582 = private unnamed_addr constant [7 x i8] c"string\00", align 1
+@1583 = private unnamed_addr constant [4 x i8] c"int\00", align 1
+@1584 = private unnamed_addr constant [8 x i8] c"println\00", align 1
+@1585 = private unnamed_addr constant [9 x i8] c"eprintln\00", align 1
+@1586 = private unnamed_addr constant [6 x i8] c"print\00", align 1
+@1587 = private unnamed_addr constant [7 x i8] c"eprint\00", align 1
+@1588 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1589 = private unnamed_addr constant [10 x i8] c"substring\00", align 1
+@1590 = private unnamed_addr constant [5 x i8] c"trim\00", align 1
+@1591 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
+@1592 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
+@1593 = private unnamed_addr constant [8 x i8] c"replace\00", align 1
+@1594 = private unnamed_addr constant [9 x i8] c"contains\00", align 1
+@1595 = private unnamed_addr constant [12 x i8] c"starts_with\00", align 1
+@1596 = private unnamed_addr constant [10 x i8] c"ends_with\00", align 1
+@1597 = private unnamed_addr constant [9 x i8] c"index_of\00", align 1
+@1598 = private unnamed_addr constant [6 x i8] c"split\00", align 1
+@1599 = private unnamed_addr constant [10 x i8] c"char_code\00", align 1
+@1600 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1601 = private unnamed_addr constant [5 x i8] c"push\00", align 1
+@1602 = private unnamed_addr constant [4 x i8] c"pop\00", align 1
+@1603 = private unnamed_addr constant [4 x i8] c"get\00", align 1
+@1604 = private unnamed_addr constant [4 x i8] c"map\00", align 1
+@1605 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@1606 = private unnamed_addr constant [7 x i8] c"reduce\00", align 1
+@1607 = private unnamed_addr constant [8 x i8] c"foreach\00", align 1
+@1608 = private unnamed_addr constant [4 x i8] c"get\00", align 1
+@1609 = private unnamed_addr constant [4 x i8] c"has\00", align 1
+@1610 = private unnamed_addr constant [4 x i8] c"set\00", align 1
+@1611 = private unnamed_addr constant [5 x i8] c"keys\00", align 1
+@1612 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1613 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1614 = private unnamed_addr constant [3 x i8] c"__\00", align 1
+@1615 = private unnamed_addr constant [7 x i8] c"length\00", align 1
 @1616 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1617 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1618 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1619 = private unnamed_addr constant [10 x i8] c"bootstrap\00", align 1
-@1620 = private unnamed_addr constant [5 x i8] c"puts\00", align 1
-@1621 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
-@1622 = private unnamed_addr constant [7 x i8] c"malloc\00", align 1
-@1623 = private unnamed_addr constant [17 x i8] c"forge_bump_alloc\00", align 1
-@1624 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
-@1625 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
-@1626 = private unnamed_addr constant [9 x i8] c"snprintf\00", align 1
-@1627 = private unnamed_addr constant [5 x i8] c"atoi\00", align 1
-@1628 = private unnamed_addr constant [5 x i8] c"exit\00", align 1
-@1629 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
-@1630 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
-@1631 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
-@1632 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
-@1633 = private unnamed_addr constant [16 x i8] c"forge_array_set\00", align 1
-@1634 = private unnamed_addr constant [16 x i8] c"forge_array_pop\00", align 1
-@1635 = private unnamed_addr constant [18 x i8] c"forge_array_slice\00", align 1
-@1636 = private unnamed_addr constant [21 x i8] c"forge_closure_get_fn\00", align 1
-@1637 = private unnamed_addr constant [27 x i8] c"forge_closure_num_captures\00", align 1
-@1638 = private unnamed_addr constant [26 x i8] c"forge_closure_get_capture\00", align 1
-@1639 = private unnamed_addr constant [21 x i8] c"forge_closure_call_0\00", align 1
-@1640 = private unnamed_addr constant [21 x i8] c"forge_closure_call_1\00", align 1
-@1641 = private unnamed_addr constant [21 x i8] c"forge_closure_call_2\00", align 1
-@1642 = private unnamed_addr constant [16 x i8] c"forge_array_map\00", align 1
-@1643 = private unnamed_addr constant [19 x i8] c"forge_array_filter\00", align 1
-@1644 = private unnamed_addr constant [20 x i8] c"forge_array_foreach\00", align 1
-@1645 = private unnamed_addr constant [19 x i8] c"forge_array_reduce\00", align 1
-@1646 = private unnamed_addr constant [19 x i8] c"forge_str_contains\00", align 1
-@1647 = private unnamed_addr constant [22 x i8] c"forge_str_starts_with\00", align 1
-@1648 = private unnamed_addr constant [20 x i8] c"forge_str_ends_with\00", align 1
-@1649 = private unnamed_addr constant [19 x i8] c"forge_str_index_of\00", align 1
-@1650 = private unnamed_addr constant [16 x i8] c"forge_str_split\00", align 1
-@1651 = private unnamed_addr constant [18 x i8] c"forge_str_replace\00", align 1
-@1652 = private unnamed_addr constant [15 x i8] c"forge_str_trim\00", align 1
-@1653 = private unnamed_addr constant [19 x i8] c"forge_str_to_upper\00", align 1
-@1654 = private unnamed_addr constant [19 x i8] c"forge_str_to_lower\00", align 1
-@1655 = private unnamed_addr constant [19 x i8] c"forge_map_new_cstr\00", align 1
-@1656 = private unnamed_addr constant [19 x i8] c"forge_map_set_cstr\00", align 1
-@1657 = private unnamed_addr constant [19 x i8] c"forge_map_get_cstr\00", align 1
-@1658 = private unnamed_addr constant [19 x i8] c"forge_map_has_cstr\00", align 1
-@1659 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
-@1660 = private unnamed_addr constant [20 x i8] c"forge_map_keys_cstr\00", align 1
+@1617 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1618 = private unnamed_addr constant [10 x i8] c"bootstrap\00", align 1
+@1619 = private unnamed_addr constant [5 x i8] c"puts\00", align 1
+@1620 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
+@1621 = private unnamed_addr constant [7 x i8] c"malloc\00", align 1
+@1622 = private unnamed_addr constant [17 x i8] c"forge_bump_alloc\00", align 1
+@1623 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
+@1624 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
+@1625 = private unnamed_addr constant [9 x i8] c"snprintf\00", align 1
+@1626 = private unnamed_addr constant [5 x i8] c"atoi\00", align 1
+@1627 = private unnamed_addr constant [5 x i8] c"exit\00", align 1
+@1628 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
+@1629 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
+@1630 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
+@1631 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
+@1632 = private unnamed_addr constant [16 x i8] c"forge_array_set\00", align 1
+@1633 = private unnamed_addr constant [16 x i8] c"forge_array_pop\00", align 1
+@1634 = private unnamed_addr constant [18 x i8] c"forge_array_slice\00", align 1
+@1635 = private unnamed_addr constant [21 x i8] c"forge_closure_get_fn\00", align 1
+@1636 = private unnamed_addr constant [27 x i8] c"forge_closure_num_captures\00", align 1
+@1637 = private unnamed_addr constant [26 x i8] c"forge_closure_get_capture\00", align 1
+@1638 = private unnamed_addr constant [21 x i8] c"forge_closure_call_0\00", align 1
+@1639 = private unnamed_addr constant [21 x i8] c"forge_closure_call_1\00", align 1
+@1640 = private unnamed_addr constant [21 x i8] c"forge_closure_call_2\00", align 1
+@1641 = private unnamed_addr constant [16 x i8] c"forge_array_map\00", align 1
+@1642 = private unnamed_addr constant [19 x i8] c"forge_array_filter\00", align 1
+@1643 = private unnamed_addr constant [20 x i8] c"forge_array_foreach\00", align 1
+@1644 = private unnamed_addr constant [19 x i8] c"forge_array_reduce\00", align 1
+@1645 = private unnamed_addr constant [19 x i8] c"forge_str_contains\00", align 1
+@1646 = private unnamed_addr constant [22 x i8] c"forge_str_starts_with\00", align 1
+@1647 = private unnamed_addr constant [20 x i8] c"forge_str_ends_with\00", align 1
+@1648 = private unnamed_addr constant [19 x i8] c"forge_str_index_of\00", align 1
+@1649 = private unnamed_addr constant [16 x i8] c"forge_str_split\00", align 1
+@1650 = private unnamed_addr constant [18 x i8] c"forge_str_replace\00", align 1
+@1651 = private unnamed_addr constant [15 x i8] c"forge_str_trim\00", align 1
+@1652 = private unnamed_addr constant [19 x i8] c"forge_str_to_upper\00", align 1
+@1653 = private unnamed_addr constant [19 x i8] c"forge_str_to_lower\00", align 1
+@1654 = private unnamed_addr constant [19 x i8] c"forge_map_new_cstr\00", align 1
+@1655 = private unnamed_addr constant [19 x i8] c"forge_map_set_cstr\00", align 1
+@1656 = private unnamed_addr constant [19 x i8] c"forge_map_get_cstr\00", align 1
+@1657 = private unnamed_addr constant [19 x i8] c"forge_map_has_cstr\00", align 1
+@1658 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
+@1659 = private unnamed_addr constant [20 x i8] c"forge_map_keys_cstr\00", align 1
+@1660 = private unnamed_addr constant [5 x i8] c"main\00", align 1
 @1661 = private unnamed_addr constant [5 x i8] c"main\00", align 1
-@1662 = private unnamed_addr constant [5 x i8] c"main\00", align 1
-@1663 = private unnamed_addr constant [15 x i8] c"__bs_top_level\00", align 1
-@1664 = private unnamed_addr constant [6 x i8] c"entry\00", align 1
-@1665 = private unnamed_addr constant [47 x i8] c"codegen error: LLVM module verification failed\00", align 1
-@1666 = private unnamed_addr constant [38 x i8] c"codegen error: failed to write IR to \00", align 1
-@1667 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1668 = private unnamed_addr constant [24 x i8] c"codegen error: global `\00", align 1
-@1669 = private unnamed_addr constant [15 x i8] c"` not declared\00", align 1
-@1670 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1671 = private unnamed_addr constant [34 x i8] c"codegen error: break outside loop\00", align 1
-@1672 = private unnamed_addr constant [37 x i8] c"codegen error: continue outside loop\00", align 1
-@1673 = private unnamed_addr constant [42 x i8] c"codegen error: unsupported statement type\00", align 1
-@1674 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1675 = private unnamed_addr constant [2 x i8] c"_\00", align 1
-@1676 = private unnamed_addr constant [3 x i8] c"0x\00", align 1
-@1677 = private unnamed_addr constant [3 x i8] c"0X\00", align 1
-@1678 = private unnamed_addr constant [3 x i8] c"0b\00", align 1
-@1679 = private unnamed_addr constant [3 x i8] c"0B\00", align 1
-@1680 = private unnamed_addr constant [3 x i8] c"0o\00", align 1
-@1681 = private unnamed_addr constant [3 x i8] c"0O\00", align 1
-@1682 = private unnamed_addr constant [2 x i8] c"0\00", align 1
-@1683 = private unnamed_addr constant [2 x i8] c"1\00", align 1
-@1684 = private unnamed_addr constant [2 x i8] c"2\00", align 1
-@1685 = private unnamed_addr constant [2 x i8] c"3\00", align 1
-@1686 = private unnamed_addr constant [2 x i8] c"4\00", align 1
-@1687 = private unnamed_addr constant [2 x i8] c"5\00", align 1
-@1688 = private unnamed_addr constant [2 x i8] c"6\00", align 1
-@1689 = private unnamed_addr constant [2 x i8] c"7\00", align 1
-@1690 = private unnamed_addr constant [2 x i8] c"8\00", align 1
-@1691 = private unnamed_addr constant [2 x i8] c"9\00", align 1
-@1692 = private unnamed_addr constant [2 x i8] c"a\00", align 1
-@1693 = private unnamed_addr constant [2 x i8] c"A\00", align 1
-@1694 = private unnamed_addr constant [2 x i8] c"b\00", align 1
-@1695 = private unnamed_addr constant [2 x i8] c"B\00", align 1
-@1696 = private unnamed_addr constant [2 x i8] c"c\00", align 1
-@1697 = private unnamed_addr constant [2 x i8] c"C\00", align 1
-@1698 = private unnamed_addr constant [2 x i8] c"d\00", align 1
-@1699 = private unnamed_addr constant [2 x i8] c"D\00", align 1
-@1700 = private unnamed_addr constant [2 x i8] c"e\00", align 1
-@1701 = private unnamed_addr constant [2 x i8] c"E\00", align 1
-@1702 = private unnamed_addr constant [2 x i8] c"f\00", align 1
-@1703 = private unnamed_addr constant [2 x i8] c"F\00", align 1
-@1704 = private unnamed_addr constant [2 x i8] c"1\00", align 1
-@1705 = private unnamed_addr constant [2 x i8] c"0\00", align 1
-@1706 = private unnamed_addr constant [2 x i8] c"1\00", align 1
-@1707 = private unnamed_addr constant [2 x i8] c"2\00", align 1
-@1708 = private unnamed_addr constant [2 x i8] c"3\00", align 1
-@1709 = private unnamed_addr constant [2 x i8] c"4\00", align 1
-@1710 = private unnamed_addr constant [2 x i8] c"5\00", align 1
-@1711 = private unnamed_addr constant [2 x i8] c"6\00", align 1
-@1712 = private unnamed_addr constant [2 x i8] c"7\00", align 1
-@1713 = private unnamed_addr constant [2 x i8] c"8\00", align 1
-@1714 = private unnamed_addr constant [2 x i8] c"9\00", align 1
-@1715 = private unnamed_addr constant [5 x i8] c"true\00", align 1
-@1716 = private unnamed_addr constant [5 x i8] c".str\00", align 1
-@1717 = private unnamed_addr constant [8 x i8] c"str_i64\00", align 1
+@1662 = private unnamed_addr constant [15 x i8] c"__bs_top_level\00", align 1
+@1663 = private unnamed_addr constant [6 x i8] c"entry\00", align 1
+@1664 = private unnamed_addr constant [47 x i8] c"codegen error: LLVM module verification failed\00", align 1
+@1665 = private unnamed_addr constant [38 x i8] c"codegen error: failed to write IR to \00", align 1
+@1666 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1667 = private unnamed_addr constant [24 x i8] c"codegen error: global `\00", align 1
+@1668 = private unnamed_addr constant [15 x i8] c"` not declared\00", align 1
+@1669 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1670 = private unnamed_addr constant [34 x i8] c"codegen error: break outside loop\00", align 1
+@1671 = private unnamed_addr constant [37 x i8] c"codegen error: continue outside loop\00", align 1
+@1672 = private unnamed_addr constant [42 x i8] c"codegen error: unsupported statement type\00", align 1
+@1673 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1674 = private unnamed_addr constant [2 x i8] c"_\00", align 1
+@1675 = private unnamed_addr constant [3 x i8] c"0x\00", align 1
+@1676 = private unnamed_addr constant [3 x i8] c"0X\00", align 1
+@1677 = private unnamed_addr constant [3 x i8] c"0b\00", align 1
+@1678 = private unnamed_addr constant [3 x i8] c"0B\00", align 1
+@1679 = private unnamed_addr constant [3 x i8] c"0o\00", align 1
+@1680 = private unnamed_addr constant [3 x i8] c"0O\00", align 1
+@1681 = private unnamed_addr constant [2 x i8] c"0\00", align 1
+@1682 = private unnamed_addr constant [2 x i8] c"1\00", align 1
+@1683 = private unnamed_addr constant [2 x i8] c"2\00", align 1
+@1684 = private unnamed_addr constant [2 x i8] c"3\00", align 1
+@1685 = private unnamed_addr constant [2 x i8] c"4\00", align 1
+@1686 = private unnamed_addr constant [2 x i8] c"5\00", align 1
+@1687 = private unnamed_addr constant [2 x i8] c"6\00", align 1
+@1688 = private unnamed_addr constant [2 x i8] c"7\00", align 1
+@1689 = private unnamed_addr constant [2 x i8] c"8\00", align 1
+@1690 = private unnamed_addr constant [2 x i8] c"9\00", align 1
+@1691 = private unnamed_addr constant [2 x i8] c"a\00", align 1
+@1692 = private unnamed_addr constant [2 x i8] c"A\00", align 1
+@1693 = private unnamed_addr constant [2 x i8] c"b\00", align 1
+@1694 = private unnamed_addr constant [2 x i8] c"B\00", align 1
+@1695 = private unnamed_addr constant [2 x i8] c"c\00", align 1
+@1696 = private unnamed_addr constant [2 x i8] c"C\00", align 1
+@1697 = private unnamed_addr constant [2 x i8] c"d\00", align 1
+@1698 = private unnamed_addr constant [2 x i8] c"D\00", align 1
+@1699 = private unnamed_addr constant [2 x i8] c"e\00", align 1
+@1700 = private unnamed_addr constant [2 x i8] c"E\00", align 1
+@1701 = private unnamed_addr constant [2 x i8] c"f\00", align 1
+@1702 = private unnamed_addr constant [2 x i8] c"F\00", align 1
+@1703 = private unnamed_addr constant [2 x i8] c"1\00", align 1
+@1704 = private unnamed_addr constant [2 x i8] c"0\00", align 1
+@1705 = private unnamed_addr constant [2 x i8] c"1\00", align 1
+@1706 = private unnamed_addr constant [2 x i8] c"2\00", align 1
+@1707 = private unnamed_addr constant [2 x i8] c"3\00", align 1
+@1708 = private unnamed_addr constant [2 x i8] c"4\00", align 1
+@1709 = private unnamed_addr constant [2 x i8] c"5\00", align 1
+@1710 = private unnamed_addr constant [2 x i8] c"6\00", align 1
+@1711 = private unnamed_addr constant [2 x i8] c"7\00", align 1
+@1712 = private unnamed_addr constant [2 x i8] c"8\00", align 1
+@1713 = private unnamed_addr constant [2 x i8] c"9\00", align 1
+@1714 = private unnamed_addr constant [5 x i8] c"true\00", align 1
+@1715 = private unnamed_addr constant [5 x i8] c".str\00", align 1
+@1716 = private unnamed_addr constant [8 x i8] c"str_i64\00", align 1
+@1717 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @1718 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1719 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1720 = private unnamed_addr constant [21 x i8] c"undefined variable `\00", align 1
-@1721 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1719 = private unnamed_addr constant [21 x i8] c"undefined variable `\00", align 1
+@1720 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1721 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @1722 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1723 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1724 = private unnamed_addr constant [35 x i8] c"assignment to undefined variable `\00", align 1
-@1725 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@1726 = private unnamed_addr constant [28 x i8] c"unsupported expression type\00", align 1
-@1727 = private unnamed_addr constant [9 x i8] c"ife_cond\00", align 1
-@1728 = private unnamed_addr constant [9 x i8] c"ife_then\00", align 1
-@1729 = private unnamed_addr constant [9 x i8] c"ife_else\00", align 1
-@1730 = private unnamed_addr constant [8 x i8] c"ife_end\00", align 1
-@1731 = private unnamed_addr constant [11 x i8] c"ife_result\00", align 1
-@1732 = private unnamed_addr constant [8 x i8] c"ife_val\00", align 1
-@1733 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1734 = private unnamed_addr constant [42 x i8] c"field assignment on non-struct value (ty=\00", align 1
-@1735 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@1736 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
-@1737 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@1738 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
-@1739 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
-@1740 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@1741 = private unnamed_addr constant [7 x i8] c"fa_ptr\00", align 1
-@1742 = private unnamed_addr constant [7 x i8] c"fa_fld\00", align 1
-@1743 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1744 = private unnamed_addr constant [9 x i8] c"sif_cond\00", align 1
-@1745 = private unnamed_addr constant [9 x i8] c"sif_then\00", align 1
-@1746 = private unnamed_addr constant [9 x i8] c"sif_else\00", align 1
-@1747 = private unnamed_addr constant [8 x i8] c"sif_end\00", align 1
-@1748 = private unnamed_addr constant [11 x i8] c"sif_result\00", align 1
-@1749 = private unnamed_addr constant [8 x i8] c"sif_val\00", align 1
+@1723 = private unnamed_addr constant [35 x i8] c"assignment to undefined variable `\00", align 1
+@1724 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1725 = private unnamed_addr constant [28 x i8] c"unsupported expression type\00", align 1
+@1726 = private unnamed_addr constant [9 x i8] c"ife_cond\00", align 1
+@1727 = private unnamed_addr constant [9 x i8] c"ife_then\00", align 1
+@1728 = private unnamed_addr constant [9 x i8] c"ife_else\00", align 1
+@1729 = private unnamed_addr constant [8 x i8] c"ife_end\00", align 1
+@1730 = private unnamed_addr constant [11 x i8] c"ife_result\00", align 1
+@1731 = private unnamed_addr constant [8 x i8] c"ife_val\00", align 1
+@1732 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1733 = private unnamed_addr constant [42 x i8] c"field assignment on non-struct value (ty=\00", align 1
+@1734 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@1735 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
+@1736 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1737 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
+@1738 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
+@1739 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1740 = private unnamed_addr constant [7 x i8] c"fa_ptr\00", align 1
+@1741 = private unnamed_addr constant [7 x i8] c"fa_fld\00", align 1
+@1742 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1743 = private unnamed_addr constant [9 x i8] c"sif_cond\00", align 1
+@1744 = private unnamed_addr constant [9 x i8] c"sif_then\00", align 1
+@1745 = private unnamed_addr constant [9 x i8] c"sif_else\00", align 1
+@1746 = private unnamed_addr constant [8 x i8] c"sif_end\00", align 1
+@1747 = private unnamed_addr constant [11 x i8] c"sif_result\00", align 1
+@1748 = private unnamed_addr constant [8 x i8] c"sif_val\00", align 1
+@1749 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @1750 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1751 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1752 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
-@1753 = private unnamed_addr constant [9 x i8] c"list_idx\00", align 1
-@1754 = private unnamed_addr constant [39 x i8] c"indexing on non-string/list value (ty=\00", align 1
-@1755 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@1756 = private unnamed_addr constant [12 x i8] c"idx_off_int\00", align 1
-@1757 = private unnamed_addr constant [8 x i8] c"idx_off\00", align 1
-@1758 = private unnamed_addr constant [9 x i8] c"idx_byte\00", align 1
-@1759 = private unnamed_addr constant [12 x i8] c"idx_buf_int\00", align 1
-@1760 = private unnamed_addr constant [12 x i8] c"idx_nul_int\00", align 1
-@1761 = private unnamed_addr constant [8 x i8] c"idx_nul\00", align 1
-@1762 = private unnamed_addr constant [11 x i8] c"idx_result\00", align 1
-@1763 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1764 = private unnamed_addr constant [8 x i8] c"len_arg\00", align 1
-@1765 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
-@1766 = private unnamed_addr constant [12 x i8] c"strlen_call\00", align 1
-@1767 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1768 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
-@1769 = private unnamed_addr constant [9 x i8] c"list_len\00", align 1
-@1770 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1771 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
-@1772 = private unnamed_addr constant [8 x i8] c"map_len\00", align 1
-@1773 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1774 = private unnamed_addr constant [38 x i8] c"field access on non-struct value (ty=\00", align 1
-@1775 = private unnamed_addr constant [9 x i8] c", field=\00", align 1
-@1776 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@1777 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
-@1778 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@1779 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
-@1780 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
-@1781 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@1782 = private unnamed_addr constant [8 x i8] c"obj_ptr\00", align 1
-@1783 = private unnamed_addr constant [8 x i8] c"fld_ptr\00", align 1
-@1784 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1785 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1786 = private unnamed_addr constant [8 x i8] c"len_arg\00", align 1
-@1787 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
-@1788 = private unnamed_addr constant [12 x i8] c"strlen_call\00", align 1
-@1789 = private unnamed_addr constant [10 x i8] c"substring\00", align 1
-@1790 = private unnamed_addr constant [9 x i8] c"contains\00", align 1
-@1791 = private unnamed_addr constant [12 x i8] c"starts_with\00", align 1
-@1792 = private unnamed_addr constant [10 x i8] c"ends_with\00", align 1
-@1793 = private unnamed_addr constant [9 x i8] c"index_of\00", align 1
-@1794 = private unnamed_addr constant [11 x i8] c"forge_str_\00", align 1
-@1795 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@1796 = private unnamed_addr constant [8 x i8] c"str_arg\00", align 1
-@1797 = private unnamed_addr constant [8 x i8] c"replace\00", align 1
-@1798 = private unnamed_addr constant [5 x i8] c"trim\00", align 1
-@1799 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@1800 = private unnamed_addr constant [15 x i8] c"forge_str_trim\00", align 1
-@1801 = private unnamed_addr constant [8 x i8] c"trimmed\00", align 1
-@1802 = private unnamed_addr constant [9 x i8] c"trim_i64\00", align 1
-@1803 = private unnamed_addr constant [9 x i8] c"to_upper\00", align 1
-@1804 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
-@1805 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@1806 = private unnamed_addr constant [19 x i8] c"forge_str_to_upper\00", align 1
-@1807 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
-@1808 = private unnamed_addr constant [10 x i8] c"upper_i64\00", align 1
-@1809 = private unnamed_addr constant [9 x i8] c"to_lower\00", align 1
-@1810 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
-@1811 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@1812 = private unnamed_addr constant [19 x i8] c"forge_str_to_lower\00", align 1
-@1813 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
-@1814 = private unnamed_addr constant [10 x i8] c"lower_i64\00", align 1
-@1815 = private unnamed_addr constant [6 x i8] c"split\00", align 1
-@1816 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@1817 = private unnamed_addr constant [8 x i8] c"sep_arg\00", align 1
-@1818 = private unnamed_addr constant [16 x i8] c"forge_str_split\00", align 1
-@1819 = private unnamed_addr constant [13 x i8] c"split_result\00", align 1
-@1820 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1821 = private unnamed_addr constant [16 x i8] c"string method `\00", align 1
-@1822 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
-@1823 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1824 = private unnamed_addr constant [4 x i8] c"len\00", align 1
-@1825 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
-@1826 = private unnamed_addr constant [9 x i8] c"list_len\00", align 1
-@1827 = private unnamed_addr constant [5 x i8] c"push\00", align 1
-@1828 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
-@1829 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1830 = private unnamed_addr constant [4 x i8] c"pop\00", align 1
-@1831 = private unnamed_addr constant [16 x i8] c"forge_array_pop\00", align 1
-@1832 = private unnamed_addr constant [9 x i8] c"list_pop\00", align 1
-@1833 = private unnamed_addr constant [4 x i8] c"get\00", align 1
-@1834 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
-@1835 = private unnamed_addr constant [9 x i8] c"list_get\00", align 1
-@1836 = private unnamed_addr constant [4 x i8] c"set\00", align 1
-@1837 = private unnamed_addr constant [4 x i8] c"map\00", align 1
-@1838 = private unnamed_addr constant [16 x i8] c"forge_array_map\00", align 1
-@1839 = private unnamed_addr constant [4 x i8] c"map\00", align 1
-@1840 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1841 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
-@1842 = private unnamed_addr constant [19 x i8] c"forge_array_filter\00", align 1
-@1843 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
-@1844 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1845 = private unnamed_addr constant [8 x i8] c"foreach\00", align 1
-@1846 = private unnamed_addr constant [20 x i8] c"forge_array_foreach\00", align 1
-@1847 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1848 = private unnamed_addr constant [7 x i8] c"reduce\00", align 1
-@1849 = private unnamed_addr constant [14 x i8] c"list method `\00", align 1
-@1850 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
-@1851 = private unnamed_addr constant [4 x i8] c"get\00", align 1
-@1852 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
-@1853 = private unnamed_addr constant [19 x i8] c"forge_map_get_cstr\00", align 1
-@1854 = private unnamed_addr constant [8 x i8] c"map_get\00", align 1
-@1855 = private unnamed_addr constant [4 x i8] c"has\00", align 1
-@1856 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
-@1857 = private unnamed_addr constant [19 x i8] c"forge_map_has_cstr\00", align 1
-@1858 = private unnamed_addr constant [8 x i8] c"map_has\00", align 1
-@1859 = private unnamed_addr constant [4 x i8] c"set\00", align 1
-@1860 = private unnamed_addr constant [4 x i8] c"len\00", align 1
-@1861 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@1862 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
-@1863 = private unnamed_addr constant [8 x i8] c"map_len\00", align 1
-@1864 = private unnamed_addr constant [5 x i8] c"keys\00", align 1
-@1865 = private unnamed_addr constant [20 x i8] c"forge_map_keys_cstr\00", align 1
-@1866 = private unnamed_addr constant [9 x i8] c"map_keys\00", align 1
-@1867 = private unnamed_addr constant [13 x i8] c"map method `\00", align 1
-@1868 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
+@1751 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
+@1752 = private unnamed_addr constant [9 x i8] c"list_idx\00", align 1
+@1753 = private unnamed_addr constant [39 x i8] c"indexing on non-string/list value (ty=\00", align 1
+@1754 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@1755 = private unnamed_addr constant [12 x i8] c"idx_off_int\00", align 1
+@1756 = private unnamed_addr constant [8 x i8] c"idx_off\00", align 1
+@1757 = private unnamed_addr constant [9 x i8] c"idx_byte\00", align 1
+@1758 = private unnamed_addr constant [12 x i8] c"idx_buf_int\00", align 1
+@1759 = private unnamed_addr constant [12 x i8] c"idx_nul_int\00", align 1
+@1760 = private unnamed_addr constant [8 x i8] c"idx_nul\00", align 1
+@1761 = private unnamed_addr constant [11 x i8] c"idx_result\00", align 1
+@1762 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1763 = private unnamed_addr constant [8 x i8] c"len_arg\00", align 1
+@1764 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
+@1765 = private unnamed_addr constant [12 x i8] c"strlen_call\00", align 1
+@1766 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1767 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
+@1768 = private unnamed_addr constant [9 x i8] c"list_len\00", align 1
+@1769 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1770 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
+@1771 = private unnamed_addr constant [8 x i8] c"map_len\00", align 1
+@1772 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1773 = private unnamed_addr constant [38 x i8] c"field access on non-struct value (ty=\00", align 1
+@1774 = private unnamed_addr constant [9 x i8] c", field=\00", align 1
+@1775 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@1776 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
+@1777 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1778 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
+@1779 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
+@1780 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1781 = private unnamed_addr constant [8 x i8] c"obj_ptr\00", align 1
+@1782 = private unnamed_addr constant [8 x i8] c"fld_ptr\00", align 1
+@1783 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1784 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1785 = private unnamed_addr constant [8 x i8] c"len_arg\00", align 1
+@1786 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
+@1787 = private unnamed_addr constant [12 x i8] c"strlen_call\00", align 1
+@1788 = private unnamed_addr constant [10 x i8] c"substring\00", align 1
+@1789 = private unnamed_addr constant [9 x i8] c"contains\00", align 1
+@1790 = private unnamed_addr constant [12 x i8] c"starts_with\00", align 1
+@1791 = private unnamed_addr constant [10 x i8] c"ends_with\00", align 1
+@1792 = private unnamed_addr constant [9 x i8] c"index_of\00", align 1
+@1793 = private unnamed_addr constant [11 x i8] c"forge_str_\00", align 1
+@1794 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@1795 = private unnamed_addr constant [8 x i8] c"str_arg\00", align 1
+@1796 = private unnamed_addr constant [8 x i8] c"replace\00", align 1
+@1797 = private unnamed_addr constant [5 x i8] c"trim\00", align 1
+@1798 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@1799 = private unnamed_addr constant [15 x i8] c"forge_str_trim\00", align 1
+@1800 = private unnamed_addr constant [8 x i8] c"trimmed\00", align 1
+@1801 = private unnamed_addr constant [9 x i8] c"trim_i64\00", align 1
+@1802 = private unnamed_addr constant [9 x i8] c"to_upper\00", align 1
+@1803 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
+@1804 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@1805 = private unnamed_addr constant [19 x i8] c"forge_str_to_upper\00", align 1
+@1806 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
+@1807 = private unnamed_addr constant [10 x i8] c"upper_i64\00", align 1
+@1808 = private unnamed_addr constant [9 x i8] c"to_lower\00", align 1
+@1809 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
+@1810 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@1811 = private unnamed_addr constant [19 x i8] c"forge_str_to_lower\00", align 1
+@1812 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
+@1813 = private unnamed_addr constant [10 x i8] c"lower_i64\00", align 1
+@1814 = private unnamed_addr constant [6 x i8] c"split\00", align 1
+@1815 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@1816 = private unnamed_addr constant [8 x i8] c"sep_arg\00", align 1
+@1817 = private unnamed_addr constant [16 x i8] c"forge_str_split\00", align 1
+@1818 = private unnamed_addr constant [13 x i8] c"split_result\00", align 1
+@1819 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1820 = private unnamed_addr constant [16 x i8] c"string method `\00", align 1
+@1821 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
+@1822 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1823 = private unnamed_addr constant [4 x i8] c"len\00", align 1
+@1824 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
+@1825 = private unnamed_addr constant [9 x i8] c"list_len\00", align 1
+@1826 = private unnamed_addr constant [5 x i8] c"push\00", align 1
+@1827 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
+@1828 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1829 = private unnamed_addr constant [4 x i8] c"pop\00", align 1
+@1830 = private unnamed_addr constant [16 x i8] c"forge_array_pop\00", align 1
+@1831 = private unnamed_addr constant [9 x i8] c"list_pop\00", align 1
+@1832 = private unnamed_addr constant [4 x i8] c"get\00", align 1
+@1833 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
+@1834 = private unnamed_addr constant [9 x i8] c"list_get\00", align 1
+@1835 = private unnamed_addr constant [4 x i8] c"set\00", align 1
+@1836 = private unnamed_addr constant [4 x i8] c"map\00", align 1
+@1837 = private unnamed_addr constant [16 x i8] c"forge_array_map\00", align 1
+@1838 = private unnamed_addr constant [4 x i8] c"map\00", align 1
+@1839 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1840 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@1841 = private unnamed_addr constant [19 x i8] c"forge_array_filter\00", align 1
+@1842 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@1843 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1844 = private unnamed_addr constant [8 x i8] c"foreach\00", align 1
+@1845 = private unnamed_addr constant [20 x i8] c"forge_array_foreach\00", align 1
+@1846 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1847 = private unnamed_addr constant [7 x i8] c"reduce\00", align 1
+@1848 = private unnamed_addr constant [14 x i8] c"list method `\00", align 1
+@1849 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
+@1850 = private unnamed_addr constant [4 x i8] c"get\00", align 1
+@1851 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
+@1852 = private unnamed_addr constant [19 x i8] c"forge_map_get_cstr\00", align 1
+@1853 = private unnamed_addr constant [8 x i8] c"map_get\00", align 1
+@1854 = private unnamed_addr constant [4 x i8] c"has\00", align 1
+@1855 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
+@1856 = private unnamed_addr constant [19 x i8] c"forge_map_has_cstr\00", align 1
+@1857 = private unnamed_addr constant [8 x i8] c"map_has\00", align 1
+@1858 = private unnamed_addr constant [4 x i8] c"set\00", align 1
+@1859 = private unnamed_addr constant [4 x i8] c"len\00", align 1
+@1860 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@1861 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
+@1862 = private unnamed_addr constant [8 x i8] c"map_len\00", align 1
+@1863 = private unnamed_addr constant [5 x i8] c"keys\00", align 1
+@1864 = private unnamed_addr constant [20 x i8] c"forge_map_keys_cstr\00", align 1
+@1865 = private unnamed_addr constant [9 x i8] c"map_keys\00", align 1
+@1866 = private unnamed_addr constant [13 x i8] c"map method `\00", align 1
+@1867 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
+@1868 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @1869 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1870 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1871 = private unnamed_addr constant [42 x i8] c"method call on non-struct/enum value (ty=\00", align 1
-@1872 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@1873 = private unnamed_addr constant [3 x i8] c"__\00", align 1
-@1874 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1875 = private unnamed_addr constant [13 x i8] c"fn_field_obj\00", align 1
-@1876 = private unnamed_addr constant [13 x i8] c"fn_field_ptr\00", align 1
-@1877 = private unnamed_addr constant [13 x i8] c"fn_field_val\00", align 1
-@1878 = private unnamed_addr constant [19 x i8] c"undefined method `\00", align 1
-@1879 = private unnamed_addr constant [2 x i8] c".\00", align 1
-@1880 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@1881 = private unnamed_addr constant [9 x i8] c"methcall\00", align 1
-@1882 = private unnamed_addr constant [8 x i8] c"println\00", align 1
-@1883 = private unnamed_addr constant [9 x i8] c"eprintln\00", align 1
-@1884 = private unnamed_addr constant [7 x i8] c"string\00", align 1
-@1885 = private unnamed_addr constant [4 x i8] c"int\00", align 1
-@1886 = private unnamed_addr constant [21 x i8] c"undefined function `\00", align 1
-@1887 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@1888 = private unnamed_addr constant [8 x i8] c"calltmp\00", align 1
-@1889 = private unnamed_addr constant [23 x i8] c"string() expects 1 arg\00", align 1
-@1890 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@1891 = private unnamed_addr constant [9 x i8] c".i2s_fmt\00", align 1
-@1892 = private unnamed_addr constant [9 x i8] c"snprintf\00", align 1
-@1893 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1894 = private unnamed_addr constant [11 x i8] c"i2s_result\00", align 1
-@1895 = private unnamed_addr constant [20 x i8] c"int() expects 1 arg\00", align 1
-@1896 = private unnamed_addr constant [9 x i8] c"atoi_arg\00", align 1
-@1897 = private unnamed_addr constant [5 x i8] c"atoi\00", align 1
-@1898 = private unnamed_addr constant [10 x i8] c"atoi_call\00", align 1
-@1899 = private unnamed_addr constant [9 x i8] c"atoi_ext\00", align 1
-@1900 = private unnamed_addr constant [5 x i8] c".str\00", align 1
-@1901 = private unnamed_addr constant [8 x i8] c"str_i64\00", align 1
-@1902 = private unnamed_addr constant [27 x i8] c"println expects 1 argument\00", align 1
-@1903 = private unnamed_addr constant [8 x i8] c"str_ptr\00", align 1
-@1904 = private unnamed_addr constant [5 x i8] c"puts\00", align 1
-@1905 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1906 = private unnamed_addr constant [9 x i8] c"concat_l\00", align 1
-@1907 = private unnamed_addr constant [9 x i8] c"concat_r\00", align 1
-@1908 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
-@1909 = private unnamed_addr constant [8 x i8] c"lhs_len\00", align 1
-@1910 = private unnamed_addr constant [8 x i8] c"rhs_len\00", align 1
-@1911 = private unnamed_addr constant [13 x i8] c"concat_total\00", align 1
-@1912 = private unnamed_addr constant [12 x i8] c"concat_size\00", align 1
-@1913 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
-@1914 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1915 = private unnamed_addr constant [8 x i8] c"buf_int\00", align 1
-@1916 = private unnamed_addr constant [9 x i8] c"dst2_int\00", align 1
-@1917 = private unnamed_addr constant [5 x i8] c"dst2\00", align 1
-@1918 = private unnamed_addr constant [11 x i8] c"rhs_len_p1\00", align 1
-@1919 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1920 = private unnamed_addr constant [11 x i8] c"concat_i64\00", align 1
-@1921 = private unnamed_addr constant [16 x i8] c"forge_array_set\00", align 1
-@1922 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1870 = private unnamed_addr constant [42 x i8] c"method call on non-struct/enum value (ty=\00", align 1
+@1871 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@1872 = private unnamed_addr constant [3 x i8] c"__\00", align 1
+@1873 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1874 = private unnamed_addr constant [13 x i8] c"fn_field_obj\00", align 1
+@1875 = private unnamed_addr constant [13 x i8] c"fn_field_ptr\00", align 1
+@1876 = private unnamed_addr constant [13 x i8] c"fn_field_val\00", align 1
+@1877 = private unnamed_addr constant [19 x i8] c"undefined method `\00", align 1
+@1878 = private unnamed_addr constant [2 x i8] c".\00", align 1
+@1879 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1880 = private unnamed_addr constant [9 x i8] c"methcall\00", align 1
+@1881 = private unnamed_addr constant [8 x i8] c"println\00", align 1
+@1882 = private unnamed_addr constant [9 x i8] c"eprintln\00", align 1
+@1883 = private unnamed_addr constant [7 x i8] c"string\00", align 1
+@1884 = private unnamed_addr constant [4 x i8] c"int\00", align 1
+@1885 = private unnamed_addr constant [21 x i8] c"undefined function `\00", align 1
+@1886 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@1887 = private unnamed_addr constant [8 x i8] c"calltmp\00", align 1
+@1888 = private unnamed_addr constant [23 x i8] c"string() expects 1 arg\00", align 1
+@1889 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@1890 = private unnamed_addr constant [9 x i8] c".i2s_fmt\00", align 1
+@1891 = private unnamed_addr constant [9 x i8] c"snprintf\00", align 1
+@1892 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1893 = private unnamed_addr constant [11 x i8] c"i2s_result\00", align 1
+@1894 = private unnamed_addr constant [20 x i8] c"int() expects 1 arg\00", align 1
+@1895 = private unnamed_addr constant [9 x i8] c"atoi_arg\00", align 1
+@1896 = private unnamed_addr constant [5 x i8] c"atoi\00", align 1
+@1897 = private unnamed_addr constant [10 x i8] c"atoi_call\00", align 1
+@1898 = private unnamed_addr constant [9 x i8] c"atoi_ext\00", align 1
+@1899 = private unnamed_addr constant [5 x i8] c".str\00", align 1
+@1900 = private unnamed_addr constant [8 x i8] c"str_i64\00", align 1
+@1901 = private unnamed_addr constant [27 x i8] c"println expects 1 argument\00", align 1
+@1902 = private unnamed_addr constant [8 x i8] c"str_ptr\00", align 1
+@1903 = private unnamed_addr constant [5 x i8] c"puts\00", align 1
+@1904 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1905 = private unnamed_addr constant [9 x i8] c"concat_l\00", align 1
+@1906 = private unnamed_addr constant [9 x i8] c"concat_r\00", align 1
+@1907 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
+@1908 = private unnamed_addr constant [8 x i8] c"lhs_len\00", align 1
+@1909 = private unnamed_addr constant [8 x i8] c"rhs_len\00", align 1
+@1910 = private unnamed_addr constant [13 x i8] c"concat_total\00", align 1
+@1911 = private unnamed_addr constant [12 x i8] c"concat_size\00", align 1
+@1912 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
+@1913 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1914 = private unnamed_addr constant [8 x i8] c"buf_int\00", align 1
+@1915 = private unnamed_addr constant [9 x i8] c"dst2_int\00", align 1
+@1916 = private unnamed_addr constant [5 x i8] c"dst2\00", align 1
+@1917 = private unnamed_addr constant [11 x i8] c"rhs_len_p1\00", align 1
+@1918 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1919 = private unnamed_addr constant [11 x i8] c"concat_i64\00", align 1
+@1920 = private unnamed_addr constant [16 x i8] c"forge_array_set\00", align 1
+@1921 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1922 = private unnamed_addr constant [46 x i8] c"list.set expects 2 arguments: index and value\00", align 1
 @1923 = private unnamed_addr constant [46 x i8] c"list.set expects 2 arguments: index and value\00", align 1
-@1924 = private unnamed_addr constant [46 x i8] c"list.set expects 2 arguments: index and value\00", align 1
-@1925 = private unnamed_addr constant [18 x i8] c"forge_array_slice\00", align 1
-@1926 = private unnamed_addr constant [6 x i8] c"slice\00", align 1
-@1927 = private unnamed_addr constant [8 x i8] c"set_key\00", align 1
-@1928 = private unnamed_addr constant [19 x i8] c"forge_map_set_cstr\00", align 1
-@1929 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1924 = private unnamed_addr constant [18 x i8] c"forge_array_slice\00", align 1
+@1925 = private unnamed_addr constant [6 x i8] c"slice\00", align 1
+@1926 = private unnamed_addr constant [8 x i8] c"set_key\00", align 1
+@1927 = private unnamed_addr constant [19 x i8] c"forge_map_set_cstr\00", align 1
+@1928 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1929 = private unnamed_addr constant [43 x i8] c"map.set expects 2 arguments: key and value\00", align 1
 @1930 = private unnamed_addr constant [43 x i8] c"map.set expects 2 arguments: key and value\00", align 1
-@1931 = private unnamed_addr constant [43 x i8] c"map.set expects 2 arguments: key and value\00", align 1
-@1932 = private unnamed_addr constant [27 x i8] c"expected 1 argument, got 0\00", align 1
-@1933 = private unnamed_addr constant [9 x i8] c"rep_self\00", align 1
-@1934 = private unnamed_addr constant [9 x i8] c"rep_from\00", align 1
-@1935 = private unnamed_addr constant [7 x i8] c"rep_to\00", align 1
-@1936 = private unnamed_addr constant [18 x i8] c"forge_str_replace\00", align 1
-@1937 = private unnamed_addr constant [9 x i8] c"replaced\00", align 1
-@1938 = private unnamed_addr constant [8 x i8] c"rep_i64\00", align 1
+@1931 = private unnamed_addr constant [27 x i8] c"expected 1 argument, got 0\00", align 1
+@1932 = private unnamed_addr constant [9 x i8] c"rep_self\00", align 1
+@1933 = private unnamed_addr constant [9 x i8] c"rep_from\00", align 1
+@1934 = private unnamed_addr constant [7 x i8] c"rep_to\00", align 1
+@1935 = private unnamed_addr constant [18 x i8] c"forge_str_replace\00", align 1
+@1936 = private unnamed_addr constant [9 x i8] c"replaced\00", align 1
+@1937 = private unnamed_addr constant [8 x i8] c"rep_i64\00", align 1
+@1938 = private unnamed_addr constant [28 x i8] c"replace expects 2 arguments\00", align 1
 @1939 = private unnamed_addr constant [28 x i8] c"replace expects 2 arguments\00", align 1
-@1940 = private unnamed_addr constant [28 x i8] c"replace expects 2 arguments\00", align 1
-@1941 = private unnamed_addr constant [32 x i8] c"substring expects 2 args, got 0\00", align 1
-@1942 = private unnamed_addr constant [32 x i8] c"substring expects 2 args, got 1\00", align 1
-@1943 = private unnamed_addr constant [8 x i8] c"sub_src\00", align 1
-@1944 = private unnamed_addr constant [8 x i8] c"sub_len\00", align 1
-@1945 = private unnamed_addr constant [10 x i8] c"sub_alloc\00", align 1
-@1946 = private unnamed_addr constant [12 x i8] c"sub_src_int\00", align 1
-@1947 = private unnamed_addr constant [12 x i8] c"sub_off_int\00", align 1
-@1948 = private unnamed_addr constant [8 x i8] c"sub_off\00", align 1
-@1949 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
-@1950 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@1951 = private unnamed_addr constant [12 x i8] c"sub_buf_int\00", align 1
-@1952 = private unnamed_addr constant [12 x i8] c"sub_nul_int\00", align 1
-@1953 = private unnamed_addr constant [8 x i8] c"sub_nul\00", align 1
-@1954 = private unnamed_addr constant [11 x i8] c"sub_result\00", align 1
-@1955 = private unnamed_addr constant [7 x i8] c"scmp_l\00", align 1
-@1956 = private unnamed_addr constant [7 x i8] c"scmp_r\00", align 1
-@1957 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
-@1958 = private unnamed_addr constant [12 x i8] c"strcmp_call\00", align 1
-@1959 = private unnamed_addr constant [12 x i8] c"strcmp_sext\00", align 1
-@1960 = private unnamed_addr constant [9 x i8] c"scmp_cmp\00", align 1
-@1961 = private unnamed_addr constant [9 x i8] c"scmp_ext\00", align 1
-@1962 = private unnamed_addr constant [8 x i8] c"streq_l\00", align 1
-@1963 = private unnamed_addr constant [8 x i8] c"streq_r\00", align 1
-@1964 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
-@1965 = private unnamed_addr constant [12 x i8] c"strcmp_call\00", align 1
-@1966 = private unnamed_addr constant [10 x i8] c"streq_cmp\00", align 1
-@1967 = private unnamed_addr constant [10 x i8] c"streq_ext\00", align 1
-@1968 = private unnamed_addr constant [4 x i8] c"neg\00", align 1
-@1969 = private unnamed_addr constant [8 x i8] c"not_cmp\00", align 1
-@1970 = private unnamed_addr constant [4 x i8] c"not\00", align 1
-@1971 = private unnamed_addr constant [5 x i8] c"bnot\00", align 1
-@1972 = private unnamed_addr constant [4 x i8] c"add\00", align 1
-@1973 = private unnamed_addr constant [4 x i8] c"sub\00", align 1
-@1974 = private unnamed_addr constant [4 x i8] c"mul\00", align 1
-@1975 = private unnamed_addr constant [4 x i8] c"div\00", align 1
-@1976 = private unnamed_addr constant [4 x i8] c"mod\00", align 1
-@1977 = private unnamed_addr constant [5 x i8] c"band\00", align 1
-@1978 = private unnamed_addr constant [4 x i8] c"bor\00", align 1
-@1979 = private unnamed_addr constant [5 x i8] c"bxor\00", align 1
-@1980 = private unnamed_addr constant [4 x i8] c"shl\00", align 1
-@1981 = private unnamed_addr constant [4 x i8] c"shr\00", align 1
-@1982 = private unnamed_addr constant [3 x i8] c"eq\00", align 1
-@1983 = private unnamed_addr constant [7 x i8] c"eq_ext\00", align 1
-@1984 = private unnamed_addr constant [3 x i8] c"ne\00", align 1
-@1985 = private unnamed_addr constant [7 x i8] c"ne_ext\00", align 1
-@1986 = private unnamed_addr constant [4 x i8] c"slt\00", align 1
-@1987 = private unnamed_addr constant [8 x i8] c"slt_ext\00", align 1
-@1988 = private unnamed_addr constant [4 x i8] c"sle\00", align 1
-@1989 = private unnamed_addr constant [8 x i8] c"sle_ext\00", align 1
-@1990 = private unnamed_addr constant [4 x i8] c"sgt\00", align 1
-@1991 = private unnamed_addr constant [8 x i8] c"sgt_ext\00", align 1
-@1992 = private unnamed_addr constant [4 x i8] c"sge\00", align 1
-@1993 = private unnamed_addr constant [8 x i8] c"sge_ext\00", align 1
-@1994 = private unnamed_addr constant [7 x i8] c"l_bool\00", align 1
-@1995 = private unnamed_addr constant [7 x i8] c"sc_rhs\00", align 1
-@1996 = private unnamed_addr constant [9 x i8] c"sc_merge\00", align 1
-@1997 = private unnamed_addr constant [7 x i8] c"r_bool\00", align 1
-@1998 = private unnamed_addr constant [7 x i8] c"sc_phi\00", align 1
-@1999 = private unnamed_addr constant [7 x i8] c"sc_ext\00", align 1
-@2000 = private unnamed_addr constant [23 x i8] c"forge-bootstrap v0.1.0\00", align 1
-@2001 = private unnamed_addr constant [73 x i8] c"Usage: bootstrapc <tokens|expr|program|eval|check|compile|run> <file.fg>\00", align 1
-@2002 = private unnamed_addr constant [2 x i8] c"/\00", align 1
+@1940 = private unnamed_addr constant [32 x i8] c"substring expects 2 args, got 0\00", align 1
+@1941 = private unnamed_addr constant [32 x i8] c"substring expects 2 args, got 1\00", align 1
+@1942 = private unnamed_addr constant [8 x i8] c"sub_src\00", align 1
+@1943 = private unnamed_addr constant [8 x i8] c"sub_len\00", align 1
+@1944 = private unnamed_addr constant [10 x i8] c"sub_alloc\00", align 1
+@1945 = private unnamed_addr constant [12 x i8] c"sub_src_int\00", align 1
+@1946 = private unnamed_addr constant [12 x i8] c"sub_off_int\00", align 1
+@1947 = private unnamed_addr constant [8 x i8] c"sub_off\00", align 1
+@1948 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
+@1949 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@1950 = private unnamed_addr constant [12 x i8] c"sub_buf_int\00", align 1
+@1951 = private unnamed_addr constant [12 x i8] c"sub_nul_int\00", align 1
+@1952 = private unnamed_addr constant [8 x i8] c"sub_nul\00", align 1
+@1953 = private unnamed_addr constant [11 x i8] c"sub_result\00", align 1
+@1954 = private unnamed_addr constant [7 x i8] c"scmp_l\00", align 1
+@1955 = private unnamed_addr constant [7 x i8] c"scmp_r\00", align 1
+@1956 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
+@1957 = private unnamed_addr constant [12 x i8] c"strcmp_call\00", align 1
+@1958 = private unnamed_addr constant [12 x i8] c"strcmp_sext\00", align 1
+@1959 = private unnamed_addr constant [9 x i8] c"scmp_cmp\00", align 1
+@1960 = private unnamed_addr constant [9 x i8] c"scmp_ext\00", align 1
+@1961 = private unnamed_addr constant [8 x i8] c"streq_l\00", align 1
+@1962 = private unnamed_addr constant [8 x i8] c"streq_r\00", align 1
+@1963 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
+@1964 = private unnamed_addr constant [12 x i8] c"strcmp_call\00", align 1
+@1965 = private unnamed_addr constant [10 x i8] c"streq_cmp\00", align 1
+@1966 = private unnamed_addr constant [10 x i8] c"streq_ext\00", align 1
+@1967 = private unnamed_addr constant [4 x i8] c"neg\00", align 1
+@1968 = private unnamed_addr constant [8 x i8] c"not_cmp\00", align 1
+@1969 = private unnamed_addr constant [4 x i8] c"not\00", align 1
+@1970 = private unnamed_addr constant [5 x i8] c"bnot\00", align 1
+@1971 = private unnamed_addr constant [4 x i8] c"add\00", align 1
+@1972 = private unnamed_addr constant [4 x i8] c"sub\00", align 1
+@1973 = private unnamed_addr constant [4 x i8] c"mul\00", align 1
+@1974 = private unnamed_addr constant [4 x i8] c"div\00", align 1
+@1975 = private unnamed_addr constant [4 x i8] c"mod\00", align 1
+@1976 = private unnamed_addr constant [5 x i8] c"band\00", align 1
+@1977 = private unnamed_addr constant [4 x i8] c"bor\00", align 1
+@1978 = private unnamed_addr constant [5 x i8] c"bxor\00", align 1
+@1979 = private unnamed_addr constant [4 x i8] c"shl\00", align 1
+@1980 = private unnamed_addr constant [4 x i8] c"shr\00", align 1
+@1981 = private unnamed_addr constant [3 x i8] c"eq\00", align 1
+@1982 = private unnamed_addr constant [7 x i8] c"eq_ext\00", align 1
+@1983 = private unnamed_addr constant [3 x i8] c"ne\00", align 1
+@1984 = private unnamed_addr constant [7 x i8] c"ne_ext\00", align 1
+@1985 = private unnamed_addr constant [4 x i8] c"slt\00", align 1
+@1986 = private unnamed_addr constant [8 x i8] c"slt_ext\00", align 1
+@1987 = private unnamed_addr constant [4 x i8] c"sle\00", align 1
+@1988 = private unnamed_addr constant [8 x i8] c"sle_ext\00", align 1
+@1989 = private unnamed_addr constant [4 x i8] c"sgt\00", align 1
+@1990 = private unnamed_addr constant [8 x i8] c"sgt_ext\00", align 1
+@1991 = private unnamed_addr constant [4 x i8] c"sge\00", align 1
+@1992 = private unnamed_addr constant [8 x i8] c"sge_ext\00", align 1
+@1993 = private unnamed_addr constant [7 x i8] c"l_bool\00", align 1
+@1994 = private unnamed_addr constant [7 x i8] c"sc_rhs\00", align 1
+@1995 = private unnamed_addr constant [9 x i8] c"sc_merge\00", align 1
+@1996 = private unnamed_addr constant [7 x i8] c"r_bool\00", align 1
+@1997 = private unnamed_addr constant [7 x i8] c"sc_phi\00", align 1
+@1998 = private unnamed_addr constant [7 x i8] c"sc_ext\00", align 1
+@1999 = private unnamed_addr constant [23 x i8] c"forge-bootstrap v0.1.0\00", align 1
+@2000 = private unnamed_addr constant [73 x i8] c"Usage: bootstrapc <tokens|expr|program|eval|check|compile|run> <file.fg>\00", align 1
+@2001 = private unnamed_addr constant [2 x i8] c"/\00", align 1
+@2002 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @2003 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@2004 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@2005 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@2006 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@2007 = private unnamed_addr constant [4 x i8] c".fg\00", align 1
-@2008 = private unnamed_addr constant [8 x i8] c"/mod.fg\00", align 1
-@2009 = private unnamed_addr constant [15 x i8] c"// === module \00", align 1
-@2010 = private unnamed_addr constant [6 x i8] c" ===\0A\00", align 1
-@2011 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@2012 = private unnamed_addr constant [15 x i8] c"// === module \00", align 1
-@2013 = private unnamed_addr constant [6 x i8] c" ===\0A\00", align 1
-@2014 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@2015 = private unnamed_addr constant [15 x i8] c"// === module \00", align 1
-@2016 = private unnamed_addr constant [18 x i8] c" (not found) ===\0A\00", align 1
-@2017 = private unnamed_addr constant [2 x i8] c" \00", align 1
-@2018 = private unnamed_addr constant [2 x i8] c"\09\00", align 1
-@2019 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@2020 = private unnamed_addr constant [2 x i8] c"m\00", align 1
-@2021 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@2022 = private unnamed_addr constant [2 x i8] c"o\00", align 1
-@2023 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@2024 = private unnamed_addr constant [2 x i8] c"d\00", align 1
-@2025 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@2026 = private unnamed_addr constant [2 x i8] c" \00", align 1
-@2027 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@2028 = private unnamed_addr constant [2 x i8] c" \00", align 1
-@2029 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
-@2030 = private unnamed_addr constant [2 x i8] c"\09\00", align 1
-@2031 = private unnamed_addr constant [2 x i8] c"\0D\00", align 1
-@2032 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
-@2033 = private unnamed_addr constant [7 x i8] c"tokens\00", align 1
-@2034 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@2035 = private unnamed_addr constant [8 x i8] c"program\00", align 1
-@2036 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
-@2037 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@2038 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@2039 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@2040 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
-@2041 = private unnamed_addr constant [4 x i8] c"run\00", align 1
+@2004 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@2005 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@2006 = private unnamed_addr constant [4 x i8] c".fg\00", align 1
+@2007 = private unnamed_addr constant [8 x i8] c"/mod.fg\00", align 1
+@2008 = private unnamed_addr constant [15 x i8] c"// === module \00", align 1
+@2009 = private unnamed_addr constant [6 x i8] c" ===\0A\00", align 1
+@2010 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@2011 = private unnamed_addr constant [15 x i8] c"// === module \00", align 1
+@2012 = private unnamed_addr constant [6 x i8] c" ===\0A\00", align 1
+@2013 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@2014 = private unnamed_addr constant [15 x i8] c"// === module \00", align 1
+@2015 = private unnamed_addr constant [18 x i8] c" (not found) ===\0A\00", align 1
+@2016 = private unnamed_addr constant [2 x i8] c" \00", align 1
+@2017 = private unnamed_addr constant [2 x i8] c"\09\00", align 1
+@2018 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@2019 = private unnamed_addr constant [2 x i8] c"m\00", align 1
+@2020 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@2021 = private unnamed_addr constant [2 x i8] c"o\00", align 1
+@2022 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@2023 = private unnamed_addr constant [2 x i8] c"d\00", align 1
+@2024 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@2025 = private unnamed_addr constant [2 x i8] c" \00", align 1
+@2026 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@2027 = private unnamed_addr constant [2 x i8] c" \00", align 1
+@2028 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@2029 = private unnamed_addr constant [2 x i8] c"\09\00", align 1
+@2030 = private unnamed_addr constant [2 x i8] c"\0D\00", align 1
+@2031 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@2032 = private unnamed_addr constant [7 x i8] c"tokens\00", align 1
+@2033 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@2034 = private unnamed_addr constant [8 x i8] c"program\00", align 1
+@2035 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
+@2036 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@2037 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@2038 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@2039 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
+@2040 = private unnamed_addr constant [4 x i8] c"run\00", align 1
 
 declare i32 @puts(ptr)
 
@@ -2214,6 +2213,12 @@ declare i64 @forge_selfhost_trace_int(i64, i64)
 declare i64 @exit.1(i64)
 
 declare i64 @forge_char_from_hex(i64, i64)
+
+declare i64 @forge_trace_ptr(i64, i64)
+
+declare i64 @forge_dump_stmt(i64, i64)
+
+declare i64 @forge_dump_stmt_list(i64, i64)
 
 declare i64 @forge_selfhost_file_exists(i64)
 
@@ -3111,7 +3116,7 @@ bb109:                                            ; preds = %bb106
   br label %bb110
 
 bb110:                                            ; preds = %bb109
-  %11 = call ptr @malloc(i64 24)
+  %11 = call ptr @forge_bump_alloc(i64 24)
   %12 = getelementptr inbounds %ValueType, ptr %11, i32 0, i32 0
   store i8 0, ptr %12, align 1
   %13 = ptrtoint ptr %11 to i64
@@ -3242,7 +3247,7 @@ bb131:                                            ; preds = %bb129
   br label %bb132
 
 bb132:                                            ; preds = %bb131
-  %16 = call ptr @malloc(i64 24)
+  %16 = call ptr @forge_bump_alloc(i64 24)
   %17 = getelementptr inbounds %ValueType, ptr %16, i32 0, i32 0
   store i8 0, ptr %17, align 1
   %18 = ptrtoint ptr %16 to i64
@@ -3537,7 +3542,7 @@ bb181:                                            ; preds = %bb178
   br label %bb182
 
 bb182:                                            ; preds = %bb181
-  %14 = call ptr @malloc(i64 24)
+  %14 = call ptr @forge_bump_alloc(i64 24)
   %15 = getelementptr inbounds %ValueType, ptr %14, i32 0, i32 0
   store i8 0, ptr %15, align 1
   %16 = ptrtoint ptr %14 to i64
@@ -3569,7 +3574,7 @@ bb185:                                            ; preds = %bb189, %bb192, %bb1
   ret i64 %8
 
 bb186:                                            ; preds = %bb184
-  %9 = call ptr @malloc(i64 24)
+  %9 = call ptr @forge_bump_alloc(i64 24)
   %10 = getelementptr inbounds %ValueType, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -3884,7 +3889,7 @@ bb243:                                            ; preds = %bb241
   %11 = load i64, ptr %n, align 4
   %12 = getelementptr inbounds %VarLookup, ptr %9, i32 0, i32 1
   store i64 %11, ptr %12, align 4
-  %13 = call ptr @malloc(i64 24)
+  %13 = call ptr @forge_bump_alloc(i64 24)
   %14 = getelementptr inbounds %ValueType, ptr %13, i32 0, i32 0
   store i8 0, ptr %14, align 1
   %15 = ptrtoint ptr %13 to i64
@@ -3964,7 +3969,7 @@ bb250:
   store i64 %2, ptr %alloca, align 4
   %ty = alloca i64, align 8
   store i64 %3, ptr %ty, align 4
-  %4 = call ptr @malloc(i64 40)
+  %4 = call ptr @forge_bump_alloc(i64 40)
   %5 = getelementptr inbounds %VarEnv, ptr %4, i32 0, i32 0
   store i8 1, ptr %5, align 1
   %6 = load i64, ptr %name, align 4
@@ -4088,7 +4093,7 @@ bb260:
   store i64 %2, ptr %fn_val, align 4
   %arity = alloca i64, align 8
   store i64 %3, ptr %arity, align 4
-  %4 = call ptr @malloc(i64 40)
+  %4 = call ptr @forge_bump_alloc(i64 40)
   %5 = getelementptr inbounds %FnEnv, ptr %4, i32 0, i32 0
   store i8 1, ptr %5, align 1
   %6 = load i64, ptr %name, align 4
@@ -4438,7 +4443,7 @@ bb304:                                            ; preds = %bb302
   %10 = call ptr @malloc(i64 24)
   %11 = getelementptr inbounds %VariantLookup, ptr %10, i32 0, i32 0
   store i64 0, ptr %11, align 4
-  %12 = call ptr @malloc(i64 32)
+  %12 = call ptr @forge_bump_alloc(i64 32)
   %13 = getelementptr inbounds %FieldList, ptr %12, i32 0, i32 0
   store i8 0, ptr %13, align 1
   %14 = ptrtoint ptr %12 to i64
@@ -12661,13 +12666,13 @@ bb924:                                            ; No predecessors!
 define i64 @resolver_new() {
 bb925:
   %0 = call ptr @malloc(i64 48)
-  %1 = call ptr @malloc(i64 48)
+  %1 = call ptr @forge_bump_alloc(i64 48)
   %2 = getelementptr inbounds %ScopeEntry, ptr %1, i32 0, i32 0
   store i8 0, ptr %2, align 1
   %3 = ptrtoint ptr %1 to i64
   %4 = getelementptr inbounds %Resolver, ptr %0, i32 0, i32 0
   store i64 %3, ptr %4, align 4
-  %5 = call ptr @malloc(i64 24)
+  %5 = call ptr @forge_bump_alloc(i64 24)
   %6 = getelementptr inbounds %FnEntry, ptr %5, i32 0, i32 0
   store i8 0, ptr %6, align 1
   %7 = ptrtoint ptr %5 to i64
@@ -12693,7 +12698,7 @@ bb926:
   %message = alloca i64, align 8
   store i64 %1, ptr %message, align 4
   %2 = load i64, ptr %r, align 4
-  %3 = call ptr @malloc(i64 8)
+  %3 = call ptr @forge_bump_alloc(i64 8)
   %4 = getelementptr inbounds %DiagCode, ptr %3, i32 0, i32 0
   store i8 12, ptr %4, align 1
   %5 = ptrtoint ptr %3 to i64
@@ -12902,7 +12907,7 @@ bb934:                                            ; preds = %bb938, %bb941, %bb9
   ret i64 %8
 
 bb935:                                            ; preds = %bb933
-  %9 = call ptr @malloc(i64 48)
+  %9 = call ptr @forge_bump_alloc(i64 48)
   %10 = getelementptr inbounds %ScopeEntry, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -12955,7 +12960,7 @@ bb940:                                            ; preds = %bb937
   br label %bb941
 
 bb941:                                            ; preds = %bb940
-  %32 = call ptr @malloc(i64 48)
+  %32 = call ptr @forge_bump_alloc(i64 48)
   %33 = getelementptr inbounds %ScopeEntry, ptr %32, i32 0, i32 0
   store i8 1, ptr %33, align 1
   %34 = load i64, ptr %name, align 4
@@ -13037,7 +13042,7 @@ bb944:
   %22 = load i64, ptr %21, align 4
   %23 = getelementptr inbounds %Resolver, ptr %4, i32 0, i32 5
   store i64 %22, ptr %23, align 4
-  %24 = call ptr @malloc(i64 48)
+  %24 = call ptr @forge_bump_alloc(i64 48)
   %25 = getelementptr inbounds %ScopeEntry, ptr %24, i32 0, i32 0
   store i8 1, ptr %25, align 1
   %26 = load i64, ptr %name, align 4
@@ -13198,7 +13203,7 @@ bb953:                                            ; preds = %bb957, %bb962, %bb9
   ret i64 %9
 
 bb954:                                            ; preds = %bb952
-  %10 = call ptr @malloc(i64 48)
+  %10 = call ptr @forge_bump_alloc(i64 48)
   %11 = getelementptr inbounds %ScopeEntry, ptr %10, i32 0, i32 0
   store i8 0, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
@@ -13260,7 +13265,7 @@ bb959:                                            ; preds = %bb958, %bb956
   br i1 %41, label %bb960, label %bb961
 
 bb960:                                            ; preds = %bb959
-  %42 = call ptr @malloc(i64 48)
+  %42 = call ptr @forge_bump_alloc(i64 48)
   %43 = getelementptr inbounds %ScopeEntry, ptr %42, i32 0, i32 0
   store i8 1, ptr %43, align 1
   %44 = load i64, ptr %entry_name, align 4
@@ -13284,7 +13289,7 @@ bb961:                                            ; preds = %bb959
   br label %bb962
 
 bb962:                                            ; preds = %bb961
-  %54 = call ptr @malloc(i64 48)
+  %54 = call ptr @forge_bump_alloc(i64 48)
   %55 = getelementptr inbounds %ScopeEntry, ptr %54, i32 0, i32 0
   store i8 1, ptr %55, align 1
   %56 = load i64, ptr %entry_name, align 4
@@ -13343,7 +13348,7 @@ bb963:
   %21 = load i64, ptr %20, align 4
   %22 = getelementptr inbounds %Resolver, ptr %3, i32 0, i32 5
   store i64 %21, ptr %22, align 4
-  %23 = call ptr @malloc(i64 24)
+  %23 = call ptr @forge_bump_alloc(i64 24)
   %24 = getelementptr inbounds %FnEntry, ptr %23, i32 0, i32 0
   store i8 1, ptr %24, align 1
   %25 = load i64, ptr %name, align 4
@@ -14789,7 +14794,7 @@ bb1131:                                           ; preds = %bb1130
 
 bb1132:                                           ; preds = %bb1131
   %186 = load i64, ptr %after_value, align 4
-  %187 = call ptr @malloc(i64 8)
+  %187 = call ptr @forge_bump_alloc(i64 8)
   %188 = getelementptr inbounds %DiagCode, ptr %187, i32 0, i32 0
   store i8 13, ptr %188, align 1
   %189 = ptrtoint ptr %187 to i64
@@ -15924,13 +15929,13 @@ bb1252:
 define i64 @runtime_new() {
 bb1253:
   %0 = call ptr @malloc(i64 24)
-  %1 = call ptr @malloc(i64 48)
+  %1 = call ptr @forge_bump_alloc(i64 48)
   %2 = getelementptr inbounds %BindingList, ptr %1, i32 0, i32 0
   store i8 0, ptr %2, align 1
   %3 = ptrtoint ptr %1 to i64
   %4 = getelementptr inbounds %Runtime, ptr %0, i32 0, i32 0
   store i64 %3, ptr %4, align 4
-  %5 = call ptr @malloc(i64 40)
+  %5 = call ptr @forge_bump_alloc(i64 40)
   %6 = getelementptr inbounds %FunctionList, ptr %5, i32 0, i32 0
   store i8 0, ptr %6, align 1
   %7 = ptrtoint ptr %5 to i64
@@ -16176,7 +16181,7 @@ bb1264:                                           ; preds = %bb1268, %bb1271, %b
   ret i64 %8
 
 bb1265:                                           ; preds = %bb1263
-  %9 = call ptr @malloc(i64 48)
+  %9 = call ptr @forge_bump_alloc(i64 48)
   %10 = getelementptr inbounds %BindingList, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -16229,7 +16234,7 @@ bb1270:                                           ; preds = %bb1267
   br label %bb1271
 
 bb1271:                                           ; preds = %bb1270
-  %32 = call ptr @malloc(i64 48)
+  %32 = call ptr @forge_bump_alloc(i64 48)
   %33 = getelementptr inbounds %BindingList, ptr %32, i32 0, i32 0
   store i8 1, ptr %33, align 1
   %34 = load i64, ptr %name, align 4
@@ -16263,7 +16268,7 @@ bb1272:
   %value = alloca i64, align 8
   store i64 %3, ptr %value, align 4
   %4 = call ptr @malloc(i64 24)
-  %5 = call ptr @malloc(i64 48)
+  %5 = call ptr @forge_bump_alloc(i64 48)
   %6 = getelementptr inbounds %BindingList, ptr %5, i32 0, i32 0
   store i8 1, ptr %6, align 1
   %7 = load i64, ptr %name, align 4
@@ -16412,13 +16417,13 @@ bb1283:                                           ; preds = %bb1287, %bb1290, %b
 
 bb1284:                                           ; preds = %bb1282
   %9 = call ptr @malloc(i64 24)
-  %10 = call ptr @malloc(i64 32)
+  %10 = call ptr @forge_bump_alloc(i64 32)
   %11 = getelementptr inbounds %ParamList, ptr %10, i32 0, i32 0
   store i8 0, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
   %13 = getelementptr inbounds %FunctionLookupResult, ptr %9, i32 0, i32 0
   store i64 %12, ptr %13, align 4
-  %14 = call ptr @malloc(i64 24)
+  %14 = call ptr @forge_bump_alloc(i64 24)
   %15 = getelementptr inbounds %StmtList, ptr %14, i32 0, i32 0
   store i8 0, ptr %15, align 1
   %16 = ptrtoint ptr %14 to i64
@@ -16507,7 +16512,7 @@ bb1291:
   %8 = load i64, ptr %7, align 4
   %9 = getelementptr inbounds %Runtime, ptr %4, i32 0, i32 0
   store i64 %8, ptr %9, align 4
-  %10 = call ptr @malloc(i64 40)
+  %10 = call ptr @forge_bump_alloc(i64 40)
   %11 = getelementptr inbounds %FunctionList, ptr %10, i32 0, i32 0
   store i8 1, ptr %11, align 1
   %12 = load i64, ptr %name, align 4
@@ -16562,7 +16567,7 @@ bb1293:                                           ; preds = %bb1297, %bb1309
 
 bb1294:                                           ; preds = %bb1292
   %10 = call ptr @malloc(i64 32)
-  %11 = call ptr @malloc(i64 48)
+  %11 = call ptr @forge_bump_alloc(i64 48)
   %12 = getelementptr inbounds %BindingList, ptr %11, i32 0, i32 0
   store i8 0, ptr %12, align 1
   %13 = ptrtoint ptr %11 to i64
@@ -16687,7 +16692,7 @@ bb1302:                                           ; preds = %bb1298
 
 bb1303:                                           ; preds = %bb1302
   %87 = call ptr @malloc(i64 32)
-  %88 = call ptr @malloc(i64 48)
+  %88 = call ptr @forge_bump_alloc(i64 48)
   %89 = getelementptr inbounds %BindingList, ptr %88, i32 0, i32 0
   store i8 1, ptr %89, align 1
   %90 = load i64, ptr %binding_name, align 4
@@ -16767,7 +16772,7 @@ bb1308:                                           ; preds = %bb1306
 
 bb1309:                                           ; preds = %bb1308
   %131 = call ptr @malloc(i64 32)
-  %132 = call ptr @malloc(i64 48)
+  %132 = call ptr @forge_bump_alloc(i64 48)
   %133 = getelementptr inbounds %BindingList, ptr %132, i32 0, i32 0
   store i8 1, ptr %133, align 1
   %134 = load i64, ptr %binding_name, align 4
@@ -18284,7 +18289,7 @@ bb1486:                                           ; preds = %bb1484
   %10 = load i64, ptr %runtime, align 4
   %11 = getelementptr inbounds %EvalArgsResult, ptr %9, i32 0, i32 0
   store i64 %10, ptr %11, align 4
-  %12 = call ptr @malloc(i64 24)
+  %12 = call ptr @forge_bump_alloc(i64 24)
   %13 = getelementptr inbounds %ValueList, ptr %12, i32 0, i32 0
   store i8 0, ptr %13, align 1
   %14 = ptrtoint ptr %12 to i64
@@ -18335,7 +18340,7 @@ bb1490:                                           ; preds = %bb1488
   %37 = load i64, ptr %36, align 4
   %38 = getelementptr inbounds %EvalArgsResult, ptr %33, i32 0, i32 0
   store i64 %37, ptr %38, align 4
-  %39 = call ptr @malloc(i64 24)
+  %39 = call ptr @forge_bump_alloc(i64 24)
   %40 = getelementptr inbounds %ValueList, ptr %39, i32 0, i32 0
   store i8 0, ptr %40, align 1
   %41 = ptrtoint ptr %39 to i64
@@ -18392,7 +18397,7 @@ bb1495:                                           ; preds = %bb1494
   %70 = load i64, ptr %69, align 4
   %71 = getelementptr inbounds %EvalArgsResult, ptr %66, i32 0, i32 0
   store i64 %70, ptr %71, align 4
-  %72 = call ptr @malloc(i64 24)
+  %72 = call ptr @forge_bump_alloc(i64 24)
   %73 = getelementptr inbounds %ValueList, ptr %72, i32 0, i32 0
   store i8 1, ptr %73, align 1
   %74 = load i64, ptr %arg_value, align 4
@@ -18573,7 +18578,7 @@ bb4690:                                           ; preds = %bb4688
   br label %bb4692
 
 bb4691:                                           ; preds = %bb4688
-  %64 = call ptr @malloc(i64 24)
+  %64 = call ptr @forge_bump_alloc(i64 24)
   %65 = getelementptr inbounds %ValueType, ptr %64, i32 0, i32 0
   store i8 0, ptr %65, align 1
   %66 = ptrtoint ptr %64 to i64
@@ -20138,7 +20143,7 @@ bb1672:
   %2 = load i64, ptr %value, align 4
   %3 = getelementptr inbounds %EmitResult, ptr %1, i32 0, i32 0
   store i64 %2, ptr %3, align 4
-  %4 = call ptr @malloc(i64 24)
+  %4 = call ptr @forge_bump_alloc(i64 24)
   %5 = getelementptr inbounds %ValueType, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -20160,7 +20165,7 @@ bb1673:
   %2 = load i64, ptr %value, align 4
   %3 = getelementptr inbounds %EmitResult, ptr %1, i32 0, i32 0
   store i64 %2, ptr %3, align 4
-  %4 = call ptr @malloc(i64 24)
+  %4 = call ptr @forge_bump_alloc(i64 24)
   %5 = getelementptr inbounds %ValueType, ptr %4, i32 0, i32 0
   store i8 1, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -20203,7 +20208,7 @@ bb1675:
   %2 = call i64 @null_ptr_val()
   %3 = getelementptr inbounds %EmitResult, ptr %1, i32 0, i32 0
   store i64 %2, ptr %3, align 4
-  %4 = call ptr @malloc(i64 24)
+  %4 = call ptr @forge_bump_alloc(i64 24)
   %5 = getelementptr inbounds %ValueType, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -20252,7 +20257,7 @@ bb1677:
   %message = alloca i64, align 8
   store i64 %0, ptr %message, align 4
   %1 = call ptr @malloc(i64 24)
-  %2 = call ptr @malloc(i64 40)
+  %2 = call ptr @forge_bump_alloc(i64 40)
   %3 = getelementptr inbounds %VarEnv, ptr %2, i32 0, i32 0
   store i8 0, ptr %3, align 1
   %4 = ptrtoint ptr %2 to i64
@@ -20272,7 +20277,7 @@ bb1678:
   %r = alloca i64, align 8
   store i64 %0, ptr %r, align 4
   %1 = call ptr @malloc(i64 24)
-  %2 = call ptr @malloc(i64 40)
+  %2 = call ptr @forge_bump_alloc(i64 40)
   %3 = getelementptr inbounds %VarEnv, ptr %2, i32 0, i32 0
   store i8 0, ptr %3, align 1
   %4 = ptrtoint ptr %2 to i64
@@ -20309,7 +20314,7 @@ bb1680:                                           ; preds = %bb1684, %bb1683, %b
   ret i64 %7
 
 bb1681:                                           ; preds = %bb1679
-  %8 = call ptr @malloc(i64 32)
+  %8 = call ptr @forge_bump_alloc(i64 32)
   %9 = getelementptr inbounds %FieldList, ptr %8, i32 0, i32 0
   store i8 0, ptr %9, align 1
   %10 = ptrtoint ptr %8 to i64
@@ -20489,7 +20494,7 @@ bb1697:                                           ; preds = %bb1695
   %9 = call ptr @malloc(i64 16)
   %10 = getelementptr inbounds %StructLookup, ptr %9, i32 0, i32 0
   store i64 0, ptr %10, align 4
-  %11 = call ptr @malloc(i64 32)
+  %11 = call ptr @forge_bump_alloc(i64 32)
   %12 = getelementptr inbounds %FieldList, ptr %11, i32 0, i32 0
   store i8 0, ptr %12, align 1
   %13 = ptrtoint ptr %11 to i64
@@ -20576,7 +20581,7 @@ bb1706:                                           ; preds = %bb1704
   %9 = call ptr @malloc(i64 16)
   %10 = getelementptr inbounds %EnumLookup, ptr %9, i32 0, i32 0
   store i64 0, ptr %10, align 4
-  %11 = call ptr @malloc(i64 32)
+  %11 = call ptr @forge_bump_alloc(i64 32)
   %12 = getelementptr inbounds %VariantList, ptr %11, i32 0, i32 0
   store i8 0, ptr %12, align 1
   %13 = ptrtoint ptr %11 to i64
@@ -20660,7 +20665,7 @@ bb1714:                                           ; preds = %bb1718, %bb1721, %b
   ret i64 %8
 
 bb1715:                                           ; preds = %bb1713
-  %9 = call ptr @malloc(i64 24)
+  %9 = call ptr @forge_bump_alloc(i64 24)
   %10 = getelementptr inbounds %ValueType, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -20743,7 +20748,7 @@ bb1724:                                           ; preds = %bb1722
   %11 = load i64, ptr %n, align 4
   %12 = getelementptr inbounds %TopLevelLookup, ptr %9, i32 0, i32 1
   store i64 %11, ptr %12, align 4
-  %13 = call ptr @malloc(i64 24)
+  %13 = call ptr @forge_bump_alloc(i64 24)
   %14 = getelementptr inbounds %ValueType, ptr %13, i32 0, i32 0
   store i8 0, ptr %14, align 1
   %15 = ptrtoint ptr %13 to i64
@@ -20896,7 +20901,7 @@ bb1737:
   br i1 %9, label %bb1738, label %bb1739
 
 bb1738:                                           ; preds = %bb1737
-  %10 = call ptr @malloc(i64 24)
+  %10 = call ptr @forge_bump_alloc(i64 24)
   %11 = getelementptr inbounds %ValueType, ptr %10, i32 0, i32 0
   store i8 1, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
@@ -20916,7 +20921,7 @@ bb1740:                                           ; preds = %bb1739
   br i1 %19, label %bb1741, label %bb1742
 
 bb1741:                                           ; preds = %bb1740
-  %20 = call ptr @malloc(i64 24)
+  %20 = call ptr @forge_bump_alloc(i64 24)
   %21 = getelementptr inbounds %ValueType, ptr %20, i32 0, i32 0
   store i8 1, ptr %21, align 1
   %22 = ptrtoint ptr %20 to i64
@@ -20936,7 +20941,7 @@ bb1743:                                           ; preds = %bb1742
   br i1 %29, label %bb1744, label %bb1745
 
 bb1744:                                           ; preds = %bb1743
-  %30 = call ptr @malloc(i64 24)
+  %30 = call ptr @forge_bump_alloc(i64 24)
   %31 = getelementptr inbounds %ValueType, ptr %30, i32 0, i32 0
   store i8 0, ptr %31, align 1
   %32 = ptrtoint ptr %30 to i64
@@ -20956,7 +20961,7 @@ bb1746:                                           ; preds = %bb1745
   br i1 %39, label %bb1747, label %bb1748
 
 bb1747:                                           ; preds = %bb1746
-  %40 = call ptr @malloc(i64 24)
+  %40 = call ptr @forge_bump_alloc(i64 24)
   %41 = getelementptr inbounds %ValueType, ptr %40, i32 0, i32 0
   store i8 0, ptr %41, align 1
   %42 = ptrtoint ptr %40 to i64
@@ -20976,7 +20981,7 @@ bb1749:                                           ; preds = %bb1748
   br i1 %49, label %bb1750, label %bb1751
 
 bb1750:                                           ; preds = %bb1749
-  %50 = call ptr @malloc(i64 24)
+  %50 = call ptr @forge_bump_alloc(i64 24)
   %51 = getelementptr inbounds %ValueType, ptr %50, i32 0, i32 0
   store i8 2, ptr %51, align 1
   %52 = ptrtoint ptr %50 to i64
@@ -20996,7 +21001,7 @@ bb1752:                                           ; preds = %bb1751
   br i1 %59, label %bb1753, label %bb1754
 
 bb1753:                                           ; preds = %bb1752
-  %60 = call ptr @malloc(i64 24)
+  %60 = call ptr @forge_bump_alloc(i64 24)
   %61 = getelementptr inbounds %ValueType, ptr %60, i32 0, i32 0
   store i8 3, ptr %61, align 1
   %62 = ptrtoint ptr %60 to i64
@@ -21016,10 +21021,10 @@ bb1755:                                           ; preds = %bb1754
   br i1 %69, label %bb1756, label %bb1757
 
 bb1756:                                           ; preds = %bb1755
-  %70 = call ptr @malloc(i64 24)
+  %70 = call ptr @forge_bump_alloc(i64 24)
   %71 = getelementptr inbounds %ValueType, ptr %70, i32 0, i32 0
   store i8 9, ptr %71, align 1
-  %72 = call ptr @malloc(i64 24)
+  %72 = call ptr @forge_bump_alloc(i64 24)
   %73 = getelementptr inbounds %ValueType, ptr %72, i32 0, i32 0
   store i8 0, ptr %73, align 1
   %74 = ptrtoint ptr %72 to i64
@@ -21093,7 +21098,7 @@ bb1761:                                           ; preds = %bb1760
   %122 = call i64 @translate_param_type(i64 %119, i64 %120, i64 %121)
   %ret_type = alloca i64, align 8
   store i64 %122, ptr %ret_type, align 4
-  %123 = call ptr @malloc(i64 24)
+  %123 = call ptr @forge_bump_alloc(i64 24)
   %124 = getelementptr inbounds %ValueType, ptr %123, i32 0, i32 0
   store i8 9, ptr %124, align 1
   %125 = load i64, ptr %ret_type, align 4
@@ -21116,10 +21121,10 @@ bb1763:                                           ; preds = %bb1762
   br i1 %134, label %bb1764, label %bb1765
 
 bb1764:                                           ; preds = %bb1763
-  %135 = call ptr @malloc(i64 24)
+  %135 = call ptr @forge_bump_alloc(i64 24)
   %136 = getelementptr inbounds %ValueType, ptr %135, i32 0, i32 0
   store i8 7, ptr %136, align 1
-  %137 = call ptr @malloc(i64 24)
+  %137 = call ptr @forge_bump_alloc(i64 24)
   %138 = getelementptr inbounds %ValueType, ptr %137, i32 0, i32 0
   store i8 0, ptr %138, align 1
   %139 = ptrtoint ptr %137 to i64
@@ -21142,7 +21147,7 @@ bb1766:                                           ; preds = %bb1765
   br i1 %148, label %bb1767, label %bb1768
 
 bb1767:                                           ; preds = %bb1766
-  %149 = call ptr @malloc(i64 24)
+  %149 = call ptr @forge_bump_alloc(i64 24)
   %150 = getelementptr inbounds %ValueType, ptr %149, i32 0, i32 0
   store i8 8, ptr %150, align 1
   %151 = ptrtoint ptr %149 to i64
@@ -21165,7 +21170,7 @@ bb1769:                                           ; preds = %bb1768
   br i1 %159, label %bb1770, label %bb1771
 
 bb1770:                                           ; preds = %bb1769
-  %160 = call ptr @malloc(i64 24)
+  %160 = call ptr @forge_bump_alloc(i64 24)
   %161 = getelementptr inbounds %ValueType, ptr %160, i32 0, i32 0
   store i8 5, ptr %161, align 1
   %162 = load i64, ptr %ty, align 4
@@ -21191,7 +21196,7 @@ bb1772:                                           ; preds = %bb1771
   br i1 %172, label %bb1773, label %bb1774
 
 bb1773:                                           ; preds = %bb1772
-  %173 = call ptr @malloc(i64 24)
+  %173 = call ptr @forge_bump_alloc(i64 24)
   %174 = getelementptr inbounds %ValueType, ptr %173, i32 0, i32 0
   store i8 4, ptr %174, align 1
   %175 = load i64, ptr %ty, align 4
@@ -21204,7 +21209,7 @@ bb1774:                                           ; preds = %bb1772
   br label %bb1775
 
 bb1775:                                           ; preds = %bb1774
-  %178 = call ptr @malloc(i64 24)
+  %178 = call ptr @forge_bump_alloc(i64 24)
   %179 = getelementptr inbounds %ValueType, ptr %178, i32 0, i32 0
   store i8 0, ptr %179, align 1
   %180 = ptrtoint ptr %178 to i64
@@ -24744,7 +24749,7 @@ bb1972:
   %4 = load i64, ptr %code, align 4
   %5 = getelementptr inbounds %Diagnostic, ptr %3, i32 0, i32 0
   store i64 %4, ptr %5, align 4
-  %6 = call ptr @malloc(i64 8)
+  %6 = call ptr @forge_bump_alloc(i64 8)
   %7 = getelementptr inbounds %Severity, ptr %6, i32 0, i32 0
   store i8 0, ptr %7, align 1
   %8 = ptrtoint ptr %6 to i64
@@ -24776,7 +24781,7 @@ bb1973:
   %4 = load i64, ptr %code, align 4
   %5 = getelementptr inbounds %Diagnostic, ptr %3, i32 0, i32 0
   store i64 %4, ptr %5, align 4
-  %6 = call ptr @malloc(i64 8)
+  %6 = call ptr @forge_bump_alloc(i64 8)
   %7 = getelementptr inbounds %Severity, ptr %6, i32 0, i32 0
   store i8 1, ptr %7, align 1
   %8 = ptrtoint ptr %6 to i64
@@ -24835,7 +24840,7 @@ bb1974:
 define i64 @bag_new() {
 bb1975:
   %0 = call ptr @malloc(i64 24)
-  %1 = call ptr @malloc(i64 24)
+  %1 = call ptr @forge_bump_alloc(i64 24)
   %2 = getelementptr inbounds %DiagnosticList, ptr %1, i32 0, i32 0
   store i8 0, ptr %2, align 1
   %3 = ptrtoint ptr %1 to i64
@@ -24913,7 +24918,7 @@ bb1982:                                           ; preds = %bb1986, %bb1985, %b
   %new_warnings = alloca i64, align 8
   store i64 %30, ptr %new_warnings, align 4
   %31 = call ptr @malloc(i64 24)
-  %32 = call ptr @malloc(i64 24)
+  %32 = call ptr @forge_bump_alloc(i64 24)
   %33 = getelementptr inbounds %DiagnosticList, ptr %32, i32 0, i32 0
   store i8 1, ptr %33, align 1
   %34 = load i64, ptr %diag, align 4
@@ -25064,7 +25069,7 @@ bb1993:                                           ; preds = %bb1992
   %next = alloca i64, align 8
   store i64 %37, ptr %next, align 4
   %38 = call ptr @malloc(i64 24)
-  %39 = call ptr @malloc(i64 24)
+  %39 = call ptr @forge_bump_alloc(i64 24)
   %40 = getelementptr inbounds %DiagnosticList, ptr %39, i32 0, i32 0
   store i8 1, ptr %40, align 1
   %41 = load i64, ptr %diag, align 4
@@ -25481,7 +25486,7 @@ bb2040:                                           ; preds = %bb2044, %bb2045, %b
   ret i64 %7
 
 bb2041:                                           ; preds = %bb2039
-  %8 = call ptr @malloc(i64 32)
+  %8 = call ptr @forge_bump_alloc(i64 32)
   %9 = getelementptr inbounds %ParamList, ptr %8, i32 0, i32 0
   store i8 0, ptr %9, align 1
   %10 = ptrtoint ptr %8 to i64
@@ -25519,7 +25524,7 @@ bb2045:                                           ; preds = %bb2049, %bb2048, %b
   %23 = load i64, ptr %match_result1, align 4
   %name = alloca i64, align 8
   store i64 %23, ptr %name, align 4
-  %24 = call ptr @malloc(i64 32)
+  %24 = call ptr @forge_bump_alloc(i64 32)
   %25 = getelementptr inbounds %ParamList, ptr %24, i32 0, i32 0
   store i8 1, ptr %25, align 1
   %26 = load i64, ptr %name, align 4
@@ -26269,17 +26274,17 @@ define i64 @wrap_in_it_lambda(i64 %0) {
 bb2145:
   %expr = alloca i64, align 8
   store i64 %0, ptr %expr, align 4
-  %1 = call ptr @malloc(i64 32)
+  %1 = call ptr @forge_bump_alloc(i64 32)
   %2 = getelementptr inbounds %Expr, ptr %1, i32 0, i32 0
   store i8 26, ptr %2, align 1
-  %3 = call ptr @malloc(i64 32)
+  %3 = call ptr @forge_bump_alloc(i64 32)
   %4 = getelementptr inbounds %ParamList, ptr %3, i32 0, i32 0
   store i8 1, ptr %4, align 1
   %5 = getelementptr inbounds %ParamList, ptr %3, i32 0, i32 1
   store i64 ptrtoint (ptr @699 to i64), ptr %5, align 4
   %6 = getelementptr inbounds %ParamList, ptr %3, i32 0, i32 2
   store i64 ptrtoint (ptr @700 to i64), ptr %6, align 4
-  %7 = call ptr @malloc(i64 32)
+  %7 = call ptr @forge_bump_alloc(i64 32)
   %8 = getelementptr inbounds %ParamList, ptr %7, i32 0, i32 0
   store i8 0, ptr %8, align 1
   %9 = ptrtoint ptr %7 to i64
@@ -27169,7 +27174,7 @@ bb2268:                                           ; preds = %bb2267, %bb2266
   br i1 %9, label %bb2269, label %bb2270
 
 bb2269:                                           ; preds = %bb2268
-  %10 = call ptr @malloc(i64 24)
+  %10 = call ptr @forge_bump_alloc(i64 24)
   %11 = getelementptr inbounds %StmtList, ptr %10, i32 0, i32 0
   store i8 0, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
@@ -27185,7 +27190,7 @@ bb2271:                                           ; preds = %bb2270
   br i1 %15, label %bb2272, label %bb2273
 
 bb2272:                                           ; preds = %bb2271
-  %16 = call ptr @malloc(i64 24)
+  %16 = call ptr @forge_bump_alloc(i64 24)
   %17 = getelementptr inbounds %StmtList, ptr %16, i32 0, i32 0
   store i8 0, ptr %17, align 1
   %18 = ptrtoint ptr %16 to i64
@@ -27215,7 +27220,7 @@ bb2276:                                           ; preds = %bb2275, %bb2274
 
 bb2277:                                           ; preds = %bb2276
   %29 = load i64, ptr %self, align 4
-  %30 = call ptr @malloc(i64 8)
+  %30 = call ptr @forge_bump_alloc(i64 8)
   %31 = getelementptr inbounds %DiagCode, ptr %30, i32 0, i32 0
   store i8 4, ptr %31, align 1
   %32 = ptrtoint ptr %30 to i64
@@ -27262,7 +27267,7 @@ bb2282:                                           ; preds = %bb2281
 bb2283:                                           ; preds = %bb2282
   %next = alloca i64, align 8
   store i64 %52, ptr %next, align 4
-  %54 = call ptr @malloc(i64 24)
+  %54 = call ptr @forge_bump_alloc(i64 24)
   %55 = getelementptr inbounds %StmtList, ptr %54, i32 0, i32 0
   store i8 1, ptr %55, align 1
   %56 = load i64, ptr %stmt, align 4
@@ -27476,7 +27481,7 @@ bb2323:                                           ; preds = %bb2322
   br i1 %10, label %bb2326, label %bb2325
 
 bb2324:                                           ; preds = %bb2363, %bb2322
-  %11 = call ptr @malloc(i64 40)
+  %11 = call ptr @forge_bump_alloc(i64 40)
   %12 = getelementptr inbounds %Stmt, ptr %11, i32 0, i32 0
   store i8 15, ptr %12, align 1
   %13 = ptrtoint ptr %11 to i64
@@ -27768,7 +27773,7 @@ bb2373:                                           ; preds = %bb2370
   br label %bb2374
 
 bb2374:                                           ; preds = %bb2373
-  %17 = call ptr @malloc(i64 40)
+  %17 = call ptr @forge_bump_alloc(i64 40)
   %18 = getelementptr inbounds %Stmt, ptr %17, i32 0, i32 0
   store i8 3, ptr %18, align 1
   %19 = load i64, ptr %body, align 4
@@ -27850,7 +27855,7 @@ bb2389:                                           ; preds = %bb2388
 bb2390:                                           ; preds = %bb2389
   %47 = load i64, ptr %self, align 4
   %48 = call i64 @Parser__advance(i64 %47)
-  %49 = call ptr @malloc(i64 40)
+  %49 = call ptr @forge_bump_alloc(i64 40)
   %50 = getelementptr inbounds %Stmt, ptr %49, i32 0, i32 0
   store i8 17, ptr %50, align 1
   %51 = ptrtoint ptr %49 to i64
@@ -27868,7 +27873,7 @@ bb2392:                                           ; preds = %bb2391
 bb2393:                                           ; preds = %bb2392
   %55 = load i64, ptr %self, align 4
   %56 = call i64 @Parser__advance(i64 %55)
-  %57 = call ptr @malloc(i64 40)
+  %57 = call ptr @forge_bump_alloc(i64 40)
   %58 = getelementptr inbounds %Stmt, ptr %57, i32 0, i32 0
   store i8 18, ptr %58, align 1
   %59 = ptrtoint ptr %57 to i64
@@ -27900,7 +27905,7 @@ bb2398:                                           ; preds = %bb2397
 bb2399:                                           ; preds = %bb2398
   %expr = alloca i64, align 8
   store i64 %66, ptr %expr, align 4
-  %68 = call ptr @malloc(i64 40)
+  %68 = call ptr @forge_bump_alloc(i64 40)
   %69 = getelementptr inbounds %Stmt, ptr %68, i32 0, i32 0
   store i8 2, ptr %69, align 1
   %70 = load i64, ptr %expr, align 4
@@ -27984,7 +27989,7 @@ bb2411:                                           ; preds = %bb2408
   %23 = load i64, ptr %22, align 4
   %name = alloca i64, align 8
   store i64 %23, ptr %name, align 4
-  %24 = call ptr @malloc(i64 32)
+  %24 = call ptr @forge_bump_alloc(i64 32)
   %25 = getelementptr inbounds %Expr, ptr %24, i32 0, i32 0
   store i8 5, ptr %25, align 1
   %26 = load i64, ptr %name, align 4
@@ -28011,7 +28016,7 @@ bb2413:                                           ; preds = %bb2412
   %36 = load i64, ptr %35, align 4
   %field = alloca i64, align 8
   store i64 %36, ptr %field, align 4
-  %37 = call ptr @malloc(i64 32)
+  %37 = call ptr @forge_bump_alloc(i64 32)
   %38 = getelementptr inbounds %Expr, ptr %37, i32 0, i32 0
   store i8 17, ptr %38, align 1
   %39 = load i64, ptr %obj, align 4
@@ -28104,13 +28109,13 @@ bb2426:                                           ; preds = %bb2423
   %23 = load i64, ptr %22, align 4
   %args = alloca i64, align 8
   store i64 %23, ptr %args, align 4
-  %24 = call ptr @malloc(i64 32)
+  %24 = call ptr @forge_bump_alloc(i64 32)
   %25 = getelementptr inbounds %Expr, ptr %24, i32 0, i32 0
   store i8 10, ptr %25, align 1
   %26 = load i64, ptr %callee, align 4
   %27 = getelementptr inbounds %Expr, ptr %24, i32 0, i32 1
   store i64 %26, ptr %27, align 4
-  %28 = call ptr @malloc(i64 24)
+  %28 = call ptr @forge_bump_alloc(i64 24)
   %29 = getelementptr inbounds %ExprList, ptr %28, i32 0, i32 0
   store i8 1, ptr %29, align 1
   %30 = load i64, ptr %expr, align 4
@@ -28130,19 +28135,19 @@ bb2427:                                           ; preds = %bb2423
   br label %bb2428
 
 bb2428:                                           ; preds = %bb2427
-  %37 = call ptr @malloc(i64 32)
+  %37 = call ptr @forge_bump_alloc(i64 32)
   %38 = getelementptr inbounds %Expr, ptr %37, i32 0, i32 0
   store i8 10, ptr %38, align 1
   %39 = load i64, ptr %rhs, align 4
   %40 = getelementptr inbounds %Expr, ptr %37, i32 0, i32 1
   store i64 %39, ptr %40, align 4
-  %41 = call ptr @malloc(i64 24)
+  %41 = call ptr @forge_bump_alloc(i64 24)
   %42 = getelementptr inbounds %ExprList, ptr %41, i32 0, i32 0
   store i8 1, ptr %42, align 1
   %43 = load i64, ptr %expr, align 4
   %44 = getelementptr inbounds %ExprList, ptr %41, i32 0, i32 1
   store i64 %43, ptr %44, align 4
-  %45 = call ptr @malloc(i64 24)
+  %45 = call ptr @forge_bump_alloc(i64 24)
   %46 = getelementptr inbounds %ExprList, ptr %45, i32 0, i32 0
   store i8 0, ptr %46, align 1
   %47 = ptrtoint ptr %45 to i64
@@ -28200,7 +28205,7 @@ bb2435:                                           ; preds = %bb2433
 bb2436:                                           ; preds = %bb2434
   %right = alloca i64, align 8
   store i64 %11, ptr %right, align 4
-  %14 = call ptr @malloc(i64 32)
+  %14 = call ptr @forge_bump_alloc(i64 32)
   %15 = getelementptr inbounds %Expr, ptr %14, i32 0, i32 0
   store i8 19, ptr %15, align 1
   %16 = load i64, ptr %expr, align 4
@@ -28270,13 +28275,13 @@ bb2445:                                           ; preds = %bb2444, %bb2441
 bb2446:                                           ; preds = %bb2442
   %right = alloca i64, align 8
   store i64 %11, ptr %right, align 4
-  %20 = call ptr @malloc(i64 32)
+  %20 = call ptr @forge_bump_alloc(i64 32)
   %21 = getelementptr inbounds %Expr, ptr %20, i32 0, i32 0
   store i8 9, ptr %21, align 1
   %22 = load i64, ptr %expr, align 4
   %23 = getelementptr inbounds %Expr, ptr %20, i32 0, i32 1
   store i64 %22, ptr %23, align 4
-  %24 = call ptr @malloc(i64 8)
+  %24 = call ptr @forge_bump_alloc(i64 8)
   %25 = getelementptr inbounds %LogicOp, ptr %24, i32 0, i32 0
   store i8 1, ptr %25, align 1
   %26 = ptrtoint ptr %24 to i64
@@ -28346,13 +28351,13 @@ bb2455:                                           ; preds = %bb2454, %bb2451
 bb2456:                                           ; preds = %bb2452
   %right = alloca i64, align 8
   store i64 %11, ptr %right, align 4
-  %20 = call ptr @malloc(i64 32)
+  %20 = call ptr @forge_bump_alloc(i64 32)
   %21 = getelementptr inbounds %Expr, ptr %20, i32 0, i32 0
   store i8 9, ptr %21, align 1
   %22 = load i64, ptr %expr, align 4
   %23 = getelementptr inbounds %Expr, ptr %20, i32 0, i32 1
   store i64 %22, ptr %23, align 4
-  %24 = call ptr @malloc(i64 8)
+  %24 = call ptr @forge_bump_alloc(i64 8)
   %25 = getelementptr inbounds %LogicOp, ptr %24, i32 0, i32 0
   store i8 0, ptr %25, align 1
   %26 = ptrtoint ptr %24 to i64
@@ -28420,7 +28425,7 @@ bb2465:                                           ; preds = %bb2464, %bb2461
   br i1 %17, label %bb2462, label %bb2463
 
 bb2466:                                           ; preds = %bb2462
-  %18 = call ptr @malloc(i64 8)
+  %18 = call ptr @forge_bump_alloc(i64 8)
   %19 = getelementptr inbounds %BinOp, ptr %18, i32 0, i32 0
   store i8 5, ptr %19, align 1
   %20 = ptrtoint ptr %18 to i64
@@ -28428,7 +28433,7 @@ bb2466:                                           ; preds = %bb2462
   br label %bb2468
 
 bb2467:                                           ; preds = %bb2462
-  %21 = call ptr @malloc(i64 8)
+  %21 = call ptr @forge_bump_alloc(i64 8)
   %22 = getelementptr inbounds %BinOp, ptr %21, i32 0, i32 0
   store i8 6, ptr %22, align 1
   %23 = ptrtoint ptr %21 to i64
@@ -28449,7 +28454,7 @@ bb2468:                                           ; preds = %bb2467, %bb2466
 bb2469:                                           ; preds = %bb2468
   %right = alloca i64, align 8
   store i64 %28, ptr %right, align 4
-  %30 = call ptr @malloc(i64 32)
+  %30 = call ptr @forge_bump_alloc(i64 32)
   %31 = getelementptr inbounds %Expr, ptr %30, i32 0, i32 0
   store i8 8, ptr %31, align 1
   %32 = load i64, ptr %expr, align 4
@@ -28510,13 +28515,13 @@ bb2476:                                           ; preds = %bb2474
 bb2477:                                           ; preds = %bb2475
   %right = alloca i64, align 8
   store i64 %11, ptr %right, align 4
-  %14 = call ptr @malloc(i64 32)
+  %14 = call ptr @forge_bump_alloc(i64 32)
   %15 = getelementptr inbounds %Expr, ptr %14, i32 0, i32 0
   store i8 8, ptr %15, align 1
   %16 = load i64, ptr %expr, align 4
   %17 = getelementptr inbounds %Expr, ptr %14, i32 0, i32 1
   store i64 %16, ptr %17, align 4
-  %18 = call ptr @malloc(i64 8)
+  %18 = call ptr @forge_bump_alloc(i64 8)
   %19 = getelementptr inbounds %BinOp, ptr %18, i32 0, i32 0
   store i8 12, ptr %19, align 1
   %20 = ptrtoint ptr %18 to i64
@@ -28574,13 +28579,13 @@ bb2484:                                           ; preds = %bb2482
 bb2485:                                           ; preds = %bb2483
   %right = alloca i64, align 8
   store i64 %11, ptr %right, align 4
-  %14 = call ptr @malloc(i64 32)
+  %14 = call ptr @forge_bump_alloc(i64 32)
   %15 = getelementptr inbounds %Expr, ptr %14, i32 0, i32 0
   store i8 8, ptr %15, align 1
   %16 = load i64, ptr %expr, align 4
   %17 = getelementptr inbounds %Expr, ptr %14, i32 0, i32 1
   store i64 %16, ptr %17, align 4
-  %18 = call ptr @malloc(i64 8)
+  %18 = call ptr @forge_bump_alloc(i64 8)
   %19 = getelementptr inbounds %BinOp, ptr %18, i32 0, i32 0
   store i8 13, ptr %19, align 1
   %20 = ptrtoint ptr %18 to i64
@@ -28638,13 +28643,13 @@ bb2492:                                           ; preds = %bb2490
 bb2493:                                           ; preds = %bb2491
   %right = alloca i64, align 8
   store i64 %11, ptr %right, align 4
-  %14 = call ptr @malloc(i64 32)
+  %14 = call ptr @forge_bump_alloc(i64 32)
   %15 = getelementptr inbounds %Expr, ptr %14, i32 0, i32 0
   store i8 8, ptr %15, align 1
   %16 = load i64, ptr %expr, align 4
   %17 = getelementptr inbounds %Expr, ptr %14, i32 0, i32 1
   store i64 %16, ptr %17, align 4
-  %18 = call ptr @malloc(i64 8)
+  %18 = call ptr @forge_bump_alloc(i64 8)
   %19 = getelementptr inbounds %BinOp, ptr %18, i32 0, i32 0
   store i8 11, ptr %19, align 1
   %20 = ptrtoint ptr %18 to i64
@@ -28736,7 +28741,7 @@ bb2506:                                           ; preds = %bb2505, %bb2504
   br i1 %29, label %bb2499, label %bb2500
 
 bb2507:                                           ; preds = %bb2499
-  %30 = call ptr @malloc(i64 8)
+  %30 = call ptr @forge_bump_alloc(i64 8)
   %31 = getelementptr inbounds %BinOp, ptr %30, i32 0, i32 0
   store i8 7, ptr %31, align 1
   %32 = ptrtoint ptr %30 to i64
@@ -28763,7 +28768,7 @@ bb2509:                                           ; preds = %bb2512, %bb2507
   br i1 %41, label %bb2517, label %bb2516
 
 bb2510:                                           ; preds = %bb2508
-  %42 = call ptr @malloc(i64 8)
+  %42 = call ptr @forge_bump_alloc(i64 8)
   %43 = getelementptr inbounds %BinOp, ptr %42, i32 0, i32 0
   store i8 8, ptr %43, align 1
   %44 = ptrtoint ptr %42 to i64
@@ -28784,7 +28789,7 @@ bb2512:                                           ; preds = %bb2515, %bb2510
   br label %bb2509
 
 bb2513:                                           ; preds = %bb2511
-  %49 = call ptr @malloc(i64 8)
+  %49 = call ptr @forge_bump_alloc(i64 8)
   %50 = getelementptr inbounds %BinOp, ptr %49, i32 0, i32 0
   store i8 9, ptr %50, align 1
   %51 = ptrtoint ptr %49 to i64
@@ -28792,7 +28797,7 @@ bb2513:                                           ; preds = %bb2511
   br label %bb2515
 
 bb2514:                                           ; preds = %bb2511
-  %52 = call ptr @malloc(i64 8)
+  %52 = call ptr @forge_bump_alloc(i64 8)
   %53 = getelementptr inbounds %BinOp, ptr %52, i32 0, i32 0
   store i8 10, ptr %53, align 1
   %54 = ptrtoint ptr %52 to i64
@@ -28807,7 +28812,7 @@ bb2515:                                           ; preds = %bb2514, %bb2513
 bb2516:                                           ; preds = %bb2509
   %right = alloca i64, align 8
   store i64 %40, ptr %right, align 4
-  %56 = call ptr @malloc(i64 32)
+  %56 = call ptr @forge_bump_alloc(i64 32)
   %57 = getelementptr inbounds %Expr, ptr %56, i32 0, i32 0
   store i8 8, ptr %57, align 1
   %58 = load i64, ptr %expr, align 4
@@ -28878,7 +28883,7 @@ bb2525:                                           ; preds = %bb2524, %bb2521
   br i1 %17, label %bb2522, label %bb2523
 
 bb2526:                                           ; preds = %bb2522
-  %18 = call ptr @malloc(i64 8)
+  %18 = call ptr @forge_bump_alloc(i64 8)
   %19 = getelementptr inbounds %BinOp, ptr %18, i32 0, i32 0
   store i8 14, ptr %19, align 1
   %20 = ptrtoint ptr %18 to i64
@@ -28886,7 +28891,7 @@ bb2526:                                           ; preds = %bb2522
   br label %bb2528
 
 bb2527:                                           ; preds = %bb2522
-  %21 = call ptr @malloc(i64 8)
+  %21 = call ptr @forge_bump_alloc(i64 8)
   %22 = getelementptr inbounds %BinOp, ptr %21, i32 0, i32 0
   store i8 15, ptr %22, align 1
   %23 = ptrtoint ptr %21 to i64
@@ -28907,7 +28912,7 @@ bb2528:                                           ; preds = %bb2527, %bb2526
 bb2529:                                           ; preds = %bb2528
   %right = alloca i64, align 8
   store i64 %28, ptr %right, align 4
-  %30 = call ptr @malloc(i64 32)
+  %30 = call ptr @forge_bump_alloc(i64 32)
   %31 = getelementptr inbounds %Expr, ptr %30, i32 0, i32 0
   store i8 8, ptr %31, align 1
   %32 = load i64, ptr %expr, align 4
@@ -28978,7 +28983,7 @@ bb2538:                                           ; preds = %bb2537, %bb2534
   br i1 %17, label %bb2535, label %bb2536
 
 bb2539:                                           ; preds = %bb2535
-  %18 = call ptr @malloc(i64 8)
+  %18 = call ptr @forge_bump_alloc(i64 8)
   %19 = getelementptr inbounds %BinOp, ptr %18, i32 0, i32 0
   store i8 0, ptr %19, align 1
   %20 = ptrtoint ptr %18 to i64
@@ -28986,7 +28991,7 @@ bb2539:                                           ; preds = %bb2535
   br label %bb2541
 
 bb2540:                                           ; preds = %bb2535
-  %21 = call ptr @malloc(i64 8)
+  %21 = call ptr @forge_bump_alloc(i64 8)
   %22 = getelementptr inbounds %BinOp, ptr %21, i32 0, i32 0
   store i8 1, ptr %22, align 1
   %23 = ptrtoint ptr %21 to i64
@@ -29007,7 +29012,7 @@ bb2541:                                           ; preds = %bb2540, %bb2539
 bb2542:                                           ; preds = %bb2541
   %right = alloca i64, align 8
   store i64 %28, ptr %right, align 4
-  %30 = call ptr @malloc(i64 32)
+  %30 = call ptr @forge_bump_alloc(i64 32)
   %31 = getelementptr inbounds %Expr, ptr %30, i32 0, i32 0
   store i8 8, ptr %31, align 1
   %32 = load i64, ptr %expr, align 4
@@ -29090,7 +29095,7 @@ bb2553:                                           ; preds = %bb2552, %bb2551
   br i1 %23, label %bb2548, label %bb2549
 
 bb2554:                                           ; preds = %bb2548
-  %24 = call ptr @malloc(i64 8)
+  %24 = call ptr @forge_bump_alloc(i64 8)
   %25 = getelementptr inbounds %BinOp, ptr %24, i32 0, i32 0
   store i8 2, ptr %25, align 1
   %26 = ptrtoint ptr %24 to i64
@@ -29117,7 +29122,7 @@ bb2556:                                           ; preds = %bb2559, %bb2554
   br i1 %35, label %bb2561, label %bb2560
 
 bb2557:                                           ; preds = %bb2555
-  %36 = call ptr @malloc(i64 8)
+  %36 = call ptr @forge_bump_alloc(i64 8)
   %37 = getelementptr inbounds %BinOp, ptr %36, i32 0, i32 0
   store i8 4, ptr %37, align 1
   %38 = ptrtoint ptr %36 to i64
@@ -29125,7 +29130,7 @@ bb2557:                                           ; preds = %bb2555
   br label %bb2559
 
 bb2558:                                           ; preds = %bb2555
-  %39 = call ptr @malloc(i64 8)
+  %39 = call ptr @forge_bump_alloc(i64 8)
   %40 = getelementptr inbounds %BinOp, ptr %39, i32 0, i32 0
   store i8 3, ptr %40, align 1
   %41 = ptrtoint ptr %39 to i64
@@ -29140,7 +29145,7 @@ bb2559:                                           ; preds = %bb2558, %bb2557
 bb2560:                                           ; preds = %bb2556
   %right = alloca i64, align 8
   store i64 %34, ptr %right, align 4
-  %43 = call ptr @malloc(i64 32)
+  %43 = call ptr @forge_bump_alloc(i64 32)
   %44 = getelementptr inbounds %Expr, ptr %43, i32 0, i32 0
   store i8 8, ptr %44, align 1
   %45 = load i64, ptr %expr, align 4
@@ -29223,7 +29228,7 @@ bb2571:                                           ; preds = %bb2570
   br i1 %27, label %bb2581, label %bb2580
 
 bb2572:                                           ; preds = %bb2569
-  %28 = call ptr @malloc(i64 8)
+  %28 = call ptr @forge_bump_alloc(i64 8)
   %29 = getelementptr inbounds %UnOp, ptr %28, i32 0, i32 0
   store i8 0, ptr %29, align 1
   %30 = ptrtoint ptr %28 to i64
@@ -29250,7 +29255,7 @@ bb2574:                                           ; preds = %bb2577, %bb2572
   br i1 %39, label %bb2579, label %bb2578
 
 bb2575:                                           ; preds = %bb2573
-  %40 = call ptr @malloc(i64 8)
+  %40 = call ptr @forge_bump_alloc(i64 8)
   %41 = getelementptr inbounds %UnOp, ptr %40, i32 0, i32 0
   store i8 2, ptr %41, align 1
   %42 = ptrtoint ptr %40 to i64
@@ -29258,7 +29263,7 @@ bb2575:                                           ; preds = %bb2573
   br label %bb2577
 
 bb2576:                                           ; preds = %bb2573
-  %43 = call ptr @malloc(i64 8)
+  %43 = call ptr @forge_bump_alloc(i64 8)
   %44 = getelementptr inbounds %UnOp, ptr %43, i32 0, i32 0
   store i8 1, ptr %44, align 1
   %45 = ptrtoint ptr %43 to i64
@@ -29273,7 +29278,7 @@ bb2577:                                           ; preds = %bb2576, %bb2575
 bb2578:                                           ; preds = %bb2574
   %right = alloca i64, align 8
   store i64 %38, ptr %right, align 4
-  %47 = call ptr @malloc(i64 32)
+  %47 = call ptr @forge_bump_alloc(i64 32)
   %48 = getelementptr inbounds %Expr, ptr %47, i32 0, i32 0
   store i8 7, ptr %48, align 1
   %49 = load i64, ptr %op, align 4
@@ -29348,7 +29353,7 @@ bb2591:                                           ; preds = %bb2588
   br label %bb2592
 
 bb2592:                                           ; preds = %bb2591
-  %73 = call ptr @malloc(i64 32)
+  %73 = call ptr @forge_bump_alloc(i64 32)
   %74 = getelementptr inbounds %Expr, ptr %73, i32 0, i32 0
   store i8 24, ptr %74, align 1
   %75 = load i64, ptr %expr, align 4
@@ -29638,7 +29643,7 @@ bb2630:                                           ; preds = %bb2628
 bb2631:                                           ; preds = %bb2630
   %82 = load i64, ptr %self, align 4
   %83 = call i64 @Parser__advance(i64 %82)
-  %84 = call ptr @malloc(i64 32)
+  %84 = call ptr @forge_bump_alloc(i64 32)
   %85 = getelementptr inbounds %Expr, ptr %84, i32 0, i32 0
   store i8 21, ptr %85, align 1
   %86 = load i64, ptr %result, align 4
@@ -29677,7 +29682,7 @@ bb2636:                                           ; preds = %bb2641, %bb2637
 bb2637:                                           ; preds = %bb2634
   %field = alloca i64, align 8
   store i64 %95, ptr %field, align 4
-  %100 = call ptr @malloc(i64 32)
+  %100 = call ptr @forge_bump_alloc(i64 32)
   %101 = getelementptr inbounds %Expr, ptr %100, i32 0, i32 0
   store i8 20, ptr %101, align 1
   %102 = load i64, ptr %result, align 4
@@ -29762,7 +29767,7 @@ bb2650:                                           ; preds = %bb2647
   br label %bb2651
 
 bb2651:                                           ; preds = %bb2650
-  %135 = call ptr @malloc(i64 32)
+  %135 = call ptr @forge_bump_alloc(i64 32)
   %136 = getelementptr inbounds %Expr, ptr %135, i32 0, i32 0
   store i8 28, ptr %136, align 1
   %137 = load i64, ptr %result, align 4
@@ -29785,7 +29790,7 @@ bb2653:                                           ; preds = %bb2646
   br label %bb2654
 
 bb2654:                                           ; preds = %bb2653
-  %144 = call ptr @malloc(i64 32)
+  %144 = call ptr @forge_bump_alloc(i64 32)
   %145 = getelementptr inbounds %Expr, ptr %144, i32 0, i32 0
   store i8 14, ptr %145, align 1
   %146 = load i64, ptr %result, align 4
@@ -29908,7 +29913,7 @@ bb2671:                                           ; preds = %bb2668
   br label %bb2672
 
 bb2672:                                           ; preds = %bb2671
-  %197 = call ptr @malloc(i64 32)
+  %197 = call ptr @forge_bump_alloc(i64 32)
   %198 = getelementptr inbounds %Expr, ptr %197, i32 0, i32 0
   store i8 10, ptr %198, align 1
   %199 = load i64, ptr %result, align 4
@@ -29930,7 +29935,7 @@ bb2673:                                           ; preds = %bb2661
   store i64 %207, ptr %idx_text, align 4
   %208 = load i64, ptr %self, align 4
   %209 = call i64 @Parser__advance(i64 %208)
-  %210 = call ptr @malloc(i64 32)
+  %210 = call ptr @forge_bump_alloc(i64 32)
   %211 = getelementptr inbounds %Expr, ptr %210, i32 0, i32 0
   store i8 23, ptr %211, align 1
   %212 = load i64, ptr %result, align 4
@@ -30041,7 +30046,7 @@ bb2688:                                           ; preds = %bb2687
   br i1 %254, label %bb2692, label %bb2691
 
 bb2689:                                           ; preds = %bb2687
-  %255 = call ptr @malloc(i64 32)
+  %255 = call ptr @forge_bump_alloc(i64 32)
   %256 = getelementptr inbounds %Expr, ptr %255, i32 0, i32 0
   store i8 12, ptr %256, align 1
   %257 = load i64, ptr %result, align 4
@@ -30077,7 +30082,7 @@ bb2694:                                           ; preds = %bb2691
   br label %bb2695
 
 bb2695:                                           ; preds = %bb2694
-  %267 = call ptr @malloc(i64 32)
+  %267 = call ptr @forge_bump_alloc(i64 32)
   %268 = getelementptr inbounds %Expr, ptr %267, i32 0, i32 0
   store i8 13, ptr %268, align 1
   %269 = load i64, ptr %type_name, align 4
@@ -30131,7 +30136,7 @@ bb2697:
   br i1 %3, label %bb2698, label %bb2699
 
 bb2698:                                           ; preds = %bb2697
-  %4 = call ptr @malloc(i64 24)
+  %4 = call ptr @forge_bump_alloc(i64 24)
   %5 = getelementptr inbounds %ExprList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -30238,13 +30243,13 @@ bb2715:                                           ; preds = %bb2705
   br label %bb2716
 
 bb2716:                                           ; preds = %bb2715
-  %40 = call ptr @malloc(i64 24)
+  %40 = call ptr @forge_bump_alloc(i64 24)
   %41 = getelementptr inbounds %ExprList, ptr %40, i32 0, i32 0
   store i8 1, ptr %41, align 1
   %42 = load i64, ptr %expr, align 4
   %43 = getelementptr inbounds %ExprList, ptr %40, i32 0, i32 1
   store i64 %42, ptr %43, align 4
-  %44 = call ptr @malloc(i64 24)
+  %44 = call ptr @forge_bump_alloc(i64 24)
   %45 = getelementptr inbounds %ExprList, ptr %44, i32 0, i32 0
   store i8 0, ptr %45, align 1
   %46 = ptrtoint ptr %44 to i64
@@ -30256,7 +30261,7 @@ bb2716:                                           ; preds = %bb2715
 bb2717:                                           ; preds = %bb2714
   %rest = alloca i64, align 8
   store i64 %38, ptr %rest, align 4
-  %49 = call ptr @malloc(i64 24)
+  %49 = call ptr @forge_bump_alloc(i64 24)
   %50 = getelementptr inbounds %ExprList, ptr %49, i32 0, i32 0
   store i8 1, ptr %50, align 1
   %51 = load i64, ptr %expr, align 4
@@ -30290,7 +30295,7 @@ bb2720:                                           ; preds = %bb2719
   store i64 %7, ptr %value, align 4
   %8 = load i64, ptr %self, align 4
   %9 = call i64 @Parser__advance(i64 %8)
-  %10 = call ptr @malloc(i64 32)
+  %10 = call ptr @forge_bump_alloc(i64 32)
   %11 = getelementptr inbounds %Expr, ptr %10, i32 0, i32 0
   store i8 0, ptr %11, align 1
   %12 = load i64, ptr %value, align 4
@@ -30317,7 +30322,7 @@ bb2723:                                           ; preds = %bb2722
   store i64 %21, ptr %value1, align 4
   %22 = load i64, ptr %self, align 4
   %23 = call i64 @Parser__advance(i64 %22)
-  %24 = call ptr @malloc(i64 32)
+  %24 = call ptr @forge_bump_alloc(i64 32)
   %25 = getelementptr inbounds %Expr, ptr %24, i32 0, i32 0
   store i8 1, ptr %25, align 1
   %26 = load i64, ptr %value1, align 4
@@ -30379,7 +30384,7 @@ bb2731:                                           ; preds = %bb2730
   store i64 %53, ptr %value2, align 4
   %54 = load i64, ptr %self, align 4
   %55 = call i64 @Parser__advance(i64 %54)
-  %56 = call ptr @malloc(i64 32)
+  %56 = call ptr @forge_bump_alloc(i64 32)
   %57 = getelementptr inbounds %Expr, ptr %56, i32 0, i32 0
   store i8 2, ptr %57, align 1
   %58 = load i64, ptr %value2, align 4
@@ -30400,7 +30405,7 @@ bb2733:                                           ; preds = %bb2732
 bb2734:                                           ; preds = %bb2733
   %64 = load i64, ptr %self, align 4
   %65 = call i64 @Parser__advance(i64 %64)
-  %66 = call ptr @malloc(i64 32)
+  %66 = call ptr @forge_bump_alloc(i64 32)
   %67 = getelementptr inbounds %Expr, ptr %66, i32 0, i32 0
   store i8 3, ptr %67, align 1
   %68 = ptrtoint ptr %66 to i64
@@ -30464,7 +30469,7 @@ bb2743:                                           ; preds = %bb2741
   br label %bb2744
 
 bb2744:                                           ; preds = %bb2743
-  %97 = call ptr @malloc(i64 32)
+  %97 = call ptr @forge_bump_alloc(i64 32)
   %98 = getelementptr inbounds %Expr, ptr %97, i32 0, i32 0
   store i8 4, ptr %98, align 1
   %99 = load i64, ptr %name, align 4
@@ -30493,7 +30498,7 @@ bb2748:                                           ; preds = %bb2745
   br label %bb2749
 
 bb2749:                                           ; preds = %bb2748
-  %107 = call ptr @malloc(i64 32)
+  %107 = call ptr @forge_bump_alloc(i64 32)
   %108 = getelementptr inbounds %Expr, ptr %107, i32 0, i32 0
   store i8 11, ptr %108, align 1
   %109 = load i64, ptr %name, align 4
@@ -30576,10 +30581,10 @@ bb2757:                                           ; preds = %bb2753
   br label %bb2758
 
 bb2758:                                           ; preds = %bb2757
-  %153 = call ptr @malloc(i64 32)
+  %153 = call ptr @forge_bump_alloc(i64 32)
   %154 = getelementptr inbounds %Expr, ptr %153, i32 0, i32 0
   store i8 22, ptr %154, align 1
-  %155 = call ptr @malloc(i64 24)
+  %155 = call ptr @forge_bump_alloc(i64 24)
   %156 = getelementptr inbounds %ExprList, ptr %155, i32 0, i32 0
   store i8 0, ptr %156, align 1
   %157 = ptrtoint ptr %155 to i64
@@ -30591,10 +30596,10 @@ bb2758:                                           ; preds = %bb2757
 bb2759:                                           ; preds = %bb2756
   %body = alloca i64, align 8
   store i64 %151, ptr %body, align 4
-  %160 = call ptr @malloc(i64 32)
+  %160 = call ptr @forge_bump_alloc(i64 32)
   %161 = getelementptr inbounds %Expr, ptr %160, i32 0, i32 0
   store i8 26, ptr %161, align 1
-  %162 = call ptr @malloc(i64 32)
+  %162 = call ptr @forge_bump_alloc(i64 32)
   %163 = getelementptr inbounds %ParamList, ptr %162, i32 0, i32 0
   store i8 0, ptr %163, align 1
   %164 = ptrtoint ptr %162 to i64
@@ -30668,7 +30673,7 @@ bb2771:                                           ; preds = %bb2770
 bb2772:                                           ; preds = %bb2771
   %190 = load i64, ptr %self, align 4
   %191 = call i64 @Parser__advance(i64 %190)
-  %192 = call ptr @malloc(i64 24)
+  %192 = call ptr @forge_bump_alloc(i64 24)
   %193 = getelementptr inbounds %ExprList, ptr %192, i32 0, i32 0
   store i8 1, ptr %193, align 1
   %194 = load i64, ptr %expr, align 4
@@ -30690,10 +30695,10 @@ bb2773:                                           ; preds = %bb2771
   br label %bb2774
 
 bb2774:                                           ; preds = %bb2773
-  %203 = call ptr @malloc(i64 32)
+  %203 = call ptr @forge_bump_alloc(i64 32)
   %204 = getelementptr inbounds %Expr, ptr %203, i32 0, i32 0
   store i8 22, ptr %204, align 1
-  %205 = call ptr @malloc(i64 24)
+  %205 = call ptr @forge_bump_alloc(i64 24)
   %206 = getelementptr inbounds %ExprList, ptr %205, i32 0, i32 0
   store i8 1, ptr %206, align 1
   %207 = load i64, ptr %expr, align 4
@@ -30711,7 +30716,7 @@ bb2774:                                           ; preds = %bb2773
 bb2775:                                           ; preds = %bb2772
   %body3 = alloca i64, align 8
   store i64 %201, ptr %body3, align 4
-  %214 = call ptr @malloc(i64 32)
+  %214 = call ptr @forge_bump_alloc(i64 32)
   %215 = getelementptr inbounds %Expr, ptr %214, i32 0, i32 0
   store i8 26, ptr %215, align 1
   %216 = load i64, ptr %params, align 4
@@ -30741,13 +30746,13 @@ bb2779:                                           ; preds = %bb2778
 bb2780:                                           ; preds = %bb2779
   %224 = load i64, ptr %self, align 4
   %225 = call i64 @Parser__advance(i64 %224)
-  %226 = call ptr @malloc(i64 24)
+  %226 = call ptr @forge_bump_alloc(i64 24)
   %227 = getelementptr inbounds %ExprList, ptr %226, i32 0, i32 0
   store i8 1, ptr %227, align 1
   %228 = load i64, ptr %expr, align 4
   %229 = getelementptr inbounds %ExprList, ptr %226, i32 0, i32 1
   store i64 %228, ptr %229, align 4
-  %230 = call ptr @malloc(i64 24)
+  %230 = call ptr @forge_bump_alloc(i64 24)
   %231 = getelementptr inbounds %ExprList, ptr %230, i32 0, i32 0
   store i8 0, ptr %231, align 1
   %232 = ptrtoint ptr %230 to i64
@@ -30766,7 +30771,7 @@ bb2781:                                           ; preds = %bb2779
   br label %bb2782
 
 bb2782:                                           ; preds = %bb2781
-  %239 = call ptr @malloc(i64 32)
+  %239 = call ptr @forge_bump_alloc(i64 32)
   %240 = getelementptr inbounds %Expr, ptr %239, i32 0, i32 0
   store i8 6, ptr %240, align 1
   %241 = load i64, ptr %expr, align 4
@@ -30778,7 +30783,7 @@ bb2782:                                           ; preds = %bb2781
 bb2783:                                           ; preds = %bb2780
   %body5 = alloca i64, align 8
   store i64 %237, ptr %body5, align 4
-  %244 = call ptr @malloc(i64 32)
+  %244 = call ptr @forge_bump_alloc(i64 32)
   %245 = getelementptr inbounds %Expr, ptr %244, i32 0, i32 0
   store i8 26, ptr %245, align 1
   %246 = load i64, ptr %params4, align 4
@@ -30813,10 +30818,10 @@ bb2787:                                           ; preds = %bb2786
 bb2788:                                           ; preds = %bb2785
   %259 = load i64, ptr %self, align 4
   %260 = call i64 @Parser__advance(i64 %259)
-  %261 = call ptr @malloc(i64 32)
+  %261 = call ptr @forge_bump_alloc(i64 32)
   %262 = getelementptr inbounds %Expr, ptr %261, i32 0, i32 0
   store i8 25, ptr %262, align 1
-  %263 = call ptr @malloc(i64 24)
+  %263 = call ptr @forge_bump_alloc(i64 24)
   %264 = getelementptr inbounds %ExprList, ptr %263, i32 0, i32 0
   store i8 0, ptr %264, align 1
   %265 = ptrtoint ptr %263 to i64
@@ -30854,7 +30859,7 @@ bb2794:                                           ; preds = %bb2791
   br label %bb2795
 
 bb2795:                                           ; preds = %bb2794
-  %276 = call ptr @malloc(i64 32)
+  %276 = call ptr @forge_bump_alloc(i64 32)
   %277 = getelementptr inbounds %Expr, ptr %276, i32 0, i32 0
   store i8 25, ptr %277, align 1
   %278 = load i64, ptr %elements, align 4
@@ -30928,7 +30933,7 @@ bb2807:                                           ; preds = %bb2806
 
 bb2808:                                           ; preds = %bb2804
   %308 = load i64, ptr %self, align 4
-  %309 = call ptr @malloc(i64 8)
+  %309 = call ptr @forge_bump_alloc(i64 8)
   %310 = getelementptr inbounds %DiagCode, ptr %309, i32 0, i32 0
   store i8 11, ptr %310, align 1
   %311 = ptrtoint ptr %309 to i64
@@ -30937,7 +30942,7 @@ bb2808:                                           ; preds = %bb2804
 
 bb2809:                                           ; preds = %bb2804
   %313 = load i64, ptr %self, align 4
-  %314 = call ptr @malloc(i64 8)
+  %314 = call ptr @forge_bump_alloc(i64 8)
   %315 = getelementptr inbounds %DiagCode, ptr %314, i32 0, i32 0
   store i8 10, ptr %315, align 1
   %316 = ptrtoint ptr %314 to i64
@@ -31109,7 +31114,7 @@ bb2822:                                           ; preds = %bb2819
   %107 = ptrtoint ptr %100 to i64
   %seg = alloca i64, align 8
   store i64 %107, ptr %seg, align 4
-  %108 = call ptr @malloc(i64 32)
+  %108 = call ptr @forge_bump_alloc(i64 32)
   %109 = getelementptr inbounds %Expr, ptr %108, i32 0, i32 0
   store i8 1, ptr %109, align 1
   %110 = load i64, ptr %seg, align 4
@@ -31145,13 +31150,13 @@ bb2825:                                           ; preds = %bb2822
   br label %bb2827
 
 bb2826:                                           ; preds = %bb2822
-  %121 = call ptr @malloc(i64 32)
+  %121 = call ptr @forge_bump_alloc(i64 32)
   %122 = getelementptr inbounds %Expr, ptr %121, i32 0, i32 0
   store i8 8, ptr %122, align 1
   %123 = load i64, ptr %result, align 4
   %124 = getelementptr inbounds %Expr, ptr %121, i32 0, i32 1
   store i64 %123, ptr %124, align 4
-  %125 = call ptr @malloc(i64 8)
+  %125 = call ptr @forge_bump_alloc(i64 8)
   %126 = getelementptr inbounds %BinOp, ptr %125, i32 0, i32 0
   store i8 0, ptr %126, align 1
   %127 = ptrtoint ptr %125 to i64
@@ -31297,7 +31302,7 @@ bb2842:                                           ; preds = %bb2841
   br i1 %203, label %bb2843, label %bb2844
 
 bb2843:                                           ; preds = %bb2842
-  %204 = call ptr @malloc(i64 32)
+  %204 = call ptr @forge_bump_alloc(i64 32)
   %205 = getelementptr inbounds %Expr, ptr %204, i32 0, i32 0
   store i8 4, ptr %205, align 1
   %206 = load i64, ptr %sub_source, align 4
@@ -31322,10 +31327,10 @@ bb2845:                                           ; preds = %bb2848, %bb2843
   %215 = load i64, ptr %ife_result, align 4
   %parsed = alloca i64, align 8
   store i64 %215, ptr %parsed, align 4
-  %216 = call ptr @malloc(i64 32)
+  %216 = call ptr @forge_bump_alloc(i64 32)
   %217 = getelementptr inbounds %Expr, ptr %216, i32 0, i32 0
   store i8 10, ptr %217, align 1
-  %218 = call ptr @malloc(i64 32)
+  %218 = call ptr @forge_bump_alloc(i64 32)
   %219 = getelementptr inbounds %Expr, ptr %218, i32 0, i32 0
   store i8 4, ptr %219, align 1
   %220 = getelementptr inbounds %Expr, ptr %218, i32 0, i32 1
@@ -31333,13 +31338,13 @@ bb2845:                                           ; preds = %bb2848, %bb2843
   %221 = ptrtoint ptr %218 to i64
   %222 = getelementptr inbounds %Expr, ptr %216, i32 0, i32 1
   store i64 %221, ptr %222, align 4
-  %223 = call ptr @malloc(i64 24)
+  %223 = call ptr @forge_bump_alloc(i64 24)
   %224 = getelementptr inbounds %ExprList, ptr %223, i32 0, i32 0
   store i8 1, ptr %224, align 1
   %225 = load i64, ptr %parsed, align 4
   %226 = getelementptr inbounds %ExprList, ptr %223, i32 0, i32 1
   store i64 %225, ptr %226, align 4
-  %227 = call ptr @malloc(i64 24)
+  %227 = call ptr @forge_bump_alloc(i64 24)
   %228 = getelementptr inbounds %ExprList, ptr %227, i32 0, i32 0
   store i8 0, ptr %228, align 1
   %229 = ptrtoint ptr %227 to i64
@@ -31390,13 +31395,13 @@ bb2849:                                           ; preds = %bb2845
   br label %bb2851
 
 bb2850:                                           ; preds = %bb2845
-  %256 = call ptr @malloc(i64 32)
+  %256 = call ptr @forge_bump_alloc(i64 32)
   %257 = getelementptr inbounds %Expr, ptr %256, i32 0, i32 0
   store i8 8, ptr %257, align 1
   %258 = load i64, ptr %result, align 4
   %259 = getelementptr inbounds %Expr, ptr %256, i32 0, i32 1
   store i64 %258, ptr %259, align 4
-  %260 = call ptr @malloc(i64 8)
+  %260 = call ptr @forge_bump_alloc(i64 8)
   %261 = getelementptr inbounds %BinOp, ptr %260, i32 0, i32 0
   store i8 0, ptr %261, align 1
   %262 = ptrtoint ptr %260 to i64
@@ -31462,7 +31467,7 @@ bb2852:                                           ; preds = %bb2814
   %310 = ptrtoint ptr %303 to i64
   %seg1 = alloca i64, align 8
   store i64 %310, ptr %seg1, align 4
-  %311 = call ptr @malloc(i64 32)
+  %311 = call ptr @forge_bump_alloc(i64 32)
   %312 = getelementptr inbounds %Expr, ptr %311, i32 0, i32 0
   store i8 1, ptr %312, align 1
   %313 = load i64, ptr %seg1, align 4
@@ -31493,13 +31498,13 @@ bb2855:                                           ; preds = %bb2852
   br label %bb2857
 
 bb2856:                                           ; preds = %bb2852
-  %325 = call ptr @malloc(i64 32)
+  %325 = call ptr @forge_bump_alloc(i64 32)
   %326 = getelementptr inbounds %Expr, ptr %325, i32 0, i32 0
   store i8 8, ptr %326, align 1
   %327 = load i64, ptr %result, align 4
   %328 = getelementptr inbounds %Expr, ptr %325, i32 0, i32 1
   store i64 %327, ptr %328, align 4
-  %329 = call ptr @malloc(i64 8)
+  %329 = call ptr @forge_bump_alloc(i64 8)
   %330 = getelementptr inbounds %BinOp, ptr %329, i32 0, i32 0
   store i8 0, ptr %330, align 1
   %331 = ptrtoint ptr %329 to i64
@@ -31516,7 +31521,7 @@ bb2857:                                           ; preds = %bb2856, %bb2855
   br label %bb2854
 
 bb2858:                                           ; preds = %bb2854
-  %336 = call ptr @malloc(i64 32)
+  %336 = call ptr @forge_bump_alloc(i64 32)
   %337 = getelementptr inbounds %Expr, ptr %336, i32 0, i32 0
   store i8 1, ptr %337, align 1
   %338 = getelementptr inbounds %Expr, ptr %336, i32 0, i32 1
@@ -31631,10 +31636,10 @@ bb2866:
 bb2867:                                           ; preds = %bb2866
   %6 = load i64, ptr %self, align 4
   %7 = call i64 @Parser__advance(i64 %6)
-  %8 = call ptr @malloc(i64 32)
+  %8 = call ptr @forge_bump_alloc(i64 32)
   %9 = getelementptr inbounds %Expr, ptr %8, i32 0, i32 0
   store i8 27, ptr %9, align 1
-  %10 = call ptr @malloc(i64 24)
+  %10 = call ptr @forge_bump_alloc(i64 24)
   %11 = getelementptr inbounds %ExprList, ptr %10, i32 0, i32 0
   store i8 0, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
@@ -31672,7 +31677,7 @@ bb2873:                                           ; preds = %bb2870
   br label %bb2874
 
 bb2874:                                           ; preds = %bb2873
-  %23 = call ptr @malloc(i64 32)
+  %23 = call ptr @forge_bump_alloc(i64 32)
   %24 = getelementptr inbounds %Expr, ptr %23, i32 0, i32 0
   store i8 27, ptr %24, align 1
   %25 = load i64, ptr %entries, align 4
@@ -31739,19 +31744,19 @@ bb2884:                                           ; preds = %bb2881
   br label %bb2885
 
 bb2885:                                           ; preds = %bb2884
-  %20 = call ptr @malloc(i64 24)
+  %20 = call ptr @forge_bump_alloc(i64 24)
   %21 = getelementptr inbounds %ExprList, ptr %20, i32 0, i32 0
   store i8 1, ptr %21, align 1
   %22 = load i64, ptr %key, align 4
   %23 = getelementptr inbounds %ExprList, ptr %20, i32 0, i32 1
   store i64 %22, ptr %23, align 4
-  %24 = call ptr @malloc(i64 24)
+  %24 = call ptr @forge_bump_alloc(i64 24)
   %25 = getelementptr inbounds %ExprList, ptr %24, i32 0, i32 0
   store i8 1, ptr %25, align 1
   %26 = load i64, ptr %value, align 4
   %27 = getelementptr inbounds %ExprList, ptr %24, i32 0, i32 1
   store i64 %26, ptr %27, align 4
-  %28 = call ptr @malloc(i64 24)
+  %28 = call ptr @forge_bump_alloc(i64 24)
   %29 = getelementptr inbounds %ExprList, ptr %28, i32 0, i32 0
   store i8 0, ptr %29, align 1
   %30 = ptrtoint ptr %28 to i64
@@ -31764,19 +31769,19 @@ bb2885:                                           ; preds = %bb2884
   ret i64 %34
 
 bb2886:                                           ; preds = %bb2883
-  %35 = call ptr @malloc(i64 24)
+  %35 = call ptr @forge_bump_alloc(i64 24)
   %36 = getelementptr inbounds %ExprList, ptr %35, i32 0, i32 0
   store i8 1, ptr %36, align 1
   %37 = load i64, ptr %key, align 4
   %38 = getelementptr inbounds %ExprList, ptr %35, i32 0, i32 1
   store i64 %37, ptr %38, align 4
-  %39 = call ptr @malloc(i64 24)
+  %39 = call ptr @forge_bump_alloc(i64 24)
   %40 = getelementptr inbounds %ExprList, ptr %39, i32 0, i32 0
   store i8 1, ptr %40, align 1
   %41 = load i64, ptr %value, align 4
   %42 = getelementptr inbounds %ExprList, ptr %39, i32 0, i32 1
   store i64 %41, ptr %42, align 4
-  %43 = call ptr @malloc(i64 24)
+  %43 = call ptr @forge_bump_alloc(i64 24)
   %44 = getelementptr inbounds %ExprList, ptr %43, i32 0, i32 0
   store i8 0, ptr %44, align 1
   %45 = ptrtoint ptr %43 to i64
@@ -31800,13 +31805,13 @@ bb2888:                                           ; preds = %bb2887
 bb2889:                                           ; preds = %bb2888
   %rest = alloca i64, align 8
   store i64 %51, ptr %rest, align 4
-  %53 = call ptr @malloc(i64 24)
+  %53 = call ptr @forge_bump_alloc(i64 24)
   %54 = getelementptr inbounds %ExprList, ptr %53, i32 0, i32 0
   store i8 1, ptr %54, align 1
   %55 = load i64, ptr %key, align 4
   %56 = getelementptr inbounds %ExprList, ptr %53, i32 0, i32 1
   store i64 %55, ptr %56, align 4
-  %57 = call ptr @malloc(i64 24)
+  %57 = call ptr @forge_bump_alloc(i64 24)
   %58 = getelementptr inbounds %ExprList, ptr %57, i32 0, i32 0
   store i8 1, ptr %58, align 1
   %59 = load i64, ptr %value, align 4
@@ -31880,13 +31885,13 @@ bb2899:                                           ; preds = %bb2896
   br label %bb2900
 
 bb2900:                                           ; preds = %bb2899
-  %12 = call ptr @malloc(i64 24)
+  %12 = call ptr @forge_bump_alloc(i64 24)
   %13 = getelementptr inbounds %ExprList, ptr %12, i32 0, i32 0
   store i8 1, ptr %13, align 1
   %14 = load i64, ptr %expr, align 4
   %15 = getelementptr inbounds %ExprList, ptr %12, i32 0, i32 1
   store i64 %14, ptr %15, align 4
-  %16 = call ptr @malloc(i64 24)
+  %16 = call ptr @forge_bump_alloc(i64 24)
   %17 = getelementptr inbounds %ExprList, ptr %16, i32 0, i32 0
   store i8 0, ptr %17, align 1
   %18 = ptrtoint ptr %16 to i64
@@ -31896,13 +31901,13 @@ bb2900:                                           ; preds = %bb2899
   ret i64 %20
 
 bb2901:                                           ; preds = %bb2898
-  %21 = call ptr @malloc(i64 24)
+  %21 = call ptr @forge_bump_alloc(i64 24)
   %22 = getelementptr inbounds %ExprList, ptr %21, i32 0, i32 0
   store i8 1, ptr %22, align 1
   %23 = load i64, ptr %expr, align 4
   %24 = getelementptr inbounds %ExprList, ptr %21, i32 0, i32 1
   store i64 %23, ptr %24, align 4
-  %25 = call ptr @malloc(i64 24)
+  %25 = call ptr @forge_bump_alloc(i64 24)
   %26 = getelementptr inbounds %ExprList, ptr %25, i32 0, i32 0
   store i8 0, ptr %26, align 1
   %27 = ptrtoint ptr %25 to i64
@@ -31923,7 +31928,7 @@ bb2903:                                           ; preds = %bb2902
 bb2904:                                           ; preds = %bb2903
   %rest = alloca i64, align 8
   store i64 %31, ptr %rest, align 4
-  %33 = call ptr @malloc(i64 24)
+  %33 = call ptr @forge_bump_alloc(i64 24)
   %34 = getelementptr inbounds %ExprList, ptr %33, i32 0, i32 0
   store i8 1, ptr %34, align 1
   %35 = load i64, ptr %expr, align 4
@@ -31949,7 +31954,7 @@ bb2906:
   br i1 %3, label %bb2907, label %bb2908
 
 bb2907:                                           ; preds = %bb2906
-  %4 = call ptr @malloc(i64 24)
+  %4 = call ptr @forge_bump_alloc(i64 24)
   %5 = getelementptr inbounds %ExprList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -31987,13 +31992,13 @@ bb2913:                                           ; preds = %bb2910
   br label %bb2914
 
 bb2914:                                           ; preds = %bb2913
-  %18 = call ptr @malloc(i64 24)
+  %18 = call ptr @forge_bump_alloc(i64 24)
   %19 = getelementptr inbounds %ExprList, ptr %18, i32 0, i32 0
   store i8 1, ptr %19, align 1
   %20 = load i64, ptr %expr, align 4
   %21 = getelementptr inbounds %ExprList, ptr %18, i32 0, i32 1
   store i64 %20, ptr %21, align 4
-  %22 = call ptr @malloc(i64 24)
+  %22 = call ptr @forge_bump_alloc(i64 24)
   %23 = getelementptr inbounds %ExprList, ptr %22, i32 0, i32 0
   store i8 0, ptr %23, align 1
   %24 = ptrtoint ptr %22 to i64
@@ -32005,7 +32010,7 @@ bb2914:                                           ; preds = %bb2913
 bb2915:                                           ; preds = %bb2912
   %rest = alloca i64, align 8
   store i64 %16, ptr %rest, align 4
-  %27 = call ptr @malloc(i64 24)
+  %27 = call ptr @forge_bump_alloc(i64 24)
   %28 = getelementptr inbounds %ExprList, ptr %27, i32 0, i32 0
   store i8 1, ptr %28, align 1
   %29 = load i64, ptr %expr, align 4
@@ -32073,7 +32078,7 @@ bb2922:                                           ; preds = %bb2920
   br label %bb2923
 
 bb2923:                                           ; preds = %bb2922
-  %25 = call ptr @malloc(i64 32)
+  %25 = call ptr @forge_bump_alloc(i64 32)
   %26 = getelementptr inbounds %Expr, ptr %25, i32 0, i32 0
   store i8 15, ptr %26, align 1
   %27 = load i64, ptr %body, align 4
@@ -33555,7 +33560,7 @@ bb3134:                                           ; preds = %bb3133, %bb3132
 
 bb3135:                                           ; preds = %bb3105
   %240 = load i64, ptr %self, align 4
-  %241 = call ptr @malloc(i64 8)
+  %241 = call ptr @forge_bump_alloc(i64 8)
   %242 = getelementptr inbounds %DiagCode, ptr %241, i32 0, i32 0
   store i8 6, ptr %242, align 1
   %243 = ptrtoint ptr %241 to i64
@@ -33655,7 +33660,7 @@ bb3143:                                           ; preds = %bb3142, %bb3139
 
 bb3144:                                           ; preds = %bb3141
   %39 = load i64, ptr %self, align 4
-  %40 = call ptr @malloc(i64 8)
+  %40 = call ptr @forge_bump_alloc(i64 8)
   %41 = getelementptr inbounds %DiagCode, ptr %40, i32 0, i32 0
   store i8 7, ptr %41, align 1
   %42 = ptrtoint ptr %40 to i64
@@ -34612,7 +34617,7 @@ bb3244:
   %message = alloca i64, align 8
   store i64 %1, ptr %message, align 4
   %2 = load i64, ptr %self, align 4
-  %3 = call ptr @malloc(i64 8)
+  %3 = call ptr @forge_bump_alloc(i64 8)
   %4 = getelementptr inbounds %DiagCode, ptr %3, i32 0, i32 0
   store i8 0, ptr %4, align 1
   %5 = ptrtoint ptr %3 to i64
@@ -35069,7 +35074,7 @@ bb3296:                                           ; preds = %bb3293
   br label %bb3297
 
 bb3297:                                           ; preds = %bb3296
-  %33 = call ptr @malloc(i64 40)
+  %33 = call ptr @forge_bump_alloc(i64 40)
   %34 = getelementptr inbounds %Stmt, ptr %33, i32 0, i32 0
   store i8 13, ptr %34, align 1
   %35 = load i64, ptr %subject, align 4
@@ -35092,7 +35097,7 @@ bb3298:
   br i1 %3, label %bb3299, label %bb3300
 
 bb3299:                                           ; preds = %bb3298
-  %4 = call ptr @malloc(i64 40)
+  %4 = call ptr @forge_bump_alloc(i64 40)
   %5 = getelementptr inbounds %MatchArmList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -35214,7 +35219,7 @@ bb3317:                                           ; preds = %bb3316, %bb3315
 bb3318:                                           ; preds = %bb3317
   %rest = alloca i64, align 8
   store i64 %48, ptr %rest, align 4
-  %50 = call ptr @malloc(i64 40)
+  %50 = call ptr @forge_bump_alloc(i64 40)
   %51 = getelementptr inbounds %MatchArmList, ptr %50, i32 0, i32 0
   store i8 1, ptr %51, align 1
   %52 = load i64, ptr %pattern, align 4
@@ -35267,7 +35272,7 @@ bb3322:                                           ; preds = %bb3321, %bb3320
 bb3323:                                           ; preds = %bb3322
   %17 = load i64, ptr %self, align 4
   %18 = call i64 @Parser__advance(i64 %17)
-  %19 = call ptr @malloc(i64 24)
+  %19 = call ptr @forge_bump_alloc(i64 24)
   %20 = getelementptr inbounds %Pattern, ptr %19, i32 0, i32 0
   store i8 0, ptr %20, align 1
   %21 = ptrtoint ptr %19 to i64
@@ -35311,7 +35316,7 @@ bb3326:                                           ; preds = %bb3325
   %47 = ptrtoint ptr %39 to i64
   %content = alloca i64, align 8
   store i64 %47, ptr %content, align 4
-  %48 = call ptr @malloc(i64 24)
+  %48 = call ptr @forge_bump_alloc(i64 24)
   %49 = getelementptr inbounds %Pattern, ptr %48, i32 0, i32 0
   store i8 2, ptr %49, align 1
   %50 = load i64, ptr %content, align 4
@@ -35341,7 +35346,7 @@ bb3329:                                           ; preds = %bb3328
   store i64 %62, ptr %val, align 4
   %63 = load i64, ptr %self, align 4
   %64 = call i64 @Parser__advance(i64 %63)
-  %65 = call ptr @malloc(i64 24)
+  %65 = call ptr @forge_bump_alloc(i64 24)
   %66 = getelementptr inbounds %Pattern, ptr %65, i32 0, i32 0
   store i8 3, ptr %66, align 1
   %67 = load i64, ptr %val, align 4
@@ -35362,7 +35367,7 @@ bb3331:                                           ; preds = %bb3330
 bb3332:                                           ; preds = %bb3331
   %73 = load i64, ptr %self, align 4
   %74 = call i64 @Parser__advance(i64 %73)
-  %75 = call ptr @malloc(i64 24)
+  %75 = call ptr @forge_bump_alloc(i64 24)
   %76 = getelementptr inbounds %Pattern, ptr %75, i32 0, i32 0
   store i8 4, ptr %76, align 1
   %77 = getelementptr inbounds %Pattern, ptr %75, i32 0, i32 1
@@ -35382,7 +35387,7 @@ bb3334:                                           ; preds = %bb3333
 bb3335:                                           ; preds = %bb3334
   %82 = load i64, ptr %self, align 4
   %83 = call i64 @Parser__advance(i64 %82)
-  %84 = call ptr @malloc(i64 24)
+  %84 = call ptr @forge_bump_alloc(i64 24)
   %85 = getelementptr inbounds %Pattern, ptr %84, i32 0, i32 0
   store i8 4, ptr %85, align 1
   %86 = getelementptr inbounds %Pattern, ptr %84, i32 0, i32 1
@@ -35427,13 +35432,13 @@ bb3342:                                           ; preds = %bb3340
   ret i64 0
 
 bb3343:                                           ; preds = %bb3341
-  %101 = call ptr @malloc(i64 24)
+  %101 = call ptr @forge_bump_alloc(i64 24)
   %102 = getelementptr inbounds %Pattern, ptr %101, i32 0, i32 0
   store i8 1, ptr %102, align 1
   %103 = load i64, ptr %name, align 4
   %104 = getelementptr inbounds %Pattern, ptr %101, i32 0, i32 1
   store i64 %103, ptr %104, align 4
-  %105 = call ptr @malloc(i64 32)
+  %105 = call ptr @forge_bump_alloc(i64 32)
   %106 = getelementptr inbounds %ParamList, ptr %105, i32 0, i32 0
   store i8 0, ptr %106, align 1
   %107 = ptrtoint ptr %105 to i64
@@ -35473,7 +35478,7 @@ bb3349:                                           ; preds = %bb3346
   br label %bb3350
 
 bb3350:                                           ; preds = %bb3349
-  %120 = call ptr @malloc(i64 24)
+  %120 = call ptr @forge_bump_alloc(i64 24)
   %121 = getelementptr inbounds %Pattern, ptr %120, i32 0, i32 0
   store i8 1, ptr %121, align 1
   %122 = load i64, ptr %name, align 4
@@ -35563,7 +35568,7 @@ bb3361:                                           ; preds = %bb3358
   br label %bb3362
 
 bb3362:                                           ; preds = %bb3361
-  %33 = call ptr @malloc(i64 32)
+  %33 = call ptr @forge_bump_alloc(i64 32)
   %34 = getelementptr inbounds %Expr, ptr %33, i32 0, i32 0
   store i8 16, ptr %34, align 1
   %35 = load i64, ptr %subject, align 4
@@ -35881,7 +35886,7 @@ bb3382:                                           ; preds = %bb3381, %bb3380
   %33 = call i64 @null_ptr_val()
   %34 = getelementptr inbounds %EmitResult, ptr %32, i32 0, i32 0
   store i64 %33, ptr %34, align 4
-  %35 = call ptr @malloc(i64 24)
+  %35 = call ptr @forge_bump_alloc(i64 24)
   %36 = getelementptr inbounds %ValueType, ptr %35, i32 0, i32 0
   store i8 0, ptr %36, align 1
   %37 = ptrtoint ptr %35 to i64
@@ -36213,7 +36218,7 @@ bb3409:                                           ; preds = %bb3408
   %246 = inttoptr i64 %245 to ptr
   %247 = getelementptr inbounds %EmitResult, ptr %246, i32 0, i32 1
   %248 = load i64, ptr %247, align 4
-  %249 = call ptr @malloc(i64 24)
+  %249 = call ptr @forge_bump_alloc(i64 24)
   %250 = getelementptr inbounds %ValueType, ptr %249, i32 0, i32 0
   store i8 0, ptr %250, align 1
   %251 = ptrtoint ptr %249 to i64
@@ -37463,7 +37468,7 @@ bb3509:                                           ; preds = %bb3508, %bb3507
   %46 = load i64, ptr %loaded, align 4
   %47 = getelementptr inbounds %EmitResult, ptr %45, i32 0, i32 0
   store i64 %46, ptr %47, align 4
-  %48 = call ptr @malloc(i64 24)
+  %48 = call ptr @forge_bump_alloc(i64 24)
   %49 = getelementptr inbounds %ValueType, ptr %48, i32 0, i32 0
   store i8 0, ptr %49, align 1
   %50 = ptrtoint ptr %48 to i64
@@ -38147,7 +38152,7 @@ bb3569:                                           ; preds = %bb3568, %bb3567
   br i1 %11, label %bb3570, label %bb3571
 
 bb3570:                                           ; preds = %bb3569
-  %12 = call ptr @malloc(i64 40)
+  %12 = call ptr @forge_bump_alloc(i64 40)
   %13 = getelementptr inbounds %Stmt, ptr %12, i32 0, i32 0
   store i8 10, ptr %13, align 1
   %14 = ptrtoint ptr %12 to i64
@@ -38165,7 +38170,7 @@ bb3572:                                           ; preds = %bb3571
 bb3573:                                           ; preds = %bb3572
   %value = alloca i64, align 8
   store i64 %16, ptr %value, align 4
-  %18 = call ptr @malloc(i64 40)
+  %18 = call ptr @forge_bump_alloc(i64 40)
   %19 = getelementptr inbounds %Stmt, ptr %18, i32 0, i32 0
   store i8 9, ptr %19, align 1
   %20 = load i64, ptr %value, align 4
@@ -38225,7 +38230,7 @@ bb3578:                                           ; preds = %bb3577
 
 bb3579:                                           ; preds = %bb3578
   %25 = load i64, ptr %self, align 4
-  %26 = call ptr @malloc(i64 8)
+  %26 = call ptr @forge_bump_alloc(i64 8)
   %27 = getelementptr inbounds %DiagCode, ptr %26, i32 0, i32 0
   store i8 1, ptr %27, align 1
   %28 = ptrtoint ptr %26 to i64
@@ -38264,7 +38269,7 @@ bb3585:                                           ; preds = %bb3582
   br label %bb3586
 
 bb3586:                                           ; preds = %bb3585
-  %41 = call ptr @malloc(i64 40)
+  %41 = call ptr @forge_bump_alloc(i64 40)
   %42 = getelementptr inbounds %Stmt, ptr %41, i32 0, i32 0
   store i8 4, ptr %42, align 1
   %43 = load i64, ptr %condition, align 4
@@ -38281,7 +38286,7 @@ bb3586:                                           ; preds = %bb3585
 bb3587:                                           ; preds = %bb3584
   %else_branch = alloca i64, align 8
   store i64 %39, ptr %else_branch, align 4
-  %49 = call ptr @malloc(i64 40)
+  %49 = call ptr @forge_bump_alloc(i64 40)
   %50 = getelementptr inbounds %Stmt, ptr %49, i32 0, i32 0
   store i8 4, ptr %50, align 1
   %51 = load i64, ptr %condition, align 4
@@ -38347,7 +38352,7 @@ bb3592:                                           ; preds = %bb3591
 
 bb3593:                                           ; preds = %bb3592
   %25 = load i64, ptr %self, align 4
-  %26 = call ptr @malloc(i64 8)
+  %26 = call ptr @forge_bump_alloc(i64 8)
   %27 = getelementptr inbounds %DiagCode, ptr %26, i32 0, i32 0
   store i8 1, ptr %27, align 1
   %28 = ptrtoint ptr %26 to i64
@@ -38377,7 +38382,7 @@ bb3597:                                           ; preds = %bb3595
   ret i64 0
 
 bb3598:                                           ; preds = %bb3596
-  %38 = call ptr @malloc(i64 32)
+  %38 = call ptr @forge_bump_alloc(i64 32)
   %39 = getelementptr inbounds %Expr, ptr %38, i32 0, i32 0
   store i8 18, ptr %39, align 1
   %40 = load i64, ptr %condition, align 4
@@ -38386,7 +38391,7 @@ bb3598:                                           ; preds = %bb3596
   %42 = load i64, ptr %then_branch, align 4
   %43 = getelementptr inbounds %Expr, ptr %38, i32 0, i32 2
   store i64 %42, ptr %43, align 4
-  %44 = call ptr @malloc(i64 32)
+  %44 = call ptr @forge_bump_alloc(i64 32)
   %45 = getelementptr inbounds %Expr, ptr %44, i32 0, i32 0
   store i8 0, ptr %45, align 1
   %46 = getelementptr inbounds %Expr, ptr %44, i32 0, i32 1
@@ -38426,7 +38431,7 @@ bb3603:                                           ; preds = %bb3602
 bb3604:                                           ; preds = %bb3601
   %else_branch = alloca i64, align 8
   store i64 %56, ptr %else_branch, align 4
-  %61 = call ptr @malloc(i64 32)
+  %61 = call ptr @forge_bump_alloc(i64 32)
   %62 = getelementptr inbounds %Expr, ptr %61, i32 0, i32 0
   store i8 18, ptr %62, align 1
   %63 = load i64, ptr %condition, align 4
@@ -38462,7 +38467,7 @@ bb3608:                                           ; preds = %bb3607
 bb3609:                                           ; preds = %bb3606
   %else_branch1 = alloca i64, align 8
   store i64 %71, ptr %else_branch1, align 4
-  %76 = call ptr @malloc(i64 32)
+  %76 = call ptr @forge_bump_alloc(i64 32)
   %77 = getelementptr inbounds %Expr, ptr %76, i32 0, i32 0
   store i8 18, ptr %77, align 1
   %78 = load i64, ptr %condition, align 4
@@ -38483,7 +38488,7 @@ bb3610:                                           ; preds = %bb3606
 bb3611:                                           ; preds = %bb3608
   %else_branch2 = alloca i64, align 8
   store i64 %74, ptr %else_branch2, align 4
-  %85 = call ptr @malloc(i64 32)
+  %85 = call ptr @forge_bump_alloc(i64 32)
   %86 = getelementptr inbounds %Expr, ptr %85, i32 0, i32 0
   store i8 18, ptr %86, align 1
   %87 = load i64, ptr %condition, align 4
@@ -38740,7 +38745,7 @@ bb3635:                                           ; preds = %bb3634
 
 bb3636:                                           ; preds = %bb3635
   %25 = load i64, ptr %self, align 4
-  %26 = call ptr @malloc(i64 8)
+  %26 = call ptr @forge_bump_alloc(i64 8)
   %27 = getelementptr inbounds %DiagCode, ptr %26, i32 0, i32 0
   store i8 1, ptr %27, align 1
   %28 = ptrtoint ptr %26 to i64
@@ -38759,7 +38764,7 @@ bb3638:                                           ; preds = %bb3637
 bb3639:                                           ; preds = %bb3638
   %body = alloca i64, align 8
   store i64 %31, ptr %body, align 4
-  %33 = call ptr @malloc(i64 40)
+  %33 = call ptr @forge_bump_alloc(i64 40)
   %34 = getelementptr inbounds %Stmt, ptr %33, i32 0, i32 0
   store i8 5, ptr %34, align 1
   %35 = load i64, ptr %condition, align 4
@@ -38859,7 +38864,7 @@ bb3644:                                           ; preds = %bb3643
   %56 = load i64, ptr %body_bb, align 4
   %57 = call i64 @forge_llvm_position_at_end(i64 %55, i64 %56)
   %58 = load i64, ptr %ctx, align 4
-  %59 = call ptr @malloc(i64 32)
+  %59 = call ptr @forge_bump_alloc(i64 32)
   %60 = getelementptr inbounds %LoopStack, ptr %59, i32 0, i32 0
   store i8 1, ptr %60, align 1
   %61 = load i64, ptr %cond_bb, align 4
@@ -39056,7 +39061,7 @@ bb3665:                                           ; preds = %bb3664
 
 bb3666:                                           ; preds = %bb3665
   %60 = load i64, ptr %self, align 4
-  %61 = call ptr @malloc(i64 8)
+  %61 = call ptr @forge_bump_alloc(i64 8)
   %62 = getelementptr inbounds %DiagCode, ptr %61, i32 0, i32 0
   store i8 1, ptr %62, align 1
   %63 = ptrtoint ptr %61 to i64
@@ -39075,7 +39080,7 @@ bb3668:                                           ; preds = %bb3667
 bb3669:                                           ; preds = %bb3668
   %body = alloca i64, align 8
   store i64 %66, ptr %body, align 4
-  %68 = call ptr @malloc(i64 40)
+  %68 = call ptr @forge_bump_alloc(i64 40)
   %69 = getelementptr inbounds %Stmt, ptr %68, i32 0, i32 0
   store i8 6, ptr %69, align 1
   %70 = load i64, ptr %name, align 4
@@ -39098,7 +39103,7 @@ bb3670:                                           ; preds = %bb3668
 
 bb3671:                                           ; preds = %bb3662
   %79 = load i64, ptr %self, align 4
-  %80 = call ptr @malloc(i64 8)
+  %80 = call ptr @forge_bump_alloc(i64 8)
   %81 = getelementptr inbounds %DiagCode, ptr %80, i32 0, i32 0
   store i8 1, ptr %81, align 1
   %82 = ptrtoint ptr %80 to i64
@@ -39117,7 +39122,7 @@ bb3673:                                           ; preds = %bb3672
 bb3674:                                           ; preds = %bb3673
   %body1 = alloca i64, align 8
   store i64 %85, ptr %body1, align 4
-  %87 = call ptr @malloc(i64 40)
+  %87 = call ptr @forge_bump_alloc(i64 40)
   %88 = getelementptr inbounds %Stmt, ptr %87, i32 0, i32 0
   store i8 7, ptr %88, align 1
   %89 = load i64, ptr %name, align 4
@@ -39240,7 +39245,7 @@ bb3682:                                           ; preds = %bb3681
   %67 = load i64, ptr %env, align 4
   %68 = load i64, ptr %variable, align 4
   %69 = load i64, ptr %counter, align 4
-  %70 = call ptr @malloc(i64 24)
+  %70 = call ptr @forge_bump_alloc(i64 24)
   %71 = getelementptr inbounds %ValueType, ptr %70, i32 0, i32 0
   store i8 0, ptr %71, align 1
   %72 = ptrtoint ptr %70 to i64
@@ -39324,7 +39329,7 @@ bb3682:                                           ; preds = %bb3681
   %134 = load i64, ptr %body_bb, align 4
   %135 = call i64 @forge_llvm_position_at_end(i64 %133, i64 %134)
   %136 = load i64, ptr %ctx, align 4
-  %137 = call ptr @malloc(i64 32)
+  %137 = call ptr @forge_bump_alloc(i64 32)
   %138 = getelementptr inbounds %LoopStack, ptr %137, i32 0, i32 0
   store i8 1, ptr %138, align 1
   %139 = load i64, ptr %incr_bb, align 4
@@ -39641,7 +39646,7 @@ bb3692:                                           ; preds = %bb3691
   %151 = load i64, ptr %elem_alloca, align 4
   %152 = call i64 @forge_llvm_build_store(i64 %149, i64 %150, i64 %151)
   %153 = load i64, ptr %ctx, align 4
-  %154 = call ptr @malloc(i64 32)
+  %154 = call ptr @forge_bump_alloc(i64 32)
   %155 = getelementptr inbounds %LoopStack, ptr %154, i32 0, i32 0
   store i8 1, ptr %155, align 1
   %156 = load i64, ptr %incr_bb, align 4
@@ -39849,7 +39854,7 @@ bb3715:                                           ; preds = %bb3714, %bb3716
   %32 = load i64, ptr %ife_result, align 4
   %ret_ty = alloca i64, align 8
   store i64 %32, ptr %ret_ty, align 4
-  %33 = call ptr @malloc(i64 40)
+  %33 = call ptr @forge_bump_alloc(i64 40)
   %34 = getelementptr inbounds %Stmt, ptr %33, i32 0, i32 0
   store i8 16, ptr %34, align 1
   %35 = load i64, ptr %name, align 4
@@ -39986,7 +39991,7 @@ bb3736:                                           ; preds = %bb3734
   ret i64 0
 
 bb3737:                                           ; preds = %bb3735
-  %37 = call ptr @malloc(i64 40)
+  %37 = call ptr @forge_bump_alloc(i64 40)
   %38 = getelementptr inbounds %Stmt, ptr %37, i32 0, i32 0
   store i8 1, ptr %38, align 1
   %39 = load i64, ptr %name, align 4
@@ -40005,7 +40010,7 @@ bb3738:                                           ; preds = %bb3735
   br label %bb3739
 
 bb3739:                                           ; preds = %bb3738
-  %46 = call ptr @malloc(i64 40)
+  %46 = call ptr @forge_bump_alloc(i64 40)
   %47 = getelementptr inbounds %Stmt, ptr %46, i32 0, i32 0
   store i8 0, ptr %47, align 1
   %48 = load i64, ptr %name, align 4
@@ -40093,7 +40098,7 @@ bb3750:                                           ; preds = %bb3749
 bb3751:                                           ; preds = %bb3750
   %initializer = alloca i64, align 8
   store i64 %22, ptr %initializer, align 4
-  %24 = call ptr @malloc(i64 40)
+  %24 = call ptr @forge_bump_alloc(i64 40)
   %25 = getelementptr inbounds %Stmt, ptr %24, i32 0, i32 0
   store i8 1, ptr %25, align 1
   %26 = load i64, ptr %name, align 4
@@ -40165,7 +40170,7 @@ bb3761:                                           ; preds = %bb3760
 bb3762:                                           ; preds = %bb3761
   %initializer = alloca i64, align 8
   store i64 %17, ptr %initializer, align 4
-  %19 = call ptr @malloc(i64 40)
+  %19 = call ptr @forge_bump_alloc(i64 40)
   %20 = getelementptr inbounds %Stmt, ptr %19, i32 0, i32 0
   store i8 20, ptr %20, align 1
   %21 = load i64, ptr %names, align 4
@@ -40191,7 +40196,7 @@ bb3764:
   br i1 %3, label %bb3765, label %bb3766
 
 bb3765:                                           ; preds = %bb3764
-  %4 = call ptr @malloc(i64 32)
+  %4 = call ptr @forge_bump_alloc(i64 32)
   %5 = getelementptr inbounds %ParamList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -40229,7 +40234,7 @@ bb3771:                                           ; preds = %bb3768
   br label %bb3772
 
 bb3772:                                           ; preds = %bb3771
-  %18 = call ptr @malloc(i64 32)
+  %18 = call ptr @forge_bump_alloc(i64 32)
   %19 = getelementptr inbounds %ParamList, ptr %18, i32 0, i32 0
   store i8 1, ptr %19, align 1
   %20 = load i64, ptr %name, align 4
@@ -40237,7 +40242,7 @@ bb3772:                                           ; preds = %bb3771
   store i64 %20, ptr %21, align 4
   %22 = getelementptr inbounds %ParamList, ptr %18, i32 0, i32 2
   store i64 ptrtoint (ptr @1333 to i64), ptr %22, align 4
-  %23 = call ptr @malloc(i64 32)
+  %23 = call ptr @forge_bump_alloc(i64 32)
   %24 = getelementptr inbounds %ParamList, ptr %23, i32 0, i32 0
   store i8 0, ptr %24, align 1
   %25 = ptrtoint ptr %23 to i64
@@ -40249,7 +40254,7 @@ bb3772:                                           ; preds = %bb3771
 bb3773:                                           ; preds = %bb3770
   %rest = alloca i64, align 8
   store i64 %16, ptr %rest, align 4
-  %28 = call ptr @malloc(i64 32)
+  %28 = call ptr @forge_bump_alloc(i64 32)
   %29 = getelementptr inbounds %ParamList, ptr %28, i32 0, i32 0
   store i8 1, ptr %29, align 1
   %30 = load i64, ptr %name, align 4
@@ -40475,7 +40480,7 @@ bb3804:                                           ; preds = %bb3801
   br label %bb3805
 
 bb3805:                                           ; preds = %bb3804
-  %47 = call ptr @malloc(i64 40)
+  %47 = call ptr @forge_bump_alloc(i64 40)
   %48 = getelementptr inbounds %Stmt, ptr %47, i32 0, i32 0
   store i8 8, ptr %48, align 1
   %49 = load i64, ptr %name, align 4
@@ -40504,7 +40509,7 @@ bb3806:
   br i1 %3, label %bb3807, label %bb3808
 
 bb3807:                                           ; preds = %bb3806
-  %4 = call ptr @malloc(i64 32)
+  %4 = call ptr @forge_bump_alloc(i64 32)
   %5 = getelementptr inbounds %ParamList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -40585,7 +40590,7 @@ bb3819:                                           ; preds = %bb3817
   br label %bb3820
 
 bb3820:                                           ; preds = %bb3819
-  %11 = call ptr @malloc(i64 32)
+  %11 = call ptr @forge_bump_alloc(i64 32)
   %12 = getelementptr inbounds %ParamList, ptr %11, i32 0, i32 0
   store i8 1, ptr %12, align 1
   %13 = load i64, ptr %name, align 4
@@ -40594,7 +40599,7 @@ bb3820:                                           ; preds = %bb3819
   %15 = load i64, ptr %ty, align 4
   %16 = getelementptr inbounds %ParamList, ptr %11, i32 0, i32 2
   store i64 %15, ptr %16, align 4
-  %17 = call ptr @malloc(i64 32)
+  %17 = call ptr @forge_bump_alloc(i64 32)
   %18 = getelementptr inbounds %ParamList, ptr %17, i32 0, i32 0
   store i8 0, ptr %18, align 1
   %19 = ptrtoint ptr %17 to i64
@@ -40606,7 +40611,7 @@ bb3820:                                           ; preds = %bb3819
 bb3821:                                           ; preds = %bb3818
   %rest = alloca i64, align 8
   store i64 %9, ptr %rest, align 4
-  %22 = call ptr @malloc(i64 32)
+  %22 = call ptr @forge_bump_alloc(i64 32)
   %23 = getelementptr inbounds %ParamList, ptr %22, i32 0, i32 0
   store i8 1, ptr %23, align 1
   %24 = load i64, ptr %name, align 4
@@ -40646,7 +40651,7 @@ bb3824:                                           ; preds = %bb3828, %bb3838, %b
   ret i64 %8
 
 bb3825:                                           ; preds = %bb3823
-  %9 = call ptr @malloc(i64 40)
+  %9 = call ptr @forge_bump_alloc(i64 40)
   %10 = getelementptr inbounds %VarEnv, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -40733,7 +40738,7 @@ bb3833:                                           ; preds = %bb3831
   br label %bb3834
 
 bb3834:                                           ; preds = %bb3833
-  %49 = call ptr @malloc(i64 40)
+  %49 = call ptr @forge_bump_alloc(i64 40)
   %50 = getelementptr inbounds %VarEnv, ptr %49, i32 0, i32 0
   store i8 0, ptr %50, align 1
   %51 = ptrtoint ptr %49 to i64
@@ -40832,7 +40837,7 @@ bb3842:                                           ; preds = %bb3841
   %51 = load i64, ptr %50, align 4
   %52 = load i64, ptr %entry, align 4
   %53 = call i64 @forge_llvm_position_at_end(i64 %51, i64 %52)
-  %54 = call ptr @malloc(i64 40)
+  %54 = call ptr @forge_bump_alloc(i64 40)
   %55 = getelementptr inbounds %VarEnv, ptr %54, i32 0, i32 0
   store i8 0, ptr %55, align 1
   %56 = ptrtoint ptr %54 to i64
@@ -40856,7 +40861,7 @@ bb3842:                                           ; preds = %bb3841
   %68 = load i64, ptr %body, align 4
   %69 = load i64, ptr %ctx, align 4
   %70 = call i64 @const_i64(i64 %69, i64 0)
-  %71 = call ptr @malloc(i64 24)
+  %71 = call ptr @forge_bump_alloc(i64 24)
   %72 = getelementptr inbounds %ValueType, ptr %71, i32 0, i32 0
   store i8 0, ptr %72, align 1
   %73 = ptrtoint ptr %71 to i64
@@ -40911,7 +40916,7 @@ bb3847:                                           ; preds = %bb3845
   br label %bb3848
 
 bb3848:                                           ; preds = %bb3847, %bb3846
-  %105 = call ptr @malloc(i64 40)
+  %105 = call ptr @forge_bump_alloc(i64 40)
   %106 = getelementptr inbounds %VarEnv, ptr %105, i32 0, i32 0
   store i8 0, ptr %106, align 1
   %107 = ptrtoint ptr %105 to i64
@@ -41106,7 +41111,7 @@ bb3870:                                           ; preds = %bb3867
   br label %bb3871
 
 bb3871:                                           ; preds = %bb3870
-  %29 = call ptr @malloc(i64 40)
+  %29 = call ptr @forge_bump_alloc(i64 40)
   %30 = getelementptr inbounds %Stmt, ptr %29, i32 0, i32 0
   store i8 11, ptr %30, align 1
   %31 = load i64, ptr %name, align 4
@@ -41129,7 +41134,7 @@ bb3872:
   br i1 %3, label %bb3873, label %bb3874
 
 bb3873:                                           ; preds = %bb3872
-  %4 = call ptr @malloc(i64 32)
+  %4 = call ptr @forge_bump_alloc(i64 32)
   %5 = getelementptr inbounds %FieldList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -41206,7 +41211,7 @@ bb3887:                                           ; preds = %bb3884
   br label %bb3888
 
 bb3888:                                           ; preds = %bb3887
-  %31 = call ptr @malloc(i64 32)
+  %31 = call ptr @forge_bump_alloc(i64 32)
   %32 = getelementptr inbounds %FieldList, ptr %31, i32 0, i32 0
   store i8 1, ptr %32, align 1
   %33 = load i64, ptr %name, align 4
@@ -41215,7 +41220,7 @@ bb3888:                                           ; preds = %bb3887
   %35 = load i64, ptr %ty, align 4
   %36 = getelementptr inbounds %FieldList, ptr %31, i32 0, i32 2
   store i64 %35, ptr %36, align 4
-  %37 = call ptr @malloc(i64 32)
+  %37 = call ptr @forge_bump_alloc(i64 32)
   %38 = getelementptr inbounds %FieldList, ptr %37, i32 0, i32 0
   store i8 0, ptr %38, align 1
   %39 = ptrtoint ptr %37 to i64
@@ -41227,7 +41232,7 @@ bb3888:                                           ; preds = %bb3887
 bb3889:                                           ; preds = %bb3886
   %rest = alloca i64, align 8
   store i64 %29, ptr %rest, align 4
-  %42 = call ptr @malloc(i64 32)
+  %42 = call ptr @forge_bump_alloc(i64 32)
   %43 = getelementptr inbounds %FieldList, ptr %42, i32 0, i32 0
   store i8 1, ptr %43, align 1
   %44 = load i64, ptr %name, align 4
@@ -41256,7 +41261,7 @@ bb3891:
   br i1 %3, label %bb3892, label %bb3893
 
 bb3892:                                           ; preds = %bb3891
-  %4 = call ptr @malloc(i64 32)
+  %4 = call ptr @forge_bump_alloc(i64 32)
   %5 = getelementptr inbounds %FieldInitList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -41293,7 +41298,7 @@ bb3897:                                           ; preds = %bb3895
   br i1 %17, label %bb3901, label %bb3900
 
 bb3898:                                           ; preds = %bb3895
-  %18 = call ptr @malloc(i64 32)
+  %18 = call ptr @forge_bump_alloc(i64 32)
   %19 = getelementptr inbounds %Expr, ptr %18, i32 0, i32 0
   store i8 4, ptr %19, align 1
   %20 = load i64, ptr %name, align 4
@@ -41334,7 +41339,7 @@ bb3903:                                           ; preds = %bb3899
   br label %bb3904
 
 bb3904:                                           ; preds = %bb3903
-  %33 = call ptr @malloc(i64 32)
+  %33 = call ptr @forge_bump_alloc(i64 32)
   %34 = getelementptr inbounds %FieldInitList, ptr %33, i32 0, i32 0
   store i8 1, ptr %34, align 1
   %35 = load i64, ptr %name, align 4
@@ -41343,7 +41348,7 @@ bb3904:                                           ; preds = %bb3903
   %37 = load i64, ptr %value, align 4
   %38 = getelementptr inbounds %FieldInitList, ptr %33, i32 0, i32 2
   store i64 %37, ptr %38, align 4
-  %39 = call ptr @malloc(i64 32)
+  %39 = call ptr @forge_bump_alloc(i64 32)
   %40 = getelementptr inbounds %FieldInitList, ptr %39, i32 0, i32 0
   store i8 0, ptr %40, align 1
   %41 = ptrtoint ptr %39 to i64
@@ -41355,7 +41360,7 @@ bb3904:                                           ; preds = %bb3903
 bb3905:                                           ; preds = %bb3902
   %rest = alloca i64, align 8
   store i64 %31, ptr %rest, align 4
-  %44 = call ptr @malloc(i64 32)
+  %44 = call ptr @forge_bump_alloc(i64 32)
   %45 = getelementptr inbounds %FieldInitList, ptr %44, i32 0, i32 0
   store i8 1, ptr %45, align 1
   %46 = load i64, ptr %name, align 4
@@ -41529,7 +41534,7 @@ bb3916:                                           ; preds = %bb3915
   %109 = load i64, ptr %as_i64, align 4
   %110 = getelementptr inbounds %EmitResult, ptr %108, i32 0, i32 0
   store i64 %109, ptr %110, align 4
-  %111 = call ptr @malloc(i64 24)
+  %111 = call ptr @forge_bump_alloc(i64 24)
   %112 = getelementptr inbounds %ValueType, ptr %111, i32 0, i32 0
   store i8 4, ptr %112, align 1
   %113 = load i64, ptr %name, align 4
@@ -41836,7 +41841,7 @@ bb3942:                                           ; preds = %bb3939
   br label %bb3943
 
 bb3943:                                           ; preds = %bb3942
-  %24 = call ptr @malloc(i64 40)
+  %24 = call ptr @forge_bump_alloc(i64 40)
   %25 = getelementptr inbounds %Stmt, ptr %24, i32 0, i32 0
   store i8 12, ptr %25, align 1
   %26 = load i64, ptr %name, align 4
@@ -41859,7 +41864,7 @@ bb3944:
   br i1 %3, label %bb3945, label %bb3946
 
 bb3945:                                           ; preds = %bb3944
-  %4 = call ptr @malloc(i64 32)
+  %4 = call ptr @forge_bump_alloc(i64 32)
   %5 = getelementptr inbounds %VariantList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -41899,7 +41904,7 @@ bb3951:                                           ; preds = %bb3948
 bb3952:                                           ; preds = %bb3951
   %18 = load i64, ptr %self, align 4
   %19 = load i64, ptr %name, align 4
-  %20 = call ptr @malloc(i64 32)
+  %20 = call ptr @forge_bump_alloc(i64 32)
   %21 = getelementptr inbounds %FieldList, ptr %20, i32 0, i32 0
   store i8 0, ptr %21, align 1
   %22 = ptrtoint ptr %20 to i64
@@ -41961,7 +41966,7 @@ bb3961:                                           ; preds = %bb3960, %bb3959
   br i1 %10, label %bb3962, label %bb3963
 
 bb3962:                                           ; preds = %bb3961
-  %11 = call ptr @malloc(i64 32)
+  %11 = call ptr @forge_bump_alloc(i64 32)
   %12 = getelementptr inbounds %VariantList, ptr %11, i32 0, i32 0
   store i8 1, ptr %12, align 1
   %13 = load i64, ptr %name, align 4
@@ -41970,7 +41975,7 @@ bb3962:                                           ; preds = %bb3961
   %15 = load i64, ptr %fields, align 4
   %16 = getelementptr inbounds %VariantList, ptr %11, i32 0, i32 2
   store i64 %15, ptr %16, align 4
-  %17 = call ptr @malloc(i64 32)
+  %17 = call ptr @forge_bump_alloc(i64 32)
   %18 = getelementptr inbounds %VariantList, ptr %17, i32 0, i32 0
   store i8 0, ptr %18, align 1
   %19 = ptrtoint ptr %17 to i64
@@ -41998,7 +42003,7 @@ bb3966:                                           ; preds = %bb3964
   br label %bb3967
 
 bb3967:                                           ; preds = %bb3966
-  %28 = call ptr @malloc(i64 32)
+  %28 = call ptr @forge_bump_alloc(i64 32)
   %29 = getelementptr inbounds %VariantList, ptr %28, i32 0, i32 0
   store i8 1, ptr %29, align 1
   %30 = load i64, ptr %name, align 4
@@ -42007,7 +42012,7 @@ bb3967:                                           ; preds = %bb3966
   %32 = load i64, ptr %fields, align 4
   %33 = getelementptr inbounds %VariantList, ptr %28, i32 0, i32 2
   store i64 %32, ptr %33, align 4
-  %34 = call ptr @malloc(i64 32)
+  %34 = call ptr @forge_bump_alloc(i64 32)
   %35 = getelementptr inbounds %VariantList, ptr %34, i32 0, i32 0
   store i8 0, ptr %35, align 1
   %36 = ptrtoint ptr %34 to i64
@@ -42019,7 +42024,7 @@ bb3967:                                           ; preds = %bb3966
 bb3968:                                           ; preds = %bb3965
   %rest = alloca i64, align 8
   store i64 %26, ptr %rest, align 4
-  %39 = call ptr @malloc(i64 32)
+  %39 = call ptr @forge_bump_alloc(i64 32)
   %40 = getelementptr inbounds %VariantList, ptr %39, i32 0, i32 0
   store i8 1, ptr %40, align 1
   %41 = load i64, ptr %name, align 4
@@ -42048,7 +42053,7 @@ bb3970:
   br i1 %3, label %bb3971, label %bb3972
 
 bb3971:                                           ; preds = %bb3970
-  %4 = call ptr @malloc(i64 32)
+  %4 = call ptr @forge_bump_alloc(i64 32)
   %5 = getelementptr inbounds %FieldList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -42125,7 +42130,7 @@ bb3985:                                           ; preds = %bb3982
   br label %bb3986
 
 bb3986:                                           ; preds = %bb3985
-  %31 = call ptr @malloc(i64 32)
+  %31 = call ptr @forge_bump_alloc(i64 32)
   %32 = getelementptr inbounds %FieldList, ptr %31, i32 0, i32 0
   store i8 1, ptr %32, align 1
   %33 = load i64, ptr %name, align 4
@@ -42134,7 +42139,7 @@ bb3986:                                           ; preds = %bb3985
   %35 = load i64, ptr %ty, align 4
   %36 = getelementptr inbounds %FieldList, ptr %31, i32 0, i32 2
   store i64 %35, ptr %36, align 4
-  %37 = call ptr @malloc(i64 32)
+  %37 = call ptr @forge_bump_alloc(i64 32)
   %38 = getelementptr inbounds %FieldList, ptr %37, i32 0, i32 0
   store i8 0, ptr %38, align 1
   %39 = ptrtoint ptr %37 to i64
@@ -42146,7 +42151,7 @@ bb3986:                                           ; preds = %bb3985
 bb3987:                                           ; preds = %bb3984
   %rest = alloca i64, align 8
   store i64 %29, ptr %rest, align 4
-  %42 = call ptr @malloc(i64 32)
+  %42 = call ptr @forge_bump_alloc(i64 32)
   %43 = getelementptr inbounds %FieldList, ptr %42, i32 0, i32 0
   store i8 1, ptr %43, align 1
   %44 = load i64, ptr %name, align 4
@@ -42422,7 +42427,7 @@ bb4001:                                           ; preds = %bb4000
   %195 = load i64, ptr %as_i64, align 4
   %196 = getelementptr inbounds %EmitResult, ptr %194, i32 0, i32 0
   store i64 %195, ptr %196, align 4
-  %197 = call ptr @malloc(i64 24)
+  %197 = call ptr @forge_bump_alloc(i64 24)
   %198 = getelementptr inbounds %ValueType, ptr %197, i32 0, i32 0
   store i8 5, ptr %198, align 1
   %199 = load i64, ptr %type_name, align 4
@@ -42450,61 +42455,16 @@ bb4002:
   %max_payload = alloca i64, align 8
   store i64 %3, ptr %max_payload, align 4
   %4 = load i64, ptr %ctx, align 4
-  %5 = inttoptr i64 %4 to ptr
-  %6 = getelementptr inbounds %Ctx, ptr %5, i32 0, i32 4
-  %7 = load i64, ptr %6, align 4
-  %8 = load i64, ptr %max_payload, align 4
-  %9 = add i64 %8, 1
-  %10 = mul i64 %9, 8
-  %11 = call i64 @forge_llvm_const_int(i64 %7, i64 %10, i64 0)
+  %5 = load i64, ptr %max_payload, align 4
+  %6 = add i64 %5, 1
+  %7 = mul i64 %6, 8
+  %8 = call i64 @const_i64(i64 %4, i64 %7)
   %size = alloca i64, align 8
-  store i64 %11, ptr %size, align 4
-  %12 = load i64, ptr %ctx, align 4
-  %13 = inttoptr i64 %12 to ptr
-  %14 = getelementptr inbounds %Ctx, ptr %13, i32 0, i32 1
-  %15 = load i64, ptr %14, align 4
-  %16 = call i64 @forge_llvm_get_named_function(i64 %15, i64 ptrtoint (ptr @1417 to i64))
-  %malloc_fn = alloca i64, align 8
-  store i64 %16, ptr %malloc_fn, align 4
-  %17 = call i64 @forge_llvm_type_array_new(i64 1)
-  %pa = alloca i64, align 8
-  store i64 %17, ptr %pa, align 4
-  %18 = load i64, ptr %pa, align 4
-  %19 = load i64, ptr %ctx, align 4
-  %20 = inttoptr i64 %19 to ptr
-  %21 = getelementptr inbounds %Ctx, ptr %20, i32 0, i32 4
-  %22 = load i64, ptr %21, align 4
-  %23 = call i64 @forge_llvm_type_array_set(i64 %18, i64 0, i64 %22)
-  %24 = load i64, ptr %ctx, align 4
-  %25 = inttoptr i64 %24 to ptr
-  %26 = getelementptr inbounds %Ctx, ptr %25, i32 0, i32 6
-  %27 = load i64, ptr %26, align 4
-  %28 = load i64, ptr %pa, align 4
-  %29 = call i64 @forge_llvm_function_type(i64 %27, i64 %28, i64 1, i64 0)
-  %malloc_type = alloca i64, align 8
-  store i64 %29, ptr %malloc_type, align 4
-  %30 = load i64, ptr %pa, align 4
-  %31 = call i64 @forge_llvm_type_array_free(i64 %30)
-  %32 = call i64 @forge_llvm_value_array_new(i64 1)
-  %arr = alloca i64, align 8
-  store i64 %32, ptr %arr, align 4
-  %33 = load i64, ptr %arr, align 4
-  %34 = load i64, ptr %size, align 4
-  %35 = call i64 @forge_llvm_value_array_set(i64 %33, i64 0, i64 %34)
-  %36 = load i64, ptr %ctx, align 4
-  %37 = inttoptr i64 %36 to ptr
-  %38 = getelementptr inbounds %Ctx, ptr %37, i32 0, i32 2
-  %39 = load i64, ptr %38, align 4
-  %40 = load i64, ptr %malloc_type, align 4
-  %41 = load i64, ptr %malloc_fn, align 4
-  %42 = load i64, ptr %arr, align 4
-  %43 = call i64 @forge_llvm_build_call(i64 %39, i64 %40, i64 %41, i64 %42, i64 1, i64 ptrtoint (ptr @1418 to i64))
-  %buf = alloca i64, align 8
-  store i64 %43, ptr %buf, align 4
-  %44 = load i64, ptr %arr, align 4
-  %45 = call i64 @forge_llvm_value_array_free(i64 %44)
-  %46 = load i64, ptr %buf, align 4
-  ret i64 %46
+  store i64 %8, ptr %size, align 4
+  %9 = load i64, ptr %ctx, align 4
+  %10 = load i64, ptr %size, align 4
+  %11 = call i64 @cg_malloc(i64 %9, i64 %10)
+  ret i64 %11
 }
 
 define i64 @fill_enum_payload(i64 %0, i64 %1, i64 %2, i64 %3, i64 %4, i64 %5) {
@@ -42587,7 +42547,7 @@ bb4011:                                           ; preds = %bb4010
   %36 = load i64, ptr %alloca, align 4
   %37 = load i64, ptr %idx, align 4
   %38 = add i64 %37, 1
-  %39 = call i64 @forge_llvm_build_struct_gep2(i64 %34, i64 %35, i64 %36, i64 %38, i64 ptrtoint (ptr @1419 to i64))
+  %39 = call i64 @forge_llvm_build_struct_gep2(i64 %34, i64 %35, i64 %36, i64 %38, i64 ptrtoint (ptr @1417 to i64))
   %gep = alloca i64, align 8
   store i64 %39, ptr %gep, align 4
   %40 = load i64, ptr %ctx, align 4
@@ -42619,7 +42579,7 @@ bb4012:
   %1 = load i64, ptr %self, align 4
   %2 = call i64 @Parser__advance(i64 %1)
   %3 = load i64, ptr %self, align 4
-  %4 = call i64 @Parser__check(i64 %3, i64 ptrtoint (ptr @1420 to i64))
+  %4 = call i64 @Parser__check(i64 %3, i64 ptrtoint (ptr @1418 to i64))
   %5 = icmp ne i64 %4, 0
   br i1 %5, label %bb4013, label %bb4014
 
@@ -42633,7 +42593,7 @@ bb4014:                                           ; preds = %bb4012
 
 bb4015:                                           ; preds = %bb4014, %bb4013
   %8 = load i64, ptr %self, align 4
-  %9 = call i64 @Parser__consume_identifier(i64 %8, i64 ptrtoint (ptr @1421 to i64))
+  %9 = call i64 @Parser__consume_identifier(i64 %8, i64 ptrtoint (ptr @1419 to i64))
   %10 = icmp eq i64 %9, 0
   br i1 %10, label %bb4017, label %bb4016
 
@@ -42641,7 +42601,7 @@ bb4016:                                           ; preds = %bb4015
   %type_name = alloca i64, align 8
   store i64 %9, ptr %type_name, align 4
   %11 = load i64, ptr %self, align 4
-  %12 = call i64 @Parser__check(i64 %11, i64 ptrtoint (ptr @1422 to i64))
+  %12 = call i64 @Parser__check(i64 %11, i64 ptrtoint (ptr @1420 to i64))
   %13 = icmp ne i64 %12, 0
   br i1 %13, label %bb4018, label %bb4019
 
@@ -42661,7 +42621,7 @@ bb4020:                                           ; preds = %bb4019, %bb4018
   %target_name = alloca i64, align 8
   store i64 %16, ptr %target_name, align 4
   %17 = load i64, ptr %self, align 4
-  %18 = call i64 @Parser__check(i64 %17, i64 ptrtoint (ptr @1423 to i64))
+  %18 = call i64 @Parser__check(i64 %17, i64 ptrtoint (ptr @1421 to i64))
   %19 = icmp ne i64 %18, 0
   br i1 %19, label %bb4021, label %bb4022
 
@@ -42669,7 +42629,7 @@ bb4021:                                           ; preds = %bb4020
   %20 = load i64, ptr %self, align 4
   %21 = call i64 @Parser__advance(i64 %20)
   %22 = load i64, ptr %self, align 4
-  %23 = call i64 @Parser__consume_identifier(i64 %22, i64 ptrtoint (ptr @1424 to i64))
+  %23 = call i64 @Parser__consume_identifier(i64 %22, i64 ptrtoint (ptr @1422 to i64))
   %24 = icmp eq i64 %23, 0
   br i1 %24, label %bb4025, label %bb4024
 
@@ -42678,7 +42638,7 @@ bb4022:                                           ; preds = %bb4020
 
 bb4023:                                           ; preds = %bb4022, %bb4028
   %25 = load i64, ptr %self, align 4
-  %26 = call i64 @Parser__consume(i64 %25, i64 ptrtoint (ptr @1426 to i64), i64 ptrtoint (ptr @1427 to i64))
+  %26 = call i64 @Parser__consume(i64 %25, i64 ptrtoint (ptr @1424 to i64), i64 ptrtoint (ptr @1425 to i64))
   %27 = icmp eq i64 %26, 0
   %28 = zext i1 %27 to i64
   %29 = icmp ne i64 %28, 0
@@ -42688,7 +42648,7 @@ bb4024:                                           ; preds = %bb4021
   %for_type = alloca i64, align 8
   store i64 %23, ptr %for_type, align 4
   %30 = load i64, ptr %self, align 4
-  %31 = call i64 @Parser__check(i64 %30, i64 ptrtoint (ptr @1425 to i64))
+  %31 = call i64 @Parser__check(i64 %30, i64 ptrtoint (ptr @1423 to i64))
   %32 = icmp ne i64 %31, 0
   br i1 %32, label %bb4026, label %bb4027
 
@@ -42725,7 +42685,7 @@ bb4032:                                           ; preds = %bb4031
   %methods = alloca i64, align 8
   store i64 %38, ptr %methods, align 4
   %40 = load i64, ptr %self, align 4
-  %41 = call i64 @Parser__consume(i64 %40, i64 ptrtoint (ptr @1428 to i64), i64 ptrtoint (ptr @1429 to i64))
+  %41 = call i64 @Parser__consume(i64 %40, i64 ptrtoint (ptr @1426 to i64), i64 ptrtoint (ptr @1427 to i64))
   %42 = icmp eq i64 %41, 0
   %43 = zext i1 %42 to i64
   %44 = icmp ne i64 %43, 0
@@ -42741,7 +42701,7 @@ bb4035:                                           ; preds = %bb4032
   br label %bb4036
 
 bb4036:                                           ; preds = %bb4035
-  %45 = call ptr @malloc(i64 40)
+  %45 = call ptr @forge_bump_alloc(i64 40)
   %46 = getelementptr inbounds %Stmt, ptr %45, i32 0, i32 0
   store i8 14, ptr %46, align 1
   %47 = load i64, ptr %target_name, align 4
@@ -42761,12 +42721,12 @@ bb4037:
   %type_name = alloca i64, align 8
   store i64 %1, ptr %type_name, align 4
   %2 = load i64, ptr %self, align 4
-  %3 = call i64 @Parser__check(i64 %2, i64 ptrtoint (ptr @1430 to i64))
+  %3 = call i64 @Parser__check(i64 %2, i64 ptrtoint (ptr @1428 to i64))
   %4 = icmp ne i64 %3, 0
   br i1 %4, label %bb4038, label %bb4039
 
 bb4038:                                           ; preds = %bb4037
-  %5 = call ptr @malloc(i64 24)
+  %5 = call ptr @forge_bump_alloc(i64 24)
   %6 = getelementptr inbounds %StmtList, ptr %5, i32 0, i32 0
   store i8 0, ptr %6, align 1
   %7 = ptrtoint ptr %5 to i64
@@ -42777,7 +42737,7 @@ bb4039:                                           ; preds = %bb4037
 
 bb4040:                                           ; preds = %bb4039
   %8 = load i64, ptr %self, align 4
-  %9 = call i64 @Parser__check(i64 %8, i64 ptrtoint (ptr @1431 to i64))
+  %9 = call i64 @Parser__check(i64 %8, i64 ptrtoint (ptr @1429 to i64))
   %10 = icmp eq i64 %9, 0
   %11 = zext i1 %10 to i64
   %12 = icmp ne i64 %11, 0
@@ -42785,7 +42745,7 @@ bb4040:                                           ; preds = %bb4039
 
 bb4041:                                           ; preds = %bb4040
   %13 = load i64, ptr %self, align 4
-  %14 = call i64 @Parser__set_error(i64 %13, i64 ptrtoint (ptr @1432 to i64))
+  %14 = call i64 @Parser__set_error(i64 %13, i64 ptrtoint (ptr @1430 to i64))
   ret i64 0
 
 bb4042:                                           ; preds = %bb4040
@@ -42813,7 +42773,7 @@ bb4045:                                           ; preds = %bb4043
 bb4046:                                           ; preds = %bb4044
   %rest = alloca i64, align 8
   store i64 %21, ptr %rest, align 4
-  %23 = call ptr @malloc(i64 24)
+  %23 = call ptr @forge_bump_alloc(i64 24)
   %24 = getelementptr inbounds %StmtList, ptr %23, i32 0, i32 0
   store i8 1, ptr %24, align 1
   %25 = load i64, ptr %method, align 4
@@ -42838,7 +42798,7 @@ bb4048:
   %2 = load i64, ptr %self, align 4
   %3 = call i64 @Parser__advance(i64 %2)
   %4 = load i64, ptr %self, align 4
-  %5 = call i64 @Parser__consume_identifier(i64 %4, i64 ptrtoint (ptr @1433 to i64))
+  %5 = call i64 @Parser__consume_identifier(i64 %4, i64 ptrtoint (ptr @1431 to i64))
   %6 = icmp eq i64 %5, 0
   br i1 %6, label %bb4050, label %bb4049
 
@@ -42846,7 +42806,7 @@ bb4049:                                           ; preds = %bb4048
   %name = alloca i64, align 8
   store i64 %5, ptr %name, align 4
   %7 = load i64, ptr %self, align 4
-  %8 = call i64 @Parser__consume(i64 %7, i64 ptrtoint (ptr @1434 to i64), i64 ptrtoint (ptr @1435 to i64))
+  %8 = call i64 @Parser__consume(i64 %7, i64 ptrtoint (ptr @1432 to i64), i64 ptrtoint (ptr @1433 to i64))
   %9 = icmp eq i64 %8, 0
   %10 = zext i1 %9 to i64
   %11 = icmp ne i64 %10, 0
@@ -42872,7 +42832,7 @@ bb4054:                                           ; preds = %bb4053
   %params = alloca i64, align 8
   store i64 %14, ptr %params, align 4
   %16 = load i64, ptr %self, align 4
-  %17 = call i64 @Parser__consume(i64 %16, i64 ptrtoint (ptr @1436 to i64), i64 ptrtoint (ptr @1437 to i64))
+  %17 = call i64 @Parser__consume(i64 %16, i64 ptrtoint (ptr @1434 to i64), i64 ptrtoint (ptr @1435 to i64))
   %18 = icmp eq i64 %17, 0
   %19 = zext i1 %18 to i64
   %20 = icmp ne i64 %19, 0
@@ -42889,7 +42849,7 @@ bb4057:                                           ; preds = %bb4054
 
 bb4058:                                           ; preds = %bb4057
   %21 = load i64, ptr %self, align 4
-  %22 = call i64 @Parser__check(i64 %21, i64 ptrtoint (ptr @1438 to i64))
+  %22 = call i64 @Parser__check(i64 %21, i64 ptrtoint (ptr @1436 to i64))
   %23 = icmp ne i64 %22, 0
   %ife_result = alloca i64, align 8
   store i64 0, ptr %ife_result, align 4
@@ -42899,12 +42859,12 @@ bb4059:                                           ; preds = %bb4058
   %24 = load i64, ptr %self, align 4
   %25 = call i64 @Parser__advance(i64 %24)
   %26 = load i64, ptr %self, align 4
-  %27 = call i64 @Parser__consume_type(i64 %26, i64 ptrtoint (ptr @1439 to i64))
+  %27 = call i64 @Parser__consume_type(i64 %26, i64 ptrtoint (ptr @1437 to i64))
   %28 = icmp eq i64 %27, 0
   br i1 %28, label %bb4063, label %bb4062
 
 bb4060:                                           ; preds = %bb4058
-  store i64 ptrtoint (ptr @1440 to i64), ptr %ife_result, align 4
+  store i64 ptrtoint (ptr @1438 to i64), ptr %ife_result, align 4
   br label %bb4061
 
 bb4061:                                           ; preds = %bb4060, %bb4062
@@ -42912,7 +42872,7 @@ bb4061:                                           ; preds = %bb4060, %bb4062
   %ret_ty = alloca i64, align 8
   store i64 %29, ptr %ret_ty, align 4
   %30 = load i64, ptr %self, align 4
-  %31 = call i64 @Parser__consume(i64 %30, i64 ptrtoint (ptr @1441 to i64), i64 ptrtoint (ptr @1442 to i64))
+  %31 = call i64 @Parser__consume(i64 %30, i64 ptrtoint (ptr @1439 to i64), i64 ptrtoint (ptr @1440 to i64))
   %32 = icmp eq i64 %31, 0
   %33 = zext i1 %32 to i64
   %34 = icmp ne i64 %33, 0
@@ -42944,7 +42904,7 @@ bb4067:                                           ; preds = %bb4066
   %body = alloca i64, align 8
   store i64 %37, ptr %body, align 4
   %39 = load i64, ptr %self, align 4
-  %40 = call i64 @Parser__consume(i64 %39, i64 ptrtoint (ptr @1443 to i64), i64 ptrtoint (ptr @1444 to i64))
+  %40 = call i64 @Parser__consume(i64 %39, i64 ptrtoint (ptr @1441 to i64), i64 ptrtoint (ptr @1442 to i64))
   %41 = icmp eq i64 %40, 0
   %42 = zext i1 %41 to i64
   %43 = icmp ne i64 %42, 0
@@ -42963,7 +42923,7 @@ bb4071:                                           ; preds = %bb4070
   %44 = load i64, ptr %type_name, align 4
   %45 = inttoptr i64 %44 to ptr
   %46 = call i64 @strlen(ptr %45)
-  %47 = call i64 @strlen(ptr @1445)
+  %47 = call i64 @strlen(ptr @1443)
   %48 = add i64 %46, %47
   %49 = add i64 %48, 1
   %50 = call ptr @forge_bump_alloc(i64 %49)
@@ -42972,7 +42932,7 @@ bb4071:                                           ; preds = %bb4070
   %53 = add i64 %52, %46
   %54 = inttoptr i64 %53 to ptr
   %55 = add i64 %47, 1
-  %56 = call ptr @memcpy(ptr %54, ptr @1445, i64 %55)
+  %56 = call ptr @memcpy(ptr %54, ptr @1443, i64 %55)
   %57 = ptrtoint ptr %50 to i64
   %58 = load i64, ptr %name, align 4
   %59 = inttoptr i64 %57 to ptr
@@ -42991,7 +42951,7 @@ bb4071:                                           ; preds = %bb4070
   %72 = ptrtoint ptr %65 to i64
   %mangled = alloca i64, align 8
   store i64 %72, ptr %mangled, align 4
-  %73 = call ptr @malloc(i64 40)
+  %73 = call ptr @forge_bump_alloc(i64 40)
   %74 = getelementptr inbounds %Stmt, ptr %73, i32 0, i32 0
   store i8 8, ptr %74, align 1
   %75 = load i64, ptr %mangled, align 4
@@ -43017,12 +42977,12 @@ bb4072:
   %type_name = alloca i64, align 8
   store i64 %1, ptr %type_name, align 4
   %2 = load i64, ptr %self, align 4
-  %3 = call i64 @Parser__check(i64 %2, i64 ptrtoint (ptr @1446 to i64))
+  %3 = call i64 @Parser__check(i64 %2, i64 ptrtoint (ptr @1444 to i64))
   %4 = icmp ne i64 %3, 0
   br i1 %4, label %bb4073, label %bb4074
 
 bb4073:                                           ; preds = %bb4072
-  %5 = call ptr @malloc(i64 32)
+  %5 = call ptr @forge_bump_alloc(i64 32)
   %6 = getelementptr inbounds %ParamList, ptr %5, i32 0, i32 0
   store i8 0, ptr %6, align 1
   %7 = ptrtoint ptr %5 to i64
@@ -43033,7 +42993,7 @@ bb4074:                                           ; preds = %bb4072
 
 bb4075:                                           ; preds = %bb4074
   %8 = load i64, ptr %self, align 4
-  %9 = call i64 @Parser__check(i64 %8, i64 ptrtoint (ptr @1447 to i64))
+  %9 = call i64 @Parser__check(i64 %8, i64 ptrtoint (ptr @1445 to i64))
   %10 = icmp ne i64 %9, 0
   br i1 %10, label %bb4076, label %bb4077
 
@@ -43043,7 +43003,7 @@ bb4076:                                           ; preds = %bb4075
   %13 = getelementptr inbounds %Parser, ptr %12, i32 0, i32 6
   %14 = load i64, ptr %13, align 4
   %15 = inttoptr i64 %14 to ptr
-  %16 = call i32 @strcmp(ptr %15, ptr @1448)
+  %16 = call i32 @strcmp(ptr %15, ptr @1446)
   %17 = zext i32 %16 to i64
   %18 = icmp eq i64 %17, 0
   %19 = zext i1 %18 to i64
@@ -43060,7 +43020,7 @@ bb4078:                                           ; preds = %bb4077
   %24 = load i64, ptr %self, align 4
   %25 = call i64 @Parser__advance(i64 %24)
   %26 = load i64, ptr %self, align 4
-  %27 = call i64 @Parser__check(i64 %26, i64 ptrtoint (ptr @1449 to i64))
+  %27 = call i64 @Parser__check(i64 %26, i64 ptrtoint (ptr @1447 to i64))
   %28 = icmp ne i64 %27, 0
   br i1 %28, label %bb4081, label %bb4082
 
@@ -43076,7 +43036,7 @@ bb4081:                                           ; preds = %bb4078
   %31 = load i64, ptr %self, align 4
   %32 = call i64 @Parser__advance(i64 %31)
   %33 = load i64, ptr %self, align 4
-  %34 = call i64 @Parser__consume_type(i64 %33, i64 ptrtoint (ptr @1450 to i64))
+  %34 = call i64 @Parser__consume_type(i64 %33, i64 ptrtoint (ptr @1448 to i64))
   %35 = icmp eq i64 %34, 0
   br i1 %35, label %bb4085, label %bb4084
 
@@ -43085,7 +43045,7 @@ bb4082:                                           ; preds = %bb4078
 
 bb4083:                                           ; preds = %bb4082, %bb4084
   %36 = load i64, ptr %self, align 4
-  %37 = call i64 @Parser__check(i64 %36, i64 ptrtoint (ptr @1451 to i64))
+  %37 = call i64 @Parser__check(i64 %36, i64 ptrtoint (ptr @1449 to i64))
   %38 = icmp ne i64 %37, 0
   br i1 %38, label %bb4086, label %bb4087
 
@@ -43109,15 +43069,15 @@ bb4087:                                           ; preds = %bb4083
   br label %bb4088
 
 bb4088:                                           ; preds = %bb4087
-  %44 = call ptr @malloc(i64 32)
+  %44 = call ptr @forge_bump_alloc(i64 32)
   %45 = getelementptr inbounds %ParamList, ptr %44, i32 0, i32 0
   store i8 1, ptr %45, align 1
   %46 = getelementptr inbounds %ParamList, ptr %44, i32 0, i32 1
-  store i64 ptrtoint (ptr @1453 to i64), ptr %46, align 4
+  store i64 ptrtoint (ptr @1451 to i64), ptr %46, align 4
   %47 = load i64, ptr %type_name, align 4
   %48 = getelementptr inbounds %ParamList, ptr %44, i32 0, i32 2
   store i64 %47, ptr %48, align 4
-  %49 = call ptr @malloc(i64 32)
+  %49 = call ptr @forge_bump_alloc(i64 32)
   %50 = getelementptr inbounds %ParamList, ptr %49, i32 0, i32 0
   store i8 0, ptr %50, align 1
   %51 = ptrtoint ptr %49 to i64
@@ -43129,11 +43089,11 @@ bb4088:                                           ; preds = %bb4087
 bb4089:                                           ; preds = %bb4086
   %rest = alloca i64, align 8
   store i64 %42, ptr %rest, align 4
-  %54 = call ptr @malloc(i64 32)
+  %54 = call ptr @forge_bump_alloc(i64 32)
   %55 = getelementptr inbounds %ParamList, ptr %54, i32 0, i32 0
   store i8 1, ptr %55, align 1
   %56 = getelementptr inbounds %ParamList, ptr %54, i32 0, i32 1
-  store i64 ptrtoint (ptr @1452 to i64), ptr %56, align 4
+  store i64 ptrtoint (ptr @1450 to i64), ptr %56, align 4
   %57 = load i64, ptr %type_name, align 4
   %58 = getelementptr inbounds %ParamList, ptr %54, i32 0, i32 2
   store i64 %57, ptr %58, align 4
@@ -43188,15 +43148,15 @@ bb4094:                                           ; preds = %bb4093
   %21 = load i64, ptr %20, align 4
   %22 = load i64, ptr %ctx, align 4
   %23 = call i64 @const_i64(i64 %22, i64 0)
-  %24 = call i64 @forge_llvm_build_icmp(i64 %17, i64 32, i64 %21, i64 %23, i64 ptrtoint (ptr @1454 to i64))
+  %24 = call i64 @forge_llvm_build_icmp(i64 %17, i64 32, i64 %21, i64 %23, i64 ptrtoint (ptr @1452 to i64))
   %is_null = alloca i64, align 8
   store i64 %24, ptr %is_null, align 4
   %25 = load i64, ptr %ctx, align 4
-  %26 = call i64 @new_bb(i64 %25, i64 ptrtoint (ptr @1455 to i64))
+  %26 = call i64 @new_bb(i64 %25, i64 ptrtoint (ptr @1453 to i64))
   %then_bb = alloca i64, align 8
   store i64 %26, ptr %then_bb, align 4
   %27 = load i64, ptr %ctx, align 4
-  %28 = call i64 @new_bb(i64 %27, i64 ptrtoint (ptr @1456 to i64))
+  %28 = call i64 @new_bb(i64 %27, i64 ptrtoint (ptr @1454 to i64))
   %merge_bb = alloca i64, align 8
   store i64 %28, ptr %merge_bb, align 4
   %29 = load i64, ptr %ctx, align 4
@@ -43207,7 +43167,7 @@ bb4094:                                           ; preds = %bb4093
   %34 = inttoptr i64 %33 to ptr
   %35 = getelementptr inbounds %Ctx, ptr %34, i32 0, i32 4
   %36 = load i64, ptr %35, align 4
-  %37 = call i64 @forge_llvm_build_alloca(i64 %32, i64 %36, i64 ptrtoint (ptr @1457 to i64))
+  %37 = call i64 @forge_llvm_build_alloca(i64 %32, i64 %36, i64 ptrtoint (ptr @1455 to i64))
   %result_slot = alloca i64, align 8
   store i64 %37, ptr %result_slot, align 4
   %38 = load i64, ptr %ctx, align 4
@@ -43286,14 +43246,14 @@ bb4097:                                           ; preds = %bb4096
   %100 = getelementptr inbounds %Ctx, ptr %99, i32 0, i32 4
   %101 = load i64, ptr %100, align 4
   %102 = load i64, ptr %result_slot, align 4
-  %103 = call i64 @forge_llvm_build_load(i64 %97, i64 %101, i64 %102, i64 ptrtoint (ptr @1458 to i64))
+  %103 = call i64 @forge_llvm_build_load(i64 %97, i64 %101, i64 %102, i64 ptrtoint (ptr @1456 to i64))
   %loaded = alloca i64, align 8
   store i64 %103, ptr %loaded, align 4
   %104 = load i64, ptr %l, align 4
   %105 = inttoptr i64 %104 to ptr
   %106 = getelementptr inbounds %EmitResult, ptr %105, i32 0, i32 1
   %107 = load i64, ptr %106, align 4
-  %108 = call ptr @malloc(i64 24)
+  %108 = call ptr @forge_bump_alloc(i64 24)
   %109 = getelementptr inbounds %ValueType, ptr %108, i32 0, i32 0
   store i8 0, ptr %109, align 1
   %110 = ptrtoint ptr %108 to i64
@@ -43319,7 +43279,7 @@ bb4099:                                           ; preds = %bb4098, %bb4097
   br i1 %121, label %bb4100, label %bb4101
 
 bb4100:                                           ; preds = %bb4099
-  %122 = call ptr @malloc(i64 24)
+  %122 = call ptr @forge_bump_alloc(i64 24)
   %123 = getelementptr inbounds %ValueType, ptr %122, i32 0, i32 0
   store i8 1, ptr %123, align 1
   %124 = ptrtoint ptr %122 to i64
@@ -43348,7 +43308,7 @@ bb4102:                                           ; preds = %bb4101, %bb4100
   %135 = getelementptr inbounds %EmitResult, ptr %130, i32 0, i32 2
   store i64 0, ptr %135, align 4
   %136 = getelementptr inbounds %EmitResult, ptr %130, i32 0, i32 3
-  store i64 ptrtoint (ptr @1459 to i64), ptr %136, align 4
+  store i64 ptrtoint (ptr @1457 to i64), ptr %136, align 4
   %137 = ptrtoint ptr %130 to i64
   ret i64 %137
 }
@@ -43394,15 +43354,15 @@ bb4106:                                           ; preds = %bb4105
   %21 = load i64, ptr %20, align 4
   %22 = load i64, ptr %ctx, align 4
   %23 = call i64 @const_i64(i64 %22, i64 0)
-  %24 = call i64 @forge_llvm_build_icmp(i64 %17, i64 32, i64 %21, i64 %23, i64 ptrtoint (ptr @1460 to i64))
+  %24 = call i64 @forge_llvm_build_icmp(i64 %17, i64 32, i64 %21, i64 %23, i64 ptrtoint (ptr @1458 to i64))
   %is_null = alloca i64, align 8
   store i64 %24, ptr %is_null, align 4
   %25 = load i64, ptr %ctx, align 4
-  %26 = call i64 @new_bb(i64 %25, i64 ptrtoint (ptr @1461 to i64))
+  %26 = call i64 @new_bb(i64 %25, i64 ptrtoint (ptr @1459 to i64))
   %access_bb = alloca i64, align 8
   store i64 %26, ptr %access_bb, align 4
   %27 = load i64, ptr %ctx, align 4
-  %28 = call i64 @new_bb(i64 %27, i64 ptrtoint (ptr @1462 to i64))
+  %28 = call i64 @new_bb(i64 %27, i64 ptrtoint (ptr @1460 to i64))
   %merge_bb = alloca i64, align 8
   store i64 %28, ptr %merge_bb, align 4
   %29 = load i64, ptr %ctx, align 4
@@ -43413,7 +43373,7 @@ bb4106:                                           ; preds = %bb4105
   %34 = inttoptr i64 %33 to ptr
   %35 = getelementptr inbounds %Ctx, ptr %34, i32 0, i32 4
   %36 = load i64, ptr %35, align 4
-  %37 = call i64 @forge_llvm_build_alloca(i64 %32, i64 %36, i64 ptrtoint (ptr @1463 to i64))
+  %37 = call i64 @forge_llvm_build_alloca(i64 %32, i64 %36, i64 ptrtoint (ptr @1461 to i64))
   %result_slot = alloca i64, align 8
   store i64 %37, ptr %result_slot, align 4
   %38 = load i64, ptr %ctx, align 4
@@ -43447,7 +43407,7 @@ bb4106:                                           ; preds = %bb4105
   store i64 %64, ptr %struct_name, align 4
   %65 = load i64, ptr %struct_name, align 4
   %66 = inttoptr i64 %65 to ptr
-  %67 = call i32 @strcmp(ptr %66, ptr @1464)
+  %67 = call i32 @strcmp(ptr %66, ptr @1462)
   %68 = zext i32 %67 to i64
   %69 = icmp eq i64 %68, 0
   %70 = zext i1 %69 to i64
@@ -43486,7 +43446,7 @@ bb4107:                                           ; preds = %bb4106
   %100 = getelementptr inbounds %Ctx, ptr %99, i32 0, i32 4
   %101 = load i64, ptr %100, align 4
   %102 = load i64, ptr %result_slot, align 4
-  %103 = call i64 @forge_llvm_build_load(i64 %97, i64 %101, i64 %102, i64 ptrtoint (ptr @1465 to i64))
+  %103 = call i64 @forge_llvm_build_load(i64 %97, i64 %101, i64 %102, i64 ptrtoint (ptr @1463 to i64))
   %loaded = alloca i64, align 8
   store i64 %103, ptr %loaded, align 4
   %104 = call ptr @malloc(i64 32)
@@ -43502,7 +43462,7 @@ bb4107:                                           ; preds = %bb4106
   %112 = getelementptr inbounds %EmitResult, ptr %104, i32 0, i32 2
   store i64 0, ptr %112, align 4
   %113 = getelementptr inbounds %EmitResult, ptr %104, i32 0, i32 3
-  store i64 ptrtoint (ptr @1466 to i64), ptr %113, align 4
+  store i64 ptrtoint (ptr @1464 to i64), ptr %113, align 4
   %114 = ptrtoint ptr %104 to i64
   ret i64 %114
 
@@ -43530,12 +43490,12 @@ bb4109:                                           ; preds = %bb4108
 bb4110:                                           ; preds = %bb4109
   %128 = load i64, ptr %struct_name, align 4
   %129 = inttoptr i64 %128 to ptr
-  %130 = call i64 @strlen(ptr @1467)
+  %130 = call i64 @strlen(ptr @1465)
   %131 = call i64 @strlen(ptr %129)
   %132 = add i64 %130, %131
   %133 = add i64 %132, 1
   %134 = call ptr @forge_bump_alloc(i64 %133)
-  %135 = call ptr @memcpy(ptr %134, ptr @1467, i64 %130)
+  %135 = call ptr @memcpy(ptr %134, ptr @1465, i64 %130)
   %136 = ptrtoint ptr %134 to i64
   %137 = add i64 %136, %130
   %138 = inttoptr i64 %137 to ptr
@@ -43544,7 +43504,7 @@ bb4110:                                           ; preds = %bb4109
   %141 = ptrtoint ptr %134 to i64
   %142 = inttoptr i64 %141 to ptr
   %143 = call i64 @strlen(ptr %142)
-  %144 = call i64 @strlen(ptr @1468)
+  %144 = call i64 @strlen(ptr @1466)
   %145 = add i64 %143, %144
   %146 = add i64 %145, 1
   %147 = call ptr @forge_bump_alloc(i64 %146)
@@ -43553,7 +43513,7 @@ bb4110:                                           ; preds = %bb4109
   %150 = add i64 %149, %143
   %151 = inttoptr i64 %150 to ptr
   %152 = add i64 %144, 1
-  %153 = call ptr @memcpy(ptr %151, ptr @1468, i64 %152)
+  %153 = call ptr @memcpy(ptr %151, ptr @1466, i64 %152)
   %154 = ptrtoint ptr %147 to i64
   %155 = call i64 @err_emit(i64 %154)
   ret i64 %155
@@ -43579,12 +43539,12 @@ bb4112:                                           ; preds = %bb4111
 bb4113:                                           ; preds = %bb4112
   %166 = load i64, ptr %field, align 4
   %167 = inttoptr i64 %166 to ptr
-  %168 = call i64 @strlen(ptr @1469)
+  %168 = call i64 @strlen(ptr @1467)
   %169 = call i64 @strlen(ptr %167)
   %170 = add i64 %168, %169
   %171 = add i64 %170, 1
   %172 = call ptr @forge_bump_alloc(i64 %171)
-  %173 = call ptr @memcpy(ptr %172, ptr @1469, i64 %168)
+  %173 = call ptr @memcpy(ptr %172, ptr @1467, i64 %168)
   %174 = ptrtoint ptr %172 to i64
   %175 = add i64 %174, %168
   %176 = inttoptr i64 %175 to ptr
@@ -43593,7 +43553,7 @@ bb4113:                                           ; preds = %bb4112
   %179 = ptrtoint ptr %172 to i64
   %180 = inttoptr i64 %179 to ptr
   %181 = call i64 @strlen(ptr %180)
-  %182 = call i64 @strlen(ptr @1470)
+  %182 = call i64 @strlen(ptr @1468)
   %183 = add i64 %181, %182
   %184 = add i64 %183, 1
   %185 = call ptr @forge_bump_alloc(i64 %184)
@@ -43602,7 +43562,7 @@ bb4113:                                           ; preds = %bb4112
   %188 = add i64 %187, %181
   %189 = inttoptr i64 %188 to ptr
   %190 = add i64 %182, 1
-  %191 = call ptr @memcpy(ptr %189, ptr @1470, i64 %190)
+  %191 = call ptr @memcpy(ptr %189, ptr @1468, i64 %190)
   %192 = ptrtoint ptr %185 to i64
   %193 = load i64, ptr %struct_name, align 4
   %194 = inttoptr i64 %192 to ptr
@@ -43621,7 +43581,7 @@ bb4113:                                           ; preds = %bb4112
   %207 = ptrtoint ptr %200 to i64
   %208 = inttoptr i64 %207 to ptr
   %209 = call i64 @strlen(ptr %208)
-  %210 = call i64 @strlen(ptr @1471)
+  %210 = call i64 @strlen(ptr @1469)
   %211 = add i64 %209, %210
   %212 = add i64 %211, 1
   %213 = call ptr @forge_bump_alloc(i64 %212)
@@ -43630,7 +43590,7 @@ bb4113:                                           ; preds = %bb4112
   %216 = add i64 %215, %209
   %217 = inttoptr i64 %216 to ptr
   %218 = add i64 %210, 1
-  %219 = call ptr @memcpy(ptr %217, ptr @1471, i64 %218)
+  %219 = call ptr @memcpy(ptr %217, ptr @1469, i64 %218)
   %220 = ptrtoint ptr %213 to i64
   %221 = call i64 @err_emit(i64 %220)
   ret i64 %221
@@ -43652,7 +43612,7 @@ bb4115:                                           ; preds = %bb4114
   %230 = inttoptr i64 %229 to ptr
   %231 = getelementptr inbounds %EmitResult, ptr %230, i32 0, i32 0
   %232 = load i64, ptr %231, align 4
-  %233 = call i64 @to_ptr(i64 %228, i64 %232, i64 ptrtoint (ptr @1472 to i64))
+  %233 = call i64 @to_ptr(i64 %228, i64 %232, i64 ptrtoint (ptr @1470 to i64))
   %obj_ptr = alloca i64, align 8
   store i64 %233, ptr %obj_ptr, align 4
   %234 = load i64, ptr %ctx, align 4
@@ -43662,7 +43622,7 @@ bb4115:                                           ; preds = %bb4114
   %238 = load i64, ptr %st_ty, align 4
   %239 = load i64, ptr %obj_ptr, align 4
   %240 = load i64, ptr %idx, align 4
-  %241 = call i64 @forge_llvm_build_struct_gep2(i64 %237, i64 %238, i64 %239, i64 %240, i64 ptrtoint (ptr @1473 to i64))
+  %241 = call i64 @forge_llvm_build_struct_gep2(i64 %237, i64 %238, i64 %239, i64 %240, i64 ptrtoint (ptr @1471 to i64))
   %gep = alloca i64, align 8
   store i64 %241, ptr %gep, align 4
   %242 = load i64, ptr %ctx, align 4
@@ -43706,7 +43666,7 @@ bb4115:                                           ; preds = %bb4114
   %278 = getelementptr inbounds %Ctx, ptr %277, i32 0, i32 4
   %279 = load i64, ptr %278, align 4
   %280 = load i64, ptr %result_slot, align 4
-  %281 = call i64 @forge_llvm_build_load(i64 %275, i64 %279, i64 %280, i64 ptrtoint (ptr @1474 to i64))
+  %281 = call i64 @forge_llvm_build_load(i64 %275, i64 %279, i64 %280, i64 ptrtoint (ptr @1472 to i64))
   %final_val = alloca i64, align 8
   store i64 %281, ptr %final_val, align 4
   %282 = load i64, ptr %ctx, align 4
@@ -43736,7 +43696,7 @@ bb4115:                                           ; preds = %bb4114
   %302 = getelementptr inbounds %EmitResult, ptr %297, i32 0, i32 2
   store i64 0, ptr %302, align 4
   %303 = getelementptr inbounds %EmitResult, ptr %297, i32 0, i32 3
-  store i64 ptrtoint (ptr @1475 to i64), ptr %303, align 4
+  store i64 ptrtoint (ptr @1473 to i64), ptr %303, align 4
   %304 = ptrtoint ptr %297 to i64
   ret i64 %304
 }
@@ -43780,15 +43740,15 @@ bb4119:                                           ; preds = %bb4118
   %20 = load i64, ptr %19, align 4
   %21 = load i64, ptr %ctx, align 4
   %22 = call i64 @const_i64(i64 %21, i64 0)
-  %23 = call i64 @forge_llvm_build_icmp(i64 %16, i64 32, i64 %20, i64 %22, i64 ptrtoint (ptr @1476 to i64))
+  %23 = call i64 @forge_llvm_build_icmp(i64 %16, i64 32, i64 %20, i64 %22, i64 ptrtoint (ptr @1474 to i64))
   %is_null = alloca i64, align 8
   store i64 %23, ptr %is_null, align 4
   %24 = load i64, ptr %ctx, align 4
-  %25 = call i64 @new_bb(i64 %24, i64 ptrtoint (ptr @1477 to i64))
+  %25 = call i64 @new_bb(i64 %24, i64 ptrtoint (ptr @1475 to i64))
   %cont_bb = alloca i64, align 8
   store i64 %25, ptr %cont_bb, align 4
   %26 = load i64, ptr %ctx, align 4
-  %27 = call i64 @new_bb(i64 %26, i64 ptrtoint (ptr @1478 to i64))
+  %27 = call i64 @new_bb(i64 %26, i64 ptrtoint (ptr @1476 to i64))
   %ret_bb = alloca i64, align 8
   store i64 %27, ptr %ret_bb, align 4
   %28 = load i64, ptr %ctx, align 4
@@ -43834,7 +43794,7 @@ bb4119:                                           ; preds = %bb4118
   %66 = getelementptr inbounds %EmitResult, ptr %55, i32 0, i32 2
   store i64 0, ptr %66, align 4
   %67 = getelementptr inbounds %EmitResult, ptr %55, i32 0, i32 3
-  store i64 ptrtoint (ptr @1479 to i64), ptr %67, align 4
+  store i64 ptrtoint (ptr @1477 to i64), ptr %67, align 4
   %68 = ptrtoint ptr %55 to i64
   ret i64 %68
 }
@@ -43846,7 +43806,7 @@ bb4120:
   %1 = load i64, ptr %self, align 4
   %2 = call i64 @Parser__advance(i64 %1)
   %3 = load i64, ptr %self, align 4
-  %4 = call i64 @Parser__consume_identifier(i64 %3, i64 ptrtoint (ptr @1480 to i64))
+  %4 = call i64 @Parser__consume_identifier(i64 %3, i64 ptrtoint (ptr @1478 to i64))
   %5 = icmp eq i64 %4, 0
   br i1 %5, label %bb4122, label %bb4121
 
@@ -43854,7 +43814,7 @@ bb4121:                                           ; preds = %bb4120
   %name = alloca i64, align 8
   store i64 %4, ptr %name, align 4
   %6 = load i64, ptr %self, align 4
-  %7 = call i64 @Parser__check(i64 %6, i64 ptrtoint (ptr @1481 to i64))
+  %7 = call i64 @Parser__check(i64 %6, i64 ptrtoint (ptr @1479 to i64))
   %8 = icmp ne i64 %7, 0
   br i1 %8, label %bb4123, label %bb4124
 
@@ -43871,7 +43831,7 @@ bb4124:                                           ; preds = %bb4121
 
 bb4125:                                           ; preds = %bb4124, %bb4123
   %11 = load i64, ptr %self, align 4
-  %12 = call i64 @Parser__consume(i64 %11, i64 ptrtoint (ptr @1482 to i64), i64 ptrtoint (ptr @1483 to i64))
+  %12 = call i64 @Parser__consume(i64 %11, i64 ptrtoint (ptr @1480 to i64), i64 ptrtoint (ptr @1481 to i64))
   %13 = icmp eq i64 %12, 0
   %14 = zext i1 %13 to i64
   %15 = icmp ne i64 %14, 0
@@ -43893,7 +43853,7 @@ bb4129:                                           ; preds = %bb4128
   %methods = alloca i64, align 8
   store i64 %17, ptr %methods, align 4
   %19 = load i64, ptr %self, align 4
-  %20 = call i64 @Parser__consume(i64 %19, i64 ptrtoint (ptr @1484 to i64), i64 ptrtoint (ptr @1485 to i64))
+  %20 = call i64 @Parser__consume(i64 %19, i64 ptrtoint (ptr @1482 to i64), i64 ptrtoint (ptr @1483 to i64))
   %21 = icmp eq i64 %20, 0
   %22 = zext i1 %21 to i64
   %23 = icmp ne i64 %22, 0
@@ -43909,7 +43869,7 @@ bb4132:                                           ; preds = %bb4129
   br label %bb4133
 
 bb4133:                                           ; preds = %bb4132
-  %24 = call ptr @malloc(i64 40)
+  %24 = call ptr @forge_bump_alloc(i64 40)
   %25 = getelementptr inbounds %Stmt, ptr %24, i32 0, i32 0
   store i8 19, ptr %25, align 1
   %26 = load i64, ptr %name, align 4
@@ -43927,12 +43887,12 @@ bb4134:
   %self = alloca i64, align 8
   store i64 %0, ptr %self, align 4
   %1 = load i64, ptr %self, align 4
-  %2 = call i64 @Parser__check(i64 %1, i64 ptrtoint (ptr @1486 to i64))
+  %2 = call i64 @Parser__check(i64 %1, i64 ptrtoint (ptr @1484 to i64))
   %3 = icmp ne i64 %2, 0
   br i1 %3, label %bb4135, label %bb4136
 
 bb4135:                                           ; preds = %bb4134
-  %4 = call ptr @malloc(i64 24)
+  %4 = call ptr @forge_bump_alloc(i64 24)
   %5 = getelementptr inbounds %StmtList, ptr %4, i32 0, i32 0
   store i8 0, ptr %5, align 1
   %6 = ptrtoint ptr %4 to i64
@@ -43961,7 +43921,7 @@ bb4139:                                           ; preds = %bb4137
 bb4140:                                           ; preds = %bb4138
   %rest = alloca i64, align 8
   store i64 %11, ptr %rest, align 4
-  %13 = call ptr @malloc(i64 24)
+  %13 = call ptr @forge_bump_alloc(i64 24)
   %14 = getelementptr inbounds %StmtList, ptr %13, i32 0, i32 0
   store i8 1, ptr %14, align 1
   %15 = load i64, ptr %method, align 4
@@ -43982,7 +43942,7 @@ bb4142:
   %self = alloca i64, align 8
   store i64 %0, ptr %self, align 4
   %1 = load i64, ptr %self, align 4
-  %2 = call i64 @Parser__consume(i64 %1, i64 ptrtoint (ptr @1487 to i64), i64 ptrtoint (ptr @1488 to i64))
+  %2 = call i64 @Parser__consume(i64 %1, i64 ptrtoint (ptr @1485 to i64), i64 ptrtoint (ptr @1486 to i64))
   %3 = icmp eq i64 %2, 0
   %4 = zext i1 %3 to i64
   %5 = icmp ne i64 %4, 0
@@ -43996,7 +43956,7 @@ bb4144:                                           ; preds = %bb4142
 
 bb4145:                                           ; preds = %bb4144
   %6 = load i64, ptr %self, align 4
-  %7 = call i64 @Parser__consume_identifier(i64 %6, i64 ptrtoint (ptr @1489 to i64))
+  %7 = call i64 @Parser__consume_identifier(i64 %6, i64 ptrtoint (ptr @1487 to i64))
   %8 = icmp eq i64 %7, 0
   br i1 %8, label %bb4147, label %bb4146
 
@@ -44004,7 +43964,7 @@ bb4146:                                           ; preds = %bb4145
   %name = alloca i64, align 8
   store i64 %7, ptr %name, align 4
   %9 = load i64, ptr %self, align 4
-  %10 = call i64 @Parser__check(i64 %9, i64 ptrtoint (ptr @1490 to i64))
+  %10 = call i64 @Parser__check(i64 %9, i64 ptrtoint (ptr @1488 to i64))
   %11 = icmp ne i64 %10, 0
   br i1 %11, label %bb4148, label %bb4149
 
@@ -44021,7 +43981,7 @@ bb4149:                                           ; preds = %bb4146
 
 bb4150:                                           ; preds = %bb4149, %bb4148
   %14 = load i64, ptr %self, align 4
-  %15 = call i64 @Parser__consume(i64 %14, i64 ptrtoint (ptr @1491 to i64), i64 ptrtoint (ptr @1492 to i64))
+  %15 = call i64 @Parser__consume(i64 %14, i64 ptrtoint (ptr @1489 to i64), i64 ptrtoint (ptr @1490 to i64))
   %16 = icmp eq i64 %15, 0
   %17 = zext i1 %16 to i64
   %18 = icmp ne i64 %17, 0
@@ -44043,7 +44003,7 @@ bb4154:                                           ; preds = %bb4153
   %params = alloca i64, align 8
   store i64 %20, ptr %params, align 4
   %22 = load i64, ptr %self, align 4
-  %23 = call i64 @Parser__consume(i64 %22, i64 ptrtoint (ptr @1493 to i64), i64 ptrtoint (ptr @1494 to i64))
+  %23 = call i64 @Parser__consume(i64 %22, i64 ptrtoint (ptr @1491 to i64), i64 ptrtoint (ptr @1492 to i64))
   %24 = icmp eq i64 %23, 0
   %25 = zext i1 %24 to i64
   %26 = icmp ne i64 %25, 0
@@ -44060,7 +44020,7 @@ bb4157:                                           ; preds = %bb4154
 
 bb4158:                                           ; preds = %bb4157
   %27 = load i64, ptr %self, align 4
-  %28 = call i64 @Parser__check(i64 %27, i64 ptrtoint (ptr @1495 to i64))
+  %28 = call i64 @Parser__check(i64 %27, i64 ptrtoint (ptr @1493 to i64))
   %29 = icmp ne i64 %28, 0
   %ife_result = alloca i64, align 8
   store i64 0, ptr %ife_result, align 4
@@ -44070,19 +44030,19 @@ bb4159:                                           ; preds = %bb4158
   %30 = load i64, ptr %self, align 4
   %31 = call i64 @Parser__advance(i64 %30)
   %32 = load i64, ptr %self, align 4
-  %33 = call i64 @Parser__consume_type(i64 %32, i64 ptrtoint (ptr @1496 to i64))
+  %33 = call i64 @Parser__consume_type(i64 %32, i64 ptrtoint (ptr @1494 to i64))
   %34 = icmp eq i64 %33, 0
   br i1 %34, label %bb4163, label %bb4162
 
 bb4160:                                           ; preds = %bb4158
-  store i64 ptrtoint (ptr @1497 to i64), ptr %ife_result, align 4
+  store i64 ptrtoint (ptr @1495 to i64), ptr %ife_result, align 4
   br label %bb4161
 
 bb4161:                                           ; preds = %bb4160, %bb4162
   %35 = load i64, ptr %ife_result, align 4
   %ret_ty = alloca i64, align 8
   store i64 %35, ptr %ret_ty, align 4
-  %36 = call ptr @malloc(i64 40)
+  %36 = call ptr @forge_bump_alloc(i64 40)
   %37 = getelementptr inbounds %Stmt, ptr %36, i32 0, i32 0
   store i8 16, ptr %37, align 1
   %38 = load i64, ptr %name, align 4
@@ -44127,7 +44087,7 @@ bb4164:
   %10 = inttoptr i64 %9 to ptr
   %11 = getelementptr inbounds %Ctx, ptr %10, i32 0, i32 4
   %12 = load i64, ptr %11, align 4
-  %13 = call i64 @forge_llvm_build_ptr_to_int(i64 %7, i64 %8, i64 %12, i64 ptrtoint (ptr @1498 to i64))
+  %13 = call i64 @forge_llvm_build_ptr_to_int(i64 %7, i64 %8, i64 %12, i64 ptrtoint (ptr @1496 to i64))
   %base_int = alloca i64, align 8
   store i64 %13, ptr %base_int, align 4
   %14 = load i64, ptr %ctx, align 4
@@ -44142,7 +44102,7 @@ bb4164:
   %21 = load i64, ptr %20, align 4
   %22 = load i64, ptr %base_int, align 4
   %23 = load i64, ptr %offset, align 4
-  %24 = call i64 @forge_llvm_build_add(i64 %21, i64 %22, i64 %23, i64 ptrtoint (ptr @1499 to i64))
+  %24 = call i64 @forge_llvm_build_add(i64 %21, i64 %22, i64 %23, i64 ptrtoint (ptr @1497 to i64))
   %addr = alloca i64, align 8
   store i64 %24, ptr %addr, align 4
   %25 = load i64, ptr %ctx, align 4
@@ -44154,7 +44114,7 @@ bb4164:
   %31 = inttoptr i64 %30 to ptr
   %32 = getelementptr inbounds %Ctx, ptr %31, i32 0, i32 6
   %33 = load i64, ptr %32, align 4
-  %34 = call i64 @forge_llvm_build_int_to_ptr(i64 %28, i64 %29, i64 %33, i64 ptrtoint (ptr @1500 to i64))
+  %34 = call i64 @forge_llvm_build_int_to_ptr(i64 %28, i64 %29, i64 %33, i64 ptrtoint (ptr @1498 to i64))
   %slot_ptr = alloca i64, align 8
   store i64 %34, ptr %slot_ptr, align 4
   %35 = load i64, ptr %ctx, align 4
@@ -44190,7 +44150,7 @@ bb4165:
   %10 = inttoptr i64 %9 to ptr
   %11 = getelementptr inbounds %Ctx, ptr %10, i32 0, i32 4
   %12 = load i64, ptr %11, align 4
-  %13 = call i64 @forge_llvm_build_ptr_to_int(i64 %7, i64 %8, i64 %12, i64 ptrtoint (ptr @1501 to i64))
+  %13 = call i64 @forge_llvm_build_ptr_to_int(i64 %7, i64 %8, i64 %12, i64 ptrtoint (ptr @1499 to i64))
   %base_int = alloca i64, align 8
   store i64 %13, ptr %base_int, align 4
   %14 = load i64, ptr %ctx, align 4
@@ -44205,7 +44165,7 @@ bb4165:
   %21 = load i64, ptr %20, align 4
   %22 = load i64, ptr %base_int, align 4
   %23 = load i64, ptr %offset, align 4
-  %24 = call i64 @forge_llvm_build_add(i64 %21, i64 %22, i64 %23, i64 ptrtoint (ptr @1502 to i64))
+  %24 = call i64 @forge_llvm_build_add(i64 %21, i64 %22, i64 %23, i64 ptrtoint (ptr @1500 to i64))
   %addr = alloca i64, align 8
   store i64 %24, ptr %addr, align 4
   %25 = load i64, ptr %ctx, align 4
@@ -44217,7 +44177,7 @@ bb4165:
   %31 = inttoptr i64 %30 to ptr
   %32 = getelementptr inbounds %Ctx, ptr %31, i32 0, i32 6
   %33 = load i64, ptr %32, align 4
-  %34 = call i64 @forge_llvm_build_int_to_ptr(i64 %28, i64 %29, i64 %33, i64 ptrtoint (ptr @1503 to i64))
+  %34 = call i64 @forge_llvm_build_int_to_ptr(i64 %28, i64 %29, i64 %33, i64 ptrtoint (ptr @1501 to i64))
   %slot_ptr = alloca i64, align 8
   store i64 %34, ptr %slot_ptr, align 4
   %35 = load i64, ptr %ctx, align 4
@@ -44254,7 +44214,7 @@ bb4166:
   %12 = load i64, ptr %env, align 4
   %13 = load i64, ptr %elements, align 4
   %14 = load i64, ptr %buf, align 4
-  %15 = call ptr @malloc(i64 24)
+  %15 = call ptr @forge_bump_alloc(i64 24)
   %16 = getelementptr inbounds %TypeList, ptr %15, i32 0, i32 0
   store i8 0, ptr %16, align 1
   %17 = ptrtoint ptr %15 to i64
@@ -44291,11 +44251,11 @@ bb4168:                                           ; preds = %bb4172, %bb4175, %b
   ret i64 %12
 
 bb4169:                                           ; preds = %bb4167
-  %13 = call ptr @malloc(i64 24)
+  %13 = call ptr @forge_bump_alloc(i64 24)
   %14 = getelementptr inbounds %ValueType, ptr %13, i32 0, i32 0
   store i8 6, ptr %14, align 1
   %15 = load i64, ptr %types_acc, align 4
-  %16 = call ptr @malloc(i64 24)
+  %16 = call ptr @forge_bump_alloc(i64 24)
   %17 = getelementptr inbounds %TypeList, ptr %16, i32 0, i32 0
   store i8 0, ptr %17, align 1
   %18 = ptrtoint ptr %16 to i64
@@ -44308,7 +44268,7 @@ bb4169:                                           ; preds = %bb4167
   %22 = call ptr @malloc(i64 32)
   %23 = load i64, ptr %ctx, align 4
   %24 = load i64, ptr %buf, align 4
-  %25 = call i64 @to_i64(i64 %23, i64 %24, i64 ptrtoint (ptr @1504 to i64))
+  %25 = call i64 @to_i64(i64 %23, i64 %24, i64 ptrtoint (ptr @1502 to i64))
   %26 = getelementptr inbounds %EmitResult, ptr %22, i32 0, i32 0
   store i64 %25, ptr %26, align 4
   %27 = load i64, ptr %ty, align 4
@@ -44317,7 +44277,7 @@ bb4169:                                           ; preds = %bb4167
   %29 = getelementptr inbounds %EmitResult, ptr %22, i32 0, i32 2
   store i64 0, ptr %29, align 4
   %30 = getelementptr inbounds %EmitResult, ptr %22, i32 0, i32 3
-  store i64 ptrtoint (ptr @1505 to i64), ptr %30, align 4
+  store i64 ptrtoint (ptr @1503 to i64), ptr %30, align 4
   %31 = ptrtoint ptr %22 to i64
   store i64 %31, ptr %match_result, align 4
   br label %bb4168
@@ -44368,7 +44328,7 @@ bb4175:                                           ; preds = %bb4174
   %53 = getelementptr inbounds %EmitResult, ptr %52, i32 0, i32 0
   %54 = load i64, ptr %53, align 4
   %55 = call i64 @tuple_store(i64 %48, i64 %49, i64 %50, i64 %54)
-  %56 = call ptr @malloc(i64 24)
+  %56 = call ptr @forge_bump_alloc(i64 24)
   %57 = getelementptr inbounds %TypeList, ptr %56, i32 0, i32 0
   store i8 1, ptr %57, align 1
   %58 = load i64, ptr %r, align 4
@@ -44435,7 +44395,7 @@ bb4180:                                           ; preds = %bb4179
   %next = alloca i64, align 8
   store i64 %15, ptr %next, align 4
   %16 = load i64, ptr %next, align 4
-  %17 = call ptr @malloc(i64 24)
+  %17 = call ptr @forge_bump_alloc(i64 24)
   %18 = getelementptr inbounds %TypeList, ptr %17, i32 0, i32 0
   store i8 1, ptr %18, align 1
   %19 = load i64, ptr %ty, align 4
@@ -44489,13 +44449,13 @@ bb4185:                                           ; preds = %bb4184
   %16 = inttoptr i64 %15 to ptr
   %17 = getelementptr inbounds %EmitResult, ptr %16, i32 0, i32 0
   %18 = load i64, ptr %17, align 4
-  %19 = call i64 @to_ptr(i64 %14, i64 %18, i64 ptrtoint (ptr @1506 to i64))
+  %19 = call i64 @to_ptr(i64 %14, i64 %18, i64 ptrtoint (ptr @1504 to i64))
   %ptr = alloca i64, align 8
   store i64 %19, ptr %ptr, align 4
   %20 = load i64, ptr %ctx, align 4
   %21 = load i64, ptr %ptr, align 4
   %22 = load i64, ptr %idx, align 4
-  %23 = call i64 @tuple_load(i64 %20, i64 %21, i64 %22, i64 ptrtoint (ptr @1507 to i64))
+  %23 = call i64 @tuple_load(i64 %20, i64 %21, i64 %22, i64 ptrtoint (ptr @1505 to i64))
   %loaded = alloca i64, align 8
   store i64 %23, ptr %loaded, align 4
   %24 = load i64, ptr %r, align 4
@@ -44516,7 +44476,7 @@ bb4185:                                           ; preds = %bb4184
   %35 = getelementptr inbounds %EmitResult, ptr %30, i32 0, i32 2
   store i64 0, ptr %35, align 4
   %36 = getelementptr inbounds %EmitResult, ptr %30, i32 0, i32 3
-  store i64 ptrtoint (ptr @1508 to i64), ptr %36, align 4
+  store i64 ptrtoint (ptr @1506 to i64), ptr %36, align 4
   %37 = ptrtoint ptr %30 to i64
   ret i64 %37
 }
@@ -44558,7 +44518,7 @@ bb4189:                                           ; preds = %bb4188
   %17 = inttoptr i64 %16 to ptr
   %18 = getelementptr inbounds %EmitResult, ptr %17, i32 0, i32 0
   %19 = load i64, ptr %18, align 4
-  %20 = call i64 @to_ptr(i64 %15, i64 %19, i64 ptrtoint (ptr @1509 to i64))
+  %20 = call i64 @to_ptr(i64 %15, i64 %19, i64 ptrtoint (ptr @1507 to i64))
   %ptr = alloca i64, align 8
   store i64 %20, ptr %ptr, align 4
   %21 = load i64, ptr %ctx, align 4
@@ -44714,7 +44674,7 @@ bb4199:                                           ; preds = %bb4198
   store i64 %18, ptr %struct_name, align 4
   %19 = load i64, ptr %struct_name, align 4
   %20 = inttoptr i64 %19 to ptr
-  %21 = call i32 @strcmp(ptr %20, ptr @1510)
+  %21 = call i32 @strcmp(ptr %20, ptr @1508)
   %22 = zext i32 %21 to i64
   %23 = icmp eq i64 %22, 0
   %24 = zext i1 %23 to i64
@@ -44728,12 +44688,12 @@ bb4200:                                           ; preds = %bb4199
   %29 = load i64, ptr %28, align 4
   %30 = call i64 @vtype_display(i64 %29)
   %31 = inttoptr i64 %30 to ptr
-  %32 = call i64 @strlen(ptr @1511)
+  %32 = call i64 @strlen(ptr @1509)
   %33 = call i64 @strlen(ptr %31)
   %34 = add i64 %32, %33
   %35 = add i64 %34, 1
   %36 = call ptr @forge_bump_alloc(i64 %35)
-  %37 = call ptr @memcpy(ptr %36, ptr @1511, i64 %32)
+  %37 = call ptr @memcpy(ptr %36, ptr @1509, i64 %32)
   %38 = ptrtoint ptr %36 to i64
   %39 = add i64 %38, %32
   %40 = inttoptr i64 %39 to ptr
@@ -44742,7 +44702,7 @@ bb4200:                                           ; preds = %bb4199
   %43 = ptrtoint ptr %36 to i64
   %44 = inttoptr i64 %43 to ptr
   %45 = call i64 @strlen(ptr %44)
-  %46 = call i64 @strlen(ptr @1512)
+  %46 = call i64 @strlen(ptr @1510)
   %47 = add i64 %45, %46
   %48 = add i64 %47, 1
   %49 = call ptr @forge_bump_alloc(i64 %48)
@@ -44751,7 +44711,7 @@ bb4200:                                           ; preds = %bb4199
   %52 = add i64 %51, %45
   %53 = inttoptr i64 %52 to ptr
   %54 = add i64 %46, 1
-  %55 = call ptr @memcpy(ptr %53, ptr @1512, i64 %54)
+  %55 = call ptr @memcpy(ptr %53, ptr @1510, i64 %54)
   %56 = ptrtoint ptr %49 to i64
   %57 = call i64 @err_emit(i64 %56)
   ret i64 %57
@@ -44780,12 +44740,12 @@ bb4202:                                           ; preds = %bb4201
 bb4203:                                           ; preds = %bb4202
   %71 = load i64, ptr %struct_name, align 4
   %72 = inttoptr i64 %71 to ptr
-  %73 = call i64 @strlen(ptr @1513)
+  %73 = call i64 @strlen(ptr @1511)
   %74 = call i64 @strlen(ptr %72)
   %75 = add i64 %73, %74
   %76 = add i64 %75, 1
   %77 = call ptr @forge_bump_alloc(i64 %76)
-  %78 = call ptr @memcpy(ptr %77, ptr @1513, i64 %73)
+  %78 = call ptr @memcpy(ptr %77, ptr @1511, i64 %73)
   %79 = ptrtoint ptr %77 to i64
   %80 = add i64 %79, %73
   %81 = inttoptr i64 %80 to ptr
@@ -44794,7 +44754,7 @@ bb4203:                                           ; preds = %bb4202
   %84 = ptrtoint ptr %77 to i64
   %85 = inttoptr i64 %84 to ptr
   %86 = call i64 @strlen(ptr %85)
-  %87 = call i64 @strlen(ptr @1514)
+  %87 = call i64 @strlen(ptr @1512)
   %88 = add i64 %86, %87
   %89 = add i64 %88, 1
   %90 = call ptr @forge_bump_alloc(i64 %89)
@@ -44803,7 +44763,7 @@ bb4203:                                           ; preds = %bb4202
   %93 = add i64 %92, %86
   %94 = inttoptr i64 %93 to ptr
   %95 = add i64 %87, 1
-  %96 = call ptr @memcpy(ptr %94, ptr @1514, i64 %95)
+  %96 = call ptr @memcpy(ptr %94, ptr @1512, i64 %95)
   %97 = ptrtoint ptr %90 to i64
   %98 = call i64 @err_emit(i64 %97)
   ret i64 %98
@@ -44832,7 +44792,7 @@ bb4205:                                           ; preds = %bb4204
   %112 = inttoptr i64 %111 to ptr
   %113 = getelementptr inbounds %EmitResult, ptr %112, i32 0, i32 0
   %114 = load i64, ptr %113, align 4
-  %115 = call i64 @to_ptr(i64 %110, i64 %114, i64 ptrtoint (ptr @1515 to i64))
+  %115 = call i64 @to_ptr(i64 %110, i64 %114, i64 ptrtoint (ptr @1513 to i64))
   %src_ptr = alloca i64, align 8
   store i64 %115, ptr %src_ptr, align 4
   %116 = load i64, ptr %ctx, align 4
@@ -44854,7 +44814,7 @@ bb4205:                                           ; preds = %bb4204
   %132 = call ptr @malloc(i64 32)
   %133 = load i64, ptr %ctx, align 4
   %134 = load i64, ptr %new_buf, align 4
-  %135 = call i64 @to_i64(i64 %133, i64 %134, i64 ptrtoint (ptr @1516 to i64))
+  %135 = call i64 @to_i64(i64 %133, i64 %134, i64 ptrtoint (ptr @1514 to i64))
   %136 = getelementptr inbounds %EmitResult, ptr %132, i32 0, i32 0
   store i64 %135, ptr %136, align 4
   %137 = load i64, ptr %r, align 4
@@ -44866,7 +44826,7 @@ bb4205:                                           ; preds = %bb4204
   %142 = getelementptr inbounds %EmitResult, ptr %132, i32 0, i32 2
   store i64 0, ptr %142, align 4
   %143 = getelementptr inbounds %EmitResult, ptr %132, i32 0, i32 3
-  store i64 ptrtoint (ptr @1517 to i64), ptr %143, align 4
+  store i64 ptrtoint (ptr @1515 to i64), ptr %143, align 4
   %144 = ptrtoint ptr %132 to i64
   ret i64 %144
 }
@@ -44914,7 +44874,7 @@ bb4209:                                           ; preds = %bb4208
   %21 = load i64, ptr %st_ty, align 4
   %22 = load i64, ptr %src, align 4
   %23 = load i64, ptr %idx, align 4
-  %24 = call i64 @forge_llvm_build_struct_gep2(i64 %20, i64 %21, i64 %22, i64 %23, i64 ptrtoint (ptr @1518 to i64))
+  %24 = call i64 @forge_llvm_build_struct_gep2(i64 %20, i64 %21, i64 %22, i64 %23, i64 ptrtoint (ptr @1516 to i64))
   %src_gep = alloca i64, align 8
   store i64 %24, ptr %src_gep, align 4
   %25 = load i64, ptr %ctx, align 4
@@ -44926,7 +44886,7 @@ bb4209:                                           ; preds = %bb4208
   %31 = getelementptr inbounds %Ctx, ptr %30, i32 0, i32 4
   %32 = load i64, ptr %31, align 4
   %33 = load i64, ptr %src_gep, align 4
-  %34 = call i64 @forge_llvm_build_load(i64 %28, i64 %32, i64 %33, i64 ptrtoint (ptr @1519 to i64))
+  %34 = call i64 @forge_llvm_build_load(i64 %28, i64 %32, i64 %33, i64 ptrtoint (ptr @1517 to i64))
   %val = alloca i64, align 8
   store i64 %34, ptr %val, align 4
   %35 = load i64, ptr %ctx, align 4
@@ -44936,7 +44896,7 @@ bb4209:                                           ; preds = %bb4208
   %39 = load i64, ptr %st_ty, align 4
   %40 = load i64, ptr %dst, align 4
   %41 = load i64, ptr %idx, align 4
-  %42 = call i64 @forge_llvm_build_struct_gep2(i64 %38, i64 %39, i64 %40, i64 %41, i64 ptrtoint (ptr @1520 to i64))
+  %42 = call i64 @forge_llvm_build_struct_gep2(i64 %38, i64 %39, i64 %40, i64 %41, i64 ptrtoint (ptr @1518 to i64))
   %dst_gep = alloca i64, align 8
   store i64 %42, ptr %dst_gep, align 4
   %43 = load i64, ptr %ctx, align 4
@@ -45068,7 +45028,7 @@ bb4219:                                           ; preds = %bb4216
   %57 = load i64, ptr %st_ty, align 4
   %58 = load i64, ptr %dst, align 4
   %59 = load i64, ptr %idx, align 4
-  %60 = call i64 @forge_llvm_build_struct_gep2(i64 %56, i64 %57, i64 %58, i64 %59, i64 ptrtoint (ptr @1521 to i64))
+  %60 = call i64 @forge_llvm_build_struct_gep2(i64 %56, i64 %57, i64 %58, i64 %59, i64 ptrtoint (ptr @1519 to i64))
   %gep = alloca i64, align 8
   store i64 %60, ptr %gep, align 4
   %61 = load i64, ptr %ctx, align 4
@@ -45099,16 +45059,16 @@ bb4222:
   %elements = alloca i64, align 8
   store i64 %2, ptr %elements, align 4
   %3 = load i64, ptr %ctx, align 4
-  %4 = call i64 @get_fn(i64 %3, i64 ptrtoint (ptr @1522 to i64))
+  %4 = call i64 @get_fn(i64 %3, i64 ptrtoint (ptr @1520 to i64))
   %arr_fn = alloca i64, align 8
   store i64 %4, ptr %arr_fn, align 4
   %5 = load i64, ptr %ctx, align 4
-  %6 = call i64 @get_fn(i64 %5, i64 ptrtoint (ptr @1523 to i64))
+  %6 = call i64 @get_fn(i64 %5, i64 ptrtoint (ptr @1521 to i64))
   %push_fn = alloca i64, align 8
   store i64 %6, ptr %push_fn, align 4
   %7 = load i64, ptr %ctx, align 4
   %8 = load i64, ptr %arr_fn, align 4
-  %9 = call i64 @call_0(i64 %7, i64 %8, i64 ptrtoint (ptr @1524 to i64))
+  %9 = call i64 @call_0(i64 %7, i64 %8, i64 ptrtoint (ptr @1522 to i64))
   %arr = alloca i64, align 8
   store i64 %9, ptr %arr, align 4
   %10 = load i64, ptr %elements, align 4
@@ -45130,10 +45090,10 @@ bb4224:                                           ; preds = %bb4222
   %18 = load i64, ptr %arr, align 4
   %19 = getelementptr inbounds %EmitResult, ptr %17, i32 0, i32 0
   store i64 %18, ptr %19, align 4
-  %20 = call ptr @malloc(i64 24)
+  %20 = call ptr @forge_bump_alloc(i64 24)
   %21 = getelementptr inbounds %ValueType, ptr %20, i32 0, i32 0
   store i8 7, ptr %21, align 1
-  %22 = call ptr @malloc(i64 24)
+  %22 = call ptr @forge_bump_alloc(i64 24)
   %23 = getelementptr inbounds %ValueType, ptr %22, i32 0, i32 0
   store i8 0, ptr %23, align 1
   %24 = ptrtoint ptr %22 to i64
@@ -45145,7 +45105,7 @@ bb4224:                                           ; preds = %bb4222
   %28 = getelementptr inbounds %EmitResult, ptr %17, i32 0, i32 2
   store i64 0, ptr %28, align 4
   %29 = getelementptr inbounds %EmitResult, ptr %17, i32 0, i32 3
-  store i64 ptrtoint (ptr @1525 to i64), ptr %29, align 4
+  store i64 ptrtoint (ptr @1523 to i64), ptr %29, align 4
   %30 = ptrtoint ptr %17 to i64
   store i64 %30, ptr %match_result, align 4
   br label %bb4223
@@ -45195,7 +45155,7 @@ bb4230:                                           ; preds = %bb4229
   %51 = inttoptr i64 %50 to ptr
   %52 = getelementptr inbounds %EmitResult, ptr %51, i32 0, i32 0
   %53 = load i64, ptr %52, align 4
-  %54 = call i64 @call_2(i64 %47, i64 %48, i64 %49, i64 %53, i64 ptrtoint (ptr @1526 to i64))
+  %54 = call i64 @call_2(i64 %47, i64 %48, i64 %49, i64 %53, i64 ptrtoint (ptr @1524 to i64))
   %55 = load i64, ptr %ctx, align 4
   %56 = load i64, ptr %env, align 4
   %57 = load i64, ptr %next, align 4
@@ -45243,7 +45203,7 @@ bb4233:                                           ; preds = %bb4231
   %14 = load i64, ptr %arr, align 4
   %15 = getelementptr inbounds %EmitResult, ptr %13, i32 0, i32 0
   store i64 %14, ptr %15, align 4
-  %16 = call ptr @malloc(i64 24)
+  %16 = call ptr @forge_bump_alloc(i64 24)
   %17 = getelementptr inbounds %ValueType, ptr %16, i32 0, i32 0
   store i8 7, ptr %17, align 1
   %18 = load i64, ptr %elem_ty, align 4
@@ -45255,7 +45215,7 @@ bb4233:                                           ; preds = %bb4231
   %22 = getelementptr inbounds %EmitResult, ptr %13, i32 0, i32 2
   store i64 0, ptr %22, align 4
   %23 = getelementptr inbounds %EmitResult, ptr %13, i32 0, i32 3
-  store i64 ptrtoint (ptr @1527 to i64), ptr %23, align 4
+  store i64 ptrtoint (ptr @1525 to i64), ptr %23, align 4
   %24 = ptrtoint ptr %13 to i64
   store i64 %24, ptr %match_result, align 4
   br label %bb4232
@@ -45305,7 +45265,7 @@ bb4239:                                           ; preds = %bb4238
   %45 = inttoptr i64 %44 to ptr
   %46 = getelementptr inbounds %EmitResult, ptr %45, i32 0, i32 0
   %47 = load i64, ptr %46, align 4
-  %48 = call i64 @call_2(i64 %41, i64 %42, i64 %43, i64 %47, i64 ptrtoint (ptr @1528 to i64))
+  %48 = call i64 @call_2(i64 %41, i64 %42, i64 %43, i64 %47, i64 ptrtoint (ptr @1526 to i64))
   %49 = load i64, ptr %ctx, align 4
   %50 = load i64, ptr %env, align 4
   %51 = load i64, ptr %next, align 4
@@ -45433,7 +45393,7 @@ bb4251:                                           ; preds = %bb4249
   %52 = load i64, ptr %env, align 4
   %53 = load i64, ptr %params, align 4
   %54 = load i64, ptr %body, align 4
-  %55 = call ptr @malloc(i64 24)
+  %55 = call ptr @forge_bump_alloc(i64 24)
   %56 = getelementptr inbounds %TypeList, ptr %55, i32 0, i32 0
   store i8 1, ptr %56, align 1
   %57 = load i64, ptr %init_r, align 4
@@ -45442,13 +45402,13 @@ bb4251:                                           ; preds = %bb4249
   %60 = load i64, ptr %59, align 4
   %61 = getelementptr inbounds %TypeList, ptr %55, i32 0, i32 1
   store i64 %60, ptr %61, align 4
-  %62 = call ptr @malloc(i64 24)
+  %62 = call ptr @forge_bump_alloc(i64 24)
   %63 = getelementptr inbounds %TypeList, ptr %62, i32 0, i32 0
   store i8 1, ptr %63, align 1
   %64 = load i64, ptr %elem_ty, align 4
   %65 = getelementptr inbounds %TypeList, ptr %62, i32 0, i32 1
   store i64 %64, ptr %65, align 4
-  %66 = call ptr @malloc(i64 24)
+  %66 = call ptr @forge_bump_alloc(i64 24)
   %67 = getelementptr inbounds %TypeList, ptr %66, i32 0, i32 0
   store i8 0, ptr %67, align 1
   %68 = ptrtoint ptr %66 to i64
@@ -45486,7 +45446,7 @@ bb4256:                                           ; preds = %bb4250
 bb4257:                                           ; preds = %bb4256
   %79 = load i64, ptr %ctx, align 4
   %80 = load i64, ptr %ctx, align 4
-  %81 = call i64 @get_fn(i64 %80, i64 ptrtoint (ptr @1529 to i64))
+  %81 = call i64 @get_fn(i64 %80, i64 ptrtoint (ptr @1527 to i64))
   %82 = load i64, ptr %list_val, align 4
   %83 = load i64, ptr %init_r, align 4
   %84 = inttoptr i64 %83 to ptr
@@ -45496,7 +45456,7 @@ bb4257:                                           ; preds = %bb4256
   %88 = inttoptr i64 %87 to ptr
   %89 = getelementptr inbounds %EmitResult, ptr %88, i32 0, i32 0
   %90 = load i64, ptr %89, align 4
-  %91 = call i64 @call_3(i64 %79, i64 %81, i64 %82, i64 %86, i64 %90, i64 ptrtoint (ptr @1530 to i64))
+  %91 = call i64 @call_3(i64 %79, i64 %81, i64 %82, i64 %86, i64 %90, i64 ptrtoint (ptr @1528 to i64))
   %result = alloca i64, align 8
   store i64 %91, ptr %result, align 4
   %92 = load i64, ptr %result, align 4
@@ -45505,7 +45465,7 @@ bb4257:                                           ; preds = %bb4256
   br label %bb4244
 
 bb4258:                                           ; preds = %bb4246
-  %94 = call i64 @err_emit(i64 ptrtoint (ptr @1531 to i64))
+  %94 = call i64 @err_emit(i64 ptrtoint (ptr @1529 to i64))
   store i64 %94, ptr %match_result1, align 4
   br label %bb4244
 
@@ -45513,7 +45473,7 @@ bb4259:                                           ; No predecessors!
   br label %bb4244
 
 bb4260:                                           ; preds = %bb4243
-  %95 = call i64 @err_emit(i64 ptrtoint (ptr @1532 to i64))
+  %95 = call i64 @err_emit(i64 ptrtoint (ptr @1530 to i64))
   store i64 %95, ptr %match_result, align 4
   br label %bb4241
 
@@ -45779,7 +45739,7 @@ bb4297:                                           ; preds = %bb4295
   br label %bb4298
 
 bb4298:                                           ; preds = %bb4297
-  %36 = call ptr @malloc(i64 40)
+  %36 = call ptr @forge_bump_alloc(i64 40)
   %37 = getelementptr inbounds %CaptureList, ptr %36, i32 0, i32 0
   store i8 1, ptr %37, align 1
   %38 = load i64, ptr %name, align 4
@@ -46463,7 +46423,7 @@ bb4360:
   %5 = load i64, ptr %env, align 4
   %6 = load i64, ptr %params, align 4
   %7 = load i64, ptr %body, align 4
-  %8 = call ptr @malloc(i64 24)
+  %8 = call ptr @forge_bump_alloc(i64 24)
   %9 = getelementptr inbounds %TypeList, ptr %8, i32 0, i32 0
   store i8 0, ptr %9, align 1
   %10 = ptrtoint ptr %8 to i64
@@ -46491,15 +46451,15 @@ bb4361:
   store i64 %7, ptr @LAMBDA_COUNTER, align 4
   %8 = load i64, ptr %id, align 4
   %9 = call ptr @forge_bump_alloc(i64 32)
-  %10 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %9, i64 32, ptr @1534, i64 %8)
+  %10 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %9, i64 32, ptr @1532, i64 %8)
   %11 = ptrtoint ptr %9 to i64
   %12 = inttoptr i64 %11 to ptr
-  %13 = call i64 @strlen(ptr @1533)
+  %13 = call i64 @strlen(ptr @1531)
   %14 = call i64 @strlen(ptr %12)
   %15 = add i64 %13, %14
   %16 = add i64 %15, 1
   %17 = call ptr @forge_bump_alloc(i64 %16)
-  %18 = call ptr @memcpy(ptr %17, ptr @1533, i64 %13)
+  %18 = call ptr @memcpy(ptr %17, ptr @1531, i64 %13)
   %19 = ptrtoint ptr %17 to i64
   %20 = add i64 %19, %13
   %21 = inttoptr i64 %20 to ptr
@@ -46511,7 +46471,7 @@ bb4361:
   %25 = load i64, ptr %body, align 4
   %26 = load i64, ptr %params, align 4
   %27 = load i64, ptr %env, align 4
-  %28 = call ptr @malloc(i64 40)
+  %28 = call ptr @forge_bump_alloc(i64 40)
   %29 = getelementptr inbounds %CaptureList, ptr %28, i32 0, i32 0
   store i8 0, ptr %29, align 1
   %30 = ptrtoint ptr %28 to i64
@@ -46571,7 +46531,7 @@ bb4361:
   %70 = getelementptr inbounds %Ctx, ptr %69, i32 0, i32 0
   %71 = load i64, ptr %70, align 4
   %72 = load i64, ptr %fn_val, align 4
-  %73 = call i64 @forge_llvm_append_basic_block(i64 %71, i64 %72, i64 ptrtoint (ptr @1535 to i64))
+  %73 = call i64 @forge_llvm_append_basic_block(i64 %71, i64 %72, i64 ptrtoint (ptr @1533 to i64))
   %entry = alloca i64, align 8
   store i64 %73, ptr %entry, align 4
   %74 = load i64, ptr %ctx, align 4
@@ -46671,16 +46631,16 @@ bb4367:                                           ; preds = %bb4366, %bb4365
   %137 = load i64, ptr %saved_bb, align 4
   %138 = call i64 @forge_llvm_position_at_end(i64 %136, i64 %137)
   %139 = load i64, ptr %ctx, align 4
-  %140 = call i64 @get_fn(i64 %139, i64 ptrtoint (ptr @1536 to i64))
+  %140 = call i64 @get_fn(i64 %139, i64 ptrtoint (ptr @1534 to i64))
   %arr_fn = alloca i64, align 8
   store i64 %140, ptr %arr_fn, align 4
   %141 = load i64, ptr %ctx, align 4
-  %142 = call i64 @get_fn(i64 %141, i64 ptrtoint (ptr @1537 to i64))
+  %142 = call i64 @get_fn(i64 %141, i64 ptrtoint (ptr @1535 to i64))
   %push_fn = alloca i64, align 8
   store i64 %142, ptr %push_fn, align 4
   %143 = load i64, ptr %ctx, align 4
   %144 = load i64, ptr %arr_fn, align 4
-  %145 = call i64 @call_0(i64 %143, i64 %144, i64 ptrtoint (ptr @1538 to i64))
+  %145 = call i64 @call_0(i64 %143, i64 %144, i64 ptrtoint (ptr @1536 to i64))
   %closure_arr = alloca i64, align 8
   store i64 %145, ptr %closure_arr, align 4
   %146 = load i64, ptr %ctx, align 4
@@ -46691,7 +46651,7 @@ bb4367:                                           ; preds = %bb4366, %bb4365
   %149 = load i64, ptr %push_fn, align 4
   %150 = load i64, ptr %closure_arr, align 4
   %151 = load i64, ptr %tag, align 4
-  %152 = call i64 @call_2(i64 %148, i64 %149, i64 %150, i64 %151, i64 ptrtoint (ptr @1539 to i64))
+  %152 = call i64 @call_2(i64 %148, i64 %149, i64 %150, i64 %151, i64 ptrtoint (ptr @1537 to i64))
   %153 = load i64, ptr %ctx, align 4
   %154 = inttoptr i64 %153 to ptr
   %155 = getelementptr inbounds %Ctx, ptr %154, i32 0, i32 2
@@ -46701,14 +46661,14 @@ bb4367:                                           ; preds = %bb4366, %bb4365
   %159 = inttoptr i64 %158 to ptr
   %160 = getelementptr inbounds %Ctx, ptr %159, i32 0, i32 4
   %161 = load i64, ptr %160, align 4
-  %162 = call i64 @forge_llvm_build_ptr_to_int(i64 %156, i64 %157, i64 %161, i64 ptrtoint (ptr @1540 to i64))
+  %162 = call i64 @forge_llvm_build_ptr_to_int(i64 %156, i64 %157, i64 %161, i64 ptrtoint (ptr @1538 to i64))
   %fn_ptr = alloca i64, align 8
   store i64 %162, ptr %fn_ptr, align 4
   %163 = load i64, ptr %ctx, align 4
   %164 = load i64, ptr %push_fn, align 4
   %165 = load i64, ptr %closure_arr, align 4
   %166 = load i64, ptr %fn_ptr, align 4
-  %167 = call i64 @call_2(i64 %163, i64 %164, i64 %165, i64 %166, i64 ptrtoint (ptr @1541 to i64))
+  %167 = call i64 @call_2(i64 %163, i64 %164, i64 %165, i64 %166, i64 ptrtoint (ptr @1539 to i64))
   %168 = load i64, ptr %num_captures, align 4
   %169 = icmp sgt i64 %168, 0
   %170 = zext i1 %169 to i64
@@ -46729,14 +46689,14 @@ bb4369:                                           ; preds = %bb4367
 bb4370:                                           ; preds = %bb4369, %bb4368
   %177 = load i64, ptr %ctx, align 4
   %178 = load i64, ptr %closure_arr, align 4
-  %179 = call i64 @to_i64(i64 %177, i64 %178, i64 ptrtoint (ptr @1542 to i64))
+  %179 = call i64 @to_i64(i64 %177, i64 %178, i64 ptrtoint (ptr @1540 to i64))
   %closure_i64 = alloca i64, align 8
   store i64 %179, ptr %closure_i64, align 4
   %180 = call ptr @malloc(i64 32)
   %181 = load i64, ptr %closure_i64, align 4
   %182 = getelementptr inbounds %EmitResult, ptr %180, i32 0, i32 0
   store i64 %181, ptr %182, align 4
-  %183 = call ptr @malloc(i64 24)
+  %183 = call ptr @forge_bump_alloc(i64 24)
   %184 = getelementptr inbounds %ValueType, ptr %183, i32 0, i32 0
   store i8 9, ptr %184, align 1
   %185 = load i64, ptr %result, align 4
@@ -46751,7 +46711,7 @@ bb4370:                                           ; preds = %bb4369, %bb4368
   %192 = getelementptr inbounds %EmitResult, ptr %180, i32 0, i32 2
   store i64 0, ptr %192, align 4
   %193 = getelementptr inbounds %EmitResult, ptr %180, i32 0, i32 3
-  store i64 ptrtoint (ptr @1543 to i64), ptr %193, align 4
+  store i64 ptrtoint (ptr @1541 to i64), ptr %193, align 4
   %194 = ptrtoint ptr %180 to i64
   ret i64 %194
 }
@@ -46902,14 +46862,14 @@ bb4381:                                           ; preds = %bb4380
   %24 = getelementptr inbounds %Ctx, ptr %23, i32 0, i32 4
   %25 = load i64, ptr %24, align 4
   %26 = load i64, ptr %alloca, align 4
-  %27 = call i64 @forge_llvm_build_load(i64 %21, i64 %25, i64 %26, i64 ptrtoint (ptr @1544 to i64))
+  %27 = call i64 @forge_llvm_build_load(i64 %21, i64 %25, i64 %26, i64 ptrtoint (ptr @1542 to i64))
   %val = alloca i64, align 8
   store i64 %27, ptr %val, align 4
   %28 = load i64, ptr %ctx, align 4
   %29 = load i64, ptr %push_fn, align 4
   %30 = load i64, ptr %arr, align 4
   %31 = load i64, ptr %val, align 4
-  %32 = call i64 @call_2(i64 %28, i64 %29, i64 %30, i64 %31, i64 ptrtoint (ptr @1545 to i64))
+  %32 = call i64 @call_2(i64 %28, i64 %29, i64 %30, i64 %31, i64 ptrtoint (ptr @1543 to i64))
   %33 = load i64, ptr %ctx, align 4
   %34 = load i64, ptr %next, align 4
   %35 = load i64, ptr %arr, align 4
@@ -46947,7 +46907,7 @@ bb4384:                                           ; preds = %bb4388, %bb4389, %b
   ret i64 %10
 
 bb4385:                                           ; preds = %bb4383
-  %11 = call i64 @err_emit(i64 ptrtoint (ptr @1546 to i64))
+  %11 = call i64 @err_emit(i64 ptrtoint (ptr @1544 to i64))
   store i64 %11, ptr %match_result, align 4
   br label %bb4384
 
@@ -47163,16 +47123,16 @@ bb4402:
   store i64 %4, ptr %num_captures, align 4
   %5 = load i64, ptr %ctx, align 4
   %6 = load i64, ptr %closure_val, align 4
-  %7 = call i64 @to_ptr(i64 %5, i64 %6, i64 ptrtoint (ptr @1547 to i64))
+  %7 = call i64 @to_ptr(i64 %5, i64 %6, i64 ptrtoint (ptr @1545 to i64))
   %closure_ptr = alloca i64, align 8
   store i64 %7, ptr %closure_ptr, align 4
   %8 = load i64, ptr %ctx, align 4
   %9 = load i64, ptr %ctx, align 4
-  %10 = call i64 @get_fn(i64 %9, i64 ptrtoint (ptr @1548 to i64))
+  %10 = call i64 @get_fn(i64 %9, i64 ptrtoint (ptr @1546 to i64))
   %11 = load i64, ptr %closure_ptr, align 4
   %12 = load i64, ptr %ctx, align 4
   %13 = call i64 @const_i64(i64 %12, i64 0)
-  %14 = call i64 @call_2(i64 %8, i64 %10, i64 %11, i64 %13, i64 ptrtoint (ptr @1549 to i64))
+  %14 = call i64 @call_2(i64 %8, i64 %10, i64 %11, i64 %13, i64 ptrtoint (ptr @1547 to i64))
   %get_fn_call = alloca i64, align 8
   store i64 %14, ptr %get_fn_call, align 4
   %15 = load i64, ptr %ctx, align 4
@@ -47184,7 +47144,7 @@ bb4402:
   %21 = inttoptr i64 %20 to ptr
   %22 = getelementptr inbounds %Ctx, ptr %21, i32 0, i32 6
   %23 = load i64, ptr %22, align 4
-  %24 = call i64 @forge_llvm_build_int_to_ptr(i64 %18, i64 %19, i64 %23, i64 ptrtoint (ptr @1550 to i64))
+  %24 = call i64 @forge_llvm_build_int_to_ptr(i64 %18, i64 %19, i64 %23, i64 ptrtoint (ptr @1548 to i64))
   %fn_ptr = alloca i64, align 8
   store i64 %24, ptr %fn_ptr, align 4
   %25 = load i64, ptr %args, align 4
@@ -47260,7 +47220,7 @@ bb4405:                                           ; preds = %bb4404
   %74 = load i64, ptr %fn_ptr, align 4
   %75 = load i64, ptr %val_arr, align 4
   %76 = load i64, ptr %total_args, align 4
-  %77 = call i64 @forge_llvm_build_call(i64 %72, i64 %73, i64 %74, i64 %75, i64 %76, i64 ptrtoint (ptr @1551 to i64))
+  %77 = call i64 @forge_llvm_build_call(i64 %72, i64 %73, i64 %74, i64 %75, i64 %76, i64 ptrtoint (ptr @1549 to i64))
   %result = alloca i64, align 8
   store i64 %77, ptr %result, align 4
   %78 = load i64, ptr %val_arr, align 4
@@ -47300,13 +47260,13 @@ bb4408:                                           ; preds = %bb4406
 bb4409:                                           ; preds = %bb4408
   %11 = load i64, ptr %ctx, align 4
   %12 = load i64, ptr %ctx, align 4
-  %13 = call i64 @get_fn(i64 %12, i64 ptrtoint (ptr @1552 to i64))
+  %13 = call i64 @get_fn(i64 %12, i64 ptrtoint (ptr @1550 to i64))
   %14 = load i64, ptr %closure_val, align 4
   %15 = load i64, ptr %ctx, align 4
   %16 = load i64, ptr %i, align 4
   %17 = add i64 %16, 1
   %18 = call i64 @const_i64(i64 %15, i64 %17)
-  %19 = call i64 @call_2(i64 %11, i64 %13, i64 %14, i64 %18, i64 ptrtoint (ptr @1553 to i64))
+  %19 = call i64 @call_2(i64 %11, i64 %13, i64 %14, i64 %18, i64 ptrtoint (ptr @1551 to i64))
   %cap_val = alloca i64, align 8
   store i64 %19, ptr %cap_val, align 4
   %20 = load i64, ptr %val_arr, align 4
@@ -47438,9 +47398,9 @@ bb4418:
 bb4419:                                           ; preds = %bb4418
   %10 = load i64, ptr %ctx, align 4
   %11 = load i64, ptr %ctx, align 4
-  %12 = call i64 @get_fn(i64 %11, i64 ptrtoint (ptr @1554 to i64))
+  %12 = call i64 @get_fn(i64 %11, i64 ptrtoint (ptr @1552 to i64))
   %13 = load i64, ptr %fn_i64, align 4
-  %14 = call i64 @call_1(i64 %10, i64 %12, i64 %13, i64 ptrtoint (ptr @1555 to i64))
+  %14 = call i64 @call_1(i64 %10, i64 %12, i64 %13, i64 ptrtoint (ptr @1553 to i64))
   %15 = call i64 @ok_emit(i64 %14)
   ret i64 %15
 
@@ -47511,18 +47471,18 @@ bb4429:                                           ; preds = %bb4426
 bb4430:                                           ; preds = %bb4429
   %44 = load i64, ptr %ctx, align 4
   %45 = load i64, ptr %ctx, align 4
-  %46 = call i64 @get_fn(i64 %45, i64 ptrtoint (ptr @1556 to i64))
+  %46 = call i64 @get_fn(i64 %45, i64 ptrtoint (ptr @1554 to i64))
   %47 = load i64, ptr %fn_i64, align 4
   %48 = load i64, ptr %a0, align 4
   %49 = inttoptr i64 %48 to ptr
   %50 = getelementptr inbounds %EmitResult, ptr %49, i32 0, i32 0
   %51 = load i64, ptr %50, align 4
-  %52 = call i64 @call_2(i64 %44, i64 %46, i64 %47, i64 %51, i64 ptrtoint (ptr @1557 to i64))
+  %52 = call i64 @call_2(i64 %44, i64 %46, i64 %47, i64 %51, i64 ptrtoint (ptr @1555 to i64))
   %53 = call i64 @ok_emit(i64 %52)
   ret i64 %53
 
 bb4431:                                           ; preds = %bb4427
-  %54 = call i64 @err_emit(i64 ptrtoint (ptr @1558 to i64))
+  %54 = call i64 @err_emit(i64 ptrtoint (ptr @1556 to i64))
   ret i64 %54
 
 bb4432:                                           ; No predecessors!
@@ -47611,7 +47571,7 @@ bb4443:                                           ; preds = %bb4440
 bb4444:                                           ; preds = %bb4443
   %89 = load i64, ptr %ctx, align 4
   %90 = load i64, ptr %ctx, align 4
-  %91 = call i64 @get_fn(i64 %90, i64 ptrtoint (ptr @1559 to i64))
+  %91 = call i64 @get_fn(i64 %90, i64 ptrtoint (ptr @1557 to i64))
   %92 = load i64, ptr %fn_i64, align 4
   %93 = load i64, ptr %a01, align 4
   %94 = inttoptr i64 %93 to ptr
@@ -47621,19 +47581,19 @@ bb4444:                                           ; preds = %bb4443
   %98 = inttoptr i64 %97 to ptr
   %99 = getelementptr inbounds %EmitResult, ptr %98, i32 0, i32 0
   %100 = load i64, ptr %99, align 4
-  %101 = call i64 @call_3(i64 %89, i64 %91, i64 %92, i64 %96, i64 %100, i64 ptrtoint (ptr @1560 to i64))
+  %101 = call i64 @call_3(i64 %89, i64 %91, i64 %92, i64 %96, i64 %100, i64 ptrtoint (ptr @1558 to i64))
   %102 = call i64 @ok_emit(i64 %101)
   ret i64 %102
 
 bb4445:                                           ; preds = %bb4441
-  %103 = call i64 @err_emit(i64 ptrtoint (ptr @1561 to i64))
+  %103 = call i64 @err_emit(i64 ptrtoint (ptr @1559 to i64))
   ret i64 %103
 
 bb4446:                                           ; No predecessors!
   br label %bb4439
 
 bb4447:                                           ; preds = %bb4435
-  %104 = call i64 @err_emit(i64 ptrtoint (ptr @1562 to i64))
+  %104 = call i64 @err_emit(i64 ptrtoint (ptr @1560 to i64))
   store i64 %104, ptr %match_result, align 4
   br label %bb4433
 
@@ -47879,7 +47839,7 @@ bb4470:                                           ; preds = %bb4466
   br i1 %57, label %bb4471, label %bb4472
 
 bb4471:                                           ; preds = %bb4470
-  %58 = call ptr @malloc(i64 24)
+  %58 = call ptr @forge_bump_alloc(i64 24)
   %59 = getelementptr inbounds %ValueType, ptr %58, i32 0, i32 0
   store i8 0, ptr %59, align 1
   %60 = ptrtoint ptr %58 to i64
@@ -47926,7 +47886,7 @@ bb4475:                                           ; preds = %bb4468
   br i1 %79, label %bb4476, label %bb4477
 
 bb4476:                                           ; preds = %bb4475
-  %80 = call ptr @malloc(i64 24)
+  %80 = call ptr @forge_bump_alloc(i64 24)
   %81 = getelementptr inbounds %TypeList, ptr %80, i32 0, i32 0
   store i8 0, ptr %81, align 1
   %82 = ptrtoint ptr %80 to i64
@@ -47946,16 +47906,16 @@ bb4478:
   %entries = alloca i64, align 8
   store i64 %2, ptr %entries, align 4
   %3 = load i64, ptr %ctx, align 4
-  %4 = call i64 @get_fn(i64 %3, i64 ptrtoint (ptr @1563 to i64))
+  %4 = call i64 @get_fn(i64 %3, i64 ptrtoint (ptr @1561 to i64))
   %new_fn = alloca i64, align 8
   store i64 %4, ptr %new_fn, align 4
   %5 = load i64, ptr %ctx, align 4
-  %6 = call i64 @get_fn(i64 %5, i64 ptrtoint (ptr @1564 to i64))
+  %6 = call i64 @get_fn(i64 %5, i64 ptrtoint (ptr @1562 to i64))
   %set_fn = alloca i64, align 8
   store i64 %6, ptr %set_fn, align 4
   %7 = load i64, ptr %ctx, align 4
   %8 = load i64, ptr %new_fn, align 4
-  %9 = call i64 @call_0(i64 %7, i64 %8, i64 ptrtoint (ptr @1565 to i64))
+  %9 = call i64 @call_0(i64 %7, i64 %8, i64 ptrtoint (ptr @1563 to i64))
   %map = alloca i64, align 8
   store i64 %9, ptr %map, align 4
   %10 = load i64, ptr %ctx, align 4
@@ -47998,7 +47958,7 @@ bb4481:                                           ; preds = %bb4479
   %13 = load i64, ptr %map, align 4
   %14 = getelementptr inbounds %EmitResult, ptr %12, i32 0, i32 0
   store i64 %13, ptr %14, align 4
-  %15 = call ptr @malloc(i64 24)
+  %15 = call ptr @forge_bump_alloc(i64 24)
   %16 = getelementptr inbounds %ValueType, ptr %15, i32 0, i32 0
   store i8 8, ptr %16, align 1
   %17 = ptrtoint ptr %15 to i64
@@ -48007,7 +47967,7 @@ bb4481:                                           ; preds = %bb4479
   %19 = getelementptr inbounds %EmitResult, ptr %12, i32 0, i32 2
   store i64 0, ptr %19, align 4
   %20 = getelementptr inbounds %EmitResult, ptr %12, i32 0, i32 3
-  store i64 ptrtoint (ptr @1566 to i64), ptr %20, align 4
+  store i64 ptrtoint (ptr @1564 to i64), ptr %20, align 4
   %21 = ptrtoint ptr %12 to i64
   store i64 %21, ptr %match_result, align 4
   br label %bb4480
@@ -48066,7 +48026,7 @@ bb4488:                                           ; preds = %bb4492, %bb4495, %b
   br label %bb4480
 
 bb4489:                                           ; preds = %bb4487
-  %45 = call i64 @err_emit(i64 ptrtoint (ptr @1567 to i64))
+  %45 = call i64 @err_emit(i64 ptrtoint (ptr @1565 to i64))
   store i64 %45, ptr %match_result1, align 4
   br label %bb4488
 
@@ -48113,7 +48073,7 @@ bb4495:                                           ; preds = %bb4494
   %64 = inttoptr i64 %63 to ptr
   %65 = getelementptr inbounds %EmitResult, ptr %64, i32 0, i32 0
   %66 = load i64, ptr %65, align 4
-  %67 = call i64 @to_ptr(i64 %62, i64 %66, i64 ptrtoint (ptr @1568 to i64))
+  %67 = call i64 @to_ptr(i64 %62, i64 %66, i64 ptrtoint (ptr @1566 to i64))
   %key_ptr = alloca i64, align 8
   store i64 %67, ptr %key_ptr, align 4
   %68 = load i64, ptr %ctx, align 4
@@ -48124,7 +48084,7 @@ bb4495:                                           ; preds = %bb4494
   %73 = inttoptr i64 %72 to ptr
   %74 = getelementptr inbounds %EmitResult, ptr %73, i32 0, i32 0
   %75 = load i64, ptr %74, align 4
-  %76 = call i64 @call_3(i64 %68, i64 %69, i64 %70, i64 %71, i64 %75, i64 ptrtoint (ptr @1569 to i64))
+  %76 = call i64 @call_3(i64 %68, i64 %69, i64 %70, i64 %71, i64 %75, i64 ptrtoint (ptr @1567 to i64))
   %77 = load i64, ptr %ctx, align 4
   %78 = load i64, ptr %env, align 4
   %79 = load i64, ptr %remaining, align 4
@@ -48149,7 +48109,7 @@ bb4496:
 bb4497:                                           ; preds = %bb4496
   %body = alloca i64, align 8
   store i64 %4, ptr %body, align 4
-  %6 = call ptr @malloc(i64 40)
+  %6 = call ptr @forge_bump_alloc(i64 40)
   %7 = getelementptr inbounds %Stmt, ptr %6, i32 0, i32 0
   store i8 21, ptr %7, align 1
   %8 = load i64, ptr %body, align 4
@@ -48166,7 +48126,7 @@ define i64 @defer_push(i64 %0) {
 bb4499:
   %body = alloca i64, align 8
   store i64 %0, ptr %body, align 4
-  %1 = call ptr @malloc(i64 24)
+  %1 = call ptr @forge_bump_alloc(i64 24)
   %2 = getelementptr inbounds %DeferStack, ptr %1, i32 0, i32 0
   store i8 1, ptr %2, align 1
   %3 = load i64, ptr %body, align 4
@@ -48182,7 +48142,7 @@ bb4499:
 
 define i64 @defer_reset() {
 bb4500:
-  %0 = call ptr @malloc(i64 24)
+  %0 = call ptr @forge_bump_alloc(i64 24)
   %1 = getelementptr inbounds %DeferStack, ptr %0, i32 0, i32 0
   store i8 0, ptr %1, align 1
   %2 = ptrtoint ptr %0 to i64
@@ -48280,7 +48240,7 @@ bb4509:                                           ; preds = %bb4513, %bb4516, %b
   ret i64 %8
 
 bb4510:                                           ; preds = %bb4508
-  %9 = call ptr @malloc(i64 24)
+  %9 = call ptr @forge_bump_alloc(i64 24)
   %10 = getelementptr inbounds %ValueType, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -48344,7 +48304,7 @@ bb4517:
   store i64 %2, ptr %ty, align 4
   %depth = alloca i64, align 8
   store i64 %3, ptr %depth, align 4
-  %4 = call ptr @malloc(i64 40)
+  %4 = call ptr @forge_bump_alloc(i64 40)
   %5 = getelementptr inbounds %TypeEntry, ptr %4, i32 0, i32 0
   store i8 1, ptr %5, align 1
   %6 = load i64, ptr %name, align 4
@@ -48384,7 +48344,7 @@ bb4519:                                           ; preds = %bb4523, %bb4526, %b
   ret i64 %8
 
 bb4520:                                           ; preds = %bb4518
-  %9 = call ptr @malloc(i64 40)
+  %9 = call ptr @forge_bump_alloc(i64 40)
   %10 = getelementptr inbounds %TypeEntry, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -48451,7 +48411,7 @@ bb4528:                                           ; preds = %bb4532, %bb4535, %b
   ret i64 %8
 
 bb4529:                                           ; preds = %bb4527
-  %9 = call ptr @malloc(i64 24)
+  %9 = call ptr @forge_bump_alloc(i64 24)
   %10 = getelementptr inbounds %ValueType, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -48592,7 +48552,7 @@ bb4546:                                           ; preds = %bb4550, %bb4553, %b
   ret i64 %8
 
 bb4547:                                           ; preds = %bb4545
-  %9 = call ptr @malloc(i64 32)
+  %9 = call ptr @forge_bump_alloc(i64 32)
   %10 = getelementptr inbounds %FieldList, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
@@ -48781,25 +48741,25 @@ bb4571:                                           ; preds = %bb4570
 define i64 @tc_new() {
 bb4572:
   %0 = call ptr @malloc(i64 48)
-  %1 = call ptr @malloc(i64 40)
+  %1 = call ptr @forge_bump_alloc(i64 40)
   %2 = getelementptr inbounds %TypeEntry, ptr %1, i32 0, i32 0
   store i8 0, ptr %2, align 1
   %3 = ptrtoint ptr %1 to i64
   %4 = getelementptr inbounds %TC, ptr %0, i32 0, i32 0
   store i64 %3, ptr %4, align 4
-  %5 = call ptr @malloc(i64 40)
+  %5 = call ptr @forge_bump_alloc(i64 40)
   %6 = getelementptr inbounds %FnTypeEntry, ptr %5, i32 0, i32 0
   store i8 0, ptr %6, align 1
   %7 = ptrtoint ptr %5 to i64
   %8 = getelementptr inbounds %TC, ptr %0, i32 0, i32 1
   store i64 %7, ptr %8, align 4
-  %9 = call ptr @malloc(i64 32)
+  %9 = call ptr @forge_bump_alloc(i64 32)
   %10 = getelementptr inbounds %StructTypeReg, ptr %9, i32 0, i32 0
   store i8 0, ptr %10, align 1
   %11 = ptrtoint ptr %9 to i64
   %12 = getelementptr inbounds %TC, ptr %0, i32 0, i32 2
   store i64 %11, ptr %12, align 4
-  %13 = call ptr @malloc(i64 32)
+  %13 = call ptr @forge_bump_alloc(i64 32)
   %14 = getelementptr inbounds %EnumTypeReg, ptr %13, i32 0, i32 0
   store i8 0, ptr %14, align 1
   %15 = ptrtoint ptr %13 to i64
@@ -49036,7 +48996,7 @@ bb4578:
   store i64 %1, ptr %ty, align 4
   %2 = load i64, ptr %ty, align 4
   %3 = inttoptr i64 %2 to ptr
-  %4 = call i32 @strcmp(ptr %3, ptr @1570)
+  %4 = call i32 @strcmp(ptr %3, ptr @1568)
   %5 = zext i32 %4 to i64
   %6 = icmp eq i64 %5, 0
   %7 = zext i1 %6 to i64
@@ -49046,7 +49006,7 @@ bb4578:
 bb4579:                                           ; preds = %bb4578
   %9 = load i64, ptr %ty, align 4
   %10 = inttoptr i64 %9 to ptr
-  %11 = call i32 @strcmp(ptr %10, ptr @1571)
+  %11 = call i32 @strcmp(ptr %10, ptr @1569)
   %12 = zext i32 %11 to i64
   %13 = icmp eq i64 %12, 0
   %14 = zext i1 %13 to i64
@@ -49060,7 +49020,7 @@ bb4580:                                           ; preds = %bb4579, %bb4578
   br i1 %18, label %bb4581, label %bb4582
 
 bb4581:                                           ; preds = %bb4580
-  %19 = call ptr @malloc(i64 24)
+  %19 = call ptr @forge_bump_alloc(i64 24)
   %20 = getelementptr inbounds %ValueType, ptr %19, i32 0, i32 0
   store i8 1, ptr %20, align 1
   %21 = ptrtoint ptr %19 to i64
@@ -49072,7 +49032,7 @@ bb4582:                                           ; preds = %bb4580
 bb4583:                                           ; preds = %bb4582
   %22 = load i64, ptr %ty, align 4
   %23 = inttoptr i64 %22 to ptr
-  %24 = call i32 @strcmp(ptr %23, ptr @1572)
+  %24 = call i32 @strcmp(ptr %23, ptr @1570)
   %25 = zext i32 %24 to i64
   %26 = icmp eq i64 %25, 0
   %27 = zext i1 %26 to i64
@@ -49082,7 +49042,7 @@ bb4583:                                           ; preds = %bb4582
 bb4584:                                           ; preds = %bb4583
   %29 = load i64, ptr %ty, align 4
   %30 = inttoptr i64 %29 to ptr
-  %31 = call i32 @strcmp(ptr %30, ptr @1573)
+  %31 = call i32 @strcmp(ptr %30, ptr @1571)
   %32 = zext i32 %31 to i64
   %33 = icmp eq i64 %32, 0
   %34 = zext i1 %33 to i64
@@ -49096,7 +49056,7 @@ bb4585:                                           ; preds = %bb4584, %bb4583
   br i1 %38, label %bb4586, label %bb4587
 
 bb4586:                                           ; preds = %bb4585
-  %39 = call ptr @malloc(i64 24)
+  %39 = call ptr @forge_bump_alloc(i64 24)
   %40 = getelementptr inbounds %ValueType, ptr %39, i32 0, i32 0
   store i8 0, ptr %40, align 1
   %41 = ptrtoint ptr %39 to i64
@@ -49108,7 +49068,7 @@ bb4587:                                           ; preds = %bb4585
 bb4588:                                           ; preds = %bb4587
   %42 = load i64, ptr %ty, align 4
   %43 = inttoptr i64 %42 to ptr
-  %44 = call i32 @strcmp(ptr %43, ptr @1574)
+  %44 = call i32 @strcmp(ptr %43, ptr @1572)
   %45 = zext i32 %44 to i64
   %46 = icmp eq i64 %45, 0
   %47 = zext i1 %46 to i64
@@ -49116,7 +49076,7 @@ bb4588:                                           ; preds = %bb4587
   br i1 %48, label %bb4589, label %bb4590
 
 bb4589:                                           ; preds = %bb4588
-  %49 = call ptr @malloc(i64 24)
+  %49 = call ptr @forge_bump_alloc(i64 24)
   %50 = getelementptr inbounds %ValueType, ptr %49, i32 0, i32 0
   store i8 2, ptr %50, align 1
   %51 = ptrtoint ptr %49 to i64
@@ -49128,7 +49088,7 @@ bb4590:                                           ; preds = %bb4588
 bb4591:                                           ; preds = %bb4590
   %52 = load i64, ptr %ty, align 4
   %53 = inttoptr i64 %52 to ptr
-  %54 = call i32 @strcmp(ptr %53, ptr @1575)
+  %54 = call i32 @strcmp(ptr %53, ptr @1573)
   %55 = zext i32 %54 to i64
   %56 = icmp eq i64 %55, 0
   %57 = zext i1 %56 to i64
@@ -49136,7 +49096,7 @@ bb4591:                                           ; preds = %bb4590
   br i1 %58, label %bb4592, label %bb4593
 
 bb4592:                                           ; preds = %bb4591
-  %59 = call ptr @malloc(i64 24)
+  %59 = call ptr @forge_bump_alloc(i64 24)
   %60 = getelementptr inbounds %ValueType, ptr %59, i32 0, i32 0
   store i8 3, ptr %60, align 1
   %61 = ptrtoint ptr %59 to i64
@@ -49148,7 +49108,7 @@ bb4593:                                           ; preds = %bb4591
 bb4594:                                           ; preds = %bb4593
   %62 = load i64, ptr %ty, align 4
   %63 = inttoptr i64 %62 to ptr
-  %64 = call i32 @strcmp(ptr %63, ptr @1576)
+  %64 = call i32 @strcmp(ptr %63, ptr @1574)
   %65 = zext i32 %64 to i64
   %66 = icmp eq i64 %65, 0
   %67 = zext i1 %66 to i64
@@ -49156,10 +49116,10 @@ bb4594:                                           ; preds = %bb4593
   br i1 %68, label %bb4595, label %bb4596
 
 bb4595:                                           ; preds = %bb4594
-  %69 = call ptr @malloc(i64 24)
+  %69 = call ptr @forge_bump_alloc(i64 24)
   %70 = getelementptr inbounds %ValueType, ptr %69, i32 0, i32 0
   store i8 9, ptr %70, align 1
-  %71 = call ptr @malloc(i64 24)
+  %71 = call ptr @forge_bump_alloc(i64 24)
   %72 = getelementptr inbounds %ValueType, ptr %71, i32 0, i32 0
   store i8 0, ptr %72, align 1
   %73 = ptrtoint ptr %71 to i64
@@ -49174,7 +49134,7 @@ bb4596:                                           ; preds = %bb4594
 bb4597:                                           ; preds = %bb4596
   %76 = load i64, ptr %ty, align 4
   %77 = inttoptr i64 %76 to ptr
-  %78 = call i32 @strcmp(ptr %77, ptr @1577)
+  %78 = call i32 @strcmp(ptr %77, ptr @1575)
   %79 = zext i32 %78 to i64
   %80 = icmp eq i64 %79, 0
   %81 = zext i1 %80 to i64
@@ -49182,10 +49142,10 @@ bb4597:                                           ; preds = %bb4596
   br i1 %82, label %bb4598, label %bb4599
 
 bb4598:                                           ; preds = %bb4597
-  %83 = call ptr @malloc(i64 24)
+  %83 = call ptr @forge_bump_alloc(i64 24)
   %84 = getelementptr inbounds %ValueType, ptr %83, i32 0, i32 0
   store i8 7, ptr %84, align 1
-  %85 = call ptr @malloc(i64 24)
+  %85 = call ptr @forge_bump_alloc(i64 24)
   %86 = getelementptr inbounds %ValueType, ptr %85, i32 0, i32 0
   store i8 0, ptr %86, align 1
   %87 = ptrtoint ptr %85 to i64
@@ -49200,7 +49160,7 @@ bb4599:                                           ; preds = %bb4597
 bb4600:                                           ; preds = %bb4599
   %90 = load i64, ptr %ty, align 4
   %91 = inttoptr i64 %90 to ptr
-  %92 = call i32 @strcmp(ptr %91, ptr @1578)
+  %92 = call i32 @strcmp(ptr %91, ptr @1576)
   %93 = zext i32 %92 to i64
   %94 = icmp eq i64 %93, 0
   %95 = zext i1 %94 to i64
@@ -49208,7 +49168,7 @@ bb4600:                                           ; preds = %bb4599
   br i1 %96, label %bb4601, label %bb4602
 
 bb4601:                                           ; preds = %bb4600
-  %97 = call ptr @malloc(i64 24)
+  %97 = call ptr @forge_bump_alloc(i64 24)
   %98 = getelementptr inbounds %ValueType, ptr %97, i32 0, i32 0
   store i8 8, ptr %98, align 1
   %99 = ptrtoint ptr %97 to i64
@@ -49240,7 +49200,7 @@ bb4604:                                           ; preds = %bb4603
   store i8 0, ptr %115, align 1
   %116 = ptrtoint ptr %108 to i64
   %117 = inttoptr i64 %116 to ptr
-  %118 = call i32 @strcmp(ptr %117, ptr @1579)
+  %118 = call i32 @strcmp(ptr %117, ptr @1577)
   %119 = zext i32 %118 to i64
   %120 = icmp eq i64 %119, 0
   %121 = zext i1 %120 to i64
@@ -49273,7 +49233,7 @@ bb4606:                                           ; preds = %bb4605
   %141 = ptrtoint ptr %133 to i64
   %ret_name = alloca i64, align 8
   store i64 %141, ptr %ret_name, align 4
-  %142 = call ptr @malloc(i64 24)
+  %142 = call ptr @forge_bump_alloc(i64 24)
   %143 = getelementptr inbounds %ValueType, ptr %142, i32 0, i32 0
   store i8 9, ptr %143, align 1
   %144 = load i64, ptr %tc, align 4
@@ -49298,7 +49258,7 @@ bb4608:                                           ; preds = %bb4607
   br i1 %155, label %bb4609, label %bb4610
 
 bb4609:                                           ; preds = %bb4608
-  %156 = call ptr @malloc(i64 24)
+  %156 = call ptr @forge_bump_alloc(i64 24)
   %157 = getelementptr inbounds %ValueType, ptr %156, i32 0, i32 0
   store i8 5, ptr %157, align 1
   %158 = load i64, ptr %ty, align 4
@@ -49321,7 +49281,7 @@ bb4611:                                           ; preds = %bb4610
   br i1 %167, label %bb4612, label %bb4613
 
 bb4612:                                           ; preds = %bb4611
-  %168 = call ptr @malloc(i64 24)
+  %168 = call ptr @forge_bump_alloc(i64 24)
   %169 = getelementptr inbounds %ValueType, ptr %168, i32 0, i32 0
   store i8 4, ptr %169, align 1
   %170 = load i64, ptr %ty, align 4
@@ -49334,7 +49294,7 @@ bb4613:                                           ; preds = %bb4611
   br label %bb4614
 
 bb4614:                                           ; preds = %bb4613
-  %173 = call ptr @malloc(i64 24)
+  %173 = call ptr @forge_bump_alloc(i64 24)
   %174 = getelementptr inbounds %ValueType, ptr %173, i32 0, i32 0
   store i8 0, ptr %174, align 1
   %175 = ptrtoint ptr %173 to i64
@@ -49474,7 +49434,7 @@ bb4623:                                           ; preds = %bb4620
   %49 = load i64, ptr %48, align 4
   %50 = getelementptr inbounds %TC, ptr %31, i32 0, i32 5
   store i64 %49, ptr %50, align 4
-  %51 = call ptr @malloc(i64 32)
+  %51 = call ptr @forge_bump_alloc(i64 32)
   %52 = getelementptr inbounds %StructTypeReg, ptr %51, i32 0, i32 0
   store i8 1, ptr %52, align 1
   %53 = load i64, ptr %name, align 4
@@ -49537,7 +49497,7 @@ bb4625:                                           ; preds = %bb4624
   %90 = load i64, ptr %89, align 4
   %91 = getelementptr inbounds %TC, ptr %72, i32 0, i32 5
   store i64 %90, ptr %91, align 4
-  %92 = call ptr @malloc(i64 32)
+  %92 = call ptr @forge_bump_alloc(i64 32)
   %93 = getelementptr inbounds %EnumTypeReg, ptr %92, i32 0, i32 0
   store i8 1, ptr %93, align 1
   %94 = load i64, ptr %name2, align 4
@@ -49604,7 +49564,7 @@ bb4627:                                           ; preds = %bb4626
   %133 = load i64, ptr %132, align 4
   %134 = getelementptr inbounds %TC, ptr %115, i32 0, i32 5
   store i64 %133, ptr %134, align 4
-  %135 = call ptr @malloc(i64 40)
+  %135 = call ptr @forge_bump_alloc(i64 40)
   %136 = getelementptr inbounds %FnTypeEntry, ptr %135, i32 0, i32 0
   store i8 1, ptr %136, align 1
   %137 = load i64, ptr %name3, align 4
@@ -49676,7 +49636,7 @@ bb4629:                                           ; preds = %bb4628
   %180 = load i64, ptr %179, align 4
   %181 = getelementptr inbounds %TC, ptr %162, i32 0, i32 5
   store i64 %180, ptr %181, align 4
-  %182 = call ptr @malloc(i64 40)
+  %182 = call ptr @forge_bump_alloc(i64 40)
   %183 = getelementptr inbounds %FnTypeEntry, ptr %182, i32 0, i32 0
   store i8 1, ptr %183, align 1
   %184 = load i64, ptr %name4, align 4
@@ -49791,530 +49751,531 @@ bb4641:
   store i64 %0, ptr %tc, align 4
   %stmt = alloca i64, align 8
   store i64 %1, ptr %stmt, align 4
-  %2 = load i64, ptr %stmt, align 4
-  %3 = inttoptr i64 %2 to ptr
-  %4 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 0
-  %5 = load i8, ptr %4, align 1
+  %2 = call i32 @puts(ptr @1578)
+  %3 = load i64, ptr %stmt, align 4
+  %4 = inttoptr i64 %3 to ptr
+  %5 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 0
+  %6 = load i8, ptr %5, align 1
   %match_result = alloca i64, align 8
   store i64 0, ptr %match_result, align 4
-  %6 = zext i8 %5 to i64
-  %7 = icmp eq i64 %6, 0
-  br i1 %7, label %bb4643, label %bb4644
+  %7 = zext i8 %6 to i64
+  %8 = icmp eq i64 %7, 0
+  br i1 %8, label %bb4643, label %bb4644
 
 bb4642:                                           ; preds = %bb4683, %bb4682, %bb4680, %bb4678, %bb4676, %bb4674, %bb4672, %bb4670, %bb4668, %bb4666, %bb4665, %bb4659, %bb4657, %bb4655, %bb4653, %bb4652, %bb4647
-  %8 = load i64, ptr %match_result, align 4
-  ret i64 %8
+  %9 = load i64, ptr %match_result, align 4
+  ret i64 %9
 
 bb4643:                                           ; preds = %bb4641
-  %9 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %10 = load i64, ptr %9, align 4
+  %10 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %11 = load i64, ptr %10, align 4
   %name = alloca i64, align 8
-  store i64 %10, ptr %name, align 4
-  %11 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %12 = load i64, ptr %11, align 4
+  store i64 %11, ptr %name, align 4
+  %12 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %13 = load i64, ptr %12, align 4
   %ty_str = alloca i64, align 8
-  store i64 %12, ptr %ty_str, align 4
-  %13 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 3
-  %14 = load i64, ptr %13, align 4
+  store i64 %13, ptr %ty_str, align 4
+  %14 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 3
+  %15 = load i64, ptr %14, align 4
   %init = alloca i64, align 8
-  store i64 %14, ptr %init, align 4
-  %15 = load i64, ptr %tc, align 4
-  %16 = load i64, ptr %init, align 4
-  %17 = call i64 @check_expr(i64 %15, i64 %16)
+  store i64 %15, ptr %init, align 4
+  %16 = load i64, ptr %tc, align 4
+  %17 = load i64, ptr %init, align 4
+  %18 = call i64 @check_expr(i64 %16, i64 %17)
   %r = alloca i64, align 8
-  store i64 %17, ptr %r, align 4
-  %18 = load i64, ptr %ty_str, align 4
-  %19 = inttoptr i64 %18 to ptr
-  %20 = call i64 @strlen(ptr %19)
-  %21 = icmp sgt i64 %20, 0
-  %22 = zext i1 %21 to i64
-  %23 = icmp ne i64 %22, 0
+  store i64 %18, ptr %r, align 4
+  %19 = load i64, ptr %ty_str, align 4
+  %20 = inttoptr i64 %19 to ptr
+  %21 = call i64 @strlen(ptr %20)
+  %22 = icmp sgt i64 %21, 0
+  %23 = zext i1 %22 to i64
+  %24 = icmp ne i64 %23, 0
   %ife_result = alloca i64, align 8
   store i64 0, ptr %ife_result, align 4
-  br i1 %23, label %bb4645, label %bb4646
+  br i1 %24, label %bb4645, label %bb4646
 
 bb4644:                                           ; preds = %bb4641
-  %24 = zext i8 %5 to i64
-  %25 = icmp eq i64 %24, 1
-  br i1 %25, label %bb4648, label %bb4649
+  %25 = zext i8 %6 to i64
+  %26 = icmp eq i64 %25, 1
+  br i1 %26, label %bb4648, label %bb4649
 
 bb4645:                                           ; preds = %bb4643
-  %26 = load i64, ptr %r, align 4
-  %27 = inttoptr i64 %26 to ptr
-  %28 = getelementptr inbounds %ExprResult, ptr %27, i32 0, i32 0
-  %29 = load i64, ptr %28, align 4
-  %30 = load i64, ptr %ty_str, align 4
-  %31 = call i64 @translate_type(i64 %29, i64 %30)
-  store i64 %31, ptr %ife_result, align 4
+  %27 = load i64, ptr %r, align 4
+  %28 = inttoptr i64 %27 to ptr
+  %29 = getelementptr inbounds %ExprResult, ptr %28, i32 0, i32 0
+  %30 = load i64, ptr %29, align 4
+  %31 = load i64, ptr %ty_str, align 4
+  %32 = call i64 @translate_type(i64 %30, i64 %31)
+  store i64 %32, ptr %ife_result, align 4
   br label %bb4647
 
 bb4646:                                           ; preds = %bb4643
-  %32 = load i64, ptr %r, align 4
-  %33 = inttoptr i64 %32 to ptr
-  %34 = getelementptr inbounds %ExprResult, ptr %33, i32 0, i32 1
-  %35 = load i64, ptr %34, align 4
-  store i64 %35, ptr %ife_result, align 4
+  %33 = load i64, ptr %r, align 4
+  %34 = inttoptr i64 %33 to ptr
+  %35 = getelementptr inbounds %ExprResult, ptr %34, i32 0, i32 1
+  %36 = load i64, ptr %35, align 4
+  store i64 %36, ptr %ife_result, align 4
   br label %bb4647
 
 bb4647:                                           ; preds = %bb4646, %bb4645
-  %36 = load i64, ptr %ife_result, align 4
+  %37 = load i64, ptr %ife_result, align 4
   %declared_ty = alloca i64, align 8
-  store i64 %36, ptr %declared_ty, align 4
-  %37 = load i64, ptr %r, align 4
-  %38 = inttoptr i64 %37 to ptr
-  %39 = getelementptr inbounds %ExprResult, ptr %38, i32 0, i32 0
-  %40 = load i64, ptr %39, align 4
-  %41 = load i64, ptr %name, align 4
-  %42 = load i64, ptr %declared_ty, align 4
-  %43 = call i64 @tc_bind(i64 %40, i64 %41, i64 %42)
-  store i64 %43, ptr %match_result, align 4
+  store i64 %37, ptr %declared_ty, align 4
+  %38 = load i64, ptr %r, align 4
+  %39 = inttoptr i64 %38 to ptr
+  %40 = getelementptr inbounds %ExprResult, ptr %39, i32 0, i32 0
+  %41 = load i64, ptr %40, align 4
+  %42 = load i64, ptr %name, align 4
+  %43 = load i64, ptr %declared_ty, align 4
+  %44 = call i64 @tc_bind(i64 %41, i64 %42, i64 %43)
+  store i64 %44, ptr %match_result, align 4
   br label %bb4642
 
 bb4648:                                           ; preds = %bb4644
-  %44 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %45 = load i64, ptr %44, align 4
+  %45 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %46 = load i64, ptr %45, align 4
   %name1 = alloca i64, align 8
-  store i64 %45, ptr %name1, align 4
-  %46 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %47 = load i64, ptr %46, align 4
+  store i64 %46, ptr %name1, align 4
+  %47 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %48 = load i64, ptr %47, align 4
   %ty_str2 = alloca i64, align 8
-  store i64 %47, ptr %ty_str2, align 4
-  %48 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 3
-  %49 = load i64, ptr %48, align 4
+  store i64 %48, ptr %ty_str2, align 4
+  %49 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 3
+  %50 = load i64, ptr %49, align 4
   %init3 = alloca i64, align 8
-  store i64 %49, ptr %init3, align 4
-  %50 = load i64, ptr %tc, align 4
-  %51 = load i64, ptr %init3, align 4
-  %52 = call i64 @check_expr(i64 %50, i64 %51)
+  store i64 %50, ptr %init3, align 4
+  %51 = load i64, ptr %tc, align 4
+  %52 = load i64, ptr %init3, align 4
+  %53 = call i64 @check_expr(i64 %51, i64 %52)
   %r4 = alloca i64, align 8
-  store i64 %52, ptr %r4, align 4
-  %53 = load i64, ptr %ty_str2, align 4
-  %54 = inttoptr i64 %53 to ptr
-  %55 = call i64 @strlen(ptr %54)
-  %56 = icmp sgt i64 %55, 0
-  %57 = zext i1 %56 to i64
-  %58 = icmp ne i64 %57, 0
+  store i64 %53, ptr %r4, align 4
+  %54 = load i64, ptr %ty_str2, align 4
+  %55 = inttoptr i64 %54 to ptr
+  %56 = call i64 @strlen(ptr %55)
+  %57 = icmp sgt i64 %56, 0
+  %58 = zext i1 %57 to i64
+  %59 = icmp ne i64 %58, 0
   %ife_result5 = alloca i64, align 8
   store i64 0, ptr %ife_result5, align 4
-  br i1 %58, label %bb4650, label %bb4651
+  br i1 %59, label %bb4650, label %bb4651
 
 bb4649:                                           ; preds = %bb4644
-  %59 = zext i8 %5 to i64
-  %60 = icmp eq i64 %59, 2
-  br i1 %60, label %bb4653, label %bb4654
+  %60 = zext i8 %6 to i64
+  %61 = icmp eq i64 %60, 2
+  br i1 %61, label %bb4653, label %bb4654
 
 bb4650:                                           ; preds = %bb4648
-  %61 = load i64, ptr %r4, align 4
-  %62 = inttoptr i64 %61 to ptr
-  %63 = getelementptr inbounds %ExprResult, ptr %62, i32 0, i32 0
-  %64 = load i64, ptr %63, align 4
-  %65 = load i64, ptr %ty_str2, align 4
-  %66 = call i64 @translate_type(i64 %64, i64 %65)
-  store i64 %66, ptr %ife_result5, align 4
+  %62 = load i64, ptr %r4, align 4
+  %63 = inttoptr i64 %62 to ptr
+  %64 = getelementptr inbounds %ExprResult, ptr %63, i32 0, i32 0
+  %65 = load i64, ptr %64, align 4
+  %66 = load i64, ptr %ty_str2, align 4
+  %67 = call i64 @translate_type(i64 %65, i64 %66)
+  store i64 %67, ptr %ife_result5, align 4
   br label %bb4652
 
 bb4651:                                           ; preds = %bb4648
-  %67 = load i64, ptr %r4, align 4
-  %68 = inttoptr i64 %67 to ptr
-  %69 = getelementptr inbounds %ExprResult, ptr %68, i32 0, i32 1
-  %70 = load i64, ptr %69, align 4
-  store i64 %70, ptr %ife_result5, align 4
+  %68 = load i64, ptr %r4, align 4
+  %69 = inttoptr i64 %68 to ptr
+  %70 = getelementptr inbounds %ExprResult, ptr %69, i32 0, i32 1
+  %71 = load i64, ptr %70, align 4
+  store i64 %71, ptr %ife_result5, align 4
   br label %bb4652
 
 bb4652:                                           ; preds = %bb4651, %bb4650
-  %71 = load i64, ptr %ife_result5, align 4
+  %72 = load i64, ptr %ife_result5, align 4
   %declared_ty6 = alloca i64, align 8
-  store i64 %71, ptr %declared_ty6, align 4
-  %72 = load i64, ptr %r4, align 4
-  %73 = inttoptr i64 %72 to ptr
-  %74 = getelementptr inbounds %ExprResult, ptr %73, i32 0, i32 0
-  %75 = load i64, ptr %74, align 4
-  %76 = load i64, ptr %name1, align 4
-  %77 = load i64, ptr %declared_ty6, align 4
-  %78 = call i64 @tc_bind(i64 %75, i64 %76, i64 %77)
-  store i64 %78, ptr %match_result, align 4
+  store i64 %72, ptr %declared_ty6, align 4
+  %73 = load i64, ptr %r4, align 4
+  %74 = inttoptr i64 %73 to ptr
+  %75 = getelementptr inbounds %ExprResult, ptr %74, i32 0, i32 0
+  %76 = load i64, ptr %75, align 4
+  %77 = load i64, ptr %name1, align 4
+  %78 = load i64, ptr %declared_ty6, align 4
+  %79 = call i64 @tc_bind(i64 %76, i64 %77, i64 %78)
+  store i64 %79, ptr %match_result, align 4
   br label %bb4642
 
 bb4653:                                           ; preds = %bb4649
-  %79 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %80 = load i64, ptr %79, align 4
+  %80 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %81 = load i64, ptr %80, align 4
   %e = alloca i64, align 8
-  store i64 %80, ptr %e, align 4
-  %81 = load i64, ptr %tc, align 4
-  %82 = load i64, ptr %e, align 4
-  %83 = call i64 @check_expr(i64 %81, i64 %82)
+  store i64 %81, ptr %e, align 4
+  %82 = load i64, ptr %tc, align 4
+  %83 = load i64, ptr %e, align 4
+  %84 = call i64 @check_expr(i64 %82, i64 %83)
   %r7 = alloca i64, align 8
-  store i64 %83, ptr %r7, align 4
-  %84 = load i64, ptr %r7, align 4
-  %85 = inttoptr i64 %84 to ptr
-  %86 = getelementptr inbounds %ExprResult, ptr %85, i32 0, i32 0
-  %87 = load i64, ptr %86, align 4
-  store i64 %87, ptr %match_result, align 4
+  store i64 %84, ptr %r7, align 4
+  %85 = load i64, ptr %r7, align 4
+  %86 = inttoptr i64 %85 to ptr
+  %87 = getelementptr inbounds %ExprResult, ptr %86, i32 0, i32 0
+  %88 = load i64, ptr %87, align 4
+  store i64 %88, ptr %match_result, align 4
   br label %bb4642
 
 bb4654:                                           ; preds = %bb4649
-  %88 = zext i8 %5 to i64
-  %89 = icmp eq i64 %88, 9
-  br i1 %89, label %bb4655, label %bb4656
+  %89 = zext i8 %6 to i64
+  %90 = icmp eq i64 %89, 9
+  br i1 %90, label %bb4655, label %bb4656
 
 bb4655:                                           ; preds = %bb4654
-  %90 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %91 = load i64, ptr %90, align 4
+  %91 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %92 = load i64, ptr %91, align 4
   %value = alloca i64, align 8
-  store i64 %91, ptr %value, align 4
-  %92 = load i64, ptr %tc, align 4
-  %93 = load i64, ptr %value, align 4
-  %94 = call i64 @check_expr(i64 %92, i64 %93)
+  store i64 %92, ptr %value, align 4
+  %93 = load i64, ptr %tc, align 4
+  %94 = load i64, ptr %value, align 4
+  %95 = call i64 @check_expr(i64 %93, i64 %94)
   %r8 = alloca i64, align 8
-  store i64 %94, ptr %r8, align 4
-  %95 = load i64, ptr %r8, align 4
-  %96 = inttoptr i64 %95 to ptr
-  %97 = getelementptr inbounds %ExprResult, ptr %96, i32 0, i32 0
-  %98 = load i64, ptr %97, align 4
-  store i64 %98, ptr %match_result, align 4
+  store i64 %95, ptr %r8, align 4
+  %96 = load i64, ptr %r8, align 4
+  %97 = inttoptr i64 %96 to ptr
+  %98 = getelementptr inbounds %ExprResult, ptr %97, i32 0, i32 0
+  %99 = load i64, ptr %98, align 4
+  store i64 %99, ptr %match_result, align 4
   br label %bb4642
 
 bb4656:                                           ; preds = %bb4654
-  %99 = zext i8 %5 to i64
-  %100 = icmp eq i64 %99, 10
-  br i1 %100, label %bb4657, label %bb4658
+  %100 = zext i8 %6 to i64
+  %101 = icmp eq i64 %100, 10
+  br i1 %101, label %bb4657, label %bb4658
 
 bb4657:                                           ; preds = %bb4656
-  %101 = load i64, ptr %tc, align 4
-  store i64 %101, ptr %match_result, align 4
+  %102 = load i64, ptr %tc, align 4
+  store i64 %102, ptr %match_result, align 4
   br label %bb4642
 
 bb4658:                                           ; preds = %bb4656
-  %102 = zext i8 %5 to i64
-  %103 = icmp eq i64 %102, 3
-  br i1 %103, label %bb4659, label %bb4660
+  %103 = zext i8 %6 to i64
+  %104 = icmp eq i64 %103, 3
+  br i1 %104, label %bb4659, label %bb4660
 
 bb4659:                                           ; preds = %bb4658
-  %104 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %105 = load i64, ptr %104, align 4
+  %105 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %106 = load i64, ptr %105, align 4
   %body = alloca i64, align 8
-  store i64 %105, ptr %body, align 4
-  %106 = load i64, ptr %tc, align 4
-  %107 = call i64 @tc_enter(i64 %106)
+  store i64 %106, ptr %body, align 4
+  %107 = load i64, ptr %tc, align 4
+  %108 = call i64 @tc_enter(i64 %107)
   %inner = alloca i64, align 8
-  store i64 %107, ptr %inner, align 4
-  %108 = load i64, ptr %inner, align 4
-  %109 = load i64, ptr %body, align 4
-  %110 = call i64 @check_stmts(i64 %108, i64 %109)
+  store i64 %108, ptr %inner, align 4
+  %109 = load i64, ptr %inner, align 4
+  %110 = load i64, ptr %body, align 4
+  %111 = call i64 @check_stmts(i64 %109, i64 %110)
   %checked = alloca i64, align 8
-  store i64 %110, ptr %checked, align 4
-  %111 = load i64, ptr %checked, align 4
-  %112 = call i64 @tc_exit(i64 %111)
-  store i64 %112, ptr %match_result, align 4
+  store i64 %111, ptr %checked, align 4
+  %112 = load i64, ptr %checked, align 4
+  %113 = call i64 @tc_exit(i64 %112)
+  store i64 %113, ptr %match_result, align 4
   br label %bb4642
 
 bb4660:                                           ; preds = %bb4658
-  %113 = zext i8 %5 to i64
-  %114 = icmp eq i64 %113, 4
-  br i1 %114, label %bb4661, label %bb4662
+  %114 = zext i8 %6 to i64
+  %115 = icmp eq i64 %114, 4
+  br i1 %115, label %bb4661, label %bb4662
 
 bb4661:                                           ; preds = %bb4660
-  %115 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %116 = load i64, ptr %115, align 4
+  %116 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %117 = load i64, ptr %116, align 4
   %cond = alloca i64, align 8
-  store i64 %116, ptr %cond, align 4
-  %117 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %118 = load i64, ptr %117, align 4
+  store i64 %117, ptr %cond, align 4
+  %118 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %119 = load i64, ptr %118, align 4
   %then_branch = alloca i64, align 8
-  store i64 %118, ptr %then_branch, align 4
-  %119 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 3
-  %120 = load i64, ptr %119, align 4
+  store i64 %119, ptr %then_branch, align 4
+  %120 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 3
+  %121 = load i64, ptr %120, align 4
   %else_branch = alloca i64, align 8
-  store i64 %120, ptr %else_branch, align 4
-  %121 = load i64, ptr %tc, align 4
-  %122 = load i64, ptr %cond, align 4
-  %123 = call i64 @check_expr(i64 %121, i64 %122)
+  store i64 %121, ptr %else_branch, align 4
+  %122 = load i64, ptr %tc, align 4
+  %123 = load i64, ptr %cond, align 4
+  %124 = call i64 @check_expr(i64 %122, i64 %123)
   %c = alloca i64, align 8
-  store i64 %123, ptr %c, align 4
-  %124 = load i64, ptr %c, align 4
-  %125 = inttoptr i64 %124 to ptr
-  %126 = getelementptr inbounds %ExprResult, ptr %125, i32 0, i32 0
-  %127 = load i64, ptr %126, align 4
-  %128 = load i64, ptr %then_branch, align 4
-  %129 = call i64 @check_stmt(i64 %127, i64 %128)
+  store i64 %124, ptr %c, align 4
+  %125 = load i64, ptr %c, align 4
+  %126 = inttoptr i64 %125 to ptr
+  %127 = getelementptr inbounds %ExprResult, ptr %126, i32 0, i32 0
+  %128 = load i64, ptr %127, align 4
+  %129 = load i64, ptr %then_branch, align 4
+  %130 = call i64 @check_stmt(i64 %128, i64 %129)
   %after_then = alloca i64, align 8
-  store i64 %129, ptr %after_then, align 4
-  %130 = load i64, ptr %else_branch, align 4
-  %131 = icmp ne i64 %130, 0
-  %132 = zext i1 %131 to i64
-  %133 = icmp ne i64 %132, 0
-  br i1 %133, label %bb4663, label %bb4664
+  store i64 %130, ptr %after_then, align 4
+  %131 = load i64, ptr %else_branch, align 4
+  %132 = icmp ne i64 %131, 0
+  %133 = zext i1 %132 to i64
+  %134 = icmp ne i64 %133, 0
+  br i1 %134, label %bb4663, label %bb4664
 
 bb4662:                                           ; preds = %bb4660
-  %134 = zext i8 %5 to i64
-  %135 = icmp eq i64 %134, 5
-  br i1 %135, label %bb4666, label %bb4667
+  %135 = zext i8 %6 to i64
+  %136 = icmp eq i64 %135, 5
+  br i1 %136, label %bb4666, label %bb4667
 
 bb4663:                                           ; preds = %bb4661
-  %136 = load i64, ptr %after_then, align 4
-  %137 = load i64, ptr %else_branch, align 4
-  %138 = call i64 @check_stmt(i64 %136, i64 %137)
-  ret i64 %138
+  %137 = load i64, ptr %after_then, align 4
+  %138 = load i64, ptr %else_branch, align 4
+  %139 = call i64 @check_stmt(i64 %137, i64 %138)
+  ret i64 %139
 
 bb4664:                                           ; preds = %bb4661
   br label %bb4665
 
 bb4665:                                           ; preds = %bb4664
-  %139 = load i64, ptr %after_then, align 4
-  store i64 %139, ptr %match_result, align 4
+  %140 = load i64, ptr %after_then, align 4
+  store i64 %140, ptr %match_result, align 4
   br label %bb4642
 
 bb4666:                                           ; preds = %bb4662
-  %140 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %141 = load i64, ptr %140, align 4
+  %141 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %142 = load i64, ptr %141, align 4
   %cond9 = alloca i64, align 8
-  store i64 %141, ptr %cond9, align 4
-  %142 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %143 = load i64, ptr %142, align 4
+  store i64 %142, ptr %cond9, align 4
+  %143 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %144 = load i64, ptr %143, align 4
   %body10 = alloca i64, align 8
-  store i64 %143, ptr %body10, align 4
-  %144 = load i64, ptr %tc, align 4
-  %145 = load i64, ptr %cond9, align 4
-  %146 = call i64 @check_expr(i64 %144, i64 %145)
+  store i64 %144, ptr %body10, align 4
+  %145 = load i64, ptr %tc, align 4
+  %146 = load i64, ptr %cond9, align 4
+  %147 = call i64 @check_expr(i64 %145, i64 %146)
   %c11 = alloca i64, align 8
-  store i64 %146, ptr %c11, align 4
-  %147 = load i64, ptr %c11, align 4
-  %148 = inttoptr i64 %147 to ptr
-  %149 = getelementptr inbounds %ExprResult, ptr %148, i32 0, i32 0
-  %150 = load i64, ptr %149, align 4
-  %151 = load i64, ptr %body10, align 4
-  %152 = call i64 @check_stmt(i64 %150, i64 %151)
-  store i64 %152, ptr %match_result, align 4
+  store i64 %147, ptr %c11, align 4
+  %148 = load i64, ptr %c11, align 4
+  %149 = inttoptr i64 %148 to ptr
+  %150 = getelementptr inbounds %ExprResult, ptr %149, i32 0, i32 0
+  %151 = load i64, ptr %150, align 4
+  %152 = load i64, ptr %body10, align 4
+  %153 = call i64 @check_stmt(i64 %151, i64 %152)
+  store i64 %153, ptr %match_result, align 4
   br label %bb4642
 
 bb4667:                                           ; preds = %bb4662
-  %153 = zext i8 %5 to i64
-  %154 = icmp eq i64 %153, 6
-  br i1 %154, label %bb4668, label %bb4669
+  %154 = zext i8 %6 to i64
+  %155 = icmp eq i64 %154, 6
+  br i1 %155, label %bb4668, label %bb4669
 
 bb4668:                                           ; preds = %bb4667
-  %155 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %156 = load i64, ptr %155, align 4
+  %156 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %157 = load i64, ptr %156, align 4
   %variable = alloca i64, align 8
-  store i64 %156, ptr %variable, align 4
-  %157 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %158 = load i64, ptr %157, align 4
+  store i64 %157, ptr %variable, align 4
+  %158 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %159 = load i64, ptr %158, align 4
   %start = alloca i64, align 8
-  store i64 %158, ptr %start, align 4
-  %159 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 3
-  %160 = load i64, ptr %159, align 4
+  store i64 %159, ptr %start, align 4
+  %160 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 3
+  %161 = load i64, ptr %160, align 4
   %end = alloca i64, align 8
-  store i64 %160, ptr %end, align 4
-  %161 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 4
-  %162 = load i64, ptr %161, align 4
+  store i64 %161, ptr %end, align 4
+  %162 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 4
+  %163 = load i64, ptr %162, align 4
   %body12 = alloca i64, align 8
-  store i64 %162, ptr %body12, align 4
-  %163 = load i64, ptr %tc, align 4
-  %164 = load i64, ptr %start, align 4
-  %165 = call i64 @check_expr(i64 %163, i64 %164)
+  store i64 %163, ptr %body12, align 4
+  %164 = load i64, ptr %tc, align 4
+  %165 = load i64, ptr %start, align 4
+  %166 = call i64 @check_expr(i64 %164, i64 %165)
   %s = alloca i64, align 8
-  store i64 %165, ptr %s, align 4
-  %166 = load i64, ptr %s, align 4
-  %167 = inttoptr i64 %166 to ptr
-  %168 = getelementptr inbounds %ExprResult, ptr %167, i32 0, i32 0
-  %169 = load i64, ptr %168, align 4
-  %170 = load i64, ptr %end, align 4
-  %171 = call i64 @check_expr(i64 %169, i64 %170)
+  store i64 %166, ptr %s, align 4
+  %167 = load i64, ptr %s, align 4
+  %168 = inttoptr i64 %167 to ptr
+  %169 = getelementptr inbounds %ExprResult, ptr %168, i32 0, i32 0
+  %170 = load i64, ptr %169, align 4
+  %171 = load i64, ptr %end, align 4
+  %172 = call i64 @check_expr(i64 %170, i64 %171)
   %e13 = alloca i64, align 8
-  store i64 %171, ptr %e13, align 4
-  %172 = load i64, ptr %e13, align 4
-  %173 = inttoptr i64 %172 to ptr
-  %174 = getelementptr inbounds %ExprResult, ptr %173, i32 0, i32 0
-  %175 = load i64, ptr %174, align 4
-  %176 = call i64 @tc_enter(i64 %175)
+  store i64 %172, ptr %e13, align 4
+  %173 = load i64, ptr %e13, align 4
+  %174 = inttoptr i64 %173 to ptr
+  %175 = getelementptr inbounds %ExprResult, ptr %174, i32 0, i32 0
+  %176 = load i64, ptr %175, align 4
+  %177 = call i64 @tc_enter(i64 %176)
   %inner14 = alloca i64, align 8
-  store i64 %176, ptr %inner14, align 4
-  %177 = load i64, ptr %inner14, align 4
-  %178 = load i64, ptr %variable, align 4
-  %179 = call ptr @malloc(i64 24)
-  %180 = getelementptr inbounds %ValueType, ptr %179, i32 0, i32 0
-  store i8 0, ptr %180, align 1
-  %181 = ptrtoint ptr %179 to i64
-  %182 = call i64 @tc_bind(i64 %177, i64 %178, i64 %181)
+  store i64 %177, ptr %inner14, align 4
+  %178 = load i64, ptr %inner14, align 4
+  %179 = load i64, ptr %variable, align 4
+  %180 = call ptr @forge_bump_alloc(i64 24)
+  %181 = getelementptr inbounds %ValueType, ptr %180, i32 0, i32 0
+  store i8 0, ptr %181, align 1
+  %182 = ptrtoint ptr %180 to i64
+  %183 = call i64 @tc_bind(i64 %178, i64 %179, i64 %182)
   %bound = alloca i64, align 8
-  store i64 %182, ptr %bound, align 4
-  %183 = load i64, ptr %bound, align 4
-  %184 = load i64, ptr %body12, align 4
-  %185 = call i64 @check_stmt(i64 %183, i64 %184)
+  store i64 %183, ptr %bound, align 4
+  %184 = load i64, ptr %bound, align 4
+  %185 = load i64, ptr %body12, align 4
+  %186 = call i64 @check_stmt(i64 %184, i64 %185)
   %after = alloca i64, align 8
-  store i64 %185, ptr %after, align 4
-  %186 = load i64, ptr %after, align 4
-  %187 = call i64 @tc_exit(i64 %186)
-  store i64 %187, ptr %match_result, align 4
+  store i64 %186, ptr %after, align 4
+  %187 = load i64, ptr %after, align 4
+  %188 = call i64 @tc_exit(i64 %187)
+  store i64 %188, ptr %match_result, align 4
   br label %bb4642
 
 bb4669:                                           ; preds = %bb4667
-  %188 = zext i8 %5 to i64
-  %189 = icmp eq i64 %188, 7
-  br i1 %189, label %bb4670, label %bb4671
+  %189 = zext i8 %6 to i64
+  %190 = icmp eq i64 %189, 7
+  br i1 %190, label %bb4670, label %bb4671
 
 bb4670:                                           ; preds = %bb4669
-  %190 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %191 = load i64, ptr %190, align 4
+  %191 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %192 = load i64, ptr %191, align 4
   %variable15 = alloca i64, align 8
-  store i64 %191, ptr %variable15, align 4
-  %192 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %193 = load i64, ptr %192, align 4
+  store i64 %192, ptr %variable15, align 4
+  %193 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %194 = load i64, ptr %193, align 4
   %collection = alloca i64, align 8
-  store i64 %193, ptr %collection, align 4
-  %194 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 3
-  %195 = load i64, ptr %194, align 4
+  store i64 %194, ptr %collection, align 4
+  %195 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 3
+  %196 = load i64, ptr %195, align 4
   %body16 = alloca i64, align 8
-  store i64 %195, ptr %body16, align 4
-  %196 = load i64, ptr %tc, align 4
-  %197 = load i64, ptr %collection, align 4
-  %198 = call i64 @check_expr(i64 %196, i64 %197)
+  store i64 %196, ptr %body16, align 4
+  %197 = load i64, ptr %tc, align 4
+  %198 = load i64, ptr %collection, align 4
+  %199 = call i64 @check_expr(i64 %197, i64 %198)
   %c17 = alloca i64, align 8
-  store i64 %198, ptr %c17, align 4
-  %199 = load i64, ptr %c17, align 4
-  %200 = inttoptr i64 %199 to ptr
-  %201 = getelementptr inbounds %ExprResult, ptr %200, i32 0, i32 1
-  %202 = load i64, ptr %201, align 4
-  %203 = call i64 @vtype_list_elem(i64 %202)
+  store i64 %199, ptr %c17, align 4
+  %200 = load i64, ptr %c17, align 4
+  %201 = inttoptr i64 %200 to ptr
+  %202 = getelementptr inbounds %ExprResult, ptr %201, i32 0, i32 1
+  %203 = load i64, ptr %202, align 4
+  %204 = call i64 @vtype_list_elem(i64 %203)
   %elem_ty = alloca i64, align 8
-  store i64 %203, ptr %elem_ty, align 4
-  %204 = load i64, ptr %c17, align 4
-  %205 = inttoptr i64 %204 to ptr
-  %206 = getelementptr inbounds %ExprResult, ptr %205, i32 0, i32 0
-  %207 = load i64, ptr %206, align 4
-  %208 = call i64 @tc_enter(i64 %207)
+  store i64 %204, ptr %elem_ty, align 4
+  %205 = load i64, ptr %c17, align 4
+  %206 = inttoptr i64 %205 to ptr
+  %207 = getelementptr inbounds %ExprResult, ptr %206, i32 0, i32 0
+  %208 = load i64, ptr %207, align 4
+  %209 = call i64 @tc_enter(i64 %208)
   %inner18 = alloca i64, align 8
-  store i64 %208, ptr %inner18, align 4
-  %209 = load i64, ptr %inner18, align 4
-  %210 = load i64, ptr %variable15, align 4
-  %211 = load i64, ptr %elem_ty, align 4
-  %212 = call i64 @tc_bind(i64 %209, i64 %210, i64 %211)
+  store i64 %209, ptr %inner18, align 4
+  %210 = load i64, ptr %inner18, align 4
+  %211 = load i64, ptr %variable15, align 4
+  %212 = load i64, ptr %elem_ty, align 4
+  %213 = call i64 @tc_bind(i64 %210, i64 %211, i64 %212)
   %bound19 = alloca i64, align 8
-  store i64 %212, ptr %bound19, align 4
-  %213 = load i64, ptr %bound19, align 4
-  %214 = load i64, ptr %body16, align 4
-  %215 = call i64 @check_stmt(i64 %213, i64 %214)
+  store i64 %213, ptr %bound19, align 4
+  %214 = load i64, ptr %bound19, align 4
+  %215 = load i64, ptr %body16, align 4
+  %216 = call i64 @check_stmt(i64 %214, i64 %215)
   %after20 = alloca i64, align 8
-  store i64 %215, ptr %after20, align 4
-  %216 = load i64, ptr %after20, align 4
-  %217 = call i64 @tc_exit(i64 %216)
-  store i64 %217, ptr %match_result, align 4
+  store i64 %216, ptr %after20, align 4
+  %217 = load i64, ptr %after20, align 4
+  %218 = call i64 @tc_exit(i64 %217)
+  store i64 %218, ptr %match_result, align 4
   br label %bb4642
 
 bb4671:                                           ; preds = %bb4669
-  %218 = zext i8 %5 to i64
-  %219 = icmp eq i64 %218, 8
-  br i1 %219, label %bb4672, label %bb4673
+  %219 = zext i8 %6 to i64
+  %220 = icmp eq i64 %219, 8
+  br i1 %220, label %bb4672, label %bb4673
 
 bb4672:                                           ; preds = %bb4671
-  %220 = load i64, ptr %tc, align 4
-  store i64 %220, ptr %match_result, align 4
+  %221 = load i64, ptr %tc, align 4
+  store i64 %221, ptr %match_result, align 4
   br label %bb4642
 
 bb4673:                                           ; preds = %bb4671
-  %221 = zext i8 %5 to i64
-  %222 = icmp eq i64 %221, 13
-  br i1 %222, label %bb4674, label %bb4675
+  %222 = zext i8 %6 to i64
+  %223 = icmp eq i64 %222, 13
+  br i1 %223, label %bb4674, label %bb4675
 
 bb4674:                                           ; preds = %bb4673
-  %223 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %224 = load i64, ptr %223, align 4
+  %224 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %225 = load i64, ptr %224, align 4
   %subject = alloca i64, align 8
-  store i64 %224, ptr %subject, align 4
-  %225 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %226 = load i64, ptr %225, align 4
+  store i64 %225, ptr %subject, align 4
+  %226 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %227 = load i64, ptr %226, align 4
   %arms = alloca i64, align 8
-  store i64 %226, ptr %arms, align 4
-  %227 = load i64, ptr %tc, align 4
-  %228 = load i64, ptr %subject, align 4
-  %229 = call i64 @check_expr(i64 %227, i64 %228)
+  store i64 %227, ptr %arms, align 4
+  %228 = load i64, ptr %tc, align 4
+  %229 = load i64, ptr %subject, align 4
+  %230 = call i64 @check_expr(i64 %228, i64 %229)
   %s21 = alloca i64, align 8
-  store i64 %229, ptr %s21, align 4
-  %230 = load i64, ptr %s21, align 4
-  %231 = inttoptr i64 %230 to ptr
-  %232 = getelementptr inbounds %ExprResult, ptr %231, i32 0, i32 0
-  %233 = load i64, ptr %232, align 4
-  %234 = load i64, ptr %arms, align 4
-  %235 = call i64 @check_match_arms(i64 %233, i64 %234)
-  store i64 %235, ptr %match_result, align 4
+  store i64 %230, ptr %s21, align 4
+  %231 = load i64, ptr %s21, align 4
+  %232 = inttoptr i64 %231 to ptr
+  %233 = getelementptr inbounds %ExprResult, ptr %232, i32 0, i32 0
+  %234 = load i64, ptr %233, align 4
+  %235 = load i64, ptr %arms, align 4
+  %236 = call i64 @check_match_arms(i64 %234, i64 %235)
+  store i64 %236, ptr %match_result, align 4
   br label %bb4642
 
 bb4675:                                           ; preds = %bb4673
-  %236 = zext i8 %5 to i64
-  %237 = icmp eq i64 %236, 14
-  br i1 %237, label %bb4676, label %bb4677
+  %237 = zext i8 %6 to i64
+  %238 = icmp eq i64 %237, 14
+  br i1 %238, label %bb4676, label %bb4677
 
 bb4676:                                           ; preds = %bb4675
-  %238 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %239 = load i64, ptr %238, align 4
+  %239 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %240 = load i64, ptr %239, align 4
   %methods = alloca i64, align 8
-  store i64 %239, ptr %methods, align 4
-  %240 = load i64, ptr %tc, align 4
-  %241 = load i64, ptr %methods, align 4
-  %242 = call i64 @check_stmts(i64 %240, i64 %241)
-  store i64 %242, ptr %match_result, align 4
+  store i64 %240, ptr %methods, align 4
+  %241 = load i64, ptr %tc, align 4
+  %242 = load i64, ptr %methods, align 4
+  %243 = call i64 @check_stmts(i64 %241, i64 %242)
+  store i64 %243, ptr %match_result, align 4
   br label %bb4642
 
 bb4677:                                           ; preds = %bb4675
-  %243 = zext i8 %5 to i64
-  %244 = icmp eq i64 %243, 20
-  br i1 %244, label %bb4678, label %bb4679
+  %244 = zext i8 %6 to i64
+  %245 = icmp eq i64 %244, 20
+  br i1 %245, label %bb4678, label %bb4679
 
 bb4678:                                           ; preds = %bb4677
-  %245 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %246 = load i64, ptr %245, align 4
+  %246 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %247 = load i64, ptr %246, align 4
   %names = alloca i64, align 8
-  store i64 %246, ptr %names, align 4
-  %247 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 2
-  %248 = load i64, ptr %247, align 4
+  store i64 %247, ptr %names, align 4
+  %248 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 2
+  %249 = load i64, ptr %248, align 4
   %init22 = alloca i64, align 8
-  store i64 %248, ptr %init22, align 4
-  %249 = load i64, ptr %tc, align 4
-  %250 = load i64, ptr %init22, align 4
-  %251 = call i64 @check_expr(i64 %249, i64 %250)
+  store i64 %249, ptr %init22, align 4
+  %250 = load i64, ptr %tc, align 4
+  %251 = load i64, ptr %init22, align 4
+  %252 = call i64 @check_expr(i64 %250, i64 %251)
   %r23 = alloca i64, align 8
-  store i64 %251, ptr %r23, align 4
-  %252 = load i64, ptr %r23, align 4
-  %253 = inttoptr i64 %252 to ptr
-  %254 = getelementptr inbounds %ExprResult, ptr %253, i32 0, i32 0
-  %255 = load i64, ptr %254, align 4
-  %256 = load i64, ptr %names, align 4
-  %257 = load i64, ptr %r23, align 4
-  %258 = inttoptr i64 %257 to ptr
-  %259 = getelementptr inbounds %ExprResult, ptr %258, i32 0, i32 1
-  %260 = load i64, ptr %259, align 4
-  %261 = call i64 @bind_destructure(i64 %255, i64 %256, i64 %260)
-  store i64 %261, ptr %match_result, align 4
+  store i64 %252, ptr %r23, align 4
+  %253 = load i64, ptr %r23, align 4
+  %254 = inttoptr i64 %253 to ptr
+  %255 = getelementptr inbounds %ExprResult, ptr %254, i32 0, i32 0
+  %256 = load i64, ptr %255, align 4
+  %257 = load i64, ptr %names, align 4
+  %258 = load i64, ptr %r23, align 4
+  %259 = inttoptr i64 %258 to ptr
+  %260 = getelementptr inbounds %ExprResult, ptr %259, i32 0, i32 1
+  %261 = load i64, ptr %260, align 4
+  %262 = call i64 @bind_destructure(i64 %256, i64 %257, i64 %261)
+  store i64 %262, ptr %match_result, align 4
   br label %bb4642
 
 bb4679:                                           ; preds = %bb4677
-  %262 = zext i8 %5 to i64
-  %263 = icmp eq i64 %262, 21
-  br i1 %263, label %bb4680, label %bb4681
+  %263 = zext i8 %6 to i64
+  %264 = icmp eq i64 %263, 21
+  br i1 %264, label %bb4680, label %bb4681
 
 bb4680:                                           ; preds = %bb4679
-  %264 = getelementptr inbounds %Stmt, ptr %3, i32 0, i32 1
-  %265 = load i64, ptr %264, align 4
+  %265 = getelementptr inbounds %Stmt, ptr %4, i32 0, i32 1
+  %266 = load i64, ptr %265, align 4
   %body24 = alloca i64, align 8
-  store i64 %265, ptr %body24, align 4
-  %266 = load i64, ptr %tc, align 4
-  %267 = load i64, ptr %body24, align 4
-  %268 = call i64 @check_expr(i64 %266, i64 %267)
+  store i64 %266, ptr %body24, align 4
+  %267 = load i64, ptr %tc, align 4
+  %268 = load i64, ptr %body24, align 4
+  %269 = call i64 @check_expr(i64 %267, i64 %268)
   %r25 = alloca i64, align 8
-  store i64 %268, ptr %r25, align 4
-  %269 = load i64, ptr %r25, align 4
-  %270 = inttoptr i64 %269 to ptr
-  %271 = getelementptr inbounds %ExprResult, ptr %270, i32 0, i32 0
-  %272 = load i64, ptr %271, align 4
-  store i64 %272, ptr %match_result, align 4
+  store i64 %269, ptr %r25, align 4
+  %270 = load i64, ptr %r25, align 4
+  %271 = inttoptr i64 %270 to ptr
+  %272 = getelementptr inbounds %ExprResult, ptr %271, i32 0, i32 0
+  %273 = load i64, ptr %272, align 4
+  store i64 %273, ptr %match_result, align 4
   br label %bb4642
 
 bb4681:                                           ; preds = %bb4679
   br label %bb4682
 
 bb4682:                                           ; preds = %bb4681
-  %273 = load i64, ptr %tc, align 4
-  store i64 %273, ptr %match_result, align 4
+  %274 = load i64, ptr %tc, align 4
+  store i64 %274, ptr %match_result, align 4
   br label %bb4642
 
 bb4683:                                           ; No predecessors!
@@ -50527,7 +50488,7 @@ bb4710:                                           ; preds = %bb4782, %bb4781, %b
 
 bb4711:                                           ; preds = %bb4709
   %9 = load i64, ptr %tc, align 4
-  %10 = call ptr @malloc(i64 24)
+  %10 = call ptr @forge_bump_alloc(i64 24)
   %11 = getelementptr inbounds %ValueType, ptr %10, i32 0, i32 0
   store i8 0, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
@@ -50542,7 +50503,7 @@ bb4712:                                           ; preds = %bb4709
 
 bb4713:                                           ; preds = %bb4712
   %16 = load i64, ptr %tc, align 4
-  %17 = call ptr @malloc(i64 24)
+  %17 = call ptr @forge_bump_alloc(i64 24)
   %18 = getelementptr inbounds %ValueType, ptr %17, i32 0, i32 0
   store i8 1, ptr %18, align 1
   %19 = ptrtoint ptr %17 to i64
@@ -50557,7 +50518,7 @@ bb4714:                                           ; preds = %bb4712
 
 bb4715:                                           ; preds = %bb4714
   %23 = load i64, ptr %tc, align 4
-  %24 = call ptr @malloc(i64 24)
+  %24 = call ptr @forge_bump_alloc(i64 24)
   %25 = getelementptr inbounds %ValueType, ptr %24, i32 0, i32 0
   store i8 2, ptr %25, align 1
   %26 = ptrtoint ptr %24 to i64
@@ -50572,7 +50533,7 @@ bb4716:                                           ; preds = %bb4714
 
 bb4717:                                           ; preds = %bb4716
   %30 = load i64, ptr %tc, align 4
-  %31 = call ptr @malloc(i64 24)
+  %31 = call ptr @forge_bump_alloc(i64 24)
   %32 = getelementptr inbounds %ValueType, ptr %31, i32 0, i32 0
   store i8 11, ptr %32, align 1
   %33 = ptrtoint ptr %31 to i64
@@ -50599,7 +50560,7 @@ bb4719:                                           ; preds = %bb4718
   %ty = alloca i64, align 8
   store i64 %44, ptr %ty, align 4
   %45 = load i64, ptr %ty, align 4
-  %46 = call ptr @malloc(i64 24)
+  %46 = call ptr @forge_bump_alloc(i64 24)
   %47 = getelementptr inbounds %ValueType, ptr %46, i32 0, i32 0
   store i8 0, ptr %47, align 1
   %48 = ptrtoint ptr %46 to i64
@@ -50630,7 +50591,7 @@ bb4722:                                           ; preds = %bb4721, %bb4719
 
 bb4723:                                           ; preds = %bb4722
   %63 = load i64, ptr %tc, align 4
-  %64 = call ptr @malloc(i64 24)
+  %64 = call ptr @forge_bump_alloc(i64 24)
   %65 = getelementptr inbounds %ValueType, ptr %64, i32 0, i32 0
   store i8 9, ptr %65, align 1
   %66 = load i64, ptr %tc, align 4
@@ -50756,7 +50717,7 @@ bb4730:                                           ; preds = %bb4729
   %139 = inttoptr i64 %138 to ptr
   %140 = getelementptr inbounds %ExprResult, ptr %139, i32 0, i32 0
   %141 = load i64, ptr %140, align 4
-  %142 = call ptr @malloc(i64 24)
+  %142 = call ptr @forge_bump_alloc(i64 24)
   %143 = getelementptr inbounds %ValueType, ptr %142, i32 0, i32 0
   store i8 2, ptr %143, align 1
   %144 = ptrtoint ptr %142 to i64
@@ -50821,7 +50782,7 @@ bb4736:                                           ; preds = %bb4735
   %checked = alloca i64, align 8
   store i64 %171, ptr %checked, align 4
   %172 = load i64, ptr %checked, align 4
-  %173 = call ptr @malloc(i64 24)
+  %173 = call ptr @forge_bump_alloc(i64 24)
   %174 = getelementptr inbounds %ValueType, ptr %173, i32 0, i32 0
   store i8 4, ptr %174, align 1
   %175 = load i64, ptr %name7, align 4
@@ -50873,7 +50834,7 @@ bb4740:                                           ; preds = %bb4739
   %checked9 = alloca i64, align 8
   store i64 %197, ptr %checked9, align 4
   %198 = load i64, ptr %checked9, align 4
-  %199 = call ptr @malloc(i64 24)
+  %199 = call ptr @forge_bump_alloc(i64 24)
   %200 = getelementptr inbounds %ValueType, ptr %199, i32 0, i32 0
   store i8 5, ptr %200, align 1
   %201 = load i64, ptr %type_name, align 4
@@ -51066,7 +51027,7 @@ bb4752:                                           ; preds = %bb4750
   %310 = inttoptr i64 %309 to ptr
   %311 = getelementptr inbounds %ExprResult, ptr %310, i32 0, i32 1
   %312 = load i64, ptr %311, align 4
-  %313 = call ptr @malloc(i64 24)
+  %313 = call ptr @forge_bump_alloc(i64 24)
   %314 = getelementptr inbounds %ValueType, ptr %313, i32 0, i32 0
   store i8 0, ptr %314, align 1
   %315 = ptrtoint ptr %313 to i64
@@ -51087,7 +51048,7 @@ bb4754:                                           ; preds = %bb4753
   %324 = inttoptr i64 %323 to ptr
   %325 = getelementptr inbounds %ExprResult, ptr %324, i32 0, i32 1
   %326 = load i64, ptr %325, align 4
-  %327 = call ptr @malloc(i64 24)
+  %327 = call ptr @forge_bump_alloc(i64 24)
   %328 = getelementptr inbounds %ValueType, ptr %327, i32 0, i32 0
   store i8 0, ptr %328, align 1
   %329 = ptrtoint ptr %327 to i64
@@ -51110,12 +51071,12 @@ bb4756:                                           ; preds = %bb4755
   %340 = load i64, ptr %339, align 4
   %341 = call i64 @vtype_display(i64 %340)
   %342 = inttoptr i64 %341 to ptr
-  %343 = call i64 @strlen(ptr @1580)
+  %343 = call i64 @strlen(ptr @1579)
   %344 = call i64 @strlen(ptr %342)
   %345 = add i64 %343, %344
   %346 = add i64 %345, 1
   %347 = call ptr @forge_bump_alloc(i64 %346)
-  %348 = call ptr @memcpy(ptr %347, ptr @1580, i64 %343)
+  %348 = call ptr @memcpy(ptr %347, ptr @1579, i64 %343)
   %349 = ptrtoint ptr %347 to i64
   %350 = add i64 %349, %343
   %351 = inttoptr i64 %350 to ptr
@@ -51124,7 +51085,7 @@ bb4756:                                           ; preds = %bb4755
   %354 = ptrtoint ptr %347 to i64
   %355 = inttoptr i64 %354 to ptr
   %356 = call i64 @strlen(ptr %355)
-  %357 = call i64 @strlen(ptr @1581)
+  %357 = call i64 @strlen(ptr @1580)
   %358 = add i64 %356, %357
   %359 = add i64 %358, 1
   %360 = call ptr @forge_bump_alloc(i64 %359)
@@ -51133,7 +51094,7 @@ bb4756:                                           ; preds = %bb4755
   %363 = add i64 %362, %356
   %364 = inttoptr i64 %363 to ptr
   %365 = add i64 %357, 1
-  %366 = call ptr @memcpy(ptr %364, ptr @1581, i64 %365)
+  %366 = call ptr @memcpy(ptr %364, ptr @1580, i64 %365)
   %367 = ptrtoint ptr %360 to i64
   %368 = load i64, ptr %e, align 4
   %369 = inttoptr i64 %368 to ptr
@@ -51156,7 +51117,7 @@ bb4756:                                           ; preds = %bb4755
   %386 = ptrtoint ptr %379 to i64
   %387 = inttoptr i64 %386 to ptr
   %388 = call i64 @strlen(ptr %387)
-  %389 = call i64 @strlen(ptr @1582)
+  %389 = call i64 @strlen(ptr @1581)
   %390 = add i64 %388, %389
   %391 = add i64 %390, 1
   %392 = call ptr @forge_bump_alloc(i64 %391)
@@ -51165,7 +51126,7 @@ bb4756:                                           ; preds = %bb4755
   %395 = add i64 %394, %388
   %396 = inttoptr i64 %395 to ptr
   %397 = add i64 %389, 1
-  %398 = call ptr @memcpy(ptr %396, ptr @1582, i64 %397)
+  %398 = call ptr @memcpy(ptr %396, ptr @1581, i64 %397)
   %399 = ptrtoint ptr %392 to i64
   %msg = alloca i64, align 8
   store i64 %399, ptr %msg, align 4
@@ -51173,7 +51134,7 @@ bb4756:                                           ; preds = %bb4755
   %401 = inttoptr i64 %400 to ptr
   %402 = getelementptr inbounds %ExprResult, ptr %401, i32 0, i32 0
   %403 = load i64, ptr %402, align 4
-  %404 = call ptr @malloc(i64 8)
+  %404 = call ptr @forge_bump_alloc(i64 8)
   %405 = getelementptr inbounds %DiagCode, ptr %404, i32 0, i32 0
   store i8 14, ptr %405, align 1
   %406 = ptrtoint ptr %404 to i64
@@ -51292,7 +51253,7 @@ bb4765:                                           ; preds = %bb4764
   %470 = inttoptr i64 %469 to ptr
   %471 = getelementptr inbounds %ExprListResult, ptr %470, i32 0, i32 0
   %472 = load i64, ptr %471, align 4
-  %473 = call ptr @malloc(i64 24)
+  %473 = call ptr @forge_bump_alloc(i64 24)
   %474 = getelementptr inbounds %ValueType, ptr %473, i32 0, i32 0
   store i8 6, ptr %474, align 1
   %475 = load i64, ptr %pair, align 4
@@ -51427,7 +51388,7 @@ bb4773:                                           ; preds = %bb4772
   %after = alloca i64, align 8
   store i64 %548, ptr %after, align 4
   %549 = load i64, ptr %after, align 4
-  %550 = call ptr @malloc(i64 24)
+  %550 = call ptr @forge_bump_alloc(i64 24)
   %551 = getelementptr inbounds %ValueType, ptr %550, i32 0, i32 0
   store i8 9, ptr %551, align 1
   %552 = load i64, ptr %b, align 4
@@ -51457,7 +51418,7 @@ bb4775:                                           ; preds = %bb4774
   %checked29 = alloca i64, align 8
   store i64 %565, ptr %checked29, align 4
   %566 = load i64, ptr %checked29, align 4
-  %567 = call ptr @malloc(i64 24)
+  %567 = call ptr @forge_bump_alloc(i64 24)
   %568 = getelementptr inbounds %ValueType, ptr %567, i32 0, i32 0
   store i8 8, ptr %568, align 1
   %569 = ptrtoint ptr %567 to i64
@@ -51552,7 +51513,7 @@ bb4780:                                           ; preds = %bb4778
 
 bb4781:                                           ; preds = %bb4780
   %621 = load i64, ptr %tc, align 4
-  %622 = call ptr @malloc(i64 24)
+  %622 = call ptr @forge_bump_alloc(i64 24)
   %623 = getelementptr inbounds %ValueType, ptr %622, i32 0, i32 0
   store i8 0, ptr %623, align 1
   %624 = ptrtoint ptr %622 to i64
@@ -51590,7 +51551,7 @@ bb4784:                                           ; preds = %bb4805, %bb4804, %b
 
 bb4785:                                           ; preds = %bb4783
   %11 = load i64, ptr %left, align 4
-  %12 = call ptr @malloc(i64 24)
+  %12 = call ptr @forge_bump_alloc(i64 24)
   %13 = getelementptr inbounds %ValueType, ptr %12, i32 0, i32 0
   store i8 1, ptr %13, align 1
   %14 = ptrtoint ptr %12 to i64
@@ -51605,7 +51566,7 @@ bb4786:                                           ; preds = %bb4783
 
 bb4787:                                           ; preds = %bb4785
   %19 = load i64, ptr %right, align 4
-  %20 = call ptr @malloc(i64 24)
+  %20 = call ptr @forge_bump_alloc(i64 24)
   %21 = getelementptr inbounds %ValueType, ptr %20, i32 0, i32 0
   store i8 1, ptr %21, align 1
   %22 = ptrtoint ptr %20 to i64
@@ -51621,7 +51582,7 @@ bb4788:                                           ; preds = %bb4787, %bb4785
 
 bb4789:                                           ; preds = %bb4788
   %28 = load i64, ptr %tc, align 4
-  %29 = call ptr @malloc(i64 24)
+  %29 = call ptr @forge_bump_alloc(i64 24)
   %30 = getelementptr inbounds %ValueType, ptr %29, i32 0, i32 0
   store i8 1, ptr %30, align 1
   %31 = ptrtoint ptr %29 to i64
@@ -51633,7 +51594,7 @@ bb4790:                                           ; preds = %bb4788
 
 bb4791:                                           ; preds = %bb4790
   %33 = load i64, ptr %tc, align 4
-  %34 = call ptr @malloc(i64 24)
+  %34 = call ptr @forge_bump_alloc(i64 24)
   %35 = getelementptr inbounds %ValueType, ptr %34, i32 0, i32 0
   store i8 0, ptr %35, align 1
   %36 = ptrtoint ptr %34 to i64
@@ -51643,7 +51604,7 @@ bb4791:                                           ; preds = %bb4790
 
 bb4792:                                           ; preds = %bb4786
   %38 = load i64, ptr %tc, align 4
-  %39 = call ptr @malloc(i64 24)
+  %39 = call ptr @forge_bump_alloc(i64 24)
   %40 = getelementptr inbounds %ValueType, ptr %39, i32 0, i32 0
   store i8 2, ptr %40, align 1
   %41 = ptrtoint ptr %39 to i64
@@ -51658,7 +51619,7 @@ bb4793:                                           ; preds = %bb4786
 
 bb4794:                                           ; preds = %bb4793
   %45 = load i64, ptr %tc, align 4
-  %46 = call ptr @malloc(i64 24)
+  %46 = call ptr @forge_bump_alloc(i64 24)
   %47 = getelementptr inbounds %ValueType, ptr %46, i32 0, i32 0
   store i8 2, ptr %47, align 1
   %48 = ptrtoint ptr %46 to i64
@@ -51673,7 +51634,7 @@ bb4795:                                           ; preds = %bb4793
 
 bb4796:                                           ; preds = %bb4795
   %52 = load i64, ptr %tc, align 4
-  %53 = call ptr @malloc(i64 24)
+  %53 = call ptr @forge_bump_alloc(i64 24)
   %54 = getelementptr inbounds %ValueType, ptr %53, i32 0, i32 0
   store i8 2, ptr %54, align 1
   %55 = ptrtoint ptr %53 to i64
@@ -51688,7 +51649,7 @@ bb4797:                                           ; preds = %bb4795
 
 bb4798:                                           ; preds = %bb4797
   %59 = load i64, ptr %tc, align 4
-  %60 = call ptr @malloc(i64 24)
+  %60 = call ptr @forge_bump_alloc(i64 24)
   %61 = getelementptr inbounds %ValueType, ptr %60, i32 0, i32 0
   store i8 2, ptr %61, align 1
   %62 = ptrtoint ptr %60 to i64
@@ -51703,7 +51664,7 @@ bb4799:                                           ; preds = %bb4797
 
 bb4800:                                           ; preds = %bb4799
   %66 = load i64, ptr %tc, align 4
-  %67 = call ptr @malloc(i64 24)
+  %67 = call ptr @forge_bump_alloc(i64 24)
   %68 = getelementptr inbounds %ValueType, ptr %67, i32 0, i32 0
   store i8 2, ptr %68, align 1
   %69 = ptrtoint ptr %67 to i64
@@ -51718,7 +51679,7 @@ bb4801:                                           ; preds = %bb4799
 
 bb4802:                                           ; preds = %bb4801
   %73 = load i64, ptr %tc, align 4
-  %74 = call ptr @malloc(i64 24)
+  %74 = call ptr @forge_bump_alloc(i64 24)
   %75 = getelementptr inbounds %ValueType, ptr %74, i32 0, i32 0
   store i8 2, ptr %75, align 1
   %76 = ptrtoint ptr %74 to i64
@@ -51731,7 +51692,7 @@ bb4803:                                           ; preds = %bb4801
 
 bb4804:                                           ; preds = %bb4803
   %78 = load i64, ptr %tc, align 4
-  %79 = call ptr @malloc(i64 24)
+  %79 = call ptr @forge_bump_alloc(i64 24)
   %80 = getelementptr inbounds %ValueType, ptr %79, i32 0, i32 0
   store i8 0, ptr %80, align 1
   %81 = ptrtoint ptr %79 to i64
@@ -51777,7 +51738,7 @@ bb4808:                                           ; preds = %bb4806
   store i64 %14, ptr %checked, align 4
   %15 = load i64, ptr %name, align 4
   %16 = inttoptr i64 %15 to ptr
-  %17 = call i32 @strcmp(ptr %16, ptr @1583)
+  %17 = call i32 @strcmp(ptr %16, ptr @1582)
   %18 = zext i32 %17 to i64
   %19 = icmp eq i64 %18, 0
   %20 = zext i1 %19 to i64
@@ -51791,7 +51752,7 @@ bb4809:                                           ; preds = %bb4806
 
 bb4810:                                           ; preds = %bb4808
   %24 = load i64, ptr %checked, align 4
-  %25 = call ptr @malloc(i64 24)
+  %25 = call ptr @forge_bump_alloc(i64 24)
   %26 = getelementptr inbounds %ValueType, ptr %25, i32 0, i32 0
   store i8 1, ptr %26, align 1
   %27 = ptrtoint ptr %25 to i64
@@ -51804,7 +51765,7 @@ bb4811:                                           ; preds = %bb4808
 bb4812:                                           ; preds = %bb4811
   %29 = load i64, ptr %name, align 4
   %30 = inttoptr i64 %29 to ptr
-  %31 = call i32 @strcmp(ptr %30, ptr @1584)
+  %31 = call i32 @strcmp(ptr %30, ptr @1583)
   %32 = zext i32 %31 to i64
   %33 = icmp eq i64 %32, 0
   %34 = zext i1 %33 to i64
@@ -51813,7 +51774,7 @@ bb4812:                                           ; preds = %bb4811
 
 bb4813:                                           ; preds = %bb4812
   %36 = load i64, ptr %checked, align 4
-  %37 = call ptr @malloc(i64 24)
+  %37 = call ptr @forge_bump_alloc(i64 24)
   %38 = getelementptr inbounds %ValueType, ptr %37, i32 0, i32 0
   store i8 0, ptr %38, align 1
   %39 = ptrtoint ptr %37 to i64
@@ -51826,7 +51787,7 @@ bb4814:                                           ; preds = %bb4812
 bb4815:                                           ; preds = %bb4814
   %41 = load i64, ptr %name, align 4
   %42 = inttoptr i64 %41 to ptr
-  %43 = call i32 @strcmp(ptr %42, ptr @1585)
+  %43 = call i32 @strcmp(ptr %42, ptr @1584)
   %44 = zext i32 %43 to i64
   %45 = icmp eq i64 %44, 0
   %46 = zext i1 %45 to i64
@@ -51836,7 +51797,7 @@ bb4815:                                           ; preds = %bb4814
 bb4816:                                           ; preds = %bb4815
   %48 = load i64, ptr %name, align 4
   %49 = inttoptr i64 %48 to ptr
-  %50 = call i32 @strcmp(ptr %49, ptr @1586)
+  %50 = call i32 @strcmp(ptr %49, ptr @1585)
   %51 = zext i32 %50 to i64
   %52 = icmp eq i64 %51, 0
   %53 = zext i1 %52 to i64
@@ -51852,7 +51813,7 @@ bb4817:                                           ; preds = %bb4816, %bb4815
 bb4818:                                           ; preds = %bb4817
   %58 = load i64, ptr %name, align 4
   %59 = inttoptr i64 %58 to ptr
-  %60 = call i32 @strcmp(ptr %59, ptr @1587)
+  %60 = call i32 @strcmp(ptr %59, ptr @1586)
   %61 = zext i32 %60 to i64
   %62 = icmp eq i64 %61, 0
   %63 = zext i1 %62 to i64
@@ -51868,7 +51829,7 @@ bb4819:                                           ; preds = %bb4818, %bb4817
 bb4820:                                           ; preds = %bb4819
   %68 = load i64, ptr %name, align 4
   %69 = inttoptr i64 %68 to ptr
-  %70 = call i32 @strcmp(ptr %69, ptr @1588)
+  %70 = call i32 @strcmp(ptr %69, ptr @1587)
   %71 = zext i32 %70 to i64
   %72 = icmp eq i64 %71, 0
   %73 = zext i1 %72 to i64
@@ -51883,7 +51844,7 @@ bb4821:                                           ; preds = %bb4820, %bb4819
 
 bb4822:                                           ; preds = %bb4821
   %78 = load i64, ptr %checked, align 4
-  %79 = call ptr @malloc(i64 24)
+  %79 = call ptr @forge_bump_alloc(i64 24)
   %80 = getelementptr inbounds %ValueType, ptr %79, i32 0, i32 0
   store i8 11, ptr %80, align 1
   %81 = ptrtoint ptr %79 to i64
@@ -51927,7 +51888,7 @@ bb4827:                                           ; preds = %bb4826
   %var_ty = alloca i64, align 8
   store i64 %103, ptr %var_ty, align 4
   %104 = load i64, ptr %var_ty, align 4
-  %105 = call ptr @malloc(i64 24)
+  %105 = call ptr @forge_bump_alloc(i64 24)
   %106 = getelementptr inbounds %ValueType, ptr %105, i32 0, i32 0
   store i8 0, ptr %106, align 1
   %107 = ptrtoint ptr %105 to i64
@@ -51937,7 +51898,7 @@ bb4827:                                           ; preds = %bb4826
 
 bb4828:                                           ; preds = %bb4827
   %110 = load i64, ptr %checked, align 4
-  %111 = call ptr @malloc(i64 24)
+  %111 = call ptr @forge_bump_alloc(i64 24)
   %112 = getelementptr inbounds %ValueType, ptr %111, i32 0, i32 0
   store i8 0, ptr %112, align 1
   %113 = ptrtoint ptr %111 to i64
@@ -52030,7 +51991,7 @@ bb4835:
   %14 = inttoptr i64 %13 to ptr
   %15 = getelementptr inbounds %ExprResult, ptr %14, i32 0, i32 1
   %16 = load i64, ptr %15, align 4
-  %17 = call ptr @malloc(i64 24)
+  %17 = call ptr @forge_bump_alloc(i64 24)
   %18 = getelementptr inbounds %ValueType, ptr %17, i32 0, i32 0
   store i8 1, ptr %18, align 1
   %19 = ptrtoint ptr %17 to i64
@@ -52041,7 +52002,7 @@ bb4835:
 bb4836:                                           ; preds = %bb4835
   %22 = load i64, ptr %method, align 4
   %23 = inttoptr i64 %22 to ptr
-  %24 = call i32 @strcmp(ptr %23, ptr @1589)
+  %24 = call i32 @strcmp(ptr %23, ptr @1588)
   %25 = zext i32 %24 to i64
   %26 = icmp eq i64 %25, 0
   %27 = zext i1 %26 to i64
@@ -52056,10 +52017,10 @@ bb4838:                                           ; preds = %bb4837, %bb4868
   %30 = inttoptr i64 %29 to ptr
   %31 = getelementptr inbounds %ExprResult, ptr %30, i32 0, i32 1
   %32 = load i64, ptr %31, align 4
-  %33 = call ptr @malloc(i64 24)
+  %33 = call ptr @forge_bump_alloc(i64 24)
   %34 = getelementptr inbounds %ValueType, ptr %33, i32 0, i32 0
   store i8 7, ptr %34, align 1
-  %35 = call ptr @malloc(i64 24)
+  %35 = call ptr @forge_bump_alloc(i64 24)
   %36 = getelementptr inbounds %ValueType, ptr %35, i32 0, i32 0
   store i8 0, ptr %36, align 1
   %37 = ptrtoint ptr %35 to i64
@@ -52072,7 +52033,7 @@ bb4838:                                           ; preds = %bb4837, %bb4868
 
 bb4839:                                           ; preds = %bb4836
   %42 = load i64, ptr %checked_args, align 4
-  %43 = call ptr @malloc(i64 24)
+  %43 = call ptr @forge_bump_alloc(i64 24)
   %44 = getelementptr inbounds %ValueType, ptr %43, i32 0, i32 0
   store i8 0, ptr %44, align 1
   %45 = ptrtoint ptr %43 to i64
@@ -52085,7 +52046,7 @@ bb4840:                                           ; preds = %bb4836
 bb4841:                                           ; preds = %bb4840
   %47 = load i64, ptr %method, align 4
   %48 = inttoptr i64 %47 to ptr
-  %49 = call i32 @strcmp(ptr %48, ptr @1590)
+  %49 = call i32 @strcmp(ptr %48, ptr @1589)
   %50 = zext i32 %49 to i64
   %51 = icmp eq i64 %50, 0
   %52 = zext i1 %51 to i64
@@ -52095,7 +52056,7 @@ bb4841:                                           ; preds = %bb4840
 bb4842:                                           ; preds = %bb4841
   %54 = load i64, ptr %method, align 4
   %55 = inttoptr i64 %54 to ptr
-  %56 = call i32 @strcmp(ptr %55, ptr @1591)
+  %56 = call i32 @strcmp(ptr %55, ptr @1590)
   %57 = zext i32 %56 to i64
   %58 = icmp eq i64 %57, 0
   %59 = zext i1 %58 to i64
@@ -52111,7 +52072,7 @@ bb4843:                                           ; preds = %bb4842, %bb4841
 bb4844:                                           ; preds = %bb4843
   %64 = load i64, ptr %method, align 4
   %65 = inttoptr i64 %64 to ptr
-  %66 = call i32 @strcmp(ptr %65, ptr @1592)
+  %66 = call i32 @strcmp(ptr %65, ptr @1591)
   %67 = zext i32 %66 to i64
   %68 = icmp eq i64 %67, 0
   %69 = zext i1 %68 to i64
@@ -52127,7 +52088,7 @@ bb4845:                                           ; preds = %bb4844, %bb4843
 bb4846:                                           ; preds = %bb4845
   %74 = load i64, ptr %method, align 4
   %75 = inttoptr i64 %74 to ptr
-  %76 = call i32 @strcmp(ptr %75, ptr @1593)
+  %76 = call i32 @strcmp(ptr %75, ptr @1592)
   %77 = zext i32 %76 to i64
   %78 = icmp eq i64 %77, 0
   %79 = zext i1 %78 to i64
@@ -52143,7 +52104,7 @@ bb4847:                                           ; preds = %bb4846, %bb4845
 bb4848:                                           ; preds = %bb4847
   %84 = load i64, ptr %method, align 4
   %85 = inttoptr i64 %84 to ptr
-  %86 = call i32 @strcmp(ptr %85, ptr @1594)
+  %86 = call i32 @strcmp(ptr %85, ptr @1593)
   %87 = zext i32 %86 to i64
   %88 = icmp eq i64 %87, 0
   %89 = zext i1 %88 to i64
@@ -52158,7 +52119,7 @@ bb4849:                                           ; preds = %bb4848, %bb4847
 
 bb4850:                                           ; preds = %bb4849
   %94 = load i64, ptr %checked_args, align 4
-  %95 = call ptr @malloc(i64 24)
+  %95 = call ptr @forge_bump_alloc(i64 24)
   %96 = getelementptr inbounds %ValueType, ptr %95, i32 0, i32 0
   store i8 1, ptr %96, align 1
   %97 = ptrtoint ptr %95 to i64
@@ -52171,7 +52132,7 @@ bb4851:                                           ; preds = %bb4849
 bb4852:                                           ; preds = %bb4851
   %99 = load i64, ptr %method, align 4
   %100 = inttoptr i64 %99 to ptr
-  %101 = call i32 @strcmp(ptr %100, ptr @1595)
+  %101 = call i32 @strcmp(ptr %100, ptr @1594)
   %102 = zext i32 %101 to i64
   %103 = icmp eq i64 %102, 0
   %104 = zext i1 %103 to i64
@@ -52181,7 +52142,7 @@ bb4852:                                           ; preds = %bb4851
 bb4853:                                           ; preds = %bb4852
   %106 = load i64, ptr %method, align 4
   %107 = inttoptr i64 %106 to ptr
-  %108 = call i32 @strcmp(ptr %107, ptr @1596)
+  %108 = call i32 @strcmp(ptr %107, ptr @1595)
   %109 = zext i32 %108 to i64
   %110 = icmp eq i64 %109, 0
   %111 = zext i1 %110 to i64
@@ -52197,7 +52158,7 @@ bb4854:                                           ; preds = %bb4853, %bb4852
 bb4855:                                           ; preds = %bb4854
   %116 = load i64, ptr %method, align 4
   %117 = inttoptr i64 %116 to ptr
-  %118 = call i32 @strcmp(ptr %117, ptr @1597)
+  %118 = call i32 @strcmp(ptr %117, ptr @1596)
   %119 = zext i32 %118 to i64
   %120 = icmp eq i64 %119, 0
   %121 = zext i1 %120 to i64
@@ -52212,7 +52173,7 @@ bb4856:                                           ; preds = %bb4855, %bb4854
 
 bb4857:                                           ; preds = %bb4856
   %126 = load i64, ptr %checked_args, align 4
-  %127 = call ptr @malloc(i64 24)
+  %127 = call ptr @forge_bump_alloc(i64 24)
   %128 = getelementptr inbounds %ValueType, ptr %127, i32 0, i32 0
   store i8 2, ptr %128, align 1
   %129 = ptrtoint ptr %127 to i64
@@ -52225,7 +52186,7 @@ bb4858:                                           ; preds = %bb4856
 bb4859:                                           ; preds = %bb4858
   %131 = load i64, ptr %method, align 4
   %132 = inttoptr i64 %131 to ptr
-  %133 = call i32 @strcmp(ptr %132, ptr @1598)
+  %133 = call i32 @strcmp(ptr %132, ptr @1597)
   %134 = zext i32 %133 to i64
   %135 = icmp eq i64 %134, 0
   %136 = zext i1 %135 to i64
@@ -52234,7 +52195,7 @@ bb4859:                                           ; preds = %bb4858
 
 bb4860:                                           ; preds = %bb4859
   %138 = load i64, ptr %checked_args, align 4
-  %139 = call ptr @malloc(i64 24)
+  %139 = call ptr @forge_bump_alloc(i64 24)
   %140 = getelementptr inbounds %ValueType, ptr %139, i32 0, i32 0
   store i8 0, ptr %140, align 1
   %141 = ptrtoint ptr %139 to i64
@@ -52247,7 +52208,7 @@ bb4861:                                           ; preds = %bb4859
 bb4862:                                           ; preds = %bb4861
   %143 = load i64, ptr %method, align 4
   %144 = inttoptr i64 %143 to ptr
-  %145 = call i32 @strcmp(ptr %144, ptr @1599)
+  %145 = call i32 @strcmp(ptr %144, ptr @1598)
   %146 = zext i32 %145 to i64
   %147 = icmp eq i64 %146, 0
   %148 = zext i1 %147 to i64
@@ -52256,10 +52217,10 @@ bb4862:                                           ; preds = %bb4861
 
 bb4863:                                           ; preds = %bb4862
   %150 = load i64, ptr %checked_args, align 4
-  %151 = call ptr @malloc(i64 24)
+  %151 = call ptr @forge_bump_alloc(i64 24)
   %152 = getelementptr inbounds %ValueType, ptr %151, i32 0, i32 0
   store i8 7, ptr %152, align 1
-  %153 = call ptr @malloc(i64 24)
+  %153 = call ptr @forge_bump_alloc(i64 24)
   %154 = getelementptr inbounds %ValueType, ptr %153, i32 0, i32 0
   store i8 1, ptr %154, align 1
   %155 = ptrtoint ptr %153 to i64
@@ -52275,7 +52236,7 @@ bb4864:                                           ; preds = %bb4862
 bb4865:                                           ; preds = %bb4864
   %159 = load i64, ptr %method, align 4
   %160 = inttoptr i64 %159 to ptr
-  %161 = call i32 @strcmp(ptr %160, ptr @1600)
+  %161 = call i32 @strcmp(ptr %160, ptr @1599)
   %162 = zext i32 %161 to i64
   %163 = icmp eq i64 %162, 0
   %164 = zext i1 %163 to i64
@@ -52284,7 +52245,7 @@ bb4865:                                           ; preds = %bb4864
 
 bb4866:                                           ; preds = %bb4865
   %166 = load i64, ptr %checked_args, align 4
-  %167 = call ptr @malloc(i64 24)
+  %167 = call ptr @forge_bump_alloc(i64 24)
   %168 = getelementptr inbounds %ValueType, ptr %167, i32 0, i32 0
   store i8 0, ptr %168, align 1
   %169 = ptrtoint ptr %167 to i64
@@ -52302,10 +52263,10 @@ bb4869:                                           ; preds = %bb4838
   %172 = inttoptr i64 %171 to ptr
   %173 = getelementptr inbounds %ExprResult, ptr %172, i32 0, i32 1
   %174 = load i64, ptr %173, align 4
-  %175 = call ptr @malloc(i64 24)
+  %175 = call ptr @forge_bump_alloc(i64 24)
   %176 = getelementptr inbounds %ValueType, ptr %175, i32 0, i32 0
   store i8 7, ptr %176, align 1
-  %177 = call ptr @malloc(i64 24)
+  %177 = call ptr @forge_bump_alloc(i64 24)
   %178 = getelementptr inbounds %ValueType, ptr %177, i32 0, i32 0
   store i8 1, ptr %178, align 1
   %179 = ptrtoint ptr %177 to i64
@@ -52332,7 +52293,7 @@ bb4871:                                           ; preds = %bb4870
   store i64 %191, ptr %elem, align 4
   %192 = load i64, ptr %method, align 4
   %193 = inttoptr i64 %192 to ptr
-  %194 = call i32 @strcmp(ptr %193, ptr @1601)
+  %194 = call i32 @strcmp(ptr %193, ptr @1600)
   %195 = zext i32 %194 to i64
   %196 = icmp eq i64 %195, 0
   %197 = zext i1 %196 to i64
@@ -52347,7 +52308,7 @@ bb4873:                                           ; preds = %bb4872, %bb4897
   %200 = inttoptr i64 %199 to ptr
   %201 = getelementptr inbounds %ExprResult, ptr %200, i32 0, i32 1
   %202 = load i64, ptr %201, align 4
-  %203 = call ptr @malloc(i64 24)
+  %203 = call ptr @forge_bump_alloc(i64 24)
   %204 = getelementptr inbounds %ValueType, ptr %203, i32 0, i32 0
   store i8 8, ptr %204, align 1
   %205 = ptrtoint ptr %203 to i64
@@ -52357,7 +52318,7 @@ bb4873:                                           ; preds = %bb4872, %bb4897
 
 bb4874:                                           ; preds = %bb4871
   %208 = load i64, ptr %checked_args, align 4
-  %209 = call ptr @malloc(i64 24)
+  %209 = call ptr @forge_bump_alloc(i64 24)
   %210 = getelementptr inbounds %ValueType, ptr %209, i32 0, i32 0
   store i8 0, ptr %210, align 1
   %211 = ptrtoint ptr %209 to i64
@@ -52370,7 +52331,7 @@ bb4875:                                           ; preds = %bb4871
 bb4876:                                           ; preds = %bb4875
   %213 = load i64, ptr %method, align 4
   %214 = inttoptr i64 %213 to ptr
-  %215 = call i32 @strcmp(ptr %214, ptr @1602)
+  %215 = call i32 @strcmp(ptr %214, ptr @1601)
   %216 = zext i32 %215 to i64
   %217 = icmp eq i64 %216, 0
   %218 = zext i1 %217 to i64
@@ -52379,7 +52340,7 @@ bb4876:                                           ; preds = %bb4875
 
 bb4877:                                           ; preds = %bb4876
   %220 = load i64, ptr %checked_args, align 4
-  %221 = call ptr @malloc(i64 24)
+  %221 = call ptr @forge_bump_alloc(i64 24)
   %222 = getelementptr inbounds %ValueType, ptr %221, i32 0, i32 0
   store i8 11, ptr %222, align 1
   %223 = ptrtoint ptr %221 to i64
@@ -52392,7 +52353,7 @@ bb4878:                                           ; preds = %bb4876
 bb4879:                                           ; preds = %bb4878
   %225 = load i64, ptr %method, align 4
   %226 = inttoptr i64 %225 to ptr
-  %227 = call i32 @strcmp(ptr %226, ptr @1603)
+  %227 = call i32 @strcmp(ptr %226, ptr @1602)
   %228 = zext i32 %227 to i64
   %229 = icmp eq i64 %228, 0
   %230 = zext i1 %229 to i64
@@ -52411,7 +52372,7 @@ bb4881:                                           ; preds = %bb4879
 bb4882:                                           ; preds = %bb4881
   %235 = load i64, ptr %method, align 4
   %236 = inttoptr i64 %235 to ptr
-  %237 = call i32 @strcmp(ptr %236, ptr @1604)
+  %237 = call i32 @strcmp(ptr %236, ptr @1603)
   %238 = zext i32 %237 to i64
   %239 = icmp eq i64 %238, 0
   %240 = zext i1 %239 to i64
@@ -52430,7 +52391,7 @@ bb4884:                                           ; preds = %bb4882
 bb4885:                                           ; preds = %bb4884
   %245 = load i64, ptr %method, align 4
   %246 = inttoptr i64 %245 to ptr
-  %247 = call i32 @strcmp(ptr %246, ptr @1605)
+  %247 = call i32 @strcmp(ptr %246, ptr @1604)
   %248 = zext i32 %247 to i64
   %249 = icmp eq i64 %248, 0
   %250 = zext i1 %249 to i64
@@ -52439,10 +52400,10 @@ bb4885:                                           ; preds = %bb4884
 
 bb4886:                                           ; preds = %bb4885
   %252 = load i64, ptr %checked_args, align 4
-  %253 = call ptr @malloc(i64 24)
+  %253 = call ptr @forge_bump_alloc(i64 24)
   %254 = getelementptr inbounds %ValueType, ptr %253, i32 0, i32 0
   store i8 7, ptr %254, align 1
-  %255 = call ptr @malloc(i64 24)
+  %255 = call ptr @forge_bump_alloc(i64 24)
   %256 = getelementptr inbounds %ValueType, ptr %255, i32 0, i32 0
   store i8 0, ptr %256, align 1
   %257 = ptrtoint ptr %255 to i64
@@ -52458,7 +52419,7 @@ bb4887:                                           ; preds = %bb4885
 bb4888:                                           ; preds = %bb4887
   %261 = load i64, ptr %method, align 4
   %262 = inttoptr i64 %261 to ptr
-  %263 = call i32 @strcmp(ptr %262, ptr @1606)
+  %263 = call i32 @strcmp(ptr %262, ptr @1605)
   %264 = zext i32 %263 to i64
   %265 = icmp eq i64 %264, 0
   %266 = zext i1 %265 to i64
@@ -52480,7 +52441,7 @@ bb4890:                                           ; preds = %bb4888
 bb4891:                                           ; preds = %bb4890
   %274 = load i64, ptr %method, align 4
   %275 = inttoptr i64 %274 to ptr
-  %276 = call i32 @strcmp(ptr %275, ptr @1607)
+  %276 = call i32 @strcmp(ptr %275, ptr @1606)
   %277 = zext i32 %276 to i64
   %278 = icmp eq i64 %277, 0
   %279 = zext i1 %278 to i64
@@ -52489,7 +52450,7 @@ bb4891:                                           ; preds = %bb4890
 
 bb4892:                                           ; preds = %bb4891
   %281 = load i64, ptr %checked_args, align 4
-  %282 = call ptr @malloc(i64 24)
+  %282 = call ptr @forge_bump_alloc(i64 24)
   %283 = getelementptr inbounds %ValueType, ptr %282, i32 0, i32 0
   store i8 0, ptr %283, align 1
   %284 = ptrtoint ptr %282 to i64
@@ -52502,7 +52463,7 @@ bb4893:                                           ; preds = %bb4891
 bb4894:                                           ; preds = %bb4893
   %286 = load i64, ptr %method, align 4
   %287 = inttoptr i64 %286 to ptr
-  %288 = call i32 @strcmp(ptr %287, ptr @1608)
+  %288 = call i32 @strcmp(ptr %287, ptr @1607)
   %289 = zext i32 %288 to i64
   %290 = icmp eq i64 %289, 0
   %291 = zext i1 %290 to i64
@@ -52511,7 +52472,7 @@ bb4894:                                           ; preds = %bb4893
 
 bb4895:                                           ; preds = %bb4894
   %293 = load i64, ptr %checked_args, align 4
-  %294 = call ptr @malloc(i64 24)
+  %294 = call ptr @forge_bump_alloc(i64 24)
   %295 = getelementptr inbounds %ValueType, ptr %294, i32 0, i32 0
   store i8 11, ptr %295, align 1
   %296 = ptrtoint ptr %294 to i64
@@ -52527,7 +52488,7 @@ bb4897:                                           ; preds = %bb4896
 bb4898:                                           ; preds = %bb4873
   %298 = load i64, ptr %method, align 4
   %299 = inttoptr i64 %298 to ptr
-  %300 = call i32 @strcmp(ptr %299, ptr @1609)
+  %300 = call i32 @strcmp(ptr %299, ptr @1608)
   %301 = zext i32 %300 to i64
   %302 = icmp eq i64 %301, 0
   %303 = zext i1 %302 to i64
@@ -52553,7 +52514,7 @@ bb4900:                                           ; preds = %bb4899, %bb4915
 
 bb4901:                                           ; preds = %bb4898
   %314 = load i64, ptr %checked_args, align 4
-  %315 = call ptr @malloc(i64 24)
+  %315 = call ptr @forge_bump_alloc(i64 24)
   %316 = getelementptr inbounds %ValueType, ptr %315, i32 0, i32 0
   store i8 1, ptr %316, align 1
   %317 = ptrtoint ptr %315 to i64
@@ -52566,7 +52527,7 @@ bb4902:                                           ; preds = %bb4898
 bb4903:                                           ; preds = %bb4902
   %319 = load i64, ptr %method, align 4
   %320 = inttoptr i64 %319 to ptr
-  %321 = call i32 @strcmp(ptr %320, ptr @1610)
+  %321 = call i32 @strcmp(ptr %320, ptr @1609)
   %322 = zext i32 %321 to i64
   %323 = icmp eq i64 %322, 0
   %324 = zext i1 %323 to i64
@@ -52575,7 +52536,7 @@ bb4903:                                           ; preds = %bb4902
 
 bb4904:                                           ; preds = %bb4903
   %326 = load i64, ptr %checked_args, align 4
-  %327 = call ptr @malloc(i64 24)
+  %327 = call ptr @forge_bump_alloc(i64 24)
   %328 = getelementptr inbounds %ValueType, ptr %327, i32 0, i32 0
   store i8 2, ptr %328, align 1
   %329 = ptrtoint ptr %327 to i64
@@ -52588,7 +52549,7 @@ bb4905:                                           ; preds = %bb4903
 bb4906:                                           ; preds = %bb4905
   %331 = load i64, ptr %method, align 4
   %332 = inttoptr i64 %331 to ptr
-  %333 = call i32 @strcmp(ptr %332, ptr @1611)
+  %333 = call i32 @strcmp(ptr %332, ptr @1610)
   %334 = zext i32 %333 to i64
   %335 = icmp eq i64 %334, 0
   %336 = zext i1 %335 to i64
@@ -52597,7 +52558,7 @@ bb4906:                                           ; preds = %bb4905
 
 bb4907:                                           ; preds = %bb4906
   %338 = load i64, ptr %checked_args, align 4
-  %339 = call ptr @malloc(i64 24)
+  %339 = call ptr @forge_bump_alloc(i64 24)
   %340 = getelementptr inbounds %ValueType, ptr %339, i32 0, i32 0
   store i8 11, ptr %340, align 1
   %341 = ptrtoint ptr %339 to i64
@@ -52610,7 +52571,7 @@ bb4908:                                           ; preds = %bb4906
 bb4909:                                           ; preds = %bb4908
   %343 = load i64, ptr %method, align 4
   %344 = inttoptr i64 %343 to ptr
-  %345 = call i32 @strcmp(ptr %344, ptr @1612)
+  %345 = call i32 @strcmp(ptr %344, ptr @1611)
   %346 = zext i32 %345 to i64
   %347 = icmp eq i64 %346, 0
   %348 = zext i1 %347 to i64
@@ -52619,10 +52580,10 @@ bb4909:                                           ; preds = %bb4908
 
 bb4910:                                           ; preds = %bb4909
   %350 = load i64, ptr %checked_args, align 4
-  %351 = call ptr @malloc(i64 24)
+  %351 = call ptr @forge_bump_alloc(i64 24)
   %352 = getelementptr inbounds %ValueType, ptr %351, i32 0, i32 0
   store i8 7, ptr %352, align 1
-  %353 = call ptr @malloc(i64 24)
+  %353 = call ptr @forge_bump_alloc(i64 24)
   %354 = getelementptr inbounds %ValueType, ptr %353, i32 0, i32 0
   store i8 1, ptr %354, align 1
   %355 = ptrtoint ptr %353 to i64
@@ -52638,7 +52599,7 @@ bb4911:                                           ; preds = %bb4909
 bb4912:                                           ; preds = %bb4911
   %359 = load i64, ptr %method, align 4
   %360 = inttoptr i64 %359 to ptr
-  %361 = call i32 @strcmp(ptr %360, ptr @1613)
+  %361 = call i32 @strcmp(ptr %360, ptr @1612)
   %362 = zext i32 %361 to i64
   %363 = icmp eq i64 %362, 0
   %364 = zext i1 %363 to i64
@@ -52647,7 +52608,7 @@ bb4912:                                           ; preds = %bb4911
 
 bb4913:                                           ; preds = %bb4912
   %366 = load i64, ptr %checked_args, align 4
-  %367 = call ptr @malloc(i64 24)
+  %367 = call ptr @forge_bump_alloc(i64 24)
   %368 = getelementptr inbounds %ValueType, ptr %367, i32 0, i32 0
   store i8 0, ptr %368, align 1
   %369 = ptrtoint ptr %367 to i64
@@ -52685,7 +52646,7 @@ bb4918:                                           ; preds = %bb4900
   br label %bb4919
 
 bb4919:                                           ; preds = %bb4918
-  store i64 ptrtoint (ptr @1614 to i64), ptr %match_result, align 4
+  store i64 ptrtoint (ptr @1613 to i64), ptr %match_result, align 4
   br label %bb4916
 
 bb4920:                                           ; No predecessors!
@@ -52695,7 +52656,7 @@ bb4921:                                           ; preds = %bb4916
   %381 = load i64, ptr %struct_name, align 4
   %382 = inttoptr i64 %381 to ptr
   %383 = call i64 @strlen(ptr %382)
-  %384 = call i64 @strlen(ptr @1615)
+  %384 = call i64 @strlen(ptr @1614)
   %385 = add i64 %383, %384
   %386 = add i64 %385, 1
   %387 = call ptr @forge_bump_alloc(i64 %386)
@@ -52704,7 +52665,7 @@ bb4921:                                           ; preds = %bb4916
   %390 = add i64 %389, %383
   %391 = inttoptr i64 %390 to ptr
   %392 = add i64 %384, 1
-  %393 = call ptr @memcpy(ptr %391, ptr @1615, i64 %392)
+  %393 = call ptr @memcpy(ptr %391, ptr @1614, i64 %392)
   %394 = ptrtoint ptr %387 to i64
   %395 = load i64, ptr %method, align 4
   %396 = inttoptr i64 %394 to ptr
@@ -52737,7 +52698,7 @@ bb4922:                                           ; preds = %bb4916
 
 bb4923:                                           ; preds = %bb4922, %bb4926
   %417 = load i64, ptr %checked_args, align 4
-  %418 = call ptr @malloc(i64 24)
+  %418 = call ptr @forge_bump_alloc(i64 24)
   %419 = getelementptr inbounds %ValueType, ptr %418, i32 0, i32 0
   store i8 0, ptr %419, align 1
   %420 = ptrtoint ptr %418 to i64
@@ -52779,7 +52740,7 @@ bb4927:
   %7 = inttoptr i64 %6 to ptr
   %8 = getelementptr inbounds %ExprResult, ptr %7, i32 0, i32 1
   %9 = load i64, ptr %8, align 4
-  %10 = call ptr @malloc(i64 24)
+  %10 = call ptr @forge_bump_alloc(i64 24)
   %11 = getelementptr inbounds %ValueType, ptr %10, i32 0, i32 0
   store i8 1, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
@@ -52790,7 +52751,7 @@ bb4927:
 bb4928:                                           ; preds = %bb4927
   %15 = load i64, ptr %field, align 4
   %16 = inttoptr i64 %15 to ptr
-  %17 = call i32 @strcmp(ptr %16, ptr @1616)
+  %17 = call i32 @strcmp(ptr %16, ptr @1615)
   %18 = zext i32 %17 to i64
   %19 = icmp eq i64 %18, 0
   %20 = zext i1 %19 to i64
@@ -52808,7 +52769,7 @@ bb4930:                                           ; preds = %bb4929
   %26 = inttoptr i64 %25 to ptr
   %27 = getelementptr inbounds %ExprResult, ptr %26, i32 0, i32 0
   %28 = load i64, ptr %27, align 4
-  %29 = call ptr @malloc(i64 24)
+  %29 = call ptr @forge_bump_alloc(i64 24)
   %30 = getelementptr inbounds %ValueType, ptr %29, i32 0, i32 0
   store i8 0, ptr %30, align 1
   %31 = ptrtoint ptr %29 to i64
@@ -52823,10 +52784,10 @@ bb4932:                                           ; preds = %bb4931
   %34 = inttoptr i64 %33 to ptr
   %35 = getelementptr inbounds %ExprResult, ptr %34, i32 0, i32 1
   %36 = load i64, ptr %35, align 4
-  %37 = call ptr @malloc(i64 24)
+  %37 = call ptr @forge_bump_alloc(i64 24)
   %38 = getelementptr inbounds %ValueType, ptr %37, i32 0, i32 0
   store i8 7, ptr %38, align 1
-  %39 = call ptr @malloc(i64 24)
+  %39 = call ptr @forge_bump_alloc(i64 24)
   %40 = getelementptr inbounds %ValueType, ptr %39, i32 0, i32 0
   store i8 0, ptr %40, align 1
   %41 = ptrtoint ptr %39 to i64
@@ -52842,10 +52803,10 @@ bb4933:                                           ; preds = %bb4932
   %47 = inttoptr i64 %46 to ptr
   %48 = getelementptr inbounds %ExprResult, ptr %47, i32 0, i32 1
   %49 = load i64, ptr %48, align 4
-  %50 = call ptr @malloc(i64 24)
+  %50 = call ptr @forge_bump_alloc(i64 24)
   %51 = getelementptr inbounds %ValueType, ptr %50, i32 0, i32 0
   store i8 7, ptr %51, align 1
-  %52 = call ptr @malloc(i64 24)
+  %52 = call ptr @forge_bump_alloc(i64 24)
   %53 = getelementptr inbounds %ValueType, ptr %52, i32 0, i32 0
   store i8 1, ptr %53, align 1
   %54 = ptrtoint ptr %52 to i64
@@ -52865,7 +52826,7 @@ bb4934:                                           ; preds = %bb4933, %bb4932
 bb4935:                                           ; preds = %bb4934
   %62 = load i64, ptr %field, align 4
   %63 = inttoptr i64 %62 to ptr
-  %64 = call i32 @strcmp(ptr %63, ptr @1617)
+  %64 = call i32 @strcmp(ptr %63, ptr @1616)
   %65 = zext i32 %64 to i64
   %66 = icmp eq i64 %65, 0
   %67 = zext i1 %66 to i64
@@ -52894,7 +52855,7 @@ bb4938:                                           ; preds = %bb4935
   %79 = inttoptr i64 %78 to ptr
   %80 = getelementptr inbounds %ExprResult, ptr %79, i32 0, i32 0
   %81 = load i64, ptr %80, align 4
-  %82 = call ptr @malloc(i64 24)
+  %82 = call ptr @forge_bump_alloc(i64 24)
   %83 = getelementptr inbounds %ValueType, ptr %82, i32 0, i32 0
   store i8 0, ptr %83, align 1
   %84 = ptrtoint ptr %82 to i64
@@ -52932,7 +52893,7 @@ bb4943:                                           ; preds = %bb4937
   br label %bb4944
 
 bb4944:                                           ; preds = %bb4943
-  store i64 ptrtoint (ptr @1618 to i64), ptr %match_result, align 4
+  store i64 ptrtoint (ptr @1617 to i64), ptr %match_result, align 4
   br label %bb4941
 
 bb4945:                                           ; No predecessors!
@@ -52975,7 +52936,7 @@ bb4948:                                           ; preds = %bb4947
   %119 = inttoptr i64 %118 to ptr
   %120 = getelementptr inbounds %ExprResult, ptr %119, i32 0, i32 0
   %121 = load i64, ptr %120, align 4
-  %122 = call ptr @malloc(i64 24)
+  %122 = call ptr @forge_bump_alloc(i64 24)
   %123 = getelementptr inbounds %ValueType, ptr %122, i32 0, i32 0
   store i8 0, ptr %123, align 1
   %124 = ptrtoint ptr %122 to i64
@@ -53006,7 +52967,7 @@ bb4950:                                           ; preds = %bb4954, %bb4957, %b
   ret i64 %9
 
 bb4951:                                           ; preds = %bb4949
-  %10 = call ptr @malloc(i64 24)
+  %10 = call ptr @forge_bump_alloc(i64 24)
   %11 = getelementptr inbounds %ValueType, ptr %10, i32 0, i32 0
   store i8 0, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
@@ -53085,10 +53046,10 @@ bb4959:                                           ; preds = %bb4963, %bb4962, %b
 
 bb4960:                                           ; preds = %bb4958
   %9 = load i64, ptr %tc, align 4
-  %10 = call ptr @malloc(i64 24)
+  %10 = call ptr @forge_bump_alloc(i64 24)
   %11 = getelementptr inbounds %ValueType, ptr %10, i32 0, i32 0
   store i8 7, ptr %11, align 1
-  %12 = call ptr @malloc(i64 24)
+  %12 = call ptr @forge_bump_alloc(i64 24)
   %13 = getelementptr inbounds %ValueType, ptr %12, i32 0, i32 0
   store i8 0, ptr %13, align 1
   %14 = ptrtoint ptr %12 to i64
@@ -53123,7 +53084,7 @@ bb4962:                                           ; preds = %bb4961
   %checked = alloca i64, align 8
   store i64 %30, ptr %checked, align 4
   %31 = load i64, ptr %checked, align 4
-  %32 = call ptr @malloc(i64 24)
+  %32 = call ptr @forge_bump_alloc(i64 24)
   %33 = getelementptr inbounds %ValueType, ptr %32, i32 0, i32 0
   store i8 7, ptr %33, align 1
   %34 = load i64, ptr %r, align 4
@@ -53194,7 +53155,7 @@ bb4966:                                           ; preds = %bb4970, %bb4971, %b
 
 bb4967:                                           ; preds = %bb4965
   %9 = load i64, ptr %tc, align 4
-  %10 = call ptr @malloc(i64 24)
+  %10 = call ptr @forge_bump_alloc(i64 24)
   %11 = getelementptr inbounds %ValueType, ptr %10, i32 0, i32 0
   store i8 11, ptr %11, align 1
   %12 = ptrtoint ptr %10 to i64
@@ -53274,7 +53235,7 @@ bb4977:                                           ; preds = %bb4976
   %checked = alloca i64, align 8
   store i64 %41, ptr %checked, align 4
   %42 = load i64, ptr %checked, align 4
-  %43 = call ptr @malloc(i64 24)
+  %43 = call ptr @forge_bump_alloc(i64 24)
   %44 = getelementptr inbounds %ValueType, ptr %43, i32 0, i32 0
   store i8 11, ptr %44, align 1
   %45 = ptrtoint ptr %43 to i64
@@ -53319,7 +53280,7 @@ bb4981:
   %8 = getelementptr inbounds %ExprResult, ptr %7, i32 0, i32 0
   %9 = load i64, ptr %8, align 4
   %10 = load i64, ptr %arms, align 4
-  %11 = call ptr @malloc(i64 24)
+  %11 = call ptr @forge_bump_alloc(i64 24)
   %12 = getelementptr inbounds %ValueType, ptr %11, i32 0, i32 0
   store i8 0, ptr %12, align 1
   %13 = ptrtoint ptr %11 to i64
@@ -53438,7 +53399,7 @@ bb4991:                                           ; preds = %bb4995, %bb4994, %b
   %result_ty = alloca i64, align 8
   store i64 %50, ptr %result_ty, align 4
   %51 = load i64, ptr %first_ty, align 4
-  %52 = call ptr @malloc(i64 24)
+  %52 = call ptr @forge_bump_alloc(i64 24)
   %53 = getelementptr inbounds %ValueType, ptr %52, i32 0, i32 0
   store i8 0, ptr %53, align 1
   %54 = ptrtoint ptr %52 to i64
@@ -53574,7 +53535,7 @@ bb5007:                                           ; preds = %bb5005
   %10 = load i64, ptr %tc, align 4
   %11 = getelementptr inbounds %ExprListResult, ptr %9, i32 0, i32 0
   store i64 %10, ptr %11, align 4
-  %12 = call ptr @malloc(i64 24)
+  %12 = call ptr @forge_bump_alloc(i64 24)
   %13 = getelementptr inbounds %TypeList, ptr %12, i32 0, i32 0
   store i8 0, ptr %13, align 1
   %14 = ptrtoint ptr %12 to i64
@@ -53618,7 +53579,7 @@ bb5009:                                           ; preds = %bb5008
   %36 = load i64, ptr %35, align 4
   %37 = getelementptr inbounds %ExprListResult, ptr %32, i32 0, i32 0
   store i64 %36, ptr %37, align 4
-  %38 = call ptr @malloc(i64 24)
+  %38 = call ptr @forge_bump_alloc(i64 24)
   %39 = getelementptr inbounds %TypeList, ptr %38, i32 0, i32 0
   store i8 1, ptr %39, align 1
   %40 = load i64, ptr %r, align 4
@@ -53711,7 +53672,7 @@ bb5017:
   %lc = alloca i64, align 8
   store i64 %2, ptr %lc, align 4
   %3 = load i64, ptr %lc, align 4
-  %4 = call i64 @forge_llvm_module_create(i64 ptrtoint (ptr @1619 to i64), i64 %3)
+  %4 = call i64 @forge_llvm_module_create(i64 ptrtoint (ptr @1618 to i64), i64 %3)
   %m = alloca i64, align 8
   store i64 %4, ptr %m, align 4
   %5 = load i64, ptr %lc, align 4
@@ -53746,7 +53707,7 @@ bb5017:
   %22 = call i64 @forge_llvm_type_array_free(i64 %21)
   %23 = load i64, ptr %m, align 4
   %24 = load i64, ptr %puts_type, align 4
-  %25 = call i64 @forge_llvm_add_function(i64 %23, i64 ptrtoint (ptr @1620 to i64), i64 %24)
+  %25 = call i64 @forge_llvm_add_function(i64 %23, i64 ptrtoint (ptr @1619 to i64), i64 %24)
   %26 = call i64 @forge_llvm_type_array_new(i64 1)
   %strlen_param_arr = alloca i64, align 8
   store i64 %26, ptr %strlen_param_arr, align 4
@@ -53762,7 +53723,7 @@ bb5017:
   %34 = call i64 @forge_llvm_type_array_free(i64 %33)
   %35 = load i64, ptr %m, align 4
   %36 = load i64, ptr %strlen_type, align 4
-  %37 = call i64 @forge_llvm_add_function(i64 %35, i64 ptrtoint (ptr @1621 to i64), i64 %36)
+  %37 = call i64 @forge_llvm_add_function(i64 %35, i64 ptrtoint (ptr @1620 to i64), i64 %36)
   %38 = call i64 @forge_llvm_type_array_new(i64 1)
   %malloc_param_arr = alloca i64, align 8
   store i64 %38, ptr %malloc_param_arr, align 4
@@ -53778,7 +53739,7 @@ bb5017:
   %46 = call i64 @forge_llvm_type_array_free(i64 %45)
   %47 = load i64, ptr %m, align 4
   %48 = load i64, ptr %malloc_type, align 4
-  %49 = call i64 @forge_llvm_add_function(i64 %47, i64 ptrtoint (ptr @1622 to i64), i64 %48)
+  %49 = call i64 @forge_llvm_add_function(i64 %47, i64 ptrtoint (ptr @1621 to i64), i64 %48)
   %50 = call i64 @forge_llvm_type_array_new(i64 1)
   %bump_param_arr = alloca i64, align 8
   store i64 %50, ptr %bump_param_arr, align 4
@@ -53794,7 +53755,7 @@ bb5017:
   %58 = call i64 @forge_llvm_type_array_free(i64 %57)
   %59 = load i64, ptr %m, align 4
   %60 = load i64, ptr %bump_type, align 4
-  %61 = call i64 @forge_llvm_add_function(i64 %59, i64 ptrtoint (ptr @1623 to i64), i64 %60)
+  %61 = call i64 @forge_llvm_add_function(i64 %59, i64 ptrtoint (ptr @1622 to i64), i64 %60)
   %62 = call i64 @forge_llvm_type_array_new(i64 3)
   %memcpy_param_arr = alloca i64, align 8
   store i64 %62, ptr %memcpy_param_arr, align 4
@@ -53816,7 +53777,7 @@ bb5017:
   %76 = call i64 @forge_llvm_type_array_free(i64 %75)
   %77 = load i64, ptr %m, align 4
   %78 = load i64, ptr %memcpy_type, align 4
-  %79 = call i64 @forge_llvm_add_function(i64 %77, i64 ptrtoint (ptr @1624 to i64), i64 %78)
+  %79 = call i64 @forge_llvm_add_function(i64 %77, i64 ptrtoint (ptr @1623 to i64), i64 %78)
   %80 = call i64 @forge_llvm_type_array_new(i64 2)
   %strcmp_param_arr = alloca i64, align 8
   store i64 %80, ptr %strcmp_param_arr, align 4
@@ -53836,7 +53797,7 @@ bb5017:
   %92 = call i64 @forge_llvm_type_array_free(i64 %91)
   %93 = load i64, ptr %m, align 4
   %94 = load i64, ptr %strcmp_type, align 4
-  %95 = call i64 @forge_llvm_add_function(i64 %93, i64 ptrtoint (ptr @1625 to i64), i64 %94)
+  %95 = call i64 @forge_llvm_add_function(i64 %93, i64 ptrtoint (ptr @1624 to i64), i64 %94)
   %96 = call i64 @forge_llvm_type_array_new(i64 3)
   %snprintf_param_arr = alloca i64, align 8
   store i64 %96, ptr %snprintf_param_arr, align 4
@@ -53859,7 +53820,7 @@ bb5017:
   %111 = call i64 @forge_llvm_type_array_free(i64 %110)
   %112 = load i64, ptr %m, align 4
   %113 = load i64, ptr %snprintf_type, align 4
-  %114 = call i64 @forge_llvm_add_function(i64 %112, i64 ptrtoint (ptr @1626 to i64), i64 %113)
+  %114 = call i64 @forge_llvm_add_function(i64 %112, i64 ptrtoint (ptr @1625 to i64), i64 %113)
   %115 = call i64 @forge_llvm_type_array_new(i64 1)
   %atoi_param_arr = alloca i64, align 8
   store i64 %115, ptr %atoi_param_arr, align 4
@@ -53876,7 +53837,7 @@ bb5017:
   %124 = call i64 @forge_llvm_type_array_free(i64 %123)
   %125 = load i64, ptr %m, align 4
   %126 = load i64, ptr %atoi_type, align 4
-  %127 = call i64 @forge_llvm_add_function(i64 %125, i64 ptrtoint (ptr @1627 to i64), i64 %126)
+  %127 = call i64 @forge_llvm_add_function(i64 %125, i64 ptrtoint (ptr @1626 to i64), i64 %126)
   %128 = call i64 @forge_llvm_type_array_new(i64 1)
   %exit_param_arr = alloca i64, align 8
   store i64 %128, ptr %exit_param_arr, align 4
@@ -53894,7 +53855,7 @@ bb5017:
   %138 = call i64 @forge_llvm_type_array_free(i64 %137)
   %139 = load i64, ptr %m, align 4
   %140 = load i64, ptr %exit_type, align 4
-  %141 = call i64 @forge_llvm_add_function(i64 %139, i64 ptrtoint (ptr @1628 to i64), i64 %140)
+  %141 = call i64 @forge_llvm_add_function(i64 %139, i64 ptrtoint (ptr @1627 to i64), i64 %140)
   %142 = load i64, ptr %pt, align 4
   %143 = call i64 @forge_llvm_type_array_new(i64 0)
   %144 = call i64 @forge_llvm_function_type(i64 %142, i64 %143, i64 0, i64 0)
@@ -53902,7 +53863,7 @@ bb5017:
   store i64 %144, ptr %arr_new_type, align 4
   %145 = load i64, ptr %m, align 4
   %146 = load i64, ptr %arr_new_type, align 4
-  %147 = call i64 @forge_llvm_add_function(i64 %145, i64 ptrtoint (ptr @1629 to i64), i64 %146)
+  %147 = call i64 @forge_llvm_add_function(i64 %145, i64 ptrtoint (ptr @1628 to i64), i64 %146)
   %148 = call i64 @forge_llvm_type_array_new(i64 2)
   %arr_push_arr = alloca i64, align 8
   store i64 %148, ptr %arr_push_arr, align 4
@@ -53922,7 +53883,7 @@ bb5017:
   %160 = call i64 @forge_llvm_type_array_free(i64 %159)
   %161 = load i64, ptr %m, align 4
   %162 = load i64, ptr %arr_push_type, align 4
-  %163 = call i64 @forge_llvm_add_function(i64 %161, i64 ptrtoint (ptr @1630 to i64), i64 %162)
+  %163 = call i64 @forge_llvm_add_function(i64 %161, i64 ptrtoint (ptr @1629 to i64), i64 %162)
   %164 = call i64 @forge_llvm_type_array_new(i64 2)
   %arr_get_arr = alloca i64, align 8
   store i64 %164, ptr %arr_get_arr, align 4
@@ -53941,7 +53902,7 @@ bb5017:
   %175 = call i64 @forge_llvm_type_array_free(i64 %174)
   %176 = load i64, ptr %m, align 4
   %177 = load i64, ptr %arr_get_type, align 4
-  %178 = call i64 @forge_llvm_add_function(i64 %176, i64 ptrtoint (ptr @1631 to i64), i64 %177)
+  %178 = call i64 @forge_llvm_add_function(i64 %176, i64 ptrtoint (ptr @1630 to i64), i64 %177)
   %179 = call i64 @forge_llvm_type_array_new(i64 1)
   %arr_len_arr = alloca i64, align 8
   store i64 %179, ptr %arr_len_arr, align 4
@@ -53957,7 +53918,7 @@ bb5017:
   %187 = call i64 @forge_llvm_type_array_free(i64 %186)
   %188 = load i64, ptr %m, align 4
   %189 = load i64, ptr %arr_len_type, align 4
-  %190 = call i64 @forge_llvm_add_function(i64 %188, i64 ptrtoint (ptr @1632 to i64), i64 %189)
+  %190 = call i64 @forge_llvm_add_function(i64 %188, i64 ptrtoint (ptr @1631 to i64), i64 %189)
   %191 = call i64 @forge_llvm_type_array_new(i64 3)
   %arr_set_arr = alloca i64, align 8
   store i64 %191, ptr %arr_set_arr, align 4
@@ -53980,10 +53941,10 @@ bb5017:
   %206 = call i64 @forge_llvm_type_array_free(i64 %205)
   %207 = load i64, ptr %m, align 4
   %208 = load i64, ptr %arr_set_type, align 4
-  %209 = call i64 @forge_llvm_add_function(i64 %207, i64 ptrtoint (ptr @1633 to i64), i64 %208)
+  %209 = call i64 @forge_llvm_add_function(i64 %207, i64 ptrtoint (ptr @1632 to i64), i64 %208)
   %210 = load i64, ptr %m, align 4
   %211 = load i64, ptr %arr_len_type, align 4
-  %212 = call i64 @forge_llvm_add_function(i64 %210, i64 ptrtoint (ptr @1634 to i64), i64 %211)
+  %212 = call i64 @forge_llvm_add_function(i64 %210, i64 ptrtoint (ptr @1633 to i64), i64 %211)
   %213 = call i64 @forge_llvm_type_array_new(i64 3)
   %arr_slice_arr = alloca i64, align 8
   store i64 %213, ptr %arr_slice_arr, align 4
@@ -54005,7 +53966,7 @@ bb5017:
   %227 = call i64 @forge_llvm_type_array_free(i64 %226)
   %228 = load i64, ptr %m, align 4
   %229 = load i64, ptr %arr_slice_type, align 4
-  %230 = call i64 @forge_llvm_add_function(i64 %228, i64 ptrtoint (ptr @1635 to i64), i64 %229)
+  %230 = call i64 @forge_llvm_add_function(i64 %228, i64 ptrtoint (ptr @1634 to i64), i64 %229)
   %231 = call i64 @forge_llvm_type_array_new(i64 1)
   %cl_1_arr = alloca i64, align 8
   store i64 %231, ptr %cl_1_arr, align 4
@@ -54021,16 +53982,16 @@ bb5017:
   %239 = call i64 @forge_llvm_type_array_free(i64 %238)
   %240 = load i64, ptr %m, align 4
   %241 = load i64, ptr %cl_i64_to_i64, align 4
-  %242 = call i64 @forge_llvm_add_function(i64 %240, i64 ptrtoint (ptr @1636 to i64), i64 %241)
+  %242 = call i64 @forge_llvm_add_function(i64 %240, i64 ptrtoint (ptr @1635 to i64), i64 %241)
   %243 = load i64, ptr %m, align 4
   %244 = load i64, ptr %cl_i64_to_i64, align 4
-  %245 = call i64 @forge_llvm_add_function(i64 %243, i64 ptrtoint (ptr @1637 to i64), i64 %244)
+  %245 = call i64 @forge_llvm_add_function(i64 %243, i64 ptrtoint (ptr @1636 to i64), i64 %244)
   %246 = load i64, ptr %m, align 4
   %247 = load i64, ptr %arr_get_type, align 4
-  %248 = call i64 @forge_llvm_add_function(i64 %246, i64 ptrtoint (ptr @1638 to i64), i64 %247)
+  %248 = call i64 @forge_llvm_add_function(i64 %246, i64 ptrtoint (ptr @1637 to i64), i64 %247)
   %249 = load i64, ptr %m, align 4
   %250 = load i64, ptr %cl_i64_to_i64, align 4
-  %251 = call i64 @forge_llvm_add_function(i64 %249, i64 ptrtoint (ptr @1639 to i64), i64 %250)
+  %251 = call i64 @forge_llvm_add_function(i64 %249, i64 ptrtoint (ptr @1638 to i64), i64 %250)
   %252 = call i64 @forge_llvm_type_array_new(i64 2)
   %cl_2_arr = alloca i64, align 8
   store i64 %252, ptr %cl_2_arr, align 4
@@ -54049,7 +54010,7 @@ bb5017:
   %263 = call i64 @forge_llvm_type_array_free(i64 %262)
   %264 = load i64, ptr %m, align 4
   %265 = load i64, ptr %cl_2_type, align 4
-  %266 = call i64 @forge_llvm_add_function(i64 %264, i64 ptrtoint (ptr @1640 to i64), i64 %265)
+  %266 = call i64 @forge_llvm_add_function(i64 %264, i64 ptrtoint (ptr @1639 to i64), i64 %265)
   %267 = call i64 @forge_llvm_type_array_new(i64 3)
   %cl_3_arr = alloca i64, align 8
   store i64 %267, ptr %cl_3_arr, align 4
@@ -54071,7 +54032,7 @@ bb5017:
   %281 = call i64 @forge_llvm_type_array_free(i64 %280)
   %282 = load i64, ptr %m, align 4
   %283 = load i64, ptr %cl_3_type, align 4
-  %284 = call i64 @forge_llvm_add_function(i64 %282, i64 ptrtoint (ptr @1641 to i64), i64 %283)
+  %284 = call i64 @forge_llvm_add_function(i64 %282, i64 ptrtoint (ptr @1640 to i64), i64 %283)
   %285 = call i64 @forge_llvm_type_array_new(i64 2)
   %arr_ho_arr = alloca i64, align 8
   store i64 %285, ptr %arr_ho_arr, align 4
@@ -54090,10 +54051,10 @@ bb5017:
   %296 = call i64 @forge_llvm_type_array_free(i64 %295)
   %297 = load i64, ptr %m, align 4
   %298 = load i64, ptr %arr_map_type, align 4
-  %299 = call i64 @forge_llvm_add_function(i64 %297, i64 ptrtoint (ptr @1642 to i64), i64 %298)
+  %299 = call i64 @forge_llvm_add_function(i64 %297, i64 ptrtoint (ptr @1641 to i64), i64 %298)
   %300 = load i64, ptr %m, align 4
   %301 = load i64, ptr %arr_map_type, align 4
-  %302 = call i64 @forge_llvm_add_function(i64 %300, i64 ptrtoint (ptr @1643 to i64), i64 %301)
+  %302 = call i64 @forge_llvm_add_function(i64 %300, i64 ptrtoint (ptr @1642 to i64), i64 %301)
   %303 = call i64 @forge_llvm_type_array_new(i64 2)
   %arr_fe_arr = alloca i64, align 8
   store i64 %303, ptr %arr_fe_arr, align 4
@@ -54113,7 +54074,7 @@ bb5017:
   %315 = call i64 @forge_llvm_type_array_free(i64 %314)
   %316 = load i64, ptr %m, align 4
   %317 = load i64, ptr %arr_fe_type, align 4
-  %318 = call i64 @forge_llvm_add_function(i64 %316, i64 ptrtoint (ptr @1644 to i64), i64 %317)
+  %318 = call i64 @forge_llvm_add_function(i64 %316, i64 ptrtoint (ptr @1643 to i64), i64 %317)
   %319 = call i64 @forge_llvm_type_array_new(i64 3)
   %arr_red_arr = alloca i64, align 8
   store i64 %319, ptr %arr_red_arr, align 4
@@ -54135,7 +54096,7 @@ bb5017:
   %333 = call i64 @forge_llvm_type_array_free(i64 %332)
   %334 = load i64, ptr %m, align 4
   %335 = load i64, ptr %arr_reduce_type, align 4
-  %336 = call i64 @forge_llvm_add_function(i64 %334, i64 ptrtoint (ptr @1645 to i64), i64 %335)
+  %336 = call i64 @forge_llvm_add_function(i64 %334, i64 ptrtoint (ptr @1644 to i64), i64 %335)
   %337 = call i64 @forge_llvm_type_array_new(i64 2)
   %str2_arr = alloca i64, align 8
   store i64 %337, ptr %str2_arr, align 4
@@ -54159,19 +54120,19 @@ bb5017:
   %351 = call i64 @forge_llvm_type_array_free(i64 %350)
   %352 = load i64, ptr %m, align 4
   %353 = load i64, ptr %str_str_to_i64, align 4
-  %354 = call i64 @forge_llvm_add_function(i64 %352, i64 ptrtoint (ptr @1646 to i64), i64 %353)
+  %354 = call i64 @forge_llvm_add_function(i64 %352, i64 ptrtoint (ptr @1645 to i64), i64 %353)
   %355 = load i64, ptr %m, align 4
   %356 = load i64, ptr %str_str_to_i64, align 4
-  %357 = call i64 @forge_llvm_add_function(i64 %355, i64 ptrtoint (ptr @1647 to i64), i64 %356)
+  %357 = call i64 @forge_llvm_add_function(i64 %355, i64 ptrtoint (ptr @1646 to i64), i64 %356)
   %358 = load i64, ptr %m, align 4
   %359 = load i64, ptr %str_str_to_i64, align 4
-  %360 = call i64 @forge_llvm_add_function(i64 %358, i64 ptrtoint (ptr @1648 to i64), i64 %359)
+  %360 = call i64 @forge_llvm_add_function(i64 %358, i64 ptrtoint (ptr @1647 to i64), i64 %359)
   %361 = load i64, ptr %m, align 4
   %362 = load i64, ptr %str_str_to_i64, align 4
-  %363 = call i64 @forge_llvm_add_function(i64 %361, i64 ptrtoint (ptr @1649 to i64), i64 %362)
+  %363 = call i64 @forge_llvm_add_function(i64 %361, i64 ptrtoint (ptr @1648 to i64), i64 %362)
   %364 = load i64, ptr %m, align 4
   %365 = load i64, ptr %str_str_to_str, align 4
-  %366 = call i64 @forge_llvm_add_function(i64 %364, i64 ptrtoint (ptr @1650 to i64), i64 %365)
+  %366 = call i64 @forge_llvm_add_function(i64 %364, i64 ptrtoint (ptr @1649 to i64), i64 %365)
   %367 = call i64 @forge_llvm_type_array_new(i64 3)
   %str3_arr = alloca i64, align 8
   store i64 %367, ptr %str3_arr, align 4
@@ -54193,7 +54154,7 @@ bb5017:
   %381 = call i64 @forge_llvm_type_array_free(i64 %380)
   %382 = load i64, ptr %m, align 4
   %383 = load i64, ptr %str3_to_str, align 4
-  %384 = call i64 @forge_llvm_add_function(i64 %382, i64 ptrtoint (ptr @1651 to i64), i64 %383)
+  %384 = call i64 @forge_llvm_add_function(i64 %382, i64 ptrtoint (ptr @1650 to i64), i64 %383)
   %385 = call i64 @forge_llvm_type_array_new(i64 1)
   %str1_arr = alloca i64, align 8
   store i64 %385, ptr %str1_arr, align 4
@@ -54209,13 +54170,13 @@ bb5017:
   %393 = call i64 @forge_llvm_type_array_free(i64 %392)
   %394 = load i64, ptr %m, align 4
   %395 = load i64, ptr %str_to_str, align 4
-  %396 = call i64 @forge_llvm_add_function(i64 %394, i64 ptrtoint (ptr @1652 to i64), i64 %395)
+  %396 = call i64 @forge_llvm_add_function(i64 %394, i64 ptrtoint (ptr @1651 to i64), i64 %395)
   %397 = load i64, ptr %m, align 4
   %398 = load i64, ptr %str_to_str, align 4
-  %399 = call i64 @forge_llvm_add_function(i64 %397, i64 ptrtoint (ptr @1653 to i64), i64 %398)
+  %399 = call i64 @forge_llvm_add_function(i64 %397, i64 ptrtoint (ptr @1652 to i64), i64 %398)
   %400 = load i64, ptr %m, align 4
   %401 = load i64, ptr %str_to_str, align 4
-  %402 = call i64 @forge_llvm_add_function(i64 %400, i64 ptrtoint (ptr @1654 to i64), i64 %401)
+  %402 = call i64 @forge_llvm_add_function(i64 %400, i64 ptrtoint (ptr @1653 to i64), i64 %401)
   %403 = load i64, ptr %pt, align 4
   %404 = call i64 @forge_llvm_type_array_new(i64 0)
   %405 = call i64 @forge_llvm_function_type(i64 %403, i64 %404, i64 0, i64 0)
@@ -54223,7 +54184,7 @@ bb5017:
   store i64 %405, ptr %map_new_type, align 4
   %406 = load i64, ptr %m, align 4
   %407 = load i64, ptr %map_new_type, align 4
-  %408 = call i64 @forge_llvm_add_function(i64 %406, i64 ptrtoint (ptr @1655 to i64), i64 %407)
+  %408 = call i64 @forge_llvm_add_function(i64 %406, i64 ptrtoint (ptr @1654 to i64), i64 %407)
   %409 = call i64 @forge_llvm_type_array_new(i64 3)
   %map_set_arr = alloca i64, align 8
   store i64 %409, ptr %map_set_arr, align 4
@@ -54246,16 +54207,16 @@ bb5017:
   %424 = call i64 @forge_llvm_type_array_free(i64 %423)
   %425 = load i64, ptr %m, align 4
   %426 = load i64, ptr %map_set_type, align 4
-  %427 = call i64 @forge_llvm_add_function(i64 %425, i64 ptrtoint (ptr @1656 to i64), i64 %426)
+  %427 = call i64 @forge_llvm_add_function(i64 %425, i64 ptrtoint (ptr @1655 to i64), i64 %426)
   %428 = load i64, ptr %m, align 4
   %429 = load i64, ptr %str_str_to_i64, align 4
-  %430 = call i64 @forge_llvm_add_function(i64 %428, i64 ptrtoint (ptr @1657 to i64), i64 %429)
+  %430 = call i64 @forge_llvm_add_function(i64 %428, i64 ptrtoint (ptr @1656 to i64), i64 %429)
   %431 = load i64, ptr %m, align 4
   %432 = load i64, ptr %str_str_to_i64, align 4
-  %433 = call i64 @forge_llvm_add_function(i64 %431, i64 ptrtoint (ptr @1658 to i64), i64 %432)
+  %433 = call i64 @forge_llvm_add_function(i64 %431, i64 ptrtoint (ptr @1657 to i64), i64 %432)
   %434 = load i64, ptr %m, align 4
   %435 = load i64, ptr %arr_len_type, align 4
-  %436 = call i64 @forge_llvm_add_function(i64 %434, i64 ptrtoint (ptr @1659 to i64), i64 %435)
+  %436 = call i64 @forge_llvm_add_function(i64 %434, i64 ptrtoint (ptr @1658 to i64), i64 %435)
   %437 = call i64 @forge_llvm_type_array_new(i64 1)
   %map_keys_arr = alloca i64, align 8
   store i64 %437, ptr %map_keys_arr, align 4
@@ -54271,11 +54232,11 @@ bb5017:
   %445 = call i64 @forge_llvm_type_array_free(i64 %444)
   %446 = load i64, ptr %m, align 4
   %447 = load i64, ptr %map_keys_type, align 4
-  %448 = call i64 @forge_llvm_add_function(i64 %446, i64 ptrtoint (ptr @1660 to i64), i64 %447)
+  %448 = call i64 @forge_llvm_add_function(i64 %446, i64 ptrtoint (ptr @1659 to i64), i64 %447)
   %449 = load i64, ptr %lc, align 4
   %450 = load i64, ptr %i64t, align 4
   %451 = load i64, ptr %stmts, align 4
-  %452 = call ptr @malloc(i64 32)
+  %452 = call ptr @forge_bump_alloc(i64 32)
   %453 = getelementptr inbounds %StructReg, ptr %452, i32 0, i32 0
   store i8 0, ptr %453, align 1
   %454 = ptrtoint ptr %452 to i64
@@ -54285,7 +54246,7 @@ bb5017:
   %456 = load i64, ptr %lc, align 4
   %457 = load i64, ptr %i64t, align 4
   %458 = load i64, ptr %stmts, align 4
-  %459 = call ptr @malloc(i64 32)
+  %459 = call ptr @forge_bump_alloc(i64 32)
   %460 = getelementptr inbounds %EnumReg, ptr %459, i32 0, i32 0
   store i8 0, ptr %460, align 1
   %461 = ptrtoint ptr %459 to i64
@@ -54298,7 +54259,7 @@ bb5017:
   %466 = load i64, ptr %structs, align 4
   %467 = load i64, ptr %enums, align 4
   %468 = load i64, ptr %stmts, align 4
-  %469 = call ptr @malloc(i64 40)
+  %469 = call ptr @forge_bump_alloc(i64 40)
   %470 = getelementptr inbounds %TopLevelVars, ptr %469, i32 0, i32 0
   store i8 0, ptr %470, align 1
   %471 = ptrtoint ptr %469 to i64
@@ -54311,7 +54272,7 @@ bb5017:
   %476 = load i64, ptr %structs, align 4
   %477 = load i64, ptr %enums, align 4
   %478 = load i64, ptr %stmts, align 4
-  %479 = call ptr @malloc(i64 32)
+  %479 = call ptr @forge_bump_alloc(i64 32)
   %480 = getelementptr inbounds %FnRetTypes, ptr %479, i32 0, i32 0
   store i8 0, ptr %480, align 1
   %481 = ptrtoint ptr %479 to i64
@@ -54319,7 +54280,7 @@ bb5017:
   %fn_rets = alloca i64, align 8
   store i64 %482, ptr %fn_rets, align 4
   %483 = load i64, ptr %m, align 4
-  %484 = call i64 @forge_llvm_get_named_function(i64 %483, i64 ptrtoint (ptr @1661 to i64))
+  %484 = call i64 @forge_llvm_get_named_function(i64 %483, i64 ptrtoint (ptr @1660 to i64))
   %user_main = alloca i64, align 8
   store i64 %484, ptr %user_main, align 4
   %485 = load i64, ptr %user_main, align 4
@@ -54331,11 +54292,11 @@ bb5017:
   br i1 %488, label %bb5018, label %bb5019
 
 bb5018:                                           ; preds = %bb5017
-  store i64 ptrtoint (ptr @1662 to i64), ptr %ife_result, align 4
+  store i64 ptrtoint (ptr @1661 to i64), ptr %ife_result, align 4
   br label %bb5020
 
 bb5019:                                           ; preds = %bb5017
-  store i64 ptrtoint (ptr @1663 to i64), ptr %ife_result, align 4
+  store i64 ptrtoint (ptr @1662 to i64), ptr %ife_result, align 4
   br label %bb5020
 
 bb5020:                                           ; preds = %bb5019, %bb5018
@@ -54360,7 +54321,7 @@ bb5020:                                           ; preds = %bb5019, %bb5018
   store i64 %499, ptr %main_fn, align 4
   %500 = load i64, ptr %lc, align 4
   %501 = load i64, ptr %main_fn, align 4
-  %502 = call i64 @forge_llvm_append_basic_block(i64 %500, i64 %501, i64 ptrtoint (ptr @1664 to i64))
+  %502 = call i64 @forge_llvm_append_basic_block(i64 %500, i64 %501, i64 ptrtoint (ptr @1663 to i64))
   %entry = alloca i64, align 8
   store i64 %502, ptr %entry, align 4
   %503 = load i64, ptr %builder, align 4
@@ -54400,13 +54361,13 @@ bb5020:                                           ; preds = %bb5019, %bb5018
   %527 = load i64, ptr %top_level_vars, align 4
   %528 = getelementptr inbounds %Ctx, ptr %506, i32 0, i32 10
   store i64 %527, ptr %528, align 4
-  %529 = call ptr @malloc(i64 32)
+  %529 = call ptr @forge_bump_alloc(i64 32)
   %530 = getelementptr inbounds %LoopStack, ptr %529, i32 0, i32 0
   store i8 0, ptr %530, align 1
   %531 = ptrtoint ptr %529 to i64
   %532 = getelementptr inbounds %Ctx, ptr %506, i32 0, i32 11
   store i64 %531, ptr %532, align 4
-  %533 = call ptr @malloc(i64 24)
+  %533 = call ptr @forge_bump_alloc(i64 24)
   %534 = getelementptr inbounds %DeferStack, ptr %533, i32 0, i32 0
   store i8 0, ptr %534, align 1
   %535 = ptrtoint ptr %533 to i64
@@ -54456,7 +54417,7 @@ bb5023:                                           ; preds = %bb5022
   %563 = load i64, ptr %builder, align 4
   %564 = load i64, ptr %entry, align 4
   %565 = call i64 @forge_llvm_position_at_end(i64 %563, i64 %564)
-  %566 = call ptr @malloc(i64 40)
+  %566 = call ptr @forge_bump_alloc(i64 40)
   %567 = getelementptr inbounds %VarEnv, ptr %566, i32 0, i32 0
   store i8 0, ptr %567, align 1
   %568 = ptrtoint ptr %566 to i64
@@ -54543,7 +54504,7 @@ bb5030:                                           ; preds = %bb5029
   %620 = getelementptr inbounds %CodegenResult, ptr %619, i32 0, i32 0
   store i64 1, ptr %620, align 4
   %621 = getelementptr inbounds %CodegenResult, ptr %619, i32 0, i32 1
-  store i64 ptrtoint (ptr @1665 to i64), ptr %621, align 4
+  store i64 ptrtoint (ptr @1664 to i64), ptr %621, align 4
   %622 = ptrtoint ptr %619 to i64
   ret i64 %622
 
@@ -54577,12 +54538,12 @@ bb5033:                                           ; preds = %bb5032
   store i64 1, ptr %640, align 4
   %641 = load i64, ptr %output_path, align 4
   %642 = inttoptr i64 %641 to ptr
-  %643 = call i64 @strlen(ptr @1666)
+  %643 = call i64 @strlen(ptr @1665)
   %644 = call i64 @strlen(ptr %642)
   %645 = add i64 %643, %644
   %646 = add i64 %645, 1
   %647 = call ptr @forge_bump_alloc(i64 %646)
-  %648 = call ptr @memcpy(ptr %647, ptr @1666, i64 %643)
+  %648 = call ptr @memcpy(ptr %647, ptr @1665, i64 %643)
   %649 = ptrtoint ptr %647 to i64
   %650 = add i64 %649, %643
   %651 = inttoptr i64 %650 to ptr
@@ -54602,7 +54563,7 @@ bb5035:                                           ; preds = %bb5034
   %658 = getelementptr inbounds %CodegenResult, ptr %657, i32 0, i32 0
   store i64 0, ptr %658, align 4
   %659 = getelementptr inbounds %CodegenResult, ptr %657, i32 0, i32 1
-  store i64 ptrtoint (ptr @1667 to i64), ptr %659, align 4
+  store i64 ptrtoint (ptr @1666 to i64), ptr %659, align 4
   %660 = ptrtoint ptr %657 to i64
   ret i64 %660
 }
@@ -54707,7 +54668,7 @@ bb5043:                                           ; preds = %bb5040
   %48 = call i64 @forge_llvm_struct_set_body(i64 %45, i64 %46, i64 %47, i64 0)
   %49 = load i64, ptr %field_arr, align 4
   %50 = call i64 @forge_llvm_type_array_free(i64 %49)
-  %51 = call ptr @malloc(i64 32)
+  %51 = call ptr @forge_bump_alloc(i64 32)
   %52 = getelementptr inbounds %StructReg, ptr %51, i32 0, i32 0
   store i8 1, ptr %52, align 1
   %53 = load i64, ptr %name, align 4
@@ -54831,7 +54792,7 @@ bb5054:                                           ; preds = %bb5051
   %45 = load i64, ptr %i64t, align 4
   %46 = call i64 @forge_llvm_const_int(i64 %45, i64 0, i64 0)
   %47 = call i64 @forge_llvm_set_initializer(i64 %44, i64 %46)
-  %48 = call ptr @malloc(i64 40)
+  %48 = call ptr @forge_bump_alloc(i64 40)
   %49 = getelementptr inbounds %TopLevelVars, ptr %48, i32 0, i32 0
   store i8 1, ptr %49, align 1
   %50 = load i64, ptr %name, align 4
@@ -54877,7 +54838,7 @@ bb5056:                                           ; preds = %bb5055
   %73 = load i64, ptr %i64t, align 4
   %74 = call i64 @forge_llvm_const_int(i64 %73, i64 0, i64 0)
   %75 = call i64 @forge_llvm_set_initializer(i64 %72, i64 %74)
-  %76 = call ptr @malloc(i64 40)
+  %76 = call ptr @forge_bump_alloc(i64 40)
   %77 = getelementptr inbounds %TopLevelVars, ptr %76, i32 0, i32 0
   store i8 1, ptr %77, align 1
   %78 = load i64, ptr %name2, align 4
@@ -55019,7 +54980,7 @@ bb5067:                                           ; preds = %bb5064
   %54 = call i64 @forge_llvm_struct_set_body(i64 %51, i64 %52, i64 %53, i64 0)
   %55 = load i64, ptr %field_arr, align 4
   %56 = call i64 @forge_llvm_type_array_free(i64 %55)
-  %57 = call ptr @malloc(i64 32)
+  %57 = call ptr @forge_bump_alloc(i64 32)
   %58 = getelementptr inbounds %EnumReg, ptr %57, i32 0, i32 0
   store i8 1, ptr %58, align 1
   %59 = load i64, ptr %name, align 4
@@ -55202,7 +55163,7 @@ bb5082:                                           ; preds = %bb5079
   %59 = load i64, ptr %name, align 4
   %60 = load i64, ptr %fn_type, align 4
   %61 = call i64 @forge_llvm_add_function(i64 %58, i64 %59, i64 %60)
-  %62 = call ptr @malloc(i64 32)
+  %62 = call ptr @forge_bump_alloc(i64 32)
   %63 = getelementptr inbounds %FnRetTypes, ptr %62, i32 0, i32 0
   store i8 1, ptr %63, align 1
   %64 = load i64, ptr %name, align 4
@@ -55263,7 +55224,7 @@ bb5084:                                           ; preds = %bb5083
   %97 = load i64, ptr %name2, align 4
   %98 = load i64, ptr %fn_type7, align 4
   %99 = call i64 @forge_llvm_add_function(i64 %96, i64 %97, i64 %98)
-  %100 = call ptr @malloc(i64 32)
+  %100 = call ptr @forge_bump_alloc(i64 32)
   %101 = getelementptr inbounds %FnRetTypes, ptr %100, i32 0, i32 0
   store i8 1, ptr %101, align 1
   %102 = load i64, ptr %name2, align 4
@@ -55604,12 +55565,12 @@ bb5119:                                           ; preds = %bb5118
   store i64 1, ptr %22, align 4
   %23 = load i64, ptr %name, align 4
   %24 = inttoptr i64 %23 to ptr
-  %25 = call i64 @strlen(ptr @1668)
+  %25 = call i64 @strlen(ptr @1667)
   %26 = call i64 @strlen(ptr %24)
   %27 = add i64 %25, %26
   %28 = add i64 %27, 1
   %29 = call ptr @forge_bump_alloc(i64 %28)
-  %30 = call ptr @memcpy(ptr %29, ptr @1668, i64 %25)
+  %30 = call ptr @memcpy(ptr %29, ptr @1667, i64 %25)
   %31 = ptrtoint ptr %29 to i64
   %32 = add i64 %31, %25
   %33 = inttoptr i64 %32 to ptr
@@ -55618,7 +55579,7 @@ bb5119:                                           ; preds = %bb5118
   %36 = ptrtoint ptr %29 to i64
   %37 = inttoptr i64 %36 to ptr
   %38 = call i64 @strlen(ptr %37)
-  %39 = call i64 @strlen(ptr @1669)
+  %39 = call i64 @strlen(ptr @1668)
   %40 = add i64 %38, %39
   %41 = add i64 %40, 1
   %42 = call ptr @forge_bump_alloc(i64 %41)
@@ -55627,7 +55588,7 @@ bb5119:                                           ; preds = %bb5118
   %45 = add i64 %44, %38
   %46 = inttoptr i64 %45 to ptr
   %47 = add i64 %39, 1
-  %48 = call ptr @memcpy(ptr %46, ptr @1669, i64 %47)
+  %48 = call ptr @memcpy(ptr %46, ptr @1668, i64 %47)
   %49 = ptrtoint ptr %42 to i64
   %50 = getelementptr inbounds %TopLevelResult, ptr %17, i32 0, i32 3
   store i64 %49, ptr %50, align 4
@@ -55687,7 +55648,7 @@ bb5124:                                           ; preds = %bb5123
   %83 = getelementptr inbounds %TopLevelLookup, ptr %82, i32 0, i32 1
   %84 = load i64, ptr %83, align 4
   %85 = call i64 @forge_llvm_build_store(i64 %76, i64 %80, i64 %84)
-  %86 = call ptr @malloc(i64 40)
+  %86 = call ptr @forge_bump_alloc(i64 40)
   %87 = getelementptr inbounds %TopLevelVars, ptr %86, i32 0, i32 0
   store i8 1, ptr %87, align 1
   %88 = load i64, ptr %name, align 4
@@ -55729,7 +55690,7 @@ bb5124:                                           ; preds = %bb5123
   %114 = getelementptr inbounds %TopLevelResult, ptr %109, i32 0, i32 2
   store i64 0, ptr %114, align 4
   %115 = getelementptr inbounds %TopLevelResult, ptr %109, i32 0, i32 3
-  store i64 ptrtoint (ptr @1670 to i64), ptr %115, align 4
+  store i64 ptrtoint (ptr @1669 to i64), ptr %115, align 4
   %116 = ptrtoint ptr %109 to i64
   ret i64 %116
 }
@@ -56228,7 +56189,7 @@ bb5178:                                           ; preds = %bb5176
   br i1 %208, label %bb5182, label %bb5183
 
 bb5179:                                           ; preds = %bb5177
-  %209 = call i64 @err_stmt(i64 ptrtoint (ptr @1671 to i64))
+  %209 = call i64 @err_stmt(i64 ptrtoint (ptr @1670 to i64))
   ret i64 %209
 
 bb5180:                                           ; preds = %bb5177
@@ -56272,7 +56233,7 @@ bb5183:                                           ; preds = %bb5178
   br i1 %234, label %bb5187, label %bb5188
 
 bb5184:                                           ; preds = %bb5182
-  %235 = call i64 @err_stmt(i64 ptrtoint (ptr @1672 to i64))
+  %235 = call i64 @err_stmt(i64 ptrtoint (ptr @1671 to i64))
   ret i64 %235
 
 bb5185:                                           ; preds = %bb5182
@@ -56342,7 +56303,7 @@ bb5192:                                           ; preds = %bb5190
   br label %bb5193
 
 bb5193:                                           ; preds = %bb5192
-  %268 = call i64 @err_stmt(i64 ptrtoint (ptr @1673 to i64))
+  %268 = call i64 @err_stmt(i64 ptrtoint (ptr @1672 to i64))
   store i64 %268, ptr %match_result, align 4
   br label %bb5135
 
@@ -56355,7 +56316,7 @@ bb5195:
   %s = alloca i64, align 8
   store i64 %0, ptr %s, align 4
   %out = alloca i64, align 8
-  store i64 ptrtoint (ptr @1674 to i64), ptr %out, align 4
+  store i64 ptrtoint (ptr @1673 to i64), ptr %out, align 4
   %i = alloca i64, align 8
   store i64 0, ptr %i, align 4
   br label %bb5196
@@ -56384,7 +56345,7 @@ bb5197:                                           ; preds = %bb5196
   store i8 0, ptr %16, align 1
   %17 = ptrtoint ptr %13 to i64
   %18 = inttoptr i64 %17 to ptr
-  %19 = call i32 @strcmp(ptr %18, ptr @1675)
+  %19 = call i32 @strcmp(ptr %18, ptr @1674)
   %20 = zext i32 %19 to i64
   %21 = icmp ne i64 %20, 0
   %22 = zext i1 %21 to i64
@@ -56469,7 +56430,7 @@ bb5203:                                           ; preds = %bb5202
   store i64 %19, ptr %prefix, align 4
   %20 = load i64, ptr %prefix, align 4
   %21 = inttoptr i64 %20 to ptr
-  %22 = call i32 @strcmp(ptr %21, ptr @1676)
+  %22 = call i32 @strcmp(ptr %21, ptr @1675)
   %23 = zext i32 %22 to i64
   %24 = icmp eq i64 %23, 0
   %25 = zext i1 %24 to i64
@@ -56489,7 +56450,7 @@ bb5205:                                           ; preds = %bb5204, %bb5220
 bb5206:                                           ; preds = %bb5203
   %31 = load i64, ptr %prefix, align 4
   %32 = inttoptr i64 %31 to ptr
-  %33 = call i32 @strcmp(ptr %32, ptr @1677)
+  %33 = call i32 @strcmp(ptr %32, ptr @1676)
   %34 = zext i32 %33 to i64
   %35 = icmp eq i64 %34, 0
   %36 = zext i1 %35 to i64
@@ -56529,7 +56490,7 @@ bb5209:                                           ; preds = %bb5207
 bb5210:                                           ; preds = %bb5209
   %58 = load i64, ptr %prefix, align 4
   %59 = inttoptr i64 %58 to ptr
-  %60 = call i32 @strcmp(ptr %59, ptr @1678)
+  %60 = call i32 @strcmp(ptr %59, ptr @1677)
   %61 = zext i32 %60 to i64
   %62 = icmp eq i64 %61, 0
   %63 = zext i1 %62 to i64
@@ -56539,7 +56500,7 @@ bb5210:                                           ; preds = %bb5209
 bb5211:                                           ; preds = %bb5210
   %65 = load i64, ptr %prefix, align 4
   %66 = inttoptr i64 %65 to ptr
-  %67 = call i32 @strcmp(ptr %66, ptr @1679)
+  %67 = call i32 @strcmp(ptr %66, ptr @1678)
   %68 = zext i32 %67 to i64
   %69 = icmp eq i64 %68, 0
   %70 = zext i1 %69 to i64
@@ -56579,7 +56540,7 @@ bb5214:                                           ; preds = %bb5212
 bb5215:                                           ; preds = %bb5214
   %92 = load i64, ptr %prefix, align 4
   %93 = inttoptr i64 %92 to ptr
-  %94 = call i32 @strcmp(ptr %93, ptr @1680)
+  %94 = call i32 @strcmp(ptr %93, ptr @1679)
   %95 = zext i32 %94 to i64
   %96 = icmp eq i64 %95, 0
   %97 = zext i1 %96 to i64
@@ -56589,7 +56550,7 @@ bb5215:                                           ; preds = %bb5214
 bb5216:                                           ; preds = %bb5215
   %99 = load i64, ptr %prefix, align 4
   %100 = inttoptr i64 %99 to ptr
-  %101 = call i32 @strcmp(ptr %100, ptr @1681)
+  %101 = call i32 @strcmp(ptr %100, ptr @1680)
   %102 = zext i32 %101 to i64
   %103 = icmp eq i64 %102, 0
   %104 = zext i1 %103 to i64
@@ -56636,7 +56597,7 @@ bb5221:
   store i64 %0, ptr %ch, align 4
   %1 = load i64, ptr %ch, align 4
   %2 = inttoptr i64 %1 to ptr
-  %3 = call i32 @strcmp(ptr %2, ptr @1682)
+  %3 = call i32 @strcmp(ptr %2, ptr @1681)
   %4 = zext i32 %3 to i64
   %5 = icmp eq i64 %4, 0
   %6 = zext i1 %5 to i64
@@ -56652,7 +56613,7 @@ bb5223:                                           ; preds = %bb5221
 bb5224:                                           ; preds = %bb5223
   %8 = load i64, ptr %ch, align 4
   %9 = inttoptr i64 %8 to ptr
-  %10 = call i32 @strcmp(ptr %9, ptr @1683)
+  %10 = call i32 @strcmp(ptr %9, ptr @1682)
   %11 = zext i32 %10 to i64
   %12 = icmp eq i64 %11, 0
   %13 = zext i1 %12 to i64
@@ -56668,7 +56629,7 @@ bb5226:                                           ; preds = %bb5224
 bb5227:                                           ; preds = %bb5226
   %15 = load i64, ptr %ch, align 4
   %16 = inttoptr i64 %15 to ptr
-  %17 = call i32 @strcmp(ptr %16, ptr @1684)
+  %17 = call i32 @strcmp(ptr %16, ptr @1683)
   %18 = zext i32 %17 to i64
   %19 = icmp eq i64 %18, 0
   %20 = zext i1 %19 to i64
@@ -56684,7 +56645,7 @@ bb5229:                                           ; preds = %bb5227
 bb5230:                                           ; preds = %bb5229
   %22 = load i64, ptr %ch, align 4
   %23 = inttoptr i64 %22 to ptr
-  %24 = call i32 @strcmp(ptr %23, ptr @1685)
+  %24 = call i32 @strcmp(ptr %23, ptr @1684)
   %25 = zext i32 %24 to i64
   %26 = icmp eq i64 %25, 0
   %27 = zext i1 %26 to i64
@@ -56700,7 +56661,7 @@ bb5232:                                           ; preds = %bb5230
 bb5233:                                           ; preds = %bb5232
   %29 = load i64, ptr %ch, align 4
   %30 = inttoptr i64 %29 to ptr
-  %31 = call i32 @strcmp(ptr %30, ptr @1686)
+  %31 = call i32 @strcmp(ptr %30, ptr @1685)
   %32 = zext i32 %31 to i64
   %33 = icmp eq i64 %32, 0
   %34 = zext i1 %33 to i64
@@ -56716,7 +56677,7 @@ bb5235:                                           ; preds = %bb5233
 bb5236:                                           ; preds = %bb5235
   %36 = load i64, ptr %ch, align 4
   %37 = inttoptr i64 %36 to ptr
-  %38 = call i32 @strcmp(ptr %37, ptr @1687)
+  %38 = call i32 @strcmp(ptr %37, ptr @1686)
   %39 = zext i32 %38 to i64
   %40 = icmp eq i64 %39, 0
   %41 = zext i1 %40 to i64
@@ -56732,7 +56693,7 @@ bb5238:                                           ; preds = %bb5236
 bb5239:                                           ; preds = %bb5238
   %43 = load i64, ptr %ch, align 4
   %44 = inttoptr i64 %43 to ptr
-  %45 = call i32 @strcmp(ptr %44, ptr @1688)
+  %45 = call i32 @strcmp(ptr %44, ptr @1687)
   %46 = zext i32 %45 to i64
   %47 = icmp eq i64 %46, 0
   %48 = zext i1 %47 to i64
@@ -56748,7 +56709,7 @@ bb5241:                                           ; preds = %bb5239
 bb5242:                                           ; preds = %bb5241
   %50 = load i64, ptr %ch, align 4
   %51 = inttoptr i64 %50 to ptr
-  %52 = call i32 @strcmp(ptr %51, ptr @1689)
+  %52 = call i32 @strcmp(ptr %51, ptr @1688)
   %53 = zext i32 %52 to i64
   %54 = icmp eq i64 %53, 0
   %55 = zext i1 %54 to i64
@@ -56764,7 +56725,7 @@ bb5244:                                           ; preds = %bb5242
 bb5245:                                           ; preds = %bb5244
   %57 = load i64, ptr %ch, align 4
   %58 = inttoptr i64 %57 to ptr
-  %59 = call i32 @strcmp(ptr %58, ptr @1690)
+  %59 = call i32 @strcmp(ptr %58, ptr @1689)
   %60 = zext i32 %59 to i64
   %61 = icmp eq i64 %60, 0
   %62 = zext i1 %61 to i64
@@ -56780,7 +56741,7 @@ bb5247:                                           ; preds = %bb5245
 bb5248:                                           ; preds = %bb5247
   %64 = load i64, ptr %ch, align 4
   %65 = inttoptr i64 %64 to ptr
-  %66 = call i32 @strcmp(ptr %65, ptr @1691)
+  %66 = call i32 @strcmp(ptr %65, ptr @1690)
   %67 = zext i32 %66 to i64
   %68 = icmp eq i64 %67, 0
   %69 = zext i1 %68 to i64
@@ -56796,7 +56757,7 @@ bb5250:                                           ; preds = %bb5248
 bb5251:                                           ; preds = %bb5250
   %71 = load i64, ptr %ch, align 4
   %72 = inttoptr i64 %71 to ptr
-  %73 = call i32 @strcmp(ptr %72, ptr @1692)
+  %73 = call i32 @strcmp(ptr %72, ptr @1691)
   %74 = zext i32 %73 to i64
   %75 = icmp eq i64 %74, 0
   %76 = zext i1 %75 to i64
@@ -56806,7 +56767,7 @@ bb5251:                                           ; preds = %bb5250
 bb5252:                                           ; preds = %bb5251
   %78 = load i64, ptr %ch, align 4
   %79 = inttoptr i64 %78 to ptr
-  %80 = call i32 @strcmp(ptr %79, ptr @1693)
+  %80 = call i32 @strcmp(ptr %79, ptr @1692)
   %81 = zext i32 %80 to i64
   %82 = icmp eq i64 %81, 0
   %83 = zext i1 %82 to i64
@@ -56828,7 +56789,7 @@ bb5255:                                           ; preds = %bb5253
 bb5256:                                           ; preds = %bb5255
   %88 = load i64, ptr %ch, align 4
   %89 = inttoptr i64 %88 to ptr
-  %90 = call i32 @strcmp(ptr %89, ptr @1694)
+  %90 = call i32 @strcmp(ptr %89, ptr @1693)
   %91 = zext i32 %90 to i64
   %92 = icmp eq i64 %91, 0
   %93 = zext i1 %92 to i64
@@ -56838,7 +56799,7 @@ bb5256:                                           ; preds = %bb5255
 bb5257:                                           ; preds = %bb5256
   %95 = load i64, ptr %ch, align 4
   %96 = inttoptr i64 %95 to ptr
-  %97 = call i32 @strcmp(ptr %96, ptr @1695)
+  %97 = call i32 @strcmp(ptr %96, ptr @1694)
   %98 = zext i32 %97 to i64
   %99 = icmp eq i64 %98, 0
   %100 = zext i1 %99 to i64
@@ -56860,7 +56821,7 @@ bb5260:                                           ; preds = %bb5258
 bb5261:                                           ; preds = %bb5260
   %105 = load i64, ptr %ch, align 4
   %106 = inttoptr i64 %105 to ptr
-  %107 = call i32 @strcmp(ptr %106, ptr @1696)
+  %107 = call i32 @strcmp(ptr %106, ptr @1695)
   %108 = zext i32 %107 to i64
   %109 = icmp eq i64 %108, 0
   %110 = zext i1 %109 to i64
@@ -56870,7 +56831,7 @@ bb5261:                                           ; preds = %bb5260
 bb5262:                                           ; preds = %bb5261
   %112 = load i64, ptr %ch, align 4
   %113 = inttoptr i64 %112 to ptr
-  %114 = call i32 @strcmp(ptr %113, ptr @1697)
+  %114 = call i32 @strcmp(ptr %113, ptr @1696)
   %115 = zext i32 %114 to i64
   %116 = icmp eq i64 %115, 0
   %117 = zext i1 %116 to i64
@@ -56892,7 +56853,7 @@ bb5265:                                           ; preds = %bb5263
 bb5266:                                           ; preds = %bb5265
   %122 = load i64, ptr %ch, align 4
   %123 = inttoptr i64 %122 to ptr
-  %124 = call i32 @strcmp(ptr %123, ptr @1698)
+  %124 = call i32 @strcmp(ptr %123, ptr @1697)
   %125 = zext i32 %124 to i64
   %126 = icmp eq i64 %125, 0
   %127 = zext i1 %126 to i64
@@ -56902,7 +56863,7 @@ bb5266:                                           ; preds = %bb5265
 bb5267:                                           ; preds = %bb5266
   %129 = load i64, ptr %ch, align 4
   %130 = inttoptr i64 %129 to ptr
-  %131 = call i32 @strcmp(ptr %130, ptr @1699)
+  %131 = call i32 @strcmp(ptr %130, ptr @1698)
   %132 = zext i32 %131 to i64
   %133 = icmp eq i64 %132, 0
   %134 = zext i1 %133 to i64
@@ -56924,7 +56885,7 @@ bb5270:                                           ; preds = %bb5268
 bb5271:                                           ; preds = %bb5270
   %139 = load i64, ptr %ch, align 4
   %140 = inttoptr i64 %139 to ptr
-  %141 = call i32 @strcmp(ptr %140, ptr @1700)
+  %141 = call i32 @strcmp(ptr %140, ptr @1699)
   %142 = zext i32 %141 to i64
   %143 = icmp eq i64 %142, 0
   %144 = zext i1 %143 to i64
@@ -56934,7 +56895,7 @@ bb5271:                                           ; preds = %bb5270
 bb5272:                                           ; preds = %bb5271
   %146 = load i64, ptr %ch, align 4
   %147 = inttoptr i64 %146 to ptr
-  %148 = call i32 @strcmp(ptr %147, ptr @1701)
+  %148 = call i32 @strcmp(ptr %147, ptr @1700)
   %149 = zext i32 %148 to i64
   %150 = icmp eq i64 %149, 0
   %151 = zext i1 %150 to i64
@@ -56956,7 +56917,7 @@ bb5275:                                           ; preds = %bb5273
 bb5276:                                           ; preds = %bb5275
   %156 = load i64, ptr %ch, align 4
   %157 = inttoptr i64 %156 to ptr
-  %158 = call i32 @strcmp(ptr %157, ptr @1702)
+  %158 = call i32 @strcmp(ptr %157, ptr @1701)
   %159 = zext i32 %158 to i64
   %160 = icmp eq i64 %159, 0
   %161 = zext i1 %160 to i64
@@ -56966,7 +56927,7 @@ bb5276:                                           ; preds = %bb5275
 bb5277:                                           ; preds = %bb5276
   %163 = load i64, ptr %ch, align 4
   %164 = inttoptr i64 %163 to ptr
-  %165 = call i32 @strcmp(ptr %164, ptr @1703)
+  %165 = call i32 @strcmp(ptr %164, ptr @1702)
   %166 = zext i32 %165 to i64
   %167 = icmp eq i64 %166, 0
   %168 = zext i1 %167 to i64
@@ -57074,7 +57035,7 @@ bb5288:                                           ; preds = %bb5287
   store i64 %17, ptr %ch, align 4
   %18 = load i64, ptr %ch, align 4
   %19 = inttoptr i64 %18 to ptr
-  %20 = call i32 @strcmp(ptr %19, ptr @1704)
+  %20 = call i32 @strcmp(ptr %19, ptr @1703)
   %21 = zext i32 %20 to i64
   %22 = icmp eq i64 %21, 0
   %23 = zext i1 %22 to i64
@@ -57159,7 +57120,7 @@ bb5297:
   store i64 %0, ptr %ch, align 4
   %1 = load i64, ptr %ch, align 4
   %2 = inttoptr i64 %1 to ptr
-  %3 = call i32 @strcmp(ptr %2, ptr @1705)
+  %3 = call i32 @strcmp(ptr %2, ptr @1704)
   %4 = zext i32 %3 to i64
   %5 = icmp eq i64 %4, 0
   %6 = zext i1 %5 to i64
@@ -57175,7 +57136,7 @@ bb5299:                                           ; preds = %bb5297
 bb5300:                                           ; preds = %bb5299
   %8 = load i64, ptr %ch, align 4
   %9 = inttoptr i64 %8 to ptr
-  %10 = call i32 @strcmp(ptr %9, ptr @1706)
+  %10 = call i32 @strcmp(ptr %9, ptr @1705)
   %11 = zext i32 %10 to i64
   %12 = icmp eq i64 %11, 0
   %13 = zext i1 %12 to i64
@@ -57191,7 +57152,7 @@ bb5302:                                           ; preds = %bb5300
 bb5303:                                           ; preds = %bb5302
   %15 = load i64, ptr %ch, align 4
   %16 = inttoptr i64 %15 to ptr
-  %17 = call i32 @strcmp(ptr %16, ptr @1707)
+  %17 = call i32 @strcmp(ptr %16, ptr @1706)
   %18 = zext i32 %17 to i64
   %19 = icmp eq i64 %18, 0
   %20 = zext i1 %19 to i64
@@ -57207,7 +57168,7 @@ bb5305:                                           ; preds = %bb5303
 bb5306:                                           ; preds = %bb5305
   %22 = load i64, ptr %ch, align 4
   %23 = inttoptr i64 %22 to ptr
-  %24 = call i32 @strcmp(ptr %23, ptr @1708)
+  %24 = call i32 @strcmp(ptr %23, ptr @1707)
   %25 = zext i32 %24 to i64
   %26 = icmp eq i64 %25, 0
   %27 = zext i1 %26 to i64
@@ -57223,7 +57184,7 @@ bb5308:                                           ; preds = %bb5306
 bb5309:                                           ; preds = %bb5308
   %29 = load i64, ptr %ch, align 4
   %30 = inttoptr i64 %29 to ptr
-  %31 = call i32 @strcmp(ptr %30, ptr @1709)
+  %31 = call i32 @strcmp(ptr %30, ptr @1708)
   %32 = zext i32 %31 to i64
   %33 = icmp eq i64 %32, 0
   %34 = zext i1 %33 to i64
@@ -57239,7 +57200,7 @@ bb5311:                                           ; preds = %bb5309
 bb5312:                                           ; preds = %bb5311
   %36 = load i64, ptr %ch, align 4
   %37 = inttoptr i64 %36 to ptr
-  %38 = call i32 @strcmp(ptr %37, ptr @1710)
+  %38 = call i32 @strcmp(ptr %37, ptr @1709)
   %39 = zext i32 %38 to i64
   %40 = icmp eq i64 %39, 0
   %41 = zext i1 %40 to i64
@@ -57255,7 +57216,7 @@ bb5314:                                           ; preds = %bb5312
 bb5315:                                           ; preds = %bb5314
   %43 = load i64, ptr %ch, align 4
   %44 = inttoptr i64 %43 to ptr
-  %45 = call i32 @strcmp(ptr %44, ptr @1711)
+  %45 = call i32 @strcmp(ptr %44, ptr @1710)
   %46 = zext i32 %45 to i64
   %47 = icmp eq i64 %46, 0
   %48 = zext i1 %47 to i64
@@ -57271,7 +57232,7 @@ bb5317:                                           ; preds = %bb5315
 bb5318:                                           ; preds = %bb5317
   %50 = load i64, ptr %ch, align 4
   %51 = inttoptr i64 %50 to ptr
-  %52 = call i32 @strcmp(ptr %51, ptr @1712)
+  %52 = call i32 @strcmp(ptr %51, ptr @1711)
   %53 = zext i32 %52 to i64
   %54 = icmp eq i64 %53, 0
   %55 = zext i1 %54 to i64
@@ -57287,7 +57248,7 @@ bb5320:                                           ; preds = %bb5318
 bb5321:                                           ; preds = %bb5320
   %57 = load i64, ptr %ch, align 4
   %58 = inttoptr i64 %57 to ptr
-  %59 = call i32 @strcmp(ptr %58, ptr @1713)
+  %59 = call i32 @strcmp(ptr %58, ptr @1712)
   %60 = zext i32 %59 to i64
   %61 = icmp eq i64 %60, 0
   %62 = zext i1 %61 to i64
@@ -57303,7 +57264,7 @@ bb5323:                                           ; preds = %bb5321
 bb5324:                                           ; preds = %bb5323
   %64 = load i64, ptr %ch, align 4
   %65 = inttoptr i64 %64 to ptr
-  %66 = call i32 @strcmp(ptr %65, ptr @1714)
+  %66 = call i32 @strcmp(ptr %65, ptr @1713)
   %67 = zext i32 %66 to i64
   %68 = icmp eq i64 %67, 0
   %69 = zext i1 %68 to i64
@@ -57370,7 +57331,7 @@ bb5332:                                           ; preds = %bb5331
   store i64 %21, ptr %text1, align 4
   %22 = load i64, ptr %text1, align 4
   %23 = inttoptr i64 %22 to ptr
-  %24 = call i32 @strcmp(ptr %23, ptr @1715)
+  %24 = call i32 @strcmp(ptr %23, ptr @1714)
   %25 = zext i32 %24 to i64
   %26 = icmp eq i64 %25, 0
   %27 = zext i1 %26 to i64
@@ -57424,12 +57385,12 @@ bb5339:                                           ; preds = %bb5338
   %48 = getelementptr inbounds %Ctx, ptr %47, i32 0, i32 2
   %49 = load i64, ptr %48, align 4
   %50 = load i64, ptr %inner, align 4
-  %51 = call i64 @forge_llvm_build_global_string_ptr(i64 %49, i64 %50, i64 ptrtoint (ptr @1716 to i64))
+  %51 = call i64 @forge_llvm_build_global_string_ptr(i64 %49, i64 %50, i64 ptrtoint (ptr @1715 to i64))
   %str_ptr = alloca i64, align 8
   store i64 %51, ptr %str_ptr, align 4
   %52 = load i64, ptr %ctx, align 4
   %53 = load i64, ptr %str_ptr, align 4
-  %54 = call i64 @to_i64(i64 %52, i64 %53, i64 ptrtoint (ptr @1717 to i64))
+  %54 = call i64 @to_i64(i64 %52, i64 %53, i64 ptrtoint (ptr @1716 to i64))
   %55 = call i64 @ok_emit_str(i64 %54)
   store i64 %55, ptr %match_result, align 4
   br label %bb5329
@@ -57584,7 +57545,7 @@ bb5351:                                           ; preds = %bb5349
   %139 = getelementptr inbounds %EmitResult, ptr %131, i32 0, i32 2
   store i64 0, ptr %139, align 4
   %140 = getelementptr inbounds %EmitResult, ptr %131, i32 0, i32 3
-  store i64 ptrtoint (ptr @1718 to i64), ptr %140, align 4
+  store i64 ptrtoint (ptr @1717 to i64), ptr %140, align 4
   %141 = ptrtoint ptr %131 to i64
   ret i64 %141
 
@@ -57637,7 +57598,7 @@ bb5354:                                           ; preds = %bb5353
   %175 = getelementptr inbounds %EmitResult, ptr %167, i32 0, i32 2
   store i64 0, ptr %175, align 4
   %176 = getelementptr inbounds %EmitResult, ptr %167, i32 0, i32 3
-  store i64 ptrtoint (ptr @1719 to i64), ptr %176, align 4
+  store i64 ptrtoint (ptr @1718 to i64), ptr %176, align 4
   %177 = ptrtoint ptr %167 to i64
   ret i64 %177
 
@@ -57647,12 +57608,12 @@ bb5355:                                           ; preds = %bb5353
 bb5356:                                           ; preds = %bb5355
   %178 = load i64, ptr %name, align 4
   %179 = inttoptr i64 %178 to ptr
-  %180 = call i64 @strlen(ptr @1720)
+  %180 = call i64 @strlen(ptr @1719)
   %181 = call i64 @strlen(ptr %179)
   %182 = add i64 %180, %181
   %183 = add i64 %182, 1
   %184 = call ptr @forge_bump_alloc(i64 %183)
-  %185 = call ptr @memcpy(ptr %184, ptr @1720, i64 %180)
+  %185 = call ptr @memcpy(ptr %184, ptr @1719, i64 %180)
   %186 = ptrtoint ptr %184 to i64
   %187 = add i64 %186, %180
   %188 = inttoptr i64 %187 to ptr
@@ -57661,7 +57622,7 @@ bb5356:                                           ; preds = %bb5355
   %191 = ptrtoint ptr %184 to i64
   %192 = inttoptr i64 %191 to ptr
   %193 = call i64 @strlen(ptr %192)
-  %194 = call i64 @strlen(ptr @1721)
+  %194 = call i64 @strlen(ptr @1720)
   %195 = add i64 %193, %194
   %196 = add i64 %195, 1
   %197 = call ptr @forge_bump_alloc(i64 %196)
@@ -57670,7 +57631,7 @@ bb5356:                                           ; preds = %bb5355
   %200 = add i64 %199, %193
   %201 = inttoptr i64 %200 to ptr
   %202 = add i64 %194, 1
-  %203 = call ptr @memcpy(ptr %201, ptr @1721, i64 %202)
+  %203 = call ptr @memcpy(ptr %201, ptr @1720, i64 %202)
   %204 = ptrtoint ptr %197 to i64
   %205 = call i64 @err_emit(i64 %204)
   store i64 %205, ptr %match_result, align 4
@@ -57753,7 +57714,7 @@ bb5362:                                           ; preds = %bb5361
   %254 = getelementptr inbounds %EmitResult, ptr %243, i32 0, i32 2
   store i64 0, ptr %254, align 4
   %255 = getelementptr inbounds %EmitResult, ptr %243, i32 0, i32 3
-  store i64 ptrtoint (ptr @1722 to i64), ptr %255, align 4
+  store i64 ptrtoint (ptr @1721 to i64), ptr %255, align 4
   %256 = ptrtoint ptr %243 to i64
   ret i64 %256
 
@@ -57806,7 +57767,7 @@ bb5365:                                           ; preds = %bb5364
   %292 = getelementptr inbounds %EmitResult, ptr %281, i32 0, i32 2
   store i64 0, ptr %292, align 4
   %293 = getelementptr inbounds %EmitResult, ptr %281, i32 0, i32 3
-  store i64 ptrtoint (ptr @1723 to i64), ptr %293, align 4
+  store i64 ptrtoint (ptr @1722 to i64), ptr %293, align 4
   %294 = ptrtoint ptr %281 to i64
   ret i64 %294
 
@@ -57816,12 +57777,12 @@ bb5366:                                           ; preds = %bb5364
 bb5367:                                           ; preds = %bb5366
   %295 = load i64, ptr %name10, align 4
   %296 = inttoptr i64 %295 to ptr
-  %297 = call i64 @strlen(ptr @1724)
+  %297 = call i64 @strlen(ptr @1723)
   %298 = call i64 @strlen(ptr %296)
   %299 = add i64 %297, %298
   %300 = add i64 %299, 1
   %301 = call ptr @forge_bump_alloc(i64 %300)
-  %302 = call ptr @memcpy(ptr %301, ptr @1724, i64 %297)
+  %302 = call ptr @memcpy(ptr %301, ptr @1723, i64 %297)
   %303 = ptrtoint ptr %301 to i64
   %304 = add i64 %303, %297
   %305 = inttoptr i64 %304 to ptr
@@ -57830,7 +57791,7 @@ bb5367:                                           ; preds = %bb5366
   %308 = ptrtoint ptr %301 to i64
   %309 = inttoptr i64 %308 to ptr
   %310 = call i64 @strlen(ptr %309)
-  %311 = call i64 @strlen(ptr @1725)
+  %311 = call i64 @strlen(ptr @1724)
   %312 = add i64 %310, %311
   %313 = add i64 %312, 1
   %314 = call ptr @forge_bump_alloc(i64 %313)
@@ -57839,7 +57800,7 @@ bb5367:                                           ; preds = %bb5366
   %317 = add i64 %316, %310
   %318 = inttoptr i64 %317 to ptr
   %319 = add i64 %311, 1
-  %320 = call ptr @memcpy(ptr %318, ptr @1725, i64 %319)
+  %320 = call ptr @memcpy(ptr %318, ptr @1724, i64 %319)
   %321 = ptrtoint ptr %314 to i64
   %322 = call i64 @err_emit(i64 %321)
   store i64 %322, ptr %match_result, align 4
@@ -58257,7 +58218,7 @@ bb5405:                                           ; preds = %bb5403
   br label %bb5406
 
 bb5406:                                           ; preds = %bb5405
-  %527 = call i64 @err_emit(i64 ptrtoint (ptr @1726 to i64))
+  %527 = call i64 @err_emit(i64 ptrtoint (ptr @1725 to i64))
   store i64 %527, ptr %match_result, align 4
   br label %bb5329
 
@@ -58308,19 +58269,19 @@ bb5411:                                           ; preds = %bb5410
   %22 = load i64, ptr %21, align 4
   %23 = load i64, ptr %ctx, align 4
   %24 = call i64 @const_i64(i64 %23, i64 0)
-  %25 = call i64 @forge_llvm_build_icmp(i64 %18, i64 33, i64 %22, i64 %24, i64 ptrtoint (ptr @1727 to i64))
+  %25 = call i64 @forge_llvm_build_icmp(i64 %18, i64 33, i64 %22, i64 %24, i64 ptrtoint (ptr @1726 to i64))
   %cond_i1 = alloca i64, align 8
   store i64 %25, ptr %cond_i1, align 4
   %26 = load i64, ptr %ctx, align 4
-  %27 = call i64 @new_bb(i64 %26, i64 ptrtoint (ptr @1728 to i64))
+  %27 = call i64 @new_bb(i64 %26, i64 ptrtoint (ptr @1727 to i64))
   %then_bb = alloca i64, align 8
   store i64 %27, ptr %then_bb, align 4
   %28 = load i64, ptr %ctx, align 4
-  %29 = call i64 @new_bb(i64 %28, i64 ptrtoint (ptr @1729 to i64))
+  %29 = call i64 @new_bb(i64 %28, i64 ptrtoint (ptr @1728 to i64))
   %else_bb = alloca i64, align 8
   store i64 %29, ptr %else_bb, align 4
   %30 = load i64, ptr %ctx, align 4
-  %31 = call i64 @new_bb(i64 %30, i64 ptrtoint (ptr @1730 to i64))
+  %31 = call i64 @new_bb(i64 %30, i64 ptrtoint (ptr @1729 to i64))
   %merge_bb = alloca i64, align 8
   store i64 %31, ptr %merge_bb, align 4
   %32 = load i64, ptr %ctx, align 4
@@ -58331,7 +58292,7 @@ bb5411:                                           ; preds = %bb5410
   %37 = inttoptr i64 %36 to ptr
   %38 = getelementptr inbounds %Ctx, ptr %37, i32 0, i32 4
   %39 = load i64, ptr %38, align 4
-  %40 = call i64 @forge_llvm_build_alloca(i64 %35, i64 %39, i64 ptrtoint (ptr @1731 to i64))
+  %40 = call i64 @forge_llvm_build_alloca(i64 %35, i64 %39, i64 ptrtoint (ptr @1730 to i64))
   %result_slot = alloca i64, align 8
   store i64 %40, ptr %result_slot, align 4
   %41 = load i64, ptr %ctx, align 4
@@ -58485,7 +58446,7 @@ bb5423:                                           ; preds = %bb5422, %bb5421
   %149 = getelementptr inbounds %Ctx, ptr %148, i32 0, i32 4
   %150 = load i64, ptr %149, align 4
   %151 = load i64, ptr %result_slot, align 4
-  %152 = call i64 @forge_llvm_build_load(i64 %146, i64 %150, i64 %151, i64 ptrtoint (ptr @1732 to i64))
+  %152 = call i64 @forge_llvm_build_load(i64 %146, i64 %150, i64 %151, i64 ptrtoint (ptr @1731 to i64))
   %loaded = alloca i64, align 8
   store i64 %152, ptr %loaded, align 4
   %153 = load i64, ptr %loaded, align 4
@@ -58539,7 +58500,7 @@ bb5427:                                           ; preds = %bb5426
   store i64 %19, ptr %struct_name, align 4
   %20 = load i64, ptr %struct_name, align 4
   %21 = inttoptr i64 %20 to ptr
-  %22 = call i32 @strcmp(ptr %21, ptr @1733)
+  %22 = call i32 @strcmp(ptr %21, ptr @1732)
   %23 = zext i32 %22 to i64
   %24 = icmp eq i64 %23, 0
   %25 = zext i1 %24 to i64
@@ -58553,12 +58514,12 @@ bb5428:                                           ; preds = %bb5427
   %30 = load i64, ptr %29, align 4
   %31 = call i64 @vtype_display(i64 %30)
   %32 = inttoptr i64 %31 to ptr
-  %33 = call i64 @strlen(ptr @1734)
+  %33 = call i64 @strlen(ptr @1733)
   %34 = call i64 @strlen(ptr %32)
   %35 = add i64 %33, %34
   %36 = add i64 %35, 1
   %37 = call ptr @forge_bump_alloc(i64 %36)
-  %38 = call ptr @memcpy(ptr %37, ptr @1734, i64 %33)
+  %38 = call ptr @memcpy(ptr %37, ptr @1733, i64 %33)
   %39 = ptrtoint ptr %37 to i64
   %40 = add i64 %39, %33
   %41 = inttoptr i64 %40 to ptr
@@ -58567,7 +58528,7 @@ bb5428:                                           ; preds = %bb5427
   %44 = ptrtoint ptr %37 to i64
   %45 = inttoptr i64 %44 to ptr
   %46 = call i64 @strlen(ptr %45)
-  %47 = call i64 @strlen(ptr @1735)
+  %47 = call i64 @strlen(ptr @1734)
   %48 = add i64 %46, %47
   %49 = add i64 %48, 1
   %50 = call ptr @forge_bump_alloc(i64 %49)
@@ -58576,7 +58537,7 @@ bb5428:                                           ; preds = %bb5427
   %53 = add i64 %52, %46
   %54 = inttoptr i64 %53 to ptr
   %55 = add i64 %47, 1
-  %56 = call ptr @memcpy(ptr %54, ptr @1735, i64 %55)
+  %56 = call ptr @memcpy(ptr %54, ptr @1734, i64 %55)
   %57 = ptrtoint ptr %50 to i64
   %58 = call i64 @err_emit(i64 %57)
   ret i64 %58
@@ -58605,12 +58566,12 @@ bb5430:                                           ; preds = %bb5429
 bb5431:                                           ; preds = %bb5430
   %72 = load i64, ptr %struct_name, align 4
   %73 = inttoptr i64 %72 to ptr
-  %74 = call i64 @strlen(ptr @1736)
+  %74 = call i64 @strlen(ptr @1735)
   %75 = call i64 @strlen(ptr %73)
   %76 = add i64 %74, %75
   %77 = add i64 %76, 1
   %78 = call ptr @forge_bump_alloc(i64 %77)
-  %79 = call ptr @memcpy(ptr %78, ptr @1736, i64 %74)
+  %79 = call ptr @memcpy(ptr %78, ptr @1735, i64 %74)
   %80 = ptrtoint ptr %78 to i64
   %81 = add i64 %80, %74
   %82 = inttoptr i64 %81 to ptr
@@ -58619,7 +58580,7 @@ bb5431:                                           ; preds = %bb5430
   %85 = ptrtoint ptr %78 to i64
   %86 = inttoptr i64 %85 to ptr
   %87 = call i64 @strlen(ptr %86)
-  %88 = call i64 @strlen(ptr @1737)
+  %88 = call i64 @strlen(ptr @1736)
   %89 = add i64 %87, %88
   %90 = add i64 %89, 1
   %91 = call ptr @forge_bump_alloc(i64 %90)
@@ -58628,7 +58589,7 @@ bb5431:                                           ; preds = %bb5430
   %94 = add i64 %93, %87
   %95 = inttoptr i64 %94 to ptr
   %96 = add i64 %88, 1
-  %97 = call ptr @memcpy(ptr %95, ptr @1737, i64 %96)
+  %97 = call ptr @memcpy(ptr %95, ptr @1736, i64 %96)
   %98 = ptrtoint ptr %91 to i64
   %99 = call i64 @err_emit(i64 %98)
   ret i64 %99
@@ -58654,12 +58615,12 @@ bb5433:                                           ; preds = %bb5432
 bb5434:                                           ; preds = %bb5433
   %110 = load i64, ptr %field, align 4
   %111 = inttoptr i64 %110 to ptr
-  %112 = call i64 @strlen(ptr @1738)
+  %112 = call i64 @strlen(ptr @1737)
   %113 = call i64 @strlen(ptr %111)
   %114 = add i64 %112, %113
   %115 = add i64 %114, 1
   %116 = call ptr @forge_bump_alloc(i64 %115)
-  %117 = call ptr @memcpy(ptr %116, ptr @1738, i64 %112)
+  %117 = call ptr @memcpy(ptr %116, ptr @1737, i64 %112)
   %118 = ptrtoint ptr %116 to i64
   %119 = add i64 %118, %112
   %120 = inttoptr i64 %119 to ptr
@@ -58668,7 +58629,7 @@ bb5434:                                           ; preds = %bb5433
   %123 = ptrtoint ptr %116 to i64
   %124 = inttoptr i64 %123 to ptr
   %125 = call i64 @strlen(ptr %124)
-  %126 = call i64 @strlen(ptr @1739)
+  %126 = call i64 @strlen(ptr @1738)
   %127 = add i64 %125, %126
   %128 = add i64 %127, 1
   %129 = call ptr @forge_bump_alloc(i64 %128)
@@ -58677,7 +58638,7 @@ bb5434:                                           ; preds = %bb5433
   %132 = add i64 %131, %125
   %133 = inttoptr i64 %132 to ptr
   %134 = add i64 %126, 1
-  %135 = call ptr @memcpy(ptr %133, ptr @1739, i64 %134)
+  %135 = call ptr @memcpy(ptr %133, ptr @1738, i64 %134)
   %136 = ptrtoint ptr %129 to i64
   %137 = load i64, ptr %struct_name, align 4
   %138 = inttoptr i64 %136 to ptr
@@ -58696,7 +58657,7 @@ bb5434:                                           ; preds = %bb5433
   %151 = ptrtoint ptr %144 to i64
   %152 = inttoptr i64 %151 to ptr
   %153 = call i64 @strlen(ptr %152)
-  %154 = call i64 @strlen(ptr @1740)
+  %154 = call i64 @strlen(ptr @1739)
   %155 = add i64 %153, %154
   %156 = add i64 %155, 1
   %157 = call ptr @forge_bump_alloc(i64 %156)
@@ -58705,7 +58666,7 @@ bb5434:                                           ; preds = %bb5433
   %160 = add i64 %159, %153
   %161 = inttoptr i64 %160 to ptr
   %162 = add i64 %154, 1
-  %163 = call ptr @memcpy(ptr %161, ptr @1740, i64 %162)
+  %163 = call ptr @memcpy(ptr %161, ptr @1739, i64 %162)
   %164 = ptrtoint ptr %157 to i64
   %165 = call i64 @err_emit(i64 %164)
   ret i64 %165
@@ -58727,7 +58688,7 @@ bb5436:                                           ; preds = %bb5435
   %174 = inttoptr i64 %173 to ptr
   %175 = getelementptr inbounds %EmitResult, ptr %174, i32 0, i32 0
   %176 = load i64, ptr %175, align 4
-  %177 = call i64 @to_ptr(i64 %172, i64 %176, i64 ptrtoint (ptr @1741 to i64))
+  %177 = call i64 @to_ptr(i64 %172, i64 %176, i64 ptrtoint (ptr @1740 to i64))
   %obj_ptr = alloca i64, align 8
   store i64 %177, ptr %obj_ptr, align 4
   %178 = load i64, ptr %ctx, align 4
@@ -58737,7 +58698,7 @@ bb5436:                                           ; preds = %bb5435
   %182 = load i64, ptr %st_ty, align 4
   %183 = load i64, ptr %obj_ptr, align 4
   %184 = load i64, ptr %idx, align 4
-  %185 = call i64 @forge_llvm_build_struct_gep2(i64 %181, i64 %182, i64 %183, i64 %184, i64 ptrtoint (ptr @1742 to i64))
+  %185 = call i64 @forge_llvm_build_struct_gep2(i64 %181, i64 %182, i64 %183, i64 %184, i64 ptrtoint (ptr @1741 to i64))
   %gep = alloca i64, align 8
   store i64 %185, ptr %gep, align 4
   %186 = load i64, ptr %ctx, align 4
@@ -58792,7 +58753,7 @@ bb5440:
   %5 = load i64, ptr %stmts, align 4
   %6 = load i64, ptr %ctx, align 4
   %7 = call i64 @const_i64(i64 %6, i64 0)
-  %8 = call ptr @malloc(i64 24)
+  %8 = call ptr @forge_bump_alloc(i64 24)
   %9 = getelementptr inbounds %ValueType, ptr %8, i32 0, i32 0
   store i8 0, ptr %9, align 1
   %10 = ptrtoint ptr %8 to i64
@@ -58946,7 +58907,7 @@ bb5455:                                           ; preds = %bb5454
   %70 = getelementptr inbounds %EmitResult, ptr %65, i32 0, i32 2
   store i64 0, ptr %70, align 4
   %71 = getelementptr inbounds %EmitResult, ptr %65, i32 0, i32 3
-  store i64 ptrtoint (ptr @1743 to i64), ptr %71, align 4
+  store i64 ptrtoint (ptr @1742 to i64), ptr %71, align 4
   %72 = ptrtoint ptr %65 to i64
   store i64 %72, ptr %match_result, align 4
   br label %bb5442
@@ -58995,19 +58956,19 @@ bb5459:                                           ; preds = %bb5458
   %22 = load i64, ptr %21, align 4
   %23 = load i64, ptr %ctx, align 4
   %24 = call i64 @const_i64(i64 %23, i64 0)
-  %25 = call i64 @forge_llvm_build_icmp(i64 %18, i64 33, i64 %22, i64 %24, i64 ptrtoint (ptr @1744 to i64))
+  %25 = call i64 @forge_llvm_build_icmp(i64 %18, i64 33, i64 %22, i64 %24, i64 ptrtoint (ptr @1743 to i64))
   %cond_i1 = alloca i64, align 8
   store i64 %25, ptr %cond_i1, align 4
   %26 = load i64, ptr %ctx, align 4
-  %27 = call i64 @new_bb(i64 %26, i64 ptrtoint (ptr @1745 to i64))
+  %27 = call i64 @new_bb(i64 %26, i64 ptrtoint (ptr @1744 to i64))
   %then_bb = alloca i64, align 8
   store i64 %27, ptr %then_bb, align 4
   %28 = load i64, ptr %ctx, align 4
-  %29 = call i64 @new_bb(i64 %28, i64 ptrtoint (ptr @1746 to i64))
+  %29 = call i64 @new_bb(i64 %28, i64 ptrtoint (ptr @1745 to i64))
   %else_bb = alloca i64, align 8
   store i64 %29, ptr %else_bb, align 4
   %30 = load i64, ptr %ctx, align 4
-  %31 = call i64 @new_bb(i64 %30, i64 ptrtoint (ptr @1747 to i64))
+  %31 = call i64 @new_bb(i64 %30, i64 ptrtoint (ptr @1746 to i64))
   %merge_bb = alloca i64, align 8
   store i64 %31, ptr %merge_bb, align 4
   %32 = load i64, ptr %ctx, align 4
@@ -59018,7 +58979,7 @@ bb5459:                                           ; preds = %bb5458
   %37 = inttoptr i64 %36 to ptr
   %38 = getelementptr inbounds %Ctx, ptr %37, i32 0, i32 4
   %39 = load i64, ptr %38, align 4
-  %40 = call i64 @forge_llvm_build_alloca(i64 %35, i64 %39, i64 ptrtoint (ptr @1748 to i64))
+  %40 = call i64 @forge_llvm_build_alloca(i64 %35, i64 %39, i64 ptrtoint (ptr @1747 to i64))
   %result_slot = alloca i64, align 8
   store i64 %40, ptr %result_slot, align 4
   %41 = load i64, ptr %ctx, align 4
@@ -59051,7 +59012,7 @@ bb5459:                                           ; preds = %bb5458
   %66 = load i64, ptr %env, align 4
   %67 = load i64, ptr %then_branch, align 4
   %68 = load i64, ptr %zero, align 4
-  %69 = call ptr @malloc(i64 24)
+  %69 = call ptr @forge_bump_alloc(i64 24)
   %70 = getelementptr inbounds %ValueType, ptr %69, i32 0, i32 0
   store i8 0, ptr %70, align 1
   %71 = ptrtoint ptr %69 to i64
@@ -59123,7 +59084,7 @@ bb5466:                                           ; preds = %bb5465
   %114 = load i64, ptr %env, align 4
   %115 = load i64, ptr %else_branch, align 4
   %116 = load i64, ptr %zero, align 4
-  %117 = call ptr @malloc(i64 24)
+  %117 = call ptr @forge_bump_alloc(i64 24)
   %118 = getelementptr inbounds %ValueType, ptr %117, i32 0, i32 0
   store i8 0, ptr %118, align 1
   %119 = ptrtoint ptr %117 to i64
@@ -59162,7 +59123,7 @@ bb5468:                                           ; preds = %bb5467, %bb5474
   %144 = getelementptr inbounds %Ctx, ptr %143, i32 0, i32 4
   %145 = load i64, ptr %144, align 4
   %146 = load i64, ptr %result_slot, align 4
-  %147 = call i64 @forge_llvm_build_load(i64 %141, i64 %145, i64 %146, i64 ptrtoint (ptr @1749 to i64))
+  %147 = call i64 @forge_llvm_build_load(i64 %141, i64 %145, i64 %146, i64 ptrtoint (ptr @1748 to i64))
   %loaded = alloca i64, align 8
   store i64 %147, ptr %loaded, align 4
   %148 = call ptr @malloc(i64 32)
@@ -59178,7 +59139,7 @@ bb5468:                                           ; preds = %bb5467, %bb5474
   %156 = getelementptr inbounds %EmitResult, ptr %148, i32 0, i32 2
   store i64 0, ptr %156, align 4
   %157 = getelementptr inbounds %EmitResult, ptr %148, i32 0, i32 3
-  store i64 ptrtoint (ptr @1750 to i64), ptr %157, align 4
+  store i64 ptrtoint (ptr @1749 to i64), ptr %157, align 4
   %158 = ptrtoint ptr %148 to i64
   ret i64 %158
 
@@ -59263,7 +59224,7 @@ bb5477:                                           ; preds = %bb5475
   %17 = getelementptr inbounds %EmitResult, ptr %12, i32 0, i32 2
   store i64 0, ptr %17, align 4
   %18 = getelementptr inbounds %EmitResult, ptr %12, i32 0, i32 3
-  store i64 ptrtoint (ptr @1751 to i64), ptr %18, align 4
+  store i64 ptrtoint (ptr @1750 to i64), ptr %18, align 4
   %19 = ptrtoint ptr %12 to i64
   store i64 %19, ptr %match_result, align 4
   br label %bb5476
@@ -59432,7 +59393,7 @@ bb5497:                                           ; preds = %bb5493
 bb5498:                                           ; preds = %bb5497
   %38 = load i64, ptr %ctx, align 4
   %39 = load i64, ptr %ctx, align 4
-  %40 = call i64 @get_fn(i64 %39, i64 ptrtoint (ptr @1752 to i64))
+  %40 = call i64 @get_fn(i64 %39, i64 ptrtoint (ptr @1751 to i64))
   %41 = load i64, ptr %r, align 4
   %42 = inttoptr i64 %41 to ptr
   %43 = getelementptr inbounds %EmitResult, ptr %42, i32 0, i32 0
@@ -59441,7 +59402,7 @@ bb5498:                                           ; preds = %bb5497
   %46 = inttoptr i64 %45 to ptr
   %47 = getelementptr inbounds %EmitResult, ptr %46, i32 0, i32 0
   %48 = load i64, ptr %47, align 4
-  %49 = call i64 @call_2(i64 %38, i64 %40, i64 %44, i64 %48, i64 ptrtoint (ptr @1753 to i64))
+  %49 = call i64 @call_2(i64 %38, i64 %40, i64 %44, i64 %48, i64 ptrtoint (ptr @1752 to i64))
   %elem = alloca i64, align 8
   store i64 %49, ptr %elem, align 4
   %50 = load i64, ptr %elem, align 4
@@ -59460,12 +59421,12 @@ bb5499:                                           ; preds = %bb5495
   %60 = load i64, ptr %59, align 4
   %61 = call i64 @vtype_display(i64 %60)
   %62 = inttoptr i64 %61 to ptr
-  %63 = call i64 @strlen(ptr @1754)
+  %63 = call i64 @strlen(ptr @1753)
   %64 = call i64 @strlen(ptr %62)
   %65 = add i64 %63, %64
   %66 = add i64 %65, 1
   %67 = call ptr @forge_bump_alloc(i64 %66)
-  %68 = call ptr @memcpy(ptr %67, ptr @1754, i64 %63)
+  %68 = call ptr @memcpy(ptr %67, ptr @1753, i64 %63)
   %69 = ptrtoint ptr %67 to i64
   %70 = add i64 %69, %63
   %71 = inttoptr i64 %70 to ptr
@@ -59474,7 +59435,7 @@ bb5499:                                           ; preds = %bb5495
   %74 = ptrtoint ptr %67 to i64
   %75 = inttoptr i64 %74 to ptr
   %76 = call i64 @strlen(ptr %75)
-  %77 = call i64 @strlen(ptr @1755)
+  %77 = call i64 @strlen(ptr @1754)
   %78 = add i64 %76, %77
   %79 = add i64 %78, 1
   %80 = call ptr @forge_bump_alloc(i64 %79)
@@ -59483,7 +59444,7 @@ bb5499:                                           ; preds = %bb5495
   %83 = add i64 %82, %76
   %84 = inttoptr i64 %83 to ptr
   %85 = add i64 %77, 1
-  %86 = call ptr @memcpy(ptr %84, ptr @1755, i64 %85)
+  %86 = call ptr @memcpy(ptr %84, ptr @1754, i64 %85)
   %87 = ptrtoint ptr %80 to i64
   %88 = call i64 @err_emit(i64 %87)
   ret i64 %88
@@ -59528,12 +59489,12 @@ bb5504:                                           ; preds = %bb5503
   %109 = inttoptr i64 %108 to ptr
   %110 = getelementptr inbounds %EmitResult, ptr %109, i32 0, i32 0
   %111 = load i64, ptr %110, align 4
-  %112 = call i64 @forge_llvm_build_add(i64 %106, i64 %107, i64 %111, i64 ptrtoint (ptr @1756 to i64))
+  %112 = call i64 @forge_llvm_build_add(i64 %106, i64 %107, i64 %111, i64 ptrtoint (ptr @1755 to i64))
   %off_int = alloca i64, align 8
   store i64 %112, ptr %off_int, align 4
   %113 = load i64, ptr %ctx, align 4
   %114 = load i64, ptr %off_int, align 4
-  %115 = call i64 @to_ptr(i64 %113, i64 %114, i64 ptrtoint (ptr @1757 to i64))
+  %115 = call i64 @to_ptr(i64 %113, i64 %114, i64 ptrtoint (ptr @1756 to i64))
   %off_ptr = alloca i64, align 8
   store i64 %115, ptr %off_ptr, align 4
   %116 = load i64, ptr %ctx, align 4
@@ -59546,7 +59507,7 @@ bb5504:                                           ; preds = %bb5503
   %123 = load i64, ptr %122, align 4
   %124 = call i64 @forge_llvm_int8_type(i64 %123)
   %125 = load i64, ptr %off_ptr, align 4
-  %126 = call i64 @forge_llvm_build_load(i64 %119, i64 %124, i64 %125, i64 ptrtoint (ptr @1758 to i64))
+  %126 = call i64 @forge_llvm_build_load(i64 %119, i64 %124, i64 %125, i64 ptrtoint (ptr @1757 to i64))
   %byte = alloca i64, align 8
   store i64 %126, ptr %byte, align 4
   %127 = load i64, ptr %ctx, align 4
@@ -59564,7 +59525,7 @@ bb5504:                                           ; preds = %bb5503
   %137 = call i64 @forge_llvm_build_store(i64 %134, i64 %135, i64 %136)
   %138 = load i64, ptr %ctx, align 4
   %139 = load i64, ptr %buf, align 4
-  %140 = call i64 @to_i64(i64 %138, i64 %139, i64 ptrtoint (ptr @1759 to i64))
+  %140 = call i64 @to_i64(i64 %138, i64 %139, i64 ptrtoint (ptr @1758 to i64))
   %buf_int = alloca i64, align 8
   store i64 %140, ptr %buf_int, align 4
   %141 = load i64, ptr %ctx, align 4
@@ -59577,12 +59538,12 @@ bb5504:                                           ; preds = %bb5503
   %146 = load i64, ptr %145, align 4
   %147 = load i64, ptr %buf_int, align 4
   %148 = load i64, ptr %one, align 4
-  %149 = call i64 @forge_llvm_build_add(i64 %146, i64 %147, i64 %148, i64 ptrtoint (ptr @1760 to i64))
+  %149 = call i64 @forge_llvm_build_add(i64 %146, i64 %147, i64 %148, i64 ptrtoint (ptr @1759 to i64))
   %nul_int = alloca i64, align 8
   store i64 %149, ptr %nul_int, align 4
   %150 = load i64, ptr %ctx, align 4
   %151 = load i64, ptr %nul_int, align 4
-  %152 = call i64 @to_ptr(i64 %150, i64 %151, i64 ptrtoint (ptr @1761 to i64))
+  %152 = call i64 @to_ptr(i64 %150, i64 %151, i64 ptrtoint (ptr @1760 to i64))
   %nul_ptr = alloca i64, align 8
   store i64 %152, ptr %nul_ptr, align 4
   %153 = load i64, ptr %ctx, align 4
@@ -59595,7 +59556,7 @@ bb5504:                                           ; preds = %bb5503
   %160 = call i64 @forge_llvm_build_store(i64 %156, i64 %158, i64 %159)
   %161 = load i64, ptr %ctx, align 4
   %162 = load i64, ptr %buf, align 4
-  %163 = call i64 @to_i64(i64 %161, i64 %162, i64 ptrtoint (ptr @1762 to i64))
+  %163 = call i64 @to_i64(i64 %161, i64 %162, i64 ptrtoint (ptr @1761 to i64))
   %result_i64 = alloca i64, align 8
   store i64 %163, ptr %result_i64, align 4
   %164 = load i64, ptr %result_i64, align 4
@@ -59665,7 +59626,7 @@ bb5509:                                           ; preds = %bb5507
   %33 = load i64, ptr %env, align 4
   %34 = load i64, ptr %head, align 4
   %35 = load i64, ptr %field, align 4
-  %36 = call ptr @malloc(i64 24)
+  %36 = call ptr @forge_bump_alloc(i64 24)
   %37 = getelementptr inbounds %ExprList, ptr %36, i32 0, i32 0
   store i8 0, ptr %37, align 1
   %38 = ptrtoint ptr %36 to i64
@@ -59705,7 +59666,7 @@ bb5516:                                           ; preds = %bb5515
 bb5517:                                           ; preds = %bb5516
   %49 = load i64, ptr %field, align 4
   %50 = inttoptr i64 %49 to ptr
-  %51 = call i32 @strcmp(ptr %50, ptr @1763)
+  %51 = call i32 @strcmp(ptr %50, ptr @1762)
   %52 = zext i32 %51 to i64
   %53 = icmp eq i64 %52, 0
   %54 = zext i1 %53 to i64
@@ -59724,14 +59685,14 @@ bb5519:                                           ; preds = %bb5518
   %61 = inttoptr i64 %60 to ptr
   %62 = getelementptr inbounds %EmitResult, ptr %61, i32 0, i32 0
   %63 = load i64, ptr %62, align 4
-  %64 = call i64 @to_ptr(i64 %59, i64 %63, i64 ptrtoint (ptr @1764 to i64))
+  %64 = call i64 @to_ptr(i64 %59, i64 %63, i64 ptrtoint (ptr @1763 to i64))
   %str_ptr = alloca i64, align 8
   store i64 %64, ptr %str_ptr, align 4
   %65 = load i64, ptr %ctx, align 4
   %66 = load i64, ptr %ctx, align 4
-  %67 = call i64 @get_fn(i64 %66, i64 ptrtoint (ptr @1765 to i64))
+  %67 = call i64 @get_fn(i64 %66, i64 ptrtoint (ptr @1764 to i64))
   %68 = load i64, ptr %str_ptr, align 4
-  %69 = call i64 @call_1(i64 %65, i64 %67, i64 %68, i64 ptrtoint (ptr @1766 to i64))
+  %69 = call i64 @call_1(i64 %65, i64 %67, i64 %68, i64 ptrtoint (ptr @1765 to i64))
   %70 = call i64 @ok_emit(i64 %69)
   ret i64 %70
 
@@ -59750,7 +59711,7 @@ bb5521:                                           ; preds = %bb5520
 bb5522:                                           ; preds = %bb5521
   %77 = load i64, ptr %field, align 4
   %78 = inttoptr i64 %77 to ptr
-  %79 = call i32 @strcmp(ptr %78, ptr @1767)
+  %79 = call i32 @strcmp(ptr %78, ptr @1766)
   %80 = zext i32 %79 to i64
   %81 = icmp eq i64 %80, 0
   %82 = zext i1 %81 to i64
@@ -59766,12 +59727,12 @@ bb5523:                                           ; preds = %bb5522, %bb5521
 bb5524:                                           ; preds = %bb5523
   %87 = load i64, ptr %ctx, align 4
   %88 = load i64, ptr %ctx, align 4
-  %89 = call i64 @get_fn(i64 %88, i64 ptrtoint (ptr @1768 to i64))
+  %89 = call i64 @get_fn(i64 %88, i64 ptrtoint (ptr @1767 to i64))
   %90 = load i64, ptr %r, align 4
   %91 = inttoptr i64 %90 to ptr
   %92 = getelementptr inbounds %EmitResult, ptr %91, i32 0, i32 0
   %93 = load i64, ptr %92, align 4
-  %94 = call i64 @call_1(i64 %87, i64 %89, i64 %93, i64 ptrtoint (ptr @1769 to i64))
+  %94 = call i64 @call_1(i64 %87, i64 %89, i64 %93, i64 ptrtoint (ptr @1768 to i64))
   %95 = call i64 @ok_emit(i64 %94)
   ret i64 %95
 
@@ -59790,7 +59751,7 @@ bb5526:                                           ; preds = %bb5525
 bb5527:                                           ; preds = %bb5526
   %102 = load i64, ptr %field, align 4
   %103 = inttoptr i64 %102 to ptr
-  %104 = call i32 @strcmp(ptr %103, ptr @1770)
+  %104 = call i32 @strcmp(ptr %103, ptr @1769)
   %105 = zext i32 %104 to i64
   %106 = icmp eq i64 %105, 0
   %107 = zext i1 %106 to i64
@@ -59806,12 +59767,12 @@ bb5528:                                           ; preds = %bb5527, %bb5526
 bb5529:                                           ; preds = %bb5528
   %112 = load i64, ptr %ctx, align 4
   %113 = load i64, ptr %ctx, align 4
-  %114 = call i64 @get_fn(i64 %113, i64 ptrtoint (ptr @1771 to i64))
+  %114 = call i64 @get_fn(i64 %113, i64 ptrtoint (ptr @1770 to i64))
   %115 = load i64, ptr %r, align 4
   %116 = inttoptr i64 %115 to ptr
   %117 = getelementptr inbounds %EmitResult, ptr %116, i32 0, i32 0
   %118 = load i64, ptr %117, align 4
-  %119 = call i64 @call_1(i64 %112, i64 %114, i64 %118, i64 ptrtoint (ptr @1772 to i64))
+  %119 = call i64 @call_1(i64 %112, i64 %114, i64 %118, i64 ptrtoint (ptr @1771 to i64))
   %120 = call i64 @ok_emit(i64 %119)
   ret i64 %120
 
@@ -59828,7 +59789,7 @@ bb5531:                                           ; preds = %bb5530
   store i64 %125, ptr %struct_name, align 4
   %126 = load i64, ptr %struct_name, align 4
   %127 = inttoptr i64 %126 to ptr
-  %128 = call i32 @strcmp(ptr %127, ptr @1773)
+  %128 = call i32 @strcmp(ptr %127, ptr @1772)
   %129 = zext i32 %128 to i64
   %130 = icmp eq i64 %129, 0
   %131 = zext i1 %130 to i64
@@ -59842,12 +59803,12 @@ bb5532:                                           ; preds = %bb5531
   %136 = load i64, ptr %135, align 4
   %137 = call i64 @vtype_display(i64 %136)
   %138 = inttoptr i64 %137 to ptr
-  %139 = call i64 @strlen(ptr @1774)
+  %139 = call i64 @strlen(ptr @1773)
   %140 = call i64 @strlen(ptr %138)
   %141 = add i64 %139, %140
   %142 = add i64 %141, 1
   %143 = call ptr @forge_bump_alloc(i64 %142)
-  %144 = call ptr @memcpy(ptr %143, ptr @1774, i64 %139)
+  %144 = call ptr @memcpy(ptr %143, ptr @1773, i64 %139)
   %145 = ptrtoint ptr %143 to i64
   %146 = add i64 %145, %139
   %147 = inttoptr i64 %146 to ptr
@@ -59856,7 +59817,7 @@ bb5532:                                           ; preds = %bb5531
   %150 = ptrtoint ptr %143 to i64
   %151 = inttoptr i64 %150 to ptr
   %152 = call i64 @strlen(ptr %151)
-  %153 = call i64 @strlen(ptr @1775)
+  %153 = call i64 @strlen(ptr @1774)
   %154 = add i64 %152, %153
   %155 = add i64 %154, 1
   %156 = call ptr @forge_bump_alloc(i64 %155)
@@ -59865,7 +59826,7 @@ bb5532:                                           ; preds = %bb5531
   %159 = add i64 %158, %152
   %160 = inttoptr i64 %159 to ptr
   %161 = add i64 %153, 1
-  %162 = call ptr @memcpy(ptr %160, ptr @1775, i64 %161)
+  %162 = call ptr @memcpy(ptr %160, ptr @1774, i64 %161)
   %163 = ptrtoint ptr %156 to i64
   %164 = load i64, ptr %field, align 4
   %165 = inttoptr i64 %163 to ptr
@@ -59884,7 +59845,7 @@ bb5532:                                           ; preds = %bb5531
   %178 = ptrtoint ptr %171 to i64
   %179 = inttoptr i64 %178 to ptr
   %180 = call i64 @strlen(ptr %179)
-  %181 = call i64 @strlen(ptr @1776)
+  %181 = call i64 @strlen(ptr @1775)
   %182 = add i64 %180, %181
   %183 = add i64 %182, 1
   %184 = call ptr @forge_bump_alloc(i64 %183)
@@ -59893,7 +59854,7 @@ bb5532:                                           ; preds = %bb5531
   %187 = add i64 %186, %180
   %188 = inttoptr i64 %187 to ptr
   %189 = add i64 %181, 1
-  %190 = call ptr @memcpy(ptr %188, ptr @1776, i64 %189)
+  %190 = call ptr @memcpy(ptr %188, ptr @1775, i64 %189)
   %191 = ptrtoint ptr %184 to i64
   %192 = call i64 @err_emit(i64 %191)
   ret i64 %192
@@ -59922,12 +59883,12 @@ bb5534:                                           ; preds = %bb5533
 bb5535:                                           ; preds = %bb5534
   %206 = load i64, ptr %struct_name, align 4
   %207 = inttoptr i64 %206 to ptr
-  %208 = call i64 @strlen(ptr @1777)
+  %208 = call i64 @strlen(ptr @1776)
   %209 = call i64 @strlen(ptr %207)
   %210 = add i64 %208, %209
   %211 = add i64 %210, 1
   %212 = call ptr @forge_bump_alloc(i64 %211)
-  %213 = call ptr @memcpy(ptr %212, ptr @1777, i64 %208)
+  %213 = call ptr @memcpy(ptr %212, ptr @1776, i64 %208)
   %214 = ptrtoint ptr %212 to i64
   %215 = add i64 %214, %208
   %216 = inttoptr i64 %215 to ptr
@@ -59936,7 +59897,7 @@ bb5535:                                           ; preds = %bb5534
   %219 = ptrtoint ptr %212 to i64
   %220 = inttoptr i64 %219 to ptr
   %221 = call i64 @strlen(ptr %220)
-  %222 = call i64 @strlen(ptr @1778)
+  %222 = call i64 @strlen(ptr @1777)
   %223 = add i64 %221, %222
   %224 = add i64 %223, 1
   %225 = call ptr @forge_bump_alloc(i64 %224)
@@ -59945,7 +59906,7 @@ bb5535:                                           ; preds = %bb5534
   %228 = add i64 %227, %221
   %229 = inttoptr i64 %228 to ptr
   %230 = add i64 %222, 1
-  %231 = call ptr @memcpy(ptr %229, ptr @1778, i64 %230)
+  %231 = call ptr @memcpy(ptr %229, ptr @1777, i64 %230)
   %232 = ptrtoint ptr %225 to i64
   %233 = call i64 @err_emit(i64 %232)
   ret i64 %233
@@ -59971,12 +59932,12 @@ bb5537:                                           ; preds = %bb5536
 bb5538:                                           ; preds = %bb5537
   %244 = load i64, ptr %field, align 4
   %245 = inttoptr i64 %244 to ptr
-  %246 = call i64 @strlen(ptr @1779)
+  %246 = call i64 @strlen(ptr @1778)
   %247 = call i64 @strlen(ptr %245)
   %248 = add i64 %246, %247
   %249 = add i64 %248, 1
   %250 = call ptr @forge_bump_alloc(i64 %249)
-  %251 = call ptr @memcpy(ptr %250, ptr @1779, i64 %246)
+  %251 = call ptr @memcpy(ptr %250, ptr @1778, i64 %246)
   %252 = ptrtoint ptr %250 to i64
   %253 = add i64 %252, %246
   %254 = inttoptr i64 %253 to ptr
@@ -59985,7 +59946,7 @@ bb5538:                                           ; preds = %bb5537
   %257 = ptrtoint ptr %250 to i64
   %258 = inttoptr i64 %257 to ptr
   %259 = call i64 @strlen(ptr %258)
-  %260 = call i64 @strlen(ptr @1780)
+  %260 = call i64 @strlen(ptr @1779)
   %261 = add i64 %259, %260
   %262 = add i64 %261, 1
   %263 = call ptr @forge_bump_alloc(i64 %262)
@@ -59994,7 +59955,7 @@ bb5538:                                           ; preds = %bb5537
   %266 = add i64 %265, %259
   %267 = inttoptr i64 %266 to ptr
   %268 = add i64 %260, 1
-  %269 = call ptr @memcpy(ptr %267, ptr @1780, i64 %268)
+  %269 = call ptr @memcpy(ptr %267, ptr @1779, i64 %268)
   %270 = ptrtoint ptr %263 to i64
   %271 = load i64, ptr %struct_name, align 4
   %272 = inttoptr i64 %270 to ptr
@@ -60013,7 +59974,7 @@ bb5538:                                           ; preds = %bb5537
   %285 = ptrtoint ptr %278 to i64
   %286 = inttoptr i64 %285 to ptr
   %287 = call i64 @strlen(ptr %286)
-  %288 = call i64 @strlen(ptr @1781)
+  %288 = call i64 @strlen(ptr @1780)
   %289 = add i64 %287, %288
   %290 = add i64 %289, 1
   %291 = call ptr @forge_bump_alloc(i64 %290)
@@ -60022,7 +59983,7 @@ bb5538:                                           ; preds = %bb5537
   %294 = add i64 %293, %287
   %295 = inttoptr i64 %294 to ptr
   %296 = add i64 %288, 1
-  %297 = call ptr @memcpy(ptr %295, ptr @1781, i64 %296)
+  %297 = call ptr @memcpy(ptr %295, ptr @1780, i64 %296)
   %298 = ptrtoint ptr %291 to i64
   %299 = call i64 @err_emit(i64 %298)
   ret i64 %299
@@ -60044,7 +60005,7 @@ bb5540:                                           ; preds = %bb5539
   %308 = inttoptr i64 %307 to ptr
   %309 = getelementptr inbounds %EmitResult, ptr %308, i32 0, i32 0
   %310 = load i64, ptr %309, align 4
-  %311 = call i64 @to_ptr(i64 %306, i64 %310, i64 ptrtoint (ptr @1782 to i64))
+  %311 = call i64 @to_ptr(i64 %306, i64 %310, i64 ptrtoint (ptr @1781 to i64))
   %obj_ptr = alloca i64, align 8
   store i64 %311, ptr %obj_ptr, align 4
   %312 = load i64, ptr %ctx, align 4
@@ -60054,7 +60015,7 @@ bb5540:                                           ; preds = %bb5539
   %316 = load i64, ptr %st_ty, align 4
   %317 = load i64, ptr %obj_ptr, align 4
   %318 = load i64, ptr %idx, align 4
-  %319 = call i64 @forge_llvm_build_struct_gep2(i64 %315, i64 %316, i64 %317, i64 %318, i64 ptrtoint (ptr @1783 to i64))
+  %319 = call i64 @forge_llvm_build_struct_gep2(i64 %315, i64 %316, i64 %317, i64 %318, i64 ptrtoint (ptr @1782 to i64))
   %gep = alloca i64, align 8
   store i64 %319, ptr %gep, align 4
   %320 = load i64, ptr %ctx, align 4
@@ -60097,7 +60058,7 @@ bb5540:                                           ; preds = %bb5539
   %351 = getelementptr inbounds %EmitResult, ptr %346, i32 0, i32 2
   store i64 0, ptr %351, align 4
   %352 = getelementptr inbounds %EmitResult, ptr %346, i32 0, i32 3
-  store i64 ptrtoint (ptr @1784 to i64), ptr %352, align 4
+  store i64 ptrtoint (ptr @1783 to i64), ptr %352, align 4
   %353 = ptrtoint ptr %346 to i64
   ret i64 %353
 }
@@ -60284,7 +60245,7 @@ bb5558:                                           ; preds = %bb5557
 bb5559:                                           ; preds = %bb5558
   %21 = load i64, ptr %method, align 4
   %22 = inttoptr i64 %21 to ptr
-  %23 = call i32 @strcmp(ptr %22, ptr @1785)
+  %23 = call i32 @strcmp(ptr %22, ptr @1784)
   %24 = zext i32 %23 to i64
   %25 = icmp eq i64 %24, 0
   %26 = zext i1 %25 to i64
@@ -60309,14 +60270,14 @@ bb5562:                                           ; preds = %bb5559
   %36 = inttoptr i64 %35 to ptr
   %37 = getelementptr inbounds %EmitResult, ptr %36, i32 0, i32 0
   %38 = load i64, ptr %37, align 4
-  %39 = call i64 @to_ptr(i64 %34, i64 %38, i64 ptrtoint (ptr @1786 to i64))
+  %39 = call i64 @to_ptr(i64 %34, i64 %38, i64 ptrtoint (ptr @1785 to i64))
   %str_ptr = alloca i64, align 8
   store i64 %39, ptr %str_ptr, align 4
   %40 = load i64, ptr %ctx, align 4
   %41 = load i64, ptr %ctx, align 4
-  %42 = call i64 @get_fn(i64 %41, i64 ptrtoint (ptr @1787 to i64))
+  %42 = call i64 @get_fn(i64 %41, i64 ptrtoint (ptr @1786 to i64))
   %43 = load i64, ptr %str_ptr, align 4
-  %44 = call i64 @call_1(i64 %40, i64 %42, i64 %43, i64 ptrtoint (ptr @1788 to i64))
+  %44 = call i64 @call_1(i64 %40, i64 %42, i64 %43, i64 ptrtoint (ptr @1787 to i64))
   %45 = call i64 @ok_emit(i64 %44)
   ret i64 %45
 
@@ -60326,7 +60287,7 @@ bb5563:                                           ; preds = %bb5559
 bb5564:                                           ; preds = %bb5563
   %46 = load i64, ptr %method, align 4
   %47 = inttoptr i64 %46 to ptr
-  %48 = call i32 @strcmp(ptr %47, ptr @1789)
+  %48 = call i32 @strcmp(ptr %47, ptr @1788)
   %49 = zext i32 %48 to i64
   %50 = icmp eq i64 %49, 0
   %51 = zext i1 %50 to i64
@@ -60350,7 +60311,7 @@ bb5566:                                           ; preds = %bb5564
 bb5567:                                           ; preds = %bb5566
   %61 = load i64, ptr %method, align 4
   %62 = inttoptr i64 %61 to ptr
-  %63 = call i32 @strcmp(ptr %62, ptr @1790)
+  %63 = call i32 @strcmp(ptr %62, ptr @1789)
   %64 = zext i32 %63 to i64
   %65 = icmp eq i64 %64, 0
   %66 = zext i1 %65 to i64
@@ -60360,7 +60321,7 @@ bb5567:                                           ; preds = %bb5566
 bb5568:                                           ; preds = %bb5567
   %68 = load i64, ptr %method, align 4
   %69 = inttoptr i64 %68 to ptr
-  %70 = call i32 @strcmp(ptr %69, ptr @1791)
+  %70 = call i32 @strcmp(ptr %69, ptr @1790)
   %71 = zext i32 %70 to i64
   %72 = icmp eq i64 %71, 0
   %73 = zext i1 %72 to i64
@@ -60376,7 +60337,7 @@ bb5569:                                           ; preds = %bb5568, %bb5567
 bb5570:                                           ; preds = %bb5569
   %78 = load i64, ptr %method, align 4
   %79 = inttoptr i64 %78 to ptr
-  %80 = call i32 @strcmp(ptr %79, ptr @1792)
+  %80 = call i32 @strcmp(ptr %79, ptr @1791)
   %81 = zext i32 %80 to i64
   %82 = icmp eq i64 %81, 0
   %83 = zext i1 %82 to i64
@@ -60392,7 +60353,7 @@ bb5571:                                           ; preds = %bb5570, %bb5569
 bb5572:                                           ; preds = %bb5571
   %88 = load i64, ptr %method, align 4
   %89 = inttoptr i64 %88 to ptr
-  %90 = call i32 @strcmp(ptr %89, ptr @1793)
+  %90 = call i32 @strcmp(ptr %89, ptr @1792)
   %91 = zext i32 %90 to i64
   %92 = icmp eq i64 %91, 0
   %93 = zext i1 %92 to i64
@@ -60419,7 +60380,7 @@ bb5575:                                           ; preds = %bb5573
 bb5576:                                           ; preds = %bb5575
   %103 = load i64, ptr %method, align 4
   %104 = inttoptr i64 %103 to ptr
-  %105 = call i32 @strcmp(ptr %104, ptr @1797)
+  %105 = call i32 @strcmp(ptr %104, ptr @1796)
   %106 = zext i32 %105 to i64
   %107 = icmp eq i64 %106, 0
   %108 = zext i1 %107 to i64
@@ -60431,12 +60392,12 @@ bb5577:                                           ; preds = %bb5574
   store i64 %101, ptr %arg_r, align 4
   %110 = load i64, ptr %method, align 4
   %111 = inttoptr i64 %110 to ptr
-  %112 = call i64 @strlen(ptr @1794)
+  %112 = call i64 @strlen(ptr @1793)
   %113 = call i64 @strlen(ptr %111)
   %114 = add i64 %112, %113
   %115 = add i64 %114, 1
   %116 = call ptr @forge_bump_alloc(i64 %115)
-  %117 = call ptr @memcpy(ptr %116, ptr @1794, i64 %112)
+  %117 = call ptr @memcpy(ptr %116, ptr @1793, i64 %112)
   %118 = ptrtoint ptr %116 to i64
   %119 = add i64 %118, %112
   %120 = inttoptr i64 %119 to ptr
@@ -60450,7 +60411,7 @@ bb5577:                                           ; preds = %bb5574
   %126 = inttoptr i64 %125 to ptr
   %127 = getelementptr inbounds %EmitResult, ptr %126, i32 0, i32 0
   %128 = load i64, ptr %127, align 4
-  %129 = call i64 @to_ptr(i64 %124, i64 %128, i64 ptrtoint (ptr @1795 to i64))
+  %129 = call i64 @to_ptr(i64 %124, i64 %128, i64 ptrtoint (ptr @1794 to i64))
   %str_ptr1 = alloca i64, align 8
   store i64 %129, ptr %str_ptr1, align 4
   %130 = load i64, ptr %ctx, align 4
@@ -60458,7 +60419,7 @@ bb5577:                                           ; preds = %bb5574
   %132 = inttoptr i64 %131 to ptr
   %133 = getelementptr inbounds %EmitResult, ptr %132, i32 0, i32 0
   %134 = load i64, ptr %133, align 4
-  %135 = call i64 @to_ptr(i64 %130, i64 %134, i64 ptrtoint (ptr @1796 to i64))
+  %135 = call i64 @to_ptr(i64 %130, i64 %134, i64 ptrtoint (ptr @1795 to i64))
   %arg_ptr = alloca i64, align 8
   store i64 %135, ptr %arg_ptr, align 4
   %136 = load i64, ptr %ctx, align 4
@@ -60492,7 +60453,7 @@ bb5580:                                           ; preds = %bb5576
 bb5581:                                           ; preds = %bb5580
   %153 = load i64, ptr %method, align 4
   %154 = inttoptr i64 %153 to ptr
-  %155 = call i32 @strcmp(ptr %154, ptr @1798)
+  %155 = call i32 @strcmp(ptr %154, ptr @1797)
   %156 = zext i32 %155 to i64
   %157 = icmp eq i64 %156, 0
   %158 = zext i1 %157 to i64
@@ -60505,16 +60466,16 @@ bb5582:                                           ; preds = %bb5581
   %162 = inttoptr i64 %161 to ptr
   %163 = getelementptr inbounds %EmitResult, ptr %162, i32 0, i32 0
   %164 = load i64, ptr %163, align 4
-  %165 = call i64 @to_ptr(i64 %160, i64 %164, i64 ptrtoint (ptr @1799 to i64))
+  %165 = call i64 @to_ptr(i64 %160, i64 %164, i64 ptrtoint (ptr @1798 to i64))
   %str_ptr2 = alloca i64, align 8
   store i64 %165, ptr %str_ptr2, align 4
   %166 = load i64, ptr %ctx, align 4
   %167 = load i64, ptr %ctx, align 4
   %168 = load i64, ptr %ctx, align 4
-  %169 = call i64 @get_fn(i64 %168, i64 ptrtoint (ptr @1800 to i64))
+  %169 = call i64 @get_fn(i64 %168, i64 ptrtoint (ptr @1799 to i64))
   %170 = load i64, ptr %str_ptr2, align 4
-  %171 = call i64 @call_1(i64 %167, i64 %169, i64 %170, i64 ptrtoint (ptr @1801 to i64))
-  %172 = call i64 @to_i64(i64 %166, i64 %171, i64 ptrtoint (ptr @1802 to i64))
+  %171 = call i64 @call_1(i64 %167, i64 %169, i64 %170, i64 ptrtoint (ptr @1800 to i64))
+  %172 = call i64 @to_i64(i64 %166, i64 %171, i64 ptrtoint (ptr @1801 to i64))
   %173 = call i64 @ok_emit_str(i64 %172)
   ret i64 %173
 
@@ -60524,7 +60485,7 @@ bb5583:                                           ; preds = %bb5581
 bb5584:                                           ; preds = %bb5583
   %174 = load i64, ptr %method, align 4
   %175 = inttoptr i64 %174 to ptr
-  %176 = call i32 @strcmp(ptr %175, ptr @1803)
+  %176 = call i32 @strcmp(ptr %175, ptr @1802)
   %177 = zext i32 %176 to i64
   %178 = icmp eq i64 %177, 0
   %179 = zext i1 %178 to i64
@@ -60534,7 +60495,7 @@ bb5584:                                           ; preds = %bb5583
 bb5585:                                           ; preds = %bb5584
   %181 = load i64, ptr %method, align 4
   %182 = inttoptr i64 %181 to ptr
-  %183 = call i32 @strcmp(ptr %182, ptr @1804)
+  %183 = call i32 @strcmp(ptr %182, ptr @1803)
   %184 = zext i32 %183 to i64
   %185 = icmp eq i64 %184, 0
   %186 = zext i1 %185 to i64
@@ -60553,16 +60514,16 @@ bb5587:                                           ; preds = %bb5586
   %193 = inttoptr i64 %192 to ptr
   %194 = getelementptr inbounds %EmitResult, ptr %193, i32 0, i32 0
   %195 = load i64, ptr %194, align 4
-  %196 = call i64 @to_ptr(i64 %191, i64 %195, i64 ptrtoint (ptr @1805 to i64))
+  %196 = call i64 @to_ptr(i64 %191, i64 %195, i64 ptrtoint (ptr @1804 to i64))
   %str_ptr3 = alloca i64, align 8
   store i64 %196, ptr %str_ptr3, align 4
   %197 = load i64, ptr %ctx, align 4
   %198 = load i64, ptr %ctx, align 4
   %199 = load i64, ptr %ctx, align 4
-  %200 = call i64 @get_fn(i64 %199, i64 ptrtoint (ptr @1806 to i64))
+  %200 = call i64 @get_fn(i64 %199, i64 ptrtoint (ptr @1805 to i64))
   %201 = load i64, ptr %str_ptr3, align 4
-  %202 = call i64 @call_1(i64 %198, i64 %200, i64 %201, i64 ptrtoint (ptr @1807 to i64))
-  %203 = call i64 @to_i64(i64 %197, i64 %202, i64 ptrtoint (ptr @1808 to i64))
+  %202 = call i64 @call_1(i64 %198, i64 %200, i64 %201, i64 ptrtoint (ptr @1806 to i64))
+  %203 = call i64 @to_i64(i64 %197, i64 %202, i64 ptrtoint (ptr @1807 to i64))
   %204 = call i64 @ok_emit_str(i64 %203)
   ret i64 %204
 
@@ -60572,7 +60533,7 @@ bb5588:                                           ; preds = %bb5586
 bb5589:                                           ; preds = %bb5588
   %205 = load i64, ptr %method, align 4
   %206 = inttoptr i64 %205 to ptr
-  %207 = call i32 @strcmp(ptr %206, ptr @1809)
+  %207 = call i32 @strcmp(ptr %206, ptr @1808)
   %208 = zext i32 %207 to i64
   %209 = icmp eq i64 %208, 0
   %210 = zext i1 %209 to i64
@@ -60582,7 +60543,7 @@ bb5589:                                           ; preds = %bb5588
 bb5590:                                           ; preds = %bb5589
   %212 = load i64, ptr %method, align 4
   %213 = inttoptr i64 %212 to ptr
-  %214 = call i32 @strcmp(ptr %213, ptr @1810)
+  %214 = call i32 @strcmp(ptr %213, ptr @1809)
   %215 = zext i32 %214 to i64
   %216 = icmp eq i64 %215, 0
   %217 = zext i1 %216 to i64
@@ -60601,16 +60562,16 @@ bb5592:                                           ; preds = %bb5591
   %224 = inttoptr i64 %223 to ptr
   %225 = getelementptr inbounds %EmitResult, ptr %224, i32 0, i32 0
   %226 = load i64, ptr %225, align 4
-  %227 = call i64 @to_ptr(i64 %222, i64 %226, i64 ptrtoint (ptr @1811 to i64))
+  %227 = call i64 @to_ptr(i64 %222, i64 %226, i64 ptrtoint (ptr @1810 to i64))
   %str_ptr4 = alloca i64, align 8
   store i64 %227, ptr %str_ptr4, align 4
   %228 = load i64, ptr %ctx, align 4
   %229 = load i64, ptr %ctx, align 4
   %230 = load i64, ptr %ctx, align 4
-  %231 = call i64 @get_fn(i64 %230, i64 ptrtoint (ptr @1812 to i64))
+  %231 = call i64 @get_fn(i64 %230, i64 ptrtoint (ptr @1811 to i64))
   %232 = load i64, ptr %str_ptr4, align 4
-  %233 = call i64 @call_1(i64 %229, i64 %231, i64 %232, i64 ptrtoint (ptr @1813 to i64))
-  %234 = call i64 @to_i64(i64 %228, i64 %233, i64 ptrtoint (ptr @1814 to i64))
+  %233 = call i64 @call_1(i64 %229, i64 %231, i64 %232, i64 ptrtoint (ptr @1812 to i64))
+  %234 = call i64 @to_i64(i64 %228, i64 %233, i64 ptrtoint (ptr @1813 to i64))
   %235 = call i64 @ok_emit_str(i64 %234)
   ret i64 %235
 
@@ -60620,7 +60581,7 @@ bb5593:                                           ; preds = %bb5591
 bb5594:                                           ; preds = %bb5593
   %236 = load i64, ptr %method, align 4
   %237 = inttoptr i64 %236 to ptr
-  %238 = call i32 @strcmp(ptr %237, ptr @1815)
+  %238 = call i32 @strcmp(ptr %237, ptr @1814)
   %239 = zext i32 %238 to i64
   %240 = icmp eq i64 %239, 0
   %241 = zext i1 %240 to i64
@@ -60641,12 +60602,12 @@ bb5596:                                           ; preds = %bb5594
 bb5597:                                           ; preds = %bb5596
   %248 = load i64, ptr %method, align 4
   %249 = inttoptr i64 %248 to ptr
-  %250 = call i64 @strlen(ptr @1821)
+  %250 = call i64 @strlen(ptr @1820)
   %251 = call i64 @strlen(ptr %249)
   %252 = add i64 %250, %251
   %253 = add i64 %252, 1
   %254 = call ptr @forge_bump_alloc(i64 %253)
-  %255 = call ptr @memcpy(ptr %254, ptr @1821, i64 %250)
+  %255 = call ptr @memcpy(ptr %254, ptr @1820, i64 %250)
   %256 = ptrtoint ptr %254 to i64
   %257 = add i64 %256, %250
   %258 = inttoptr i64 %257 to ptr
@@ -60655,7 +60616,7 @@ bb5597:                                           ; preds = %bb5596
   %261 = ptrtoint ptr %254 to i64
   %262 = inttoptr i64 %261 to ptr
   %263 = call i64 @strlen(ptr %262)
-  %264 = call i64 @strlen(ptr @1822)
+  %264 = call i64 @strlen(ptr @1821)
   %265 = add i64 %263, %264
   %266 = add i64 %265, 1
   %267 = call ptr @forge_bump_alloc(i64 %266)
@@ -60664,7 +60625,7 @@ bb5597:                                           ; preds = %bb5596
   %270 = add i64 %269, %263
   %271 = inttoptr i64 %270 to ptr
   %272 = add i64 %264, 1
-  %273 = call ptr @memcpy(ptr %271, ptr @1822, i64 %272)
+  %273 = call ptr @memcpy(ptr %271, ptr @1821, i64 %272)
   %274 = ptrtoint ptr %267 to i64
   %275 = call i64 @err_emit(i64 %274)
   ret i64 %275
@@ -60677,7 +60638,7 @@ bb5598:                                           ; preds = %bb5595
   %278 = inttoptr i64 %277 to ptr
   %279 = getelementptr inbounds %EmitResult, ptr %278, i32 0, i32 0
   %280 = load i64, ptr %279, align 4
-  %281 = call i64 @to_ptr(i64 %276, i64 %280, i64 ptrtoint (ptr @1816 to i64))
+  %281 = call i64 @to_ptr(i64 %276, i64 %280, i64 ptrtoint (ptr @1815 to i64))
   %str_ptr6 = alloca i64, align 8
   store i64 %281, ptr %str_ptr6, align 4
   %282 = load i64, ptr %ctx, align 4
@@ -60685,25 +60646,25 @@ bb5598:                                           ; preds = %bb5595
   %284 = inttoptr i64 %283 to ptr
   %285 = getelementptr inbounds %EmitResult, ptr %284, i32 0, i32 0
   %286 = load i64, ptr %285, align 4
-  %287 = call i64 @to_ptr(i64 %282, i64 %286, i64 ptrtoint (ptr @1817 to i64))
+  %287 = call i64 @to_ptr(i64 %282, i64 %286, i64 ptrtoint (ptr @1816 to i64))
   %sep_ptr = alloca i64, align 8
   store i64 %287, ptr %sep_ptr, align 4
   %288 = load i64, ptr %ctx, align 4
   %289 = load i64, ptr %ctx, align 4
-  %290 = call i64 @get_fn(i64 %289, i64 ptrtoint (ptr @1818 to i64))
+  %290 = call i64 @get_fn(i64 %289, i64 ptrtoint (ptr @1817 to i64))
   %291 = load i64, ptr %str_ptr6, align 4
   %292 = load i64, ptr %sep_ptr, align 4
-  %293 = call i64 @call_2(i64 %288, i64 %290, i64 %291, i64 %292, i64 ptrtoint (ptr @1819 to i64))
+  %293 = call i64 @call_2(i64 %288, i64 %290, i64 %291, i64 %292, i64 ptrtoint (ptr @1818 to i64))
   %result = alloca i64, align 8
   store i64 %293, ptr %result, align 4
   %294 = call ptr @malloc(i64 32)
   %295 = load i64, ptr %result, align 4
   %296 = getelementptr inbounds %EmitResult, ptr %294, i32 0, i32 0
   store i64 %295, ptr %296, align 4
-  %297 = call ptr @malloc(i64 24)
+  %297 = call ptr @forge_bump_alloc(i64 24)
   %298 = getelementptr inbounds %ValueType, ptr %297, i32 0, i32 0
   store i8 7, ptr %298, align 1
-  %299 = call ptr @malloc(i64 24)
+  %299 = call ptr @forge_bump_alloc(i64 24)
   %300 = getelementptr inbounds %ValueType, ptr %299, i32 0, i32 0
   store i8 1, ptr %300, align 1
   %301 = ptrtoint ptr %299 to i64
@@ -60715,7 +60676,7 @@ bb5598:                                           ; preds = %bb5595
   %305 = getelementptr inbounds %EmitResult, ptr %294, i32 0, i32 2
   store i64 0, ptr %305, align 4
   %306 = getelementptr inbounds %EmitResult, ptr %294, i32 0, i32 3
-  store i64 ptrtoint (ptr @1820 to i64), ptr %306, align 4
+  store i64 ptrtoint (ptr @1819 to i64), ptr %306, align 4
   %307 = ptrtoint ptr %294 to i64
   ret i64 %307
 
@@ -60725,7 +60686,7 @@ bb5599:                                           ; preds = %bb5595
 bb5600:                                           ; preds = %bb5561
   %308 = load i64, ptr %method, align 4
   %309 = inttoptr i64 %308 to ptr
-  %310 = call i32 @strcmp(ptr %309, ptr @1823)
+  %310 = call i32 @strcmp(ptr %309, ptr @1822)
   %311 = zext i32 %310 to i64
   %312 = icmp eq i64 %311, 0
   %313 = zext i1 %312 to i64
@@ -60747,7 +60708,7 @@ bb5602:                                           ; preds = %bb5601
 bb5603:                                           ; preds = %bb5600
   %321 = load i64, ptr %method, align 4
   %322 = inttoptr i64 %321 to ptr
-  %323 = call i32 @strcmp(ptr %322, ptr @1824)
+  %323 = call i32 @strcmp(ptr %322, ptr @1823)
   %324 = zext i32 %323 to i64
   %325 = icmp eq i64 %324, 0
   %326 = zext i1 %325 to i64
@@ -60763,12 +60724,12 @@ bb5604:                                           ; preds = %bb5603, %bb5600
 bb5605:                                           ; preds = %bb5604
   %331 = load i64, ptr %ctx, align 4
   %332 = load i64, ptr %ctx, align 4
-  %333 = call i64 @get_fn(i64 %332, i64 ptrtoint (ptr @1825 to i64))
+  %333 = call i64 @get_fn(i64 %332, i64 ptrtoint (ptr @1824 to i64))
   %334 = load i64, ptr %r, align 4
   %335 = inttoptr i64 %334 to ptr
   %336 = getelementptr inbounds %EmitResult, ptr %335, i32 0, i32 0
   %337 = load i64, ptr %336, align 4
-  %338 = call i64 @call_1(i64 %331, i64 %333, i64 %337, i64 ptrtoint (ptr @1826 to i64))
+  %338 = call i64 @call_1(i64 %331, i64 %333, i64 %337, i64 ptrtoint (ptr @1825 to i64))
   %339 = call i64 @ok_emit(i64 %338)
   ret i64 %339
 
@@ -60778,7 +60739,7 @@ bb5606:                                           ; preds = %bb5604
 bb5607:                                           ; preds = %bb5606
   %340 = load i64, ptr %method, align 4
   %341 = inttoptr i64 %340 to ptr
-  %342 = call i32 @strcmp(ptr %341, ptr @1827)
+  %342 = call i32 @strcmp(ptr %341, ptr @1826)
   %343 = zext i32 %342 to i64
   %344 = icmp eq i64 %343, 0
   %345 = zext i1 %344 to i64
@@ -60799,7 +60760,7 @@ bb5609:                                           ; preds = %bb5607
 bb5610:                                           ; preds = %bb5609
   %352 = load i64, ptr %method, align 4
   %353 = inttoptr i64 %352 to ptr
-  %354 = call i32 @strcmp(ptr %353, ptr @1830)
+  %354 = call i32 @strcmp(ptr %353, ptr @1829)
   %355 = zext i32 %354 to i64
   %356 = icmp eq i64 %355, 0
   %357 = zext i1 %356 to i64
@@ -60811,7 +60772,7 @@ bb5611:                                           ; preds = %bb5608
   store i64 %350, ptr %arg_r7, align 4
   %359 = load i64, ptr %ctx, align 4
   %360 = load i64, ptr %ctx, align 4
-  %361 = call i64 @get_fn(i64 %360, i64 ptrtoint (ptr @1828 to i64))
+  %361 = call i64 @get_fn(i64 %360, i64 ptrtoint (ptr @1827 to i64))
   %362 = load i64, ptr %r, align 4
   %363 = inttoptr i64 %362 to ptr
   %364 = getelementptr inbounds %EmitResult, ptr %363, i32 0, i32 0
@@ -60820,7 +60781,7 @@ bb5611:                                           ; preds = %bb5608
   %367 = inttoptr i64 %366 to ptr
   %368 = getelementptr inbounds %EmitResult, ptr %367, i32 0, i32 0
   %369 = load i64, ptr %368, align 4
-  %370 = call i64 @call_2(i64 %359, i64 %361, i64 %365, i64 %369, i64 ptrtoint (ptr @1829 to i64))
+  %370 = call i64 @call_2(i64 %359, i64 %361, i64 %365, i64 %369, i64 ptrtoint (ptr @1828 to i64))
   %371 = load i64, ptr %r, align 4
   %372 = inttoptr i64 %371 to ptr
   %373 = getelementptr inbounds %EmitResult, ptr %372, i32 0, i32 0
@@ -60834,12 +60795,12 @@ bb5612:                                           ; preds = %bb5608
 bb5613:                                           ; preds = %bb5610
   %376 = load i64, ptr %ctx, align 4
   %377 = load i64, ptr %ctx, align 4
-  %378 = call i64 @get_fn(i64 %377, i64 ptrtoint (ptr @1831 to i64))
+  %378 = call i64 @get_fn(i64 %377, i64 ptrtoint (ptr @1830 to i64))
   %379 = load i64, ptr %r, align 4
   %380 = inttoptr i64 %379 to ptr
   %381 = getelementptr inbounds %EmitResult, ptr %380, i32 0, i32 0
   %382 = load i64, ptr %381, align 4
-  %383 = call i64 @call_1(i64 %376, i64 %378, i64 %382, i64 ptrtoint (ptr @1832 to i64))
+  %383 = call i64 @call_1(i64 %376, i64 %378, i64 %382, i64 ptrtoint (ptr @1831 to i64))
   %384 = call i64 @ok_emit(i64 %383)
   ret i64 %384
 
@@ -60849,7 +60810,7 @@ bb5614:                                           ; preds = %bb5610
 bb5615:                                           ; preds = %bb5614
   %385 = load i64, ptr %method, align 4
   %386 = inttoptr i64 %385 to ptr
-  %387 = call i32 @strcmp(ptr %386, ptr @1833)
+  %387 = call i32 @strcmp(ptr %386, ptr @1832)
   %388 = zext i32 %387 to i64
   %389 = icmp eq i64 %388, 0
   %390 = zext i1 %389 to i64
@@ -60870,7 +60831,7 @@ bb5617:                                           ; preds = %bb5615
 bb5618:                                           ; preds = %bb5617
   %397 = load i64, ptr %method, align 4
   %398 = inttoptr i64 %397 to ptr
-  %399 = call i32 @strcmp(ptr %398, ptr @1836)
+  %399 = call i32 @strcmp(ptr %398, ptr @1835)
   %400 = zext i32 %399 to i64
   %401 = icmp eq i64 %400, 0
   %402 = zext i1 %401 to i64
@@ -60889,7 +60850,7 @@ bb5619:                                           ; preds = %bb5616
   store i64 %408, ptr %elem_ty, align 4
   %409 = load i64, ptr %ctx, align 4
   %410 = load i64, ptr %ctx, align 4
-  %411 = call i64 @get_fn(i64 %410, i64 ptrtoint (ptr @1834 to i64))
+  %411 = call i64 @get_fn(i64 %410, i64 ptrtoint (ptr @1833 to i64))
   %412 = load i64, ptr %r, align 4
   %413 = inttoptr i64 %412 to ptr
   %414 = getelementptr inbounds %EmitResult, ptr %413, i32 0, i32 0
@@ -60898,7 +60859,7 @@ bb5619:                                           ; preds = %bb5616
   %417 = inttoptr i64 %416 to ptr
   %418 = getelementptr inbounds %EmitResult, ptr %417, i32 0, i32 0
   %419 = load i64, ptr %418, align 4
-  %420 = call i64 @call_2(i64 %409, i64 %411, i64 %415, i64 %419, i64 ptrtoint (ptr @1835 to i64))
+  %420 = call i64 @call_2(i64 %409, i64 %411, i64 %415, i64 %419, i64 ptrtoint (ptr @1834 to i64))
   %421 = load i64, ptr %elem_ty, align 4
   %422 = call i64 @ok_emit_typed(i64 %420, i64 %421)
   ret i64 %422
@@ -60923,7 +60884,7 @@ bb5622:                                           ; preds = %bb5618
 bb5623:                                           ; preds = %bb5622
   %431 = load i64, ptr %method, align 4
   %432 = inttoptr i64 %431 to ptr
-  %433 = call i32 @strcmp(ptr %432, ptr @1837)
+  %433 = call i32 @strcmp(ptr %432, ptr @1836)
   %434 = zext i32 %433 to i64
   %435 = icmp eq i64 %434, 0
   %436 = zext i1 %435 to i64
@@ -60941,13 +60902,13 @@ bb5624:                                           ; preds = %bb5623
   %443 = load i64, ptr %ctx, align 4
   %444 = load i64, ptr %env, align 4
   %445 = load i64, ptr %args, align 4
-  %446 = call ptr @malloc(i64 24)
+  %446 = call ptr @forge_bump_alloc(i64 24)
   %447 = getelementptr inbounds %TypeList, ptr %446, i32 0, i32 0
   store i8 1, ptr %447, align 1
   %448 = load i64, ptr %elem_ty9, align 4
   %449 = getelementptr inbounds %TypeList, ptr %446, i32 0, i32 1
   store i64 %448, ptr %449, align 4
-  %450 = call ptr @malloc(i64 24)
+  %450 = call ptr @forge_bump_alloc(i64 24)
   %451 = getelementptr inbounds %TypeList, ptr %450, i32 0, i32 0
   store i8 0, ptr %451, align 1
   %452 = ptrtoint ptr %450 to i64
@@ -60970,7 +60931,7 @@ bb5625:                                           ; preds = %bb5623
 bb5626:                                           ; preds = %bb5625
   %461 = load i64, ptr %method, align 4
   %462 = inttoptr i64 %461 to ptr
-  %463 = call i32 @strcmp(ptr %462, ptr @1841)
+  %463 = call i32 @strcmp(ptr %462, ptr @1840)
   %464 = zext i32 %463 to i64
   %465 = icmp eq i64 %464, 0
   %466 = zext i1 %465 to i64
@@ -60987,7 +60948,7 @@ bb5628:                                           ; preds = %bb5624
 bb5629:                                           ; preds = %bb5628
   %469 = load i64, ptr %ctx, align 4
   %470 = load i64, ptr %ctx, align 4
-  %471 = call i64 @get_fn(i64 %470, i64 ptrtoint (ptr @1838 to i64))
+  %471 = call i64 @get_fn(i64 %470, i64 ptrtoint (ptr @1837 to i64))
   %472 = load i64, ptr %r, align 4
   %473 = inttoptr i64 %472 to ptr
   %474 = getelementptr inbounds %EmitResult, ptr %473, i32 0, i32 0
@@ -60996,7 +60957,7 @@ bb5629:                                           ; preds = %bb5628
   %477 = inttoptr i64 %476 to ptr
   %478 = getelementptr inbounds %EmitResult, ptr %477, i32 0, i32 0
   %479 = load i64, ptr %478, align 4
-  %480 = call i64 @call_2(i64 %469, i64 %471, i64 %475, i64 %479, i64 ptrtoint (ptr @1839 to i64))
+  %480 = call i64 @call_2(i64 %469, i64 %471, i64 %475, i64 %479, i64 ptrtoint (ptr @1838 to i64))
   %result11 = alloca i64, align 8
   store i64 %480, ptr %result11, align 4
   %481 = load i64, ptr %arg_r10, align 4
@@ -61010,7 +60971,7 @@ bb5629:                                           ; preds = %bb5628
   %487 = load i64, ptr %result11, align 4
   %488 = getelementptr inbounds %EmitResult, ptr %486, i32 0, i32 0
   store i64 %487, ptr %488, align 4
-  %489 = call ptr @malloc(i64 24)
+  %489 = call ptr @forge_bump_alloc(i64 24)
   %490 = getelementptr inbounds %ValueType, ptr %489, i32 0, i32 0
   store i8 7, ptr %490, align 1
   %491 = load i64, ptr %ret_ty, align 4
@@ -61022,7 +60983,7 @@ bb5629:                                           ; preds = %bb5628
   %495 = getelementptr inbounds %EmitResult, ptr %486, i32 0, i32 2
   store i64 0, ptr %495, align 4
   %496 = getelementptr inbounds %EmitResult, ptr %486, i32 0, i32 3
-  store i64 ptrtoint (ptr @1840 to i64), ptr %496, align 4
+  store i64 ptrtoint (ptr @1839 to i64), ptr %496, align 4
   %497 = ptrtoint ptr %486 to i64
   ret i64 %497
 
@@ -61037,13 +60998,13 @@ bb5630:                                           ; preds = %bb5626
   %503 = load i64, ptr %ctx, align 4
   %504 = load i64, ptr %env, align 4
   %505 = load i64, ptr %args, align 4
-  %506 = call ptr @malloc(i64 24)
+  %506 = call ptr @forge_bump_alloc(i64 24)
   %507 = getelementptr inbounds %TypeList, ptr %506, i32 0, i32 0
   store i8 1, ptr %507, align 1
   %508 = load i64, ptr %elem_ty12, align 4
   %509 = getelementptr inbounds %TypeList, ptr %506, i32 0, i32 1
   store i64 %508, ptr %509, align 4
-  %510 = call ptr @malloc(i64 24)
+  %510 = call ptr @forge_bump_alloc(i64 24)
   %511 = getelementptr inbounds %TypeList, ptr %510, i32 0, i32 0
   store i8 0, ptr %511, align 1
   %512 = ptrtoint ptr %510 to i64
@@ -61066,7 +61027,7 @@ bb5631:                                           ; preds = %bb5626
 bb5632:                                           ; preds = %bb5631
   %521 = load i64, ptr %method, align 4
   %522 = inttoptr i64 %521 to ptr
-  %523 = call i32 @strcmp(ptr %522, ptr @1845)
+  %523 = call i32 @strcmp(ptr %522, ptr @1844)
   %524 = zext i32 %523 to i64
   %525 = icmp eq i64 %524, 0
   %526 = zext i1 %525 to i64
@@ -61083,7 +61044,7 @@ bb5634:                                           ; preds = %bb5630
 bb5635:                                           ; preds = %bb5634
   %529 = load i64, ptr %ctx, align 4
   %530 = load i64, ptr %ctx, align 4
-  %531 = call i64 @get_fn(i64 %530, i64 ptrtoint (ptr @1842 to i64))
+  %531 = call i64 @get_fn(i64 %530, i64 ptrtoint (ptr @1841 to i64))
   %532 = load i64, ptr %r, align 4
   %533 = inttoptr i64 %532 to ptr
   %534 = getelementptr inbounds %EmitResult, ptr %533, i32 0, i32 0
@@ -61092,14 +61053,14 @@ bb5635:                                           ; preds = %bb5634
   %537 = inttoptr i64 %536 to ptr
   %538 = getelementptr inbounds %EmitResult, ptr %537, i32 0, i32 0
   %539 = load i64, ptr %538, align 4
-  %540 = call i64 @call_2(i64 %529, i64 %531, i64 %535, i64 %539, i64 ptrtoint (ptr @1843 to i64))
+  %540 = call i64 @call_2(i64 %529, i64 %531, i64 %535, i64 %539, i64 ptrtoint (ptr @1842 to i64))
   %result14 = alloca i64, align 8
   store i64 %540, ptr %result14, align 4
   %541 = call ptr @malloc(i64 32)
   %542 = load i64, ptr %result14, align 4
   %543 = getelementptr inbounds %EmitResult, ptr %541, i32 0, i32 0
   store i64 %542, ptr %543, align 4
-  %544 = call ptr @malloc(i64 24)
+  %544 = call ptr @forge_bump_alloc(i64 24)
   %545 = getelementptr inbounds %ValueType, ptr %544, i32 0, i32 0
   store i8 7, ptr %545, align 1
   %546 = load i64, ptr %elem_ty12, align 4
@@ -61111,7 +61072,7 @@ bb5635:                                           ; preds = %bb5634
   %550 = getelementptr inbounds %EmitResult, ptr %541, i32 0, i32 2
   store i64 0, ptr %550, align 4
   %551 = getelementptr inbounds %EmitResult, ptr %541, i32 0, i32 3
-  store i64 ptrtoint (ptr @1844 to i64), ptr %551, align 4
+  store i64 ptrtoint (ptr @1843 to i64), ptr %551, align 4
   %552 = ptrtoint ptr %541 to i64
   ret i64 %552
 
@@ -61126,13 +61087,13 @@ bb5636:                                           ; preds = %bb5632
   %558 = load i64, ptr %ctx, align 4
   %559 = load i64, ptr %env, align 4
   %560 = load i64, ptr %args, align 4
-  %561 = call ptr @malloc(i64 24)
+  %561 = call ptr @forge_bump_alloc(i64 24)
   %562 = getelementptr inbounds %TypeList, ptr %561, i32 0, i32 0
   store i8 1, ptr %562, align 1
   %563 = load i64, ptr %elem_ty15, align 4
   %564 = getelementptr inbounds %TypeList, ptr %561, i32 0, i32 1
   store i64 %563, ptr %564, align 4
-  %565 = call ptr @malloc(i64 24)
+  %565 = call ptr @forge_bump_alloc(i64 24)
   %566 = getelementptr inbounds %TypeList, ptr %565, i32 0, i32 0
   store i8 0, ptr %566, align 1
   %567 = ptrtoint ptr %565 to i64
@@ -61155,7 +61116,7 @@ bb5637:                                           ; preds = %bb5632
 bb5638:                                           ; preds = %bb5637
   %576 = load i64, ptr %method, align 4
   %577 = inttoptr i64 %576 to ptr
-  %578 = call i32 @strcmp(ptr %577, ptr @1848)
+  %578 = call i32 @strcmp(ptr %577, ptr @1847)
   %579 = zext i32 %578 to i64
   %580 = icmp eq i64 %579, 0
   %581 = zext i1 %580 to i64
@@ -61172,7 +61133,7 @@ bb5640:                                           ; preds = %bb5636
 bb5641:                                           ; preds = %bb5640
   %584 = load i64, ptr %ctx, align 4
   %585 = load i64, ptr %ctx, align 4
-  %586 = call i64 @get_fn(i64 %585, i64 ptrtoint (ptr @1846 to i64))
+  %586 = call i64 @get_fn(i64 %585, i64 ptrtoint (ptr @1845 to i64))
   %587 = load i64, ptr %r, align 4
   %588 = inttoptr i64 %587 to ptr
   %589 = getelementptr inbounds %EmitResult, ptr %588, i32 0, i32 0
@@ -61181,7 +61142,7 @@ bb5641:                                           ; preds = %bb5640
   %592 = inttoptr i64 %591 to ptr
   %593 = getelementptr inbounds %EmitResult, ptr %592, i32 0, i32 0
   %594 = load i64, ptr %593, align 4
-  %595 = call i64 @call_2(i64 %584, i64 %586, i64 %590, i64 %594, i64 ptrtoint (ptr @1847 to i64))
+  %595 = call i64 @call_2(i64 %584, i64 %586, i64 %590, i64 %594, i64 ptrtoint (ptr @1846 to i64))
   %596 = load i64, ptr %ctx, align 4
   %597 = call i64 @const_i64(i64 %596, i64 0)
   %598 = call i64 @ok_emit(i64 %597)
@@ -61212,12 +61173,12 @@ bb5643:                                           ; preds = %bb5638
 bb5644:                                           ; preds = %bb5643
   %613 = load i64, ptr %method, align 4
   %614 = inttoptr i64 %613 to ptr
-  %615 = call i64 @strlen(ptr @1849)
+  %615 = call i64 @strlen(ptr @1848)
   %616 = call i64 @strlen(ptr %614)
   %617 = add i64 %615, %616
   %618 = add i64 %617, 1
   %619 = call ptr @forge_bump_alloc(i64 %618)
-  %620 = call ptr @memcpy(ptr %619, ptr @1849, i64 %615)
+  %620 = call ptr @memcpy(ptr %619, ptr @1848, i64 %615)
   %621 = ptrtoint ptr %619 to i64
   %622 = add i64 %621, %615
   %623 = inttoptr i64 %622 to ptr
@@ -61226,7 +61187,7 @@ bb5644:                                           ; preds = %bb5643
   %626 = ptrtoint ptr %619 to i64
   %627 = inttoptr i64 %626 to ptr
   %628 = call i64 @strlen(ptr %627)
-  %629 = call i64 @strlen(ptr @1850)
+  %629 = call i64 @strlen(ptr @1849)
   %630 = add i64 %628, %629
   %631 = add i64 %630, 1
   %632 = call ptr @forge_bump_alloc(i64 %631)
@@ -61235,7 +61196,7 @@ bb5644:                                           ; preds = %bb5643
   %635 = add i64 %634, %628
   %636 = inttoptr i64 %635 to ptr
   %637 = add i64 %629, 1
-  %638 = call ptr @memcpy(ptr %636, ptr @1850, i64 %637)
+  %638 = call ptr @memcpy(ptr %636, ptr @1849, i64 %637)
   %639 = ptrtoint ptr %632 to i64
   %640 = call i64 @err_emit(i64 %639)
   ret i64 %640
@@ -61243,7 +61204,7 @@ bb5644:                                           ; preds = %bb5643
 bb5645:                                           ; preds = %bb5602
   %641 = load i64, ptr %method, align 4
   %642 = inttoptr i64 %641 to ptr
-  %643 = call i32 @strcmp(ptr %642, ptr @1851)
+  %643 = call i32 @strcmp(ptr %642, ptr @1850)
   %644 = zext i32 %643 to i64
   %645 = icmp eq i64 %644, 0
   %646 = zext i1 %645 to i64
@@ -61270,7 +61231,7 @@ bb5647:                                           ; preds = %bb5646
   store i64 %657, ptr %enum_name, align 4
   %658 = load i64, ptr %type_name, align 4
   %659 = inttoptr i64 %658 to ptr
-  %660 = call i32 @strcmp(ptr %659, ptr @1869)
+  %660 = call i32 @strcmp(ptr %659, ptr @1868)
   %661 = zext i32 %660 to i64
   %662 = icmp ne i64 %661, 0
   %663 = zext i1 %662 to i64
@@ -61293,7 +61254,7 @@ bb5649:                                           ; preds = %bb5645
 bb5650:                                           ; preds = %bb5649
   %670 = load i64, ptr %method, align 4
   %671 = inttoptr i64 %670 to ptr
-  %672 = call i32 @strcmp(ptr %671, ptr @1855)
+  %672 = call i32 @strcmp(ptr %671, ptr @1854)
   %673 = zext i32 %672 to i64
   %674 = icmp eq i64 %673, 0
   %675 = zext i1 %674 to i64
@@ -61308,18 +61269,18 @@ bb5651:                                           ; preds = %bb5648
   %679 = inttoptr i64 %678 to ptr
   %680 = getelementptr inbounds %EmitResult, ptr %679, i32 0, i32 0
   %681 = load i64, ptr %680, align 4
-  %682 = call i64 @to_ptr(i64 %677, i64 %681, i64 ptrtoint (ptr @1852 to i64))
+  %682 = call i64 @to_ptr(i64 %677, i64 %681, i64 ptrtoint (ptr @1851 to i64))
   %key_ptr = alloca i64, align 8
   store i64 %682, ptr %key_ptr, align 4
   %683 = load i64, ptr %ctx, align 4
   %684 = load i64, ptr %ctx, align 4
-  %685 = call i64 @get_fn(i64 %684, i64 ptrtoint (ptr @1853 to i64))
+  %685 = call i64 @get_fn(i64 %684, i64 ptrtoint (ptr @1852 to i64))
   %686 = load i64, ptr %r, align 4
   %687 = inttoptr i64 %686 to ptr
   %688 = getelementptr inbounds %EmitResult, ptr %687, i32 0, i32 0
   %689 = load i64, ptr %688, align 4
   %690 = load i64, ptr %key_ptr, align 4
-  %691 = call i64 @call_2(i64 %683, i64 %685, i64 %689, i64 %690, i64 ptrtoint (ptr @1854 to i64))
+  %691 = call i64 @call_2(i64 %683, i64 %685, i64 %689, i64 %690, i64 ptrtoint (ptr @1853 to i64))
   %692 = call i64 @ok_emit(i64 %691)
   ret i64 %692
 
@@ -61340,7 +61301,7 @@ bb5654:                                           ; preds = %bb5650
 bb5655:                                           ; preds = %bb5654
   %698 = load i64, ptr %method, align 4
   %699 = inttoptr i64 %698 to ptr
-  %700 = call i32 @strcmp(ptr %699, ptr @1859)
+  %700 = call i32 @strcmp(ptr %699, ptr @1858)
   %701 = zext i32 %700 to i64
   %702 = icmp eq i64 %701, 0
   %703 = zext i1 %702 to i64
@@ -61355,18 +61316,18 @@ bb5656:                                           ; preds = %bb5653
   %707 = inttoptr i64 %706 to ptr
   %708 = getelementptr inbounds %EmitResult, ptr %707, i32 0, i32 0
   %709 = load i64, ptr %708, align 4
-  %710 = call i64 @to_ptr(i64 %705, i64 %709, i64 ptrtoint (ptr @1856 to i64))
+  %710 = call i64 @to_ptr(i64 %705, i64 %709, i64 ptrtoint (ptr @1855 to i64))
   %key_ptr20 = alloca i64, align 8
   store i64 %710, ptr %key_ptr20, align 4
   %711 = load i64, ptr %ctx, align 4
   %712 = load i64, ptr %ctx, align 4
-  %713 = call i64 @get_fn(i64 %712, i64 ptrtoint (ptr @1857 to i64))
+  %713 = call i64 @get_fn(i64 %712, i64 ptrtoint (ptr @1856 to i64))
   %714 = load i64, ptr %r, align 4
   %715 = inttoptr i64 %714 to ptr
   %716 = getelementptr inbounds %EmitResult, ptr %715, i32 0, i32 0
   %717 = load i64, ptr %716, align 4
   %718 = load i64, ptr %key_ptr20, align 4
-  %719 = call i64 @call_2(i64 %711, i64 %713, i64 %717, i64 %718, i64 ptrtoint (ptr @1858 to i64))
+  %719 = call i64 @call_2(i64 %711, i64 %713, i64 %717, i64 %718, i64 ptrtoint (ptr @1857 to i64))
   %720 = call i64 @ok_emit(i64 %719)
   ret i64 %720
 
@@ -61390,7 +61351,7 @@ bb5659:                                           ; preds = %bb5655
 bb5660:                                           ; preds = %bb5659
   %729 = load i64, ptr %method, align 4
   %730 = inttoptr i64 %729 to ptr
-  %731 = call i32 @strcmp(ptr %730, ptr @1860)
+  %731 = call i32 @strcmp(ptr %730, ptr @1859)
   %732 = zext i32 %731 to i64
   %733 = icmp eq i64 %732, 0
   %734 = zext i1 %733 to i64
@@ -61400,7 +61361,7 @@ bb5660:                                           ; preds = %bb5659
 bb5661:                                           ; preds = %bb5660
   %736 = load i64, ptr %method, align 4
   %737 = inttoptr i64 %736 to ptr
-  %738 = call i32 @strcmp(ptr %737, ptr @1861)
+  %738 = call i32 @strcmp(ptr %737, ptr @1860)
   %739 = zext i32 %738 to i64
   %740 = icmp eq i64 %739, 0
   %741 = zext i1 %740 to i64
@@ -61416,12 +61377,12 @@ bb5662:                                           ; preds = %bb5661, %bb5660
 bb5663:                                           ; preds = %bb5662
   %746 = load i64, ptr %ctx, align 4
   %747 = load i64, ptr %ctx, align 4
-  %748 = call i64 @get_fn(i64 %747, i64 ptrtoint (ptr @1862 to i64))
+  %748 = call i64 @get_fn(i64 %747, i64 ptrtoint (ptr @1861 to i64))
   %749 = load i64, ptr %r, align 4
   %750 = inttoptr i64 %749 to ptr
   %751 = getelementptr inbounds %EmitResult, ptr %750, i32 0, i32 0
   %752 = load i64, ptr %751, align 4
-  %753 = call i64 @call_1(i64 %746, i64 %748, i64 %752, i64 ptrtoint (ptr @1863 to i64))
+  %753 = call i64 @call_1(i64 %746, i64 %748, i64 %752, i64 ptrtoint (ptr @1862 to i64))
   %754 = call i64 @ok_emit(i64 %753)
   ret i64 %754
 
@@ -61431,7 +61392,7 @@ bb5664:                                           ; preds = %bb5662
 bb5665:                                           ; preds = %bb5664
   %755 = load i64, ptr %method, align 4
   %756 = inttoptr i64 %755 to ptr
-  %757 = call i32 @strcmp(ptr %756, ptr @1864)
+  %757 = call i32 @strcmp(ptr %756, ptr @1863)
   %758 = zext i32 %757 to i64
   %759 = icmp eq i64 %758, 0
   %760 = zext i1 %759 to i64
@@ -61441,19 +61402,19 @@ bb5665:                                           ; preds = %bb5664
 bb5666:                                           ; preds = %bb5665
   %762 = load i64, ptr %ctx, align 4
   %763 = load i64, ptr %ctx, align 4
-  %764 = call i64 @get_fn(i64 %763, i64 ptrtoint (ptr @1865 to i64))
+  %764 = call i64 @get_fn(i64 %763, i64 ptrtoint (ptr @1864 to i64))
   %765 = load i64, ptr %r, align 4
   %766 = inttoptr i64 %765 to ptr
   %767 = getelementptr inbounds %EmitResult, ptr %766, i32 0, i32 0
   %768 = load i64, ptr %767, align 4
-  %769 = call i64 @call_1(i64 %762, i64 %764, i64 %768, i64 ptrtoint (ptr @1866 to i64))
+  %769 = call i64 @call_1(i64 %762, i64 %764, i64 %768, i64 ptrtoint (ptr @1865 to i64))
   %keys = alloca i64, align 8
   store i64 %769, ptr %keys, align 4
   %770 = load i64, ptr %keys, align 4
-  %771 = call ptr @malloc(i64 24)
+  %771 = call ptr @forge_bump_alloc(i64 24)
   %772 = getelementptr inbounds %ValueType, ptr %771, i32 0, i32 0
   store i8 7, ptr %772, align 1
-  %773 = call ptr @malloc(i64 24)
+  %773 = call ptr @forge_bump_alloc(i64 24)
   %774 = getelementptr inbounds %ValueType, ptr %773, i32 0, i32 0
   store i8 1, ptr %774, align 1
   %775 = ptrtoint ptr %773 to i64
@@ -61469,12 +61430,12 @@ bb5667:                                           ; preds = %bb5665
 bb5668:                                           ; preds = %bb5667
   %779 = load i64, ptr %method, align 4
   %780 = inttoptr i64 %779 to ptr
-  %781 = call i64 @strlen(ptr @1867)
+  %781 = call i64 @strlen(ptr @1866)
   %782 = call i64 @strlen(ptr %780)
   %783 = add i64 %781, %782
   %784 = add i64 %783, 1
   %785 = call ptr @forge_bump_alloc(i64 %784)
-  %786 = call ptr @memcpy(ptr %785, ptr @1867, i64 %781)
+  %786 = call ptr @memcpy(ptr %785, ptr @1866, i64 %781)
   %787 = ptrtoint ptr %785 to i64
   %788 = add i64 %787, %781
   %789 = inttoptr i64 %788 to ptr
@@ -61483,7 +61444,7 @@ bb5668:                                           ; preds = %bb5667
   %792 = ptrtoint ptr %785 to i64
   %793 = inttoptr i64 %792 to ptr
   %794 = call i64 @strlen(ptr %793)
-  %795 = call i64 @strlen(ptr @1868)
+  %795 = call i64 @strlen(ptr @1867)
   %796 = add i64 %794, %795
   %797 = add i64 %796, 1
   %798 = call ptr @forge_bump_alloc(i64 %797)
@@ -61492,7 +61453,7 @@ bb5668:                                           ; preds = %bb5667
   %801 = add i64 %800, %794
   %802 = inttoptr i64 %801 to ptr
   %803 = add i64 %795, 1
-  %804 = call ptr @memcpy(ptr %802, ptr @1868, i64 %803)
+  %804 = call ptr @memcpy(ptr %802, ptr @1867, i64 %803)
   %805 = ptrtoint ptr %798 to i64
   %806 = call i64 @err_emit(i64 %805)
   ret i64 %806
@@ -61513,7 +61474,7 @@ bb5671:                                           ; preds = %bb5670, %bb5669
   store i64 %809, ptr %owner, align 4
   %810 = load i64, ptr %owner, align 4
   %811 = inttoptr i64 %810 to ptr
-  %812 = call i32 @strcmp(ptr %811, ptr @1870)
+  %812 = call i32 @strcmp(ptr %811, ptr @1869)
   %813 = zext i32 %812 to i64
   %814 = icmp eq i64 %813, 0
   %815 = zext i1 %814 to i64
@@ -61527,12 +61488,12 @@ bb5672:                                           ; preds = %bb5671
   %820 = load i64, ptr %819, align 4
   %821 = call i64 @vtype_display(i64 %820)
   %822 = inttoptr i64 %821 to ptr
-  %823 = call i64 @strlen(ptr @1871)
+  %823 = call i64 @strlen(ptr @1870)
   %824 = call i64 @strlen(ptr %822)
   %825 = add i64 %823, %824
   %826 = add i64 %825, 1
   %827 = call ptr @forge_bump_alloc(i64 %826)
-  %828 = call ptr @memcpy(ptr %827, ptr @1871, i64 %823)
+  %828 = call ptr @memcpy(ptr %827, ptr @1870, i64 %823)
   %829 = ptrtoint ptr %827 to i64
   %830 = add i64 %829, %823
   %831 = inttoptr i64 %830 to ptr
@@ -61541,7 +61502,7 @@ bb5672:                                           ; preds = %bb5671
   %834 = ptrtoint ptr %827 to i64
   %835 = inttoptr i64 %834 to ptr
   %836 = call i64 @strlen(ptr %835)
-  %837 = call i64 @strlen(ptr @1872)
+  %837 = call i64 @strlen(ptr @1871)
   %838 = add i64 %836, %837
   %839 = add i64 %838, 1
   %840 = call ptr @forge_bump_alloc(i64 %839)
@@ -61550,7 +61511,7 @@ bb5672:                                           ; preds = %bb5671
   %843 = add i64 %842, %836
   %844 = inttoptr i64 %843 to ptr
   %845 = add i64 %837, 1
-  %846 = call ptr @memcpy(ptr %844, ptr @1872, i64 %845)
+  %846 = call ptr @memcpy(ptr %844, ptr @1871, i64 %845)
   %847 = ptrtoint ptr %840 to i64
   %848 = call i64 @err_emit(i64 %847)
   ret i64 %848
@@ -61562,7 +61523,7 @@ bb5674:                                           ; preds = %bb5673
   %849 = load i64, ptr %owner, align 4
   %850 = inttoptr i64 %849 to ptr
   %851 = call i64 @strlen(ptr %850)
-  %852 = call i64 @strlen(ptr @1873)
+  %852 = call i64 @strlen(ptr @1872)
   %853 = add i64 %851, %852
   %854 = add i64 %853, 1
   %855 = call ptr @forge_bump_alloc(i64 %854)
@@ -61571,7 +61532,7 @@ bb5674:                                           ; preds = %bb5673
   %858 = add i64 %857, %851
   %859 = inttoptr i64 %858 to ptr
   %860 = add i64 %852, 1
-  %861 = call ptr @memcpy(ptr %859, ptr @1873, i64 %860)
+  %861 = call ptr @memcpy(ptr %859, ptr @1872, i64 %860)
   %862 = ptrtoint ptr %855 to i64
   %863 = load i64, ptr %method, align 4
   %864 = inttoptr i64 %862 to ptr
@@ -61607,7 +61568,7 @@ bb5674:                                           ; preds = %bb5673
 bb5675:                                           ; preds = %bb5674
   %888 = load i64, ptr %type_name, align 4
   %889 = inttoptr i64 %888 to ptr
-  %890 = call i32 @strcmp(ptr %889, ptr @1874)
+  %890 = call i32 @strcmp(ptr %889, ptr @1873)
   %891 = zext i32 %890 to i64
   %892 = icmp ne i64 %891, 0
   %893 = zext i1 %892 to i64
@@ -61672,12 +61633,12 @@ bb5679:                                           ; preds = %bb5675
 bb5680:                                           ; preds = %bb5679, %bb5683
   %928 = load i64, ptr %owner, align 4
   %929 = inttoptr i64 %928 to ptr
-  %930 = call i64 @strlen(ptr @1878)
+  %930 = call i64 @strlen(ptr @1877)
   %931 = call i64 @strlen(ptr %929)
   %932 = add i64 %930, %931
   %933 = add i64 %932, 1
   %934 = call ptr @forge_bump_alloc(i64 %933)
-  %935 = call ptr @memcpy(ptr %934, ptr @1878, i64 %930)
+  %935 = call ptr @memcpy(ptr %934, ptr @1877, i64 %930)
   %936 = ptrtoint ptr %934 to i64
   %937 = add i64 %936, %930
   %938 = inttoptr i64 %937 to ptr
@@ -61686,7 +61647,7 @@ bb5680:                                           ; preds = %bb5679, %bb5683
   %941 = ptrtoint ptr %934 to i64
   %942 = inttoptr i64 %941 to ptr
   %943 = call i64 @strlen(ptr %942)
-  %944 = call i64 @strlen(ptr @1879)
+  %944 = call i64 @strlen(ptr @1878)
   %945 = add i64 %943, %944
   %946 = add i64 %945, 1
   %947 = call ptr @forge_bump_alloc(i64 %946)
@@ -61695,7 +61656,7 @@ bb5680:                                           ; preds = %bb5679, %bb5683
   %950 = add i64 %949, %943
   %951 = inttoptr i64 %950 to ptr
   %952 = add i64 %944, 1
-  %953 = call ptr @memcpy(ptr %951, ptr @1879, i64 %952)
+  %953 = call ptr @memcpy(ptr %951, ptr @1878, i64 %952)
   %954 = ptrtoint ptr %947 to i64
   %955 = load i64, ptr %method, align 4
   %956 = inttoptr i64 %954 to ptr
@@ -61714,7 +61675,7 @@ bb5680:                                           ; preds = %bb5679, %bb5683
   %969 = ptrtoint ptr %962 to i64
   %970 = inttoptr i64 %969 to ptr
   %971 = call i64 @strlen(ptr %970)
-  %972 = call i64 @strlen(ptr @1880)
+  %972 = call i64 @strlen(ptr @1879)
   %973 = add i64 %971, %972
   %974 = add i64 %973, 1
   %975 = call ptr @forge_bump_alloc(i64 %974)
@@ -61723,7 +61684,7 @@ bb5680:                                           ; preds = %bb5679, %bb5683
   %978 = add i64 %977, %971
   %979 = inttoptr i64 %978 to ptr
   %980 = add i64 %972, 1
-  %981 = call ptr @memcpy(ptr %979, ptr @1880, i64 %980)
+  %981 = call ptr @memcpy(ptr %979, ptr @1879, i64 %980)
   %982 = ptrtoint ptr %975 to i64
   %983 = call i64 @err_emit(i64 %982)
   ret i64 %983
@@ -61771,7 +61732,7 @@ bb5684:                                           ; preds = %bb5681
   %1010 = inttoptr i64 %1009 to ptr
   %1011 = getelementptr inbounds %EmitResult, ptr %1010, i32 0, i32 0
   %1012 = load i64, ptr %1011, align 4
-  %1013 = call i64 @to_ptr(i64 %1008, i64 %1012, i64 ptrtoint (ptr @1875 to i64))
+  %1013 = call i64 @to_ptr(i64 %1008, i64 %1012, i64 ptrtoint (ptr @1874 to i64))
   %obj_ptr = alloca i64, align 8
   store i64 %1013, ptr %obj_ptr, align 4
   %1014 = load i64, ptr %ctx, align 4
@@ -61786,7 +61747,7 @@ bb5684:                                           ; preds = %bb5681
   %1023 = load i64, ptr %1022, align 4
   %1024 = load i64, ptr %method, align 4
   %1025 = call i64 @field_index_of(i64 %1023, i64 %1024)
-  %1026 = call i64 @forge_llvm_build_struct_gep2(i64 %1017, i64 %1018, i64 %1019, i64 %1025, i64 ptrtoint (ptr @1876 to i64))
+  %1026 = call i64 @forge_llvm_build_struct_gep2(i64 %1017, i64 %1018, i64 %1019, i64 %1025, i64 ptrtoint (ptr @1875 to i64))
   %gep = alloca i64, align 8
   store i64 %1026, ptr %gep, align 4
   %1027 = load i64, ptr %ctx, align 4
@@ -61798,7 +61759,7 @@ bb5684:                                           ; preds = %bb5681
   %1033 = getelementptr inbounds %Ctx, ptr %1032, i32 0, i32 4
   %1034 = load i64, ptr %1033, align 4
   %1035 = load i64, ptr %gep, align 4
-  %1036 = call i64 @forge_llvm_build_load(i64 %1030, i64 %1034, i64 %1035, i64 ptrtoint (ptr @1877 to i64))
+  %1036 = call i64 @forge_llvm_build_load(i64 %1030, i64 %1034, i64 %1035, i64 ptrtoint (ptr @1876 to i64))
   %fn_i64 = alloca i64, align 8
   store i64 %1036, ptr %fn_i64, align 4
   %1037 = load i64, ptr %ctx, align 4
@@ -61854,7 +61815,7 @@ bb5689:                                           ; preds = %bb5688
   %1068 = load i64, ptr %fn_val, align 4
   %1069 = load i64, ptr %arg_arr, align 4
   %1070 = load i64, ptr %arg_count, align 4
-  %1071 = call i64 @forge_llvm_build_call(i64 %1066, i64 %1067, i64 %1068, i64 %1069, i64 %1070, i64 ptrtoint (ptr @1881 to i64))
+  %1071 = call i64 @forge_llvm_build_call(i64 %1066, i64 %1067, i64 %1068, i64 %1069, i64 %1070, i64 ptrtoint (ptr @1880 to i64))
   %result21 = alloca i64, align 8
   store i64 %1071, ptr %result21, align 4
   %1072 = load i64, ptr %arg_arr, align 4
@@ -61885,7 +61846,7 @@ bb5690:
   store i64 %3, ptr %args, align 4
   %4 = load i64, ptr %name, align 4
   %5 = inttoptr i64 %4 to ptr
-  %6 = call i32 @strcmp(ptr %5, ptr @1882)
+  %6 = call i32 @strcmp(ptr %5, ptr @1881)
   %7 = zext i32 %6 to i64
   %8 = icmp eq i64 %7, 0
   %9 = zext i1 %8 to i64
@@ -61905,7 +61866,7 @@ bb5692:                                           ; preds = %bb5690
 bb5693:                                           ; preds = %bb5692
   %15 = load i64, ptr %name, align 4
   %16 = inttoptr i64 %15 to ptr
-  %17 = call i32 @strcmp(ptr %16, ptr @1883)
+  %17 = call i32 @strcmp(ptr %16, ptr @1882)
   %18 = zext i32 %17 to i64
   %19 = icmp eq i64 %18, 0
   %20 = zext i1 %19 to i64
@@ -61925,7 +61886,7 @@ bb5695:                                           ; preds = %bb5693
 bb5696:                                           ; preds = %bb5695
   %26 = load i64, ptr %name, align 4
   %27 = inttoptr i64 %26 to ptr
-  %28 = call i32 @strcmp(ptr %27, ptr @1884)
+  %28 = call i32 @strcmp(ptr %27, ptr @1883)
   %29 = zext i32 %28 to i64
   %30 = icmp eq i64 %29, 0
   %31 = zext i1 %30 to i64
@@ -61945,7 +61906,7 @@ bb5698:                                           ; preds = %bb5696
 bb5699:                                           ; preds = %bb5698
   %37 = load i64, ptr %name, align 4
   %38 = inttoptr i64 %37 to ptr
-  %39 = call i32 @strcmp(ptr %38, ptr @1885)
+  %39 = call i32 @strcmp(ptr %38, ptr @1884)
   %40 = zext i32 %39 to i64
   %41 = icmp eq i64 %40, 0
   %42 = zext i1 %41 to i64
@@ -62099,12 +62060,12 @@ bb5714:                                           ; preds = %bb5712
 bb5715:                                           ; preds = %bb5714
   %131 = load i64, ptr %name, align 4
   %132 = inttoptr i64 %131 to ptr
-  %133 = call i64 @strlen(ptr @1886)
+  %133 = call i64 @strlen(ptr @1885)
   %134 = call i64 @strlen(ptr %132)
   %135 = add i64 %133, %134
   %136 = add i64 %135, 1
   %137 = call ptr @forge_bump_alloc(i64 %136)
-  %138 = call ptr @memcpy(ptr %137, ptr @1886, i64 %133)
+  %138 = call ptr @memcpy(ptr %137, ptr @1885, i64 %133)
   %139 = ptrtoint ptr %137 to i64
   %140 = add i64 %139, %133
   %141 = inttoptr i64 %140 to ptr
@@ -62113,7 +62074,7 @@ bb5715:                                           ; preds = %bb5714
   %144 = ptrtoint ptr %137 to i64
   %145 = inttoptr i64 %144 to ptr
   %146 = call i64 @strlen(ptr %145)
-  %147 = call i64 @strlen(ptr @1887)
+  %147 = call i64 @strlen(ptr @1886)
   %148 = add i64 %146, %147
   %149 = add i64 %148, 1
   %150 = call ptr @forge_bump_alloc(i64 %149)
@@ -62122,7 +62083,7 @@ bb5715:                                           ; preds = %bb5714
   %153 = add i64 %152, %146
   %154 = inttoptr i64 %153 to ptr
   %155 = add i64 %147, 1
-  %156 = call ptr @memcpy(ptr %154, ptr @1887, i64 %155)
+  %156 = call ptr @memcpy(ptr %154, ptr @1886, i64 %155)
   %157 = ptrtoint ptr %150 to i64
   %158 = call i64 @err_emit(i64 %157)
   ret i64 %158
@@ -62167,7 +62128,7 @@ bb5718:                                           ; preds = %bb5717
   %185 = load i64, ptr %fn_val, align 4
   %186 = load i64, ptr %arg_arr, align 4
   %187 = load i64, ptr %arg_count, align 4
-  %188 = call i64 @forge_llvm_build_call(i64 %183, i64 %184, i64 %185, i64 %186, i64 %187, i64 ptrtoint (ptr @1888 to i64))
+  %188 = call i64 @forge_llvm_build_call(i64 %183, i64 %184, i64 %185, i64 %186, i64 %187, i64 ptrtoint (ptr @1887 to i64))
   %result = alloca i64, align 8
   store i64 %188, ptr %result, align 4
   %189 = load i64, ptr %arg_arr, align 4
@@ -62209,7 +62170,7 @@ bb5720:                                           ; preds = %bb5724, %bb5730, %b
   ret i64 %9
 
 bb5721:                                           ; preds = %bb5719
-  %10 = call i64 @err_emit(i64 ptrtoint (ptr @1889 to i64))
+  %10 = call i64 @err_emit(i64 ptrtoint (ptr @1888 to i64))
   store i64 %10, ptr %match_result, align 4
   br label %bb5720
 
@@ -62273,12 +62234,12 @@ bb5730:                                           ; preds = %bb5729
   %37 = inttoptr i64 %36 to ptr
   %38 = getelementptr inbounds %Ctx, ptr %37, i32 0, i32 2
   %39 = load i64, ptr %38, align 4
-  %40 = call i64 @forge_llvm_build_global_string_ptr(i64 %39, i64 ptrtoint (ptr @1890 to i64), i64 ptrtoint (ptr @1891 to i64))
+  %40 = call i64 @forge_llvm_build_global_string_ptr(i64 %39, i64 ptrtoint (ptr @1889 to i64), i64 ptrtoint (ptr @1890 to i64))
   %fmt = alloca i64, align 8
   store i64 %40, ptr %fmt, align 4
   %41 = load i64, ptr %ctx, align 4
   %42 = load i64, ptr %ctx, align 4
-  %43 = call i64 @get_fn(i64 %42, i64 ptrtoint (ptr @1892 to i64))
+  %43 = call i64 @get_fn(i64 %42, i64 ptrtoint (ptr @1891 to i64))
   %44 = load i64, ptr %buf, align 4
   %45 = load i64, ptr %ctx, align 4
   %46 = call i64 @const_i64(i64 %45, i64 32)
@@ -62287,10 +62248,10 @@ bb5730:                                           ; preds = %bb5729
   %49 = inttoptr i64 %48 to ptr
   %50 = getelementptr inbounds %EmitResult, ptr %49, i32 0, i32 0
   %51 = load i64, ptr %50, align 4
-  %52 = call i64 @call_4(i64 %41, i64 %43, i64 %44, i64 %46, i64 %47, i64 %51, i64 ptrtoint (ptr @1893 to i64))
+  %52 = call i64 @call_4(i64 %41, i64 %43, i64 %44, i64 %46, i64 %47, i64 %51, i64 ptrtoint (ptr @1892 to i64))
   %53 = load i64, ptr %ctx, align 4
   %54 = load i64, ptr %buf, align 4
-  %55 = call i64 @to_i64(i64 %53, i64 %54, i64 ptrtoint (ptr @1894 to i64))
+  %55 = call i64 @to_i64(i64 %53, i64 %54, i64 ptrtoint (ptr @1893 to i64))
   %result_i64 = alloca i64, align 8
   store i64 %55, ptr %result_i64, align 4
   %56 = load i64, ptr %result_i64, align 4
@@ -62322,7 +62283,7 @@ bb5732:                                           ; preds = %bb5736, %bb5742, %b
   ret i64 %9
 
 bb5733:                                           ; preds = %bb5731
-  %10 = call i64 @err_emit(i64 ptrtoint (ptr @1895 to i64))
+  %10 = call i64 @err_emit(i64 ptrtoint (ptr @1894 to i64))
   store i64 %10, ptr %match_result, align 4
   br label %bb5732
 
@@ -62383,14 +62344,14 @@ bb5742:                                           ; preds = %bb5741
   %36 = inttoptr i64 %35 to ptr
   %37 = getelementptr inbounds %EmitResult, ptr %36, i32 0, i32 0
   %38 = load i64, ptr %37, align 4
-  %39 = call i64 @to_ptr(i64 %34, i64 %38, i64 ptrtoint (ptr @1896 to i64))
+  %39 = call i64 @to_ptr(i64 %34, i64 %38, i64 ptrtoint (ptr @1895 to i64))
   %str_ptr = alloca i64, align 8
   store i64 %39, ptr %str_ptr, align 4
   %40 = load i64, ptr %ctx, align 4
   %41 = load i64, ptr %ctx, align 4
-  %42 = call i64 @get_fn(i64 %41, i64 ptrtoint (ptr @1897 to i64))
+  %42 = call i64 @get_fn(i64 %41, i64 ptrtoint (ptr @1896 to i64))
   %43 = load i64, ptr %str_ptr, align 4
-  %44 = call i64 @call_1(i64 %40, i64 %42, i64 %43, i64 ptrtoint (ptr @1898 to i64))
+  %44 = call i64 @call_1(i64 %40, i64 %42, i64 %43, i64 ptrtoint (ptr @1897 to i64))
   %result32 = alloca i64, align 8
   store i64 %44, ptr %result32, align 4
   %45 = load i64, ptr %ctx, align 4
@@ -62402,7 +62363,7 @@ bb5742:                                           ; preds = %bb5741
   %51 = inttoptr i64 %50 to ptr
   %52 = getelementptr inbounds %Ctx, ptr %51, i32 0, i32 4
   %53 = load i64, ptr %52, align 4
-  %54 = call i64 @forge_llvm_build_sext(i64 %48, i64 %49, i64 %53, i64 ptrtoint (ptr @1899 to i64))
+  %54 = call i64 @forge_llvm_build_sext(i64 %48, i64 %49, i64 %53, i64 ptrtoint (ptr @1898 to i64))
   %55 = call i64 @ok_emit(i64 %54)
   store i64 %55, ptr %match_result, align 4
   br label %bb5732
@@ -62432,14 +62393,14 @@ bb5744:                                           ; preds = %bb5756, %bb5747
   store i64 %9, ptr %str_i64, align 4
   %10 = load i64, ptr %ctx, align 4
   %11 = load i64, ptr %str_i64, align 4
-  %12 = call i64 @to_ptr(i64 %10, i64 %11, i64 ptrtoint (ptr @1903 to i64))
+  %12 = call i64 @to_ptr(i64 %10, i64 %11, i64 ptrtoint (ptr @1902 to i64))
   %str_ptr2 = alloca i64, align 8
   store i64 %12, ptr %str_ptr2, align 4
   %13 = load i64, ptr %ctx, align 4
   %14 = load i64, ptr %ctx, align 4
-  %15 = call i64 @get_fn(i64 %14, i64 ptrtoint (ptr @1904 to i64))
+  %15 = call i64 @get_fn(i64 %14, i64 ptrtoint (ptr @1903 to i64))
   %16 = load i64, ptr %str_ptr2, align 4
-  %17 = call i64 @call_1(i64 %13, i64 %15, i64 %16, i64 ptrtoint (ptr @1905 to i64))
+  %17 = call i64 @call_1(i64 %13, i64 %15, i64 %16, i64 ptrtoint (ptr @1904 to i64))
   %18 = load i64, ptr %ctx, align 4
   %19 = call i64 @const_i64(i64 %18, i64 0)
   %20 = call i64 @ok_emit(i64 %19)
@@ -62484,12 +62445,12 @@ bb5748:                                           ; preds = %bb5745
   %38 = getelementptr inbounds %Ctx, ptr %37, i32 0, i32 2
   %39 = load i64, ptr %38, align 4
   %40 = load i64, ptr %inner, align 4
-  %41 = call i64 @forge_llvm_build_global_string_ptr(i64 %39, i64 %40, i64 ptrtoint (ptr @1900 to i64))
+  %41 = call i64 @forge_llvm_build_global_string_ptr(i64 %39, i64 %40, i64 ptrtoint (ptr @1899 to i64))
   %str_ptr = alloca i64, align 8
   store i64 %41, ptr %str_ptr, align 4
   %42 = load i64, ptr %ctx, align 4
   %43 = load i64, ptr %str_ptr, align 4
-  %44 = call i64 @to_i64(i64 %42, i64 %43, i64 ptrtoint (ptr @1901 to i64))
+  %44 = call i64 @to_i64(i64 %42, i64 %43, i64 ptrtoint (ptr @1900 to i64))
   store i64 %44, ptr %match_result1, align 4
   br label %bb5747
 
@@ -62529,7 +62490,7 @@ bb5754:                                           ; preds = %bb5753
   br label %bb5747
 
 bb5755:                                           ; preds = %bb5746
-  %59 = call i64 @err_emit(i64 ptrtoint (ptr @1902 to i64))
+  %59 = call i64 @err_emit(i64 ptrtoint (ptr @1901 to i64))
   ret i64 %59
 
 bb5756:                                           ; preds = %bb5746
@@ -62546,28 +62507,28 @@ bb5757:
   store i64 %2, ptr %rhs_i64, align 4
   %3 = load i64, ptr %ctx, align 4
   %4 = load i64, ptr %lhs_i64, align 4
-  %5 = call i64 @to_ptr(i64 %3, i64 %4, i64 ptrtoint (ptr @1906 to i64))
+  %5 = call i64 @to_ptr(i64 %3, i64 %4, i64 ptrtoint (ptr @1905 to i64))
   %lhs_ptr = alloca i64, align 8
   store i64 %5, ptr %lhs_ptr, align 4
   %6 = load i64, ptr %ctx, align 4
   %7 = load i64, ptr %rhs_i64, align 4
-  %8 = call i64 @to_ptr(i64 %6, i64 %7, i64 ptrtoint (ptr @1907 to i64))
+  %8 = call i64 @to_ptr(i64 %6, i64 %7, i64 ptrtoint (ptr @1906 to i64))
   %rhs_ptr = alloca i64, align 8
   store i64 %8, ptr %rhs_ptr, align 4
   %9 = load i64, ptr %ctx, align 4
-  %10 = call i64 @get_fn(i64 %9, i64 ptrtoint (ptr @1908 to i64))
+  %10 = call i64 @get_fn(i64 %9, i64 ptrtoint (ptr @1907 to i64))
   %strlen_fn = alloca i64, align 8
   store i64 %10, ptr %strlen_fn, align 4
   %11 = load i64, ptr %ctx, align 4
   %12 = load i64, ptr %strlen_fn, align 4
   %13 = load i64, ptr %lhs_ptr, align 4
-  %14 = call i64 @call_1(i64 %11, i64 %12, i64 %13, i64 ptrtoint (ptr @1909 to i64))
+  %14 = call i64 @call_1(i64 %11, i64 %12, i64 %13, i64 ptrtoint (ptr @1908 to i64))
   %lhs_len = alloca i64, align 8
   store i64 %14, ptr %lhs_len, align 4
   %15 = load i64, ptr %ctx, align 4
   %16 = load i64, ptr %strlen_fn, align 4
   %17 = load i64, ptr %rhs_ptr, align 4
-  %18 = call i64 @call_1(i64 %15, i64 %16, i64 %17, i64 ptrtoint (ptr @1910 to i64))
+  %18 = call i64 @call_1(i64 %15, i64 %16, i64 %17, i64 ptrtoint (ptr @1909 to i64))
   %rhs_len = alloca i64, align 8
   store i64 %18, ptr %rhs_len, align 4
   %19 = load i64, ptr %ctx, align 4
@@ -62576,7 +62537,7 @@ bb5757:
   %22 = load i64, ptr %21, align 4
   %23 = load i64, ptr %lhs_len, align 4
   %24 = load i64, ptr %rhs_len, align 4
-  %25 = call i64 @forge_llvm_build_add(i64 %22, i64 %23, i64 %24, i64 ptrtoint (ptr @1911 to i64))
+  %25 = call i64 @forge_llvm_build_add(i64 %22, i64 %23, i64 %24, i64 ptrtoint (ptr @1910 to i64))
   %total = alloca i64, align 8
   store i64 %25, ptr %total, align 4
   %26 = load i64, ptr %ctx, align 4
@@ -62589,7 +62550,7 @@ bb5757:
   %31 = load i64, ptr %30, align 4
   %32 = load i64, ptr %total, align 4
   %33 = load i64, ptr %one, align 4
-  %34 = call i64 @forge_llvm_build_add(i64 %31, i64 %32, i64 %33, i64 ptrtoint (ptr @1912 to i64))
+  %34 = call i64 @forge_llvm_build_add(i64 %31, i64 %32, i64 %33, i64 ptrtoint (ptr @1911 to i64))
   %alloc_size = alloca i64, align 8
   store i64 %34, ptr %alloc_size, align 4
   %35 = load i64, ptr %ctx, align 4
@@ -62598,7 +62559,7 @@ bb5757:
   %buf = alloca i64, align 8
   store i64 %37, ptr %buf, align 4
   %38 = load i64, ptr %ctx, align 4
-  %39 = call i64 @get_fn(i64 %38, i64 ptrtoint (ptr @1913 to i64))
+  %39 = call i64 @get_fn(i64 %38, i64 ptrtoint (ptr @1912 to i64))
   %memcpy_fn = alloca i64, align 8
   store i64 %39, ptr %memcpy_fn, align 4
   %40 = load i64, ptr %ctx, align 4
@@ -62606,10 +62567,10 @@ bb5757:
   %42 = load i64, ptr %buf, align 4
   %43 = load i64, ptr %lhs_ptr, align 4
   %44 = load i64, ptr %lhs_len, align 4
-  %45 = call i64 @call_3(i64 %40, i64 %41, i64 %42, i64 %43, i64 %44, i64 ptrtoint (ptr @1914 to i64))
+  %45 = call i64 @call_3(i64 %40, i64 %41, i64 %42, i64 %43, i64 %44, i64 ptrtoint (ptr @1913 to i64))
   %46 = load i64, ptr %ctx, align 4
   %47 = load i64, ptr %buf, align 4
-  %48 = call i64 @to_i64(i64 %46, i64 %47, i64 ptrtoint (ptr @1915 to i64))
+  %48 = call i64 @to_i64(i64 %46, i64 %47, i64 ptrtoint (ptr @1914 to i64))
   %buf_int = alloca i64, align 8
   store i64 %48, ptr %buf_int, align 4
   %49 = load i64, ptr %ctx, align 4
@@ -62618,12 +62579,12 @@ bb5757:
   %52 = load i64, ptr %51, align 4
   %53 = load i64, ptr %buf_int, align 4
   %54 = load i64, ptr %lhs_len, align 4
-  %55 = call i64 @forge_llvm_build_add(i64 %52, i64 %53, i64 %54, i64 ptrtoint (ptr @1916 to i64))
+  %55 = call i64 @forge_llvm_build_add(i64 %52, i64 %53, i64 %54, i64 ptrtoint (ptr @1915 to i64))
   %dst2_int = alloca i64, align 8
   store i64 %55, ptr %dst2_int, align 4
   %56 = load i64, ptr %ctx, align 4
   %57 = load i64, ptr %dst2_int, align 4
-  %58 = call i64 @to_ptr(i64 %56, i64 %57, i64 ptrtoint (ptr @1917 to i64))
+  %58 = call i64 @to_ptr(i64 %56, i64 %57, i64 ptrtoint (ptr @1916 to i64))
   %dst2 = alloca i64, align 8
   store i64 %58, ptr %dst2, align 4
   %59 = load i64, ptr %ctx, align 4
@@ -62632,7 +62593,7 @@ bb5757:
   %62 = load i64, ptr %61, align 4
   %63 = load i64, ptr %rhs_len, align 4
   %64 = load i64, ptr %one, align 4
-  %65 = call i64 @forge_llvm_build_add(i64 %62, i64 %63, i64 %64, i64 ptrtoint (ptr @1918 to i64))
+  %65 = call i64 @forge_llvm_build_add(i64 %62, i64 %63, i64 %64, i64 ptrtoint (ptr @1917 to i64))
   %rhs_len_plus_1 = alloca i64, align 8
   store i64 %65, ptr %rhs_len_plus_1, align 4
   %66 = load i64, ptr %ctx, align 4
@@ -62640,10 +62601,10 @@ bb5757:
   %68 = load i64, ptr %dst2, align 4
   %69 = load i64, ptr %rhs_ptr, align 4
   %70 = load i64, ptr %rhs_len_plus_1, align 4
-  %71 = call i64 @call_3(i64 %66, i64 %67, i64 %68, i64 %69, i64 %70, i64 ptrtoint (ptr @1919 to i64))
+  %71 = call i64 @call_3(i64 %66, i64 %67, i64 %68, i64 %69, i64 %70, i64 ptrtoint (ptr @1918 to i64))
   %72 = load i64, ptr %ctx, align 4
   %73 = load i64, ptr %buf, align 4
-  %74 = call i64 @to_i64(i64 %72, i64 %73, i64 ptrtoint (ptr @1920 to i64))
+  %74 = call i64 @to_i64(i64 %72, i64 %73, i64 ptrtoint (ptr @1919 to i64))
   %75 = call i64 @ok_emit_str(i64 %74)
   ret i64 %75
 }
@@ -62751,7 +62712,7 @@ bb5769:                                           ; preds = %bb5767
 bb5770:                                           ; preds = %bb5769
   %44 = load i64, ptr %ctx, align 4
   %45 = load i64, ptr %ctx, align 4
-  %46 = call i64 @get_fn(i64 %45, i64 ptrtoint (ptr @1921 to i64))
+  %46 = call i64 @get_fn(i64 %45, i64 ptrtoint (ptr @1920 to i64))
   %47 = load i64, ptr %list, align 4
   %48 = load i64, ptr %idx_r, align 4
   %49 = inttoptr i64 %48 to ptr
@@ -62761,14 +62722,14 @@ bb5770:                                           ; preds = %bb5769
   %53 = inttoptr i64 %52 to ptr
   %54 = getelementptr inbounds %EmitResult, ptr %53, i32 0, i32 0
   %55 = load i64, ptr %54, align 4
-  %56 = call i64 @call_3(i64 %44, i64 %46, i64 %47, i64 %51, i64 %55, i64 ptrtoint (ptr @1922 to i64))
+  %56 = call i64 @call_3(i64 %44, i64 %46, i64 %47, i64 %51, i64 %55, i64 ptrtoint (ptr @1921 to i64))
   %57 = load i64, ptr %list, align 4
   %58 = call i64 @ok_emit(i64 %57)
   store i64 %58, ptr %match_result1, align 4
   br label %bb5762
 
 bb5771:                                           ; preds = %bb5764
-  %59 = call i64 @err_emit(i64 ptrtoint (ptr @1923 to i64))
+  %59 = call i64 @err_emit(i64 ptrtoint (ptr @1922 to i64))
   store i64 %59, ptr %match_result1, align 4
   br label %bb5762
 
@@ -62776,7 +62737,7 @@ bb5772:                                           ; No predecessors!
   br label %bb5762
 
 bb5773:                                           ; preds = %bb5761
-  %60 = call i64 @err_emit(i64 ptrtoint (ptr @1924 to i64))
+  %60 = call i64 @err_emit(i64 ptrtoint (ptr @1923 to i64))
   store i64 %60, ptr %match_result, align 4
   br label %bb5759
 
@@ -62861,7 +62822,7 @@ bb5783:                                           ; preds = %bb5781
 bb5784:                                           ; preds = %bb5783
   %35 = load i64, ptr %ctx, align 4
   %36 = load i64, ptr %ctx, align 4
-  %37 = call i64 @get_fn(i64 %36, i64 ptrtoint (ptr @1925 to i64))
+  %37 = call i64 @get_fn(i64 %36, i64 ptrtoint (ptr @1924 to i64))
   %38 = load i64, ptr %obj_r, align 4
   %39 = inttoptr i64 %38 to ptr
   %40 = getelementptr inbounds %EmitResult, ptr %39, i32 0, i32 0
@@ -62874,7 +62835,7 @@ bb5784:                                           ; preds = %bb5783
   %47 = inttoptr i64 %46 to ptr
   %48 = getelementptr inbounds %EmitResult, ptr %47, i32 0, i32 0
   %49 = load i64, ptr %48, align 4
-  %50 = call i64 @call_3(i64 %35, i64 %37, i64 %41, i64 %45, i64 %49, i64 ptrtoint (ptr @1926 to i64))
+  %50 = call i64 @call_3(i64 %35, i64 %37, i64 %41, i64 %45, i64 %49, i64 ptrtoint (ptr @1925 to i64))
   %result = alloca i64, align 8
   store i64 %50, ptr %result, align 4
   %51 = load i64, ptr %result, align 4
@@ -62992,26 +62953,26 @@ bb5797:                                           ; preds = %bb5796
   %46 = inttoptr i64 %45 to ptr
   %47 = getelementptr inbounds %EmitResult, ptr %46, i32 0, i32 0
   %48 = load i64, ptr %47, align 4
-  %49 = call i64 @to_ptr(i64 %44, i64 %48, i64 ptrtoint (ptr @1927 to i64))
+  %49 = call i64 @to_ptr(i64 %44, i64 %48, i64 ptrtoint (ptr @1926 to i64))
   %key_ptr = alloca i64, align 8
   store i64 %49, ptr %key_ptr, align 4
   %50 = load i64, ptr %ctx, align 4
   %51 = load i64, ptr %ctx, align 4
-  %52 = call i64 @get_fn(i64 %51, i64 ptrtoint (ptr @1928 to i64))
+  %52 = call i64 @get_fn(i64 %51, i64 ptrtoint (ptr @1927 to i64))
   %53 = load i64, ptr %map, align 4
   %54 = load i64, ptr %key_ptr, align 4
   %55 = load i64, ptr %val_r, align 4
   %56 = inttoptr i64 %55 to ptr
   %57 = getelementptr inbounds %EmitResult, ptr %56, i32 0, i32 0
   %58 = load i64, ptr %57, align 4
-  %59 = call i64 @call_3(i64 %50, i64 %52, i64 %53, i64 %54, i64 %58, i64 ptrtoint (ptr @1929 to i64))
+  %59 = call i64 @call_3(i64 %50, i64 %52, i64 %53, i64 %54, i64 %58, i64 ptrtoint (ptr @1928 to i64))
   %60 = load i64, ptr %map, align 4
   %61 = call i64 @ok_emit(i64 %60)
   store i64 %61, ptr %match_result1, align 4
   br label %bb5789
 
 bb5798:                                           ; preds = %bb5791
-  %62 = call i64 @err_emit(i64 ptrtoint (ptr @1930 to i64))
+  %62 = call i64 @err_emit(i64 ptrtoint (ptr @1929 to i64))
   store i64 %62, ptr %match_result1, align 4
   br label %bb5789
 
@@ -63019,7 +62980,7 @@ bb5799:                                           ; No predecessors!
   br label %bb5789
 
 bb5800:                                           ; preds = %bb5788
-  %63 = call i64 @err_emit(i64 ptrtoint (ptr @1931 to i64))
+  %63 = call i64 @err_emit(i64 ptrtoint (ptr @1930 to i64))
   store i64 %63, ptr %match_result, align 4
   br label %bb5786
 
@@ -63050,7 +63011,7 @@ bb5803:                                           ; preds = %bb5807, %bb5806, %b
   ret i64 %9
 
 bb5804:                                           ; preds = %bb5802
-  %10 = call i64 @err_emit(i64 ptrtoint (ptr @1932 to i64))
+  %10 = call i64 @err_emit(i64 ptrtoint (ptr @1931 to i64))
   store i64 %10, ptr %match_result, align 4
   br label %bb5803
 
@@ -63178,7 +63139,7 @@ bb5819:                                           ; preds = %bb5817
 bb5820:                                           ; preds = %bb5819
   %44 = load i64, ptr %ctx, align 4
   %45 = load i64, ptr %str_i64, align 4
-  %46 = call i64 @to_ptr(i64 %44, i64 %45, i64 ptrtoint (ptr @1933 to i64))
+  %46 = call i64 @to_ptr(i64 %44, i64 %45, i64 ptrtoint (ptr @1932 to i64))
   %str_ptr = alloca i64, align 8
   store i64 %46, ptr %str_ptr, align 4
   %47 = load i64, ptr %ctx, align 4
@@ -63186,7 +63147,7 @@ bb5820:                                           ; preds = %bb5819
   %49 = inttoptr i64 %48 to ptr
   %50 = getelementptr inbounds %EmitResult, ptr %49, i32 0, i32 0
   %51 = load i64, ptr %50, align 4
-  %52 = call i64 @to_ptr(i64 %47, i64 %51, i64 ptrtoint (ptr @1934 to i64))
+  %52 = call i64 @to_ptr(i64 %47, i64 %51, i64 ptrtoint (ptr @1933 to i64))
   %from_ptr = alloca i64, align 8
   store i64 %52, ptr %from_ptr, align 4
   %53 = load i64, ptr %ctx, align 4
@@ -63194,27 +63155,27 @@ bb5820:                                           ; preds = %bb5819
   %55 = inttoptr i64 %54 to ptr
   %56 = getelementptr inbounds %EmitResult, ptr %55, i32 0, i32 0
   %57 = load i64, ptr %56, align 4
-  %58 = call i64 @to_ptr(i64 %53, i64 %57, i64 ptrtoint (ptr @1935 to i64))
+  %58 = call i64 @to_ptr(i64 %53, i64 %57, i64 ptrtoint (ptr @1934 to i64))
   %to_ptr_v = alloca i64, align 8
   store i64 %58, ptr %to_ptr_v, align 4
   %59 = load i64, ptr %ctx, align 4
   %60 = load i64, ptr %ctx, align 4
-  %61 = call i64 @get_fn(i64 %60, i64 ptrtoint (ptr @1936 to i64))
+  %61 = call i64 @get_fn(i64 %60, i64 ptrtoint (ptr @1935 to i64))
   %62 = load i64, ptr %str_ptr, align 4
   %63 = load i64, ptr %from_ptr, align 4
   %64 = load i64, ptr %to_ptr_v, align 4
-  %65 = call i64 @call_3(i64 %59, i64 %61, i64 %62, i64 %63, i64 %64, i64 ptrtoint (ptr @1937 to i64))
+  %65 = call i64 @call_3(i64 %59, i64 %61, i64 %62, i64 %63, i64 %64, i64 ptrtoint (ptr @1936 to i64))
   %result = alloca i64, align 8
   store i64 %65, ptr %result, align 4
   %66 = load i64, ptr %ctx, align 4
   %67 = load i64, ptr %result, align 4
-  %68 = call i64 @to_i64(i64 %66, i64 %67, i64 ptrtoint (ptr @1938 to i64))
+  %68 = call i64 @to_i64(i64 %66, i64 %67, i64 ptrtoint (ptr @1937 to i64))
   %69 = call i64 @ok_emit_str(i64 %68)
   store i64 %69, ptr %match_result1, align 4
   br label %bb5812
 
 bb5821:                                           ; preds = %bb5814
-  %70 = call i64 @err_emit(i64 ptrtoint (ptr @1939 to i64))
+  %70 = call i64 @err_emit(i64 ptrtoint (ptr @1938 to i64))
   store i64 %70, ptr %match_result1, align 4
   br label %bb5812
 
@@ -63222,7 +63183,7 @@ bb5822:                                           ; No predecessors!
   br label %bb5812
 
 bb5823:                                           ; preds = %bb5811
-  %71 = call i64 @err_emit(i64 ptrtoint (ptr @1940 to i64))
+  %71 = call i64 @err_emit(i64 ptrtoint (ptr @1939 to i64))
   store i64 %71, ptr %match_result, align 4
   br label %bb5809
 
@@ -63255,7 +63216,7 @@ bb5826:                                           ; preds = %bb5830, %bb5831, %b
   ret i64 %10
 
 bb5827:                                           ; preds = %bb5825
-  %11 = call i64 @err_emit(i64 ptrtoint (ptr @1941 to i64))
+  %11 = call i64 @err_emit(i64 ptrtoint (ptr @1940 to i64))
   store i64 %11, ptr %match_result, align 4
   br label %bb5826
 
@@ -63292,7 +63253,7 @@ bb5831:                                           ; preds = %bb5835, %bb5834, %b
   br label %bb5826
 
 bb5832:                                           ; preds = %bb5829
-  %25 = call i64 @err_emit(i64 ptrtoint (ptr @1942 to i64))
+  %25 = call i64 @err_emit(i64 ptrtoint (ptr @1941 to i64))
   store i64 %25, ptr %match_result1, align 4
   br label %bb5831
 
@@ -63375,7 +63336,7 @@ bb5841:                                           ; preds = %bb5839
 bb5842:                                           ; preds = %bb5841
   %25 = load i64, ptr %ctx, align 4
   %26 = load i64, ptr %str_i64, align 4
-  %27 = call i64 @to_ptr(i64 %25, i64 %26, i64 ptrtoint (ptr @1943 to i64))
+  %27 = call i64 @to_ptr(i64 %25, i64 %26, i64 ptrtoint (ptr @1942 to i64))
   %str_ptr = alloca i64, align 8
   store i64 %27, ptr %str_ptr, align 4
   %28 = load i64, ptr %ctx, align 4
@@ -63390,7 +63351,7 @@ bb5842:                                           ; preds = %bb5841
   %37 = inttoptr i64 %36 to ptr
   %38 = getelementptr inbounds %EmitResult, ptr %37, i32 0, i32 0
   %39 = load i64, ptr %38, align 4
-  %40 = call i64 @forge_llvm_build_sub(i64 %31, i64 %35, i64 %39, i64 ptrtoint (ptr @1944 to i64))
+  %40 = call i64 @forge_llvm_build_sub(i64 %31, i64 %35, i64 %39, i64 ptrtoint (ptr @1943 to i64))
   %len = alloca i64, align 8
   store i64 %40, ptr %len, align 4
   %41 = load i64, ptr %ctx, align 4
@@ -63403,7 +63364,7 @@ bb5842:                                           ; preds = %bb5841
   %46 = load i64, ptr %45, align 4
   %47 = load i64, ptr %len, align 4
   %48 = load i64, ptr %one, align 4
-  %49 = call i64 @forge_llvm_build_add(i64 %46, i64 %47, i64 %48, i64 ptrtoint (ptr @1945 to i64))
+  %49 = call i64 @forge_llvm_build_add(i64 %46, i64 %47, i64 %48, i64 ptrtoint (ptr @1944 to i64))
   %alloc_size = alloca i64, align 8
   store i64 %49, ptr %alloc_size, align 4
   %50 = load i64, ptr %ctx, align 4
@@ -63413,7 +63374,7 @@ bb5842:                                           ; preds = %bb5841
   store i64 %52, ptr %buf, align 4
   %53 = load i64, ptr %ctx, align 4
   %54 = load i64, ptr %str_ptr, align 4
-  %55 = call i64 @to_i64(i64 %53, i64 %54, i64 ptrtoint (ptr @1946 to i64))
+  %55 = call i64 @to_i64(i64 %53, i64 %54, i64 ptrtoint (ptr @1945 to i64))
   %src_int = alloca i64, align 8
   store i64 %55, ptr %src_int, align 4
   %56 = load i64, ptr %ctx, align 4
@@ -63425,24 +63386,24 @@ bb5842:                                           ; preds = %bb5841
   %62 = inttoptr i64 %61 to ptr
   %63 = getelementptr inbounds %EmitResult, ptr %62, i32 0, i32 0
   %64 = load i64, ptr %63, align 4
-  %65 = call i64 @forge_llvm_build_add(i64 %59, i64 %60, i64 %64, i64 ptrtoint (ptr @1947 to i64))
+  %65 = call i64 @forge_llvm_build_add(i64 %59, i64 %60, i64 %64, i64 ptrtoint (ptr @1946 to i64))
   %off_int = alloca i64, align 8
   store i64 %65, ptr %off_int, align 4
   %66 = load i64, ptr %ctx, align 4
   %67 = load i64, ptr %off_int, align 4
-  %68 = call i64 @to_ptr(i64 %66, i64 %67, i64 ptrtoint (ptr @1948 to i64))
+  %68 = call i64 @to_ptr(i64 %66, i64 %67, i64 ptrtoint (ptr @1947 to i64))
   %off_ptr = alloca i64, align 8
   store i64 %68, ptr %off_ptr, align 4
   %69 = load i64, ptr %ctx, align 4
   %70 = load i64, ptr %ctx, align 4
-  %71 = call i64 @get_fn(i64 %70, i64 ptrtoint (ptr @1949 to i64))
+  %71 = call i64 @get_fn(i64 %70, i64 ptrtoint (ptr @1948 to i64))
   %72 = load i64, ptr %buf, align 4
   %73 = load i64, ptr %off_ptr, align 4
   %74 = load i64, ptr %len, align 4
-  %75 = call i64 @call_3(i64 %69, i64 %71, i64 %72, i64 %73, i64 %74, i64 ptrtoint (ptr @1950 to i64))
+  %75 = call i64 @call_3(i64 %69, i64 %71, i64 %72, i64 %73, i64 %74, i64 ptrtoint (ptr @1949 to i64))
   %76 = load i64, ptr %ctx, align 4
   %77 = load i64, ptr %buf, align 4
-  %78 = call i64 @to_i64(i64 %76, i64 %77, i64 ptrtoint (ptr @1951 to i64))
+  %78 = call i64 @to_i64(i64 %76, i64 %77, i64 ptrtoint (ptr @1950 to i64))
   %buf_int2 = alloca i64, align 8
   store i64 %78, ptr %buf_int2, align 4
   %79 = load i64, ptr %ctx, align 4
@@ -63451,12 +63412,12 @@ bb5842:                                           ; preds = %bb5841
   %82 = load i64, ptr %81, align 4
   %83 = load i64, ptr %buf_int2, align 4
   %84 = load i64, ptr %len, align 4
-  %85 = call i64 @forge_llvm_build_add(i64 %82, i64 %83, i64 %84, i64 ptrtoint (ptr @1952 to i64))
+  %85 = call i64 @forge_llvm_build_add(i64 %82, i64 %83, i64 %84, i64 ptrtoint (ptr @1951 to i64))
   %nul_int = alloca i64, align 8
   store i64 %85, ptr %nul_int, align 4
   %86 = load i64, ptr %ctx, align 4
   %87 = load i64, ptr %nul_int, align 4
-  %88 = call i64 @to_ptr(i64 %86, i64 %87, i64 ptrtoint (ptr @1953 to i64))
+  %88 = call i64 @to_ptr(i64 %86, i64 %87, i64 ptrtoint (ptr @1952 to i64))
   %nul_ptr = alloca i64, align 8
   store i64 %88, ptr %nul_ptr, align 4
   %89 = load i64, ptr %ctx, align 4
@@ -63469,7 +63430,7 @@ bb5842:                                           ; preds = %bb5841
   %96 = call i64 @forge_llvm_build_store(i64 %92, i64 %94, i64 %95)
   %97 = load i64, ptr %ctx, align 4
   %98 = load i64, ptr %buf, align 4
-  %99 = call i64 @to_i64(i64 %97, i64 %98, i64 ptrtoint (ptr @1954 to i64))
+  %99 = call i64 @to_i64(i64 %97, i64 %98, i64 ptrtoint (ptr @1953 to i64))
   %result_i64 = alloca i64, align 8
   store i64 %99, ptr %result_i64, align 4
   %100 = load i64, ptr %result_i64, align 4
@@ -63489,20 +63450,20 @@ bb5843:
   store i64 %3, ptr %pred, align 4
   %4 = load i64, ptr %ctx, align 4
   %5 = load i64, ptr %lhs_i64, align 4
-  %6 = call i64 @to_ptr(i64 %4, i64 %5, i64 ptrtoint (ptr @1955 to i64))
+  %6 = call i64 @to_ptr(i64 %4, i64 %5, i64 ptrtoint (ptr @1954 to i64))
   %lhs_ptr = alloca i64, align 8
   store i64 %6, ptr %lhs_ptr, align 4
   %7 = load i64, ptr %ctx, align 4
   %8 = load i64, ptr %rhs_i64, align 4
-  %9 = call i64 @to_ptr(i64 %7, i64 %8, i64 ptrtoint (ptr @1956 to i64))
+  %9 = call i64 @to_ptr(i64 %7, i64 %8, i64 ptrtoint (ptr @1955 to i64))
   %rhs_ptr = alloca i64, align 8
   store i64 %9, ptr %rhs_ptr, align 4
   %10 = load i64, ptr %ctx, align 4
   %11 = load i64, ptr %ctx, align 4
-  %12 = call i64 @get_fn(i64 %11, i64 ptrtoint (ptr @1957 to i64))
+  %12 = call i64 @get_fn(i64 %11, i64 ptrtoint (ptr @1956 to i64))
   %13 = load i64, ptr %lhs_ptr, align 4
   %14 = load i64, ptr %rhs_ptr, align 4
-  %15 = call i64 @call_2(i64 %10, i64 %12, i64 %13, i64 %14, i64 ptrtoint (ptr @1958 to i64))
+  %15 = call i64 @call_2(i64 %10, i64 %12, i64 %13, i64 %14, i64 ptrtoint (ptr @1957 to i64))
   %result32 = alloca i64, align 8
   store i64 %15, ptr %result32, align 4
   %16 = load i64, ptr %ctx, align 4
@@ -63514,7 +63475,7 @@ bb5843:
   %22 = inttoptr i64 %21 to ptr
   %23 = getelementptr inbounds %Ctx, ptr %22, i32 0, i32 4
   %24 = load i64, ptr %23, align 4
-  %25 = call i64 @forge_llvm_build_sext(i64 %19, i64 %20, i64 %24, i64 ptrtoint (ptr @1959 to i64))
+  %25 = call i64 @forge_llvm_build_sext(i64 %19, i64 %20, i64 %24, i64 ptrtoint (ptr @1958 to i64))
   %result64 = alloca i64, align 8
   store i64 %25, ptr %result64, align 4
   %26 = load i64, ptr %ctx, align 4
@@ -63528,7 +63489,7 @@ bb5843:
   %32 = load i64, ptr %pred, align 4
   %33 = load i64, ptr %result64, align 4
   %34 = load i64, ptr %zero64, align 4
-  %35 = call i64 @forge_llvm_build_icmp(i64 %31, i64 %32, i64 %33, i64 %34, i64 ptrtoint (ptr @1960 to i64))
+  %35 = call i64 @forge_llvm_build_icmp(i64 %31, i64 %32, i64 %33, i64 %34, i64 ptrtoint (ptr @1959 to i64))
   %cmp = alloca i64, align 8
   store i64 %35, ptr %cmp, align 4
   %36 = load i64, ptr %ctx, align 4
@@ -63540,7 +63501,7 @@ bb5843:
   %42 = inttoptr i64 %41 to ptr
   %43 = getelementptr inbounds %Ctx, ptr %42, i32 0, i32 4
   %44 = load i64, ptr %43, align 4
-  %45 = call i64 @forge_llvm_build_zext(i64 %39, i64 %40, i64 %44, i64 ptrtoint (ptr @1961 to i64))
+  %45 = call i64 @forge_llvm_build_zext(i64 %39, i64 %40, i64 %44, i64 ptrtoint (ptr @1960 to i64))
   %46 = call i64 @ok_emit(i64 %45)
   ret i64 %46
 }
@@ -63557,20 +63518,20 @@ bb5844:
   store i64 %3, ptr %invert, align 4
   %4 = load i64, ptr %ctx, align 4
   %5 = load i64, ptr %lhs_i64, align 4
-  %6 = call i64 @to_ptr(i64 %4, i64 %5, i64 ptrtoint (ptr @1962 to i64))
+  %6 = call i64 @to_ptr(i64 %4, i64 %5, i64 ptrtoint (ptr @1961 to i64))
   %lhs_ptr = alloca i64, align 8
   store i64 %6, ptr %lhs_ptr, align 4
   %7 = load i64, ptr %ctx, align 4
   %8 = load i64, ptr %rhs_i64, align 4
-  %9 = call i64 @to_ptr(i64 %7, i64 %8, i64 ptrtoint (ptr @1963 to i64))
+  %9 = call i64 @to_ptr(i64 %7, i64 %8, i64 ptrtoint (ptr @1962 to i64))
   %rhs_ptr = alloca i64, align 8
   store i64 %9, ptr %rhs_ptr, align 4
   %10 = load i64, ptr %ctx, align 4
   %11 = load i64, ptr %ctx, align 4
-  %12 = call i64 @get_fn(i64 %11, i64 ptrtoint (ptr @1964 to i64))
+  %12 = call i64 @get_fn(i64 %11, i64 ptrtoint (ptr @1963 to i64))
   %13 = load i64, ptr %lhs_ptr, align 4
   %14 = load i64, ptr %rhs_ptr, align 4
-  %15 = call i64 @call_2(i64 %10, i64 %12, i64 %13, i64 %14, i64 ptrtoint (ptr @1965 to i64))
+  %15 = call i64 @call_2(i64 %10, i64 %12, i64 %13, i64 %14, i64 ptrtoint (ptr @1964 to i64))
   %result32 = alloca i64, align 8
   store i64 %15, ptr %result32, align 4
   %16 = load i64, ptr %ctx, align 4
@@ -63606,7 +63567,7 @@ bb5847:                                           ; preds = %bb5846, %bb5845
   %29 = load i64, ptr %pred, align 4
   %30 = load i64, ptr %result32, align 4
   %31 = load i64, ptr %zero32, align 4
-  %32 = call i64 @forge_llvm_build_icmp(i64 %28, i64 %29, i64 %30, i64 %31, i64 ptrtoint (ptr @1966 to i64))
+  %32 = call i64 @forge_llvm_build_icmp(i64 %28, i64 %29, i64 %30, i64 %31, i64 ptrtoint (ptr @1965 to i64))
   %cmp = alloca i64, align 8
   store i64 %32, ptr %cmp, align 4
   %33 = load i64, ptr %ctx, align 4
@@ -63618,7 +63579,7 @@ bb5847:                                           ; preds = %bb5846, %bb5845
   %39 = inttoptr i64 %38 to ptr
   %40 = getelementptr inbounds %Ctx, ptr %39, i32 0, i32 4
   %41 = load i64, ptr %40, align 4
-  %42 = call i64 @forge_llvm_build_zext(i64 %36, i64 %37, i64 %41, i64 ptrtoint (ptr @1967 to i64))
+  %42 = call i64 @forge_llvm_build_zext(i64 %36, i64 %37, i64 %41, i64 ptrtoint (ptr @1966 to i64))
   %43 = call i64 @ok_emit(i64 %42)
   ret i64 %43
 }
@@ -63809,7 +63770,7 @@ bb5866:                                           ; preds = %bb5864
   %28 = inttoptr i64 %27 to ptr
   %29 = getelementptr inbounds %EmitResult, ptr %28, i32 0, i32 0
   %30 = load i64, ptr %29, align 4
-  %31 = call i64 @forge_llvm_build_sub(i64 %24, i64 %26, i64 %30, i64 ptrtoint (ptr @1968 to i64))
+  %31 = call i64 @forge_llvm_build_sub(i64 %24, i64 %26, i64 %30, i64 ptrtoint (ptr @1967 to i64))
   %32 = call i64 @ok_emit(i64 %31)
   store i64 %32, ptr %match_result, align 4
   br label %bb5865
@@ -63830,7 +63791,7 @@ bb5868:                                           ; preds = %bb5867
   %42 = load i64, ptr %41, align 4
   %43 = load i64, ptr %ctx, align 4
   %44 = call i64 @const_i64(i64 %43, i64 0)
-  %45 = call i64 @forge_llvm_build_icmp(i64 %38, i64 32, i64 %42, i64 %44, i64 ptrtoint (ptr @1969 to i64))
+  %45 = call i64 @forge_llvm_build_icmp(i64 %38, i64 32, i64 %42, i64 %44, i64 ptrtoint (ptr @1968 to i64))
   %cmp = alloca i64, align 8
   store i64 %45, ptr %cmp, align 4
   %46 = load i64, ptr %ctx, align 4
@@ -63842,7 +63803,7 @@ bb5868:                                           ; preds = %bb5867
   %52 = inttoptr i64 %51 to ptr
   %53 = getelementptr inbounds %Ctx, ptr %52, i32 0, i32 4
   %54 = load i64, ptr %53, align 4
-  %55 = call i64 @forge_llvm_build_zext(i64 %49, i64 %50, i64 %54, i64 ptrtoint (ptr @1970 to i64))
+  %55 = call i64 @forge_llvm_build_zext(i64 %49, i64 %50, i64 %54, i64 ptrtoint (ptr @1969 to i64))
   %56 = call i64 @ok_emit(i64 %55)
   store i64 %56, ptr %match_result, align 4
   br label %bb5865
@@ -63861,7 +63822,7 @@ bb5870:                                           ; preds = %bb5869
   %64 = inttoptr i64 %63 to ptr
   %65 = getelementptr inbounds %EmitResult, ptr %64, i32 0, i32 0
   %66 = load i64, ptr %65, align 4
-  %67 = call i64 @forge_llvm_build_not(i64 %62, i64 %66, i64 ptrtoint (ptr @1971 to i64))
+  %67 = call i64 @forge_llvm_build_not(i64 %62, i64 %66, i64 ptrtoint (ptr @1970 to i64))
   %68 = call i64 @ok_emit(i64 %67)
   store i64 %68, ptr %match_result, align 4
   br label %bb5865
@@ -64048,7 +64009,7 @@ bb5894:                                           ; preds = %bb5893
   %73 = load i64, ptr %72, align 4
   %74 = load i64, ptr %lhs, align 4
   %75 = load i64, ptr %rhs, align 4
-  %76 = call i64 @forge_llvm_build_add(i64 %73, i64 %74, i64 %75, i64 ptrtoint (ptr @1972 to i64))
+  %76 = call i64 @forge_llvm_build_add(i64 %73, i64 %74, i64 %75, i64 ptrtoint (ptr @1971 to i64))
   %77 = call i64 @ok_emit(i64 %76)
   store i64 %77, ptr %match_result, align 4
   br label %bb5889
@@ -64060,7 +64021,7 @@ bb5895:                                           ; preds = %bb5891
   %81 = load i64, ptr %80, align 4
   %82 = load i64, ptr %lhs, align 4
   %83 = load i64, ptr %rhs, align 4
-  %84 = call i64 @forge_llvm_build_sub(i64 %81, i64 %82, i64 %83, i64 ptrtoint (ptr @1973 to i64))
+  %84 = call i64 @forge_llvm_build_sub(i64 %81, i64 %82, i64 %83, i64 ptrtoint (ptr @1972 to i64))
   %85 = call i64 @ok_emit(i64 %84)
   store i64 %85, ptr %match_result, align 4
   br label %bb5889
@@ -64077,7 +64038,7 @@ bb5897:                                           ; preds = %bb5896
   %91 = load i64, ptr %90, align 4
   %92 = load i64, ptr %lhs, align 4
   %93 = load i64, ptr %rhs, align 4
-  %94 = call i64 @forge_llvm_build_mul(i64 %91, i64 %92, i64 %93, i64 ptrtoint (ptr @1974 to i64))
+  %94 = call i64 @forge_llvm_build_mul(i64 %91, i64 %92, i64 %93, i64 ptrtoint (ptr @1973 to i64))
   %95 = call i64 @ok_emit(i64 %94)
   store i64 %95, ptr %match_result, align 4
   br label %bb5889
@@ -64094,7 +64055,7 @@ bb5899:                                           ; preds = %bb5898
   %101 = load i64, ptr %100, align 4
   %102 = load i64, ptr %lhs, align 4
   %103 = load i64, ptr %rhs, align 4
-  %104 = call i64 @forge_llvm_build_sdiv(i64 %101, i64 %102, i64 %103, i64 ptrtoint (ptr @1975 to i64))
+  %104 = call i64 @forge_llvm_build_sdiv(i64 %101, i64 %102, i64 %103, i64 ptrtoint (ptr @1974 to i64))
   %105 = call i64 @ok_emit(i64 %104)
   store i64 %105, ptr %match_result, align 4
   br label %bb5889
@@ -64111,7 +64072,7 @@ bb5901:                                           ; preds = %bb5900
   %111 = load i64, ptr %110, align 4
   %112 = load i64, ptr %lhs, align 4
   %113 = load i64, ptr %rhs, align 4
-  %114 = call i64 @forge_llvm_build_srem(i64 %111, i64 %112, i64 %113, i64 ptrtoint (ptr @1976 to i64))
+  %114 = call i64 @forge_llvm_build_srem(i64 %111, i64 %112, i64 %113, i64 ptrtoint (ptr @1975 to i64))
   %115 = call i64 @ok_emit(i64 %114)
   store i64 %115, ptr %match_result, align 4
   br label %bb5889
@@ -64128,7 +64089,7 @@ bb5903:                                           ; preds = %bb5902
   %121 = load i64, ptr %120, align 4
   %122 = load i64, ptr %lhs, align 4
   %123 = load i64, ptr %rhs, align 4
-  %124 = call i64 @forge_llvm_build_and(i64 %121, i64 %122, i64 %123, i64 ptrtoint (ptr @1977 to i64))
+  %124 = call i64 @forge_llvm_build_and(i64 %121, i64 %122, i64 %123, i64 ptrtoint (ptr @1976 to i64))
   %125 = call i64 @ok_emit(i64 %124)
   store i64 %125, ptr %match_result, align 4
   br label %bb5889
@@ -64145,7 +64106,7 @@ bb5905:                                           ; preds = %bb5904
   %131 = load i64, ptr %130, align 4
   %132 = load i64, ptr %lhs, align 4
   %133 = load i64, ptr %rhs, align 4
-  %134 = call i64 @forge_llvm_build_or(i64 %131, i64 %132, i64 %133, i64 ptrtoint (ptr @1978 to i64))
+  %134 = call i64 @forge_llvm_build_or(i64 %131, i64 %132, i64 %133, i64 ptrtoint (ptr @1977 to i64))
   %135 = call i64 @ok_emit(i64 %134)
   store i64 %135, ptr %match_result, align 4
   br label %bb5889
@@ -64162,7 +64123,7 @@ bb5907:                                           ; preds = %bb5906
   %141 = load i64, ptr %140, align 4
   %142 = load i64, ptr %lhs, align 4
   %143 = load i64, ptr %rhs, align 4
-  %144 = call i64 @forge_llvm_build_xor(i64 %141, i64 %142, i64 %143, i64 ptrtoint (ptr @1979 to i64))
+  %144 = call i64 @forge_llvm_build_xor(i64 %141, i64 %142, i64 %143, i64 ptrtoint (ptr @1978 to i64))
   %145 = call i64 @ok_emit(i64 %144)
   store i64 %145, ptr %match_result, align 4
   br label %bb5889
@@ -64179,7 +64140,7 @@ bb5909:                                           ; preds = %bb5908
   %151 = load i64, ptr %150, align 4
   %152 = load i64, ptr %lhs, align 4
   %153 = load i64, ptr %rhs, align 4
-  %154 = call i64 @forge_llvm_build_shl(i64 %151, i64 %152, i64 %153, i64 ptrtoint (ptr @1980 to i64))
+  %154 = call i64 @forge_llvm_build_shl(i64 %151, i64 %152, i64 %153, i64 ptrtoint (ptr @1979 to i64))
   %155 = call i64 @ok_emit(i64 %154)
   store i64 %155, ptr %match_result, align 4
   br label %bb5889
@@ -64196,7 +64157,7 @@ bb5911:                                           ; preds = %bb5910
   %161 = load i64, ptr %160, align 4
   %162 = load i64, ptr %lhs, align 4
   %163 = load i64, ptr %rhs, align 4
-  %164 = call i64 @forge_llvm_build_ashr(i64 %161, i64 %162, i64 %163, i64 ptrtoint (ptr @1981 to i64))
+  %164 = call i64 @forge_llvm_build_ashr(i64 %161, i64 %162, i64 %163, i64 ptrtoint (ptr @1980 to i64))
   %165 = call i64 @ok_emit(i64 %164)
   store i64 %165, ptr %match_result, align 4
   br label %bb5889
@@ -64246,7 +64207,7 @@ bb5919:                                           ; preds = %bb5918
   %186 = load i64, ptr %185, align 4
   %187 = load i64, ptr %lhs, align 4
   %188 = load i64, ptr %rhs, align 4
-  %189 = call i64 @forge_llvm_build_icmp(i64 %186, i64 32, i64 %187, i64 %188, i64 ptrtoint (ptr @1982 to i64))
+  %189 = call i64 @forge_llvm_build_icmp(i64 %186, i64 32, i64 %187, i64 %188, i64 ptrtoint (ptr @1981 to i64))
   %cmp = alloca i64, align 8
   store i64 %189, ptr %cmp, align 4
   %190 = load i64, ptr %ctx, align 4
@@ -64258,7 +64219,7 @@ bb5919:                                           ; preds = %bb5918
   %196 = inttoptr i64 %195 to ptr
   %197 = getelementptr inbounds %Ctx, ptr %196, i32 0, i32 4
   %198 = load i64, ptr %197, align 4
-  %199 = call i64 @forge_llvm_build_zext(i64 %193, i64 %194, i64 %198, i64 ptrtoint (ptr @1983 to i64))
+  %199 = call i64 @forge_llvm_build_zext(i64 %193, i64 %194, i64 %198, i64 ptrtoint (ptr @1982 to i64))
   %200 = call i64 @ok_emit(i64 %199)
   store i64 %200, ptr %match_result, align 4
   br label %bb5889
@@ -64303,7 +64264,7 @@ bb5926:                                           ; preds = %bb5925
   %219 = load i64, ptr %218, align 4
   %220 = load i64, ptr %lhs, align 4
   %221 = load i64, ptr %rhs, align 4
-  %222 = call i64 @forge_llvm_build_icmp(i64 %219, i64 33, i64 %220, i64 %221, i64 ptrtoint (ptr @1984 to i64))
+  %222 = call i64 @forge_llvm_build_icmp(i64 %219, i64 33, i64 %220, i64 %221, i64 ptrtoint (ptr @1983 to i64))
   %cmp1 = alloca i64, align 8
   store i64 %222, ptr %cmp1, align 4
   %223 = load i64, ptr %ctx, align 4
@@ -64315,7 +64276,7 @@ bb5926:                                           ; preds = %bb5925
   %229 = inttoptr i64 %228 to ptr
   %230 = getelementptr inbounds %Ctx, ptr %229, i32 0, i32 4
   %231 = load i64, ptr %230, align 4
-  %232 = call i64 @forge_llvm_build_zext(i64 %226, i64 %227, i64 %231, i64 ptrtoint (ptr @1985 to i64))
+  %232 = call i64 @forge_llvm_build_zext(i64 %226, i64 %227, i64 %231, i64 ptrtoint (ptr @1984 to i64))
   %233 = call i64 @ok_emit(i64 %232)
   store i64 %233, ptr %match_result, align 4
   br label %bb5889
@@ -64347,7 +64308,7 @@ bb5931:                                           ; preds = %bb5930
   %245 = load i64, ptr %244, align 4
   %246 = load i64, ptr %lhs, align 4
   %247 = load i64, ptr %rhs, align 4
-  %248 = call i64 @forge_llvm_build_icmp(i64 %245, i64 40, i64 %246, i64 %247, i64 ptrtoint (ptr @1986 to i64))
+  %248 = call i64 @forge_llvm_build_icmp(i64 %245, i64 40, i64 %246, i64 %247, i64 ptrtoint (ptr @1985 to i64))
   %cmp2 = alloca i64, align 8
   store i64 %248, ptr %cmp2, align 4
   %249 = load i64, ptr %ctx, align 4
@@ -64359,7 +64320,7 @@ bb5931:                                           ; preds = %bb5930
   %255 = inttoptr i64 %254 to ptr
   %256 = getelementptr inbounds %Ctx, ptr %255, i32 0, i32 4
   %257 = load i64, ptr %256, align 4
-  %258 = call i64 @forge_llvm_build_zext(i64 %252, i64 %253, i64 %257, i64 ptrtoint (ptr @1987 to i64))
+  %258 = call i64 @forge_llvm_build_zext(i64 %252, i64 %253, i64 %257, i64 ptrtoint (ptr @1986 to i64))
   %259 = call i64 @ok_emit(i64 %258)
   store i64 %259, ptr %match_result, align 4
   br label %bb5889
@@ -64391,7 +64352,7 @@ bb5936:                                           ; preds = %bb5935
   %271 = load i64, ptr %270, align 4
   %272 = load i64, ptr %lhs, align 4
   %273 = load i64, ptr %rhs, align 4
-  %274 = call i64 @forge_llvm_build_icmp(i64 %271, i64 41, i64 %272, i64 %273, i64 ptrtoint (ptr @1988 to i64))
+  %274 = call i64 @forge_llvm_build_icmp(i64 %271, i64 41, i64 %272, i64 %273, i64 ptrtoint (ptr @1987 to i64))
   %cmp3 = alloca i64, align 8
   store i64 %274, ptr %cmp3, align 4
   %275 = load i64, ptr %ctx, align 4
@@ -64403,7 +64364,7 @@ bb5936:                                           ; preds = %bb5935
   %281 = inttoptr i64 %280 to ptr
   %282 = getelementptr inbounds %Ctx, ptr %281, i32 0, i32 4
   %283 = load i64, ptr %282, align 4
-  %284 = call i64 @forge_llvm_build_zext(i64 %278, i64 %279, i64 %283, i64 ptrtoint (ptr @1989 to i64))
+  %284 = call i64 @forge_llvm_build_zext(i64 %278, i64 %279, i64 %283, i64 ptrtoint (ptr @1988 to i64))
   %285 = call i64 @ok_emit(i64 %284)
   store i64 %285, ptr %match_result, align 4
   br label %bb5889
@@ -64435,7 +64396,7 @@ bb5941:                                           ; preds = %bb5940
   %297 = load i64, ptr %296, align 4
   %298 = load i64, ptr %lhs, align 4
   %299 = load i64, ptr %rhs, align 4
-  %300 = call i64 @forge_llvm_build_icmp(i64 %297, i64 38, i64 %298, i64 %299, i64 ptrtoint (ptr @1990 to i64))
+  %300 = call i64 @forge_llvm_build_icmp(i64 %297, i64 38, i64 %298, i64 %299, i64 ptrtoint (ptr @1989 to i64))
   %cmp4 = alloca i64, align 8
   store i64 %300, ptr %cmp4, align 4
   %301 = load i64, ptr %ctx, align 4
@@ -64447,7 +64408,7 @@ bb5941:                                           ; preds = %bb5940
   %307 = inttoptr i64 %306 to ptr
   %308 = getelementptr inbounds %Ctx, ptr %307, i32 0, i32 4
   %309 = load i64, ptr %308, align 4
-  %310 = call i64 @forge_llvm_build_zext(i64 %304, i64 %305, i64 %309, i64 ptrtoint (ptr @1991 to i64))
+  %310 = call i64 @forge_llvm_build_zext(i64 %304, i64 %305, i64 %309, i64 ptrtoint (ptr @1990 to i64))
   %311 = call i64 @ok_emit(i64 %310)
   store i64 %311, ptr %match_result, align 4
   br label %bb5889
@@ -64477,7 +64438,7 @@ bb5946:                                           ; preds = %bb5945
   %321 = load i64, ptr %320, align 4
   %322 = load i64, ptr %lhs, align 4
   %323 = load i64, ptr %rhs, align 4
-  %324 = call i64 @forge_llvm_build_icmp(i64 %321, i64 39, i64 %322, i64 %323, i64 ptrtoint (ptr @1992 to i64))
+  %324 = call i64 @forge_llvm_build_icmp(i64 %321, i64 39, i64 %322, i64 %323, i64 ptrtoint (ptr @1991 to i64))
   %cmp5 = alloca i64, align 8
   store i64 %324, ptr %cmp5, align 4
   %325 = load i64, ptr %ctx, align 4
@@ -64489,7 +64450,7 @@ bb5946:                                           ; preds = %bb5945
   %331 = inttoptr i64 %330 to ptr
   %332 = getelementptr inbounds %Ctx, ptr %331, i32 0, i32 4
   %333 = load i64, ptr %332, align 4
-  %334 = call i64 @forge_llvm_build_zext(i64 %328, i64 %329, i64 %333, i64 ptrtoint (ptr @1993 to i64))
+  %334 = call i64 @forge_llvm_build_zext(i64 %328, i64 %329, i64 %333, i64 ptrtoint (ptr @1992 to i64))
   %335 = call i64 @ok_emit(i64 %334)
   store i64 %335, ptr %match_result, align 4
   br label %bb5889
@@ -64538,7 +64499,7 @@ bb5950:                                           ; preds = %bb5949
   %22 = load i64, ptr %21, align 4
   %23 = load i64, ptr %ctx, align 4
   %24 = call i64 @const_i64(i64 %23, i64 0)
-  %25 = call i64 @forge_llvm_build_icmp(i64 %18, i64 33, i64 %22, i64 %24, i64 ptrtoint (ptr @1994 to i64))
+  %25 = call i64 @forge_llvm_build_icmp(i64 %18, i64 33, i64 %22, i64 %24, i64 ptrtoint (ptr @1993 to i64))
   %l_bool = alloca i64, align 8
   store i64 %25, ptr %l_bool, align 4
   %26 = load i64, ptr %ctx, align 4
@@ -64549,11 +64510,11 @@ bb5950:                                           ; preds = %bb5949
   %left_bb = alloca i64, align 8
   store i64 %30, ptr %left_bb, align 4
   %31 = load i64, ptr %ctx, align 4
-  %32 = call i64 @new_bb(i64 %31, i64 ptrtoint (ptr @1995 to i64))
+  %32 = call i64 @new_bb(i64 %31, i64 ptrtoint (ptr @1994 to i64))
   %rhs_bb = alloca i64, align 8
   store i64 %32, ptr %rhs_bb, align 4
   %33 = load i64, ptr %ctx, align 4
-  %34 = call i64 @new_bb(i64 %33, i64 ptrtoint (ptr @1996 to i64))
+  %34 = call i64 @new_bb(i64 %33, i64 ptrtoint (ptr @1995 to i64))
   %merge_bb = alloca i64, align 8
   store i64 %34, ptr %merge_bb, align 4
   %35 = load i64, ptr %op, align 4
@@ -64632,7 +64593,7 @@ bb5958:                                           ; preds = %bb5957
   %82 = load i64, ptr %81, align 4
   %83 = load i64, ptr %ctx, align 4
   %84 = call i64 @const_i64(i64 %83, i64 0)
-  %85 = call i64 @forge_llvm_build_icmp(i64 %78, i64 33, i64 %82, i64 %84, i64 ptrtoint (ptr @1997 to i64))
+  %85 = call i64 @forge_llvm_build_icmp(i64 %78, i64 33, i64 %82, i64 %84, i64 ptrtoint (ptr @1996 to i64))
   %r_bool = alloca i64, align 8
   store i64 %85, ptr %r_bool, align 4
   %86 = load i64, ptr %ctx, align 4
@@ -64663,7 +64624,7 @@ bb5958:                                           ; preds = %bb5957
   %109 = getelementptr inbounds %Ctx, ptr %108, i32 0, i32 0
   %110 = load i64, ptr %109, align 4
   %111 = call i64 @forge_llvm_int1_type(i64 %110)
-  %112 = call i64 @forge_llvm_build_phi(i64 %106, i64 %111, i64 ptrtoint (ptr @1998 to i64))
+  %112 = call i64 @forge_llvm_build_phi(i64 %106, i64 %111, i64 ptrtoint (ptr @1997 to i64))
   %phi = alloca i64, align 8
   store i64 %112, ptr %phi, align 4
   %113 = load i64, ptr %op, align 4
@@ -64697,7 +64658,7 @@ bb5959:                                           ; preds = %bb5963, %bb5962, %b
   %134 = inttoptr i64 %133 to ptr
   %135 = getelementptr inbounds %Ctx, ptr %134, i32 0, i32 4
   %136 = load i64, ptr %135, align 4
-  %137 = call i64 @forge_llvm_build_zext(i64 %131, i64 %132, i64 %136, i64 ptrtoint (ptr @1999 to i64))
+  %137 = call i64 @forge_llvm_build_zext(i64 %131, i64 %132, i64 %136, i64 ptrtoint (ptr @1998 to i64))
   %138 = call i64 @ok_emit(i64 %137)
   ret i64 %138
 
@@ -64732,8 +64693,8 @@ bb5963:                                           ; preds = %bb5961
 
 define i64 @print_usage() {
 bb5964:
-  %0 = call i32 @puts(ptr @2000)
-  %1 = call i32 @puts(ptr @2001)
+  %0 = call i32 @puts(ptr @1999)
+  %1 = call i32 @puts(ptr @2000)
   ret i64 0
 }
 
@@ -64787,7 +64748,7 @@ bb5968:                                           ; preds = %bb5967
   store i8 0, ptr %19, align 1
   %20 = ptrtoint ptr %16 to i64
   %21 = inttoptr i64 %20 to ptr
-  %22 = call i32 @strcmp(ptr %21, ptr @2002)
+  %22 = call i32 @strcmp(ptr %21, ptr @2001)
   %23 = zext i32 %22 to i64
   %24 = icmp eq i64 %23, 0
   %25 = zext i1 %24 to i64
@@ -64795,7 +64756,7 @@ bb5968:                                           ; preds = %bb5967
   br i1 %26, label %bb5970, label %bb5971
 
 bb5969:                                           ; preds = %bb5967
-  ret i64 ptrtoint (ptr @2003 to i64)
+  ret i64 ptrtoint (ptr @2002 to i64)
 
 bb5970:                                           ; preds = %bb5968
   %27 = load i64, ptr %path, align 4
@@ -64835,7 +64796,7 @@ bb5973:
   %dir = alloca i64, align 8
   store i64 %3, ptr %dir, align 4
   %out = alloca i64, align 8
-  store i64 ptrtoint (ptr @2004 to i64), ptr %out, align 4
+  store i64 ptrtoint (ptr @2003 to i64), ptr %out, align 4
   %i = alloca i64, align 8
   store i64 0, ptr %i, align 4
   %4 = load i64, ptr %source, align 4
@@ -64885,7 +64846,7 @@ bb5978:                                           ; preds = %bb5977
   store i8 0, ptr %27, align 1
   %28 = ptrtoint ptr %24 to i64
   %29 = inttoptr i64 %28 to ptr
-  %30 = call i32 @strcmp(ptr %29, ptr @2005)
+  %30 = call i32 @strcmp(ptr %29, ptr @2004)
   %31 = zext i32 %30 to i64
   %32 = icmp eq i64 %31, 0
   %33 = zext i1 %32 to i64
@@ -64917,7 +64878,7 @@ bb5979:                                           ; preds = %bb5980, %bb5977
   store i64 %51, ptr %mod_name, align 4
   %52 = load i64, ptr %mod_name, align 4
   %53 = inttoptr i64 %52 to ptr
-  %54 = call i32 @strcmp(ptr %53, ptr @2006)
+  %54 = call i32 @strcmp(ptr %53, ptr @2005)
   %55 = zext i32 %54 to i64
   %56 = icmp eq i64 %55, 0
   %57 = zext i1 %56 to i64
@@ -64978,7 +64939,7 @@ bb5984:                                           ; preds = %bb5979
   %94 = ptrtoint ptr %87 to i64
   %95 = inttoptr i64 %94 to ptr
   %96 = call i64 @strlen(ptr %95)
-  %97 = call i64 @strlen(ptr @2007)
+  %97 = call i64 @strlen(ptr @2006)
   %98 = add i64 %96, %97
   %99 = add i64 %98, 1
   %100 = call ptr @forge_bump_alloc(i64 %99)
@@ -64987,7 +64948,7 @@ bb5984:                                           ; preds = %bb5979
   %103 = add i64 %102, %96
   %104 = inttoptr i64 %103 to ptr
   %105 = add i64 %97, 1
-  %106 = call ptr @memcpy(ptr %104, ptr @2007, i64 %105)
+  %106 = call ptr @memcpy(ptr %104, ptr @2006, i64 %105)
   %107 = ptrtoint ptr %100 to i64
   %sibling_path = alloca i64, align 8
   store i64 %107, ptr %sibling_path, align 4
@@ -65009,7 +64970,7 @@ bb5984:                                           ; preds = %bb5979
   %123 = ptrtoint ptr %116 to i64
   %124 = inttoptr i64 %123 to ptr
   %125 = call i64 @strlen(ptr %124)
-  %126 = call i64 @strlen(ptr @2008)
+  %126 = call i64 @strlen(ptr @2007)
   %127 = add i64 %125, %126
   %128 = add i64 %127, 1
   %129 = call ptr @forge_bump_alloc(i64 %128)
@@ -65018,7 +64979,7 @@ bb5984:                                           ; preds = %bb5979
   %132 = add i64 %131, %125
   %133 = inttoptr i64 %132 to ptr
   %134 = add i64 %126, 1
-  %135 = call ptr @memcpy(ptr %133, ptr @2008, i64 %134)
+  %135 = call ptr @memcpy(ptr %133, ptr @2007, i64 %134)
   %136 = ptrtoint ptr %129 to i64
   %dir_mod_path = alloca i64, align 8
   store i64 %136, ptr %dir_mod_path, align 4
@@ -65043,7 +65004,7 @@ bb5986:                                           ; preds = %bb5984
   %145 = load i64, ptr %out, align 4
   %146 = inttoptr i64 %145 to ptr
   %147 = call i64 @strlen(ptr %146)
-  %148 = call i64 @strlen(ptr @2009)
+  %148 = call i64 @strlen(ptr @2008)
   %149 = add i64 %147, %148
   %150 = add i64 %149, 1
   %151 = call ptr @forge_bump_alloc(i64 %150)
@@ -65052,7 +65013,7 @@ bb5986:                                           ; preds = %bb5984
   %154 = add i64 %153, %147
   %155 = inttoptr i64 %154 to ptr
   %156 = add i64 %148, 1
-  %157 = call ptr @memcpy(ptr %155, ptr @2009, i64 %156)
+  %157 = call ptr @memcpy(ptr %155, ptr @2008, i64 %156)
   %158 = ptrtoint ptr %151 to i64
   %159 = load i64, ptr %mod_name, align 4
   %160 = inttoptr i64 %158 to ptr
@@ -65071,7 +65032,7 @@ bb5986:                                           ; preds = %bb5984
   %173 = ptrtoint ptr %166 to i64
   %174 = inttoptr i64 %173 to ptr
   %175 = call i64 @strlen(ptr %174)
-  %176 = call i64 @strlen(ptr @2010)
+  %176 = call i64 @strlen(ptr @2009)
   %177 = add i64 %175, %176
   %178 = add i64 %177, 1
   %179 = call ptr @forge_bump_alloc(i64 %178)
@@ -65080,7 +65041,7 @@ bb5986:                                           ; preds = %bb5984
   %182 = add i64 %181, %175
   %183 = inttoptr i64 %182 to ptr
   %184 = add i64 %176, 1
-  %185 = call ptr @memcpy(ptr %183, ptr @2010, i64 %184)
+  %185 = call ptr @memcpy(ptr %183, ptr @2009, i64 %184)
   %186 = ptrtoint ptr %179 to i64
   store i64 %186, ptr %out, align 4
   %187 = load i64, ptr %out, align 4
@@ -65103,7 +65064,7 @@ bb5986:                                           ; preds = %bb5984
   %203 = load i64, ptr %out, align 4
   %204 = inttoptr i64 %203 to ptr
   %205 = call i64 @strlen(ptr %204)
-  %206 = call i64 @strlen(ptr @2011)
+  %206 = call i64 @strlen(ptr @2010)
   %207 = add i64 %205, %206
   %208 = add i64 %207, 1
   %209 = call ptr @forge_bump_alloc(i64 %208)
@@ -65112,7 +65073,7 @@ bb5986:                                           ; preds = %bb5984
   %212 = add i64 %211, %205
   %213 = inttoptr i64 %212 to ptr
   %214 = add i64 %206, 1
-  %215 = call ptr @memcpy(ptr %213, ptr @2011, i64 %214)
+  %215 = call ptr @memcpy(ptr %213, ptr @2010, i64 %214)
   %216 = ptrtoint ptr %209 to i64
   store i64 %216, ptr %out, align 4
   br label %bb5988
@@ -65139,7 +65100,7 @@ bb5989:                                           ; preds = %bb5987
   %225 = load i64, ptr %out, align 4
   %226 = inttoptr i64 %225 to ptr
   %227 = call i64 @strlen(ptr %226)
-  %228 = call i64 @strlen(ptr @2012)
+  %228 = call i64 @strlen(ptr @2011)
   %229 = add i64 %227, %228
   %230 = add i64 %229, 1
   %231 = call ptr @forge_bump_alloc(i64 %230)
@@ -65148,7 +65109,7 @@ bb5989:                                           ; preds = %bb5987
   %234 = add i64 %233, %227
   %235 = inttoptr i64 %234 to ptr
   %236 = add i64 %228, 1
-  %237 = call ptr @memcpy(ptr %235, ptr @2012, i64 %236)
+  %237 = call ptr @memcpy(ptr %235, ptr @2011, i64 %236)
   %238 = ptrtoint ptr %231 to i64
   %239 = load i64, ptr %mod_name, align 4
   %240 = inttoptr i64 %238 to ptr
@@ -65167,7 +65128,7 @@ bb5989:                                           ; preds = %bb5987
   %253 = ptrtoint ptr %246 to i64
   %254 = inttoptr i64 %253 to ptr
   %255 = call i64 @strlen(ptr %254)
-  %256 = call i64 @strlen(ptr @2013)
+  %256 = call i64 @strlen(ptr @2012)
   %257 = add i64 %255, %256
   %258 = add i64 %257, 1
   %259 = call ptr @forge_bump_alloc(i64 %258)
@@ -65176,7 +65137,7 @@ bb5989:                                           ; preds = %bb5987
   %262 = add i64 %261, %255
   %263 = inttoptr i64 %262 to ptr
   %264 = add i64 %256, 1
-  %265 = call ptr @memcpy(ptr %263, ptr @2013, i64 %264)
+  %265 = call ptr @memcpy(ptr %263, ptr @2012, i64 %264)
   %266 = ptrtoint ptr %259 to i64
   store i64 %266, ptr %out, align 4
   %267 = load i64, ptr %out, align 4
@@ -65199,7 +65160,7 @@ bb5989:                                           ; preds = %bb5987
   %283 = load i64, ptr %out, align 4
   %284 = inttoptr i64 %283 to ptr
   %285 = call i64 @strlen(ptr %284)
-  %286 = call i64 @strlen(ptr @2014)
+  %286 = call i64 @strlen(ptr @2013)
   %287 = add i64 %285, %286
   %288 = add i64 %287, 1
   %289 = call ptr @forge_bump_alloc(i64 %288)
@@ -65208,7 +65169,7 @@ bb5989:                                           ; preds = %bb5987
   %292 = add i64 %291, %285
   %293 = inttoptr i64 %292 to ptr
   %294 = add i64 %286, 1
-  %295 = call ptr @memcpy(ptr %293, ptr @2014, i64 %294)
+  %295 = call ptr @memcpy(ptr %293, ptr @2013, i64 %294)
   %296 = ptrtoint ptr %289 to i64
   store i64 %296, ptr %out, align 4
   br label %bb5991
@@ -65217,7 +65178,7 @@ bb5990:                                           ; preds = %bb5987
   %297 = load i64, ptr %out, align 4
   %298 = inttoptr i64 %297 to ptr
   %299 = call i64 @strlen(ptr %298)
-  %300 = call i64 @strlen(ptr @2015)
+  %300 = call i64 @strlen(ptr @2014)
   %301 = add i64 %299, %300
   %302 = add i64 %301, 1
   %303 = call ptr @forge_bump_alloc(i64 %302)
@@ -65226,7 +65187,7 @@ bb5990:                                           ; preds = %bb5987
   %306 = add i64 %305, %299
   %307 = inttoptr i64 %306 to ptr
   %308 = add i64 %300, 1
-  %309 = call ptr @memcpy(ptr %307, ptr @2015, i64 %308)
+  %309 = call ptr @memcpy(ptr %307, ptr @2014, i64 %308)
   %310 = ptrtoint ptr %303 to i64
   %311 = load i64, ptr %mod_name, align 4
   %312 = inttoptr i64 %310 to ptr
@@ -65245,7 +65206,7 @@ bb5990:                                           ; preds = %bb5987
   %325 = ptrtoint ptr %318 to i64
   %326 = inttoptr i64 %325 to ptr
   %327 = call i64 @strlen(ptr %326)
-  %328 = call i64 @strlen(ptr @2016)
+  %328 = call i64 @strlen(ptr @2015)
   %329 = add i64 %327, %328
   %330 = add i64 %329, 1
   %331 = call ptr @forge_bump_alloc(i64 %330)
@@ -65254,7 +65215,7 @@ bb5990:                                           ; preds = %bb5987
   %334 = add i64 %333, %327
   %335 = inttoptr i64 %334 to ptr
   %336 = add i64 %328, 1
-  %337 = call ptr @memcpy(ptr %335, ptr @2016, i64 %336)
+  %337 = call ptr @memcpy(ptr %335, ptr @2015, i64 %336)
   %338 = ptrtoint ptr %331 to i64
   store i64 %338, ptr %out, align 4
   br label %bb5991
@@ -65301,7 +65262,7 @@ bb5994:                                           ; preds = %bb5993
   store i64 %18, ptr %ch, align 4
   %19 = load i64, ptr %ch, align 4
   %20 = inttoptr i64 %19 to ptr
-  %21 = call i32 @strcmp(ptr %20, ptr @2017)
+  %21 = call i32 @strcmp(ptr %20, ptr @2016)
   %22 = zext i32 %21 to i64
   %23 = icmp ne i64 %22, 0
   %24 = zext i1 %23 to i64
@@ -65320,7 +65281,7 @@ bb5995:                                           ; preds = %bb5998, %bb5993
 bb5996:                                           ; preds = %bb5994
   %32 = load i64, ptr %ch, align 4
   %33 = inttoptr i64 %32 to ptr
-  %34 = call i32 @strcmp(ptr %33, ptr @2018)
+  %34 = call i32 @strcmp(ptr %33, ptr @2017)
   %35 = zext i32 %34 to i64
   %36 = icmp ne i64 %35, 0
   %37 = zext i1 %36 to i64
@@ -65346,7 +65307,7 @@ bb6000:                                           ; preds = %bb5999
   br label %bb5993
 
 bb6001:                                           ; preds = %bb5995
-  ret i64 ptrtoint (ptr @2019 to i64)
+  ret i64 ptrtoint (ptr @2018 to i64)
 
 bb6002:                                           ; preds = %bb5995
   br label %bb6003
@@ -65365,7 +65326,7 @@ bb6003:                                           ; preds = %bb6002
   store i8 0, ptr %52, align 1
   %53 = ptrtoint ptr %49 to i64
   %54 = inttoptr i64 %53 to ptr
-  %55 = call i32 @strcmp(ptr %54, ptr @2020)
+  %55 = call i32 @strcmp(ptr %54, ptr @2019)
   %56 = zext i32 %55 to i64
   %57 = icmp ne i64 %56, 0
   %58 = zext i1 %57 to i64
@@ -65373,7 +65334,7 @@ bb6003:                                           ; preds = %bb6002
   br i1 %59, label %bb6004, label %bb6005
 
 bb6004:                                           ; preds = %bb6003
-  ret i64 ptrtoint (ptr @2021 to i64)
+  ret i64 ptrtoint (ptr @2020 to i64)
 
 bb6005:                                           ; preds = %bb6003
   br label %bb6006
@@ -65393,7 +65354,7 @@ bb6006:                                           ; preds = %bb6005
   store i8 0, ptr %69, align 1
   %70 = ptrtoint ptr %66 to i64
   %71 = inttoptr i64 %70 to ptr
-  %72 = call i32 @strcmp(ptr %71, ptr @2022)
+  %72 = call i32 @strcmp(ptr %71, ptr @2021)
   %73 = zext i32 %72 to i64
   %74 = icmp ne i64 %73, 0
   %75 = zext i1 %74 to i64
@@ -65401,7 +65362,7 @@ bb6006:                                           ; preds = %bb6005
   br i1 %76, label %bb6007, label %bb6008
 
 bb6007:                                           ; preds = %bb6006
-  ret i64 ptrtoint (ptr @2023 to i64)
+  ret i64 ptrtoint (ptr @2022 to i64)
 
 bb6008:                                           ; preds = %bb6006
   br label %bb6009
@@ -65421,7 +65382,7 @@ bb6009:                                           ; preds = %bb6008
   store i8 0, ptr %86, align 1
   %87 = ptrtoint ptr %83 to i64
   %88 = inttoptr i64 %87 to ptr
-  %89 = call i32 @strcmp(ptr %88, ptr @2024)
+  %89 = call i32 @strcmp(ptr %88, ptr @2023)
   %90 = zext i32 %89 to i64
   %91 = icmp ne i64 %90, 0
   %92 = zext i1 %91 to i64
@@ -65429,7 +65390,7 @@ bb6009:                                           ; preds = %bb6008
   br i1 %93, label %bb6010, label %bb6011
 
 bb6010:                                           ; preds = %bb6009
-  ret i64 ptrtoint (ptr @2025 to i64)
+  ret i64 ptrtoint (ptr @2024 to i64)
 
 bb6011:                                           ; preds = %bb6009
   br label %bb6012
@@ -65449,7 +65410,7 @@ bb6012:                                           ; preds = %bb6011
   store i8 0, ptr %103, align 1
   %104 = ptrtoint ptr %100 to i64
   %105 = inttoptr i64 %104 to ptr
-  %106 = call i32 @strcmp(ptr %105, ptr @2026)
+  %106 = call i32 @strcmp(ptr %105, ptr @2025)
   %107 = zext i32 %106 to i64
   %108 = icmp ne i64 %107, 0
   %109 = zext i1 %108 to i64
@@ -65457,7 +65418,7 @@ bb6012:                                           ; preds = %bb6011
   br i1 %110, label %bb6013, label %bb6014
 
 bb6013:                                           ; preds = %bb6012
-  ret i64 ptrtoint (ptr @2027 to i64)
+  ret i64 ptrtoint (ptr @2026 to i64)
 
 bb6014:                                           ; preds = %bb6012
   br label %bb6015
@@ -65497,7 +65458,7 @@ bb6017:                                           ; preds = %bb6016
   store i64 %128, ptr %ch1, align 4
   %129 = load i64, ptr %ch1, align 4
   %130 = inttoptr i64 %129 to ptr
-  %131 = call i32 @strcmp(ptr %130, ptr @2028)
+  %131 = call i32 @strcmp(ptr %130, ptr @2027)
   %132 = zext i32 %131 to i64
   %133 = icmp eq i64 %132, 0
   %134 = zext i1 %133 to i64
@@ -65526,7 +65487,7 @@ bb6018:                                           ; preds = %bb6025, %bb6016
 bb6019:                                           ; preds = %bb6017
   %151 = load i64, ptr %ch1, align 4
   %152 = inttoptr i64 %151 to ptr
-  %153 = call i32 @strcmp(ptr %152, ptr @2029)
+  %153 = call i32 @strcmp(ptr %152, ptr @2028)
   %154 = zext i32 %153 to i64
   %155 = icmp eq i64 %154, 0
   %156 = zext i1 %155 to i64
@@ -65542,7 +65503,7 @@ bb6020:                                           ; preds = %bb6019, %bb6017
 bb6021:                                           ; preds = %bb6020
   %161 = load i64, ptr %ch1, align 4
   %162 = inttoptr i64 %161 to ptr
-  %163 = call i32 @strcmp(ptr %162, ptr @2030)
+  %163 = call i32 @strcmp(ptr %162, ptr @2029)
   %164 = zext i32 %163 to i64
   %165 = icmp eq i64 %164, 0
   %166 = zext i1 %165 to i64
@@ -65558,7 +65519,7 @@ bb6022:                                           ; preds = %bb6021, %bb6020
 bb6023:                                           ; preds = %bb6022
   %171 = load i64, ptr %ch1, align 4
   %172 = inttoptr i64 %171 to ptr
-  %173 = call i32 @strcmp(ptr %172, ptr @2031)
+  %173 = call i32 @strcmp(ptr %172, ptr @2030)
   %174 = zext i32 %173 to i64
   %175 = icmp eq i64 %174, 0
   %176 = zext i1 %175 to i64
@@ -65617,12 +65578,12 @@ bb6031:                                           ; preds = %bb6030, %bb6029
 bb6032:                                           ; preds = %bb6031
   %13 = load i64, ptr %path, align 4
   %14 = inttoptr i64 %13 to ptr
-  %15 = call i64 @strlen(ptr @2032)
+  %15 = call i64 @strlen(ptr @2031)
   %16 = call i64 @strlen(ptr %14)
   %17 = add i64 %15, %16
   %18 = add i64 %17, 1
   %19 = call ptr @forge_bump_alloc(i64 %18)
-  %20 = call ptr @memcpy(ptr %19, ptr @2032, i64 %15)
+  %20 = call ptr @memcpy(ptr %19, ptr @2031, i64 %15)
   %21 = ptrtoint ptr %19 to i64
   %22 = add i64 %21, %15
   %23 = inttoptr i64 %22 to ptr
@@ -65642,7 +65603,7 @@ bb6034:                                           ; preds = %bb6033, %bb6032
   store i64 %29, ptr %source, align 4
   %30 = load i64, ptr %command, align 4
   %31 = inttoptr i64 %30 to ptr
-  %32 = call i32 @strcmp(ptr %31, ptr @2033)
+  %32 = call i32 @strcmp(ptr %31, ptr @2032)
   %33 = zext i32 %32 to i64
   %34 = icmp eq i64 %33, 0
   %35 = zext i1 %34 to i64
@@ -65667,7 +65628,7 @@ bb6036:                                           ; preds = %bb6034
 bb6037:                                           ; preds = %bb6036
   %44 = load i64, ptr %command, align 4
   %45 = inttoptr i64 %44 to ptr
-  %46 = call i32 @strcmp(ptr %45, ptr @2034)
+  %46 = call i32 @strcmp(ptr %45, ptr @2033)
   %47 = zext i32 %46 to i64
   %48 = icmp eq i64 %47, 0
   %49 = zext i1 %48 to i64
@@ -65710,7 +65671,7 @@ bb6042:                                           ; preds = %bb6037
 bb6043:                                           ; preds = %bb6042
   %67 = load i64, ptr %command, align 4
   %68 = inttoptr i64 %67 to ptr
-  %69 = call i32 @strcmp(ptr %68, ptr @2035)
+  %69 = call i32 @strcmp(ptr %68, ptr @2034)
   %70 = zext i32 %69 to i64
   %71 = icmp eq i64 %70, 0
   %72 = zext i1 %71 to i64
@@ -65772,7 +65733,7 @@ bb6050:                                           ; preds = %bb6043
 bb6051:                                           ; preds = %bb6050
   %103 = load i64, ptr %command, align 4
   %104 = inttoptr i64 %103 to ptr
-  %105 = call i32 @strcmp(ptr %104, ptr @2036)
+  %105 = call i32 @strcmp(ptr %104, ptr @2035)
   %106 = zext i32 %105 to i64
   %107 = icmp eq i64 %106, 0
   %108 = zext i1 %107 to i64
@@ -65834,7 +65795,7 @@ bb6058:                                           ; preds = %bb6051
 bb6059:                                           ; preds = %bb6058
   %139 = load i64, ptr %command, align 4
   %140 = inttoptr i64 %139 to ptr
-  %141 = call i32 @strcmp(ptr %140, ptr @2037)
+  %141 = call i32 @strcmp(ptr %140, ptr @2036)
   %142 = zext i32 %141 to i64
   %143 = icmp eq i64 %142, 0
   %144 = zext i1 %143 to i64
@@ -65896,7 +65857,7 @@ bb6066:                                           ; preds = %bb6059
 bb6067:                                           ; preds = %bb6066
   %175 = load i64, ptr %command, align 4
   %176 = inttoptr i64 %175 to ptr
-  %177 = call i32 @strcmp(ptr %176, ptr @2039)
+  %177 = call i32 @strcmp(ptr %176, ptr @2038)
   %178 = zext i32 %177 to i64
   %179 = icmp eq i64 %178, 0
   %180 = zext i1 %179 to i64
@@ -65985,7 +65946,7 @@ bb6078:                                           ; preds = %bb6077, %bb6081
   %228 = getelementptr inbounds %ProgramParseResult, ptr %227, i32 0, i32 0
   %229 = load i64, ptr %228, align 4
   %230 = call i64 @typecheck_program(i64 %229)
-  %231 = call i32 @puts(ptr @2038)
+  %231 = call i32 @puts(ptr @2037)
   ret i64 0
 
 bb6079:                                           ; preds = %bb6076
@@ -66032,7 +65993,7 @@ bb6083:                                           ; preds = %bb6067
 bb6084:                                           ; preds = %bb6083
   %254 = load i64, ptr %command, align 4
   %255 = inttoptr i64 %254 to ptr
-  %256 = call i32 @strcmp(ptr %255, ptr @2041)
+  %256 = call i32 @strcmp(ptr %255, ptr @2040)
   %257 = zext i32 %256 to i64
   %258 = icmp eq i64 %257, 0
   %259 = zext i1 %258 to i64
@@ -66096,7 +66057,7 @@ bb6092:                                           ; preds = %bb6091, %bb6090
   %291 = load i64, ptr %path, align 4
   %292 = inttoptr i64 %291 to ptr
   %293 = call i64 @strlen(ptr %292)
-  %294 = call i64 @strlen(ptr @2040)
+  %294 = call i64 @strlen(ptr @2039)
   %295 = add i64 %293, %294
   %296 = add i64 %295, 1
   %297 = call ptr @forge_bump_alloc(i64 %296)
@@ -66105,7 +66066,7 @@ bb6092:                                           ; preds = %bb6091, %bb6090
   %300 = add i64 %299, %293
   %301 = inttoptr i64 %300 to ptr
   %302 = add i64 %294, 1
-  %303 = call ptr @memcpy(ptr %301, ptr @2040, i64 %302)
+  %303 = call ptr @memcpy(ptr %301, ptr @2039, i64 %302)
   %304 = ptrtoint ptr %297 to i64
   %output = alloca i64, align 8
   store i64 %304, ptr %output, align 4
@@ -66202,7 +66163,7 @@ bb6103:                                           ; preds = %bb6102, %bb6101
 define i64 @__bs_top_level() {
 bb0:
   store i64 0, ptr @LAMBDA_COUNTER, align 4
-  %0 = call ptr @malloc(i64 24)
+  %0 = call ptr @forge_bump_alloc(i64 24)
   %1 = getelementptr inbounds %DeferStack, ptr %0, i32 0, i32 0
   store i8 0, ptr %1, align 1
   %2 = ptrtoint ptr %0 to i64

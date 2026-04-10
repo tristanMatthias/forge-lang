@@ -644,3 +644,132 @@ const char* forge_char_from_hex(const char* hi, const char* lo) {
     buf[1] = 0;
     return buf;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Developer tooling — debugging, crash guards, tracing
+// ═══════════════════════════════════════════════════════════════════
+
+#include <setjmp.h>
+
+// ── 1. Crash guard ──────────────────────────────────────────────
+// Wraps a function call in setjmp/longjmp so a segfault inside
+// becomes a return value instead of a process-killing signal.
+// Usage: if (forge_try_call(fn, arg1, arg2)) { /* crashed */ }
+
+static jmp_buf forge_crash_jmp;
+static volatile sig_atomic_t forge_crash_guard_active = 0;
+
+static void forge_crash_guard_handler(int sig) {
+    if (forge_crash_guard_active) {
+        forge_crash_guard_active = 0;
+        longjmp(forge_crash_jmp, sig);
+    }
+    // Not guarded — fall through to normal handler
+    forge_signal_handler(sig);
+}
+
+// Returns 0 on success, signal number on crash.
+int64_t forge_try_call_1(int64_t (*fn)(int64_t), int64_t a) {
+    struct sigaction old_segv, old_bus;
+    struct sigaction sa = { .sa_handler = forge_crash_guard_handler };
+    sigaction(SIGSEGV, &sa, &old_segv);
+    sigaction(SIGBUS, &sa, &old_bus);
+
+    forge_crash_guard_active = 1;
+    int sig = setjmp(forge_crash_jmp);
+    if (sig == 0) {
+        fn(a);
+        forge_crash_guard_active = 0;
+        sigaction(SIGSEGV, &old_segv, NULL);
+        sigaction(SIGBUS, &old_bus, NULL);
+        return 0;
+    }
+    // Crashed
+    sigaction(SIGSEGV, &old_segv, NULL);
+    sigaction(SIGBUS, &old_bus, NULL);
+    return (int64_t)sig;
+}
+
+// ── 2. Value tracer ─────────────────────────────────────────────
+// Prints a label + pointer value + validates which memory region
+// it belongs to (bump arena, system heap, stack, text).
+
+void forge_trace_ptr(const char* label, int64_t val) {
+    uintptr_t p = (uintptr_t)val;
+    const char* region = "unknown";
+
+    // Check bump arena
+    if (bump_arena && p >= (uintptr_t)bump_arena &&
+        p < (uintptr_t)bump_arena + BUMP_ARENA_SIZE) {
+        region = "bump";
+    }
+    // Check stack (rough heuristic — stack is near sp)
+    else {
+        uintptr_t sp;
+        __asm__ volatile("mov %0, sp" : "=r"(sp));
+        if (p > sp - 1024*1024 && p < sp + 1024*1024) {
+            region = "stack";
+        }
+        // System heap is typically in 0x600000000000 range on macOS
+        else if (p >= 0x100000000ULL && p < 0x700000000000ULL) {
+            region = "heap";
+        }
+        // Text segment
+        else if (p < 0x100000000ULL && p > 0x100000ULL) {
+            region = "text";
+        }
+        else if (p < 0x100000ULL) {
+            region = "INVALID(low)";
+        }
+    }
+    fprintf(stderr, "[trace] %s = 0x%llx (%s)\n", label, (unsigned long long)val, region);
+}
+
+// ── 3. IR function dumper ───────────────────────────────────────
+// Already exists as forge_dump_function in the LLVM wrapper.
+// This adds a name-based lookup + dump for any function in the module.
+
+// (forge_dump_function is already declared via libforge_llvm.a)
+
+// ── 4. AST dumper ───────────────────────────────────────────────
+// Prints Stmt/Expr enum tag + pointer for debugging AST traversal.
+
+void forge_dump_stmt(const char* label, int64_t stmt_ptr) {
+    if (stmt_ptr == 0) {
+        fprintf(stderr, "[ast] %s: NULL\n", label);
+        return;
+    }
+    uint8_t* p = (uint8_t*)(uintptr_t)stmt_ptr;
+    uint8_t tag = p[0];
+    const char* names[] = {
+        "Let", "Mut", "Expr", "Block", "If", "While", "For", "ForIn",
+        "Function", "Return", "ReturnEmpty", "TypeDecl", "EnumDecl",
+        "Match", "Impl", "NoOp", "ExternFn", "Break", "Continue",
+        "TraitDecl", "LetDestructure", "Defer"
+    };
+    const char* name = tag < 22 ? names[tag] : "???";
+    // Read fields as i64
+    int64_t* fields = (int64_t*)(p + 8); // skip tag + padding
+    fprintf(stderr, "[ast] %s: Stmt.%s (tag=%d) at %p fields=[%llx, %llx, %llx, %llx]\n",
+        label, name, tag, p,
+        (unsigned long long)fields[0], (unsigned long long)fields[1],
+        (unsigned long long)fields[2], (unsigned long long)fields[3]);
+}
+
+void forge_dump_stmt_list(const char* label, int64_t list_ptr) {
+    if (list_ptr == 0) {
+        fprintf(stderr, "[ast] %s: NULL\n", label);
+        return;
+    }
+    uint8_t* p = (uint8_t*)(uintptr_t)list_ptr;
+    uint8_t tag = p[0];
+    if (tag == 0) {
+        fprintf(stderr, "[ast] %s: StmtList.End\n", label);
+        return;
+    }
+    int64_t* fields = (int64_t*)(p + 8);
+    fprintf(stderr, "[ast] %s: StmtList.Node at %p stmt=%llx next=%llx\n",
+        label, p, (unsigned long long)fields[0], (unsigned long long)fields[1]);
+    // Dump the stmt
+    forge_dump_stmt("  stmt", fields[0]);
+}

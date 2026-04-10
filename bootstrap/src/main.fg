@@ -7,6 +7,11 @@ extern fn forge_selfhost_trace_int(label: string, val: int)
 extern fn exit(code: int)
 extern fn forge_char_from_hex(hi: string, lo: string) -> string
 
+// Developer tooling — crash guard, tracing, AST inspection
+extern fn forge_trace_ptr(label: string, val: int)
+extern fn forge_dump_stmt(label: string, stmt: int)
+extern fn forge_dump_stmt_list(label: string, list: int)
+
 // File-system builtins. The bootstrap codegen passes strings as a
 // single i64 (the C-string pointer) rather than the host's
 // ForgeString {ptr, len} struct, so we link against the

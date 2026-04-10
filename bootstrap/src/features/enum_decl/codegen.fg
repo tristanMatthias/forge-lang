@@ -1,7 +1,7 @@
 // WHY: emits enum constructors (heap-allocated tagged unions).
 
 use core.ast.{Expr, ExprList, VariantList, VarEnv, variant_lookup, variant_max_payload, ValueType}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, enum_reg_lookup}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, enum_reg_lookup, const_i64, const_i8, to_i64, cg_malloc}
 use codegen.{emit_expr}
 
 
@@ -30,17 +30,8 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
     let max_payload = variant_max_payload(variants)
-    let size = forge_llvm_const_int(ctx.i64_type, (max_payload + 1) * 8, 0)
-    let malloc_fn = forge_llvm_get_named_function(ctx.module, "malloc")
-    let pa = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(pa, 0, ctx.i64_type)
-    let malloc_type = forge_llvm_function_type(ctx.ptr_type, pa, 1, 0)
-    forge_llvm_type_array_free(pa)
-    let arr = forge_llvm_value_array_new(1)
-    forge_llvm_value_array_set(arr, 0, size)
-    let buf = forge_llvm_build_call(ctx.builder, malloc_type, malloc_fn, arr, 1, "enum_buf")
-    forge_llvm_value_array_free(arr)
-    buf
+    let size = const_i64(ctx, (max_payload + 1) * 8)
+    cg_malloc(ctx, size)
 }
 
 fn fill_enum_payload(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, args: ExprList, idx: int) -> EmitResult {

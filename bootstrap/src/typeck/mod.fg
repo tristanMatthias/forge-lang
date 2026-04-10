@@ -223,6 +223,7 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
 }
 
 fn check_stmt(tc: TC, stmt: Stmt) -> TC {
+    eprintln("[typeck] check_stmt")
     match stmt {
         .Let(name, ty_str, init) -> {
             let r = check_expr(tc, init)
