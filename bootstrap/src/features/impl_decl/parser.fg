@@ -1,7 +1,7 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.ast.{Stmt, StmtList, ParamList}
+use core.ast.{Stmt, StmtList, ParamList, SStmt, sstmt}
 use parse.{Parser}
 
 impl Parser {
@@ -48,7 +48,7 @@ impl Parser {
         }
         let method = self.parse_method_declaration(type_name)?
         let rest = self.parse_impl_methods(type_name)?
-        StmtList.Node(method, rest)
+        StmtList.Node(sstmt(method, self.current_line, self.current_column), rest)
     }
 
     fn parse_method_declaration(self, type_name: string) -> Stmt? {

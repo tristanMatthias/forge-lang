@@ -5,7 +5,7 @@
 // Feature-specific codegen lives in features/*/codegen.fg and is
 // resolved globally by the host compiler's cross-file impl lookup.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display, SStmt, SExpr, sexpr_dummy}
 use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
 
 // ── Direct C extern declarations ──
@@ -374,7 +374,8 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
 fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> StructReg {
     match stmts {
         .End -> reg
-        .Node(stmt, next) -> {
+        .Node(ss, next) -> {
+            let stmt = ss.node
             let updated = match stmt {
                 .TypeDecl(name, fields) -> {
                     let count = field_list_length(fields)
@@ -404,7 +405,8 @@ fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> Stru
 fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
     match stmts {
         .End -> reg
-        .Node(stmt, next) -> {
+        .Node(ss, next) -> {
+            let stmt = ss.node
             let updated = match stmt {
                 .Let(name, ty, _) -> {
                     let g = forge_llvm_add_global(m, i64t, name)
@@ -428,7 +430,8 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumR
 fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg {
     match stmts {
         .End -> reg
-        .Node(stmt, next) -> {
+        .Node(ss, next) -> {
+            let stmt = ss.node
             let updated = match stmt {
                 .EnumDecl(name, variants) -> {
                     let max_fields = variant_max_payload(variants)
@@ -461,7 +464,8 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
     match stmts {
         .End -> reg
-        .Node(stmt, next) -> {
+        .Node(ss, next) -> {
+            let stmt = ss.node
             let updated = match stmt {
                 .Function(name, params, ret_ty, body) -> {
                     let arity = param_list_length(params)
@@ -524,7 +528,8 @@ type TopLevelResult = {
 fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(env)
-        .Node(stmt, next) -> {
+        .Node(ss, next) -> {
+            let stmt = ss.node
             match stmt {
                 .Function(_, _, _, _) -> emit_top_level(ctx, env, next)
                 .Let(name, _, init) -> {
@@ -573,8 +578,8 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLe
 fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(env)
-        .Node(stmt, next) -> {
-            let result = emit_stmt(ctx, env, stmt)
+        .Node(ss, next) -> {
+            let result = emit_stmt(ctx, env, ss.node)
             if result.had_error {
                 return result
             }
@@ -646,7 +651,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         .TraitDecl(_, _) -> ok_stmt(env)  // trait decls are type metadata, no codegen
         .LetDestructure(names, initializer) -> emit_let_destructure(ctx, env, names, initializer)
         .Defer(body) -> {
-            defer_push(body)
+            defer_push(sexpr_dummy(body))
             ok_stmt(env)
         }
         _ -> err_stmt("codegen error: unsupported statement type")
@@ -977,11 +982,11 @@ fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: St
 export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> EmitResult {
     match stmts {
         .End -> EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
-        .Node(stmt, next) -> {
+        .Node(ss, next) -> {
             match next {
-                .End -> emit_stmt_as_value(ctx, env, stmt, last_val, last_ty)
+                .End -> emit_stmt_as_value(ctx, env, ss.node, last_val, last_ty)
                 _ -> {
-                    let s = emit_stmt(ctx, env, stmt)
+                    let s = emit_stmt(ctx, env, ss.node)
                     if s.had_error {
                         return err_emit(s.error_message)
                     }
@@ -1341,8 +1346,8 @@ fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // string(i64) → str via snprintf into a 32-byte malloc'd buffer.
     match args {
         .End -> err_emit("string() expects 1 arg")
-        .Node(arg, _) -> {
-            let r = emit_expr(ctx, env, arg)
+        .Node(se, _) -> {
+            let r = emit_expr(ctx, env, se.node)
             if r.had_error {
                 return r
             }
@@ -1365,8 +1370,8 @@ fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // int(str) → i64 via libc atoi.
     match args {
         .End -> err_emit("int() expects 1 arg")
-        .Node(arg, _) -> {
-            let r = emit_expr(ctx, env, arg)
+        .Node(se, _) -> {
+            let r = emit_expr(ctx, env, se.node)
             if r.had_error {
                 return r
             }
@@ -1385,8 +1390,8 @@ fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
 fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("panic() expects 1 argument")
-        .Node(arg, _) -> {
-            let r = emit_expr(ctx, env, arg)
+        .Node(se, _) -> {
+            let r = emit_expr(ctx, env, se.node)
             if r.had_error { return r }
             // Print "panic: <message>" to stderr
             let prefix = forge_llvm_build_global_string_ptr(ctx.builder, "panic: ", ".panic_prefix")
@@ -1414,8 +1419,8 @@ fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
 fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("eprintln() expects 1 arg")
-        .Node(arg, _) -> {
-            let r = emit_expr(ctx, env, arg)
+        .Node(se, _) -> {
+            let r = emit_expr(ctx, env, se.node)
             if r.had_error { return r }
             let str_val = if vtype_is_str(r.ty) {
                 r.value
@@ -1448,15 +1453,15 @@ fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // match — going through any extra binding clobbers the payload
     // (host miscompilation, see TECH_DEBT.md #11).
     let str_i64 = match args {
-        .Node(e, _) -> {
-            match e {
+        .Node(se, _) -> {
+            match se.node {
                 .String(text) -> {
                     let inner = strip_quotes(text)
                     let str_ptr = forge_llvm_build_global_string_ptr(ctx.builder, inner, ".str")
                     to_i64(ctx, str_ptr, "str_i64")
                 }
                 _ -> {
-                    let r = emit_expr(ctx, env, e)
+                    let r = emit_expr(ctx, env, se.node)
                     if r.had_error {
                         return r
                     }
@@ -1500,12 +1505,12 @@ fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
 
 fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> EmitResult {
     match args {
-        .Node(idx_expr, rest) -> {
+        .Node(se_idx, rest) -> {
             match rest {
-                .Node(val_expr, _) -> {
-                    let idx_r = emit_expr(ctx, env, idx_expr)
+                .Node(se_val, _) -> {
+                    let idx_r = emit_expr(ctx, env, se_idx.node)
                     if idx_r.had_error { return idx_r }
-                    let val_r = emit_expr(ctx, env, val_expr)
+                    let val_r = emit_expr(ctx, env, se_val.node)
                     if val_r.had_error { return val_r }
                     call_3(ctx, get_fn(ctx, "forge_array_set"), list, idx_r.value, val_r.value, "")
                     ok_emit(list)
@@ -1530,12 +1535,12 @@ fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitR
 
 fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
     match args {
-        .Node(key_expr, rest) -> {
+        .Node(se_key, rest) -> {
             match rest {
-                .Node(val_expr, _) -> {
-                    let key_r = emit_expr(ctx, env, key_expr)
+                .Node(se_val, _) -> {
+                    let key_r = emit_expr(ctx, env, se_key.node)
                     if key_r.had_error { return key_r }
-                    let val_r = emit_expr(ctx, env, val_expr)
+                    let val_r = emit_expr(ctx, env, se_val.node)
                     if val_r.had_error { return val_r }
                     let key_ptr = to_ptr(ctx, key_r.value, "set_key")
                     call_3(ctx, get_fn(ctx, "forge_map_set_cstr"), map, key_ptr, val_r.value, "")
@@ -1554,18 +1559,18 @@ fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
 fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("expected 1 argument, got 0")
-        .Node(expr, _) -> emit_expr(ctx, env, expr)
+        .Node(se, _) -> emit_expr(ctx, env, se.node)
     }
 }
 
 fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
     match args {
-        .Node(from_expr, rest) -> {
+        .Node(se_from, rest) -> {
             match rest {
-                .Node(to_expr, _) -> {
-                    let from_r = emit_expr(ctx, env, from_expr)
+                .Node(se_to, _) -> {
+                    let from_r = emit_expr(ctx, env, se_from.node)
                     if from_r.had_error { return from_r }
-                    let to_r = emit_expr(ctx, env, to_expr)
+                    let to_r = emit_expr(ctx, env, se_to.node)
                     if to_r.had_error { return to_r }
                     let str_ptr = to_ptr(ctx, str_i64, "rep_self")
                     let from_ptr = to_ptr(ctx, from_r.value, "rep_from")
@@ -1586,10 +1591,10 @@ fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitRe
     // the inner payloads (host-compiler issue).
     match args {
         .End -> err_emit("substring expects 2 args, got 0")
-        .Node(start_arg, rest) -> {
+        .Node(se_start, rest) -> {
             match rest {
                 .End -> err_emit("substring expects 2 args, got 1")
-                .Node(end_arg, _) -> emit_substring_inner(ctx, env, str_i64, start_arg, end_arg)
+                .Node(se_end, _) -> emit_substring_inner(ctx, env, str_i64, se_start.node, se_end.node)
             }
         }
     }
@@ -1664,8 +1669,8 @@ fn strip_quotes(s: string) -> string {
 fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
     match args {
         .End -> ok_emit(null_ptr_val())
-        .Node(expr, next) -> {
-            let r = emit_expr(ctx, env, expr)
+        .Node(se, next) -> {
+            let r = emit_expr(ctx, env, se.node)
             if r.had_error {
                 return r
             }

@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str}
+use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
 use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, get_fn, call_2}
 use codegen.{emit_expr}
 
@@ -58,14 +58,14 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
             // Guard: if present, check condition; if false, skip to next arm
             if guard != null {
-                let guard_r = emit_expr(ctx, arm_env, guard!)
+                let guard_r = emit_expr(ctx, arm_env, guard!.node)
                 if guard_r.had_error { return guard_r }
                 let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "guard")
                 let guard_pass_bb = new_bb(ctx, "guard_pass")
                 forge_llvm_build_cond_br(ctx.builder, guard_bool, guard_pass_bb, next_bb)
                 forge_llvm_position_at_end(ctx.builder, guard_pass_bb)
             }
-            let body_result = emit_expr(ctx, arm_env, body)
+            let body_result = emit_expr(ctx, arm_env, body.node)
             if body_result.had_error { return body_result }
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 forge_llvm_build_store(ctx.builder, body_result.value, result_slot)
@@ -130,14 +130,14 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
             forge_llvm_position_at_end(ctx.builder, arm_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
             if guard != null {
-                let guard_r = emit_expr(ctx, arm_env, guard!)
+                let guard_r = emit_expr(ctx, arm_env, guard!.node)
                 if guard_r.had_error { return err_stmt(guard_r.error_message) }
                 let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "guard")
                 let guard_pass_bb = new_bb(ctx, "guard_pass")
                 forge_llvm_build_cond_br(ctx.builder, guard_bool, guard_pass_bb, next_bb)
                 forge_llvm_position_at_end(ctx.builder, guard_pass_bb)
             }
-            let body_result = emit_expr(ctx, arm_env, body)
+            let body_result = emit_expr(ctx, arm_env, body.node)
             if body_result.had_error { return err_stmt(body_result.error_message) }
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 forge_llvm_build_br(ctx.builder, merge_bb)
@@ -246,7 +246,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                     let lit_pass_bb = new_bb(ctx, "lit_guard")
                     forge_llvm_build_cond_br(ctx.builder, cmp, lit_pass_bb, next_bb)
                     forge_llvm_position_at_end(ctx.builder, lit_pass_bb)
-                    let guard_r = emit_expr(ctx, env, guard!)
+                    let guard_r = emit_expr(ctx, env, guard!.node)
                     if guard_r.had_error { return guard_r }
                     let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
                     forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
@@ -255,7 +255,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                 }
             } else if guard != null {
                 // Guarded wildcard: if guard { body } else { next arm }
-                let guard_r = emit_expr(ctx, env, guard!)
+                let guard_r = emit_expr(ctx, env, guard!.node)
                 if guard_r.had_error { return guard_r }
                 let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
                 forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
@@ -265,7 +265,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             }
 
             forge_llvm_position_at_end(ctx.builder, body_bb)
-            let body_r = emit_expr(ctx, env, body)
+            let body_r = emit_expr(ctx, env, body.node)
             if body_r.had_error { return body_r }
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 forge_llvm_build_store(ctx.builder, body_r.value, result_slot)
@@ -306,7 +306,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                     let lit_pass_bb = new_bb(ctx, "lit_guard")
                     forge_llvm_build_cond_br(ctx.builder, cmp, lit_pass_bb, next_bb)
                     forge_llvm_position_at_end(ctx.builder, lit_pass_bb)
-                    let guard_r = emit_expr(ctx, env, guard!)
+                    let guard_r = emit_expr(ctx, env, guard!.node)
                     if guard_r.had_error { return err_stmt_from_expr(guard_r) }
                     let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
                     forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
@@ -314,7 +314,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                     forge_llvm_build_cond_br(ctx.builder, cmp, body_bb, next_bb)
                 }
             } else if guard != null {
-                let guard_r = emit_expr(ctx, env, guard!)
+                let guard_r = emit_expr(ctx, env, guard!.node)
                 if guard_r.had_error { return err_stmt_from_expr(guard_r) }
                 let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
                 forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
@@ -323,7 +323,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             }
 
             forge_llvm_position_at_end(ctx.builder, body_bb)
-            let body_r = emit_expr(ctx, env, body)
+            let body_r = emit_expr(ctx, env, body.node)
             if body_r.had_error { return err_stmt_from_expr(body_r) }
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 forge_llvm_build_br(ctx.builder, merge_bb)

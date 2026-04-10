@@ -4,7 +4,7 @@
 // statements; complex features (match, for, etc.) are codegen-only.
 
 use parse.{parse_expression_source, parse_program_source}
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, SExpr, SStmt}
 
 // `float` is a host built-in that the bootstrap evaluator uses to
 // parse numeric literal strings. The bootstrap codegen doesn't
@@ -338,8 +338,8 @@ fn assign_binding(bindings: BindingList, name: string, value: Value) -> AssignBi
 fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
     match stmts {
         .End -> ok_result(runtime, value_null())
-        .Node(stmt, next) -> {
-            let current = execute_stmt(runtime, stmt)
+        .Node(ss, next) -> {
+            let current = execute_stmt(runtime, ss.node)
             if current.had_error || current.is_return {
                 return current
             }
@@ -556,8 +556,8 @@ enum ValueList {
 fn eval_arg_list(runtime: Runtime, args: ExprList) -> EvalArgsResult {
     match args {
         .End -> EvalArgsResult { runtime, values: ValueList.End, had_error: false, error_message: "" }
-        .Node(expr, next) -> {
-            let result = eval_expr(runtime, expr)
+        .Node(se, next) -> {
+            let result = eval_expr(runtime, se.node)
             if result.had_error {
                 return EvalArgsResult { runtime: result.runtime, values: ValueList.End, had_error: true, error_message: result.error_message }
             }

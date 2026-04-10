@@ -3,7 +3,7 @@
 // The trait declaration itself is a no-op at codegen — the methods
 // are implemented by `impl Trait for Type { ... }` blocks.
 
-use core.ast.{Stmt, StmtList, ParamList}
+use core.ast.{Stmt, StmtList, ParamList, SStmt, sstmt}
 use parse.{Parser}
 
 impl Parser {
@@ -32,7 +32,7 @@ impl Parser {
         }
         let method = self.parse_trait_method_sig()?
         let rest = self.parse_trait_methods()?
-        StmtList.Node(method, rest)
+        StmtList.Node(sstmt(method, self.current_line, self.current_column), rest)
     }
 
     fn parse_trait_method_sig(self) -> Stmt? {

@@ -4,7 +4,7 @@
 // equality → comparison → term → factor → unary → call → primary.
 // Feature-specific parsers extend Parser via cross-file impl blocks.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
 export type ParseResult = {
@@ -104,8 +104,8 @@ fn expr_is_upper_ident(e: Expr) -> bool {
 fn exprs_to_params(exprs: ExprList) -> ParamList {
     match exprs {
         .End -> ParamList.End
-        .Node(expr, next) -> {
-            let name = match expr {
+        .Node(se, next) -> {
+            let name = match se.node {
                 .Ident(n) -> n
                 _ -> "_"  // non-ident in lambda params — use placeholder
             }
@@ -148,15 +148,15 @@ fn expr_contains_it(expr: Expr) -> bool {
 fn expr_list_contains_it(list: ExprList) -> bool {
     match list {
         .End -> false
-        .Node(e, next) -> expr_contains_it(e) || expr_list_contains_it(next)
+        .Node(se, next) -> expr_contains_it(se.node) || expr_list_contains_it(next)
     }
 }
 
 fn stmt_list_contains_it(list: StmtList) -> bool {
     match list {
         .End -> false
-        .Node(stmt, next) -> {
-            let has = match stmt {
+        .Node(ss, next) -> {
+            let has = match ss.node {
                 .Expr(e) -> expr_contains_it(e)
                 .Let(_, _, init) -> expr_contains_it(init)
                 .Mut(_, _, init) -> expr_contains_it(init)
@@ -342,7 +342,7 @@ impl Parser {
 
         let next = self.parse_statement_list(stop_at_right_brace)?
 
-        StmtList.Node(stmt!, next)
+        StmtList.Node(sstmt(stmt!, self.current_line, self.current_column), next)
     }
 
     fn parse_declaration(self) -> Stmt? {
@@ -499,10 +499,10 @@ impl Parser {
             // Desugar: `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`
             match rhs {
                 .Call(callee, args) -> {
-                    expr = Expr.Call(callee, ExprList.Node(expr, args))
+                    expr = Expr.Call(callee, ExprList.Node(sexpr(expr, self.current_line, self.current_column), args))
                 }
                 _ -> {
-                    expr = Expr.Call(rhs, ExprList.Node(expr, ExprList.End))
+                    expr = Expr.Call(rhs, ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End))
                 }
             }
         }
@@ -856,10 +856,10 @@ impl Parser {
         if self.check("comma") {
             self.advance()
             let rest = self.parse_arg_list_inner()?
-            return ExprList.Node(expr, rest)
+            return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
         }
 
-        ExprList.Node(expr, ExprList.End)
+        ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
     }
 
     fn parse_primary(self) -> Expr? {
@@ -935,11 +935,11 @@ impl Parser {
                 // (a, b) -> expr  is a lambda
                 if self.check("arrow") {
                     self.advance()
-                    let params = exprs_to_params(ExprList.Node(expr!, rest))
+                    let params = exprs_to_params(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), rest))
                     let body = self.parse_lambda_body()?
                     return Expr.Lambda(params, body)
                 }
-                return Expr.Tuple(ExprList.Node(expr!, rest))
+                return Expr.Tuple(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), rest))
             }
             if !self.consume("right_paren", "expected `)` after expression") {
                 return null
@@ -947,7 +947,7 @@ impl Parser {
             // (x) -> expr  is a single-param lambda
             if self.check("arrow") {
                 self.advance()
-                let params = exprs_to_params(ExprList.Node(expr!, ExprList.End))
+                let params = exprs_to_params(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), ExprList.End))
                 let body = self.parse_lambda_body()?
                 return Expr.Lambda(params, body)
             }
@@ -1049,7 +1049,7 @@ impl Parser {
                     sub_result!
                 }
                 // Wrap in string() call for automatic conversion.
-                let str_call = Expr.Call(Expr.Ident("string"), ExprList.Node(parsed!, ExprList.End))
+                let str_call = Expr.Call(Expr.Ident("string"), ExprList.Node(sexpr_dummy(parsed!), ExprList.End))
                 if result == null {
                     result = str_call
                 } else {
@@ -1123,12 +1123,12 @@ impl Parser {
         if self.check("comma") {
             self.advance()
             if self.check("right_brace") {
-                return ExprList.Node(key, ExprList.Node(value, ExprList.End))
+                return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
             }
             let rest = self.parse_map_entries()?
-            return ExprList.Node(key, ExprList.Node(value, rest))
+            return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), rest))
         }
-        ExprList.Node(key, ExprList.Node(value, ExprList.End))
+        ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
     }
 
     fn parse_lambda_body(self) -> Expr? {
@@ -1145,12 +1145,12 @@ impl Parser {
             self.advance()
             if self.check("right_bracket") {
                 // Trailing comma: [1, 2,]
-                return ExprList.Node(expr, ExprList.End)
+                return ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
             }
             let rest = self.parse_list_elements()?
-            return ExprList.Node(expr, rest)
+            return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
         }
-        ExprList.Node(expr, ExprList.End)
+        ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
     }
 
     fn parse_tuple_rest(self) -> ExprList? {
@@ -1162,9 +1162,9 @@ impl Parser {
         if self.check("comma") {
             self.advance()
             let rest = self.parse_tuple_rest()?
-            return ExprList.Node(expr, rest)
+            return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
         }
-        ExprList.Node(expr, ExprList.End)
+        ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
     }
 
     fn parse_block_expression(self) -> Expr? {

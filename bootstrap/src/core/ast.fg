@@ -14,7 +14,7 @@ export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0 } }
 
 export enum ExprList {
     End
-    Node(expr: Expr, next: ExprList)
+    Node(expr: SExpr, next: ExprList)
 }
 
 export enum ParamList {
@@ -36,7 +36,7 @@ export enum FieldList {
 // Field initializer list — used in `Foo { f1: 1, f2: "hi" }`.
 export enum FieldInitList {
     End
-    Node(name: string, value: Expr, next: FieldInitList)
+    Node(name: string, value: SExpr, next: FieldInitList)
 }
 
 // Variant of an enum declaration. Each variant has zero or more
@@ -65,7 +65,7 @@ export enum Pattern {
 // block is itself an Expr.Block.
 export enum MatchArmList {
     End
-    Node(pattern: Pattern, guard: Expr?, body: Expr, next: MatchArmList)
+    Node(pattern: Pattern, guard: SExpr?, body: SExpr, next: MatchArmList)
 }
 
 // ── Value types ──
@@ -293,7 +293,7 @@ export enum Stmt {
 
 export enum StmtList {
     End
-    Node(stmt: Stmt, next: StmtList)
+    Node(stmt: SStmt, next: StmtList)
 }
 
 // Recursive variable environment used by codegen.
@@ -508,8 +508,8 @@ export fn render_expr(expr: Expr) -> string {
 export fn render_field_init_list(inits: FieldInitList) -> string {
     match inits {
         .End -> "()"
-        .Node(name, value, next) -> {
-            let head = name + "=" + render_expr(value)
+        .Node(name, sv, next) -> {
+            let head = name + "=" + render_expr(sv.node)
             let tail = render_field_init_tail(next)
             "(" + head + tail + ")"
         }
@@ -519,7 +519,7 @@ export fn render_field_init_list(inits: FieldInitList) -> string {
 fn render_field_init_tail(inits: FieldInitList) -> string {
     match inits {
         .End -> ""
-        .Node(name, value, next) -> ", " + name + "=" + render_expr(value) + render_field_init_tail(next)
+        .Node(name, sv, next) -> ", " + name + "=" + render_expr(sv.node) + render_field_init_tail(next)
     }
 }
 
@@ -544,8 +544,8 @@ fn render_field_list_tail(fields: FieldList) -> string {
 export fn render_expr_list(exprs: ExprList) -> string {
     match exprs {
         .End -> "()"
-        .Node(expr, next) -> {
-            let head = render_expr(expr)
+        .Node(se, next) -> {
+            let head = render_expr(se.node)
             let tail = render_expr_list_tail(next)
             "(" + head + tail + ")"
         }
@@ -555,7 +555,7 @@ export fn render_expr_list(exprs: ExprList) -> string {
 fn render_expr_list_tail(exprs: ExprList) -> string {
     match exprs {
         .End -> ""
-        .Node(expr, next) -> ", " + render_expr(expr) + render_expr_list_tail(next)
+        .Node(se, next) -> ", " + render_expr(se.node) + render_expr_list_tail(next)
     }
 }
 
@@ -638,8 +638,8 @@ export fn render_match_arm_list(arms: MatchArmList) -> string {
     match arms {
         .End -> "()"
         .Node(pattern, guard, body, next) -> {
-            let guard_str = if guard != null { " if " + render_expr(guard!) } else { "" }
-            let head = render_pattern(pattern) + guard_str + " -> " + render_expr(body)
+            let guard_str = if guard != null { " if " + render_expr(guard!.node) } else { "" }
+            let head = render_pattern(pattern) + guard_str + " -> " + render_expr(body.node)
             let tail = render_match_arm_tail(next)
             "(" + head + tail + ")"
         }
@@ -650,8 +650,8 @@ fn render_match_arm_tail(arms: MatchArmList) -> string {
     match arms {
         .End -> ""
         .Node(pattern, guard, body, next) -> {
-            let guard_str = if guard != null { " if " + render_expr(guard!) } else { "" }
-            "; " + render_pattern(pattern) + guard_str + " -> " + render_expr(body) + render_match_arm_tail(next)
+            let guard_str = if guard != null { " if " + render_expr(guard!.node) } else { "" }
+            "; " + render_pattern(pattern) + guard_str + " -> " + render_expr(body.node) + render_match_arm_tail(next)
         }
     }
 }
@@ -659,8 +659,8 @@ fn render_match_arm_tail(arms: MatchArmList) -> string {
 export fn render_stmt_list(stmts: StmtList) -> string {
     match stmts {
         .End -> ""
-        .Node(stmt, next) -> {
-            let head = render_stmt(stmt)
+        .Node(ss, next) -> {
+            let head = render_stmt(ss.node)
             let tail = render_stmt_list(next)
             if tail == "" {
                 head

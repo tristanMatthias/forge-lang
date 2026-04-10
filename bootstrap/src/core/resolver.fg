@@ -3,7 +3,7 @@
 // a linked-list stack; functions are pre-declared so mutual
 // recursion works.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, SExpr, SStmt}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
 
 export type ResolveResult = {
@@ -48,8 +48,8 @@ fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
     while true {
         match current {
             .End -> { return res }
-            .Node(stmt, next) -> {
-                res = match stmt {
+            .Node(ss, next) -> {
+                res = match ss.node {
                     .Function(name, _, _, _) -> declare_function(res, name)
                     .ExternFn(name, _, _) -> declare_function(res, name)
                     .Impl(type_name, methods) -> collect_method_names(res, type_name, methods)
@@ -68,8 +68,8 @@ fn collect_method_names(r: Resolver, type_name: string, methods: StmtList) -> Re
     while true {
         match current {
             .End -> { return res }
-            .Node(stmt, next) -> {
-                res = match stmt {
+            .Node(ss, next) -> {
+                res = match ss.node {
                     .Function(name, _, _, _) -> declare_function(res, name)
                     _ -> res
                 }
@@ -214,8 +214,8 @@ fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
         if res.had_error { return res }
         match current {
             .End -> { return res }
-            .Node(stmt, next) -> {
-                res = resolve_stmt(res, stmt)
+            .Node(ss, next) -> {
+                res = resolve_stmt(res, ss.node)
                 current = next
             }
         }
@@ -312,8 +312,8 @@ fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
             .Node(pattern, guard, body, next) -> {
                 let entered = enter_resolve_scope(res)
                 let with_bindings = declare_pattern_bindings(entered, pattern)
-                let after_guard = if guard != null { resolve_expr(with_bindings, guard!) } else { with_bindings }
-                let after_body = resolve_expr(after_guard, body)
+                let after_guard = if guard != null { resolve_expr(with_bindings, guard!.node) } else { with_bindings }
+                let after_body = resolve_expr(after_guard, body.node)
                 res = exit_resolve_scope(after_body)
                 current = next
             }
@@ -489,8 +489,8 @@ fn resolve_field_init_list(r: Resolver, inits: FieldInitList) -> Resolver {
         if res.had_error { return res }
         match current {
             .End -> { return res }
-            .Node(_, value, next) -> {
-                res = resolve_expr(res, value)
+            .Node(_, sv, next) -> {
+                res = resolve_expr(res, sv.node)
                 current = next
             }
         }
@@ -505,8 +505,8 @@ fn resolve_expr_list(r: Resolver, exprs: ExprList) -> Resolver {
         if res.had_error { return res }
         match current {
             .End -> { return res }
-            .Node(expr, next) -> {
-                res = resolve_expr(res, expr)
+            .Node(se, next) -> {
+                res = resolve_expr(res, se.node)
                 current = next
             }
         }

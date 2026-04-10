@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str}
 
 // ── Codegen context ──
 //
@@ -149,7 +149,7 @@ export enum LoopStack {
 
 export enum DeferStack {
     End
-    Frame(body: Expr, next: DeferStack)
+    Frame(body: SExpr, next: DeferStack)
 }
 
 export fn ctx_with_defers(ctx: Ctx, defers: DeferStack) -> Ctx {

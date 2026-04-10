@@ -2,7 +2,7 @@
 // when the enclosing function returns, in reverse order (LIFO).
 // Uses a global stack since the Ctx isn't threaded through emit_stmt.
 
-use core.ast.{Expr, VarEnv}
+use core.ast.{Expr, VarEnv, SExpr}
 use core.cg.{Ctx, DeferStack}
 use codegen.{emit_expr}
 
@@ -10,7 +10,7 @@ use codegen.{emit_expr}
 // emitted before return.
 export mut DEFER_STACK: DeferStack = DeferStack.End
 
-export fn defer_push(body: Expr) {
+export fn defer_push(body: SExpr) {
     DEFER_STACK = DeferStack.Frame(body, DEFER_STACK)
 }
 
@@ -27,7 +27,7 @@ fn emit_defer_stack(ctx: Ctx, env: VarEnv, stack: DeferStack) {
     match stack {
         .End -> {}
         .Frame(body, next) -> {
-            emit_expr(ctx, env, body)
+            emit_expr(ctx, env, body.node)
             emit_defer_stack(ctx, env, next)
         }
     }

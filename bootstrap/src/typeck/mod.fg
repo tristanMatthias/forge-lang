@@ -5,7 +5,7 @@
 // produces zero false positives on self-compilation, we flip it
 // to gating and start simplifying codegen.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, MatchArmList, Pattern, ValueType, TypeList, BinOp, vtype_display, vtype_eq, vtype_list_elem, vtype_fn_ret, vtype_tuple_at}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, MatchArmList, Pattern, ValueType, TypeList, BinOp, vtype_display, vtype_eq, vtype_list_elem, vtype_fn_ret, vtype_tuple_at, SExpr, SStmt}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
 
 // ── Type environment ──
@@ -210,8 +210,8 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
 fn collect_decls(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
-        .Node(stmt, next) -> {
-            let updated = match stmt {
+        .Node(ss, next) -> {
+            let updated = match ss.node {
                 .TypeDecl(name, fields) -> tc with {
                     structs: StructTypeReg.Node(name, fields, tc.structs)
                 }
@@ -237,8 +237,8 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
 fn check_stmts(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
-        .Node(stmt, next) -> {
-            let updated = check_stmt(tc, stmt)
+        .Node(ss, next) -> {
+            let updated = check_stmt(tc, ss.node)
             check_stmts(updated, next)
         }
     }
@@ -347,8 +347,8 @@ fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, body: StmtList) ->
 fn tc_has_return(stmts: StmtList) -> bool {
     match stmts {
         .End -> false
-        .Node(stmt, next) -> {
-            let has = match stmt {
+        .Node(ss, next) -> {
+            let has = match ss.node {
                 .Return(_) -> true
                 .ReturnEmpty -> true
                 .If(_, then_branch, else_branch) -> {
@@ -374,11 +374,11 @@ fn tc_stmt_has_return(stmt: Stmt) -> bool {
 fn tc_last_stmt_type(tc: TC, stmts: StmtList) -> ValueType {
     match stmts {
         .End -> ValueType.Void
-        .Node(stmt, next) -> {
+        .Node(ss, next) -> {
             match next {
                 .End -> {
                     // Last statement — check if it's an expression
-                    match stmt {
+                    match ss.node {
                         .Expr(e) -> {
                             let r = check_expr(tc, e)
                             r.ty
@@ -428,10 +428,10 @@ fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
             // Bind pattern variables (enum variant bindings)
             let with_bindings = tc_bind_pattern(inner, pattern)
             let with_guard = if guard != null {
-                let g = check_expr(with_bindings, guard!)
+                let g = check_expr(with_bindings, guard!.node)
                 g.tc
             } else { with_bindings }
-            let b = check_expr(with_guard, body)
+            let b = check_expr(with_guard, body.node)
             let after = tc_exit(b.tc)
             check_match_arms(after, next)
         }
@@ -737,8 +737,8 @@ fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
 fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {
     match args {
         .End -> ValueType.Int
-        .Node(expr, _) -> {
-            match expr {
+        .Node(se, _) -> {
+            match se.node {
                 .Lambda(params, body) -> {
                     // Bind lambda params with the element type
                     let inner = tc_enter(tc)
@@ -781,8 +781,8 @@ fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
 fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
     match elements {
         .End -> tc_er(tc, ValueType.List(ValueType.Int))
-        .Node(first, _) -> {
-            let r = check_expr(tc, first)
+        .Node(se, _) -> {
+            let r = check_expr(tc, se.node)
             let checked = check_expr_list(r.tc, elements)
             tc_er(checked, ValueType.List(r.ty))
         }
@@ -801,20 +801,20 @@ fn check_block(tc: TC, stmts: StmtList) -> ExprResult {
 fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
     match stmts {
         .End -> tc_er(tc, ValueType.Void)
-        .Node(stmt, next) -> {
+        .Node(ss, next) -> {
             match next {
                 .End -> {
                     // Last statement — its type is the block's type
-                    match stmt {
+                    match ss.node {
                         .Expr(e) -> check_expr(tc, e)
                         _ -> {
-                            let checked = check_stmt(tc, stmt)
+                            let checked = check_stmt(tc, ss.node)
                             tc_er(checked, ValueType.Void)
                         }
                     }
                 }
                 _ -> {
-                    let checked = check_stmt(tc, stmt)
+                    let checked = check_stmt(tc, ss.node)
                     check_block_stmts(checked, next)
                 }
             }
@@ -835,10 +835,10 @@ fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> Exp
         .Node(_, guard, body, next) -> {
             let inner = tc_enter(tc)
             let with_guard = if guard != null {
-                let g = check_expr(inner, guard!)
+                let g = check_expr(inner, guard!.node)
                 g.tc
             } else { inner }
-            let b = check_expr(with_guard, body)
+            let b = check_expr(with_guard, body.node)
             let after = tc_exit(b.tc)
             // Use first arm's type as the result type
             let result_ty = match next {
@@ -856,8 +856,8 @@ fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> Exp
 fn check_expr_list(tc: TC, exprs: ExprList) -> TC {
     match exprs {
         .End -> tc
-        .Node(expr, next) -> {
-            let r = check_expr(tc, expr)
+        .Node(se, next) -> {
+            let r = check_expr(tc, se.node)
             check_expr_list(r.tc, next)
         }
     }
@@ -871,8 +871,8 @@ type ExprListResult = {
 fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
     match exprs {
         .End -> ExprListResult { tc, types: TypeList.End }
-        .Node(expr, next) -> {
-            let r = check_expr(tc, expr)
+        .Node(se, next) -> {
+            let r = check_expr(tc, se.node)
             let rest = check_expr_list_types(r.tc, next)
             ExprListResult { tc: rest.tc, types: TypeList.Node(r.ty, rest.types) }
         }
@@ -882,8 +882,8 @@ fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
 fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
     match inits {
         .End -> tc
-        .Node(_, expr, next) -> {
-            let r = check_expr(tc, expr)
+        .Node(_, sv, next) -> {
+            let r = check_expr(tc, sv.node)
             check_field_inits(r.tc, next)
         }
     }

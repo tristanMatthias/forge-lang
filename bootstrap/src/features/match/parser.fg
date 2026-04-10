@@ -6,7 +6,7 @@
 //   do NOT read this file when:   the issue is expression precedence (parser.fg)
 //   related:                features/match/codegen.fg, core.ast.{Pattern, MatchArmList}
 
-use core.ast.{Stmt, Expr, Pattern, MatchArmList, ParamList}
+use core.ast.{Stmt, Expr, Pattern, MatchArmList, ParamList, SExpr, sexpr}
 use parse.{Parser}
 
 impl Parser {
@@ -33,10 +33,10 @@ impl Parser {
         }
         let pattern = self.parse_pattern()?
         // Optional guard: `pattern if cond ->`
-        let guard: Expr? = if self.check("kw_if") {
+        let guard: SExpr? = if self.check("kw_if") {
             self.advance()
             let g = self.parse_expression()?
-            g
+            sexpr(g, self.current_line, self.current_column)
         } else {
             null
         }
@@ -52,7 +52,7 @@ impl Parser {
             self.advance()
         }
         let rest = self.parse_match_arm_list()?
-        MatchArmList.Node(pattern, guard, body!, rest)
+        MatchArmList.Node(pattern, guard, sexpr(body!, self.current_line, self.current_column), rest)
     }
 
     fn parse_pattern(self) -> Pattern? {

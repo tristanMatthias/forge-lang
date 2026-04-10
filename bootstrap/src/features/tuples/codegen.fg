@@ -44,8 +44,8 @@ fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx
             let ty = ValueType.Tuple(reverse_type_list(types_acc, TypeList.End))
             EmitResult { value: to_i64(ctx, buf, "tuple_i64"), ty, had_error: false, error_message: "" }
         }
-        .Node(expr, next) -> {
-            let r = emit_expr(ctx, env, expr)
+        .Node(se, next) -> {
+            let r = emit_expr(ctx, env, se.node)
             if r.had_error { return r }
             tuple_store(ctx, buf, idx, r.value)
             let new_types = TypeList.Node(r.ty, types_acc)

@@ -37,8 +37,8 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
 fn fill_enum_payload(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, args: ExprList, idx: int) -> EmitResult {
     match args {
         .End -> ok_emit(null_ptr_val())
-        .Node(expr, next) -> {
-            let r = emit_expr(ctx, env, expr)
+        .Node(se, next) -> {
+            let r = emit_expr(ctx, env, se.node)
             if r.had_error { return r }
             let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, alloca, idx + 1, "epay_ptr")
             forge_llvm_build_store(ctx.builder, r.value, gep)

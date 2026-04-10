@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` declarations and the
 // supporting field grammars (declaration + literal init).
 
-use core.ast.{Stmt, Expr, FieldList, FieldInitList}
+use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr}
 use parse.{Parser}
 
 impl Parser {
@@ -65,8 +65,8 @@ impl Parser {
         if self.check("comma") {
             self.advance()
             let rest = self.parse_field_init_list()?
-            return FieldInitList.Node(name, value, rest)
+            return FieldInitList.Node(name, sexpr(value, self.current_line, self.current_column), rest)
         }
-        FieldInitList.Node(name, value, FieldInitList.End)
+        FieldInitList.Node(name, sexpr(value, self.current_line, self.current_column), FieldInitList.End)
     }
 }
