@@ -5,7 +5,7 @@
 // produces zero false positives on self-compilation, we flip it
 // to gating and start simplifying codegen.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, MatchArmList, Pattern, ValueType, TypeList, vtype_display, vtype_eq, vtype_list_elem, vtype_fn_ret, vtype_tuple_at}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, MatchArmList, Pattern, ValueType, TypeList, BinOp, vtype_display, vtype_eq, vtype_list_elem, vtype_fn_ret, vtype_tuple_at}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
 
 // ── Type environment ──
@@ -453,7 +453,7 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
 
 // ── Binary operator type rules ──
 
-fn check_binary_type(tc: TC, left: ValueType, op: core.ast.BinOp, right: ValueType) -> ExprResult {
+fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
     match op {
         .Add -> {
             // String + anything = String

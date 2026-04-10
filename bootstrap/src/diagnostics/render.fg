@@ -189,18 +189,19 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
 }
 
 fn render_list(source: string, filename: string, list: DiagnosticList) {
-    render_list_limited(source, filename, list, 0, 20)
+    // Render the FIRST 10 diagnostics (newest are at head, so we
+    // just take from the front without reversing — avoids deep
+    // recursion on lists with hundreds of entries).
+    render_first_n(source, filename, list, 0, 10)
 }
 
-fn render_list_limited(source: string, filename: string, list: DiagnosticList, count: int, max: int) {
+fn render_first_n(source: string, filename: string, list: DiagnosticList, count: int, max: int) {
     if count >= max { return }
     match list {
         .End -> {}
         .Node(diag, next) -> {
-            render_list_limited(source, filename, next, count + 1, max)
-            if count < max {
-                render_diagnostic(source, filename, diag)
-            }
+            render_diagnostic(source, filename, diag)
+            render_first_n(source, filename, next, count + 1, max)
         }
     }
 }

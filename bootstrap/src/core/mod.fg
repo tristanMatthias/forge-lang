@@ -9,4 +9,3 @@ mod resolver
 mod eval
 mod cg
 mod llvm
-// mod typeck — blocked on cross-module use resolution (see commit msg)
