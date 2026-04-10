@@ -2,6 +2,16 @@
 // Stmt, Pattern, and their recursive list types. Pure data only;
 // all logic (parsing, resolution, codegen) lives elsewhere.
 
+// ── Spanned wrappers ──
+// Phase A: types + helpers added, containers NOT yet changed.
+// Phase B (after seed update): containers use SExpr/SStmt.
+export type SExpr = { node: Expr, line: int, col: int }
+export type SStmt = { node: Stmt, line: int, col: int }
+export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col } }
+export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0 } }
+export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col } }
+export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0 } }
+
 export enum ExprList {
     End
     Node(expr: Expr, next: ExprList)
