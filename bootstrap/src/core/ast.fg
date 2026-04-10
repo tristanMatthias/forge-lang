@@ -152,6 +152,10 @@ export fn vtype_closure_captures(t: ValueType) -> int {
     match t { .Closure(n, _) -> n, _ -> 0 }
 }
 
+export fn vtype_is_closure(t: ValueType) -> bool {
+    match t { .Closure(_, _) -> true, _ -> false }
+}
+
 export fn vtype_struct_name(t: ValueType) -> string {
     match t { .Struct(n) -> n, _ -> "" }
 }

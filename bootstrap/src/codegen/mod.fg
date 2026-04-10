@@ -814,13 +814,21 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
                 let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, g.llvm_global, name)
                 return EmitResult { value: loaded, ty: g.ty, had_error: false, error_message: "" }
             }
-            // First-class function reference: if name is a declared function,
-            // convert its pointer to i64 so it can be stored/passed as a value.
+            // First-class function reference: wrap in closure array [TAG, fn_ptr]
+            // so ALL callable values have the same representation. This means
+            // call sites always use forge_closure_get_fn to extract the fn ptr,
+            // and the same code handles named fn refs, lambdas, and closures.
             let fn_val = forge_llvm_get_named_function(ctx.module, name)
             if fn_val != null {
                 let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "fn_ref")
+                let arr_fn = get_fn(ctx, "forge_array_new")
+                let push_fn = get_fn(ctx, "forge_array_push")
+                let closure_arr = call_0(ctx, arr_fn, "fn_wrap")
+                call_2(ctx, push_fn, closure_arr, const_i64(ctx, -559038737), "")
+                call_2(ctx, push_fn, closure_arr, fn_i64, "")
+                let closure_i64 = to_i64(ctx, closure_arr, "fn_ref_i64")
                 let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
-                return ok_emit_typed(fn_i64, ValueType.Fn(ret_ty))
+                return ok_emit_typed(closure_i64, ValueType.Closure(0, ret_ty))
             }
             err_emit("undefined variable `" + name + "`")
         }
