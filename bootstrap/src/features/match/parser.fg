@@ -78,6 +78,22 @@ impl Parser {
             self.advance()
             return Pattern.LitFloat(val)
         }
+        // Negative literal patterns: -42, -3.14
+        if self.check("minus") {
+            self.advance()
+            if self.check("number") {
+                let val = int(self.current_lexeme)
+                self.advance()
+                return Pattern.LitInt(0 - val)
+            }
+            if self.check("float") {
+                let val = "-" + self.current_lexeme
+                self.advance()
+                return Pattern.LitFloat(val)
+            }
+            self.set_error("expected number after `-` in pattern")
+            return null
+        }
         if self.check("kw_true") {
             self.advance()
             return Pattern.LitBool(true)
