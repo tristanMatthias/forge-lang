@@ -351,6 +351,47 @@ static void forge_map_grow(ForgeHashMap* m) {
     free(old_values);
 }
 
+// ─── Int-keyed Map ────────────────────────────────────────────────
+// Flat array indexed by int key. Perfect for enum tag → handler
+// dispatch where keys are small sequential integers (0-63).
+// Values are i64 (function pointers, struct pointers, etc.).
+
+#define FORGE_INTMAP_CAP 64
+
+typedef struct {
+    int64_t values[FORGE_INTMAP_CAP];
+    int8_t  occupied[FORGE_INTMAP_CAP];
+} ForgeIntMap;
+
+void* forge_intmap_new(void) {
+    ForgeIntMap* m = (ForgeIntMap*)calloc(1, sizeof(ForgeIntMap));
+    return m;
+}
+
+void forge_intmap_set(void* map, int64_t key, int64_t value) {
+    ForgeIntMap* m = (ForgeIntMap*)map;
+    if (key >= 0 && key < FORGE_INTMAP_CAP) {
+        m->values[key] = value;
+        m->occupied[key] = 1;
+    }
+}
+
+int64_t forge_intmap_get(void* map, int64_t key) {
+    ForgeIntMap* m = (ForgeIntMap*)map;
+    if (key >= 0 && key < FORGE_INTMAP_CAP && m->occupied[key]) {
+        return m->values[key];
+    }
+    return 0;
+}
+
+int64_t forge_intmap_has(void* map, int64_t key) {
+    ForgeIntMap* m = (ForgeIntMap*)map;
+    if (key >= 0 && key < FORGE_INTMAP_CAP) {
+        return m->occupied[key];
+    }
+    return 0;
+}
+
 // ─── String Methods ───────────────────────────────────────────────
 // All take const char* and return const char* or int64_t.
 // Returned strings are heap-allocated (caller doesn't free in

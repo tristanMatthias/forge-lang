@@ -7,7 +7,7 @@
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display, SStmt, SExpr, sexpr_dummy}
 use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
-use core.registry.{build_expr_registry, build_stmt_registry, dispatch_expr, dispatch_stmt, forge_expr_tag, forge_stmt_tag}
+use core.registry.{build_registry, dispatch_expr, dispatch_stmt, forge_expr_tag, forge_stmt_tag}
 
 // ── Direct C extern declarations ──
 //
@@ -288,6 +288,18 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(map_keys_arr)
     forge_llvm_add_function(m, "forge_map_keys_cstr", map_keys_type)
 
+    // Int-keyed map: O(1) lookup by integer key (used for feature registry dispatch)
+    forge_llvm_add_function(m, "forge_intmap_new", arr_new_type)
+    let im_set_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(im_set_arr, 0, pt)
+    forge_llvm_type_array_set(im_set_arr, 1, i64t)
+    forge_llvm_type_array_set(im_set_arr, 2, i64t)
+    let im_set_type = forge_llvm_function_type(forge_llvm_void_type(lc), im_set_arr, 3, 0)
+    forge_llvm_type_array_free(im_set_arr)
+    forge_llvm_add_function(m, "forge_intmap_set", im_set_type)
+    forge_llvm_add_function(m, "forge_intmap_get", arr_get_type)
+    forge_llvm_add_function(m, "forge_intmap_has", arr_get_type)
+
     // Float support: forge_float_parse(ptr) → i64, forge_float_to_string(i64) → ptr
     forge_llvm_add_function(m, "forge_float_parse", strlen_type)
     forge_llvm_add_function(m, "forge_float_to_string", cl_i64_to_i64)
@@ -329,8 +341,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         top_level_vars,
         loops: LoopStack.End,
         defers: DeferStack.End,
-        expr_features: build_expr_registry(),
-        stmt_features: build_stmt_registry(),
+        features: build_registry(),
     }
 
     // Pass 2: emit each user-defined function's body, then emit
@@ -627,8 +638,8 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             forge_llvm_build_ret(ctx.builder, const_i64(ctx, 0))
             ok_stmt(env)
         }
-        .Let(name, _, initializer) -> emit_var_decl(ctx, env, name, initializer)
-        .Mut(name, _, initializer) -> emit_var_decl(ctx, env, name, initializer)
+        .Let(name, ty, initializer) -> emit_var_decl(ctx, env, name, ty, initializer)
+        .Mut(name, ty, initializer) -> emit_var_decl(ctx, env, name, ty, initializer)
         .Block(body) -> {
             let inner = emit_stmt_list(ctx, env, body)
             if inner.had_error {
@@ -664,7 +675,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         // All other statement types dispatch through the feature registry.
         _ -> {
             let tag = forge_stmt_tag(stmt)
-            let result = dispatch_stmt(ctx.stmt_features, tag, ctx, env, stmt)
+            let result = dispatch_stmt(ctx.features, tag, ctx, env, stmt)
             if result != null {
                 return result!
             }
@@ -852,7 +863,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         // All other expression types dispatch through the feature registry.
         _ -> {
             let tag = forge_expr_tag(expr)
-            let result = dispatch_expr(ctx.expr_features, tag, ctx, env, expr)
+            let result = dispatch_expr(ctx.features, tag, ctx, env, expr)
             if result != null {
                 return result!
             }
@@ -1149,13 +1160,18 @@ fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult 
         .FieldAccess(obj, method) -> emit_method_call(ctx, env, obj, method, args)
         _ -> {
             // Expression callee: evaluate it and call indirectly.
+            // All callable values are closure arrays, so route through
+            // the closure call path which unpacks [TAG, fn_ptr, caps...].
             let callee_r = emit_expr(ctx, env, callee)
             if callee_r.had_error { return callee_r }
             let ret_ty = vtype_fn_ret(callee_r.ty)
-            let num_caps = vtype_closure_captures(callee_r.ty)
-            if num_caps > 0 {
+            if vtype_is_closure(callee_r.ty) {
+                let num_caps = vtype_closure_captures(callee_r.ty)
                 return emit_closure_call_typed(ctx, env, callee_r.value, args, num_caps, ret_ty)
             }
+            // For values with Fn/FnTyped type (e.g. from intmap_get),
+            // the runtime value is still a closure array — route
+            // through indirect call which handles both representations.
             emit_indirect_call_typed(ctx, env, callee_r.value, args, ret_ty)
         }
     }

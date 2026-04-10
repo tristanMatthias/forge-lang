@@ -1,142 +1,123 @@
 // WHY: central feature registry for the compiler. Each language feature
-// registers its emit/check/resolve handlers here instead of being
-// hardcoded into giant match statements in codegen/typeck/resolver.
+// registers its handlers into int-keyed maps for O(1) dispatch.
+// No linked lists, no linear scans.
+//
+// To add a new feature:
+//   1. Create features/<name>/mod.fg
+//   2. Add a register_<name>(reg) function that calls reg_expr/reg_stmt
+//   3. Call it from build_registry()
 //
 // AGENT:
-//   read this file when:    adding a new language feature, understanding
-//                           how features are dispatched
-//   do NOT read this file when:   the issue is in a specific feature's
-//                                 implementation (go to features/<name>/)
+//   read this file when:    adding a new language feature
+//   do NOT read this file when:   feature-specific logic (go to features/<name>/)
 
-use core.ast.{Expr, Stmt, ValueType, VarEnv, TypeList}
-use core.cg.{Ctx, EmitResult, StmtResult, err_emit, err_stmt}
-use features.registry_handlers.{reg_emit_struct_lit, reg_emit_field_access, reg_emit_enum_ctor, reg_emit_index, reg_emit_block_expr, reg_emit_match_expr, reg_emit_field_assign, reg_emit_if_expr, reg_emit_null_coalesce, reg_emit_optional_chain, reg_emit_try, reg_emit_tuple, reg_emit_tuple_index, reg_emit_with, reg_emit_list_lit, reg_emit_lambda, reg_emit_map_lit, reg_emit_slice, reg_emit_is_check, reg_emit_if, reg_emit_while, reg_emit_for, reg_emit_for_in, reg_emit_match_stmt, reg_emit_let_destructure, reg_emit_defer}
-
-// C-side helpers to extract enum discriminant tags.
+// C-side helpers
 extern fn forge_expr_tag(expr: int) -> int
 extern fn forge_stmt_tag(stmt: int) -> int
+extern fn forge_intmap_new() -> ptr
+extern fn forge_intmap_set(map: ptr, key: int, value: int)
+extern fn forge_intmap_get(map: ptr, key: int) -> int
+extern fn forge_intmap_has(map: ptr, key: int) -> int
+// Dispatch uses typed let bindings: `let handler: fn(...) = intmap_get(...)`
+// The type annotation tells codegen the value is callable.
 
-// ── Expr tag reference ──
-// Tags are the enum variant index in `enum Expr` (ast.fg).
-// Used as literal ints in build_expr_registry below.
-// NOT stored as globals (export mut is 0 at registry build time).
+// ── Tag reference ──
+// Tags are enum variant indices in ast.fg.
 //
-//  0=Number  1=String  2=Bool  3=Null  4=Ident  5=Assign
-//  6=Grouping  7=Unary  8=Binary  9=Logical  10=Call
-// 11=StructLit  12=FieldAccess  13=EnumCtor  14=Index
-// 15=Block  16=MatchExpr  17=FieldAssign  18=IfExpr
-// 19=NullCoalesce  20=OptionalChain  21=Try  22=Tuple
-// 23=TupleIndex  24=With  25=ListLit  26=Lambda
-// 27=MapLit  28=Slice  29=FloatLit  30=IsCheck
+// Expr:  0=Number  1=String  2=Bool  3=Null  4=Ident  5=Assign
+//        6=Grouping  7=Unary  8=Binary  9=Logical  10=Call
+//       11=StructLit  12=FieldAccess  13=EnumCtor  14=Index
+//       15=Block  16=MatchExpr  17=FieldAssign  18=IfExpr
+//       19=NullCoalesce  20=OptionalChain  21=Try  22=Tuple
+//       23=TupleIndex  24=With  25=ListLit  26=Lambda
+//       27=MapLit  28=Slice  29=FloatLit  30=IsCheck
 //
-// Stmt tags (enum Stmt):
-//  0=Let  1=Mut  2=Expr  3=Block  4=If  5=While  6=For  7=ForIn
-//  8=Function  9=Return  10=ReturnEmpty  11=TypeDecl  12=EnumDecl
-// 13=Match  14=Impl  15=NoOp  16=ExternFn  17=Break  18=Continue
-// 19=TraitDecl  20=LetDestructure  21=Defer
-
-// ── Handler signatures ──
-// Each feature provides functions with these signatures.
-// The handler receives the FULL Expr/Stmt and destructures internally.
-
-export type ExprFeature = {
-    name: string,
-    tag: int,
-    emit: fn(Ctx, VarEnv, Expr) -> EmitResult,
-}
-
-export type StmtFeature = {
-    name: string,
-    tag: int,
-    emit: fn(Ctx, VarEnv, Stmt) -> StmtResult,
-}
+// Stmt:  0=Let  1=Mut  2=Expr  3=Block  4=If  5=While  6=For  7=ForIn
+//        8=Function  9=Return  10=ReturnEmpty  11=TypeDecl  12=EnumDecl
+//       13=Match  14=Impl  15=NoOp  16=ExternFn  17=Break  18=Continue
+//       19=TraitDecl  20=LetDestructure  21=Defer
 
 // ── Registry ──
+// Two int-keyed maps: tag → handler function pointer.
+// O(1) lookup. Stored in Ctx and threaded through compilation.
 
-export enum ExprRegistry {
-    End
-    Node(feature: ExprFeature, next: ExprRegistry)
+export type Registry = {
+    expr_handlers: ptr,   // intmap: expr tag → fn(Ctx, VarEnv, Expr) -> EmitResult
+    stmt_handlers: ptr,   // intmap: stmt tag → fn(Ctx, VarEnv, Stmt) -> StmtResult
 }
 
-export enum StmtRegistry {
-    End
-    Node(feature: StmtFeature, next: StmtRegistry)
-}
-
-export fn register_expr(reg: ExprRegistry, name: string, tag: int, emit: fn(Ctx, VarEnv, Expr) -> EmitResult) -> ExprRegistry {
-    ExprRegistry.Node(ExprFeature { name, tag, emit }, reg)
-}
-
-export fn register_stmt(reg: StmtRegistry, name: string, tag: int, emit: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> StmtRegistry {
-    StmtRegistry.Node(StmtFeature { name, tag, emit }, reg)
-}
-
-// Dispatch: find handler for tag, call it. Returns null if no handler found.
-export fn dispatch_expr(reg: ExprRegistry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult? {
-    match reg {
-        .End -> null
-        .Node(feature, next) -> {
-            if feature.tag == tag {
-                return feature.emit(ctx, env, expr)
-            }
-            dispatch_expr(next, tag, ctx, env, expr)
-        }
+export fn registry_new() -> Registry {
+    Registry {
+        expr_handlers: forge_intmap_new(),
+        stmt_handlers: forge_intmap_new(),
     }
 }
 
-export fn dispatch_stmt(reg: StmtRegistry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult? {
-    match reg {
-        .End -> null
-        .Node(feature, next) -> {
-            if feature.tag == tag {
-                return feature.emit(ctx, env, stmt)
-            }
-            dispatch_stmt(next, tag, ctx, env, stmt)
-        }
-    }
-}
-
-// ── Build the default registry ──
-// This is where features register themselves. Each feature adds its
-// handler to the registry list. To add a new feature:
-//   1. Add the handler function in features/<name>/codegen.fg
-//   2. Add a register call here
-//   3. Remove the match arm from emit_expr/emit_stmt in codegen/mod.fg
-
-export fn build_expr_registry() -> ExprRegistry {
-    mut reg = ExprRegistry.End
-    // Each line replaces a match arm in emit_expr. Tags must match
-    // the Expr enum variant order in ast.fg.
-    reg = register_expr(reg, "struct_lit",      11, reg_emit_struct_lit)
-    reg = register_expr(reg, "field_access",    12, reg_emit_field_access)
-    reg = register_expr(reg, "enum_ctor",       13, reg_emit_enum_ctor)
-    reg = register_expr(reg, "index",           14, reg_emit_index)
-    reg = register_expr(reg, "block",           15, reg_emit_block_expr)
-    reg = register_expr(reg, "match_expr",      16, reg_emit_match_expr)
-    reg = register_expr(reg, "field_assign",    17, reg_emit_field_assign)
-    reg = register_expr(reg, "if_expr",         18, reg_emit_if_expr)
-    reg = register_expr(reg, "null_coalesce",   19, reg_emit_null_coalesce)
-    reg = register_expr(reg, "optional_chain",  20, reg_emit_optional_chain)
-    reg = register_expr(reg, "try",             21, reg_emit_try)
-    reg = register_expr(reg, "tuple",           22, reg_emit_tuple)
-    reg = register_expr(reg, "tuple_index",     23, reg_emit_tuple_index)
-    reg = register_expr(reg, "with",            24, reg_emit_with)
-    reg = register_expr(reg, "list_lit",        25, reg_emit_list_lit)
-    reg = register_expr(reg, "lambda",          26, reg_emit_lambda)
-    reg = register_expr(reg, "map_lit",         27, reg_emit_map_lit)
-    reg = register_expr(reg, "slice",           28, reg_emit_slice)
-    reg = register_expr(reg, "is",              30, reg_emit_is_check)
+// Register a handler for an expression tag.
+export fn reg_expr(reg: Registry, tag: int, handler: fn(Ctx, VarEnv, Expr) -> EmitResult) -> Registry {
+    forge_intmap_set(reg.expr_handlers, tag, handler)
     reg
 }
 
-export fn build_stmt_registry() -> StmtRegistry {
-    mut reg = StmtRegistry.End
-    reg = register_stmt(reg, "if",              4, reg_emit_if)
-    reg = register_stmt(reg, "while",           5, reg_emit_while)
-    reg = register_stmt(reg, "for",             6, reg_emit_for)
-    reg = register_stmt(reg, "for_in",          7, reg_emit_for_in)
-    reg = register_stmt(reg, "match",           13, reg_emit_match_stmt)
-    reg = register_stmt(reg, "let_destructure", 20, reg_emit_let_destructure)
-    reg = register_stmt(reg, "defer",           21, reg_emit_defer)
+// Register a handler for a statement tag.
+export fn reg_stmt(reg: Registry, tag: int, handler: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> Registry {
+    forge_intmap_set(reg.stmt_handlers, tag, handler)
+    reg
+}
+
+// Dispatch an expression through the registry. Returns null if no handler.
+export fn dispatch_expr(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult? {
+    if forge_intmap_has(reg.expr_handlers, tag) == 0 {
+        return null
+    }
+    let handler: fn(Ctx, VarEnv, Expr) -> EmitResult = forge_intmap_get(reg.expr_handlers, tag)
+    handler(ctx, env, expr)
+}
+
+// Dispatch a statement through the registry. Returns null if no handler.
+export fn dispatch_stmt(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult? {
+    if forge_intmap_has(reg.stmt_handlers, tag) == 0 {
+        return null
+    }
+    let handler: fn(Ctx, VarEnv, Stmt) -> StmtResult = forge_intmap_get(reg.stmt_handlers, tag)
+    handler(ctx, env, stmt)
+}
+
+// ── Build the registry ──
+// Each feature registers its handlers here.
+
+export fn build_registry() -> Registry {
+    mut reg = registry_new()
+
+    // Expression features
+    reg = reg_expr(reg, 11, reg_emit_struct_lit)
+    reg = reg_expr(reg, 12, reg_emit_field_access)
+    reg = reg_expr(reg, 13, reg_emit_enum_ctor)
+    reg = reg_expr(reg, 14, reg_emit_index)
+    reg = reg_expr(reg, 15, reg_emit_block_expr)
+    reg = reg_expr(reg, 16, reg_emit_match_expr)
+    reg = reg_expr(reg, 17, reg_emit_field_assign)
+    reg = reg_expr(reg, 18, reg_emit_if_expr)
+    reg = reg_expr(reg, 19, reg_emit_null_coalesce)
+    reg = reg_expr(reg, 20, reg_emit_optional_chain)
+    reg = reg_expr(reg, 21, reg_emit_try)
+    reg = reg_expr(reg, 22, reg_emit_tuple)
+    reg = reg_expr(reg, 23, reg_emit_tuple_index)
+    reg = reg_expr(reg, 24, reg_emit_with)
+    reg = reg_expr(reg, 25, reg_emit_list_lit)
+    reg = reg_expr(reg, 26, reg_emit_lambda)
+    reg = reg_expr(reg, 27, reg_emit_map_lit)
+    reg = reg_expr(reg, 28, reg_emit_slice)
+    reg = reg_expr(reg, 30, reg_emit_is_check)
+
+    // Statement features
+    reg = reg_stmt(reg, 4, reg_emit_if)
+    reg = reg_stmt(reg, 5, reg_emit_while)
+    reg = reg_stmt(reg, 6, reg_emit_for)
+    reg = reg_stmt(reg, 7, reg_emit_for_in)
+    reg = reg_stmt(reg, 13, reg_emit_match_stmt)
+    reg = reg_stmt(reg, 20, reg_emit_let_destructure)
+    reg = reg_stmt(reg, 21, reg_emit_defer)
+
     reg
 }

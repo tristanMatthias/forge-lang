@@ -1,16 +1,22 @@
 // WHY: emits LLVM IR for `let` and `mut` variable bindings.
 
 use core.ast.{Expr, VarEnv, env_extend}
-use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt_from_expr}
+use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt_from_expr, translate_param_type}
 use codegen.{emit_expr}
 
 
-export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, initializer: Expr) -> StmtResult {
+export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: string, initializer: Expr) -> StmtResult {
     let r = emit_expr(ctx, env, initializer)
     if r.had_error {
         return err_stmt_from_expr(r)
     }
     let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
     forge_llvm_build_store(ctx.builder, r.value, alloca)
-    ok_stmt(env_extend(env, name, alloca, r.ty))
+    // Use the type annotation when present, otherwise infer from initializer.
+    let var_ty = if ty_annotation != "" {
+        translate_param_type(ctx.structs, ctx.enums, ty_annotation)
+    } else {
+        r.ty
+    }
+    ok_stmt(env_extend(env, name, alloca, var_ty))
 }
