@@ -100,9 +100,9 @@
 | 93 | string() conversion | ✅ | |
 | 94 | int() conversion | ✅ | |
 | 95 | float() conversion | 🔲 | |
-| 96 | file_exists | ✅ | |
-| 97 | read_file | ✅ | |
-| 98 | write_file | ✅ | |
+| 96 | file_exists | ✅ | compiler-only; user programs need `extern fn` |
+| 97 | read_file | ✅ | compiler-only; user programs need `extern fn` |
+| 98 | write_file | ✅ | compiler-only; user programs need `extern fn` |
 | 99 | json.parse / stringify | 🔲 | |
 | 100 | process_uptime | 🔲 | |
 | 101 | datetime | 🔲 | |
