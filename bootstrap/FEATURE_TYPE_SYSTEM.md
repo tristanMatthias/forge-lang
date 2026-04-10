@@ -35,6 +35,71 @@ Every expression in Forge carries not just a type but a **type derivation** — 
 
 ---
 
+## Vision: Futuristic Error System
+
+The diagnostic infrastructure is architected for what's coming, not just what's needed today. Phase 0 builds the foundation; these capabilities are unlocked by the architecture without redesign.
+
+### Capability Tiers
+
+**Tier 1 (Phase 0 — build now):**
+- Error codes, spans, multi-label source context
+- "Did you mean?" via Levenshtein distance
+- Help text with actionable guidance
+- DiagnosticBag collects all errors, renders at end
+- `forge fix` auto-applies high-confidence suggestions
+
+**Tier 2 (Phase 1 — unlocked by type checker):**
+- Type derivation chains — "this is Int because X, which is Int because Y"
+- Bidirectional blame — "expected Str here because the function signature says so"
+- Exhaustiveness warnings — "match doesn't cover variant .Error"
+- Unused variable/import warnings (the resolver already tracks definitions)
+- Unreachable code detection (after `return`, `break`, `continue`)
+
+**Tier 3 (future — unlocked by architecture):**
+- **Interactive errors** — the compiler asks clarifying questions when ambiguous, remembers answers
+- **Error tutorials** — `forge explain F0012` opens a rich explanation with examples, common causes, and fix patterns
+- **Fix preview** — `forge fix --preview` shows a diff of all auto-fixes before applying
+- **Error history** — track which errors a developer hits most often, surface relevant docs proactively
+- **Cross-file blame** — "this type mismatch originates in module X, which exports the wrong type"
+- **Regression detection** — "this error was fixed in commit abc123 but reintroduced here"
+
+### Architectural Decisions That Enable This
+
+**1. Diagnostics are data, not strings.** A `Diagnostic` is a structured record with typed fields (code, severity, span, labels, suggestions), not a formatted string. This means:
+- JSON output for tooling (`forge check --json`)
+- LSP integration (diagnostics map directly to LSP `Diagnostic` protocol)
+- Filtering/sorting (show only errors, only warnings, only from specific files)
+- Machine-readable for CI/CD (parse error codes, track regressions)
+
+**2. Spans are attached everywhere.** Every AST node carries a Span. Every type derivation step records which span triggered it. This means error messages can always point at source code — even for errors discovered deep in the type checker or codegen.
+
+**3. Labels are ordered and typed.** Primary labels mark the error location. Secondary labels mark contributing locations. This means errors can show the full story: "the conflict is HERE (primary), caused by THIS declaration (secondary) and THIS usage (secondary)."
+
+**4. Suggestions are structured edits.** A suggestion is `(span, replacement)` pairs with a confidence score, not a prose description. This means `forge fix` can apply them mechanically, and IDEs can offer quick-fix actions.
+
+**5. The bag pattern.** All passes report into a shared DiagnosticBag. No pass aborts on the first error. This means:
+- Users see all errors at once
+- Later passes can add context to earlier errors (type checker annotates parser errors with type info)
+- Error count limits prevent flooding (`--max-errors 10`)
+
+### Error Code Space
+
+Reserve error code ranges for each subsystem:
+
+| Range | Subsystem | Examples |
+|-------|-----------|----------|
+| F0001-F0099 | Syntax/Lexer | unterminated string, unexpected token |
+| F0100-F0199 | Name resolution | undefined variable, duplicate definition |
+| F0200-F0299 | Type checking | type mismatch, wrong arg count, missing field |
+| F0300-F0399 | Refinement types | can't prove predicate, refinement violated |
+| F0400-F0499 | Codegen | unsupported feature, LLVM error |
+| F0800-F0899 | Warnings | unused variable, unreachable code |
+| F0900-F0999 | Internal | ICE, assertion failure |
+
+Each error code maps to a documentation page. `forge explain F0012` shows the full explanation with examples.
+
+---
+
 ## Feature 1: Type Checker Pass
 
 ### Architecture
@@ -401,14 +466,215 @@ Phase 2 does NOT include:
 
 ## Implementation Roadmap
 
-### Phase 1: Type Checker (the foundation)
+### Phase 0: Diagnostic Infrastructure
+
+The diagnostic system is the rendering and reporting layer that every subsequent phase builds on. Without it, the type checker produces `err_emit("some string")` — no source locations, no context, no suggestions, no error codes. The Rust-based Forge compiler already has this system fully built. We port the architecture to Forge.
+
+#### What We Port
+
+From `forge/packages/forgec-rust/errors/diagnostic.rs`:
+
+**Span** — source location with byte offsets, line, and column:
+```forge
+type Span = {
+    start: int,      // byte offset into source
+    end: int,        // byte offset end
+    line: int,       // 1-based line number
+    col: int,        // 1-based column
+}
+```
+
+**Diagnostic** — a single error, warning, or hint with full context:
+```forge
+type Diagnostic = {
+    code: string,           // "F0012", "F0020", etc.
+    severity: Severity,     // Error, Warning, Info, Hint
+    message: string,        // "type mismatch in if-expression"
+    span: Span,             // primary source location
+    help: string?,          // "both branches must produce the same type"
+    labels: LabelList,      // multi-location highlighting
+    suggestions: SuggestionList,  // auto-fix proposals
+    tip: string?,           // additional note
+}
+
+enum Severity { Error, Warning, Info, Hint }
+```
+
+**Labels** — point at multiple source locations with messages:
+```forge
+type Label = {
+    span: Span,
+    message: string,        // "expected Str here"
+    kind: LabelKind,        // Primary (red) or Secondary (blue)
+}
+enum LabelKind { Primary, Secondary }
+```
+
+This is what enables errors like:
+```
+error[F0012]: type mismatch in if-expression
+
+   |  let result = if x > 0 { "positive" } else { 42 }
+   |                           ^^^^^^^^^^          ^^
+   |                           Str                 Int
+   |
+   = help: both branches must produce the same type
+```
+
+The primary label (red) points at the main problem. Secondary labels (blue) point at related locations — the other branch, the function signature that constrains the type, the variable declaration, etc.
+
+**Suggestions** — proposed fixes with confidence scores:
+```forge
+type Suggestion = {
+    message: string,        // "wrap with string()"
+    edits: EditList,        // source replacements
+    confidence: int,        // 0-100 (95 = auto-fixable)
+}
+type Edit = {
+    span: Span,             // what to replace
+    replacement: string,    // what to replace it with
+}
+```
+
+High-confidence suggestions (>90) can be auto-applied with `forge fix`. Low-confidence suggestions are shown as "did you mean?" hints.
+
+**DiagnosticBag** — collects diagnostics during a compilation pass:
+```forge
+type DiagnosticBag = {
+    diagnostics: DiagnosticList,
+}
+```
+
+Methods: `report(diag)`, `has_errors()`, `error_count()`, `print_all(source, filename)`.
+
+**Suggestions helper** — Levenshtein distance for "did you mean?" on undefined variables/fields:
+```forge
+fn suggest_similar(name: string, candidates: List<string>) -> string? {
+    // Returns the candidate with smallest edit distance, if < 3
+}
+```
+
+#### How It Integrates
+
+Every compiler pass (parser, resolver, type checker) receives a `DiagnosticBag` and reports errors into it. At the end, the bag is rendered. This replaces:
+
+**Before:**
+```forge
+// Parser
+self.set_error("expected `{` after if condition")
+// Resolver
+err_resolve("undefined variable `x`")
+// Codegen
+err_emit("field access on non-struct value")
+```
+
+**After:**
+```forge
+// Parser
+bag.report(Diagnostic {
+    code: "F0001",
+    severity: Severity.Error,
+    message: "expected `{` after if condition",
+    span: self.current_span(),
+    help: "if-expressions require braces around the body",
+    ...
+})
+// Resolver
+bag.report(Diagnostic {
+    code: "F0020",
+    severity: Severity.Error,
+    message: `undefined variable \`${name}\``,
+    span,
+    help: suggest_similar(name, env.all_names()) ?? null,
+    ...
+})
+// Type checker
+bag.report(Diagnostic {
+    code: "F0012",
+    severity: Severity.Error,
+    message: "type mismatch",
+    span,
+    labels: [
+        Label { span: then_span, message: vtype_display(then_ty), kind: LabelKind.Primary },
+        Label { span: else_span, message: vtype_display(else_ty), kind: LabelKind.Secondary },
+    ],
+    help: "both branches must produce the same type",
+    ...
+})
+```
+
+#### Rendering
+
+The Rust compiler uses the `ariadne` crate for pretty-printing. We implement our own renderer in Forge — it reads the source file, extracts the relevant lines, and underlines the spans with `^` characters. Color output via ANSI escape codes (with TTY detection).
+
+```
+error[F0012]: type mismatch in if-expression
+  --> app.fg:5:30
+   |
+ 5 |  let result = if x > 0 { "positive" } else { 42 }
+   |                           ^^^^^^^^^^          ^^ Int
+   |                           Str
+   |
+   = help: both branches must produce the same type
+   = suggestion: wrap the integer: string(42)
+```
+
+#### Span Tracking
+
+The parser must track source spans for every token and AST node. Currently the parser tracks `current_line` and `current_column` but not byte offsets. We add:
+
+```forge
+// In the Parser struct:
+mut current_start: int,   // byte offset where current token started
+
+// Every token records its span:
+type TokenSpan = {
+    start: int,
+    end: int,
+    line: int,
+    col: int,
+}
+```
+
+Every `Expr` and `Stmt` node gets a `span: Span` field so the type checker and error renderer can point at the exact source location.
+
+#### Files to Create
+
+- `src/core/diagnostic.fg` — Diagnostic, Severity, Label, Suggestion, Edit, DiagnosticBag types + builder functions
+- `src/core/render.fg` — source-context renderer (read line from source, underline spans, ANSI colors)
+- `src/core/suggest.fg` — Levenshtein distance, similar name suggestions
+
+#### Files to Modify
+
+- `src/parse/mod.fg` — track byte offsets, attach Span to every AST node
+- `src/core/ast.fg` — add `span: Span` to Expr and Stmt (or a parallel SpanTable)
+- `src/core/resolver.fg` — report via DiagnosticBag instead of returning error strings
+- `src/main.fg` — create DiagnosticBag, pass through all phases, render at end
+
+#### Prerequisites
+
+None. This is the foundation everything else builds on.
+
+#### Success Criteria
+
+- All errors include error code, source location, and help text
+- Multi-label errors show primary + secondary source locations
+- "Did you mean?" suggestions for undefined variables/fields (Levenshtein)
+- Errors render with source context and underlined spans
+- DiagnosticBag collects all errors without stopping at the first one
+- Existing tests still pass (error format changes but behavior doesn't)
+
+---
+
+### Phase 1: Type Checker
+
+**Prerequisite:** Phase 0 (diagnostic infrastructure) must be complete. The type checker reports errors via DiagnosticBag with spans, labels, and suggestions.
 
 **Files to create:**
-- `src/core/typeck.fg` — main type checker, walks AST, infers types
-- `src/core/diagnostic.fg` — Diagnostic struct with labels, suggestions, error codes
+- `src/core/typeck.fg` — main type checker, walks AST, infers types, reports via DiagnosticBag
 
 **Files to modify:**
-- `src/core/ast.fg` — add ExprId to expressions (or a parallel typed AST)
+- `src/core/ast.fg` — add type annotations to expressions (ExprId or inline `ty` field)
 - `src/codegen/mod.fg` — remove all `vtype_is_*` calls, read types from checker
 - `src/main.fg` — insert type check pass between resolve and codegen
 - All 15 feature codegen files — simplify to trust types from checker
@@ -420,6 +686,8 @@ Phase 2 does NOT include:
 - Codegen has zero `vtype_is_str`/`vtype_is_list`/`vtype_is_fn` calls
 - Type errors are reported with source spans and derivation chains
 - New edge-case tests pass WITHOUT adding type logic to codegen
+
+---
 
 ### Phase 2: Refinement Types
 
