@@ -242,6 +242,11 @@ fn main() {
             }
             fail(resolved.error_message)
         }
+        // Type check (additive — reports but doesn't block compilation)
+        let tc_result = typecheck_program(parsed.stmts!)
+        if bag_has_errors(tc_result.bag) {
+            render_bag(merged, path, tc_result.bag)
+        }
         let output = path + ".ll"
         let compiled = compile_program(parsed.stmts!, output)
         if compiled.had_error {
