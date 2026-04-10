@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (131 total: 85 done, 33 todo, 10 n/a)
+## Feature Progress (131 total: 91 done, 27 todo, 10 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -22,7 +22,7 @@
 | 16 | return | ✅ | |
 | 17 | implicit return | ✅ | |
 | 18 | extern fn | ✅ | |
-| 19 | fn types | 🔲 | |
+| 19 | fn types | ✅ | ValueType.Fn(ret) carries return type |
 | 20 | closures / lambdas | ✅ | lifted functions + indirect calls |
 | 21 | `it` parameter | 🔲 | needs closures |
 | 22 | generics | ✅ | parsed, erased |
@@ -38,11 +38,12 @@
 | 32 | enum declaration | ✅ | |
 | 33 | enum constructor | ✅ | |
 | 34 | match statement | ✅ | |
-| 35 | match expression | ✅ | |
+| 35 | match expression | ✅ | incl. primitive + literal patterns |
 | 36 | wildcard pattern | ✅ | |
 | 37 | variant binding | ✅ | |
 | 38 | nested patterns | 🔲 | |
-| 39 | match guards | ✅ | pattern if cond -> body | |
+| 39 | match guards | ✅ | pattern if cond -> body |
+| 39b | literal patterns | ✅ | string/int/bool in match arms |
 | 40 | match tables | 🔲 | |
 | 41 | `is` keyword | 🔲 | |
 | 42 | contextual resolution | 🔲 | |

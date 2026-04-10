@@ -6,7 +6,7 @@
 // resolved globally by the host compiler's cross-file impl lookup.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display}
-use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc}
+use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
 
 // ── Direct C extern declarations ──
 //
@@ -299,6 +299,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         fn_rets,
         top_level_vars,
         loops: LoopStack.End,
+        defers: DeferStack.End,
     }
 
     // Pass 2: emit each user-defined function's body, then emit
@@ -573,10 +574,12 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             if r.had_error {
                 return err_stmt_from_expr(r)
             }
+            emit_defers(ctx, env)
             forge_llvm_build_ret(ctx.builder, r.value)
             ok_stmt(env)
         }
         .ReturnEmpty -> {
+            emit_defers(ctx, env)
             forge_llvm_build_ret(ctx.builder, const_i64(ctx, 0))
             ok_stmt(env)
         }
@@ -619,6 +622,10 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         }
         .TraitDecl(_, _) -> ok_stmt(env)  // trait decls are type metadata, no codegen
         .LetDestructure(names, initializer) -> emit_let_destructure(ctx, env, names, initializer)
+        .Defer(body) -> {
+            defer_push(body)
+            ok_stmt(env)
+        }
         _ -> err_stmt("codegen error: unsupported statement type")
     }
 }

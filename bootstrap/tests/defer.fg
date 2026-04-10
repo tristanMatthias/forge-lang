@@ -1,0 +1,26 @@
+// Basic defer
+fn test_basic() {
+    defer println("cleanup!")
+    println("working...")
+}
+test_basic()
+
+// Multiple defers — LIFO order
+fn test_lifo() {
+    defer println("third (first deferred)")
+    defer println("second")
+    defer println("first (last deferred)")
+    println("body")
+}
+test_lifo()
+
+// Defer with early return
+fn test_early(x: int) -> string {
+    defer println("always runs")
+    if x > 0 {
+        return "positive"
+    }
+    "non-positive"
+}
+println(test_early(5))
+println(test_early(-1))

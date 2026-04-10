@@ -322,6 +322,7 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after_init = resolve_expr(r, initializer)
             define_param_names(after_init, names)
         }
+        .Defer(body) -> resolve_expr(r, body)
     }
 }
 

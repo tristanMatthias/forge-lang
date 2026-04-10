@@ -278,6 +278,7 @@ export enum Stmt {
     Continue
     TraitDecl(name: string, methods: StmtList)
     LetDestructure(names: ParamList, initializer: Expr)
+    Defer(body: Expr)
 }
 
 export enum StmtList {

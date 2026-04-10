@@ -1,0 +1,34 @@
+// WHY: codegen for `defer` statements. Deferred expressions execute
+// when the enclosing function returns, in reverse order (LIFO).
+// Uses a global stack since the Ctx isn't threaded through emit_stmt.
+
+use core.ast.{Expr, VarEnv}
+use core.cg.{Ctx, DeferStack}
+use codegen.{emit_expr}
+
+// Global defer stack — reset at function entry, pushed by defer,
+// emitted before return.
+export mut DEFER_STACK: DeferStack = DeferStack.End
+
+export fn defer_push(body: Expr) {
+    DEFER_STACK = DeferStack.Frame(body, DEFER_STACK)
+}
+
+export fn defer_reset() {
+    DEFER_STACK = DeferStack.End
+}
+
+// Emit all deferred expressions in LIFO order before a return.
+export fn emit_defers(ctx: Ctx, env: VarEnv) {
+    emit_defer_stack(ctx, env, DEFER_STACK)
+}
+
+fn emit_defer_stack(ctx: Ctx, env: VarEnv, stack: DeferStack) {
+    match stack {
+        .End -> {}
+        .Frame(body, next) -> {
+            emit_expr(ctx, env, body)
+            emit_defer_stack(ctx, env, next)
+        }
+    }
+}

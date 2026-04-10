@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{VarEnv, FieldList, VariantList, ValueType, vtype_is_str}
+use core.ast.{Expr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str}
 
 // ── Codegen context ──
 //
@@ -39,6 +39,7 @@ export type Ctx = {
     fn_rets: FnRetTypes,
     top_level_vars: TopLevelVars,
     loops: LoopStack,
+    defers: DeferStack,
 }
 
 export fn null_ptr_val() -> ptr {
@@ -144,6 +145,15 @@ export enum TopLevelVars {
 export enum LoopStack {
     End
     Frame(cond_bb: ptr, exit_bb: ptr, next: LoopStack)
+}
+
+export enum DeferStack {
+    End
+    Frame(body: Expr, next: DeferStack)
+}
+
+export fn ctx_with_defers(ctx: Ctx, defers: DeferStack) -> Ctx {
+    ctx with { defers }
 }
 
 export enum StructReg {

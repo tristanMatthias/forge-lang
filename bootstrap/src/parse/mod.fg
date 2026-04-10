@@ -106,6 +106,51 @@ fn exprs_to_params(exprs: ExprList) -> ParamList {
     }
 }
 
+// Check if an expression tree references the identifier `it`.
+// Used by `it` parameter sugar: `list.map(it * 2)` becomes
+// `list.map((it) -> { it * 2 })`.
+fn expr_contains_it(expr: Expr) -> bool {
+    match expr {
+        .Ident(n) -> n == "it"
+        .Binary(l, _, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .Unary(_, r) -> expr_contains_it(r)
+        .Logical(l, _, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .Call(callee, args) -> expr_contains_it(callee) || expr_list_contains_it(args)
+        .Grouping(inner) -> expr_contains_it(inner)
+        .IfExpr(c, t, e) -> expr_contains_it(c) || expr_contains_it(t) || expr_contains_it(e)
+        .Block(stmts) -> stmt_list_contains_it(stmts)
+        .Index(obj, idx) -> expr_contains_it(obj) || expr_contains_it(idx)
+        .FieldAccess(obj, _) -> expr_contains_it(obj)
+        .NullCoalesce(l, r) -> expr_contains_it(l) || expr_contains_it(r)
+        _ -> false
+    }
+}
+
+fn expr_list_contains_it(list: ExprList) -> bool {
+    match list {
+        .End -> false
+        .Node(e, next) -> expr_contains_it(e) || expr_list_contains_it(next)
+    }
+}
+
+fn stmt_list_contains_it(list: StmtList) -> bool {
+    match list {
+        .End -> false
+        .Node(stmt, next) -> {
+            let has = match stmt {
+                .Expr(e) -> expr_contains_it(e)
+                _ -> false
+            }
+            has || stmt_list_contains_it(next)
+        }
+    }
+}
+
+// Wrap an expression in an implicit `(it) -> { expr }` lambda.
+fn wrap_in_it_lambda(expr: Expr) -> Expr {
+    Expr.Lambda(ParamList.Node("it", "", ParamList.End), expr)
+}
+
 fn p_starts_with_upper(name: string) -> bool {
     if name.length < 1 {
         return false
@@ -164,6 +209,7 @@ fn p_keyword_kind(text: string) -> string {
     if text == "extern" { return "kw_extern" }
     if text == "break" { return "kw_break" }
     if text == "continue" { return "kw_continue" }
+    if text == "defer" { return "kw_defer" }
     if text == "trait" { return "kw_trait" }
     if text == "with" { return "kw_with" }
     return "identifier"
@@ -325,7 +371,7 @@ impl Parser {
         // disappear into the void.
         self.advance()
         while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") || self.check("kw_trait") {
+            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") || self.check("kw_trait") || self.check("kw_defer") {
                 break
             }
             self.advance()
@@ -374,6 +420,10 @@ impl Parser {
         if self.check("kw_continue") {
             self.advance()
             return Stmt.Continue
+        }
+
+        if self.check("kw_defer") {
+            return self.parse_defer_statement()
         }
 
         let expr = self.parse_expression()?
@@ -738,7 +788,19 @@ impl Parser {
             return ExprList.End
         }
 
-        let expr = self.parse_expression()?
+        let raw_expr = self.parse_expression()?
+        // `it` parameter sugar: if the expression uses `it` and isn't
+        // already a lambda, wrap it as `(it) -> { expr }`.
+        let expr = match raw_expr {
+            .Lambda(_, _) -> raw_expr
+            _ -> {
+                if expr_contains_it(raw_expr) {
+                    wrap_in_it_lambda(raw_expr)
+                } else {
+                    raw_expr
+                }
+            }
+        }
 
         if self.check("comma") {
             self.advance()
