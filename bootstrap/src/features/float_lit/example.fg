@@ -1,0 +1,18 @@
+// Float literal support — f64 values stored as i64 bit patterns.
+
+fn main() {
+    let x = 3.14
+    println(string(x))
+
+    let y = 2.718
+    println(string(y))
+
+    let z = 0.5
+    println(string(z))
+
+    let big = 1000000.123
+    println(string(big))
+
+    // Float in function args
+    println(string(42.0))
+}

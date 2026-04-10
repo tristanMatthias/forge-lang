@@ -791,7 +791,22 @@ int64_t forge_float_parse(const char* s) {
 const char* forge_float_to_string(int64_t bits) {
     double d;
     memcpy(&d, &bits, sizeof(d));
-    char* buf = (char*)malloc(32);
-    snprintf(buf, 32, "%g", d);
+    char* buf = (char*)malloc(64);
+    // Use shortest representation that round-trips: try %g first,
+    // fall back to %.15g if precision is lost.
+    snprintf(buf, 64, "%g", d);
+    double check;
+    sscanf(buf, "%lf", &check);
+    if (check != d) {
+        snprintf(buf, 64, "%.15g", d);
+    }
+    // Find decimal point
+    char* dot = strchr(buf, '.');
+    if (dot) {
+        char* end = buf + strlen(buf) - 1;
+        while (end > dot && *end == '0') end--;
+        if (end == dot) end++;  // keep at least one digit after dot
+        *(end + 1) = '\0';
+    }
     return buf;
 }

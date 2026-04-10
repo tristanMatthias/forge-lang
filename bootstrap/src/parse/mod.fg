@@ -869,6 +869,12 @@ impl Parser {
             return Expr.Number(value)
         }
 
+        if self.check("float") {
+            let value = self.current_lexeme
+            self.advance()
+            return Expr.FloatLit(value)
+        }
+
         if self.check("string") {
             let value = self.current_lexeme
             self.advance()
@@ -1564,6 +1570,8 @@ impl Parser {
             while p_is_digit(self.peek_char()) || self.peek_char() == "_" {
                 self.advance_char()
             }
+            self.set_current("float", self.source.substring(self.start, self.current))
+            return
         }
 
         self.set_current("number", self.source.substring(self.start, self.current))

@@ -449,6 +449,7 @@ fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
 fn check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Number(_) -> tc_er(tc, ValueType.Int)
+        .FloatLit(_) -> tc_er(tc, ValueType.Float)
         .String(_) -> tc_er(tc, ValueType.Str)
         .Bool(_) -> tc_er(tc, ValueType.Bool)
         .Null -> tc_er(tc, ValueType.Void)

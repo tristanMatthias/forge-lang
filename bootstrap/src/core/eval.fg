@@ -467,6 +467,7 @@ fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepResult {
 fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
     match expr {
         .Number(text) -> ok_result(runtime, value_number(render_number(float(text))))
+        .FloatLit(text) -> ok_result(runtime, value_number(text))
         .String(text) -> ok_result(runtime, value_string(unquote_string(text)))
         .Bool(text) -> ok_result(runtime, value_bool(text == "true"))
         .Null -> ok_result(runtime, value_null())

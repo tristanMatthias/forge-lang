@@ -278,6 +278,10 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(map_keys_arr)
     forge_llvm_add_function(m, "forge_map_keys_cstr", map_keys_type)
 
+    // Float support: forge_float_parse(ptr) → i64, forge_float_to_string(i64) → ptr
+    forge_llvm_add_function(m, "forge_float_parse", strlen_type)
+    forge_llvm_add_function(m, "forge_float_to_string", cl_i64_to_i64)
+
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
@@ -765,6 +769,11 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .Number(text) -> {
             let value = parse_int_literal(text)
             ok_emit(const_i64(ctx, value))
+        }
+        .FloatLit(text) -> {
+            let str_ptr = forge_llvm_build_global_string_ptr(ctx.builder, text, ".float_str")
+            let bits = call_1(ctx, get_fn(ctx, "forge_float_parse"), str_ptr, "float_bits")
+            ok_emit_typed(bits, ValueType.Float)
         }
         .Bool(text) -> {
             if text == "true" {
@@ -1355,9 +1364,13 @@ fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             if vtype_is_str(r.ty) {
                 return r
             }
-            // malloc(32)
+            // Float → string via forge_float_to_string(i64_bits) → ptr
+            if vtype_eq(r.ty, ValueType.Float) {
+                let str_ptr = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "f2s")
+                return ok_emit_str(to_i64(ctx, str_ptr, "f2s_i64"))
+            }
+            // Int → string via snprintf into a 32-byte malloc'd buffer.
             let buf = cg_malloc(ctx, const_i64(ctx, 32))
-            // snprintf(buf, 32, "%lld", value)
             let fmt = forge_llvm_build_global_string_ptr(ctx.builder, "%lld", ".i2s_fmt")
             call_4(ctx, get_fn(ctx, "snprintf"), buf, const_i64(ctx, 32), fmt, r.value, "")
             let result_i64 = to_i64(ctx, buf, "i2s_result")

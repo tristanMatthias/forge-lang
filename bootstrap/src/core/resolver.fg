@@ -352,6 +352,7 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     }
     match expr {
         .Number(_) -> r
+        .FloatLit(_) -> r
         .String(_) -> r
         .Bool(_) -> r
         .Null -> r
