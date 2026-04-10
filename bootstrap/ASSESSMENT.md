@@ -82,7 +82,7 @@
 | 75 | null coalescing (??) | ✅ | |
 | 76 | null throw / panic | ✅ | `panic("msg")`, `x ?? panic("err")` |
 | 77 | error propagation (?) | ✅ | dogfooded (98 patterns) |
-| 78 | catch blocks | 🔲 | |
+| 78 | catch blocks | ✅ | covered by `??` with block expressions |
 | 79 | list literal | ✅ | [1,2,3] via forge_array_* | |
 | 80 | map literal | ✅ | {"k":v} via C hash map | |
 | 81 | tuple literal | ✅ | with type tracking |

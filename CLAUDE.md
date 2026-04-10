@@ -31,6 +31,134 @@ cd forge/
 LLVM_SYS_191_PREFIX=/opt/homebrew/opt/llvm@19 cargo build --release
 ```
 
+## Adding a Feature to the Bootstrap Compiler — MANDATORY PROCESS
+
+Every new language feature MUST follow this process. No shortcuts, no
+skipping steps, no "I'll add tests later." The process exists because
+we've been burned by every shortcut listed here.
+
+### Phase 1: Plan & Scope
+
+1. **Check ASSESSMENT.md** — is this feature already listed? Mark it
+   in-progress. If it's not listed, add it.
+2. **Check the Rust compiler** — `forge/packages/forgec-rust/features/`
+   may already have a reference implementation with examples. Read it
+   for semantics and edge cases before writing a single line of code.
+3. **Identify seed impact** — does this feature add new enum variants,
+   change container types, or add new keywords? If yes, you need a
+   two-phase bootstrap. Plan Phase A (types only) and Phase B (usage).
+
+### Phase 2: Two-Phase Bootstrap (if needed)
+
+Required when: adding enum variants, new AST types, new keywords, or
+changing any type that appears in containers (ExprList, StmtList, etc.).
+
+**Phase A — Types only:**
+1. Add new types/variants at the END of their enums. Never in the middle.
+2. Do NOT use the new types anywhere yet.
+3. `make build` — must pass including self-compile check.
+4. Update seed: `./build/bs2 compile src/main.fg && cp src/main.fg.ll seed/seed.ll`
+5. Clean rebuild: `rm -rf build && make build` — must pass.
+
+**Phase B — Implementation:**
+1. Now implement parser, codegen, resolver, type checker using the new types.
+2. `make build` after every significant change — the self-compile check
+   catches bootstrap chain breaks immediately.
+3. Update seed when done: same as Phase A step 4-5.
+
+If `make build` fails the self-compile check, your changes broke the
+bootstrap chain. Fix before proceeding. Do NOT bypass this.
+
+### Phase 3: Implementation Checklist
+
+Every feature touches these files. Check each one:
+
+- [ ] **AST** (`src/core/ast.fg`) — new Expr/Stmt/Pattern variant (at END)
+- [ ] **Scanner** (`src/core/scanner.fg`) — new keyword in `keyword_kind` (if needed)
+- [ ] **Parser** (`src/parse/mod.fg` or `src/features/<name>/parser.fg`) — parse the new syntax
+- [ ] **Codegen** (`src/codegen/mod.fg` or `src/features/<name>/codegen.fg`) — emit LLVM IR
+- [ ] **Resolver** (`src/core/resolver.fg`) — resolve names in the new construct
+- [ ] **Type checker** (`src/typeck/mod.fg`) — type-check the new construct
+- [ ] **Eval** (`src/core/eval.fg`) — handle in tree-walk interpreter (can be stub with error message)
+- [ ] **AST renderer** (`render_expr`/`render_stmt` in `ast.fg`) — pretty-print for debugging
+
+### Phase 4: Testing — AGGRESSIVE
+
+This is where things break. Every feature must have:
+
+1. **Basic test** — the happy path works. Create `src/features/<name>/example.fg`
+   with matching `expected.out`.
+2. **Edge cases** — empty inputs, single elements, max values, null,
+   zero, negative numbers, empty strings.
+3. **Combinatorial tests** — the new feature combined with EVERY other
+   major feature. These are the real bug-finders:
+   - With closures/lambdas (capture semantics)
+   - Inside match arms (pattern context)
+   - With nullable types (? operator, ??, null coalesce)
+   - Inside if-expressions (both branches)
+   - With structs and enums (field access, variant matching)
+   - Inside for/while loops (break/continue interaction)
+   - With pipe operator (|>)
+   - With string templates (`${...}`)
+   - With list/map operations (.map, .filter, etc.)
+   - Nested inside itself (recursive structures)
+   - As function arguments and return values
+   - With `with` expressions (struct update)
+   - With `defer` statements
+4. **Regression test** — add to `regress/` with `.out` file. These run
+   on every commit via the pre-commit hook.
+5. **Error test** — if the feature has error cases, add to
+   `src/features/error_messages/examples/` with `/// expect-error:`.
+
+Run `make test` after writing tests. All 186+ tests must pass.
+
+### Phase 5: Documentation
+
+1. **Grammar** — create `src/features/<name>/grammar.md` describing the syntax.
+2. **WHY comment** — add a WHY block at the top of each new file explaining
+   what it does, when to read it, and when NOT to read it.
+3. **ASSESSMENT.md** — mark the feature as ✅ with a brief note.
+4. **Update feature count** in the ASSESSMENT.md header line.
+
+### Phase 6: Dogfood
+
+Once the feature works and tests pass:
+
+1. **Search the bootstrap source** for places that could use the new feature.
+   `grep` for patterns the new feature replaces.
+2. **Refactor** bootstrap code to use the new feature where it improves
+   clarity. This validates the feature in real code AND improves the
+   codebase. Examples:
+   - Added `with` expressions → refactor Ctx copy-helpers to use `with`
+   - Added `?` operator → refactor error handling to use `?`
+   - Added `is` keyword → refactor variant checks to use `is`
+   - Added float → use float where appropriate in the compiler
+3. **Update seed** after refactoring (the bootstrap source changed).
+4. `make test` — all tests still pass after dogfooding.
+
+### Phase 7: Commit
+
+1. Commit with a clear message: `feat: <feature name> — <what it does>`
+2. The pre-commit hook runs regression + selfhost check automatically.
+3. If the hook fails, fix before committing. Never `--no-verify`.
+
+### Anti-Patterns — NEVER DO THESE
+
+- **Skip tests** — "it works in the happy path" is not tested.
+- **Skip seed update** — the self-compile check exists for a reason.
+- **Add enum variants in the middle** — shifts all tags, breaks everything.
+- **Add keywords without Phase A** — the seed scanner won't recognize them.
+- **Skip the resolver** — resolver errors crash at codegen time with
+  unhelpful messages. Always handle new expressions in the resolver.
+- **Skip the type checker** — the `_ ->` wildcard catches new variants
+  silently but assigns wrong types.
+- **Skip eval** — a missing eval arm silently falls through. Add at
+  least an error stub.
+- **Test only the happy path** — combinatorial tests with other features
+  are where real bugs live.
+- **Refactor later** — dogfooding the feature immediately validates it
+  and prevents bit-rot.
+
 ### Self-Hosting Build Pipeline (Makefile)
 
 ## NEVER CONTEXT-BUDGET
