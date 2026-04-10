@@ -9,3 +9,4 @@ mod resolver
 mod eval
 mod cg
 mod llvm
+mod registry

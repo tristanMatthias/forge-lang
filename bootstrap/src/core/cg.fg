@@ -13,6 +13,7 @@
 //                                 or the dispatchers (codegen.fg)
 
 use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str}
+use core.registry.{ExprRegistry, StmtRegistry}
 
 // ── Codegen context ──
 //
@@ -40,6 +41,8 @@ export type Ctx = {
     top_level_vars: TopLevelVars,
     loops: LoopStack,
     defers: DeferStack,
+    expr_features: ExprRegistry,
+    stmt_features: StmtRegistry,
 }
 
 export fn null_ptr_val() -> ptr {

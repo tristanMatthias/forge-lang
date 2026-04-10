@@ -37,6 +37,22 @@ Every new language feature MUST follow this process. No shortcuts, no
 skipping steps, no "I'll add tests later." The process exists because
 we've been burned by every shortcut listed here.
 
+### CRITICAL RULE: Build What You Need
+
+**If you discover a missing language feature or infrastructure gap while
+working on something, STOP what you're doing and implement the missing
+piece FIRST.** Then come back to the original task. Do NOT work around
+missing features. Do NOT defer them. Do NOT hack a substitute.
+
+Examples:
+- Need extern fn declarations from Forge source? Add that feature first.
+- Need to read enum tags at runtime? Add ptr indexing first.
+- Need typed callbacks? Add typed function signatures first.
+- Need to iterate a registry? Make sure the iteration pattern works first.
+
+This is non-negotiable. Every workaround becomes permanent tech debt.
+Build the foundation, then build on it.
+
 ### Phase 1: Plan & Scope
 
 1. **Check ASSESSMENT.md** — is this feature already listed? Mark it

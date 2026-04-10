@@ -7,6 +7,7 @@
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display, SStmt, SExpr, sexpr_dummy}
 use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
+use core.registry.{ExprRegistry, StmtRegistry, build_expr_registry, build_stmt_registry, dispatch_expr, forge_expr_tag}
 
 // ── Direct C extern declarations ──
 //
@@ -319,6 +320,8 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         top_level_vars,
         loops: LoopStack.End,
         defers: DeferStack.End,
+        expr_features: build_expr_registry(),
+        stmt_features: build_stmt_registry(),
     }
 
     // Pass 2: emit each user-defined function's body, then emit
@@ -849,7 +852,24 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .MapLit(entries) -> emit_map_lit(ctx, env, entries)
         .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
         .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname)
-        _ -> err_emit("unsupported expression type")
+        _ -> {
+            // Feature registry dispatch: check if a registered feature
+            // handles this expression type.
+            let tag = forge_expr_tag(expr)
+            let result = dispatch_expr(ctx.expr_features, tag, ctx, env, expr)
+            if result != null {
+                return result!
+            }
+            err_emit("unsupported expression type")
+        }
+    }
+}
+
+// Registry-compatible wrapper: takes full Expr, destructures internally.
+export fn emit_is_check_feature(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr {
+        .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname)
+        _ -> err_emit("emit_is_check_feature called with wrong expr type")
     }
 }
 

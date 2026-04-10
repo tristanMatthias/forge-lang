@@ -1,0 +1,135 @@
+// WHY: central feature registry for the compiler. Each language feature
+// registers its emit/check/resolve handlers here instead of being
+// hardcoded into giant match statements in codegen/typeck/resolver.
+//
+// AGENT:
+//   read this file when:    adding a new language feature, understanding
+//                           how features are dispatched
+//   do NOT read this file when:   the issue is in a specific feature's
+//                                 implementation (go to features/<name>/)
+
+use core.ast.{Expr, Stmt, ValueType, VarEnv, TypeList}
+use core.cg.{Ctx, EmitResult, StmtResult, err_emit, err_stmt}
+use codegen.{emit_is_check_feature}
+
+// C-side helpers to extract enum discriminant tags.
+extern fn forge_expr_tag(expr: int) -> int
+extern fn forge_stmt_tag(stmt: int) -> int
+
+// ── Expr tag constants ──
+// These must match the order of variants in `enum Expr` in ast.fg.
+// ALWAYS keep in sync. If you add an Expr variant, add a constant here.
+
+export mut EXPR_NUMBER = 0
+export mut EXPR_STRING = 1
+export mut EXPR_BOOL = 2
+export mut EXPR_NULL = 3
+export mut EXPR_IDENT = 4
+export mut EXPR_ASSIGN = 5
+export mut EXPR_GROUPING = 6
+export mut EXPR_UNARY = 7
+export mut EXPR_BINARY = 8
+export mut EXPR_LOGICAL = 9
+export mut EXPR_CALL = 10
+export mut EXPR_STRUCT_LIT = 11
+export mut EXPR_FIELD_ACCESS = 12
+export mut EXPR_ENUM_CTOR = 13
+export mut EXPR_INDEX = 14
+export mut EXPR_BLOCK = 15
+export mut EXPR_MATCH_EXPR = 16
+export mut EXPR_FIELD_ASSIGN = 17
+export mut EXPR_IF_EXPR = 18
+export mut EXPR_NULL_COALESCE = 19
+export mut EXPR_OPTIONAL_CHAIN = 20
+export mut EXPR_TRY = 21
+export mut EXPR_TUPLE = 22
+export mut EXPR_TUPLE_INDEX = 23
+export mut EXPR_WITH = 24
+export mut EXPR_LIST_LIT = 25
+export mut EXPR_LAMBDA = 26
+export mut EXPR_MAP_LIT = 27
+export mut EXPR_SLICE = 28
+export mut EXPR_FLOAT_LIT = 29
+export mut EXPR_IS_CHECK = 30
+
+// ── Handler signatures ──
+// Each feature provides functions with these signatures.
+// The handler receives the FULL Expr/Stmt and destructures internally.
+
+export type ExprFeature = {
+    name: string,
+    tag: int,
+    emit: fn(Ctx, VarEnv, Expr) -> EmitResult,
+}
+
+export type StmtFeature = {
+    name: string,
+    tag: int,
+    emit: fn(Ctx, VarEnv, Stmt) -> StmtResult,
+}
+
+// ── Registry ──
+
+export enum ExprRegistry {
+    End
+    Node(feature: ExprFeature, next: ExprRegistry)
+}
+
+export enum StmtRegistry {
+    End
+    Node(feature: StmtFeature, next: StmtRegistry)
+}
+
+export fn register_expr(reg: ExprRegistry, name: string, tag: int, emit: fn(Ctx, VarEnv, Expr) -> EmitResult) -> ExprRegistry {
+    ExprRegistry.Node(ExprFeature { name, tag, emit }, reg)
+}
+
+export fn register_stmt(reg: StmtRegistry, name: string, tag: int, emit: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> StmtRegistry {
+    StmtRegistry.Node(StmtFeature { name, tag, emit }, reg)
+}
+
+// Dispatch: find handler for tag, call it. Returns null if no handler found.
+export fn dispatch_expr(reg: ExprRegistry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult? {
+    match reg {
+        .End -> null
+        .Node(feature, next) -> {
+            if feature.tag == tag {
+                return feature.emit(ctx, env, expr)
+            }
+            dispatch_expr(next, tag, ctx, env, expr)
+        }
+    }
+}
+
+export fn dispatch_stmt(reg: StmtRegistry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult? {
+    match reg {
+        .End -> null
+        .Node(feature, next) -> {
+            if feature.tag == tag {
+                return feature.emit(ctx, env, stmt)
+            }
+            dispatch_stmt(next, tag, ctx, env, stmt)
+        }
+    }
+}
+
+// ── Build the default registry ──
+// This is where features register themselves. Each feature adds its
+// handler to the registry list. To add a new feature:
+//   1. Add the handler function in features/<name>/codegen.fg
+//   2. Add a register call here
+//   3. Remove the match arm from emit_expr/emit_stmt in codegen/mod.fg
+
+export fn build_expr_registry() -> ExprRegistry {
+    mut reg = ExprRegistry.End
+    // Features register here. Each line replaces a match arm in emit_expr.
+    // To migrate a feature: create an export fn wrapper in its codegen.fg,
+    // register it here, remove the match arm from codegen/mod.fg.
+    reg = register_expr(reg, "is", EXPR_IS_CHECK, emit_is_check_feature)
+    reg
+}
+
+export fn build_stmt_registry() -> StmtRegistry {
+    mut reg = StmtRegistry.End
+    reg
+}

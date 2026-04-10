@@ -810,3 +810,16 @@ const char* forge_float_to_string(int64_t bits) {
     }
     return buf;
 }
+
+// ── Feature registry helpers ──
+// Extract the enum discriminant tag (first byte) from an enum value.
+// Enums are heap-allocated structs with {i8 tag, i64 field1, ...}.
+int64_t forge_expr_tag(int64_t expr_val) {
+    uint8_t* p = (uint8_t*)(uintptr_t)expr_val;
+    return (int64_t)p[0];
+}
+
+int64_t forge_stmt_tag(int64_t stmt_val) {
+    uint8_t* p = (uint8_t*)(uintptr_t)stmt_val;
+    return (int64_t)p[0];
+}
