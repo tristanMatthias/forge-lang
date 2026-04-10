@@ -73,8 +73,8 @@ export enum ValueType {
     Tuple(elements: TypeList),
     List(elem: ValueType),
     Map,
-    Fn,
-    Closure(num_captures: int),
+    Fn(ret: ValueType),
+    Closure(num_captures: int, ret: ValueType),
     Void,
 }
 
@@ -110,11 +110,15 @@ export fn vtype_is_map(t: ValueType) -> bool {
 }
 
 export fn vtype_is_fn(t: ValueType) -> bool {
-    match t { .Fn -> true, .Closure(_) -> true, _ -> false }
+    match t { .Fn(_) -> true, .Closure(_, _) -> true, _ -> false }
+}
+
+export fn vtype_fn_ret(t: ValueType) -> ValueType {
+    match t { .Fn(r) -> r, .Closure(_, r) -> r, _ -> ValueType.Int }
 }
 
 export fn vtype_closure_captures(t: ValueType) -> int {
-    match t { .Closure(n) -> n, _ -> 0 }
+    match t { .Closure(n, _) -> n, _ -> 0 }
 }
 
 export fn vtype_struct_name(t: ValueType) -> string {
@@ -136,8 +140,8 @@ export fn vtype_display(t: ValueType) -> string {
         .Tuple(_) -> "(tuple)"
         .List(_) -> "List"
         .Map -> "Map"
-        .Fn -> "fn"
-        .Closure(_) -> "fn"
+        .Fn(_) -> "fn"
+        .Closure(_, _) -> "fn"
         .Void -> "void"
     }
 }

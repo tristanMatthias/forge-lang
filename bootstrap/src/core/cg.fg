@@ -246,7 +246,12 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     if ty == "int" { return ValueType.Int }
     if ty == "bool" { return ValueType.Bool }
     if ty == "ptr" { return ValueType.Ptr }
-    if ty == "fn" { return ValueType.Fn }
+    if ty == "fn" { return ValueType.Fn(ValueType.Int) }
+    if ty.length > 4 && ty.substring(0, 4) == "fn->" {
+        let ret_name = ty.substring(4, ty.length)
+        let ret_type = translate_param_type(structs, enums, ret_name)
+        return ValueType.Fn(ret_type)
+    }
     if ty == "List" { return ValueType.List(ValueType.Int) }
     if ty == "Map" { return ValueType.Map }
     let enum_l = enum_reg_lookup(enums, ty)

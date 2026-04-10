@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_fn_ret}
 use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, const_i64, to_ptr, to_i64, ctx_with_fn, get_fn, call_0, call_2}
 use codegen.{emit_expr}
 
@@ -207,7 +207,9 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
         push_captured_values(ctx, captures, closure_arr, push_fn)
     }
     let closure_i64 = to_i64(ctx, closure_arr, "closure_i64")
-    EmitResult { value: closure_i64, ty: ValueType.Fn, had_error: false, error_message: "" }
+    // The lambda's return type becomes the Fn's return type.
+    // This lets callers know what type the function produces.
+    EmitResult { value: closure_i64, ty: ValueType.Fn(result.ty), had_error: false, error_message: "" }
 }
 
 fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val: ptr, idx: int) -> VarEnv {
@@ -255,23 +257,22 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_typ
 export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, args: ExprList) -> EmitResult {
     let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, alloca, name)
     let local = env_lookup(env, name)
+    let ret_ty = vtype_fn_ret(local.ty)
     let num_caps = vtype_closure_captures(local.ty)
     if num_caps > 0 {
-        return emit_closure_call(ctx, env, fn_i64, args, num_caps)
+        return emit_closure_call_typed(ctx, env, fn_i64, args, num_caps, ret_ty)
     }
-    // Look up what the fn returns based on fn type annotation.
-    // For fn(A) -> fn(B) -> C, the return is Fn.
-    // For now, check if this variable's type annotation suggests fn return.
-    emit_indirect_call_value(ctx, env, fn_i64, args)
+    emit_indirect_call_typed(ctx, env, fn_i64, args, ret_ty)
 }
 
 export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, name: string, args: ExprList, ty: ValueType) -> EmitResult {
     let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, global, name)
+    let ret_ty = vtype_fn_ret(ty)
     let num_caps = vtype_closure_captures(ty)
     if num_caps > 0 {
-        return emit_closure_call(ctx, env, fn_i64, args, num_caps)
+        return emit_closure_call_typed(ctx, env, fn_i64, args, num_caps, ret_ty)
     }
-    emit_indirect_call_value(ctx, env, fn_i64, args)
+    emit_indirect_call_typed(ctx, env, fn_i64, args, ret_ty)
 }
 
 // Call a closure with captures. The closure value is a ForgeArray:
@@ -313,6 +314,18 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
     let cap_val = call_2(ctx, get_fn(ctx, "forge_array_get"), closure_val, const_i64(ctx, i + 1), "cap")
     forge_llvm_value_array_set(val_arr, start_idx + i, cap_val)
     fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
+}
+
+fn emit_indirect_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> EmitResult {
+    let r = emit_indirect_call_value(ctx, env, fn_i64, args)
+    if r.had_error { return r }
+    ok_emit_typed(r.value, ret_ty)
+}
+
+fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> EmitResult {
+    let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)
+    if r.had_error { return r }
+    ok_emit_typed(r.value, ret_ty)
 }
 
 fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> EmitResult {

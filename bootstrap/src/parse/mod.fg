@@ -1099,11 +1099,9 @@ impl Parser {
     // Both generics and nullable are erased — we return the base name.
     fn consume_type(self, message: string) -> string? {
         // fn(T, T) -> T  as a type
+        // Returns "fn" for simple fn, "fn->RetType" for fn with return type
         if self.check("kw_fn") {
             self.advance()
-            // Skip the parameter list and return type — we just
-            // record "fn" as the type name. The bootstrap erases
-            // parameter types anyway (everything is i64).
             if self.check("left_paren") {
                 self.advance()
                 while !self.check("right_paren") && !self.check("eof") {
@@ -1113,7 +1111,8 @@ impl Parser {
             }
             if self.check("arrow") {
                 self.advance()
-                let _ = self.consume_type("expected return type after `->`")
+                let ret = self.consume_type("expected return type after `->`")?
+                return "fn->" + ret
             }
             return "fn"
         }

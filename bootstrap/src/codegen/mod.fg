@@ -1066,11 +1066,12 @@ fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult 
             // Expression callee: evaluate it and call indirectly.
             let callee_r = emit_expr(ctx, env, callee)
             if callee_r.had_error { return callee_r }
+            let ret_ty = vtype_fn_ret(callee_r.ty)
             let num_caps = vtype_closure_captures(callee_r.ty)
             if num_caps > 0 {
-                return emit_closure_call(ctx, env, callee_r.value, args, num_caps)
+                return emit_closure_call_typed(ctx, env, callee_r.value, args, num_caps, ret_ty)
             }
-            emit_indirect_call_value(ctx, env, callee_r.value, args)
+            emit_indirect_call_typed(ctx, env, callee_r.value, args, ret_ty)
         }
     }
 }
