@@ -133,9 +133,30 @@
 | 1 | Ctx copy-helper boilerplate | ✅ FIXED | `with` expressions eliminate field-listing |
 | 2 | String type tags (ty: string) | ✅ FIXED | ValueType enum, pattern matching, no CSV parsing |
 | 3 | String-based operator dispatch | ✅ FIXED | BinOp/UnOp/LogicOp enums, match dispatch |
-| 4 | emit_expr/emit_stmt dispatcher size | ⏳ OK for now | 25 arms, manageable to ~50 |
+| 4 | emit_expr/emit_stmt dispatcher size | ⏳ OK for now | 29 arms, manageable to ~50 |
 | 5 | VarEnv O(n) lookup | ⏳ OK for now | Not bottleneck yet |
 | 6 | Module preprocessor O(n²) concat | ⏳ OK for now | Fine for current codebase size |
+| 7 | Type logic scattered in codegen | 🔄 IN PROGRESS | Type checker added (Phase 1), codegen not yet simplified |
+| 8 | Function name collisions | ✅ FIXED | Compile-time detection added, CLAUDE.md protocol |
+| 9 | align 4 on i64 loads/stores | ✅ FIXED | LLVM wrapper now forces align 8 |
+| 10 | Non-entry-block allocas | ✅ FIXED | LLVM wrapper moves allocas to entry block |
+
+## New Architecture (since original assessment)
+
+**Diagnostic system:** structured error reporting with DiagCode enum,
+ErrorDef registry, ariadne-style rendering. Parser has error recovery
+(synchronize + continue). See `FEATURE_TYPE_SYSTEM.md`.
+
+**Type checker:** additive pass between resolver and codegen. Catches
+if-expr type mismatches, wrong argument counts. Runs during `check`
+mode. See `src/typeck/mod.fg`.
+
+**Bump allocator:** monotonic allocation for all struct/enum/with
+constructions. Prevents heap corruption. Stepping stone to real
+memory management. See `TECH_DEBT.md #15`.
+
+**Debug tooling:** LLDB protocol in CLAUDE.md, C-side trace/dump
+functions, duplicate function name detection at compile time.
 
 ---
 
