@@ -66,6 +66,23 @@ fn fn_type_has(fns: FnTypeEntry, name: string) -> bool {
     }
 }
 
+fn tc_fn_arity(fns: FnTypeEntry, name: string) -> int {
+    match fns {
+        .End -> 0
+        .Node(n, params, _, next) -> {
+            if n == name { return param_list_length(params) }
+            tc_fn_arity(next, name)
+        }
+    }
+}
+
+fn tc_count_args(list: ExprList) -> int {
+    match list {
+        .End -> 0
+        .Node(_, next) -> 1 + tc_count_args(next)
+    }
+}
+
 // ── Struct/Enum registries ──
 
 enum StructTypeReg {
@@ -146,7 +163,7 @@ fn tc_report(tc: TC, code: DiagCode, message: string) -> TC {
     tc with { bag: bag_report(tc.bag, diag_error(code, message, span_dummy())) }
 }
 
-fn er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
+fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
 
 // ── Type string translation ──
 
@@ -344,17 +361,17 @@ fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
 
 fn check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
-        .Number(_) -> er(tc, ValueType.Int)
-        .String(_) -> er(tc, ValueType.Str)
-        .Bool(_) -> er(tc, ValueType.Bool)
-        .Null -> er(tc, ValueType.Void)
+        .Number(_) -> tc_er(tc, ValueType.Int)
+        .String(_) -> tc_er(tc, ValueType.Str)
+        .Bool(_) -> tc_er(tc, ValueType.Bool)
+        .Null -> tc_er(tc, ValueType.Void)
         .Ident(name) -> {
             let ty = type_lookup(tc.types, name)
             // If not found in locals, check function registry
             if vtype_eq(ty, ValueType.Int) && fn_type_has(tc.fns, name) {
-                return er(tc, ValueType.Fn(fn_type_lookup(tc.fns, name)))
+                return tc_er(tc, ValueType.Fn(fn_type_lookup(tc.fns, name)))
             }
-            er(tc, ty)
+            tc_er(tc, ty)
         }
         .Binary(left, op, right) -> {
             let l = check_expr(tc, left)
@@ -363,67 +380,67 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Unary(_, right) -> {
             let r = check_expr(tc, right)
-            er(r.tc, r.ty)
+            tc_er(r.tc, r.ty)
         }
         .Logical(left, _, right) -> {
             let l = check_expr(tc, left)
             let r = check_expr(l.tc, right)
-            er(r.tc, ValueType.Bool)
+            tc_er(r.tc, ValueType.Bool)
         }
         .Grouping(inner) -> check_expr(tc, inner)
         .Call(callee, args) -> check_call(tc, callee, args)
         .StructLit(name, inits) -> {
             let checked = check_field_inits(tc, inits)
-            er(checked, ValueType.Struct(name))
+            tc_er(checked, ValueType.Struct(name))
         }
         .FieldAccess(obj, field) -> check_field_access(tc, obj, field)
         .EnumCtor(type_name, _, args) -> {
             let checked = check_expr_list(tc, args)
-            er(checked, ValueType.Enum(type_name))
+            tc_er(checked, ValueType.Enum(type_name))
         }
         .Index(obj, idx) -> {
             let o = check_expr(tc, obj)
             let i = check_expr(o.tc, idx)
             let elem_ty = vtype_list_elem(o.ty)
-            er(i.tc, elem_ty)
+            tc_er(i.tc, elem_ty)
         }
         .Block(body) -> check_block(tc, body)
         .MatchExpr(subject, arms) -> check_match_expr(tc, subject, arms)
         .FieldAssign(obj, _, value) -> {
             let o = check_expr(tc, obj)
             let v = check_expr(o.tc, value)
-            er(v.tc, v.ty)
+            tc_er(v.tc, v.ty)
         }
         .IfExpr(cond, then_branch, else_branch) -> {
             let c = check_expr(tc, cond)
             let t = check_expr(c.tc, then_branch)
             let e = check_expr(t.tc, else_branch)
             // Both branches should agree. Report if not.
-            if !vtype_eq(t.ty, e.ty) && !vtype_eq(t.ty, ValueType.Int) && !vtype_eq(e.ty, ValueType.Int) {
+            if !vtype_eq(t.ty, e.ty) {
                 let msg = "if-expression branches have different types: `" + vtype_display(t.ty) + "` vs `" + vtype_display(e.ty) + "`"
-                return er(tc_report(e.tc, DiagCode.TypeMismatch, msg), t.ty)
+                return tc_er(tc_report(e.tc, DiagCode.TypeMismatch, msg), t.ty)
             }
-            er(e.tc, t.ty)
+            tc_er(e.tc, t.ty)
         }
         .NullCoalesce(left, right) -> {
             let l = check_expr(tc, left)
             let r = check_expr(l.tc, right)
-            er(r.tc, r.ty)
+            tc_er(r.tc, r.ty)
         }
         .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
         .Try(inner) -> check_expr(tc, inner)
         .Tuple(elements) -> {
             let pair = check_expr_list_types(tc, elements)
-            er(pair.tc, ValueType.Tuple(pair.types))
+            tc_er(pair.tc, ValueType.Tuple(pair.types))
         }
         .TupleIndex(obj, idx) -> {
             let o = check_expr(tc, obj)
-            er(o.tc, vtype_tuple_at(o.ty, idx))
+            tc_er(o.tc, vtype_tuple_at(o.ty, idx))
         }
         .With(obj, overrides) -> {
             let o = check_expr(tc, obj)
             let checked = check_field_inits(o.tc, overrides)
-            er(checked, o.ty)
+            tc_er(checked, o.ty)
         }
         .ListLit(elements) -> check_list_lit(tc, elements)
         .Lambda(params, body) -> {
@@ -431,23 +448,23 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let with_params = tc_bind_params(inner, params)
             let b = check_expr(with_params, body)
             let after = tc_exit(b.tc)
-            er(after, ValueType.Fn(b.ty))
+            tc_er(after, ValueType.Fn(b.ty))
         }
         .MapLit(entries) -> {
             let checked = check_expr_list(tc, entries)
-            er(checked, ValueType.Map)
+            tc_er(checked, ValueType.Map)
         }
         .Slice(obj, start, end) -> {
             let o = check_expr(tc, obj)
             let s = check_expr(o.tc, start)
             let e = check_expr(s.tc, end)
-            er(e.tc, o.ty)
+            tc_er(e.tc, o.ty)
         }
         .Assign(name, value) -> {
             let v = check_expr(tc, value)
-            er(v.tc, v.ty)
+            tc_er(v.tc, v.ty)
         }
-        _ -> er(tc, ValueType.Int)
+        _ -> tc_er(tc, ValueType.Int)
     }
 }
 
@@ -458,17 +475,17 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
         .Add -> {
             // String + anything = String
             if vtype_eq(left, ValueType.Str) || vtype_eq(right, ValueType.Str) {
-                return er(tc, ValueType.Str)
+                return tc_er(tc, ValueType.Str)
             }
-            er(tc, ValueType.Int)
+            tc_er(tc, ValueType.Int)
         }
-        .Eq -> er(tc, ValueType.Bool)
-        .Ne -> er(tc, ValueType.Bool)
-        .Lt -> er(tc, ValueType.Bool)
-        .Le -> er(tc, ValueType.Bool)
-        .Gt -> er(tc, ValueType.Bool)
-        .Ge -> er(tc, ValueType.Bool)
-        _ -> er(tc, ValueType.Int)  // Sub, Mul, Div, Rem, bitwise
+        .Eq -> tc_er(tc, ValueType.Bool)
+        .Ne -> tc_er(tc, ValueType.Bool)
+        .Lt -> tc_er(tc, ValueType.Bool)
+        .Le -> tc_er(tc, ValueType.Bool)
+        .Gt -> tc_er(tc, ValueType.Bool)
+        .Ge -> tc_er(tc, ValueType.Bool)
+        _ -> tc_er(tc, ValueType.Int)  // Sub, Mul, Div, Rem, bitwise
     }
 }
 
@@ -479,28 +496,34 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
         .Ident(name) -> {
             let checked = check_expr_list(tc, args)
             // Built-in functions
-            if name == "string" { return er(checked, ValueType.Str) }
-            if name == "int" { return er(checked, ValueType.Int) }
+            if name == "string" { return tc_er(checked, ValueType.Str) }
+            if name == "int" { return tc_er(checked, ValueType.Int) }
             if name == "println" || name == "eprintln" || name == "print" || name == "eprint" {
-                return er(checked, ValueType.Void)
+                return tc_er(checked, ValueType.Void)
             }
             // User-defined function
             if fn_type_has(checked.fns, name) {
-                return er(checked, fn_type_lookup(checked.fns, name))
+                let expected = tc_fn_arity(checked.fns, name)
+                let actual = tc_count_args(args)
+                if expected != actual {
+                    let msg = "`" + name + "` expects " + string(expected) + " argument" + if expected != 1 { "s" } else { "" } + ", got " + string(actual)
+                    return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, name))
+                }
+                return tc_er(checked, fn_type_lookup(checked.fns, name))
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)
             if vtype_eq(var_ty, ValueType.Int) {
-                return er(checked, ValueType.Int) // unknown
+                return tc_er(checked, ValueType.Int) // unknown
             }
-            er(checked, vtype_fn_ret(var_ty))
+            tc_er(checked, vtype_fn_ret(var_ty))
         }
         .FieldAccess(obj, method) -> check_method_call(tc, obj, method, args)
         _ -> {
             // Expression callee (e.g. compose(f,g)(x))
             let c = check_expr(tc, callee)
             let checked = check_expr_list(c.tc, args)
-            er(checked, vtype_fn_ret(c.ty))
+            tc_er(checked, vtype_fn_ret(c.ty))
         }
     }
 }
@@ -513,38 +536,38 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
 
     // String methods
     if vtype_eq(o.ty, ValueType.Str) {
-        if method == "length" { return er(checked_args, ValueType.Int) }
+        if method == "length" { return tc_er(checked_args, ValueType.Int) }
         if method == "substring" || method == "trim" || method == "upper" || method == "lower" || method == "replace" {
-            return er(checked_args, ValueType.Str)
+            return tc_er(checked_args, ValueType.Str)
         }
         if method == "contains" || method == "starts_with" || method == "ends_with" {
-            return er(checked_args, ValueType.Bool)
+            return tc_er(checked_args, ValueType.Bool)
         }
-        if method == "index_of" { return er(checked_args, ValueType.Int) }
-        if method == "split" { return er(checked_args, ValueType.List(ValueType.Str)) }
-        if method == "char_code" { return er(checked_args, ValueType.Int) }
+        if method == "index_of" { return tc_er(checked_args, ValueType.Int) }
+        if method == "split" { return tc_er(checked_args, ValueType.List(ValueType.Str)) }
+        if method == "char_code" { return tc_er(checked_args, ValueType.Int) }
     }
 
     // List methods
     if vtype_eq(o.ty, ValueType.List(ValueType.Int)) || vtype_eq(o.ty, ValueType.List(ValueType.Str)) {
         let elem = vtype_list_elem(o.ty)
-        if method == "length" { return er(checked_args, ValueType.Int) }
-        if method == "push" { return er(checked_args, ValueType.Void) }
-        if method == "pop" { return er(checked_args, elem) }
-        if method == "get" { return er(checked_args, elem) }
-        if method == "map" { return er(checked_args, ValueType.List(ValueType.Int)) } // TODO: infer lambda ret
-        if method == "filter" { return er(checked_args, o.ty) }
-        if method == "reduce" { return er(checked_args, ValueType.Int) }
-        if method == "foreach" { return er(checked_args, ValueType.Void) }
+        if method == "length" { return tc_er(checked_args, ValueType.Int) }
+        if method == "push" { return tc_er(checked_args, ValueType.Void) }
+        if method == "pop" { return tc_er(checked_args, elem) }
+        if method == "get" { return tc_er(checked_args, elem) }
+        if method == "map" { return tc_er(checked_args, ValueType.List(ValueType.Int)) } // TODO: infer lambda ret
+        if method == "filter" { return tc_er(checked_args, o.ty) }
+        if method == "reduce" { return tc_er(checked_args, ValueType.Int) }
+        if method == "foreach" { return tc_er(checked_args, ValueType.Void) }
     }
 
     // Map methods
     if vtype_eq(o.ty, ValueType.Map) {
-        if method == "get" { return er(checked_args, ValueType.Str) }
-        if method == "has" { return er(checked_args, ValueType.Bool) }
-        if method == "set" { return er(checked_args, ValueType.Void) }
-        if method == "keys" { return er(checked_args, ValueType.List(ValueType.Str)) }
-        if method == "length" { return er(checked_args, ValueType.Int) }
+        if method == "get" { return tc_er(checked_args, ValueType.Str) }
+        if method == "has" { return tc_er(checked_args, ValueType.Bool) }
+        if method == "set" { return tc_er(checked_args, ValueType.Void) }
+        if method == "keys" { return tc_er(checked_args, ValueType.List(ValueType.Str)) }
+        if method == "length" { return tc_er(checked_args, ValueType.Int) }
     }
 
     // Struct method — look up in fn registry as TypeName__method
@@ -555,12 +578,12 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     if struct_name.length > 0 {
         let qualified = struct_name + "__" + method
         if fn_type_has(checked_args.fns, qualified) {
-            return er(checked_args, fn_type_lookup(checked_args.fns, qualified))
+            return tc_er(checked_args, fn_type_lookup(checked_args.fns, qualified))
         }
     }
 
     // Fallback
-    er(checked_args, ValueType.Int)
+    tc_er(checked_args, ValueType.Int)
 }
 
 // ── Field access type inference ──
@@ -569,11 +592,11 @@ fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     let o = check_expr(tc, obj)
     // String .length
     if vtype_eq(o.ty, ValueType.Str) && field == "length" {
-        return er(o.tc, ValueType.Int)
+        return tc_er(o.tc, ValueType.Int)
     }
     // List .length
     if vtype_eq(o.ty, ValueType.List(ValueType.Int)) || vtype_eq(o.ty, ValueType.List(ValueType.Str)) {
-        if field == "length" { return er(o.tc, ValueType.Int) }
+        if field == "length" { return tc_er(o.tc, ValueType.Int) }
     }
     // Struct field
     let struct_name = match o.ty {
@@ -583,10 +606,10 @@ fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     if struct_name.length > 0 {
         let fields = struct_type_lookup(o.tc.structs, struct_name)
         let field_ty = field_type_in(o.tc, fields, field)
-        return er(o.tc, field_ty)
+        return tc_er(o.tc, field_ty)
     }
     // Map .get is handled in method call
-    er(o.tc, ValueType.Int)
+    tc_er(o.tc, ValueType.Int)
 }
 
 fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
@@ -603,11 +626,11 @@ fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
 
 fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
     match elements {
-        .End -> er(tc, ValueType.List(ValueType.Int))
+        .End -> tc_er(tc, ValueType.List(ValueType.Int))
         .Node(first, _) -> {
             let r = check_expr(tc, first)
             let checked = check_expr_list(r.tc, elements)
-            er(checked, ValueType.List(r.ty))
+            tc_er(checked, ValueType.List(r.ty))
         }
     }
 }
@@ -618,12 +641,12 @@ fn check_block(tc: TC, stmts: StmtList) -> ExprResult {
     let inner = tc_enter(tc)
     let pair = check_block_stmts(inner, stmts)
     let after = tc_exit(pair.tc)
-    er(after, pair.ty)
+    tc_er(after, pair.ty)
 }
 
 fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
     match stmts {
-        .End -> er(tc, ValueType.Void)
+        .End -> tc_er(tc, ValueType.Void)
         .Node(stmt, next) -> {
             match next {
                 .End -> {
@@ -632,7 +655,7 @@ fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
                         .Expr(e) -> check_expr(tc, e)
                         _ -> {
                             let checked = check_stmt(tc, stmt)
-                            er(checked, ValueType.Void)
+                            tc_er(checked, ValueType.Void)
                         }
                     }
                 }
@@ -654,7 +677,7 @@ fn check_match_expr(tc: TC, subject: Expr, arms: MatchArmList) -> ExprResult {
 
 fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> ExprResult {
     match arms {
-        .End -> er(tc, first_ty)
+        .End -> tc_er(tc, first_ty)
         .Node(_, guard, body, next) -> {
             let inner = tc_enter(tc)
             let with_guard = if guard != null {

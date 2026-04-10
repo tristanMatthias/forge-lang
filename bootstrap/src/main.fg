@@ -217,8 +217,11 @@ fn main() {
             }
             fail(resolved.error_message)
         }
-        // Type check — silent for now (render crashes on some inputs)
-        typecheck_program(parsed.stmts!)
+        // Type check
+        let tc_result = typecheck_program(parsed.stmts!)
+        if bag_has_errors(tc_result.bag) {
+            render_bag(source, path, tc_result.bag)
+        }
         println("ok")
         return
     }

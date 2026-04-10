@@ -756,6 +756,35 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 
 ---
 
+## Current Status (April 10, 2026)
+
+### Phase 0: DONE
+- ✅ Span, Diagnostic, DiagnosticBag types
+- ✅ DiagCode enum with ErrorDef single-match registry
+- ✅ Beautiful renderer (ariadne box + miette symbols + gray chrome)
+- ✅ Error recovery (parser synchronizes + continues)
+- ✅ `\x` hex escapes in lexer (for ANSI codes)
+- ✅ Levenshtein distance for suggestions
+- ⚠️ Resolver bag reporting disabled (TECH_DEBT #20)
+- ⚠️ render_bag removed from compile path (TECH_DEBT #21)
+- ⚠️ No source spans on AST nodes (TECH_DEBT #18)
+
+### Phase 1: IN PROGRESS
+- ✅ Type checker created (`src/typeck/mod.fg`, top-level module)
+- ✅ Walks ALL expression/statement forms
+- ✅ Function body checking works
+- ✅ If-expr branch type mismatch detection
+- ✅ Wrong argument count detection
+- ✅ Wired into `check` command with rendering
+- ⚠️ Struct field access check doesn't trigger (TECH_DEBT #17)
+- ⚠️ `bind_params` inlined as workaround (TECH_DEBT #19)
+- ❌ No type annotations on AST nodes
+- ❌ Codegen still has all vtype_is_* calls (0 removed)
+- ❌ No source spans in type checker diagnostics
+- ❌ Type checker silent during compile (only runs in check mode)
+
+### Phase 2: NOT STARTED
+
 ## Success Metrics
 
 After Phase 1:

@@ -243,6 +243,64 @@ See `docs/idea_scoped_abstraction_levels.md` for the full vision.
 in the real compiler. The bump allocator is bootstrap-only — it never
 ships in any user-facing binary.
 
+### 17. Type checker: struct field access doesn't detect invalid fields
+
+**Severity:** medium (type checker false negative)
+**Impact:** `f.nonexistent_field` on a struct doesn't report an error.
+The `check_field_access` function has the code to detect this, but
+`ExprResult.ty` returns `Int` instead of `Struct("Foo")` for struct
+literal expressions. The StructLit arm in `check_expr` creates the
+correct `ValueType.Struct(name)` in the IR (tag 4), but at runtime
+the tag reads as 0 (Int). Root cause unknown — possibly related to
+the `malloc` vs `forge_bump_alloc` allocator mismatch (some struct
+constructors still use system malloc).
+
+### 18. Type checker: no source spans on diagnostics
+
+**Severity:** medium (DX limitation)
+**Impact:** type checker errors show the error code and message but
+no source location (uses `span_dummy()`). The parser tracks byte
+offsets (`current_start`) but doesn't attach spans to AST nodes.
+Adding spans requires modifying the Expr/Stmt enums which breaks
+every match site (~100+ locations).
+
+**Fix path:** add a `Span` field to Expr and Stmt (or a parallel
+SpanTable indexed by ExprId). Update all construction sites in the
+parser to record spans.
+
+### 19. Type checker: `bind_params` inlined in Function arm
+
+**Severity:** low (workaround for fixed bug)
+**Impact:** the typeck Function arm inlines param binding instead of
+calling `tc_bind_params`. This was a workaround for the name collision
+bug (#14) which is now fixed. The inline can be replaced with a
+proper function call.
+
+### 20. Resolver bag reporting disabled
+
+**Severity:** medium (resolver errors don't show structured diagnostics)
+**Impact:** `resolve_report` builds Diagnostics but doesn't add them
+to the bag. The render_bag call for resolver errors was removed from
+the compile path. Resolver errors show only the old-style string
+message.
+
+### 21. render_bag removed from compile path
+
+**Severity:** medium (compile-mode errors lack structured diagnostics)
+**Impact:** the compile command's parse error path doesn't call
+`render_bag`. Only the check command renders structured diagnostics.
+This was removed because the renderer crashed on large inputs during
+the typeck bootstrap.
+
+### 22. Remaining `malloc` calls in struct/enum constructors
+
+**Severity:** low (doesn't affect correctness with bump allocator)
+**Impact:** 137 `malloc` calls remain in the seed (enum and struct
+constructors). These should use `forge_bump_alloc` via `cg_malloc`.
+The `malloc_struct_bytes` and `malloc_enum_bytes` functions were
+fixed, but the SEED hasn't been fully regenerated to eliminate all
+old `malloc` patterns.
+
 ## Closed (previously from Rust host era)
 
 Items 1–9 from the old TECH_DEBT.md related to the Rust host compiler

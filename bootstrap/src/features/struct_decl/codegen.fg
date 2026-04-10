@@ -1,7 +1,7 @@
 // WHY: emits struct literal construction and field-filling.
 
 use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup, const_i64, to_i64, cg_malloc}
 use codegen.{emit_expr}
 
 
@@ -23,17 +23,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
 
 fn malloc_struct_bytes(ctx: Ctx, fields: FieldList) -> ptr {
     let count = field_list_length(fields)
-    let size = forge_llvm_const_int(ctx.i64_type, count * 8, 0)
-    let malloc_fn = forge_llvm_get_named_function(ctx.module, "malloc")
-    let pa = forge_llvm_type_array_new(1)
-    forge_llvm_type_array_set(pa, 0, ctx.i64_type)
-    let malloc_type = forge_llvm_function_type(ctx.ptr_type, pa, 1, 0)
-    forge_llvm_type_array_free(pa)
-    let arr = forge_llvm_value_array_new(1)
-    forge_llvm_value_array_set(arr, 0, size)
-    let buf = forge_llvm_build_call(ctx.builder, malloc_type, malloc_fn, arr, 1, "struct_buf")
-    forge_llvm_value_array_free(arr)
-    buf
+    cg_malloc(ctx, const_i64(ctx, count * 8))
 }
 
 fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> EmitResult {
