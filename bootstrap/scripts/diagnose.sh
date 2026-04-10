@@ -500,14 +500,9 @@ mode_rank() {
 
 mode_regress() {
   ensure_bs2
-  local pass=0 fail=0
   shopt -s nullglob
 
-  # Build the test list from three locations:
-  #   1. src/features/*/tests/*.fg   — per-feature tests
-  #   2. src/features/*/example.fg   — feature examples
-  #   3. tests/*.fg                  — cross-cutting + combo tests
-  #   4. regress/*/main.fg           — multi-file fixtures (legacy)
+  # Build the test list
   local test_specs=()
   for fg in "$BOOTSTRAP_DIR"/src/features/*/tests/*.fg; do
     test_specs+=("$fg")
@@ -524,44 +519,91 @@ mode_regress() {
     fi
   done
 
+  # Phase 1: Compile all tests with bs2 (sequential — fast, <1ms each)
+  local names=() expecteds=() fgs=() bins=() slugs=()
   for fg in "${test_specs[@]}"; do
-    local name expected actual bin
+    local name expected slug
     if [[ "$fg" == */main.fg ]]; then
-      # Directory test: name from the directory, .out lives next to main.fg.
       local expected_dir; expected_dir=$(dirname "$fg")
       name=$(basename "$expected_dir")
       expected="$expected_dir/expected.out"
     elif [[ "$fg" == */example.fg ]]; then
-      # Feature example: name from the feature dir, .out is expected.out.
       local feat_dir; feat_dir=$(dirname "$fg")
       name=$(basename "$feat_dir")
       expected="$feat_dir/expected.out"
     else
-      # Named test: .out is a sibling file with same basename.
       name=$(basename "$fg" .fg)
       expected="$(dirname "$fg")/$name.out"
     fi
-    [ -f "$expected" ] || { warn "$name: missing .out, skipping"; continue; }
-    # Compile, link, run with bs2, compare against expected output.
-    bin="$BUILD_DIR/regress_$name.bin"
-    if ! "$BS2" compile "$fg" >"$BUILD_DIR/regress_$name.codegen.log" 2>&1; then
-      err "$name: codegen failed"
+    [ -f "$expected" ] || continue
+    slug=$(echo "$fg" | sed 's|[/.]|_|g')
+    names+=("$name")
+    expecteds+=("$expected")
+    fgs+=("$fg")
+    bins+=("$BUILD_DIR/regress_${slug}.bin")
+    slugs+=("$slug")
+  done
+
+  # Compile all .fg → .ll (sequential — bs2 is fast)
+  local compile_ok=()
+  for i in "${!fgs[@]}"; do
+    if "$BS2" compile "${fgs[$i]}" >"$BUILD_DIR/regress_${slugs[$i]}.codegen.log" 2>&1; then
+      compile_ok+=("1")
+    else
+      compile_ok+=("0")
+    fi
+  done
+
+  # Phase 2: Link + run in parallel (this is the slow part)
+  local results_dir="$BUILD_DIR/_regress_results"
+  rm -rf "$results_dir"
+  mkdir -p "$results_dir"
+
+  link_and_run() {
+    local fg="$1" bin="$2" expected="$3" slug="$4" compiled="$5" results_dir="$6"
+    if [ "$compiled" != "1" ]; then
+      echo "FAIL codegen failed" > "$results_dir/$slug"; return
+    fi
+    if ! link_ll "$fg.ll" "$bin" "$BUILD_DIR/regress_${slug}.link.log" 2>/dev/null; then
+      echo "FAIL link failed" > "$results_dir/$slug"; return
+    fi
+    local actual
+    actual=$("$bin" 2>&1) || true
+    if [ "$actual" = "$(cat "$expected")" ]; then
+      echo "PASS" > "$results_dir/$slug"
+    else
+      echo "FAIL output mismatch" > "$results_dir/$slug"
+    fi
+  }
+  export -f link_and_run link_ll
+  export BUILD_DIR LLC RUNTIME_O STDLLVM_A LLVM_PREFIX
+
+  local njobs
+  njobs=$(sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+
+  # Link + run ALL tests in parallel (let OS handle scheduling)
+  for i in "${!fgs[@]}"; do
+    link_and_run "${fgs[$i]}" "${bins[$i]}" "${expecteds[$i]}" "${slugs[$i]}" "${compile_ok[$i]}" "${results_dir}" &
+  done
+  wait
+
+  # Phase 3: Collect results
+  local pass=0 fail=0 idx=0
+  for i in "${!slugs[@]}"; do
+    local result_file="$results_dir/${slugs[$i]}"
+    if [ ! -f "$result_file" ]; then
+      err "${names[$i]}: no result"
       fail=$((fail+1))
       continue
     fi
-    link_ll "$fg.ll" "$bin" "$BUILD_DIR/regress_$name.link.log" 2>/dev/null \
-      || { err "$name: link failed"; fail=$((fail+1)); continue; }
-    actual=$("$bin" 2>&1) || true
-
-    if [ "$actual" = "$(cat "$expected")" ]; then
-      ok "$name"
-      pass=$((pass+1))
-    else
-      err "$name: output mismatch"
-      diff -u <(echo "$actual") "$expected" | sed 's/^/    /' >&2
-      fail=$((fail+1))
-    fi
+    local result
+    result=$(cat "$result_file")
+    case "$result" in
+      PASS) ok "${names[$i]}"; pass=$((pass+1)) ;;
+      FAIL*) err "${names[$i]}: ${result#FAIL }"; fail=$((fail+1)) ;;
+    esac
   done
+  rm -rf "$results_dir"
   echo
   printf "regress: ${C_GREEN}%d passed${C_RESET}, ${C_RED}%d failed${C_RESET}\n" "$pass" "$fail"
   [ "$fail" -eq 0 ]
