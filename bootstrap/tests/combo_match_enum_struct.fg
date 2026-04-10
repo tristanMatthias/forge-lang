@@ -1,0 +1,42 @@
+// Literal match + enum + struct + template combos
+type Config = { mode: string, level: int }
+
+enum Action {
+    Start(config: Config)
+    Stop
+    Restart(delay: int)
+}
+
+fn describe_action(a: Action) -> string {
+    match a {
+        .Start(cfg) -> {
+            let mode_desc = match cfg.mode {
+                "debug" -> "DEBUG"
+                "release" -> "RELEASE"
+                _ -> "UNKNOWN"
+            }
+            `Starting in ${mode_desc} mode (level ${string(cfg.level)})`
+        }
+        .Stop -> "Stopping"
+        .Restart(d) -> `Restarting in ${string(d)}s`
+    }
+}
+
+println(describe_action(Action.Start(Config { mode: "debug", level: 3 })))
+println(describe_action(Action.Start(Config { mode: "release", level: 1 })))
+println(describe_action(Action.Stop))
+println(describe_action(Action.Restart(5)))
+
+// Literal match as expression in template
+fn badge(status: int) -> string {
+    let icon = match status {
+        200 -> "✓"
+        404 -> "✗"
+        500 -> "!"
+        _ -> "?"
+    }
+    `[${icon}] ${string(status)}`
+}
+println(badge(200))
+println(badge(404))
+println(badge(999))

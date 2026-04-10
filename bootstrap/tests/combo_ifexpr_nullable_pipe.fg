@@ -1,0 +1,33 @@
+// If-expr type in template
+let x = 42
+println(`value: ${if x > 0 { "positive" } else { "negative" }}`)
+println(`double: ${string(if x > 20 { x * 2 } else { x })}`)
+
+// If-expr chained with pipe
+fn double(n: int) -> int { n * 2 }
+fn negate(n: int) -> int { -n }
+let piped = (if true { 5 } else { 10 }) |> double |> negate
+println(string(piped))
+
+// Nullable + if-expr
+fn safe_div(a: int, b: int) -> int? {
+    if b == 0 { return null }
+    a / b
+}
+let r1 = safe_div(10, 2) ?? -1
+let r2 = safe_div(10, 0) ?? -1
+println(string(r1))
+println(string(r2))
+
+// Nullable + template
+fn greet(name: string?) -> string {
+    `hello ${name ?? "stranger"}`
+}
+println(greet("Alice"))
+println(greet(null))
+
+// If-expr returning struct
+type Pair = { a: int, b: int }
+let p = if x > 0 { Pair { a: 1, b: 2 } } else { Pair { a: 0, b: 0 } }
+println(string(p.a))
+println(string(p.b))

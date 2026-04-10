@@ -1,0 +1,33 @@
+// Defer + closure: defer doesn't leak into lambda
+mut log = ""
+fn process(items: List) -> string {
+    defer log = log + "[cleanup]"
+    let results = items.map(it * 2)
+    if results.length == 0 { return "empty" }
+    string(results[0])
+}
+println(process([5, 10]))
+println(log)
+
+// Defer with multiple returns
+fn classify(n: int) -> string {
+    defer println("classify done")
+    if n > 100 { return "huge" }
+    if n > 10 { return "big" }
+    if n > 0 { return "small" }
+    "zero"
+}
+println(classify(200))
+println(classify(50))
+println(classify(3))
+println(classify(0))
+
+// Defer + lambda with return inside
+fn join_with(items: List, sep: string) -> string {
+    defer println("join done")
+    items.reduce("", (acc, x) -> {
+        if acc == "" { return string(x) }
+        acc + sep + string(x)
+    })
+}
+println(join_with([1, 2, 3], "-"))

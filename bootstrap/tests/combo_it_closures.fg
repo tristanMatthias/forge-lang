@@ -1,0 +1,21 @@
+// it + filter + map chain
+let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+let result = nums.filter(it > 5).map(it * 100)
+println(string(result[0]))
+println(string(result[1]))
+println(string(result.length))
+
+// it with mutation via foreach
+mut sum = 0
+nums.foreach(sum = sum + it)
+println(string(sum))
+
+// it mixed with explicit lambda
+let mixed = nums.map(it + 1).filter((x) -> { x > 5 })
+println(string(mixed[0]))
+println(string(mixed.length))
+
+// Closure capturing + it
+mut total = 0
+[10, 20, 30].foreach(total = total + it)
+println(string(total))

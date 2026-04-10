@@ -1,0 +1,38 @@
+// Immutability + with + pipe + match guard
+type Vec = { x: int, y: int }
+let v = Vec { x: 1, y: 2 }
+
+// with creates new, doesn't mutate
+let v2 = v with { x: 10 }
+println(string(v.x))
+println(string(v2.x))
+
+// Match guard + classify via function
+fn classify(n: int) -> string {
+    match n {
+        _ if n > 100 -> "huge"
+        _ if n > 10 -> "big"
+        _ if n > 0 -> "small"
+        _ if n == 0 -> "zero"
+        _ -> "negative"
+    }
+}
+let values = [150, 50, 5, 0, -10]
+let labels = values.map((x) -> { classify(x) })
+println(labels[0])
+println(labels[1])
+println(labels[2])
+println(labels[3])
+println(labels[4])
+
+// with in if-expression
+let base = Vec { x: 0, y: 0 }
+let moved = if true { base with { x: 100 } } else { base with { y: 100 } }
+println(`${string(moved.x)},${string(moved.y)}`)
+
+// Pipe with struct
+fn scale(v: Vec, factor: int) -> Vec {
+    v with { x: v.x * factor, y: v.y * factor }
+}
+let v3 = scale(Vec { x: 3, y: 4 }, 5)
+println(`${string(v3.x)},${string(v3.y)}`)

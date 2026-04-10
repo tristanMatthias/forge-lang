@@ -1,0 +1,31 @@
+// String methods chained with it parameter
+let words = ["hello", "world", "foo", "bar"]
+let uppers = words.map(it.upper())
+println(uppers[0])
+println(uppers[1])
+
+// String contains + filter with it
+let items = ["apple pie", "banana split", "apple sauce", "cherry"]
+let apples = items.filter(it.contains("apple"))
+println(string(apples.length))
+println(apples[0])
+println(apples[1])
+
+// Template + match on int literal
+let count = 3
+let desc = match count {
+    0 -> "no items"
+    1 -> "one item"
+    _ -> `${string(count)} items`
+}
+println(desc)
+
+// String split + map + template
+let csv = "Alice,30,Engineer"
+let parts = csv.split(",")
+println(`name=${parts[0]}, age=${parts[1]}, role=${parts[2]}`)
+
+// replace + trim + upper chain
+let messy = "  hello world  "
+let clean = messy.trim().replace("world", "forge").upper()
+println(clean)

@@ -40,6 +40,10 @@ export type Parser = {
     // Disabled inside match-arm bodies so the next sibling pattern
     // (e.g. `.Variant(x)`) isn't gobbled into the previous body.
     mut allow_dot_postfix: bool,
+    // When true, expressions containing `it` in arg lists are wrapped
+    // in implicit lambdas. Set by method call parsing (.map, etc.),
+    // NOT by regular function calls (prevents double-wrapping).
+    mut allow_it_sugar: bool,
 }
 
 export fn parse_expression_source(source: string) -> ParseResult {
@@ -121,7 +125,18 @@ fn expr_contains_it(expr: Expr) -> bool {
         .Block(stmts) -> stmt_list_contains_it(stmts)
         .Index(obj, idx) -> expr_contains_it(obj) || expr_contains_it(idx)
         .FieldAccess(obj, _) -> expr_contains_it(obj)
+        .FieldAssign(obj, _, val) -> expr_contains_it(obj) || expr_contains_it(val)
+        .Assign(_, val) -> expr_contains_it(val)
         .NullCoalesce(l, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .OptionalChain(obj, _) -> expr_contains_it(obj)
+        .Try(inner) -> expr_contains_it(inner)
+        .Tuple(elems) -> expr_list_contains_it(elems)
+        .TupleIndex(obj, _) -> expr_contains_it(obj)
+        .With(obj, _) -> expr_contains_it(obj)
+        .ListLit(elems) -> expr_list_contains_it(elems)
+        .MapLit(entries) -> expr_list_contains_it(entries)
+        .Slice(obj, s, e) -> expr_contains_it(obj) || expr_contains_it(s) || expr_contains_it(e)
+        .MatchExpr(subj, _) -> expr_contains_it(subj)
         _ -> false
     }
 }
@@ -139,6 +154,9 @@ fn stmt_list_contains_it(list: StmtList) -> bool {
         .Node(stmt, next) -> {
             let has = match stmt {
                 .Expr(e) -> expr_contains_it(e)
+                .Let(_, _, init) -> expr_contains_it(init)
+                .Mut(_, _, init) -> expr_contains_it(init)
+                .Return(val) -> expr_contains_it(val)
                 _ -> false
             }
             has || stmt_list_contains_it(next)
@@ -231,6 +249,7 @@ export fn parser_new(source: string) -> Parser {
         error_message: "",
         allow_struct_lit: true,
         allow_dot_postfix: true,
+        allow_it_sugar: false,
     }
     parser.advance_token()
     parser
@@ -726,7 +745,17 @@ impl Parser {
             } else {
             if self.check("left_paren") {
                 self.advance()
+                // Enable `it` sugar for method calls (obj.method(it * 2))
+                // but not for regular function calls (to prevent
+                // double-wrapping in `f(it)` inside `.map(f(it))`).
+                let saved_it = self.allow_it_sugar
+                let is_method = match result {
+                    .FieldAccess(_, _) -> true
+                    _ -> false
+                }
+                self.allow_it_sugar = is_method
                 let args = self.parse_arg_list()?
+                self.allow_it_sugar = saved_it
                 if !self.consume("right_paren", "expected `)` after arguments") {
                     return null
                 }
@@ -789,17 +818,23 @@ impl Parser {
         }
 
         let raw_expr = self.parse_expression()?
-        // `it` parameter sugar: if the expression uses `it` and isn't
-        // already a lambda, wrap it as `(it) -> { expr }`.
-        let expr = match raw_expr {
-            .Lambda(_, _) -> raw_expr
-            _ -> {
-                if expr_contains_it(raw_expr) {
-                    wrap_in_it_lambda(raw_expr)
-                } else {
-                    raw_expr
+        // `it` parameter sugar: only wrap if allow_it_sugar is set
+        // (method calls like .map/.filter set this, regular function
+        // calls do not, preventing double-wrapping in `f(it)` inside
+        // `.map(f(it))`).
+        let expr = if self.allow_it_sugar {
+            match raw_expr {
+                .Lambda(_, _) -> raw_expr
+                _ -> {
+                    if expr_contains_it(raw_expr) {
+                        wrap_in_it_lambda(raw_expr)
+                    } else {
+                        raw_expr
+                    }
                 }
             }
+        } else {
+            raw_expr
         }
 
         if self.check("comma") {
