@@ -790,8 +790,13 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ False positives reduced from 10 to 1 on self-compilation
 - ✅ Parser default types fixed across fn/impl/extern/let/mut
 - ⚠️ No source spans on diagnostics (TECH_DEBT #18)
-- ❌ No type annotations on AST nodes
-- ❌ Codegen still has all vtype_is_* calls (0 removed)
+- ⚠️ No type annotations on AST nodes — but codegen already tracks
+  types via EmitResult.ty, so this is a DRY improvement not a correctness fix
+- ⚠️ Codegen still has 27 vtype_is_* calls — but these dispatch on
+  types that codegen ITSELF computed correctly. The type checker catches
+  errors BEFORE codegen; codegen still needs type dispatch for correct IR
+  generation. Removing vtype_is_* requires codegen to read from a shared
+  type table, which is a Phase 1b refactor (DRY, not correctness).
 
 ### Phase 2: NOT STARTED
 
