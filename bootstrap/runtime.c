@@ -580,3 +580,16 @@ int64_t forge_selfhost_levenshtein(const char *a, const char *b, int64_t len_a, 
     free(row);
     return result;
 }
+
+// ── Hex escape: \xHH → single-byte C string ──
+static int hex_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + c - 'a';
+    if (c >= 'A' && c <= 'F') return 10 + c - 'A';
+    return 0;
+}
+const char* forge_char_from_hex(const char* hi, const char* lo) {
+    static char buf[2] = {0, 0};
+    buf[0] = (char)((hex_val(hi[0]) << 4) | hex_val(lo[0]));
+    return buf;
+}

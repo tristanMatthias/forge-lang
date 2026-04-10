@@ -1474,6 +1474,11 @@ impl Parser {
                     content = content + "\""
                 } else if esc == "0" {
                     content = content + "\0"
+                } else if esc == "x" {
+                    // \xHH — two hex digits → one byte
+                    let hi = self.advance_char()
+                    let lo = self.advance_char()
+                    content = content + forge_char_from_hex(hi, lo)
                 } else {
                     content = content + "\\" + esc
                 }

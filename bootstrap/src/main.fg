@@ -5,6 +5,7 @@ extern fn forge_selfhost_get_arg_cstr(idx: int) -> string
 extern fn forge_selfhost_trace(s: string)
 extern fn forge_selfhost_trace_int(label: string, val: int)
 extern fn exit(code: int)
+extern fn forge_char_from_hex(hi: string, lo: string) -> string
 
 // File-system builtins. The bootstrap codegen passes strings as a
 // single i64 (the C-string pointer) rather than the host's
