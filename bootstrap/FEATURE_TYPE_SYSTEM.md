@@ -786,6 +786,9 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ Match arm pattern variable binding
 - ✅ All list types supported (not just Int/Str)
 - ✅ Zero TODOs remaining in typeck source
+- ✅ String indexing returns Str (not Int fallback)
+- ✅ False positives reduced from 10 to 1 on self-compilation
+- ✅ Parser default types fixed across fn/impl/extern/let/mut
 - ⚠️ No source spans on diagnostics (TECH_DEBT #18)
 - ❌ No type annotations on AST nodes
 - ❌ Codegen still has all vtype_is_* calls (0 removed)
