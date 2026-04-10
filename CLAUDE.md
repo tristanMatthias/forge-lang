@@ -465,6 +465,12 @@ Prefix with module name if ambiguous: `tc_bind_params`, not `bind_params`.
    seed binary crashes trying to render them. Always remove
    `render_bag` from the compile path before adding new modules.
 
+   **`make build` catches this automatically.** After building bs2
+   from the seed, it runs `bs2 compile src/main.fg` as a safety
+   check. If bs2 can't compile itself, the build fails with a clear
+   error explaining the bootstrap chain is broken. You will NEVER
+   get a green build that silently can't self-host.
+
 4. **render_list stack overflow.** DiagnosticList is a linked list.
    render_list is recursive. 100+ diagnostics = stack overflow. The
    limit is 10 (render_first_n). If you hit this, the resolver is

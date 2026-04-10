@@ -244,7 +244,29 @@ mode_build() {
 }
 
 mode_build_runtime() { ensure_runtime; ok "$RUNTIME_O"; }
-mode_build_bs2()      { ensure_bs2;      ok "$BS2"; }
+mode_build_bs2() {
+  ensure_bs2
+  # ALWAYS verify bs2 can compile itself. This catches bootstrap
+  # chicken-and-egg bugs at build time instead of hours later when
+  # you try to update the seed. If this fails, your changes broke
+  # the self-hosting chain — fix before proceeding.
+  log "verifying bs2 can self-compile (bootstrap safety check)"
+  if ! "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
+    err "bs2 CANNOT compile itself — bootstrap chain is broken!"
+    err "This means the seed binary compiled your code, but the"
+    err "resulting bs2 cannot parse/compile the same source."
+    err ""
+    err "Common causes:"
+    err "  - New syntax that the seed-compiled parser doesn't handle"
+    err "  - New enum variant that shifts tags in the seed-compiled binary"
+    err "  - Two-phase bootstrap needed (add types first, update seed, then use them)"
+    err ""
+    err "Log: $BUILD_DIR/bs2_selfcheck.log"
+    head -30 "$BUILD_DIR/bs2_selfcheck.log" >&2
+    die "fix the self-compile error before proceeding"
+  fi
+  ok "$BS2"
+}
 mode_build_bs2_asan() { ensure_bs2_asan; ok "$BS2_ASAN"; }
 mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
 
