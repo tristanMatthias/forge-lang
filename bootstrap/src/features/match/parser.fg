@@ -6,7 +6,7 @@
 //   do NOT read this file when:   the issue is expression precedence (parser.fg)
 //   related:                features/match/codegen.fg, core.ast.{Pattern, MatchArmList}
 
-use core.ast.{Stmt, Expr, Pattern, MatchArmList, ParamList, SExpr, sexpr}
+use core.ast.{Stmt, Expr, Pattern, PatternList, MatchArmList, ParamList, SExpr, sexpr}
 use parse.{Parser}
 
 impl Parser {
@@ -110,11 +110,43 @@ impl Parser {
             return Pattern.Variant(name, ParamList.End)
         }
         self.advance()
+        // Detect nested patterns: if first token inside parens is `.`, `_`,
+        // a literal, or `-`, parse as sub-pattern list. Otherwise simple bindings.
+        if self.is_pattern_start() {
+            let sub = self.parse_pattern_list()?
+            if !self.consume("right_paren", "expected `)` after nested patterns") {
+                return null
+            }
+            return Pattern.NestedVariant(name, sub)
+        }
         let bindings = self.parse_param_list()?
         if !self.consume("right_paren", "expected `)` after binding list") {
             return null
         }
         Pattern.Variant(name, bindings)
+    }
+
+    fn is_pattern_start(self) -> bool {
+        // Only `.` (sub-variant) triggers nested pattern mode.
+        // Literals and `_` are ambiguous with simple bindings, so
+        // we don't use them as triggers — they'll be parsed as
+        // simple param bindings via parse_param_list.
+        self.check("dot")
+    }
+
+    fn parse_pattern_list(self) -> PatternList? {
+        if self.check("right_paren") {
+            return PatternList.End
+        }
+        let p = self.parse_pattern()?
+        if self.check("comma") {
+            self.advance()
+        }
+        if self.check("right_paren") {
+            return PatternList.Node(p, PatternList.End)
+        }
+        let rest = self.parse_pattern_list()?
+        PatternList.Node(p, rest)
     }
 
     fn parse_match_expression(self) -> Expr? {

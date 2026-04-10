@@ -5,7 +5,7 @@
 // produces zero false positives on self-compilation, we flip it
 // to gating and start simplifying codegen.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, MatchArmList, Pattern, ValueType, TypeList, BinOp, vtype_display, vtype_eq, vtype_list_elem, vtype_fn_ret, vtype_tuple_at, SExpr, SStmt}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, MatchArmList, Pattern, PatternList, ValueType, TypeList, BinOp, vtype_display, vtype_eq, vtype_list_elem, vtype_fn_ret, vtype_tuple_at, SExpr, SStmt}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
 
 // ── Type environment ──
@@ -726,7 +726,15 @@ fn tc_bind_pattern(tc: TC, pattern: Pattern) -> TC {
     match pattern {
         .Wildcard -> tc
         .Variant(_, bindings) -> tc_bind_pattern_params(tc, bindings)
-        _ -> tc  // LitString, LitInt, LitBool — no bindings
+        .NestedVariant(_, sub_pats) -> tc_bind_pattern_list(tc, sub_pats)
+        _ -> tc  // LitString, LitInt, LitBool, LitFloat — no bindings
+    }
+}
+
+fn tc_bind_pattern_list(tc: TC, pats: PatternList) -> TC {
+    match pats {
+        .End -> tc
+        .Node(p, next) -> tc_bind_pattern_list(tc_bind_pattern(tc, p), next)
     }
 }
 

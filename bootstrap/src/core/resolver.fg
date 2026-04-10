@@ -3,7 +3,7 @@
 // a linked-list stack; functions are pre-declared so mutual
 // recursion works.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, SExpr, SStmt}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, PatternList, SExpr, SStmt}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
 
 export type ResolveResult = {
@@ -327,7 +327,15 @@ fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
     match pattern {
         .Wildcard -> r
         .Variant(_, bindings) -> declare_params(r, bindings)
+        .NestedVariant(_, sub_pats) -> declare_pattern_list(r, sub_pats)
         _ -> r  // Literal patterns don't bind variables
+    }
+}
+
+fn declare_pattern_list(r: Resolver, pats: PatternList) -> Resolver {
+    match pats {
+        .End -> r
+        .Node(p, next) -> declare_pattern_list(declare_pattern_bindings(r, p), next)
     }
 }
 

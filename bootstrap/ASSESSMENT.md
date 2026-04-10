@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 89 done, 27 todo, 10 n/a, 6 partial)
+## Feature Progress (132 total: 90 done, 26 todo, 10 n/a, 6 partial)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -41,7 +41,7 @@
 | 35 | match expression | ✅ | incl. primitive + literal patterns |
 | 36 | wildcard pattern | ✅ | |
 | 37 | variant binding | ✅ | |
-| 38 | nested patterns | 🔲 | |
+| 38 | nested patterns | ✅ | .Wrap(.Inner(x)) syntax |
 | 39 | match guards | ✅ | pattern if cond -> body |
 | 39b | literal patterns | ✅ | string/int/bool in match arms |
 | 40 | match tables | 🔲 | |

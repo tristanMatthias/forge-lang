@@ -1,6 +1,6 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
 use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, to_f64, get_fn, call_1, call_2}
 use codegen.{emit_expr}
 
@@ -43,18 +43,10 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
         .Node(pattern, guard, body, next) -> {
             let arm_bb = new_bb(ctx, "march_arm")
             let next_bb = new_bb(ctx, "march_next")
-            match pattern {
-                .Wildcard -> forge_llvm_build_br(ctx.builder, arm_bb)
-                .Variant(vname, _) -> {
-                    let v = variant_lookup(variants, vname)
-                    if !v.found { return err_emit("pattern references unknown variant `" + vname + "`") }
-                    let want_tag = const_i8(ctx, v.tag)
-                    let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, want_tag, "tag_eq")
-                    forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
-                }
-                _ -> forge_llvm_build_br(ctx.builder, arm_bb) // literal patterns in enum context — treat as wildcard
-            }
+            emit_pattern_tag_branch(ctx, pattern, tag_val, variants, arm_bb, next_bb)
             forge_llvm_position_at_end(ctx.builder, arm_bb)
+            // For nested patterns, check inner variant tags before binding
+            emit_nested_tag_checks(ctx, pattern, st_ty, subj_ptr, variants, next_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
             // Guard: if present, check condition; if false, skip to next arm
             if guard != null {
@@ -116,18 +108,9 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
         .Node(pattern, guard, body, next) -> {
             let arm_bb = new_bb(ctx, "match_arm")
             let next_bb = new_bb(ctx, "match_next")
-            match pattern {
-                .Wildcard -> forge_llvm_build_br(ctx.builder, arm_bb)
-                .Variant(vname, _) -> {
-                    let v = variant_lookup(variants, vname)
-                    if !v.found { return err_stmt("codegen error: pattern references unknown variant `" + vname + "`") }
-                    let want_tag = const_i8(ctx, v.tag)
-                    let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, want_tag, "tag_eq")
-                    forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
-                }
-                _ -> forge_llvm_build_br(ctx.builder, arm_bb)
-            }
+            emit_pattern_tag_branch(ctx, pattern, tag_val, variants, arm_bb, next_bb)
             forge_llvm_position_at_end(ctx.builder, arm_bb)
+            emit_nested_tag_checks(ctx, pattern, st_ty, subj_ptr, variants, next_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
             if guard != null {
                 let guard_r = emit_expr(ctx, arm_env, guard!.node)
@@ -150,6 +133,103 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
 
 // ── Pattern payload binding ──
 
+// Shared tag dispatch: compare pattern's variant tag against subject's tag.
+fn pattern_variant_name(pattern: Pattern) -> string {
+    match pattern {
+        .Variant(vname, _) -> vname
+        .NestedVariant(vname, _) -> vname
+        _ -> ""
+    }
+}
+
+fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: VariantList, arm_bb: ptr, next_bb: ptr) -> ptr {
+    let vname = pattern_variant_name(pattern)
+    if vname == "" {
+        // Wildcard or literal: always take arm
+        return forge_llvm_build_br(ctx.builder, arm_bb)
+    }
+    let v = variant_lookup(variants, vname)
+    if !v.found {
+        return forge_llvm_build_br(ctx.builder, next_bb)
+    }
+    let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, const_i8(ctx, v.tag), "tag_eq")
+    forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
+}
+
+// Emit runtime checks for inner variant tags in nested patterns.
+// If the inner tag doesn't match, branch to next_bb (skip this arm).
+fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList, next_bb: ptr) {
+    match pattern {
+        .NestedVariant(vname, sub_pats) -> {
+            let v = variant_lookup(variants, vname)
+            if !v.found { return }
+            emit_nested_tag_check_list(ctx, st_ty, subj_ptr, sub_pats, v.fields, 0, next_bb)
+        }
+        _ -> {}
+    }
+}
+
+fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: PatternList, fields: FieldList, idx: int, next_bb: ptr) {
+    match pats {
+        .End -> {}
+        .Node(pat, next) -> {
+            match pat {
+                .Variant(inner_vname, _) -> {
+                    let field_type_name = field_type_at(fields, 0)
+                    let inner_ty = translate_param_type(ctx.structs, ctx.enums, field_type_name)
+                    let enum_name = vtype_enum_name(inner_ty)
+                    if enum_name != "" {
+                        let lookup = enum_reg_lookup(ctx.enums, enum_name)
+                        if lookup.found {
+                            let iv = variant_lookup(lookup.variants, inner_vname)
+                            if iv.found {
+                                let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, idx + 1, "inner_val")
+                                let inner_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "inner_i64")
+                                let inner_ptr = to_ptr(ctx, inner_val, "inner_enum_ptr")
+                                let inner_struct_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
+                                let inner_tag_gep = forge_llvm_build_struct_gep2(ctx.builder, inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
+                                let inner_tag = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), inner_tag_gep, "inner_tag")
+                                let want = const_i8(ctx, iv.tag)
+                                let cmp = forge_llvm_build_icmp(ctx.builder, 32, inner_tag, want, "inner_tag_eq")
+                                let pass_bb = new_bb(ctx, "inner_pass")
+                                forge_llvm_build_cond_br(ctx.builder, cmp, pass_bb, next_bb)
+                                forge_llvm_position_at_end(ctx.builder, pass_bb)
+                            }
+                        }
+                    }
+                }
+                .NestedVariant(inner_vname, _) -> {
+                    // Same tag check for deeper nesting
+                    let field_type_name = field_type_at(fields, 0)
+                    let inner_ty = translate_param_type(ctx.structs, ctx.enums, field_type_name)
+                    let enum_name = vtype_enum_name(inner_ty)
+                    if enum_name != "" {
+                        let lookup = enum_reg_lookup(ctx.enums, enum_name)
+                        if lookup.found {
+                            let iv = variant_lookup(lookup.variants, inner_vname)
+                            if iv.found {
+                                let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, idx + 1, "inner_val")
+                                let inner_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "inner_i64")
+                                let inner_ptr = to_ptr(ctx, inner_val, "inner_enum_ptr")
+                                let inner_struct_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
+                                let inner_tag_gep = forge_llvm_build_struct_gep2(ctx.builder, inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
+                                let inner_tag = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), inner_tag_gep, "inner_tag")
+                                let want = const_i8(ctx, iv.tag)
+                                let cmp = forge_llvm_build_icmp(ctx.builder, 32, inner_tag, want, "inner_tag_eq")
+                                let pass_bb = new_bb(ctx, "inner_pass")
+                                forge_llvm_build_cond_br(ctx.builder, cmp, pass_bb, next_bb)
+                                forge_llvm_position_at_end(ctx.builder, pass_bb)
+                            }
+                        }
+                    }
+                }
+                _ -> {}
+            }
+            emit_nested_tag_check_list(ctx, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1, next_bb)
+        }
+    }
+}
+
 fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList) -> VarEnv {
     match pattern {
         .Wildcard -> env
@@ -157,6 +237,11 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
             let v = variant_lookup(variants, vname)
             if !v.found { return env }
             bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, bindings, v.fields, 0)
+        }
+        .NestedVariant(vname, sub_pats) -> {
+            let v = variant_lookup(variants, vname)
+            if !v.found { return env }
+            bind_nested_patterns(ctx, env, st_ty, subj_ptr, sub_pats, v.fields, 0)
         }
         _ -> env  // Literal patterns don't bind variables
     }
@@ -176,6 +261,69 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
             let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
             let extended = env_extend(env, name, alloca, field_ty)
             bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
+        }
+    }
+}
+
+// Bind nested sub-patterns: each PatternList element matches against the
+// corresponding payload field of the outer variant.
+fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: PatternList, fields: FieldList, idx: int) -> VarEnv {
+    match pats {
+        .End -> env
+        .Node(pat, next) -> {
+            let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, idx + 1, "npat_ptr")
+            let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "npat_val")
+            let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
+            let new_env = bind_single_sub_pattern(ctx, env, pat, loaded, field_ty)
+            bind_nested_patterns(ctx, new_env, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1)
+        }
+    }
+}
+
+// Bind a single sub-pattern against a value extracted from a payload field.
+fn bind_single_sub_pattern(ctx: Ctx, env: VarEnv, pat: Pattern, value: ptr, ty: ValueType) -> VarEnv {
+    match pat {
+        .Wildcard -> env
+        .Variant(vname, bindings) -> {
+            // Inner variant: extract its payload. The value is an i64
+            // holding a pointer to the inner enum struct.
+            let enum_name = vtype_enum_name(ty)
+            if enum_name == "" {
+                // Not an enum type — try to bind directly
+                return bind_first_param(ctx, env, bindings, value, ty)
+            }
+            let lookup = enum_reg_lookup(ctx.enums, enum_name)
+            if !lookup.found { return env }
+            let inner_ptr = to_ptr(ctx, value, "inner_ptr")
+            let inner_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
+            let v = variant_lookup(lookup.variants, vname)
+            if !v.found { return env }
+            bind_pattern_payload_loop(ctx, env, inner_ty, inner_ptr, bindings, v.fields, 0)
+        }
+        .NestedVariant(vname, sub_pats) -> {
+            let enum_name = vtype_enum_name(ty)
+            if enum_name == "" { return env }
+            let lookup = enum_reg_lookup(ctx.enums, enum_name)
+            if !lookup.found { return env }
+            let inner_ptr = to_ptr(ctx, value, "inner_ptr")
+            let inner_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
+            let v = variant_lookup(lookup.variants, vname)
+            if !v.found { return env }
+            bind_nested_patterns(ctx, env, inner_ty, inner_ptr, sub_pats, v.fields, 0)
+        }
+        _ -> env  // Literal sub-patterns don't bind
+    }
+}
+
+// Bind the first param from a ParamList as a simple variable.
+fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: ValueType) -> VarEnv {
+    match bindings {
+        .End -> env
+        .Node(name, _, _) -> {
+            if name == "_" { return env }
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
+            forge_llvm_build_store(ctx.builder, value, alloca)
+            env_extend(env, name, alloca, ty)
         }
     }
 }
