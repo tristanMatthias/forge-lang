@@ -148,8 +148,10 @@ ErrorDef registry, ariadne-style rendering. Parser has error recovery
 (synchronize + continue). See `FEATURE_TYPE_SYSTEM.md`.
 
 **Type checker:** additive pass between resolver and codegen. Catches
-if-expr type mismatches, wrong argument counts. Runs during `check`
-mode. See `src/typeck/mod.fg`.
+6 error classes: if-expr mismatch, wrong arg count, undefined field,
+return type mismatch, condition type errors, string indexing type.
+Runs in both check AND compile modes with 1 false positive on 11.7K
+lines of self-compilation. See `src/typeck/mod.fg` (885 lines).
 
 **Bump allocator:** monotonic allocation for all struct/enum/with
 constructions. Prevents heap corruption. Stepping stone to real
@@ -160,9 +162,17 @@ functions, duplicate function name detection at compile time.
 
 ---
 
-## EXECUTIVE SUMMARY
+## EXECUTIVE SUMMARY (updated April 10, 2026)
 
-       The bootstrap compiler is a 1,341-line codegen, 1,274-line parser, with 10 feature modules distributed across ~4,100 total lines. Current design patterns will BREAK at 30-50 features due to multiple scaling bottlenecks. The problems are not subtle—they are structural.
+The bootstrap compiler is now 11,768 lines: 1,726-line codegen,
+1,670-line parser, 885-line type checker, 20 feature modules. The
+top 3 critical scaling issues (Ctx boilerplate, string type tags,
+operator dispatch) are all FIXED. The type checker catches 6 error
+classes with near-zero false positives.
+
+**Original summary (for reference):**
+
+       The bootstrap compiler was originally a 1,341-line codegen, 1,274-line parser, with 10 feature modules distributed across ~4,100 total lines. The following analysis describes problems that were identified and solved.
 
        ---
        FILE METRICS & FUNCTION DISTRIBUTION
