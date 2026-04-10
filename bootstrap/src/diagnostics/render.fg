@@ -144,7 +144,7 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
         eprintln(`  ${color_blue(pad + " " + chr_dot())} ${label_pad}${connector} ${diag.message}`)
 
         // Box bottom: ───╯
-        eprintln(`${repeat_char(chr_hbar(), w + 3)}${color_blue(chr_rbot())}`)
+        eprintln(color_blue(repeat_hbar(w + 3) + chr_rbot()))
     }
 
     // Help text
