@@ -311,6 +311,44 @@ The resolver would find them via normal function pre-declaration,
 and the codegen would intercept them in `emit_call_named` as today.
 No hardcoded list needed.
 
+### 26. Stmt.Defer stores Expr, not SExpr — loses source location
+
+**Severity:** low (cosmetic — defer errors don't show line numbers)
+**Impact:** `Stmt.Defer(body: Expr)` stores an `Expr`. The defer
+handler wraps it in `sexpr_dummy(body)` which sets line:0, col:0.
+If a defer body has a compile error, the error points to line 0.
+
+**Proper fix:** Change `Stmt.Defer(body: Expr)` to
+`Stmt.Defer(body: SExpr)`. This is a container type change requiring
+a two-phase bootstrap (Phase A: add variant, Phase B: switch parser).
+
+### 27. Closures returned through functions lose Closure type
+
+**Severity:** medium (forces trampoline fallback path)
+**Impact:** When a function's return type annotation says `fn(int) -> int`
+but it returns a closure, the call site gets `Fn`/`FnTyped` type instead
+of `Closure`. `vtype_is_closure` returns false, so the call goes through
+`emit_indirect_call_value` which uses C trampolines (forge_closure_call_N)
+instead of direct LLVM calls.
+
+**Proper fix:** Propagate `Closure` through return type inference. When
+codegen sees a function that returns a lambda, the `FnRetTypes` registry
+should store `Closure(n, ret)` instead of `Fn(ret)`. Requires analyzing
+function bodies during the declaration pass, not just reading the type
+annotation string.
+
+### 28. Registry dispatch is O(n) linked-list scan
+
+**Severity:** low (25 features × integer compare — negligible)
+**Impact:** `dispatch_expr` walks a linked list of 25 features comparing
+tags. At ~2ns per comparison, this adds ~50ns per expression — invisible
+against LLVM call overhead.
+
+**Proper fix:** Replace with a C-side array indexed by tag for O(1)
+lookup. `forge_registry_set(tag, fn_ptr)` + `forge_registry_get(tag)`.
+Only worth doing if the feature count exceeds ~100 or profiling shows
+dispatch as a hotspot.
+
 ### ~~25. Duplicate keyword lists (scanner.fg + parse/mod.fg)~~ (FIXED)
 
 **Status:** fixed (April 10 2026)
