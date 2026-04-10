@@ -267,7 +267,10 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         }
         .If(cond, then_branch, else_branch) -> {
             let c = check_expr(tc, cond)
-            let after_then = check_stmt(c.tc, then_branch)
+            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
+                tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `" + vtype_display(c.ty) + "`")
+            } else { c.tc }
+            let after_then = check_stmt(after_cond, then_branch)
             if else_branch != null {
                 return check_stmt(after_then, else_branch!)
             }
@@ -275,7 +278,10 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         }
         .While(cond, body) -> {
             let c = check_expr(tc, cond)
-            check_stmt(c.tc, body)
+            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
+                tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `" + vtype_display(c.ty) + "`")
+            } else { c.tc }
+            check_stmt(after_cond, body)
         }
         .For(variable, start, end, body) -> {
             let s = check_expr(tc, start)
@@ -454,7 +460,10 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .IfExpr(cond, then_branch, else_branch) -> {
             let c = check_expr(tc, cond)
-            let t = check_expr(c.tc, then_branch)
+            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
+                tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `" + vtype_display(c.ty) + "`")
+            } else { c.tc }
+            let t = check_expr(after_cond, then_branch)
             let e = check_expr(t.tc, else_branch)
             // Both branches should agree. Report if not.
             if !vtype_eq(t.ty, e.ty) {
