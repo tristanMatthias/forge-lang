@@ -1,0 +1,10 @@
+// All escape sequences
+println("tab:\there")
+println("newline:\nhere")
+println("quote:\"here")
+println("backslash:\\here")
+println("null:\0end")
+let multiline = "line1\nline2\nline3"
+println(string(multiline.length))
+println(string(multiline.contains("\n")))
+println(string(multiline.index_of("\n")))

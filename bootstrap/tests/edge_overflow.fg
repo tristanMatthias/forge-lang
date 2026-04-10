@@ -1,0 +1,10 @@
+// Large numbers
+let big = 9223372036854775807
+println(string(big))
+println(string(-big))
+println(string(big + 1))
+// Shift edge cases
+println(string(1 << 63))
+println(string(-1 >> 1))
+println(string(0 & 0))
+println(string(~0 & 0xFF))

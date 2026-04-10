@@ -1,0 +1,14 @@
+// Complex mutual recursion
+fn is_even(n: int) -> int {
+    if n == 0 { return 1 }
+    if n < 0 { return is_even(-n) }
+    is_odd(n - 1)
+}
+fn is_odd(n: int) -> int {
+    if n == 0 { return 0 }
+    if n < 0 { return is_odd(-n) }
+    is_even(n - 1)
+}
+for i in 0..8 {
+    println(`${string(i)}: even=${string(is_even(i))} odd=${string(is_odd(i))}`)
+}

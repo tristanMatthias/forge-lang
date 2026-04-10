@@ -247,6 +247,8 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     if ty == "bool" { return ValueType.Bool }
     if ty == "ptr" { return ValueType.Ptr }
     if ty == "fn" { return ValueType.Fn }
+    if ty == "List" { return ValueType.List(ValueType.Int) }
+    if ty == "Map" { return ValueType.Map }
     let enum_l = enum_reg_lookup(enums, ty)
     if enum_l.found {
         return ValueType.Enum(ty)

@@ -1,0 +1,21 @@
+// Empty everything
+let empty_list = []
+let empty_map = {}
+let empty_str = ""
+println(string(empty_list.length))
+println(string(empty_map.length))
+println(string(empty_str.length))
+let filtered = empty_list.filter((x) -> x > 0)
+println(string(filtered.length))
+let mapped = empty_list.map((x) -> x * 2)
+println(string(mapped.length))
+let reduced = empty_list.reduce(99, (a, b) -> a + b)
+println(string(reduced))
+let sliced = empty_list[0..0]
+println(string(sliced.length))
+println(string(empty_str.contains("")))
+println(string(empty_str.starts_with("")))
+println(string("".index_of("")))
+println(string("".replace("x", "y")))
+let split_empty = "".split(",")
+println(string(split_empty.length))
