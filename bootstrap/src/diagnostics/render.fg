@@ -109,7 +109,7 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
     let header = severity_color(diag.severity, `${sev}[${code_str}]`)
     eprintln(`  ${sym} ${header}${color_bold(": " + diag.message)}`)
 
-    if line > 0 {
+    if line > 0 && col > 0 {
         // Box top: ╭─[file.fg:2:5]
         let loc = `${filename}:${string(line)}:${string(col)}`
         eprintln(`  ${pad} ${color_gray(chr_ltop() + chr_hbar())}[${color_dim(loc)}]`)
@@ -189,11 +189,18 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
 }
 
 fn render_list(source: string, filename: string, list: DiagnosticList) {
+    render_list_limited(source, filename, list, 0, 20)
+}
+
+fn render_list_limited(source: string, filename: string, list: DiagnosticList, count: int, max: int) {
+    if count >= max { return }
     match list {
         .End -> {}
         .Node(diag, next) -> {
-            render_list(source, filename, next)
-            render_diagnostic(source, filename, diag)
+            render_list_limited(source, filename, next, count + 1, max)
+            if count < max {
+                render_diagnostic(source, filename, diag)
+            }
         }
     }
 }
