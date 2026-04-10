@@ -22,6 +22,7 @@ fn read_file(path: string) -> string { forge_selfhost_read_file(path) }
 fn write_file(path: string, content: string) -> int { forge_selfhost_write_file(path, content) }
 
 mod core
+mod diagnostics
 mod parse
 mod features
 mod codegen
@@ -31,6 +32,8 @@ use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list}
 use core.eval.{eval_expression_source, execute_program_source, render_value}
 use core.resolver.{resolve_program}
+use diagnostics.{bag_has_errors}
+use diagnostics.render.{render_bag}
 use codegen.{compile_program}
 
 fn print_usage() {
@@ -194,6 +197,9 @@ fn main() {
     if command == "check" {
         let parsed = parse_program_source(source)
         if parsed.had_error || parsed.stmts == null {
+            if bag_has_errors(parsed.bag) {
+                render_bag(source, path, parsed.bag)
+            }
             fail(parsed.error_message)
         }
         let resolved = resolve_program(parsed.stmts!)
@@ -208,6 +214,9 @@ fn main() {
         let merged = preprocess_modules(source, path)
         let parsed = parse_program_source(merged)
         if parsed.had_error || parsed.stmts == null {
+            if bag_has_errors(parsed.bag) {
+                render_bag(merged, path, parsed.bag)
+            }
             fail(parsed.error_message)
         }
         let resolved = resolve_program(parsed.stmts!)

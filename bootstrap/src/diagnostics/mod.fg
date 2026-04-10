@@ -1,3 +1,6 @@
+mod render
+mod suggest
+
 // WHY: structured diagnostic types for compiler error reporting.
 // Every error is a Diagnostic record with error code, severity,
 // source span, help text, and labels. DiagnosticBag collects

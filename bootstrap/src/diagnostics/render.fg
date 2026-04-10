@@ -2,7 +2,7 @@
 // Shows the error code, message, source location, underlined
 // span, and help text. No external dependencies.
 
-use core.diagnostic.{Diagnostic, DiagnosticBag, DiagnosticList, Span, Severity, severity_str}
+use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, Span, Severity, severity_str}
 
 // ── Line extraction ──
 
