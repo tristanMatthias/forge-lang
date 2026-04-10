@@ -775,12 +775,13 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ Function body checking works
 - ✅ If-expr branch type mismatch detection
 - ✅ Wrong argument count detection
+- ✅ Undefined struct field detection
 - ✅ Wired into `check` command with rendering
-- ⚠️ Struct field access check doesn't trigger (TECH_DEBT #17)
-- ⚠️ `bind_params` inlined as workaround (TECH_DEBT #19)
+- ✅ Resolver + parse diagnostics re-enabled in compile mode
+- ✅ Parser default type changed from "i64" to "" (enables type inference)
+- ⚠️ No source spans on diagnostics (TECH_DEBT #18)
 - ❌ No type annotations on AST nodes
 - ❌ Codegen still has all vtype_is_* calls (0 removed)
-- ❌ No source spans in type checker diagnostics
 - ❌ Type checker silent during compile (only runs in check mode)
 
 ### Phase 2: NOT STARTED
