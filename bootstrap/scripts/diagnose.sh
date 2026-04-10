@@ -164,7 +164,7 @@ ensure_seed() {
     [ -f "$SEED_LL" ] || die "seed IR not found at $SEED_LL — repo is corrupt"
     log "building seed compiler from seed/seed.ll"
     mkdir -p "$BUILD_DIR"
-    "$LLC" -O1 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed.o" \
+    "$LLC" -O2 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed.o" \
       || die "seed llc failed"
     cc -o "$SEED_BIN" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$STDLLVM_A" \
       -L"$LLVM_PREFIX/lib" -lLLVM-19 -lc++ 2>"$BUILD_DIR/seed.link.log" \
@@ -175,7 +175,7 @@ ensure_seed() {
 # Link an LLVM IR file into an executable.
 link_ll() {
   local ll="$1" out="$2" logfile="$3"
-  "$LLC" -O1 -filetype=obj "$ll" -o "${out}.o" \
+  "$LLC" -O2 -filetype=obj "$ll" -o "${out}.o" \
     || die "llc failed for $ll"
   cc -o "$out" "${out}.o" "$RUNTIME_O" "$STDLLVM_A" \
     -L"$LLVM_PREFIX/lib" -lLLVM-19 -lc++ 2>"$logfile" \

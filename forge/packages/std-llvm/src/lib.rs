@@ -551,6 +551,7 @@ extern "C" {
     fn LLVMIsAInstruction(val: LLVMPtr) -> LLVMPtr;
     fn LLVMGetOperand(val: LLVMPtr, index: c_uint) -> LLVMPtr;
     fn LLVMBuildLoad2(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVMPtr, name: *const c_char) -> LLVMPtr;
+    fn LLVMSetAlignment(val: LLVMPtr, bytes: c_uint);
 
     // Aggregate operations (GEP, insert/extract)
     fn LLVMBuildGEP2(builder: LLVMPtr, ty: LLVMPtr, pointer: LLVMPtr, indices: *mut LLVMPtr, num_indices: c_uint, name: *const c_char) -> LLVMPtr;
@@ -1206,7 +1207,40 @@ pub extern "C" fn forge_llvm_build_alloca(builder: LLVMPtr, ty: LLVMPtr, name: *
     // identifier. This makes stage 2 IR show `%lhs`, `%rhs`, `%op`
     // instead of `%47`, `%49`, `%2` — 10x faster IR reading forever.
     let llvm_name = unsafe { validate_named(name) };
-    let result = unsafe { LLVMBuildAlloca(builder, ty, llvm_name) };
+    // CRITICAL: Insert ALL allocas at the function entry block.
+    // Non-entry allocas create dynamic stack adjustments that use
+    // callee-saved registers (x19 on ARM64) as frame pointers.
+    // LLVM -O2 then miscompiles code that accesses these across
+    // function calls because the callee saves/restores x19.
+    // Moving allocas to entry makes them static stack slots that
+    // don't need dynamic frame pointers.
+    // Insert alloca at the function entry block to avoid dynamic
+    // stack adjustments in non-entry blocks (which break -O2 on ARM64).
+    // Position after existing allocas but before any non-alloca instruction.
+    let result = unsafe {
+        let cur_bb = LLVMGetInsertBlock(builder);
+        let func = LLVMGetBasicBlockParent(cur_bb);
+        let entry_bb = LLVMGetEntryBasicBlock(func);
+        // If we're already in the entry block, just use normal alloca
+        if cur_bb == entry_bb {
+            LLVMBuildAlloca(builder, ty, llvm_name)
+        } else {
+            // Find the insertion point: after all existing allocas in entry
+            let mut inst = LLVMGetFirstInstruction(entry_bb);
+            while !inst.is_null() && LLVMGetInstructionOpcode(inst) == 26 {
+                // opcode 26 = Alloca — skip past existing allocas
+                inst = LLVMGetNextInstruction(inst);
+            }
+            if !inst.is_null() {
+                LLVMPositionBuilderBefore(builder, inst);
+            } else {
+                LLVMPositionBuilderAtEnd(builder, entry_bb);
+            }
+            let alloca = LLVMBuildAlloca(builder, ty, llvm_name);
+            LLVMPositionBuilderAtEnd(builder, cur_bb);
+            alloca
+        }
+    };
     // Auto-cache: only store EXPLICITLY armed source-variable allocas in the
     // C-side cache. Caching every named alloca polluted the source-variable
     // namespace with internal temporaries like `ca`, so later `emit_ident("ca")`
@@ -1328,7 +1362,16 @@ pub extern "C" fn forge_llvm_build_store(builder: LLVMPtr, val: LLVMPtr, ptr: LL
                 }
             }
         }
-        LLVMBuildStore(builder, real_val, ptr)
+        let store_inst = LLVMBuildStore(builder, real_val, ptr);
+        // Force 8-byte alignment for all stores. The bootstrap's
+        // everything-is-i64 model means all values are 8 bytes.
+        // Without this, LLVM defaults to align 4 which lets the
+        // optimizer generate code that corrupts struct arguments
+        // at function call boundaries (bug #14/#16).
+        if !store_inst.is_null() {
+            LLVMSetAlignment(store_inst, 8);
+        }
+        store_inst
     }
 }
 
@@ -1365,7 +1408,12 @@ pub extern "C" fn forge_llvm_build_load(builder: LLVMPtr, ty: LLVMPtr, ptr: LLVM
                 }
             }
         }
-        LLVMBuildLoad2(builder, ty, ptr, safe_name(name))
+        let load_inst = LLVMBuildLoad2(builder, ty, ptr, safe_name(name));
+        // Force 8-byte alignment for all loads (see store comment above).
+        if !load_inst.is_null() {
+            LLVMSetAlignment(load_inst, 8);
+        }
+        load_inst
     }
 }
 

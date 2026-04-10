@@ -422,11 +422,23 @@ forge_dump_stmt_list(label, list)   // prints StmtList structure
 forge_selfhost_trace_int(label, n)  // prints label + i64 to stderr
 ```
 
+### Step 5: Check function name collisions
+The bootstrap inlines ALL modules into a single compilation unit. If
+two modules define a function with the same name (e.g. `bind_params`
+in both `eval.fg` and `typeck/mod.fg`), the linker picks ONE definition
+and ALL call sites use it — even if the signatures differ. This causes
+silent argument corruption.
+
+**Check:** `grep -rn "fn <name>" src/` before naming any function.
+Prefix with module name if ambiguous: `tc_bind_params`, not `bind_params`.
+
 ### Rules
 - **NEVER do more than ONE seed cycle to diagnose a crash.** Use LLDB.
 - **NEVER guess the cause.** Read the register values. Read the IR.
 - **NEVER chase heap corruption without first testing -O0.**
-- **NEVER pass two large structs to a function.** Inline or restructure.
+- **NEVER reuse function names across modules.** The bootstrap inlines
+  everything — duplicate names cause silent call resolution to the
+  wrong function with wrong arity. ALWAYS prefix with module name.
 - **Log EVERY crash diagnosis in TECH_DEBT.md** with the root cause,
   LLDB output, and fix. Future agents need this history.
 

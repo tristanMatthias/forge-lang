@@ -172,51 +172,41 @@ the type first: `use core.ast.{BinOp}` then `fn foo(x: BinOp)`.
 **Fix:** Support dotted type names in `consume_type` parser function.
 Low priority since the import workaround is clean.
 
-### ~~14. Struct args corrupt second parameter~~ (FIXED)
+### ~~14. Function name collision~~ (FIXED)
 
 **Status:** fixed (April 10 2026)
 
-**Root cause:** The bootstrap's calling convention passes structs as
-single i64 pointers. When a function takes two struct arguments (e.g.
-`bind_params(tc: TC, params: ParamList)`), the function prologue
-clobbers the register holding the second argument while accessing
-fields of the first struct via GEP. This only happens when the first
-struct has 6+ fields.
+**Root cause:** Two functions named `bind_params` existed in different
+modules: `eval.fg` (3 params: runtime, params, args) and `typeck/mod.fg`
+(2 params: tc, params). The bootstrap inlines all modules into one
+compilation unit, so LLVM merged both definitions. The typeck call site
+resolved to the eval version, which expected a third argument. The
+missing `x2` register contained garbage, causing a segfault when the
+eval's `bind_params` accessed it.
 
-**How it was found:** LLDB showed `params` was valid at the call site
-(`forge_selfhost_trace_int` printed the correct pointer) but garbage
-inside `bind_params`. Inlining the function body eliminated the crash,
-confirming the bug was at the function call boundary, not in the logic.
+**How it was found:** LLDB showed `bind_params` had 3 parameters in
+IR (`define i64 @bind_params(i64, i64, i64)`) but the typeck call
+only passed 2. `grep -rn "fn bind_params" src/` revealed the collision.
 
-**Fix:** Inlined `bind_params` into the Function arm of `check_stmt`.
+**Fix:** Renamed typeck's function to `tc_bind_params`.
 
-**Proper fix needed:** The codegen should use LLVM's `byval` attribute
-or splat struct fields into separate arguments. See item #16.
+**Prevention:** CLAUDE.md now requires prefixing function names with
+the module name to avoid collisions. Added to debugging protocol.
 
-### 16. Two-struct-arg calling convention bug (SYSTEMATIC)
+### 16. Function name collisions across modules (SYSTEMATIC)
 
-**Severity:** high (any function with two struct args is at risk)
-**Impact:** the second argument is silently corrupted when the first
-is a large struct (6+ fields accessed via GEP)
+**Severity:** high (silent crash, very hard to diagnose)
+**Impact:** when two modules define a function with the same name but
+different signatures, LLVM picks one definition and all call sites
+use it. Arguments beyond the shorter signature read garbage.
 
-**Known affected patterns:**
-- `fn foo(tc: TC, params: ParamList)` — TC has 6 fields
-- Any function taking `(Ctx, ...)` where Ctx has 12 fields
-  (these work because Ctx fields are accessed via the pointer
-  directly, but fragile)
-
-**Audit needed:** grep for all functions that take two struct arguments
-where the first struct has 4+ fields. These are all potential crash sites.
-
-**Proper fix:** Change the codegen to either:
-1. Use LLVM `byval` attribute on struct pointer args
-2. Splat struct fields into separate register arguments (C ABI)
-3. Always pass structs via explicit alloca (caller allocates on stack,
-   callee receives pointer, guaranteed not to alias registers)
+**Prevention:** prefix all non-exported functions with their module
+name: `tc_bind_params`, `eval_bind_params`, etc.
 
 **Audit command:**
 ```bash
-grep "fn.*tc: TC.*params:\|fn.*ctx: Ctx.*env:" src/**/*.fg
+# Find duplicate function names across modules
+grep -rh "^fn \|^export fn " src/ | sed 's/fn //' | sed 's/(.*//' | sort | uniq -d
 ```
 
 ### 15. Bump allocator (STEPPING STONE — will be removed)

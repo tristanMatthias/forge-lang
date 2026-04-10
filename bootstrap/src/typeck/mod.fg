@@ -277,15 +277,8 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             tc_exit(after)
         }
         .Function(name, params, ret_ty, body) -> {
-            // Inline bind_params to avoid function call boundary issue
             let inner = tc_enter(tc)
-            let with_params = match params {
-                .End -> inner
-                .Node(pname, pty, _) -> {
-                    let pt = if pty.length > 0 { translate_type(inner, pty) } else { ValueType.Int }
-                    tc_bind(inner, pname, pt)
-                }
-            }
+            let with_params = tc_bind_params(inner, params)
             let checked = check_stmts(with_params, body)
             tc_exit(checked)
         }
@@ -306,12 +299,12 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
-fn bind_params(tc: TC, params: ParamList) -> TC {
+fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
         .Node(name, ty_str, next) -> {
             let ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { ValueType.Int }
-            bind_params(tc_bind(tc, name, ty), next)
+            tc_bind_params(tc_bind(tc, name, ty), next)
         }
     }
 }
@@ -435,7 +428,7 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .ListLit(elements) -> check_list_lit(tc, elements)
         .Lambda(params, body) -> {
             let inner = tc_enter(tc)
-            let with_params = bind_params(inner, params)
+            let with_params = tc_bind_params(inner, params)
             let b = check_expr(with_params, body)
             let after = tc_exit(b.tc)
             er(after, ValueType.Fn(b.ty))
