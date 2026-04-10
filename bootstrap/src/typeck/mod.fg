@@ -296,7 +296,7 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         .Function(name, params, ret_ty, body) -> {
             let inner = tc_enter(tc)
             let with_params = tc_bind_params(inner, params)
-            let checked = check_stmts(with_params, body)
+            let checked = tc_check_fn_body(with_params, name, ret_ty, body)
             tc_exit(checked)
         }
         .Match(subject, arms) -> {
@@ -313,6 +313,47 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             r.tc
         }
         _ -> tc  // TypeDecl, EnumDecl, ExternFn, NoOp, Break, Continue, TraitDecl
+    }
+}
+
+fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, body: StmtList) -> TC {
+    let checked = check_stmts(tc, body)
+    // If the function has a declared return type, check the last
+    // expression's type matches
+    if ret_ty_str.length > 0 {
+        let declared_ret = translate_type(checked, ret_ty_str)
+        let body_ty = tc_last_stmt_type(checked, body)
+        if !vtype_eq(declared_ret, body_ty) && !vtype_eq(body_ty, ValueType.Void) {
+            let msg = "function `" + name + "` returns `" + vtype_display(declared_ret) + "`, but body produces `" + vtype_display(body_ty) + "`"
+            return tc_report(checked, DiagCode.TypeMismatch, msg)
+        }
+    }
+    checked
+}
+
+// Get the type of the last expression in a statement list
+fn tc_last_stmt_type(tc: TC, stmts: StmtList) -> ValueType {
+    match stmts {
+        .End -> ValueType.Void
+        .Node(stmt, next) -> {
+            match next {
+                .End -> {
+                    // Last statement — check if it's an expression
+                    match stmt {
+                        .Expr(e) -> {
+                            let r = check_expr(tc, e)
+                            r.ty
+                        }
+                        .Return(e) -> {
+                            let r = check_expr(tc, e)
+                            r.ty
+                        }
+                        _ -> ValueType.Void
+                    }
+                }
+                _ -> tc_last_stmt_type(tc, next)
+            }
+        }
     }
 }
 
