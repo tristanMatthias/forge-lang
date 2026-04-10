@@ -97,21 +97,11 @@ position. Low priority — the braces are idiomatic anyway.
 Previously `Return` was renamed to `Ret` because the Rust host
 compiler rejected it. Now resolved — variant is `Stmt.Return`.
 
-### 9. DiagCode parallel match blocks
+### ~~9. DiagCode parallel match blocks~~ (FIXED)
 
-**Severity:** medium (DRY violation)
-**Impact:** `diag_code_str` and `diag_code_help` are two separate match
-blocks over the same enum, kept in sync manually
-
-Currently each `DiagCode` variant requires editing two match blocks —
-one for the code string (`"F0010"`) and one for the help text. Adding
-a variant = 3 lines across 2 functions instead of 1.
-
-**Fix:** Collapse into a single `error_def(code: DiagCode) -> ErrorDef`
-match that returns `ErrorDef { code: string, help: string }`. One match,
-each arm returns all metadata for that error on a single line. Blocked
-on the current mid-refactor state — finish wiring `DiagCode` enum into
-parser/resolver first, then collapse.
+**Status:** fixed. Single `error_def(code: DiagCode) -> ErrorDef` match
+returns all metadata. `diag_code_str` and `diag_code_help` are thin
+wrappers that delegate to `error_def`.
 
 ### 10. Forge needs associated enum data
 
@@ -131,21 +121,12 @@ of debt item #9. Eventually the language should support one of:
 **Plan:** Add enum impl codegen support (we already parse `impl EnumName`).
 Then `diag_code_str` and `diag_code_help` become methods on `DiagCode`.
 
-### 11. render_diagnostic crashes on bad input
+### ~~11. render_diagnostic crashes on bad input~~ (FIXED)
 
-**Severity:** high (blocks bootstrap)
-**Impact:** any diagnostic with a dummy span or corrupt data crashes
-the entire compiler. This blocked the type checker bootstrap for 30+
-minutes across multiple seed cycles.
-
-Three compounding bugs:
-1. `render_diagnostic` crashes when `col == 0` (substring with negative index)
-2. `render_list` stack-overflows on 100+ diagnostics (recursive linked list)
-3. Parse/resolve errors masked by crash — can't see the real error
-
-**Fix:** Make `render_diagnostic` crash-proof. Guard every field access.
-Use iterative rendering (or hard limit). Add a C-side `forge_safe_render`
-that catches SIGSEGV and prints a fallback message.
+**Status:** fixed. Three fixes applied:
+1. `if line > 0 && col > 0` guard prevents source context on dummy spans
+2. `render_first_n` limits to 10 diagnostics (prevents stack overflow)
+3. `render_bag` re-enabled in both check and compile paths
 
 ### 12. Seed bootstrap requires multiple manual cycles
 
@@ -243,17 +224,14 @@ See `docs/idea_scoped_abstraction_levels.md` for the full vision.
 in the real compiler. The bump allocator is bootstrap-only — it never
 ships in any user-facing binary.
 
-### 17. Type checker: struct field access doesn't detect invalid fields
+### ~~17. Type checker: struct field access doesn't detect invalid fields~~ (FIXED)
 
-**Severity:** medium (type checker false negative)
-**Impact:** `f.nonexistent_field` on a struct doesn't report an error.
-The `check_field_access` function has the code to detect this, but
-`ExprResult.ty` returns `Int` instead of `Struct("Foo")` for struct
-literal expressions. The StructLit arm in `check_expr` creates the
-correct `ValueType.Struct(name)` in the IR (tag 4), but at runtime
-the tag reads as 0 (Int). Root cause unknown — possibly related to
-the `malloc` vs `forge_bump_alloc` allocator mismatch (some struct
-constructors still use system malloc).
+**Status:** fixed (April 10 2026). Root cause: the parser defaulted
+unannotated `let` bindings to type `"i64"`. The type checker saw the
+non-empty type annotation and used `translate_type("i64")` → `Int`,
+overriding the inferred `Struct("Foo")` from the initializer. Fix:
+changed parser default from `"i64"` to `""` (empty). Applied across
+`let`, `mut`, `fn`, `impl`, `extern`, `trait` parsers.
 
 ### 18. Type checker: no source spans on diagnostics
 
