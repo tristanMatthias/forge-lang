@@ -495,6 +495,14 @@ ordering mismatches.
 Then check if the error is from the old seed vs the new source
 (struct layout mismatch). Use LLDB to find the exact crash point.
 
+### Adding new enum variants MUST go at the END
+**Symptom:** segfault or wrong dispatch after adding a variant.
+**Root cause:** inserting a variant in the MIDDLE of an enum shifts
+all subsequent tag numbers. The old seed's codegen uses the old tags
+but the new source has different values.
+**Fix:** ALWAYS add new enum variants at the END. Never in the middle.
+Apply to Expr, Stmt, ValueType, and all other enums.
+
 ### Naming: avoid shadowing function names with pattern variables
 **Rule:** never use `sexpr`, `sstmt`, `expr`, `stmt` as pattern
 variable names — they shadow function/type names and confuse the
