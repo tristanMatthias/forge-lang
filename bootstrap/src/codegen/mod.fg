@@ -458,6 +458,14 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
             let updated = match stmt {
                 .Function(name, params, ret_ty, body) -> {
                     let arity = param_list_length(params)
+                    // Detect function name collisions: if a function with
+                    // this name already exists, it's a silent crash
+                    // waiting to happen (see TECH_DEBT #14).
+                    let existing = forge_llvm_get_named_function(m, name)
+                    if existing != null {
+                        eprintln("FATAL: duplicate function `" + name + "` — rename to avoid collision")
+                        exit(1)
+                    }
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_i64_param_array(param_arr, i64t, 0, arity)
                     let fn_type = forge_llvm_function_type(i64t, param_arr, arity, 0)

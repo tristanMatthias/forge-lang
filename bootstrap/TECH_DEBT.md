@@ -193,20 +193,29 @@ only passed 2. `grep -rn "fn bind_params" src/` revealed the collision.
 **Prevention:** CLAUDE.md now requires prefixing function names with
 the module name to avoid collisions. Added to debugging protocol.
 
-### 16. Function name collisions across modules (SYSTEMATIC)
+### 16. Function name collisions across modules (MITIGATED)
 
 **Severity:** high (silent crash, very hard to diagnose)
 **Impact:** when two modules define a function with the same name but
 different signatures, LLVM picks one definition and all call sites
 use it. Arguments beyond the shorter signature read garbage.
 
+**Mitigation (done):** `declare_functions` in codegen/mod.fg now checks
+`forge_llvm_get_named_function` before adding. If a function with the
+same name already exists, it prints `FATAL: duplicate function` and exits.
+This catches the bug at compile time instead of runtime.
+
+**Proper fix (TODO):** The module preprocessor should mangle function
+names with their module path: `bind_params` in `typeck/mod.fg` becomes
+`typeck__bind_params` in the IR. This is what every real compiler does
+and eliminates the collision class entirely.
+
 **Prevention:** prefix all non-exported functions with their module
 name: `tc_bind_params`, `eval_bind_params`, etc.
 
 **Audit command:**
 ```bash
-# Find duplicate function names across modules
-grep -rh "^fn \|^export fn " src/ | sed 's/fn //' | sed 's/(.*//' | sort | uniq -d
+grep -rh "^fn \|^export fn " src/ | sed 's/^export //' | sed 's/fn //' | sed 's/(.*//' | sort | uniq -d
 ```
 
 ### 15. Bump allocator (STEPPING STONE — will be removed)
