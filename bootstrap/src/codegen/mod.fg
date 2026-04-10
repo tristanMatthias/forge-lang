@@ -1146,12 +1146,20 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
             // list.set(index, value) → forge_array_set(list, index, value)
             return emit_list_set(ctx, env, r.value, args)
         }
-        if method == "map" || method == "filter" {
+        if method == "map" {
             let elem_ty = vtype_list_elem(r.ty)
             let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
             if arg_r.had_error { return arg_r }
-            let fn_name = "forge_array_" + method
-            let result = call_2(ctx, get_fn(ctx, fn_name), r.value, arg_r.value, method)
+            let result = call_2(ctx, get_fn(ctx, "forge_array_map"), r.value, arg_r.value, "map")
+            // Map's return type is the lambda's return type, not the input element type
+            let ret_ty = vtype_fn_ret(arg_r.ty)
+            return EmitResult { value: result, ty: ValueType.List(ret_ty), had_error: false, error_message: "" }
+        }
+        if method == "filter" {
+            let elem_ty = vtype_list_elem(r.ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
+            if arg_r.had_error { return arg_r }
+            let result = call_2(ctx, get_fn(ctx, "forge_array_filter"), r.value, arg_r.value, "filter")
             return EmitResult { value: result, ty: ValueType.List(elem_ty), had_error: false, error_message: "" }
         }
         if method == "foreach" {
