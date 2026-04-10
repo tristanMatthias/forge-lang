@@ -1,0 +1,26 @@
+// Builder pattern — with expression + struct + closures
+type Config = {
+    host: string,
+    port: int,
+    workers: int,
+    debug: int,
+    timeout: int,
+}
+
+fn default_config() -> Config {
+    Config { host: "localhost", port: 8080, workers: 4, debug: 0, timeout: 30 }
+}
+
+// Builder functions return modified configs
+fn with_host(cfg: Config, host: string) -> Config { cfg with { host } }
+fn with_port(cfg: Config, port: int) -> Config { cfg with { port } }
+fn with_debug(cfg: Config) -> Config { cfg with { debug: 1 } }
+
+let prod = default_config()
+    |> with_host("prod.example.com")
+    |> with_port(443)
+
+let dev = default_config() |> with_debug
+
+println(`prod: ${prod.host}:${string(prod.port)} debug=${string(prod.debug)}`)
+println(`dev: ${dev.host}:${string(dev.port)} debug=${string(dev.debug)}`)

@@ -1,0 +1,33 @@
+// Functional programming patterns — closures + higher-order + lists
+fn compose(f: fn(int) -> int, g: fn(int) -> int) -> fn(int) -> int {
+    (x) -> f(g(x))
+}
+
+fn pipe2(x: int, f: fn(int) -> int, g: fn(int) -> int) -> int {
+    g(f(x))
+}
+
+let inc = (x) -> x + 1
+let dbl = (x) -> x * 2
+let sqr = (x) -> x * x
+
+// Compose chains
+let inc_then_dbl = compose(dbl, inc)
+let dbl_then_sqr = compose(sqr, dbl)
+println(string(inc_then_dbl(5)))
+println(string(dbl_then_sqr(3)))
+
+// Map with composed functions
+let nums = [1, 2, 3, 4, 5]
+let results = nums.map(compose(dbl, inc))
+for r in results {
+    println(string(r))
+}
+
+// Reduce to build a string
+let words = ["hello", "world", "from", "forge"]
+let sentence = words.reduce("", (acc, w) -> {
+    if acc == "" { return w }
+    acc + " " + w
+})
+println(sentence)

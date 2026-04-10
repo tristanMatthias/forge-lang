@@ -1,0 +1,48 @@
+// Collections stress — typed operations only
+
+// Find max in list
+let scores = [42, 17, 93, 65, 28, 81, 54]
+mut max_val = scores[0]
+for s in scores {
+    if s > max_val { max_val = s }
+}
+println(`max: ${string(max_val)}`)
+
+// Map with integer values
+let counts = {}
+counts.set("a", string(1))
+counts.set("b", string(2))
+counts.set("c", string(3))
+println(`a: ${string(counts.has("a"))}`)
+println(`d: ${string(counts.has("d"))}`)
+println(string(counts.length))
+
+// Nested list flatten + reduce  
+let matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+mut flat = []
+for row in matrix {
+    for val in row {
+        flat.push(val)
+    }
+}
+let total = flat.reduce(0, (a, b) -> a + b)
+println(`sum: ${string(total)}`)
+
+// Slice operations
+let nums = [10, 20, 30, 40, 50]
+let mid = nums[1..4]
+println(`mid: ${string(mid[0])}, ${string(mid[1])}, ${string(mid[2])}`)
+println(`slice len: ${string(mid.length)}`)
+
+// List of structs
+type Point = { x: int, y: int }
+let points = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }, Point { x: 5, y: 6 }]
+let distances = points.map((p) -> p.x * p.x + p.y * p.y)
+for d in distances {
+    println(string(d))
+}
+
+// Filter + reduce chain
+let evens = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter((x) -> x % 2 == 0)
+let even_sum = evens.reduce(0, (a, b) -> a + b)
+println(`even sum: ${string(even_sum)}`)

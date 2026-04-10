@@ -1,0 +1,2 @@
+prod: prod.example.com:443 debug=0
+dev: localhost:8080 debug=1
