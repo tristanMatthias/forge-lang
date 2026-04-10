@@ -781,6 +781,11 @@ Applied to type checking: each TYPE RULE maps to a function. If the type rules a
 - ✅ Parser default type changed from "i64" to "" (enables type inference)
 - ✅ Type checker runs in both check AND compile modes (zero false positives)
 - ✅ Return type mismatch detection
+- ✅ If/while condition type checking (rejects non-bool/non-int)
+- ✅ Map return type inference from lambda body
+- ✅ Match arm pattern variable binding
+- ✅ All list types supported (not just Int/Str)
+- ✅ Zero TODOs remaining in typeck source
 - ⚠️ No source spans on diagnostics (TECH_DEBT #18)
 - ❌ No type annotations on AST nodes
 - ❌ Codegen still has all vtype_is_* calls (0 removed)
