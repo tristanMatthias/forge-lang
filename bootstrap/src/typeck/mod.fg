@@ -392,11 +392,12 @@ fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
         .End -> tc
         .Node(pattern, guard, body, next) -> {
             let inner = tc_enter(tc)
-            // TODO: bind pattern variables
+            // Bind pattern variables (enum variant bindings)
+            let with_bindings = tc_bind_pattern(inner, pattern)
             let with_guard = if guard != null {
-                let g = check_expr(inner, guard!)
+                let g = check_expr(with_bindings, guard!)
                 g.tc
-            } else { inner }
+            } else { with_bindings }
             let b = check_expr(with_guard, body)
             let after = tc_exit(b.tc)
             check_match_arms(after, next)
@@ -599,13 +600,18 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     }
 
     // List methods
-    if vtype_eq(o.ty, ValueType.List(ValueType.Int)) || vtype_eq(o.ty, ValueType.List(ValueType.Str)) {
+    let is_list = match o.ty { .List(_) -> true, _ -> false }
+    if is_list {
         let elem = vtype_list_elem(o.ty)
         if method == "length" { return tc_er(checked_args, ValueType.Int) }
         if method == "push" { return tc_er(checked_args, ValueType.Void) }
         if method == "pop" { return tc_er(checked_args, elem) }
         if method == "get" { return tc_er(checked_args, elem) }
-        if method == "map" { return tc_er(checked_args, ValueType.List(ValueType.Int)) } // TODO: infer lambda ret
+        if method == "map" {
+            // Infer return type from the lambda argument
+            let map_ret = tc_infer_lambda_ret(checked_args, args, elem)
+            return tc_er(checked_args, ValueType.List(map_ret))
+        }
         if method == "filter" { return tc_er(checked_args, o.ty) }
         if method == "reduce" { return tc_er(checked_args, ValueType.Int) }
         if method == "foreach" { return tc_er(checked_args, ValueType.Void) }
@@ -664,6 +670,49 @@ fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     }
     // Map .get is handled in method call
     tc_er(o.tc, ValueType.Int)
+}
+
+// Bind pattern variables in match arms. Variant bindings are typed
+// as Int for now since we don't track the subject's enum variant types.
+fn tc_bind_pattern(tc: TC, pattern: Pattern) -> TC {
+    match pattern {
+        .Wildcard -> tc
+        .Variant(_, bindings) -> tc_bind_pattern_params(tc, bindings)
+        _ -> tc  // LitString, LitInt, LitBool — no bindings
+    }
+}
+
+fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
+    match params {
+        .End -> tc
+        .Node(name, _, next) -> {
+            if name == "_" { return tc_bind_pattern_params(tc, next) }
+            tc_bind_pattern_params(tc_bind(tc, name, ValueType.Int), next)
+        }
+    }
+}
+
+// Infer the return type of a lambda argument (e.g. for .map)
+fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {
+    match args {
+        .End -> ValueType.Int
+        .Node(expr, _) -> {
+            match expr {
+                .Lambda(params, body) -> {
+                    // Bind lambda params with the element type
+                    let inner = tc_enter(tc)
+                    let with_params = match params {
+                        .End -> inner
+                        .Node(pname, _, _) -> tc_bind(inner, pname, elem_ty)
+                    }
+                    let r = check_expr(with_params, body)
+                    tc_exit(r.tc)
+                    r.ty
+                }
+                _ -> ValueType.Int
+            }
+        }
+    }
 }
 
 fn tc_field_exists(fields: FieldList, name: string) -> bool {
