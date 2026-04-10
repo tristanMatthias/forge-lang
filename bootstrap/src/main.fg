@@ -205,6 +205,9 @@ fn main() {
         }
         let resolved = resolve_program(parsed.stmts!)
         if resolved.had_error {
+            if bag_has_errors(resolved.bag) {
+                render_bag(source, path, resolved.bag)
+            }
             fail(resolved.error_message)
         }
         println("ok")
@@ -222,6 +225,9 @@ fn main() {
         }
         let resolved = resolve_program(parsed.stmts!)
         if resolved.had_error {
+            if bag_has_errors(resolved.bag) {
+                render_bag(merged, path, resolved.bag)
+            }
             fail(resolved.error_message)
         }
 

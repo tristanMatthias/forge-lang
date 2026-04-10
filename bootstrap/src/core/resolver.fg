@@ -4,10 +4,12 @@
 // recursion works.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern}
+use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
 
 export type ResolveResult = {
     had_error: bool,
     error_message: string,
+    bag: DiagnosticBag,
 }
 
 enum ScopeEntry {
@@ -26,6 +28,7 @@ type Resolver = {
     depth: int,
     had_error: bool,
     error_message: string,
+    bag: DiagnosticBag,
 }
 
 export fn resolve_program(stmts: StmtList) -> ResolveResult {
@@ -35,6 +38,7 @@ export fn resolve_program(stmts: StmtList) -> ResolveResult {
     ResolveResult {
         had_error: r.had_error,
         error_message: r.error_message,
+        bag: r.bag,
     }
 }
 
@@ -83,40 +87,30 @@ fn resolver_new() -> Resolver {
         depth: 0,
         had_error: false,
         error_message: "",
+        bag: bag_new(),
     }
 }
 
 fn set_resolve_error(r: Resolver, message: string) -> Resolver {
-    if r.had_error {
-        return r
-    }
-    Resolver {
-        scopes: r.scopes,
-        functions: r.functions,
-        depth: r.depth,
+    resolve_report(r, DiagCode.UndefinedVariable, message)
+}
+
+fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
+    let diag = diag_error(code, message, span_dummy())
+    let new_bag = bag_report(r.bag, diag)
+    r with {
         had_error: true,
-        error_message: "resolve error: " + message,
+        error_message: if r.error_message.length == 0 { "resolve error: " + message } else { r.error_message },
+        bag: new_bag,
     }
 }
 
 fn enter_resolve_scope(r: Resolver) -> Resolver {
-    Resolver {
-        scopes: r.scopes,
-        functions: r.functions,
-        depth: r.depth + 1,
-        had_error: r.had_error,
-        error_message: r.error_message,
-    }
+    r with { depth: r.depth + 1 }
 }
 
 fn exit_resolve_scope(r: Resolver) -> Resolver {
-    Resolver {
-        scopes: pop_resolve_scope(r.scopes, r.depth),
-        functions: r.functions,
-        depth: r.depth - 1,
-        had_error: r.had_error,
-        error_message: r.error_message,
-    }
+    r with { scopes: pop_resolve_scope(r.scopes, r.depth), depth: r.depth - 1 }
 }
 
 fn pop_resolve_scope(entries: ScopeEntry, depth: int) -> ScopeEntry {
@@ -140,23 +134,11 @@ fn declare_name_mutable(r: Resolver, name: string) -> Resolver {
 }
 
 fn declare_name_mut(r: Resolver, name: string, is_mut: bool) -> Resolver {
-    Resolver {
-        scopes: ScopeEntry.Node(name, false, is_mut, r.depth, r.scopes),
-        functions: r.functions,
-        depth: r.depth,
-        had_error: r.had_error,
-        error_message: r.error_message,
-    }
+    r with { scopes: ScopeEntry.Node(name, false, is_mut, r.depth, r.scopes) }
 }
 
 fn define_name(r: Resolver, name: string) -> Resolver {
-    Resolver {
-        scopes: mark_defined(r.scopes, name, r.depth),
-        functions: r.functions,
-        depth: r.depth,
-        had_error: r.had_error,
-        error_message: r.error_message,
-    }
+    r with { scopes: mark_defined(r.scopes, name, r.depth) }
 }
 
 fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
@@ -183,13 +165,7 @@ fn mark_defined(entries: ScopeEntry, name: string, depth: int) -> ScopeEntry {
 }
 
 fn declare_function(r: Resolver, name: string) -> Resolver {
-    Resolver {
-        scopes: r.scopes,
-        functions: FnEntry.Node(name, r.functions),
-        depth: r.depth,
-        had_error: r.had_error,
-        error_message: r.error_message,
-    }
+    r with { functions: FnEntry.Node(name, r.functions) }
 }
 
 type NameLookup = {
@@ -411,7 +387,7 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
                 return set_resolve_error(after_value, "undefined variable `" + name + "`")
             }
             if !result.mutable {
-                return set_resolve_error(after_value, "cannot assign to immutable variable `" + name + "` (use `mut` to make it mutable)")
+                return resolve_report(after_value, DiagCode.ImmutableAssign, "cannot assign to immutable variable `" + name + "`")
             }
             after_value
         }
