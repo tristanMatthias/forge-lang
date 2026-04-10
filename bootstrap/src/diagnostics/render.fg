@@ -12,6 +12,7 @@ fn color_cyan(s: string) -> string { "\x1b[1;36m" + s + "\x1b[0m" }
 fn color_bold(s: string) -> string { "\x1b[1m" + s + "\x1b[0m" }
 fn color_dim(s: string) -> string { "\x1b[2m" + s + "\x1b[0m" }
 fn color_blue(s: string) -> string { "\x1b[1;34m" + s + "\x1b[0m" }
+fn color_gray(s: string) -> string { "\x1b[90m" + s + "\x1b[0m" }
 fn color_magenta(s: string) -> string { "\x1b[1;35m" + s + "\x1b[0m" }
 
 fn severity_color(sev: Severity, text: string) -> string {
@@ -98,7 +99,7 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
     let line = diag.span.line
     let col = diag.span.col
     let w = gutter_width(line)
-    let vbar = color_blue(chr_vbar())
+    let vbar = color_gray(chr_vbar())
     let pad = repeat_char(" ", w)
     let code_str = diag_code_str(diag.code)
 
@@ -111,40 +112,51 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
     if line > 0 {
         // Box top: ╭─[file.fg:2:5]
         let loc = `${filename}:${string(line)}:${string(col)}`
-        eprintln(`  ${pad} ${color_blue(chr_ltop() + chr_hbar())}[${loc}]`)
+        eprintln(`  ${pad} ${color_gray(chr_ltop() + chr_hbar())}[${color_dim(loc)}]`)
 
         // Blank gutter
         eprintln(`  ${pad} ${vbar}`)
 
-        // Source line
+        // Source line — highlight the error span in the severity color
         let src_line = extract_line(source, line)
-        eprintln(`  ${color_blue(gutter(line, w))} ${vbar} ${src_line}`)
+        let span_len = diag.span.end - diag.span.start
+        let hi_len = if span_len > 0 { span_len } else { 1 }
+        let hi_start = col - 1
+        let hi_end = hi_start + hi_len
+        let before_span = if hi_start > 0 { src_line.substring(0, hi_start) } else { "" }
+        let in_span = if hi_end <= src_line.length {
+            src_line.substring(hi_start, hi_end)
+        } else {
+            src_line.substring(hi_start, src_line.length)
+        }
+        let after_span = if hi_end < src_line.length { src_line.substring(hi_end, src_line.length) } else { "" }
+        let highlighted_line = before_span + severity_color(diag.severity, in_span) + after_span
+        eprintln(`  ${color_gray(gutter(line, w))} ${vbar} ${highlighted_line}`)
 
         // Caret line:  · │   ──┬──
-        let span_len = diag.span.end - diag.span.start
-        let underline_len = if span_len > 0 { span_len } else { 1 }
+        let underline_len = hi_len
         let before = repeat_char(" ", col - 1)
 
         if underline_len == 1 {
             // Single char: just ┬
             let caret = severity_color(diag.severity, chr_caret())
-            eprintln(`  ${color_blue(pad + " " + chr_dot())} ${before}${caret}`)
+            eprintln(`  ${color_gray(pad + " " + chr_dot())} ${before}${caret}`)
         } else {
             // Multi char: ──┬──
             let half = underline_len / 2
             let left_bars = repeat_hbar(half)
             let right_bars = repeat_hbar(underline_len - half - 1)
             let caret_line = severity_color(diag.severity, left_bars + chr_caret() + right_bars)
-            eprintln(`  ${color_blue(pad + " " + chr_dot())} ${before}${caret_line}`)
+            eprintln(`  ${color_gray(pad + " " + chr_dot())} ${before}${caret_line}`)
         }
 
         // Label line:  · │   ╰── message
         let label_pad = repeat_char(" ", col - 1 + underline_len / 2)
         let connector = severity_color(diag.severity, chr_lbot() + chr_hbar() + chr_hbar())
-        eprintln(`  ${color_blue(pad + " " + chr_dot())} ${label_pad}${connector} ${diag.message}`)
+        eprintln(`  ${color_gray(pad + " " + chr_dot())} ${label_pad}${connector} ${diag.message}`)
 
         // Box bottom: ───╯
-        eprintln(color_blue(repeat_hbar(w + 3) + chr_rbot()))
+        eprintln(color_gray(repeat_hbar(w + 3) + chr_rbot()))
     }
 
     // Help text
@@ -163,15 +175,13 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
     if bag.error_count > 0 || bag.warning_count > 0 {
         mut parts = ""
         if bag.error_count > 0 {
-            parts = color_red(string(bag.error_count) + " error")
-            if bag.error_count > 1 { parts = parts + "s" }
-            parts = parts + "\x1b[0m"
+            let label = string(bag.error_count) + " error" + if bag.error_count > 1 { "s" } else { "" }
+            parts = color_red(label)
         }
         if bag.warning_count > 0 {
             if parts.length > 0 { parts = parts + " and " }
-            parts = parts + color_yellow(string(bag.warning_count) + " warning")
-            if bag.warning_count > 1 { parts = parts + "s" }
-            parts = parts + "\x1b[0m"
+            let label = string(bag.warning_count) + " warning" + if bag.warning_count > 1 { "s" } else { "" }
+            parts = parts + color_yellow(label)
         }
         eprintln(`${color_bold("Found")} ${parts}${color_bold(".")}`)
         eprintln("")

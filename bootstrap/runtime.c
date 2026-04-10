@@ -589,7 +589,8 @@ static int hex_val(char c) {
     return 0;
 }
 const char* forge_char_from_hex(const char* hi, const char* lo) {
-    static char buf[2] = {0, 0};
+    char* buf = (char*)malloc(2);
     buf[0] = (char)((hex_val(hi[0]) << 4) | hex_val(lo[0]));
+    buf[1] = 0;
     return buf;
 }
