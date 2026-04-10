@@ -1,0 +1,144 @@
+// WHY: structured diagnostic types for compiler error reporting.
+// Every error is a Diagnostic record with error code, severity,
+// source span, help text, and labels. DiagnosticBag collects
+// diagnostics across an entire compilation pass without stopping.
+//
+// Ported from forge/packages/forgec-rust/errors/diagnostic.rs.
+// The architecture supports multi-label errors, suggestions with
+// confidence scores, and machine-readable JSON output — even
+// though not all of those are wired up in Phase 0.
+
+// ── Source spans ──
+
+export type Span = {
+    start: int,    // byte offset into source
+    end: int,      // byte offset end
+    line: int,     // 1-based line number
+    col: int,      // 1-based column
+}
+
+export fn span_new(start: int, end: int, line: int, col: int) -> Span {
+    Span { start, end, line, col }
+}
+
+export fn span_dummy() -> Span {
+    Span { start: 0, end: 0, line: 0, col: 0 }
+}
+
+// ── Severity ──
+
+export enum Severity {
+    Error
+    Warning
+    Info
+    Hint
+}
+
+export fn severity_str(s: Severity) -> string {
+    match s {
+        .Error -> "error"
+        .Warning -> "warning"
+        .Info -> "info"
+        .Hint -> "hint"
+    }
+}
+
+// ── Labels ──
+
+export enum LabelKind {
+    Primary
+    Secondary
+}
+
+export type Label = {
+    span: Span,
+    message: string,
+    kind: LabelKind,
+}
+
+export enum LabelList {
+    End
+    Node(label: Label, next: LabelList)
+}
+
+// ── Diagnostic ──
+
+export type Diagnostic = {
+    code: string,
+    severity: Severity,
+    message: string,
+    span: Span,
+    help: string,       // empty string = no help
+}
+
+export fn diag_error(code: string, message: string, span: Span) -> Diagnostic {
+    Diagnostic { code, severity: Severity.Error, message, span, help: "" }
+}
+
+export fn diag_warning(code: string, message: string, span: Span) -> Diagnostic {
+    Diagnostic { code, severity: Severity.Warning, message, span, help: "" }
+}
+
+export fn diag_with_help(d: Diagnostic, help: string) -> Diagnostic {
+    d with { help }
+}
+
+// ── DiagnosticBag ──
+
+export enum DiagnosticList {
+    End
+    Node(diag: Diagnostic, next: DiagnosticList)
+}
+
+export type DiagnosticBag = {
+    diagnostics: DiagnosticList,
+    error_count: int,
+    warning_count: int,
+}
+
+export fn bag_new() -> DiagnosticBag {
+    DiagnosticBag { diagnostics: DiagnosticList.End, error_count: 0, warning_count: 0 }
+}
+
+export fn bag_report(bag: DiagnosticBag, diag: Diagnostic) -> DiagnosticBag {
+    let new_errors = match diag.severity {
+        .Error -> bag.error_count + 1
+        _ -> bag.error_count
+    }
+    let new_warnings = match diag.severity {
+        .Warning -> bag.warning_count + 1
+        _ -> bag.warning_count
+    }
+    DiagnosticBag {
+        diagnostics: DiagnosticList.Node(diag, bag.diagnostics),
+        error_count: new_errors,
+        warning_count: new_warnings,
+    }
+}
+
+export fn bag_has_errors(bag: DiagnosticBag) -> bool {
+    bag.error_count > 0
+}
+
+export fn bag_merge(a: DiagnosticBag, b: DiagnosticBag) -> DiagnosticBag {
+    // Prepend all of b's diagnostics onto a
+    merge_lists(a, b.diagnostics, b.error_count, b.warning_count)
+}
+
+fn merge_lists(bag: DiagnosticBag, list: DiagnosticList, extra_errors: int, extra_warnings: int) -> DiagnosticBag {
+    match list {
+        .End -> DiagnosticBag {
+            diagnostics: bag.diagnostics,
+            error_count: bag.error_count + extra_errors,
+            warning_count: bag.warning_count + extra_warnings,
+        }
+        .Node(diag, next) -> {
+            let updated = DiagnosticBag {
+                diagnostics: DiagnosticList.Node(diag, bag.diagnostics),
+                error_count: bag.error_count,
+                warning_count: bag.warning_count,
+            }
+            merge_lists(updated, next, extra_errors, extra_warnings)
+        }
+    }
+}

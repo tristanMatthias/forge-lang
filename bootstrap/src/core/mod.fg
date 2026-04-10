@@ -9,3 +9,6 @@ mod resolver
 mod eval
 mod cg
 mod llvm
+mod diagnostic
+mod render
+mod suggest

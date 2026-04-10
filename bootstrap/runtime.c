@@ -554,3 +554,29 @@ int64_t forge_closure_call_0(int64_t closure) {
     if (n == 2) { typedef int64_t (*Fn2x)(int64_t, int64_t); return ((Fn2x)(uintptr_t)fn)(forge_closure_get_capture(closure, 0), forge_closure_get_capture(closure, 1)); }
     return ((Fn0)(uintptr_t)fn)(); // fallback
 }
+
+// ── Levenshtein distance ──
+// Used by "did you mean?" suggestions in the compiler.
+int64_t forge_selfhost_levenshtein(const char *a, const char *b, int64_t len_a, int64_t len_b) {
+    if (len_a == 0) return len_b;
+    if (len_b == 0) return len_a;
+    // Use a single row of the DP matrix (O(min(m,n)) space).
+    int64_t *row = (int64_t *)malloc((len_b + 1) * sizeof(int64_t));
+    for (int64_t j = 0; j <= len_b; j++) row[j] = j;
+    for (int64_t i = 1; i <= len_a; i++) {
+        int64_t prev = row[0];
+        row[0] = i;
+        for (int64_t j = 1; j <= len_b; j++) {
+            int64_t cost = (a[i-1] == b[j-1]) ? 0 : 1;
+            int64_t del = row[j] + 1;
+            int64_t ins = row[j-1] + 1;
+            int64_t sub = prev + cost;
+            prev = row[j];
+            int64_t best = del < ins ? del : ins;
+            row[j] = best < sub ? best : sub;
+        }
+    }
+    int64_t result = row[len_b];
+    free(row);
+    return result;
+}
