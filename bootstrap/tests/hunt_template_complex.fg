@@ -1,0 +1,13 @@
+// Complex template expressions
+type Point = { x: int, y: int }
+let p = Point { x: 10, y: 20 }
+println(`point(${string(p.x)}, ${string(p.y)})`)
+
+// Template with function call
+fn greet(name: string) -> string { `hello ${name}!` }
+println(greet("world"))
+println(`result: ${greet("forge")}`)
+
+// Template with if-expression
+let x = 5
+println(`sign: ${if x > 0 { "positive" } else { "negative" }}`)

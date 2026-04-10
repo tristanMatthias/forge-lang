@@ -1,0 +1,8 @@
+// Closure captures VALUE at creation time (snapshot)
+// But in the bootstrap, captures happen via load at the instruction
+// position where the closure is created. So:
+let base = 10
+let snap = (x) -> x + base
+// base is immutable, value is 10 at capture time
+println(string(snap(5)))
+println(string(snap(100)))

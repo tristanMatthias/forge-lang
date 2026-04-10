@@ -1,0 +1,24 @@
+// Match inside match inside match
+enum Outer { A(inner: Inner) }
+enum Inner { X(value: int), Y }
+
+fn deep(o: Outer) -> string {
+    match o {
+        .A(inner) -> {
+            match inner {
+                .X(v) -> {
+                    match v {
+                        _ if v > 10 -> "big"
+                        _ if v > 0 -> "small"
+                        _ -> "zero or negative"
+                    }
+                }
+                .Y -> "Y"
+            }
+        }
+    }
+}
+println(deep(Outer.A(Inner.X(42))))
+println(deep(Outer.A(Inner.X(3))))
+println(deep(Outer.A(Inner.X(0))))
+println(deep(Outer.A(Inner.Y)))

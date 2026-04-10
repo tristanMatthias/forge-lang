@@ -349,6 +349,7 @@ fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
     match pattern {
         .Wildcard -> r
         .Variant(_, bindings) -> declare_params(r, bindings)
+        _ -> r  // Literal patterns don't bind variables
     }
 }
 

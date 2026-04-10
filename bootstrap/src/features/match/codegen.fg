@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq}
-use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr}
+use core.ast.{Expr, Pattern, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str}
+use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, get_fn, call_2}
 use codegen.{emit_expr}
 
 
@@ -52,6 +52,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                     let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, want_tag, "tag_eq")
                     forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
                 }
+                _ -> forge_llvm_build_br(ctx.builder, arm_bb) // literal patterns in enum context — treat as wildcard
             }
             forge_llvm_position_at_end(ctx.builder, arm_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
@@ -73,7 +74,6 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             forge_llvm_position_at_end(ctx.builder, next_bb)
             let rest = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)
             if rest.had_error { return rest }
-            // Type unification: warn if arms disagree on type
             if !vtype_eq(rest.ty, ValueType.Int) && !vtype_eq(body_result.ty, rest.ty) {
                 eprintln("warning: match arms have different types: `" + vtype_display(body_result.ty) + "` vs `" + vtype_display(rest.ty) + "`")
             }
@@ -125,6 +125,7 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
                     let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, want_tag, "tag_eq")
                     forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
                 }
+                _ -> forge_llvm_build_br(ctx.builder, arm_bb)
             }
             forge_llvm_position_at_end(ctx.builder, arm_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
@@ -157,6 +158,7 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
             if !v.found { return env }
             bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, bindings, v.fields, 0)
         }
+        _ -> env  // Literal patterns don't bind variables
     }
 }
 
@@ -187,13 +189,44 @@ fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Matc
     let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "pmatch_result")
     forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
     let merge_bb = new_bb(ctx, "pmatch_end")
-    emit_primitive_arms_expr(ctx, env, arms, merge_bb, result_slot)
+    emit_primitive_arms_expr(ctx, env, subj, arms, merge_bb, result_slot)
 }
 
-fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, arms: MatchArmList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
+// Generate a boolean comparison for a literal pattern against the subject.
+fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
+    match pattern {
+        .LitInt(val) -> {
+            forge_llvm_build_icmp(ctx.builder, 32, subj.value, const_i64(ctx, val), "lit_eq")
+        }
+        .LitBool(val) -> {
+            let cmp_val = if val { const_i64(ctx, 1) } else { const_i64(ctx, 0) }
+            forge_llvm_build_icmp(ctx.builder, 32, subj.value, cmp_val, "lit_eq")
+        }
+        .LitString(val) -> {
+            let subj_ptr = to_ptr(ctx, subj.value, "lit_str_ptr")
+            let lit_ptr = forge_llvm_build_global_string_ptr(ctx.builder, val, ".lit_str")
+            let cmp_result = call_2(ctx, get_fn(ctx, "strcmp"), subj_ptr, lit_ptr, "strcmp_r")
+            forge_llvm_build_icmp(ctx.builder, 32, cmp_result, const_i64(ctx, 0), "str_eq")
+        }
+        _ -> {
+            // Wildcard / Variant — should not reach here
+            const_i64(ctx, 1)
+        }
+    }
+}
+
+fn is_literal_pattern(pattern: Pattern) -> bool {
+    match pattern {
+        .LitString(_) -> true
+        .LitInt(_) -> true
+        .LitBool(_) -> true
+        _ -> false
+    }
+}
+
+fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
     match arms {
         .End -> {
-            // No arm matched — fall through with default value.
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 forge_llvm_build_br(ctx.builder, merge_bb)
             }
@@ -202,47 +235,59 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, arms: MatchArmList, merge_bb:
             EmitResult { value: loaded, ty: ValueType.Int, had_error: false, error_message: "" }
         }
         .Node(pattern, guard, body, next) -> {
-            if guard != null {
-                // Guarded arm: if guard { body } else { next arm }
+            let body_bb = new_bb(ctx, "parm_body")
+            let next_bb = new_bb(ctx, "parm_next")
+
+            if is_literal_pattern(pattern) {
+                // Literal pattern: compare subject against the literal
+                let cmp = emit_literal_cmp(ctx, subj, pattern)
+                if guard != null {
+                    // Literal + guard: both must be true
+                    let lit_pass_bb = new_bb(ctx, "lit_guard")
+                    forge_llvm_build_cond_br(ctx.builder, cmp, lit_pass_bb, next_bb)
+                    forge_llvm_position_at_end(ctx.builder, lit_pass_bb)
+                    let guard_r = emit_expr(ctx, env, guard!)
+                    if guard_r.had_error { return guard_r }
+                    let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
+                    forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
+                } else {
+                    forge_llvm_build_cond_br(ctx.builder, cmp, body_bb, next_bb)
+                }
+            } else if guard != null {
+                // Guarded wildcard: if guard { body } else { next arm }
                 let guard_r = emit_expr(ctx, env, guard!)
                 if guard_r.had_error { return guard_r }
                 let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
-                let body_bb = new_bb(ctx, "parm_body")
-                let next_bb = new_bb(ctx, "parm_next")
                 forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
-
-                forge_llvm_position_at_end(ctx.builder, body_bb)
-                let body_r = emit_expr(ctx, env, body)
-                if body_r.had_error { return body_r }
-                if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                    forge_llvm_build_store(ctx.builder, body_r.value, result_slot)
-                    forge_llvm_build_br(ctx.builder, merge_bb)
-                }
-
-                forge_llvm_position_at_end(ctx.builder, next_bb)
-                emit_primitive_arms_expr(ctx, env, next, merge_bb, result_slot)
             } else {
                 // Unguarded wildcard: always matches (catch-all)
-                let body_r = emit_expr(ctx, env, body)
-                if body_r.had_error { return body_r }
-                if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                    forge_llvm_build_store(ctx.builder, body_r.value, result_slot)
-                    forge_llvm_build_br(ctx.builder, merge_bb)
-                }
-                forge_llvm_position_at_end(ctx.builder, merge_bb)
-                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "pmatch_val")
-                EmitResult { value: loaded, ty: body_r.ty, had_error: false, error_message: "" }
+                forge_llvm_build_br(ctx.builder, body_bb)
             }
+
+            forge_llvm_position_at_end(ctx.builder, body_bb)
+            let body_r = emit_expr(ctx, env, body)
+            if body_r.had_error { return body_r }
+            if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                forge_llvm_build_store(ctx.builder, body_r.value, result_slot)
+                forge_llvm_build_br(ctx.builder, merge_bb)
+            }
+
+            forge_llvm_position_at_end(ctx.builder, next_bb)
+            let rest = emit_primitive_arms_expr(ctx, env, subj, next, merge_bb, result_slot)
+            if rest.had_error { return rest }
+            // Return the merged loaded value from result_slot (via rest),
+            // but carry the type from this arm's body.
+            EmitResult { value: rest.value, ty: body_r.ty, had_error: false, error_message: "" }
         }
     }
 }
 
 fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList) -> StmtResult {
     let merge_bb = new_bb(ctx, "pmatch_end")
-    emit_primitive_arms_stmt(ctx, env, arms, merge_bb)
+    emit_primitive_arms_stmt(ctx, env, subj, arms, merge_bb)
 }
 
-fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, arms: MatchArmList, merge_bb: ptr) -> StmtResult {
+fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList, merge_bb: ptr) -> StmtResult {
     match arms {
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
@@ -252,32 +297,40 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, arms: MatchArmList, merge_bb:
             ok_stmt(env)
         }
         .Node(pattern, guard, body, next) -> {
-            if guard != null {
+            let body_bb = new_bb(ctx, "parm_body")
+            let next_bb = new_bb(ctx, "parm_next")
+
+            if is_literal_pattern(pattern) {
+                let cmp = emit_literal_cmp(ctx, subj, pattern)
+                if guard != null {
+                    let lit_pass_bb = new_bb(ctx, "lit_guard")
+                    forge_llvm_build_cond_br(ctx.builder, cmp, lit_pass_bb, next_bb)
+                    forge_llvm_position_at_end(ctx.builder, lit_pass_bb)
+                    let guard_r = emit_expr(ctx, env, guard!)
+                    if guard_r.had_error { return err_stmt_from_expr(guard_r) }
+                    let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
+                    forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
+                } else {
+                    forge_llvm_build_cond_br(ctx.builder, cmp, body_bb, next_bb)
+                }
+            } else if guard != null {
                 let guard_r = emit_expr(ctx, env, guard!)
                 if guard_r.had_error { return err_stmt_from_expr(guard_r) }
                 let guard_bool = forge_llvm_build_icmp(ctx.builder, 33, guard_r.value, const_i64(ctx, 0), "pguard")
-                let body_bb = new_bb(ctx, "parm_body")
-                let next_bb = new_bb(ctx, "parm_next")
                 forge_llvm_build_cond_br(ctx.builder, guard_bool, body_bb, next_bb)
-
-                forge_llvm_position_at_end(ctx.builder, body_bb)
-                let body_r = emit_expr(ctx, env, body)
-                if body_r.had_error { return err_stmt_from_expr(body_r) }
-                if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                    forge_llvm_build_br(ctx.builder, merge_bb)
-                }
-
-                forge_llvm_position_at_end(ctx.builder, next_bb)
-                emit_primitive_arms_stmt(ctx, env, next, merge_bb)
             } else {
-                let body_r = emit_expr(ctx, env, body)
-                if body_r.had_error { return err_stmt_from_expr(body_r) }
-                if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                    forge_llvm_build_br(ctx.builder, merge_bb)
-                }
-                forge_llvm_position_at_end(ctx.builder, merge_bb)
-                ok_stmt(env)
+                forge_llvm_build_br(ctx.builder, body_bb)
             }
+
+            forge_llvm_position_at_end(ctx.builder, body_bb)
+            let body_r = emit_expr(ctx, env, body)
+            if body_r.had_error { return err_stmt_from_expr(body_r) }
+            if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                forge_llvm_build_br(ctx.builder, merge_bb)
+            }
+
+            forge_llvm_position_at_end(ctx.builder, next_bb)
+            emit_primitive_arms_stmt(ctx, env, subj, next, merge_bb)
         }
     }
 }

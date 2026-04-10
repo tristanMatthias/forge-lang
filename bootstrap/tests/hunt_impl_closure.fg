@@ -1,0 +1,12 @@
+// Method returning closure
+type Adder = { base: int }
+impl Adder {
+    fn make(self) -> fn(int) -> int {
+        let b = self.base
+        (x) -> x + b
+    }
+}
+let a = Adder { base: 100 }
+let add100 = a.make()
+println(string(add100(5)))
+println(string(add100(42)))

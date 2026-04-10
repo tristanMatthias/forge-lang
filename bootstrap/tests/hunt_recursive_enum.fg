@@ -1,0 +1,23 @@
+// Recursive enum (linked list)
+enum IntList {
+    Nil
+    Cons(head: int, tail: IntList)
+}
+
+fn sum(list: IntList) -> int {
+    match list {
+        .Nil -> 0
+        .Cons(h, t) -> h + sum(t)
+    }
+}
+
+fn list_to_string(list: IntList) -> string {
+    match list {
+        .Nil -> "nil"
+        .Cons(h, t) -> string(h) + " -> " + list_to_string(t)
+    }
+}
+
+let my_list = IntList.Cons(1, IntList.Cons(2, IntList.Cons(3, IntList.Nil)))
+println(list_to_string(my_list))
+println(string(sum(my_list)))

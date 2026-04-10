@@ -835,7 +835,7 @@ fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_
 
     forge_llvm_position_at_end(ctx.builder, merge_bb)
     let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "ife_val")
-    ok_emit(loaded)
+    ok_emit_typed(loaded, t.ty)
 }
 
 fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> EmitResult {

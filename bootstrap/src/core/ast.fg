@@ -41,9 +41,13 @@ export enum VariantList {
 //   .Variant            → no payload binding
 //   .Variant(a, b)      → bind payload positionally to `a`, `b`
 //   _                   → wildcard
+//   "string" / 42 / true / false → literal match
 export enum Pattern {
     Wildcard
     Variant(name: string, bindings: ParamList)
+    LitString(value: string)
+    LitInt(value: int)
+    LitBool(value: bool)
 }
 
 // Arms of a match expression/statement, terminated by `End`.

@@ -1,0 +1,13 @@
+// Pipe into pre-created closure
+fn make_transform(multiplier: int) -> fn(int) -> int {
+    (x) -> x * multiplier
+}
+let times3 = make_transform(3)
+let result = 5 |> times3
+println(string(result))
+
+// Chain pipes with closures
+let inc = (x) -> x + 1
+let dbl = (x) -> x * 2
+let val = 5 |> inc |> dbl |> inc
+println(string(val))

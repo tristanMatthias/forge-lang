@@ -60,7 +60,28 @@ impl Parser {
             self.advance()
             return Pattern.Wildcard
         }
-        if !self.consume("dot", "expected `.` or `_` to start pattern") {
+        // Literal patterns: "string", 42, true, false
+        if self.check("string") {
+            let raw = self.current_lexeme
+            self.advance()
+            // Strip surrounding quotes from the lexeme
+            let content = raw.substring(1, raw.length - 1)
+            return Pattern.LitString(content)
+        }
+        if self.check("number") {
+            let val = int(self.current_lexeme)
+            self.advance()
+            return Pattern.LitInt(val)
+        }
+        if self.check("kw_true") {
+            self.advance()
+            return Pattern.LitBool(true)
+        }
+        if self.check("kw_false") {
+            self.advance()
+            return Pattern.LitBool(false)
+        }
+        if !self.consume("dot", "expected `.`, `_`, or literal to start pattern") {
             return null
         }
         let name = self.consume_identifier("expected variant name in pattern")?

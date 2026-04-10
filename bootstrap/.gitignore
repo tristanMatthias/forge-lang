@@ -1,5 +1,7 @@
 src/*.fg.ll
 src/**/*.fg.ll
 src/**/*.bin
+tests/*.fg.ll
+tests/*.bin
 build/
 *.bin.o
