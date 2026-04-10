@@ -135,6 +135,8 @@ type TC = {
     depth: int,
     bag: DiagnosticBag,
     current_fn: string,
+    current_line: int,
+    current_col: int,
 }
 
 type ExprResult = {
@@ -151,6 +153,8 @@ fn tc_new() -> TC {
         depth: 0,
         bag: bag_new(),
         current_fn: "",
+        current_line: 0,
+        current_col: 0,
     }
 }
 
@@ -165,7 +169,8 @@ fn tc_report(tc: TC, code: DiagCode, msg: string) -> TC {
     let message = if tc.current_fn.length > 0 {
         msg + " (in function `" + tc.current_fn + "`)"
     } else { msg }
-    tc with { bag: bag_report(tc.bag, diag_error(code, message, span_dummy())) }
+    let sp = if tc.current_line > 0 { span_new(0, 0, tc.current_line, tc.current_col) } else { span_dummy() }
+    tc with { bag: bag_report(tc.bag, diag_error(code, message, sp)) }
 }
 
 fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
@@ -238,7 +243,8 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
         .Node(ss, next) -> {
-            let updated = check_stmt(tc, ss.node)
+            let with_pos = tc with { current_line: ss.line, current_col: ss.col }
+            let updated = check_stmt(with_pos, ss.node)
             check_stmts(updated, next)
         }
     }
