@@ -352,6 +352,30 @@ fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) 
             _ -> { return err_emit("expected 1 arg") }
         }
     }
+    if arg_count == 3 {
+        match args {
+            .Node(se0, rest0) -> {
+                let a0 = emit_expr(ctx, env, se0.node)
+                if a0.had_error { return a0 }
+                match rest0 {
+                    .Node(se1, rest1) -> {
+                        let a1 = emit_expr(ctx, env, se1.node)
+                        if a1.had_error { return a1 }
+                        match rest1 {
+                            .Node(se2, _) -> {
+                                let a2 = emit_expr(ctx, env, se2.node)
+                                if a2.had_error { return a2 }
+                                return ok_emit(call_4(ctx, get_fn(ctx, "forge_closure_call_3"), fn_i64, a0.value, a1.value, a2.value, "ccall"))
+                            }
+                            _ -> { return err_emit("expected 3 args") }
+                        }
+                    }
+                    _ -> { return err_emit("expected 3 args") }
+                }
+            }
+            _ -> { return err_emit("expected 3 args") }
+        }
+    }
     match args {
         .Node(se0, rest) -> {
             let a0 = emit_expr(ctx, env, se0.node)

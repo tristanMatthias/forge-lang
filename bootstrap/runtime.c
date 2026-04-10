@@ -605,6 +605,18 @@ int64_t forge_closure_call_0(int64_t closure) {
     return ((Fn0)(uintptr_t)fn)(); // fallback
 }
 
+int64_t forge_closure_call_3(int64_t closure, int64_t a0, int64_t a1, int64_t a2) {
+    int64_t n = forge_closure_num_captures(closure);
+    int64_t fn = forge_closure_get_fn(closure);
+    typedef int64_t (*Fn3)(int64_t, int64_t, int64_t);
+    typedef int64_t (*Fn4)(int64_t, int64_t, int64_t, int64_t);
+    typedef int64_t (*Fn5)(int64_t, int64_t, int64_t, int64_t, int64_t);
+    if (n == 0) return ((Fn3)(uintptr_t)fn)(a0, a1, a2);
+    if (n == 1) return ((Fn4)(uintptr_t)fn)(a0, a1, a2, forge_closure_get_capture(closure, 0));
+    if (n == 2) return ((Fn5)(uintptr_t)fn)(a0, a1, a2, forge_closure_get_capture(closure, 0), forge_closure_get_capture(closure, 1));
+    return ((Fn3)(uintptr_t)fn)(a0, a1, a2); // fallback
+}
+
 // ── Levenshtein distance ──
 // Used by "did you mean?" suggestions in the compiler.
 int64_t forge_selfhost_levenshtein(const char *a, const char *b, int64_t len_a, int64_t len_b) {

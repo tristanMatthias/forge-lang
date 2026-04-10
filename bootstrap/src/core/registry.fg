@@ -125,7 +125,8 @@ export fn build_expr_registry() -> ExprRegistry {
     // Features register here. Each line replaces a match arm in emit_expr.
     // To migrate a feature: create an export fn wrapper in its codegen.fg,
     // register it here, remove the match arm from codegen/mod.fg.
-    reg = register_expr(reg, "is", EXPR_IS_CHECK, emit_is_check_feature)
+    // Tag 30 = Expr.IsCheck (see tag constants above for reference)
+    reg = register_expr(reg, "is", 30, emit_is_check_feature)
     reg
 }
 

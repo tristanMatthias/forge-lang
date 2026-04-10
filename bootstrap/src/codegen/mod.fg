@@ -198,6 +198,15 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(cl_3_arr)
     forge_llvm_add_function(m, "forge_closure_call_2", cl_3_type)
 
+    let cl_4_arr = forge_llvm_type_array_new(4)
+    forge_llvm_type_array_set(cl_4_arr, 0, i64t)
+    forge_llvm_type_array_set(cl_4_arr, 1, i64t)
+    forge_llvm_type_array_set(cl_4_arr, 2, i64t)
+    forge_llvm_type_array_set(cl_4_arr, 3, i64t)
+    let cl_4_type = forge_llvm_function_type(i64t, cl_4_arr, 4, 0)
+    forge_llvm_type_array_free(cl_4_arr)
+    forge_llvm_add_function(m, "forge_closure_call_3", cl_4_type)
+
     // C-runtime: higher-order list operations (map, filter, reduce, foreach)
     // All take (ptr arr, i64 fn_ptr) and return ptr or i64.
     let arr_ho_arr = forge_llvm_type_array_new(2)
@@ -851,16 +860,13 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .Lambda(params, body) -> emit_lambda(ctx, env, params, body)
         .MapLit(entries) -> emit_map_lit(ctx, env, entries)
         .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
-        .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname)
         _ -> {
-            // Feature registry dispatch: check if a registered feature
-            // handles this expression type.
             let tag = forge_expr_tag(expr)
             let result = dispatch_expr(ctx.expr_features, tag, ctx, env, expr)
             if result != null {
                 return result!
             }
-            err_emit("unsupported expression type")
+            err_emit("unsupported expression type (tag=" + string(tag) + ")")
         }
     }
 }
