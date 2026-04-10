@@ -773,3 +773,9 @@ void forge_dump_stmt_list(const char* label, int64_t list_ptr) {
     // Dump the stmt
     forge_dump_stmt("  stmt", fields[0]);
 }
+
+// ── eprintln: write string + newline to stderr ──
+void forge_eprintln(const char* s) {
+    fputs(s, stderr);
+    fputc('\n', stderr);
+}

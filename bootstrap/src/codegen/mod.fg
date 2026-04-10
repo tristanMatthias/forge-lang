@@ -59,6 +59,13 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_type_array_free(puts_param_arr)
     forge_llvm_add_function(m, "puts", puts_type)
 
+    // forge_eprintln(ptr) -> void — write string + newline to stderr
+    let eprint_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(eprint_param_arr, 0, pt)
+    let eprint_type = forge_llvm_function_type(forge_llvm_void_type(lc), eprint_param_arr, 1, 0)
+    forge_llvm_type_array_free(eprint_param_arr)
+    forge_llvm_add_function(m, "forge_eprintln", eprint_type)
+
     let strlen_param_arr = forge_llvm_type_array_new(1)
     forge_llvm_type_array_set(strlen_param_arr, 0, pt)
     let strlen_type = forge_llvm_function_type(i64t, strlen_param_arr, 1, 0)
@@ -1286,9 +1293,7 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
         return emit_println(ctx, env, args)
     }
     if name == "eprintln" {
-        // Same as println for the MVP — go to stdout. Bootstrap
-        // source uses eprintln only for diagnostics.
-        return emit_println(ctx, env, args)
+        return emit_eprintln(ctx, env, args)
     }
     if name == "string" {
         return emit_int_to_string(ctx, env, args)
@@ -1383,15 +1388,55 @@ fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
         .Node(arg, _) -> {
             let r = emit_expr(ctx, env, arg)
             if r.had_error { return r }
-            // Print "panic: <message>\n" to stderr via puts
+            // Print "panic: <message>" to stderr
             let prefix = forge_llvm_build_global_string_ptr(ctx.builder, "panic: ", ".panic_prefix")
             let prefix_i64 = to_i64(ctx, prefix, "prefix_i64")
             let msg = emit_concat(ctx, prefix_i64, r.value)
             let msg_ptr = to_ptr(ctx, msg.value, "panic_msg")
-            call_1(ctx, get_fn(ctx, "puts"), msg_ptr, "")
+            let eprint_fn = get_fn(ctx, "forge_eprintln")
+            let arr = forge_llvm_value_array_new(1)
+            forge_llvm_value_array_set(arr, 0, msg_ptr)
+            let void_type = forge_llvm_void_type(ctx.lc)
+            let pa = forge_llvm_type_array_new(1)
+            forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
+            let fn_type = forge_llvm_function_type(void_type, pa, 1, 0)
+            forge_llvm_type_array_free(pa)
+            forge_llvm_build_call(ctx.builder, fn_type, eprint_fn, arr, 1, "")
+            forge_llvm_value_array_free(arr)
             // exit(1)
             call_1(ctx, get_fn(ctx, "exit"), const_i64(ctx, 1), "")
             // Unreachable — but return a value for the type system
+            ok_emit(const_i64(ctx, 0))
+        }
+    }
+}
+
+fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+    match args {
+        .End -> err_emit("eprintln() expects 1 arg")
+        .Node(arg, _) -> {
+            let r = emit_expr(ctx, env, arg)
+            if r.had_error { return r }
+            let str_val = if vtype_is_str(r.ty) {
+                r.value
+            } else {
+                // Convert to string first
+                let buf = cg_malloc(ctx, const_i64(ctx, 32))
+                let fmt = forge_llvm_build_global_string_ptr(ctx.builder, "%lld", ".eprint_fmt")
+                call_4(ctx, get_fn(ctx, "snprintf"), buf, const_i64(ctx, 32), fmt, r.value, "")
+                to_i64(ctx, buf, "eprint_str")
+            }
+            let str_ptr = to_ptr(ctx, str_val, "eprint_arg")
+            let eprint_fn = get_fn(ctx, "forge_eprintln")
+            let arr = forge_llvm_value_array_new(1)
+            forge_llvm_value_array_set(arr, 0, str_ptr)
+            let void_type = forge_llvm_void_type(ctx.lc)
+            let pa = forge_llvm_type_array_new(1)
+            forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
+            let fn_type = forge_llvm_function_type(void_type, pa, 1, 0)
+            forge_llvm_type_array_free(pa)
+            forge_llvm_build_call(ctx.builder, fn_type, eprint_fn, arr, 1, "")
+            forge_llvm_value_array_free(arr)
             ok_emit(const_i64(ctx, 0))
         }
     }
