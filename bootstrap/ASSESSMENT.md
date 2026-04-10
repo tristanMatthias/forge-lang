@@ -96,7 +96,7 @@
 | 89 | package use | ✅ | |
 | 90 | proper separate compilation | 🔲 | |
 | 91 | println / print | ✅ | |
-| 92 | eprintln / eprint | ✅ | |
+| 92 | eprintln / eprint | ✅ | now actually writes to stderr |
 | 93 | string() conversion | ✅ | |
 | 94 | int() conversion | ✅ | |
 | 95 | float() conversion | 🔲 | |
