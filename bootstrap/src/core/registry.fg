@@ -1,15 +1,10 @@
-// WHY: central feature registry for the compiler. Each language feature
-// registers its handlers into int-keyed maps for O(1) dispatch.
-// No linked lists, no linear scans.
+// WHY: central feature registry. Each feature declares a single Feature
+// struct with ALL its handlers. One struct, one registration call.
 //
 // To add a new feature:
 //   1. Create features/<name>/mod.fg
-//   2. Add a register_<name>(reg) function that calls reg_expr/reg_stmt
-//   3. Call it from build_registry()
-//
-// AGENT:
-//   read this file when:    adding a new language feature
-//   do NOT read this file when:   feature-specific logic (go to features/<name>/)
+//   2. Build a Feature struct with your handlers
+//   3. Call register_feature() in build_registry()
 
 // C-side helpers
 extern fn forge_expr_tag(expr: int) -> int
@@ -18,12 +13,8 @@ extern fn forge_intmap_new() -> ptr
 extern fn forge_intmap_set(map: ptr, key: int, value: int)
 extern fn forge_intmap_get(map: ptr, key: int) -> int
 extern fn forge_intmap_has(map: ptr, key: int) -> int
-// Dispatch uses typed let bindings: `let handler: fn(...) = intmap_get(...)`
-// The type annotation tells codegen the value is callable.
 
 // ── Tag reference ──
-// Tags are enum variant indices in ast.fg.
-//
 // Expr:  0=Number  1=String  2=Bool  3=Null  4=Ident  5=Assign
 //        6=Grouping  7=Unary  8=Binary  9=Logical  10=Call
 //       11=StructLit  12=FieldAccess  13=EnumCtor  14=Index
@@ -37,35 +28,49 @@ extern fn forge_intmap_has(map: ptr, key: int) -> int
 //       13=Match  14=Impl  15=NoOp  16=ExternFn  17=Break  18=Continue
 //       19=TraitDecl  20=LetDestructure  21=Defer
 
+// ── Unified Feature type ──
+
+export type Feature = {
+    name: string,
+    expr_tag: int,                                       // -1 = no expression form
+    stmt_tag: int,                                       // -1 = no statement form
+    emit_expr: fn(Ctx, VarEnv, Expr) -> EmitResult,
+    emit_stmt: fn(Ctx, VarEnv, Stmt) -> StmtResult,
+}
+
+// ── No-op handlers for features that only have one form ──
+
+export fn noop_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    err_emit("no expr handler")
+}
+
+export fn noop_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    err_stmt("no stmt handler")
+}
+
 // ── Registry ──
-// Two int-keyed maps: tag → handler function pointer.
-// O(1) lookup. Stored in Ctx and threaded through compilation.
 
 export type Registry = {
-    expr_handlers: ptr,   // intmap: expr tag → fn(Ctx, VarEnv, Expr) -> EmitResult
-    stmt_handlers: ptr,   // intmap: stmt tag → fn(Ctx, VarEnv, Stmt) -> StmtResult
+    expr_handlers: ptr,
+    stmt_handlers: ptr,
 }
 
 export fn registry_new() -> Registry {
-    Registry {
-        expr_handlers: forge_intmap_new(),
-        stmt_handlers: forge_intmap_new(),
+    Registry { expr_handlers: forge_intmap_new(), stmt_handlers: forge_intmap_new() }
+}
+
+export fn register_feature(reg: Registry, f: Feature) -> Registry {
+    if f.expr_tag >= 0 {
+        forge_intmap_set(reg.expr_handlers, f.expr_tag, f.emit_expr)
     }
-}
-
-// Register a handler for an expression tag.
-export fn reg_expr(reg: Registry, tag: int, handler: fn(Ctx, VarEnv, Expr) -> EmitResult) -> Registry {
-    forge_intmap_set(reg.expr_handlers, tag, handler)
+    if f.stmt_tag >= 0 {
+        forge_intmap_set(reg.stmt_handlers, f.stmt_tag, f.emit_stmt)
+    }
     reg
 }
 
-// Register a handler for a statement tag.
-export fn reg_stmt(reg: Registry, tag: int, handler: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> Registry {
-    forge_intmap_set(reg.stmt_handlers, tag, handler)
-    reg
-}
+// ── Dispatch ──
 
-// Dispatch an expression through the registry. Returns null if no handler.
 export fn dispatch_expr(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult? {
     if forge_intmap_has(reg.expr_handlers, tag) == 0 {
         return null
@@ -74,7 +79,6 @@ export fn dispatch_expr(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, expr: Ex
     handler(ctx, env, expr)
 }
 
-// Dispatch a statement through the registry. Returns null if no handler.
 export fn dispatch_stmt(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult? {
     if forge_intmap_has(reg.stmt_handlers, tag) == 0 {
         return null
@@ -84,26 +88,22 @@ export fn dispatch_stmt(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: St
 }
 
 // ── Build the registry ──
-// Each feature registers its handlers here.
 
 export fn build_registry() -> Registry {
     mut reg = registry_new()
-
-    // Each feature registers itself. One line per feature.
-    reg = register_struct_decl(reg)    // StructLit(11), FieldAccess(12), EnumCtor(13), FieldAssign(17)
-    reg = register_match(reg)          // MatchExpr(16), Match stmt(13)
-    reg = register_if_stmt(reg)        // IfExpr(18), If stmt(4)
-    reg = register_null_safety(reg)    // NullCoalesce(19), OptionalChain(20), Try(21)
-    reg = register_tuples(reg)         // Tuple(22), TupleIndex(23)
-    reg = register_with_expr(reg)      // With(24)
-    reg = register_list_lit(reg)       // ListLit(25)
-    reg = register_closures(reg)       // Lambda(26)
-    reg = register_map_lit(reg)        // MapLit(27)
-    reg = register_is_keyword(reg)     // IsCheck(30)
-    reg = register_while_stmt(reg)     // While stmt(5)
-    reg = register_for_stmt(reg)       // For(6), ForIn(7) stmts
-    reg = register_let_stmt(reg)       // LetDestructure stmt(20)
-    reg = register_defer_stmt(reg)     // Defer stmt(21)
-
+    reg = register_struct_decl(reg)
+    reg = register_match(reg)
+    reg = register_if_stmt(reg)
+    reg = register_null_safety(reg)
+    reg = register_tuples(reg)
+    reg = register_with_expr(reg)
+    reg = register_list_lit(reg)
+    reg = register_closures(reg)
+    reg = register_map_lit(reg)
+    reg = register_is_keyword(reg)
+    reg = register_while_stmt(reg)
+    reg = register_for_stmt(reg)
+    reg = register_let_stmt(reg)
+    reg = register_defer_stmt(reg)
     reg
 }

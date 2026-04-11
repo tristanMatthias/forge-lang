@@ -2,10 +2,10 @@ mod parser
 mod codegen
 
 export fn register_defer_stmt(reg: Registry) -> Registry {
-    reg_stmt(reg, 21, reg_emit_defer_f)
+    register_feature(reg, Feature { name: "defer", expr_tag: 0 - 1, stmt_tag: 21, emit_expr: noop_expr, emit_stmt: defer_emit_stmt })
 }
 
-fn reg_emit_defer_f(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
         .Defer(body) -> {
             defer_push(sexpr_dummy(body))

@@ -1,13 +1,10 @@
-// WHY: `expr with { field: value }` — functional struct update.
-// Creates a copy with specified fields overridden. The original
-// is not mutated. Eliminates verbose struct-copy boilerplate.
-
+mod parser
 mod codegen
 
 export fn register_with_expr(reg: Registry) -> Registry {
-    reg_expr(reg, 24, reg_emit_with_f)
+    register_feature(reg, Feature { name: "with", expr_tag: 24, stmt_tag: 0 - 1, emit_expr: with_emit, emit_stmt: noop_stmt })
 }
 
-fn reg_emit_with_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+fn with_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .With(obj, overrides) -> emit_with(ctx, env, obj, overrides), _ -> err_emit("expected With") }
 }

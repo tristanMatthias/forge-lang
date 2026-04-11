@@ -1,20 +1,16 @@
-// WHY: tuple literals `(a, b, c)`, tuple indexing `t.0`, and
-// destructuring `let (x, y) = expr`. Tuples are heap-allocated
-// i64 buffers with compile-time known arity.
-
+mod parser
 mod codegen
 
 export fn register_tuples(reg: Registry) -> Registry {
     mut r = reg
-    r = reg_expr(r, 22, reg_emit_tuple_f)
-    r = reg_expr(r, 23, reg_emit_tuple_index_f)
-    r
+    r = register_feature(r, Feature { name: "tuple", expr_tag: 22, stmt_tag: 0 - 1, emit_expr: tuple_emit, emit_stmt: noop_stmt })
+    register_feature(r, Feature { name: "tuple_index", expr_tag: 23, stmt_tag: 0 - 1, emit_expr: tuple_idx_emit, emit_stmt: noop_stmt })
 }
 
-fn reg_emit_tuple_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+fn tuple_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .Tuple(elements) -> emit_tuple(ctx, env, elements), _ -> err_emit("expected Tuple") }
 }
 
-fn reg_emit_tuple_index_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+fn tuple_idx_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx), _ -> err_emit("expected TupleIndex") }
 }

@@ -1,11 +1,9 @@
-// WHY: map literals {"key": value, ...} backed by C-runtime hash maps.
-
 mod codegen
 
 export fn register_map_lit(reg: Registry) -> Registry {
-    reg_expr(reg, 27, reg_emit_map_lit_f)
+    register_feature(reg, Feature { name: "map_lit", expr_tag: 27, stmt_tag: 0 - 1, emit_expr: map_emit, emit_stmt: noop_stmt })
 }
 
-fn reg_emit_map_lit_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+fn map_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .MapLit(entries) -> emit_map_lit(ctx, env, entries), _ -> err_emit("expected MapLit") }
 }

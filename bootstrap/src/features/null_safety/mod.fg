@@ -1,24 +1,21 @@
-// WHY: null safety operators `??` (null coalesce) and `?.` (optional chain).
-// Eliminates verbose `if x == null { default } else { x! }` patterns.
-
+mod parser
 mod codegen
 
 export fn register_null_safety(reg: Registry) -> Registry {
     mut r = reg
-    r = reg_expr(r, 19, reg_emit_null_coalesce_f)
-    r = reg_expr(r, 20, reg_emit_optional_chain_f)
-    r = reg_expr(r, 21, reg_emit_try_f)
-    r
+    r = register_feature(r, Feature { name: "null_coalesce", expr_tag: 19, stmt_tag: 0 - 1, emit_expr: nc_emit, emit_stmt: noop_stmt })
+    r = register_feature(r, Feature { name: "optional_chain", expr_tag: 20, stmt_tag: 0 - 1, emit_expr: oc_emit, emit_stmt: noop_stmt })
+    register_feature(r, Feature { name: "try", expr_tag: 21, stmt_tag: 0 - 1, emit_expr: try_emit, emit_stmt: noop_stmt })
 }
 
-fn reg_emit_null_coalesce_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+fn nc_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right), _ -> err_emit("expected NullCoalesce") }
 }
 
-fn reg_emit_optional_chain_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+fn oc_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field), _ -> err_emit("expected OptionalChain") }
 }
 
-fn reg_emit_try_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+fn try_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .Try(inner) -> emit_try(ctx, env, inner), _ -> err_emit("expected Try") }
 }
