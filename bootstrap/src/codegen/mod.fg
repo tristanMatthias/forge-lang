@@ -304,6 +304,9 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_float_parse", strlen_type)
     forge_llvm_add_function(m, "forge_float_to_string", cl_i64_to_i64)
 
+    // Ptr byte store: forge_ptr_store_byte(ptr, offset, byte) → void
+    forge_llvm_add_function(m, "forge_ptr_store_byte", im_set_type)
+
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
@@ -1046,6 +1049,15 @@ fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     let r = emit_expr(ctx, env, obj)
     if r.had_error {
         return r
+    }
+    // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
+    if vtype_eq(r.ty, ValueType.Ptr) {
+        let i_r = emit_expr(ctx, env, idx)
+        if i_r.had_error { return i_r }
+        let off = forge_llvm_build_add(ctx.builder, r.value, i_r.value, "ptr_off")
+        let off_ptr = to_ptr(ctx, off, "ptr_idx")
+        let byte = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), off_ptr, "ptr_byte")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, byte, ctx.i64_type, "ptr_byte_ext"))
     }
     // List indexing: list[i] → forge_array_get(list, i)
     if vtype_is_list(r.ty) {
@@ -1810,12 +1822,18 @@ fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> Emi
         return emit_float_binary(ctx, lhs, rhs, op, left_result.ty, right_result.ty)
     }
 
+    let is_ptr = vtype_eq(left_result.ty, ValueType.Ptr) || vtype_eq(right_result.ty, ValueType.Ptr)
+
     match op {
         .Add -> {
             if is_str { return emit_concat(ctx, lhs, rhs) }
+            if is_ptr { return ok_emit_typed(forge_llvm_build_add(ctx.builder, lhs, rhs, "ptr_add"), ValueType.Ptr) }
             ok_emit(forge_llvm_build_add(ctx.builder, lhs, rhs, "add"))
         }
-        .Sub -> ok_emit(forge_llvm_build_sub(ctx.builder, lhs, rhs, "sub"))
+        .Sub -> {
+            if is_ptr { return ok_emit_typed(forge_llvm_build_sub(ctx.builder, lhs, rhs, "ptr_sub"), ValueType.Ptr) }
+            ok_emit(forge_llvm_build_sub(ctx.builder, lhs, rhs, "sub"))
+        }
         .Mul -> ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul"))
         .Div -> ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div"))
         .Mod -> ok_emit(forge_llvm_build_srem(ctx.builder, lhs, rhs, "mod"))

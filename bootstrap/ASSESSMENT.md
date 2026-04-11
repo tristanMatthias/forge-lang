@@ -120,8 +120,8 @@
 | 113 | table literals | 🔲 | |
 | 114 | validation | 🔲 | |
 | 115 | annotations | 🔲 | |
-| 116 | ptr arithmetic | 🔲 | |
-| 117 | ptr indexing | 🔲 | |
+| 116 | ptr arithmetic | ✅ | ptr + int, ptr - int, ptr - ptr |
+| 117 | ptr indexing | ✅ | ptr[i] reads byte, forge_ptr_store_byte writes |
 | 118 | ptr ↔ string | 🔲 | |
 | 119 | c_abi_trampolines | 🔲 | |
 | 120–131 | packages (@llvm, @process, etc.) | mixed | 4 done, 4 todo, 6 n/a |

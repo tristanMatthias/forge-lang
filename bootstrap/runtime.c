@@ -906,3 +906,9 @@ int64_t forge_stmt_tag(int64_t stmt_val) {
     uint8_t* p = (uint8_t*)(uintptr_t)stmt_val;
     return (int64_t)p[0];
 }
+
+// ── Ptr byte write ──
+void forge_ptr_store_byte(int64_t ptr_val, int64_t offset, int64_t byte_val) {
+    uint8_t* p = (uint8_t*)(uintptr_t)ptr_val;
+    p[offset] = (uint8_t)byte_val;
+}
