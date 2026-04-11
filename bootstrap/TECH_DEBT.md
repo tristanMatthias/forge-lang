@@ -2,6 +2,51 @@
 
 Active debt in the bootstrap compiler. Each item has a plan.
 
+## In-Progress Work (resume here)
+
+### Trait Dynamic Dispatch — BLOCKED on seed parse error
+
+**Status:** partially committed, codegen changes NOT committed
+
+**What's done (committed):**
+- `ValueType.Trait(name)` variant in ast.fg
+- `vtype_trait_name`, `vtype_eq`, `vtype_display` handle Trait
+- `TraitDeclReg` + `TraitMethodNames` types in cg.fg
+- `translate_type_ctx` — type translator with trait awareness
+- `trait_decls` field added to Ctx struct
+- C runtime: `forge_trait_object_new/value/vtable` in runtime.c
+- Trait object runtime declarations in declare_runtime_fns
+- Seed updated with all the above
+
+**What's done (NOT committed — in working tree):**
+- `codegen/mod.fg`: `collect_trait_decls`, `collect_trait_fn_names` functions
+- `codegen/mod.fg`: `emit_trait_dispatch`, `trait_method_idx`, `emit_first_arg`
+- `codegen/mod.fg`: trait dispatch check in `emit_method_call` using `vtype_trait_name`
+- `codegen/mod.fg`: `trait_decls` collection in compile_program + passed to Ctx
+- `codegen/mod.fg`: runtime function declarations for trait objects
+- `let_stmt/codegen.fg`: `emit_var_decl` with trait boxing — `is_trait_boxing`,
+  `box_as_trait`, `build_vtable`, `push_vtable_entries`, helper functions
+- `ast.fg`: `vtype_trait_name` helper
+
+**Blocker:** The old seed crashes with a parse error at ~line 11225 of
+the merged source when compiling the new codegen functions. The error
+says "expected expression" pointing at a comment line. Root cause is a
+cascading parse failure — something in the new code confuses the seed's
+parser. The individual functions are syntactically valid.
+
+**To debug:** Bisect by adding the new functions ONE AT A TIME to find
+which specific function triggers the parse error. The `collect_trait_decls`
+and `emit_trait_dispatch` functions were both added — test each alone.
+
+**How dyn dispatch works (design):**
+1. `let d: Trait = concrete_value` — codegen detects Trait type annotation,
+   builds a vtable (ForgeArray of closure-wrapped fn pointers), creates a
+   trait object via `forge_trait_object_new(value, vtable)`
+2. `d.method()` — codegen detects Trait type on the object, calls
+   `forge_trait_object_value/vtable` to extract concrete value + vtable,
+   looks up method index in trait's method list, loads vtable[idx],
+   calls through closure trampoline with concrete value as self
+
 ## Open
 
 ### 1. libforge_llvm.a dependency (Rust LLVM wrapper)
