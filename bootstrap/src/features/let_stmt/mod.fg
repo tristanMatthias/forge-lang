@@ -1,2 +1,10 @@
 mod parser
 mod codegen
+
+export fn register_let_stmt(reg: Registry) -> Registry {
+    reg_stmt(reg, 20, reg_emit_let_destructure_f)
+}
+
+fn reg_emit_let_destructure_f(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .LetDestructure(names, init) -> emit_let_destructure(ctx, env, names, init), _ -> err_stmt("expected LetDestructure") }
+}

@@ -84,9 +84,7 @@ export fn reg_emit_slice(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end), _ -> err_emit("expected Slice") }
 }
 
-export fn reg_emit_is_check(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname), _ -> err_emit("expected IsCheck") }
-}
+// is_check moved to features/is_keyword/mod.fg
 
 // ── Statement handlers ──
 

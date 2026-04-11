@@ -1,0 +1,15 @@
+// Feature: is keyword — `value is .Variant` enum tag check.
+// Expr tag 30 = IsCheck
+
+mod codegen
+
+export fn register_is_keyword(reg: Registry) -> Registry {
+    reg_expr(reg, 30, reg_emit_is_check)
+}
+
+fn reg_emit_is_check(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr {
+        .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname)
+        _ -> err_emit("expected IsCheck")
+    }
+}

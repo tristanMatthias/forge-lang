@@ -1,2 +1,10 @@
 mod parser
 mod codegen
+
+export fn register_while_stmt(reg: Registry) -> Registry {
+    reg_stmt(reg, 5, reg_emit_while_f)
+}
+
+fn reg_emit_while_f(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .While(cond, body) -> emit_while(ctx, env, cond, body), _ -> err_stmt("expected While") }
+}

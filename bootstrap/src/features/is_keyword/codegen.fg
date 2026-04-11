@@ -1,0 +1,25 @@
+// WHY: codegen for `expr is .Variant` — checks enum tag at runtime.
+
+export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> EmitResult {
+    let r = emit_expr(ctx, env, subject)
+    if r.had_error { return r }
+    let enum_name = vtype_enum_name(r.ty)
+    if enum_name == "" {
+        return err_emit("`is` requires an enum value, got `" + vtype_display(r.ty) + "`")
+    }
+    let lookup = enum_reg_lookup(ctx.enums, enum_name)
+    if !lookup.found {
+        return err_emit("unknown enum `" + enum_name + "`")
+    }
+    let v = variant_lookup(lookup.variants, vname)
+    if !v.found {
+        return err_emit("unknown variant `" + vname + "` in enum `" + enum_name + "`")
+    }
+    let subj_ptr = to_ptr(ctx, r.value, "is_subj")
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
+    let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, 0, "is_tag_ptr")
+    let tag_val = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), tag_gep, "is_tag")
+    let want = const_i8(ctx, v.tag)
+    let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, want, "is_eq")
+    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "is_result"))
+}

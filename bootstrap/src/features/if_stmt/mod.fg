@@ -1,2 +1,17 @@
 mod parser
 mod codegen
+
+export fn register_if_stmt(reg: Registry) -> Registry {
+    mut r = reg
+    r = reg_expr(r, 18, reg_emit_if_expr_f)
+    r = reg_stmt(r, 4, reg_emit_if_f)
+    r
+}
+
+fn reg_emit_if_expr_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .IfExpr(c, t, e) -> emit_if_expr(ctx, env, c, t, e), _ -> err_emit("expected IfExpr") }
+}
+
+fn reg_emit_if_f(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .If(cond, then_b, else_b) -> emit_if(ctx, env, cond, then_b, else_b), _ -> err_stmt("expected If") }
+}

@@ -1,2 +1,16 @@
 mod parser
 mod codegen
+
+export fn register_defer_stmt(reg: Registry) -> Registry {
+    reg_stmt(reg, 21, reg_emit_defer_f)
+}
+
+fn reg_emit_defer_f(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt {
+        .Defer(body) -> {
+            defer_push(sexpr_dummy(body))
+            ok_stmt(env)
+        }
+        _ -> err_stmt("expected Defer")
+    }
+}

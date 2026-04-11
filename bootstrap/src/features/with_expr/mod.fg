@@ -3,3 +3,11 @@
 // is not mutated. Eliminates verbose struct-copy boilerplate.
 
 mod codegen
+
+export fn register_with_expr(reg: Registry) -> Registry {
+    reg_expr(reg, 24, reg_emit_with_f)
+}
+
+fn reg_emit_with_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .With(obj, overrides) -> emit_with(ctx, env, obj, overrides), _ -> err_emit("expected With") }
+}

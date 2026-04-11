@@ -3,3 +3,18 @@
 // i64 buffers with compile-time known arity.
 
 mod codegen
+
+export fn register_tuples(reg: Registry) -> Registry {
+    mut r = reg
+    r = reg_expr(r, 22, reg_emit_tuple_f)
+    r = reg_expr(r, 23, reg_emit_tuple_index_f)
+    r
+}
+
+fn reg_emit_tuple_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .Tuple(elements) -> emit_tuple(ctx, env, elements), _ -> err_emit("expected Tuple") }
+}
+
+fn reg_emit_tuple_index_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx), _ -> err_emit("expected TupleIndex") }
+}

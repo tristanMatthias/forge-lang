@@ -2,3 +2,11 @@
 // the C-runtime forge_array_* dynamic array functions.
 
 mod codegen
+
+export fn register_list_lit(reg: Registry) -> Registry {
+    reg_expr(reg, 25, reg_emit_list_lit_f)
+}
+
+fn reg_emit_list_lit_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .ListLit(elements) -> emit_list_lit(ctx, env, elements), _ -> err_emit("expected ListLit") }
+}

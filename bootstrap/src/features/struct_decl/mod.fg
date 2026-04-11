@@ -1,2 +1,27 @@
 mod parser
 mod codegen
+
+export fn register_struct_decl(reg: Registry) -> Registry {
+    mut r = reg
+    r = reg_expr(r, 11, reg_emit_struct_lit_f)
+    r = reg_expr(r, 12, reg_emit_field_access_f)
+    r = reg_expr(r, 13, reg_emit_enum_ctor_f)
+    r = reg_expr(r, 17, reg_emit_field_assign_f)
+    r
+}
+
+fn reg_emit_struct_lit_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .StructLit(name, inits) -> emit_struct_lit(ctx, env, name, inits), _ -> err_emit("expected StructLit") }
+}
+
+fn reg_emit_field_access_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .FieldAccess(obj, field) -> emit_field_access(ctx, env, obj, field), _ -> err_emit("expected FieldAccess") }
+}
+
+fn reg_emit_enum_ctor_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .EnumCtor(tn, v, args) -> emit_enum_ctor(ctx, env, tn, v, args), _ -> err_emit("expected EnumCtor") }
+}
+
+fn reg_emit_field_assign_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value), _ -> err_emit("expected FieldAssign") }
+}

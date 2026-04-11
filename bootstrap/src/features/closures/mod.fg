@@ -4,3 +4,11 @@
 // callback patterns.
 
 mod codegen
+
+export fn register_closures(reg: Registry) -> Registry {
+    reg_expr(reg, 26, reg_emit_lambda_f)
+}
+
+fn reg_emit_lambda_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .Lambda(params, body) -> emit_lambda(ctx, env, params, body), _ -> err_emit("expected Lambda") }
+}

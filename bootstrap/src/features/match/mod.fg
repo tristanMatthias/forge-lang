@@ -2,3 +2,18 @@
 
 mod parser
 mod codegen
+
+export fn register_match(reg: Registry) -> Registry {
+    mut r = reg
+    r = reg_expr(r, 16, reg_emit_match_expr_f)
+    r = reg_stmt(r, 13, reg_emit_match_stmt_f)
+    r
+}
+
+fn reg_emit_match_expr_f(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+    match expr { .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms), _ -> err_emit("expected MatchExpr") }
+}
+
+fn reg_emit_match_stmt_f(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .Match(subject, arms) -> emit_match(ctx, env, subject, arms), _ -> err_stmt("expected Match") }
+}

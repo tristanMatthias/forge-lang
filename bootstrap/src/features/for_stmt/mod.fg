@@ -1,2 +1,17 @@
 mod parser
 mod codegen
+
+export fn register_for_stmt(reg: Registry) -> Registry {
+    mut r = reg
+    r = reg_stmt(r, 6, reg_emit_for_f)
+    r = reg_stmt(r, 7, reg_emit_for_in_f)
+    r
+}
+
+fn reg_emit_for_f(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .For(var, start, end, body) -> emit_for(ctx, env, var, start, end, body), _ -> err_stmt("expected For") }
+}
+
+fn reg_emit_for_in_f(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt { .ForIn(var, coll, body) -> emit_for_in(ctx, env, var, coll, body), _ -> err_stmt("expected ForIn") }
+}

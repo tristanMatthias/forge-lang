@@ -89,35 +89,26 @@ export fn dispatch_stmt(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: St
 export fn build_registry() -> Registry {
     mut reg = registry_new()
 
-    // Expression features
-    reg = reg_expr(reg, 11, reg_emit_struct_lit)
-    reg = reg_expr(reg, 12, reg_emit_field_access)
-    reg = reg_expr(reg, 13, reg_emit_enum_ctor)
+    // Each feature registers itself. One line per feature.
+    reg = register_struct_decl(reg)    // StructLit(11), FieldAccess(12), EnumCtor(13), FieldAssign(17)
+    reg = register_match(reg)          // MatchExpr(16), Match stmt(13)
+    reg = register_if_stmt(reg)        // IfExpr(18), If stmt(4)
+    reg = register_null_safety(reg)    // NullCoalesce(19), OptionalChain(20), Try(21)
+    reg = register_tuples(reg)         // Tuple(22), TupleIndex(23)
+    reg = register_with_expr(reg)      // With(24)
+    reg = register_list_lit(reg)       // ListLit(25)
+    reg = register_closures(reg)       // Lambda(26)
+    reg = register_map_lit(reg)        // MapLit(27)
+    reg = register_is_keyword(reg)     // IsCheck(30)
+    reg = register_while_stmt(reg)     // While stmt(5)
+    reg = register_for_stmt(reg)       // For(6), ForIn(7) stmts
+    reg = register_let_stmt(reg)       // LetDestructure stmt(20)
+    reg = register_defer_stmt(reg)     // Defer stmt(21)
+
+    // These don't have feature dirs yet — still in registry_handlers.fg
     reg = reg_expr(reg, 14, reg_emit_index)
     reg = reg_expr(reg, 15, reg_emit_block_expr)
-    reg = reg_expr(reg, 16, reg_emit_match_expr)
-    reg = reg_expr(reg, 17, reg_emit_field_assign)
-    reg = reg_expr(reg, 18, reg_emit_if_expr)
-    reg = reg_expr(reg, 19, reg_emit_null_coalesce)
-    reg = reg_expr(reg, 20, reg_emit_optional_chain)
-    reg = reg_expr(reg, 21, reg_emit_try)
-    reg = reg_expr(reg, 22, reg_emit_tuple)
-    reg = reg_expr(reg, 23, reg_emit_tuple_index)
-    reg = reg_expr(reg, 24, reg_emit_with)
-    reg = reg_expr(reg, 25, reg_emit_list_lit)
-    reg = reg_expr(reg, 26, reg_emit_lambda)
-    reg = reg_expr(reg, 27, reg_emit_map_lit)
     reg = reg_expr(reg, 28, reg_emit_slice)
-    reg = reg_expr(reg, 30, reg_emit_is_check)
-
-    // Statement features
-    reg = reg_stmt(reg, 4, reg_emit_if)
-    reg = reg_stmt(reg, 5, reg_emit_while)
-    reg = reg_stmt(reg, 6, reg_emit_for)
-    reg = reg_stmt(reg, 7, reg_emit_for_in)
-    reg = reg_stmt(reg, 13, reg_emit_match_stmt)
-    reg = reg_stmt(reg, 20, reg_emit_let_destructure)
-    reg = reg_stmt(reg, 21, reg_emit_defer)
 
     reg
 }
