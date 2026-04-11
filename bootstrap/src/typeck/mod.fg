@@ -168,13 +168,14 @@ fn method_list_has(list: TraitMethodList, name: string) -> bool {
     }
 }
 
+// Collect REQUIRED method names (ExternFn = signature only, no default body).
+// Function entries are default methods — not required to be overridden.
 fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
     match stmts {
         .End -> TraitMethodList.End
         .Node(ss, next) -> {
             match ss.node {
                 .ExternFn(name, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
-                .Function(name, _, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
                 _ -> collect_method_names_from_stmts(next)
             }
         }

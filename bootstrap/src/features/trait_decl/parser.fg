@@ -58,8 +58,16 @@ impl Parser {
         } else {
             ""
         }
-        // Trait methods are signatures only — reuse ExternFn to
-        // represent "declaration without a body".
+        // Default method: if there's a body `{ ... }`, parse it as a Function.
+        // Otherwise it's a signature only (ExternFn).
+        if self.check("left_brace") {
+            self.advance()
+            let body = self.parse_statement_list(true)?
+            if !self.consume("right_brace", "expected `}` after default method body") {
+                return null
+            }
+            return Stmt.Function(name, params, ret_ty, body)
+        }
         Stmt.ExternFn(name, params, ret_ty)
     }
 }
