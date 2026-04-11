@@ -229,7 +229,7 @@ Status key:
 | @semver | ✅ | major/minor/patch/compare via C runtime |
 | @term | ✅ | ANSI escape codes via \x sequences |
 | @test | ✅ | spec/given/then via C runtime |
-| @toml | 🔲 | |
+| @toml | ✅ | get_string/get_int/get_bool via C runtime |
 
 ---
 
@@ -253,8 +253,8 @@ Status key:
 | Components | 4 | 0 | 0 | 4 |
 | Testing | 4 | 2 | 2 | 0 |
 | Pointer Ops | 4 | 3 | 1 | 0 |
-| Packages | 14 | 7 | 1 | 6 |
-| **TOTAL** | **131** | **112** | **9** | **10** |
+| Packages | 14 | 8 | 0 | 6 |
+| **TOTAL** | **131** | **113** | **8** | **10** |
 
 ## Dogfooding Rule
 

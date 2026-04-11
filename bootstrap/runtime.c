@@ -1085,6 +1085,66 @@ int64_t forge_semver_compare(const char* a, const char* b) {
     return 0;
 }
 
+// ── TOML (minimal) ──
+// Extracts string values from simple key = "value" TOML.
+const char* forge_toml_get_string(const char* toml, const char* key) {
+    if (!toml || !key) return "";
+    size_t klen = strlen(key);
+    const char* pos = toml;
+    while ((pos = strstr(pos, key)) != NULL) {
+        // Check it's at line start or after whitespace
+        if (pos != toml && pos[-1] != '\n' && pos[-1] != ' ') { pos++; continue; }
+        const char* after = pos + klen;
+        // Skip whitespace and =
+        while (*after == ' ' || *after == '\t') after++;
+        if (*after != '=') { pos++; continue; }
+        after++;
+        while (*after == ' ' || *after == '\t') after++;
+        if (*after != '"') { pos++; continue; }
+        after++; // skip opening quote
+        const char* end = strchr(after, '"');
+        if (!end) return "";
+        size_t vlen = end - after;
+        char* result = (char*)malloc(vlen + 1);
+        memcpy(result, after, vlen);
+        result[vlen] = '\0';
+        return result;
+    }
+    return "";
+}
+
+int64_t forge_toml_get_int(const char* toml, const char* key) {
+    if (!toml || !key) return 0;
+    size_t klen = strlen(key);
+    const char* pos = toml;
+    while ((pos = strstr(pos, key)) != NULL) {
+        if (pos != toml && pos[-1] != '\n' && pos[-1] != ' ') { pos++; continue; }
+        const char* after = pos + klen;
+        while (*after == ' ' || *after == '\t') after++;
+        if (*after != '=') { pos++; continue; }
+        after++;
+        while (*after == ' ' || *after == '\t') after++;
+        return atoll(after);
+    }
+    return 0;
+}
+
+int64_t forge_toml_get_bool(const char* toml, const char* key) {
+    if (!toml || !key) return 0;
+    size_t klen = strlen(key);
+    const char* pos = toml;
+    while ((pos = strstr(pos, key)) != NULL) {
+        if (pos != toml && pos[-1] != '\n' && pos[-1] != ' ') { pos++; continue; }
+        const char* after = pos + klen;
+        while (*after == ' ' || *after == '\t') after++;
+        if (*after != '=') { pos++; continue; }
+        after++;
+        while (*after == ' ' || *after == '\t') after++;
+        return (strncmp(after, "true", 4) == 0) ? 1 : 0;
+    }
+    return 0;
+}
+
 // ── Shell execution ──
 const char* forge_shell_exec(const char* cmd) {
     FILE* fp = popen(cmd, "r");
