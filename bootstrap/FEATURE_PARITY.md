@@ -251,10 +251,10 @@ Status key:
 | I/O & Runtime | 12 | 12 | 0 | 0 |
 | Concurrency | 4 | 0 | 4 | 0 |
 | Components | 4 | 0 | 0 | 4 |
-| Testing | 4 | 2 | 2 | 0 |
+| Testing | 4 | 4 | 0 | 0 |
 | Pointer Ops | 4 | 3 | 1 | 0 |
 | Packages | 14 | 8 | 0 | 6 |
-| **TOTAL** | **131** | **113** | **8** | **10** |
+| **TOTAL** | **131** | **116** | **5** | **10** |
 
 ## Dogfooding Rule
 
