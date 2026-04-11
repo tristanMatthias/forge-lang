@@ -1145,6 +1145,41 @@ int64_t forge_toml_get_bool(const char* toml, const char* key) {
     return 0;
 }
 
+// ── Validation ──
+// Basic runtime validation: assert conditions, check non-null.
+int64_t forge_validate_not_null(int64_t value, const char* name) {
+    if (value == 0) {
+        fprintf(stderr, "validation error: %s must not be null\n", name);
+        exit(1);
+    }
+    return value;
+}
+
+int64_t forge_validate_positive(int64_t value, const char* name) {
+    if (value <= 0) {
+        fprintf(stderr, "validation error: %s must be positive, got %lld\n", name, (long long)value);
+        exit(1);
+    }
+    return value;
+}
+
+int64_t forge_validate_range(int64_t value, int64_t min, int64_t max, const char* name) {
+    if (value < min || value > max) {
+        fprintf(stderr, "validation error: %s must be between %lld and %lld, got %lld\n",
+                name, (long long)min, (long long)max, (long long)value);
+        exit(1);
+    }
+    return value;
+}
+
+int64_t forge_validate_not_empty(const char* s, const char* name) {
+    if (!s || strlen(s) == 0) {
+        fprintf(stderr, "validation error: %s must not be empty\n", name);
+        exit(1);
+    }
+    return (int64_t)(uintptr_t)s;
+}
+
 // ── Shell execution ──
 const char* forge_shell_exec(const char* cmd) {
     FILE* fp = popen(cmd, "r");

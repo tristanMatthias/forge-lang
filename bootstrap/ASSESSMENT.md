@@ -118,7 +118,7 @@
 | 111 | custom syntax | ⬜ | n/a |
 | 112 | spec tests | ✅ | spec/given/then syntax with pass/fail reporting |
 | 113 | table literals | ✅ | table { col | col; val | val } → list of maps |
-| 114 | validation | 🔲 | |
+| 114 | validation | ✅ | forge_validate_not_null/positive/not_empty |
 | 115 | annotations | ✅ | @name and @name(args) parsed, stored in AST |
 | 116 | ptr arithmetic | ✅ | ptr + int, ptr - int, ptr - ptr |
 | 117 | ptr indexing | ✅ | ptr[i] reads byte, forge_ptr_store_byte writes |

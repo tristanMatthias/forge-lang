@@ -1,0 +1,17 @@
+// Runtime validation functions.
+
+extern fn forge_validate_not_null(value: int, name: string) -> int
+extern fn forge_validate_positive(value: int, name: string) -> int
+extern fn forge_validate_not_empty(s: string, name: string) -> string
+
+fn main() {
+    // These pass (no error)
+    let x = forge_validate_not_null(42, "x")
+    println(string(x))
+
+    let y = forge_validate_positive(10, "y")
+    println(string(y))
+
+    let s = forge_validate_not_empty("hello", "s")
+    println(s)
+}

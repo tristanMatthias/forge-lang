@@ -198,7 +198,7 @@ Status key:
 |---|---|---|---|
 | spec tests | `spec "name" { given { } then { } }` | ✅ | hierarchical pass/fail output |
 | table literals | `table { col | col; val | val }` | ✅ | desugars to list of maps |
-| validation | `validate(value)` | 🔲 | |
+| validation | `validate(value)` | ✅ | not_null/positive/not_empty via C runtime |
 | annotations | `@name`, `@name(args)` | ✅ | parsed, stored in AST |
 
 ## Pointer Operations (low-level)
