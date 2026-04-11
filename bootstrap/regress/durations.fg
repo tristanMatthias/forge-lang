@@ -1,0 +1,18 @@
+// Duration literals: Nd, Nh, Nm, Ns, Nms → milliseconds.
+
+fn main() {
+    // Basic conversions
+    println(string(1s))
+    println(string(5m))
+    println(string(2h))
+    println(string(1d))
+    println(string(500ms))
+
+    // Used in expressions
+    let timeout = 30s
+    println(string(timeout))
+
+    // Arithmetic
+    println(string(1h + 30m))
+    println(string(2d - 12h))
+}

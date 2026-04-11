@@ -171,7 +171,7 @@ Status key:
 | json.parse / stringify | `json.parse(str)` | 🔲 | |
 | process_uptime | `process_uptime()` | ✅ | forge_uptime_ms() via extern fn |
 | datetime | `datetime_now()` | ✅ | forge_datetime_now + year/month/day/hour/min/sec |
-| durations | `7d`, `24h`, `5m` | 🔲 | |
+| durations | `7d`, `24h`, `5m` | ✅ | compile-time millisecond conversion |
 | shell shorthand | `$"command ${arg}"` | ✅ | forge_shell_exec via C extern |
 
 ## Concurrency
@@ -248,13 +248,13 @@ Status key:
 | Null Safety | 8 | 8 | 0 | 0 |
 | Collections | 7 | 7 | 0 | 0 |
 | Modules & Imports | 5 | 4 | 1 | 0 |
-| I/O & Runtime | 12 | 10 | 2 | 0 |
+| I/O & Runtime | 12 | 11 | 1 | 0 |
 | Concurrency | 4 | 0 | 4 | 0 |
 | Components | 4 | 0 | 0 | 4 |
 | Testing | 4 | 2 | 2 | 0 |
 | Pointer Ops | 4 | 3 | 1 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **103** | **18** | **10** |
+| **TOTAL** | **131** | **104** | **17** | **10** |
 
 ## Dogfooding Rule
 

@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 93 done, 23 todo, 10 n/a, 6 partial)
+## Feature Progress (132 total: 104 done, 18 todo, 10 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -106,7 +106,7 @@
 | 99 | json.parse / stringify | 🔲 | |
 | 100 | process_uptime | ✅ | forge_uptime_ms() via extern fn |
 | 101 | datetime | ✅ | forge_datetime_now/year/month/day/hour/minute/second |
-| 102 | durations | 🔲 | |
+| 102 | durations | ✅ | 1d, 2h, 5m, 10s, 500ms → millisecond integers |
 | 103 | shell shorthand | ✅ | forge_shell_exec, forge_shell_exec_status |
 | 104 | spawn | 🔲 | |
 | 105 | channels | 🔲 | |

@@ -1654,6 +1654,41 @@ impl Parser {
             return
         }
 
+        // Duration suffix: Nd, Nh, Nm, Ns, Nms → milliseconds
+        let next = self.peek_char()
+        if next == "d" && !p_is_alpha_numeric(self.peek_next_char()) {
+            self.advance_char()
+            let num_str = self.source.substring(self.start, self.current - 1)
+            self.set_current("number", string(int(num_str) * 86400000))
+            return
+        }
+        if next == "h" && !p_is_alpha_numeric(self.peek_next_char()) {
+            self.advance_char()
+            let num_str = self.source.substring(self.start, self.current - 1)
+            self.set_current("number", string(int(num_str) * 3600000))
+            return
+        }
+        if next == "m" {
+            if self.peek_next_char() == "s" {
+                self.advance_char()
+                self.advance_char()
+                let num_str = self.source.substring(self.start, self.current - 2)
+                self.set_current("number", string(int(num_str)))
+                return
+            }
+            if !p_is_alpha_numeric(self.peek_next_char()) {
+                self.advance_char()
+                let num_str = self.source.substring(self.start, self.current - 1)
+                self.set_current("number", string(int(num_str) * 60000))
+                return
+            }
+        }
+        if next == "s" && !p_is_alpha_numeric(self.peek_next_char()) {
+            self.advance_char()
+            let num_str = self.source.substring(self.start, self.current - 1)
+            self.set_current("number", string(int(num_str) * 1000))
+            return
+        }
         self.set_current("number", self.source.substring(self.start, self.current))
     }
 
