@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 116 done, 6 todo, 10 n/a)
+## Feature Progress (132 total: 118 done, 4 todo, 10 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -164,14 +164,15 @@ functions, duplicate function name detection at compile time.
 
 ## EXECUTIVE SUMMARY (updated April 11, 2026)
 
-The bootstrap compiler is at 107/132 features (81%), 209 tests,
-with a self-hosting fixed-point that produces byte-identical 81K-line
+The bootstrap compiler is at 118/132 features (90%), 216 tests,
+with a self-hosting fixed-point that produces byte-identical 83K-line
 IR across bs2/bs3. Recent additions: trait dynamic dispatch (vtable),
 annotations, contextual enum resolution, spec test framework,
-datetime/duration literals, JSON stringify/parse. The top 3 scaling
-issues are all FIXED. Remaining 14 TODO items are primarily
-domain-specific extensions (concurrency, match tables, type operators)
-or major infrastructure (separate compilation).
+datetime/duration literals, JSON/TOML, match tables, table literals,
+tagged templates, type operators, validation, semver. The top 3
+scaling issues are all FIXED. Remaining 4 TODO: proper separate
+compilation, concurrency (spawn/channels/select/parallel),
+c_abi_trampolines.
 
 **Original summary (for reference):**
 

@@ -241,9 +241,9 @@ Status key:
 | Primitive Types | 7 | 7 | 0 | 0 |
 | Functions | 9 | 9 | 0 | 0 |
 | Structs & Types | 8 | 8 | 0 | 0 |
-| Enums & Matching | 11 | 9 | 2 | 0 |
+| Enums & Matching | 11 | 10 | 1 | 0 |
 | Control Flow | 8 | 8 | 0 | 0 |
-| Operators | 8 | 8 | 0 | 0 |
+| Operators | 9 | 9 | 0 | 0 |
 | Strings | 11 | 11 | 0 | 0 |
 | Null Safety | 8 | 8 | 0 | 0 |
 | Collections | 7 | 7 | 0 | 0 |
@@ -254,7 +254,7 @@ Status key:
 | Testing | 4 | 4 | 0 | 0 |
 | Pointer Ops | 4 | 3 | 1 | 0 |
 | Packages | 14 | 8 | 0 | 6 |
-| **TOTAL** | **131** | **116** | **5** | **10** |
+| **TOTAL** | **131** | **118** | **3** | **10** |
 
 ## Dogfooding Rule
 
