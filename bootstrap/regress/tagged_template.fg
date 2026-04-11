@@ -1,0 +1,15 @@
+// Tagged templates: tag`template` desugars to tag(template_result).
+
+fn upper(s: string) -> string { s.upper() }
+fn shout(s: string) -> string { s.upper() + "!!!" }
+fn wrap(s: string) -> string { "[" + s + "]" }
+
+fn main() {
+    let name = "world"
+    println(upper`hello ${name}`)
+    println(shout`hi ${name}`)
+    println(wrap`value: ${string(42)}`)
+
+    // No interpolation
+    println(upper`static text`)
+}

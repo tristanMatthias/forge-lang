@@ -971,6 +971,16 @@ impl Parser {
                 }
                 return Expr.StructLit(name, inits)
             }
+            // Tagged template: `tag`template with ${expr}`
+            // Desugars to: tag(desugar_template(raw))
+            if self.check("template") {
+                let raw = self.current_lexeme
+                self.advance()
+                let template_expr = self.desugar_template(raw)
+                if template_expr == null { return null }
+                let args = ExprList.Node(sexpr(template_expr!, self.current_line, self.current_column), ExprList.End)
+                return Expr.Call(Expr.Ident(name), args)
+            }
             return Expr.Ident(name)
         }
 

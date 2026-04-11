@@ -70,7 +70,7 @@
 | 63 | .length | ✅ | |
 | 64 | .substring | ✅ | |
 | 65 | string templates | ✅ | with sub-parser for expressions |
-| 66 | tagged templates | 🔲 | |
+| 66 | tagged templates | ✅ | tag`template` desugars to tag(result) |
 | 67 | .split, .trim | ✅ | C runtime | |
 | 68 | .contains, .starts_with | ✅ | C runtime | |
 | 69 | .replace, .upper, .lower | ✅ | C runtime | |

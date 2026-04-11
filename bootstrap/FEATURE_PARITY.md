@@ -115,7 +115,7 @@ Status key:
 | `.length` | `s.length` | ✅ | via strlen |
 | `.substring` | `s.substring(start, end)` | ✅ | |
 | string templates | `` `hello ${name}` `` | ✅ | desugars to string concat |
-| tagged templates | `` tag`template` `` | 🔲 | needs templates |
+| tagged templates | `` tag`template` `` | ✅ | desugars to function call |
 | `.split`, `.trim`, etc. | `s.split(sep)` | ✅ | C runtime |
 | `.contains`, `.starts_with` | `s.contains(sub)` | ✅ | C runtime |
 | `.replace`, `.upper`, `.lower` | `s.replace(a, b)` | ✅ | C runtime |
