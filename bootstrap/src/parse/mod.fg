@@ -934,6 +934,25 @@ impl Parser {
             return Expr.Null
         }
 
+        // Contextual enum variant: `.Variant` or `.Variant(args)`
+        // Resolved at codegen time using the expected type from context.
+        if self.check("dot") {
+            self.advance()  // consume .
+            if self.check("identifier") {
+                let variant = self.current_lexeme
+                self.advance()  // consume variant name
+                if self.check("left_paren") {
+                    self.advance()
+                    let args = self.parse_arg_list()?
+                    if !self.consume("right_paren", "expected `)` after variant args") {
+                        return null
+                    }
+                    return Expr.EnumCtor("", variant, args)
+                }
+                return Expr.EnumCtor("", variant, ExprList.End)
+            }
+        }
+
         if self.check("identifier") {
             let name = self.current_lexeme
             self.advance()

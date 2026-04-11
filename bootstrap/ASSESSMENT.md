@@ -46,7 +46,7 @@
 | 39b | literal patterns | ✅ | string/int/bool in match arms |
 | 40 | match tables | 🔲 | |
 | 41 | `is` keyword | ✅ | `value is .Variant` returns bool |
-| 42 | contextual resolution | 🔲 | |
+| 42 | contextual resolution | ✅ | `.Variant` resolves by searching enum registry |
 | 43 | if / else | ✅ | stmt + expr |
 | 44 | else if | ✅ | |
 | 45 | while | ✅ | |

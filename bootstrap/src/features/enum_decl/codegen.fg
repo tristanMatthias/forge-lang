@@ -1,22 +1,33 @@
 // WHY: emits enum constructors (heap-allocated tagged unions).
 
 use core.ast.{Expr, ExprList, VariantList, VarEnv, variant_lookup, variant_max_payload, ValueType}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, enum_reg_lookup, const_i64, const_i8, to_i64, cg_malloc}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, const_i64, const_i8, to_i64, cg_malloc}
 use codegen.{emit_expr}
 
 
 export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
-    let enum_l = enum_reg_lookup(ctx.enums, type_name)
+    // Contextual resolution: `.Variant` with empty type_name.
+    // Search all enums for a variant with this name.
+    let resolved_name = if type_name == "" {
+        let found = enum_reg_find_by_variant(ctx.enums, variant)
+        if found == "" {
+            return err_emit("no enum has variant `" + variant + "`")
+        }
+        found
+    } else {
+        type_name
+    }
+    let enum_l = enum_reg_lookup(ctx.enums, resolved_name)
     if !enum_l.found {
-        return err_emit("undefined enum type `" + type_name + "`")
+        return err_emit("undefined enum type `" + resolved_name + "`")
     }
     let v = variant_lookup(enum_l.variants, variant)
     if !v.found {
-        return err_emit("enum `" + type_name + "` has no variant `" + variant + "`")
+        return err_emit("enum `" + resolved_name + "` has no variant `" + variant + "`")
     }
-    let st_ty = forge_llvm_get_type_by_name(ctx.lc, type_name)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, resolved_name)
     if st_ty == null {
-        return err_emit("LLVM enum type `" + type_name + "` not declared")
+        return err_emit("LLVM enum type `" + resolved_name + "` not declared")
     }
     let buf = malloc_enum_bytes(ctx, enum_l.variants)
     let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, buf, 0, "tag_ptr")
@@ -25,7 +36,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     let fill = fill_enum_payload(ctx, env, st_ty, buf, args, 0)
     if fill.had_error { return fill }
     let as_i64 = to_i64(ctx, buf, "enum_i64")
-    EmitResult { value: as_i64, ty: ValueType.Enum(type_name), had_error: false, error_message: "" }
+    EmitResult { value: as_i64, ty: ValueType.Enum(resolved_name), had_error: false, error_message: "" }
 }
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {

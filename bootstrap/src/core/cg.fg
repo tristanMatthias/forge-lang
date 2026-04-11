@@ -234,6 +234,19 @@ export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
     }
 }
 
+// Find the enum type name that contains a given variant.
+// Used for contextual resolution: `.Variant` → `EnumName.Variant`.
+export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(name, variants, next) -> {
+            let v = variant_lookup(variants, variant)
+            if v.found { return name }
+            enum_reg_find_by_variant(next, variant)
+        }
+    }
+}
+
 // translate_param_type: converts Forge type names to the internal
 // string tag used by EmitResult.ty. Uses the registries from the
 // Codegen struct.

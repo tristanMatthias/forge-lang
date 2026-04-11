@@ -76,7 +76,7 @@ Status key:
 | match guards | `pattern if guard -> body` | ✅ | |
 | match tables | `match expr table { ... }` | 🔲 | |
 | `is` keyword | `value is Pattern` | ✅ | |
-| contextual resolution | `let x: Enum = .variant` | 🔲 | |
+| contextual resolution | `let x: Enum = .variant` | ✅ | searches all enums by variant |
 
 ## Control Flow
 
@@ -241,7 +241,7 @@ Status key:
 | Primitive Types | 7 | 7 | 0 | 0 |
 | Functions | 9 | 8 | 1 | 0 |
 | Structs & Types | 8 | 8 | 0 | 0 |
-| Enums & Matching | 11 | 8 | 3 | 0 |
+| Enums & Matching | 11 | 9 | 2 | 0 |
 | Control Flow | 8 | 8 | 0 | 0 |
 | Operators | 8 | 8 | 0 | 0 |
 | Strings | 11 | 10 | 1 | 0 |
@@ -251,10 +251,10 @@ Status key:
 | I/O & Runtime | 12 | 10 | 2 | 0 |
 | Concurrency | 4 | 0 | 4 | 0 |
 | Components | 4 | 0 | 0 | 4 |
-| Testing | 4 | 0 | 4 | 0 |
+| Testing | 4 | 1 | 3 | 0 |
 | Pointer Ops | 4 | 3 | 1 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **100** | **21** | **10** |
+| **TOTAL** | **131** | **102** | **19** | **10** |
 
 ## Dogfooding Rule
 

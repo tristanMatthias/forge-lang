@@ -1,0 +1,56 @@
+// Contextual enum resolution: .Variant resolves to EnumName.Variant
+// by searching all declared enums.
+
+enum Color { Red, Green, Blue }
+enum Dir { Up, Down, Left, Right }
+enum Option { None, Some(value: int) }
+
+fn color_name(c: Color) -> string {
+    match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue -> "blue"
+    }
+}
+
+fn dir_name(d: Dir) -> string {
+    match d {
+        .Up -> "up"
+        .Down -> "down"
+        .Left -> "left"
+        .Right -> "right"
+    }
+}
+
+fn main() {
+    // Basic contextual resolution
+    let c = .Red
+    println(color_name(c))
+    println(color_name(.Green))
+    println(color_name(.Blue))
+
+    // Different enum
+    let d = .Up
+    println(dir_name(d))
+    println(dir_name(.Right))
+
+    // With payload
+    let x = .Some(42)
+    match x {
+        .Some(v) -> println(string(v))
+        .None -> println("none")
+    }
+
+    let n = .None
+    match n {
+        .Some(v) -> println(string(v))
+        .None -> println("none")
+    }
+
+    // In if expressions
+    let result = if true { .Some(99) } else { .None }
+    match result {
+        .Some(v) -> println(string(v))
+        .None -> println("none")
+    }
+}
