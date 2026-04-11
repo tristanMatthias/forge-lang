@@ -107,7 +107,7 @@
 | 100 | process_uptime | ✅ | forge_uptime_ms() via extern fn |
 | 101 | datetime | 🔲 | |
 | 102 | durations | 🔲 | |
-| 103 | shell shorthand | 🔲 | |
+| 103 | shell shorthand | ✅ | forge_shell_exec, forge_shell_exec_status |
 | 104 | spawn | 🔲 | |
 | 105 | channels | 🔲 | |
 | 106 | select | 🔲 | |

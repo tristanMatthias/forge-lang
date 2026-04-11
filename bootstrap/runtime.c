@@ -938,3 +938,31 @@ int64_t forge_uptime_ms(void) {
     int64_t nsecs = now.tv_nsec - forge_start_time.tv_nsec;
     return secs * 1000 + nsecs / 1000000;
 }
+
+// ── Shell execution ──
+const char* forge_shell_exec(const char* cmd) {
+    FILE* fp = popen(cmd, "r");
+    if (!fp) return "";
+    char* buf = (char*)malloc(4096);
+    size_t total = 0;
+    size_t cap = 4096;
+    while (1) {
+        size_t n = fread(buf + total, 1, cap - total - 1, fp);
+        if (n == 0) break;
+        total += n;
+        if (total >= cap - 1) {
+            cap *= 2;
+            buf = (char*)realloc(buf, cap);
+        }
+    }
+    buf[total] = '\0';
+    // Strip trailing newline
+    if (total > 0 && buf[total - 1] == '\n') buf[total - 1] = '\0';
+    pclose(fp);
+    return buf;
+}
+
+int64_t forge_shell_exec_status(const char* cmd) {
+    int status = system(cmd);
+    return (int64_t)((status >> 8) & 0xff);
+}
