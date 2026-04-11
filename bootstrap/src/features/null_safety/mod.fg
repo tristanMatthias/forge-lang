@@ -2,10 +2,9 @@ mod parser
 mod codegen
 
 export fn register_null_safety(reg: Registry) -> Registry {
-    mut r = reg
-    r = register_feature(r, Feature { name: "null_coalesce", expr_tag: 19, stmt_tag: 0 - 1, emit_expr: nc_emit, emit_stmt: noop_stmt })
-    r = register_feature(r, Feature { name: "optional_chain", expr_tag: 20, stmt_tag: 0 - 1, emit_expr: oc_emit, emit_stmt: noop_stmt })
-    register_feature(r, Feature { name: "try", expr_tag: 21, stmt_tag: 0 - 1, emit_expr: try_emit, emit_stmt: noop_stmt })
+    mut r = register_feature(reg, expr_feature("null_coalesce", 19, nc_emit))
+    r = register_feature(r, expr_feature("optional_chain", 20, oc_emit))
+    register_feature(r, expr_feature("try", 21, try_emit))
 }
 
 fn nc_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

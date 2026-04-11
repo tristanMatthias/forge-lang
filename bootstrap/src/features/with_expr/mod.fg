@@ -2,7 +2,7 @@ mod parser
 mod codegen
 
 export fn register_with_expr(reg: Registry) -> Registry {
-    register_feature(reg, Feature { name: "with", expr_tag: 24, stmt_tag: 0 - 1, emit_expr: with_emit, emit_stmt: noop_stmt })
+    register_feature(reg, expr_feature("with", 24, with_emit))
 }
 
 fn with_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

@@ -1,7 +1,7 @@
 mod codegen
 
 export fn register_closures(reg: Registry) -> Registry {
-    register_feature(reg, Feature { name: "lambda", expr_tag: 26, stmt_tag: 0 - 1, emit_expr: lambda_emit, emit_stmt: noop_stmt })
+    register_feature(reg, expr_feature("lambda", 26, lambda_emit))
 }
 
 fn lambda_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

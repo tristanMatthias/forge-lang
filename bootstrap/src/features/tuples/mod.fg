@@ -2,9 +2,8 @@ mod parser
 mod codegen
 
 export fn register_tuples(reg: Registry) -> Registry {
-    mut r = reg
-    r = register_feature(r, Feature { name: "tuple", expr_tag: 22, stmt_tag: 0 - 1, emit_expr: tuple_emit, emit_stmt: noop_stmt })
-    register_feature(r, Feature { name: "tuple_index", expr_tag: 23, stmt_tag: 0 - 1, emit_expr: tuple_idx_emit, emit_stmt: noop_stmt })
+    mut r = register_feature(reg, expr_feature("tuple", 22, tuple_emit))
+    register_feature(r, expr_feature("tuple_index", 23, tuple_idx_emit))
 }
 
 fn tuple_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

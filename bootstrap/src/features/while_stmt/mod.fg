@@ -2,13 +2,7 @@ mod parser
 mod codegen
 
 export fn register_while_stmt(reg: Registry) -> Registry {
-    register_feature(reg, Feature {
-        name: "while",
-        expr_tag: 0 - 1,
-        stmt_tag: 5,
-        emit_expr: noop_expr,
-        emit_stmt: while_emit_stmt,
-    })
+    register_feature(reg, stmt_feature("while", 5, while_emit_stmt))
 }
 
 fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

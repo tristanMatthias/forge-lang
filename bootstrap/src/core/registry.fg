@@ -38,14 +38,23 @@ export type Feature = {
     emit_stmt: fn(Ctx, VarEnv, Stmt) -> StmtResult,
 }
 
-// ── No-op handlers for features that only have one form ──
+// ── No-op handlers ──
 
-export fn noop_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    err_emit("no expr handler")
+fn noop_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult { err_emit("no expr handler") }
+fn noop_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult { err_stmt("no stmt handler") }
+
+// ── Convenience constructors ──
+
+export fn expr_feature(name: string, tag: int, emit: fn(Ctx, VarEnv, Expr) -> EmitResult) -> Feature {
+    Feature { name, expr_tag: tag, stmt_tag: 0 - 1, emit_expr: emit, emit_stmt: noop_stmt }
 }
 
-export fn noop_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
-    err_stmt("no stmt handler")
+export fn stmt_feature(name: string, tag: int, emit: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> Feature {
+    Feature { name, expr_tag: 0 - 1, stmt_tag: tag, emit_expr: noop_expr, emit_stmt: emit }
+}
+
+export fn dual_feature(name: string, etag: int, stag: int, eemit: fn(Ctx, VarEnv, Expr) -> EmitResult, semit: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> Feature {
+    Feature { name, expr_tag: etag, stmt_tag: stag, emit_expr: eemit, emit_stmt: semit }
 }
 
 // ── Registry ──

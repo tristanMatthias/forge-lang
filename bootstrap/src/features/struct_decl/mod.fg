@@ -2,11 +2,10 @@ mod parser
 mod codegen
 
 export fn register_struct_decl(reg: Registry) -> Registry {
-    mut r = reg
-    r = register_feature(r, Feature { name: "struct_lit", expr_tag: 11, stmt_tag: 0 - 1, emit_expr: struct_lit_emit, emit_stmt: noop_stmt })
-    r = register_feature(r, Feature { name: "field_access", expr_tag: 12, stmt_tag: 0 - 1, emit_expr: field_access_emit, emit_stmt: noop_stmt })
-    r = register_feature(r, Feature { name: "enum_ctor", expr_tag: 13, stmt_tag: 0 - 1, emit_expr: enum_ctor_emit, emit_stmt: noop_stmt })
-    register_feature(r, Feature { name: "field_assign", expr_tag: 17, stmt_tag: 0 - 1, emit_expr: field_assign_emit, emit_stmt: noop_stmt })
+    mut r = register_feature(reg, expr_feature("struct_lit", 11, struct_lit_emit))
+    r = register_feature(r, expr_feature("field_access", 12, field_access_emit))
+    r = register_feature(r, expr_feature("enum_ctor", 13, enum_ctor_emit))
+    register_feature(r, expr_feature("field_assign", 17, field_assign_emit))
 }
 
 fn struct_lit_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
