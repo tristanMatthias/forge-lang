@@ -1,6 +1,6 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 
-use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend, ValueType, SStmt}
+use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend, ValueType, SStmt, stmt_unwrap}
 use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_type_ctx, ctx_with_fn}
 use codegen.{emit_block_loop}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
@@ -10,7 +10,7 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(VarEnv.End)
         .Node(ss, next) -> {
-            let r = match ss.node {
+            let r = match stmt_unwrap(ss.node) {
                 .Function(name, params, _, body) -> emit_function_body(ctx, name, params, body)
                 .Impl(_, methods) -> emit_function_bodies(ctx, methods)
                 _ -> ok_stmt(VarEnv.End)

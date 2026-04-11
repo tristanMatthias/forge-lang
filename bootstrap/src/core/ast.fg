@@ -335,6 +335,23 @@ export enum Stmt {
     TraitDecl(name: string, methods: StmtList)
     LetDestructure(names: ParamList, initializer: Expr)
     Defer(body: Expr)
+    Annotated(annotations: AnnotationList, inner: Stmt)
+}
+
+// Annotations attached to declarations: @name or @name(args).
+// Args are stored as ExprList for generality.
+export enum AnnotationList {
+    End
+    Node(name: string, args: ExprList, next: AnnotationList)
+}
+
+// Unwrap Annotated wrapper, returning the inner statement.
+// If not Annotated, returns the statement as-is.
+export fn stmt_unwrap(s: Stmt) -> Stmt {
+    match s {
+        .Annotated(_, inner) -> inner
+        _ -> s
+    }
 }
 
 export enum StmtList {
@@ -654,6 +671,15 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Continue -> "(continue)"
         .TraitDecl(name, methods) -> "(trait " + name + " " + render_stmt_list(methods) + ")"
         .LetDestructure(names, initializer) -> "(let-destruct " + render_param_list(names) + " " + render_expr(initializer) + ")"
+        .Defer(body) -> "(defer " + render_expr(body) + ")"
+        .Annotated(annotations, inner) -> "(@annotated " + render_annotation_list(annotations) + " " + render_stmt(inner) + ")"
+    }
+}
+
+export fn render_annotation_list(annots: AnnotationList) -> string {
+    match annots {
+        .End -> ""
+        .Node(name, _, next) -> "@" + name + " " + render_annotation_list(next)
     }
 }
 

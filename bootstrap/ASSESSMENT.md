@@ -119,7 +119,7 @@
 | 112 | spec tests | 🔲 | |
 | 113 | table literals | 🔲 | |
 | 114 | validation | 🔲 | |
-| 115 | annotations | 🔲 | |
+| 115 | annotations | ✅ | @name and @name(args) parsed, stored in AST |
 | 116 | ptr arithmetic | ✅ | ptr + int, ptr - int, ptr - ptr |
 | 117 | ptr indexing | ✅ | ptr[i] reads byte, forge_ptr_store_byte writes |
 | 118 | ptr ↔ string | ✅ | forge_string_from_ptr, let p: ptr = str |

@@ -4,7 +4,7 @@
 // equality → comparison → term → factor → unary → call → primary.
 // Feature-specific parsers extend Parser via cross-file impl blocks.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
 export type ParseResult = {
@@ -347,6 +347,14 @@ impl Parser {
     }
 
     fn parse_declaration(self) -> Stmt? {
+        // Annotations: `@name` or `@name(args)` before a declaration.
+        if self.check("at") {
+            let annotations = self.parse_annotations()
+            let inner = self.parse_declaration()
+            if inner == null { return null }
+            return Stmt.Annotated(annotations, inner!)
+        }
+
         // `export` is currently a no-op modifier — every top-level
         // declaration is reachable from main, so the visibility tag
         // is irrelevant for single-file MVP compilation. Recorded
@@ -400,6 +408,24 @@ impl Parser {
         self.parse_statement()
     }
 
+    // Parse one or more annotations: @name or @name(arg1, arg2)
+    fn parse_annotations(self) -> AnnotationList {
+        if !self.check("at") { return AnnotationList.End }
+        self.advance()  // consume @
+        let name = self.current_lexeme
+        self.advance()  // consume name
+        // Optional argument list
+        let args = if self.check("left_paren") {
+            self.advance()  // consume (
+            let a = self.parse_arg_list()
+            if self.check("right_paren") { self.advance() }
+            if a == null { ExprList.End } else { a! }
+        } else {
+            ExprList.End
+        }
+        AnnotationList.Node(name, args, self.parse_annotations())
+    }
+
     fn parse_use_or_mod_skip(self) -> Stmt? {
         // Skip everything until we hit a top-level token that
         // could start a new declaration. This is intentionally
@@ -407,7 +433,7 @@ impl Parser {
         // disappear into the void.
         self.advance()
         while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") || self.check("kw_trait") || self.check("kw_defer") {
+            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") || self.check("kw_trait") || self.check("kw_defer") || self.check("at") {
                 break
             }
             self.advance()

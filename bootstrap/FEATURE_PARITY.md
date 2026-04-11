@@ -199,7 +199,7 @@ Status key:
 | spec tests | `spec "name" { given { } then { } }` | 🔲 | |
 | table literals | `table { col | col; val | val }` | 🔲 | |
 | validation | `validate(value)` | 🔲 | |
-| annotations | `@name`, `@name(args)` | 🔲 | |
+| annotations | `@name`, `@name(args)` | ✅ | parsed, stored in AST |
 
 ## Pointer Operations (low-level)
 

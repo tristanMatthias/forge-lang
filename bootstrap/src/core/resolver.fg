@@ -49,7 +49,7 @@ fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
         match current {
             .End -> { return res }
             .Node(ss, next) -> {
-                res = match ss.node {
+                res = match stmt_unwrap(ss.node) {
                     .Function(name, _, _, _) -> declare_function(res, name)
                     .ExternFn(name, _, _) -> declare_function(res, name)
                     .Impl(type_name, methods) -> collect_method_names(res, type_name, methods)
@@ -69,7 +69,7 @@ fn collect_method_names(r: Resolver, type_name: string, methods: StmtList) -> Re
         match current {
             .End -> { return res }
             .Node(ss, next) -> {
-                res = match ss.node {
+                res = match stmt_unwrap(ss.node) {
                     .Function(name, _, _, _) -> declare_function(res, name)
                     _ -> res
                 }
@@ -300,6 +300,7 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             define_param_names(after_init, names)
         }
         .Defer(body) -> resolve_expr(r, body)
+        .Annotated(_, inner) -> resolve_stmt(r, inner)
     }
 }
 

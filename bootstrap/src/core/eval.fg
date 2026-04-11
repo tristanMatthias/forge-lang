@@ -443,6 +443,8 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .TraitDecl(_, _) -> ok_result(runtime, 0)
         .LetDestructure(_, _) -> error_result(runtime, "destructuring is not supported by the tree-walk evaluator")
         .ForIn(_, _, _) -> error_result(runtime, "for-in is not supported by the tree-walk evaluator")
+        .Annotated(_, inner) -> execute_stmt(runtime, inner)
+        .Defer(_) -> ok_result(runtime, value_null())
     }
 }
 
