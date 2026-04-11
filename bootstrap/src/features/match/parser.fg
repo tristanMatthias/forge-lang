@@ -45,7 +45,18 @@ impl Parser {
         }
         let saved = self.allow_dot_postfix
         self.allow_dot_postfix = false
-        let body = self.parse_expression()
+        // Allow `return expr` in bare match arm position by wrapping
+        // it in a Block expression: `{ return expr }`
+        let body = if self.check("kw_return") {
+            self.advance()
+            let ret_val = self.parse_expression()
+            if ret_val == null { null } else {
+                let ret_stmt = sstmt(Stmt.Return(ret_val!), self.current_line, self.current_column)
+                Expr.Block(StmtList.Node(ret_stmt, StmtList.End))
+            }
+        } else {
+            self.parse_expression()
+        }
         self.allow_dot_postfix = saved
         if body == null { return null }
         if self.check("comma") {

@@ -92,24 +92,14 @@ enums work fine for AST sizes. Not urgent.
 **Plan:** Consider migrating when/if performance matters. The linked
 lists are actually idiomatic for immutable scope stacks (VarEnv).
 
-### 7. return not allowed in bare match arms
+### ~~7. return not allowed in bare match arms~~ (FIXED)
 
-**Severity:** low
-**Impact:** must wrap return in braces: `_ -> { return x }`
+**Status:** fixed (April 11 2026). Parser wraps bare `return expr`
+in a Block expression, so `_ -> return x` works without braces.
 
-The parser rejects `_ -> return x` because match arm bodies expect
-expressions and `return` is a statement. The braces workaround is
-fine and doesn't hurt readability.
+### ~~8. Stmt.Return naming (was Ret)~~ (RESOLVED)
 
-**Plan:** Fix the parser to accept statements in bare match arm
-position. Low priority — the braces are idiomatic anyway.
-
-### 8. Stmt.Return naming (was Ret)
-
-**Severity:** none (RESOLVED)
-
-Previously `Return` was renamed to `Ret` because the Rust host
-compiler rejected it. Now resolved — variant is `Stmt.Return`.
+**Status:** fixed. Variant is `Stmt.Return`.
 
 ### ~~9. DiagCode parallel match blocks~~ (FIXED)
 
