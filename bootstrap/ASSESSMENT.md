@@ -104,7 +104,7 @@
 | 97 | read_file | ✅ | compiler-only; user programs need `extern fn` |
 | 98 | write_file | ✅ | compiler-only; user programs need `extern fn` |
 | 99 | json.parse / stringify | 🔲 | |
-| 100 | process_uptime | 🔲 | |
+| 100 | process_uptime | ✅ | forge_uptime_ms() via extern fn |
 | 101 | datetime | 🔲 | |
 | 102 | durations | 🔲 | |
 | 103 | shell shorthand | 🔲 | |

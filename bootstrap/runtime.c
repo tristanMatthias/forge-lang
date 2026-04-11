@@ -920,3 +920,21 @@ const char* forge_string_from_ptr(int64_t ptr_val, int64_t len) {
     buf[len] = '\0';
     return buf;
 }
+
+// ── Process timing ──
+#include <time.h>
+
+static struct timespec forge_start_time;
+
+__attribute__((constructor))
+static void forge_init_timer(void) {
+    clock_gettime(CLOCK_MONOTONIC, &forge_start_time);
+}
+
+int64_t forge_uptime_ms(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    int64_t secs = now.tv_sec - forge_start_time.tv_sec;
+    int64_t nsecs = now.tv_nsec - forge_start_time.tv_nsec;
+    return secs * 1000 + nsecs / 1000000;
+}
