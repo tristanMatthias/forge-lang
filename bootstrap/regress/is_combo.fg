@@ -1,0 +1,81 @@
+// `is` keyword combined with other features.
+
+enum Shape { Circle(r: int), Square(s: int), Triangle }
+
+enum Option { Some(val: int), None }
+
+// is with if-expression
+fn describe(s: Shape) -> string {
+    if s is .Circle { return "circle" }
+    if s is .Square { return "square" }
+    "triangle"
+}
+
+// is with logical operators
+fn is_round_or_none(s: Shape, o: Option) -> bool {
+    s is .Circle || o is .None
+}
+
+// is in while loop
+fn count_somes(items: List<int>) -> int {
+    mut count = 0
+    mut i = 0
+    while i < items.length {
+        let val = Option.Some(items[i])
+        if val is .Some { count = count + 1 }
+        i = i + 1
+    }
+    count
+}
+
+// is with match
+fn classify(s: Shape) -> string {
+    match s {
+        .Circle(r) -> {
+            if s is .Circle { "confirmed circle r=" + string(r) } else { "impossible" }
+        }
+        _ -> "not circle"
+    }
+}
+
+// is with struct fields
+type Tagged = { shape: Shape, label: string }
+
+fn main() {
+    // Basic
+    println(describe(Shape.Circle(5)))
+    println(describe(Shape.Square(3)))
+    println(describe(Shape.Triangle))
+
+    // Logical
+    println(string(is_round_or_none(Shape.Circle(1), Option.None)))
+    println(string(is_round_or_none(Shape.Square(1), Option.Some(1))))
+    println(string(is_round_or_none(Shape.Square(1), Option.None)))
+
+    // With list
+    let items = [1, 2, 3, 4, 5]
+    println(string(count_somes(items)))
+
+    // With match
+    println(classify(Shape.Circle(10)))
+    println(classify(Shape.Triangle))
+
+    // Chained is
+    let a = Shape.Circle(1)
+    let b = Shape.Circle(2)
+    if a is .Circle && b is .Circle {
+        println("both circles")
+    }
+
+    // Negated
+    let t = Shape.Triangle
+    if !(t is .Circle) {
+        println("not a circle")
+    }
+
+    // With struct
+    let tagged = Tagged { shape: Shape.Square(4), label: "box" }
+    if tagged.shape is .Square {
+        println(tagged.label)
+    }
+}

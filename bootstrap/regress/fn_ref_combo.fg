@@ -1,0 +1,61 @@
+// First-class function refs combined with other features.
+
+fn double(n: int) -> int { n * 2 }
+fn triple(n: int) -> int { n * 3 }
+fn negate(n: int) -> int { 0 - n }
+
+// Fn ref in struct
+type Transform = { apply: fn(int) -> int, name: string }
+
+// Fn ref in list
+fn apply_all(fns: List<fn(int) -> int>, x: int) {
+    for i in 0..fns.length {
+        let f: fn(int) -> int = fns[i]
+        println(string(f(x)))
+    }
+}
+
+// Fn ref in match
+enum Op { Add, Mul }
+fn get_op(op: Op) -> fn(int) -> int {
+    match op {
+        .Add -> double
+        .Mul -> triple
+    }
+}
+
+// Fn ref in if-expression
+fn pick(use_first: bool) -> fn(int) -> int {
+    if use_first { double } else { triple }
+}
+
+// Fn ref with pipe
+fn apply_fn(x: int, f: fn(int) -> int) -> int { f(x) }
+
+fn main() {
+    // Struct with fn field
+    let t = Transform { apply: double, name: "double" }
+    println(t.name + ": " + string(t.apply(7)))
+
+    // Fn ref from match
+    let op = get_op(Op.Add)
+    println(string(op(5)))
+
+    // Fn ref from if
+    let f = pick(false)
+    println(string(f(4)))
+
+    // Reassignment
+    mut g = double
+    println(string(g(3)))
+    g = negate
+    println(string(g(3)))
+
+    // As argument
+    println(string(apply_fn(10, triple)))
+
+    // With is keyword
+    let op2 = Op.Mul
+    let handler = if op2 is .Mul { triple } else { double }
+    println(string(handler(6)))
+}

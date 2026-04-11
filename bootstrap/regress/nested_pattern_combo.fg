@@ -1,0 +1,72 @@
+// Nested patterns combined with other features.
+
+enum Inner { A(x: int), B(msg: string), Empty }
+enum Outer { Wrap(inner: Inner), Pair(a: Inner, b: Inner), None }
+
+// Nested patterns in if-expr context
+fn describe(o: Outer) -> string {
+    match o {
+        .Wrap(.A(x)) -> "wrap-a: " + string(x)
+        .Wrap(.B(msg)) -> "wrap-b: " + msg
+        .Wrap(.Empty) -> "wrap-empty"
+        .Pair(.A(x), .A(y)) -> "pair-aa: " + string(x) + "," + string(y)
+        .Pair(.A(x), .B(msg)) -> "pair-ab: " + string(x) + " " + msg
+        .None -> "none"
+        _ -> "other"
+    }
+}
+
+// Nested pattern with guard
+fn guarded(o: Outer) -> string {
+    match o {
+        .Wrap(.A(x)) if x > 10 -> "big: " + string(x)
+        .Wrap(.A(x)) -> "small: " + string(x)
+        _ -> "?"
+    }
+}
+
+// Nested patterns in match-as-expression
+fn classify(o: Outer) -> int {
+    match o {
+        .Wrap(.A(_)) -> 1
+        .Wrap(.B(_)) -> 2
+        .None -> 0
+        _ -> 3
+    }
+}
+
+// Nested with is keyword
+fn is_wrap_a(o: Outer) -> bool {
+    o is .Wrap
+}
+
+fn main() {
+    println(describe(Outer.Wrap(Inner.A(42))))
+    println(describe(Outer.Wrap(Inner.B("hello"))))
+    println(describe(Outer.Wrap(Inner.Empty)))
+    println(describe(Outer.Pair(Inner.A(1), Inner.A(2))))
+    println(describe(Outer.Pair(Inner.A(3), Inner.B("yo"))))
+    println(describe(Outer.None))
+
+    // Guards
+    println(guarded(Outer.Wrap(Inner.A(5))))
+    println(guarded(Outer.Wrap(Inner.A(20))))
+
+    // Match expression
+    println(string(classify(Outer.Wrap(Inner.A(1)))))
+    println(string(classify(Outer.Wrap(Inner.B("x")))))
+    println(string(classify(Outer.None)))
+
+    // is + nested
+    println(string(is_wrap_a(Outer.Wrap(Inner.A(1)))))
+    println(string(is_wrap_a(Outer.None)))
+
+    // Nested in for loop
+    let items = [Outer.Wrap(Inner.A(10)), Outer.None, Outer.Wrap(Inner.A(20))]
+    for i in 0..items.length {
+        match items[i] {
+            .Wrap(.A(x)) -> println(string(x))
+            _ -> println("skip")
+        }
+    }
+}

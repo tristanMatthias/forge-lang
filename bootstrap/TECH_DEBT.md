@@ -342,6 +342,23 @@ annotation string.
 **Status:** fixed (April 10 2026)
 Replaced with O(1) ForgeIntMap (flat array indexed by tag).
 
+### 31. Float values captured by closures lose their type
+
+**Severity:** medium (closures that capture floats produce garbage)
+**Impact:** `let factor = 10.0; let f = (x) -> x * factor` — the
+captured `factor` is stored as i64 in the closure array but read back
+as Int type (not Float). Arithmetic uses integer ops on float bits,
+producing garbage results.
+
+**Root cause:** Closure captures store values as i64 (correct for the
+everything-is-i64 model) but don't preserve the ValueType of the
+captured variable. When the lambda body reads the capture, it gets
+`ValueType.Int` instead of `ValueType.Float`.
+
+**Proper fix:** Store value types alongside captured values in the
+closure array, or carry the capture types in the Closure ValueType
+variant: `Closure(captures: TypeList, ret: ValueType)`.
+
 ### 29. Dummy enum values for tag extraction in feature registration
 
 **Severity:** low (ugly but correct)
