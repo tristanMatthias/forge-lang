@@ -1,0 +1,36 @@
+// Basic trait implementation.
+
+trait Describable {
+    fn describe(self) -> string
+}
+
+type Circle = { radius: int }
+type Square = { side: int }
+
+impl Describable for Circle {
+    fn describe(self) -> string {
+        "circle r=" + string(self.radius)
+    }
+}
+
+impl Describable for Square {
+    fn describe(self) -> string {
+        "square s=" + string(self.side)
+    }
+}
+
+// Plain impl (no trait)
+impl Circle {
+    fn area(self) -> int {
+        self.radius * self.radius * 3
+    }
+}
+
+fn main() {
+    let c = Circle { radius: 5 }
+    let s = Square { side: 3 }
+
+    println(c.describe())
+    println(s.describe())
+    println(string(c.area()))
+}

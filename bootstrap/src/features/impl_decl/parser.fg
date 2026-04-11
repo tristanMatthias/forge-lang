@@ -35,7 +35,14 @@ impl Parser {
         if !self.consume("right_brace", "expected `}` after impl block") {
             return null
         }
-        Stmt.Impl(target_name, methods)
+        // Encode trait info in the type_name: "Trait:Type" for trait impls,
+        // just "Type" for plain impls. Downstream can split on ':'.
+        let impl_name = if type_name != target_name {
+            type_name + ":" + target_name
+        } else {
+            target_name
+        }
+        Stmt.Impl(impl_name, methods)
     }
 
     fn parse_impl_methods(self, type_name: string) -> StmtList? {
