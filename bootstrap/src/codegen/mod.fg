@@ -324,6 +324,14 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_datetime_minute", strlen_type)
     forge_llvm_add_function(m, "forge_datetime_second", strlen_type)
 
+    // JSON
+    forge_llvm_add_function(m, "forge_json_stringify_int", map_keys_type)
+    forge_llvm_add_function(m, "forge_json_stringify_string", map_keys_type)
+    forge_llvm_add_function(m, "forge_json_stringify_bool", map_keys_type)
+    forge_llvm_add_function(m, "forge_json_get_int", arr_get_type)
+    forge_llvm_add_function(m, "forge_json_get_string", arr_get_type)
+    forge_llvm_add_function(m, "forge_json_get_bool", arr_get_type)
+
     // Spec test runtime
     forge_llvm_add_function(m, "forge_test_start_spec", puts_type)
     forge_llvm_add_function(m, "forge_test_end_spec", puts_type)

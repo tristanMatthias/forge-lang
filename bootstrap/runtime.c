@@ -971,6 +971,92 @@ int64_t forge_datetime_second(int64_t epoch) {
     time_t t = (time_t)epoch; struct tm* tm = localtime(&t); return tm->tm_sec;
 }
 
+// ── JSON ──
+// Minimal JSON: stringify maps/lists/primitives, parse field extraction.
+
+// Stringify an integer to JSON.
+const char* forge_json_stringify_int(int64_t value) {
+    char* buf = (char*)malloc(32);
+    snprintf(buf, 32, "%lld", (long long)value);
+    return buf;
+}
+
+// Stringify a string to JSON (with escaping).
+const char* forge_json_stringify_string(const char* s) {
+    if (!s) return "null";
+    // Worst case: every char needs escaping + quotes + null
+    size_t len = strlen(s);
+    char* buf = (char*)malloc(len * 2 + 3);
+    char* p = buf;
+    *p++ = '"';
+    for (size_t i = 0; i < len; i++) {
+        char c = s[i];
+        if (c == '"') { *p++ = '\\'; *p++ = '"'; }
+        else if (c == '\\') { *p++ = '\\'; *p++ = '\\'; }
+        else if (c == '\n') { *p++ = '\\'; *p++ = 'n'; }
+        else if (c == '\r') { *p++ = '\\'; *p++ = 'r'; }
+        else if (c == '\t') { *p++ = '\\'; *p++ = 't'; }
+        else *p++ = c;
+    }
+    *p++ = '"';
+    *p = '\0';
+    return buf;
+}
+
+// Stringify a boolean to JSON.
+const char* forge_json_stringify_bool(int64_t value) {
+    return value ? "true" : "false";
+}
+
+// Parse a JSON string and extract an integer field by key.
+int64_t forge_json_get_int(const char* json, const char* key) {
+    if (!json || !key) return 0;
+    // Simple string search for "key":
+    char needle[256];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char* pos = strstr(json, needle);
+    if (!pos) return 0;
+    pos += strlen(needle);
+    // Skip whitespace and colon
+    while (*pos == ' ' || *pos == ':' || *pos == '\t') pos++;
+    return atoll(pos);
+}
+
+// Parse a JSON string and extract a string field by key.
+const char* forge_json_get_string(const char* json, const char* key) {
+    if (!json || !key) return "";
+    char needle[256];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char* pos = strstr(json, needle);
+    if (!pos) return "";
+    pos += strlen(needle);
+    while (*pos == ' ' || *pos == ':' || *pos == '\t') pos++;
+    if (*pos != '"') return "";
+    pos++; // skip opening quote
+    const char* end = pos;
+    while (*end && *end != '"') {
+        if (*end == '\\') end++; // skip escaped char
+        end++;
+    }
+    size_t len = end - pos;
+    char* result = (char*)malloc(len + 1);
+    memcpy(result, pos, len);
+    result[len] = '\0';
+    return result;
+}
+
+// Parse a JSON string and extract a boolean field by key.
+int64_t forge_json_get_bool(const char* json, const char* key) {
+    if (!json || !key) return 0;
+    char needle[256];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char* pos = strstr(json, needle);
+    if (!pos) return 0;
+    pos += strlen(needle);
+    while (*pos == ' ' || *pos == ':' || *pos == '\t') pos++;
+    return (strncmp(pos, "true", 4) == 0) ? 1 : 0;
+}
+
 // ── Shell execution ──
 const char* forge_shell_exec(const char* cmd) {
     FILE* fp = popen(cmd, "r");

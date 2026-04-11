@@ -168,7 +168,7 @@ Status key:
 | file_exists | `file_exists(path)` | ✅ | via C extern |
 | read_file | `read_file(path)` | ✅ | via C extern |
 | write_file | `write_file(path, content)` | ✅ | via C extern |
-| json.parse / stringify | `json.parse(str)` | 🔲 | |
+| json.parse / stringify | `json.parse(str)` | ✅ | stringify_int/string/bool, get_int/string/bool |
 | process_uptime | `process_uptime()` | ✅ | forge_uptime_ms() via extern fn |
 | datetime | `datetime_now()` | ✅ | forge_datetime_now + year/month/day/hour/min/sec |
 | durations | `7d`, `24h`, `5m` | ✅ | compile-time millisecond conversion |

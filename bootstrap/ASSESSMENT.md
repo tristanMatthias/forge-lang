@@ -103,7 +103,7 @@
 | 96 | file_exists | ✅ | compiler-only; user programs need `extern fn` |
 | 97 | read_file | ✅ | compiler-only; user programs need `extern fn` |
 | 98 | write_file | ✅ | compiler-only; user programs need `extern fn` |
-| 99 | json.parse / stringify | 🔲 | |
+| 99 | json.parse / stringify | ✅ | forge_json_stringify_*, forge_json_get_* |
 | 100 | process_uptime | ✅ | forge_uptime_ms() via extern fn |
 | 101 | datetime | ✅ | forge_datetime_now/year/month/day/hour/minute/second |
 | 102 | durations | ✅ | 1d, 2h, 5m, 10s, 500ms → millisecond integers |
