@@ -966,3 +966,24 @@ int64_t forge_shell_exec_status(const char* cmd) {
     int status = system(cmd);
     return (int64_t)((status >> 8) & 0xff);
 }
+
+// ── Trait objects (dynamic dispatch) ──
+// A trait object is a 2-element struct: { concrete_value, vtable_ptr }
+// The vtable is a ForgeArray of function pointers (closure arrays).
+// vtable[i] = closure array for the i-th trait method.
+// Method dispatch: load vtable[method_index], call with concrete_value as self.
+
+void* forge_trait_object_new(int64_t value, void* vtable) {
+    int64_t* obj = (int64_t*)forge_bump_alloc(16);
+    obj[0] = value;
+    obj[1] = (int64_t)(uintptr_t)vtable;
+    return obj;
+}
+
+int64_t forge_trait_object_value(void* obj) {
+    return ((int64_t*)obj)[0];
+}
+
+void* forge_trait_object_vtable(void* obj) {
+    return (void*)(uintptr_t)((int64_t*)obj)[1];
+}

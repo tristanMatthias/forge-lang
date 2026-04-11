@@ -294,6 +294,7 @@ fn translate_type(tc: TC, ty: string) -> ValueType {
     }
     if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty) }
     if struct_type_has(tc.structs, ty) { return ValueType.Struct(ty) }
+    if trait_has(tc.traits, ty) { return ValueType.Trait(ty) }
     ValueType.Int
 }
 
