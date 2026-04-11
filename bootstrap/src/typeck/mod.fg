@@ -127,6 +127,60 @@ fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
 
 // ── Checker state ──
 
+// Trait registry: maps trait name to its required method names.
+enum TraitMethodList {
+    End
+    Node(name: string, next: TraitMethodList)
+}
+
+enum TraitRegistry {
+    End
+    Node(trait_name: string, methods: TraitMethodList, next: TraitRegistry)
+}
+
+fn trait_lookup(reg: TraitRegistry, name: string) -> TraitMethodList {
+    match reg {
+        .End -> TraitMethodList.End
+        .Node(n, methods, next) -> {
+            if n == name { return methods }
+            trait_lookup(next, name)
+        }
+    }
+}
+
+fn trait_has(reg: TraitRegistry, name: string) -> bool {
+    match reg {
+        .End -> false
+        .Node(n, _, next) -> {
+            if n == name { return true }
+            trait_has(next, name)
+        }
+    }
+}
+
+fn method_list_has(list: TraitMethodList, name: string) -> bool {
+    match list {
+        .End -> false
+        .Node(n, next) -> {
+            if n == name { return true }
+            method_list_has(next, name)
+        }
+    }
+}
+
+fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
+    match stmts {
+        .End -> TraitMethodList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .ExternFn(name, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
+                .Function(name, _, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
+                _ -> collect_method_names_from_stmts(next)
+            }
+        }
+    }
+}
+
 type TC = {
     types: TypeEntry,
     fns: FnTypeEntry,
@@ -137,6 +191,7 @@ type TC = {
     current_fn: string,
     current_line: int,
     current_col: int,
+    traits: TraitRegistry,
 }
 
 type ExprResult = {
@@ -155,6 +210,7 @@ fn tc_new() -> TC {
         current_fn: "",
         current_line: 0,
         current_col: 0,
+        traits: TraitRegistry.End,
     }
 }
 
@@ -276,6 +332,9 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns)
                 }
                 .Impl(_, methods) -> collect_decls(tc, methods)
+                .TraitDecl(name, methods) -> tc with {
+                    traits: TraitRegistry.Node(name, collect_method_names_from_stmts(methods), tc.traits)
+                }
                 _ -> tc
             }
             collect_decls(updated, next)
@@ -366,7 +425,12 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let s = check_expr(tc, subject)
             check_match_arms(s.tc, arms)
         }
-        .Impl(_, methods) -> check_stmts(tc, methods)
+        .Impl(impl_name, methods) -> {
+            let after = check_stmts(tc, methods)
+            // Check trait conformance if this is `impl Trait for Type`
+            // impl_name is "Trait:Type" or just "Type"
+            check_trait_conformance(after, impl_name, methods)
+        }
         .LetDestructure(names, init) -> {
             let r = check_expr(tc, init)
             bind_destructure(r.tc, names, r.ty)
@@ -376,6 +440,55 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             r.tc
         }
         _ -> tc  // TypeDecl, EnumDecl, ExternFn, NoOp, Break, Continue, TraitDecl
+    }
+}
+
+// Check that `impl Trait for Type` provides all required methods.
+fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) -> TC {
+    // Split "Trait:Type" — if no colon, it's a plain impl (no trait)
+    let colon_idx = impl_name.index_of(":")
+    if colon_idx < 0 { return tc }
+
+    let trait_name = impl_name.substring(0, colon_idx)
+    let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
+
+    if !trait_has(tc.traits, trait_name) {
+        return tc_report(tc, DiagCode.TypeMismatch, "unknown trait `" + trait_name + "`")
+    }
+
+    let required = trait_lookup(tc.traits, trait_name)
+    check_required_methods(tc, trait_name, type_name, required, methods)
+}
+
+fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: TraitMethodList, impl_methods: StmtList) -> TC {
+    match required {
+        .End -> tc
+        .Node(name, next) -> {
+            // Check if the impl provides a method with this name.
+            // The method is mangled as Type__name in the impl's StmtList.
+            let mangled = type_name + "__" + name
+            if !impl_has_method(impl_methods, mangled) {
+                let after = tc_report(tc, DiagCode.TypeMismatch, "trait `" + trait_name + "` requires method `" + name + "` but `" + type_name + "` does not implement it")
+                check_required_methods(after, trait_name, type_name, next, impl_methods)
+            } else {
+                check_required_methods(tc, trait_name, type_name, next, impl_methods)
+            }
+        }
+    }
+}
+
+fn impl_has_method(methods: StmtList, name: string) -> bool {
+    match methods {
+        .End -> false
+        .Node(ss, next) -> {
+            match ss.node {
+                .Function(fn_name, _, _, _) -> {
+                    if fn_name == name { return true }
+                    impl_has_method(next, name)
+                }
+                _ -> impl_has_method(next, name)
+            }
+        }
     }
 }
 

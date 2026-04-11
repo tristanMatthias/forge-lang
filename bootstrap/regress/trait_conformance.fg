@@ -1,0 +1,51 @@
+// Trait conformance — verify all required methods are implemented.
+
+trait Animal {
+    fn name(self) -> string
+    fn sound(self) -> string
+}
+
+type Dog = { breed: string }
+type Cat = { color: string }
+
+impl Animal for Dog {
+    fn name(self) -> string { "dog (" + self.breed + ")" }
+    fn sound(self) -> string { "woof" }
+}
+
+impl Animal for Cat {
+    fn name(self) -> string { "cat (" + self.color + ")" }
+    fn sound(self) -> string { "meow" }
+}
+
+// Multiple traits on different types
+trait Sized {
+    fn size(self) -> int
+}
+
+impl Sized for Dog {
+    fn size(self) -> int { 30 }
+}
+
+impl Sized for Cat {
+    fn size(self) -> int { 10 }
+}
+
+fn describe(d: Dog) -> string {
+    d.name() + " says " + d.sound() + " (size " + string(d.size()) + ")"
+}
+
+fn main() {
+    let d = Dog { breed: "labrador" }
+    let c = Cat { color: "black" }
+
+    println(d.name())
+    println(d.sound())
+    println(c.name())
+    println(c.sound())
+
+    println(string(d.size()))
+    println(string(c.size()))
+
+    println(describe(d))
+}
