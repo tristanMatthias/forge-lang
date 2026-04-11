@@ -912,3 +912,11 @@ void forge_ptr_store_byte(int64_t ptr_val, int64_t offset, int64_t byte_val) {
     uint8_t* p = (uint8_t*)(uintptr_t)ptr_val;
     p[offset] = (uint8_t)byte_val;
 }
+
+// ── Ptr ↔ String ──
+const char* forge_string_from_ptr(int64_t ptr_val, int64_t len) {
+    char* buf = (char*)malloc(len + 1);
+    memcpy(buf, (void*)(uintptr_t)ptr_val, len);
+    buf[len] = '\0';
+    return buf;
+}

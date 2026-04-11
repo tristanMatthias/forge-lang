@@ -304,8 +304,9 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_float_parse", strlen_type)
     forge_llvm_add_function(m, "forge_float_to_string", cl_i64_to_i64)
 
-    // Ptr byte store: forge_ptr_store_byte(ptr, offset, byte) → void
+    // Ptr ops
     forge_llvm_add_function(m, "forge_ptr_store_byte", im_set_type)
+    forge_llvm_add_function(m, "forge_string_from_ptr", arr_get_type)
 
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no

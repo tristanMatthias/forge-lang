@@ -122,7 +122,7 @@
 | 115 | annotations | 🔲 | |
 | 116 | ptr arithmetic | ✅ | ptr + int, ptr - int, ptr - ptr |
 | 117 | ptr indexing | ✅ | ptr[i] reads byte, forge_ptr_store_byte writes |
-| 118 | ptr ↔ string | 🔲 | |
+| 118 | ptr ↔ string | ✅ | forge_string_from_ptr, let p: ptr = str |
 | 119 | c_abi_trampolines | 🔲 | |
 | 120–131 | packages (@llvm, @process, etc.) | mixed | 4 done, 4 todo, 6 n/a |
 
