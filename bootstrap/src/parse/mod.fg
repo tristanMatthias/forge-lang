@@ -235,6 +235,9 @@ fn p_keyword_kind(text: string) -> string {
     if text == "trait" { return "kw_trait" }
     if text == "with" { return "kw_with" }
     if text == "is" { return "kw_is" }
+    if text == "spec" { return "kw_spec" }
+    if text == "given" { return "kw_given" }
+    if text == "then" { return "kw_then" }
     return "identifier"
 }
 
@@ -405,6 +408,10 @@ impl Parser {
             return self.parse_trait_declaration()
         }
 
+        if self.check("kw_spec") {
+            return self.parse_spec_block()
+        }
+
         self.parse_statement()
     }
 
@@ -433,7 +440,7 @@ impl Parser {
         // disappear into the void.
         self.advance()
         while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") || self.check("kw_trait") || self.check("kw_defer") || self.check("at") {
+            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") || self.check("kw_trait") || self.check("kw_defer") || self.check("at") || self.check("kw_spec") {
                 break
             }
             self.advance()
@@ -1742,7 +1749,7 @@ impl Parser {
     // parsing and find more errors.
     fn synchronize(self) {
         while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_trait") || self.check("kw_defer") || self.check("right_brace") {
+            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_trait") || self.check("kw_defer") || self.check("kw_spec") || self.check("kw_given") || self.check("kw_then") || self.check("right_brace") {
                 return
             }
             self.advance()

@@ -196,7 +196,7 @@ Status key:
 
 | Feature | Forge syntax | Bootstrap | Notes |
 |---|---|---|---|
-| spec tests | `spec "name" { given { } then { } }` | 🔲 | |
+| spec tests | `spec "name" { given { } then { } }` | ✅ | hierarchical pass/fail output |
 | table literals | `table { col | col; val | val }` | 🔲 | |
 | validation | `validate(value)` | 🔲 | |
 | annotations | `@name`, `@name(args)` | ✅ | parsed, stored in AST |
@@ -251,10 +251,10 @@ Status key:
 | I/O & Runtime | 12 | 10 | 2 | 0 |
 | Concurrency | 4 | 0 | 4 | 0 |
 | Components | 4 | 0 | 0 | 4 |
-| Testing | 4 | 1 | 3 | 0 |
+| Testing | 4 | 2 | 2 | 0 |
 | Pointer Ops | 4 | 3 | 1 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **102** | **19** | **10** |
+| **TOTAL** | **131** | **103** | **18** | **10** |
 
 ## Dogfooding Rule
 

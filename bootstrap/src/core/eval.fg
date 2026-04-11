@@ -445,6 +445,9 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .ForIn(_, _, _) -> error_result(runtime, "for-in is not supported by the tree-walk evaluator")
         .Annotated(_, inner) -> execute_stmt(runtime, inner)
         .Defer(_) -> ok_result(runtime, value_null())
+        .SpecBlock(_, _) -> ok_result(runtime, value_null())
+        .GivenBlock(_, _) -> ok_result(runtime, value_null())
+        .ThenBlock(_, _) -> ok_result(runtime, value_null())
     }
 }
 

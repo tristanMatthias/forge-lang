@@ -336,6 +336,9 @@ export enum Stmt {
     LetDestructure(names: ParamList, initializer: Expr)
     Defer(body: Expr)
     Annotated(annotations: AnnotationList, inner: Stmt)
+    SpecBlock(name: string, body: StmtList)
+    GivenBlock(name: string, body: StmtList)
+    ThenBlock(name: string, condition: Expr)
 }
 
 // Annotations attached to declarations: @name or @name(args).
@@ -673,6 +676,9 @@ export fn render_stmt(stmt: Stmt) -> string {
         .LetDestructure(names, initializer) -> "(let-destruct " + render_param_list(names) + " " + render_expr(initializer) + ")"
         .Defer(body) -> "(defer " + render_expr(body) + ")"
         .Annotated(annotations, inner) -> "(@annotated " + render_annotation_list(annotations) + " " + render_stmt(inner) + ")"
+        .SpecBlock(name, _) -> "(spec " + name + " ...)"
+        .GivenBlock(name, _) -> "(given " + name + " ...)"
+        .ThenBlock(name, cond) -> "(then " + name + " " + render_expr(cond) + ")"
     }
 }
 

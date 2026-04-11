@@ -301,6 +301,9 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         }
         .Defer(body) -> resolve_expr(r, body)
         .Annotated(_, inner) -> resolve_stmt(r, inner)
+        .SpecBlock(_, body) -> resolve_stmt_list(r, body)
+        .GivenBlock(_, body) -> resolve_stmt_list(r, body)
+        .ThenBlock(_, cond) -> resolve_expr(r, cond)
     }
 }
 

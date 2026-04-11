@@ -116,7 +116,7 @@
 | 109 | config declaration | ⬜ | n/a |
 | 110 | events | ⬜ | n/a |
 | 111 | custom syntax | ⬜ | n/a |
-| 112 | spec tests | 🔲 | |
+| 112 | spec tests | ✅ | spec/given/then syntax with pass/fail reporting |
 | 113 | table literals | 🔲 | |
 | 114 | validation | 🔲 | |
 | 115 | annotations | ✅ | @name and @name(args) parsed, stored in AST |

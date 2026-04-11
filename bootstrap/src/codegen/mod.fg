@@ -313,6 +313,14 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_trait_object_value", strlen_type)
     forge_llvm_add_function(m, "forge_trait_object_vtable", map_keys_type)
 
+    // Spec test runtime
+    forge_llvm_add_function(m, "forge_test_start_spec", puts_type)
+    forge_llvm_add_function(m, "forge_test_end_spec", puts_type)
+    forge_llvm_add_function(m, "forge_test_start_given", puts_type)
+    forge_llvm_add_function(m, "forge_test_end_given", puts_type)
+    forge_llvm_add_function(m, "forge_test_run_then", arr_get_type)
+    forge_llvm_add_function(m, "forge_test_summary", puts_type)
+
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no
     // mutable globals.

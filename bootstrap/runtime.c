@@ -987,3 +987,46 @@ int64_t forge_trait_object_value(void* obj) {
 void* forge_trait_object_vtable(void* obj) {
     return (void*)(uintptr_t)((int64_t*)obj)[1];
 }
+
+// ── Spec test runtime ──
+// Tracks test results for the spec/given/then testing framework.
+static int64_t forge_test_pass_count = 0;
+static int64_t forge_test_fail_count = 0;
+static int64_t forge_test_depth = 0;
+
+void forge_test_start_spec(const char* name) {
+    printf("spec %s\n", name);
+    forge_test_depth = 1;
+}
+
+void forge_test_end_spec(void) {
+    forge_test_depth = 0;
+}
+
+void forge_test_start_given(const char* name) {
+    printf("  given %s\n", name);
+    forge_test_depth = 2;
+}
+
+void forge_test_end_given(void) {
+    forge_test_depth = 1;
+}
+
+void forge_test_run_then(const char* name, int64_t result) {
+    if (result) {
+        printf("    then %s: PASS\n", name);
+        forge_test_pass_count++;
+    } else {
+        printf("    then %s: FAIL\n", name);
+        forge_test_fail_count++;
+    }
+}
+
+void forge_test_summary(void) {
+    int64_t total = forge_test_pass_count + forge_test_fail_count;
+    printf("\n%lld/%lld tests passed", forge_test_pass_count, total);
+    if (forge_test_fail_count > 0) {
+        printf(" (%lld failed)", forge_test_fail_count);
+    }
+    printf("\n");
+}

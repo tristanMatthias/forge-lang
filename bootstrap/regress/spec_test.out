@@ -1,0 +1,12 @@
+spec "arithmetic"
+  given "addition"
+    then "1 + 1 = 2": PASS
+    then "0 + 0 = 0": PASS
+    then "negative": PASS
+  given "multiplication"
+    then "2 * 3 = 6": PASS
+    then "0 * anything = 0": PASS
+spec "strings"
+  given "concatenation"
+    then "hello + world": PASS
+    then "length check": PASS
