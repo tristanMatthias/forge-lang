@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 105 done, 17 todo, 10 n/a)
+## Feature Progress (132 total: 107 done, 15 todo, 10 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -162,13 +162,16 @@ functions, duplicate function name detection at compile time.
 
 ---
 
-## EXECUTIVE SUMMARY (updated April 10, 2026)
+## EXECUTIVE SUMMARY (updated April 11, 2026)
 
-The bootstrap compiler is now 11,768 lines: 1,726-line codegen,
-1,670-line parser, 885-line type checker, 20 feature modules. The
-top 3 critical scaling issues (Ctx boilerplate, string type tags,
-operator dispatch) are all FIXED. The type checker catches 6 error
-classes with near-zero false positives.
+The bootstrap compiler is at 107/132 features (81%), 209 tests,
+with a self-hosting fixed-point that produces byte-identical 81K-line
+IR across bs2/bs3. Recent additions: trait dynamic dispatch (vtable),
+annotations, contextual enum resolution, spec test framework,
+datetime/duration literals, JSON stringify/parse. The top 3 scaling
+issues are all FIXED. Remaining 14 TODO items are primarily
+domain-specific extensions (concurrency, match tables, type operators)
+or major infrastructure (separate compilation).
 
 **Original summary (for reference):**
 

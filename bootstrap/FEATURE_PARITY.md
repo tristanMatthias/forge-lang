@@ -239,7 +239,7 @@ Status key:
 |---|---|---|---|---|
 | Variables & Bindings | 7 | 6 | 1 | 0 |
 | Primitive Types | 7 | 7 | 0 | 0 |
-| Functions | 9 | 8 | 1 | 0 |
+| Functions | 9 | 9 | 0 | 0 |
 | Structs & Types | 8 | 8 | 0 | 0 |
 | Enums & Matching | 11 | 9 | 2 | 0 |
 | Control Flow | 8 | 8 | 0 | 0 |
@@ -254,7 +254,7 @@ Status key:
 | Testing | 4 | 2 | 2 | 0 |
 | Pointer Ops | 4 | 3 | 1 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **105** | **16** | **10** |
+| **TOTAL** | **131** | **107** | **14** | **10** |
 
 ## Dogfooding Rule
 
