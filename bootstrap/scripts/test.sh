@@ -16,9 +16,7 @@ if [ ! -f "$FORGE_DIR/packages/std-process/target/release/libforge_process.a" ];
   (cd "$FORGE_DIR/packages/std-process" && cargo build --release)
 fi
 
-if [ ! -f "$FORGE_DIR/packages/std-llvm/target/release/libforge_llvm.a" ]; then
-  (cd "$FORGE_DIR/packages/std-llvm" && LLVM_SYS_191_PREFIX=/opt/homebrew/opt/llvm@19 cargo build --release)
-fi
+# libforge_llvm.a no longer needed — bootstrap uses llvm_wrapper.c directly
 
 mkdir -p "$BUILD_DIR"
 build_log="$BUILD_DIR/build.log"

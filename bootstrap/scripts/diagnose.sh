@@ -113,7 +113,7 @@ HEAP / MEMORY DEBUGGING
 
 ENVIRONMENT
   LLVM_PREFIX  Override the LLVM 19 install prefix.
-               Default: /opt/homebrew/opt/llvm@19
+               Default: /opt/homebrew/opt/llvm
 
 EXAMPLES
   diagnose.sh --build               # rebuild stage1 from rust + run tests

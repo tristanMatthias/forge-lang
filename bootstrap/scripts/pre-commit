@@ -3,7 +3,7 @@
 #
 # Runs the bootstrap regression suite when any staged file is under
 # bootstrap/ or affects bootstrap's build inputs (forge/stdlib/runtime.c,
-# forge/packages/std-llvm/). Skips otherwise so commits in unrelated
+# bootstrap/llvm_wrapper.c). Skips otherwise so commits in unrelated
 # parts of the repo aren't slowed down.
 #
 # Install: ln -sf ../../bootstrap/scripts/pre-commit .git/hooks/pre-commit
@@ -18,7 +18,7 @@ cd "$REPO_DIR"
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
 # Trigger the regression suite for any bootstrap-affecting change.
-relevant=$(echo "$staged" | grep -E '^(bootstrap/|forge/stdlib/runtime\.c|forge/packages/std-llvm/)' || true)
+relevant=$(echo "$staged" | grep -E '^(bootstrap/|forge/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 if [ -z "$relevant" ]; then
   exit 0
 fi
@@ -26,7 +26,7 @@ fi
 # Trigger the (heavier) self-host fixed-point check only when the
 # bootstrap source itself or its build inputs change. Touching just
 # regression test files or scripts doesn't require it.
-src_relevant=$(echo "$staged" | grep -E '^(bootstrap/src/|forge/stdlib/runtime\.c|forge/packages/std-llvm/)' || true)
+src_relevant=$(echo "$staged" | grep -E '^(bootstrap/src/|forge/stdlib/runtime\.c|bootstrap/llvm_wrapper.c)' || true)
 
 echo "[pre-commit] bootstrap-affecting changes detected — running regression suite"
 if ! bootstrap/scripts/diagnose.sh --regress; then

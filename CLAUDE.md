@@ -593,10 +593,8 @@ Prefix with module name if ambiguous: `tc_bind_params`, not `bind_params`.
    second argument. Inline the function or pass one arg as a global.
    See TECH_DEBT #16.
 
-2. **`align 4` on i64 loads.** The codegen emits `align 4` instead of
-   `align 8` for all i64 load/store instructions. This causes LLVM's
-   optimizer to generate wrong code at -O2. Use `-O1` until fixed.
-   The fix is in `libforge_llvm.a` (Rust LLVM wrapper).
+2. **~~`align 4` on i64 loads.~~** FIXED. The `llvm_wrapper.c` forces
+   `align 8` on all load/store instructions.
 
 3. **Seed bootstrap chicken-and-egg.** Any change that modifies
    enum/struct field types in container types (ExprList, StmtList,

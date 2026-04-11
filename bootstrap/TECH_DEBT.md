@@ -18,25 +18,11 @@ Active debt in the bootstrap compiler. Each item has a plan.
 
 ## Open
 
-### 1. libforge_llvm.a dependency (Rust LLVM wrapper)
+### ~~1. libforge_llvm.a dependency (Rust LLVM wrapper)~~ (FIXED)
 
-**Severity:** medium
-**Impact:** requires Rust toolchain to rebuild the LLVM wrapper library
-
-The bootstrap calls LLVM via `forge_llvm_*` functions that live in
-`libforge_llvm.a` — a Rust-compiled wrapper around LLVM's C API. This
-library has internal callbacks that expect certain C functions to exist,
-which we satisfy with no-op stubs in `runtime.c`.
-
-**Current state:**
-- The `.a` file is pre-built and works
-- 11 stub functions in runtime.c satisfy the linker
-- The bootstrap never calls these stubs at runtime
-
-**Plan:** Write `bootstrap/llvm_wrapper.c` (~200 lines) that calls
-LLVM's C API directly (`LLVMBuildAdd`, `LLVMBuildAlloca`, etc.).
-Drop `libforge_llvm.a` entirely. This makes the bootstrap depend
-only on LLVM 19 + a C compiler — no Rust at all.
+**Status:** fixed (April 11 2026). Replaced with `bootstrap/llvm_wrapper.c`
+(~300 lines of pure C calling LLVM 21 C API directly). No Rust toolchain
+needed. 11 compatibility stubs removed from runtime.c.
 
 ### ~~2. String type tags (ty: string)~~ (FIXED)
 

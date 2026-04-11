@@ -3,5 +3,9 @@ src/**/*.fg.ll
 src/**/*.bin
 tests/*.fg.ll
 tests/*.bin
+regress/*.fg.ll
+regress/*.bin
+regress/**/*.fg.ll
+regress/**/*.bin
 build/
 *.bin.o

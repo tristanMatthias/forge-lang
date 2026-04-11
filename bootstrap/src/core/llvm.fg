@@ -2,10 +2,8 @@
 // functions used by the bootstrap codegen. Every feature codegen
 // file imports from here instead of re-declaring externs locally.
 //
-// These are C ABI functions provided by the forge-llvm static
-// library (forge/packages/std-llvm). The bootstrap passes strings
-// as raw `const char*` (single i64), which matches the non-_s
-// entry points in the library.
+// These are C ABI functions provided by bootstrap/llvm_wrapper.c
+// — thin wrappers around the LLVM 21 C API. No Rust dependency.
 
 // ── Context / module / builder lifecycle ──
 extern fn forge_llvm_context_create() -> ptr
