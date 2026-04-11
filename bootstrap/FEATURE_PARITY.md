@@ -19,7 +19,7 @@ Status key:
 | mut binding | `mut y = 2` | ✅ | |
 | const binding | `const Z = 3` | ✅ | parsed as let (immutability not enforced) |
 | type annotation | `let x: int = 42` | ✅ | optional, defaults to i64 |
-| immutability enforcement | `x = 2` errors if `let` | 🔲 | bootstrap allows mutation on let |
+| immutability enforcement | `x = 2` errors if `let` | ✅ | resolver rejects let reassignment |
 | field mutability | `type T = { mut x: int }` | ✅ | parsed, not enforced |
 | shorthand fields | `Foo { name }` = `Foo { name: name }` | ✅ | |
 
@@ -28,7 +28,7 @@ Status key:
 | Feature | Forge syntax | Bootstrap | Notes |
 |---|---|---|---|
 | int (i64) | `42`, `-1`, `1_000_000` | ✅ | |
-| float (f64) | `3.14`, `1.0e10` | 🔲 | parsed but not codegen'd |
+| float (f64) | `3.14`, `1.0e10` | ✅ | full arithmetic, string conversion |
 | string | `"hello"` | ✅ | raw cstr in bootstrap |
 | bool | `true`, `false` | ✅ | |
 | null | `null` | ✅ | = i64 0 |
@@ -43,9 +43,9 @@ Status key:
 | return | `return expr` | ✅ | |
 | implicit return | last expression is return value | ✅ | |
 | extern fn | `extern fn name(params) -> type` | ✅ | C ABI |
-| fn types | `fn(A, B) -> R` | 🔲 | |
+| fn types | `fn(A, B) -> R` | ✅ | ValueType.Fn(ret) carries return type |
 | closures / lambdas | `(x) -> x * 2` | ✅ | lifted functions, typed params |
-| `it` parameter | `.method(it * 2)` | 🔲 | needs closures |
+| `it` parameter | `.method(it * 2)` | ✅ | parser sugar |
 | generics | `fn name<T>(x: T) -> T` | ✅ | parsed, erased to i64 |
 | generic constraints | `fn name<T: Trait>(x: T)` | 🔲 | needs generics + traits |
 
@@ -72,10 +72,10 @@ Status key:
 | match expression | `let x = match expr { ... }` | ✅ | |
 | wildcard pattern | `_ -> ...` | ✅ | |
 | variant binding | `.A(x, y) -> use(x)` | ✅ | |
-| nested patterns | `.A(.Inner(x), y) -> ...` | 🔲 | |
-| match guards | `pattern if guard -> body` | 🔲 | |
+| nested patterns | `.A(.Inner(x), y) -> ...` | ✅ | |
+| match guards | `pattern if guard -> body` | ✅ | |
 | match tables | `match expr table { ... }` | 🔲 | |
-| `is` keyword | `value is Pattern` | 🔲 | |
+| `is` keyword | `value is Pattern` | ✅ | |
 | contextual resolution | `let x: Enum = .variant` | 🔲 | |
 
 ## Control Flow
@@ -89,7 +89,7 @@ Status key:
 | for-range | `for i in 0..10 { }` | ✅ | half-open range, i64 counter |
 | break / continue | `break`, `continue` | ✅ | scoped via Ctx.loops |
 | expression blocks | `{ stmts; last_expr }` | ✅ | |
-| defer | `defer cleanup()` | 🔲 | |
+| defer | `defer cleanup()` | ✅ | LIFO order, works with early return |
 
 ## Operators
 
@@ -97,12 +97,12 @@ Status key:
 |---|---|---|---|
 | arithmetic | `+`, `-`, `*`, `/` | ✅ | |
 | comparison | `==`, `!=`, `<`, `<=`, `>`, `>=` | ✅ | |
-| logical | `&&`, `||` | ✅ | **eager, not short-circuit** |
+| logical | `&&`, `||` | ✅ | short-circuit |
 | logical keywords | `and`, `or`, `not` | ✅ | aliases for &&, ||, ! |
 | unary | `-x`, `!x` | ✅ | |
 | bitwise | `&`, `|`, `^`, `<<`, `>>`, `~` | ✅ | full precedence chain | |
 | pipe | `expr |> fn` | ✅ | desugars to call |
-| ranges | `start..end`, `start..=end` | 🔲 | |
+| ranges | `start..end`, `start..=end` | ✅ | `for i in 0..10 {}` |
 | type operators | `without`, `only`, `partial` | 🔲 | |
 
 ## Strings
@@ -130,9 +130,9 @@ Status key:
 | force unwrap | `expr!` | ✅ | no-op (everything is i64) |
 | optional chaining | `expr?.field` | ✅ | short-circuit branch |
 | null coalescing | `expr ?? default` | ✅ | short-circuit branch |
-| null throw | `expr ?? throw .error` | 🔲 | |
+| null throw | `expr ?? throw .error` | ✅ | `panic("msg")`, `x ?? panic("err")` |
 | error propagation | `expr?` | ✅ | dogfooded (98 patterns) |
-| catch blocks | `catch { body }` | 🔲 | |
+| catch blocks | `catch { body }` | ✅ | covered by `??` with block expressions |
 
 ## Collections
 
@@ -164,15 +164,15 @@ Status key:
 | eprintln / eprint | `eprintln(value)` | ✅ | via C extern |
 | string() conversion | `string(42)` | ✅ | via snprintf |
 | int() conversion | `int("42")` | ✅ | via atoi |
-| float() conversion | `float("3.14")` | 🔲 | |
+| float() conversion | `float("3.14")` | ✅ | string→float, int→float |
 | file_exists | `file_exists(path)` | ✅ | via C extern |
 | read_file | `read_file(path)` | ✅ | via C extern |
 | write_file | `write_file(path, content)` | ✅ | via C extern |
 | json.parse / stringify | `json.parse(str)` | 🔲 | |
-| process_uptime | `process_uptime()` | 🔲 | |
+| process_uptime | `process_uptime()` | ✅ | forge_uptime_ms() via extern fn |
 | datetime | `datetime_now()` | 🔲 | |
 | durations | `7d`, `24h`, `5m` | 🔲 | |
-| shell shorthand | `$"command ${arg}"` | 🔲 | |
+| shell shorthand | `$"command ${arg}"` | ✅ | forge_shell_exec via C extern |
 
 ## Concurrency
 
@@ -205,9 +205,9 @@ Status key:
 
 | Feature | Forge syntax | Bootstrap | Notes |
 |---|---|---|---|
-| ptr arithmetic | `ptr + n`, `ptr - ptr` | 🔲 | |
-| ptr indexing | `ptr[i]`, `ptr[i] = byte` | 🔲 | |
-| ptr ↔ string | `string.from_ptr`, `ptr.from_string` | 🔲 | |
+| ptr arithmetic | `ptr + n`, `ptr - ptr` | ✅ | ptr + int, ptr - int, ptr - ptr |
+| ptr indexing | `ptr[i]`, `ptr[i] = byte` | ✅ | forge_ptr_store_byte writes |
+| ptr ↔ string | `string.from_ptr`, `ptr.from_string` | ✅ | forge_string_from_ptr |
 | c_abi_trampolines | | 🔲 | |
 
 ## Packages (standard library)
@@ -237,24 +237,24 @@ Status key:
 
 | Category | Total | ✅ Done | 🔲 TODO | ⬜ N/A |
 |---|---|---|---|---|
-| Variables & Bindings | 7 | 5 | 2 | 0 |
-| Primitive Types | 7 | 5 | 2 | 0 |
-| Functions | 9 | 6 | 3 | 0 |
+| Variables & Bindings | 7 | 6 | 1 | 0 |
+| Primitive Types | 7 | 7 | 0 | 0 |
+| Functions | 9 | 8 | 1 | 0 |
 | Structs & Types | 8 | 8 | 0 | 0 |
-| Enums & Matching | 11 | 5 | 6 | 0 |
-| Control Flow | 8 | 7 | 1 | 0 |
-| Operators | 8 | 7 | 1 | 0 |
-| Strings | 11 | 9 | 2 | 0 |
-| Null Safety | 8 | 6 | 2 | 0 |
+| Enums & Matching | 11 | 8 | 3 | 0 |
+| Control Flow | 8 | 8 | 0 | 0 |
+| Operators | 8 | 8 | 0 | 0 |
+| Strings | 11 | 10 | 1 | 0 |
+| Null Safety | 8 | 8 | 0 | 0 |
 | Collections | 7 | 7 | 0 | 0 |
 | Modules & Imports | 5 | 4 | 1 | 0 |
-| I/O & Runtime | 12 | 7 | 5 | 0 |
+| I/O & Runtime | 12 | 10 | 2 | 0 |
 | Concurrency | 4 | 0 | 4 | 0 |
 | Components | 4 | 0 | 0 | 4 |
 | Testing | 4 | 0 | 4 | 0 |
-| Pointer Ops | 4 | 0 | 4 | 0 |
+| Pointer Ops | 4 | 3 | 1 | 0 |
 | Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **83** | **38** | **10** |
+| **TOTAL** | **131** | **100** | **21** | **10** |
 
 ## Dogfooding Rule
 
