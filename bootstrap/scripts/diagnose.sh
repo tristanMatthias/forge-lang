@@ -112,7 +112,7 @@ HEAP / MEMORY DEBUGGING
                        Useful for isolating heap-corruption triggers.
 
 ENVIRONMENT
-  LLVM_PREFIX  Override the LLVM 19 install prefix.
+  LLVM_PREFIX  Override the LLVM install prefix.
                Default: /opt/homebrew/opt/llvm
 
 EXAMPLES

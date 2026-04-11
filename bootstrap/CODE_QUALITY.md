@@ -68,7 +68,7 @@ These exist because each was paid for with at least one bug.
 ### No fake successes
 A function that can't perform the requested operation MUST return
 null + an error, never a fake-success constant. This is the rule
-that std-llvm now enforces. Project-wide.
+that llvm_wrapper.c enforces. Project-wide.
 
 ### No silent value loss in tail position
 Empty `_ -> {}` arms in codegen are forbidden. Every Stmt and Expr

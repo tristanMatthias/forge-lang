@@ -414,7 +414,7 @@ that are NOT actively scheduled — they're "do when blocked" or
 ### Bug-class rules (encoded in CODE_QUALITY.md)
 
 These are session learnings already enforced by code and tooling:
-- No fake successes in low-level builders (std-llvm hardened)
+- No fake successes in low-level builders (llvm_wrapper.c hardened)
 - No silent value loss in tail position (emit_stmt_as_value)
 - Store width must match allocation size (forge_llvm_build_store fixed)
 - No mutable globals (all state flows through Ctx)

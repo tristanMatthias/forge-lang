@@ -794,10 +794,8 @@ void forge_trace_ptr(const char* label, int64_t val) {
 }
 
 // ── 3. IR function dumper ───────────────────────────────────────
-// Already exists as forge_dump_function in the LLVM wrapper.
-// This adds a name-based lookup + dump for any function in the module.
-
-// (forge_dump_function is already declared via libforge_llvm.a)
+// Debug: dump IR for a named function. Not currently used but
+// available for debugging via extern fn in Forge source.
 
 // ── 4. AST dumper ───────────────────────────────────────────────
 // Prints Stmt/Expr enum tag + pointer for debugging AST traversal.

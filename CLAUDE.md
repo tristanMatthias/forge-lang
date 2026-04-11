@@ -551,7 +551,7 @@ range in LLDB:
 $LLC -O0 -filetype=obj seed/seed.ll -o build/test.o && cc -o build/test ...
 ```
 If -O0 works but -O2 crashes, it's an alignment/optimization bug.
-The bootstrap emits `align 4` for i64 loads (should be `align 8`).
+(The old align 4 bug is FIXED — llvm_wrapper.c forces align 8.)
 
 ### Step 4: Check struct arg corruption
 If the crash is in a function that takes TWO struct arguments, the
