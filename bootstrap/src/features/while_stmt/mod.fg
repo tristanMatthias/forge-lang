@@ -2,7 +2,7 @@ mod parser
 mod codegen
 
 export fn register_while_stmt(reg: Registry) -> Registry {
-    register_feature(reg, stmt_feature("while", 5, while_emit_stmt))
+    register_stmt(reg, Stmt.While(Expr.Null, Stmt.NoOp), stmt_only("while", while_emit_stmt))
 }
 
 fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

@@ -2,7 +2,7 @@ mod parser
 mod codegen
 
 export fn register_defer_stmt(reg: Registry) -> Registry {
-    register_feature(reg, stmt_feature("defer", 21, defer_emit_stmt))
+    register_stmt(reg, Stmt.Defer(Expr.Null), stmt_only("defer", defer_emit_stmt))
 }
 
 fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

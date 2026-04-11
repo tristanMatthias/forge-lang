@@ -2,9 +2,9 @@ mod parser
 mod codegen
 
 export fn register_null_safety(reg: Registry) -> Registry {
-    mut r = register_feature(reg, expr_feature("null_coalesce", 19, nc_emit))
-    r = register_feature(r, expr_feature("optional_chain", 20, oc_emit))
-    register_feature(r, expr_feature("try", 21, try_emit))
+    mut r = register_expr(reg, Expr.NullCoalesce(Expr.Null, Expr.Null), emit_only("null_coalesce", nc_emit))
+    r = register_expr(r, Expr.OptionalChain(Expr.Null, ""), emit_only("optional_chain", oc_emit))
+    register_expr(r, Expr.Try(Expr.Null), emit_only("try", try_emit))
 }
 
 fn nc_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

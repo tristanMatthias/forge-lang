@@ -7,7 +7,7 @@
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display, SStmt, SExpr, sexpr_dummy}
 use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
-use core.registry.{build_registry, dispatch_expr, dispatch_stmt, forge_expr_tag, forge_stmt_tag}
+use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag}
 
 // ── Direct C extern declarations ──
 //
@@ -675,7 +675,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         // All other statement types dispatch through the feature registry.
         _ -> {
             let tag = forge_stmt_tag(stmt)
-            let result = dispatch_stmt(ctx.features, tag, ctx, env, stmt)
+            let result = dispatch_stmt_emit(ctx.features, tag, ctx, env, stmt)
             if result != null {
                 return result!
             }
@@ -867,7 +867,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         // All other expression types dispatch through the feature registry.
         _ -> {
             let tag = forge_expr_tag(expr)
-            let result = dispatch_expr(ctx.features, tag, ctx, env, expr)
+            let result = dispatch_expr_emit(ctx.features, tag, ctx, env, expr)
             if result != null {
                 return result!
             }

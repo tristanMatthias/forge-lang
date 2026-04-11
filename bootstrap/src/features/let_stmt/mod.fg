@@ -2,7 +2,7 @@ mod parser
 mod codegen
 
 export fn register_let_stmt(reg: Registry) -> Registry {
-    register_feature(reg, stmt_feature("let_destructure", 20, let_destr_emit))
+    register_stmt(reg, Stmt.LetDestructure(ParamList.End, Expr.Null), stmt_only("let_destructure", let_destr_emit))
 }
 
 fn let_destr_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

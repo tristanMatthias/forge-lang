@@ -2,7 +2,13 @@ mod parser
 mod codegen
 
 export fn register_if_stmt(reg: Registry) -> Registry {
-    register_feature(reg, dual_feature("if", 18, 4, if_emit_expr, if_emit_stmt))
+    register_dual(reg, Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null), Stmt.If(Expr.Null, Stmt.NoOp, null), Feature {
+        name: "if",
+        emit_expr: if_emit_expr,
+        emit_stmt: if_emit_stmt,
+        resolve_expr: noop_resolve,
+        check_expr: noop_check,
+    })
 }
 
 fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

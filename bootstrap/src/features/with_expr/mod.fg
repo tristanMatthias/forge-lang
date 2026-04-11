@@ -2,7 +2,7 @@ mod parser
 mod codegen
 
 export fn register_with_expr(reg: Registry) -> Registry {
-    register_feature(reg, expr_feature("with", 24, with_emit))
+    register_expr(reg, Expr.With(Expr.Null, FieldInitList.End), emit_only("with", with_emit))
 }
 
 fn with_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

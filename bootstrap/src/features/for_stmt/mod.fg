@@ -2,8 +2,8 @@ mod parser
 mod codegen
 
 export fn register_for_stmt(reg: Registry) -> Registry {
-    mut r = register_feature(reg, stmt_feature("for", 6, for_emit_stmt))
-    register_feature(r, stmt_feature("for_in", 7, for_in_emit_stmt))
+    mut r = register_stmt(reg, Stmt.For("", Expr.Null, Expr.Null, Stmt.NoOp), stmt_only("for", for_emit_stmt))
+    register_stmt(r, Stmt.ForIn("", Expr.Null, Stmt.NoOp), stmt_only("for_in", for_in_emit_stmt))
 }
 
 fn for_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

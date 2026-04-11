@@ -1,10 +1,12 @@
-// WHY: central feature registry. Each feature declares a single Feature
-// struct with ALL its handlers. One struct, one registration call.
+// WHY: central feature registry. Each feature declares a Feature struct
+// with all handlers (emit, resolve, check). Registration uses dummy
+// enum values to derive tags — no magic numbers.
 //
 // To add a new feature:
 //   1. Create features/<name>/mod.fg
-//   2. Build a Feature struct with your handlers
-//   3. Call register_feature() in build_registry()
+//   2. Build a Feature with your handlers
+//   3. Call register_feature() with a dummy Expr/Stmt value
+//   4. One line in build_registry()
 
 // C-side helpers
 extern fn forge_expr_tag(expr: int) -> int
@@ -14,86 +16,107 @@ extern fn forge_intmap_set(map: ptr, key: int, value: int)
 extern fn forge_intmap_get(map: ptr, key: int) -> int
 extern fn forge_intmap_has(map: ptr, key: int) -> int
 
-// ── Tag reference ──
-// Expr:  0=Number  1=String  2=Bool  3=Null  4=Ident  5=Assign
-//        6=Grouping  7=Unary  8=Binary  9=Logical  10=Call
-//       11=StructLit  12=FieldAccess  13=EnumCtor  14=Index
-//       15=Block  16=MatchExpr  17=FieldAssign  18=IfExpr
-//       19=NullCoalesce  20=OptionalChain  21=Try  22=Tuple
-//       23=TupleIndex  24=With  25=ListLit  26=Lambda
-//       27=MapLit  28=Slice  29=FloatLit  30=IsCheck
-//
-// Stmt:  0=Let  1=Mut  2=Expr  3=Block  4=If  5=While  6=For  7=ForIn
-//        8=Function  9=Return  10=ReturnEmpty  11=TypeDecl  12=EnumDecl
-//       13=Match  14=Impl  15=NoOp  16=ExternFn  17=Break  18=Continue
-//       19=TraitDecl  20=LetDestructure  21=Defer
-
-// ── Unified Feature type ──
+// ── Feature type ──
 
 export type Feature = {
     name: string,
-    expr_tag: int,                                       // -1 = no expression form
-    stmt_tag: int,                                       // -1 = no statement form
     emit_expr: fn(Ctx, VarEnv, Expr) -> EmitResult,
     emit_stmt: fn(Ctx, VarEnv, Stmt) -> StmtResult,
+    resolve_expr: fn(Resolver, Expr) -> Resolver,
+    check_expr: fn(TC, Expr) -> ExprResult,
 }
 
 // ── No-op handlers ──
 
-fn noop_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult { err_emit("no expr handler") }
-fn noop_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult { err_stmt("no stmt handler") }
-
-// ── Convenience constructors ──
-
-export fn expr_feature(name: string, tag: int, emit: fn(Ctx, VarEnv, Expr) -> EmitResult) -> Feature {
-    Feature { name, expr_tag: tag, stmt_tag: 0 - 1, emit_expr: emit, emit_stmt: noop_stmt }
-}
-
-export fn stmt_feature(name: string, tag: int, emit: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> Feature {
-    Feature { name, expr_tag: 0 - 1, stmt_tag: tag, emit_expr: noop_expr, emit_stmt: emit }
-}
-
-export fn dual_feature(name: string, etag: int, stag: int, eemit: fn(Ctx, VarEnv, Expr) -> EmitResult, semit: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> Feature {
-    Feature { name, expr_tag: etag, stmt_tag: stag, emit_expr: eemit, emit_stmt: semit }
-}
+fn noop_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult { err_emit("no expr handler") }
+fn noop_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult { err_stmt("no stmt handler") }
+fn noop_resolve(r: Resolver, expr: Expr) -> Resolver { r }
+fn noop_check(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, ValueType.Int) }
 
 // ── Registry ──
 
 export type Registry = {
-    expr_handlers: ptr,
-    stmt_handlers: ptr,
+    expr_emitters: ptr,
+    stmt_emitters: ptr,
+    expr_resolvers: ptr,
+    expr_checkers: ptr,
 }
 
 export fn registry_new() -> Registry {
-    Registry { expr_handlers: forge_intmap_new(), stmt_handlers: forge_intmap_new() }
+    Registry {
+        expr_emitters: forge_intmap_new(),
+        stmt_emitters: forge_intmap_new(),
+        expr_resolvers: forge_intmap_new(),
+        expr_checkers: forge_intmap_new(),
+    }
 }
 
-export fn register_feature(reg: Registry, f: Feature) -> Registry {
-    if f.expr_tag >= 0 {
-        forge_intmap_set(reg.expr_handlers, f.expr_tag, f.emit_expr)
-    }
-    if f.stmt_tag >= 0 {
-        forge_intmap_set(reg.stmt_handlers, f.stmt_tag, f.emit_stmt)
-    }
+// Register an expression feature. Pass a DUMMY Expr value to derive the tag.
+// Example: register_expr(reg, Expr.IsCheck(Expr.Null, ""), my_feature)
+export fn register_expr(reg: Registry, dummy: Expr, f: Feature) -> Registry {
+    let tag = forge_expr_tag(dummy)
+    forge_intmap_set(reg.expr_emitters, tag, f.emit_expr)
+    forge_intmap_set(reg.expr_resolvers, tag, f.resolve_expr)
+    forge_intmap_set(reg.expr_checkers, tag, f.check_expr)
     reg
+}
+
+// Register a statement feature. Pass a DUMMY Stmt value to derive the tag.
+export fn register_stmt(reg: Registry, dummy: Stmt, f: Feature) -> Registry {
+    let tag = forge_stmt_tag(dummy)
+    forge_intmap_set(reg.stmt_emitters, tag, f.emit_stmt)
+    reg
+}
+
+// Register both expr and stmt forms.
+export fn register_dual(reg: Registry, expr_dummy: Expr, stmt_dummy: Stmt, f: Feature) -> Registry {
+    let etag = forge_expr_tag(expr_dummy)
+    let stag = forge_stmt_tag(stmt_dummy)
+    forge_intmap_set(reg.expr_emitters, etag, f.emit_expr)
+    forge_intmap_set(reg.expr_resolvers, etag, f.resolve_expr)
+    forge_intmap_set(reg.expr_checkers, etag, f.check_expr)
+    forge_intmap_set(reg.stmt_emitters, stag, f.emit_stmt)
+    reg
+}
+
+// ── Convenience constructors ──
+
+export fn emit_only(name: string, emit: fn(Ctx, VarEnv, Expr) -> EmitResult) -> Feature {
+    Feature { name, emit_expr: emit, emit_stmt: noop_emit_stmt, resolve_expr: noop_resolve, check_expr: noop_check }
+}
+
+export fn stmt_only(name: string, emit: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> Feature {
+    Feature { name, emit_expr: noop_emit_expr, emit_stmt: emit, resolve_expr: noop_resolve, check_expr: noop_check }
+}
+
+export fn full_expr(name: string, emit: fn(Ctx, VarEnv, Expr) -> EmitResult, resolve: fn(Resolver, Expr) -> Resolver, check: fn(TC, Expr) -> ExprResult) -> Feature {
+    Feature { name, emit_expr: emit, emit_stmt: noop_emit_stmt, resolve_expr: resolve, check_expr: check }
 }
 
 // ── Dispatch ──
 
-export fn dispatch_expr(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult? {
-    if forge_intmap_has(reg.expr_handlers, tag) == 0 {
-        return null
-    }
-    let handler: fn(Ctx, VarEnv, Expr) -> EmitResult = forge_intmap_get(reg.expr_handlers, tag)
+export fn dispatch_expr_emit(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult? {
+    if forge_intmap_has(reg.expr_emitters, tag) == 0 { return null }
+    let handler: fn(Ctx, VarEnv, Expr) -> EmitResult = forge_intmap_get(reg.expr_emitters, tag)
     handler(ctx, env, expr)
 }
 
-export fn dispatch_stmt(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult? {
-    if forge_intmap_has(reg.stmt_handlers, tag) == 0 {
-        return null
-    }
-    let handler: fn(Ctx, VarEnv, Stmt) -> StmtResult = forge_intmap_get(reg.stmt_handlers, tag)
+export fn dispatch_stmt_emit(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult? {
+    if forge_intmap_has(reg.stmt_emitters, tag) == 0 { return null }
+    let handler: fn(Ctx, VarEnv, Stmt) -> StmtResult = forge_intmap_get(reg.stmt_emitters, tag)
     handler(ctx, env, stmt)
+}
+
+export fn dispatch_expr_resolve(reg: Registry, tag: int, r: Resolver, expr: Expr) -> Resolver? {
+    if forge_intmap_has(reg.expr_resolvers, tag) == 0 { return null }
+    let handler: fn(Resolver, Expr) -> Resolver = forge_intmap_get(reg.expr_resolvers, tag)
+    handler(r, expr)
+}
+
+export fn dispatch_expr_check(reg: Registry, tag: int, tc: TC, expr: Expr) -> ExprResult? {
+    if forge_intmap_has(reg.expr_checkers, tag) == 0 { return null }
+    let handler: fn(TC, Expr) -> ExprResult = forge_intmap_get(reg.expr_checkers, tag)
+    handler(tc, expr)
 }
 
 // ── Build the registry ──

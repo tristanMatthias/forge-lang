@@ -337,14 +337,38 @@ should store `Closure(n, ret)` instead of `Fn(ret)`. Requires analyzing
 function bodies during the declaration pass, not just reading the type
 annotation string.
 
-### 28. Registry dispatch is O(n) linked-list scan
+### ~~28. Registry dispatch is O(n) linked-list scan~~ (FIXED)
 
-**Severity:** low (25 features × integer compare — negligible)
-**Impact:** `dispatch_expr` walks a linked list of 25 features comparing
-tags. At ~2ns per comparison, this adds ~50ns per expression — invisible
-against LLVM call overhead.
+**Status:** fixed (April 10 2026)
+Replaced with O(1) ForgeIntMap (flat array indexed by tag).
 
-**Proper fix:** Replace with a C-side array indexed by tag for O(1)
+### 29. Dummy enum values for tag extraction in feature registration
+
+**Severity:** low (ugly but correct)
+**Impact:** Features register with `register_expr(reg, Expr.IsCheck(Expr.Null, ""), handler)`.
+The `Expr.IsCheck(Expr.Null, "")` constructs a throwaway value just to
+extract its tag byte. The field values (`Expr.Null`, `""`) are garbage —
+only byte 0 (the tag) is read. This is confusing to read.
+
+**Proper fix:** Add variant tag references as a language feature.
+`Expr.IsCheck` without args should evaluate to the tag number (int).
+This requires parser + codegen changes: when an enum variant with
+fields is referenced without calling it, emit its tag as a constant
+instead of requiring field arguments.
+
+### 30. Resolver and typeck not yet dispatched through registry
+
+**Severity:** medium (adding a feature still requires match arms in 2 central files)
+**Impact:** The Feature struct has resolve_expr and check_expr handlers
+but resolve_expr and check_expr in resolver.fg and typeck/mod.fg still
+use hardcoded match statements. Features must add arms in both files.
+
+**Proper fix:** Wire dispatch_expr_resolve and dispatch_expr_check into
+the catch-all arms of resolve_expr and check_expr, same pattern as
+codegen. Then features provide all handlers in one Feature struct and
+the central files never need editing.
+
+### ~~28-old. Registry dispatch is O(n) linked-list scan~~ (FIXED)
 lookup. `forge_registry_set(tag, fn_ptr)` + `forge_registry_get(tag)`.
 Only worth doing if the feature count exceeds ~100 or profiling shows
 dispatch as a hotspot.

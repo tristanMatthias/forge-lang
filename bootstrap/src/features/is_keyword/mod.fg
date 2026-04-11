@@ -1,7 +1,7 @@
 mod codegen
 
 export fn register_is_keyword(reg: Registry) -> Registry {
-    register_feature(reg, expr_feature("is", 30, is_emit_expr))
+    register_expr(reg, Expr.IsCheck(Expr.Null, ""), emit_only("is", is_emit_expr))
 }
 
 fn is_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

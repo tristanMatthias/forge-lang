@@ -2,7 +2,13 @@ mod parser
 mod codegen
 
 export fn register_match(reg: Registry) -> Registry {
-    register_feature(reg, dual_feature("match", 16, 13, match_emit_expr, match_emit_stmt))
+    register_dual(reg, Expr.MatchExpr(Expr.Null, MatchArmList.End), Stmt.Match(Expr.Null, MatchArmList.End), Feature {
+        name: "match",
+        emit_expr: match_emit_expr,
+        emit_stmt: match_emit_stmt,
+        resolve_expr: noop_resolve,
+        check_expr: noop_check,
+    })
 }
 
 fn match_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
