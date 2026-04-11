@@ -32,7 +32,7 @@
 | 26 | field access | ✅ | |
 | 27 | field assign | ✅ | |
 | 28 | `with` expression | ✅ | dogfooded in Ctx helpers |
-| 29 | traits | ✅ | no dynamic dispatch |
+| 29 | traits | ✅ | static + dynamic dispatch via vtable |
 | 30 | impl for trait | ✅ | desugars to Type__method |
 | 31 | impl block | ✅ | |
 | 32 | enum declaration | ✅ | |

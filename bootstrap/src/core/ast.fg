@@ -186,6 +186,10 @@ export fn vtype_display(t: ValueType) -> string {
     }
 }
 
+export fn vtype_trait_name(t: ValueType) -> string {
+    match t { .Trait(n) -> n, _ -> "" }
+}
+
 export fn render_type_list(tl: TypeList) -> string {
     match tl {
         .End -> ""

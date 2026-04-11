@@ -535,6 +535,9 @@ mode_regress() {
   for fg in "$BOOTSTRAP_DIR"/tests/*.fg; do
     test_specs+=("$fg")
   done
+  for fg in "$REGRESS_DIR"/*.fg; do
+    test_specs+=("$fg")
+  done
   for d in "$REGRESS_DIR"/*/; do
     if [ -f "${d}main.fg" ]; then
       test_specs+=("${d}main.fg")

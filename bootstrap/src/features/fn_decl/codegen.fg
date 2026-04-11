@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 
 use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend, ValueType, SStmt}
-use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_param_type, ctx_with_fn}
+use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_type_ctx, ctx_with_fn}
 use codegen.{emit_block_loop}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 
@@ -51,7 +51,7 @@ fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: ParamList, idx: int, env: V
             let arg = forge_llvm_get_param(fn_val, idx)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, arg, alloca)
-            let internal_ty = translate_param_type(ctx.structs, ctx.enums, ty)
+            let internal_ty = translate_type_ctx(ctx, ty)
             bind_params_inline(ctx, fn_val, next, idx + 1, env_extend(env, name, alloca, internal_ty))
         }
     }

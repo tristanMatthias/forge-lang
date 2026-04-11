@@ -58,7 +58,7 @@ Status key:
 | field access | `obj.field` | ✅ | |
 | field assign | `obj.field = val` | ✅ | |
 | `with` expression | `obj with { field: val }` | ✅ | functional update, dogfooded |
-| traits | `trait Name { fn method(self) }` | ✅ | parsed, no dynamic dispatch |
+| traits | `trait Name { fn method(self) }` | ✅ | static + dynamic dispatch via vtable |
 | impl for trait | `impl Trait for Type { }` | ✅ | desugars to Type__method |
 | impl block | `impl Type { fn method(self) }` | ✅ | desugars to Type__method |
 

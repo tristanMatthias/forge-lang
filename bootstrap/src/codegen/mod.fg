@@ -6,7 +6,7 @@
 // resolved globally by the host compiler's cross-file impl lookup.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display, SStmt, SExpr, sexpr_dummy}
-use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, translate_param_type, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
+use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, TraitDeclReg, TraitMethodNames, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, trait_decl_lookup, translate_param_type, translate_type_ctx, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag}
 
 // ── Direct C extern declarations ──
@@ -308,11 +308,17 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_ptr_store_byte", im_set_type)
     forge_llvm_add_function(m, "forge_string_from_ptr", arr_get_type)
 
+    // Trait objects
+    forge_llvm_add_function(m, "forge_trait_object_new", arr_get_type)
+    forge_llvm_add_function(m, "forge_trait_object_value", strlen_type)
+    forge_llvm_add_function(m, "forge_trait_object_vtable", map_keys_type)
+
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
     let structs = declare_structs(lc, i64t, stmts, StructReg.End)
     let enums = declare_enums(lc, i64t, stmts, EnumReg.End)
+    let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
     let top_level_vars = declare_globals(m, lc, i64t, structs, enums, stmts, TopLevelVars.End)
     let fn_rets = declare_functions(m, lc, i64t, structs, enums, stmts, FnRetTypes.End)
 
@@ -346,6 +352,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         loops: LoopStack.End,
         defers: DeferStack.End,
         features: build_registry(),
+        trait_decls,
     }
 
     // Pass 2: emit each user-defined function's body, then emit
@@ -478,6 +485,32 @@ fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg 
                 _ -> reg
             }
             declare_enums(ctx, i64t, next, updated)
+        }
+    }
+}
+
+fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let updated = match ss.node {
+                .TraitDecl(name, methods) -> TraitDeclReg.Node(name, collect_trait_fn_names(methods), reg)
+                _ -> reg
+            }
+            collect_trait_decls(next, updated)
+        }
+    }
+}
+
+fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
+    match stmts {
+        .End -> TraitMethodNames.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .ExternFn(name, _, ret_ty) -> TraitMethodNames.Node(name, ret_ty, collect_trait_fn_names(next))
+                .Function(name, _, ret_ty, _) -> TraitMethodNames.Node(name, ret_ty, collect_trait_fn_names(next))
+                _ -> collect_trait_fn_names(next)
+            }
         }
     }
 }
@@ -1302,6 +1335,11 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
         }
         return err_emit("map method `" + method + "` not implemented")
     }
+    // Trait dispatch
+    let tn = vtype_trait_name(r.ty)
+    if tn != "" {
+        return emit_trait_dispatch(ctx, env, r.value, tn, method, args)
+    }
     // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
     let type_name = vtype_struct_name(r.ty)
     let enum_name = vtype_enum_name(r.ty)
@@ -1352,6 +1390,57 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
     forge_llvm_value_array_free(arg_arr)
     let ret_ty = fn_ret_lookup(ctx.fn_rets, mangled)
     ok_emit_typed(result, ret_ty)
+}
+
+fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
+    match methods {
+        .End -> 0 - 1
+        .Node(n, _, next) -> {
+            if n == name { return idx }
+            trait_method_idx(next, name, idx + 1)
+        }
+    }
+}
+
+// Look up the return type string for a trait method.
+fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string {
+    match methods {
+        .End -> ""
+        .Node(n, ret, next) -> {
+            if n == name { return ret }
+            trait_method_ret_ty(next, name)
+        }
+    }
+}
+
+fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> EmitResult {
+    let obj_ptr = to_ptr(ctx, obj_val, "tobj_ptr")
+    let concrete = call_1(ctx, get_fn(ctx, "forge_trait_object_value"), obj_ptr, "concrete")
+    let vtable = call_1(ctx, get_fn(ctx, "forge_trait_object_vtable"), obj_ptr, "vtable")
+    let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
+    let idx = trait_method_idx(methods, method, 0)
+    if idx < 0 {
+        return err_emit("trait has no method `" + method + "`")
+    }
+    // Determine return type from trait declaration
+    let ret_ty_str = trait_method_ret_ty(methods, method)
+    let ret_ty = translate_type_ctx(ctx, ret_ty_str)
+    let fn_closure = call_2(ctx, get_fn(ctx, "forge_array_get"), vtable, const_i64(ctx, idx), "vmethod")
+    let user_count = expr_list_length(args)
+    if user_count == 0 {
+        return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_closure_call_1"), fn_closure, concrete, "tcall"), ret_ty)
+    }
+    // 1-arg case
+    let first_arg = emit_first_arg(ctx, env, args)
+    if first_arg.had_error { return first_arg }
+    ok_emit_typed(call_3(ctx, get_fn(ctx, "forge_closure_call_2"), fn_closure, concrete, first_arg.value, "tcall"), ret_ty)
+}
+
+fn emit_first_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+    match args {
+        .End -> err_emit("expected argument")
+        .Node(se, _) -> emit_expr(ctx, env, se.node)
+    }
 }
 
 fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitResult {

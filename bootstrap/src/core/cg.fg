@@ -42,6 +42,38 @@ export type Ctx = {
     loops: LoopStack,
     defers: DeferStack,
     features: Registry,
+    trait_decls: TraitDeclReg,
+}
+
+// Trait declaration registry — maps trait name to method names + return types.
+export enum TraitMethodNames {
+    End
+    Node(name: string, ret_ty: string, next: TraitMethodNames)
+}
+
+export enum TraitDeclReg {
+    End
+    Node(trait_name: string, methods: TraitMethodNames, next: TraitDeclReg)
+}
+
+export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames {
+    match reg {
+        .End -> TraitMethodNames.End
+        .Node(n, methods, next) -> {
+            if n == name { return methods }
+            trait_decl_lookup(next, name)
+        }
+    }
+}
+
+export fn trait_decl_has(reg: TraitDeclReg, name: string) -> bool {
+    match reg {
+        .End -> false
+        .Node(n, _, next) -> {
+            if n == name { return true }
+            trait_decl_has(next, name)
+        }
+    }
 }
 
 export fn null_ptr_val() -> ptr {
@@ -327,6 +359,18 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
         return ValueType.Struct(ty)
     }
     ValueType.Int
+}
+
+// translate_param_type with trait awareness — uses Ctx for trait registry.
+export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
+    let base = translate_param_type(ctx.structs, ctx.enums, ty)
+    // If base type is Int (unknown), check if it's a trait name
+    if !vtype_eq(base, ValueType.Int) { return base }
+    if ty == "" || ty == "int" || ty == "i64" { return base }
+    if trait_decl_has(ctx.trait_decls, ty) {
+        return ValueType.Trait(ty)
+    }
+    base
 }
 
 // ── Ctx copy helpers ──
