@@ -1,0 +1,16 @@
+// Type operators: without and only.
+
+type User = { id: int, name: string, email: string, password: string }
+
+type CreateUser = User without {id}
+type PublicUser = User only {name, email}
+
+fn main() {
+    let c = CreateUser { name: "alice", email: "a@test.com", password: "secret" }
+    println(c.name)
+    println(c.email)
+
+    let p = PublicUser { name: "bob", email: "b@test.com" }
+    println(p.name)
+    println(p.email)
+}

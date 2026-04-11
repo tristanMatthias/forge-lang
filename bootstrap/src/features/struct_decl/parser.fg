@@ -27,11 +27,9 @@ impl Parser {
                     if !self.consume("left_brace", "expected `{` after type operator") { return null }
                     let op_fields = self.parse_ident_list()
                     if !self.consume("right_brace", "expected `}` after type operator fields") { return null }
-                    // Store as TypeDecl with a marker — the codegen will resolve
-                    // the base type's fields and apply the transformation.
-                    // For now, just emit as TypeDecl with empty fields.
-                    // The proper fix is a type-operator-aware declaration pass.
-                    return Stmt.TypeDecl(name, FieldList.End)
+                    // Encode derivation: __base=Base, __op=without, then excluded field names
+                    let derived = FieldList.Node("__base", base, FieldList.Node("__op", op, op_fields))
+                    return Stmt.TypeDecl(name, derived)
                 }
             }
             // Not a type operator — could be `type X = BaseType` (alias)

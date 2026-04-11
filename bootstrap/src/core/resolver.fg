@@ -305,6 +305,7 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .GivenBlock(_, body) -> resolve_stmt_list(r, body)
         .ThenBlock(_, cond) -> resolve_expr(r, cond)
         .Select(arms) -> resolve_select_arms(r, arms)
+        .Parallel(body) -> resolve_stmt_list(r, body)
     }
 }
 

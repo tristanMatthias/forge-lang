@@ -139,5 +139,6 @@ export fn build_registry() -> Registry {
     reg = register_defer_stmt(reg)
     reg = register_spec_test(reg)
     reg = register_select_stmt(reg)
+    reg = register_parallel_stmt(reg)
     reg
 }

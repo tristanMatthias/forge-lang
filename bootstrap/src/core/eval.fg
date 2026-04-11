@@ -449,6 +449,7 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .GivenBlock(_, _) -> ok_result(runtime, value_null())
         .ThenBlock(_, _) -> ok_result(runtime, value_null())
         .Select(_) -> error_result(runtime, "select is not supported by the tree-walk evaluator")
+        .Parallel(_) -> error_result(runtime, "parallel is not supported by the tree-walk evaluator")
     }
 }
 

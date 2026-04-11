@@ -1402,6 +1402,25 @@ int64_t forge_select_value(void* result) {
     return r->value;
 }
 
+// Run an array of closures in parallel threads, join all before returning.
+void forge_parallel_run(void* closure_array) {
+    ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_array;
+    if (!arr || arr->len == 0) return;
+    int64_t n = arr->len;
+    pthread_t* threads = (pthread_t*)malloc(n * sizeof(pthread_t));
+    ForgeThreadArg** args = (ForgeThreadArg**)malloc(n * sizeof(ForgeThreadArg*));
+    for (int64_t i = 0; i < n; i++) {
+        args[i] = (ForgeThreadArg*)malloc(sizeof(ForgeThreadArg));
+        args[i]->closure = arr->data[i];
+        pthread_create(&threads[i], NULL, forge_thread_entry, args[i]);
+    }
+    for (int64_t i = 0; i < n; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    free(threads);
+    free(args);
+}
+
 void forge_channel_close(void* channel) {
     ForgeChannel* ch = (ForgeChannel*)channel;
     pthread_mutex_destroy(&ch->mutex);

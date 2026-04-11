@@ -265,6 +265,7 @@ fn p_keyword_kind(text: string) -> string {
     if text == "given" { return "kw_given" }
     if text == "then" { return "kw_then" }
     if text == "select" { return "kw_select" }
+    if text == "parallel" { return "kw_parallel" }
     return "identifier"
 }
 
@@ -443,7 +444,26 @@ impl Parser {
             return self.parse_select_statement()
         }
 
+        if self.check("kw_parallel") {
+            return self.parse_parallel_statement()
+        }
+
         self.parse_statement()
+    }
+
+    // Parse parallel block: parallel { stmt1; stmt2 }
+    // Each statement runs in its own thread, all joined at block end.
+    fn parse_parallel_statement(self) -> Stmt? {
+        self.advance()  // consume `parallel`
+        if !self.consume("left_brace", "expected `{` after parallel") {
+            return null
+        }
+        let body = self.parse_statement_list(true)
+        if body == null { return null }
+        if !self.consume("right_brace", "expected `}` to close parallel block") {
+            return null
+        }
+        Stmt.Parallel(body!)
     }
 
     // Parse select statement: select { binding <- channel -> { body } }

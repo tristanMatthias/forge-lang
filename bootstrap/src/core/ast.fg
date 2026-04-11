@@ -340,6 +340,7 @@ export enum Stmt {
     GivenBlock(name: string, body: StmtList)
     ThenBlock(name: string, condition: Expr)
     Select(arms: SelectArmList)
+    Parallel(body: StmtList)
 }
 
 // Select arms: `binding <- channel -> body`
@@ -687,6 +688,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .GivenBlock(name, _) -> "(given " + name + " ...)"
         .ThenBlock(name, cond) -> "(then " + name + " " + render_expr(cond) + ")"
         .Select(_) -> "(select ...)"
+        .Parallel(_) -> "(parallel ...)"
     }
 }
 

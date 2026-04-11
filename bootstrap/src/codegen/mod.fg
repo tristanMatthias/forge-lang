@@ -356,6 +356,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_channel_recv", strlen_type)
     forge_llvm_add_function(m, "forge_channel_close", puts_type)
 
+    forge_llvm_add_function(m, "forge_parallel_run", puts_type)
     forge_llvm_add_function(m, "forge_select", arr_get_type)
     forge_llvm_add_function(m, "forge_select_index", strlen_type)
     forge_llvm_add_function(m, "forge_select_value", strlen_type)
@@ -471,13 +472,15 @@ fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> Stru
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .TypeDecl(name, fields) -> {
-                    let count = field_list_length(fields)
+                    // Check for type operator: __base sentinel
+                    let resolved_fields = resolve_type_operator(fields, reg)
+                    let count = field_list_length(resolved_fields)
                     let field_arr = forge_llvm_type_array_new(count)
                     fill_i64_param_array(field_arr, i64t, 0, count)
                     let st = forge_llvm_struct_create_named(ctx, name)
                     forge_llvm_struct_set_body(st, field_arr, count, 0)
                     forge_llvm_type_array_free(field_arr)
-                    StructReg.Node(name, fields, reg)
+                    StructReg.Node(name, resolved_fields, reg)
                 }
                 _ -> reg
             }
@@ -566,6 +569,70 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
                 .Function(name, _, ret_ty, _) -> TraitMethodNames.Node(name, ret_ty, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
+        }
+    }
+}
+
+// Resolve type operator fields: if fields start with __base sentinel,
+// look up base type and filter. Otherwise return fields unchanged.
+fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
+    match fields {
+        .Node(name, base_name, rest) -> {
+            if name == "__base" {
+                match rest {
+                    .Node(op_name, op, excluded_fields) -> {
+                        let base_lookup = struct_reg_lookup(reg, base_name)
+                        if !base_lookup.found { return FieldList.End }
+                        if op == "without" {
+                            return filter_fields_without(base_lookup.fields, excluded_fields)
+                        }
+                        if op == "only" {
+                            return filter_fields_only(base_lookup.fields, excluded_fields)
+                        }
+                        base_lookup.fields
+                    }
+                    _ -> fields
+                }
+            } else {
+                fields
+            }
+        }
+        _ -> fields
+    }
+}
+
+fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
+    match base {
+        .End -> FieldList.End
+        .Node(name, ty, next) -> {
+            if field_list_has(excluded, name) {
+                filter_fields_without(next, excluded)
+            } else {
+                FieldList.Node(name, ty, filter_fields_without(next, excluded))
+            }
+        }
+    }
+}
+
+fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
+    match base {
+        .End -> FieldList.End
+        .Node(name, ty, next) -> {
+            if field_list_has(included, name) {
+                FieldList.Node(name, ty, filter_fields_only(next, included))
+            } else {
+                filter_fields_only(next, included)
+            }
+        }
+    }
+}
+
+fn field_list_has(list: FieldList, target: string) -> bool {
+    match list {
+        .End -> false
+        .Node(name, _, next) -> {
+            if name == target { return true }
+            field_list_has(next, target)
         }
     }
 }

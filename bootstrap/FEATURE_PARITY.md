@@ -103,7 +103,7 @@ Status key:
 | bitwise | `&`, `|`, `^`, `<<`, `>>`, `~` | ✅ | full precedence chain | |
 | pipe | `expr |> fn` | ✅ | desugars to call |
 | ranges | `start..end`, `start..=end` | ✅ | `for i in 0..10 {}` |
-| type operators | `without`, `only`, `partial` | 🔲 | syntax parses but derived types are empty |
+| type operators | `without`, `only`, `partial` | ✅ | field filtering at declaration time |
 
 ## Strings
 
@@ -181,7 +181,7 @@ Status key:
 | spawn | `spawn { body }` | ✅ | forge_spawn via pthreads |
 | channels | `ch <- value`, `<- ch` | ✅ | forge_channel_new/send/recv |
 | select | `select { ch -> body }` | ✅ | v <- ch -> { body } with polling |
-| parallel | `parallel { }` | 🔲 | no syntax; spawn+join exist |
+| parallel | `parallel { }` | ✅ | runs all expressions in parallel threads |
 
 ## Components (domain-specific)
 
@@ -243,18 +243,18 @@ Status key:
 | Structs & Types | 8 | 8 | 0 | 0 |
 | Enums & Matching | 11 | 11 | 0 | 0 |
 | Control Flow | 8 | 8 | 0 | 0 |
-| Operators | 8 | 7 | 1 | 0 |
+| Operators | 8 | 8 | 0 | 0 |
 | Strings | 11 | 11 | 0 | 0 |
 | Null Safety | 8 | 8 | 0 | 0 |
 | Collections | 7 | 7 | 0 | 0 |
 | Modules & Imports | 5 | 5 | 0 | 0 |
 | I/O & Runtime | 12 | 12 | 0 | 0 |
-| Concurrency | 4 | 2 | 2 | 0 |
+| Concurrency | 4 | 4 | 0 | 0 |
 | Components | 4 | 0 | 0 | 4 |
 | Testing | 4 | 4 | 0 | 0 |
 | Pointer Ops | 4 | 4 | 0 | 0 |
 | Packages | 14 | 9 | 0 | 5 |
-| **TOTAL** | **131** | **124** | **3** | **4** |
+| **TOTAL** | **131** | **127** | **0** | **4** |
 
 ## Dogfooding Rule
 

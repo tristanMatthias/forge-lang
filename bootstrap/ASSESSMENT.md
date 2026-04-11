@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 124 done, 3 todo, 5 n/a)
+## Feature Progress (132 total: 127 done, 0 todo, 5 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -63,7 +63,7 @@
 | 56 | bitwise | ✅ | &, |, ^, <<, >>, ~, % | |
 | 57 | pipe | ✅ | |
 | 58 | ranges | ✅ | `for i in 0..10 { }` |
-| 59 | type operators | 🔲 | syntax parses but derived types are empty — field filtering not implemented |
+| 59 | type operators | ✅ | without/only filter base type fields at declaration time |
 | 60 | string literals | ✅ | |
 | 61 | string concat | ✅ | |
 | 62 | string indexing | ✅ | |
@@ -111,7 +111,7 @@
 | 104 | spawn | ✅ | forge_spawn/forge_thread_join via pthreads |
 | 105 | channels | ✅ | forge_channel_new/send/recv/close |
 | 106 | select | ✅ | select { v <- ch -> { body } } with forge_select runtime |
-| 107 | parallel | 🔲 | no parallel syntax; spawn+join exist but parallel { } block not implemented |
+| 107 | parallel | ✅ | parallel { fn1; fn2 } runs all in threads, joins |
 | 108 | component blocks | ⬜ | n/a |
 | 109 | config declaration | ⬜ | n/a |
 | 110 | events | ⬜ | n/a |
