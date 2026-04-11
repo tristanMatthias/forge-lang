@@ -110,7 +110,7 @@
 | 103 | shell shorthand | ✅ | forge_shell_exec, forge_shell_exec_status |
 | 104 | spawn | ✅ | forge_spawn/forge_thread_join via pthreads |
 | 105 | channels | ✅ | forge_channel_new/send/recv/close |
-| 106 | select | 🔲 | no select syntax or runtime; channels exist but select requires polling |
+| 106 | select | ✅ | select { v <- ch -> { body } } with forge_select runtime |
 | 107 | parallel | 🔲 | no parallel syntax; spawn+join exist but parallel { } block not implemented |
 | 108 | component blocks | ⬜ | n/a |
 | 109 | config declaration | ⬜ | n/a |

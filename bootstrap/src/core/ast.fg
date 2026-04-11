@@ -339,6 +339,13 @@ export enum Stmt {
     SpecBlock(name: string, body: StmtList)
     GivenBlock(name: string, body: StmtList)
     ThenBlock(name: string, condition: Expr)
+    Select(arms: SelectArmList)
+}
+
+// Select arms: `binding <- channel -> body`
+export enum SelectArmList {
+    End
+    Node(binding: string, channel: Expr, body: StmtList, next: SelectArmList)
 }
 
 // Annotations attached to declarations: @name or @name(args).
@@ -679,6 +686,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .SpecBlock(name, _) -> "(spec " + name + " ...)"
         .GivenBlock(name, _) -> "(given " + name + " ...)"
         .ThenBlock(name, cond) -> "(then " + name + " " + render_expr(cond) + ")"
+        .Select(_) -> "(select ...)"
     }
 }
 

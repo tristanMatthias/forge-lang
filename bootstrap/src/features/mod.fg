@@ -27,3 +27,4 @@ mod map_lit
 mod defer_stmt
 mod is_keyword
 mod spec_test
+mod select_stmt

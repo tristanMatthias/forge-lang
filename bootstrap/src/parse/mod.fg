@@ -264,6 +264,7 @@ fn p_keyword_kind(text: string) -> string {
     if text == "spec" { return "kw_spec" }
     if text == "given" { return "kw_given" }
     if text == "then" { return "kw_then" }
+    if text == "select" { return "kw_select" }
     return "identifier"
 }
 
@@ -438,7 +439,56 @@ impl Parser {
             return self.parse_spec_block()
         }
 
+        if self.check("kw_select") {
+            return self.parse_select_statement()
+        }
+
         self.parse_statement()
+    }
+
+    // Parse select statement: select { binding <- channel -> { body } }
+    fn parse_select_statement(self) -> Stmt? {
+        self.advance()  // consume `select`
+        if !self.consume("left_brace", "expected `{` after select") {
+            return null
+        }
+        let arms = self.parse_select_arm_list()
+        if !self.consume("right_brace", "expected `}` to close select") {
+            return null
+        }
+        Stmt.Select(arms)
+    }
+
+    fn parse_select_arm_list(self) -> SelectArmList {
+        if self.check("right_brace") || self.check("eof") {
+            return SelectArmList.End
+        }
+        // Parse: binding <- channel -> { body }
+        if !self.check("identifier") { return SelectArmList.End }
+        let binding = self.current_lexeme
+        self.advance()
+        // Expect `<-`
+        if !self.check("less") { return SelectArmList.End }
+        self.advance()  // consume <
+        if !self.check("minus") { return SelectArmList.End }
+        self.advance()  // consume -
+        // Parse channel expression
+        let channel = self.parse_expression()
+        if channel == null { return SelectArmList.End }
+        // Expect `->`
+        if !self.consume("arrow", "expected `->` after channel in select arm") {
+            return SelectArmList.End
+        }
+        // Parse body block
+        if !self.consume("left_brace", "expected `{` for select arm body") {
+            return SelectArmList.End
+        }
+        let body = self.parse_statement_list(true)
+        if body == null { return SelectArmList.End }
+        if !self.consume("right_brace", "expected `}` to close select arm") {
+            return SelectArmList.End
+        }
+        SelectArmList.Node(binding, channel!, body!, self.parse_select_arm_list())
     }
 
     // Parse one or more annotations: @name or @name(arg1, arg2)
@@ -1880,7 +1930,7 @@ impl Parser {
     // parsing and find more errors.
     fn synchronize(self) {
         while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_trait") || self.check("kw_defer") || self.check("kw_spec") || self.check("kw_given") || self.check("kw_then") || self.check("right_brace") {
+            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_trait") || self.check("kw_defer") || self.check("kw_spec") || self.check("kw_given") || self.check("kw_then") || self.check("kw_select") || self.check("right_brace") {
                 return
             }
             self.advance()

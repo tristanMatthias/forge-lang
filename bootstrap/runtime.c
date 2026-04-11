@@ -1348,6 +1348,60 @@ int64_t forge_channel_recv(void* channel) {
     return value;
 }
 
+// Select: poll multiple channels, block until one has data.
+// channels is a ForgeArray of channel pointers.
+// Returns: (index << 32) | (value & 0xFFFFFFFF) packed into i64.
+// Better approach: write index + value to out params.
+typedef struct {
+    int64_t index;  // which channel fired
+    int64_t value;  // the received value
+} ForgeSelectResult;
+
+static ForgeSelectResult forge_select_result;
+
+// Polls channels in round-robin until one has data.
+// Returns pointer to static ForgeSelectResult.
+void* forge_select(void* channel_array, int64_t count) {
+    ForgeArray* arr = (ForgeArray*)(uintptr_t)channel_array;
+    if (!arr || arr->len == 0) {
+        forge_select_result.index = -1;
+        forge_select_result.value = 0;
+        return &forge_select_result;
+    }
+    // Spin-poll with backoff until one channel has data.
+    // This is simple but correct. A production implementation
+    // would use condition variables or epoll.
+    while (1) {
+        for (int64_t i = 0; i < arr->len && i < count; i++) {
+            ForgeChannel* ch = (ForgeChannel*)(uintptr_t)arr->data[i];
+            if (!ch) continue;
+            pthread_mutex_lock(&ch->mutex);
+            if (ch->has_value) {
+                int64_t val = ch->value;
+                ch->has_value = 0;
+                pthread_cond_signal(&ch->send_cond);
+                pthread_mutex_unlock(&ch->mutex);
+                forge_select_result.index = i;
+                forge_select_result.value = val;
+                return &forge_select_result;
+            }
+            pthread_mutex_unlock(&ch->mutex);
+        }
+        // Brief sleep to avoid busy-waiting
+        usleep(100);  // 100 microseconds
+    }
+}
+
+int64_t forge_select_index(void* result) {
+    ForgeSelectResult* r = (ForgeSelectResult*)result;
+    return r->index;
+}
+
+int64_t forge_select_value(void* result) {
+    ForgeSelectResult* r = (ForgeSelectResult*)result;
+    return r->value;
+}
+
 void forge_channel_close(void* channel) {
     ForgeChannel* ch = (ForgeChannel*)channel;
     pthread_mutex_destroy(&ch->mutex);

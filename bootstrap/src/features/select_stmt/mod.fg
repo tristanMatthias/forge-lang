@@ -1,0 +1,5 @@
+mod codegen
+
+export fn register_select_stmt(reg: Registry) -> Registry {
+    register_stmt(reg, Stmt.Select(SelectArmList.End), stmt_only("select", select_emit_stmt))
+}

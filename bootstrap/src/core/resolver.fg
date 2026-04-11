@@ -304,6 +304,22 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .SpecBlock(_, body) -> resolve_stmt_list(r, body)
         .GivenBlock(_, body) -> resolve_stmt_list(r, body)
         .ThenBlock(_, cond) -> resolve_expr(r, cond)
+        .Select(arms) -> resolve_select_arms(r, arms)
+    }
+}
+
+fn resolve_select_arms(r: Resolver, arms: SelectArmList) -> Resolver {
+    match arms {
+        .End -> r
+        .Node(binding, channel, body, next) -> {
+            let after_ch = resolve_expr(r, channel)
+            let scoped = enter_resolve_scope(after_ch)
+            let with_binding = declare_name(scoped, binding)
+            let defined = define_name(with_binding, binding)
+            let after_body = resolve_stmt_list(defined, body)
+            let exited = exit_resolve_scope(after_body)
+            resolve_select_arms(exited, next)
+        }
     }
 }
 

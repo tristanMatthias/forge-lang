@@ -1,0 +1,81 @@
+// WHY: codegen for `select { binding <- channel -> { body } }`.
+// Builds an array of channel pointers, calls forge_select to block
+// until one has data, then dispatches to the matching arm.
+
+export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+    match stmt {
+        .Select(arms) -> emit_select(ctx, env, arms)
+        _ -> err_stmt("select_emit_stmt: expected Select")
+    }
+}
+
+fn emit_select(ctx: Ctx, env: VarEnv, arms: SelectArmList) -> StmtResult {
+    // Step 1: Build array of channel pointers
+    let arr_fn = get_fn(ctx, "forge_array_new")
+    let push_fn = get_fn(ctx, "forge_array_push")
+    let channels = call_0(ctx, arr_fn, "sel_channels")
+    let count = push_channels(ctx, env, arms, channels, push_fn, 0)
+
+    // Step 2: Call forge_select to block until one fires
+    let sel_fn = get_fn(ctx, "forge_select")
+    let result = call_2(ctx, sel_fn, channels, const_i64(ctx, count), "sel_result")
+
+    // Step 3: Extract index and value
+    let idx_fn = get_fn(ctx, "forge_select_index")
+    let val_fn = get_fn(ctx, "forge_select_value")
+    let idx = call_1(ctx, idx_fn, result, "sel_idx")
+    let val = call_1(ctx, val_fn, result, "sel_val")
+
+    // Step 4: Dispatch to matching arm using if-else chain
+    emit_select_dispatch(ctx, env, arms, idx, val, 0)
+}
+
+fn push_channels(ctx: Ctx, env: VarEnv, arms: SelectArmList, arr: ptr, push_fn: ptr, count: int) -> int {
+    match arms {
+        .End -> count
+        .Node(_, channel, _, next) -> {
+            let r = emit_expr(ctx, env, channel)
+            if r.had_error { return count }
+            let ch_i64 = to_i64(ctx, r.value, "ch_i64")
+            call_2(ctx, push_fn, arr, ch_i64, "")
+            push_channels(ctx, env, next, arr, push_fn, count + 1)
+        }
+    }
+}
+
+fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, val: ptr, arm_idx: int) -> StmtResult {
+    match arms {
+        .End -> ok_stmt(env)
+        .Node(binding, _, body, next) -> {
+            // if idx == arm_idx { let binding = val; body }
+            let cmp = forge_llvm_build_icmp(ctx.builder, 32, idx, const_i64(ctx, arm_idx), "sel_cmp")
+            let then_bb = new_bb(ctx, "sel_then")
+            let else_bb = new_bb(ctx, "sel_else")
+            let merge_bb = new_bb(ctx, "sel_merge")
+
+            forge_llvm_build_cond_br(ctx.builder, cmp, then_bb, else_bb)
+
+            // Then: bind value and run body
+            forge_llvm_position_at_end(ctx.builder, then_bb)
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, binding)
+            forge_llvm_build_store(ctx.builder, val, alloca)
+            let body_env = env_extend(env, binding, alloca, ValueType.Int)
+            let body_r = emit_block_loop(ctx, body_env, body, const_i64(ctx, 0), ValueType.Int)
+            if body_r.had_error { return err_stmt(body_r.error_message) }
+            if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                forge_llvm_build_br(ctx.builder, merge_bb)
+            }
+
+            // Else: try next arm
+            forge_llvm_position_at_end(ctx.builder, else_bb)
+            let next_r = emit_select_dispatch(ctx, env, next, idx, val, arm_idx + 1)
+            if next_r.had_error { return next_r }
+            if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+                forge_llvm_build_br(ctx.builder, merge_bb)
+            }
+
+            forge_llvm_position_at_end(ctx.builder, merge_bb)
+            ok_stmt(env)
+        }
+    }
+}

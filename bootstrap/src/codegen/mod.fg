@@ -356,6 +356,10 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_channel_recv", strlen_type)
     forge_llvm_add_function(m, "forge_channel_close", puts_type)
 
+    forge_llvm_add_function(m, "forge_select", arr_get_type)
+    forge_llvm_add_function(m, "forge_select_index", strlen_type)
+    forge_llvm_add_function(m, "forge_select_value", strlen_type)
+
     // Spec test runtime
     forge_llvm_add_function(m, "forge_test_start_spec", puts_type)
     forge_llvm_add_function(m, "forge_test_end_spec", puts_type)

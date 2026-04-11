@@ -180,7 +180,7 @@ Status key:
 |---|---|---|---|
 | spawn | `spawn { body }` | ✅ | forge_spawn via pthreads |
 | channels | `ch <- value`, `<- ch` | ✅ | forge_channel_new/send/recv |
-| select | `select { ch -> body }` | 🔲 | no syntax; channels exist |
+| select | `select { ch -> body }` | ✅ | v <- ch -> { body } with polling |
 | parallel | `parallel { }` | 🔲 | no syntax; spawn+join exist |
 
 ## Components (domain-specific)
