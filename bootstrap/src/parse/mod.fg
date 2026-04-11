@@ -471,7 +471,8 @@ impl Parser {
             if self.check("identifier") {
                 let col = self.current_lexeme
                 self.advance()
-                headers = ExprList.Node(sexpr(Expr.String(col), self.current_line, self.current_column), headers)
+                let quoted_col = "\"" + col + "\""
+                headers = ExprList.Node(sexpr(Expr.String(quoted_col), self.current_line, self.current_column), headers)
                 header_count = header_count + 1
                 if self.check("pipe") {
                     self.advance()

@@ -44,7 +44,7 @@
 | 38 | nested patterns | ✅ | .Wrap(.Inner(x)) syntax |
 | 39 | match guards | ✅ | pattern if cond -> body |
 | 39b | literal patterns | ✅ | string/int/bool in match arms |
-| 40 | match tables | 🔲 | |
+| 40 | match tables | ✅ | match expr table { pattern | col; .A | val } |
 | 41 | `is` keyword | ✅ | `value is .Variant` returns bool |
 | 42 | contextual resolution | ✅ | `.Variant` resolves by searching enum registry |
 | 43 | if / else | ✅ | stmt + expr |

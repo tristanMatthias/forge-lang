@@ -74,7 +74,7 @@ Status key:
 | variant binding | `.A(x, y) -> use(x)` | ✅ | |
 | nested patterns | `.A(.Inner(x), y) -> ...` | ✅ | |
 | match guards | `pattern if guard -> body` | ✅ | |
-| match tables | `match expr table { ... }` | 🔲 | |
+| match tables | `match expr table { ... }` | ✅ | desugars to match arms returning maps |
 | `is` keyword | `value is Pattern` | ✅ | |
 | contextual resolution | `let x: Enum = .variant` | ✅ | searches all enums by variant |
 
