@@ -860,6 +860,10 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
             err_emit("assignment to undefined variable `" + name + "`")
         }
         .Call(callee, args) -> emit_call(ctx, env, callee, args)
+        // Core expression types that don't warrant a feature directory
+        .Index(obj, idx) -> emit_index(ctx, env, obj, idx)
+        .Block(body) -> emit_block_expr(ctx, env, body)
+        .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
         // All other expression types dispatch through the feature registry.
         _ -> {
             let tag = forge_expr_tag(expr)

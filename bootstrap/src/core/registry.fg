@@ -105,10 +105,5 @@ export fn build_registry() -> Registry {
     reg = register_let_stmt(reg)       // LetDestructure stmt(20)
     reg = register_defer_stmt(reg)     // Defer stmt(21)
 
-    // These don't have feature dirs yet — still in registry_handlers.fg
-    reg = reg_expr(reg, 14, reg_emit_index)
-    reg = reg_expr(reg, 15, reg_emit_block_expr)
-    reg = reg_expr(reg, 28, reg_emit_slice)
-
     reg
 }
