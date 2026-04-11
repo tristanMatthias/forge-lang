@@ -47,7 +47,7 @@ Status key:
 | closures / lambdas | `(x) -> x * 2` | ✅ | lifted functions, typed params |
 | `it` parameter | `.method(it * 2)` | ✅ | parser sugar |
 | generics | `fn name<T>(x: T) -> T` | ✅ | parsed, erased to i64 |
-| generic constraints | `fn name<T: Trait>(x: T)` | 🔲 | needs generics + traits |
+| generic constraints | `fn name<T: Trait>(x: T)` | ✅ | parsed + erased; use dyn dispatch |
 
 ## Structs & Types
 

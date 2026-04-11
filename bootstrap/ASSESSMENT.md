@@ -26,7 +26,7 @@
 | 20 | closures / lambdas | ✅ | lifted functions + indirect calls |
 | 21 | `it` parameter | ✅ | parser sugar: `list.map(it * 2)` |
 | 22 | generics | ✅ | parsed, erased |
-| 23 | generic constraints | 🔲 | |
+| 23 | generic constraints | ✅ | parsed + erased; use trait objects for dispatch |
 | 24 | type declaration | ✅ | |
 | 25 | struct literal | ✅ | |
 | 26 | field access | ✅ | |
