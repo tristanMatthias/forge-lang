@@ -939,6 +939,38 @@ int64_t forge_uptime_ms(void) {
     return secs * 1000 + nsecs / 1000000;
 }
 
+// ── DateTime ──
+int64_t forge_datetime_now(void) {
+    return (int64_t)time(NULL);
+}
+
+const char* forge_datetime_format(int64_t epoch, const char* fmt) {
+    time_t t = (time_t)epoch;
+    struct tm* tm = localtime(&t);
+    char* buf = (char*)malloc(256);
+    strftime(buf, 256, fmt, tm);
+    return buf;
+}
+
+int64_t forge_datetime_year(int64_t epoch) {
+    time_t t = (time_t)epoch; struct tm* tm = localtime(&t); return tm->tm_year + 1900;
+}
+int64_t forge_datetime_month(int64_t epoch) {
+    time_t t = (time_t)epoch; struct tm* tm = localtime(&t); return tm->tm_mon + 1;
+}
+int64_t forge_datetime_day(int64_t epoch) {
+    time_t t = (time_t)epoch; struct tm* tm = localtime(&t); return tm->tm_mday;
+}
+int64_t forge_datetime_hour(int64_t epoch) {
+    time_t t = (time_t)epoch; struct tm* tm = localtime(&t); return tm->tm_hour;
+}
+int64_t forge_datetime_minute(int64_t epoch) {
+    time_t t = (time_t)epoch; struct tm* tm = localtime(&t); return tm->tm_min;
+}
+int64_t forge_datetime_second(int64_t epoch) {
+    time_t t = (time_t)epoch; struct tm* tm = localtime(&t); return tm->tm_sec;
+}
+
 // ── Shell execution ──
 const char* forge_shell_exec(const char* cmd) {
     FILE* fp = popen(cmd, "r");

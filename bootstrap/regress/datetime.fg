@@ -1,0 +1,33 @@
+// DateTime functions via C runtime.
+
+extern fn forge_datetime_now() -> int
+extern fn forge_datetime_year(epoch: int) -> int
+extern fn forge_datetime_month(epoch: int) -> int
+extern fn forge_datetime_day(epoch: int) -> int
+extern fn forge_datetime_hour(epoch: int) -> int
+extern fn forge_datetime_minute(epoch: int) -> int
+extern fn forge_datetime_second(epoch: int) -> int
+
+fn main() {
+    let now = forge_datetime_now()
+    // Epoch should be > 0
+    if now > 0 { println("epoch ok") }
+
+    let year = forge_datetime_year(now)
+    if year >= 2026 { println("year ok") }
+
+    let month = forge_datetime_month(now)
+    if month >= 1 && month <= 12 { println("month ok") }
+
+    let day = forge_datetime_day(now)
+    if day >= 1 && day <= 31 { println("day ok") }
+
+    let hour = forge_datetime_hour(now)
+    if hour >= 0 && hour <= 23 { println("hour ok") }
+
+    let minute = forge_datetime_minute(now)
+    if minute >= 0 && minute <= 59 { println("minute ok") }
+
+    let second = forge_datetime_second(now)
+    if second >= 0 && second <= 59 { println("second ok") }
+}

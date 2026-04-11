@@ -105,7 +105,7 @@
 | 98 | write_file | ✅ | compiler-only; user programs need `extern fn` |
 | 99 | json.parse / stringify | 🔲 | |
 | 100 | process_uptime | ✅ | forge_uptime_ms() via extern fn |
-| 101 | datetime | 🔲 | |
+| 101 | datetime | ✅ | forge_datetime_now/year/month/day/hour/minute/second |
 | 102 | durations | 🔲 | |
 | 103 | shell shorthand | ✅ | forge_shell_exec, forge_shell_exec_status |
 | 104 | spawn | 🔲 | |

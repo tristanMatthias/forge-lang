@@ -170,7 +170,7 @@ Status key:
 | write_file | `write_file(path, content)` | ✅ | via C extern |
 | json.parse / stringify | `json.parse(str)` | 🔲 | |
 | process_uptime | `process_uptime()` | ✅ | forge_uptime_ms() via extern fn |
-| datetime | `datetime_now()` | 🔲 | |
+| datetime | `datetime_now()` | ✅ | forge_datetime_now + year/month/day/hour/min/sec |
 | durations | `7d`, `24h`, `5m` | 🔲 | |
 | shell shorthand | `$"command ${arg}"` | ✅ | forge_shell_exec via C extern |
 
