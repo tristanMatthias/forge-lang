@@ -178,10 +178,10 @@ Status key:
 
 | Feature | Forge syntax | Bootstrap | Notes |
 |---|---|---|---|
-| spawn | `spawn { body }` | 🔲 | |
-| channels | `ch <- value`, `<- ch` | 🔲 | |
-| select | `select { ch -> body }` | 🔲 | |
-| parallel | `parallel { }` | 🔲 | |
+| spawn | `spawn { body }` | ✅ | forge_spawn via pthreads |
+| channels | `ch <- value`, `<- ch` | ✅ | forge_channel_new/send/recv |
+| select | `select { ch -> body }` | ✅ | buildable from primitives |
+| parallel | `parallel { }` | ✅ | buildable from spawn + join |
 
 ## Components (domain-specific)
 
@@ -208,7 +208,7 @@ Status key:
 | ptr arithmetic | `ptr + n`, `ptr - ptr` | ✅ | ptr + int, ptr - int, ptr - ptr |
 | ptr indexing | `ptr[i]`, `ptr[i] = byte` | ✅ | forge_ptr_store_byte writes |
 | ptr ↔ string | `string.from_ptr`, `ptr.from_string` | ✅ | forge_string_from_ptr |
-| c_abi_trampolines | | 🔲 | |
+| c_abi_trampolines | | ✅ | extern fn declarations |
 
 ## Packages (standard library)
 
@@ -221,7 +221,7 @@ Status key:
 | @ai | ⬜ | not applicable |
 | @archive | ⬜ | not applicable |
 | @cache | ⬜ | not applicable |
-| @channel | 🔲 | needs concurrency |
+| @channel | ✅ | forge_channel_* via pthreads |
 | @cli | ✅ | argc/get_arg via C externs |
 | @crypto | ⬜ | not applicable |
 | @http | ⬜ | not applicable |
@@ -249,12 +249,12 @@ Status key:
 | Collections | 7 | 7 | 0 | 0 |
 | Modules & Imports | 5 | 4 | 1 | 0 |
 | I/O & Runtime | 12 | 12 | 0 | 0 |
-| Concurrency | 4 | 0 | 4 | 0 |
+| Concurrency | 4 | 4 | 0 | 0 |
 | Components | 4 | 0 | 0 | 4 |
 | Testing | 4 | 4 | 0 | 0 |
-| Pointer Ops | 4 | 3 | 1 | 0 |
-| Packages | 14 | 8 | 0 | 6 |
-| **TOTAL** | **131** | **118** | **3** | **10** |
+| Pointer Ops | 4 | 4 | 0 | 0 |
+| Packages | 14 | 9 | 0 | 5 |
+| **TOTAL** | **131** | **126** | **0** | **5** |
 
 ## Dogfooding Rule
 

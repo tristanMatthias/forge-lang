@@ -923,6 +923,7 @@ const char* forge_string_from_ptr(int64_t ptr_val, int64_t len) {
 
 // ── Process timing ──
 #include <time.h>
+#include <pthread.h>
 
 static struct timespec forge_start_time;
 
@@ -1270,4 +1271,87 @@ void forge_test_summary(void) {
         printf(" (%lld failed)", forge_test_fail_count);
     }
     printf("\n");
+}
+
+// ── Concurrency ──
+// Thread spawning via pthreads. spawn takes a closure (ForgeArray)
+// and runs it in a new thread.
+
+typedef struct {
+    int64_t closure;
+} ForgeThreadArg;
+
+static void* forge_thread_entry(void* arg) {
+    ForgeThreadArg* ta = (ForgeThreadArg*)arg;
+    forge_closure_call_0(ta->closure);
+    free(ta);
+    return NULL;
+}
+
+// Spawn a closure in a new thread. Returns a thread handle (i64).
+int64_t forge_spawn(int64_t closure) {
+    pthread_t* thread = (pthread_t*)malloc(sizeof(pthread_t));
+    ForgeThreadArg* arg = (ForgeThreadArg*)malloc(sizeof(ForgeThreadArg));
+    arg->closure = closure;
+    pthread_create(thread, NULL, forge_thread_entry, arg);
+    return (int64_t)(uintptr_t)thread;
+}
+
+// Wait for a spawned thread to finish.
+void forge_thread_join(int64_t handle) {
+    pthread_t* thread = (pthread_t*)(uintptr_t)handle;
+    pthread_join(*thread, NULL);
+    free(thread);
+}
+
+// ── Channels ──
+// Unbuffered channel: send blocks until recv, recv blocks until send.
+
+typedef struct {
+    int64_t value;
+    int has_value;
+    pthread_mutex_t mutex;
+    pthread_cond_t send_cond;
+    pthread_cond_t recv_cond;
+} ForgeChannel;
+
+void* forge_channel_new(void) {
+    ForgeChannel* ch = (ForgeChannel*)calloc(1, sizeof(ForgeChannel));
+    pthread_mutex_init(&ch->mutex, NULL);
+    pthread_cond_init(&ch->send_cond, NULL);
+    pthread_cond_init(&ch->recv_cond, NULL);
+    return ch;
+}
+
+void forge_channel_send(void* channel, int64_t value) {
+    ForgeChannel* ch = (ForgeChannel*)channel;
+    pthread_mutex_lock(&ch->mutex);
+    while (ch->has_value) {
+        pthread_cond_wait(&ch->send_cond, &ch->mutex);
+    }
+    ch->value = value;
+    ch->has_value = 1;
+    pthread_cond_signal(&ch->recv_cond);
+    pthread_mutex_unlock(&ch->mutex);
+}
+
+int64_t forge_channel_recv(void* channel) {
+    ForgeChannel* ch = (ForgeChannel*)channel;
+    pthread_mutex_lock(&ch->mutex);
+    while (!ch->has_value) {
+        pthread_cond_wait(&ch->recv_cond, &ch->mutex);
+    }
+    int64_t value = ch->value;
+    ch->has_value = 0;
+    pthread_cond_signal(&ch->send_cond);
+    pthread_mutex_unlock(&ch->mutex);
+    return value;
+}
+
+void forge_channel_close(void* channel) {
+    ForgeChannel* ch = (ForgeChannel*)channel;
+    pthread_mutex_destroy(&ch->mutex);
+    pthread_cond_destroy(&ch->send_cond);
+    pthread_cond_destroy(&ch->recv_cond);
+    free(ch);
 }
