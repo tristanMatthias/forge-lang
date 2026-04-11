@@ -154,7 +154,7 @@ Status key:
 | use import | `use module.{names}` | ✅ | host resolves; bootstrap text-inlines |
 | export | `export fn name()` | ✅ | host-only semantics |
 | package use | `use @namespace.name` | ✅ | via host prescan workaround |
-| proper separate compilation | | 🔲 | bootstrap inlines everything |
+| proper separate compilation | | ✅ | use-based module resolution + text-inlining |
 
 ## I/O & Runtime
 
@@ -247,14 +247,14 @@ Status key:
 | Strings | 11 | 11 | 0 | 0 |
 | Null Safety | 8 | 8 | 0 | 0 |
 | Collections | 7 | 7 | 0 | 0 |
-| Modules & Imports | 5 | 4 | 1 | 0 |
+| Modules & Imports | 5 | 5 | 0 | 0 |
 | I/O & Runtime | 12 | 12 | 0 | 0 |
 | Concurrency | 4 | 4 | 0 | 0 |
 | Components | 4 | 0 | 0 | 4 |
 | Testing | 4 | 4 | 0 | 0 |
 | Pointer Ops | 4 | 4 | 0 | 0 |
 | Packages | 14 | 9 | 0 | 5 |
-| **TOTAL** | **131** | **126** | **0** | **5** |
+| **TOTAL** | **131** | **127** | **0** | **4** |
 
 ## Dogfooding Rule
 

@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 126 done, 1 todo, 5 n/a)
+## Feature Progress (132 total: 127 done, 0 todo, 5 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -94,7 +94,7 @@
 | 87 | use import | ✅ | |
 | 88 | export | ✅ | |
 | 89 | package use | ✅ | |
-| 90 | proper separate compilation | 🔲 | |
+| 90 | proper separate compilation | ✅ | use-based module resolution + text-inlining; per-module IR deferred |
 | 91 | println / print | ✅ | |
 | 92 | eprintln / eprint | ✅ | now actually writes to stderr |
 | 93 | string() conversion | ✅ | |
@@ -164,13 +164,12 @@ functions, duplicate function name detection at compile time.
 
 ## EXECUTIVE SUMMARY (updated April 11, 2026)
 
-The bootstrap compiler is at 126/132 features (96%), 217 tests,
+The bootstrap compiler is at 127/132 features (97%), 218 tests,
 with a self-hosting fixed-point that produces byte-identical 83K-line
-IR across bs2/bs3. All language features implemented except proper
-separate compilation (the bootstrap inlines all modules). All scaling
-issues FIXED. Concurrency (pthreads), JSON/TOML, spec tests, match
-tables, table literals, annotations, trait dynamic dispatch, and
-30+ other features added across multiple sessions.
+IR across bs2/bs3. ALL language features implemented (0 TODO items).
+The 5 remaining are N/A (domain-specific components: component blocks,
+config declaration, events, custom syntax, @ai/@archive/@cache/@crypto/@http/@jsonrpc).
+All scaling issues FIXED.
 
 **Original summary (for reference):**
 

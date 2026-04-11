@@ -1,0 +1,2 @@
+fn helper_add(a: int, b: int) -> int { a + b }
+fn helper_greet(name: string) -> string { "hi " + name }

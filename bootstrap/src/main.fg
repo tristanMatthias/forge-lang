@@ -76,8 +76,13 @@ fn dirname(path: string) -> string {
 // powers the feature-organized layout where each language feature
 // lives under `features/<name>/`.
 fn preprocess_modules(source: string, entry_path: string) -> string {
+    preprocess_modules_inner(source, entry_path, true)
+}
+
+fn preprocess_modules_inner(source: string, entry_path: string, resolve_use: bool) -> string {
     let dir = dirname(entry_path)
     mut out = ""
+    mut inlined = ""  // Comma-separated list of already-inlined module names
     mut i = 0
     let n = source.length
     while i < n {
@@ -91,31 +96,78 @@ fn preprocess_modules(source: string, entry_path: string) -> string {
         }
         let line = source.substring(line_start, i)
         let mod_name = extract_mod_name(line)
-        if mod_name == "" {
-            out = out + line
-        } else {
-            // Try sibling-file form first: <dir>/<name>.fg
-            let sibling_path = dir + mod_name + ".fg"
-            // Then directory-module form: <dir>/<name>/mod.fg
-            let dir_mod_path = dir + mod_name + "/mod.fg"
-            if file_exists(sibling_path) {
-                let mod_src = read_file(sibling_path)
-                let inlined = preprocess_modules(mod_src, sibling_path)
-                out = out + "// === module " + mod_name + " ===\n"
-                out = out + inlined
-                out = out + "\n"
-            } else if file_exists(dir_mod_path) {
-                let mod_src = read_file(dir_mod_path)
-                let inlined = preprocess_modules(mod_src, dir_mod_path)
-                out = out + "// === module " + mod_name + " ===\n"
-                out = out + inlined
-                out = out + "\n"
-            } else {
-                out = out + "// === module " + mod_name + " (not found) ===\n"
+        if mod_name != "" {
+            if !inlined.contains("," + mod_name + ",") {
+                out = out + inline_module_inner(dir, mod_name)
+                inlined = inlined + "," + mod_name + ","
+            }
+            continue
+        }
+        // Handle `use module.{...}` — only at entry-file level.
+        // Recursively inlined modules already have their symbols
+        // available from mod declarations.
+        if resolve_use {
+            let use_mod = extract_use_module(line)
+            if use_mod != "" {
+                if !inlined.contains("," + use_mod + ",") {
+                    out = out + inline_module_inner(dir, use_mod)
+                    inlined = inlined + "," + use_mod + ","
+                }
+                out = out + "// " + line
+                continue
             }
         }
+        out = out + line
     }
     out
+}
+
+fn inline_module_inner(dir: string, mod_name: string) -> string {
+    let sibling_path = dir + mod_name + ".fg"
+    let dir_mod_path = dir + mod_name + "/mod.fg"
+    if file_exists(sibling_path) {
+        let mod_src = read_file(sibling_path)
+        // Recursively process but WITHOUT use-inlining (only mod)
+        let inlined = preprocess_modules_inner(mod_src, sibling_path, false)
+        return "// === module " + mod_name + " ===\n" + inlined + "\n"
+    }
+    if file_exists(dir_mod_path) {
+        let mod_src = read_file(dir_mod_path)
+        let inlined = preprocess_modules_inner(mod_src, dir_mod_path, false)
+        return "// === module " + mod_name + " ===\n" + inlined + "\n"
+    }
+    "// === module " + mod_name + " (not found) ===\n"
+}
+
+// inline_module delegates to inline_module_inner (above)
+
+// Extract the top-level module name from `use module.{...}` or
+// `use module.submodule.{...}`. Returns just the first component.
+fn extract_use_module(line: string) -> string {
+    let len = line.length
+    mut i = 0
+    while i < len {
+        let ch = line[i]
+        if ch != " " && ch != "\t" { break }
+        i = i + 1
+    }
+    if i + 4 > len { return "" }
+    if line[i] != "u" { return "" }
+    if line[i + 1] != "s" { return "" }
+    if line[i + 2] != "e" { return "" }
+    if line[i + 3] != " " { return "" }
+    // Skip `use ` prefix, then read the module name until `.` or `{` or space
+    mut j = i + 4
+    // Skip @ prefix for package imports
+    if j < len && line[j] == "@" { return "" }
+    let name_start = j
+    while j < len {
+        let ch = line[j]
+        if ch == "." || ch == " " || ch == "{" || ch == "\n" { break }
+        j = j + 1
+    }
+    if j == name_start { return "" }
+    line.substring(name_start, j)
 }
 
 // If `line` starts with `mod <name>`, return `<name>`. Otherwise "".
