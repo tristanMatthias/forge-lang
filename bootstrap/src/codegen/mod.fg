@@ -332,6 +332,12 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_json_get_string", arr_get_type)
     forge_llvm_add_function(m, "forge_json_get_bool", arr_get_type)
 
+    // Semver
+    forge_llvm_add_function(m, "forge_semver_major", strlen_type)
+    forge_llvm_add_function(m, "forge_semver_minor", strlen_type)
+    forge_llvm_add_function(m, "forge_semver_patch", strlen_type)
+    forge_llvm_add_function(m, "forge_semver_compare", arr_get_type)
+
     // Spec test runtime
     forge_llvm_add_function(m, "forge_test_start_spec", puts_type)
     forge_llvm_add_function(m, "forge_test_end_spec", puts_type)

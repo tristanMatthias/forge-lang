@@ -1,0 +1,19 @@
+// Semver parsing and comparison.
+
+extern fn forge_semver_major(version: string) -> int
+extern fn forge_semver_minor(version: string) -> int
+extern fn forge_semver_patch(version: string) -> int
+extern fn forge_semver_compare(a: string, b: string) -> int
+
+fn main() {
+    let v = "1.2.3"
+    println(string(forge_semver_major(v)))
+    println(string(forge_semver_minor(v)))
+    println(string(forge_semver_patch(v)))
+
+    // Compare
+    println(string(forge_semver_compare("1.0.0", "2.0.0")))
+    println(string(forge_semver_compare("2.0.0", "1.0.0")))
+    println(string(forge_semver_compare("1.2.3", "1.2.3")))
+    println(string(forge_semver_compare("1.2.3", "1.2.4")))
+}

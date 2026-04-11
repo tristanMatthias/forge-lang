@@ -1057,6 +1057,34 @@ int64_t forge_json_get_bool(const char* json, const char* key) {
     return (strncmp(pos, "true", 4) == 0) ? 1 : 0;
 }
 
+// ── Semver ──
+int64_t forge_semver_major(const char* version) {
+    if (!version) return 0;
+    return atoi(version);
+}
+int64_t forge_semver_minor(const char* version) {
+    if (!version) return 0;
+    const char* dot = strchr(version, '.');
+    return dot ? atoi(dot + 1) : 0;
+}
+int64_t forge_semver_patch(const char* version) {
+    if (!version) return 0;
+    const char* dot1 = strchr(version, '.');
+    if (!dot1) return 0;
+    const char* dot2 = strchr(dot1 + 1, '.');
+    return dot2 ? atoi(dot2 + 1) : 0;
+}
+// Returns -1, 0, or 1 for version comparison.
+int64_t forge_semver_compare(const char* a, const char* b) {
+    int64_t am = forge_semver_major(a), bm = forge_semver_major(b);
+    if (am != bm) return am < bm ? -1 : 1;
+    int64_t ai = forge_semver_minor(a), bi = forge_semver_minor(b);
+    if (ai != bi) return ai < bi ? -1 : 1;
+    int64_t ap = forge_semver_patch(a), bp = forge_semver_patch(b);
+    if (ap != bp) return ap < bp ? -1 : 1;
+    return 0;
+}
+
 // ── Shell execution ──
 const char* forge_shell_exec(const char* cmd) {
     FILE* fp = popen(cmd, "r");

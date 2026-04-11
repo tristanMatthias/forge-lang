@@ -222,13 +222,13 @@ Status key:
 | @archive | ⬜ | not applicable |
 | @cache | ⬜ | not applicable |
 | @channel | 🔲 | needs concurrency |
-| @cli | 🔲 | |
+| @cli | ✅ | argc/get_arg via C externs |
 | @crypto | ⬜ | not applicable |
 | @http | ⬜ | not applicable |
 | @jsonrpc | ⬜ | not applicable |
-| @semver | 🔲 | |
-| @term | 🔲 | |
-| @test | 🔲 | |
+| @semver | ✅ | major/minor/patch/compare via C runtime |
+| @term | ✅ | ANSI escape codes via \x sequences |
+| @test | ✅ | spec/given/then via C runtime |
 | @toml | 🔲 | |
 
 ---
@@ -244,7 +244,7 @@ Status key:
 | Enums & Matching | 11 | 9 | 2 | 0 |
 | Control Flow | 8 | 8 | 0 | 0 |
 | Operators | 8 | 8 | 0 | 0 |
-| Strings | 11 | 10 | 1 | 0 |
+| Strings | 11 | 11 | 0 | 0 |
 | Null Safety | 8 | 8 | 0 | 0 |
 | Collections | 7 | 7 | 0 | 0 |
 | Modules & Imports | 5 | 4 | 1 | 0 |
@@ -253,8 +253,8 @@ Status key:
 | Components | 4 | 0 | 0 | 4 |
 | Testing | 4 | 2 | 2 | 0 |
 | Pointer Ops | 4 | 3 | 1 | 0 |
-| Packages | 14 | 4 | 4 | 6 |
-| **TOTAL** | **131** | **107** | **14** | **10** |
+| Packages | 14 | 7 | 1 | 6 |
+| **TOTAL** | **131** | **112** | **9** | **10** |
 
 ## Dogfooding Rule
 
