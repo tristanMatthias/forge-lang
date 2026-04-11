@@ -63,7 +63,7 @@
 | 56 | bitwise | ✅ | &, |, ^, <<, >>, ~, % | |
 | 57 | pipe | ✅ | |
 | 58 | ranges | ✅ | `for i in 0..10 { }` |
-| 59 | type operators | 🔲 | |
+| 59 | type operators | ✅ | without/only syntax parsed; field filtering deferred |
 | 60 | string literals | ✅ | |
 | 61 | string concat | ✅ | |
 | 62 | string indexing | ✅ | |

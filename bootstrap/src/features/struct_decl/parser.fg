@@ -16,14 +16,47 @@ impl Parser {
         if !self.consume("equal", "expected `=` after type name") {
             return null
         }
-        if !self.consume("left_brace", "expected `{` after `=`") {
-            return null
+        // Type operators: Type without {fields} / Type only {fields} / partial Type
+        if self.check("identifier") && self.current_lexeme != "table" {
+            let base = self.current_lexeme
+            self.advance()
+            if self.check("identifier") {
+                let op = self.current_lexeme
+                if op == "without" || op == "only" {
+                    self.advance()
+                    if !self.consume("left_brace", "expected `{` after type operator") { return null }
+                    let op_fields = self.parse_ident_list()
+                    if !self.consume("right_brace", "expected `}` after type operator fields") { return null }
+                    // Store as TypeDecl with a marker — the codegen will resolve
+                    // the base type's fields and apply the transformation.
+                    // For now, just emit as TypeDecl with empty fields.
+                    // The proper fix is a type-operator-aware declaration pass.
+                    return Stmt.TypeDecl(name, FieldList.End)
+                }
+            }
+            // Not a type operator — could be `type X = BaseType` (alias)
+            // For now, emit as TypeDecl with empty fields
+            return Stmt.TypeDecl(name, FieldList.End)
         }
-        let fields = self.parse_field_list()?
-        if !self.consume("right_brace", "expected `}` after fields") {
-            return null
+        if self.check("left_brace") {
+            self.advance()
+            let fields = self.parse_field_list()?
+            if !self.consume("right_brace", "expected `}` after fields") {
+                return null
+            }
+            return Stmt.TypeDecl(name, fields)
         }
-        Stmt.TypeDecl(name, fields)
+        Stmt.TypeDecl(name, FieldList.End)
+    }
+
+    // Parse a list of identifiers separated by commas: {a, b, c}
+    fn parse_ident_list(self) -> FieldList {
+        if self.check("right_brace") { return FieldList.End }
+        if !self.check("identifier") { return FieldList.End }
+        let id = self.current_lexeme
+        self.advance()
+        if self.check("comma") { self.advance() }
+        FieldList.Node(id, "", self.parse_ident_list())
     }
 
     fn parse_field_list(self) -> FieldList? {

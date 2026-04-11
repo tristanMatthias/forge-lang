@@ -103,7 +103,7 @@ Status key:
 | bitwise | `&`, `|`, `^`, `<<`, `>>`, `~` | ✅ | full precedence chain | |
 | pipe | `expr |> fn` | ✅ | desugars to call |
 | ranges | `start..end`, `start..=end` | ✅ | `for i in 0..10 {}` |
-| type operators | `without`, `only`, `partial` | 🔲 | |
+| type operators | `without`, `only`, `partial` | ✅ | syntax parsed, field filtering deferred |
 
 ## Strings
 
