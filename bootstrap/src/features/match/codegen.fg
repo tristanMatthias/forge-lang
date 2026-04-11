@@ -354,7 +354,9 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
             let subj_ptr = to_ptr(ctx, subj.value, "lit_str_ptr")
             let lit_ptr = forge_llvm_build_global_string_ptr(ctx.builder, val, ".lit_str")
             let cmp_result = call_2(ctx, get_fn(ctx, "strcmp"), subj_ptr, lit_ptr, "strcmp_r")
-            forge_llvm_build_icmp(ctx.builder, 32, cmp_result, const_i64(ctx, 0), "str_eq")
+            // Sign-extend i32 strcmp result to i64 for type-safe icmp (LLVM 21 requires matching types)
+            let cmp_ext = forge_llvm_build_sext(ctx.builder, cmp_result, ctx.i64_type, "strcmp_sext")
+            forge_llvm_build_icmp(ctx.builder, 32, cmp_ext, const_i64(ctx, 0), "str_eq")
         }
         .LitFloat(val) -> {
             // Parse the float literal string → i64 bits, then compare as f64

@@ -153,22 +153,7 @@ int64_t forge_selfhost_write_file(const char* path, const char* content) {
     return 1;
 }
 
-// ─── libforge_llvm compatibility stubs ────────────────────────────
-// The Rust LLVM wrapper (libforge_llvm.a) calls back into the runtime
-// for alloca caching and variable tracking. The bootstrap doesn't use
-// these features — it manages its own allocas via the Ctx struct.
-// These no-op stubs satisfy the linker.
-
-void  forge_alloca_cache_set_builder(void* b) { (void)b; }
-void  forge_alloca_cache_set_context(void* c) { (void)c; }
-void  forge_alloca_cache_set_fn(void* f) { (void)f; }
-void  forge_alloca_cache_set_raw(const char* n, int64_t nl, void* v) { (void)n; (void)nl; (void)v; }
-int64_t forge_check_pending_alloca(void) { return 0; }
-const char* forge_pending_alloca_name(void) { return ""; }
-int64_t forge_pending_alloca_name_len(void) { return 0; }
-void  forge_ptr_var_add_raw(const char* n, int64_t nl) { (void)n; (void)nl; }
-void  forge_str_var_add_raw(const char* n, int64_t nl) { (void)n; (void)nl; }
-void  forge_set_alloca_name_c_raw(const char* n, int64_t nl) { (void)n; (void)nl; }
+// forge_selfhost_string_to_float is used by the bootstrap's float() builtin.
 double forge_selfhost_string_to_float(const char* s) { return strtod(s, NULL); }
 
 // ─── Dynamic Array ────────────────────────────────────────────────

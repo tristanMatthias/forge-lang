@@ -26,10 +26,10 @@ BS2="$BUILD_DIR/bs2"
 BS2_ASAN="$BUILD_DIR/bs2_asan"
 BS3="$BUILD_DIR/bs3"
 
-LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm@19}"
+LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm}"
 LLVM_CONFIG="$LLVM_PREFIX/bin/llvm-config"
 LLC="$LLVM_PREFIX/bin/llc"
-STDLLVM_A="$FORGE_DIR/packages/std-llvm/target/release/libforge_llvm.a"
+LLVM_WRAPPER_O="$BUILD_DIR/llvm_wrapper.o"
 
 C_RED='\033[0;31m'
 C_GREEN='\033[0;32m'
@@ -147,18 +147,20 @@ ensure_runtime_asan() {
   fi
 }
 
-ensure_stdlibs() {
-  if [ ! -f "$STDLLVM_A" ]; then
-    log "building libforge_llvm"
-    (cd "$FORGE_DIR/packages/std-llvm" && LLVM_SYS_191_PREFIX="$LLVM_PREFIX" cargo build --release) >&2 \
-      || die "libforge_llvm build failed"
+ensure_llvm_wrapper() {
+  local wrapper_src="$BOOTSTRAP_DIR/llvm_wrapper.c"
+  if [ ! -f "$LLVM_WRAPPER_O" ] || [ "$wrapper_src" -nt "$LLVM_WRAPPER_O" ]; then
+    log "compiling LLVM wrapper → $LLVM_WRAPPER_O"
+    mkdir -p "$BUILD_DIR"
+    cc -c -O2 -I"$LLVM_PREFIX/include" -o "$LLVM_WRAPPER_O" "$wrapper_src" \
+      || die "LLVM wrapper build failed"
   fi
 }
 
 # Build the seed binary from seed/seed.ll (no Rust compiler needed).
 # The seed IR is checked into the repo and is the bootstrap's lifeline.
 ensure_seed() {
-  ensure_stdlibs
+  ensure_llvm_wrapper
   ensure_runtime
   if [ ! -x "$SEED_BIN" ] || [ "$SEED_LL" -nt "$SEED_BIN" ]; then
     [ -f "$SEED_LL" ] || die "seed IR not found at $SEED_LL — repo is corrupt"
@@ -166,8 +168,8 @@ ensure_seed() {
     mkdir -p "$BUILD_DIR"
     "$LLC" -O2 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed.o" \
       || die "seed llc failed"
-    cc -o "$SEED_BIN" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$STDLLVM_A" \
-      -L"$LLVM_PREFIX/lib" -lLLVM-19 -lc++ 2>"$BUILD_DIR/seed.link.log" \
+    cc -o "$SEED_BIN" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+      -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$BUILD_DIR/seed.link.log" \
       || { cat "$BUILD_DIR/seed.link.log" >&2; die "seed link failed"; }
   fi
 }
@@ -177,8 +179,8 @@ link_ll() {
   local ll="$1" out="$2" logfile="$3"
   "$LLC" -O2 -filetype=obj "$ll" -o "${out}.o" \
     || die "llc failed for $ll"
-  cc -o "$out" "${out}.o" "$RUNTIME_O" "$STDLLVM_A" \
-    -L"$LLVM_PREFIX/lib" -lLLVM-19 -lc++ 2>"$logfile" \
+  cc -o "$out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+    -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$logfile" \
     || { cat "$logfile" >&2; die "link failed for $out"; }
 }
 
@@ -217,8 +219,8 @@ ensure_bs2_asan() {
       || { cat "$BUILD_DIR/bs2_asan.codegen.log" >&2; die "bs2_asan codegen failed"; }
     log "linking $BS2_ASAN with -fsanitize=address"
     cc -fsanitize=address -g -o "$BS2_ASAN" \
-       "$BOOTSTRAP_DIR/src/main.fg.ll" "$RUNTIME_ASAN_O" "$STDLLVM_A" \
-       -L"$LLVM_PREFIX/lib" -lLLVM-19 -lc++ 2>"$BUILD_DIR/bs2_asan.link.log" \
+       "$BOOTSTRAP_DIR/src/main.fg.ll" "$RUNTIME_ASAN_O" "$LLVM_WRAPPER_O" \
+       -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$BUILD_DIR/bs2_asan.link.log" \
       || { cat "$BUILD_DIR/bs2_asan.link.log" >&2; die "bs2_asan link failed"; }
     ok "built $BS2_ASAN"
   fi
@@ -601,7 +603,7 @@ mode_regress() {
     fi
   }
   export -f link_and_run link_ll
-  export BUILD_DIR LLC RUNTIME_O STDLLVM_A LLVM_PREFIX
+  export BUILD_DIR LLC RUNTIME_O LLVM_WRAPPER_O LLVM_PREFIX
 
   local njobs
   njobs=$(sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || echo 4)
