@@ -197,7 +197,7 @@ Status key:
 | Feature | Forge syntax | Bootstrap | Notes |
 |---|---|---|---|
 | spec tests | `spec "name" { given { } then { } }` | ✅ | hierarchical pass/fail output |
-| table literals | `table { col | col; val | val }` | 🔲 | |
+| table literals | `table { col | col; val | val }` | ✅ | desugars to list of maps |
 | validation | `validate(value)` | 🔲 | |
 | annotations | `@name`, `@name(args)` | ✅ | parsed, stored in AST |
 

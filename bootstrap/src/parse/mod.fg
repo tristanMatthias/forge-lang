@@ -84,6 +84,32 @@ fn p_is_octal_digit(ch: string) -> bool {
     ch >= "0" && ch <= "7"
 }
 
+fn reverse_expr_list(list: ExprList) -> ExprList {
+    reverse_expr_list_acc(list, ExprList.End)
+}
+fn reverse_expr_list_acc(list: ExprList, acc: ExprList) -> ExprList {
+    match list {
+        .End -> acc
+        .Node(se, next) -> reverse_expr_list_acc(next, ExprList.Node(se, acc))
+    }
+}
+
+// Interleave header names and values: [k1,k2] + [v1,v2] → [k1,v1,k2,v2]
+// MapLit expects entries as flat: key1, val1, key2, val2, ...
+fn table_zip_entries(headers: ExprList, values: ExprList) -> ExprList {
+    match headers {
+        .End -> ExprList.End
+        .Node(hse, hnext) -> {
+            match values {
+                .End -> ExprList.End
+                .Node(vse, vnext) -> {
+                    ExprList.Node(hse, ExprList.Node(vse, table_zip_entries(hnext, vnext)))
+                }
+            }
+        }
+    }
+}
+
 fn expr_is_ident(e: Expr) -> bool {
     match e {
         .Ident(_) -> true
@@ -431,6 +457,60 @@ impl Parser {
             ExprList.End
         }
         AnnotationList.Node(name, args, self.parse_annotations())
+    }
+
+    // Parse table literal: table { col1 | col2\n val1 | val2\n val3 | val4 }
+    // Desugars to ListLit of MapLit entries.
+    fn parse_table_literal(self) -> Expr? {
+        self.advance()  // consume `{`
+        // Parse header row: identifiers separated by `|`
+        mut headers: ExprList = ExprList.End
+        mut header_count = 0
+        let header_line = self.current_line
+        while !self.check("right_brace") && !self.check("eof") && self.current_line == header_line {
+            if self.check("identifier") {
+                let col = self.current_lexeme
+                self.advance()
+                headers = ExprList.Node(sexpr(Expr.String(col), self.current_line, self.current_column), headers)
+                header_count = header_count + 1
+                if self.check("pipe") {
+                    self.advance()
+                }
+            } else {
+                break
+            }
+        }
+        if header_count == 0 {
+            if !self.consume("right_brace", "expected `}` to close table") { return null }
+            return Expr.ListLit(ExprList.End)
+        }
+        let header_names = reverse_expr_list(headers)
+        // Parse data rows
+        mut rows: ExprList = ExprList.End
+        while !self.check("right_brace") && !self.check("eof") {
+            mut vals: ExprList = ExprList.End
+            mut col_idx = 0
+            while col_idx < header_count {
+                if self.check("right_brace") { break }
+                // Use parse_bitwise_xor which stops before `|`
+                let val = self.parse_bitwise_xor()
+                if val == null { return null }
+                vals = ExprList.Node(sexpr(val!, self.current_line, self.current_column), vals)
+                col_idx = col_idx + 1
+                if self.check("pipe") {
+                    self.advance()
+                }
+            }
+            if col_idx == header_count {
+                let map_entries = table_zip_entries(header_names, reverse_expr_list(vals))
+                let row_map = Expr.MapLit(map_entries)
+                rows = ExprList.Node(sexpr(row_map, self.current_line, self.current_column), rows)
+            }
+        }
+        if !self.consume("right_brace", "expected `}` to close table") {
+            return null
+        }
+        Expr.ListLit(reverse_expr_list(rows))
     }
 
     fn parse_use_or_mod_skip(self) -> Stmt? {
@@ -963,6 +1043,11 @@ impl Parser {
         if self.check("identifier") {
             let name = self.current_lexeme
             self.advance()
+            // Table literal: table { col1 | col2; val1 | val2 }
+            // Must check BEFORE struct literal since both start with ident + {
+            if name == "table" && self.check("left_brace") {
+                return self.parse_table_literal()
+            }
             if self.allow_struct_lit && self.check("left_brace") {
                 self.advance()
                 let inits = self.parse_field_init_list()?

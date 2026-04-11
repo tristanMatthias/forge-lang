@@ -117,7 +117,7 @@
 | 110 | events | ⬜ | n/a |
 | 111 | custom syntax | ⬜ | n/a |
 | 112 | spec tests | ✅ | spec/given/then syntax with pass/fail reporting |
-| 113 | table literals | 🔲 | |
+| 113 | table literals | ✅ | table { col | col; val | val } → list of maps |
 | 114 | validation | 🔲 | |
 | 115 | annotations | ✅ | @name and @name(args) parsed, stored in AST |
 | 116 | ptr arithmetic | ✅ | ptr + int, ptr - int, ptr - ptr |

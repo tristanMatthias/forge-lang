@@ -1,0 +1,19 @@
+// Table literals: table { col | col\n val | val }
+// Desugars to a list of maps.
+
+fn main() {
+    let users = table {
+        name | age
+        "alice" | 30
+        "bob" | 25
+        "charlie" | 35
+    }
+
+    // Length
+    println(string(users.length))
+
+    // Direct map creation works
+    let m = {"x": 1, "y": 2}
+    println(string(m.get("x")))
+    println(string(m.get("y")))
+}
