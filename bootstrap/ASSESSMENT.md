@@ -1,6 +1,6 @@
 # DEEP ARCHITECTURAL ASSESSMENT: Bootstrap Compiler
 
-## Feature Progress (132 total: 127 done, 0 todo, 5 n/a)
+## Feature Progress (132 total: 124 done, 3 todo, 5 n/a)
 
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
@@ -63,7 +63,7 @@
 | 56 | bitwise | ✅ | &, |, ^, <<, >>, ~, % | |
 | 57 | pipe | ✅ | |
 | 58 | ranges | ✅ | `for i in 0..10 { }` |
-| 59 | type operators | ✅ | without/only syntax parsed; field filtering deferred |
+| 59 | type operators | 🔲 | syntax parses but derived types are empty — field filtering not implemented |
 | 60 | string literals | ✅ | |
 | 61 | string concat | ✅ | |
 | 62 | string indexing | ✅ | |
@@ -110,8 +110,8 @@
 | 103 | shell shorthand | ✅ | forge_shell_exec, forge_shell_exec_status |
 | 104 | spawn | ✅ | forge_spawn/forge_thread_join via pthreads |
 | 105 | channels | ✅ | forge_channel_new/send/recv/close |
-| 106 | select | ✅ | buildable from channel primitives |
-| 107 | parallel | ✅ | buildable from spawn + join |
+| 106 | select | 🔲 | no select syntax or runtime; channels exist but select requires polling |
+| 107 | parallel | 🔲 | no parallel syntax; spawn+join exist but parallel { } block not implemented |
 | 108 | component blocks | ⬜ | n/a |
 | 109 | config declaration | ⬜ | n/a |
 | 110 | events | ⬜ | n/a |
@@ -124,7 +124,7 @@
 | 117 | ptr indexing | ✅ | ptr[i] reads byte, forge_ptr_store_byte writes |
 | 118 | ptr ↔ string | ✅ | forge_string_from_ptr, let p: ptr = str |
 | 119 | c_abi_trampolines | ✅ | extern fn declarations serve as C ABI bridge |
-| 120–131 | packages (@llvm, @process, etc.) | mixed | 4 done, 4 todo, 6 n/a |
+| 120–131 | packages (@llvm, @process, etc.) | mixed | 9 done, 0 todo, 5 n/a |
 
 ## Scaling Issues (priority order)
 
@@ -164,12 +164,12 @@ functions, duplicate function name detection at compile time.
 
 ## EXECUTIVE SUMMARY (updated April 11, 2026)
 
-The bootstrap compiler is at 127/132 features (97%), 218 tests,
+The bootstrap compiler is at 124/132 features (94%), 218 tests,
 with a self-hosting fixed-point that produces byte-identical 83K-line
-IR across bs2/bs3. ALL language features implemented (0 TODO items).
-The 5 remaining are N/A (domain-specific components: component blocks,
-config declaration, events, custom syntax, @ai/@archive/@cache/@crypto/@http/@jsonrpc).
-All scaling issues FIXED.
+IR across bs2/bs3. 3 TODO items remain: type operators (without/only
+field filtering), select (channel multiplexing), parallel (concurrent
+block). The 5 N/A are domain-specific components not applicable to
+a compiler. All scaling issues FIXED.
 
 **Original summary (for reference):**
 

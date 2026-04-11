@@ -103,7 +103,7 @@ Status key:
 | bitwise | `&`, `|`, `^`, `<<`, `>>`, `~` | ✅ | full precedence chain | |
 | pipe | `expr |> fn` | ✅ | desugars to call |
 | ranges | `start..end`, `start..=end` | ✅ | `for i in 0..10 {}` |
-| type operators | `without`, `only`, `partial` | ✅ | syntax parsed, field filtering deferred |
+| type operators | `without`, `only`, `partial` | 🔲 | syntax parses but derived types are empty |
 
 ## Strings
 
@@ -180,8 +180,8 @@ Status key:
 |---|---|---|---|
 | spawn | `spawn { body }` | ✅ | forge_spawn via pthreads |
 | channels | `ch <- value`, `<- ch` | ✅ | forge_channel_new/send/recv |
-| select | `select { ch -> body }` | ✅ | buildable from primitives |
-| parallel | `parallel { }` | ✅ | buildable from spawn + join |
+| select | `select { ch -> body }` | 🔲 | no syntax; channels exist |
+| parallel | `parallel { }` | 🔲 | no syntax; spawn+join exist |
 
 ## Components (domain-specific)
 
@@ -237,24 +237,24 @@ Status key:
 
 | Category | Total | ✅ Done | 🔲 TODO | ⬜ N/A |
 |---|---|---|---|---|
-| Variables & Bindings | 7 | 6 | 1 | 0 |
+| Variables & Bindings | 7 | 7 | 0 | 0 |
 | Primitive Types | 7 | 7 | 0 | 0 |
 | Functions | 9 | 9 | 0 | 0 |
 | Structs & Types | 8 | 8 | 0 | 0 |
-| Enums & Matching | 11 | 10 | 1 | 0 |
+| Enums & Matching | 11 | 11 | 0 | 0 |
 | Control Flow | 8 | 8 | 0 | 0 |
-| Operators | 9 | 9 | 0 | 0 |
+| Operators | 8 | 7 | 1 | 0 |
 | Strings | 11 | 11 | 0 | 0 |
 | Null Safety | 8 | 8 | 0 | 0 |
 | Collections | 7 | 7 | 0 | 0 |
 | Modules & Imports | 5 | 5 | 0 | 0 |
 | I/O & Runtime | 12 | 12 | 0 | 0 |
-| Concurrency | 4 | 4 | 0 | 0 |
+| Concurrency | 4 | 2 | 2 | 0 |
 | Components | 4 | 0 | 0 | 4 |
 | Testing | 4 | 4 | 0 | 0 |
 | Pointer Ops | 4 | 4 | 0 | 0 |
 | Packages | 14 | 9 | 0 | 5 |
-| **TOTAL** | **131** | **127** | **0** | **4** |
+| **TOTAL** | **131** | **124** | **3** | **4** |
 
 ## Dogfooding Rule
 
