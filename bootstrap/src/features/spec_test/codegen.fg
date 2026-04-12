@@ -1,7 +1,6 @@
 // WHY: emits spec test runtime calls for spec/given/then blocks.
 
-// Imports resolved by bootstrap's text-inlining module system.
-// All symbols are available globally after merge.
+// Imports resolved by bootstrap's module-qualified name resolution.
 
 export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {

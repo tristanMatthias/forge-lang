@@ -1,7 +1,7 @@
 // WHY: parses spec test syntax:
 //   spec "name" { given "setup" { then "assertion" { expr } } }
 
-// Imports resolved by bootstrap's text-inlining module system.
+// Imports resolved by bootstrap's module-qualified name resolution.
 
 impl Parser {
     fn parse_spec_block(self) -> Stmt? {

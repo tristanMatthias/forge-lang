@@ -251,15 +251,6 @@ correctly. The type checker catches errors BEFORE codegen; codegen still needs t
 for correct IR generation. Removing vtype_is_* requires codegen to read from a shared type
 table — a DRY improvement, not a correctness fix.
 
-### Function name mangling
-**type:** debt
-**priority:** medium
-**source:** TECH_DEBT.md #16
-
-The module preprocessor should mangle function names with their module path: `bind_params` in
-`typeck/mod.fg` becomes `typeck__bind_params` in the IR. This is what every real compiler does
-and eliminates the collision class entirely. Current mitigation: `declare_functions` checks for
-duplicates and exits with `FATAL: duplicate function`.
 
 ### Resolver/typechecker dispatch through registry
 **type:** debt
