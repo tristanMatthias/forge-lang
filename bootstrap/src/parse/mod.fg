@@ -1099,6 +1099,20 @@ impl Parser {
                 }
                 return Expr.Tuple(ExprList.End)
             }
+            // Typed lambda: (x: int, y: string) -> body
+            // Detect by peeking: if current is identifier and next non-ws is ':'
+            if self.check("identifier") && self.peek_after_ident_is_colon() {
+                self.allow_dot_postfix = saved
+                let params = self.parse_param_list()?
+                if !self.consume("right_paren", "expected `)` after typed parameters") {
+                    return null
+                }
+                if !self.consume("arrow", "expected `->` after typed lambda parameters") {
+                    return null
+                }
+                let body = self.parse_lambda_body()?
+                return Expr.Lambda(params, body)
+            }
             let expr = self.parse_expression()
             self.allow_dot_postfix = saved
             if expr == null { return null }
@@ -1362,6 +1376,21 @@ impl Parser {
 
     fn check(self, kind: string) -> bool {
         self.current_kind == kind
+    }
+
+    // Peek ahead: after the current identifier, skip whitespace,
+    // return true if the next char is ':'. For typed lambda detection.
+    fn peek_after_ident_is_colon(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == ":"
+            }
+            i = i + 1
+        }
+        false
     }
 
     fn advance(self) {
