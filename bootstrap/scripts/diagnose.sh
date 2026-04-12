@@ -126,6 +126,8 @@ SEED MANAGEMENT
   --seed-diff [fn]       Show IR diff between seed and fresh compile. With a
                          function name, shows just that function's diff.
   --build-seed           Build the seed binary from seed/seed.ll.
+  --update-seed          Copy current bs2 output to seed/seed.ll with
+                         provenance metadata (commit, timestamp, source hash).
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -828,9 +830,16 @@ mode_regress() {
   local njobs
   njobs=$(sysctl -n hw.logicalcpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 
-  # Link + run ALL tests in parallel (let OS handle scheduling)
+  # Link + run tests in parallel with controlled concurrency (njobs at a time).
+  # Each test compiles to a unique path so there is no clobbering.
+  local running=0
   for i in "${!fgs[@]}"; do
     link_and_run "${fgs[$i]}" "${bins[$i]}" "${expecteds[$i]}" "${slugs[$i]}" "${compile_ok[$i]}" "${results_dir}" &
+    running=$((running + 1))
+    if [ "$running" -ge "$njobs" ]; then
+      wait -n 2>/dev/null || wait
+      running=$((running - 1))
+    fi
   done
   wait
 
@@ -996,8 +1005,34 @@ main() {
     --seed-status)        mode_seed_status "$@" ;;
     --seed-diff)          mode_seed_diff "$@" ;;
     --build-seed)         ensure_seed; ok "$SEED_BIN" ;;
+    --update-seed)        mode_update_seed "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
+}
+
+# Copy current bs2 IR output to seed/seed.ll with provenance metadata.
+# Prepends a comment with commit hash, timestamp, and source directory hash.
+mode_update_seed() {
+  local src_ir="$BOOTSTRAP_DIR/src/main.fg.ll"
+  [ -f "$src_ir" ] || die "no IR found at $src_ir — run --build-bs2 first"
+
+  cp "$src_ir" "$SEED_LL"
+
+  # Prepend provenance comment
+  local commit timestamp src_hash
+  commit=$(git -C "$BOOTSTRAP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  src_hash=$(find "$BOOTSTRAP_DIR/src" -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
+
+  {
+    printf '; seed built from commit %s at %s\n' "$commit" "$timestamp"
+    printf '; source hash: %s\n' "$src_hash"
+    cat "$SEED_LL"
+  } > "${SEED_LL}.tmp" && mv "${SEED_LL}.tmp" "$SEED_LL"
+
+  rm -f "$SEED_BIN" "$BUILD_DIR/seed.o"
+  ok "seed/seed.ll updated ($(wc -l < "$SEED_LL" | tr -d ' ') lines)"
+  log "provenance: commit=$commit time=$timestamp src_hash=${src_hash:0:16}..."
 }
 
 # Show what's in the seed vs the current source — functions added, removed,

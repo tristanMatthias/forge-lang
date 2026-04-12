@@ -72,6 +72,12 @@ update-seed:
 	@$(DIAG) --build-bs2
 	@$(DIAG) --check-fixedpoint
 	@cp src/main.fg.ll seed/seed.ll
+	@# Prepend provenance comment (commit hash, timestamp, source hash)
+	@COMMIT=$$(git rev-parse --short HEAD); \
+	 TIMESTAMP=$$(date -u +%Y-%m-%dT%H:%M:%SZ); \
+	 SRC_HASH=$$(find src/ -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
+	 { printf '; seed built from commit %s at %s\n; source hash: %s\n' "$$COMMIT" "$$TIMESTAMP" "$$SRC_HASH"; cat seed/seed.ll; } > seed/seed.ll.tmp && \
+	 mv seed/seed.ll.tmp seed/seed.ll
 	@rm -f build/seed build/seed.o
 	@echo "seed/seed.ll updated ($$(wc -l < seed/seed.ll | tr -d ' ') lines)"
 	@echo "build/seed invalidated — next 'make build' rebuilds from new seed"
