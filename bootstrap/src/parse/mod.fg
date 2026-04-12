@@ -368,16 +368,19 @@ impl Parser {
             return self.parse_statement_list(stop_at_right_brace)
         }
 
+        // Capture line/col BEFORE parsing the statement so the SStmt
+        // points at the start of the declaration, not the end.
+        let stmt_line = self.current_line
+        let stmt_col = self.current_column
         let stmt = self.parse_declaration()
         if stmt == null {
-            // Error already reported — synchronize and continue
             self.synchronize()
             return self.parse_statement_list(stop_at_right_brace)
         }
 
         let next = self.parse_statement_list(stop_at_right_brace)?
 
-        StmtList.Node(sstmt(stmt!, self.current_line, self.current_column), next)
+        StmtList.Node(sstmt(stmt!, stmt_line, stmt_col), next)
     }
 
     fn parse_declaration(self) -> Stmt? {

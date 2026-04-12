@@ -35399,6 +35399,8 @@ define i64 @Parser__parse_statement_list(i64 %0, i64 %1) {
 entry:
   %next = alloca i64, align 8
   %stmt = alloca i64, align 8
+  %stmt_col = alloca i64, align 8
+  %stmt_line = alloca i64, align 8
   %stop_at_right_brace = alloca i64, align 8
   %self = alloca i64, align 8
   store i64 %0, ptr %self, align 8
@@ -35483,56 +35485,60 @@ else23:                                           ; preds = %sc_merge15
 
 ifcont24:                                         ; preds = %else23
   %self35 = load i64, ptr %self, align 8
-  %methcall36 = call i64 @Parser__parse_declaration(i64 %self35)
-  store i64 %methcall36, ptr %stmt, align 8
-  %stmt37 = load i64, ptr %stmt, align 8
-  %eq = icmp eq i64 %stmt37, 0
-  %eq_ext = zext i1 %eq to i64
-  %if_cond38 = icmp ne i64 %eq_ext, 0
-  br i1 %if_cond38, label %then39, label %else40
-
-then39:                                           ; preds = %ifcont24
-  %self42 = load i64, ptr %self, align 8
-  %methcall43 = call i64 @Parser__synchronize(i64 %self42)
-  %self44 = load i64, ptr %self, align 8
-  %stop_at_right_brace45 = load i64, ptr %stop_at_right_brace, align 8
-  %methcall46 = call i64 @Parser__parse_statement_list(i64 %self44, i64 %stop_at_right_brace45)
-  ret i64 %methcall46
-
-else40:                                           ; preds = %ifcont24
-  br label %ifcont41
-
-ifcont41:                                         ; preds = %else40
-  %self47 = load i64, ptr %self, align 8
-  %stop_at_right_brace48 = load i64, ptr %stop_at_right_brace, align 8
-  %methcall49 = call i64 @Parser__parse_statement_list(i64 %self47, i64 %stop_at_right_brace48)
-  %try_null = icmp eq i64 %methcall49, 0
-  br i1 %try_null, label %try_ret, label %try_ok
-
-try_ok:                                           ; preds = %ifcont41
-  store i64 %methcall49, ptr %next, align 8
-  %buf50 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr51 = getelementptr inbounds nuw %StmtList, ptr %buf50, i32 0, i32 0
-  store i8 1, ptr %tag_ptr51, align 8
-  %stmt52 = load i64, ptr %stmt, align 8
-  %self53 = load i64, ptr %self, align 8
-  %obj_ptr = inttoptr i64 %self53 to ptr
+  %obj_ptr = inttoptr i64 %self35 to ptr
   %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 7
   %current_line = load i64, ptr %fld_ptr, align 8
-  %self54 = load i64, ptr %self, align 8
-  %obj_ptr55 = inttoptr i64 %self54 to ptr
-  %fld_ptr56 = getelementptr inbounds nuw %Parser, ptr %obj_ptr55, i32 0, i32 8
-  %current_column = load i64, ptr %fld_ptr56, align 8
-  %calltmp = call i64 @"core::ast::sstmt"(i64 %stmt52, i64 %current_line, i64 %current_column)
-  %epay_ptr = getelementptr inbounds nuw %StmtList, ptr %buf50, i32 0, i32 1
-  store i64 %calltmp, ptr %epay_ptr, align 8
-  %next57 = load i64, ptr %next, align 8
-  %epay_ptr58 = getelementptr inbounds nuw %StmtList, ptr %buf50, i32 0, i32 2
-  store i64 %next57, ptr %epay_ptr58, align 8
-  %enum_i6459 = ptrtoint ptr %buf50 to i64
-  ret i64 %enum_i6459
+  store i64 %current_line, ptr %stmt_line, align 8
+  %self36 = load i64, ptr %self, align 8
+  %obj_ptr37 = inttoptr i64 %self36 to ptr
+  %fld_ptr38 = getelementptr inbounds nuw %Parser, ptr %obj_ptr37, i32 0, i32 8
+  %current_column = load i64, ptr %fld_ptr38, align 8
+  store i64 %current_column, ptr %stmt_col, align 8
+  %self39 = load i64, ptr %self, align 8
+  %methcall40 = call i64 @Parser__parse_declaration(i64 %self39)
+  store i64 %methcall40, ptr %stmt, align 8
+  %stmt41 = load i64, ptr %stmt, align 8
+  %eq = icmp eq i64 %stmt41, 0
+  %eq_ext = zext i1 %eq to i64
+  %if_cond42 = icmp ne i64 %eq_ext, 0
+  br i1 %if_cond42, label %then43, label %else44
 
-try_ret:                                          ; preds = %ifcont41
+then43:                                           ; preds = %ifcont24
+  %self46 = load i64, ptr %self, align 8
+  %methcall47 = call i64 @Parser__synchronize(i64 %self46)
+  %self48 = load i64, ptr %self, align 8
+  %stop_at_right_brace49 = load i64, ptr %stop_at_right_brace, align 8
+  %methcall50 = call i64 @Parser__parse_statement_list(i64 %self48, i64 %stop_at_right_brace49)
+  ret i64 %methcall50
+
+else44:                                           ; preds = %ifcont24
+  br label %ifcont45
+
+ifcont45:                                         ; preds = %else44
+  %self51 = load i64, ptr %self, align 8
+  %stop_at_right_brace52 = load i64, ptr %stop_at_right_brace, align 8
+  %methcall53 = call i64 @Parser__parse_statement_list(i64 %self51, i64 %stop_at_right_brace52)
+  %try_null = icmp eq i64 %methcall53, 0
+  br i1 %try_null, label %try_ret, label %try_ok
+
+try_ok:                                           ; preds = %ifcont45
+  store i64 %methcall53, ptr %next, align 8
+  %buf54 = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr55 = getelementptr inbounds nuw %StmtList, ptr %buf54, i32 0, i32 0
+  store i8 1, ptr %tag_ptr55, align 8
+  %stmt56 = load i64, ptr %stmt, align 8
+  %stmt_line57 = load i64, ptr %stmt_line, align 8
+  %stmt_col58 = load i64, ptr %stmt_col, align 8
+  %calltmp = call i64 @"core::ast::sstmt"(i64 %stmt56, i64 %stmt_line57, i64 %stmt_col58)
+  %epay_ptr = getelementptr inbounds nuw %StmtList, ptr %buf54, i32 0, i32 1
+  store i64 %calltmp, ptr %epay_ptr, align 8
+  %next59 = load i64, ptr %next, align 8
+  %epay_ptr60 = getelementptr inbounds nuw %StmtList, ptr %buf54, i32 0, i32 2
+  store i64 %next59, ptr %epay_ptr60, align 8
+  %enum_i6461 = ptrtoint ptr %buf54 to i64
+  ret i64 %enum_i6461
+
+try_ret:                                          ; preds = %ifcont45
   ret i64 0
 }
 
