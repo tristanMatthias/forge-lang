@@ -1,5 +1,9 @@
 mod codegen
 
-export fn register_parallel_stmt(reg: Registry) -> Registry {
-    register_stmt(reg, Stmt.Parallel(StmtList.End), stmt_only("parallel", parallel_emit_stmt))
+export fn init_parallel_stmt(reg: Registry) {
+    let f = feature_new("parallel") with {
+        stmt_tag: Stmt.Parallel(StmtList.End),
+        emit_stmt: parallel_emit_stmt,
+    }
+    register(reg, f)
 }

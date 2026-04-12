@@ -1,8 +1,12 @@
 mod parser
 mod codegen
 
-export fn register_let_stmt(reg: Registry) -> Registry {
-    register_stmt(reg, Stmt.LetDestructure(ParamList.End, Expr.Null), stmt_only("let_destructure", let_destr_emit))
+export fn init_let_stmt(reg: Registry) {
+    let f = feature_new("let_destructure") with {
+        stmt_tag: Stmt.LetDestructure(ParamList.End, Expr.Null),
+        emit_stmt: let_destr_emit,
+    }
+    register(reg, f)
 }
 
 fn let_destr_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

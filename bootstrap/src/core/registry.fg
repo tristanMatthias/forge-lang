@@ -242,23 +242,7 @@ export fn lookup_stmt_parser(reg: Registry, keyword: string) -> int? {
 // ── Build the registry ──
 
 export fn build_registry() -> Registry {
-    mut reg = registry_new()
-    reg = register_struct_decl(reg)
-    reg = register_match(reg)
-    reg = register_if_stmt(reg)
-    reg = register_null_safety(reg)
-    reg = register_tuples(reg)
-    reg = register_with_expr(reg)
-    reg = register_list_lit(reg)
-    reg = register_closures(reg)
-    reg = register_map_lit(reg)
-    reg = register_is_keyword(reg)
-    reg = register_while_stmt(reg)
-    reg = register_for_stmt(reg)
-    reg = register_let_stmt(reg)
-    reg = register_defer_stmt(reg)
-    reg = register_spec_test(reg)
-    reg = register_select_stmt(reg)
-    reg = register_parallel_stmt(reg)
+    let reg = registry_new()
+    init_features(reg)
     reg
 }

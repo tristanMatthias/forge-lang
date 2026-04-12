@@ -1,8 +1,12 @@
 mod parser
 mod codegen
 
-export fn register_while_stmt(reg: Registry) -> Registry {
-    register_stmt(reg, Stmt.While(Expr.Null, Stmt.NoOp), stmt_only("while", while_emit_stmt))
+export fn init_while_stmt(reg: Registry) {
+    let f = feature_new("while") with {
+        stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
+        emit_stmt: while_emit_stmt,
+    }
+    register(reg, f)
 }
 
 fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

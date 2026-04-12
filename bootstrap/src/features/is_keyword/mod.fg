@@ -1,7 +1,11 @@
 mod codegen
 
-export fn register_is_keyword(reg: Registry) -> Registry {
-    register_expr(reg, Expr.IsCheck(Expr.Null, ""), emit_only("is", is_emit_expr))
+export fn init_is_keyword(reg: Registry) {
+    let f = feature_new("is") with {
+        expr_tag: Expr.IsCheck(Expr.Null, ""),
+        emit_expr: is_emit_expr,
+    }
+    register(reg, f)
 }
 
 fn is_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

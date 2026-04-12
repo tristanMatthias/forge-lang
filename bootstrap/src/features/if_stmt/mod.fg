@@ -1,20 +1,14 @@
 mod parser
 mod codegen
 
-export fn register_if_stmt(reg: Registry) -> Registry {
-    register_dual(reg, Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null), Stmt.If(Expr.Null, Stmt.NoOp, null), Feature {
-        name: "if",
-        expr_tag: null, stmt_tag: null, decl_keyword: "", stmt_keyword: "",
-        parse_decl: noop_parse, parse_stmt: noop_parse,
+export fn init_if_stmt(reg: Registry) {
+    let f = feature_new("if") with {
+        expr_tag: Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null),
+        stmt_tag: Stmt.If(Expr.Null, Stmt.NoOp, null),
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
-        resolve_expr: noop_resolve,
-        resolve_stmt: noop_resolve_stmt,
-        check_expr: noop_check,
-        check_stmt: noop_check_stmt,
-        eval_expr: noop_eval_expr,
-        eval_stmt: noop_eval_stmt,
-    })
+    }
+    register(reg, f)
 }
 
 fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

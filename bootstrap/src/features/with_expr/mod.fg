@@ -1,7 +1,11 @@
 mod codegen
 
-export fn register_with_expr(reg: Registry) -> Registry {
-    register_expr(reg, Expr.With(Expr.Null, FieldInitList.End), emit_only("with", with_emit))
+export fn init_with_expr(reg: Registry) {
+    let f = feature_new("with") with {
+        expr_tag: Expr.With(Expr.Null, FieldInitList.End),
+        emit_expr: with_emit,
+    }
+    register(reg, f)
 }
 
 fn with_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

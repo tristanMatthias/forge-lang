@@ -3,3 +3,15 @@
 // reserved keyword that can't appear in `mod` declarations.
 
 mod parser
+
+fn kw_parse_return(p: Parser) -> Stmt? {
+    p.parse_return_statement()
+}
+
+export fn init_return_stmt(reg: Registry) {
+    let f = feature_new("return_stmt") with {
+        stmt_keyword: "return",
+        parse_stmt: kw_parse_return,
+    }
+    register(reg, f)
+}

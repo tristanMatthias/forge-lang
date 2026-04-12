@@ -4,3 +4,15 @@
 // the existing impl block mechanism.
 
 mod parser
+
+fn kw_parse_trait(p: Parser) -> Stmt? {
+    p.parse_trait_declaration()
+}
+
+export fn init_trait_decl(reg: Registry) {
+    let f = feature_new("trait_decl") with {
+        decl_keyword: "trait",
+        parse_decl: kw_parse_trait,
+    }
+    register(reg, f)
+}

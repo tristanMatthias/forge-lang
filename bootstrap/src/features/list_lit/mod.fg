@@ -1,7 +1,11 @@
 mod codegen
 
-export fn register_list_lit(reg: Registry) -> Registry {
-    register_expr(reg, Expr.ListLit(ExprList.End), emit_only("list_lit", list_emit))
+export fn init_list_lit(reg: Registry) {
+    let f = feature_new("list_lit") with {
+        expr_tag: Expr.ListLit(ExprList.End),
+        emit_expr: list_emit,
+    }
+    register(reg, f)
 }
 
 fn list_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

@@ -1,8 +1,12 @@
 mod parser
 mod codegen
 
-export fn register_defer_stmt(reg: Registry) -> Registry {
-    register_stmt(reg, Stmt.Defer(Expr.Null), stmt_only("defer", defer_emit_stmt))
+export fn init_defer_stmt(reg: Registry) {
+    let f = feature_new("defer") with {
+        stmt_tag: Stmt.Defer(Expr.Null),
+        emit_stmt: defer_emit_stmt,
+    }
+    register(reg, f)
 }
 
 fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

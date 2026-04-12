@@ -30,3 +30,30 @@ mod spec_test
 mod select_stmt
 mod parallel_stmt
 mod modules
+
+export fn init_features(reg: Registry) {
+    init_if_stmt(reg)
+    init_match_expr(reg)
+    init_struct_decl(reg)
+    init_null_safety(reg)
+    init_tuples(reg)
+    init_with_expr(reg)
+    init_list_lit(reg)
+    init_closures(reg)
+    init_map_lit(reg)
+    init_is_keyword(reg)
+    init_while_stmt(reg)
+    init_for_stmt(reg)
+    init_let_stmt(reg)
+    init_defer_stmt(reg)
+    init_spec_test(reg)
+    init_select_stmt(reg)
+    init_parallel_stmt(reg)
+    init_fn_decl(reg)
+    init_enum_decl(reg)
+    init_impl_decl(reg)
+    init_extern_decl(reg)
+    init_trait_decl(reg)
+    init_return_stmt(reg)
+    init_modules(reg)
+}

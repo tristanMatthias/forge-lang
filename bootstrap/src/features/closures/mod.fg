@@ -1,7 +1,11 @@
 mod codegen
 
-export fn register_closures(reg: Registry) -> Registry {
-    register_expr(reg, Expr.Lambda(ParamList.End, Expr.Null), emit_only("lambda", lambda_emit))
+export fn init_closures(reg: Registry) {
+    let f = feature_new("lambda") with {
+        expr_tag: Expr.Lambda(ParamList.End, Expr.Null),
+        emit_expr: lambda_emit,
+    }
+    register(reg, f)
 }
 
 fn lambda_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

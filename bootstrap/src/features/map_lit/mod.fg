@@ -1,7 +1,11 @@
 mod codegen
 
-export fn register_map_lit(reg: Registry) -> Registry {
-    register_expr(reg, Expr.MapLit(ExprList.End), emit_only("map_lit", map_emit))
+export fn init_map_lit(reg: Registry) {
+    let f = feature_new("map_lit") with {
+        expr_tag: Expr.MapLit(ExprList.End),
+        emit_expr: map_emit,
+    }
+    register(reg, f)
 }
 
 fn map_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

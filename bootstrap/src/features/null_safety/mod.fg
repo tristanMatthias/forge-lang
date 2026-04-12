@@ -1,9 +1,23 @@
 mod codegen
 
-export fn register_null_safety(reg: Registry) -> Registry {
-    mut r = register_expr(reg, Expr.NullCoalesce(Expr.Null, Expr.Null), emit_only("null_coalesce", nc_emit))
-    r = register_expr(r, Expr.OptionalChain(Expr.Null, ""), emit_only("optional_chain", oc_emit))
-    register_expr(r, Expr.Try(Expr.Null), emit_only("try", try_emit))
+export fn init_null_safety(reg: Registry) {
+    let f1 = feature_new("null_coalesce") with {
+        expr_tag: Expr.NullCoalesce(Expr.Null, Expr.Null),
+        emit_expr: nc_emit,
+    }
+    register(reg, f1)
+
+    let f2 = feature_new("optional_chain") with {
+        expr_tag: Expr.OptionalChain(Expr.Null, ""),
+        emit_expr: oc_emit,
+    }
+    register(reg, f2)
+
+    let f3 = feature_new("try") with {
+        expr_tag: Expr.Try(Expr.Null),
+        emit_expr: try_emit,
+    }
+    register(reg, f3)
 }
 
 fn nc_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

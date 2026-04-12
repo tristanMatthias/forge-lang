@@ -1,8 +1,17 @@
 mod codegen
 
-export fn register_tuples(reg: Registry) -> Registry {
-    mut r = register_expr(reg, Expr.Tuple(ExprList.End), emit_only("tuple", tuple_emit))
-    register_expr(r, Expr.TupleIndex(Expr.Null, 0), emit_only("tuple_index", tuple_idx_emit))
+export fn init_tuples(reg: Registry) {
+    let f1 = feature_new("tuple") with {
+        expr_tag: Expr.Tuple(ExprList.End),
+        emit_expr: tuple_emit,
+    }
+    register(reg, f1)
+
+    let f2 = feature_new("tuple_index") with {
+        expr_tag: Expr.TupleIndex(Expr.Null, 0),
+        emit_expr: tuple_idx_emit,
+    }
+    register(reg, f2)
 }
 
 fn tuple_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

@@ -1,5 +1,9 @@
 mod codegen
 
-export fn register_select_stmt(reg: Registry) -> Registry {
-    register_stmt(reg, Stmt.Select(SelectArmList.End), stmt_only("select", select_emit_stmt))
+export fn init_select_stmt(reg: Registry) {
+    let f = feature_new("select") with {
+        stmt_tag: Stmt.Select(SelectArmList.End),
+        emit_stmt: select_emit_stmt,
+    }
+    register(reg, f)
 }
