@@ -553,10 +553,11 @@ $LLC -O0 -filetype=obj seed/seed.ll -o build/test.o && cc -o build/test ...
 If -O0 works but -O2 crashes, it's an alignment/optimization bug.
 (The old align 4 bug is FIXED — llvm_wrapper.c forces align 8.)
 
-### Step 4: Check struct arg corruption
-If the crash is in a function that takes TWO struct arguments, the
-second arg is likely corrupt. This is a codegen bug (#16 in
-TECH_DEBT.md). **Fix the codegen** — do NOT inline or work around it.
+### Step 4: Check seed staleness
+If bs2 crashes but the seed compiles fine, the seed is likely stale.
+`make build` auto-cycles the seed when this happens. If the auto-cycle
+doesn't help, run `bash scripts/diagnose.sh --seed-status` to see
+which functions are new/changed.
 
 ### Available C-side tools (runtime.c)
 ```forge
@@ -588,11 +589,10 @@ Prefix with module name if ambiguous: `tc_bind_params`, not `bind_params`.
 
 ## Known Bootstrap Pitfalls
 
-1. **Two-struct-arg calling convention bug.** Any function taking two
-   struct parameters where the first has 4+ fields will corrupt the
-   second argument. This must be fixed in the codegen — do NOT work
-   around it with inlining, globals, or argument reordering.
-   See TECH_DEBT #16.
+1. **~~Two-struct-arg calling convention bug.~~** DEBUNKED. Tested
+   with 4-field struct + int arg and 4-field struct + 2-field struct:
+   both produce correct results. Previously attributed crashes were
+   actually stale seed issues (now handled by auto-cycling).
 
 2. **~~`align 4` on i64 loads.~~** FIXED. The `llvm_wrapper.c` forces
    `align 8` on all load/store instructions.

@@ -418,25 +418,17 @@ type of the last expression in the body and compares it against the
 declared return type. Only flags concrete mismatches (skips Void and
 Int fallback).
 
-### 37. Name resolution pass crashes in self-compiled binary
+### ~~37. Name resolution pass crashes in self-compiled binary~~ (FIXED)
 
-**Severity:** high (blocks full module name qualification)
-**Impact:** `core/names.fg` implements a complete 3-pass name resolution
-system (build module tree → resolve use aliases → rewrite identifiers).
-The pass works when run by the seed-compiled binary. However, when bs2
-(compiled by seed) self-compiles, its `rewrite_expr` crashes at an early
-offset — a codegen fidelity issue where the bootstrap produces subtly
-wrong code for match expressions with many arms constructing enums.
+**Status:** fixed (April 11 2026). Root cause was stale seed — the seed
+didn't contain names.fg code, so it compiled rewrite_expr with a calling
+convention that didn't match the source. The "two-struct-arg bug" was
+a red herring (debunked: tested directly, works fine). Solution: update
+the seed to include names.fg, then use globals for pass state to avoid
+deep parameter threading. Auto-cycle in `make build` now prevents this
+class of issue entirely.
 
-**Root cause:** The bs2 codegen produces a crashing `rewrite_expr`. The
-seed's version works. This is a one-generation codegen divergence bug.
-
-**Proper fix:** Diff the seed's `rewrite_expr` IR against bs2's version
-using `--diff-fn rewrite_expr`. The divergence is the bug. Fix the
-codegen to produce identical IR for match-heavy enum-constructing
-functions.
-
-**Status:** Pass is complete and tested on small programs. Wired into
+**Previously reported as:** Pass is complete and tested on small programs. Wired into
 the pipeline but currently bypassed (commented out in main.fg check
 and compile paths).
 
