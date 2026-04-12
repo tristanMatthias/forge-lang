@@ -53,11 +53,11 @@ check mutual_recursion "stack overflow" 'fn a(n:int)->int{b(n+1)}
 fn b(n:int)->int{a(n+1)}
 fn main(){println(string(a(0)))}'
 
-check match_enum "match fallthrough" 'enum D{N,S,E,W}
+check match_enum "non-exhaustive match" 'enum D{N,S,E,W}
 fn f(d:D)->string{match d{.N->"n"}}
 fn main(){println(f(D.W))}'
 
-check match_prim "match fallthrough" 'fn f(n:int)->string{match n{1->"one"}}
+check match_prim "non-exhaustive match" 'fn f(n:int)->string{match n{1->"one"}}
 fn main(){println(f(99))}'
 
 echo ""

@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <signal.h>
 #include <execinfo.h>
 #include <unistd.h>
@@ -24,6 +25,10 @@
 #undef _XOPEN_SOURCE
 #include <mach/mach.h>
 #endif
+
+// ─── Forward declarations for error reporting ────────────────────
+static void forge_runtime_error(const char* msg);
+static void forge_runtime_errorf(const char* fmt, ...);
 
 // ─── Bump allocator ──────────────────────────────────────────────
 //
@@ -48,7 +53,7 @@ static void bump_init(void) {
     if (!bump_arena) {
         bump_arena = (char *)malloc(BUMP_ARENA_SIZE);
         if (!bump_arena) {
-            fprintf(stderr, "fatal: could not allocate bump arena\n");
+            forge_runtime_error("could not allocate bump arena");
             exit(1);
         }
     }
@@ -58,7 +63,7 @@ void *forge_bump_alloc(size_t size) {
     bump_init();
     size = (size + 7) & ~7;  // align to 8 bytes
     if (bump_offset + size > BUMP_ARENA_SIZE) {
-        fprintf(stderr, "fatal: bump arena exhausted (%zu bytes used)\n", bump_offset);
+        forge_runtime_errorf("bump arena exhausted (%zu bytes used)", bump_offset);
         exit(1);
     }
     void *ptr = &bump_arena[bump_offset];
@@ -75,9 +80,61 @@ void *forge_bump_alloc(size_t size) {
 // The codegen calls forge_bump_alloc() for struct/enum/with allocations.
 // malloc() is still used by array/map code that needs realloc.
 
+// ─── Central error reporting ──────────────────────────────────────
+//
+// All runtime errors go through these two functions. This ensures
+// consistent formatting ("\nerror: ...\n") and a single place to
+// change the output behavior.
+//
+// forge_runtime_error  — async-signal-safe (uses write() only)
+// forge_runtime_errorf — formatted (NOT async-signal-safe)
+
+static void safe_write(const char* s) {
+    write(STDERR_FILENO, s, strlen(s));
+}
+
+static void safe_write_int(long long n) {
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%lld", n);
+    write(STDERR_FILENO, buf, len);
+}
+
+static void safe_write_ptr(const void* p) {
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%p", p);
+    write(STDERR_FILENO, buf, len);
+}
+
+static void safe_write_hex(unsigned long long v) {
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%016llx", v);
+    write(STDERR_FILENO, buf, len);
+}
+
+// Async-signal-safe: uses write() only. Safe in signal handlers.
+static void forge_runtime_error(const char* msg) {
+    safe_write("\nerror: ");
+    safe_write(msg);
+    safe_write("\n");
+}
+
+// Formatted version: uses fprintf. NOT async-signal-safe.
+static void forge_runtime_errorf(const char* fmt, ...) {
+    fprintf(stderr, "\nerror: ");
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    fprintf(stderr, "\n");
+}
+
 // ─── Signal handler ───────────────────────────────────────────────
 
 static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
+    // This entire handler uses only async-signal-safe functions:
+    // write(), _exit(), backtrace(), dladdr(), snprintf() into stack buffers.
+    // NO fprintf, NO malloc, NO stdio.
+
     const char* name = sig == SIGSEGV ? "segmentation fault"
                      : sig == SIGBUS  ? "bus error"
                      : sig == SIGABRT ? "abort"
@@ -89,11 +146,12 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
     // Distinguish stack overflow from null dereference by checking fault address.
     if (sig == SIGSEGV && si && si->si_addr) {
         uintptr_t addr = (uintptr_t)si->si_addr;
-        // Addresses near the stack pointer suggest stack overflow (infinite recursion).
         // Addresses near zero suggest null pointer dereference.
         if (addr < 0x10000) {
-            fprintf(stderr, "\nerror: null pointer dereference (accessed address %p)\n", si->si_addr);
-            fprintf(stderr, "A value was null when a field access, method call, or dereference was attempted.\n");
+            safe_write("\nerror: null pointer dereference (accessed address ");
+            safe_write_ptr(si->si_addr);
+            safe_write(")\n");
+            safe_write("A value was null when a field access, method call, or dereference was attempted.\n");
             _exit(128 + sig);
         }
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
@@ -103,8 +161,8 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
             uintptr_t sp = (uintptr_t)arm_thread_state64_get_sp(*ts);
             // If the fault address is within 64KB of the stack pointer, it's likely stack overflow.
             if (addr >= sp - 0x10000 && addr <= sp + 0x10000) {
-                fprintf(stderr, "\nerror: stack overflow (possible infinite recursion)\n");
-                fprintf(stderr, "Check for recursive functions that lack a proper base case.\n");
+                forge_runtime_error("stack overflow (possible infinite recursion)");
+                safe_write("Check for recursive functions that lack a proper base case.\n");
                 _exit(128 + sig);
             }
         }
@@ -119,16 +177,14 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
 
     // SIGFPE: arithmetic exception (rare on ARM64 but possible)
     if (sig == SIGFPE) {
-        const char* msg = "\nerror: arithmetic error (possible integer overflow or hardware fault)\n";
-        write(STDERR_FILENO, msg, strlen(msg));
+        forge_runtime_error("arithmetic error (possible integer overflow or hardware fault)");
         _exit(128 + sig);
     }
 
     // SIGILL: illegal instruction (usually a codegen bug, not user's fault)
     if (sig == SIGILL) {
-        const char* msg = "\nerror: illegal instruction — this is a compiler bug, not your code\n"
-                          "  Please report at https://github.com/forge-lang/forge/issues\n";
-        write(STDERR_FILENO, msg, strlen(msg));
+        forge_runtime_error("illegal instruction — this is a compiler bug, not your code");
+        safe_write("  Please report at https://github.com/forge-lang/forge/issues\n");
         _exit(128 + sig);
     }
 
@@ -150,62 +206,81 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
         }
     }
 
-    fprintf(stderr, "\n");
-    fprintf(stderr, "error: unexpected runtime error");
-    if (crash_fn) fprintf(stderr, " in function `%s`", crash_fn);
-    fprintf(stderr, "\n");
+    safe_write("\nerror: unexpected runtime error");
+    if (crash_fn) {
+        safe_write(" in function `");
+        safe_write(crash_fn);
+        safe_write("`");
+    }
+    safe_write("\n");
 
     if (si && sig == SIGSEGV) {
         uintptr_t addr = (uintptr_t)si->si_addr;
         if (addr < 0x10000) {
-            fprintf(stderr, "  A null value was used where an object was expected.\n");
+            safe_write("  A null value was used where an object was expected.\n");
         } else {
-            fprintf(stderr, "  Memory access violation at address %p.\n", si->si_addr);
+            safe_write("  Memory access violation at address ");
+            safe_write_ptr(si->si_addr);
+            safe_write(".\n");
         }
     } else if (sig == SIGBUS) {
-        fprintf(stderr, "  Invalid memory access (bus error).\n");
+        safe_write("  Invalid memory access (bus error).\n");
     } else {
-        fprintf(stderr, "  Signal %d (%s).\n", sig, name);
+        char buf[64];
+        int len = snprintf(buf, sizeof(buf), "  Signal %d (%s).\n", sig, name);
+        write(STDERR_FILENO, buf, len);
     }
 
     if (caller_fn) {
-        fprintf(stderr, "  Called from: %s\n", caller_fn);
+        safe_write("  Called from: ");
+        safe_write(caller_fn);
+        safe_write("\n");
     }
 
-    fprintf(stderr, "\n");
-    fprintf(stderr, "  Suggestions:\n");
-    fprintf(stderr, "    - Check for null values passed to functions\n");
-    fprintf(stderr, "    - Recompile with --debug-null to find the exact null argument\n");
-    fprintf(stderr, "    - Run with FORGE_CRASH_DETAIL=1 for the full technical dump\n");
-    fprintf(stderr, "\n");
+    safe_write("\n");
+    safe_write("  Suggestions:\n");
+    safe_write("    - Check for null values passed to functions\n");
+    safe_write("    - Recompile with --debug-null to find the exact null argument\n");
+    safe_write("    - Run with FORGE_CRASH_DETAIL=1 for the full technical dump\n");
+    safe_write("\n");
 
     // Full technical dump only with FORGE_CRASH_DETAIL=1
     if (getenv("FORGE_CRASH_DETAIL")) {
-        fprintf(stderr, "  --- Technical details ---\n");
-        fprintf(stderr, "  Signal: %d (%s)\n", sig, name);
-        if (si) fprintf(stderr, "  Address: %p\n", si->si_addr);
+        char buf[256];
+        int len;
+        safe_write("  --- Technical details ---\n");
+        len = snprintf(buf, sizeof(buf), "  Signal: %d (%s)\n", sig, name);
+        write(STDERR_FILENO, buf, len);
+        if (si) {
+            safe_write("  Address: ");
+            safe_write_ptr(si->si_addr);
+            safe_write("\n");
+        }
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
         if (context) {
             ucontext_t *uc = (ucontext_t *)context;
             arm_thread_state64_t *ts = (arm_thread_state64_t *)&uc->uc_mcontext->__ss;
-            fprintf(stderr, "  x0=%016llx x1=%016llx x2=%016llx x3=%016llx\n",
-                    (unsigned long long)ts->__x[0], (unsigned long long)ts->__x[1],
-                    (unsigned long long)ts->__x[2], (unsigned long long)ts->__x[3]);
-            fprintf(stderr, "  sp=%016llx lr=%016llx pc=%016llx\n",
-                    (unsigned long long)arm_thread_state64_get_sp(*ts),
-                    (unsigned long long)arm_thread_state64_get_lr(*ts),
-                    (unsigned long long)arm_thread_state64_get_pc(*ts));
+            safe_write("  x0="); safe_write_hex((unsigned long long)ts->__x[0]);
+            safe_write(" x1="); safe_write_hex((unsigned long long)ts->__x[1]);
+            safe_write(" x2="); safe_write_hex((unsigned long long)ts->__x[2]);
+            safe_write(" x3="); safe_write_hex((unsigned long long)ts->__x[3]);
+            safe_write("\n");
+            safe_write("  sp="); safe_write_hex((unsigned long long)arm_thread_state64_get_sp(*ts));
+            safe_write(" lr="); safe_write_hex((unsigned long long)arm_thread_state64_get_lr(*ts));
+            safe_write(" pc="); safe_write_hex((unsigned long long)arm_thread_state64_get_pc(*ts));
+            safe_write("\n");
         }
 #endif
-        fprintf(stderr, "  Backtrace:\n");
+        safe_write("  Backtrace:\n");
         for (int i = 0; i < n; i++) {
             Dl_info info;
             if (dladdr(frames[i], &info) && info.dli_sname) {
                 long long offset = (long long)((char*)frames[i] - (char*)info.dli_saddr);
-                fprintf(stderr, "    %2d  %s + %lld\n", i, info.dli_sname, offset);
+                len = snprintf(buf, sizeof(buf), "    %2d  %s + %lld\n", i, info.dli_sname, offset);
+                write(STDERR_FILENO, buf, len);
             }
         }
-        fprintf(stderr, "\n");
+        safe_write("\n");
     }
 
     _exit(128 + sig);
@@ -324,12 +399,12 @@ void forge_array_push(void* arr, int64_t value) {
 
 int64_t forge_array_get(void* arr, int64_t idx) {
     if (!arr) {
-        fprintf(stderr, "error: index on null list\n");
+        forge_runtime_error("index on null list");
         abort();
     }
     ForgeArray* a = (ForgeArray*)arr;
     if (idx < 0 || idx >= a->len) {
-        fprintf(stderr, "error: index %lld out of bounds (length %lld)\n",
+        forge_runtime_errorf("index %lld out of bounds (length %lld)",
                 (long long)idx, (long long)a->len);
         abort();
     }
@@ -338,12 +413,12 @@ int64_t forge_array_get(void* arr, int64_t idx) {
 
 void forge_array_set(void* arr, int64_t idx, int64_t value) {
     if (!arr) {
-        fprintf(stderr, "error: index assignment on null list\n");
+        forge_runtime_error("index assignment on null list");
         abort();
     }
     ForgeArray* a = (ForgeArray*)arr;
     if (idx < 0 || idx >= a->len) {
-        fprintf(stderr, "error: index %lld out of bounds for assignment (length %lld)\n",
+        forge_runtime_errorf("index %lld out of bounds for assignment (length %lld)",
                 (long long)idx, (long long)a->len);
         abort();
     }
@@ -357,12 +432,12 @@ int64_t forge_array_len(void* arr) {
 
 int64_t forge_array_pop(void* arr) {
     if (!arr) {
-        fprintf(stderr, "error: pop on null list\n");
+        forge_runtime_error("pop on null list");
         abort();
     }
     ForgeArray* a = (ForgeArray*)arr;
     if (a->len <= 0) {
-        fprintf(stderr, "error: pop on empty list\n");
+        forge_runtime_error("pop on empty list");
         abort();
     }
     return a->data[--a->len];
@@ -744,7 +819,7 @@ int64_t forge_closure_get_fn(int64_t closure_val) {
     }
     // Should never happen — all callables are arrays. Log and return
     // the value itself as a last resort (better than silent crash).
-    fprintf(stderr, "forge: warning — forge_closure_get_fn called on non-closure value 0x%llx\n",
+    forge_runtime_errorf("closure call on non-closure value 0x%llx",
             (unsigned long long)closure_val);
     return closure_val;
 }
@@ -809,7 +884,7 @@ static int64_t forge_closure_dispatch(int64_t closure, int64_t* user_args, int64
         case 7: return ((Fn7)(uintptr_t)fn)(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
         case 8: return ((Fn8)(uintptr_t)fn)(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
         default:
-            fprintf(stderr, "forge: closure call with %lld args exceeds limit of 8\n", (long long)total);
+            forge_runtime_errorf("closure call with %lld args exceeds limit of 8", (long long)total);
             return 0;
     }
 }
@@ -1293,7 +1368,7 @@ int64_t forge_toml_get_bool(const char* toml, const char* key) {
 // Basic runtime validation: assert conditions, check non-null.
 int64_t forge_validate_not_null(int64_t value, const char* name) {
     if (value == 0) {
-        fprintf(stderr, "validation error: %s must not be null\n", name);
+        forge_runtime_errorf("%s must not be null", name);
         exit(1);
     }
     return value;
@@ -1301,7 +1376,7 @@ int64_t forge_validate_not_null(int64_t value, const char* name) {
 
 int64_t forge_validate_positive(int64_t value, const char* name) {
     if (value <= 0) {
-        fprintf(stderr, "validation error: %s must be positive, got %lld\n", name, (long long)value);
+        forge_runtime_errorf("%s must be positive, got %lld", name, (long long)value);
         exit(1);
     }
     return value;
@@ -1309,7 +1384,7 @@ int64_t forge_validate_positive(int64_t value, const char* name) {
 
 int64_t forge_validate_range(int64_t value, int64_t min, int64_t max, const char* name) {
     if (value < min || value > max) {
-        fprintf(stderr, "validation error: %s must be between %lld and %lld, got %lld\n",
+        forge_runtime_errorf("%s must be between %lld and %lld, got %lld",
                 name, (long long)min, (long long)max, (long long)value);
         exit(1);
     }
@@ -1318,7 +1393,7 @@ int64_t forge_validate_range(int64_t value, int64_t min, int64_t max, const char
 
 int64_t forge_validate_not_empty(const char* s, const char* name) {
     if (!s || strlen(s) == 0) {
-        fprintf(stderr, "validation error: %s must not be empty\n", name);
+        forge_runtime_errorf("%s must not be empty", name);
         exit(1);
     }
     return (int64_t)(uintptr_t)s;
@@ -1582,16 +1657,16 @@ void forge_channel_close(void* channel) {
 //   - type_name: name for the error message
 void forge_validate_tag(void *ptr, int64_t max_tag, const char *type_name) {
     if (!ptr) {
-        fprintf(stderr, "FATAL: null %s pointer passed to match\n", type_name);
+        forge_runtime_errorf("null %s pointer passed to match", type_name);
         exit(99);
     }
     uint8_t tag = *(uint8_t *)ptr;
     if (tag > max_tag) {
-        fprintf(stderr, "FATAL: %s tag %d exceeds max %lld (ptr=%p)\n",
+        forge_runtime_errorf("%s tag %d exceeds max %lld (ptr=%p)",
                 type_name, tag, (long long)max_tag, ptr);
         // Check if ptr looks like a valid address
         if ((uintptr_t)ptr < 0x100000) {
-            fprintf(stderr, "  → pointer %p is suspiciously low — likely a corrupt integer, not a real pointer\n", ptr);
+            fprintf(stderr, "  pointer %p is suspiciously low — likely a corrupt integer, not a real pointer\n", ptr);
         }
         exit(99);
     }
@@ -1605,7 +1680,7 @@ void forge_validate_tag(void *ptr, int64_t max_tag, const char *type_name) {
 // (which would require creating basic blocks in the correct function).
 void forge_null_arg_trap(const char *fn_name, int64_t fn_len,
                          const char *param_name, int64_t param_len) {
-    fprintf(stderr, "FATAL: null argument `");
+    fprintf(stderr, "\nerror: null argument `");
     fwrite(param_name, 1, (size_t)param_len, stderr);
     fprintf(stderr, "` in function `");
     fwrite(fn_name, 1, (size_t)fn_len, stderr);
@@ -1628,7 +1703,7 @@ void forge_null_arg_check(const char *fn_name, int64_t fn_len,
 // the data is corrupt. Prints the function name and tag value so the
 // developer knows exactly where and why.
 void forge_match_unreachable(const char *fn_name, int64_t tag) {
-    fprintf(stderr, "\nFATAL: match fallthrough in `%s` — no arm matched tag %lld\n", fn_name, (long long)tag);
+    forge_runtime_errorf("non-exhaustive match in function `%s` — unmatched tag %lld", fn_name, (long long)tag);
     fprintf(stderr, "This means an enum value has a corrupt or unexpected tag byte.\n");
     fprintf(stderr, "Common causes:\n");
     fprintf(stderr, "  - Bump allocator returned uninitialized memory\n");
@@ -1646,7 +1721,7 @@ void forge_null_deref_trap(const char *field, int64_t field_len,
                            const char *type_name, int64_t type_len,
                            int64_t is_null) {
     if (!is_null) return;
-    fprintf(stderr, "error: null pointer dereference accessing field `");
+    fprintf(stderr, "\nerror: null pointer dereference accessing field `");
     fwrite(field, 1, (size_t)field_len, stderr);
     fprintf(stderr, "`");
     if (type_len > 0) {
@@ -1664,6 +1739,6 @@ void forge_null_deref_trap(const char *field, int64_t field_len,
 // passes is_zero (0 or 1) and the C function checks internally.
 void forge_div_by_zero_trap(int64_t is_zero) {
     if (!is_zero) return;
-    fprintf(stderr, "error: division by zero\n");
+    forge_runtime_error("division by zero");
     abort();
 }
