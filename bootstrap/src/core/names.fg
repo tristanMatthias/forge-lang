@@ -14,7 +14,7 @@
 //                                  type checking
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
-use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_dummy}
+use diagnostics.{DiagCode, Span, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_new, span_dummy}
 
 // ── Module tree ──
 //
@@ -227,7 +227,8 @@ fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> UseResult {
             match ss.node {
                 .Use(mod_path, names) -> {
                     let canonical_path = dots_to_colons(mod_path)
-                    resolve_use_names(canonical_path, names, tree, rest)
+                    let sp = span_new(0, 0, ss.line, ss.col)
+                    resolve_use_names(canonical_path, names, tree, rest, sp)
                 }
                 _ -> rest
             }
@@ -241,23 +242,23 @@ type UseResult = {
     bag: DiagnosticBag,
 }
 
-fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, result: UseResult) -> UseResult {
+fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, result: UseResult, sp: Span) -> UseResult {
     match names {
         .End -> result
         .Node(name, _, next) -> {
             let mod_node = module_find(tree, mod_path)
             let found_info = match mod_node {
                 .End -> {
-                    let d = diag_error(DiagCode.ImportNotFound, "`use " + mod_path + "` — module not found in module tree", span_dummy())
+                    let d = diag_error(DiagCode.ImportNotFound, "`use " + mod_path + "` — module not found in module tree", sp)
                     UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                 }
                 .Node(_, _, items, _, _) -> {
                     let found = item_lookup(items, name)
                     if found == "" {
-                        let d = diag_error(DiagCode.ImportNotFound, "`" + name + "` not found in module `" + mod_path + "`", span_dummy())
+                        let d = diag_error(DiagCode.ImportNotFound, "`" + name + "` not found in module `" + mod_path + "`", sp)
                         UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                     } else if !item_is_exported(items, name) {
-                        let d = diag_error(DiagCode.ImportPrivate, "`" + name + "` is private in module `" + mod_path + "`", span_dummy())
+                        let d = diag_error(DiagCode.ImportPrivate, "`" + name + "` is private in module `" + mod_path + "`", sp)
                         UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                     } else {
                         UseResult { aliases: AliasEntry.Node(name, found, result.aliases), bag: result.bag }
@@ -265,7 +266,7 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, resul
                 }
                 _ -> result
             }
-            resolve_use_names(mod_path, next, tree, found_info)
+            resolve_use_names(mod_path, next, tree, found_info, sp)
         }
         _ -> result
     }
