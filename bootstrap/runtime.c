@@ -81,6 +81,9 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
     const char* name = sig == SIGSEGV ? "segmentation fault"
                      : sig == SIGBUS  ? "bus error"
                      : sig == SIGABRT ? "abort"
+                     : sig == SIGFPE  ? "arithmetic error"
+                     : sig == SIGILL  ? "illegal instruction"
+                     : sig == SIGTRAP ? "debug trap"
                      : "unknown signal";
 
     // Distinguish stack overflow from null dereference by checking fault address.
@@ -112,6 +115,21 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
     // printed. Exit cleanly without the full crash dump.
     if (sig == SIGABRT) {
         _exit(1);
+    }
+
+    // SIGFPE: arithmetic exception (rare on ARM64 but possible)
+    if (sig == SIGFPE) {
+        const char* msg = "\nerror: arithmetic error (possible integer overflow or hardware fault)\n";
+        write(STDERR_FILENO, msg, strlen(msg));
+        _exit(128 + sig);
+    }
+
+    // SIGILL: illegal instruction (usually a codegen bug, not user's fault)
+    if (sig == SIGILL) {
+        const char* msg = "\nerror: illegal instruction — this is a compiler bug, not your code\n"
+                          "  Please report at https://github.com/forge-lang/forge/issues\n";
+        write(STDERR_FILENO, msg, strlen(msg));
+        _exit(128 + sig);
     }
 
     // ── User-friendly crash report ──
@@ -207,6 +225,9 @@ static void forge_install_signal_handlers(void) {
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGBUS,  &sa, NULL);
     sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGFPE,  &sa, NULL);
+    sigaction(SIGILL,  &sa, NULL);
+    sigaction(SIGTRAP, &sa, NULL);
 }
 
 // ─── Selfhost helpers ─────────────────────────────────────────────
