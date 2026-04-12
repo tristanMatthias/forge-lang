@@ -82,6 +82,38 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
                      : sig == SIGBUS  ? "bus error"
                      : sig == SIGABRT ? "abort"
                      : "unknown signal";
+
+    // Distinguish stack overflow from null dereference by checking fault address.
+    if (sig == SIGSEGV && si && si->si_addr) {
+        uintptr_t addr = (uintptr_t)si->si_addr;
+        // Addresses near the stack pointer suggest stack overflow (infinite recursion).
+        // Addresses near zero suggest null pointer dereference.
+        if (addr < 0x10000) {
+            fprintf(stderr, "\nerror: null pointer dereference (accessed address %p)\n", si->si_addr);
+            fprintf(stderr, "A value was null when a field access, method call, or dereference was attempted.\n");
+            _exit(128 + sig);
+        }
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+        if (context) {
+            ucontext_t *uc = (ucontext_t *)context;
+            arm_thread_state64_t *ts = (arm_thread_state64_t *)&uc->uc_mcontext->__ss;
+            uintptr_t sp = (uintptr_t)arm_thread_state64_get_sp(*ts);
+            // If the fault address is within 64KB of the stack pointer, it's likely stack overflow.
+            if (addr >= sp - 0x10000 && addr <= sp + 0x10000) {
+                fprintf(stderr, "\nerror: stack overflow (possible infinite recursion)\n");
+                fprintf(stderr, "Check for recursive functions that lack a proper base case.\n");
+                _exit(128 + sig);
+            }
+        }
+#endif
+    }
+
+    // For SIGABRT from our own trap functions, the error message was already
+    // printed. Exit cleanly without the full crash dump.
+    if (sig == SIGABRT) {
+        _exit(1);
+    }
+
     fprintf(stderr, "\n=== CRASH ===\n");
     fprintf(stderr, "Signal: %d (%s)\n", sig, name);
     if (si) {
@@ -128,9 +160,14 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
 
 __attribute__((constructor))
 static void forge_install_signal_handlers(void) {
+    // Alternate signal stack so handler works during stack overflow
+    static char alt_stack[SIGSTKSZ + 65536];
+    stack_t ss = { .ss_sp = alt_stack, .ss_size = sizeof(alt_stack), .ss_flags = 0 };
+    sigaltstack(&ss, NULL);
+
     struct sigaction sa;
     sa.sa_sigaction = forge_signal_handler;
-    sa.sa_flags = SA_SIGINFO;
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, NULL);
     sigaction(SIGBUS,  &sa, NULL);
@@ -230,14 +267,30 @@ void forge_array_push(void* arr, int64_t value) {
 }
 
 int64_t forge_array_get(void* arr, int64_t idx) {
+    if (!arr) {
+        fprintf(stderr, "error: index on null list\n");
+        abort();
+    }
     ForgeArray* a = (ForgeArray*)arr;
-    if (idx < 0 || idx >= a->len) return 0;
+    if (idx < 0 || idx >= a->len) {
+        fprintf(stderr, "error: index %lld out of bounds (length %lld)\n",
+                (long long)idx, (long long)a->len);
+        abort();
+    }
     return a->data[idx];
 }
 
 void forge_array_set(void* arr, int64_t idx, int64_t value) {
+    if (!arr) {
+        fprintf(stderr, "error: index assignment on null list\n");
+        abort();
+    }
     ForgeArray* a = (ForgeArray*)arr;
-    if (idx < 0 || idx >= a->len) return;
+    if (idx < 0 || idx >= a->len) {
+        fprintf(stderr, "error: index %lld out of bounds for assignment (length %lld)\n",
+                (long long)idx, (long long)a->len);
+        abort();
+    }
     a->data[idx] = value;
 }
 
@@ -247,8 +300,15 @@ int64_t forge_array_len(void* arr) {
 }
 
 int64_t forge_array_pop(void* arr) {
+    if (!arr) {
+        fprintf(stderr, "error: pop on null list\n");
+        abort();
+    }
     ForgeArray* a = (ForgeArray*)arr;
-    if (a->len <= 0) return 0;
+    if (a->len <= 0) {
+        fprintf(stderr, "error: pop on empty list\n");
+        abort();
+    }
     return a->data[--a->len];
 }
 
@@ -1519,4 +1579,35 @@ void forge_match_unreachable(const char *fn_name, int64_t tag) {
     fprintf(stderr, "  - Enum variant was added but match arms weren't updated\n");
     fprintf(stderr, "  - Struct field read at wrong offset (enum layout mismatch)\n");
     exit(99);
+}
+
+// ── Null pointer dereference trap ──
+//
+// Called when a field access or method call is attempted on a null pointer.
+// Uses the branchless pattern: codegen passes is_null (0 or 1) and the
+// C function checks internally, avoiding basic block creation in the IR.
+void forge_null_deref_trap(const char *field, int64_t field_len,
+                           const char *type_name, int64_t type_len,
+                           int64_t is_null) {
+    if (!is_null) return;
+    fprintf(stderr, "error: null pointer dereference accessing field `");
+    fwrite(field, 1, (size_t)field_len, stderr);
+    fprintf(stderr, "`");
+    if (type_len > 0) {
+        fprintf(stderr, " on null `");
+        fwrite(type_name, 1, (size_t)type_len, stderr);
+        fprintf(stderr, "` value");
+    }
+    fprintf(stderr, "\n");
+    abort();
+}
+
+// ── Division by zero trap ──
+//
+// Called before every sdiv/srem. Uses the branchless pattern: codegen
+// passes is_zero (0 or 1) and the C function checks internally.
+void forge_div_by_zero_trap(int64_t is_zero) {
+    if (!is_zero) return;
+    fprintf(stderr, "error: division by zero\n");
+    abort();
 }

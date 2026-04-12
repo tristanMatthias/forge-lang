@@ -139,6 +139,28 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     forge_llvm_type_array_free(null_check_arr)
     forge_llvm_add_function(m, "forge_null_arg_check", null_check_type)
 
+    // forge_null_deref_trap(field: ptr, field_len: i64, type_name: ptr, type_len: i64, is_null: i64) -> void
+    // Called on every field access / method call to catch null pointer dereferences.
+    // Branchless: the C function checks is_null internally.
+    let null_deref_arr = forge_llvm_type_array_new(5)
+    forge_llvm_type_array_set(null_deref_arr, 0, pt)
+    forge_llvm_type_array_set(null_deref_arr, 1, i64t)
+    forge_llvm_type_array_set(null_deref_arr, 2, pt)
+    forge_llvm_type_array_set(null_deref_arr, 3, i64t)
+    forge_llvm_type_array_set(null_deref_arr, 4, i64t)
+    let null_deref_type = forge_llvm_function_type(forge_llvm_void_type(lc), null_deref_arr, 5, 0)
+    forge_llvm_type_array_free(null_deref_arr)
+    forge_llvm_add_function(m, "forge_null_deref_trap", null_deref_type)
+
+    // forge_div_by_zero_trap(is_zero: i64) -> void
+    // Called before every sdiv/srem to catch division by zero.
+    // Branchless: the C function checks is_zero internally.
+    let div_zero_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(div_zero_arr, 0, i64t)
+    let div_zero_type = forge_llvm_function_type(forge_llvm_void_type(lc), div_zero_arr, 1, 0)
+    forge_llvm_type_array_free(div_zero_arr)
+    forge_llvm_add_function(m, "forge_div_by_zero_trap", div_zero_type)
+
     // C-runtime: dynamic arrays (forge_array_*)
     let arr_new_type = forge_llvm_function_type(pt, forge_llvm_type_array_new(0), 0, 0)
     forge_llvm_add_function(m, "forge_array_new", arr_new_type)
@@ -1390,6 +1412,26 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
     }
     let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
     let obj_ptr = to_ptr(ctx, r.value, "obj_ptr")
+
+    // Runtime null-pointer dereference check (branchless — C function checks internally).
+    let zero = const_i64(ctx, 0)
+    let is_null_i1 = forge_llvm_build_icmp(ctx.builder, 32, r.value, zero, "null_fld_chk")
+    let is_null = forge_llvm_build_zext(ctx.builder, is_null_i1, ctx.i64_type, "null_fld_ext")
+    let fld_str = forge_llvm_build_global_string_ptr(ctx.builder, field, "fld_name")
+    let fld_len = const_i64(ctx, field.length)
+    let ty_str = forge_llvm_build_global_string_ptr(ctx.builder, struct_name, "sty_name")
+    let ty_len = const_i64(ctx, struct_name.length)
+    let trap_fn = get_fn(ctx, "forge_null_deref_trap")
+    let trap_ft = forge_llvm_fn_type_of(trap_fn)
+    let trap_args = forge_llvm_value_array_new(5)
+    forge_llvm_value_array_set(trap_args, 0, fld_str)
+    forge_llvm_value_array_set(trap_args, 1, fld_len)
+    forge_llvm_value_array_set(trap_args, 2, ty_str)
+    forge_llvm_value_array_set(trap_args, 3, ty_len)
+    forge_llvm_value_array_set(trap_args, 4, is_null)
+    forge_llvm_build_call(ctx.builder, trap_ft, trap_fn, trap_args, 5, "")
+    forge_llvm_value_array_free(trap_args)
+
     let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fld_ptr")
     let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, field)
     let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
@@ -1593,6 +1635,25 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
         }
         return err_emit("undefined method `" + owner + "." + method + "`")
     }
+    // Runtime null-pointer dereference check on method receiver (branchless).
+    let mzero = const_i64(ctx, 0)
+    let m_null_i1 = forge_llvm_build_icmp(ctx.builder, 32, r.value, mzero, "null_meth_chk")
+    let m_null = forge_llvm_build_zext(ctx.builder, m_null_i1, ctx.i64_type, "null_meth_ext")
+    let m_fld_str = forge_llvm_build_global_string_ptr(ctx.builder, method, "meth_name")
+    let m_fld_len = const_i64(ctx, method.length)
+    let m_ty_str = forge_llvm_build_global_string_ptr(ctx.builder, owner, "mowner_name")
+    let m_ty_len = const_i64(ctx, owner.length)
+    let m_trap_fn = get_fn(ctx, "forge_null_deref_trap")
+    let m_trap_ft = forge_llvm_fn_type_of(m_trap_fn)
+    let m_trap_args = forge_llvm_value_array_new(5)
+    forge_llvm_value_array_set(m_trap_args, 0, m_fld_str)
+    forge_llvm_value_array_set(m_trap_args, 1, m_fld_len)
+    forge_llvm_value_array_set(m_trap_args, 2, m_ty_str)
+    forge_llvm_value_array_set(m_trap_args, 3, m_ty_len)
+    forge_llvm_value_array_set(m_trap_args, 4, m_null)
+    forge_llvm_build_call(ctx.builder, m_trap_ft, m_trap_fn, m_trap_args, 5, "")
+    forge_llvm_value_array_free(m_trap_args)
+
     // Build arg array with self prepended.
     let extra_count = expr_list_length(args)
     let arg_count = extra_count + 1
@@ -2146,8 +2207,22 @@ fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> Emi
             ok_emit(forge_llvm_build_sub(ctx.builder, lhs, rhs, "sub"))
         }
         .Mul -> ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul"))
-        .Div -> ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div"))
-        .Mod -> ok_emit(forge_llvm_build_srem(ctx.builder, lhs, rhs, "mod"))
+        .Div -> {
+            // Runtime division-by-zero check (branchless — C function checks internally).
+            let zero = const_i64(ctx, 0)
+            let is_zero_i1 = forge_llvm_build_icmp(ctx.builder, 32, rhs, zero, "div_zero_chk")
+            let is_zero = forge_llvm_build_zext(ctx.builder, is_zero_i1, ctx.i64_type, "div_zero_ext")
+            call_1(ctx, get_fn(ctx, "forge_div_by_zero_trap"), is_zero, "")
+            ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div"))
+        }
+        .Mod -> {
+            // Runtime division-by-zero check (branchless — C function checks internally).
+            let zero = const_i64(ctx, 0)
+            let is_zero_i1 = forge_llvm_build_icmp(ctx.builder, 32, rhs, zero, "mod_zero_chk")
+            let is_zero = forge_llvm_build_zext(ctx.builder, is_zero_i1, ctx.i64_type, "mod_zero_ext")
+            call_1(ctx, get_fn(ctx, "forge_div_by_zero_trap"), is_zero, "")
+            ok_emit(forge_llvm_build_srem(ctx.builder, lhs, rhs, "mod"))
+        }
         .BitAnd -> ok_emit(forge_llvm_build_and(ctx.builder, lhs, rhs, "band"))
         .BitOr -> ok_emit(forge_llvm_build_or(ctx.builder, lhs, rhs, "bor"))
         .BitXor -> ok_emit(forge_llvm_build_xor(ctx.builder, lhs, rhs, "bxor"))
