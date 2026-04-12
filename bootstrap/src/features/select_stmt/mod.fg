@@ -8,8 +8,13 @@ export fn init_select_stmt(reg: Registry) {
     let f = feature_new("select") with {
         stmt_tag: Stmt.Select(SelectArmList.End),
         emit_stmt: select_emit_stmt,
+        resolve_stmt: select_resolve_stmt,
         decl_keyword: "kw_select",
         parse_decl: kw_parse_select,
     }
     register(reg, f)
+}
+
+fn select_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r }
 }

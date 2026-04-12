@@ -4,10 +4,26 @@ export fn init_map_lit(reg: Registry) {
     let f = feature_new("map_lit") with {
         expr_tag: Expr.MapLit(ExprList.End),
         emit_expr: map_emit,
+        resolve_expr: map_resolve_expr,
+        check_expr: map_check_expr,
     }
     register(reg, f)
 }
 
 fn map_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .MapLit(entries) -> emit_map_lit(ctx, env, entries), _ -> err_emit("expected MapLit") }
+}
+
+fn map_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr { .MapLit(entries) -> resolve_expr_list(r, entries), _ -> r }
+}
+
+fn map_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .MapLit(entries) -> {
+            let checked = check_expr_list(tc, entries)
+            tc_er(checked, ValueType.Map)
+        }
+        _ -> tc_er(tc, ValueType.Int)
+    }
 }

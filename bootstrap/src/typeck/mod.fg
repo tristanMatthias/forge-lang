@@ -387,63 +387,17 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let checked = check_stmts(inner, body)
             tc_exit(checked)
         }
-        .If(cond, then_branch, else_branch) -> {
-            let c = check_expr(tc, cond)
-            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
-                tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `" + vtype_display(c.ty) + "`")
-            } else { c.tc }
-            let after_then = check_stmt(after_cond, then_branch)
-            if else_branch != null {
-                return check_stmt(after_then, else_branch!)
-            }
-            after_then
-        }
-        .While(cond, body) -> {
-            let c = check_expr(tc, cond)
-            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
-                tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `" + vtype_display(c.ty) + "`")
-            } else { c.tc }
-            check_stmt(after_cond, body)
-        }
-        .For(variable, start, end, body) -> {
-            let s = check_expr(tc, start)
-            let e = check_expr(s.tc, end)
-            let inner = tc_enter(e.tc)
-            let bound = tc_bind(inner, variable, ValueType.Int)
-            let after = check_stmt(bound, body)
-            tc_exit(after)
-        }
-        .ForIn(variable, collection, body) -> {
-            let c = check_expr(tc, collection)
-            let elem_ty = vtype_list_elem(c.ty)
-            let inner = tc_enter(c.tc)
-            let bound = tc_bind(inner, variable, elem_ty)
-            let after = check_stmt(bound, body)
-            tc_exit(after)
-        }
         .Function(name, params, ret_ty, body) -> {
             let inner = tc_enter(tc) with { current_fn: name }
             let with_params = tc_bind_params(inner, params)
             let checked = tc_check_fn_body(with_params, name, ret_ty, body)
             tc_exit(checked)
         }
-        .Match(subject, arms) -> {
-            let s = check_expr(tc, subject)
-            check_match_arms(s.tc, arms)
-        }
         .Impl(impl_name, methods) -> {
             let after = check_stmts(tc, methods)
             // Check trait conformance if this is `impl Trait for Type`
             // impl_name is "Trait:Type" or just "Type"
             check_trait_conformance(after, impl_name, methods)
-        }
-        .LetDestructure(names, init) -> {
-            let r = check_expr(tc, init)
-            bind_destructure(r.tc, names, r.ty)
-        }
-        .Defer(body) -> {
-            let r = check_expr(tc, body)
-            r.tc
         }
         .Module(_, body) -> check_stmts(tc, body)
         .Annotated(_, inner) -> check_stmt(tc, inner)
@@ -697,15 +651,6 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Grouping(inner) -> check_expr(tc, inner)
         .Call(callee, args) -> check_call(tc, callee, args)
-        .StructLit(name, inits) -> {
-            let checked = check_field_inits(tc, inits)
-            tc_er(checked, ValueType.Struct(name))
-        }
-        .FieldAccess(obj, field) -> check_field_access(tc, obj, field)
-        .EnumCtor(type_name, _, args) -> {
-            let checked = check_expr_list(tc, args)
-            tc_er(checked, ValueType.Enum(type_name))
-        }
         .Index(obj, idx) -> {
             let o = check_expr(tc, obj)
             let i = check_expr(o.tc, idx)
@@ -717,62 +662,6 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(i.tc, elem_ty)
         }
         .Block(body) -> check_block(tc, body)
-        .MatchExpr(subject, arms) -> check_match_expr(tc, subject, arms)
-        .FieldAssign(obj, _, value) -> {
-            let o = check_expr(tc, obj)
-            let v = check_expr(o.tc, value)
-            tc_er(v.tc, v.ty)
-        }
-        .IfExpr(cond, then_branch, else_branch) -> {
-            let c = check_expr(tc, cond)
-            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
-                tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `" + vtype_display(c.ty) + "`")
-            } else { c.tc }
-            let t = check_expr(after_cond, then_branch)
-            let e = check_expr(t.tc, else_branch)
-            // Both branches should agree. Skip when either is Int (the
-            // fallback type) since the checker can't distinguish "actually
-            // an int" from "type unknown". This suppresses false positives
-            // in the bootstrap's own code where enum branches produce
-            // different ValueType variants.
-            if !vtype_eq(t.ty, e.ty) && !vtype_eq(t.ty, ValueType.Int) && !vtype_eq(e.ty, ValueType.Int) && !vtype_eq(t.ty, ValueType.Void) && !vtype_eq(e.ty, ValueType.Void) {
-                let msg = "if-expression branches have different types: `" + vtype_display(t.ty) + "` vs `" + vtype_display(e.ty) + "`"
-                return tc_er(tc_report(e.tc, DiagCode.TypeMismatch, msg), t.ty)
-            }
-            tc_er(e.tc, t.ty)
-        }
-        .NullCoalesce(left, right) -> {
-            let l = check_expr(tc, left)
-            let r = check_expr(l.tc, right)
-            tc_er(r.tc, r.ty)
-        }
-        .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
-        .Try(inner) -> check_expr(tc, inner)
-        .Tuple(elements) -> {
-            let pair = check_expr_list_types(tc, elements)
-            tc_er(pair.tc, ValueType.Tuple(pair.types))
-        }
-        .TupleIndex(obj, idx) -> {
-            let o = check_expr(tc, obj)
-            tc_er(o.tc, vtype_tuple_at(o.ty, idx))
-        }
-        .With(obj, overrides) -> {
-            let o = check_expr(tc, obj)
-            let checked = check_field_inits(o.tc, overrides)
-            tc_er(checked, o.ty)
-        }
-        .ListLit(elements) -> check_list_lit(tc, elements)
-        .Lambda(params, body) -> {
-            let inner = tc_enter(tc)
-            let with_params = tc_bind_params(inner, params)
-            let b = check_expr(with_params, body)
-            let after = tc_exit(b.tc)
-            tc_er(after, ValueType.Fn(b.ty))
-        }
-        .MapLit(entries) -> {
-            let checked = check_expr_list(tc, entries)
-            tc_er(checked, ValueType.Map)
-        }
         .Slice(obj, start, end) -> {
             let o = check_expr(tc, obj)
             let s = check_expr(o.tc, start)
@@ -782,10 +671,6 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .Assign(name, value) -> {
             let v = check_expr(tc, value)
             tc_er(v.tc, v.ty)
-        }
-        .IsCheck(subject, _) -> {
-            let s = check_expr(tc, subject)
-            tc_er(s.tc, ValueType.Bool)
         }
         .QualifiedIdent(path) -> {
             let fn_ty = fn_type_lookup(tc.fns, path)

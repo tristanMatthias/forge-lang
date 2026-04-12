@@ -4,12 +4,16 @@ export fn init_tuples(reg: Registry) {
     let f1 = feature_new("tuple") with {
         expr_tag: Expr.Tuple(ExprList.End),
         emit_expr: tuple_emit,
+        resolve_expr: tuple_resolve_expr,
+        check_expr: tuple_check_expr,
     }
     register(reg, f1)
 
     let f2 = feature_new("tuple_index") with {
         expr_tag: Expr.TupleIndex(Expr.Null, 0),
         emit_expr: tuple_idx_emit,
+        resolve_expr: tuple_idx_resolve_expr,
+        check_expr: tuple_idx_check_expr,
     }
     register(reg, f2)
 }
@@ -20,4 +24,32 @@ fn tuple_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
 
 fn tuple_idx_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx), _ -> err_emit("expected TupleIndex") }
+}
+
+fn tuple_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr { .Tuple(elements) -> resolve_expr_list(r, elements), _ -> r }
+}
+
+fn tuple_idx_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr { .TupleIndex(obj, _) -> resolve_expr(r, obj), _ -> r }
+}
+
+fn tuple_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .Tuple(elements) -> {
+            let pair = check_expr_list_types(tc, elements)
+            tc_er(pair.tc, ValueType.Tuple(pair.types))
+        }
+        _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn tuple_idx_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .TupleIndex(obj, idx) -> {
+            let o = check_expr(tc, obj)
+            tc_er(o.tc, vtype_tuple_at(o.ty, idx))
+        }
+        _ -> tc_er(tc, ValueType.Int)
+    }
 }

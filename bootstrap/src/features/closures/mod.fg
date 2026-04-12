@@ -4,10 +4,37 @@ export fn init_closures(reg: Registry) {
     let f = feature_new("lambda") with {
         expr_tag: Expr.Lambda(ParamList.End, Expr.Null),
         emit_expr: lambda_emit,
+        resolve_expr: lambda_resolve_expr,
+        check_expr: lambda_check_expr,
     }
     register(reg, f)
 }
 
 fn lambda_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .Lambda(params, body) -> emit_lambda(ctx, env, params, body), _ -> err_emit("expected Lambda") }
+}
+
+fn lambda_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Lambda(params, body) -> {
+            let entered = enter_resolve_scope(r)
+            let with_params = declare_params(entered, params)
+            let after_body = resolve_expr(with_params, body)
+            exit_resolve_scope(after_body)
+        }
+        _ -> r
+    }
+}
+
+fn lambda_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .Lambda(params, body) -> {
+            let inner = tc_enter(tc)
+            let with_params = tc_bind_params(inner, params)
+            let b = check_expr(with_params, body)
+            let after = tc_exit(b.tc)
+            tc_er(after, ValueType.Fn(b.ty))
+        }
+        _ -> tc_er(tc, ValueType.Int)
+    }
 }

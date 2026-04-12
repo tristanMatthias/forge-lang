@@ -11,6 +11,10 @@ export fn init_match_expr(reg: Registry) {
         stmt_tag: Stmt.Match(Expr.Null, MatchArmList.End),
         emit_expr: match_emit_expr,
         emit_stmt: match_emit_stmt,
+        resolve_stmt: match_resolve_stmt,
+        resolve_expr: match_resolve_expr,
+        check_stmt: match_check_stmt,
+        check_expr: match_check_expr,
         stmt_keyword: "kw_match",
         parse_stmt: kw_parse_match,
     }
@@ -23,4 +27,41 @@ fn match_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
 
 fn match_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt { .Match(subject, arms) -> emit_match(ctx, env, subject, arms), _ -> err_stmt("expected Match") }
+}
+
+fn match_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .Match(subject, arms) -> {
+            let after_subject = resolve_expr(r, subject)
+            resolve_match_arms(after_subject, arms)
+        }
+        _ -> r
+    }
+}
+
+fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .MatchExpr(subject, arms) -> {
+            let after_subject = resolve_expr(r, subject)
+            resolve_match_arms(after_subject, arms)
+        }
+        _ -> r
+    }
+}
+
+fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .Match(subject, arms) -> {
+            let s = check_expr(tc, subject)
+            check_match_arms(s.tc, arms)
+        }
+        _ -> tc
+    }
+}
+
+fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .MatchExpr(subject, arms) -> check_match_expr(tc, subject, arms)
+        _ -> tc_er(tc, ValueType.Int)
+    }
 }

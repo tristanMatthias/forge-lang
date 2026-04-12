@@ -218,9 +218,14 @@ overriding the inferred `Struct("Foo")` from the initializer. Fix:
 changed parser default from `"i64"` to `""` (empty). Applied across
 `let`, `mut`, `fn`, `impl`, `extern`, `trait` parsers.
 
-### 18. Type checker: no source spans on diagnostics (BLOCKED)
+### ~~18. Type checker: no source spans on diagnostics~~ (FIXED)
 
-**Status:** blocked by bootstrap chicken-and-egg
+**Status:** fixed. SExpr/SStmt wrappers exist in ast.fg, containers
+(ExprList, StmtList, MatchArmList, FieldInitList) use them, and
+check_stmts extracts ss.line/ss.col into TC.current_line/current_col.
+Type errors now show source file, line number, and column.
+
+**Previously:** blocked by bootstrap chicken-and-egg
 
 **The wrapper struct approach (SExpr/SStmt) was attempted** — all ~200
 edits across 22 files were made, but the bootstrap fails because

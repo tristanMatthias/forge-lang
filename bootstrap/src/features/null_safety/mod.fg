@@ -4,18 +4,24 @@ export fn init_null_safety(reg: Registry) {
     let f1 = feature_new("null_coalesce") with {
         expr_tag: Expr.NullCoalesce(Expr.Null, Expr.Null),
         emit_expr: nc_emit,
+        resolve_expr: nc_resolve_expr,
+        check_expr: nc_check_expr,
     }
     register(reg, f1)
 
     let f2 = feature_new("optional_chain") with {
         expr_tag: Expr.OptionalChain(Expr.Null, ""),
         emit_expr: oc_emit,
+        resolve_expr: oc_resolve_expr,
+        check_expr: oc_check_expr,
     }
     register(reg, f2)
 
     let f3 = feature_new("try") with {
         expr_tag: Expr.Try(Expr.Null),
         emit_expr: try_emit,
+        resolve_expr: try_resolve_expr,
+        check_expr: try_check_expr,
     }
     register(reg, f3)
 }
@@ -30,4 +36,44 @@ fn oc_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
 
 fn try_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .Try(inner) -> emit_try(ctx, env, inner), _ -> err_emit("expected Try") }
+}
+
+fn nc_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .NullCoalesce(left, right) -> {
+            let after_left = resolve_expr(r, left)
+            resolve_expr(after_left, right)
+        }
+        _ -> r
+    }
+}
+
+fn oc_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr { .OptionalChain(obj, _) -> resolve_expr(r, obj), _ -> r }
+}
+
+fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr { .Try(inner) -> resolve_expr(r, inner), _ -> r }
+}
+
+fn nc_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .NullCoalesce(left, right) -> {
+            let l = check_expr(tc, left)
+            let r = check_expr(l.tc, right)
+            tc_er(r.tc, r.ty)
+        }
+        _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn oc_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
+        _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn try_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, ValueType.Int) }
 }

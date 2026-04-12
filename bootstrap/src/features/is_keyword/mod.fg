@@ -4,10 +4,26 @@ export fn init_is_keyword(reg: Registry) {
     let f = feature_new("is") with {
         expr_tag: Expr.IsCheck(Expr.Null, ""),
         emit_expr: is_emit_expr,
+        resolve_expr: is_resolve_expr,
+        check_expr: is_check_expr,
     }
     register(reg, f)
 }
 
 fn is_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname), _ -> err_emit("expected IsCheck") }
+}
+
+fn is_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr { .IsCheck(subject, _) -> resolve_expr(r, subject), _ -> r }
+}
+
+fn is_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .IsCheck(subject, _) -> {
+            let s = check_expr(tc, subject)
+            tc_er(s.tc, ValueType.Bool)
+        }
+        _ -> tc_er(tc, ValueType.Int)
+    }
 }

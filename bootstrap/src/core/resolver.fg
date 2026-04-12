@@ -249,18 +249,6 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after = resolve_stmt_list(entered, body)
             exit_resolve_scope(after)
         }
-        .If(condition, then_branch, else_branch) -> {
-            let after_cond = resolve_expr(r, condition)
-            let after_then = resolve_stmt(after_cond, then_branch)
-            if else_branch != null {
-                return resolve_stmt(after_then, else_branch!)
-            }
-            after_then
-        }
-        .While(condition, body) -> {
-            let after_cond = resolve_expr(r, condition)
-            resolve_stmt(after_cond, body)
-        }
         .Function(name, params, _, body) -> {
             let with_fn = declare_function(r, name)
             let entered = enter_resolve_scope(with_fn)
@@ -272,45 +260,13 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .ReturnEmpty -> r
         .TypeDecl(_, _) -> r
         .EnumDecl(_, _) -> r
-        .Match(subject, arms) -> {
-            let after_subject = resolve_expr(r, subject)
-            resolve_match_arms(after_subject, arms)
-        }
-        .For(variable, start, end, body) -> {
-            let after_start = resolve_expr(r, start)
-            let after_end = resolve_expr(after_start, end)
-            let entered = enter_resolve_scope(after_end)
-            let declared = declare_name(entered, variable)
-            let defined = define_name(declared, variable)
-            let after_body = resolve_stmt(defined, body)
-            exit_resolve_scope(after_body)
-        }
-        .ForIn(variable, collection, body) -> {
-            let after_coll = resolve_expr(r, collection)
-            let entered = enter_resolve_scope(after_coll)
-            let declared = declare_name(entered, variable)
-            let defined = define_name(declared, variable)
-            let after_body = resolve_stmt(defined, body)
-            exit_resolve_scope(after_body)
-        }
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
         .NoOp -> r
         .ExternFn(name, _, _) -> declare_function(r, name)
         .Break -> r
         .Continue -> r
         .TraitDecl(_, _) -> r  // trait declarations are no-ops
-        .LetDestructure(names, initializer) -> {
-            let after_init = resolve_expr(r, initializer)
-            define_param_names(after_init, names)
-        }
-        .Defer(body) -> resolve_expr(r, body)
         .Annotated(_, inner) -> resolve_stmt(r, inner)
-        .SpecBlock(_, body) -> resolve_stmt_list(r, body)
-        .GivenBlock(_, body) -> resolve_stmt_list(r, body)
-        .ThenBlock(_, cond) -> resolve_expr(r, cond)
-        .Select(arms) -> resolve_select_arms(r, arms)
-        .Parallel(body) -> resolve_stmt_list(r, body)
-        .Module(_, body) -> resolve_stmt_list(r, body)
         .Use(_, _) -> r
         _ -> {
             let tag = forge_stmt_tag(stmt)
@@ -445,25 +401,6 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             let after_callee = resolve_expr(r, callee)
             resolve_expr_list(after_callee, args)
         }
-        .StructLit(_, inits) -> resolve_field_init_list(r, inits)
-        .FieldAccess(obj, _) -> {
-            // `Type.Variant` (a zero-arg enum constructor) is parsed
-            // as FieldAccess(Ident(Type), Variant). Skip the inner
-            // Ident lookup when it starts with an uppercase letter
-            // because it's a type name, not a runtime value.
-            // Codegen does the actual validity check against the
-            // enum/struct registries.
-            match obj {
-                .Ident(name) -> {
-                    if starts_with_upper(name) {
-                        return r
-                    }
-                    resolve_expr(r, obj)
-                }
-                _ -> resolve_expr(r, obj)
-            }
-        }
-        .EnumCtor(_, _, args) -> resolve_expr_list(r, args)
         .Index(obj, idx) -> {
             let after_obj = resolve_expr(r, obj)
             resolve_expr(after_obj, idx)
@@ -473,45 +410,11 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             let after = resolve_stmt_list(entered, body)
             exit_resolve_scope(after)
         }
-        .MatchExpr(subject, arms) -> {
-            let after_subject = resolve_expr(r, subject)
-            resolve_match_arms(after_subject, arms)
-        }
-        .FieldAssign(obj, _, value) -> {
-            let after_obj = resolve_expr(r, obj)
-            resolve_expr(after_obj, value)
-        }
-        .IfExpr(c, t, e) -> {
-            let after_c = resolve_expr(r, c)
-            let after_t = resolve_expr(after_c, t)
-            resolve_expr(after_t, e)
-        }
-        .NullCoalesce(left, right) -> {
-            let after_left = resolve_expr(r, left)
-            resolve_expr(after_left, right)
-        }
-        .OptionalChain(obj, _) -> resolve_expr(r, obj)
-        .Try(inner) -> resolve_expr(r, inner)
-        .Tuple(elements) -> resolve_expr_list(r, elements)
-        .TupleIndex(obj, _) -> resolve_expr(r, obj)
-        .ListLit(elements) -> resolve_expr_list(r, elements)
-        .MapLit(entries) -> resolve_expr_list(r, entries)
         .Slice(obj, start, end) -> {
             let a = resolve_expr(r, obj)
             let b = resolve_expr(a, start)
             resolve_expr(b, end)
         }
-        .Lambda(params, body) -> {
-            let entered = enter_resolve_scope(r)
-            let with_params = declare_params(entered, params)
-            let after_body = resolve_expr(with_params, body)
-            exit_resolve_scope(after_body)
-        }
-        .With(obj, overrides) -> {
-            let after_obj = resolve_expr(r, obj)
-            resolve_field_init_list(after_obj, overrides)
-        }
-        .IsCheck(subject, _) -> resolve_expr(r, subject)
         .QualifiedIdent(_) -> r
         _ -> {
             let tag = forge_expr_tag(expr)

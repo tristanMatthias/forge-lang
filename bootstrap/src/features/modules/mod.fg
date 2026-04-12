@@ -25,6 +25,8 @@ fn kw_parse_use(p: Parser) -> Stmt? {
 
 export fn init_modules(reg: Registry) {
     let f1 = feature_new("mod") with {
+        stmt_tag: Stmt.Module("", StmtList.End),
+        resolve_stmt: module_resolve_stmt,
         decl_keyword: "kw_mod",
         parse_decl: kw_parse_mod,
     }
@@ -35,4 +37,8 @@ export fn init_modules(reg: Registry) {
         parse_decl: kw_parse_use,
     }
     register(reg, f2)
+}
+
+fn module_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r }
 }

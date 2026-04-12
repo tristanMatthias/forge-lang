@@ -4,10 +4,33 @@ export fn init_with_expr(reg: Registry) {
     let f = feature_new("with") with {
         expr_tag: Expr.With(Expr.Null, FieldInitList.End),
         emit_expr: with_emit,
+        resolve_expr: with_resolve_expr,
+        check_expr: with_check_expr,
     }
     register(reg, f)
 }
 
 fn with_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .With(obj, overrides) -> emit_with(ctx, env, obj, overrides), _ -> err_emit("expected With") }
+}
+
+fn with_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .With(obj, overrides) -> {
+            let after_obj = resolve_expr(r, obj)
+            resolve_field_init_list(after_obj, overrides)
+        }
+        _ -> r
+    }
+}
+
+fn with_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .With(obj, overrides) -> {
+            let o = check_expr(tc, obj)
+            let checked = check_field_inits(o.tc, overrides)
+            tc_er(checked, o.ty)
+        }
+        _ -> tc_er(tc, ValueType.Int)
+    }
 }

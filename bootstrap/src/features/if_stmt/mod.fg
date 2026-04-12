@@ -11,6 +11,10 @@ export fn init_if_stmt(reg: Registry) {
         stmt_tag: Stmt.If(Expr.Null, Stmt.NoOp, null),
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
+        resolve_stmt: if_resolve_stmt,
+        resolve_expr: if_resolve_expr,
+        check_stmt: if_check_stmt,
+        check_expr: if_check_expr,
         stmt_keyword: "kw_if",
         parse_stmt: kw_parse_if,
     }
@@ -23,4 +27,65 @@ fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
 
 fn if_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt { .If(cond, then_b, else_b) -> emit_if(ctx, env, cond, then_b, else_b), _ -> err_stmt("expected If") }
+}
+
+fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .If(condition, then_branch, else_branch) -> {
+            let after_cond = resolve_expr(r, condition)
+            let after_then = resolve_stmt(after_cond, then_branch)
+            if else_branch != null {
+                return resolve_stmt(after_then, else_branch!)
+            }
+            after_then
+        }
+        _ -> r
+    }
+}
+
+fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .IfExpr(c, t, e) -> {
+            let after_c = resolve_expr(r, c)
+            let after_t = resolve_expr(after_c, t)
+            resolve_expr(after_t, e)
+        }
+        _ -> r
+    }
+}
+
+fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .If(cond, then_branch, else_branch) -> {
+            let c = check_expr(tc, cond)
+            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
+                tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `" + vtype_display(c.ty) + "`")
+            } else { c.tc }
+            let after_then = check_stmt(after_cond, then_branch)
+            if else_branch != null {
+                return check_stmt(after_then, else_branch!)
+            }
+            after_then
+        }
+        _ -> tc
+    }
+}
+
+fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .IfExpr(cond, then_branch, else_branch) -> {
+            let c = check_expr(tc, cond)
+            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
+                tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `" + vtype_display(c.ty) + "`")
+            } else { c.tc }
+            let t = check_expr(after_cond, then_branch)
+            let e = check_expr(t.tc, else_branch)
+            if !vtype_eq(t.ty, e.ty) && !vtype_eq(t.ty, ValueType.Int) && !vtype_eq(e.ty, ValueType.Int) && !vtype_eq(t.ty, ValueType.Void) && !vtype_eq(e.ty, ValueType.Void) {
+                let msg = "if-expression branches have different types: `" + vtype_display(t.ty) + "` vs `" + vtype_display(e.ty) + "`"
+                return tc_er(tc_report(e.tc, DiagCode.TypeMismatch, msg), t.ty)
+            }
+            tc_er(e.tc, t.ty)
+        }
+        _ -> tc_er(tc, ValueType.Int)
+    }
 }

@@ -4,10 +4,23 @@ export fn init_list_lit(reg: Registry) {
     let f = feature_new("list_lit") with {
         expr_tag: Expr.ListLit(ExprList.End),
         emit_expr: list_emit,
+        resolve_expr: list_resolve_expr,
+        check_expr: list_check_expr,
     }
     register(reg, f)
 }
 
 fn list_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     match expr { .ListLit(elements) -> emit_list_lit(ctx, env, elements), _ -> err_emit("expected ListLit") }
+}
+
+fn list_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr { .ListLit(elements) -> resolve_expr_list(r, elements), _ -> r }
+}
+
+fn list_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .ListLit(elements) -> check_list_lit(tc, elements)
+        _ -> tc_er(tc, ValueType.Int)
+    }
 }

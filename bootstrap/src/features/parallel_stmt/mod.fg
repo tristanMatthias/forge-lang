@@ -8,8 +8,13 @@ export fn init_parallel_stmt(reg: Registry) {
     let f = feature_new("parallel") with {
         stmt_tag: Stmt.Parallel(StmtList.End),
         emit_stmt: parallel_emit_stmt,
+        resolve_stmt: parallel_resolve_stmt,
         decl_keyword: "kw_parallel",
         parse_decl: kw_parse_parallel,
     }
     register(reg, f)
+}
+
+fn parallel_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Parallel(body) -> resolve_stmt_list(r, body), _ -> r }
 }

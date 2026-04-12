@@ -13,6 +13,8 @@ export fn init_let_stmt(reg: Registry) {
     let f = feature_new("let_destructure") with {
         stmt_tag: Stmt.LetDestructure(ParamList.End, Expr.Null),
         emit_stmt: let_destr_emit,
+        resolve_stmt: let_destr_resolve_stmt,
+        check_stmt: let_destr_check_stmt,
     }
     register(reg, f)
 
@@ -37,4 +39,24 @@ export fn init_let_stmt(reg: Registry) {
 
 fn let_destr_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt { .LetDestructure(names, init) -> emit_let_destructure(ctx, env, names, init), _ -> err_stmt("expected LetDestructure") }
+}
+
+fn let_destr_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .LetDestructure(names, initializer) -> {
+            let after_init = resolve_expr(r, initializer)
+            define_param_names(after_init, names)
+        }
+        _ -> r
+    }
+}
+
+fn let_destr_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .LetDestructure(names, init) -> {
+            let r = check_expr(tc, init)
+            bind_destructure(r.tc, names, r.ty)
+        }
+        _ -> tc
+    }
 }

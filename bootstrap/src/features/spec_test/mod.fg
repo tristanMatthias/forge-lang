@@ -9,6 +9,7 @@ export fn init_spec_test(reg: Registry) {
     let f1 = feature_new("spec") with {
         stmt_tag: Stmt.SpecBlock("", StmtList.End),
         emit_stmt: spec_emit_stmt,
+        resolve_stmt: spec_resolve_stmt,
         decl_keyword: "kw_spec",
         parse_decl: kw_parse_spec,
     }
@@ -17,12 +18,26 @@ export fn init_spec_test(reg: Registry) {
     let f2 = feature_new("given") with {
         stmt_tag: Stmt.GivenBlock("", StmtList.End),
         emit_stmt: spec_emit_stmt,
+        resolve_stmt: given_resolve_stmt,
     }
     register(reg, f2)
 
     let f3 = feature_new("then") with {
         stmt_tag: Stmt.ThenBlock("", Expr.Null),
         emit_stmt: spec_emit_stmt,
+        resolve_stmt: then_resolve_stmt,
     }
     register(reg, f3)
+}
+
+fn spec_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .SpecBlock(_, body) -> resolve_stmt_list(r, body), _ -> r }
+}
+
+fn given_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .GivenBlock(_, body) -> resolve_stmt_list(r, body), _ -> r }
+}
+
+fn then_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .ThenBlock(_, cond) -> resolve_expr(r, cond), _ -> r }
 }

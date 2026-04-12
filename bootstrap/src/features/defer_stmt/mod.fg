@@ -9,10 +9,26 @@ export fn init_defer_stmt(reg: Registry) {
     let f = feature_new("defer") with {
         stmt_tag: Stmt.Defer(Expr.Null),
         emit_stmt: defer_emit_stmt,
+        resolve_stmt: defer_resolve_stmt,
+        check_stmt: defer_check_stmt,
         stmt_keyword: "kw_defer",
         parse_stmt: kw_parse_defer,
     }
     register(reg, f)
+}
+
+fn defer_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Defer(body) -> resolve_expr(r, body), _ -> r }
+}
+
+fn defer_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .Defer(body) -> {
+            let r = check_expr(tc, body)
+            r.tc
+        }
+        _ -> tc
+    }
 }
 
 fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {

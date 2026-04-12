@@ -9,6 +9,8 @@ export fn init_while_stmt(reg: Registry) {
     let f = feature_new("while") with {
         stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
         emit_stmt: while_emit_stmt,
+        resolve_stmt: while_resolve_stmt,
+        check_stmt: while_check_stmt,
         stmt_keyword: "kw_while",
         parse_stmt: kw_parse_while,
     }
@@ -17,4 +19,27 @@ export fn init_while_stmt(reg: Registry) {
 
 fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt { .While(cond, body) -> emit_while(ctx, env, cond, body), _ -> err_stmt("expected While") }
+}
+
+fn while_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .While(condition, body) -> {
+            let after_cond = resolve_expr(r, condition)
+            resolve_stmt(after_cond, body)
+        }
+        _ -> r
+    }
+}
+
+fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .While(cond, body) -> {
+            let c = check_expr(tc, cond)
+            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
+                tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `" + vtype_display(c.ty) + "`")
+            } else { c.tc }
+            check_stmt(after_cond, body)
+        }
+        _ -> tc
+    }
 }
