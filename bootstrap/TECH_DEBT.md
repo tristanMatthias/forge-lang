@@ -93,23 +93,18 @@ in a Block expression, so `_ -> return x` works without braces.
 returns all metadata. `diag_code_str` and `diag_code_help` are thin
 wrappers that delegate to `error_def`.
 
-### 10. Forge needs associated enum data
+### ~~10. Forge needs associated enum data~~ (FIXED)
 
-**Severity:** medium (language gap)
-**Impact:** forces the parallel-match pattern above
+**Status:** fixed (April 11 2026)
 
-Forge enums can't carry static metadata per variant. Rust has
-`impl DiagCode { fn help(&self) -> &str { match self { ... } } }` and
-Swift has computed properties on enum cases. Forge has neither — you
-must write a standalone function with a match. This is the root cause
-of debt item #9. Eventually the language should support one of:
+**Resolution:** Enum impl blocks now work in both the Rust compiler and
+the bootstrap compiler. Three fixes in the Rust compiler's traits/codegen.rs:
+1. `get_type_name` now returns the enum name for `Type::Enum`
+2. `resolve_named_type` now checks `enum_types` in the type checker env
+3. `type_to_type_expr` now handles `Type::Enum` (returns `TypeExpr::Named(name)`)
 
-- `impl` on enums with `self` dispatch (already parsed, not codegen'd for enums)
-- Static associated data: `enum Thing { Value { label: "x" } }`
-- Derive-style attribute: `@display enum DiagCode { ... }`
-
-**Plan:** Add enum impl codegen support (we already parse `impl EnumName`).
-Then `diag_code_str` and `diag_code_help` become methods on `DiagCode`.
+The bootstrap compiler already handled this correctly via `vtype_enum_name`
+in the method call dispatch path. Test added to both compilers.
 
 ### ~~11. render_diagnostic crashes on bad input~~ (FIXED)
 

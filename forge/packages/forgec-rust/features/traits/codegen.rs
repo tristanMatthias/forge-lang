@@ -424,6 +424,7 @@ impl<'ctx> Codegen<'ctx> {
             Type::Tuple(elems) => {
                 TypeExpr::Tuple(elems.iter().map(|e| self.type_to_type_expr(e)).collect())
             }
+            Type::Enum { name, .. } => TypeExpr::Named(name.clone()),
             _ => TypeExpr::Named("int".to_string()), // fallback
         }
     }
@@ -470,6 +471,8 @@ impl<'ctx> Codegen<'ctx> {
                 },
                 other => other.clone(),
             }
+        } else if let Some(ty) = self.type_checker.env.enum_types.get(name) {
+            ty.clone()
         } else {
             match name {
                 "int" => Type::Int,
@@ -532,6 +535,7 @@ impl<'ctx> Codegen<'ctx> {
     pub(crate) fn get_type_name(&self, ty: &Type) -> Option<String> {
         match ty {
             Type::Struct { name: Some(n), .. } => Some(n.clone()),
+            Type::Enum { name, .. } => Some(name.clone()),
             Type::Int => Some("int".to_string()),
             Type::Float => Some("float".to_string()),
             Type::Bool => Some("bool".to_string()),

@@ -1,0 +1,32 @@
+/// # Enum Impl With Data
+///
+/// Enum impl methods on variants with data fields.
+///
+/// expect: circle
+/// expect: rectangle
+/// expect: point
+
+enum Shape {
+    Circle(radius: float)
+    Rectangle(width: float, height: float)
+    Point
+}
+
+impl Shape {
+    fn describe(self) -> string {
+        match self {
+            .Circle(r) -> "circle"
+            .Rectangle(w, h) -> "rectangle"
+            .Point -> "point"
+        }
+    }
+}
+
+fn main() {
+    let c = Shape.Circle(radius: 5.0)
+    let r = Shape.Rectangle(width: 3.0, height: 4.0)
+    let p = Shape.Point
+    println(c.describe())
+    println(r.describe())
+    println(p.describe())
+}
