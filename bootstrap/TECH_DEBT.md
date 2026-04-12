@@ -348,7 +348,7 @@ This requires parser + codegen changes: when an enum variant with
 fields is referenced without calling it, emit its tag as a constant
 instead of requiring field arguments.
 
-### 30. Resolver and typeck not yet dispatched through registry (PARTIALLY DONE)
+### ~~30. Resolver and typeck not yet dispatched through registry~~ (DONE)
 
 **Severity:** medium (adding a feature still requires match arms in 2 central files)
 **Impact:** The Feature struct has resolve_expr and check_expr handlers

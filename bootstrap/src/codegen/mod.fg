@@ -1199,12 +1199,6 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     }
 }
 
-// emit_is_check moved to features/is_keyword/codegen.fg
-
-// emit_if_expr moved to features/if_stmt/codegen.fg
-
-// emit_field_assign moved to features/struct_decl/codegen.fg
-
 fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
     // A block expression's value is the value of the LAST
     // statement, if that statement is a `Stmt.Expr`. Anything
@@ -1350,10 +1344,6 @@ fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     ok_emit_str(result_i64)
 }
 
-// emit_struct_lit, malloc_struct_bytes, fill_struct_fields → features/struct_decl/codegen.fg
-
-// emit_field_access moved to features/struct_decl/codegen.fg
-// emit_enum_ctor → features/enum_decl/codegen.fg
 
 
 fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
