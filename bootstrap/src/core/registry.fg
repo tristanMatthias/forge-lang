@@ -15,11 +15,21 @@ extern fn forge_intmap_new() -> ptr
 extern fn forge_intmap_set(map: ptr, key: int, value: int)
 extern fn forge_intmap_get(map: ptr, key: int) -> int
 extern fn forge_intmap_has(map: ptr, key: int) -> int
+extern fn forge_map_new_cstr() -> ptr
+extern fn forge_map_set_cstr(map: ptr, key: string, value: int)
+extern fn forge_map_get_cstr(map: ptr, key: string) -> int
+extern fn forge_map_has_cstr(map: ptr, key: string) -> int
 
 // ── Feature type ──
 
 export type Feature = {
     name: string,
+    expr_tag: Expr?,
+    stmt_tag: Stmt?,
+    decl_keyword: string,
+    stmt_keyword: string,
+    parse_decl: fn(Parser) -> Stmt?,
+    parse_stmt: fn(Parser) -> Stmt?,
     emit_expr: fn(Ctx, VarEnv, Expr) -> EmitResult,
     emit_stmt: fn(Ctx, VarEnv, Stmt) -> StmtResult,
     resolve_expr: fn(Resolver, Expr) -> Resolver,
@@ -44,6 +54,27 @@ fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
 fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_stmt handler" }
 }
+fn noop_parse(p: Parser) -> Stmt? { null }
+
+export fn feature_new(name: string) -> Feature {
+    Feature {
+        name,
+        expr_tag: null,
+        stmt_tag: null,
+        decl_keyword: "",
+        stmt_keyword: "",
+        parse_decl: noop_parse,
+        parse_stmt: noop_parse,
+        emit_expr: noop_emit_expr,
+        emit_stmt: noop_emit_stmt,
+        resolve_expr: noop_resolve,
+        resolve_stmt: noop_resolve_stmt,
+        check_expr: noop_check,
+        check_stmt: noop_check_stmt,
+        eval_expr: noop_eval_expr,
+        eval_stmt: noop_eval_stmt,
+    }
+}
 
 // ── Registry ──
 
@@ -56,6 +87,8 @@ export type Registry = {
     stmt_checkers: ptr,
     expr_evals: ptr,
     stmt_evals: ptr,
+    decl_parsers: ptr,
+    stmt_parsers: ptr,
 }
 
 export fn registry_new() -> Registry {
@@ -68,6 +101,31 @@ export fn registry_new() -> Registry {
         stmt_checkers: forge_intmap_new(),
         expr_evals: forge_intmap_new(),
         stmt_evals: forge_intmap_new(),
+        decl_parsers: forge_map_new_cstr(),
+        stmt_parsers: forge_map_new_cstr(),
+    }
+}
+
+export fn register(reg: Registry, f: Feature) {
+    if f.expr_tag != null {
+        let etag = forge_expr_tag(f.expr_tag!)
+        forge_intmap_set(reg.expr_emitters, etag, f.emit_expr)
+        forge_intmap_set(reg.expr_resolvers, etag, f.resolve_expr)
+        forge_intmap_set(reg.expr_checkers, etag, f.check_expr)
+        forge_intmap_set(reg.expr_evals, etag, f.eval_expr)
+    }
+    if f.stmt_tag != null {
+        let stag = forge_stmt_tag(f.stmt_tag!)
+        forge_intmap_set(reg.stmt_emitters, stag, f.emit_stmt)
+        forge_intmap_set(reg.stmt_resolvers, stag, f.resolve_stmt)
+        forge_intmap_set(reg.stmt_checkers, stag, f.check_stmt)
+        forge_intmap_set(reg.stmt_evals, stag, f.eval_stmt)
+    }
+    if f.decl_keyword.length > 0 {
+        forge_map_set_cstr(reg.decl_parsers, f.decl_keyword, f.parse_decl)
+    }
+    if f.stmt_keyword.length > 0 {
+        forge_map_set_cstr(reg.stmt_parsers, f.stmt_keyword, f.parse_stmt)
     }
 }
 
@@ -110,15 +168,15 @@ export fn register_dual(reg: Registry, expr_dummy: Expr, stmt_dummy: Stmt, f: Fe
 // ── Convenience constructors ──
 
 export fn emit_only(name: string, emit: fn(Ctx, VarEnv, Expr) -> EmitResult) -> Feature {
-    Feature { name, emit_expr: emit, emit_stmt: noop_emit_stmt, resolve_expr: noop_resolve, resolve_stmt: noop_resolve_stmt, check_expr: noop_check, check_stmt: noop_check_stmt, eval_expr: noop_eval_expr, eval_stmt: noop_eval_stmt }
+    Feature { name, expr_tag: null, stmt_tag: null, decl_keyword: "", stmt_keyword: "", parse_decl: noop_parse, parse_stmt: noop_parse, emit_expr: emit, emit_stmt: noop_emit_stmt, resolve_expr: noop_resolve, resolve_stmt: noop_resolve_stmt, check_expr: noop_check, check_stmt: noop_check_stmt, eval_expr: noop_eval_expr, eval_stmt: noop_eval_stmt }
 }
 
 export fn stmt_only(name: string, emit: fn(Ctx, VarEnv, Stmt) -> StmtResult) -> Feature {
-    Feature { name, emit_expr: noop_emit_expr, emit_stmt: emit, resolve_expr: noop_resolve, resolve_stmt: noop_resolve_stmt, check_expr: noop_check, check_stmt: noop_check_stmt, eval_expr: noop_eval_expr, eval_stmt: noop_eval_stmt }
+    Feature { name, expr_tag: null, stmt_tag: null, decl_keyword: "", stmt_keyword: "", parse_decl: noop_parse, parse_stmt: noop_parse, emit_expr: noop_emit_expr, emit_stmt: emit, resolve_expr: noop_resolve, resolve_stmt: noop_resolve_stmt, check_expr: noop_check, check_stmt: noop_check_stmt, eval_expr: noop_eval_expr, eval_stmt: noop_eval_stmt }
 }
 
 export fn full_expr(name: string, emit: fn(Ctx, VarEnv, Expr) -> EmitResult, resolve: fn(Resolver, Expr) -> Resolver, check: fn(TC, Expr) -> ExprResult) -> Feature {
-    Feature { name, emit_expr: emit, emit_stmt: noop_emit_stmt, resolve_expr: resolve, resolve_stmt: noop_resolve_stmt, check_expr: check, check_stmt: noop_check_stmt, eval_expr: noop_eval_expr, eval_stmt: noop_eval_stmt }
+    Feature { name, expr_tag: null, stmt_tag: null, decl_keyword: "", stmt_keyword: "", parse_decl: noop_parse, parse_stmt: noop_parse, emit_expr: emit, emit_stmt: noop_emit_stmt, resolve_expr: resolve, resolve_stmt: noop_resolve_stmt, check_expr: check, check_stmt: noop_check_stmt, eval_expr: noop_eval_expr, eval_stmt: noop_eval_stmt }
 }
 
 // ── Dispatch ──
@@ -169,6 +227,16 @@ export fn dispatch_stmt_eval(reg: Registry, tag: int, rt: Runtime, stmt: Stmt) -
     if forge_intmap_has(reg.stmt_evals, tag) == 0 { return null }
     let handler: fn(Runtime, Stmt) -> StepResult = forge_intmap_get(reg.stmt_evals, tag)
     handler(rt, stmt)
+}
+
+export fn lookup_decl_parser(reg: Registry, keyword: string) -> int? {
+    if forge_map_has_cstr(reg.decl_parsers, keyword) == 0 { return null }
+    forge_map_get_cstr(reg.decl_parsers, keyword)
+}
+
+export fn lookup_stmt_parser(reg: Registry, keyword: string) -> int? {
+    if forge_map_has_cstr(reg.stmt_parsers, keyword) == 0 { return null }
+    forge_map_get_cstr(reg.stmt_parsers, keyword)
 }
 
 // ── Build the registry ──

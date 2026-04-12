@@ -4,6 +4,8 @@ mod codegen
 export fn register_if_stmt(reg: Registry) -> Registry {
     register_dual(reg, Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null), Stmt.If(Expr.Null, Stmt.NoOp, null), Feature {
         name: "if",
+        expr_tag: null, stmt_tag: null, decl_keyword: "", stmt_keyword: "",
+        parse_decl: noop_parse, parse_stmt: noop_parse,
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
         resolve_expr: noop_resolve,

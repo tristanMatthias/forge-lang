@@ -4,6 +4,8 @@ mod codegen
 export fn register_match(reg: Registry) -> Registry {
     register_dual(reg, Expr.MatchExpr(Expr.Null, MatchArmList.End), Stmt.Match(Expr.Null, MatchArmList.End), Feature {
         name: "match",
+        expr_tag: null, stmt_tag: null, decl_keyword: "", stmt_keyword: "",
+        parse_decl: noop_parse, parse_stmt: noop_parse,
         emit_expr: match_emit_expr,
         emit_stmt: match_emit_stmt,
         resolve_expr: noop_resolve,
