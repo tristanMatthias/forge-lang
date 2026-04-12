@@ -14,6 +14,7 @@
 //                                  type checking
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
+use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_dummy}
 
 // ── Module tree ──
 //
@@ -220,7 +221,7 @@ fn annotation_has_export(annotations: AnnotationList) -> bool {
 
 fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> UseResult {
     match stmts {
-        .End -> UseResult { aliases: AliasEntry.End, errors: "", warnings: "" }
+        .End -> UseResult { aliases: AliasEntry.End, bag: bag_new() }
         .Node(ss, next) -> {
             let rest = resolve_use_aliases(next, tree)
             match ss.node {
@@ -234,11 +235,10 @@ fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> UseResult {
     }
 }
 
-// Use resolution result — carries aliases + accumulated diagnostics.
+// Use resolution result — carries aliases + diagnostics bag.
 type UseResult = {
     aliases: AliasEntry,
-    errors: string,      // Hard errors (missing names)
-    warnings: string,    // Soft warnings (private imports)
+    bag: DiagnosticBag,
 }
 
 fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, result: UseResult) -> UseResult {
@@ -248,16 +248,19 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, resul
             let mod_node = module_find(tree, mod_path)
             let found_info = match mod_node {
                 .End -> {
-                    UseResult { aliases: result.aliases, errors: result.errors + "error: `use " + mod_path + "` — module not found\n", warnings: result.warnings }
+                    let d = diag_error(DiagCode.ImportNotFound, "`use " + mod_path + "` — module not found in module tree", span_dummy())
+                    UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                 }
                 .Node(_, _, items, _, _) -> {
                     let found = item_lookup(items, name)
                     if found == "" {
-                        UseResult { aliases: result.aliases, errors: result.errors + "error: `" + name + "` not found in module `" + mod_path + "`\n", warnings: result.warnings }
+                        let d = diag_error(DiagCode.ImportNotFound, "`" + name + "` not found in module `" + mod_path + "`", span_dummy())
+                        UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                     } else if !item_is_exported(items, name) {
-                        UseResult { aliases: AliasEntry.Node(name, found, result.aliases), errors: result.errors, warnings: result.warnings + "warning: `" + name + "` is private in module `" + mod_path + "`\n" }
+                        let d = diag_error(DiagCode.ImportPrivate, "`" + name + "` is private in module `" + mod_path + "`", span_dummy())
+                        UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                     } else {
-                        UseResult { aliases: AliasEntry.Node(name, found, result.aliases), errors: result.errors, warnings: result.warnings }
+                        UseResult { aliases: AliasEntry.Node(name, found, result.aliases), bag: result.bag }
                     }
                 }
                 _ -> result
@@ -372,23 +375,26 @@ fn merge_aliases(base: AliasEntry, extra: AliasEntry) -> AliasEntry {
 
 // ── Public entry point ──
 
-export type NameResolveResult = { stmts: StmtList, had_error: bool, error_message: string }
+export type NameResolveResult = {
+    stmts: StmtList,
+    had_error: bool,
+    error_message: string,
+    bag: DiagnosticBag,
+}
 
 export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let use_result = resolve_use_aliases(stmts, tree)
     let global_index = build_global_index(tree, ModuleItem.End)
     let ctx = NameCtx { tree, aliases: use_result.aliases, current_module: "", locals: LocalScope.End, global_index }
-    // Print warnings (non-fatal) to stderr
-    if use_result.warnings.length > 0 {
-        eprintln(use_result.warnings)
-    }
     let rewritten = rewrite_stmt_list(ctx, stmts)
-    // Errors are fatal
-    if use_result.errors.length > 0 {
-        return NameResolveResult { stmts: rewritten, had_error: true, error_message: use_result.errors }
+    let has_errors = bag_has_errors(use_result.bag)
+    NameResolveResult {
+        stmts: rewritten,
+        had_error: has_errors,
+        error_message: if has_errors { "module resolution errors" } else { "" },
+        bag: use_result.bag,
     }
-    NameResolveResult { stmts: rewritten, had_error: false, error_message: "" }
 }
 
 // ── Statement rewriting ──

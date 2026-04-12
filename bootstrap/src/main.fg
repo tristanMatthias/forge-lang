@@ -236,6 +236,9 @@ fn main() {
             fail(mod_resolved.error_message)
         }
         let named = resolve_names(mod_resolved.stmts)
+        if bag_has_errors(named.bag) {
+            render_bag(source, path, named.bag)
+        }
         if named.had_error { fail(named.error_message) }
         let resolved = resolve_program(named.stmts)
         if resolved.had_error {
@@ -269,6 +272,9 @@ fn main() {
             fail(mod_resolved.error_message)
         }
         let named = resolve_names(mod_resolved.stmts)
+        if bag_has_errors(named.bag) {
+            render_bag(source, path, named.bag)
+        }
         if named.had_error { fail(named.error_message) }
         let resolved = resolve_program(named.stmts)
         if resolved.had_error {

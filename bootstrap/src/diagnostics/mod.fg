@@ -89,6 +89,10 @@ export enum DiagCode {
     // Type checking (F02xx) — reserved for Phase 1
     TypeMismatch
     WrongArgCount
+    // Module system (F03xx)
+    ModuleNotFound
+    ImportNotFound
+    ImportPrivate
     // Internal (F09xx)
     InternalError
 }
@@ -115,6 +119,9 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ImmutableAssign     -> ErrorDef { code: "F0101", help: "declare with `mut` instead of `let` to allow reassignment" }
         .TypeMismatch        -> ErrorDef { code: "F0200", help: "" }
         .WrongArgCount       -> ErrorDef { code: "F0201", help: "" }
+        .ModuleNotFound      -> ErrorDef { code: "F0300", help: "create the module file or remove the `mod` declaration" }
+        .ImportNotFound      -> ErrorDef { code: "F0301", help: "check the spelling or add `export` to the function in the target module" }
+        .ImportPrivate       -> ErrorDef { code: "F0302", help: "add `export` before the declaration to make it importable" }
         .InternalError       -> ErrorDef { code: "F0999", help: "" }
     }
 }
