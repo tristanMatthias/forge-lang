@@ -128,6 +128,16 @@ SEED MANAGEMENT
   --build-seed           Build the seed binary from seed/seed.ll.
   --update-seed          Copy current bs2 output to seed/seed.ll with
                          provenance metadata (commit, timestamp, source hash).
+  --verify-seed          Verify bootstrap chain integrity WITHOUT auto-cycle.
+                         Builds seed → bs2 → verifies bs2 can self-compile →
+                         verifies the resulting binary can also self-compile.
+                         Prints OK or specific failure point. Use this to
+                         check seed health before committing.
+  --seed-sigs            Compare function signatures (parameter counts)
+                         between seed/seed.ll and src/**/*.fg. Reports
+                         mismatches, new functions, and removed functions.
+                         Catches the most common seed staleness issue:
+                         parameter count changes that cause silent corruption.
 
   NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
   You rarely need to run 'make update-seed' manually anymore.
@@ -1006,6 +1016,8 @@ main() {
     --seed-diff)          mode_seed_diff "$@" ;;
     --build-seed)         ensure_seed; ok "$SEED_BIN" ;;
     --update-seed)        mode_update_seed "$@" ;;
+    --verify-seed)        mode_verify_seed "$@" ;;
+    --seed-sigs)          mode_seed_sigs "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
 }
@@ -1144,6 +1156,189 @@ mode_seed_diff() {
   else
     # Overview: just count differences
     mode_seed_status
+  fi
+}
+
+# Verify the bootstrap chain integrity WITHOUT auto-cycling.
+# This is a strict check: build seed → bs2, verify bs2 self-compiles,
+# verify the resulting binary can also self-compile. No recovery attempts.
+mode_verify_seed() {
+  log "step 1/4: building seed binary from seed/seed.ll"
+  ensure_seed
+  ok "seed binary built"
+
+  log "step 2/4: compiling src/main.fg with seed → bs2"
+  # Force a fresh bs2 build
+  rm -f "$BS2"
+  if ! "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/verify_bs2.log" 2>&1; then
+    cat "$BUILD_DIR/verify_bs2.log" >&2
+    die "FAIL: seed cannot compile current source"
+  fi
+  link_ll "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS2" "$BUILD_DIR/verify_bs2_link.log"
+  ok "bs2 built from seed"
+
+  log "step 3/4: verifying bs2 can compile src/main.fg"
+  if ! "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/verify_bs2_self.log" 2>&1; then
+    cat "$BUILD_DIR/verify_bs2_self.log" >&2
+    die "FAIL: bs2 cannot self-compile (seed is stale or source has breaking changes)"
+  fi
+  ok "bs2 self-compile succeeded"
+
+  log "step 4/4: linking and verifying bs3 can compile src/main.fg"
+  link_ll "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS3" "$BUILD_DIR/verify_bs3_link.log"
+  if ! "$BS3" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/verify_bs3_self.log" 2>&1; then
+    cat "$BUILD_DIR/verify_bs3_self.log" >&2
+    die "FAIL: bs3 cannot self-compile (bootstrap chain is broken at generation 3)"
+  fi
+  ok "bs3 self-compile succeeded"
+
+  ok "seed verification passed — full bootstrap chain is healthy"
+}
+
+# Compare function signatures between seed IR and source .fg files.
+# Catches the most common seed staleness issue: parameter count changes.
+mode_seed_sigs() {
+  [ -f "$SEED_LL" ] || die "no seed found at $SEED_LL"
+
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  trap "rm -rf $tmpdir" EXIT
+
+  # Extract seed function signatures: "bare_name param_count full_name"
+  # from define lines. Handles both @bare_name( and @"mod::name"( forms.
+  # For qualified names like "core::scanner::advance", the bare_name is
+  # "advance" (last segment after ::) so it can match source fn names.
+  grep '^define ' "$SEED_LL" | while IFS= read -r line; do
+    # Extract full function name
+    local full_name bare_name
+    if echo "$line" | grep -q '@"'; then
+      full_name=$(echo "$line" | sed 's/.*@"\([^"]*\)".*/\1/')
+    else
+      full_name=$(echo "$line" | sed 's/.*@\([^(]*\)(.*/\1/')
+    fi
+    # Strip module prefix for matching: "core::scanner::advance" → "advance"
+    bare_name=$(echo "$full_name" | sed 's/.*:://')
+    # Count parameters by counting % sigils in the parameter list
+    local param_str count
+    param_str=$(echo "$line" | sed 's/[^(]*(\([^)]*\)).*/\1/')
+    count=$(echo "$param_str" | grep -o '%' | wc -l | tr -d ' ')
+    echo "$bare_name $count $full_name"
+  done | sort -k1,1 > "$tmpdir/seed_sigs.txt"
+
+  # Extract source function signatures from .fg files.
+  # Matches: fn name(...) and export fn name(...)
+  # Counts parameters by counting commas + 1 (if non-empty param list).
+  find "$BOOTSTRAP_DIR/src" -name '*.fg' -print0 | xargs -0 grep -h '^\(export \)\{0,1\}fn ' | \
+    sed 's/^export //' | while IFS= read -r line; do
+    # Extract function name
+    local name
+    name=$(echo "$line" | sed 's/^fn \([a-zA-Z_][a-zA-Z0-9_]*\).*/\1/')
+    # Extract parameter list (between first parens)
+    local params
+    params=$(echo "$line" | sed 's/[^(]*(\([^)]*\)).*/\1/' | sed 's/[[:space:]]//g')
+    if [ -z "$params" ]; then
+      echo "$name 0"
+    else
+      local count
+      count=$(echo "$params" | tr ',' '\n' | wc -l | tr -d ' ')
+      echo "$name $count"
+    fi
+  done | sort -k1,1 -u > "$tmpdir/src_sigs.txt"
+
+  # Build lookup: bare_name → (seed_count, full_name)
+  # seed_sigs.txt has: bare_name param_count full_name
+  # src_sigs.txt has: name param_count
+  local seed_names src_names
+  seed_names=$(awk '{print $1}' "$tmpdir/seed_sigs.txt" | sort -u)
+  src_names=$(awk '{print $1}' "$tmpdir/src_sigs.txt" | sort -u)
+
+  # Functions with different parameter counts
+  local mismatches=0
+  local mismatch_list=""
+  local common_fns
+  common_fns=$(comm -12 <(echo "$seed_names") <(echo "$src_names"))
+  for fn in $common_fns; do
+    local seed_count src_count full_name
+    seed_count=$(grep "^${fn} " "$tmpdir/seed_sigs.txt" | head -1 | awk '{print $2}')
+    full_name=$(grep "^${fn} " "$tmpdir/seed_sigs.txt" | head -1 | awk '{print $3}')
+    src_count=$(grep "^${fn} " "$tmpdir/src_sigs.txt" | head -1 | awk '{print $2}')
+    if [ -n "$seed_count" ] && [ -n "$src_count" ] && [ "$seed_count" != "$src_count" ]; then
+      mismatches=$((mismatches + 1))
+      local display_name="$fn"
+      # Show qualified name if different from bare name
+      if [ "$full_name" != "$fn" ]; then
+        display_name="$fn ($full_name)"
+      fi
+      mismatch_list="${mismatch_list}$(printf "  ${C_RED}! %-50s seed=%s  src=%s${C_RESET}\n" "$display_name" "$seed_count" "$src_count")\n"
+    fi
+  done
+
+  # New functions (in source but not seed)
+  local new_fns
+  new_fns=$(comm -13 <(echo "$seed_names") <(echo "$src_names"))
+  local new_count=0
+  if [ -n "$new_fns" ]; then
+    new_count=$(echo "$new_fns" | wc -l | tr -d ' ')
+  fi
+
+  # Removed functions (in seed but not source)
+  local removed_fns
+  removed_fns=$(comm -23 <(echo "$seed_names") <(echo "$src_names"))
+  local removed_count=0
+  if [ -n "$removed_fns" ]; then
+    removed_count=$(echo "$removed_fns" | wc -l | tr -d ' ')
+  fi
+
+  # Print report
+  local seed_total src_total
+  seed_total=$(wc -l < "$tmpdir/seed_sigs.txt" | tr -d ' ')
+  src_total=$(wc -l < "$tmpdir/src_sigs.txt" | tr -d ' ')
+  echo "Seed functions: $seed_total (unique bare names: $(echo "$seed_names" | wc -l | tr -d ' '))"
+  echo "Source functions: $src_total"
+  echo ""
+
+  if [ "$mismatches" -gt 0 ]; then
+    printf "${C_RED}PARAMETER COUNT MISMATCHES: %s${C_RESET}\n" "$mismatches"
+    printf "$mismatch_list"
+    echo ""
+  fi
+
+  if [ "$new_count" -gt 0 ]; then
+    printf "${C_GREEN}+ %s new functions (in source, not in seed):${C_RESET}\n" "$new_count"
+    echo "$new_fns" | head -20 | while read -r fn; do
+      printf "  ${C_GREEN}+ %s${C_RESET}\n" "$fn"
+    done
+    if [ "$new_count" -gt 20 ]; then
+      printf "  ${C_DIM}... and %s more${C_RESET}\n" "$((new_count - 20))"
+    fi
+    echo ""
+  fi
+
+  if [ "$removed_count" -gt 0 ]; then
+    printf "${C_YELLOW}- %s removed functions (in seed, not in source):${C_RESET}\n" "$removed_count"
+    echo "$removed_fns" | head -20 | while read -r fn; do
+      # Show the full qualified name from the seed
+      local full_name
+      full_name=$(grep "^${fn} " "$tmpdir/seed_sigs.txt" | head -1 | awk '{print $3}')
+      if [ "$full_name" != "$fn" ]; then
+        printf "  ${C_YELLOW}- %s (%s)${C_RESET}\n" "$fn" "$full_name"
+      else
+        printf "  ${C_YELLOW}- %s${C_RESET}\n" "$fn"
+      fi
+    done
+    if [ "$removed_count" -gt 20 ]; then
+      printf "  ${C_DIM}... and %s more${C_RESET}\n" "$((removed_count - 20))"
+    fi
+    echo ""
+  fi
+
+  if [ "$mismatches" -eq 0 ] && [ "$new_count" -eq 0 ] && [ "$removed_count" -eq 0 ]; then
+    ok "seed signatures match source — no mismatches"
+  elif [ "$mismatches" -gt 0 ]; then
+    warn "parameter count mismatches may cause silent corruption — consider updating the seed"
+    return 1
+  else
+    ok "no parameter count mismatches (new/removed functions are expected during development)"
   fi
 }
 
