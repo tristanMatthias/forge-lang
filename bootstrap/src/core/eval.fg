@@ -5,6 +5,7 @@
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, SExpr, SStmt}
+use core.registry.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_eval, forge_stmt_tag, forge_expr_tag}
 
 // `float` is a host built-in that the bootstrap evaluator uses to
 // parse numeric literal strings. The bootstrap codegen doesn't
@@ -44,6 +45,7 @@ export type Runtime = {
     bindings: BindingList,
     functions: FunctionList,
     depth: int,
+    features: Registry,
 }
 
 export type StepResult = {
@@ -128,6 +130,7 @@ fn runtime_new() -> Runtime {
         bindings: BindingList.End,
         functions: FunctionList.End,
         depth: 0,
+        features: build_registry(),
     }
 }
 
@@ -202,6 +205,7 @@ fn enter_scope(runtime: Runtime) -> Runtime {
         bindings: runtime.bindings,
         functions: runtime.functions,
         depth: runtime.depth + 1,
+        features: runtime.features,
     }
 }
 
@@ -210,6 +214,7 @@ fn exit_scope(runtime: Runtime) -> Runtime {
         bindings: pop_scope_bindings(runtime.bindings, runtime.depth),
         functions: runtime.functions,
         depth: runtime.depth - 1,
+        features: runtime.features,
     }
 }
 
@@ -231,6 +236,7 @@ fn define_binding(runtime: Runtime, name: string, mutable_binding: bool, value: 
         bindings: BindingList.Node(name, mutable_binding, runtime.depth, value, runtime.bindings),
         functions: runtime.functions,
         depth: runtime.depth,
+        features: runtime.features,
     }
 }
 
@@ -274,6 +280,7 @@ fn define_function(runtime: Runtime, name: string, params: ParamList, body: Stmt
         bindings: runtime.bindings,
         functions: FunctionList.Node(name, params, body, runtime.functions),
         depth: runtime.depth,
+        features: runtime.features,
     }
 }
 
@@ -452,6 +459,12 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .Parallel(_) -> error_result(runtime, "parallel is not supported by the tree-walk evaluator")
         .Module(_, _) -> ok_result(runtime, value_null())
         .Use(_, _) -> ok_result(runtime, value_null())
+        _ -> {
+            let tag = forge_stmt_tag(stmt)
+            let result = dispatch_stmt_eval(runtime.features, tag, runtime, stmt)
+            if result != null { return result! }
+            ok_result(runtime, value_null())
+        }
     }
 }
 
@@ -522,6 +535,7 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
                 bindings: assigned.bindings,
                 functions: value_result.runtime.functions,
                 depth: value_result.runtime.depth,
+                features: value_result.runtime.features,
             }
             ok_result(next_runtime, value_result.value)
         }
@@ -555,6 +569,12 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
                 return ok_result(runtime, value_function(path))
             }
             error_result(runtime, "undefined qualified name `" + path + "`")
+        }
+        _ -> {
+            let tag = forge_expr_tag(expr)
+            let result = dispatch_expr_eval(runtime.features, tag, runtime, expr)
+            if result != null { return result! }
+            error_result(runtime, "unsupported expression type in tree-walk evaluator")
         }
     }
 }

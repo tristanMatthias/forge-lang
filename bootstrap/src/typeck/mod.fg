@@ -7,6 +7,7 @@
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, MatchArmList, Pattern, PatternList, ValueType, TypeList, BinOp, vtype_display, vtype_eq, vtype_list_elem, vtype_fn_ret, vtype_tuple_at, SExpr, SStmt}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
+use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 
 // ── Type environment ──
 
@@ -193,6 +194,7 @@ type TC = {
     current_line: int,
     current_col: int,
     traits: TraitRegistry,
+    features: Registry,
 }
 
 type ExprResult = {
@@ -212,6 +214,7 @@ fn tc_new() -> TC {
         current_line: 0,
         current_col: 0,
         traits: TraitRegistry.End,
+        features: build_registry(),
     }
 }
 
@@ -444,7 +447,12 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         }
         .Module(_, body) -> check_stmts(tc, body)
         .Annotated(_, inner) -> check_stmt(tc, inner)
-        _ -> tc  // TypeDecl, EnumDecl, ExternFn, NoOp, Break, Continue, TraitDecl, Use
+        _ -> {
+            let tag = forge_stmt_tag(stmt)
+            let result = dispatch_stmt_check(tc.features, tag, tc, stmt)
+            if result != null { return result! }
+            tc
+        }
     }
 }
 
@@ -783,7 +791,12 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let fn_ty = fn_type_lookup(tc.fns, path)
             tc_er(tc, fn_ty)
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> {
+            let tag = forge_expr_tag(expr)
+            let result = dispatch_expr_check(tc.features, tag, tc, expr)
+            if result != null { return result! }
+            tc_er(tc, ValueType.Int)
+        }
     }
 }
 

@@ -5,6 +5,7 @@
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, PatternList, SExpr, SStmt}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
+use core.registry.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, forge_stmt_tag, forge_expr_tag}
 
 export type ResolveResult = {
     had_error: bool,
@@ -29,6 +30,7 @@ type Resolver = {
     had_error: bool,
     error_message: string,
     bag: DiagnosticBag,
+    features: Registry,
 }
 
 export fn resolve_program(stmts: StmtList) -> ResolveResult {
@@ -89,6 +91,7 @@ fn resolver_new() -> Resolver {
         had_error: false,
         error_message: "",
         bag: bag_new(),
+        features: build_registry(),
     }
 }
 
@@ -304,6 +307,12 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .Parallel(body) -> resolve_stmt_list(r, body)
         .Module(_, body) -> resolve_stmt_list(r, body)
         .Use(_, _) -> r
+        _ -> {
+            let tag = forge_stmt_tag(stmt)
+            let result = dispatch_stmt_resolve(r.features, tag, r, stmt)
+            if result != null { return result! }
+            r
+        }
     }
 }
 
@@ -502,6 +511,12 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         }
         .IsCheck(subject, _) -> resolve_expr(r, subject)
         .QualifiedIdent(_) -> r
+        _ -> {
+            let tag = forge_expr_tag(expr)
+            let result = dispatch_expr_resolve(r.features, tag, r, expr)
+            if result != null { return result! }
+            r
+        }
     }
 }
 
