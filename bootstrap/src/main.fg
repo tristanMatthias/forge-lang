@@ -49,6 +49,7 @@ use codegen.{compile_program}
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")
     eprintln("Usage: bootstrapc <tokens|expr|program|eval|check|compile|run> <file.fg>")
+    eprintln("       bootstrapc compile --stop-after=<parse|resolve|names|check> <file.fg>")
 }
 
 fn fail(message: string) {
@@ -66,11 +67,14 @@ fn main() {
 
     let command = forge_selfhost_get_arg_cstr(1)
     let path = forge_selfhost_get_arg_cstr(2)
-    if !file_exists(path) {
+    // Skip file existence check when arg 2 is a flag (e.g. --stop-after=X).
+    // The compile command handles its own path validation in that case.
+    let is_flag = path.length > 2 && path.substring(0, 2) == "--"
+    if !is_flag && !file_exists(path) {
         fail("error: file not found: " + path)
     }
 
-    let source = read_file(path)
+    let source = if is_flag { "" } else { read_file(path) }
     if command == "tokens" {
         let result = scan_source(source)
         if result.had_error {
@@ -149,40 +153,69 @@ fn main() {
     }
 
     if command == "compile" {
-        let parsed = parse_program_source(source)
+        // Check for --stop-after=<pass> flag. When present, arg 2 is the
+        // flag and arg 3 is the file path.
+        let has_stop_flag = path.length > 13 && path.substring(0, 13) == "--stop-after="
+        let stop_after = if has_stop_flag { path.substring(13, path.length) } else { "" }
+        if has_stop_flag && forge_selfhost_argc() < 4 {
+            fail("error: --stop-after requires a file path argument")
+        }
+        let cpath = if has_stop_flag { forge_selfhost_get_arg_cstr(3) } else { path }
+        if has_stop_flag && !file_exists(cpath) {
+            fail("error: file not found: " + cpath)
+        }
+        let csource = if has_stop_flag { read_file(cpath) } else { source }
+
+        let parsed = parse_program_source(csource)
         if parsed.had_error || parsed.stmts == null {
             if bag_has_errors(parsed.bag) {
-                render_bag(source, path, parsed.bag)
+                render_bag(csource, cpath, parsed.bag)
             }
             fail(parsed.error_message)
         }
+        if stop_after == "parse" {
+            println("ok")
+            return
+        }
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
-        let entry_dir = modules_dirname(path)
+        let entry_dir = modules_dirname(cpath)
         let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
         if mod_resolved.had_error {
             let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-            render_bag(source, path, mod_bag)
+            render_bag(csource, cpath, mod_bag)
             fail(mod_resolved.error_message)
+        }
+        if stop_after == "resolve" {
+            println("ok")
+            return
         }
         let named = resolve_names(mod_resolved.stmts)
         if bag_has_errors(named.bag) {
-            render_bag(source, path, named.bag)
+            render_bag(csource, cpath, named.bag)
         }
         if named.had_error { fail(named.error_message) }
+        if stop_after == "names" {
+            println("ok")
+            return
+        }
         let resolved = resolve_program(named.stmts)
         if resolved.had_error {
             if bag_has_errors(resolved.bag) {
-                render_bag(source, path, resolved.bag)
+                render_bag(csource, cpath, resolved.bag)
             }
             fail(resolved.error_message)
         }
         // Type check (additive — reports but doesn't block compilation)
         let tc_result = typecheck_program(named.stmts)
         if bag_has_errors(tc_result.bag) {
-            render_bag(source, path, tc_result.bag)
+            render_bag(csource, cpath, tc_result.bag)
         }
-        let output = path + ".ll"
+        if stop_after == "check" {
+            println("ok")
+            return
+        }
+        let output = cpath + ".ll"
         let compiled = compile_program(named.stmts, output)
         if compiled.had_error {
             fail(compiled.error_message)

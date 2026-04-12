@@ -23,6 +23,7 @@ RUNTIME_C="$BOOTSTRAP_DIR/runtime.c"
 RUNTIME_O="$BUILD_DIR/runtime.o"
 RUNTIME_ASAN_O="$BUILD_DIR/runtime_asan.o"
 BS2="$BUILD_DIR/bs2"
+BS2_O0="$BUILD_DIR/bs2_O0"
 BS2_ASAN="$BUILD_DIR/bs2_asan"
 BS3="$BUILD_DIR/bs3"
 
@@ -60,6 +61,9 @@ BUILD MODES
                        Same as scripts/test.sh but goes through this script.
   --build-runtime      Compile forge/stdlib/runtime.c → build/runtime.o.
   --build-bs2          Compile bootstrap/src/main.fg with stage1 → build/bs2.
+  --build-O0           Build bs2 at -O0 (no optimization) for debuggability.
+                       Makes lldb usable with breakpoints and variable inspection.
+                       Output: build/bs2_O0.
   --build-bs2-asan     Same as --build-bs2 but link with -fsanitize=address.
   --build-bs3          Compile bootstrap/src/main.fg with bs2 → build/bs3.
                        (The fixed-point self-host check.)
@@ -253,6 +257,34 @@ ensure_bs2() {
   fi
 }
 
+# Link an LLVM IR file into an executable at -O0 (for debuggability).
+link_ll_O0() {
+  local ll="$1" out="$2" logfile="$3"
+  "$LLC" -O0 -filetype=obj "$ll" -o "${out}.o" \
+    || die "llc -O0 failed for $ll"
+  cc -g -o "$out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+    -Wl,-stack_size,0x800000 \
+    -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$logfile" \
+    || { cat "$logfile" >&2; die "link failed for $out"; }
+}
+
+# Build bs2 at -O0 for debuggability (lldb + breakpoints).
+ensure_bs2_O0() {
+  ensure_seed
+  if [ ! -x "$BS2_O0" ] \
+     || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$BS2_O0" ] \
+     || [ "$SEED_LL" -nt "$BS2_O0" ]; then
+    log "compiling bootstrap/src/main.fg with seed compiler (for -O0 build)"
+    if ! "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_O0.codegen.log" 2>&1; then
+      cat "$BUILD_DIR/bs2_O0.codegen.log" >&2
+      die "bs2_O0 codegen failed"
+    fi
+    log "linking $BS2_O0 at -O0"
+    link_ll_O0 "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS2_O0" "$BUILD_DIR/bs2_O0.link.log"
+    ok "built $BS2_O0 (lldb-friendly, -O0)"
+  fi
+}
+
 ensure_bs2_asan() {
   ensure_seed
   ensure_runtime_asan
@@ -436,6 +468,7 @@ mode_diagnose_selfcompile_failure() {
     fi
   done
 }
+mode_build_O0()       { ensure_bs2_O0;   ok "$BS2_O0"; }
 mode_build_bs2_asan() { ensure_bs2_asan; ok "$BS2_ASAN"; }
 mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
 
@@ -943,6 +976,7 @@ main() {
     --build)              mode_build "$@" ;;
     --build-runtime)      mode_build_runtime "$@" ;;
     --build-bs2)          mode_build_bs2 "$@" ;;
+    --build-O0)           mode_build_O0 "$@" ;;
     --build-bs2-asan)     mode_build_bs2_asan "$@" ;;
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;

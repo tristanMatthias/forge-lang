@@ -3154,16 +3154,31 @@ source_filename = "bootstrap"
 @.str.3058 = private unnamed_addr constant [7 x i8] c"sc_ext\00", align 1
 @.str.3059 = private unnamed_addr constant [23 x i8] c"forge-bootstrap v0.1.0\00", align 1
 @.str.3060 = private unnamed_addr constant [73 x i8] c"Usage: bootstrapc <tokens|expr|program|eval|check|compile|run> <file.fg>\00", align 1
-@.str.3061 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
-@.str.3062 = private unnamed_addr constant [7 x i8] c"tokens\00", align 1
-@.str.3063 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@.str.3064 = private unnamed_addr constant [8 x i8] c"program\00", align 1
-@.str.3065 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
-@.str.3066 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.3067 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@.str.3068 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.3069 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
-@.str.3070 = private unnamed_addr constant [4 x i8] c"run\00", align 1
+@.str.3061 = private unnamed_addr constant [77 x i8] c"       bootstrapc compile --stop-after=<parse|resolve|names|check> <file.fg>\00", align 1
+@.str.3062 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.3063 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@.str.3064 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.3065 = private unnamed_addr constant [7 x i8] c"tokens\00", align 1
+@.str.3066 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@.str.3067 = private unnamed_addr constant [8 x i8] c"program\00", align 1
+@.str.3068 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
+@.str.3069 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.3070 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3071 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.3072 = private unnamed_addr constant [14 x i8] c"--stop-after=\00", align 1
+@.str.3073 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.3074 = private unnamed_addr constant [50 x i8] c"error: --stop-after requires a file path argument\00", align 1
+@.str.3075 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@.str.3076 = private unnamed_addr constant [6 x i8] c"parse\00", align 1
+@.str.3077 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3078 = private unnamed_addr constant [8 x i8] c"resolve\00", align 1
+@.str.3079 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3080 = private unnamed_addr constant [6 x i8] c"names\00", align 1
+@.str.3081 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3082 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.3083 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3084 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
+@.str.3085 = private unnamed_addr constant [4 x i8] c"run\00", align 1
 
 declare i32 @puts(ptr)
 
@@ -94719,6 +94734,7 @@ define i64 @print_usage() {
 entry:
   call void @forge_eprintln(ptr @.str.3059)
   call void @forge_eprintln(ptr @.str.3060)
+  call void @forge_eprintln(ptr @.str.3061)
   ret i64 0
 }
 
@@ -94735,16 +94751,23 @@ entry:
 
 define i64 @main() {
 entry:
-  %result564 = alloca i64, align 8
+  %result736 = alloca i64, align 8
   %compiled = alloca i64, align 8
   %output = alloca i64, align 8
-  %tc_result503 = alloca i64, align 8
-  %resolved468 = alloca i64, align 8
-  %named433 = alloca i64, align 8
-  %mod_bag418 = alloca i64, align 8
-  %mod_resolved398 = alloca i64, align 8
-  %entry_dir388 = alloca i64, align 8
-  %parsed344 = alloca i64, align 8
+  %tc_result665 = alloca i64, align 8
+  %resolved630 = alloca i64, align 8
+  %named585 = alloca i64, align 8
+  %mod_bag560 = alloca i64, align 8
+  %mod_resolved540 = alloca i64, align 8
+  %entry_dir530 = alloca i64, align 8
+  %parsed476 = alloca i64, align 8
+  %csource = alloca i64, align 8
+  %ife_result469 = alloca i64, align 8
+  %cpath = alloca i64, align 8
+  %ife_result432 = alloca i64, align 8
+  %stop_after = alloca i64, align 8
+  %ife_result397 = alloca i64, align 8
+  %has_stop_flag = alloca i64, align 8
   %tc_result = alloca i64, align 8
   %resolved = alloca i64, align 8
   %named = alloca i64, align 8
@@ -94752,11 +94775,13 @@ entry:
   %mod_resolved = alloca i64, align 8
   %entry_dir = alloca i64, align 8
   %parsed = alloca i64, align 8
-  %result123 = alloca i64, align 8
-  %result80 = alloca i64, align 8
-  %result45 = alloca i64, align 8
+  %result147 = alloca i64, align 8
+  %result104 = alloca i64, align 8
+  %result63 = alloca i64, align 8
   %result = alloca i64, align 8
   %source = alloca i64, align 8
+  %ife_result = alloca i64, align 8
+  %is_flag = alloca i64, align 8
   %path = alloca i64, align 8
   %command = alloca i64, align 8
   %calltmp = call i64 @forge_selfhost_argc()
@@ -94779,866 +94804,1163 @@ ifcont:                                           ; preds = %else, %then
   %calltmp4 = call i64 @forge_selfhost_get_arg_cstr(i64 2)
   store i64 %calltmp4, ptr %path, align 8
   %path5 = load i64, ptr %path, align 8
-  %calltmp6 = call i64 @file_exists(i64 %path5)
-  %not_cmp = icmp eq i64 %calltmp6, 0
-  %not = zext i1 %not_cmp to i64
-  %if_cond7 = icmp ne i64 %not, 0
-  br i1 %if_cond7, label %then8, label %else9
+  %len_arg = inttoptr i64 %path5 to ptr
+  %strlen_call = call i64 @strlen(ptr %len_arg)
+  %sgt = icmp sgt i64 %strlen_call, 2
+  %sgt_ext = zext i1 %sgt to i64
+  %l_bool = icmp ne i64 %sgt_ext, 0
+  br i1 %l_bool, label %sc_rhs, label %sc_merge
 
-then8:                                            ; preds = %ifcont
-  %path11 = load i64, ptr %path, align 8
-  %concat_r = inttoptr i64 %path11 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.3061)
-  %rhs_len = call i64 @strlen(ptr %concat_r)
-  %concat_total = add i64 %lhs_len, %rhs_len
-  %concat_size = add i64 %concat_total, 1
-  %buf = call ptr @forge_bump_alloc(i64 %concat_size)
-  %0 = call ptr @memcpy(ptr %buf, ptr @.str.3061, i64 %lhs_len)
-  %buf_int = ptrtoint ptr %buf to i64
-  %dst2_int = add i64 %buf_int, %lhs_len
-  %dst2 = inttoptr i64 %dst2_int to ptr
-  %rhs_len_p1 = add i64 %rhs_len, 1
-  %1 = call ptr @memcpy(ptr %dst2, ptr %concat_r, i64 %rhs_len_p1)
-  %concat_i64 = ptrtoint ptr %buf to i64
-  %calltmp12 = call i64 @fail(i64 %concat_i64)
-  br label %ifcont10
-
-else9:                                            ; preds = %ifcont
-  br label %ifcont10
-
-ifcont10:                                         ; preds = %else9, %then8
-  %path13 = load i64, ptr %path, align 8
-  %calltmp14 = call i64 @read_file(i64 %path13)
-  store i64 %calltmp14, ptr %source, align 8
-  %command15 = load i64, ptr %command, align 8
-  %streq_l = inttoptr i64 %command15 to ptr
+sc_rhs:                                           ; preds = %ifcont
+  %path6 = load i64, ptr %path, align 8
+  %sub_src = inttoptr i64 %path6 to ptr
+  %buf = call ptr @forge_bump_alloc(i64 3)
+  %sub_src_int = ptrtoint ptr %sub_src to i64
+  %sub_off_int = add i64 %sub_src_int, 0
+  %sub_off = inttoptr i64 %sub_off_int to ptr
+  %0 = call ptr @memcpy(ptr %buf, ptr %sub_off, i64 2)
+  %sub_buf_int = ptrtoint ptr %buf to i64
+  %sub_nul_int = add i64 %sub_buf_int, 2
+  %sub_nul = inttoptr i64 %sub_nul_int to ptr
+  store i8 0, ptr %sub_nul, align 8
+  %sub_result = ptrtoint ptr %buf to i64
+  %streq_l = inttoptr i64 %sub_result to ptr
   %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.3062)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
-  %if_cond16 = icmp ne i64 %streq_ext, 0
-  br i1 %if_cond16, label %then17, label %else18
-
-then17:                                           ; preds = %ifcont10
-  %source20 = load i64, ptr %source, align 8
-  %calltmp21 = call i64 @"core::scanner::scan_source"(i64 %source20)
-  store i64 %calltmp21, ptr %result, align 8
-  %result22 = load i64, ptr %result, align 8
-  %obj_ptr = inttoptr i64 %result22 to ptr
-  %fld_ptr = getelementptr inbounds nuw %ScanResult, ptr %obj_ptr, i32 0, i32 1
-  %had_error = load i64, ptr %fld_ptr, align 8
-  %if_cond23 = icmp ne i64 %had_error, 0
-  br i1 %if_cond23, label %then24, label %else25
-
-else18:                                           ; preds = %ifcont10
-  br label %ifcont19
-
-ifcont19:                                         ; preds = %else18
-  %command33 = load i64, ptr %command, align 8
-  %streq_l34 = inttoptr i64 %command33 to ptr
-  %strcmp_call35 = call i32 @strcmp(ptr %streq_l34, ptr @.str.3063)
-  %strcmp_sext36 = sext i32 %strcmp_call35 to i64
-  %streq_cmp37 = icmp eq i64 %strcmp_sext36, 0
-  %streq_ext38 = zext i1 %streq_cmp37 to i64
-  %if_cond39 = icmp ne i64 %streq_ext38, 0
-  br i1 %if_cond39, label %then40, label %else41
-
-then24:                                           ; preds = %then17
-  %result27 = load i64, ptr %result, align 8
-  %obj_ptr28 = inttoptr i64 %result27 to ptr
-  %fld_ptr29 = getelementptr inbounds nuw %ScanResult, ptr %obj_ptr28, i32 0, i32 2
-  %error_message = load i64, ptr %fld_ptr29, align 8
-  %calltmp30 = call i64 @fail(i64 %error_message)
-  br label %ifcont26
-
-else25:                                           ; preds = %then17
-  br label %ifcont26
-
-ifcont26:                                         ; preds = %else25, %then24
-  %result31 = load i64, ptr %result, align 8
-  %calltmp32 = call i64 @"core::scanner::render_tokens"(i64 %result31)
-  %str_ptr = inttoptr i64 %calltmp32 to ptr
-  %2 = call i32 @puts(ptr %str_ptr)
-  ret i64 0
-
-then40:                                           ; preds = %ifcont19
-  %source43 = load i64, ptr %source, align 8
-  %calltmp44 = call i64 @"parse::parse_expression_source"(i64 %source43)
-  store i64 %calltmp44, ptr %result45, align 8
-  %result46 = load i64, ptr %result45, align 8
-  %obj_ptr47 = inttoptr i64 %result46 to ptr
-  %fld_ptr48 = getelementptr inbounds nuw %ParseResult, ptr %obj_ptr47, i32 0, i32 1
-  %had_error49 = load i64, ptr %fld_ptr48, align 8
-  %l_bool = icmp ne i64 %had_error49, 0
-  br i1 %l_bool, label %sc_merge, label %sc_rhs
-
-else41:                                           ; preds = %ifcont19
-  br label %ifcont42
-
-ifcont42:                                         ; preds = %else41
-  %command68 = load i64, ptr %command, align 8
-  %streq_l69 = inttoptr i64 %command68 to ptr
-  %strcmp_call70 = call i32 @strcmp(ptr %streq_l69, ptr @.str.3064)
-  %strcmp_sext71 = sext i32 %strcmp_call70 to i64
-  %streq_cmp72 = icmp eq i64 %strcmp_sext71, 0
-  %streq_ext73 = zext i1 %streq_cmp72 to i64
-  %if_cond74 = icmp ne i64 %streq_ext73, 0
-  br i1 %if_cond74, label %then75, label %else76
-
-sc_rhs:                                           ; preds = %then40
-  %result50 = load i64, ptr %result45, align 8
-  %obj_ptr51 = inttoptr i64 %result50 to ptr
-  %fld_ptr52 = getelementptr inbounds nuw %ParseResult, ptr %obj_ptr51, i32 0, i32 0
-  %expr = load i64, ptr %fld_ptr52, align 8
-  %eq = icmp eq i64 %expr, 0
-  %eq_ext = zext i1 %eq to i64
-  %r_bool = icmp ne i64 %eq_ext, 0
+  %r_bool = icmp ne i64 %streq_ext, 0
   br label %sc_merge
 
-sc_merge:                                         ; preds = %sc_rhs, %then40
-  %sc_phi = phi i1 [ true, %then40 ], [ %r_bool, %sc_rhs ]
+sc_merge:                                         ; preds = %sc_rhs, %ifcont
+  %sc_phi = phi i1 [ false, %ifcont ], [ %r_bool, %sc_rhs ]
   %sc_ext = zext i1 %sc_phi to i64
-  %if_cond53 = icmp ne i64 %sc_ext, 0
-  br i1 %if_cond53, label %then54, label %else55
+  store i64 %sc_ext, ptr %is_flag, align 8
+  %is_flag7 = load i64, ptr %is_flag, align 8
+  %not_cmp = icmp eq i64 %is_flag7, 0
+  %not = zext i1 %not_cmp to i64
+  %l_bool8 = icmp ne i64 %not, 0
+  br i1 %l_bool8, label %sc_rhs9, label %sc_merge10
 
-then54:                                           ; preds = %sc_merge
-  %result57 = load i64, ptr %result45, align 8
-  %obj_ptr58 = inttoptr i64 %result57 to ptr
-  %fld_ptr59 = getelementptr inbounds nuw %ParseResult, ptr %obj_ptr58, i32 0, i32 2
-  %error_message60 = load i64, ptr %fld_ptr59, align 8
-  %calltmp61 = call i64 @fail(i64 %error_message60)
-  br label %ifcont56
+sc_rhs9:                                          ; preds = %sc_merge
+  %path11 = load i64, ptr %path, align 8
+  %calltmp12 = call i64 @file_exists(i64 %path11)
+  %not_cmp13 = icmp eq i64 %calltmp12, 0
+  %not14 = zext i1 %not_cmp13 to i64
+  %r_bool15 = icmp ne i64 %not14, 0
+  br label %sc_merge10
 
-else55:                                           ; preds = %sc_merge
-  br label %ifcont56
+sc_merge10:                                       ; preds = %sc_rhs9, %sc_merge
+  %sc_phi16 = phi i1 [ false, %sc_merge ], [ %r_bool15, %sc_rhs9 ]
+  %sc_ext17 = zext i1 %sc_phi16 to i64
+  %if_cond18 = icmp ne i64 %sc_ext17, 0
+  br i1 %if_cond18, label %then19, label %else20
 
-ifcont56:                                         ; preds = %else55, %then54
-  %result62 = load i64, ptr %result45, align 8
-  %obj_ptr63 = inttoptr i64 %result62 to ptr
-  %fld_ptr64 = getelementptr inbounds nuw %ParseResult, ptr %obj_ptr63, i32 0, i32 0
-  %expr65 = load i64, ptr %fld_ptr64, align 8
-  %calltmp66 = call i64 @"core::ast::render_expr"(i64 %expr65)
-  %str_ptr67 = inttoptr i64 %calltmp66 to ptr
-  %3 = call i32 @puts(ptr %str_ptr67)
+then19:                                           ; preds = %sc_merge10
+  %path22 = load i64, ptr %path, align 8
+  %concat_r = inttoptr i64 %path22 to ptr
+  %lhs_len = call i64 @strlen(ptr @.str.3063)
+  %rhs_len = call i64 @strlen(ptr %concat_r)
+  %concat_total = add i64 %lhs_len, %rhs_len
+  %concat_size = add i64 %concat_total, 1
+  %buf23 = call ptr @forge_bump_alloc(i64 %concat_size)
+  %1 = call ptr @memcpy(ptr %buf23, ptr @.str.3063, i64 %lhs_len)
+  %buf_int = ptrtoint ptr %buf23 to i64
+  %dst2_int = add i64 %buf_int, %lhs_len
+  %dst2 = inttoptr i64 %dst2_int to ptr
+  %rhs_len_p1 = add i64 %rhs_len, 1
+  %2 = call ptr @memcpy(ptr %dst2, ptr %concat_r, i64 %rhs_len_p1)
+  %concat_i64 = ptrtoint ptr %buf23 to i64
+  %calltmp24 = call i64 @fail(i64 %concat_i64)
+  br label %ifcont21
+
+else20:                                           ; preds = %sc_merge10
+  br label %ifcont21
+
+ifcont21:                                         ; preds = %else20, %then19
+  %is_flag25 = load i64, ptr %is_flag, align 8
+  %ife_cond = icmp ne i64 %is_flag25, 0
+  store i64 0, ptr %ife_result, align 8
+  br i1 %ife_cond, label %ife_then, label %ife_else
+
+ife_then:                                         ; preds = %ifcont21
+  store i64 ptrtoint (ptr @.str.3064 to i64), ptr %ife_result, align 8
+  br label %ife_end
+
+ife_else:                                         ; preds = %ifcont21
+  %path26 = load i64, ptr %path, align 8
+  %calltmp27 = call i64 @read_file(i64 %path26)
+  store i64 %calltmp27, ptr %ife_result, align 8
+  br label %ife_end
+
+ife_end:                                          ; preds = %ife_else, %ife_then
+  %ife_val = load i64, ptr %ife_result, align 8
+  store i64 %ife_val, ptr %source, align 8
+  %command28 = load i64, ptr %command, align 8
+  %streq_l29 = inttoptr i64 %command28 to ptr
+  %strcmp_call30 = call i32 @strcmp(ptr %streq_l29, ptr @.str.3065)
+  %strcmp_sext31 = sext i32 %strcmp_call30 to i64
+  %streq_cmp32 = icmp eq i64 %strcmp_sext31, 0
+  %streq_ext33 = zext i1 %streq_cmp32 to i64
+  %if_cond34 = icmp ne i64 %streq_ext33, 0
+  br i1 %if_cond34, label %then35, label %else36
+
+then35:                                           ; preds = %ife_end
+  %source38 = load i64, ptr %source, align 8
+  %calltmp39 = call i64 @"core::scanner::scan_source"(i64 %source38)
+  store i64 %calltmp39, ptr %result, align 8
+  %result40 = load i64, ptr %result, align 8
+  %obj_ptr = inttoptr i64 %result40 to ptr
+  %fld_ptr = getelementptr inbounds nuw %ScanResult, ptr %obj_ptr, i32 0, i32 1
+  %had_error = load i64, ptr %fld_ptr, align 8
+  %if_cond41 = icmp ne i64 %had_error, 0
+  br i1 %if_cond41, label %then42, label %else43
+
+else36:                                           ; preds = %ife_end
+  br label %ifcont37
+
+ifcont37:                                         ; preds = %else36
+  %command51 = load i64, ptr %command, align 8
+  %streq_l52 = inttoptr i64 %command51 to ptr
+  %strcmp_call53 = call i32 @strcmp(ptr %streq_l52, ptr @.str.3066)
+  %strcmp_sext54 = sext i32 %strcmp_call53 to i64
+  %streq_cmp55 = icmp eq i64 %strcmp_sext54, 0
+  %streq_ext56 = zext i1 %streq_cmp55 to i64
+  %if_cond57 = icmp ne i64 %streq_ext56, 0
+  br i1 %if_cond57, label %then58, label %else59
+
+then42:                                           ; preds = %then35
+  %result45 = load i64, ptr %result, align 8
+  %obj_ptr46 = inttoptr i64 %result45 to ptr
+  %fld_ptr47 = getelementptr inbounds nuw %ScanResult, ptr %obj_ptr46, i32 0, i32 2
+  %error_message = load i64, ptr %fld_ptr47, align 8
+  %calltmp48 = call i64 @fail(i64 %error_message)
+  br label %ifcont44
+
+else43:                                           ; preds = %then35
+  br label %ifcont44
+
+ifcont44:                                         ; preds = %else43, %then42
+  %result49 = load i64, ptr %result, align 8
+  %calltmp50 = call i64 @"core::scanner::render_tokens"(i64 %result49)
+  %str_ptr = inttoptr i64 %calltmp50 to ptr
+  %3 = call i32 @puts(ptr %str_ptr)
   ret i64 0
 
-then75:                                           ; preds = %ifcont42
-  %source78 = load i64, ptr %source, align 8
-  %calltmp79 = call i64 @"parse::parse_program_source"(i64 %source78)
-  store i64 %calltmp79, ptr %result80, align 8
-  %result81 = load i64, ptr %result80, align 8
+then58:                                           ; preds = %ifcont37
+  %source61 = load i64, ptr %source, align 8
+  %calltmp62 = call i64 @"parse::parse_expression_source"(i64 %source61)
+  store i64 %calltmp62, ptr %result63, align 8
+  %result64 = load i64, ptr %result63, align 8
+  %obj_ptr65 = inttoptr i64 %result64 to ptr
+  %fld_ptr66 = getelementptr inbounds nuw %ParseResult, ptr %obj_ptr65, i32 0, i32 1
+  %had_error67 = load i64, ptr %fld_ptr66, align 8
+  %l_bool68 = icmp ne i64 %had_error67, 0
+  br i1 %l_bool68, label %sc_merge70, label %sc_rhs69
+
+else59:                                           ; preds = %ifcont37
+  br label %ifcont60
+
+ifcont60:                                         ; preds = %else59
+  %command92 = load i64, ptr %command, align 8
+  %streq_l93 = inttoptr i64 %command92 to ptr
+  %strcmp_call94 = call i32 @strcmp(ptr %streq_l93, ptr @.str.3067)
+  %strcmp_sext95 = sext i32 %strcmp_call94 to i64
+  %streq_cmp96 = icmp eq i64 %strcmp_sext95, 0
+  %streq_ext97 = zext i1 %streq_cmp96 to i64
+  %if_cond98 = icmp ne i64 %streq_ext97, 0
+  br i1 %if_cond98, label %then99, label %else100
+
+sc_rhs69:                                         ; preds = %then58
+  %result71 = load i64, ptr %result63, align 8
+  %obj_ptr72 = inttoptr i64 %result71 to ptr
+  %fld_ptr73 = getelementptr inbounds nuw %ParseResult, ptr %obj_ptr72, i32 0, i32 0
+  %expr = load i64, ptr %fld_ptr73, align 8
+  %eq = icmp eq i64 %expr, 0
+  %eq_ext = zext i1 %eq to i64
+  %r_bool74 = icmp ne i64 %eq_ext, 0
+  br label %sc_merge70
+
+sc_merge70:                                       ; preds = %sc_rhs69, %then58
+  %sc_phi75 = phi i1 [ true, %then58 ], [ %r_bool74, %sc_rhs69 ]
+  %sc_ext76 = zext i1 %sc_phi75 to i64
+  %if_cond77 = icmp ne i64 %sc_ext76, 0
+  br i1 %if_cond77, label %then78, label %else79
+
+then78:                                           ; preds = %sc_merge70
+  %result81 = load i64, ptr %result63, align 8
   %obj_ptr82 = inttoptr i64 %result81 to ptr
-  %fld_ptr83 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr82, i32 0, i32 1
-  %had_error84 = load i64, ptr %fld_ptr83, align 8
-  %l_bool85 = icmp ne i64 %had_error84, 0
-  br i1 %l_bool85, label %sc_merge87, label %sc_rhs86
+  %fld_ptr83 = getelementptr inbounds nuw %ParseResult, ptr %obj_ptr82, i32 0, i32 2
+  %error_message84 = load i64, ptr %fld_ptr83, align 8
+  %calltmp85 = call i64 @fail(i64 %error_message84)
+  br label %ifcont80
 
-else76:                                           ; preds = %ifcont42
-  br label %ifcont77
+else79:                                           ; preds = %sc_merge70
+  br label %ifcont80
 
-ifcont77:                                         ; preds = %else76
-  %command111 = load i64, ptr %command, align 8
-  %streq_l112 = inttoptr i64 %command111 to ptr
-  %strcmp_call113 = call i32 @strcmp(ptr %streq_l112, ptr @.str.3065)
-  %strcmp_sext114 = sext i32 %strcmp_call113 to i64
-  %streq_cmp115 = icmp eq i64 %strcmp_sext114, 0
-  %streq_ext116 = zext i1 %streq_cmp115 to i64
-  %if_cond117 = icmp ne i64 %streq_ext116, 0
-  br i1 %if_cond117, label %then118, label %else119
+ifcont80:                                         ; preds = %else79, %then78
+  %result86 = load i64, ptr %result63, align 8
+  %obj_ptr87 = inttoptr i64 %result86 to ptr
+  %fld_ptr88 = getelementptr inbounds nuw %ParseResult, ptr %obj_ptr87, i32 0, i32 0
+  %expr89 = load i64, ptr %fld_ptr88, align 8
+  %calltmp90 = call i64 @"core::ast::render_expr"(i64 %expr89)
+  %str_ptr91 = inttoptr i64 %calltmp90 to ptr
+  %4 = call i32 @puts(ptr %str_ptr91)
+  ret i64 0
 
-sc_rhs86:                                         ; preds = %then75
-  %result88 = load i64, ptr %result80, align 8
-  %obj_ptr89 = inttoptr i64 %result88 to ptr
-  %fld_ptr90 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr89, i32 0, i32 0
-  %stmts = load i64, ptr %fld_ptr90, align 8
-  %eq91 = icmp eq i64 %stmts, 0
-  %eq_ext92 = zext i1 %eq91 to i64
-  %r_bool93 = icmp ne i64 %eq_ext92, 0
-  br label %sc_merge87
-
-sc_merge87:                                       ; preds = %sc_rhs86, %then75
-  %sc_phi94 = phi i1 [ true, %then75 ], [ %r_bool93, %sc_rhs86 ]
-  %sc_ext95 = zext i1 %sc_phi94 to i64
-  %if_cond96 = icmp ne i64 %sc_ext95, 0
-  br i1 %if_cond96, label %then97, label %else98
-
-then97:                                           ; preds = %sc_merge87
-  %result100 = load i64, ptr %result80, align 8
-  %obj_ptr101 = inttoptr i64 %result100 to ptr
-  %fld_ptr102 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr101, i32 0, i32 2
-  %error_message103 = load i64, ptr %fld_ptr102, align 8
-  %calltmp104 = call i64 @fail(i64 %error_message103)
-  br label %ifcont99
-
-else98:                                           ; preds = %sc_merge87
-  br label %ifcont99
-
-ifcont99:                                         ; preds = %else98, %then97
-  %result105 = load i64, ptr %result80, align 8
+then99:                                           ; preds = %ifcont60
+  %source102 = load i64, ptr %source, align 8
+  %calltmp103 = call i64 @"parse::parse_program_source"(i64 %source102)
+  store i64 %calltmp103, ptr %result104, align 8
+  %result105 = load i64, ptr %result104, align 8
   %obj_ptr106 = inttoptr i64 %result105 to ptr
-  %fld_ptr107 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr106, i32 0, i32 0
-  %stmts108 = load i64, ptr %fld_ptr107, align 8
-  %calltmp109 = call i64 @"core::ast::render_stmt_list"(i64 %stmts108)
-  %str_ptr110 = inttoptr i64 %calltmp109 to ptr
-  %4 = call i32 @puts(ptr %str_ptr110)
-  ret i64 0
+  %fld_ptr107 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr106, i32 0, i32 1
+  %had_error108 = load i64, ptr %fld_ptr107, align 8
+  %l_bool109 = icmp ne i64 %had_error108, 0
+  br i1 %l_bool109, label %sc_merge111, label %sc_rhs110
 
-then118:                                          ; preds = %ifcont77
-  %source121 = load i64, ptr %source, align 8
-  %calltmp122 = call i64 @"core::eval::eval_expression_source"(i64 %source121)
-  store i64 %calltmp122, ptr %result123, align 8
-  %result124 = load i64, ptr %result123, align 8
+else100:                                          ; preds = %ifcont60
+  br label %ifcont101
+
+ifcont101:                                        ; preds = %else100
+  %command135 = load i64, ptr %command, align 8
+  %streq_l136 = inttoptr i64 %command135 to ptr
+  %strcmp_call137 = call i32 @strcmp(ptr %streq_l136, ptr @.str.3068)
+  %strcmp_sext138 = sext i32 %strcmp_call137 to i64
+  %streq_cmp139 = icmp eq i64 %strcmp_sext138, 0
+  %streq_ext140 = zext i1 %streq_cmp139 to i64
+  %if_cond141 = icmp ne i64 %streq_ext140, 0
+  br i1 %if_cond141, label %then142, label %else143
+
+sc_rhs110:                                        ; preds = %then99
+  %result112 = load i64, ptr %result104, align 8
+  %obj_ptr113 = inttoptr i64 %result112 to ptr
+  %fld_ptr114 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr113, i32 0, i32 0
+  %stmts = load i64, ptr %fld_ptr114, align 8
+  %eq115 = icmp eq i64 %stmts, 0
+  %eq_ext116 = zext i1 %eq115 to i64
+  %r_bool117 = icmp ne i64 %eq_ext116, 0
+  br label %sc_merge111
+
+sc_merge111:                                      ; preds = %sc_rhs110, %then99
+  %sc_phi118 = phi i1 [ true, %then99 ], [ %r_bool117, %sc_rhs110 ]
+  %sc_ext119 = zext i1 %sc_phi118 to i64
+  %if_cond120 = icmp ne i64 %sc_ext119, 0
+  br i1 %if_cond120, label %then121, label %else122
+
+then121:                                          ; preds = %sc_merge111
+  %result124 = load i64, ptr %result104, align 8
   %obj_ptr125 = inttoptr i64 %result124 to ptr
-  %fld_ptr126 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr125, i32 0, i32 1
-  %had_error127 = load i64, ptr %fld_ptr126, align 8
-  %l_bool128 = icmp ne i64 %had_error127, 0
-  br i1 %l_bool128, label %sc_merge130, label %sc_rhs129
+  %fld_ptr126 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr125, i32 0, i32 2
+  %error_message127 = load i64, ptr %fld_ptr126, align 8
+  %calltmp128 = call i64 @fail(i64 %error_message127)
+  br label %ifcont123
 
-else119:                                          ; preds = %ifcont77
-  br label %ifcont120
+else122:                                          ; preds = %sc_merge111
+  br label %ifcont123
 
-ifcont120:                                        ; preds = %else119
-  %command154 = load i64, ptr %command, align 8
-  %streq_l155 = inttoptr i64 %command154 to ptr
-  %strcmp_call156 = call i32 @strcmp(ptr %streq_l155, ptr @.str.3066)
-  %strcmp_sext157 = sext i32 %strcmp_call156 to i64
-  %streq_cmp158 = icmp eq i64 %strcmp_sext157, 0
-  %streq_ext159 = zext i1 %streq_cmp158 to i64
-  %if_cond160 = icmp ne i64 %streq_ext159, 0
-  br i1 %if_cond160, label %then161, label %else162
-
-sc_rhs129:                                        ; preds = %then118
-  %result131 = load i64, ptr %result123, align 8
-  %obj_ptr132 = inttoptr i64 %result131 to ptr
-  %fld_ptr133 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr132, i32 0, i32 0
-  %value = load i64, ptr %fld_ptr133, align 8
-  %eq134 = icmp eq i64 %value, 0
-  %eq_ext135 = zext i1 %eq134 to i64
-  %r_bool136 = icmp ne i64 %eq_ext135, 0
-  br label %sc_merge130
-
-sc_merge130:                                      ; preds = %sc_rhs129, %then118
-  %sc_phi137 = phi i1 [ true, %then118 ], [ %r_bool136, %sc_rhs129 ]
-  %sc_ext138 = zext i1 %sc_phi137 to i64
-  %if_cond139 = icmp ne i64 %sc_ext138, 0
-  br i1 %if_cond139, label %then140, label %else141
-
-then140:                                          ; preds = %sc_merge130
-  %result143 = load i64, ptr %result123, align 8
-  %obj_ptr144 = inttoptr i64 %result143 to ptr
-  %fld_ptr145 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr144, i32 0, i32 2
-  %error_message146 = load i64, ptr %fld_ptr145, align 8
-  %calltmp147 = call i64 @fail(i64 %error_message146)
-  br label %ifcont142
-
-else141:                                          ; preds = %sc_merge130
-  br label %ifcont142
-
-ifcont142:                                        ; preds = %else141, %then140
-  %result148 = load i64, ptr %result123, align 8
-  %obj_ptr149 = inttoptr i64 %result148 to ptr
-  %fld_ptr150 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr149, i32 0, i32 0
-  %value151 = load i64, ptr %fld_ptr150, align 8
-  %calltmp152 = call i64 @"core::eval::render_value"(i64 %value151)
-  %str_ptr153 = inttoptr i64 %calltmp152 to ptr
-  %5 = call i32 @puts(ptr %str_ptr153)
+ifcont123:                                        ; preds = %else122, %then121
+  %result129 = load i64, ptr %result104, align 8
+  %obj_ptr130 = inttoptr i64 %result129 to ptr
+  %fld_ptr131 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr130, i32 0, i32 0
+  %stmts132 = load i64, ptr %fld_ptr131, align 8
+  %calltmp133 = call i64 @"core::ast::render_stmt_list"(i64 %stmts132)
+  %str_ptr134 = inttoptr i64 %calltmp133 to ptr
+  %5 = call i32 @puts(ptr %str_ptr134)
   ret i64 0
 
-then161:                                          ; preds = %ifcont120
-  %source164 = load i64, ptr %source, align 8
-  %calltmp165 = call i64 @"parse::parse_program_source"(i64 %source164)
-  store i64 %calltmp165, ptr %parsed, align 8
-  %parsed166 = load i64, ptr %parsed, align 8
-  %obj_ptr167 = inttoptr i64 %parsed166 to ptr
-  %fld_ptr168 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr167, i32 0, i32 1
-  %had_error169 = load i64, ptr %fld_ptr168, align 8
-  %l_bool170 = icmp ne i64 %had_error169, 0
-  br i1 %l_bool170, label %sc_merge172, label %sc_rhs171
+then142:                                          ; preds = %ifcont101
+  %source145 = load i64, ptr %source, align 8
+  %calltmp146 = call i64 @"core::eval::eval_expression_source"(i64 %source145)
+  store i64 %calltmp146, ptr %result147, align 8
+  %result148 = load i64, ptr %result147, align 8
+  %obj_ptr149 = inttoptr i64 %result148 to ptr
+  %fld_ptr150 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr149, i32 0, i32 1
+  %had_error151 = load i64, ptr %fld_ptr150, align 8
+  %l_bool152 = icmp ne i64 %had_error151, 0
+  br i1 %l_bool152, label %sc_merge154, label %sc_rhs153
 
-else162:                                          ; preds = %ifcont120
-  br label %ifcont163
+else143:                                          ; preds = %ifcont101
+  br label %ifcont144
 
-ifcont163:                                        ; preds = %else162
-  %command332 = load i64, ptr %command, align 8
-  %streq_l333 = inttoptr i64 %command332 to ptr
-  %strcmp_call334 = call i32 @strcmp(ptr %streq_l333, ptr @.str.3068)
-  %strcmp_sext335 = sext i32 %strcmp_call334 to i64
-  %streq_cmp336 = icmp eq i64 %strcmp_sext335, 0
-  %streq_ext337 = zext i1 %streq_cmp336 to i64
-  %if_cond338 = icmp ne i64 %streq_ext337, 0
-  br i1 %if_cond338, label %then339, label %else340
+ifcont144:                                        ; preds = %else143
+  %command178 = load i64, ptr %command, align 8
+  %streq_l179 = inttoptr i64 %command178 to ptr
+  %strcmp_call180 = call i32 @strcmp(ptr %streq_l179, ptr @.str.3069)
+  %strcmp_sext181 = sext i32 %strcmp_call180 to i64
+  %streq_cmp182 = icmp eq i64 %strcmp_sext181, 0
+  %streq_ext183 = zext i1 %streq_cmp182 to i64
+  %if_cond184 = icmp ne i64 %streq_ext183, 0
+  br i1 %if_cond184, label %then185, label %else186
 
-sc_rhs171:                                        ; preds = %then161
-  %parsed173 = load i64, ptr %parsed, align 8
-  %obj_ptr174 = inttoptr i64 %parsed173 to ptr
-  %fld_ptr175 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr174, i32 0, i32 0
-  %stmts176 = load i64, ptr %fld_ptr175, align 8
-  %eq177 = icmp eq i64 %stmts176, 0
-  %eq_ext178 = zext i1 %eq177 to i64
-  %r_bool179 = icmp ne i64 %eq_ext178, 0
-  br label %sc_merge172
+sc_rhs153:                                        ; preds = %then142
+  %result155 = load i64, ptr %result147, align 8
+  %obj_ptr156 = inttoptr i64 %result155 to ptr
+  %fld_ptr157 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr156, i32 0, i32 0
+  %value = load i64, ptr %fld_ptr157, align 8
+  %eq158 = icmp eq i64 %value, 0
+  %eq_ext159 = zext i1 %eq158 to i64
+  %r_bool160 = icmp ne i64 %eq_ext159, 0
+  br label %sc_merge154
 
-sc_merge172:                                      ; preds = %sc_rhs171, %then161
-  %sc_phi180 = phi i1 [ true, %then161 ], [ %r_bool179, %sc_rhs171 ]
-  %sc_ext181 = zext i1 %sc_phi180 to i64
-  %if_cond182 = icmp ne i64 %sc_ext181, 0
-  br i1 %if_cond182, label %then183, label %else184
+sc_merge154:                                      ; preds = %sc_rhs153, %then142
+  %sc_phi161 = phi i1 [ true, %then142 ], [ %r_bool160, %sc_rhs153 ]
+  %sc_ext162 = zext i1 %sc_phi161 to i64
+  %if_cond163 = icmp ne i64 %sc_ext162, 0
+  br i1 %if_cond163, label %then164, label %else165
 
-then183:                                          ; preds = %sc_merge172
-  %parsed186 = load i64, ptr %parsed, align 8
-  %obj_ptr187 = inttoptr i64 %parsed186 to ptr
-  %fld_ptr188 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr187, i32 0, i32 3
-  %bag = load i64, ptr %fld_ptr188, align 8
-  %calltmp189 = call i64 @"diagnostics::bag_has_errors"(i64 %bag)
-  %if_cond190 = icmp ne i64 %calltmp189, 0
-  br i1 %if_cond190, label %then191, label %else192
+then164:                                          ; preds = %sc_merge154
+  %result167 = load i64, ptr %result147, align 8
+  %obj_ptr168 = inttoptr i64 %result167 to ptr
+  %fld_ptr169 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr168, i32 0, i32 2
+  %error_message170 = load i64, ptr %fld_ptr169, align 8
+  %calltmp171 = call i64 @fail(i64 %error_message170)
+  br label %ifcont166
 
-else184:                                          ; preds = %sc_merge172
-  br label %ifcont185
+else165:                                          ; preds = %sc_merge154
+  br label %ifcont166
 
-ifcont185:                                        ; preds = %else184, %ifcont193
-  %path206 = load i64, ptr %path, align 8
-  %calltmp207 = call i64 @"features::modules::resolver::modules_dirname"(i64 %path206)
-  store i64 %calltmp207, ptr %entry_dir, align 8
-  %parsed208 = load i64, ptr %parsed, align 8
-  %obj_ptr209 = inttoptr i64 %parsed208 to ptr
-  %fld_ptr210 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr209, i32 0, i32 0
-  %stmts211 = load i64, ptr %fld_ptr210, align 8
-  %entry_dir212 = load i64, ptr %entry_dir, align 8
-  %buf213 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr = getelementptr inbounds nuw %LoadedPaths, ptr %buf213, i32 0, i32 0
+ifcont166:                                        ; preds = %else165, %then164
+  %result172 = load i64, ptr %result147, align 8
+  %obj_ptr173 = inttoptr i64 %result172 to ptr
+  %fld_ptr174 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr173, i32 0, i32 0
+  %value175 = load i64, ptr %fld_ptr174, align 8
+  %calltmp176 = call i64 @"core::eval::render_value"(i64 %value175)
+  %str_ptr177 = inttoptr i64 %calltmp176 to ptr
+  %6 = call i32 @puts(ptr %str_ptr177)
+  ret i64 0
+
+then185:                                          ; preds = %ifcont144
+  %source188 = load i64, ptr %source, align 8
+  %calltmp189 = call i64 @"parse::parse_program_source"(i64 %source188)
+  store i64 %calltmp189, ptr %parsed, align 8
+  %parsed190 = load i64, ptr %parsed, align 8
+  %obj_ptr191 = inttoptr i64 %parsed190 to ptr
+  %fld_ptr192 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr191, i32 0, i32 1
+  %had_error193 = load i64, ptr %fld_ptr192, align 8
+  %l_bool194 = icmp ne i64 %had_error193, 0
+  br i1 %l_bool194, label %sc_merge196, label %sc_rhs195
+
+else186:                                          ; preds = %ifcont144
+  br label %ifcont187
+
+ifcont187:                                        ; preds = %else186
+  %command356 = load i64, ptr %command, align 8
+  %streq_l357 = inttoptr i64 %command356 to ptr
+  %strcmp_call358 = call i32 @strcmp(ptr %streq_l357, ptr @.str.3071)
+  %strcmp_sext359 = sext i32 %strcmp_call358 to i64
+  %streq_cmp360 = icmp eq i64 %strcmp_sext359, 0
+  %streq_ext361 = zext i1 %streq_cmp360 to i64
+  %if_cond362 = icmp ne i64 %streq_ext361, 0
+  br i1 %if_cond362, label %then363, label %else364
+
+sc_rhs195:                                        ; preds = %then185
+  %parsed197 = load i64, ptr %parsed, align 8
+  %obj_ptr198 = inttoptr i64 %parsed197 to ptr
+  %fld_ptr199 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr198, i32 0, i32 0
+  %stmts200 = load i64, ptr %fld_ptr199, align 8
+  %eq201 = icmp eq i64 %stmts200, 0
+  %eq_ext202 = zext i1 %eq201 to i64
+  %r_bool203 = icmp ne i64 %eq_ext202, 0
+  br label %sc_merge196
+
+sc_merge196:                                      ; preds = %sc_rhs195, %then185
+  %sc_phi204 = phi i1 [ true, %then185 ], [ %r_bool203, %sc_rhs195 ]
+  %sc_ext205 = zext i1 %sc_phi204 to i64
+  %if_cond206 = icmp ne i64 %sc_ext205, 0
+  br i1 %if_cond206, label %then207, label %else208
+
+then207:                                          ; preds = %sc_merge196
+  %parsed210 = load i64, ptr %parsed, align 8
+  %obj_ptr211 = inttoptr i64 %parsed210 to ptr
+  %fld_ptr212 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr211, i32 0, i32 3
+  %bag = load i64, ptr %fld_ptr212, align 8
+  %calltmp213 = call i64 @"diagnostics::bag_has_errors"(i64 %bag)
+  %if_cond214 = icmp ne i64 %calltmp213, 0
+  br i1 %if_cond214, label %then215, label %else216
+
+else208:                                          ; preds = %sc_merge196
+  br label %ifcont209
+
+ifcont209:                                        ; preds = %else208, %ifcont217
+  %path230 = load i64, ptr %path, align 8
+  %calltmp231 = call i64 @"features::modules::resolver::modules_dirname"(i64 %path230)
+  store i64 %calltmp231, ptr %entry_dir, align 8
+  %parsed232 = load i64, ptr %parsed, align 8
+  %obj_ptr233 = inttoptr i64 %parsed232 to ptr
+  %fld_ptr234 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr233, i32 0, i32 0
+  %stmts235 = load i64, ptr %fld_ptr234, align 8
+  %entry_dir236 = load i64, ptr %entry_dir, align 8
+  %buf237 = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr = getelementptr inbounds nuw %LoadedPaths, ptr %buf237, i32 0, i32 0
   store i8 0, ptr %tag_ptr, align 8
-  %enum_i64 = ptrtoint ptr %buf213 to i64
-  %calltmp214 = call i64 @"features::modules::resolver::resolve_module_files"(i64 %stmts211, i64 %entry_dir212, i64 %enum_i64)
-  store i64 %calltmp214, ptr %mod_resolved, align 8
-  %mod_resolved215 = load i64, ptr %mod_resolved, align 8
-  %obj_ptr216 = inttoptr i64 %mod_resolved215 to ptr
-  %fld_ptr217 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr216, i32 0, i32 2
-  %had_error218 = load i64, ptr %fld_ptr217, align 8
-  %if_cond219 = icmp ne i64 %had_error218, 0
-  br i1 %if_cond219, label %then220, label %else221
+  %enum_i64 = ptrtoint ptr %buf237 to i64
+  %calltmp238 = call i64 @"features::modules::resolver::resolve_module_files"(i64 %stmts235, i64 %entry_dir236, i64 %enum_i64)
+  store i64 %calltmp238, ptr %mod_resolved, align 8
+  %mod_resolved239 = load i64, ptr %mod_resolved, align 8
+  %obj_ptr240 = inttoptr i64 %mod_resolved239 to ptr
+  %fld_ptr241 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr240, i32 0, i32 2
+  %had_error242 = load i64, ptr %fld_ptr241, align 8
+  %if_cond243 = icmp ne i64 %had_error242, 0
+  br i1 %if_cond243, label %then244, label %else245
 
-then191:                                          ; preds = %then183
-  %source194 = load i64, ptr %source, align 8
-  %path195 = load i64, ptr %path, align 8
-  %parsed196 = load i64, ptr %parsed, align 8
-  %obj_ptr197 = inttoptr i64 %parsed196 to ptr
-  %fld_ptr198 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr197, i32 0, i32 3
-  %bag199 = load i64, ptr %fld_ptr198, align 8
-  %calltmp200 = call i64 @"diagnostics::render::render_bag"(i64 %source194, i64 %path195, i64 %bag199)
-  br label %ifcont193
+then215:                                          ; preds = %then207
+  %source218 = load i64, ptr %source, align 8
+  %path219 = load i64, ptr %path, align 8
+  %parsed220 = load i64, ptr %parsed, align 8
+  %obj_ptr221 = inttoptr i64 %parsed220 to ptr
+  %fld_ptr222 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr221, i32 0, i32 3
+  %bag223 = load i64, ptr %fld_ptr222, align 8
+  %calltmp224 = call i64 @"diagnostics::render::render_bag"(i64 %source218, i64 %path219, i64 %bag223)
+  br label %ifcont217
 
-else192:                                          ; preds = %then183
-  br label %ifcont193
+else216:                                          ; preds = %then207
+  br label %ifcont217
 
-ifcont193:                                        ; preds = %else192, %then191
-  %parsed201 = load i64, ptr %parsed, align 8
-  %obj_ptr202 = inttoptr i64 %parsed201 to ptr
-  %fld_ptr203 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr202, i32 0, i32 2
-  %error_message204 = load i64, ptr %fld_ptr203, align 8
-  %calltmp205 = call i64 @fail(i64 %error_message204)
-  br label %ifcont185
+ifcont217:                                        ; preds = %else216, %then215
+  %parsed225 = load i64, ptr %parsed, align 8
+  %obj_ptr226 = inttoptr i64 %parsed225 to ptr
+  %fld_ptr227 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr226, i32 0, i32 2
+  %error_message228 = load i64, ptr %fld_ptr227, align 8
+  %calltmp229 = call i64 @fail(i64 %error_message228)
+  br label %ifcont209
 
-then220:                                          ; preds = %ifcont185
-  %calltmp223 = call i64 @"diagnostics::bag_new"()
-  %buf224 = call ptr @forge_bump_alloc(i64 8)
-  %tag_ptr225 = getelementptr inbounds nuw %DiagCode, ptr %buf224, i32 0, i32 0
-  store i8 16, ptr %tag_ptr225, align 8
-  %enum_i64226 = ptrtoint ptr %buf224 to i64
-  %mod_resolved227 = load i64, ptr %mod_resolved, align 8
-  %obj_ptr228 = inttoptr i64 %mod_resolved227 to ptr
-  %fld_ptr229 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr228, i32 0, i32 3
-  %error_message230 = load i64, ptr %fld_ptr229, align 8
-  %calltmp231 = call i64 @"diagnostics::span_dummy"()
-  %calltmp232 = call i64 @"diagnostics::diag_error"(i64 %enum_i64226, i64 %error_message230, i64 %calltmp231)
-  %calltmp233 = call i64 @"diagnostics::bag_report"(i64 %calltmp223, i64 %calltmp232)
-  store i64 %calltmp233, ptr %mod_bag, align 8
-  %source234 = load i64, ptr %source, align 8
-  %path235 = load i64, ptr %path, align 8
-  %mod_bag236 = load i64, ptr %mod_bag, align 8
-  %calltmp237 = call i64 @"diagnostics::render::render_bag"(i64 %source234, i64 %path235, i64 %mod_bag236)
-  %mod_resolved238 = load i64, ptr %mod_resolved, align 8
-  %obj_ptr239 = inttoptr i64 %mod_resolved238 to ptr
-  %fld_ptr240 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr239, i32 0, i32 3
-  %error_message241 = load i64, ptr %fld_ptr240, align 8
-  %calltmp242 = call i64 @fail(i64 %error_message241)
-  br label %ifcont222
+then244:                                          ; preds = %ifcont209
+  %calltmp247 = call i64 @"diagnostics::bag_new"()
+  %buf248 = call ptr @forge_bump_alloc(i64 8)
+  %tag_ptr249 = getelementptr inbounds nuw %DiagCode, ptr %buf248, i32 0, i32 0
+  store i8 16, ptr %tag_ptr249, align 8
+  %enum_i64250 = ptrtoint ptr %buf248 to i64
+  %mod_resolved251 = load i64, ptr %mod_resolved, align 8
+  %obj_ptr252 = inttoptr i64 %mod_resolved251 to ptr
+  %fld_ptr253 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr252, i32 0, i32 3
+  %error_message254 = load i64, ptr %fld_ptr253, align 8
+  %calltmp255 = call i64 @"diagnostics::span_dummy"()
+  %calltmp256 = call i64 @"diagnostics::diag_error"(i64 %enum_i64250, i64 %error_message254, i64 %calltmp255)
+  %calltmp257 = call i64 @"diagnostics::bag_report"(i64 %calltmp247, i64 %calltmp256)
+  store i64 %calltmp257, ptr %mod_bag, align 8
+  %source258 = load i64, ptr %source, align 8
+  %path259 = load i64, ptr %path, align 8
+  %mod_bag260 = load i64, ptr %mod_bag, align 8
+  %calltmp261 = call i64 @"diagnostics::render::render_bag"(i64 %source258, i64 %path259, i64 %mod_bag260)
+  %mod_resolved262 = load i64, ptr %mod_resolved, align 8
+  %obj_ptr263 = inttoptr i64 %mod_resolved262 to ptr
+  %fld_ptr264 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr263, i32 0, i32 3
+  %error_message265 = load i64, ptr %fld_ptr264, align 8
+  %calltmp266 = call i64 @fail(i64 %error_message265)
+  br label %ifcont246
 
-else221:                                          ; preds = %ifcont185
-  br label %ifcont222
+else245:                                          ; preds = %ifcont209
+  br label %ifcont246
 
-ifcont222:                                        ; preds = %else221, %then220
-  %mod_resolved243 = load i64, ptr %mod_resolved, align 8
-  %obj_ptr244 = inttoptr i64 %mod_resolved243 to ptr
-  %fld_ptr245 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr244, i32 0, i32 0
-  %stmts246 = load i64, ptr %fld_ptr245, align 8
-  %calltmp247 = call i64 @"features::modules::names::resolve_names"(i64 %stmts246)
-  store i64 %calltmp247, ptr %named, align 8
-  %named248 = load i64, ptr %named, align 8
-  %obj_ptr249 = inttoptr i64 %named248 to ptr
-  %fld_ptr250 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr249, i32 0, i32 3
-  %bag251 = load i64, ptr %fld_ptr250, align 8
-  %calltmp252 = call i64 @"diagnostics::bag_has_errors"(i64 %bag251)
-  %if_cond253 = icmp ne i64 %calltmp252, 0
-  br i1 %if_cond253, label %then254, label %else255
-
-then254:                                          ; preds = %ifcont222
-  %source257 = load i64, ptr %source, align 8
-  %path258 = load i64, ptr %path, align 8
-  %named259 = load i64, ptr %named, align 8
-  %obj_ptr260 = inttoptr i64 %named259 to ptr
-  %fld_ptr261 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr260, i32 0, i32 3
-  %bag262 = load i64, ptr %fld_ptr261, align 8
-  %calltmp263 = call i64 @"diagnostics::render::render_bag"(i64 %source257, i64 %path258, i64 %bag262)
-  br label %ifcont256
-
-else255:                                          ; preds = %ifcont222
-  br label %ifcont256
-
-ifcont256:                                        ; preds = %else255, %then254
-  %named264 = load i64, ptr %named, align 8
-  %obj_ptr265 = inttoptr i64 %named264 to ptr
-  %fld_ptr266 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr265, i32 0, i32 1
-  %had_error267 = load i64, ptr %fld_ptr266, align 8
-  %if_cond268 = icmp ne i64 %had_error267, 0
-  br i1 %if_cond268, label %then269, label %else270
-
-then269:                                          ; preds = %ifcont256
+ifcont246:                                        ; preds = %else245, %then244
+  %mod_resolved267 = load i64, ptr %mod_resolved, align 8
+  %obj_ptr268 = inttoptr i64 %mod_resolved267 to ptr
+  %fld_ptr269 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr268, i32 0, i32 0
+  %stmts270 = load i64, ptr %fld_ptr269, align 8
+  %calltmp271 = call i64 @"features::modules::names::resolve_names"(i64 %stmts270)
+  store i64 %calltmp271, ptr %named, align 8
   %named272 = load i64, ptr %named, align 8
   %obj_ptr273 = inttoptr i64 %named272 to ptr
-  %fld_ptr274 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr273, i32 0, i32 2
-  %error_message275 = load i64, ptr %fld_ptr274, align 8
-  %calltmp276 = call i64 @fail(i64 %error_message275)
-  br label %ifcont271
+  %fld_ptr274 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr273, i32 0, i32 3
+  %bag275 = load i64, ptr %fld_ptr274, align 8
+  %calltmp276 = call i64 @"diagnostics::bag_has_errors"(i64 %bag275)
+  %if_cond277 = icmp ne i64 %calltmp276, 0
+  br i1 %if_cond277, label %then278, label %else279
 
-else270:                                          ; preds = %ifcont256
-  br label %ifcont271
+then278:                                          ; preds = %ifcont246
+  %source281 = load i64, ptr %source, align 8
+  %path282 = load i64, ptr %path, align 8
+  %named283 = load i64, ptr %named, align 8
+  %obj_ptr284 = inttoptr i64 %named283 to ptr
+  %fld_ptr285 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr284, i32 0, i32 3
+  %bag286 = load i64, ptr %fld_ptr285, align 8
+  %calltmp287 = call i64 @"diagnostics::render::render_bag"(i64 %source281, i64 %path282, i64 %bag286)
+  br label %ifcont280
 
-ifcont271:                                        ; preds = %else270, %then269
-  %named277 = load i64, ptr %named, align 8
-  %obj_ptr278 = inttoptr i64 %named277 to ptr
-  %fld_ptr279 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr278, i32 0, i32 0
-  %stmts280 = load i64, ptr %fld_ptr279, align 8
-  %calltmp281 = call i64 @"core::resolver::resolve_program"(i64 %stmts280)
-  store i64 %calltmp281, ptr %resolved, align 8
-  %resolved282 = load i64, ptr %resolved, align 8
-  %obj_ptr283 = inttoptr i64 %resolved282 to ptr
-  %fld_ptr284 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr283, i32 0, i32 0
-  %had_error285 = load i64, ptr %fld_ptr284, align 8
-  %if_cond286 = icmp ne i64 %had_error285, 0
-  br i1 %if_cond286, label %then287, label %else288
+else279:                                          ; preds = %ifcont246
+  br label %ifcont280
 
-then287:                                          ; preds = %ifcont271
-  %resolved290 = load i64, ptr %resolved, align 8
-  %obj_ptr291 = inttoptr i64 %resolved290 to ptr
-  %fld_ptr292 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr291, i32 0, i32 2
-  %bag293 = load i64, ptr %fld_ptr292, align 8
-  %calltmp294 = call i64 @"diagnostics::bag_has_errors"(i64 %bag293)
-  %if_cond295 = icmp ne i64 %calltmp294, 0
-  br i1 %if_cond295, label %then296, label %else297
+ifcont280:                                        ; preds = %else279, %then278
+  %named288 = load i64, ptr %named, align 8
+  %obj_ptr289 = inttoptr i64 %named288 to ptr
+  %fld_ptr290 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr289, i32 0, i32 1
+  %had_error291 = load i64, ptr %fld_ptr290, align 8
+  %if_cond292 = icmp ne i64 %had_error291, 0
+  br i1 %if_cond292, label %then293, label %else294
 
-else288:                                          ; preds = %ifcont271
-  br label %ifcont289
+then293:                                          ; preds = %ifcont280
+  %named296 = load i64, ptr %named, align 8
+  %obj_ptr297 = inttoptr i64 %named296 to ptr
+  %fld_ptr298 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr297, i32 0, i32 2
+  %error_message299 = load i64, ptr %fld_ptr298, align 8
+  %calltmp300 = call i64 @fail(i64 %error_message299)
+  br label %ifcont295
 
-ifcont289:                                        ; preds = %else288, %ifcont298
-  %named311 = load i64, ptr %named, align 8
-  %obj_ptr312 = inttoptr i64 %named311 to ptr
-  %fld_ptr313 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr312, i32 0, i32 0
-  %stmts314 = load i64, ptr %fld_ptr313, align 8
-  %calltmp315 = call i64 @"typeck::typecheck_program"(i64 %stmts314)
-  store i64 %calltmp315, ptr %tc_result, align 8
-  %tc_result316 = load i64, ptr %tc_result, align 8
-  %obj_ptr317 = inttoptr i64 %tc_result316 to ptr
-  %fld_ptr318 = getelementptr inbounds nuw %TypeCheckResult, ptr %obj_ptr317, i32 0, i32 1
-  %bag319 = load i64, ptr %fld_ptr318, align 8
-  %calltmp320 = call i64 @"diagnostics::bag_has_errors"(i64 %bag319)
-  %if_cond321 = icmp ne i64 %calltmp320, 0
-  br i1 %if_cond321, label %then322, label %else323
+else294:                                          ; preds = %ifcont280
+  br label %ifcont295
 
-then296:                                          ; preds = %then287
-  %source299 = load i64, ptr %source, align 8
-  %path300 = load i64, ptr %path, align 8
-  %resolved301 = load i64, ptr %resolved, align 8
-  %obj_ptr302 = inttoptr i64 %resolved301 to ptr
-  %fld_ptr303 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr302, i32 0, i32 2
-  %bag304 = load i64, ptr %fld_ptr303, align 8
-  %calltmp305 = call i64 @"diagnostics::render::render_bag"(i64 %source299, i64 %path300, i64 %bag304)
-  br label %ifcont298
-
-else297:                                          ; preds = %then287
-  br label %ifcont298
-
-ifcont298:                                        ; preds = %else297, %then296
+ifcont295:                                        ; preds = %else294, %then293
+  %named301 = load i64, ptr %named, align 8
+  %obj_ptr302 = inttoptr i64 %named301 to ptr
+  %fld_ptr303 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr302, i32 0, i32 0
+  %stmts304 = load i64, ptr %fld_ptr303, align 8
+  %calltmp305 = call i64 @"core::resolver::resolve_program"(i64 %stmts304)
+  store i64 %calltmp305, ptr %resolved, align 8
   %resolved306 = load i64, ptr %resolved, align 8
   %obj_ptr307 = inttoptr i64 %resolved306 to ptr
-  %fld_ptr308 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr307, i32 0, i32 1
-  %error_message309 = load i64, ptr %fld_ptr308, align 8
-  %calltmp310 = call i64 @fail(i64 %error_message309)
-  br label %ifcont289
+  %fld_ptr308 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr307, i32 0, i32 0
+  %had_error309 = load i64, ptr %fld_ptr308, align 8
+  %if_cond310 = icmp ne i64 %had_error309, 0
+  br i1 %if_cond310, label %then311, label %else312
 
-then322:                                          ; preds = %ifcont289
-  %source325 = load i64, ptr %source, align 8
-  %path326 = load i64, ptr %path, align 8
-  %tc_result327 = load i64, ptr %tc_result, align 8
-  %obj_ptr328 = inttoptr i64 %tc_result327 to ptr
-  %fld_ptr329 = getelementptr inbounds nuw %TypeCheckResult, ptr %obj_ptr328, i32 0, i32 1
-  %bag330 = load i64, ptr %fld_ptr329, align 8
-  %calltmp331 = call i64 @"diagnostics::render::render_bag"(i64 %source325, i64 %path326, i64 %bag330)
-  br label %ifcont324
+then311:                                          ; preds = %ifcont295
+  %resolved314 = load i64, ptr %resolved, align 8
+  %obj_ptr315 = inttoptr i64 %resolved314 to ptr
+  %fld_ptr316 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr315, i32 0, i32 2
+  %bag317 = load i64, ptr %fld_ptr316, align 8
+  %calltmp318 = call i64 @"diagnostics::bag_has_errors"(i64 %bag317)
+  %if_cond319 = icmp ne i64 %calltmp318, 0
+  br i1 %if_cond319, label %then320, label %else321
 
-else323:                                          ; preds = %ifcont289
-  br label %ifcont324
+else312:                                          ; preds = %ifcont295
+  br label %ifcont313
 
-ifcont324:                                        ; preds = %else323, %then322
-  %6 = call i32 @puts(ptr @.str.3067)
+ifcont313:                                        ; preds = %else312, %ifcont322
+  %named335 = load i64, ptr %named, align 8
+  %obj_ptr336 = inttoptr i64 %named335 to ptr
+  %fld_ptr337 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr336, i32 0, i32 0
+  %stmts338 = load i64, ptr %fld_ptr337, align 8
+  %calltmp339 = call i64 @"typeck::typecheck_program"(i64 %stmts338)
+  store i64 %calltmp339, ptr %tc_result, align 8
+  %tc_result340 = load i64, ptr %tc_result, align 8
+  %obj_ptr341 = inttoptr i64 %tc_result340 to ptr
+  %fld_ptr342 = getelementptr inbounds nuw %TypeCheckResult, ptr %obj_ptr341, i32 0, i32 1
+  %bag343 = load i64, ptr %fld_ptr342, align 8
+  %calltmp344 = call i64 @"diagnostics::bag_has_errors"(i64 %bag343)
+  %if_cond345 = icmp ne i64 %calltmp344, 0
+  br i1 %if_cond345, label %then346, label %else347
+
+then320:                                          ; preds = %then311
+  %source323 = load i64, ptr %source, align 8
+  %path324 = load i64, ptr %path, align 8
+  %resolved325 = load i64, ptr %resolved, align 8
+  %obj_ptr326 = inttoptr i64 %resolved325 to ptr
+  %fld_ptr327 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr326, i32 0, i32 2
+  %bag328 = load i64, ptr %fld_ptr327, align 8
+  %calltmp329 = call i64 @"diagnostics::render::render_bag"(i64 %source323, i64 %path324, i64 %bag328)
+  br label %ifcont322
+
+else321:                                          ; preds = %then311
+  br label %ifcont322
+
+ifcont322:                                        ; preds = %else321, %then320
+  %resolved330 = load i64, ptr %resolved, align 8
+  %obj_ptr331 = inttoptr i64 %resolved330 to ptr
+  %fld_ptr332 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr331, i32 0, i32 1
+  %error_message333 = load i64, ptr %fld_ptr332, align 8
+  %calltmp334 = call i64 @fail(i64 %error_message333)
+  br label %ifcont313
+
+then346:                                          ; preds = %ifcont313
+  %source349 = load i64, ptr %source, align 8
+  %path350 = load i64, ptr %path, align 8
+  %tc_result351 = load i64, ptr %tc_result, align 8
+  %obj_ptr352 = inttoptr i64 %tc_result351 to ptr
+  %fld_ptr353 = getelementptr inbounds nuw %TypeCheckResult, ptr %obj_ptr352, i32 0, i32 1
+  %bag354 = load i64, ptr %fld_ptr353, align 8
+  %calltmp355 = call i64 @"diagnostics::render::render_bag"(i64 %source349, i64 %path350, i64 %bag354)
+  br label %ifcont348
+
+else347:                                          ; preds = %ifcont313
+  br label %ifcont348
+
+ifcont348:                                        ; preds = %else347, %then346
+  %7 = call i32 @puts(ptr @.str.3070)
   ret i64 0
 
-then339:                                          ; preds = %ifcont163
-  %source342 = load i64, ptr %source, align 8
-  %calltmp343 = call i64 @"parse::parse_program_source"(i64 %source342)
-  store i64 %calltmp343, ptr %parsed344, align 8
-  %parsed345 = load i64, ptr %parsed344, align 8
-  %obj_ptr346 = inttoptr i64 %parsed345 to ptr
-  %fld_ptr347 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr346, i32 0, i32 1
-  %had_error348 = load i64, ptr %fld_ptr347, align 8
-  %l_bool349 = icmp ne i64 %had_error348, 0
-  br i1 %l_bool349, label %sc_merge351, label %sc_rhs350
+then363:                                          ; preds = %ifcont187
+  %path366 = load i64, ptr %path, align 8
+  %len_arg367 = inttoptr i64 %path366 to ptr
+  %strlen_call368 = call i64 @strlen(ptr %len_arg367)
+  %sgt369 = icmp sgt i64 %strlen_call368, 13
+  %sgt_ext370 = zext i1 %sgt369 to i64
+  %l_bool371 = icmp ne i64 %sgt_ext370, 0
+  br i1 %l_bool371, label %sc_rhs372, label %sc_merge373
 
-else340:                                          ; preds = %ifcont163
-  br label %ifcont341
+else364:                                          ; preds = %ifcont187
+  br label %ifcont365
 
-ifcont341:                                        ; preds = %else340
-  %command552 = load i64, ptr %command, align 8
-  %streq_l553 = inttoptr i64 %command552 to ptr
-  %strcmp_call554 = call i32 @strcmp(ptr %streq_l553, ptr @.str.3070)
-  %strcmp_sext555 = sext i32 %strcmp_call554 to i64
-  %streq_cmp556 = icmp eq i64 %strcmp_sext555, 0
-  %streq_ext557 = zext i1 %streq_cmp556 to i64
-  %if_cond558 = icmp ne i64 %streq_ext557, 0
-  br i1 %if_cond558, label %then559, label %else560
+ifcont365:                                        ; preds = %else364
+  %command724 = load i64, ptr %command, align 8
+  %streq_l725 = inttoptr i64 %command724 to ptr
+  %strcmp_call726 = call i32 @strcmp(ptr %streq_l725, ptr @.str.3085)
+  %strcmp_sext727 = sext i32 %strcmp_call726 to i64
+  %streq_cmp728 = icmp eq i64 %strcmp_sext727, 0
+  %streq_ext729 = zext i1 %streq_cmp728 to i64
+  %if_cond730 = icmp ne i64 %streq_ext729, 0
+  br i1 %if_cond730, label %then731, label %else732
 
-sc_rhs350:                                        ; preds = %then339
-  %parsed352 = load i64, ptr %parsed344, align 8
-  %obj_ptr353 = inttoptr i64 %parsed352 to ptr
-  %fld_ptr354 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr353, i32 0, i32 0
-  %stmts355 = load i64, ptr %fld_ptr354, align 8
-  %eq356 = icmp eq i64 %stmts355, 0
-  %eq_ext357 = zext i1 %eq356 to i64
-  %r_bool358 = icmp ne i64 %eq_ext357, 0
-  br label %sc_merge351
+sc_rhs372:                                        ; preds = %then363
+  %path374 = load i64, ptr %path, align 8
+  %sub_src375 = inttoptr i64 %path374 to ptr
+  %buf376 = call ptr @forge_bump_alloc(i64 14)
+  %sub_src_int377 = ptrtoint ptr %sub_src375 to i64
+  %sub_off_int378 = add i64 %sub_src_int377, 0
+  %sub_off379 = inttoptr i64 %sub_off_int378 to ptr
+  %8 = call ptr @memcpy(ptr %buf376, ptr %sub_off379, i64 13)
+  %sub_buf_int380 = ptrtoint ptr %buf376 to i64
+  %sub_nul_int381 = add i64 %sub_buf_int380, 13
+  %sub_nul382 = inttoptr i64 %sub_nul_int381 to ptr
+  store i8 0, ptr %sub_nul382, align 8
+  %sub_result383 = ptrtoint ptr %buf376 to i64
+  %streq_l384 = inttoptr i64 %sub_result383 to ptr
+  %strcmp_call385 = call i32 @strcmp(ptr %streq_l384, ptr @.str.3072)
+  %strcmp_sext386 = sext i32 %strcmp_call385 to i64
+  %streq_cmp387 = icmp eq i64 %strcmp_sext386, 0
+  %streq_ext388 = zext i1 %streq_cmp387 to i64
+  %r_bool389 = icmp ne i64 %streq_ext388, 0
+  br label %sc_merge373
 
-sc_merge351:                                      ; preds = %sc_rhs350, %then339
-  %sc_phi359 = phi i1 [ true, %then339 ], [ %r_bool358, %sc_rhs350 ]
-  %sc_ext360 = zext i1 %sc_phi359 to i64
-  %if_cond361 = icmp ne i64 %sc_ext360, 0
-  br i1 %if_cond361, label %then362, label %else363
+sc_merge373:                                      ; preds = %sc_rhs372, %then363
+  %sc_phi390 = phi i1 [ false, %then363 ], [ %r_bool389, %sc_rhs372 ]
+  %sc_ext391 = zext i1 %sc_phi390 to i64
+  store i64 %sc_ext391, ptr %has_stop_flag, align 8
+  %has_stop_flag392 = load i64, ptr %has_stop_flag, align 8
+  %ife_cond393 = icmp ne i64 %has_stop_flag392, 0
+  store i64 0, ptr %ife_result397, align 8
+  br i1 %ife_cond393, label %ife_then394, label %ife_else395
 
-then362:                                          ; preds = %sc_merge351
-  %parsed365 = load i64, ptr %parsed344, align 8
-  %obj_ptr366 = inttoptr i64 %parsed365 to ptr
-  %fld_ptr367 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr366, i32 0, i32 3
-  %bag368 = load i64, ptr %fld_ptr367, align 8
-  %calltmp369 = call i64 @"diagnostics::bag_has_errors"(i64 %bag368)
-  %if_cond370 = icmp ne i64 %calltmp369, 0
-  br i1 %if_cond370, label %then371, label %else372
+ife_then394:                                      ; preds = %sc_merge373
+  %path398 = load i64, ptr %path, align 8
+  %path399 = load i64, ptr %path, align 8
+  %len_arg400 = inttoptr i64 %path399 to ptr
+  %strlen_call401 = call i64 @strlen(ptr %len_arg400)
+  %sub_src402 = inttoptr i64 %path398 to ptr
+  %sub_len = sub i64 %strlen_call401, 13
+  %sub_alloc = add i64 %sub_len, 1
+  %buf403 = call ptr @forge_bump_alloc(i64 %sub_alloc)
+  %sub_src_int404 = ptrtoint ptr %sub_src402 to i64
+  %sub_off_int405 = add i64 %sub_src_int404, 13
+  %sub_off406 = inttoptr i64 %sub_off_int405 to ptr
+  %9 = call ptr @memcpy(ptr %buf403, ptr %sub_off406, i64 %sub_len)
+  %sub_buf_int407 = ptrtoint ptr %buf403 to i64
+  %sub_nul_int408 = add i64 %sub_buf_int407, %sub_len
+  %sub_nul409 = inttoptr i64 %sub_nul_int408 to ptr
+  store i8 0, ptr %sub_nul409, align 8
+  %sub_result410 = ptrtoint ptr %buf403 to i64
+  store i64 %sub_result410, ptr %ife_result397, align 8
+  br label %ife_end396
 
-else363:                                          ; preds = %sc_merge351
-  br label %ifcont364
+ife_else395:                                      ; preds = %sc_merge373
+  store i64 ptrtoint (ptr @.str.3073 to i64), ptr %ife_result397, align 8
+  br label %ife_end396
 
-ifcont364:                                        ; preds = %else363, %ifcont373
-  %path386 = load i64, ptr %path, align 8
-  %calltmp387 = call i64 @"features::modules::resolver::modules_dirname"(i64 %path386)
-  store i64 %calltmp387, ptr %entry_dir388, align 8
-  %parsed389 = load i64, ptr %parsed344, align 8
-  %obj_ptr390 = inttoptr i64 %parsed389 to ptr
-  %fld_ptr391 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr390, i32 0, i32 0
-  %stmts392 = load i64, ptr %fld_ptr391, align 8
-  %entry_dir393 = load i64, ptr %entry_dir388, align 8
-  %buf394 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr395 = getelementptr inbounds nuw %LoadedPaths, ptr %buf394, i32 0, i32 0
-  store i8 0, ptr %tag_ptr395, align 8
-  %enum_i64396 = ptrtoint ptr %buf394 to i64
-  %calltmp397 = call i64 @"features::modules::resolver::resolve_module_files"(i64 %stmts392, i64 %entry_dir393, i64 %enum_i64396)
-  store i64 %calltmp397, ptr %mod_resolved398, align 8
-  %mod_resolved399 = load i64, ptr %mod_resolved398, align 8
-  %obj_ptr400 = inttoptr i64 %mod_resolved399 to ptr
-  %fld_ptr401 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr400, i32 0, i32 2
-  %had_error402 = load i64, ptr %fld_ptr401, align 8
-  %if_cond403 = icmp ne i64 %had_error402, 0
-  br i1 %if_cond403, label %then404, label %else405
+ife_end396:                                       ; preds = %ife_else395, %ife_then394
+  %ife_val411 = load i64, ptr %ife_result397, align 8
+  store i64 %ife_val411, ptr %stop_after, align 8
+  %has_stop_flag412 = load i64, ptr %has_stop_flag, align 8
+  %l_bool413 = icmp ne i64 %has_stop_flag412, 0
+  br i1 %l_bool413, label %sc_rhs414, label %sc_merge415
 
-then371:                                          ; preds = %then362
-  %source374 = load i64, ptr %source, align 8
-  %path375 = load i64, ptr %path, align 8
-  %parsed376 = load i64, ptr %parsed344, align 8
-  %obj_ptr377 = inttoptr i64 %parsed376 to ptr
-  %fld_ptr378 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr377, i32 0, i32 3
-  %bag379 = load i64, ptr %fld_ptr378, align 8
-  %calltmp380 = call i64 @"diagnostics::render::render_bag"(i64 %source374, i64 %path375, i64 %bag379)
-  br label %ifcont373
+sc_rhs414:                                        ; preds = %ife_end396
+  %calltmp416 = call i64 @forge_selfhost_argc()
+  %slt417 = icmp slt i64 %calltmp416, 4
+  %slt_ext418 = zext i1 %slt417 to i64
+  %r_bool419 = icmp ne i64 %slt_ext418, 0
+  br label %sc_merge415
 
-else372:                                          ; preds = %then362
-  br label %ifcont373
+sc_merge415:                                      ; preds = %sc_rhs414, %ife_end396
+  %sc_phi420 = phi i1 [ false, %ife_end396 ], [ %r_bool419, %sc_rhs414 ]
+  %sc_ext421 = zext i1 %sc_phi420 to i64
+  %if_cond422 = icmp ne i64 %sc_ext421, 0
+  br i1 %if_cond422, label %then423, label %else424
 
-ifcont373:                                        ; preds = %else372, %then371
-  %parsed381 = load i64, ptr %parsed344, align 8
-  %obj_ptr382 = inttoptr i64 %parsed381 to ptr
-  %fld_ptr383 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr382, i32 0, i32 2
-  %error_message384 = load i64, ptr %fld_ptr383, align 8
-  %calltmp385 = call i64 @fail(i64 %error_message384)
-  br label %ifcont364
+then423:                                          ; preds = %sc_merge415
+  %calltmp426 = call i64 @fail(i64 ptrtoint (ptr @.str.3074 to i64))
+  br label %ifcont425
 
-then404:                                          ; preds = %ifcont364
-  %calltmp407 = call i64 @"diagnostics::bag_new"()
-  %buf408 = call ptr @forge_bump_alloc(i64 8)
-  %tag_ptr409 = getelementptr inbounds nuw %DiagCode, ptr %buf408, i32 0, i32 0
-  store i8 16, ptr %tag_ptr409, align 8
-  %enum_i64410 = ptrtoint ptr %buf408 to i64
-  %mod_resolved411 = load i64, ptr %mod_resolved398, align 8
-  %obj_ptr412 = inttoptr i64 %mod_resolved411 to ptr
-  %fld_ptr413 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr412, i32 0, i32 3
-  %error_message414 = load i64, ptr %fld_ptr413, align 8
-  %calltmp415 = call i64 @"diagnostics::span_dummy"()
-  %calltmp416 = call i64 @"diagnostics::diag_error"(i64 %enum_i64410, i64 %error_message414, i64 %calltmp415)
-  %calltmp417 = call i64 @"diagnostics::bag_report"(i64 %calltmp407, i64 %calltmp416)
-  store i64 %calltmp417, ptr %mod_bag418, align 8
-  %source419 = load i64, ptr %source, align 8
-  %path420 = load i64, ptr %path, align 8
-  %mod_bag421 = load i64, ptr %mod_bag418, align 8
-  %calltmp422 = call i64 @"diagnostics::render::render_bag"(i64 %source419, i64 %path420, i64 %mod_bag421)
-  %mod_resolved423 = load i64, ptr %mod_resolved398, align 8
-  %obj_ptr424 = inttoptr i64 %mod_resolved423 to ptr
-  %fld_ptr425 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr424, i32 0, i32 3
-  %error_message426 = load i64, ptr %fld_ptr425, align 8
-  %calltmp427 = call i64 @fail(i64 %error_message426)
-  br label %ifcont406
+else424:                                          ; preds = %sc_merge415
+  br label %ifcont425
 
-else405:                                          ; preds = %ifcont364
-  br label %ifcont406
+ifcont425:                                        ; preds = %else424, %then423
+  %has_stop_flag427 = load i64, ptr %has_stop_flag, align 8
+  %ife_cond428 = icmp ne i64 %has_stop_flag427, 0
+  store i64 0, ptr %ife_result432, align 8
+  br i1 %ife_cond428, label %ife_then429, label %ife_else430
 
-ifcont406:                                        ; preds = %else405, %then404
-  %mod_resolved428 = load i64, ptr %mod_resolved398, align 8
-  %obj_ptr429 = inttoptr i64 %mod_resolved428 to ptr
-  %fld_ptr430 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr429, i32 0, i32 0
-  %stmts431 = load i64, ptr %fld_ptr430, align 8
-  %calltmp432 = call i64 @"features::modules::names::resolve_names"(i64 %stmts431)
-  store i64 %calltmp432, ptr %named433, align 8
-  %named434 = load i64, ptr %named433, align 8
-  %obj_ptr435 = inttoptr i64 %named434 to ptr
-  %fld_ptr436 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr435, i32 0, i32 3
-  %bag437 = load i64, ptr %fld_ptr436, align 8
-  %calltmp438 = call i64 @"diagnostics::bag_has_errors"(i64 %bag437)
-  %if_cond439 = icmp ne i64 %calltmp438, 0
-  br i1 %if_cond439, label %then440, label %else441
+ife_then429:                                      ; preds = %ifcont425
+  %calltmp433 = call i64 @forge_selfhost_get_arg_cstr(i64 3)
+  store i64 %calltmp433, ptr %ife_result432, align 8
+  br label %ife_end431
 
-then440:                                          ; preds = %ifcont406
-  %source443 = load i64, ptr %source, align 8
-  %path444 = load i64, ptr %path, align 8
-  %named445 = load i64, ptr %named433, align 8
-  %obj_ptr446 = inttoptr i64 %named445 to ptr
-  %fld_ptr447 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr446, i32 0, i32 3
-  %bag448 = load i64, ptr %fld_ptr447, align 8
-  %calltmp449 = call i64 @"diagnostics::render::render_bag"(i64 %source443, i64 %path444, i64 %bag448)
-  br label %ifcont442
+ife_else430:                                      ; preds = %ifcont425
+  %path434 = load i64, ptr %path, align 8
+  store i64 %path434, ptr %ife_result432, align 8
+  br label %ife_end431
 
-else441:                                          ; preds = %ifcont406
-  br label %ifcont442
+ife_end431:                                       ; preds = %ife_else430, %ife_then429
+  %ife_val435 = load i64, ptr %ife_result432, align 8
+  store i64 %ife_val435, ptr %cpath, align 8
+  %has_stop_flag436 = load i64, ptr %has_stop_flag, align 8
+  %l_bool437 = icmp ne i64 %has_stop_flag436, 0
+  br i1 %l_bool437, label %sc_rhs438, label %sc_merge439
 
-ifcont442:                                        ; preds = %else441, %then440
-  %named450 = load i64, ptr %named433, align 8
-  %obj_ptr451 = inttoptr i64 %named450 to ptr
-  %fld_ptr452 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr451, i32 0, i32 1
-  %had_error453 = load i64, ptr %fld_ptr452, align 8
-  %if_cond454 = icmp ne i64 %had_error453, 0
-  br i1 %if_cond454, label %then455, label %else456
+sc_rhs438:                                        ; preds = %ife_end431
+  %cpath440 = load i64, ptr %cpath, align 8
+  %calltmp441 = call i64 @file_exists(i64 %cpath440)
+  %not_cmp442 = icmp eq i64 %calltmp441, 0
+  %not443 = zext i1 %not_cmp442 to i64
+  %r_bool444 = icmp ne i64 %not443, 0
+  br label %sc_merge439
 
-then455:                                          ; preds = %ifcont442
-  %named458 = load i64, ptr %named433, align 8
-  %obj_ptr459 = inttoptr i64 %named458 to ptr
-  %fld_ptr460 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr459, i32 0, i32 2
-  %error_message461 = load i64, ptr %fld_ptr460, align 8
-  %calltmp462 = call i64 @fail(i64 %error_message461)
-  br label %ifcont457
+sc_merge439:                                      ; preds = %sc_rhs438, %ife_end431
+  %sc_phi445 = phi i1 [ false, %ife_end431 ], [ %r_bool444, %sc_rhs438 ]
+  %sc_ext446 = zext i1 %sc_phi445 to i64
+  %if_cond447 = icmp ne i64 %sc_ext446, 0
+  br i1 %if_cond447, label %then448, label %else449
 
-else456:                                          ; preds = %ifcont442
-  br label %ifcont457
+then448:                                          ; preds = %sc_merge439
+  %cpath451 = load i64, ptr %cpath, align 8
+  %concat_r452 = inttoptr i64 %cpath451 to ptr
+  %lhs_len453 = call i64 @strlen(ptr @.str.3075)
+  %rhs_len454 = call i64 @strlen(ptr %concat_r452)
+  %concat_total455 = add i64 %lhs_len453, %rhs_len454
+  %concat_size456 = add i64 %concat_total455, 1
+  %buf457 = call ptr @forge_bump_alloc(i64 %concat_size456)
+  %10 = call ptr @memcpy(ptr %buf457, ptr @.str.3075, i64 %lhs_len453)
+  %buf_int458 = ptrtoint ptr %buf457 to i64
+  %dst2_int459 = add i64 %buf_int458, %lhs_len453
+  %dst2460 = inttoptr i64 %dst2_int459 to ptr
+  %rhs_len_p1461 = add i64 %rhs_len454, 1
+  %11 = call ptr @memcpy(ptr %dst2460, ptr %concat_r452, i64 %rhs_len_p1461)
+  %concat_i64462 = ptrtoint ptr %buf457 to i64
+  %calltmp463 = call i64 @fail(i64 %concat_i64462)
+  br label %ifcont450
 
-ifcont457:                                        ; preds = %else456, %then455
-  %named463 = load i64, ptr %named433, align 8
-  %obj_ptr464 = inttoptr i64 %named463 to ptr
-  %fld_ptr465 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr464, i32 0, i32 0
-  %stmts466 = load i64, ptr %fld_ptr465, align 8
-  %calltmp467 = call i64 @"core::resolver::resolve_program"(i64 %stmts466)
-  store i64 %calltmp467, ptr %resolved468, align 8
-  %resolved469 = load i64, ptr %resolved468, align 8
-  %obj_ptr470 = inttoptr i64 %resolved469 to ptr
-  %fld_ptr471 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr470, i32 0, i32 0
-  %had_error472 = load i64, ptr %fld_ptr471, align 8
-  %if_cond473 = icmp ne i64 %had_error472, 0
-  br i1 %if_cond473, label %then474, label %else475
+else449:                                          ; preds = %sc_merge439
+  br label %ifcont450
 
-then474:                                          ; preds = %ifcont457
-  %resolved477 = load i64, ptr %resolved468, align 8
-  %obj_ptr478 = inttoptr i64 %resolved477 to ptr
-  %fld_ptr479 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr478, i32 0, i32 2
-  %bag480 = load i64, ptr %fld_ptr479, align 8
-  %calltmp481 = call i64 @"diagnostics::bag_has_errors"(i64 %bag480)
-  %if_cond482 = icmp ne i64 %calltmp481, 0
-  br i1 %if_cond482, label %then483, label %else484
+ifcont450:                                        ; preds = %else449, %then448
+  %has_stop_flag464 = load i64, ptr %has_stop_flag, align 8
+  %ife_cond465 = icmp ne i64 %has_stop_flag464, 0
+  store i64 0, ptr %ife_result469, align 8
+  br i1 %ife_cond465, label %ife_then466, label %ife_else467
 
-else475:                                          ; preds = %ifcont457
-  br label %ifcont476
+ife_then466:                                      ; preds = %ifcont450
+  %cpath470 = load i64, ptr %cpath, align 8
+  %calltmp471 = call i64 @read_file(i64 %cpath470)
+  store i64 %calltmp471, ptr %ife_result469, align 8
+  br label %ife_end468
 
-ifcont476:                                        ; preds = %else475, %ifcont485
-  %named498 = load i64, ptr %named433, align 8
-  %obj_ptr499 = inttoptr i64 %named498 to ptr
-  %fld_ptr500 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr499, i32 0, i32 0
-  %stmts501 = load i64, ptr %fld_ptr500, align 8
-  %calltmp502 = call i64 @"typeck::typecheck_program"(i64 %stmts501)
-  store i64 %calltmp502, ptr %tc_result503, align 8
-  %tc_result504 = load i64, ptr %tc_result503, align 8
-  %obj_ptr505 = inttoptr i64 %tc_result504 to ptr
-  %fld_ptr506 = getelementptr inbounds nuw %TypeCheckResult, ptr %obj_ptr505, i32 0, i32 1
-  %bag507 = load i64, ptr %fld_ptr506, align 8
-  %calltmp508 = call i64 @"diagnostics::bag_has_errors"(i64 %bag507)
-  %if_cond509 = icmp ne i64 %calltmp508, 0
-  br i1 %if_cond509, label %then510, label %else511
+ife_else467:                                      ; preds = %ifcont450
+  %source472 = load i64, ptr %source, align 8
+  store i64 %source472, ptr %ife_result469, align 8
+  br label %ife_end468
 
-then483:                                          ; preds = %then474
-  %source486 = load i64, ptr %source, align 8
-  %path487 = load i64, ptr %path, align 8
-  %resolved488 = load i64, ptr %resolved468, align 8
-  %obj_ptr489 = inttoptr i64 %resolved488 to ptr
-  %fld_ptr490 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr489, i32 0, i32 2
-  %bag491 = load i64, ptr %fld_ptr490, align 8
-  %calltmp492 = call i64 @"diagnostics::render::render_bag"(i64 %source486, i64 %path487, i64 %bag491)
-  br label %ifcont485
+ife_end468:                                       ; preds = %ife_else467, %ife_then466
+  %ife_val473 = load i64, ptr %ife_result469, align 8
+  store i64 %ife_val473, ptr %csource, align 8
+  %csource474 = load i64, ptr %csource, align 8
+  %calltmp475 = call i64 @"parse::parse_program_source"(i64 %csource474)
+  store i64 %calltmp475, ptr %parsed476, align 8
+  %parsed477 = load i64, ptr %parsed476, align 8
+  %obj_ptr478 = inttoptr i64 %parsed477 to ptr
+  %fld_ptr479 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr478, i32 0, i32 1
+  %had_error480 = load i64, ptr %fld_ptr479, align 8
+  %l_bool481 = icmp ne i64 %had_error480, 0
+  br i1 %l_bool481, label %sc_merge483, label %sc_rhs482
 
-else484:                                          ; preds = %then474
-  br label %ifcont485
+sc_rhs482:                                        ; preds = %ife_end468
+  %parsed484 = load i64, ptr %parsed476, align 8
+  %obj_ptr485 = inttoptr i64 %parsed484 to ptr
+  %fld_ptr486 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr485, i32 0, i32 0
+  %stmts487 = load i64, ptr %fld_ptr486, align 8
+  %eq488 = icmp eq i64 %stmts487, 0
+  %eq_ext489 = zext i1 %eq488 to i64
+  %r_bool490 = icmp ne i64 %eq_ext489, 0
+  br label %sc_merge483
 
-ifcont485:                                        ; preds = %else484, %then483
-  %resolved493 = load i64, ptr %resolved468, align 8
-  %obj_ptr494 = inttoptr i64 %resolved493 to ptr
-  %fld_ptr495 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr494, i32 0, i32 1
-  %error_message496 = load i64, ptr %fld_ptr495, align 8
-  %calltmp497 = call i64 @fail(i64 %error_message496)
-  br label %ifcont476
+sc_merge483:                                      ; preds = %sc_rhs482, %ife_end468
+  %sc_phi491 = phi i1 [ true, %ife_end468 ], [ %r_bool490, %sc_rhs482 ]
+  %sc_ext492 = zext i1 %sc_phi491 to i64
+  %if_cond493 = icmp ne i64 %sc_ext492, 0
+  br i1 %if_cond493, label %then494, label %else495
 
-then510:                                          ; preds = %ifcont476
-  %source513 = load i64, ptr %source, align 8
-  %path514 = load i64, ptr %path, align 8
-  %tc_result515 = load i64, ptr %tc_result503, align 8
-  %obj_ptr516 = inttoptr i64 %tc_result515 to ptr
-  %fld_ptr517 = getelementptr inbounds nuw %TypeCheckResult, ptr %obj_ptr516, i32 0, i32 1
-  %bag518 = load i64, ptr %fld_ptr517, align 8
-  %calltmp519 = call i64 @"diagnostics::render::render_bag"(i64 %source513, i64 %path514, i64 %bag518)
-  br label %ifcont512
+then494:                                          ; preds = %sc_merge483
+  %parsed497 = load i64, ptr %parsed476, align 8
+  %obj_ptr498 = inttoptr i64 %parsed497 to ptr
+  %fld_ptr499 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr498, i32 0, i32 3
+  %bag500 = load i64, ptr %fld_ptr499, align 8
+  %calltmp501 = call i64 @"diagnostics::bag_has_errors"(i64 %bag500)
+  %if_cond502 = icmp ne i64 %calltmp501, 0
+  br i1 %if_cond502, label %then503, label %else504
 
-else511:                                          ; preds = %ifcont476
-  br label %ifcont512
+else495:                                          ; preds = %sc_merge483
+  br label %ifcont496
 
-ifcont512:                                        ; preds = %else511, %then510
-  %path520 = load i64, ptr %path, align 8
-  %concat_l = inttoptr i64 %path520 to ptr
-  %lhs_len521 = call i64 @strlen(ptr %concat_l)
-  %rhs_len522 = call i64 @strlen(ptr @.str.3069)
-  %concat_total523 = add i64 %lhs_len521, %rhs_len522
-  %concat_size524 = add i64 %concat_total523, 1
-  %buf525 = call ptr @forge_bump_alloc(i64 %concat_size524)
-  %7 = call ptr @memcpy(ptr %buf525, ptr %concat_l, i64 %lhs_len521)
-  %buf_int526 = ptrtoint ptr %buf525 to i64
-  %dst2_int527 = add i64 %buf_int526, %lhs_len521
-  %dst2528 = inttoptr i64 %dst2_int527 to ptr
-  %rhs_len_p1529 = add i64 %rhs_len522, 1
-  %8 = call ptr @memcpy(ptr %dst2528, ptr @.str.3069, i64 %rhs_len_p1529)
-  %concat_i64530 = ptrtoint ptr %buf525 to i64
-  store i64 %concat_i64530, ptr %output, align 8
-  %named531 = load i64, ptr %named433, align 8
-  %obj_ptr532 = inttoptr i64 %named531 to ptr
-  %fld_ptr533 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr532, i32 0, i32 0
+ifcont496:                                        ; preds = %else495, %ifcont505
+  %stop_after518 = load i64, ptr %stop_after, align 8
+  %streq_l519 = inttoptr i64 %stop_after518 to ptr
+  %strcmp_call520 = call i32 @strcmp(ptr %streq_l519, ptr @.str.3076)
+  %strcmp_sext521 = sext i32 %strcmp_call520 to i64
+  %streq_cmp522 = icmp eq i64 %strcmp_sext521, 0
+  %streq_ext523 = zext i1 %streq_cmp522 to i64
+  %if_cond524 = icmp ne i64 %streq_ext523, 0
+  br i1 %if_cond524, label %then525, label %else526
+
+then503:                                          ; preds = %then494
+  %csource506 = load i64, ptr %csource, align 8
+  %cpath507 = load i64, ptr %cpath, align 8
+  %parsed508 = load i64, ptr %parsed476, align 8
+  %obj_ptr509 = inttoptr i64 %parsed508 to ptr
+  %fld_ptr510 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr509, i32 0, i32 3
+  %bag511 = load i64, ptr %fld_ptr510, align 8
+  %calltmp512 = call i64 @"diagnostics::render::render_bag"(i64 %csource506, i64 %cpath507, i64 %bag511)
+  br label %ifcont505
+
+else504:                                          ; preds = %then494
+  br label %ifcont505
+
+ifcont505:                                        ; preds = %else504, %then503
+  %parsed513 = load i64, ptr %parsed476, align 8
+  %obj_ptr514 = inttoptr i64 %parsed513 to ptr
+  %fld_ptr515 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr514, i32 0, i32 2
+  %error_message516 = load i64, ptr %fld_ptr515, align 8
+  %calltmp517 = call i64 @fail(i64 %error_message516)
+  br label %ifcont496
+
+then525:                                          ; preds = %ifcont496
+  %12 = call i32 @puts(ptr @.str.3077)
+  ret i64 0
+
+else526:                                          ; preds = %ifcont496
+  br label %ifcont527
+
+ifcont527:                                        ; preds = %else526
+  %cpath528 = load i64, ptr %cpath, align 8
+  %calltmp529 = call i64 @"features::modules::resolver::modules_dirname"(i64 %cpath528)
+  store i64 %calltmp529, ptr %entry_dir530, align 8
+  %parsed531 = load i64, ptr %parsed476, align 8
+  %obj_ptr532 = inttoptr i64 %parsed531 to ptr
+  %fld_ptr533 = getelementptr inbounds nuw %ProgramParseResult, ptr %obj_ptr532, i32 0, i32 0
   %stmts534 = load i64, ptr %fld_ptr533, align 8
-  %output535 = load i64, ptr %output, align 8
-  %calltmp536 = call i64 @"codegen::compile_program"(i64 %stmts534, i64 %output535)
-  store i64 %calltmp536, ptr %compiled, align 8
-  %compiled537 = load i64, ptr %compiled, align 8
-  %obj_ptr538 = inttoptr i64 %compiled537 to ptr
-  %fld_ptr539 = getelementptr inbounds nuw %CodegenResult, ptr %obj_ptr538, i32 0, i32 0
-  %had_error540 = load i64, ptr %fld_ptr539, align 8
-  %if_cond541 = icmp ne i64 %had_error540, 0
-  br i1 %if_cond541, label %then542, label %else543
+  %entry_dir535 = load i64, ptr %entry_dir530, align 8
+  %buf536 = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr537 = getelementptr inbounds nuw %LoadedPaths, ptr %buf536, i32 0, i32 0
+  store i8 0, ptr %tag_ptr537, align 8
+  %enum_i64538 = ptrtoint ptr %buf536 to i64
+  %calltmp539 = call i64 @"features::modules::resolver::resolve_module_files"(i64 %stmts534, i64 %entry_dir535, i64 %enum_i64538)
+  store i64 %calltmp539, ptr %mod_resolved540, align 8
+  %mod_resolved541 = load i64, ptr %mod_resolved540, align 8
+  %obj_ptr542 = inttoptr i64 %mod_resolved541 to ptr
+  %fld_ptr543 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr542, i32 0, i32 2
+  %had_error544 = load i64, ptr %fld_ptr543, align 8
+  %if_cond545 = icmp ne i64 %had_error544, 0
+  br i1 %if_cond545, label %then546, label %else547
 
-then542:                                          ; preds = %ifcont512
-  %compiled545 = load i64, ptr %compiled, align 8
-  %obj_ptr546 = inttoptr i64 %compiled545 to ptr
-  %fld_ptr547 = getelementptr inbounds nuw %CodegenResult, ptr %obj_ptr546, i32 0, i32 1
-  %error_message548 = load i64, ptr %fld_ptr547, align 8
-  %calltmp549 = call i64 @fail(i64 %error_message548)
-  br label %ifcont544
+then546:                                          ; preds = %ifcont527
+  %calltmp549 = call i64 @"diagnostics::bag_new"()
+  %buf550 = call ptr @forge_bump_alloc(i64 8)
+  %tag_ptr551 = getelementptr inbounds nuw %DiagCode, ptr %buf550, i32 0, i32 0
+  store i8 16, ptr %tag_ptr551, align 8
+  %enum_i64552 = ptrtoint ptr %buf550 to i64
+  %mod_resolved553 = load i64, ptr %mod_resolved540, align 8
+  %obj_ptr554 = inttoptr i64 %mod_resolved553 to ptr
+  %fld_ptr555 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr554, i32 0, i32 3
+  %error_message556 = load i64, ptr %fld_ptr555, align 8
+  %calltmp557 = call i64 @"diagnostics::span_dummy"()
+  %calltmp558 = call i64 @"diagnostics::diag_error"(i64 %enum_i64552, i64 %error_message556, i64 %calltmp557)
+  %calltmp559 = call i64 @"diagnostics::bag_report"(i64 %calltmp549, i64 %calltmp558)
+  store i64 %calltmp559, ptr %mod_bag560, align 8
+  %csource561 = load i64, ptr %csource, align 8
+  %cpath562 = load i64, ptr %cpath, align 8
+  %mod_bag563 = load i64, ptr %mod_bag560, align 8
+  %calltmp564 = call i64 @"diagnostics::render::render_bag"(i64 %csource561, i64 %cpath562, i64 %mod_bag563)
+  %mod_resolved565 = load i64, ptr %mod_resolved540, align 8
+  %obj_ptr566 = inttoptr i64 %mod_resolved565 to ptr
+  %fld_ptr567 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr566, i32 0, i32 3
+  %error_message568 = load i64, ptr %fld_ptr567, align 8
+  %calltmp569 = call i64 @fail(i64 %error_message568)
+  br label %ifcont548
 
-else543:                                          ; preds = %ifcont512
-  br label %ifcont544
+else547:                                          ; preds = %ifcont527
+  br label %ifcont548
 
-ifcont544:                                        ; preds = %else543, %then542
-  %output550 = load i64, ptr %output, align 8
-  %str_ptr551 = inttoptr i64 %output550 to ptr
-  %9 = call i32 @puts(ptr %str_ptr551)
+ifcont548:                                        ; preds = %else547, %then546
+  %stop_after570 = load i64, ptr %stop_after, align 8
+  %streq_l571 = inttoptr i64 %stop_after570 to ptr
+  %strcmp_call572 = call i32 @strcmp(ptr %streq_l571, ptr @.str.3078)
+  %strcmp_sext573 = sext i32 %strcmp_call572 to i64
+  %streq_cmp574 = icmp eq i64 %strcmp_sext573, 0
+  %streq_ext575 = zext i1 %streq_cmp574 to i64
+  %if_cond576 = icmp ne i64 %streq_ext575, 0
+  br i1 %if_cond576, label %then577, label %else578
+
+then577:                                          ; preds = %ifcont548
+  %13 = call i32 @puts(ptr @.str.3079)
   ret i64 0
 
-then559:                                          ; preds = %ifcont341
-  %source562 = load i64, ptr %source, align 8
-  %calltmp563 = call i64 @"core::eval::execute_program_source"(i64 %source562)
-  store i64 %calltmp563, ptr %result564, align 8
-  %result565 = load i64, ptr %result564, align 8
-  %obj_ptr566 = inttoptr i64 %result565 to ptr
-  %fld_ptr567 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr566, i32 0, i32 1
-  %had_error568 = load i64, ptr %fld_ptr567, align 8
-  %l_bool569 = icmp ne i64 %had_error568, 0
-  br i1 %l_bool569, label %sc_merge571, label %sc_rhs570
+else578:                                          ; preds = %ifcont548
+  br label %ifcont579
 
-else560:                                          ; preds = %ifcont341
-  br label %ifcont561
+ifcont579:                                        ; preds = %else578
+  %mod_resolved580 = load i64, ptr %mod_resolved540, align 8
+  %obj_ptr581 = inttoptr i64 %mod_resolved580 to ptr
+  %fld_ptr582 = getelementptr inbounds nuw %ModListResult, ptr %obj_ptr581, i32 0, i32 0
+  %stmts583 = load i64, ptr %fld_ptr582, align 8
+  %calltmp584 = call i64 @"features::modules::names::resolve_names"(i64 %stmts583)
+  store i64 %calltmp584, ptr %named585, align 8
+  %named586 = load i64, ptr %named585, align 8
+  %obj_ptr587 = inttoptr i64 %named586 to ptr
+  %fld_ptr588 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr587, i32 0, i32 3
+  %bag589 = load i64, ptr %fld_ptr588, align 8
+  %calltmp590 = call i64 @"diagnostics::bag_has_errors"(i64 %bag589)
+  %if_cond591 = icmp ne i64 %calltmp590, 0
+  br i1 %if_cond591, label %then592, label %else593
 
-ifcont561:                                        ; preds = %else560
-  %calltmp596 = call i64 @print_usage()
-  %calltmp597 = call i64 @exit(i64 1)
-  ret i64 %calltmp597
+then592:                                          ; preds = %ifcont579
+  %csource595 = load i64, ptr %csource, align 8
+  %cpath596 = load i64, ptr %cpath, align 8
+  %named597 = load i64, ptr %named585, align 8
+  %obj_ptr598 = inttoptr i64 %named597 to ptr
+  %fld_ptr599 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr598, i32 0, i32 3
+  %bag600 = load i64, ptr %fld_ptr599, align 8
+  %calltmp601 = call i64 @"diagnostics::render::render_bag"(i64 %csource595, i64 %cpath596, i64 %bag600)
+  br label %ifcont594
 
-sc_rhs570:                                        ; preds = %then559
-  %result572 = load i64, ptr %result564, align 8
-  %obj_ptr573 = inttoptr i64 %result572 to ptr
-  %fld_ptr574 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr573, i32 0, i32 0
-  %value575 = load i64, ptr %fld_ptr574, align 8
-  %eq576 = icmp eq i64 %value575, 0
-  %eq_ext577 = zext i1 %eq576 to i64
-  %r_bool578 = icmp ne i64 %eq_ext577, 0
-  br label %sc_merge571
+else593:                                          ; preds = %ifcont579
+  br label %ifcont594
 
-sc_merge571:                                      ; preds = %sc_rhs570, %then559
-  %sc_phi579 = phi i1 [ true, %then559 ], [ %r_bool578, %sc_rhs570 ]
-  %sc_ext580 = zext i1 %sc_phi579 to i64
-  %if_cond581 = icmp ne i64 %sc_ext580, 0
-  br i1 %if_cond581, label %then582, label %else583
+ifcont594:                                        ; preds = %else593, %then592
+  %named602 = load i64, ptr %named585, align 8
+  %obj_ptr603 = inttoptr i64 %named602 to ptr
+  %fld_ptr604 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr603, i32 0, i32 1
+  %had_error605 = load i64, ptr %fld_ptr604, align 8
+  %if_cond606 = icmp ne i64 %had_error605, 0
+  br i1 %if_cond606, label %then607, label %else608
 
-then582:                                          ; preds = %sc_merge571
-  %result585 = load i64, ptr %result564, align 8
-  %obj_ptr586 = inttoptr i64 %result585 to ptr
-  %fld_ptr587 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr586, i32 0, i32 2
-  %error_message588 = load i64, ptr %fld_ptr587, align 8
-  %calltmp589 = call i64 @fail(i64 %error_message588)
-  br label %ifcont584
+then607:                                          ; preds = %ifcont594
+  %named610 = load i64, ptr %named585, align 8
+  %obj_ptr611 = inttoptr i64 %named610 to ptr
+  %fld_ptr612 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr611, i32 0, i32 2
+  %error_message613 = load i64, ptr %fld_ptr612, align 8
+  %calltmp614 = call i64 @fail(i64 %error_message613)
+  br label %ifcont609
 
-else583:                                          ; preds = %sc_merge571
-  br label %ifcont584
+else608:                                          ; preds = %ifcont594
+  br label %ifcont609
 
-ifcont584:                                        ; preds = %else583, %then582
-  %result590 = load i64, ptr %result564, align 8
-  %obj_ptr591 = inttoptr i64 %result590 to ptr
-  %fld_ptr592 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr591, i32 0, i32 0
-  %value593 = load i64, ptr %fld_ptr592, align 8
-  %calltmp594 = call i64 @"core::eval::render_value"(i64 %value593)
-  %str_ptr595 = inttoptr i64 %calltmp594 to ptr
-  %10 = call i32 @puts(ptr %str_ptr595)
+ifcont609:                                        ; preds = %else608, %then607
+  %stop_after615 = load i64, ptr %stop_after, align 8
+  %streq_l616 = inttoptr i64 %stop_after615 to ptr
+  %strcmp_call617 = call i32 @strcmp(ptr %streq_l616, ptr @.str.3080)
+  %strcmp_sext618 = sext i32 %strcmp_call617 to i64
+  %streq_cmp619 = icmp eq i64 %strcmp_sext618, 0
+  %streq_ext620 = zext i1 %streq_cmp619 to i64
+  %if_cond621 = icmp ne i64 %streq_ext620, 0
+  br i1 %if_cond621, label %then622, label %else623
+
+then622:                                          ; preds = %ifcont609
+  %14 = call i32 @puts(ptr @.str.3081)
+  ret i64 0
+
+else623:                                          ; preds = %ifcont609
+  br label %ifcont624
+
+ifcont624:                                        ; preds = %else623
+  %named625 = load i64, ptr %named585, align 8
+  %obj_ptr626 = inttoptr i64 %named625 to ptr
+  %fld_ptr627 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr626, i32 0, i32 0
+  %stmts628 = load i64, ptr %fld_ptr627, align 8
+  %calltmp629 = call i64 @"core::resolver::resolve_program"(i64 %stmts628)
+  store i64 %calltmp629, ptr %resolved630, align 8
+  %resolved631 = load i64, ptr %resolved630, align 8
+  %obj_ptr632 = inttoptr i64 %resolved631 to ptr
+  %fld_ptr633 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr632, i32 0, i32 0
+  %had_error634 = load i64, ptr %fld_ptr633, align 8
+  %if_cond635 = icmp ne i64 %had_error634, 0
+  br i1 %if_cond635, label %then636, label %else637
+
+then636:                                          ; preds = %ifcont624
+  %resolved639 = load i64, ptr %resolved630, align 8
+  %obj_ptr640 = inttoptr i64 %resolved639 to ptr
+  %fld_ptr641 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr640, i32 0, i32 2
+  %bag642 = load i64, ptr %fld_ptr641, align 8
+  %calltmp643 = call i64 @"diagnostics::bag_has_errors"(i64 %bag642)
+  %if_cond644 = icmp ne i64 %calltmp643, 0
+  br i1 %if_cond644, label %then645, label %else646
+
+else637:                                          ; preds = %ifcont624
+  br label %ifcont638
+
+ifcont638:                                        ; preds = %else637, %ifcont647
+  %named660 = load i64, ptr %named585, align 8
+  %obj_ptr661 = inttoptr i64 %named660 to ptr
+  %fld_ptr662 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr661, i32 0, i32 0
+  %stmts663 = load i64, ptr %fld_ptr662, align 8
+  %calltmp664 = call i64 @"typeck::typecheck_program"(i64 %stmts663)
+  store i64 %calltmp664, ptr %tc_result665, align 8
+  %tc_result666 = load i64, ptr %tc_result665, align 8
+  %obj_ptr667 = inttoptr i64 %tc_result666 to ptr
+  %fld_ptr668 = getelementptr inbounds nuw %TypeCheckResult, ptr %obj_ptr667, i32 0, i32 1
+  %bag669 = load i64, ptr %fld_ptr668, align 8
+  %calltmp670 = call i64 @"diagnostics::bag_has_errors"(i64 %bag669)
+  %if_cond671 = icmp ne i64 %calltmp670, 0
+  br i1 %if_cond671, label %then672, label %else673
+
+then645:                                          ; preds = %then636
+  %csource648 = load i64, ptr %csource, align 8
+  %cpath649 = load i64, ptr %cpath, align 8
+  %resolved650 = load i64, ptr %resolved630, align 8
+  %obj_ptr651 = inttoptr i64 %resolved650 to ptr
+  %fld_ptr652 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr651, i32 0, i32 2
+  %bag653 = load i64, ptr %fld_ptr652, align 8
+  %calltmp654 = call i64 @"diagnostics::render::render_bag"(i64 %csource648, i64 %cpath649, i64 %bag653)
+  br label %ifcont647
+
+else646:                                          ; preds = %then636
+  br label %ifcont647
+
+ifcont647:                                        ; preds = %else646, %then645
+  %resolved655 = load i64, ptr %resolved630, align 8
+  %obj_ptr656 = inttoptr i64 %resolved655 to ptr
+  %fld_ptr657 = getelementptr inbounds nuw %ResolveResult, ptr %obj_ptr656, i32 0, i32 1
+  %error_message658 = load i64, ptr %fld_ptr657, align 8
+  %calltmp659 = call i64 @fail(i64 %error_message658)
+  br label %ifcont638
+
+then672:                                          ; preds = %ifcont638
+  %csource675 = load i64, ptr %csource, align 8
+  %cpath676 = load i64, ptr %cpath, align 8
+  %tc_result677 = load i64, ptr %tc_result665, align 8
+  %obj_ptr678 = inttoptr i64 %tc_result677 to ptr
+  %fld_ptr679 = getelementptr inbounds nuw %TypeCheckResult, ptr %obj_ptr678, i32 0, i32 1
+  %bag680 = load i64, ptr %fld_ptr679, align 8
+  %calltmp681 = call i64 @"diagnostics::render::render_bag"(i64 %csource675, i64 %cpath676, i64 %bag680)
+  br label %ifcont674
+
+else673:                                          ; preds = %ifcont638
+  br label %ifcont674
+
+ifcont674:                                        ; preds = %else673, %then672
+  %stop_after682 = load i64, ptr %stop_after, align 8
+  %streq_l683 = inttoptr i64 %stop_after682 to ptr
+  %strcmp_call684 = call i32 @strcmp(ptr %streq_l683, ptr @.str.3082)
+  %strcmp_sext685 = sext i32 %strcmp_call684 to i64
+  %streq_cmp686 = icmp eq i64 %strcmp_sext685, 0
+  %streq_ext687 = zext i1 %streq_cmp686 to i64
+  %if_cond688 = icmp ne i64 %streq_ext687, 0
+  br i1 %if_cond688, label %then689, label %else690
+
+then689:                                          ; preds = %ifcont674
+  %15 = call i32 @puts(ptr @.str.3083)
+  ret i64 0
+
+else690:                                          ; preds = %ifcont674
+  br label %ifcont691
+
+ifcont691:                                        ; preds = %else690
+  %cpath692 = load i64, ptr %cpath, align 8
+  %concat_l = inttoptr i64 %cpath692 to ptr
+  %lhs_len693 = call i64 @strlen(ptr %concat_l)
+  %rhs_len694 = call i64 @strlen(ptr @.str.3084)
+  %concat_total695 = add i64 %lhs_len693, %rhs_len694
+  %concat_size696 = add i64 %concat_total695, 1
+  %buf697 = call ptr @forge_bump_alloc(i64 %concat_size696)
+  %16 = call ptr @memcpy(ptr %buf697, ptr %concat_l, i64 %lhs_len693)
+  %buf_int698 = ptrtoint ptr %buf697 to i64
+  %dst2_int699 = add i64 %buf_int698, %lhs_len693
+  %dst2700 = inttoptr i64 %dst2_int699 to ptr
+  %rhs_len_p1701 = add i64 %rhs_len694, 1
+  %17 = call ptr @memcpy(ptr %dst2700, ptr @.str.3084, i64 %rhs_len_p1701)
+  %concat_i64702 = ptrtoint ptr %buf697 to i64
+  store i64 %concat_i64702, ptr %output, align 8
+  %named703 = load i64, ptr %named585, align 8
+  %obj_ptr704 = inttoptr i64 %named703 to ptr
+  %fld_ptr705 = getelementptr inbounds nuw %NameResolveResult, ptr %obj_ptr704, i32 0, i32 0
+  %stmts706 = load i64, ptr %fld_ptr705, align 8
+  %output707 = load i64, ptr %output, align 8
+  %calltmp708 = call i64 @"codegen::compile_program"(i64 %stmts706, i64 %output707)
+  store i64 %calltmp708, ptr %compiled, align 8
+  %compiled709 = load i64, ptr %compiled, align 8
+  %obj_ptr710 = inttoptr i64 %compiled709 to ptr
+  %fld_ptr711 = getelementptr inbounds nuw %CodegenResult, ptr %obj_ptr710, i32 0, i32 0
+  %had_error712 = load i64, ptr %fld_ptr711, align 8
+  %if_cond713 = icmp ne i64 %had_error712, 0
+  br i1 %if_cond713, label %then714, label %else715
+
+then714:                                          ; preds = %ifcont691
+  %compiled717 = load i64, ptr %compiled, align 8
+  %obj_ptr718 = inttoptr i64 %compiled717 to ptr
+  %fld_ptr719 = getelementptr inbounds nuw %CodegenResult, ptr %obj_ptr718, i32 0, i32 1
+  %error_message720 = load i64, ptr %fld_ptr719, align 8
+  %calltmp721 = call i64 @fail(i64 %error_message720)
+  br label %ifcont716
+
+else715:                                          ; preds = %ifcont691
+  br label %ifcont716
+
+ifcont716:                                        ; preds = %else715, %then714
+  %output722 = load i64, ptr %output, align 8
+  %str_ptr723 = inttoptr i64 %output722 to ptr
+  %18 = call i32 @puts(ptr %str_ptr723)
+  ret i64 0
+
+then731:                                          ; preds = %ifcont365
+  %source734 = load i64, ptr %source, align 8
+  %calltmp735 = call i64 @"core::eval::execute_program_source"(i64 %source734)
+  store i64 %calltmp735, ptr %result736, align 8
+  %result737 = load i64, ptr %result736, align 8
+  %obj_ptr738 = inttoptr i64 %result737 to ptr
+  %fld_ptr739 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr738, i32 0, i32 1
+  %had_error740 = load i64, ptr %fld_ptr739, align 8
+  %l_bool741 = icmp ne i64 %had_error740, 0
+  br i1 %l_bool741, label %sc_merge743, label %sc_rhs742
+
+else732:                                          ; preds = %ifcont365
+  br label %ifcont733
+
+ifcont733:                                        ; preds = %else732
+  %calltmp768 = call i64 @print_usage()
+  %calltmp769 = call i64 @exit(i64 1)
+  ret i64 %calltmp769
+
+sc_rhs742:                                        ; preds = %then731
+  %result744 = load i64, ptr %result736, align 8
+  %obj_ptr745 = inttoptr i64 %result744 to ptr
+  %fld_ptr746 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr745, i32 0, i32 0
+  %value747 = load i64, ptr %fld_ptr746, align 8
+  %eq748 = icmp eq i64 %value747, 0
+  %eq_ext749 = zext i1 %eq748 to i64
+  %r_bool750 = icmp ne i64 %eq_ext749, 0
+  br label %sc_merge743
+
+sc_merge743:                                      ; preds = %sc_rhs742, %then731
+  %sc_phi751 = phi i1 [ true, %then731 ], [ %r_bool750, %sc_rhs742 ]
+  %sc_ext752 = zext i1 %sc_phi751 to i64
+  %if_cond753 = icmp ne i64 %sc_ext752, 0
+  br i1 %if_cond753, label %then754, label %else755
+
+then754:                                          ; preds = %sc_merge743
+  %result757 = load i64, ptr %result736, align 8
+  %obj_ptr758 = inttoptr i64 %result757 to ptr
+  %fld_ptr759 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr758, i32 0, i32 2
+  %error_message760 = load i64, ptr %fld_ptr759, align 8
+  %calltmp761 = call i64 @fail(i64 %error_message760)
+  br label %ifcont756
+
+else755:                                          ; preds = %sc_merge743
+  br label %ifcont756
+
+ifcont756:                                        ; preds = %else755, %then754
+  %result762 = load i64, ptr %result736, align 8
+  %obj_ptr763 = inttoptr i64 %result762 to ptr
+  %fld_ptr764 = getelementptr inbounds nuw %EvalResult, ptr %obj_ptr763, i32 0, i32 0
+  %value765 = load i64, ptr %fld_ptr764, align 8
+  %calltmp766 = call i64 @"core::eval::render_value"(i64 %value765)
+  %str_ptr767 = inttoptr i64 %calltmp766 to ptr
+  %19 = call i32 @puts(ptr %str_ptr767)
   ret i64 0
 }
 

@@ -16,7 +16,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build test run selfhost clean help install-hooks regress score update-seed
+.PHONY: build build-O0 test run selfhost clean help install-hooks regress score update-seed
 
 DIAG := bash scripts/diagnose.sh
 
@@ -24,6 +24,7 @@ help:
 	@echo "Bootstrap compiler — common targets:"
 	@echo ""
 	@echo "  make build         Build the bootstrap compiler (default)."
+	@echo "  make build-O0      Build at -O0 for lldb debugging (build/bs2_O0)."
 	@echo "  make test          Run regression suite + self-host fixed-point check."
 	@echo "  make run FILE=x.fg Compile and run a Forge program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
@@ -37,6 +38,10 @@ help:
 # Build the bootstrap compiler. Produces build/bs2.
 build:
 	@$(DIAG) --build-bs2
+
+# Build at -O0 for lldb debugging. Produces build/bs2_O0.
+build-O0:
+	@$(DIAG) --build-O0
 
 # Full safety net: regression suite + fixed-point invariant.
 test:
