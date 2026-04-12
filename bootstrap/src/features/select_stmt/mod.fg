@@ -1,5 +1,6 @@
 mod codegen
 mod parser
+mod resolver
 
 fn kw_parse_select(p: Parser) -> Stmt? {
     p.parse_select_statement()

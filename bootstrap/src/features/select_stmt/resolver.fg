@@ -1,0 +1,19 @@
+// WHY: resolves names in select arms — binds channel binding variables into scope.
+
+use core.ast.{SelectArmList}
+use core.resolver.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt_list, declare_name, define_name}
+
+fn resolve_select_arms(r: Resolver, arms: SelectArmList) -> Resolver {
+    match arms {
+        .End -> r
+        .Node(binding, channel, body, next) -> {
+            let after_ch = resolve_expr(r, channel)
+            let scoped = enter_resolve_scope(after_ch)
+            let with_binding = declare_name(scoped, binding)
+            let defined = define_name(with_binding, binding)
+            let after_body = resolve_stmt_list(defined, body)
+            let exited = exit_resolve_scope(after_body)
+            resolve_select_arms(exited, next)
+        }
+    }
+}

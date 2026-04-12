@@ -277,56 +277,6 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
-fn resolve_select_arms(r: Resolver, arms: SelectArmList) -> Resolver {
-    match arms {
-        .End -> r
-        .Node(binding, channel, body, next) -> {
-            let after_ch = resolve_expr(r, channel)
-            let scoped = enter_resolve_scope(after_ch)
-            let with_binding = declare_name(scoped, binding)
-            let defined = define_name(with_binding, binding)
-            let after_body = resolve_stmt_list(defined, body)
-            let exited = exit_resolve_scope(after_body)
-            resolve_select_arms(exited, next)
-        }
-    }
-}
-
-fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
-    mut current = arms
-    mut res = r
-    while true {
-        if res.had_error { return res }
-        match current {
-            .End -> { return res }
-            .Node(pattern, guard, body, next) -> {
-                let entered = enter_resolve_scope(res)
-                let with_bindings = declare_pattern_bindings(entered, pattern)
-                let after_guard = if guard != null { resolve_expr(with_bindings, guard!.node) } else { with_bindings }
-                let after_body = resolve_expr(after_guard, body.node)
-                res = exit_resolve_scope(after_body)
-                current = next
-            }
-        }
-    }
-    res
-}
-
-fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
-    match pattern {
-        .Wildcard -> r
-        .Variant(_, bindings) -> declare_params(r, bindings)
-        .NestedVariant(_, sub_pats) -> declare_pattern_list(r, sub_pats)
-        _ -> r  // Literal patterns don't bind variables
-    }
-}
-
-fn declare_pattern_list(r: Resolver, pats: PatternList) -> Resolver {
-    match pats {
-        .End -> r
-        .Node(p, next) -> declare_pattern_list(declare_pattern_bindings(r, p), next)
-    }
-}
 
 fn declare_params(r: Resolver, params: ParamList) -> Resolver {
     mut current = params

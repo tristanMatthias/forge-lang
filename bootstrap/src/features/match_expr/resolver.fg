@@ -1,0 +1,40 @@
+// WHY: resolves names in match arms — binds pattern variables into scope.
+
+use core.ast.{Pattern, PatternList, MatchArmList}
+use core.resolver.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params}
+
+fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
+    mut current = arms
+    mut res = r
+    while true {
+        if res.had_error { return res }
+        match current {
+            .End -> { return res }
+            .Node(pattern, guard, body, next) -> {
+                let entered = enter_resolve_scope(res)
+                let with_bindings = declare_pattern_bindings(entered, pattern)
+                let after_guard = if guard != null { resolve_expr(with_bindings, guard!.node) } else { with_bindings }
+                let after_body = resolve_expr(after_guard, body.node)
+                res = exit_resolve_scope(after_body)
+                current = next
+            }
+        }
+    }
+    res
+}
+
+fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
+    match pattern {
+        .Wildcard -> r
+        .Variant(_, bindings) -> declare_params(r, bindings)
+        .NestedVariant(_, sub_pats) -> declare_pattern_list(r, sub_pats)
+        _ -> r  // Literal patterns don't bind variables
+    }
+}
+
+fn declare_pattern_list(r: Resolver, pats: PatternList) -> Resolver {
+    match pats {
+        .End -> r
+        .Node(p, next) -> declare_pattern_list(declare_pattern_bindings(r, p), next)
+    }
+}
