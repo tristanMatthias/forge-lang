@@ -418,9 +418,9 @@ type of the last expression in the body and compares it against the
 declared return type. Only flags concrete mismatches (skips Void and
 Int fallback).
 
-### 37. Phantom parameter bug in seed codegen
+### 37. Name resolution uses globals instead of NameCtx parameter passing
 
-**Severity:** high (blocks parameter-passing refactor of names.fg)
+**Severity:** medium (architectural, not correctness)
 **Impact:** The seed's compiled `rewrite_expr(expr: Expr)` (1 parameter)
 generates code that treats x1 (the second register) as the primary
 value instead of x0. Disassembly shows:

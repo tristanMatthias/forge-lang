@@ -39,6 +39,7 @@ source_filename = "bootstrap"
 %ModuleItem = type { i8, i64, i64, i64, i64 }
 %ModuleNode = type { i8, i64, i64, i64, i64, i64 }
 %LocalScope = type { i8, i64, i64 }
+%NameCtx = type { i64, i64, i64, i64 }
 %NameResolveResult = type { i64, i64, i64 }
 %ParseResult = type { i64, i64, i64 }
 %EvalResult = type { i64, i64, i64 }
@@ -95,10 +96,6 @@ source_filename = "bootstrap"
 %ModListResult = type { i64, i64, i64, i64 }
 %ModStmtResult = type { i64, i64, i64, i64 }
 
-@NR_TREE = global i64 0
-@NR_ALIASES = global i64 0
-@NR_MODULE = global i64 0
-@NR_LOCALS = global i64 0
 @LAMBDA_COUNTER = global i64 0
 @DEFER_STACK = global i64 0
 @.str = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
@@ -2745,7 +2742,6 @@ source_filename = "bootstrap"
 @.str.2643 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
 @.str.2644 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
 @.str.2645 = private unnamed_addr constant [4 x i8] c"run\00", align 1
-@.str.2646 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 
 declare i32 @puts(ptr)
 
@@ -18914,13 +18910,78 @@ sc_merge82:                                       ; preds = %sc_rhs81, %sc_merge
   ret i64 %sc_ext91
 }
 
-define i64 @"core::names::push_params_to_locals"(i64 %0) {
+define i64 @"core::names::ctx_with_locals"(i64 %0, i64 %1) {
 entry:
-  %next7 = alloca i64, align 8
-  %name5 = alloca i64, align 8
+  %locals = alloca i64, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %locals, align 8
+  %buf = call ptr @forge_bump_alloc(i64 32)
+  %ctx1 = load i64, ptr %ctx, align 8
+  %obj_ptr = inttoptr i64 %ctx1 to ptr
+  %fld_ptr = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr, i32 0, i32 0
+  %tree = load i64, ptr %fld_ptr, align 8
+  %fld_ptr2 = getelementptr inbounds nuw %NameCtx, ptr %buf, i32 0, i32 0
+  store i64 %tree, ptr %fld_ptr2, align 8
+  %ctx3 = load i64, ptr %ctx, align 8
+  %obj_ptr4 = inttoptr i64 %ctx3 to ptr
+  %fld_ptr5 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr4, i32 0, i32 1
+  %aliases = load i64, ptr %fld_ptr5, align 8
+  %fld_ptr6 = getelementptr inbounds nuw %NameCtx, ptr %buf, i32 0, i32 1
+  store i64 %aliases, ptr %fld_ptr6, align 8
+  %ctx7 = load i64, ptr %ctx, align 8
+  %obj_ptr8 = inttoptr i64 %ctx7 to ptr
+  %fld_ptr9 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr8, i32 0, i32 2
+  %current_module = load i64, ptr %fld_ptr9, align 8
+  %fld_ptr10 = getelementptr inbounds nuw %NameCtx, ptr %buf, i32 0, i32 2
+  store i64 %current_module, ptr %fld_ptr10, align 8
+  %locals11 = load i64, ptr %locals, align 8
+  %fld_ptr12 = getelementptr inbounds nuw %NameCtx, ptr %buf, i32 0, i32 3
+  store i64 %locals11, ptr %fld_ptr12, align 8
+  %struct_i64 = ptrtoint ptr %buf to i64
+  ret i64 %struct_i64
+}
+
+define i64 @"core::names::ctx_with_module"(i64 %0, i64 %1, i64 %2) {
+entry:
+  %aliases = alloca i64, align 8
+  %current_module = alloca i64, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %current_module, align 8
+  store i64 %2, ptr %aliases, align 8
+  %buf = call ptr @forge_bump_alloc(i64 32)
+  %ctx1 = load i64, ptr %ctx, align 8
+  %obj_ptr = inttoptr i64 %ctx1 to ptr
+  %fld_ptr = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr, i32 0, i32 0
+  %tree = load i64, ptr %fld_ptr, align 8
+  %fld_ptr2 = getelementptr inbounds nuw %NameCtx, ptr %buf, i32 0, i32 0
+  store i64 %tree, ptr %fld_ptr2, align 8
+  %aliases3 = load i64, ptr %aliases, align 8
+  %fld_ptr4 = getelementptr inbounds nuw %NameCtx, ptr %buf, i32 0, i32 1
+  store i64 %aliases3, ptr %fld_ptr4, align 8
+  %current_module5 = load i64, ptr %current_module, align 8
+  %fld_ptr6 = getelementptr inbounds nuw %NameCtx, ptr %buf, i32 0, i32 2
+  store i64 %current_module5, ptr %fld_ptr6, align 8
+  %ctx7 = load i64, ptr %ctx, align 8
+  %obj_ptr8 = inttoptr i64 %ctx7 to ptr
+  %fld_ptr9 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr8, i32 0, i32 3
+  %locals = load i64, ptr %fld_ptr9, align 8
+  %fld_ptr10 = getelementptr inbounds nuw %NameCtx, ptr %buf, i32 0, i32 3
+  store i64 %locals, ptr %fld_ptr10, align 8
+  %struct_i64 = ptrtoint ptr %buf to i64
+  ret i64 %struct_i64
+}
+
+define i64 @"core::names::bind_params_ctx"(i64 %0, i64 %1) {
+entry:
+  %next8 = alloca i64, align 8
+  %name6 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %params = alloca i64, align 8
-  store i64 %0, ptr %params, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %params, align 8
   %params1 = load i64, ptr %params, align 8
   %match_subj = inttoptr i64 %params1 to ptr
   %tag_ptr = getelementptr inbounds nuw %ParamList, ptr %match_subj, i32 0, i32 0
@@ -18929,52 +18990,66 @@ entry:
   %tag_eq = icmp eq i8 %tag, 0
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_next3, %march_arm2, %march_arm
+match_end:                                        ; preds = %march_next17, %march_arm16, %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %map = call ptr @forge_map_new_cstr()
-  store ptr %map, ptr %match_result, align 8
+  %ctx2 = load i64, ptr %ctx, align 8
+  store i64 %ctx2, ptr %match_result, align 8
   br label %match_end
 
 march_next:                                       ; preds = %entry
-  %tag_eq4 = icmp eq i8 %tag, 1
-  br i1 %tag_eq4, label %march_arm2, label %march_next3
+  %tag_eq5 = icmp eq i8 %tag, 1
+  br i1 %tag_eq5, label %march_arm3, label %march_next4
 
-march_arm2:                                       ; preds = %march_next
+march_arm3:                                       ; preds = %march_next
   %pbind_ptr = getelementptr inbounds nuw %ParamList, ptr %match_subj, i32 0, i32 1
   %name = load i64, ptr %pbind_ptr, align 8
-  store i64 %name, ptr %name5, align 8
-  %pbind_ptr6 = getelementptr inbounds nuw %ParamList, ptr %match_subj, i32 0, i32 3
-  %next = load i64, ptr %pbind_ptr6, align 8
-  store i64 %next, ptr %next7, align 8
+  store i64 %name, ptr %name6, align 8
+  %pbind_ptr7 = getelementptr inbounds nuw %ParamList, ptr %match_subj, i32 0, i32 3
+  %next = load i64, ptr %pbind_ptr7, align 8
+  store i64 %next, ptr %next8, align 8
+  %ctx9 = load i64, ptr %ctx, align 8
   %buf = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr8 = getelementptr inbounds nuw %LocalScope, ptr %buf, i32 0, i32 0
-  store i8 1, ptr %tag_ptr8, align 8
-  %name9 = load i64, ptr %name5, align 8
+  %tag_ptr10 = getelementptr inbounds nuw %LocalScope, ptr %buf, i32 0, i32 0
+  store i8 1, ptr %tag_ptr10, align 8
+  %name11 = load i64, ptr %name6, align 8
   %epay_ptr = getelementptr inbounds nuw %LocalScope, ptr %buf, i32 0, i32 1
-  store i64 %name9, ptr %epay_ptr, align 8
-  %NR_LOCALS = load i64, ptr @NR_LOCALS, align 8
-  %epay_ptr10 = getelementptr inbounds nuw %LocalScope, ptr %buf, i32 0, i32 2
-  store i64 %NR_LOCALS, ptr %epay_ptr10, align 8
+  store i64 %name11, ptr %epay_ptr, align 8
+  %ctx12 = load i64, ptr %ctx, align 8
+  %obj_ptr = inttoptr i64 %ctx12 to ptr
+  %fld_ptr = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr, i32 0, i32 3
+  %locals = load i64, ptr %fld_ptr, align 8
+  %epay_ptr13 = getelementptr inbounds nuw %LocalScope, ptr %buf, i32 0, i32 2
+  store i64 %locals, ptr %epay_ptr13, align 8
   %enum_i64 = ptrtoint ptr %buf to i64
-  store i64 %enum_i64, ptr @NR_LOCALS, align 8
-  %next11 = load i64, ptr %next7, align 8
-  %calltmp = call i64 @"core::names::push_params_to_locals"(i64 %next11)
-  store i64 %calltmp, ptr %match_result, align 8
+  %calltmp = call i64 @"core::names::ctx_with_locals"(i64 %ctx9, i64 %enum_i64)
+  %next14 = load i64, ptr %next8, align 8
+  %calltmp15 = call i64 @"core::names::bind_params_ctx"(i64 %calltmp, i64 %next14)
+  store i64 %calltmp15, ptr %match_result, align 8
   br label %match_end
 
-march_next3:                                      ; preds = %march_next
+march_next4:                                      ; preds = %march_next
+  br label %march_arm16
+
+march_arm16:                                      ; preds = %march_next4
+  %ctx18 = load i64, ptr %ctx, align 8
+  store i64 %ctx18, ptr %match_result, align 8
+  br label %match_end
+
+march_next17:                                     ; No predecessors!
   br label %match_end
 }
 
-define i64 @"core::names::push_pattern_to_locals"(i64 %0) {
+define i64 @"core::names::bind_pattern_ctx"(i64 %0, i64 %1) {
 entry:
-  %bindings5 = alloca i64, align 8
+  %bindings6 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %pattern = alloca i64, align 8
-  store i64 %0, ptr %pattern, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %pattern, align 8
   %pattern1 = load i64, ptr %pattern, align 8
   %match_subj = inttoptr i64 %pattern1 to ptr
   %tag_ptr = getelementptr inbounds nuw %Pattern, ptr %match_subj, i32 0, i32 0
@@ -18983,29 +19058,38 @@ entry:
   %tag_eq = icmp eq i8 %tag, 0
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_next3, %march_arm2, %march_arm
+match_end:                                        ; preds = %march_next10, %march_arm9, %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %map = call ptr @forge_map_new_cstr()
-  store ptr %map, ptr %match_result, align 8
+  %ctx2 = load i64, ptr %ctx, align 8
+  store i64 %ctx2, ptr %match_result, align 8
   br label %match_end
 
 march_next:                                       ; preds = %entry
-  %tag_eq4 = icmp eq i8 %tag, 1
-  br i1 %tag_eq4, label %march_arm2, label %march_next3
+  %tag_eq5 = icmp eq i8 %tag, 1
+  br i1 %tag_eq5, label %march_arm3, label %march_next4
 
-march_arm2:                                       ; preds = %march_next
+march_arm3:                                       ; preds = %march_next
   %pbind_ptr = getelementptr inbounds nuw %Pattern, ptr %match_subj, i32 0, i32 2
   %bindings = load i64, ptr %pbind_ptr, align 8
-  store i64 %bindings, ptr %bindings5, align 8
-  %bindings6 = load i64, ptr %bindings5, align 8
-  %calltmp = call i64 @"core::names::push_params_to_locals"(i64 %bindings6)
+  store i64 %bindings, ptr %bindings6, align 8
+  %ctx7 = load i64, ptr %ctx, align 8
+  %bindings8 = load i64, ptr %bindings6, align 8
+  %calltmp = call i64 @"core::names::bind_params_ctx"(i64 %ctx7, i64 %bindings8)
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
-march_next3:                                      ; preds = %march_next
+march_next4:                                      ; preds = %march_next
+  br label %march_arm9
+
+march_arm9:                                       ; preds = %march_next4
+  %ctx11 = load i64, ptr %ctx, align 8
+  store i64 %ctx11, ptr %match_result, align 8
+  br label %match_end
+
+march_next10:                                     ; No predecessors!
   br label %match_end
 }
 
@@ -19074,7 +19158,7 @@ march_next4:                                      ; preds = %march_next
 
 define i64 @"core::names::resolve_names"(i64 %0) {
 entry:
-  %rewritten = alloca i64, align 8
+  %ctx = alloca i64, align 8
   %aliases = alloca i64, align 8
   %tree = alloca i64, align 8
   %stmts = alloca i64, align 8
@@ -19090,40 +19174,46 @@ entry:
   %tree3 = load i64, ptr %tree, align 8
   %calltmp4 = call i64 @"core::names::resolve_use_aliases"(i64 %stmts2, i64 %tree3)
   store i64 %calltmp4, ptr %aliases, align 8
-  %tree5 = load i64, ptr %tree, align 8
-  store i64 %tree5, ptr @NR_TREE, align 8
-  %aliases6 = load i64, ptr %aliases, align 8
-  store i64 %aliases6, ptr @NR_ALIASES, align 8
-  store i64 ptrtoint (ptr @.str.460 to i64), ptr @NR_MODULE, align 8
-  %buf7 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr8 = getelementptr inbounds nuw %LocalScope, ptr %buf7, i32 0, i32 0
-  store i8 0, ptr %tag_ptr8, align 8
-  %enum_i649 = ptrtoint ptr %buf7 to i64
-  store i64 %enum_i649, ptr @NR_LOCALS, align 8
-  %stmts10 = load i64, ptr %stmts, align 8
-  %calltmp11 = call i64 @"core::names::rewrite_stmt_list"(i64 %stmts10)
-  store i64 %calltmp11, ptr %rewritten, align 8
-  %buf12 = call ptr @forge_bump_alloc(i64 24)
-  %rewritten13 = load i64, ptr %rewritten, align 8
-  %fld_ptr = getelementptr inbounds nuw %NameResolveResult, ptr %buf12, i32 0, i32 0
-  store i64 %rewritten13, ptr %fld_ptr, align 8
-  %fld_ptr14 = getelementptr inbounds nuw %NameResolveResult, ptr %buf12, i32 0, i32 1
-  store i64 0, ptr %fld_ptr14, align 8
-  %fld_ptr15 = getelementptr inbounds nuw %NameResolveResult, ptr %buf12, i32 0, i32 2
-  store i64 ptrtoint (ptr @.str.461 to i64), ptr %fld_ptr15, align 8
-  %struct_i64 = ptrtoint ptr %buf12 to i64
-  ret i64 %struct_i64
+  %buf5 = call ptr @forge_bump_alloc(i64 32)
+  %tree6 = load i64, ptr %tree, align 8
+  %fld_ptr = getelementptr inbounds nuw %NameCtx, ptr %buf5, i32 0, i32 0
+  store i64 %tree6, ptr %fld_ptr, align 8
+  %aliases7 = load i64, ptr %aliases, align 8
+  %fld_ptr8 = getelementptr inbounds nuw %NameCtx, ptr %buf5, i32 0, i32 1
+  store i64 %aliases7, ptr %fld_ptr8, align 8
+  %fld_ptr9 = getelementptr inbounds nuw %NameCtx, ptr %buf5, i32 0, i32 2
+  store i64 ptrtoint (ptr @.str.460 to i64), ptr %fld_ptr9, align 8
+  %buf10 = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr11 = getelementptr inbounds nuw %LocalScope, ptr %buf10, i32 0, i32 0
+  store i8 0, ptr %tag_ptr11, align 8
+  %enum_i6412 = ptrtoint ptr %buf10 to i64
+  %fld_ptr13 = getelementptr inbounds nuw %NameCtx, ptr %buf5, i32 0, i32 3
+  store i64 %enum_i6412, ptr %fld_ptr13, align 8
+  %struct_i64 = ptrtoint ptr %buf5 to i64
+  store i64 %struct_i64, ptr %ctx, align 8
+  %buf14 = call ptr @forge_bump_alloc(i64 24)
+  %ctx15 = load i64, ptr %ctx, align 8
+  %stmts16 = load i64, ptr %stmts, align 8
+  %calltmp17 = call i64 @"core::names::rewrite_stmt_list"(i64 %ctx15, i64 %stmts16)
+  %fld_ptr18 = getelementptr inbounds nuw %NameResolveResult, ptr %buf14, i32 0, i32 0
+  store i64 %calltmp17, ptr %fld_ptr18, align 8
+  %fld_ptr19 = getelementptr inbounds nuw %NameResolveResult, ptr %buf14, i32 0, i32 1
+  store i64 0, ptr %fld_ptr19, align 8
+  %fld_ptr20 = getelementptr inbounds nuw %NameResolveResult, ptr %buf14, i32 0, i32 2
+  store i64 ptrtoint (ptr @.str.461 to i64), ptr %fld_ptr20, align 8
+  %struct_i6421 = ptrtoint ptr %buf14 to i64
+  ret i64 %struct_i6421
 }
 
-define i64 @"core::names::rewrite_stmt_list"(i64 %0) {
+define i64 @"core::names::rewrite_stmt_list"(i64 %0, i64 %1) {
 entry:
-  %new_next = alloca i64, align 8
-  %new_stmt = alloca i64, align 8
   %next8 = alloca i64, align 8
   %ss6 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %stmts = alloca i64, align 8
-  store i64 %0, ptr %stmts, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %stmts, align 8
   %stmts1 = load i64, ptr %stmts, align 8
   %match_subj = inttoptr i64 %stmts1 to ptr
   %tag_ptr = getelementptr inbounds nuw %StmtList, ptr %match_subj, i32 0, i32 0
@@ -19155,34 +19245,32 @@ march_arm3:                                       ; preds = %march_next
   %pbind_ptr7 = getelementptr inbounds nuw %StmtList, ptr %match_subj, i32 0, i32 2
   %next = load i64, ptr %pbind_ptr7, align 8
   store i64 %next, ptr %next8, align 8
-  %ss9 = load i64, ptr %ss6, align 8
-  %obj_ptr = inttoptr i64 %ss9 to ptr
+  %buf9 = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr10 = getelementptr inbounds nuw %StmtList, ptr %buf9, i32 0, i32 0
+  store i8 1, ptr %tag_ptr10, align 8
+  %ctx11 = load i64, ptr %ctx, align 8
+  %ss12 = load i64, ptr %ss6, align 8
+  %obj_ptr = inttoptr i64 %ss12 to ptr
   %fld_ptr = getelementptr inbounds nuw %SStmt, ptr %obj_ptr, i32 0, i32 0
   %node = load i64, ptr %fld_ptr, align 8
-  %calltmp = call i64 @"core::names::rewrite_stmt"(i64 %node)
-  store i64 %calltmp, ptr %new_stmt, align 8
-  %next10 = load i64, ptr %next8, align 8
-  %calltmp11 = call i64 @"core::names::rewrite_stmt_list"(i64 %next10)
-  store i64 %calltmp11, ptr %new_next, align 8
-  %buf12 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr13 = getelementptr inbounds nuw %StmtList, ptr %buf12, i32 0, i32 0
-  store i8 1, ptr %tag_ptr13, align 8
-  %new_stmt14 = load i64, ptr %new_stmt, align 8
-  %ss15 = load i64, ptr %ss6, align 8
-  %obj_ptr16 = inttoptr i64 %ss15 to ptr
-  %fld_ptr17 = getelementptr inbounds nuw %SStmt, ptr %obj_ptr16, i32 0, i32 1
-  %line = load i64, ptr %fld_ptr17, align 8
-  %ss18 = load i64, ptr %ss6, align 8
-  %obj_ptr19 = inttoptr i64 %ss18 to ptr
-  %fld_ptr20 = getelementptr inbounds nuw %SStmt, ptr %obj_ptr19, i32 0, i32 2
-  %col = load i64, ptr %fld_ptr20, align 8
-  %calltmp21 = call i64 @"core::ast::sstmt"(i64 %new_stmt14, i64 %line, i64 %col)
-  %epay_ptr = getelementptr inbounds nuw %StmtList, ptr %buf12, i32 0, i32 1
-  store i64 %calltmp21, ptr %epay_ptr, align 8
-  %new_next22 = load i64, ptr %new_next, align 8
-  %epay_ptr23 = getelementptr inbounds nuw %StmtList, ptr %buf12, i32 0, i32 2
-  store i64 %new_next22, ptr %epay_ptr23, align 8
-  %enum_i6424 = ptrtoint ptr %buf12 to i64
+  %calltmp = call i64 @"core::names::rewrite_stmt"(i64 %ctx11, i64 %node)
+  %ss13 = load i64, ptr %ss6, align 8
+  %obj_ptr14 = inttoptr i64 %ss13 to ptr
+  %fld_ptr15 = getelementptr inbounds nuw %SStmt, ptr %obj_ptr14, i32 0, i32 1
+  %line = load i64, ptr %fld_ptr15, align 8
+  %ss16 = load i64, ptr %ss6, align 8
+  %obj_ptr17 = inttoptr i64 %ss16 to ptr
+  %fld_ptr18 = getelementptr inbounds nuw %SStmt, ptr %obj_ptr17, i32 0, i32 2
+  %col = load i64, ptr %fld_ptr18, align 8
+  %calltmp19 = call i64 @"core::ast::sstmt"(i64 %calltmp, i64 %line, i64 %col)
+  %epay_ptr = getelementptr inbounds nuw %StmtList, ptr %buf9, i32 0, i32 1
+  store i64 %calltmp19, ptr %epay_ptr, align 8
+  %ctx20 = load i64, ptr %ctx, align 8
+  %next21 = load i64, ptr %next8, align 8
+  %calltmp22 = call i64 @"core::names::rewrite_stmt_list"(i64 %ctx20, i64 %next21)
+  %epay_ptr23 = getelementptr inbounds nuw %StmtList, ptr %buf9, i32 0, i32 2
+  store i64 %calltmp22, ptr %epay_ptr23, align 8
+  %enum_i6424 = ptrtoint ptr %buf9 to i64
   store i64 %enum_i6424, ptr %match_result, align 8
   br label %match_end
 
@@ -19190,63 +19278,56 @@ march_next4:                                      ; preds = %march_next
   br label %match_end
 }
 
-define i64 @"core::names::rewrite_stmt"(i64 %0) {
+define i64 @"core::names::rewrite_stmt"(i64 %0, i64 %1) {
 entry:
-  %init357 = alloca i64, align 8
-  %names354 = alloca i64, align 8
-  %body343 = alloca i64, align 8
-  %inner329 = alloca i64, align 8
-  %annotations327 = alloca i64, align 8
-  %methods314 = alloca i64, align 8
-  %type_name312 = alloca i64, align 8
-  %result304 = alloca i64, align 8
-  %mod_aliases = alloca i64, align 8
-  %ife_result263 = alloca i64, align 8
-  %saved_aliases = alloca i64, align 8
-  %saved_module = alloca i64, align 8
-  %body251 = alloca i64, align 8
-  %name248 = alloca i64, align 8
-  %arms233 = alloca i64, align 8
-  %subject231 = alloca i64, align 8
-  %result = alloca i64, align 8
-  %saved_locals = alloca i64, align 8
+  %init383 = alloca i64, align 8
+  %names380 = alloca i64, align 8
+  %body368 = alloca i64, align 8
+  %inner353 = alloca i64, align 8
+  %annotations351 = alloca i64, align 8
+  %methods337 = alloca i64, align 8
+  %type_name335 = alloca i64, align 8
+  %mod_path = alloca i64, align 8
+  %ife_result280 = alloca i64, align 8
+  %body266 = alloca i64, align 8
+  %name263 = alloca i64, align 8
+  %arms246 = alloca i64, align 8
+  %subject244 = alloca i64, align 8
   %qualified = alloca i64, align 8
-  %ife_result194 = alloca i64, align 8
+  %ife_result205 = alloca i64, align 8
   %is_impl_method = alloca i64, align 8
-  %body175 = alloca i64, align 8
-  %ret_ty172 = alloca i64, align 8
-  %params170 = alloca i64, align 8
-  %name168 = alloca i64, align 8
-  %body151 = alloca i64, align 8
-  %coll148 = alloca i64, align 8
-  %var146 = alloca i64, align 8
-  %body126 = alloca i64, align 8
-  %end123 = alloca i64, align 8
-  %start121 = alloca i64, align 8
-  %var119 = alloca i64, align 8
-  %body105 = alloca i64, align 8
-  %cond102 = alloca i64, align 8
+  %body185 = alloca i64, align 8
+  %ret_ty182 = alloca i64, align 8
+  %params180 = alloca i64, align 8
+  %name178 = alloca i64, align 8
+  %body159 = alloca i64, align 8
+  %coll156 = alloca i64, align 8
+  %var154 = alloca i64, align 8
+  %body131 = alloca i64, align 8
+  %end128 = alloca i64, align 8
+  %start126 = alloca i64, align 8
+  %var124 = alloca i64, align 8
+  %body108 = alloca i64, align 8
+  %cond105 = alloca i64, align 8
   %new_else = alloca i64, align 8
   %ife_result = alloca i64, align 8
-  %new_then = alloca i64, align 8
-  %new_cond = alloca i64, align 8
-  %else_b80 = alloca i64, align 8
-  %then_b78 = alloca i64, align 8
-  %cond76 = alloca i64, align 8
-  %body65 = alloca i64, align 8
+  %else_b82 = alloca i64, align 8
+  %then_b80 = alloca i64, align 8
+  %cond78 = alloca i64, align 8
+  %body66 = alloca i64, align 8
   %e54 = alloca i64, align 8
-  %e42 = alloca i64, align 8
-  %new_init28 = alloca i64, align 8
+  %e41 = alloca i64, align 8
   %init25 = alloca i64, align 8
   %ty22 = alloca i64, align 8
   %name19 = alloca i64, align 8
-  %new_init = alloca i64, align 8
   %init6 = alloca i64, align 8
   %ty4 = alloca i64, align 8
   %name2 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca i64, align 8
-  store i64 %0, ptr %stmt, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %stmt, align 8
   %stmt1 = load i64, ptr %stmt, align 8
   %match_subj = inttoptr i64 %stmt1 to ptr
   %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 0
@@ -19255,7 +19336,7 @@ entry:
   %tag_eq = icmp eq i8 %tag, 0
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_next367, %march_arm366, %march_arm350, %march_arm338, %march_arm323, %march_arm308, %ife_end262, %march_arm227, %ife_end193, %march_arm141, %march_arm115, %march_arm97, %ife_end, %march_arm61, %march_arm49, %march_arm38, %march_arm14, %march_arm
+match_end:                                        ; preds = %march_next394, %march_arm393, %march_arm376, %march_arm363, %march_arm347, %march_arm331, %ife_end279, %march_arm240, %ife_end204, %march_arm149, %march_arm120, %march_arm100, %ife_end, %march_arm62, %march_arm49, %march_arm37, %march_arm14, %march_arm
   %match_val = load i64, ptr %match_result, align 8
   ret i64 %match_val
 
@@ -19269,21 +19350,20 @@ march_arm:                                        ; preds = %entry
   %pbind_ptr5 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
   %init = load i64, ptr %pbind_ptr5, align 8
   store i64 %init, ptr %init6, align 8
-  %init7 = load i64, ptr %init6, align 8
-  %calltmp = call i64 @"core::names::rewrite_expr"(i64 %init7)
-  store i64 %calltmp, ptr %new_init, align 8
   %buf = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr8 = getelementptr inbounds nuw %Stmt, ptr %buf, i32 0, i32 0
-  store i8 0, ptr %tag_ptr8, align 8
-  %name9 = load i64, ptr %name2, align 8
+  %tag_ptr7 = getelementptr inbounds nuw %Stmt, ptr %buf, i32 0, i32 0
+  store i8 0, ptr %tag_ptr7, align 8
+  %name8 = load i64, ptr %name2, align 8
   %epay_ptr = getelementptr inbounds nuw %Stmt, ptr %buf, i32 0, i32 1
-  store i64 %name9, ptr %epay_ptr, align 8
-  %ty10 = load i64, ptr %ty4, align 8
-  %epay_ptr11 = getelementptr inbounds nuw %Stmt, ptr %buf, i32 0, i32 2
-  store i64 %ty10, ptr %epay_ptr11, align 8
-  %new_init12 = load i64, ptr %new_init, align 8
+  store i64 %name8, ptr %epay_ptr, align 8
+  %ty9 = load i64, ptr %ty4, align 8
+  %epay_ptr10 = getelementptr inbounds nuw %Stmt, ptr %buf, i32 0, i32 2
+  store i64 %ty9, ptr %epay_ptr10, align 8
+  %ctx11 = load i64, ptr %ctx, align 8
+  %init12 = load i64, ptr %init6, align 8
+  %calltmp = call i64 @"core::names::rewrite_expr"(i64 %ctx11, i64 %init12)
   %epay_ptr13 = getelementptr inbounds nuw %Stmt, ptr %buf, i32 0, i32 3
-  store i64 %new_init12, ptr %epay_ptr13, align 8
+  store i64 %calltmp, ptr %epay_ptr13, align 8
   %enum_i64 = ptrtoint ptr %buf to i64
   store i64 %enum_i64, ptr %match_result, align 8
   br label %match_end
@@ -19302,258 +19382,269 @@ march_arm14:                                      ; preds = %march_next
   %pbind_ptr23 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
   %init24 = load i64, ptr %pbind_ptr23, align 8
   store i64 %init24, ptr %init25, align 8
-  %init26 = load i64, ptr %init25, align 8
-  %calltmp27 = call i64 @"core::names::rewrite_expr"(i64 %init26)
-  store i64 %calltmp27, ptr %new_init28, align 8
-  %buf29 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr30 = getelementptr inbounds nuw %Stmt, ptr %buf29, i32 0, i32 0
-  store i8 1, ptr %tag_ptr30, align 8
-  %name31 = load i64, ptr %name19, align 8
-  %epay_ptr32 = getelementptr inbounds nuw %Stmt, ptr %buf29, i32 0, i32 1
-  store i64 %name31, ptr %epay_ptr32, align 8
-  %ty33 = load i64, ptr %ty22, align 8
-  %epay_ptr34 = getelementptr inbounds nuw %Stmt, ptr %buf29, i32 0, i32 2
-  store i64 %ty33, ptr %epay_ptr34, align 8
-  %new_init35 = load i64, ptr %new_init28, align 8
-  %epay_ptr36 = getelementptr inbounds nuw %Stmt, ptr %buf29, i32 0, i32 3
-  store i64 %new_init35, ptr %epay_ptr36, align 8
-  %enum_i6437 = ptrtoint ptr %buf29 to i64
-  store i64 %enum_i6437, ptr %match_result, align 8
+  %buf26 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr27 = getelementptr inbounds nuw %Stmt, ptr %buf26, i32 0, i32 0
+  store i8 1, ptr %tag_ptr27, align 8
+  %name28 = load i64, ptr %name19, align 8
+  %epay_ptr29 = getelementptr inbounds nuw %Stmt, ptr %buf26, i32 0, i32 1
+  store i64 %name28, ptr %epay_ptr29, align 8
+  %ty30 = load i64, ptr %ty22, align 8
+  %epay_ptr31 = getelementptr inbounds nuw %Stmt, ptr %buf26, i32 0, i32 2
+  store i64 %ty30, ptr %epay_ptr31, align 8
+  %ctx32 = load i64, ptr %ctx, align 8
+  %init33 = load i64, ptr %init25, align 8
+  %calltmp34 = call i64 @"core::names::rewrite_expr"(i64 %ctx32, i64 %init33)
+  %epay_ptr35 = getelementptr inbounds nuw %Stmt, ptr %buf26, i32 0, i32 3
+  store i64 %calltmp34, ptr %epay_ptr35, align 8
+  %enum_i6436 = ptrtoint ptr %buf26 to i64
+  store i64 %enum_i6436, ptr %match_result, align 8
   br label %match_end
 
 march_next15:                                     ; preds = %march_next
-  %tag_eq40 = icmp eq i8 %tag, 2
-  br i1 %tag_eq40, label %march_arm38, label %march_next39
+  %tag_eq39 = icmp eq i8 %tag, 2
+  br i1 %tag_eq39, label %march_arm37, label %march_next38
 
-march_arm38:                                      ; preds = %march_next15
-  %pbind_ptr41 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %e = load i64, ptr %pbind_ptr41, align 8
-  store i64 %e, ptr %e42, align 8
-  %buf43 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr44 = getelementptr inbounds nuw %Stmt, ptr %buf43, i32 0, i32 0
-  store i8 2, ptr %tag_ptr44, align 8
-  %e45 = load i64, ptr %e42, align 8
-  %calltmp46 = call i64 @"core::names::rewrite_expr"(i64 %e45)
-  %epay_ptr47 = getelementptr inbounds nuw %Stmt, ptr %buf43, i32 0, i32 1
+march_arm37:                                      ; preds = %march_next15
+  %pbind_ptr40 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %e = load i64, ptr %pbind_ptr40, align 8
+  store i64 %e, ptr %e41, align 8
+  %buf42 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr43 = getelementptr inbounds nuw %Stmt, ptr %buf42, i32 0, i32 0
+  store i8 2, ptr %tag_ptr43, align 8
+  %ctx44 = load i64, ptr %ctx, align 8
+  %e45 = load i64, ptr %e41, align 8
+  %calltmp46 = call i64 @"core::names::rewrite_expr"(i64 %ctx44, i64 %e45)
+  %epay_ptr47 = getelementptr inbounds nuw %Stmt, ptr %buf42, i32 0, i32 1
   store i64 %calltmp46, ptr %epay_ptr47, align 8
-  %enum_i6448 = ptrtoint ptr %buf43 to i64
+  %enum_i6448 = ptrtoint ptr %buf42 to i64
   store i64 %enum_i6448, ptr %match_result, align 8
   br label %match_end
 
-march_next39:                                     ; preds = %march_next15
+march_next38:                                     ; preds = %march_next15
   %tag_eq51 = icmp eq i8 %tag, 9
   br i1 %tag_eq51, label %march_arm49, label %march_next50
 
-march_arm49:                                      ; preds = %march_next39
+march_arm49:                                      ; preds = %march_next38
   %pbind_ptr52 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
   %e53 = load i64, ptr %pbind_ptr52, align 8
   store i64 %e53, ptr %e54, align 8
   %buf55 = call ptr @forge_bump_alloc(i64 40)
   %tag_ptr56 = getelementptr inbounds nuw %Stmt, ptr %buf55, i32 0, i32 0
   store i8 9, ptr %tag_ptr56, align 8
-  %e57 = load i64, ptr %e54, align 8
-  %calltmp58 = call i64 @"core::names::rewrite_expr"(i64 %e57)
-  %epay_ptr59 = getelementptr inbounds nuw %Stmt, ptr %buf55, i32 0, i32 1
-  store i64 %calltmp58, ptr %epay_ptr59, align 8
-  %enum_i6460 = ptrtoint ptr %buf55 to i64
-  store i64 %enum_i6460, ptr %match_result, align 8
+  %ctx57 = load i64, ptr %ctx, align 8
+  %e58 = load i64, ptr %e54, align 8
+  %calltmp59 = call i64 @"core::names::rewrite_expr"(i64 %ctx57, i64 %e58)
+  %epay_ptr60 = getelementptr inbounds nuw %Stmt, ptr %buf55, i32 0, i32 1
+  store i64 %calltmp59, ptr %epay_ptr60, align 8
+  %enum_i6461 = ptrtoint ptr %buf55 to i64
+  store i64 %enum_i6461, ptr %match_result, align 8
   br label %match_end
 
-march_next50:                                     ; preds = %march_next39
-  %tag_eq63 = icmp eq i8 %tag, 3
-  br i1 %tag_eq63, label %march_arm61, label %march_next62
+march_next50:                                     ; preds = %march_next38
+  %tag_eq64 = icmp eq i8 %tag, 3
+  br i1 %tag_eq64, label %march_arm62, label %march_next63
 
-march_arm61:                                      ; preds = %march_next50
-  %pbind_ptr64 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %body = load i64, ptr %pbind_ptr64, align 8
-  store i64 %body, ptr %body65, align 8
-  %buf66 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr67 = getelementptr inbounds nuw %Stmt, ptr %buf66, i32 0, i32 0
-  store i8 3, ptr %tag_ptr67, align 8
-  %body68 = load i64, ptr %body65, align 8
-  %calltmp69 = call i64 @"core::names::rewrite_stmt_list"(i64 %body68)
-  %epay_ptr70 = getelementptr inbounds nuw %Stmt, ptr %buf66, i32 0, i32 1
-  store i64 %calltmp69, ptr %epay_ptr70, align 8
-  %enum_i6471 = ptrtoint ptr %buf66 to i64
-  store i64 %enum_i6471, ptr %match_result, align 8
+march_arm62:                                      ; preds = %march_next50
+  %pbind_ptr65 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %body = load i64, ptr %pbind_ptr65, align 8
+  store i64 %body, ptr %body66, align 8
+  %buf67 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr68 = getelementptr inbounds nuw %Stmt, ptr %buf67, i32 0, i32 0
+  store i8 3, ptr %tag_ptr68, align 8
+  %ctx69 = load i64, ptr %ctx, align 8
+  %body70 = load i64, ptr %body66, align 8
+  %calltmp71 = call i64 @"core::names::rewrite_stmt_list"(i64 %ctx69, i64 %body70)
+  %epay_ptr72 = getelementptr inbounds nuw %Stmt, ptr %buf67, i32 0, i32 1
+  store i64 %calltmp71, ptr %epay_ptr72, align 8
+  %enum_i6473 = ptrtoint ptr %buf67 to i64
+  store i64 %enum_i6473, ptr %match_result, align 8
   br label %match_end
 
-march_next62:                                     ; preds = %march_next50
-  %tag_eq74 = icmp eq i8 %tag, 4
-  br i1 %tag_eq74, label %march_arm72, label %march_next73
+march_next63:                                     ; preds = %march_next50
+  %tag_eq76 = icmp eq i8 %tag, 4
+  br i1 %tag_eq76, label %march_arm74, label %march_next75
 
-march_arm72:                                      ; preds = %march_next62
-  %pbind_ptr75 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %cond = load i64, ptr %pbind_ptr75, align 8
-  store i64 %cond, ptr %cond76, align 8
-  %pbind_ptr77 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %then_b = load i64, ptr %pbind_ptr77, align 8
-  store i64 %then_b, ptr %then_b78, align 8
-  %pbind_ptr79 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
-  %else_b = load i64, ptr %pbind_ptr79, align 8
-  store i64 %else_b, ptr %else_b80, align 8
-  %cond81 = load i64, ptr %cond76, align 8
-  %calltmp82 = call i64 @"core::names::rewrite_expr"(i64 %cond81)
-  store i64 %calltmp82, ptr %new_cond, align 8
-  %then_b83 = load i64, ptr %then_b78, align 8
-  %calltmp84 = call i64 @"core::names::rewrite_stmt"(i64 %then_b83)
-  store i64 %calltmp84, ptr %new_then, align 8
-  %else_b85 = load i64, ptr %else_b80, align 8
-  %ne = icmp ne i64 %else_b85, 0
+march_arm74:                                      ; preds = %march_next63
+  %pbind_ptr77 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %cond = load i64, ptr %pbind_ptr77, align 8
+  store i64 %cond, ptr %cond78, align 8
+  %pbind_ptr79 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %then_b = load i64, ptr %pbind_ptr79, align 8
+  store i64 %then_b, ptr %then_b80, align 8
+  %pbind_ptr81 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
+  %else_b = load i64, ptr %pbind_ptr81, align 8
+  store i64 %else_b, ptr %else_b82, align 8
+  %else_b83 = load i64, ptr %else_b82, align 8
+  %ne = icmp ne i64 %else_b83, 0
   %ne_ext = zext i1 %ne to i64
   %ife_cond = icmp ne i64 %ne_ext, 0
   store i64 0, ptr %ife_result, align 8
   br i1 %ife_cond, label %ife_then, label %ife_else
 
-march_next73:                                     ; preds = %march_next62
-  %tag_eq99 = icmp eq i8 %tag, 5
-  br i1 %tag_eq99, label %march_arm97, label %march_next98
+march_next75:                                     ; preds = %march_next63
+  %tag_eq102 = icmp eq i8 %tag, 5
+  br i1 %tag_eq102, label %march_arm100, label %march_next101
 
-ife_then:                                         ; preds = %march_arm72
-  %else_b86 = load i64, ptr %else_b80, align 8
-  %calltmp87 = call i64 @"core::names::rewrite_stmt"(i64 %else_b86)
-  store i64 %calltmp87, ptr %ife_result, align 8
+ife_then:                                         ; preds = %march_arm74
+  %ctx84 = load i64, ptr %ctx, align 8
+  %else_b85 = load i64, ptr %else_b82, align 8
+  %calltmp86 = call i64 @"core::names::rewrite_stmt"(i64 %ctx84, i64 %else_b85)
+  store i64 %calltmp86, ptr %ife_result, align 8
   br label %ife_end
 
-ife_else:                                         ; preds = %march_arm72
+ife_else:                                         ; preds = %march_arm74
   store i64 0, ptr %ife_result, align 8
   br label %ife_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
   store i64 %ife_val, ptr %new_else, align 8
-  %buf88 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr89 = getelementptr inbounds nuw %Stmt, ptr %buf88, i32 0, i32 0
-  store i8 4, ptr %tag_ptr89, align 8
-  %new_cond90 = load i64, ptr %new_cond, align 8
-  %epay_ptr91 = getelementptr inbounds nuw %Stmt, ptr %buf88, i32 0, i32 1
-  store i64 %new_cond90, ptr %epay_ptr91, align 8
-  %new_then92 = load i64, ptr %new_then, align 8
-  %epay_ptr93 = getelementptr inbounds nuw %Stmt, ptr %buf88, i32 0, i32 2
-  store i64 %new_then92, ptr %epay_ptr93, align 8
-  %new_else94 = load i64, ptr %new_else, align 8
-  %epay_ptr95 = getelementptr inbounds nuw %Stmt, ptr %buf88, i32 0, i32 3
-  store i64 %new_else94, ptr %epay_ptr95, align 8
-  %enum_i6496 = ptrtoint ptr %buf88 to i64
-  store i64 %enum_i6496, ptr %match_result, align 8
+  %buf87 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr88 = getelementptr inbounds nuw %Stmt, ptr %buf87, i32 0, i32 0
+  store i8 4, ptr %tag_ptr88, align 8
+  %ctx89 = load i64, ptr %ctx, align 8
+  %cond90 = load i64, ptr %cond78, align 8
+  %calltmp91 = call i64 @"core::names::rewrite_expr"(i64 %ctx89, i64 %cond90)
+  %epay_ptr92 = getelementptr inbounds nuw %Stmt, ptr %buf87, i32 0, i32 1
+  store i64 %calltmp91, ptr %epay_ptr92, align 8
+  %ctx93 = load i64, ptr %ctx, align 8
+  %then_b94 = load i64, ptr %then_b80, align 8
+  %calltmp95 = call i64 @"core::names::rewrite_stmt"(i64 %ctx93, i64 %then_b94)
+  %epay_ptr96 = getelementptr inbounds nuw %Stmt, ptr %buf87, i32 0, i32 2
+  store i64 %calltmp95, ptr %epay_ptr96, align 8
+  %new_else97 = load i64, ptr %new_else, align 8
+  %epay_ptr98 = getelementptr inbounds nuw %Stmt, ptr %buf87, i32 0, i32 3
+  store i64 %new_else97, ptr %epay_ptr98, align 8
+  %enum_i6499 = ptrtoint ptr %buf87 to i64
+  store i64 %enum_i6499, ptr %match_result, align 8
   br label %match_end
 
-march_arm97:                                      ; preds = %march_next73
-  %pbind_ptr100 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %cond101 = load i64, ptr %pbind_ptr100, align 8
-  store i64 %cond101, ptr %cond102, align 8
-  %pbind_ptr103 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %body104 = load i64, ptr %pbind_ptr103, align 8
-  store i64 %body104, ptr %body105, align 8
-  %buf106 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr107 = getelementptr inbounds nuw %Stmt, ptr %buf106, i32 0, i32 0
-  store i8 5, ptr %tag_ptr107, align 8
-  %cond108 = load i64, ptr %cond102, align 8
-  %calltmp109 = call i64 @"core::names::rewrite_expr"(i64 %cond108)
-  %epay_ptr110 = getelementptr inbounds nuw %Stmt, ptr %buf106, i32 0, i32 1
-  store i64 %calltmp109, ptr %epay_ptr110, align 8
-  %body111 = load i64, ptr %body105, align 8
-  %calltmp112 = call i64 @"core::names::rewrite_stmt"(i64 %body111)
-  %epay_ptr113 = getelementptr inbounds nuw %Stmt, ptr %buf106, i32 0, i32 2
-  store i64 %calltmp112, ptr %epay_ptr113, align 8
-  %enum_i64114 = ptrtoint ptr %buf106 to i64
-  store i64 %enum_i64114, ptr %match_result, align 8
+march_arm100:                                     ; preds = %march_next75
+  %pbind_ptr103 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %cond104 = load i64, ptr %pbind_ptr103, align 8
+  store i64 %cond104, ptr %cond105, align 8
+  %pbind_ptr106 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %body107 = load i64, ptr %pbind_ptr106, align 8
+  store i64 %body107, ptr %body108, align 8
+  %buf109 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr110 = getelementptr inbounds nuw %Stmt, ptr %buf109, i32 0, i32 0
+  store i8 5, ptr %tag_ptr110, align 8
+  %ctx111 = load i64, ptr %ctx, align 8
+  %cond112 = load i64, ptr %cond105, align 8
+  %calltmp113 = call i64 @"core::names::rewrite_expr"(i64 %ctx111, i64 %cond112)
+  %epay_ptr114 = getelementptr inbounds nuw %Stmt, ptr %buf109, i32 0, i32 1
+  store i64 %calltmp113, ptr %epay_ptr114, align 8
+  %ctx115 = load i64, ptr %ctx, align 8
+  %body116 = load i64, ptr %body108, align 8
+  %calltmp117 = call i64 @"core::names::rewrite_stmt"(i64 %ctx115, i64 %body116)
+  %epay_ptr118 = getelementptr inbounds nuw %Stmt, ptr %buf109, i32 0, i32 2
+  store i64 %calltmp117, ptr %epay_ptr118, align 8
+  %enum_i64119 = ptrtoint ptr %buf109 to i64
+  store i64 %enum_i64119, ptr %match_result, align 8
   br label %match_end
 
-march_next98:                                     ; preds = %march_next73
-  %tag_eq117 = icmp eq i8 %tag, 6
-  br i1 %tag_eq117, label %march_arm115, label %march_next116
+march_next101:                                    ; preds = %march_next75
+  %tag_eq122 = icmp eq i8 %tag, 6
+  br i1 %tag_eq122, label %march_arm120, label %march_next121
 
-march_arm115:                                     ; preds = %march_next98
-  %pbind_ptr118 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %var = load i64, ptr %pbind_ptr118, align 8
-  store i64 %var, ptr %var119, align 8
-  %pbind_ptr120 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %start = load i64, ptr %pbind_ptr120, align 8
-  store i64 %start, ptr %start121, align 8
-  %pbind_ptr122 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
-  %end = load i64, ptr %pbind_ptr122, align 8
-  store i64 %end, ptr %end123, align 8
-  %pbind_ptr124 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 4
-  %body125 = load i64, ptr %pbind_ptr124, align 8
-  store i64 %body125, ptr %body126, align 8
-  %buf127 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr128 = getelementptr inbounds nuw %Stmt, ptr %buf127, i32 0, i32 0
-  store i8 6, ptr %tag_ptr128, align 8
-  %var129 = load i64, ptr %var119, align 8
-  %epay_ptr130 = getelementptr inbounds nuw %Stmt, ptr %buf127, i32 0, i32 1
-  store i64 %var129, ptr %epay_ptr130, align 8
-  %start131 = load i64, ptr %start121, align 8
-  %calltmp132 = call i64 @"core::names::rewrite_expr"(i64 %start131)
-  %epay_ptr133 = getelementptr inbounds nuw %Stmt, ptr %buf127, i32 0, i32 2
-  store i64 %calltmp132, ptr %epay_ptr133, align 8
-  %end134 = load i64, ptr %end123, align 8
-  %calltmp135 = call i64 @"core::names::rewrite_expr"(i64 %end134)
-  %epay_ptr136 = getelementptr inbounds nuw %Stmt, ptr %buf127, i32 0, i32 3
-  store i64 %calltmp135, ptr %epay_ptr136, align 8
-  %body137 = load i64, ptr %body126, align 8
-  %calltmp138 = call i64 @"core::names::rewrite_stmt"(i64 %body137)
-  %epay_ptr139 = getelementptr inbounds nuw %Stmt, ptr %buf127, i32 0, i32 4
+march_arm120:                                     ; preds = %march_next101
+  %pbind_ptr123 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %var = load i64, ptr %pbind_ptr123, align 8
+  store i64 %var, ptr %var124, align 8
+  %pbind_ptr125 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %start = load i64, ptr %pbind_ptr125, align 8
+  store i64 %start, ptr %start126, align 8
+  %pbind_ptr127 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
+  %end = load i64, ptr %pbind_ptr127, align 8
+  store i64 %end, ptr %end128, align 8
+  %pbind_ptr129 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 4
+  %body130 = load i64, ptr %pbind_ptr129, align 8
+  store i64 %body130, ptr %body131, align 8
+  %buf132 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr133 = getelementptr inbounds nuw %Stmt, ptr %buf132, i32 0, i32 0
+  store i8 6, ptr %tag_ptr133, align 8
+  %var134 = load i64, ptr %var124, align 8
+  %epay_ptr135 = getelementptr inbounds nuw %Stmt, ptr %buf132, i32 0, i32 1
+  store i64 %var134, ptr %epay_ptr135, align 8
+  %ctx136 = load i64, ptr %ctx, align 8
+  %start137 = load i64, ptr %start126, align 8
+  %calltmp138 = call i64 @"core::names::rewrite_expr"(i64 %ctx136, i64 %start137)
+  %epay_ptr139 = getelementptr inbounds nuw %Stmt, ptr %buf132, i32 0, i32 2
   store i64 %calltmp138, ptr %epay_ptr139, align 8
-  %enum_i64140 = ptrtoint ptr %buf127 to i64
-  store i64 %enum_i64140, ptr %match_result, align 8
+  %ctx140 = load i64, ptr %ctx, align 8
+  %end141 = load i64, ptr %end128, align 8
+  %calltmp142 = call i64 @"core::names::rewrite_expr"(i64 %ctx140, i64 %end141)
+  %epay_ptr143 = getelementptr inbounds nuw %Stmt, ptr %buf132, i32 0, i32 3
+  store i64 %calltmp142, ptr %epay_ptr143, align 8
+  %ctx144 = load i64, ptr %ctx, align 8
+  %body145 = load i64, ptr %body131, align 8
+  %calltmp146 = call i64 @"core::names::rewrite_stmt"(i64 %ctx144, i64 %body145)
+  %epay_ptr147 = getelementptr inbounds nuw %Stmt, ptr %buf132, i32 0, i32 4
+  store i64 %calltmp146, ptr %epay_ptr147, align 8
+  %enum_i64148 = ptrtoint ptr %buf132 to i64
+  store i64 %enum_i64148, ptr %match_result, align 8
   br label %match_end
 
-march_next116:                                    ; preds = %march_next98
-  %tag_eq143 = icmp eq i8 %tag, 7
-  br i1 %tag_eq143, label %march_arm141, label %march_next142
+march_next121:                                    ; preds = %march_next101
+  %tag_eq151 = icmp eq i8 %tag, 7
+  br i1 %tag_eq151, label %march_arm149, label %march_next150
 
-march_arm141:                                     ; preds = %march_next116
-  %pbind_ptr144 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %var145 = load i64, ptr %pbind_ptr144, align 8
-  store i64 %var145, ptr %var146, align 8
-  %pbind_ptr147 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %coll = load i64, ptr %pbind_ptr147, align 8
-  store i64 %coll, ptr %coll148, align 8
-  %pbind_ptr149 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
-  %body150 = load i64, ptr %pbind_ptr149, align 8
-  store i64 %body150, ptr %body151, align 8
-  %buf152 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr153 = getelementptr inbounds nuw %Stmt, ptr %buf152, i32 0, i32 0
-  store i8 7, ptr %tag_ptr153, align 8
-  %var154 = load i64, ptr %var146, align 8
-  %epay_ptr155 = getelementptr inbounds nuw %Stmt, ptr %buf152, i32 0, i32 1
-  store i64 %var154, ptr %epay_ptr155, align 8
-  %coll156 = load i64, ptr %coll148, align 8
-  %calltmp157 = call i64 @"core::names::rewrite_expr"(i64 %coll156)
-  %epay_ptr158 = getelementptr inbounds nuw %Stmt, ptr %buf152, i32 0, i32 2
-  store i64 %calltmp157, ptr %epay_ptr158, align 8
-  %body159 = load i64, ptr %body151, align 8
-  %calltmp160 = call i64 @"core::names::rewrite_stmt"(i64 %body159)
-  %epay_ptr161 = getelementptr inbounds nuw %Stmt, ptr %buf152, i32 0, i32 3
-  store i64 %calltmp160, ptr %epay_ptr161, align 8
-  %enum_i64162 = ptrtoint ptr %buf152 to i64
-  store i64 %enum_i64162, ptr %match_result, align 8
+march_arm149:                                     ; preds = %march_next121
+  %pbind_ptr152 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %var153 = load i64, ptr %pbind_ptr152, align 8
+  store i64 %var153, ptr %var154, align 8
+  %pbind_ptr155 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %coll = load i64, ptr %pbind_ptr155, align 8
+  store i64 %coll, ptr %coll156, align 8
+  %pbind_ptr157 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
+  %body158 = load i64, ptr %pbind_ptr157, align 8
+  store i64 %body158, ptr %body159, align 8
+  %buf160 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr161 = getelementptr inbounds nuw %Stmt, ptr %buf160, i32 0, i32 0
+  store i8 7, ptr %tag_ptr161, align 8
+  %var162 = load i64, ptr %var154, align 8
+  %epay_ptr163 = getelementptr inbounds nuw %Stmt, ptr %buf160, i32 0, i32 1
+  store i64 %var162, ptr %epay_ptr163, align 8
+  %ctx164 = load i64, ptr %ctx, align 8
+  %coll165 = load i64, ptr %coll156, align 8
+  %calltmp166 = call i64 @"core::names::rewrite_expr"(i64 %ctx164, i64 %coll165)
+  %epay_ptr167 = getelementptr inbounds nuw %Stmt, ptr %buf160, i32 0, i32 2
+  store i64 %calltmp166, ptr %epay_ptr167, align 8
+  %ctx168 = load i64, ptr %ctx, align 8
+  %body169 = load i64, ptr %body159, align 8
+  %calltmp170 = call i64 @"core::names::rewrite_stmt"(i64 %ctx168, i64 %body169)
+  %epay_ptr171 = getelementptr inbounds nuw %Stmt, ptr %buf160, i32 0, i32 3
+  store i64 %calltmp170, ptr %epay_ptr171, align 8
+  %enum_i64172 = ptrtoint ptr %buf160 to i64
+  store i64 %enum_i64172, ptr %match_result, align 8
   br label %match_end
 
-march_next142:                                    ; preds = %march_next116
-  %tag_eq165 = icmp eq i8 %tag, 8
-  br i1 %tag_eq165, label %march_arm163, label %march_next164
+march_next150:                                    ; preds = %march_next121
+  %tag_eq175 = icmp eq i8 %tag, 8
+  br i1 %tag_eq175, label %march_arm173, label %march_next174
 
-march_arm163:                                     ; preds = %march_next142
-  %pbind_ptr166 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %name167 = load i64, ptr %pbind_ptr166, align 8
-  store i64 %name167, ptr %name168, align 8
-  %pbind_ptr169 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %params = load i64, ptr %pbind_ptr169, align 8
-  store i64 %params, ptr %params170, align 8
-  %pbind_ptr171 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
-  %ret_ty = load i64, ptr %pbind_ptr171, align 8
-  store i64 %ret_ty, ptr %ret_ty172, align 8
-  %pbind_ptr173 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 4
-  %body174 = load i64, ptr %pbind_ptr173, align 8
-  store i64 %body174, ptr %body175, align 8
-  %name176 = load i64, ptr %name168, align 8
-  %str_self = inttoptr i64 %name176 to ptr
+march_arm173:                                     ; preds = %march_next150
+  %pbind_ptr176 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %name177 = load i64, ptr %pbind_ptr176, align 8
+  store i64 %name177, ptr %name178, align 8
+  %pbind_ptr179 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %params = load i64, ptr %pbind_ptr179, align 8
+  store i64 %params, ptr %params180, align 8
+  %pbind_ptr181 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 3
+  %ret_ty = load i64, ptr %pbind_ptr181, align 8
+  store i64 %ret_ty, ptr %ret_ty182, align 8
+  %pbind_ptr183 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 4
+  %body184 = load i64, ptr %pbind_ptr183, align 8
+  store i64 %body184, ptr %body185, align 8
+  %name186 = load i64, ptr %name178, align 8
+  %str_self = inttoptr i64 %name186 to ptr
   %contains = call i64 @forge_str_contains(ptr %str_self, ptr @.str.462)
   store i64 %contains, ptr %is_impl_method, align 8
-  %NR_MODULE = load i64, ptr @NR_MODULE, align 8
-  %streq_l = inttoptr i64 %NR_MODULE to ptr
+  %ctx187 = load i64, ptr %ctx, align 8
+  %obj_ptr = inttoptr i64 %ctx187 to ptr
+  %fld_ptr = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr, i32 0, i32 2
+  %current_module = load i64, ptr %fld_ptr, align 8
+  %streq_l = inttoptr i64 %current_module to ptr
   %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.463)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp ne i64 %strcmp_sext, 0
@@ -19561,354 +19652,362 @@ march_arm163:                                     ; preds = %march_next142
   %l_bool = icmp ne i64 %streq_ext, 0
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
-march_next164:                                    ; preds = %march_next142
-  %tag_eq229 = icmp eq i8 %tag, 13
-  br i1 %tag_eq229, label %march_arm227, label %march_next228
+march_next174:                                    ; preds = %march_next150
+  %tag_eq242 = icmp eq i8 %tag, 13
+  br i1 %tag_eq242, label %march_arm240, label %march_next241
 
-sc_rhs:                                           ; preds = %march_arm163
-  %name177 = load i64, ptr %name168, align 8
-  %streq_l178 = inttoptr i64 %name177 to ptr
-  %strcmp_call179 = call i32 @strcmp(ptr %streq_l178, ptr @.str.464)
-  %strcmp_sext180 = sext i32 %strcmp_call179 to i64
-  %streq_cmp181 = icmp ne i64 %strcmp_sext180, 0
-  %streq_ext182 = zext i1 %streq_cmp181 to i64
-  %r_bool = icmp ne i64 %streq_ext182, 0
+sc_rhs:                                           ; preds = %march_arm173
+  %name188 = load i64, ptr %name178, align 8
+  %streq_l189 = inttoptr i64 %name188 to ptr
+  %strcmp_call190 = call i32 @strcmp(ptr %streq_l189, ptr @.str.464)
+  %strcmp_sext191 = sext i32 %strcmp_call190 to i64
+  %streq_cmp192 = icmp ne i64 %strcmp_sext191, 0
+  %streq_ext193 = zext i1 %streq_cmp192 to i64
+  %r_bool = icmp ne i64 %streq_ext193, 0
   br label %sc_merge
 
-sc_merge:                                         ; preds = %sc_rhs, %march_arm163
-  %sc_phi = phi i1 [ false, %march_arm163 ], [ %r_bool, %sc_rhs ]
+sc_merge:                                         ; preds = %sc_rhs, %march_arm173
+  %sc_phi = phi i1 [ false, %march_arm173 ], [ %r_bool, %sc_rhs ]
   %sc_ext = zext i1 %sc_phi to i64
-  %l_bool183 = icmp ne i64 %sc_ext, 0
-  br i1 %l_bool183, label %sc_rhs184, label %sc_merge185
+  %l_bool194 = icmp ne i64 %sc_ext, 0
+  br i1 %l_bool194, label %sc_rhs195, label %sc_merge196
 
-sc_rhs184:                                        ; preds = %sc_merge
-  %is_impl_method186 = load i64, ptr %is_impl_method, align 8
-  %not_cmp = icmp eq i64 %is_impl_method186, 0
+sc_rhs195:                                        ; preds = %sc_merge
+  %is_impl_method197 = load i64, ptr %is_impl_method, align 8
+  %not_cmp = icmp eq i64 %is_impl_method197, 0
   %not = zext i1 %not_cmp to i64
-  %r_bool187 = icmp ne i64 %not, 0
-  br label %sc_merge185
+  %r_bool198 = icmp ne i64 %not, 0
+  br label %sc_merge196
 
-sc_merge185:                                      ; preds = %sc_rhs184, %sc_merge
-  %sc_phi188 = phi i1 [ false, %sc_merge ], [ %r_bool187, %sc_rhs184 ]
-  %sc_ext189 = zext i1 %sc_phi188 to i64
-  %ife_cond190 = icmp ne i64 %sc_ext189, 0
-  store i64 0, ptr %ife_result194, align 8
-  br i1 %ife_cond190, label %ife_then191, label %ife_else192
+sc_merge196:                                      ; preds = %sc_rhs195, %sc_merge
+  %sc_phi199 = phi i1 [ false, %sc_merge ], [ %r_bool198, %sc_rhs195 ]
+  %sc_ext200 = zext i1 %sc_phi199 to i64
+  %ife_cond201 = icmp ne i64 %sc_ext200, 0
+  store i64 0, ptr %ife_result205, align 8
+  br i1 %ife_cond201, label %ife_then202, label %ife_else203
 
-ife_then191:                                      ; preds = %sc_merge185
-  %NR_MODULE195 = load i64, ptr @NR_MODULE, align 8
-  %concat_l = inttoptr i64 %NR_MODULE195 to ptr
+ife_then202:                                      ; preds = %sc_merge196
+  %ctx206 = load i64, ptr %ctx, align 8
+  %obj_ptr207 = inttoptr i64 %ctx206 to ptr
+  %fld_ptr208 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr207, i32 0, i32 2
+  %current_module209 = load i64, ptr %fld_ptr208, align 8
+  %concat_l = inttoptr i64 %current_module209 to ptr
   %lhs_len = call i64 @strlen(ptr %concat_l)
   %rhs_len = call i64 @strlen(ptr @.str.465)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
-  %buf196 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %1 = call ptr @memcpy(ptr %buf196, ptr %concat_l, i64 %lhs_len)
-  %buf_int = ptrtoint ptr %buf196 to i64
+  %buf210 = call ptr @forge_bump_alloc(i64 %concat_size)
+  %2 = call ptr @memcpy(ptr %buf210, ptr %concat_l, i64 %lhs_len)
+  %buf_int = ptrtoint ptr %buf210 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %rhs_len, 1
-  %2 = call ptr @memcpy(ptr %dst2, ptr @.str.465, i64 %rhs_len_p1)
-  %concat_i64 = ptrtoint ptr %buf196 to i64
-  %name197 = load i64, ptr %name168, align 8
-  %concat_l198 = inttoptr i64 %concat_i64 to ptr
-  %concat_r = inttoptr i64 %name197 to ptr
-  %lhs_len199 = call i64 @strlen(ptr %concat_l198)
-  %rhs_len200 = call i64 @strlen(ptr %concat_r)
-  %concat_total201 = add i64 %lhs_len199, %rhs_len200
-  %concat_size202 = add i64 %concat_total201, 1
-  %buf203 = call ptr @forge_bump_alloc(i64 %concat_size202)
-  %3 = call ptr @memcpy(ptr %buf203, ptr %concat_l198, i64 %lhs_len199)
-  %buf_int204 = ptrtoint ptr %buf203 to i64
-  %dst2_int205 = add i64 %buf_int204, %lhs_len199
-  %dst2206 = inttoptr i64 %dst2_int205 to ptr
-  %rhs_len_p1207 = add i64 %rhs_len200, 1
-  %4 = call ptr @memcpy(ptr %dst2206, ptr %concat_r, i64 %rhs_len_p1207)
-  %concat_i64208 = ptrtoint ptr %buf203 to i64
-  store i64 %concat_i64208, ptr %ife_result194, align 8
-  br label %ife_end193
+  %3 = call ptr @memcpy(ptr %dst2, ptr @.str.465, i64 %rhs_len_p1)
+  %concat_i64 = ptrtoint ptr %buf210 to i64
+  %name211 = load i64, ptr %name178, align 8
+  %concat_l212 = inttoptr i64 %concat_i64 to ptr
+  %concat_r = inttoptr i64 %name211 to ptr
+  %lhs_len213 = call i64 @strlen(ptr %concat_l212)
+  %rhs_len214 = call i64 @strlen(ptr %concat_r)
+  %concat_total215 = add i64 %lhs_len213, %rhs_len214
+  %concat_size216 = add i64 %concat_total215, 1
+  %buf217 = call ptr @forge_bump_alloc(i64 %concat_size216)
+  %4 = call ptr @memcpy(ptr %buf217, ptr %concat_l212, i64 %lhs_len213)
+  %buf_int218 = ptrtoint ptr %buf217 to i64
+  %dst2_int219 = add i64 %buf_int218, %lhs_len213
+  %dst2220 = inttoptr i64 %dst2_int219 to ptr
+  %rhs_len_p1221 = add i64 %rhs_len214, 1
+  %5 = call ptr @memcpy(ptr %dst2220, ptr %concat_r, i64 %rhs_len_p1221)
+  %concat_i64222 = ptrtoint ptr %buf217 to i64
+  store i64 %concat_i64222, ptr %ife_result205, align 8
+  br label %ife_end204
 
-ife_else192:                                      ; preds = %sc_merge185
-  %name209 = load i64, ptr %name168, align 8
-  store i64 %name209, ptr %ife_result194, align 8
-  br label %ife_end193
+ife_else203:                                      ; preds = %sc_merge196
+  %name223 = load i64, ptr %name178, align 8
+  store i64 %name223, ptr %ife_result205, align 8
+  br label %ife_end204
 
-ife_end193:                                       ; preds = %ife_else192, %ife_then191
-  %ife_val210 = load i64, ptr %ife_result194, align 8
-  store i64 %ife_val210, ptr %qualified, align 8
-  %NR_LOCALS = load i64, ptr @NR_LOCALS, align 8
-  store i64 %NR_LOCALS, ptr %saved_locals, align 8
-  %params211 = load i64, ptr %params170, align 8
-  %calltmp212 = call i64 @"core::names::push_params_to_locals"(i64 %params211)
-  %buf213 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr214 = getelementptr inbounds nuw %Stmt, ptr %buf213, i32 0, i32 0
-  store i8 8, ptr %tag_ptr214, align 8
-  %qualified215 = load i64, ptr %qualified, align 8
-  %epay_ptr216 = getelementptr inbounds nuw %Stmt, ptr %buf213, i32 0, i32 1
-  store i64 %qualified215, ptr %epay_ptr216, align 8
-  %params217 = load i64, ptr %params170, align 8
-  %epay_ptr218 = getelementptr inbounds nuw %Stmt, ptr %buf213, i32 0, i32 2
-  store i64 %params217, ptr %epay_ptr218, align 8
-  %ret_ty219 = load i64, ptr %ret_ty172, align 8
-  %epay_ptr220 = getelementptr inbounds nuw %Stmt, ptr %buf213, i32 0, i32 3
-  store i64 %ret_ty219, ptr %epay_ptr220, align 8
-  %body221 = load i64, ptr %body175, align 8
-  %calltmp222 = call i64 @"core::names::rewrite_stmt_list"(i64 %body221)
-  %epay_ptr223 = getelementptr inbounds nuw %Stmt, ptr %buf213, i32 0, i32 4
-  store i64 %calltmp222, ptr %epay_ptr223, align 8
-  %enum_i64224 = ptrtoint ptr %buf213 to i64
-  store i64 %enum_i64224, ptr %result, align 8
-  %saved_locals225 = load i64, ptr %saved_locals, align 8
-  store i64 %saved_locals225, ptr @NR_LOCALS, align 8
-  %result226 = load i64, ptr %result, align 8
-  store i64 %result226, ptr %match_result, align 8
-  br label %match_end
-
-march_arm227:                                     ; preds = %march_next164
-  %pbind_ptr230 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %subject = load i64, ptr %pbind_ptr230, align 8
-  store i64 %subject, ptr %subject231, align 8
-  %pbind_ptr232 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %arms = load i64, ptr %pbind_ptr232, align 8
-  store i64 %arms, ptr %arms233, align 8
-  %buf234 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr235 = getelementptr inbounds nuw %Stmt, ptr %buf234, i32 0, i32 0
-  store i8 13, ptr %tag_ptr235, align 8
-  %subject236 = load i64, ptr %subject231, align 8
-  %calltmp237 = call i64 @"core::names::rewrite_expr"(i64 %subject236)
-  %epay_ptr238 = getelementptr inbounds nuw %Stmt, ptr %buf234, i32 0, i32 1
+ife_end204:                                       ; preds = %ife_else203, %ife_then202
+  %ife_val224 = load i64, ptr %ife_result205, align 8
+  store i64 %ife_val224, ptr %qualified, align 8
+  %buf225 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr226 = getelementptr inbounds nuw %Stmt, ptr %buf225, i32 0, i32 0
+  store i8 8, ptr %tag_ptr226, align 8
+  %qualified227 = load i64, ptr %qualified, align 8
+  %epay_ptr228 = getelementptr inbounds nuw %Stmt, ptr %buf225, i32 0, i32 1
+  store i64 %qualified227, ptr %epay_ptr228, align 8
+  %params229 = load i64, ptr %params180, align 8
+  %epay_ptr230 = getelementptr inbounds nuw %Stmt, ptr %buf225, i32 0, i32 2
+  store i64 %params229, ptr %epay_ptr230, align 8
+  %ret_ty231 = load i64, ptr %ret_ty182, align 8
+  %epay_ptr232 = getelementptr inbounds nuw %Stmt, ptr %buf225, i32 0, i32 3
+  store i64 %ret_ty231, ptr %epay_ptr232, align 8
+  %ctx233 = load i64, ptr %ctx, align 8
+  %params234 = load i64, ptr %params180, align 8
+  %calltmp235 = call i64 @"core::names::bind_params_ctx"(i64 %ctx233, i64 %params234)
+  %body236 = load i64, ptr %body185, align 8
+  %calltmp237 = call i64 @"core::names::rewrite_stmt_list"(i64 %calltmp235, i64 %body236)
+  %epay_ptr238 = getelementptr inbounds nuw %Stmt, ptr %buf225, i32 0, i32 4
   store i64 %calltmp237, ptr %epay_ptr238, align 8
-  %arms239 = load i64, ptr %arms233, align 8
-  %calltmp240 = call i64 @"core::names::rewrite_match_arms"(i64 %arms239)
-  %epay_ptr241 = getelementptr inbounds nuw %Stmt, ptr %buf234, i32 0, i32 2
-  store i64 %calltmp240, ptr %epay_ptr241, align 8
-  %enum_i64242 = ptrtoint ptr %buf234 to i64
-  store i64 %enum_i64242, ptr %match_result, align 8
+  %enum_i64239 = ptrtoint ptr %buf225 to i64
+  store i64 %enum_i64239, ptr %match_result, align 8
   br label %match_end
 
-march_next228:                                    ; preds = %march_next164
-  %tag_eq245 = icmp eq i8 %tag, 28
-  br i1 %tag_eq245, label %march_arm243, label %march_next244
-
-march_arm243:                                     ; preds = %march_next228
-  %pbind_ptr246 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %name247 = load i64, ptr %pbind_ptr246, align 8
-  store i64 %name247, ptr %name248, align 8
-  %pbind_ptr249 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %body250 = load i64, ptr %pbind_ptr249, align 8
-  store i64 %body250, ptr %body251, align 8
-  %NR_MODULE252 = load i64, ptr @NR_MODULE, align 8
-  store i64 %NR_MODULE252, ptr %saved_module, align 8
-  %NR_ALIASES = load i64, ptr @NR_ALIASES, align 8
-  store i64 %NR_ALIASES, ptr %saved_aliases, align 8
-  %saved_module253 = load i64, ptr %saved_module, align 8
-  %streq_l254 = inttoptr i64 %saved_module253 to ptr
-  %strcmp_call255 = call i32 @strcmp(ptr %streq_l254, ptr @.str.466)
-  %strcmp_sext256 = sext i32 %strcmp_call255 to i64
-  %streq_cmp257 = icmp eq i64 %strcmp_sext256, 0
-  %streq_ext258 = zext i1 %streq_cmp257 to i64
-  %ife_cond259 = icmp ne i64 %streq_ext258, 0
-  store i64 0, ptr %ife_result263, align 8
-  br i1 %ife_cond259, label %ife_then260, label %ife_else261
-
-march_next244:                                    ; preds = %march_next228
-  %tag_eq310 = icmp eq i8 %tag, 14
-  br i1 %tag_eq310, label %march_arm308, label %march_next309
-
-ife_then260:                                      ; preds = %march_arm243
-  %name264 = load i64, ptr %name248, align 8
-  store i64 %name264, ptr %ife_result263, align 8
-  br label %ife_end262
-
-ife_else261:                                      ; preds = %march_arm243
-  %saved_module265 = load i64, ptr %saved_module, align 8
-  %concat_l266 = inttoptr i64 %saved_module265 to ptr
-  %lhs_len267 = call i64 @strlen(ptr %concat_l266)
-  %rhs_len268 = call i64 @strlen(ptr @.str.467)
-  %concat_total269 = add i64 %lhs_len267, %rhs_len268
-  %concat_size270 = add i64 %concat_total269, 1
-  %buf271 = call ptr @forge_bump_alloc(i64 %concat_size270)
-  %5 = call ptr @memcpy(ptr %buf271, ptr %concat_l266, i64 %lhs_len267)
-  %buf_int272 = ptrtoint ptr %buf271 to i64
-  %dst2_int273 = add i64 %buf_int272, %lhs_len267
-  %dst2274 = inttoptr i64 %dst2_int273 to ptr
-  %rhs_len_p1275 = add i64 %rhs_len268, 1
-  %6 = call ptr @memcpy(ptr %dst2274, ptr @.str.467, i64 %rhs_len_p1275)
-  %concat_i64276 = ptrtoint ptr %buf271 to i64
-  %name277 = load i64, ptr %name248, align 8
-  %concat_l278 = inttoptr i64 %concat_i64276 to ptr
-  %concat_r279 = inttoptr i64 %name277 to ptr
-  %lhs_len280 = call i64 @strlen(ptr %concat_l278)
-  %rhs_len281 = call i64 @strlen(ptr %concat_r279)
-  %concat_total282 = add i64 %lhs_len280, %rhs_len281
-  %concat_size283 = add i64 %concat_total282, 1
-  %buf284 = call ptr @forge_bump_alloc(i64 %concat_size283)
-  %7 = call ptr @memcpy(ptr %buf284, ptr %concat_l278, i64 %lhs_len280)
-  %buf_int285 = ptrtoint ptr %buf284 to i64
-  %dst2_int286 = add i64 %buf_int285, %lhs_len280
-  %dst2287 = inttoptr i64 %dst2_int286 to ptr
-  %rhs_len_p1288 = add i64 %rhs_len281, 1
-  %8 = call ptr @memcpy(ptr %dst2287, ptr %concat_r279, i64 %rhs_len_p1288)
-  %concat_i64289 = ptrtoint ptr %buf284 to i64
-  store i64 %concat_i64289, ptr %ife_result263, align 8
-  br label %ife_end262
-
-ife_end262:                                       ; preds = %ife_else261, %ife_then260
-  %ife_val290 = load i64, ptr %ife_result263, align 8
-  store i64 %ife_val290, ptr @NR_MODULE, align 8
-  %body291 = load i64, ptr %body251, align 8
-  %NR_TREE = load i64, ptr @NR_TREE, align 8
-  %calltmp292 = call i64 @"core::names::resolve_use_aliases"(i64 %body291, i64 %NR_TREE)
-  store i64 %calltmp292, ptr %mod_aliases, align 8
-  %saved_aliases293 = load i64, ptr %saved_aliases, align 8
-  %mod_aliases294 = load i64, ptr %mod_aliases, align 8
-  %calltmp295 = call i64 @"core::names::merge_aliases"(i64 %saved_aliases293, i64 %mod_aliases294)
-  store i64 %calltmp295, ptr @NR_ALIASES, align 8
-  %buf296 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr297 = getelementptr inbounds nuw %Stmt, ptr %buf296, i32 0, i32 0
-  store i8 28, ptr %tag_ptr297, align 8
-  %name298 = load i64, ptr %name248, align 8
-  %epay_ptr299 = getelementptr inbounds nuw %Stmt, ptr %buf296, i32 0, i32 1
-  store i64 %name298, ptr %epay_ptr299, align 8
-  %body300 = load i64, ptr %body251, align 8
-  %calltmp301 = call i64 @"core::names::rewrite_stmt_list"(i64 %body300)
-  %epay_ptr302 = getelementptr inbounds nuw %Stmt, ptr %buf296, i32 0, i32 2
-  store i64 %calltmp301, ptr %epay_ptr302, align 8
-  %enum_i64303 = ptrtoint ptr %buf296 to i64
-  store i64 %enum_i64303, ptr %result304, align 8
-  %saved_module305 = load i64, ptr %saved_module, align 8
-  store i64 %saved_module305, ptr @NR_MODULE, align 8
-  %saved_aliases306 = load i64, ptr %saved_aliases, align 8
-  store i64 %saved_aliases306, ptr @NR_ALIASES, align 8
-  %result307 = load i64, ptr %result304, align 8
-  store i64 %result307, ptr %match_result, align 8
+march_arm240:                                     ; preds = %march_next174
+  %pbind_ptr243 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %subject = load i64, ptr %pbind_ptr243, align 8
+  store i64 %subject, ptr %subject244, align 8
+  %pbind_ptr245 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %arms = load i64, ptr %pbind_ptr245, align 8
+  store i64 %arms, ptr %arms246, align 8
+  %buf247 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr248 = getelementptr inbounds nuw %Stmt, ptr %buf247, i32 0, i32 0
+  store i8 13, ptr %tag_ptr248, align 8
+  %ctx249 = load i64, ptr %ctx, align 8
+  %subject250 = load i64, ptr %subject244, align 8
+  %calltmp251 = call i64 @"core::names::rewrite_expr"(i64 %ctx249, i64 %subject250)
+  %epay_ptr252 = getelementptr inbounds nuw %Stmt, ptr %buf247, i32 0, i32 1
+  store i64 %calltmp251, ptr %epay_ptr252, align 8
+  %ctx253 = load i64, ptr %ctx, align 8
+  %arms254 = load i64, ptr %arms246, align 8
+  %calltmp255 = call i64 @"core::names::rewrite_match_arms"(i64 %ctx253, i64 %arms254)
+  %epay_ptr256 = getelementptr inbounds nuw %Stmt, ptr %buf247, i32 0, i32 2
+  store i64 %calltmp255, ptr %epay_ptr256, align 8
+  %enum_i64257 = ptrtoint ptr %buf247 to i64
+  store i64 %enum_i64257, ptr %match_result, align 8
   br label %match_end
 
-march_arm308:                                     ; preds = %march_next244
-  %pbind_ptr311 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %type_name = load i64, ptr %pbind_ptr311, align 8
-  store i64 %type_name, ptr %type_name312, align 8
-  %pbind_ptr313 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %methods = load i64, ptr %pbind_ptr313, align 8
-  store i64 %methods, ptr %methods314, align 8
-  %buf315 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr316 = getelementptr inbounds nuw %Stmt, ptr %buf315, i32 0, i32 0
-  store i8 14, ptr %tag_ptr316, align 8
-  %type_name317 = load i64, ptr %type_name312, align 8
-  %epay_ptr318 = getelementptr inbounds nuw %Stmt, ptr %buf315, i32 0, i32 1
-  store i64 %type_name317, ptr %epay_ptr318, align 8
-  %methods319 = load i64, ptr %methods314, align 8
-  %calltmp320 = call i64 @"core::names::rewrite_stmt_list"(i64 %methods319)
-  %epay_ptr321 = getelementptr inbounds nuw %Stmt, ptr %buf315, i32 0, i32 2
-  store i64 %calltmp320, ptr %epay_ptr321, align 8
-  %enum_i64322 = ptrtoint ptr %buf315 to i64
-  store i64 %enum_i64322, ptr %match_result, align 8
+march_next241:                                    ; preds = %march_next174
+  %tag_eq260 = icmp eq i8 %tag, 28
+  br i1 %tag_eq260, label %march_arm258, label %march_next259
+
+march_arm258:                                     ; preds = %march_next241
+  %pbind_ptr261 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %name262 = load i64, ptr %pbind_ptr261, align 8
+  store i64 %name262, ptr %name263, align 8
+  %pbind_ptr264 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %body265 = load i64, ptr %pbind_ptr264, align 8
+  store i64 %body265, ptr %body266, align 8
+  %ctx267 = load i64, ptr %ctx, align 8
+  %obj_ptr268 = inttoptr i64 %ctx267 to ptr
+  %fld_ptr269 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr268, i32 0, i32 2
+  %current_module270 = load i64, ptr %fld_ptr269, align 8
+  %streq_l271 = inttoptr i64 %current_module270 to ptr
+  %strcmp_call272 = call i32 @strcmp(ptr %streq_l271, ptr @.str.466)
+  %strcmp_sext273 = sext i32 %strcmp_call272 to i64
+  %streq_cmp274 = icmp eq i64 %strcmp_sext273, 0
+  %streq_ext275 = zext i1 %streq_cmp274 to i64
+  %ife_cond276 = icmp ne i64 %streq_ext275, 0
+  store i64 0, ptr %ife_result280, align 8
+  br i1 %ife_cond276, label %ife_then277, label %ife_else278
+
+march_next259:                                    ; preds = %march_next241
+  %tag_eq333 = icmp eq i8 %tag, 14
+  br i1 %tag_eq333, label %march_arm331, label %march_next332
+
+ife_then277:                                      ; preds = %march_arm258
+  %name281 = load i64, ptr %name263, align 8
+  store i64 %name281, ptr %ife_result280, align 8
+  br label %ife_end279
+
+ife_else278:                                      ; preds = %march_arm258
+  %ctx282 = load i64, ptr %ctx, align 8
+  %obj_ptr283 = inttoptr i64 %ctx282 to ptr
+  %fld_ptr284 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr283, i32 0, i32 2
+  %current_module285 = load i64, ptr %fld_ptr284, align 8
+  %concat_l286 = inttoptr i64 %current_module285 to ptr
+  %lhs_len287 = call i64 @strlen(ptr %concat_l286)
+  %rhs_len288 = call i64 @strlen(ptr @.str.467)
+  %concat_total289 = add i64 %lhs_len287, %rhs_len288
+  %concat_size290 = add i64 %concat_total289, 1
+  %buf291 = call ptr @forge_bump_alloc(i64 %concat_size290)
+  %6 = call ptr @memcpy(ptr %buf291, ptr %concat_l286, i64 %lhs_len287)
+  %buf_int292 = ptrtoint ptr %buf291 to i64
+  %dst2_int293 = add i64 %buf_int292, %lhs_len287
+  %dst2294 = inttoptr i64 %dst2_int293 to ptr
+  %rhs_len_p1295 = add i64 %rhs_len288, 1
+  %7 = call ptr @memcpy(ptr %dst2294, ptr @.str.467, i64 %rhs_len_p1295)
+  %concat_i64296 = ptrtoint ptr %buf291 to i64
+  %name297 = load i64, ptr %name263, align 8
+  %concat_l298 = inttoptr i64 %concat_i64296 to ptr
+  %concat_r299 = inttoptr i64 %name297 to ptr
+  %lhs_len300 = call i64 @strlen(ptr %concat_l298)
+  %rhs_len301 = call i64 @strlen(ptr %concat_r299)
+  %concat_total302 = add i64 %lhs_len300, %rhs_len301
+  %concat_size303 = add i64 %concat_total302, 1
+  %buf304 = call ptr @forge_bump_alloc(i64 %concat_size303)
+  %8 = call ptr @memcpy(ptr %buf304, ptr %concat_l298, i64 %lhs_len300)
+  %buf_int305 = ptrtoint ptr %buf304 to i64
+  %dst2_int306 = add i64 %buf_int305, %lhs_len300
+  %dst2307 = inttoptr i64 %dst2_int306 to ptr
+  %rhs_len_p1308 = add i64 %rhs_len301, 1
+  %9 = call ptr @memcpy(ptr %dst2307, ptr %concat_r299, i64 %rhs_len_p1308)
+  %concat_i64309 = ptrtoint ptr %buf304 to i64
+  store i64 %concat_i64309, ptr %ife_result280, align 8
+  br label %ife_end279
+
+ife_end279:                                       ; preds = %ife_else278, %ife_then277
+  %ife_val310 = load i64, ptr %ife_result280, align 8
+  store i64 %ife_val310, ptr %mod_path, align 8
+  %buf311 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr312 = getelementptr inbounds nuw %Stmt, ptr %buf311, i32 0, i32 0
+  store i8 28, ptr %tag_ptr312, align 8
+  %name313 = load i64, ptr %name263, align 8
+  %epay_ptr314 = getelementptr inbounds nuw %Stmt, ptr %buf311, i32 0, i32 1
+  store i64 %name313, ptr %epay_ptr314, align 8
+  %ctx315 = load i64, ptr %ctx, align 8
+  %mod_path316 = load i64, ptr %mod_path, align 8
+  %ctx317 = load i64, ptr %ctx, align 8
+  %obj_ptr318 = inttoptr i64 %ctx317 to ptr
+  %fld_ptr319 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr318, i32 0, i32 1
+  %aliases = load i64, ptr %fld_ptr319, align 8
+  %body320 = load i64, ptr %body266, align 8
+  %ctx321 = load i64, ptr %ctx, align 8
+  %obj_ptr322 = inttoptr i64 %ctx321 to ptr
+  %fld_ptr323 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr322, i32 0, i32 0
+  %tree = load i64, ptr %fld_ptr323, align 8
+  %calltmp324 = call i64 @"core::names::resolve_use_aliases"(i64 %body320, i64 %tree)
+  %calltmp325 = call i64 @"core::names::merge_aliases"(i64 %aliases, i64 %calltmp324)
+  %calltmp326 = call i64 @"core::names::ctx_with_module"(i64 %ctx315, i64 %mod_path316, i64 %calltmp325)
+  %body327 = load i64, ptr %body266, align 8
+  %calltmp328 = call i64 @"core::names::rewrite_stmt_list"(i64 %calltmp326, i64 %body327)
+  %epay_ptr329 = getelementptr inbounds nuw %Stmt, ptr %buf311, i32 0, i32 2
+  store i64 %calltmp328, ptr %epay_ptr329, align 8
+  %enum_i64330 = ptrtoint ptr %buf311 to i64
+  store i64 %enum_i64330, ptr %match_result, align 8
   br label %match_end
 
-march_next309:                                    ; preds = %march_next244
-  %tag_eq325 = icmp eq i8 %tag, 22
-  br i1 %tag_eq325, label %march_arm323, label %march_next324
-
-march_arm323:                                     ; preds = %march_next309
-  %pbind_ptr326 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %annotations = load i64, ptr %pbind_ptr326, align 8
-  store i64 %annotations, ptr %annotations327, align 8
-  %pbind_ptr328 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %inner = load i64, ptr %pbind_ptr328, align 8
-  store i64 %inner, ptr %inner329, align 8
-  %buf330 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr331 = getelementptr inbounds nuw %Stmt, ptr %buf330, i32 0, i32 0
-  store i8 22, ptr %tag_ptr331, align 8
-  %annotations332 = load i64, ptr %annotations327, align 8
-  %epay_ptr333 = getelementptr inbounds nuw %Stmt, ptr %buf330, i32 0, i32 1
-  store i64 %annotations332, ptr %epay_ptr333, align 8
-  %inner334 = load i64, ptr %inner329, align 8
-  %calltmp335 = call i64 @"core::names::rewrite_stmt"(i64 %inner334)
-  %epay_ptr336 = getelementptr inbounds nuw %Stmt, ptr %buf330, i32 0, i32 2
-  store i64 %calltmp335, ptr %epay_ptr336, align 8
-  %enum_i64337 = ptrtoint ptr %buf330 to i64
-  store i64 %enum_i64337, ptr %match_result, align 8
+march_arm331:                                     ; preds = %march_next259
+  %pbind_ptr334 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %type_name = load i64, ptr %pbind_ptr334, align 8
+  store i64 %type_name, ptr %type_name335, align 8
+  %pbind_ptr336 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %methods = load i64, ptr %pbind_ptr336, align 8
+  store i64 %methods, ptr %methods337, align 8
+  %buf338 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr339 = getelementptr inbounds nuw %Stmt, ptr %buf338, i32 0, i32 0
+  store i8 14, ptr %tag_ptr339, align 8
+  %type_name340 = load i64, ptr %type_name335, align 8
+  %epay_ptr341 = getelementptr inbounds nuw %Stmt, ptr %buf338, i32 0, i32 1
+  store i64 %type_name340, ptr %epay_ptr341, align 8
+  %ctx342 = load i64, ptr %ctx, align 8
+  %methods343 = load i64, ptr %methods337, align 8
+  %calltmp344 = call i64 @"core::names::rewrite_stmt_list"(i64 %ctx342, i64 %methods343)
+  %epay_ptr345 = getelementptr inbounds nuw %Stmt, ptr %buf338, i32 0, i32 2
+  store i64 %calltmp344, ptr %epay_ptr345, align 8
+  %enum_i64346 = ptrtoint ptr %buf338 to i64
+  store i64 %enum_i64346, ptr %match_result, align 8
   br label %match_end
 
-march_next324:                                    ; preds = %march_next309
-  %tag_eq340 = icmp eq i8 %tag, 21
-  br i1 %tag_eq340, label %march_arm338, label %march_next339
+march_next332:                                    ; preds = %march_next259
+  %tag_eq349 = icmp eq i8 %tag, 22
+  br i1 %tag_eq349, label %march_arm347, label %march_next348
 
-march_arm338:                                     ; preds = %march_next324
-  %pbind_ptr341 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %body342 = load i64, ptr %pbind_ptr341, align 8
-  store i64 %body342, ptr %body343, align 8
-  %buf344 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr345 = getelementptr inbounds nuw %Stmt, ptr %buf344, i32 0, i32 0
-  store i8 21, ptr %tag_ptr345, align 8
-  %body346 = load i64, ptr %body343, align 8
-  %calltmp347 = call i64 @"core::names::rewrite_expr"(i64 %body346)
-  %epay_ptr348 = getelementptr inbounds nuw %Stmt, ptr %buf344, i32 0, i32 1
-  store i64 %calltmp347, ptr %epay_ptr348, align 8
-  %enum_i64349 = ptrtoint ptr %buf344 to i64
-  store i64 %enum_i64349, ptr %match_result, align 8
+march_arm347:                                     ; preds = %march_next332
+  %pbind_ptr350 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %annotations = load i64, ptr %pbind_ptr350, align 8
+  store i64 %annotations, ptr %annotations351, align 8
+  %pbind_ptr352 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %inner = load i64, ptr %pbind_ptr352, align 8
+  store i64 %inner, ptr %inner353, align 8
+  %buf354 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr355 = getelementptr inbounds nuw %Stmt, ptr %buf354, i32 0, i32 0
+  store i8 22, ptr %tag_ptr355, align 8
+  %annotations356 = load i64, ptr %annotations351, align 8
+  %epay_ptr357 = getelementptr inbounds nuw %Stmt, ptr %buf354, i32 0, i32 1
+  store i64 %annotations356, ptr %epay_ptr357, align 8
+  %ctx358 = load i64, ptr %ctx, align 8
+  %inner359 = load i64, ptr %inner353, align 8
+  %calltmp360 = call i64 @"core::names::rewrite_stmt"(i64 %ctx358, i64 %inner359)
+  %epay_ptr361 = getelementptr inbounds nuw %Stmt, ptr %buf354, i32 0, i32 2
+  store i64 %calltmp360, ptr %epay_ptr361, align 8
+  %enum_i64362 = ptrtoint ptr %buf354 to i64
+  store i64 %enum_i64362, ptr %match_result, align 8
   br label %match_end
 
-march_next339:                                    ; preds = %march_next324
-  %tag_eq352 = icmp eq i8 %tag, 20
-  br i1 %tag_eq352, label %march_arm350, label %march_next351
+march_next348:                                    ; preds = %march_next332
+  %tag_eq365 = icmp eq i8 %tag, 21
+  br i1 %tag_eq365, label %march_arm363, label %march_next364
 
-march_arm350:                                     ; preds = %march_next339
-  %pbind_ptr353 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
-  %names = load i64, ptr %pbind_ptr353, align 8
-  store i64 %names, ptr %names354, align 8
-  %pbind_ptr355 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
-  %init356 = load i64, ptr %pbind_ptr355, align 8
-  store i64 %init356, ptr %init357, align 8
-  %buf358 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr359 = getelementptr inbounds nuw %Stmt, ptr %buf358, i32 0, i32 0
-  store i8 20, ptr %tag_ptr359, align 8
-  %names360 = load i64, ptr %names354, align 8
-  %epay_ptr361 = getelementptr inbounds nuw %Stmt, ptr %buf358, i32 0, i32 1
-  store i64 %names360, ptr %epay_ptr361, align 8
-  %init362 = load i64, ptr %init357, align 8
-  %calltmp363 = call i64 @"core::names::rewrite_expr"(i64 %init362)
-  %epay_ptr364 = getelementptr inbounds nuw %Stmt, ptr %buf358, i32 0, i32 2
-  store i64 %calltmp363, ptr %epay_ptr364, align 8
-  %enum_i64365 = ptrtoint ptr %buf358 to i64
-  store i64 %enum_i64365, ptr %match_result, align 8
+march_arm363:                                     ; preds = %march_next348
+  %pbind_ptr366 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %body367 = load i64, ptr %pbind_ptr366, align 8
+  store i64 %body367, ptr %body368, align 8
+  %buf369 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr370 = getelementptr inbounds nuw %Stmt, ptr %buf369, i32 0, i32 0
+  store i8 21, ptr %tag_ptr370, align 8
+  %ctx371 = load i64, ptr %ctx, align 8
+  %body372 = load i64, ptr %body368, align 8
+  %calltmp373 = call i64 @"core::names::rewrite_expr"(i64 %ctx371, i64 %body372)
+  %epay_ptr374 = getelementptr inbounds nuw %Stmt, ptr %buf369, i32 0, i32 1
+  store i64 %calltmp373, ptr %epay_ptr374, align 8
+  %enum_i64375 = ptrtoint ptr %buf369 to i64
+  store i64 %enum_i64375, ptr %match_result, align 8
   br label %match_end
 
-march_next351:                                    ; preds = %march_next339
-  br label %march_arm366
+march_next364:                                    ; preds = %march_next348
+  %tag_eq378 = icmp eq i8 %tag, 20
+  br i1 %tag_eq378, label %march_arm376, label %march_next377
 
-march_arm366:                                     ; preds = %march_next351
-  %stmt368 = load i64, ptr %stmt, align 8
-  store i64 %stmt368, ptr %match_result, align 8
+march_arm376:                                     ; preds = %march_next364
+  %pbind_ptr379 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 1
+  %names = load i64, ptr %pbind_ptr379, align 8
+  store i64 %names, ptr %names380, align 8
+  %pbind_ptr381 = getelementptr inbounds nuw %Stmt, ptr %match_subj, i32 0, i32 2
+  %init382 = load i64, ptr %pbind_ptr381, align 8
+  store i64 %init382, ptr %init383, align 8
+  %buf384 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr385 = getelementptr inbounds nuw %Stmt, ptr %buf384, i32 0, i32 0
+  store i8 20, ptr %tag_ptr385, align 8
+  %names386 = load i64, ptr %names380, align 8
+  %epay_ptr387 = getelementptr inbounds nuw %Stmt, ptr %buf384, i32 0, i32 1
+  store i64 %names386, ptr %epay_ptr387, align 8
+  %ctx388 = load i64, ptr %ctx, align 8
+  %init389 = load i64, ptr %init383, align 8
+  %calltmp390 = call i64 @"core::names::rewrite_expr"(i64 %ctx388, i64 %init389)
+  %epay_ptr391 = getelementptr inbounds nuw %Stmt, ptr %buf384, i32 0, i32 2
+  store i64 %calltmp390, ptr %epay_ptr391, align 8
+  %enum_i64392 = ptrtoint ptr %buf384 to i64
+  store i64 %enum_i64392, ptr %match_result, align 8
   br label %match_end
 
-march_next367:                                    ; No predecessors!
+march_next377:                                    ; preds = %march_next364
+  br label %march_arm393
+
+march_arm393:                                     ; preds = %march_next377
+  %stmt395 = load i64, ptr %stmt, align 8
+  store i64 %stmt395, ptr %match_result, align 8
+  br label %match_end
+
+march_next394:                                    ; No predecessors!
   br label %match_end
 }
 
-define i64 @"core::names::rewrite_expr"(i64 %0) {
+define i64 @"core::names::rewrite_expr"(i64 %0, i64 %1) {
 entry:
-  %body141 = alloca i64, align 8
-  %inner130 = alloca i64, align 8
-  %idx115 = alloca i64, align 8
-  %obj113 = alloca i64, align 8
-  %val100 = alloca i64, align 8
-  %name98 = alloca i64, align 8
-  %inner86 = alloca i64, align 8
-  %r70 = alloca i64, align 8
-  %op67 = alloca i64, align 8
-  %l64 = alloca i64, align 8
-  %r50 = alloca i64, align 8
-  %op47 = alloca i64, align 8
-  %r30 = alloca i64, align 8
-  %op28 = alloca i64, align 8
-  %l26 = alloca i64, align 8
-  %args13 = alloca i64, align 8
-  %callee11 = alloca i64, align 8
+  %body154 = alloca i64, align 8
+  %inner142 = alloca i64, align 8
+  %idx125 = alloca i64, align 8
+  %obj123 = alloca i64, align 8
+  %val109 = alloca i64, align 8
+  %name107 = alloca i64, align 8
+  %inner94 = alloca i64, align 8
+  %r76 = alloca i64, align 8
+  %op73 = alloca i64, align 8
+  %l70 = alloca i64, align 8
+  %r55 = alloca i64, align 8
+  %op52 = alloca i64, align 8
+  %r33 = alloca i64, align 8
+  %op31 = alloca i64, align 8
+  %l29 = alloca i64, align 8
+  %args14 = alloca i64, align 8
+  %callee12 = alloca i64, align 8
   %name4 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %expr = alloca i64, align 8
-  store i64 %0, ptr %expr, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %expr, align 8
   %expr1 = load i64, ptr %expr, align 8
   %eq = icmp eq i64 %expr1, 0
   %eq_ext = zext i1 %eq to i64
@@ -19934,7 +20033,7 @@ ifcont:                                           ; preds = %else
   %tag_eq = icmp eq i8 %tag, 4
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_next149, %march_arm148, %march_arm137, %march_arm125, %march_arm109, %march_arm93, %march_arm82, %march_arm59, %march_arm42, %march_arm22, %march_arm7, %march_arm
+match_end:                                        ; preds = %march_next163, %march_arm162, %march_arm150, %march_arm137, %march_arm119, %march_arm102, %march_arm90, %march_arm65, %march_arm47, %march_arm25, %march_arm8, %march_arm
   %match_val = load i64, ptr %match_result, align 8
   ret i64 %match_val
 
@@ -19942,288 +20041,303 @@ march_arm:                                        ; preds = %ifcont
   %pbind_ptr = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
   %name = load i64, ptr %pbind_ptr, align 8
   store i64 %name, ptr %name4, align 8
-  %name5 = load i64, ptr %name4, align 8
-  %expr6 = load i64, ptr %expr, align 8
-  %calltmp = call i64 @"core::names::rewrite_ident"(i64 %name5, i64 %expr6)
+  %ctx5 = load i64, ptr %ctx, align 8
+  %name6 = load i64, ptr %name4, align 8
+  %expr7 = load i64, ptr %expr, align 8
+  %calltmp = call i64 @"core::names::rewrite_ident"(i64 %ctx5, i64 %name6, i64 %expr7)
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
 march_next:                                       ; preds = %ifcont
-  %tag_eq9 = icmp eq i8 %tag, 10
-  br i1 %tag_eq9, label %march_arm7, label %march_next8
+  %tag_eq10 = icmp eq i8 %tag, 10
+  br i1 %tag_eq10, label %march_arm8, label %march_next9
 
-march_arm7:                                       ; preds = %march_next
-  %pbind_ptr10 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %callee = load i64, ptr %pbind_ptr10, align 8
-  store i64 %callee, ptr %callee11, align 8
-  %pbind_ptr12 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %args = load i64, ptr %pbind_ptr12, align 8
-  store i64 %args, ptr %args13, align 8
-  %buf14 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr15 = getelementptr inbounds nuw %Expr, ptr %buf14, i32 0, i32 0
-  store i8 10, ptr %tag_ptr15, align 8
-  %callee16 = load i64, ptr %callee11, align 8
-  %calltmp17 = call i64 @"core::names::rewrite_expr"(i64 %callee16)
-  %epay_ptr = getelementptr inbounds nuw %Expr, ptr %buf14, i32 0, i32 1
-  store i64 %calltmp17, ptr %epay_ptr, align 8
-  %args18 = load i64, ptr %args13, align 8
-  %calltmp19 = call i64 @"core::names::rewrite_expr_list"(i64 %args18)
-  %epay_ptr20 = getelementptr inbounds nuw %Expr, ptr %buf14, i32 0, i32 2
-  store i64 %calltmp19, ptr %epay_ptr20, align 8
-  %enum_i6421 = ptrtoint ptr %buf14 to i64
-  store i64 %enum_i6421, ptr %match_result, align 8
+march_arm8:                                       ; preds = %march_next
+  %pbind_ptr11 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %callee = load i64, ptr %pbind_ptr11, align 8
+  store i64 %callee, ptr %callee12, align 8
+  %pbind_ptr13 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %args = load i64, ptr %pbind_ptr13, align 8
+  store i64 %args, ptr %args14, align 8
+  %buf15 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr16 = getelementptr inbounds nuw %Expr, ptr %buf15, i32 0, i32 0
+  store i8 10, ptr %tag_ptr16, align 8
+  %ctx17 = load i64, ptr %ctx, align 8
+  %callee18 = load i64, ptr %callee12, align 8
+  %calltmp19 = call i64 @"core::names::rewrite_expr"(i64 %ctx17, i64 %callee18)
+  %epay_ptr = getelementptr inbounds nuw %Expr, ptr %buf15, i32 0, i32 1
+  store i64 %calltmp19, ptr %epay_ptr, align 8
+  %ctx20 = load i64, ptr %ctx, align 8
+  %args21 = load i64, ptr %args14, align 8
+  %calltmp22 = call i64 @"core::names::rewrite_expr_list"(i64 %ctx20, i64 %args21)
+  %epay_ptr23 = getelementptr inbounds nuw %Expr, ptr %buf15, i32 0, i32 2
+  store i64 %calltmp22, ptr %epay_ptr23, align 8
+  %enum_i6424 = ptrtoint ptr %buf15 to i64
+  store i64 %enum_i6424, ptr %match_result, align 8
   br label %match_end
 
-march_next8:                                      ; preds = %march_next
-  %tag_eq24 = icmp eq i8 %tag, 8
-  br i1 %tag_eq24, label %march_arm22, label %march_next23
+march_next9:                                      ; preds = %march_next
+  %tag_eq27 = icmp eq i8 %tag, 8
+  br i1 %tag_eq27, label %march_arm25, label %march_next26
 
-march_arm22:                                      ; preds = %march_next8
-  %pbind_ptr25 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %l = load i64, ptr %pbind_ptr25, align 8
-  store i64 %l, ptr %l26, align 8
-  %pbind_ptr27 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %op = load i64, ptr %pbind_ptr27, align 8
-  store i64 %op, ptr %op28, align 8
-  %pbind_ptr29 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %r = load i64, ptr %pbind_ptr29, align 8
-  store i64 %r, ptr %r30, align 8
-  %buf31 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr32 = getelementptr inbounds nuw %Expr, ptr %buf31, i32 0, i32 0
-  store i8 8, ptr %tag_ptr32, align 8
-  %l33 = load i64, ptr %l26, align 8
-  %calltmp34 = call i64 @"core::names::rewrite_expr"(i64 %l33)
-  %epay_ptr35 = getelementptr inbounds nuw %Expr, ptr %buf31, i32 0, i32 1
-  store i64 %calltmp34, ptr %epay_ptr35, align 8
-  %op36 = load i64, ptr %op28, align 8
-  %epay_ptr37 = getelementptr inbounds nuw %Expr, ptr %buf31, i32 0, i32 2
-  store i64 %op36, ptr %epay_ptr37, align 8
-  %r38 = load i64, ptr %r30, align 8
-  %calltmp39 = call i64 @"core::names::rewrite_expr"(i64 %r38)
-  %epay_ptr40 = getelementptr inbounds nuw %Expr, ptr %buf31, i32 0, i32 3
-  store i64 %calltmp39, ptr %epay_ptr40, align 8
-  %enum_i6441 = ptrtoint ptr %buf31 to i64
-  store i64 %enum_i6441, ptr %match_result, align 8
+march_arm25:                                      ; preds = %march_next9
+  %pbind_ptr28 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %l = load i64, ptr %pbind_ptr28, align 8
+  store i64 %l, ptr %l29, align 8
+  %pbind_ptr30 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %op = load i64, ptr %pbind_ptr30, align 8
+  store i64 %op, ptr %op31, align 8
+  %pbind_ptr32 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %r = load i64, ptr %pbind_ptr32, align 8
+  store i64 %r, ptr %r33, align 8
+  %buf34 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr35 = getelementptr inbounds nuw %Expr, ptr %buf34, i32 0, i32 0
+  store i8 8, ptr %tag_ptr35, align 8
+  %ctx36 = load i64, ptr %ctx, align 8
+  %l37 = load i64, ptr %l29, align 8
+  %calltmp38 = call i64 @"core::names::rewrite_expr"(i64 %ctx36, i64 %l37)
+  %epay_ptr39 = getelementptr inbounds nuw %Expr, ptr %buf34, i32 0, i32 1
+  store i64 %calltmp38, ptr %epay_ptr39, align 8
+  %op40 = load i64, ptr %op31, align 8
+  %epay_ptr41 = getelementptr inbounds nuw %Expr, ptr %buf34, i32 0, i32 2
+  store i64 %op40, ptr %epay_ptr41, align 8
+  %ctx42 = load i64, ptr %ctx, align 8
+  %r43 = load i64, ptr %r33, align 8
+  %calltmp44 = call i64 @"core::names::rewrite_expr"(i64 %ctx42, i64 %r43)
+  %epay_ptr45 = getelementptr inbounds nuw %Expr, ptr %buf34, i32 0, i32 3
+  store i64 %calltmp44, ptr %epay_ptr45, align 8
+  %enum_i6446 = ptrtoint ptr %buf34 to i64
+  store i64 %enum_i6446, ptr %match_result, align 8
   br label %match_end
 
-march_next23:                                     ; preds = %march_next8
-  %tag_eq44 = icmp eq i8 %tag, 7
-  br i1 %tag_eq44, label %march_arm42, label %march_next43
+march_next26:                                     ; preds = %march_next9
+  %tag_eq49 = icmp eq i8 %tag, 7
+  br i1 %tag_eq49, label %march_arm47, label %march_next48
 
-march_arm42:                                      ; preds = %march_next23
-  %pbind_ptr45 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %op46 = load i64, ptr %pbind_ptr45, align 8
-  store i64 %op46, ptr %op47, align 8
-  %pbind_ptr48 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %r49 = load i64, ptr %pbind_ptr48, align 8
-  store i64 %r49, ptr %r50, align 8
-  %buf51 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr52 = getelementptr inbounds nuw %Expr, ptr %buf51, i32 0, i32 0
-  store i8 7, ptr %tag_ptr52, align 8
-  %op53 = load i64, ptr %op47, align 8
-  %epay_ptr54 = getelementptr inbounds nuw %Expr, ptr %buf51, i32 0, i32 1
-  store i64 %op53, ptr %epay_ptr54, align 8
-  %r55 = load i64, ptr %r50, align 8
-  %calltmp56 = call i64 @"core::names::rewrite_expr"(i64 %r55)
-  %epay_ptr57 = getelementptr inbounds nuw %Expr, ptr %buf51, i32 0, i32 2
-  store i64 %calltmp56, ptr %epay_ptr57, align 8
-  %enum_i6458 = ptrtoint ptr %buf51 to i64
-  store i64 %enum_i6458, ptr %match_result, align 8
+march_arm47:                                      ; preds = %march_next26
+  %pbind_ptr50 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %op51 = load i64, ptr %pbind_ptr50, align 8
+  store i64 %op51, ptr %op52, align 8
+  %pbind_ptr53 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %r54 = load i64, ptr %pbind_ptr53, align 8
+  store i64 %r54, ptr %r55, align 8
+  %buf56 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr57 = getelementptr inbounds nuw %Expr, ptr %buf56, i32 0, i32 0
+  store i8 7, ptr %tag_ptr57, align 8
+  %op58 = load i64, ptr %op52, align 8
+  %epay_ptr59 = getelementptr inbounds nuw %Expr, ptr %buf56, i32 0, i32 1
+  store i64 %op58, ptr %epay_ptr59, align 8
+  %ctx60 = load i64, ptr %ctx, align 8
+  %r61 = load i64, ptr %r55, align 8
+  %calltmp62 = call i64 @"core::names::rewrite_expr"(i64 %ctx60, i64 %r61)
+  %epay_ptr63 = getelementptr inbounds nuw %Expr, ptr %buf56, i32 0, i32 2
+  store i64 %calltmp62, ptr %epay_ptr63, align 8
+  %enum_i6464 = ptrtoint ptr %buf56 to i64
+  store i64 %enum_i6464, ptr %match_result, align 8
   br label %match_end
 
-march_next43:                                     ; preds = %march_next23
-  %tag_eq61 = icmp eq i8 %tag, 9
-  br i1 %tag_eq61, label %march_arm59, label %march_next60
+march_next48:                                     ; preds = %march_next26
+  %tag_eq67 = icmp eq i8 %tag, 9
+  br i1 %tag_eq67, label %march_arm65, label %march_next66
 
-march_arm59:                                      ; preds = %march_next43
-  %pbind_ptr62 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %l63 = load i64, ptr %pbind_ptr62, align 8
-  store i64 %l63, ptr %l64, align 8
-  %pbind_ptr65 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %op66 = load i64, ptr %pbind_ptr65, align 8
-  store i64 %op66, ptr %op67, align 8
-  %pbind_ptr68 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %r69 = load i64, ptr %pbind_ptr68, align 8
-  store i64 %r69, ptr %r70, align 8
-  %buf71 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr72 = getelementptr inbounds nuw %Expr, ptr %buf71, i32 0, i32 0
-  store i8 9, ptr %tag_ptr72, align 8
-  %l73 = load i64, ptr %l64, align 8
-  %calltmp74 = call i64 @"core::names::rewrite_expr"(i64 %l73)
-  %epay_ptr75 = getelementptr inbounds nuw %Expr, ptr %buf71, i32 0, i32 1
-  store i64 %calltmp74, ptr %epay_ptr75, align 8
-  %op76 = load i64, ptr %op67, align 8
-  %epay_ptr77 = getelementptr inbounds nuw %Expr, ptr %buf71, i32 0, i32 2
-  store i64 %op76, ptr %epay_ptr77, align 8
-  %r78 = load i64, ptr %r70, align 8
-  %calltmp79 = call i64 @"core::names::rewrite_expr"(i64 %r78)
-  %epay_ptr80 = getelementptr inbounds nuw %Expr, ptr %buf71, i32 0, i32 3
-  store i64 %calltmp79, ptr %epay_ptr80, align 8
-  %enum_i6481 = ptrtoint ptr %buf71 to i64
-  store i64 %enum_i6481, ptr %match_result, align 8
+march_arm65:                                      ; preds = %march_next48
+  %pbind_ptr68 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %l69 = load i64, ptr %pbind_ptr68, align 8
+  store i64 %l69, ptr %l70, align 8
+  %pbind_ptr71 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %op72 = load i64, ptr %pbind_ptr71, align 8
+  store i64 %op72, ptr %op73, align 8
+  %pbind_ptr74 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %r75 = load i64, ptr %pbind_ptr74, align 8
+  store i64 %r75, ptr %r76, align 8
+  %buf77 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr78 = getelementptr inbounds nuw %Expr, ptr %buf77, i32 0, i32 0
+  store i8 9, ptr %tag_ptr78, align 8
+  %ctx79 = load i64, ptr %ctx, align 8
+  %l80 = load i64, ptr %l70, align 8
+  %calltmp81 = call i64 @"core::names::rewrite_expr"(i64 %ctx79, i64 %l80)
+  %epay_ptr82 = getelementptr inbounds nuw %Expr, ptr %buf77, i32 0, i32 1
+  store i64 %calltmp81, ptr %epay_ptr82, align 8
+  %op83 = load i64, ptr %op73, align 8
+  %epay_ptr84 = getelementptr inbounds nuw %Expr, ptr %buf77, i32 0, i32 2
+  store i64 %op83, ptr %epay_ptr84, align 8
+  %ctx85 = load i64, ptr %ctx, align 8
+  %r86 = load i64, ptr %r76, align 8
+  %calltmp87 = call i64 @"core::names::rewrite_expr"(i64 %ctx85, i64 %r86)
+  %epay_ptr88 = getelementptr inbounds nuw %Expr, ptr %buf77, i32 0, i32 3
+  store i64 %calltmp87, ptr %epay_ptr88, align 8
+  %enum_i6489 = ptrtoint ptr %buf77 to i64
+  store i64 %enum_i6489, ptr %match_result, align 8
   br label %match_end
 
-march_next60:                                     ; preds = %march_next43
-  %tag_eq84 = icmp eq i8 %tag, 6
-  br i1 %tag_eq84, label %march_arm82, label %march_next83
+march_next66:                                     ; preds = %march_next48
+  %tag_eq92 = icmp eq i8 %tag, 6
+  br i1 %tag_eq92, label %march_arm90, label %march_next91
 
-march_arm82:                                      ; preds = %march_next60
-  %pbind_ptr85 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %inner = load i64, ptr %pbind_ptr85, align 8
-  store i64 %inner, ptr %inner86, align 8
-  %buf87 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr88 = getelementptr inbounds nuw %Expr, ptr %buf87, i32 0, i32 0
-  store i8 6, ptr %tag_ptr88, align 8
-  %inner89 = load i64, ptr %inner86, align 8
-  %calltmp90 = call i64 @"core::names::rewrite_expr"(i64 %inner89)
-  %epay_ptr91 = getelementptr inbounds nuw %Expr, ptr %buf87, i32 0, i32 1
-  store i64 %calltmp90, ptr %epay_ptr91, align 8
-  %enum_i6492 = ptrtoint ptr %buf87 to i64
-  store i64 %enum_i6492, ptr %match_result, align 8
+march_arm90:                                      ; preds = %march_next66
+  %pbind_ptr93 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %inner = load i64, ptr %pbind_ptr93, align 8
+  store i64 %inner, ptr %inner94, align 8
+  %buf95 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr96 = getelementptr inbounds nuw %Expr, ptr %buf95, i32 0, i32 0
+  store i8 6, ptr %tag_ptr96, align 8
+  %ctx97 = load i64, ptr %ctx, align 8
+  %inner98 = load i64, ptr %inner94, align 8
+  %calltmp99 = call i64 @"core::names::rewrite_expr"(i64 %ctx97, i64 %inner98)
+  %epay_ptr100 = getelementptr inbounds nuw %Expr, ptr %buf95, i32 0, i32 1
+  store i64 %calltmp99, ptr %epay_ptr100, align 8
+  %enum_i64101 = ptrtoint ptr %buf95 to i64
+  store i64 %enum_i64101, ptr %match_result, align 8
   br label %match_end
 
-march_next83:                                     ; preds = %march_next60
-  %tag_eq95 = icmp eq i8 %tag, 5
-  br i1 %tag_eq95, label %march_arm93, label %march_next94
+march_next91:                                     ; preds = %march_next66
+  %tag_eq104 = icmp eq i8 %tag, 5
+  br i1 %tag_eq104, label %march_arm102, label %march_next103
 
-march_arm93:                                      ; preds = %march_next83
-  %pbind_ptr96 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %name97 = load i64, ptr %pbind_ptr96, align 8
-  store i64 %name97, ptr %name98, align 8
-  %pbind_ptr99 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %val = load i64, ptr %pbind_ptr99, align 8
-  store i64 %val, ptr %val100, align 8
-  %buf101 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr102 = getelementptr inbounds nuw %Expr, ptr %buf101, i32 0, i32 0
-  store i8 5, ptr %tag_ptr102, align 8
-  %name103 = load i64, ptr %name98, align 8
-  %epay_ptr104 = getelementptr inbounds nuw %Expr, ptr %buf101, i32 0, i32 1
-  store i64 %name103, ptr %epay_ptr104, align 8
-  %val105 = load i64, ptr %val100, align 8
-  %calltmp106 = call i64 @"core::names::rewrite_expr"(i64 %val105)
-  %epay_ptr107 = getelementptr inbounds nuw %Expr, ptr %buf101, i32 0, i32 2
-  store i64 %calltmp106, ptr %epay_ptr107, align 8
-  %enum_i64108 = ptrtoint ptr %buf101 to i64
-  store i64 %enum_i64108, ptr %match_result, align 8
+march_arm102:                                     ; preds = %march_next91
+  %pbind_ptr105 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %name106 = load i64, ptr %pbind_ptr105, align 8
+  store i64 %name106, ptr %name107, align 8
+  %pbind_ptr108 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %val = load i64, ptr %pbind_ptr108, align 8
+  store i64 %val, ptr %val109, align 8
+  %buf110 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr111 = getelementptr inbounds nuw %Expr, ptr %buf110, i32 0, i32 0
+  store i8 5, ptr %tag_ptr111, align 8
+  %name112 = load i64, ptr %name107, align 8
+  %epay_ptr113 = getelementptr inbounds nuw %Expr, ptr %buf110, i32 0, i32 1
+  store i64 %name112, ptr %epay_ptr113, align 8
+  %ctx114 = load i64, ptr %ctx, align 8
+  %val115 = load i64, ptr %val109, align 8
+  %calltmp116 = call i64 @"core::names::rewrite_expr"(i64 %ctx114, i64 %val115)
+  %epay_ptr117 = getelementptr inbounds nuw %Expr, ptr %buf110, i32 0, i32 2
+  store i64 %calltmp116, ptr %epay_ptr117, align 8
+  %enum_i64118 = ptrtoint ptr %buf110 to i64
+  store i64 %enum_i64118, ptr %match_result, align 8
   br label %match_end
 
-march_next94:                                     ; preds = %march_next83
-  %tag_eq111 = icmp eq i8 %tag, 14
-  br i1 %tag_eq111, label %march_arm109, label %march_next110
+march_next103:                                    ; preds = %march_next91
+  %tag_eq121 = icmp eq i8 %tag, 14
+  br i1 %tag_eq121, label %march_arm119, label %march_next120
 
-march_arm109:                                     ; preds = %march_next94
-  %pbind_ptr112 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj = load i64, ptr %pbind_ptr112, align 8
-  store i64 %obj, ptr %obj113, align 8
-  %pbind_ptr114 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %idx = load i64, ptr %pbind_ptr114, align 8
-  store i64 %idx, ptr %idx115, align 8
-  %buf116 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr117 = getelementptr inbounds nuw %Expr, ptr %buf116, i32 0, i32 0
-  store i8 14, ptr %tag_ptr117, align 8
-  %obj118 = load i64, ptr %obj113, align 8
-  %calltmp119 = call i64 @"core::names::rewrite_expr"(i64 %obj118)
-  %epay_ptr120 = getelementptr inbounds nuw %Expr, ptr %buf116, i32 0, i32 1
-  store i64 %calltmp119, ptr %epay_ptr120, align 8
-  %idx121 = load i64, ptr %idx115, align 8
-  %calltmp122 = call i64 @"core::names::rewrite_expr"(i64 %idx121)
-  %epay_ptr123 = getelementptr inbounds nuw %Expr, ptr %buf116, i32 0, i32 2
-  store i64 %calltmp122, ptr %epay_ptr123, align 8
-  %enum_i64124 = ptrtoint ptr %buf116 to i64
-  store i64 %enum_i64124, ptr %match_result, align 8
-  br label %match_end
-
-march_next110:                                    ; preds = %march_next94
-  %tag_eq127 = icmp eq i8 %tag, 21
-  br i1 %tag_eq127, label %march_arm125, label %march_next126
-
-march_arm125:                                     ; preds = %march_next110
-  %pbind_ptr128 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %inner129 = load i64, ptr %pbind_ptr128, align 8
-  store i64 %inner129, ptr %inner130, align 8
-  %buf131 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr132 = getelementptr inbounds nuw %Expr, ptr %buf131, i32 0, i32 0
-  store i8 21, ptr %tag_ptr132, align 8
-  %inner133 = load i64, ptr %inner130, align 8
-  %calltmp134 = call i64 @"core::names::rewrite_expr"(i64 %inner133)
-  %epay_ptr135 = getelementptr inbounds nuw %Expr, ptr %buf131, i32 0, i32 1
+march_arm119:                                     ; preds = %march_next103
+  %pbind_ptr122 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj = load i64, ptr %pbind_ptr122, align 8
+  store i64 %obj, ptr %obj123, align 8
+  %pbind_ptr124 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %idx = load i64, ptr %pbind_ptr124, align 8
+  store i64 %idx, ptr %idx125, align 8
+  %buf126 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr127 = getelementptr inbounds nuw %Expr, ptr %buf126, i32 0, i32 0
+  store i8 14, ptr %tag_ptr127, align 8
+  %ctx128 = load i64, ptr %ctx, align 8
+  %obj129 = load i64, ptr %obj123, align 8
+  %calltmp130 = call i64 @"core::names::rewrite_expr"(i64 %ctx128, i64 %obj129)
+  %epay_ptr131 = getelementptr inbounds nuw %Expr, ptr %buf126, i32 0, i32 1
+  store i64 %calltmp130, ptr %epay_ptr131, align 8
+  %ctx132 = load i64, ptr %ctx, align 8
+  %idx133 = load i64, ptr %idx125, align 8
+  %calltmp134 = call i64 @"core::names::rewrite_expr"(i64 %ctx132, i64 %idx133)
+  %epay_ptr135 = getelementptr inbounds nuw %Expr, ptr %buf126, i32 0, i32 2
   store i64 %calltmp134, ptr %epay_ptr135, align 8
-  %enum_i64136 = ptrtoint ptr %buf131 to i64
+  %enum_i64136 = ptrtoint ptr %buf126 to i64
   store i64 %enum_i64136, ptr %match_result, align 8
   br label %match_end
 
-march_next126:                                    ; preds = %march_next110
-  %tag_eq139 = icmp eq i8 %tag, 15
+march_next120:                                    ; preds = %march_next103
+  %tag_eq139 = icmp eq i8 %tag, 21
   br i1 %tag_eq139, label %march_arm137, label %march_next138
 
-march_arm137:                                     ; preds = %march_next126
+march_arm137:                                     ; preds = %march_next120
   %pbind_ptr140 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %body = load i64, ptr %pbind_ptr140, align 8
-  store i64 %body, ptr %body141, align 8
-  %buf142 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr143 = getelementptr inbounds nuw %Expr, ptr %buf142, i32 0, i32 0
-  store i8 15, ptr %tag_ptr143, align 8
-  %body144 = load i64, ptr %body141, align 8
-  %calltmp145 = call i64 @"core::names::rewrite_stmt_list"(i64 %body144)
-  %epay_ptr146 = getelementptr inbounds nuw %Expr, ptr %buf142, i32 0, i32 1
-  store i64 %calltmp145, ptr %epay_ptr146, align 8
-  %enum_i64147 = ptrtoint ptr %buf142 to i64
-  store i64 %enum_i64147, ptr %match_result, align 8
+  %inner141 = load i64, ptr %pbind_ptr140, align 8
+  store i64 %inner141, ptr %inner142, align 8
+  %buf143 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr144 = getelementptr inbounds nuw %Expr, ptr %buf143, i32 0, i32 0
+  store i8 21, ptr %tag_ptr144, align 8
+  %ctx145 = load i64, ptr %ctx, align 8
+  %inner146 = load i64, ptr %inner142, align 8
+  %calltmp147 = call i64 @"core::names::rewrite_expr"(i64 %ctx145, i64 %inner146)
+  %epay_ptr148 = getelementptr inbounds nuw %Expr, ptr %buf143, i32 0, i32 1
+  store i64 %calltmp147, ptr %epay_ptr148, align 8
+  %enum_i64149 = ptrtoint ptr %buf143 to i64
+  store i64 %enum_i64149, ptr %match_result, align 8
   br label %match_end
 
-march_next138:                                    ; preds = %march_next126
-  br label %march_arm148
+march_next138:                                    ; preds = %march_next120
+  %tag_eq152 = icmp eq i8 %tag, 15
+  br i1 %tag_eq152, label %march_arm150, label %march_next151
 
-march_arm148:                                     ; preds = %march_next138
-  %expr150 = load i64, ptr %expr, align 8
-  %calltmp151 = call i64 @"core::names::rewrite_expr_compound"(i64 %expr150)
-  store i64 %calltmp151, ptr %match_result, align 8
+march_arm150:                                     ; preds = %march_next138
+  %pbind_ptr153 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %body = load i64, ptr %pbind_ptr153, align 8
+  store i64 %body, ptr %body154, align 8
+  %buf155 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr156 = getelementptr inbounds nuw %Expr, ptr %buf155, i32 0, i32 0
+  store i8 15, ptr %tag_ptr156, align 8
+  %ctx157 = load i64, ptr %ctx, align 8
+  %body158 = load i64, ptr %body154, align 8
+  %calltmp159 = call i64 @"core::names::rewrite_stmt_list"(i64 %ctx157, i64 %body158)
+  %epay_ptr160 = getelementptr inbounds nuw %Expr, ptr %buf155, i32 0, i32 1
+  store i64 %calltmp159, ptr %epay_ptr160, align 8
+  %enum_i64161 = ptrtoint ptr %buf155 to i64
+  store i64 %enum_i64161, ptr %match_result, align 8
   br label %match_end
 
-march_next149:                                    ; No predecessors!
+march_next151:                                    ; preds = %march_next138
+  br label %march_arm162
+
+march_arm162:                                     ; preds = %march_next151
+  %ctx164 = load i64, ptr %ctx, align 8
+  %expr165 = load i64, ptr %expr, align 8
+  %calltmp166 = call i64 @"core::names::rewrite_expr_compound"(i64 %ctx164, i64 %expr165)
+  store i64 %calltmp166, ptr %match_result, align 8
+  br label %match_end
+
+march_next163:                                    ; No predecessors!
   br label %match_end
 }
 
-define i64 @"core::names::rewrite_expr_compound"(i64 %0) {
+define i64 @"core::names::rewrite_expr_compound"(i64 %0, i64 %1) {
 entry:
-  %variant256 = alloca i64, align 8
-  %subject253 = alloca i64, align 8
-  %result = alloca i64, align 8
-  %saved_locals = alloca i64, align 8
-  %body235 = alloca i64, align 8
-  %params233 = alloca i64, align 8
-  %arms219 = alloca i64, align 8
-  %subject217 = alloca i64, align 8
-  %args202 = alloca i64, align 8
-  %variant200 = alloca i64, align 8
-  %type_name198 = alloca i64, align 8
-  %inits185 = alloca i64, align 8
-  %name183 = alloca i64, align 8
-  %overrides169 = alloca i64, align 8
-  %obj167 = alloca i64, align 8
-  %e149 = alloca i64, align 8
-  %s146 = alloca i64, align 8
-  %obj144 = alloca i64, align 8
-  %entries132 = alloca i64, align 8
-  %elems121 = alloca i64, align 8
-  %idx107 = alloca i64, align 8
-  %obj105 = alloca i64, align 8
-  %elems93 = alloca i64, align 8
-  %field80 = alloca i64, align 8
-  %obj77 = alloca i64, align 8
-  %r62 = alloca i64, align 8
-  %l60 = alloca i64, align 8
-  %e43 = alloca i64, align 8
-  %t41 = alloca i64, align 8
-  %c39 = alloca i64, align 8
-  %val23 = alloca i64, align 8
-  %field21 = alloca i64, align 8
-  %obj18 = alloca i64, align 8
+  %variant277 = alloca i64, align 8
+  %subject274 = alloca i64, align 8
+  %body257 = alloca i64, align 8
+  %params255 = alloca i64, align 8
+  %arms239 = alloca i64, align 8
+  %subject237 = alloca i64, align 8
+  %args221 = alloca i64, align 8
+  %variant219 = alloca i64, align 8
+  %type_name217 = alloca i64, align 8
+  %inits203 = alloca i64, align 8
+  %name201 = alloca i64, align 8
+  %overrides185 = alloca i64, align 8
+  %obj183 = alloca i64, align 8
+  %e162 = alloca i64, align 8
+  %s159 = alloca i64, align 8
+  %obj157 = alloca i64, align 8
+  %entries144 = alloca i64, align 8
+  %elems132 = alloca i64, align 8
+  %idx117 = alloca i64, align 8
+  %obj115 = alloca i64, align 8
+  %elems102 = alloca i64, align 8
+  %field88 = alloca i64, align 8
+  %obj85 = alloca i64, align 8
+  %r68 = alloca i64, align 8
+  %l66 = alloca i64, align 8
+  %e46 = alloca i64, align 8
+  %t44 = alloca i64, align 8
+  %c42 = alloca i64, align 8
+  %val24 = alloca i64, align 8
+  %field22 = alloca i64, align 8
+  %obj19 = alloca i64, align 8
   %field6 = alloca i64, align 8
   %obj4 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %expr = alloca i64, align 8
-  store i64 %0, ptr %expr, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %expr, align 8
   %expr1 = load i64, ptr %expr, align 8
   %eq = icmp eq i64 %expr1, 0
   %eq_ext = zext i1 %eq to i64
@@ -20249,7 +20363,7 @@ ifcont:                                           ; preds = %else
   %tag_eq = icmp eq i8 %tag, 12
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_next266, %march_arm265, %march_arm248, %march_arm229, %march_arm213, %march_arm194, %march_arm179, %march_arm162, %march_arm139, %march_arm128, %march_arm116, %march_arm100, %march_arm89, %march_arm72, %march_arm56, %march_arm35, %march_arm13, %march_arm
+match_end:                                        ; preds = %march_next288, %march_arm287, %march_arm269, %march_arm251, %march_arm233, %march_arm213, %march_arm197, %march_arm178, %march_arm152, %march_arm140, %march_arm127, %march_arm110, %march_arm98, %march_arm80, %march_arm62, %march_arm38, %march_arm14, %march_arm
   %match_val = load i64, ptr %match_result, align 8
   ret i64 %match_val
 
@@ -20263,476 +20377,499 @@ march_arm:                                        ; preds = %ifcont
   %buf7 = call ptr @forge_bump_alloc(i64 32)
   %tag_ptr8 = getelementptr inbounds nuw %Expr, ptr %buf7, i32 0, i32 0
   store i8 12, ptr %tag_ptr8, align 8
-  %obj9 = load i64, ptr %obj4, align 8
-  %calltmp = call i64 @"core::names::rewrite_expr"(i64 %obj9)
+  %ctx9 = load i64, ptr %ctx, align 8
+  %obj10 = load i64, ptr %obj4, align 8
+  %calltmp = call i64 @"core::names::rewrite_expr"(i64 %ctx9, i64 %obj10)
   %epay_ptr = getelementptr inbounds nuw %Expr, ptr %buf7, i32 0, i32 1
   store i64 %calltmp, ptr %epay_ptr, align 8
-  %field10 = load i64, ptr %field6, align 8
-  %epay_ptr11 = getelementptr inbounds nuw %Expr, ptr %buf7, i32 0, i32 2
-  store i64 %field10, ptr %epay_ptr11, align 8
-  %enum_i6412 = ptrtoint ptr %buf7 to i64
-  store i64 %enum_i6412, ptr %match_result, align 8
+  %field11 = load i64, ptr %field6, align 8
+  %epay_ptr12 = getelementptr inbounds nuw %Expr, ptr %buf7, i32 0, i32 2
+  store i64 %field11, ptr %epay_ptr12, align 8
+  %enum_i6413 = ptrtoint ptr %buf7 to i64
+  store i64 %enum_i6413, ptr %match_result, align 8
   br label %match_end
 
 march_next:                                       ; preds = %ifcont
-  %tag_eq15 = icmp eq i8 %tag, 17
-  br i1 %tag_eq15, label %march_arm13, label %march_next14
+  %tag_eq16 = icmp eq i8 %tag, 17
+  br i1 %tag_eq16, label %march_arm14, label %march_next15
 
-march_arm13:                                      ; preds = %march_next
-  %pbind_ptr16 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj17 = load i64, ptr %pbind_ptr16, align 8
-  store i64 %obj17, ptr %obj18, align 8
-  %pbind_ptr19 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %field20 = load i64, ptr %pbind_ptr19, align 8
-  store i64 %field20, ptr %field21, align 8
-  %pbind_ptr22 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %val = load i64, ptr %pbind_ptr22, align 8
-  store i64 %val, ptr %val23, align 8
-  %buf24 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr25 = getelementptr inbounds nuw %Expr, ptr %buf24, i32 0, i32 0
-  store i8 17, ptr %tag_ptr25, align 8
-  %obj26 = load i64, ptr %obj18, align 8
-  %calltmp27 = call i64 @"core::names::rewrite_expr"(i64 %obj26)
-  %epay_ptr28 = getelementptr inbounds nuw %Expr, ptr %buf24, i32 0, i32 1
-  store i64 %calltmp27, ptr %epay_ptr28, align 8
-  %field29 = load i64, ptr %field21, align 8
-  %epay_ptr30 = getelementptr inbounds nuw %Expr, ptr %buf24, i32 0, i32 2
-  store i64 %field29, ptr %epay_ptr30, align 8
-  %val31 = load i64, ptr %val23, align 8
-  %calltmp32 = call i64 @"core::names::rewrite_expr"(i64 %val31)
-  %epay_ptr33 = getelementptr inbounds nuw %Expr, ptr %buf24, i32 0, i32 3
-  store i64 %calltmp32, ptr %epay_ptr33, align 8
-  %enum_i6434 = ptrtoint ptr %buf24 to i64
-  store i64 %enum_i6434, ptr %match_result, align 8
+march_arm14:                                      ; preds = %march_next
+  %pbind_ptr17 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj18 = load i64, ptr %pbind_ptr17, align 8
+  store i64 %obj18, ptr %obj19, align 8
+  %pbind_ptr20 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %field21 = load i64, ptr %pbind_ptr20, align 8
+  store i64 %field21, ptr %field22, align 8
+  %pbind_ptr23 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %val = load i64, ptr %pbind_ptr23, align 8
+  store i64 %val, ptr %val24, align 8
+  %buf25 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr26 = getelementptr inbounds nuw %Expr, ptr %buf25, i32 0, i32 0
+  store i8 17, ptr %tag_ptr26, align 8
+  %ctx27 = load i64, ptr %ctx, align 8
+  %obj28 = load i64, ptr %obj19, align 8
+  %calltmp29 = call i64 @"core::names::rewrite_expr"(i64 %ctx27, i64 %obj28)
+  %epay_ptr30 = getelementptr inbounds nuw %Expr, ptr %buf25, i32 0, i32 1
+  store i64 %calltmp29, ptr %epay_ptr30, align 8
+  %field31 = load i64, ptr %field22, align 8
+  %epay_ptr32 = getelementptr inbounds nuw %Expr, ptr %buf25, i32 0, i32 2
+  store i64 %field31, ptr %epay_ptr32, align 8
+  %ctx33 = load i64, ptr %ctx, align 8
+  %val34 = load i64, ptr %val24, align 8
+  %calltmp35 = call i64 @"core::names::rewrite_expr"(i64 %ctx33, i64 %val34)
+  %epay_ptr36 = getelementptr inbounds nuw %Expr, ptr %buf25, i32 0, i32 3
+  store i64 %calltmp35, ptr %epay_ptr36, align 8
+  %enum_i6437 = ptrtoint ptr %buf25 to i64
+  store i64 %enum_i6437, ptr %match_result, align 8
   br label %match_end
 
-march_next14:                                     ; preds = %march_next
-  %tag_eq37 = icmp eq i8 %tag, 18
-  br i1 %tag_eq37, label %march_arm35, label %march_next36
+march_next15:                                     ; preds = %march_next
+  %tag_eq40 = icmp eq i8 %tag, 18
+  br i1 %tag_eq40, label %march_arm38, label %march_next39
 
-march_arm35:                                      ; preds = %march_next14
-  %pbind_ptr38 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %c = load i64, ptr %pbind_ptr38, align 8
-  store i64 %c, ptr %c39, align 8
-  %pbind_ptr40 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %t = load i64, ptr %pbind_ptr40, align 8
-  store i64 %t, ptr %t41, align 8
-  %pbind_ptr42 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %e = load i64, ptr %pbind_ptr42, align 8
-  store i64 %e, ptr %e43, align 8
-  %buf44 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr45 = getelementptr inbounds nuw %Expr, ptr %buf44, i32 0, i32 0
-  store i8 18, ptr %tag_ptr45, align 8
-  %c46 = load i64, ptr %c39, align 8
-  %calltmp47 = call i64 @"core::names::rewrite_expr"(i64 %c46)
-  %epay_ptr48 = getelementptr inbounds nuw %Expr, ptr %buf44, i32 0, i32 1
-  store i64 %calltmp47, ptr %epay_ptr48, align 8
-  %t49 = load i64, ptr %t41, align 8
-  %calltmp50 = call i64 @"core::names::rewrite_expr"(i64 %t49)
-  %epay_ptr51 = getelementptr inbounds nuw %Expr, ptr %buf44, i32 0, i32 2
-  store i64 %calltmp50, ptr %epay_ptr51, align 8
-  %e52 = load i64, ptr %e43, align 8
-  %calltmp53 = call i64 @"core::names::rewrite_expr"(i64 %e52)
-  %epay_ptr54 = getelementptr inbounds nuw %Expr, ptr %buf44, i32 0, i32 3
-  store i64 %calltmp53, ptr %epay_ptr54, align 8
-  %enum_i6455 = ptrtoint ptr %buf44 to i64
-  store i64 %enum_i6455, ptr %match_result, align 8
+march_arm38:                                      ; preds = %march_next15
+  %pbind_ptr41 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %c = load i64, ptr %pbind_ptr41, align 8
+  store i64 %c, ptr %c42, align 8
+  %pbind_ptr43 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %t = load i64, ptr %pbind_ptr43, align 8
+  store i64 %t, ptr %t44, align 8
+  %pbind_ptr45 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %e = load i64, ptr %pbind_ptr45, align 8
+  store i64 %e, ptr %e46, align 8
+  %buf47 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr48 = getelementptr inbounds nuw %Expr, ptr %buf47, i32 0, i32 0
+  store i8 18, ptr %tag_ptr48, align 8
+  %ctx49 = load i64, ptr %ctx, align 8
+  %c50 = load i64, ptr %c42, align 8
+  %calltmp51 = call i64 @"core::names::rewrite_expr"(i64 %ctx49, i64 %c50)
+  %epay_ptr52 = getelementptr inbounds nuw %Expr, ptr %buf47, i32 0, i32 1
+  store i64 %calltmp51, ptr %epay_ptr52, align 8
+  %ctx53 = load i64, ptr %ctx, align 8
+  %t54 = load i64, ptr %t44, align 8
+  %calltmp55 = call i64 @"core::names::rewrite_expr"(i64 %ctx53, i64 %t54)
+  %epay_ptr56 = getelementptr inbounds nuw %Expr, ptr %buf47, i32 0, i32 2
+  store i64 %calltmp55, ptr %epay_ptr56, align 8
+  %ctx57 = load i64, ptr %ctx, align 8
+  %e58 = load i64, ptr %e46, align 8
+  %calltmp59 = call i64 @"core::names::rewrite_expr"(i64 %ctx57, i64 %e58)
+  %epay_ptr60 = getelementptr inbounds nuw %Expr, ptr %buf47, i32 0, i32 3
+  store i64 %calltmp59, ptr %epay_ptr60, align 8
+  %enum_i6461 = ptrtoint ptr %buf47 to i64
+  store i64 %enum_i6461, ptr %match_result, align 8
   br label %match_end
 
-march_next36:                                     ; preds = %march_next14
-  %tag_eq58 = icmp eq i8 %tag, 19
-  br i1 %tag_eq58, label %march_arm56, label %march_next57
+march_next39:                                     ; preds = %march_next15
+  %tag_eq64 = icmp eq i8 %tag, 19
+  br i1 %tag_eq64, label %march_arm62, label %march_next63
 
-march_arm56:                                      ; preds = %march_next36
-  %pbind_ptr59 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %l = load i64, ptr %pbind_ptr59, align 8
-  store i64 %l, ptr %l60, align 8
-  %pbind_ptr61 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %r = load i64, ptr %pbind_ptr61, align 8
-  store i64 %r, ptr %r62, align 8
-  %buf63 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr64 = getelementptr inbounds nuw %Expr, ptr %buf63, i32 0, i32 0
-  store i8 19, ptr %tag_ptr64, align 8
-  %l65 = load i64, ptr %l60, align 8
-  %calltmp66 = call i64 @"core::names::rewrite_expr"(i64 %l65)
-  %epay_ptr67 = getelementptr inbounds nuw %Expr, ptr %buf63, i32 0, i32 1
-  store i64 %calltmp66, ptr %epay_ptr67, align 8
-  %r68 = load i64, ptr %r62, align 8
-  %calltmp69 = call i64 @"core::names::rewrite_expr"(i64 %r68)
-  %epay_ptr70 = getelementptr inbounds nuw %Expr, ptr %buf63, i32 0, i32 2
-  store i64 %calltmp69, ptr %epay_ptr70, align 8
-  %enum_i6471 = ptrtoint ptr %buf63 to i64
-  store i64 %enum_i6471, ptr %match_result, align 8
+march_arm62:                                      ; preds = %march_next39
+  %pbind_ptr65 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %l = load i64, ptr %pbind_ptr65, align 8
+  store i64 %l, ptr %l66, align 8
+  %pbind_ptr67 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %r = load i64, ptr %pbind_ptr67, align 8
+  store i64 %r, ptr %r68, align 8
+  %buf69 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr70 = getelementptr inbounds nuw %Expr, ptr %buf69, i32 0, i32 0
+  store i8 19, ptr %tag_ptr70, align 8
+  %ctx71 = load i64, ptr %ctx, align 8
+  %l72 = load i64, ptr %l66, align 8
+  %calltmp73 = call i64 @"core::names::rewrite_expr"(i64 %ctx71, i64 %l72)
+  %epay_ptr74 = getelementptr inbounds nuw %Expr, ptr %buf69, i32 0, i32 1
+  store i64 %calltmp73, ptr %epay_ptr74, align 8
+  %ctx75 = load i64, ptr %ctx, align 8
+  %r76 = load i64, ptr %r68, align 8
+  %calltmp77 = call i64 @"core::names::rewrite_expr"(i64 %ctx75, i64 %r76)
+  %epay_ptr78 = getelementptr inbounds nuw %Expr, ptr %buf69, i32 0, i32 2
+  store i64 %calltmp77, ptr %epay_ptr78, align 8
+  %enum_i6479 = ptrtoint ptr %buf69 to i64
+  store i64 %enum_i6479, ptr %match_result, align 8
   br label %match_end
 
-march_next57:                                     ; preds = %march_next36
-  %tag_eq74 = icmp eq i8 %tag, 20
-  br i1 %tag_eq74, label %march_arm72, label %march_next73
+march_next63:                                     ; preds = %march_next39
+  %tag_eq82 = icmp eq i8 %tag, 20
+  br i1 %tag_eq82, label %march_arm80, label %march_next81
 
-march_arm72:                                      ; preds = %march_next57
-  %pbind_ptr75 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj76 = load i64, ptr %pbind_ptr75, align 8
-  store i64 %obj76, ptr %obj77, align 8
-  %pbind_ptr78 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %field79 = load i64, ptr %pbind_ptr78, align 8
-  store i64 %field79, ptr %field80, align 8
-  %buf81 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr82 = getelementptr inbounds nuw %Expr, ptr %buf81, i32 0, i32 0
-  store i8 20, ptr %tag_ptr82, align 8
-  %obj83 = load i64, ptr %obj77, align 8
-  %calltmp84 = call i64 @"core::names::rewrite_expr"(i64 %obj83)
-  %epay_ptr85 = getelementptr inbounds nuw %Expr, ptr %buf81, i32 0, i32 1
-  store i64 %calltmp84, ptr %epay_ptr85, align 8
-  %field86 = load i64, ptr %field80, align 8
-  %epay_ptr87 = getelementptr inbounds nuw %Expr, ptr %buf81, i32 0, i32 2
-  store i64 %field86, ptr %epay_ptr87, align 8
-  %enum_i6488 = ptrtoint ptr %buf81 to i64
-  store i64 %enum_i6488, ptr %match_result, align 8
+march_arm80:                                      ; preds = %march_next63
+  %pbind_ptr83 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj84 = load i64, ptr %pbind_ptr83, align 8
+  store i64 %obj84, ptr %obj85, align 8
+  %pbind_ptr86 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %field87 = load i64, ptr %pbind_ptr86, align 8
+  store i64 %field87, ptr %field88, align 8
+  %buf89 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr90 = getelementptr inbounds nuw %Expr, ptr %buf89, i32 0, i32 0
+  store i8 20, ptr %tag_ptr90, align 8
+  %ctx91 = load i64, ptr %ctx, align 8
+  %obj92 = load i64, ptr %obj85, align 8
+  %calltmp93 = call i64 @"core::names::rewrite_expr"(i64 %ctx91, i64 %obj92)
+  %epay_ptr94 = getelementptr inbounds nuw %Expr, ptr %buf89, i32 0, i32 1
+  store i64 %calltmp93, ptr %epay_ptr94, align 8
+  %field95 = load i64, ptr %field88, align 8
+  %epay_ptr96 = getelementptr inbounds nuw %Expr, ptr %buf89, i32 0, i32 2
+  store i64 %field95, ptr %epay_ptr96, align 8
+  %enum_i6497 = ptrtoint ptr %buf89 to i64
+  store i64 %enum_i6497, ptr %match_result, align 8
   br label %match_end
 
-march_next73:                                     ; preds = %march_next57
-  %tag_eq91 = icmp eq i8 %tag, 22
-  br i1 %tag_eq91, label %march_arm89, label %march_next90
+march_next81:                                     ; preds = %march_next63
+  %tag_eq100 = icmp eq i8 %tag, 22
+  br i1 %tag_eq100, label %march_arm98, label %march_next99
 
-march_arm89:                                      ; preds = %march_next73
-  %pbind_ptr92 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %elems = load i64, ptr %pbind_ptr92, align 8
-  store i64 %elems, ptr %elems93, align 8
-  %buf94 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr95 = getelementptr inbounds nuw %Expr, ptr %buf94, i32 0, i32 0
-  store i8 22, ptr %tag_ptr95, align 8
-  %elems96 = load i64, ptr %elems93, align 8
-  %calltmp97 = call i64 @"core::names::rewrite_expr_list"(i64 %elems96)
-  %epay_ptr98 = getelementptr inbounds nuw %Expr, ptr %buf94, i32 0, i32 1
-  store i64 %calltmp97, ptr %epay_ptr98, align 8
-  %enum_i6499 = ptrtoint ptr %buf94 to i64
-  store i64 %enum_i6499, ptr %match_result, align 8
+march_arm98:                                      ; preds = %march_next81
+  %pbind_ptr101 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %elems = load i64, ptr %pbind_ptr101, align 8
+  store i64 %elems, ptr %elems102, align 8
+  %buf103 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr104 = getelementptr inbounds nuw %Expr, ptr %buf103, i32 0, i32 0
+  store i8 22, ptr %tag_ptr104, align 8
+  %ctx105 = load i64, ptr %ctx, align 8
+  %elems106 = load i64, ptr %elems102, align 8
+  %calltmp107 = call i64 @"core::names::rewrite_expr_list"(i64 %ctx105, i64 %elems106)
+  %epay_ptr108 = getelementptr inbounds nuw %Expr, ptr %buf103, i32 0, i32 1
+  store i64 %calltmp107, ptr %epay_ptr108, align 8
+  %enum_i64109 = ptrtoint ptr %buf103 to i64
+  store i64 %enum_i64109, ptr %match_result, align 8
   br label %match_end
 
-march_next90:                                     ; preds = %march_next73
-  %tag_eq102 = icmp eq i8 %tag, 23
-  br i1 %tag_eq102, label %march_arm100, label %march_next101
+march_next99:                                     ; preds = %march_next81
+  %tag_eq112 = icmp eq i8 %tag, 23
+  br i1 %tag_eq112, label %march_arm110, label %march_next111
 
-march_arm100:                                     ; preds = %march_next90
-  %pbind_ptr103 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj104 = load i64, ptr %pbind_ptr103, align 8
-  store i64 %obj104, ptr %obj105, align 8
-  %pbind_ptr106 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %idx = load i64, ptr %pbind_ptr106, align 8
-  store i64 %idx, ptr %idx107, align 8
-  %buf108 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr109 = getelementptr inbounds nuw %Expr, ptr %buf108, i32 0, i32 0
-  store i8 23, ptr %tag_ptr109, align 8
-  %obj110 = load i64, ptr %obj105, align 8
-  %calltmp111 = call i64 @"core::names::rewrite_expr"(i64 %obj110)
-  %epay_ptr112 = getelementptr inbounds nuw %Expr, ptr %buf108, i32 0, i32 1
-  store i64 %calltmp111, ptr %epay_ptr112, align 8
-  %idx113 = load i64, ptr %idx107, align 8
-  %epay_ptr114 = getelementptr inbounds nuw %Expr, ptr %buf108, i32 0, i32 2
-  store i64 %idx113, ptr %epay_ptr114, align 8
-  %enum_i64115 = ptrtoint ptr %buf108 to i64
-  store i64 %enum_i64115, ptr %match_result, align 8
+march_arm110:                                     ; preds = %march_next99
+  %pbind_ptr113 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj114 = load i64, ptr %pbind_ptr113, align 8
+  store i64 %obj114, ptr %obj115, align 8
+  %pbind_ptr116 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %idx = load i64, ptr %pbind_ptr116, align 8
+  store i64 %idx, ptr %idx117, align 8
+  %buf118 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr119 = getelementptr inbounds nuw %Expr, ptr %buf118, i32 0, i32 0
+  store i8 23, ptr %tag_ptr119, align 8
+  %ctx120 = load i64, ptr %ctx, align 8
+  %obj121 = load i64, ptr %obj115, align 8
+  %calltmp122 = call i64 @"core::names::rewrite_expr"(i64 %ctx120, i64 %obj121)
+  %epay_ptr123 = getelementptr inbounds nuw %Expr, ptr %buf118, i32 0, i32 1
+  store i64 %calltmp122, ptr %epay_ptr123, align 8
+  %idx124 = load i64, ptr %idx117, align 8
+  %epay_ptr125 = getelementptr inbounds nuw %Expr, ptr %buf118, i32 0, i32 2
+  store i64 %idx124, ptr %epay_ptr125, align 8
+  %enum_i64126 = ptrtoint ptr %buf118 to i64
+  store i64 %enum_i64126, ptr %match_result, align 8
   br label %match_end
 
-march_next101:                                    ; preds = %march_next90
-  %tag_eq118 = icmp eq i8 %tag, 25
-  br i1 %tag_eq118, label %march_arm116, label %march_next117
+march_next111:                                    ; preds = %march_next99
+  %tag_eq129 = icmp eq i8 %tag, 25
+  br i1 %tag_eq129, label %march_arm127, label %march_next128
 
-march_arm116:                                     ; preds = %march_next101
-  %pbind_ptr119 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %elems120 = load i64, ptr %pbind_ptr119, align 8
-  store i64 %elems120, ptr %elems121, align 8
-  %buf122 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr123 = getelementptr inbounds nuw %Expr, ptr %buf122, i32 0, i32 0
-  store i8 25, ptr %tag_ptr123, align 8
-  %elems124 = load i64, ptr %elems121, align 8
-  %calltmp125 = call i64 @"core::names::rewrite_expr_list"(i64 %elems124)
-  %epay_ptr126 = getelementptr inbounds nuw %Expr, ptr %buf122, i32 0, i32 1
-  store i64 %calltmp125, ptr %epay_ptr126, align 8
-  %enum_i64127 = ptrtoint ptr %buf122 to i64
-  store i64 %enum_i64127, ptr %match_result, align 8
-  br label %match_end
-
-march_next117:                                    ; preds = %march_next101
-  %tag_eq130 = icmp eq i8 %tag, 27
-  br i1 %tag_eq130, label %march_arm128, label %march_next129
-
-march_arm128:                                     ; preds = %march_next117
-  %pbind_ptr131 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %entries = load i64, ptr %pbind_ptr131, align 8
-  store i64 %entries, ptr %entries132, align 8
+march_arm127:                                     ; preds = %march_next111
+  %pbind_ptr130 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %elems131 = load i64, ptr %pbind_ptr130, align 8
+  store i64 %elems131, ptr %elems132, align 8
   %buf133 = call ptr @forge_bump_alloc(i64 32)
   %tag_ptr134 = getelementptr inbounds nuw %Expr, ptr %buf133, i32 0, i32 0
-  store i8 27, ptr %tag_ptr134, align 8
-  %entries135 = load i64, ptr %entries132, align 8
-  %calltmp136 = call i64 @"core::names::rewrite_expr_list"(i64 %entries135)
-  %epay_ptr137 = getelementptr inbounds nuw %Expr, ptr %buf133, i32 0, i32 1
-  store i64 %calltmp136, ptr %epay_ptr137, align 8
-  %enum_i64138 = ptrtoint ptr %buf133 to i64
-  store i64 %enum_i64138, ptr %match_result, align 8
+  store i8 25, ptr %tag_ptr134, align 8
+  %ctx135 = load i64, ptr %ctx, align 8
+  %elems136 = load i64, ptr %elems132, align 8
+  %calltmp137 = call i64 @"core::names::rewrite_expr_list"(i64 %ctx135, i64 %elems136)
+  %epay_ptr138 = getelementptr inbounds nuw %Expr, ptr %buf133, i32 0, i32 1
+  store i64 %calltmp137, ptr %epay_ptr138, align 8
+  %enum_i64139 = ptrtoint ptr %buf133 to i64
+  store i64 %enum_i64139, ptr %match_result, align 8
   br label %match_end
 
-march_next129:                                    ; preds = %march_next117
-  %tag_eq141 = icmp eq i8 %tag, 28
-  br i1 %tag_eq141, label %march_arm139, label %march_next140
+march_next128:                                    ; preds = %march_next111
+  %tag_eq142 = icmp eq i8 %tag, 27
+  br i1 %tag_eq142, label %march_arm140, label %march_next141
 
-march_arm139:                                     ; preds = %march_next129
-  %pbind_ptr142 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj143 = load i64, ptr %pbind_ptr142, align 8
-  store i64 %obj143, ptr %obj144, align 8
-  %pbind_ptr145 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %s = load i64, ptr %pbind_ptr145, align 8
-  store i64 %s, ptr %s146, align 8
-  %pbind_ptr147 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %e148 = load i64, ptr %pbind_ptr147, align 8
-  store i64 %e148, ptr %e149, align 8
-  %buf150 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr151 = getelementptr inbounds nuw %Expr, ptr %buf150, i32 0, i32 0
-  store i8 28, ptr %tag_ptr151, align 8
-  %obj152 = load i64, ptr %obj144, align 8
-  %calltmp153 = call i64 @"core::names::rewrite_expr"(i64 %obj152)
-  %epay_ptr154 = getelementptr inbounds nuw %Expr, ptr %buf150, i32 0, i32 1
-  store i64 %calltmp153, ptr %epay_ptr154, align 8
-  %s155 = load i64, ptr %s146, align 8
-  %calltmp156 = call i64 @"core::names::rewrite_expr"(i64 %s155)
-  %epay_ptr157 = getelementptr inbounds nuw %Expr, ptr %buf150, i32 0, i32 2
-  store i64 %calltmp156, ptr %epay_ptr157, align 8
-  %e158 = load i64, ptr %e149, align 8
-  %calltmp159 = call i64 @"core::names::rewrite_expr"(i64 %e158)
-  %epay_ptr160 = getelementptr inbounds nuw %Expr, ptr %buf150, i32 0, i32 3
-  store i64 %calltmp159, ptr %epay_ptr160, align 8
-  %enum_i64161 = ptrtoint ptr %buf150 to i64
-  store i64 %enum_i64161, ptr %match_result, align 8
+march_arm140:                                     ; preds = %march_next128
+  %pbind_ptr143 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %entries = load i64, ptr %pbind_ptr143, align 8
+  store i64 %entries, ptr %entries144, align 8
+  %buf145 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr146 = getelementptr inbounds nuw %Expr, ptr %buf145, i32 0, i32 0
+  store i8 27, ptr %tag_ptr146, align 8
+  %ctx147 = load i64, ptr %ctx, align 8
+  %entries148 = load i64, ptr %entries144, align 8
+  %calltmp149 = call i64 @"core::names::rewrite_expr_list"(i64 %ctx147, i64 %entries148)
+  %epay_ptr150 = getelementptr inbounds nuw %Expr, ptr %buf145, i32 0, i32 1
+  store i64 %calltmp149, ptr %epay_ptr150, align 8
+  %enum_i64151 = ptrtoint ptr %buf145 to i64
+  store i64 %enum_i64151, ptr %match_result, align 8
   br label %match_end
 
-march_next140:                                    ; preds = %march_next129
-  %tag_eq164 = icmp eq i8 %tag, 24
-  br i1 %tag_eq164, label %march_arm162, label %march_next163
+march_next141:                                    ; preds = %march_next128
+  %tag_eq154 = icmp eq i8 %tag, 28
+  br i1 %tag_eq154, label %march_arm152, label %march_next153
 
-march_arm162:                                     ; preds = %march_next140
-  %pbind_ptr165 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj166 = load i64, ptr %pbind_ptr165, align 8
-  store i64 %obj166, ptr %obj167, align 8
-  %pbind_ptr168 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %overrides = load i64, ptr %pbind_ptr168, align 8
-  store i64 %overrides, ptr %overrides169, align 8
-  %buf170 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr171 = getelementptr inbounds nuw %Expr, ptr %buf170, i32 0, i32 0
-  store i8 24, ptr %tag_ptr171, align 8
-  %obj172 = load i64, ptr %obj167, align 8
-  %calltmp173 = call i64 @"core::names::rewrite_expr"(i64 %obj172)
-  %epay_ptr174 = getelementptr inbounds nuw %Expr, ptr %buf170, i32 0, i32 1
-  store i64 %calltmp173, ptr %epay_ptr174, align 8
-  %overrides175 = load i64, ptr %overrides169, align 8
-  %calltmp176 = call i64 @"core::names::rewrite_field_inits"(i64 %overrides175)
-  %epay_ptr177 = getelementptr inbounds nuw %Expr, ptr %buf170, i32 0, i32 2
-  store i64 %calltmp176, ptr %epay_ptr177, align 8
-  %enum_i64178 = ptrtoint ptr %buf170 to i64
-  store i64 %enum_i64178, ptr %match_result, align 8
+march_arm152:                                     ; preds = %march_next141
+  %pbind_ptr155 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj156 = load i64, ptr %pbind_ptr155, align 8
+  store i64 %obj156, ptr %obj157, align 8
+  %pbind_ptr158 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %s = load i64, ptr %pbind_ptr158, align 8
+  store i64 %s, ptr %s159, align 8
+  %pbind_ptr160 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %e161 = load i64, ptr %pbind_ptr160, align 8
+  store i64 %e161, ptr %e162, align 8
+  %buf163 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr164 = getelementptr inbounds nuw %Expr, ptr %buf163, i32 0, i32 0
+  store i8 28, ptr %tag_ptr164, align 8
+  %ctx165 = load i64, ptr %ctx, align 8
+  %obj166 = load i64, ptr %obj157, align 8
+  %calltmp167 = call i64 @"core::names::rewrite_expr"(i64 %ctx165, i64 %obj166)
+  %epay_ptr168 = getelementptr inbounds nuw %Expr, ptr %buf163, i32 0, i32 1
+  store i64 %calltmp167, ptr %epay_ptr168, align 8
+  %ctx169 = load i64, ptr %ctx, align 8
+  %s170 = load i64, ptr %s159, align 8
+  %calltmp171 = call i64 @"core::names::rewrite_expr"(i64 %ctx169, i64 %s170)
+  %epay_ptr172 = getelementptr inbounds nuw %Expr, ptr %buf163, i32 0, i32 2
+  store i64 %calltmp171, ptr %epay_ptr172, align 8
+  %ctx173 = load i64, ptr %ctx, align 8
+  %e174 = load i64, ptr %e162, align 8
+  %calltmp175 = call i64 @"core::names::rewrite_expr"(i64 %ctx173, i64 %e174)
+  %epay_ptr176 = getelementptr inbounds nuw %Expr, ptr %buf163, i32 0, i32 3
+  store i64 %calltmp175, ptr %epay_ptr176, align 8
+  %enum_i64177 = ptrtoint ptr %buf163 to i64
+  store i64 %enum_i64177, ptr %match_result, align 8
   br label %match_end
 
-march_next163:                                    ; preds = %march_next140
-  %tag_eq181 = icmp eq i8 %tag, 11
-  br i1 %tag_eq181, label %march_arm179, label %march_next180
+march_next153:                                    ; preds = %march_next141
+  %tag_eq180 = icmp eq i8 %tag, 24
+  br i1 %tag_eq180, label %march_arm178, label %march_next179
 
-march_arm179:                                     ; preds = %march_next163
-  %pbind_ptr182 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %name = load i64, ptr %pbind_ptr182, align 8
-  store i64 %name, ptr %name183, align 8
+march_arm178:                                     ; preds = %march_next153
+  %pbind_ptr181 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj182 = load i64, ptr %pbind_ptr181, align 8
+  store i64 %obj182, ptr %obj183, align 8
   %pbind_ptr184 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %inits = load i64, ptr %pbind_ptr184, align 8
-  store i64 %inits, ptr %inits185, align 8
+  %overrides = load i64, ptr %pbind_ptr184, align 8
+  store i64 %overrides, ptr %overrides185, align 8
   %buf186 = call ptr @forge_bump_alloc(i64 32)
   %tag_ptr187 = getelementptr inbounds nuw %Expr, ptr %buf186, i32 0, i32 0
-  store i8 11, ptr %tag_ptr187, align 8
-  %name188 = load i64, ptr %name183, align 8
-  %epay_ptr189 = getelementptr inbounds nuw %Expr, ptr %buf186, i32 0, i32 1
-  store i64 %name188, ptr %epay_ptr189, align 8
-  %inits190 = load i64, ptr %inits185, align 8
-  %calltmp191 = call i64 @"core::names::rewrite_field_inits"(i64 %inits190)
-  %epay_ptr192 = getelementptr inbounds nuw %Expr, ptr %buf186, i32 0, i32 2
-  store i64 %calltmp191, ptr %epay_ptr192, align 8
-  %enum_i64193 = ptrtoint ptr %buf186 to i64
-  store i64 %enum_i64193, ptr %match_result, align 8
+  store i8 24, ptr %tag_ptr187, align 8
+  %ctx188 = load i64, ptr %ctx, align 8
+  %obj189 = load i64, ptr %obj183, align 8
+  %calltmp190 = call i64 @"core::names::rewrite_expr"(i64 %ctx188, i64 %obj189)
+  %epay_ptr191 = getelementptr inbounds nuw %Expr, ptr %buf186, i32 0, i32 1
+  store i64 %calltmp190, ptr %epay_ptr191, align 8
+  %ctx192 = load i64, ptr %ctx, align 8
+  %overrides193 = load i64, ptr %overrides185, align 8
+  %calltmp194 = call i64 @"core::names::rewrite_field_inits"(i64 %ctx192, i64 %overrides193)
+  %epay_ptr195 = getelementptr inbounds nuw %Expr, ptr %buf186, i32 0, i32 2
+  store i64 %calltmp194, ptr %epay_ptr195, align 8
+  %enum_i64196 = ptrtoint ptr %buf186 to i64
+  store i64 %enum_i64196, ptr %match_result, align 8
   br label %match_end
 
-march_next180:                                    ; preds = %march_next163
-  %tag_eq196 = icmp eq i8 %tag, 13
-  br i1 %tag_eq196, label %march_arm194, label %march_next195
+march_next179:                                    ; preds = %march_next153
+  %tag_eq199 = icmp eq i8 %tag, 11
+  br i1 %tag_eq199, label %march_arm197, label %march_next198
 
-march_arm194:                                     ; preds = %march_next180
-  %pbind_ptr197 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %type_name = load i64, ptr %pbind_ptr197, align 8
-  store i64 %type_name, ptr %type_name198, align 8
-  %pbind_ptr199 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %variant = load i64, ptr %pbind_ptr199, align 8
-  store i64 %variant, ptr %variant200, align 8
-  %pbind_ptr201 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %args = load i64, ptr %pbind_ptr201, align 8
-  store i64 %args, ptr %args202, align 8
-  %buf203 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr204 = getelementptr inbounds nuw %Expr, ptr %buf203, i32 0, i32 0
-  store i8 13, ptr %tag_ptr204, align 8
-  %type_name205 = load i64, ptr %type_name198, align 8
-  %epay_ptr206 = getelementptr inbounds nuw %Expr, ptr %buf203, i32 0, i32 1
-  store i64 %type_name205, ptr %epay_ptr206, align 8
-  %variant207 = load i64, ptr %variant200, align 8
-  %epay_ptr208 = getelementptr inbounds nuw %Expr, ptr %buf203, i32 0, i32 2
-  store i64 %variant207, ptr %epay_ptr208, align 8
-  %args209 = load i64, ptr %args202, align 8
-  %calltmp210 = call i64 @"core::names::rewrite_expr_list"(i64 %args209)
-  %epay_ptr211 = getelementptr inbounds nuw %Expr, ptr %buf203, i32 0, i32 3
+march_arm197:                                     ; preds = %march_next179
+  %pbind_ptr200 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %name = load i64, ptr %pbind_ptr200, align 8
+  store i64 %name, ptr %name201, align 8
+  %pbind_ptr202 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %inits = load i64, ptr %pbind_ptr202, align 8
+  store i64 %inits, ptr %inits203, align 8
+  %buf204 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr205 = getelementptr inbounds nuw %Expr, ptr %buf204, i32 0, i32 0
+  store i8 11, ptr %tag_ptr205, align 8
+  %name206 = load i64, ptr %name201, align 8
+  %epay_ptr207 = getelementptr inbounds nuw %Expr, ptr %buf204, i32 0, i32 1
+  store i64 %name206, ptr %epay_ptr207, align 8
+  %ctx208 = load i64, ptr %ctx, align 8
+  %inits209 = load i64, ptr %inits203, align 8
+  %calltmp210 = call i64 @"core::names::rewrite_field_inits"(i64 %ctx208, i64 %inits209)
+  %epay_ptr211 = getelementptr inbounds nuw %Expr, ptr %buf204, i32 0, i32 2
   store i64 %calltmp210, ptr %epay_ptr211, align 8
-  %enum_i64212 = ptrtoint ptr %buf203 to i64
+  %enum_i64212 = ptrtoint ptr %buf204 to i64
   store i64 %enum_i64212, ptr %match_result, align 8
   br label %match_end
 
-march_next195:                                    ; preds = %march_next180
-  %tag_eq215 = icmp eq i8 %tag, 16
+march_next198:                                    ; preds = %march_next179
+  %tag_eq215 = icmp eq i8 %tag, 13
   br i1 %tag_eq215, label %march_arm213, label %march_next214
 
-march_arm213:                                     ; preds = %march_next195
+march_arm213:                                     ; preds = %march_next198
   %pbind_ptr216 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %subject = load i64, ptr %pbind_ptr216, align 8
-  store i64 %subject, ptr %subject217, align 8
+  %type_name = load i64, ptr %pbind_ptr216, align 8
+  store i64 %type_name, ptr %type_name217, align 8
   %pbind_ptr218 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %arms = load i64, ptr %pbind_ptr218, align 8
-  store i64 %arms, ptr %arms219, align 8
-  %buf220 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr221 = getelementptr inbounds nuw %Expr, ptr %buf220, i32 0, i32 0
-  store i8 16, ptr %tag_ptr221, align 8
-  %subject222 = load i64, ptr %subject217, align 8
-  %calltmp223 = call i64 @"core::names::rewrite_expr"(i64 %subject222)
-  %epay_ptr224 = getelementptr inbounds nuw %Expr, ptr %buf220, i32 0, i32 1
-  store i64 %calltmp223, ptr %epay_ptr224, align 8
-  %arms225 = load i64, ptr %arms219, align 8
-  %calltmp226 = call i64 @"core::names::rewrite_match_arms"(i64 %arms225)
-  %epay_ptr227 = getelementptr inbounds nuw %Expr, ptr %buf220, i32 0, i32 2
-  store i64 %calltmp226, ptr %epay_ptr227, align 8
-  %enum_i64228 = ptrtoint ptr %buf220 to i64
-  store i64 %enum_i64228, ptr %match_result, align 8
+  %variant = load i64, ptr %pbind_ptr218, align 8
+  store i64 %variant, ptr %variant219, align 8
+  %pbind_ptr220 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %args = load i64, ptr %pbind_ptr220, align 8
+  store i64 %args, ptr %args221, align 8
+  %buf222 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr223 = getelementptr inbounds nuw %Expr, ptr %buf222, i32 0, i32 0
+  store i8 13, ptr %tag_ptr223, align 8
+  %type_name224 = load i64, ptr %type_name217, align 8
+  %epay_ptr225 = getelementptr inbounds nuw %Expr, ptr %buf222, i32 0, i32 1
+  store i64 %type_name224, ptr %epay_ptr225, align 8
+  %variant226 = load i64, ptr %variant219, align 8
+  %epay_ptr227 = getelementptr inbounds nuw %Expr, ptr %buf222, i32 0, i32 2
+  store i64 %variant226, ptr %epay_ptr227, align 8
+  %ctx228 = load i64, ptr %ctx, align 8
+  %args229 = load i64, ptr %args221, align 8
+  %calltmp230 = call i64 @"core::names::rewrite_expr_list"(i64 %ctx228, i64 %args229)
+  %epay_ptr231 = getelementptr inbounds nuw %Expr, ptr %buf222, i32 0, i32 3
+  store i64 %calltmp230, ptr %epay_ptr231, align 8
+  %enum_i64232 = ptrtoint ptr %buf222 to i64
+  store i64 %enum_i64232, ptr %match_result, align 8
   br label %match_end
 
-march_next214:                                    ; preds = %march_next195
-  %tag_eq231 = icmp eq i8 %tag, 26
-  br i1 %tag_eq231, label %march_arm229, label %march_next230
+march_next214:                                    ; preds = %march_next198
+  %tag_eq235 = icmp eq i8 %tag, 16
+  br i1 %tag_eq235, label %march_arm233, label %march_next234
 
-march_arm229:                                     ; preds = %march_next214
-  %pbind_ptr232 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %params = load i64, ptr %pbind_ptr232, align 8
-  store i64 %params, ptr %params233, align 8
-  %pbind_ptr234 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %body = load i64, ptr %pbind_ptr234, align 8
-  store i64 %body, ptr %body235, align 8
-  %NR_LOCALS = load i64, ptr @NR_LOCALS, align 8
-  store i64 %NR_LOCALS, ptr %saved_locals, align 8
-  %params236 = load i64, ptr %params233, align 8
-  %calltmp237 = call i64 @"core::names::push_params_to_locals"(i64 %params236)
-  %buf238 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr239 = getelementptr inbounds nuw %Expr, ptr %buf238, i32 0, i32 0
-  store i8 26, ptr %tag_ptr239, align 8
-  %params240 = load i64, ptr %params233, align 8
-  %epay_ptr241 = getelementptr inbounds nuw %Expr, ptr %buf238, i32 0, i32 1
-  store i64 %params240, ptr %epay_ptr241, align 8
-  %body242 = load i64, ptr %body235, align 8
-  %calltmp243 = call i64 @"core::names::rewrite_expr"(i64 %body242)
-  %epay_ptr244 = getelementptr inbounds nuw %Expr, ptr %buf238, i32 0, i32 2
-  store i64 %calltmp243, ptr %epay_ptr244, align 8
-  %enum_i64245 = ptrtoint ptr %buf238 to i64
-  store i64 %enum_i64245, ptr %result, align 8
-  %saved_locals246 = load i64, ptr %saved_locals, align 8
-  store i64 %saved_locals246, ptr @NR_LOCALS, align 8
-  %result247 = load i64, ptr %result, align 8
-  store i64 %result247, ptr %match_result, align 8
+march_arm233:                                     ; preds = %march_next214
+  %pbind_ptr236 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %subject = load i64, ptr %pbind_ptr236, align 8
+  store i64 %subject, ptr %subject237, align 8
+  %pbind_ptr238 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %arms = load i64, ptr %pbind_ptr238, align 8
+  store i64 %arms, ptr %arms239, align 8
+  %buf240 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr241 = getelementptr inbounds nuw %Expr, ptr %buf240, i32 0, i32 0
+  store i8 16, ptr %tag_ptr241, align 8
+  %ctx242 = load i64, ptr %ctx, align 8
+  %subject243 = load i64, ptr %subject237, align 8
+  %calltmp244 = call i64 @"core::names::rewrite_expr"(i64 %ctx242, i64 %subject243)
+  %epay_ptr245 = getelementptr inbounds nuw %Expr, ptr %buf240, i32 0, i32 1
+  store i64 %calltmp244, ptr %epay_ptr245, align 8
+  %ctx246 = load i64, ptr %ctx, align 8
+  %arms247 = load i64, ptr %arms239, align 8
+  %calltmp248 = call i64 @"core::names::rewrite_match_arms"(i64 %ctx246, i64 %arms247)
+  %epay_ptr249 = getelementptr inbounds nuw %Expr, ptr %buf240, i32 0, i32 2
+  store i64 %calltmp248, ptr %epay_ptr249, align 8
+  %enum_i64250 = ptrtoint ptr %buf240 to i64
+  store i64 %enum_i64250, ptr %match_result, align 8
   br label %match_end
 
-march_next230:                                    ; preds = %march_next214
-  %tag_eq250 = icmp eq i8 %tag, 30
-  br i1 %tag_eq250, label %march_arm248, label %march_next249
+march_next234:                                    ; preds = %march_next214
+  %tag_eq253 = icmp eq i8 %tag, 26
+  br i1 %tag_eq253, label %march_arm251, label %march_next252
 
-march_arm248:                                     ; preds = %march_next230
-  %pbind_ptr251 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %subject252 = load i64, ptr %pbind_ptr251, align 8
-  store i64 %subject252, ptr %subject253, align 8
-  %pbind_ptr254 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %variant255 = load i64, ptr %pbind_ptr254, align 8
-  store i64 %variant255, ptr %variant256, align 8
-  %buf257 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr258 = getelementptr inbounds nuw %Expr, ptr %buf257, i32 0, i32 0
-  store i8 30, ptr %tag_ptr258, align 8
-  %subject259 = load i64, ptr %subject253, align 8
-  %calltmp260 = call i64 @"core::names::rewrite_expr"(i64 %subject259)
-  %epay_ptr261 = getelementptr inbounds nuw %Expr, ptr %buf257, i32 0, i32 1
-  store i64 %calltmp260, ptr %epay_ptr261, align 8
-  %variant262 = load i64, ptr %variant256, align 8
-  %epay_ptr263 = getelementptr inbounds nuw %Expr, ptr %buf257, i32 0, i32 2
-  store i64 %variant262, ptr %epay_ptr263, align 8
-  %enum_i64264 = ptrtoint ptr %buf257 to i64
-  store i64 %enum_i64264, ptr %match_result, align 8
+march_arm251:                                     ; preds = %march_next234
+  %pbind_ptr254 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %params = load i64, ptr %pbind_ptr254, align 8
+  store i64 %params, ptr %params255, align 8
+  %pbind_ptr256 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %body = load i64, ptr %pbind_ptr256, align 8
+  store i64 %body, ptr %body257, align 8
+  %buf258 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr259 = getelementptr inbounds nuw %Expr, ptr %buf258, i32 0, i32 0
+  store i8 26, ptr %tag_ptr259, align 8
+  %params260 = load i64, ptr %params255, align 8
+  %epay_ptr261 = getelementptr inbounds nuw %Expr, ptr %buf258, i32 0, i32 1
+  store i64 %params260, ptr %epay_ptr261, align 8
+  %ctx262 = load i64, ptr %ctx, align 8
+  %params263 = load i64, ptr %params255, align 8
+  %calltmp264 = call i64 @"core::names::bind_params_ctx"(i64 %ctx262, i64 %params263)
+  %body265 = load i64, ptr %body257, align 8
+  %calltmp266 = call i64 @"core::names::rewrite_expr"(i64 %calltmp264, i64 %body265)
+  %epay_ptr267 = getelementptr inbounds nuw %Expr, ptr %buf258, i32 0, i32 2
+  store i64 %calltmp266, ptr %epay_ptr267, align 8
+  %enum_i64268 = ptrtoint ptr %buf258 to i64
+  store i64 %enum_i64268, ptr %match_result, align 8
   br label %match_end
 
-march_next249:                                    ; preds = %march_next230
-  br label %march_arm265
+march_next252:                                    ; preds = %march_next234
+  %tag_eq271 = icmp eq i8 %tag, 30
+  br i1 %tag_eq271, label %march_arm269, label %march_next270
 
-march_arm265:                                     ; preds = %march_next249
-  %expr267 = load i64, ptr %expr, align 8
-  store i64 %expr267, ptr %match_result, align 8
+march_arm269:                                     ; preds = %march_next252
+  %pbind_ptr272 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %subject273 = load i64, ptr %pbind_ptr272, align 8
+  store i64 %subject273, ptr %subject274, align 8
+  %pbind_ptr275 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %variant276 = load i64, ptr %pbind_ptr275, align 8
+  store i64 %variant276, ptr %variant277, align 8
+  %buf278 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr279 = getelementptr inbounds nuw %Expr, ptr %buf278, i32 0, i32 0
+  store i8 30, ptr %tag_ptr279, align 8
+  %ctx280 = load i64, ptr %ctx, align 8
+  %subject281 = load i64, ptr %subject274, align 8
+  %calltmp282 = call i64 @"core::names::rewrite_expr"(i64 %ctx280, i64 %subject281)
+  %epay_ptr283 = getelementptr inbounds nuw %Expr, ptr %buf278, i32 0, i32 1
+  store i64 %calltmp282, ptr %epay_ptr283, align 8
+  %variant284 = load i64, ptr %variant277, align 8
+  %epay_ptr285 = getelementptr inbounds nuw %Expr, ptr %buf278, i32 0, i32 2
+  store i64 %variant284, ptr %epay_ptr285, align 8
+  %enum_i64286 = ptrtoint ptr %buf278 to i64
+  store i64 %enum_i64286, ptr %match_result, align 8
   br label %match_end
 
-march_next266:                                    ; No predecessors!
+march_next270:                                    ; preds = %march_next252
+  br label %march_arm287
+
+march_arm287:                                     ; preds = %march_next270
+  %expr289 = load i64, ptr %expr, align 8
+  store i64 %expr289, ptr %match_result, align 8
+  br label %match_end
+
+march_next288:                                    ; No predecessors!
   br label %match_end
 }
 
-define i64 @"core::names::rewrite_ident"(i64 %0, i64 %1) {
+define i64 @"core::names::rewrite_ident"(i64 %0, i64 %1, i64 %2) {
 entry:
   %from_global = alloca i64, align 8
   %from_sibling = alloca i64, align 8
-  %items64 = alloca i64, align 8
+  %items77 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %mod_node = alloca i64, align 8
   %from_alias = alloca i64, align 8
   %original = alloca i64, align 8
   %name = alloca i64, align 8
-  store i64 %0, ptr %name, align 8
-  store i64 %1, ptr %original, align 8
-  %NR_LOCALS = load i64, ptr @NR_LOCALS, align 8
-  %name1 = load i64, ptr %name, align 8
-  %calltmp = call i64 @"core::names::scope_has"(i64 %NR_LOCALS, i64 %name1)
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %name, align 8
+  store i64 %2, ptr %original, align 8
+  %ctx1 = load i64, ptr %ctx, align 8
+  %obj_ptr = inttoptr i64 %ctx1 to ptr
+  %fld_ptr = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr, i32 0, i32 3
+  %locals = load i64, ptr %fld_ptr, align 8
+  %name2 = load i64, ptr %name, align 8
+  %calltmp = call i64 @"core::names::scope_has"(i64 %locals, i64 %name2)
   %if_cond = icmp ne i64 %calltmp, 0
   br i1 %if_cond, label %then, label %else
 
 then:                                             ; preds = %entry
-  %original2 = load i64, ptr %original, align 8
-  ret i64 %original2
+  %original3 = load i64, ptr %original, align 8
+  ret i64 %original3
 
 else:                                             ; preds = %entry
   br label %ifcont
 
 ifcont:                                           ; preds = %else
-  %name3 = load i64, ptr %name, align 8
-  %calltmp4 = call i64 @"core::names::is_builtin_name"(i64 %name3)
-  %if_cond5 = icmp ne i64 %calltmp4, 0
-  br i1 %if_cond5, label %then6, label %else7
+  %name4 = load i64, ptr %name, align 8
+  %calltmp5 = call i64 @"core::names::is_builtin_name"(i64 %name4)
+  %if_cond6 = icmp ne i64 %calltmp5, 0
+  br i1 %if_cond6, label %then7, label %else8
 
-then6:                                            ; preds = %ifcont
-  %original9 = load i64, ptr %original, align 8
-  ret i64 %original9
+then7:                                            ; preds = %ifcont
+  %original10 = load i64, ptr %original, align 8
+  ret i64 %original10
 
-else7:                                            ; preds = %ifcont
-  br label %ifcont8
+else8:                                            ; preds = %ifcont
+  br label %ifcont9
 
-ifcont8:                                          ; preds = %else7
-  %name10 = load i64, ptr %name, align 8
-  %len_arg = inttoptr i64 %name10 to ptr
+ifcont9:                                          ; preds = %else8
+  %name11 = load i64, ptr %name, align 8
+  %len_arg = inttoptr i64 %name11 to ptr
   %strlen_call = call i64 @strlen(ptr %len_arg)
   %sgt = icmp sgt i64 %strlen_call, 0
   %sgt_ext = zext i1 %sgt to i64
   %l_bool = icmp ne i64 %sgt_ext, 0
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
-sc_rhs:                                           ; preds = %ifcont8
-  %name11 = load i64, ptr %name, align 8
-  %idx_off_int = add i64 %name11, 0
+sc_rhs:                                           ; preds = %ifcont9
+  %name12 = load i64, ptr %name, align 8
+  %idx_off_int = add i64 %name12, 0
   %idx_off = inttoptr i64 %idx_off_int to ptr
   %idx_byte = load i8, ptr %idx_off, align 8
   %buf = call ptr @forge_bump_alloc(i64 2)
@@ -20750,186 +20887,203 @@ sc_rhs:                                           ; preds = %ifcont8
   %r_bool = icmp ne i64 %scmp_ext, 0
   br label %sc_merge
 
-sc_merge:                                         ; preds = %sc_rhs, %ifcont8
-  %sc_phi = phi i1 [ false, %ifcont8 ], [ %r_bool, %sc_rhs ]
+sc_merge:                                         ; preds = %sc_rhs, %ifcont9
+  %sc_phi = phi i1 [ false, %ifcont9 ], [ %r_bool, %sc_rhs ]
   %sc_ext = zext i1 %sc_phi to i64
-  %l_bool12 = icmp ne i64 %sc_ext, 0
-  br i1 %l_bool12, label %sc_rhs13, label %sc_merge14
+  %l_bool13 = icmp ne i64 %sc_ext, 0
+  br i1 %l_bool13, label %sc_rhs14, label %sc_merge15
 
-sc_rhs13:                                         ; preds = %sc_merge
-  %name15 = load i64, ptr %name, align 8
-  %idx_off_int16 = add i64 %name15, 0
-  %idx_off17 = inttoptr i64 %idx_off_int16 to ptr
-  %idx_byte18 = load i8, ptr %idx_off17, align 8
-  %buf19 = call ptr @forge_bump_alloc(i64 2)
-  store i8 %idx_byte18, ptr %buf19, align 8
-  %idx_buf_int20 = ptrtoint ptr %buf19 to i64
-  %idx_nul_int21 = add i64 %idx_buf_int20, 1
-  %idx_nul22 = inttoptr i64 %idx_nul_int21 to ptr
-  store i8 0, ptr %idx_nul22, align 8
-  %idx_result23 = ptrtoint ptr %buf19 to i64
-  %scmp_l24 = inttoptr i64 %idx_result23 to ptr
-  %strcmp_call25 = call i32 @strcmp(ptr %scmp_l24, ptr @.str.469)
-  %strcmp_sext26 = sext i32 %strcmp_call25 to i64
-  %scmp_cmp27 = icmp sle i64 %strcmp_sext26, 0
-  %scmp_ext28 = zext i1 %scmp_cmp27 to i64
-  %r_bool29 = icmp ne i64 %scmp_ext28, 0
-  br label %sc_merge14
+sc_rhs14:                                         ; preds = %sc_merge
+  %name16 = load i64, ptr %name, align 8
+  %idx_off_int17 = add i64 %name16, 0
+  %idx_off18 = inttoptr i64 %idx_off_int17 to ptr
+  %idx_byte19 = load i8, ptr %idx_off18, align 8
+  %buf20 = call ptr @forge_bump_alloc(i64 2)
+  store i8 %idx_byte19, ptr %buf20, align 8
+  %idx_buf_int21 = ptrtoint ptr %buf20 to i64
+  %idx_nul_int22 = add i64 %idx_buf_int21, 1
+  %idx_nul23 = inttoptr i64 %idx_nul_int22 to ptr
+  store i8 0, ptr %idx_nul23, align 8
+  %idx_result24 = ptrtoint ptr %buf20 to i64
+  %scmp_l25 = inttoptr i64 %idx_result24 to ptr
+  %strcmp_call26 = call i32 @strcmp(ptr %scmp_l25, ptr @.str.469)
+  %strcmp_sext27 = sext i32 %strcmp_call26 to i64
+  %scmp_cmp28 = icmp sle i64 %strcmp_sext27, 0
+  %scmp_ext29 = zext i1 %scmp_cmp28 to i64
+  %r_bool30 = icmp ne i64 %scmp_ext29, 0
+  br label %sc_merge15
 
-sc_merge14:                                       ; preds = %sc_rhs13, %sc_merge
-  %sc_phi30 = phi i1 [ false, %sc_merge ], [ %r_bool29, %sc_rhs13 ]
-  %sc_ext31 = zext i1 %sc_phi30 to i64
-  %if_cond32 = icmp ne i64 %sc_ext31, 0
-  br i1 %if_cond32, label %then33, label %else34
+sc_merge15:                                       ; preds = %sc_rhs14, %sc_merge
+  %sc_phi31 = phi i1 [ false, %sc_merge ], [ %r_bool30, %sc_rhs14 ]
+  %sc_ext32 = zext i1 %sc_phi31 to i64
+  %if_cond33 = icmp ne i64 %sc_ext32, 0
+  br i1 %if_cond33, label %then34, label %else35
 
-then33:                                           ; preds = %sc_merge14
-  %original36 = load i64, ptr %original, align 8
-  ret i64 %original36
+then34:                                           ; preds = %sc_merge15
+  %original37 = load i64, ptr %original, align 8
+  ret i64 %original37
 
-else34:                                           ; preds = %sc_merge14
-  br label %ifcont35
+else35:                                           ; preds = %sc_merge15
+  br label %ifcont36
 
-ifcont35:                                         ; preds = %else34
-  %NR_ALIASES = load i64, ptr @NR_ALIASES, align 8
-  %name37 = load i64, ptr %name, align 8
-  %calltmp38 = call i64 @"core::names::alias_lookup"(i64 %NR_ALIASES, i64 %name37)
-  store i64 %calltmp38, ptr %from_alias, align 8
-  %from_alias39 = load i64, ptr %from_alias, align 8
-  %streq_l = inttoptr i64 %from_alias39 to ptr
-  %strcmp_call40 = call i32 @strcmp(ptr %streq_l, ptr @.str.470)
-  %strcmp_sext41 = sext i32 %strcmp_call40 to i64
-  %streq_cmp = icmp ne i64 %strcmp_sext41, 0
+ifcont36:                                         ; preds = %else35
+  %ctx38 = load i64, ptr %ctx, align 8
+  %obj_ptr39 = inttoptr i64 %ctx38 to ptr
+  %fld_ptr40 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr39, i32 0, i32 1
+  %aliases = load i64, ptr %fld_ptr40, align 8
+  %name41 = load i64, ptr %name, align 8
+  %calltmp42 = call i64 @"core::names::alias_lookup"(i64 %aliases, i64 %name41)
+  store i64 %calltmp42, ptr %from_alias, align 8
+  %from_alias43 = load i64, ptr %from_alias, align 8
+  %streq_l = inttoptr i64 %from_alias43 to ptr
+  %strcmp_call44 = call i32 @strcmp(ptr %streq_l, ptr @.str.470)
+  %strcmp_sext45 = sext i32 %strcmp_call44 to i64
+  %streq_cmp = icmp ne i64 %strcmp_sext45, 0
   %streq_ext = zext i1 %streq_cmp to i64
-  %if_cond42 = icmp ne i64 %streq_ext, 0
-  br i1 %if_cond42, label %then43, label %else44
+  %if_cond46 = icmp ne i64 %streq_ext, 0
+  br i1 %if_cond46, label %then47, label %else48
 
-then43:                                           ; preds = %ifcont35
-  %buf46 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %buf46, i32 0, i32 0
+then47:                                           ; preds = %ifcont36
+  %buf50 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %buf50, i32 0, i32 0
   store i8 31, ptr %tag_ptr, align 8
-  %from_alias47 = load i64, ptr %from_alias, align 8
-  %epay_ptr = getelementptr inbounds nuw %Expr, ptr %buf46, i32 0, i32 1
-  store i64 %from_alias47, ptr %epay_ptr, align 8
-  %enum_i64 = ptrtoint ptr %buf46 to i64
+  %from_alias51 = load i64, ptr %from_alias, align 8
+  %epay_ptr = getelementptr inbounds nuw %Expr, ptr %buf50, i32 0, i32 1
+  store i64 %from_alias51, ptr %epay_ptr, align 8
+  %enum_i64 = ptrtoint ptr %buf50 to i64
   ret i64 %enum_i64
 
-else44:                                           ; preds = %ifcont35
-  br label %ifcont45
+else48:                                           ; preds = %ifcont36
+  br label %ifcont49
 
-ifcont45:                                         ; preds = %else44
-  %NR_MODULE = load i64, ptr @NR_MODULE, align 8
-  %streq_l48 = inttoptr i64 %NR_MODULE to ptr
-  %strcmp_call49 = call i32 @strcmp(ptr %streq_l48, ptr @.str.471)
-  %strcmp_sext50 = sext i32 %strcmp_call49 to i64
-  %streq_cmp51 = icmp ne i64 %strcmp_sext50, 0
-  %streq_ext52 = zext i1 %streq_cmp51 to i64
-  %if_cond53 = icmp ne i64 %streq_ext52, 0
-  br i1 %if_cond53, label %then54, label %else55
+ifcont49:                                         ; preds = %else48
+  %ctx52 = load i64, ptr %ctx, align 8
+  %obj_ptr53 = inttoptr i64 %ctx52 to ptr
+  %fld_ptr54 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr53, i32 0, i32 2
+  %current_module = load i64, ptr %fld_ptr54, align 8
+  %streq_l55 = inttoptr i64 %current_module to ptr
+  %strcmp_call56 = call i32 @strcmp(ptr %streq_l55, ptr @.str.471)
+  %strcmp_sext57 = sext i32 %strcmp_call56 to i64
+  %streq_cmp58 = icmp ne i64 %strcmp_sext57, 0
+  %streq_ext59 = zext i1 %streq_cmp58 to i64
+  %if_cond60 = icmp ne i64 %streq_ext59, 0
+  br i1 %if_cond60, label %then61, label %else62
 
-then54:                                           ; preds = %ifcont45
-  %NR_TREE = load i64, ptr @NR_TREE, align 8
-  %NR_MODULE57 = load i64, ptr @NR_MODULE, align 8
-  %calltmp58 = call i64 @"core::names::module_find"(i64 %NR_TREE, i64 %NR_MODULE57)
-  store i64 %calltmp58, ptr %mod_node, align 8
-  %mod_node59 = load i64, ptr %mod_node, align 8
-  %match_subj = inttoptr i64 %mod_node59 to ptr
-  %tag_ptr60 = getelementptr inbounds nuw %ModuleNode, ptr %match_subj, i32 0, i32 0
-  %tag = load i8, ptr %tag_ptr60, align 8
+then61:                                           ; preds = %ifcont49
+  %ctx64 = load i64, ptr %ctx, align 8
+  %obj_ptr65 = inttoptr i64 %ctx64 to ptr
+  %fld_ptr66 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr65, i32 0, i32 0
+  %tree = load i64, ptr %fld_ptr66, align 8
+  %ctx67 = load i64, ptr %ctx, align 8
+  %obj_ptr68 = inttoptr i64 %ctx67 to ptr
+  %fld_ptr69 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr68, i32 0, i32 2
+  %current_module70 = load i64, ptr %fld_ptr69, align 8
+  %calltmp71 = call i64 @"core::names::module_find"(i64 %tree, i64 %current_module70)
+  store i64 %calltmp71, ptr %mod_node, align 8
+  %mod_node72 = load i64, ptr %mod_node, align 8
+  %match_subj = inttoptr i64 %mod_node72 to ptr
+  %tag_ptr73 = getelementptr inbounds nuw %ModuleNode, ptr %match_subj, i32 0, i32 0
+  %tag = load i8, ptr %tag_ptr73, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i8 %tag, 0
   br i1 %tag_eq, label %march_arm, label %march_next
 
-else55:                                           ; preds = %ifcont45
-  br label %ifcont56
+else62:                                           ; preds = %ifcont49
+  br label %ifcont63
 
-ifcont56:                                         ; preds = %else55, %ifcont77
-  %NR_TREE83 = load i64, ptr @NR_TREE, align 8
-  %name84 = load i64, ptr %name, align 8
-  %calltmp85 = call i64 @"core::names::item_search_all"(i64 %NR_TREE83, i64 %name84)
-  store i64 %calltmp85, ptr %from_global, align 8
-  %from_global86 = load i64, ptr %from_global, align 8
-  %streq_l87 = inttoptr i64 %from_global86 to ptr
-  %strcmp_call88 = call i32 @strcmp(ptr %streq_l87, ptr @.str.474)
-  %strcmp_sext89 = sext i32 %strcmp_call88 to i64
-  %streq_cmp90 = icmp ne i64 %strcmp_sext89, 0
-  %streq_ext91 = zext i1 %streq_cmp90 to i64
-  %if_cond92 = icmp ne i64 %streq_ext91, 0
-  br i1 %if_cond92, label %then93, label %else94
+ifcont63:                                         ; preds = %else62, %ifcont90
+  %ctx96 = load i64, ptr %ctx, align 8
+  %obj_ptr97 = inttoptr i64 %ctx96 to ptr
+  %fld_ptr98 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr97, i32 0, i32 0
+  %tree99 = load i64, ptr %fld_ptr98, align 8
+  %name100 = load i64, ptr %name, align 8
+  %calltmp101 = call i64 @"core::names::item_search_all"(i64 %tree99, i64 %name100)
+  store i64 %calltmp101, ptr %from_global, align 8
+  %from_global102 = load i64, ptr %from_global, align 8
+  %streq_l103 = inttoptr i64 %from_global102 to ptr
+  %strcmp_call104 = call i32 @strcmp(ptr %streq_l103, ptr @.str.474)
+  %strcmp_sext105 = sext i32 %strcmp_call104 to i64
+  %streq_cmp106 = icmp ne i64 %strcmp_sext105, 0
+  %streq_ext107 = zext i1 %streq_cmp106 to i64
+  %if_cond108 = icmp ne i64 %streq_ext107, 0
+  br i1 %if_cond108, label %then109, label %else110
 
-match_end:                                        ; preds = %march_next62, %march_arm61, %march_arm
+match_end:                                        ; preds = %march_next75, %march_arm74, %march_arm
   %match_val = load i64, ptr %match_result, align 8
   store i64 %match_val, ptr %from_sibling, align 8
-  %from_sibling68 = load i64, ptr %from_sibling, align 8
-  %streq_l69 = inttoptr i64 %from_sibling68 to ptr
-  %strcmp_call70 = call i32 @strcmp(ptr %streq_l69, ptr @.str.473)
-  %strcmp_sext71 = sext i32 %strcmp_call70 to i64
-  %streq_cmp72 = icmp ne i64 %strcmp_sext71, 0
-  %streq_ext73 = zext i1 %streq_cmp72 to i64
-  %if_cond74 = icmp ne i64 %streq_ext73, 0
-  br i1 %if_cond74, label %then75, label %else76
+  %from_sibling81 = load i64, ptr %from_sibling, align 8
+  %streq_l82 = inttoptr i64 %from_sibling81 to ptr
+  %strcmp_call83 = call i32 @strcmp(ptr %streq_l82, ptr @.str.473)
+  %strcmp_sext84 = sext i32 %strcmp_call83 to i64
+  %streq_cmp85 = icmp ne i64 %strcmp_sext84, 0
+  %streq_ext86 = zext i1 %streq_cmp85 to i64
+  %if_cond87 = icmp ne i64 %streq_ext86, 0
+  br i1 %if_cond87, label %then88, label %else89
 
-march_arm:                                        ; preds = %then54
+march_arm:                                        ; preds = %then61
   store i64 ptrtoint (ptr @.str.472 to i64), ptr %match_result, align 8
   br label %match_end
 
-march_next:                                       ; preds = %then54
-  %tag_eq63 = icmp eq i8 %tag, 1
-  br i1 %tag_eq63, label %march_arm61, label %march_next62
+march_next:                                       ; preds = %then61
+  %tag_eq76 = icmp eq i8 %tag, 1
+  br i1 %tag_eq76, label %march_arm74, label %march_next75
 
-march_arm61:                                      ; preds = %march_next
+march_arm74:                                      ; preds = %march_next
   %pbind_ptr = getelementptr inbounds nuw %ModuleNode, ptr %match_subj, i32 0, i32 3
   %items = load i64, ptr %pbind_ptr, align 8
-  store i64 %items, ptr %items64, align 8
-  %items65 = load i64, ptr %items64, align 8
-  %name66 = load i64, ptr %name, align 8
-  %calltmp67 = call i64 @"core::names::item_lookup"(i64 %items65, i64 %name66)
-  store i64 %calltmp67, ptr %match_result, align 8
+  store i64 %items, ptr %items77, align 8
+  %items78 = load i64, ptr %items77, align 8
+  %name79 = load i64, ptr %name, align 8
+  %calltmp80 = call i64 @"core::names::item_lookup"(i64 %items78, i64 %name79)
+  store i64 %calltmp80, ptr %match_result, align 8
   br label %match_end
 
-march_next62:                                     ; preds = %march_next
+march_next75:                                     ; preds = %march_next
   br label %match_end
 
-then75:                                           ; preds = %match_end
-  %buf78 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr79 = getelementptr inbounds nuw %Expr, ptr %buf78, i32 0, i32 0
-  store i8 31, ptr %tag_ptr79, align 8
-  %from_sibling80 = load i64, ptr %from_sibling, align 8
-  %epay_ptr81 = getelementptr inbounds nuw %Expr, ptr %buf78, i32 0, i32 1
-  store i64 %from_sibling80, ptr %epay_ptr81, align 8
-  %enum_i6482 = ptrtoint ptr %buf78 to i64
-  ret i64 %enum_i6482
+then88:                                           ; preds = %match_end
+  %buf91 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr92 = getelementptr inbounds nuw %Expr, ptr %buf91, i32 0, i32 0
+  store i8 31, ptr %tag_ptr92, align 8
+  %from_sibling93 = load i64, ptr %from_sibling, align 8
+  %epay_ptr94 = getelementptr inbounds nuw %Expr, ptr %buf91, i32 0, i32 1
+  store i64 %from_sibling93, ptr %epay_ptr94, align 8
+  %enum_i6495 = ptrtoint ptr %buf91 to i64
+  ret i64 %enum_i6495
 
-else76:                                           ; preds = %match_end
-  br label %ifcont77
+else89:                                           ; preds = %match_end
+  br label %ifcont90
 
-ifcont77:                                         ; preds = %else76
-  br label %ifcont56
+ifcont90:                                         ; preds = %else89
+  br label %ifcont63
 
-then93:                                           ; preds = %ifcont56
-  %buf96 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr97 = getelementptr inbounds nuw %Expr, ptr %buf96, i32 0, i32 0
-  store i8 31, ptr %tag_ptr97, align 8
-  %from_global98 = load i64, ptr %from_global, align 8
-  %epay_ptr99 = getelementptr inbounds nuw %Expr, ptr %buf96, i32 0, i32 1
-  store i64 %from_global98, ptr %epay_ptr99, align 8
-  %enum_i64100 = ptrtoint ptr %buf96 to i64
-  ret i64 %enum_i64100
+then109:                                          ; preds = %ifcont63
+  %buf112 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr113 = getelementptr inbounds nuw %Expr, ptr %buf112, i32 0, i32 0
+  store i8 31, ptr %tag_ptr113, align 8
+  %from_global114 = load i64, ptr %from_global, align 8
+  %epay_ptr115 = getelementptr inbounds nuw %Expr, ptr %buf112, i32 0, i32 1
+  store i64 %from_global114, ptr %epay_ptr115, align 8
+  %enum_i64116 = ptrtoint ptr %buf112 to i64
+  ret i64 %enum_i64116
 
-else94:                                           ; preds = %ifcont56
-  br label %ifcont95
+else110:                                          ; preds = %ifcont63
+  br label %ifcont111
 
-ifcont95:                                         ; preds = %else94
-  %original101 = load i64, ptr %original, align 8
-  ret i64 %original101
+ifcont111:                                        ; preds = %else110
+  %original117 = load i64, ptr %original, align 8
+  ret i64 %original117
 }
 
-define i64 @"core::names::rewrite_expr_list"(i64 %0) {
+define i64 @"core::names::rewrite_expr_list"(i64 %0, i64 %1) {
 entry:
   %next8 = alloca i64, align 8
   %se6 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %exprs = alloca i64, align 8
-  store i64 %0, ptr %exprs, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %exprs, align 8
   %exprs1 = load i64, ptr %exprs, align 8
   %match_subj = inttoptr i64 %exprs1 to ptr
   %tag_ptr = getelementptr inbounds nuw %ExprList, ptr %match_subj, i32 0, i32 0
@@ -20964,42 +21118,46 @@ march_arm3:                                       ; preds = %march_next
   %buf9 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr10 = getelementptr inbounds nuw %ExprList, ptr %buf9, i32 0, i32 0
   store i8 1, ptr %tag_ptr10, align 8
-  %se11 = load i64, ptr %se6, align 8
-  %obj_ptr = inttoptr i64 %se11 to ptr
+  %ctx11 = load i64, ptr %ctx, align 8
+  %se12 = load i64, ptr %se6, align 8
+  %obj_ptr = inttoptr i64 %se12 to ptr
   %fld_ptr = getelementptr inbounds nuw %SExpr, ptr %obj_ptr, i32 0, i32 0
   %node = load i64, ptr %fld_ptr, align 8
-  %calltmp = call i64 @"core::names::rewrite_expr"(i64 %node)
-  %se12 = load i64, ptr %se6, align 8
-  %obj_ptr13 = inttoptr i64 %se12 to ptr
-  %fld_ptr14 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr13, i32 0, i32 1
-  %line = load i64, ptr %fld_ptr14, align 8
-  %se15 = load i64, ptr %se6, align 8
-  %obj_ptr16 = inttoptr i64 %se15 to ptr
-  %fld_ptr17 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr16, i32 0, i32 2
-  %col = load i64, ptr %fld_ptr17, align 8
-  %calltmp18 = call i64 @"core::ast::sexpr"(i64 %calltmp, i64 %line, i64 %col)
+  %calltmp = call i64 @"core::names::rewrite_expr"(i64 %ctx11, i64 %node)
+  %se13 = load i64, ptr %se6, align 8
+  %obj_ptr14 = inttoptr i64 %se13 to ptr
+  %fld_ptr15 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr14, i32 0, i32 1
+  %line = load i64, ptr %fld_ptr15, align 8
+  %se16 = load i64, ptr %se6, align 8
+  %obj_ptr17 = inttoptr i64 %se16 to ptr
+  %fld_ptr18 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr17, i32 0, i32 2
+  %col = load i64, ptr %fld_ptr18, align 8
+  %calltmp19 = call i64 @"core::ast::sexpr"(i64 %calltmp, i64 %line, i64 %col)
   %epay_ptr = getelementptr inbounds nuw %ExprList, ptr %buf9, i32 0, i32 1
-  store i64 %calltmp18, ptr %epay_ptr, align 8
-  %next19 = load i64, ptr %next8, align 8
-  %calltmp20 = call i64 @"core::names::rewrite_expr_list"(i64 %next19)
-  %epay_ptr21 = getelementptr inbounds nuw %ExprList, ptr %buf9, i32 0, i32 2
-  store i64 %calltmp20, ptr %epay_ptr21, align 8
-  %enum_i6422 = ptrtoint ptr %buf9 to i64
-  store i64 %enum_i6422, ptr %match_result, align 8
+  store i64 %calltmp19, ptr %epay_ptr, align 8
+  %ctx20 = load i64, ptr %ctx, align 8
+  %next21 = load i64, ptr %next8, align 8
+  %calltmp22 = call i64 @"core::names::rewrite_expr_list"(i64 %ctx20, i64 %next21)
+  %epay_ptr23 = getelementptr inbounds nuw %ExprList, ptr %buf9, i32 0, i32 2
+  store i64 %calltmp22, ptr %epay_ptr23, align 8
+  %enum_i6424 = ptrtoint ptr %buf9 to i64
+  store i64 %enum_i6424, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
   br label %match_end
 }
 
-define i64 @"core::names::rewrite_field_inits"(i64 %0) {
+define i64 @"core::names::rewrite_field_inits"(i64 %0, i64 %1) {
 entry:
   %next10 = alloca i64, align 8
   %se8 = alloca i64, align 8
   %name6 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %inits = alloca i64, align 8
-  store i64 %0, ptr %inits, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %inits, align 8
   %inits1 = load i64, ptr %inits, align 8
   %match_subj = inttoptr i64 %inits1 to ptr
   %tag_ptr = getelementptr inbounds nuw %FieldInitList, ptr %match_subj, i32 0, i32 0
@@ -21040,47 +21198,50 @@ march_arm3:                                       ; preds = %march_next
   %name13 = load i64, ptr %name6, align 8
   %epay_ptr = getelementptr inbounds nuw %FieldInitList, ptr %buf11, i32 0, i32 1
   store i64 %name13, ptr %epay_ptr, align 8
-  %se14 = load i64, ptr %se8, align 8
-  %obj_ptr = inttoptr i64 %se14 to ptr
+  %ctx14 = load i64, ptr %ctx, align 8
+  %se15 = load i64, ptr %se8, align 8
+  %obj_ptr = inttoptr i64 %se15 to ptr
   %fld_ptr = getelementptr inbounds nuw %SExpr, ptr %obj_ptr, i32 0, i32 0
   %node = load i64, ptr %fld_ptr, align 8
-  %calltmp = call i64 @"core::names::rewrite_expr"(i64 %node)
-  %se15 = load i64, ptr %se8, align 8
-  %obj_ptr16 = inttoptr i64 %se15 to ptr
-  %fld_ptr17 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr16, i32 0, i32 1
-  %line = load i64, ptr %fld_ptr17, align 8
-  %se18 = load i64, ptr %se8, align 8
-  %obj_ptr19 = inttoptr i64 %se18 to ptr
-  %fld_ptr20 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr19, i32 0, i32 2
-  %col = load i64, ptr %fld_ptr20, align 8
-  %calltmp21 = call i64 @"core::ast::sexpr"(i64 %calltmp, i64 %line, i64 %col)
-  %epay_ptr22 = getelementptr inbounds nuw %FieldInitList, ptr %buf11, i32 0, i32 2
-  store i64 %calltmp21, ptr %epay_ptr22, align 8
-  %next23 = load i64, ptr %next10, align 8
-  %calltmp24 = call i64 @"core::names::rewrite_field_inits"(i64 %next23)
-  %epay_ptr25 = getelementptr inbounds nuw %FieldInitList, ptr %buf11, i32 0, i32 3
-  store i64 %calltmp24, ptr %epay_ptr25, align 8
-  %enum_i6426 = ptrtoint ptr %buf11 to i64
-  store i64 %enum_i6426, ptr %match_result, align 8
+  %calltmp = call i64 @"core::names::rewrite_expr"(i64 %ctx14, i64 %node)
+  %se16 = load i64, ptr %se8, align 8
+  %obj_ptr17 = inttoptr i64 %se16 to ptr
+  %fld_ptr18 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr17, i32 0, i32 1
+  %line = load i64, ptr %fld_ptr18, align 8
+  %se19 = load i64, ptr %se8, align 8
+  %obj_ptr20 = inttoptr i64 %se19 to ptr
+  %fld_ptr21 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr20, i32 0, i32 2
+  %col = load i64, ptr %fld_ptr21, align 8
+  %calltmp22 = call i64 @"core::ast::sexpr"(i64 %calltmp, i64 %line, i64 %col)
+  %epay_ptr23 = getelementptr inbounds nuw %FieldInitList, ptr %buf11, i32 0, i32 2
+  store i64 %calltmp22, ptr %epay_ptr23, align 8
+  %ctx24 = load i64, ptr %ctx, align 8
+  %next25 = load i64, ptr %next10, align 8
+  %calltmp26 = call i64 @"core::names::rewrite_field_inits"(i64 %ctx24, i64 %next25)
+  %epay_ptr27 = getelementptr inbounds nuw %FieldInitList, ptr %buf11, i32 0, i32 3
+  store i64 %calltmp26, ptr %epay_ptr27, align 8
+  %enum_i6428 = ptrtoint ptr %buf11 to i64
+  store i64 %enum_i6428, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
   br label %match_end
 }
 
-define i64 @"core::names::rewrite_match_arms"(i64 %0) {
+define i64 @"core::names::rewrite_match_arms"(i64 %0, i64 %1) {
 entry:
-  %new_body = alloca i64, align 8
   %new_guard = alloca i64, align 8
   %ife_result = alloca i64, align 8
-  %saved_locals = alloca i64, align 8
+  %arm_ctx = alloca i64, align 8
   %next12 = alloca i64, align 8
   %body10 = alloca i64, align 8
   %guard8 = alloca i64, align 8
   %pattern6 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %arms = alloca i64, align 8
-  store i64 %0, ptr %arms, align 8
+  %ctx = alloca i64, align 8
+  store i64 %0, ptr %ctx, align 8
+  store i64 %1, ptr %arms, align 8
   %arms1 = load i64, ptr %arms, align 8
   %match_subj = inttoptr i64 %arms1 to ptr
   %tag_ptr = getelementptr inbounds nuw %MatchArmList, ptr %match_subj, i32 0, i32 0
@@ -21118,12 +21279,12 @@ march_arm3:                                       ; preds = %march_next
   %pbind_ptr11 = getelementptr inbounds nuw %MatchArmList, ptr %match_subj, i32 0, i32 4
   %next = load i64, ptr %pbind_ptr11, align 8
   store i64 %next, ptr %next12, align 8
-  %NR_LOCALS = load i64, ptr @NR_LOCALS, align 8
-  store i64 %NR_LOCALS, ptr %saved_locals, align 8
-  %pattern13 = load i64, ptr %pattern6, align 8
-  %calltmp = call i64 @"core::names::push_pattern_to_locals"(i64 %pattern13)
-  %guard14 = load i64, ptr %guard8, align 8
-  %ne = icmp ne i64 %guard14, 0
+  %ctx13 = load i64, ptr %ctx, align 8
+  %pattern14 = load i64, ptr %pattern6, align 8
+  %calltmp = call i64 @"core::names::bind_pattern_ctx"(i64 %ctx13, i64 %pattern14)
+  store i64 %calltmp, ptr %arm_ctx, align 8
+  %guard15 = load i64, ptr %guard8, align 8
+  %ne = icmp ne i64 %guard15, 0
   %ne_ext = zext i1 %ne to i64
   %ife_cond = icmp ne i64 %ne_ext, 0
   store i64 0, ptr %ife_result, align 8
@@ -21133,21 +21294,22 @@ march_next4:                                      ; preds = %march_next
   br label %match_end
 
 ife_then:                                         ; preds = %march_arm3
-  %guard15 = load i64, ptr %guard8, align 8
-  %obj_ptr = inttoptr i64 %guard15 to ptr
+  %arm_ctx16 = load i64, ptr %arm_ctx, align 8
+  %guard17 = load i64, ptr %guard8, align 8
+  %obj_ptr = inttoptr i64 %guard17 to ptr
   %fld_ptr = getelementptr inbounds nuw %SExpr, ptr %obj_ptr, i32 0, i32 0
   %node = load i64, ptr %fld_ptr, align 8
-  %calltmp16 = call i64 @"core::names::rewrite_expr"(i64 %node)
-  %guard17 = load i64, ptr %guard8, align 8
-  %obj_ptr18 = inttoptr i64 %guard17 to ptr
-  %fld_ptr19 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr18, i32 0, i32 1
-  %line = load i64, ptr %fld_ptr19, align 8
-  %guard20 = load i64, ptr %guard8, align 8
-  %obj_ptr21 = inttoptr i64 %guard20 to ptr
-  %fld_ptr22 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr21, i32 0, i32 2
-  %col = load i64, ptr %fld_ptr22, align 8
-  %calltmp23 = call i64 @"core::ast::sexpr"(i64 %calltmp16, i64 %line, i64 %col)
-  store i64 %calltmp23, ptr %ife_result, align 8
+  %calltmp18 = call i64 @"core::names::rewrite_expr"(i64 %arm_ctx16, i64 %node)
+  %guard19 = load i64, ptr %guard8, align 8
+  %obj_ptr20 = inttoptr i64 %guard19 to ptr
+  %fld_ptr21 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr20, i32 0, i32 1
+  %line = load i64, ptr %fld_ptr21, align 8
+  %guard22 = load i64, ptr %guard8, align 8
+  %obj_ptr23 = inttoptr i64 %guard22 to ptr
+  %fld_ptr24 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr23, i32 0, i32 2
+  %col = load i64, ptr %fld_ptr24, align 8
+  %calltmp25 = call i64 @"core::ast::sexpr"(i64 %calltmp18, i64 %line, i64 %col)
+  store i64 %calltmp25, ptr %ife_result, align 8
   br label %ife_end
 
 ife_else:                                         ; preds = %march_arm3
@@ -21157,41 +21319,39 @@ ife_else:                                         ; preds = %march_arm3
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
   store i64 %ife_val, ptr %new_guard, align 8
-  %body24 = load i64, ptr %body10, align 8
-  %obj_ptr25 = inttoptr i64 %body24 to ptr
-  %fld_ptr26 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr25, i32 0, i32 0
-  %node27 = load i64, ptr %fld_ptr26, align 8
-  %calltmp28 = call i64 @"core::names::rewrite_expr"(i64 %node27)
-  %body29 = load i64, ptr %body10, align 8
-  %obj_ptr30 = inttoptr i64 %body29 to ptr
-  %fld_ptr31 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr30, i32 0, i32 1
-  %line32 = load i64, ptr %fld_ptr31, align 8
-  %body33 = load i64, ptr %body10, align 8
-  %obj_ptr34 = inttoptr i64 %body33 to ptr
-  %fld_ptr35 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr34, i32 0, i32 2
-  %col36 = load i64, ptr %fld_ptr35, align 8
-  %calltmp37 = call i64 @"core::ast::sexpr"(i64 %calltmp28, i64 %line32, i64 %col36)
-  store i64 %calltmp37, ptr %new_body, align 8
-  %saved_locals38 = load i64, ptr %saved_locals, align 8
-  store i64 %saved_locals38, ptr @NR_LOCALS, align 8
-  %buf39 = call ptr @forge_bump_alloc(i64 40)
-  %tag_ptr40 = getelementptr inbounds nuw %MatchArmList, ptr %buf39, i32 0, i32 0
-  store i8 1, ptr %tag_ptr40, align 8
-  %pattern41 = load i64, ptr %pattern6, align 8
-  %epay_ptr = getelementptr inbounds nuw %MatchArmList, ptr %buf39, i32 0, i32 1
-  store i64 %pattern41, ptr %epay_ptr, align 8
-  %new_guard42 = load i64, ptr %new_guard, align 8
-  %epay_ptr43 = getelementptr inbounds nuw %MatchArmList, ptr %buf39, i32 0, i32 2
-  store i64 %new_guard42, ptr %epay_ptr43, align 8
-  %new_body44 = load i64, ptr %new_body, align 8
-  %epay_ptr45 = getelementptr inbounds nuw %MatchArmList, ptr %buf39, i32 0, i32 3
-  store i64 %new_body44, ptr %epay_ptr45, align 8
-  %next46 = load i64, ptr %next12, align 8
-  %calltmp47 = call i64 @"core::names::rewrite_match_arms"(i64 %next46)
-  %epay_ptr48 = getelementptr inbounds nuw %MatchArmList, ptr %buf39, i32 0, i32 4
-  store i64 %calltmp47, ptr %epay_ptr48, align 8
-  %enum_i6449 = ptrtoint ptr %buf39 to i64
-  store i64 %enum_i6449, ptr %match_result, align 8
+  %buf26 = call ptr @forge_bump_alloc(i64 40)
+  %tag_ptr27 = getelementptr inbounds nuw %MatchArmList, ptr %buf26, i32 0, i32 0
+  store i8 1, ptr %tag_ptr27, align 8
+  %pattern28 = load i64, ptr %pattern6, align 8
+  %epay_ptr = getelementptr inbounds nuw %MatchArmList, ptr %buf26, i32 0, i32 1
+  store i64 %pattern28, ptr %epay_ptr, align 8
+  %new_guard29 = load i64, ptr %new_guard, align 8
+  %epay_ptr30 = getelementptr inbounds nuw %MatchArmList, ptr %buf26, i32 0, i32 2
+  store i64 %new_guard29, ptr %epay_ptr30, align 8
+  %arm_ctx31 = load i64, ptr %arm_ctx, align 8
+  %body32 = load i64, ptr %body10, align 8
+  %obj_ptr33 = inttoptr i64 %body32 to ptr
+  %fld_ptr34 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr33, i32 0, i32 0
+  %node35 = load i64, ptr %fld_ptr34, align 8
+  %calltmp36 = call i64 @"core::names::rewrite_expr"(i64 %arm_ctx31, i64 %node35)
+  %body37 = load i64, ptr %body10, align 8
+  %obj_ptr38 = inttoptr i64 %body37 to ptr
+  %fld_ptr39 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr38, i32 0, i32 1
+  %line40 = load i64, ptr %fld_ptr39, align 8
+  %body41 = load i64, ptr %body10, align 8
+  %obj_ptr42 = inttoptr i64 %body41 to ptr
+  %fld_ptr43 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr42, i32 0, i32 2
+  %col44 = load i64, ptr %fld_ptr43, align 8
+  %calltmp45 = call i64 @"core::ast::sexpr"(i64 %calltmp36, i64 %line40, i64 %col44)
+  %epay_ptr46 = getelementptr inbounds nuw %MatchArmList, ptr %buf26, i32 0, i32 3
+  store i64 %calltmp45, ptr %epay_ptr46, align 8
+  %ctx47 = load i64, ptr %ctx, align 8
+  %next48 = load i64, ptr %next12, align 8
+  %calltmp49 = call i64 @"core::names::rewrite_match_arms"(i64 %ctx47, i64 %next48)
+  %epay_ptr50 = getelementptr inbounds nuw %MatchArmList, ptr %buf26, i32 0, i32 4
+  store i64 %calltmp49, ptr %epay_ptr50, align 8
+  %enum_i6451 = ptrtoint ptr %buf26 to i64
+  store i64 %enum_i6451, ptr %match_result, align 8
   br label %match_end
 }
 
@@ -89556,27 +89716,11 @@ ifcont521:                                        ; preds = %else520, %then519
 
 define i64 @__bs_top_level() {
 entry:
-  %buf = call ptr @forge_bump_alloc(i64 48)
-  %tag_ptr = getelementptr inbounds nuw %ModuleNode, ptr %buf, i32 0, i32 0
+  store i64 0, ptr @LAMBDA_COUNTER, align 8
+  %buf = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr = getelementptr inbounds nuw %DeferStack, ptr %buf, i32 0, i32 0
   store i8 0, ptr %tag_ptr, align 8
   %enum_i64 = ptrtoint ptr %buf to i64
-  store i64 %enum_i64, ptr @NR_TREE, align 8
-  %buf1 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr2 = getelementptr inbounds nuw %AliasEntry, ptr %buf1, i32 0, i32 0
-  store i8 0, ptr %tag_ptr2, align 8
-  %enum_i643 = ptrtoint ptr %buf1 to i64
-  store i64 %enum_i643, ptr @NR_ALIASES, align 8
-  store i64 ptrtoint (ptr @.str.2646 to i64), ptr @NR_MODULE, align 8
-  %buf4 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr5 = getelementptr inbounds nuw %LocalScope, ptr %buf4, i32 0, i32 0
-  store i8 0, ptr %tag_ptr5, align 8
-  %enum_i646 = ptrtoint ptr %buf4 to i64
-  store i64 %enum_i646, ptr @NR_LOCALS, align 8
-  store i64 0, ptr @LAMBDA_COUNTER, align 8
-  %buf7 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr8 = getelementptr inbounds nuw %DeferStack, ptr %buf7, i32 0, i32 0
-  store i8 0, ptr %tag_ptr8, align 8
-  %enum_i649 = ptrtoint ptr %buf7 to i64
-  store i64 %enum_i649, ptr @DEFER_STACK, align 8
+  store i64 %enum_i64, ptr @DEFER_STACK, align 8
   ret i64 0
 }

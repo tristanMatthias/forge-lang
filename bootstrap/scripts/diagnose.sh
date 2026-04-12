@@ -28,7 +28,11 @@ BS3="$BUILD_DIR/bs3"
 
 LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm}"
 LLVM_CONFIG="$LLVM_PREFIX/bin/llvm-config"
-LLC="$LLVM_PREFIX/bin/llc"
+# Use LLVM 20's llc for code generation. LLVM 21's -O2 miscompiles
+# certain functions on ARM64 (uses wrong register for parameters).
+# The runtime still links against the default LLVM's libLLVM.
+LLC_PREFIX="${LLC_PREFIX:-/opt/homebrew/Cellar/llvm/20.1.5}"
+LLC="$LLC_PREFIX/bin/llc"
 LLVM_WRAPPER_O="$BUILD_DIR/llvm_wrapper.o"
 
 C_RED='\033[0;31m'
