@@ -6,6 +6,7 @@ export fn init_is_keyword(reg: Registry) {
         emit_expr: is_emit_expr,
         resolve_expr: is_resolve_expr,
         check_expr: is_check_expr,
+        eval_expr: is_eval_expr,
     }
     register(reg, f)
 }
@@ -25,5 +26,12 @@ fn is_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(s.tc, ValueType.Bool)
         }
         _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn is_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .IsCheck(_, _) -> error_result(rt, "is-check is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected IsCheck")
     }
 }

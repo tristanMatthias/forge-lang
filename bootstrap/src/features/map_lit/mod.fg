@@ -6,6 +6,7 @@ export fn init_map_lit(reg: Registry) {
         emit_expr: map_emit,
         resolve_expr: map_resolve_expr,
         check_expr: map_check_expr,
+        eval_expr: map_eval_expr,
     }
     register(reg, f)
 }
@@ -25,5 +26,12 @@ fn map_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(checked, ValueType.Map)
         }
         _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn map_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .MapLit(_) -> error_result(rt, "map literals are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected MapLit")
     }
 }

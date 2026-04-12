@@ -10,6 +10,7 @@ export fn init_spec_test(reg: Registry) {
         stmt_tag: Stmt.SpecBlock("", StmtList.End),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: spec_resolve_stmt,
+        eval_stmt: spec_eval_stmt,
         decl_keyword: "kw_spec",
         parse_decl: kw_parse_spec,
     }
@@ -19,6 +20,7 @@ export fn init_spec_test(reg: Registry) {
         stmt_tag: Stmt.GivenBlock("", StmtList.End),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: given_resolve_stmt,
+        eval_stmt: given_eval_stmt,
     }
     register(reg, f2)
 
@@ -26,6 +28,7 @@ export fn init_spec_test(reg: Registry) {
         stmt_tag: Stmt.ThenBlock("", Expr.Null),
         emit_stmt: spec_emit_stmt,
         resolve_stmt: then_resolve_stmt,
+        eval_stmt: then_eval_stmt,
     }
     register(reg, f3)
 }
@@ -40,4 +43,25 @@ fn given_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
 
 fn then_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .ThenBlock(_, cond) -> resolve_expr(r, cond), _ -> r }
+}
+
+fn spec_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .SpecBlock(_, _) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected SpecBlock")
+    }
+}
+
+fn given_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .GivenBlock(_, _) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected GivenBlock")
+    }
+}
+
+fn then_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .ThenBlock(_, _) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected ThenBlock")
+    }
 }

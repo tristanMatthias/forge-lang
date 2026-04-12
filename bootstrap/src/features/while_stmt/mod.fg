@@ -11,6 +11,7 @@ export fn init_while_stmt(reg: Registry) {
         emit_stmt: while_emit_stmt,
         resolve_stmt: while_resolve_stmt,
         check_stmt: while_check_stmt,
+        eval_stmt: while_eval_stmt,
         stmt_keyword: "kw_while",
         parse_stmt: kw_parse_while,
     }
@@ -41,5 +42,12 @@ fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {
             check_stmt(after_cond, body)
         }
         _ -> tc
+    }
+}
+
+fn while_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .While(condition, body) -> execute_while(rt, condition, body)
+        _ -> error_result(rt, "expected While")
     }
 }

@@ -27,12 +27,15 @@ export fn init_modules(reg: Registry) {
     let f1 = feature_new("mod") with {
         stmt_tag: Stmt.Module("", StmtList.End),
         resolve_stmt: module_resolve_stmt,
+        eval_stmt: module_eval_stmt,
         decl_keyword: "kw_mod",
         parse_decl: kw_parse_mod,
     }
     register(reg, f1)
 
     let f2 = feature_new("use") with {
+        stmt_tag: Stmt.Use("", ParamList.End),
+        eval_stmt: use_eval_stmt,
         decl_keyword: "kw_use",
         parse_decl: kw_parse_use,
     }
@@ -41,4 +44,18 @@ export fn init_modules(reg: Registry) {
 
 fn module_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r }
+}
+
+fn module_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Module(_, _) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected Module")
+    }
+}
+
+fn use_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Use(_, _) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected Use")
+    }
 }

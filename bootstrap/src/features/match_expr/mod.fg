@@ -15,6 +15,8 @@ export fn init_match_expr(reg: Registry) {
         resolve_expr: match_resolve_expr,
         check_stmt: match_check_stmt,
         check_expr: match_check_expr,
+        eval_stmt: match_eval_stmt,
+        eval_expr: match_eval_expr,
         stmt_keyword: "kw_match",
         parse_stmt: kw_parse_match,
     }
@@ -63,5 +65,19 @@ fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MatchExpr(subject, arms) -> check_match_expr(tc, subject, arms)
         _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Match(_, _) -> error_result(rt, "match statements are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected Match")
+    }
+}
+
+fn match_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .MatchExpr(_, _) -> error_result(rt, "match expressions are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected MatchExpr")
     }
 }

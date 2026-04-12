@@ -6,6 +6,7 @@ export fn init_with_expr(reg: Registry) {
         emit_expr: with_emit,
         resolve_expr: with_resolve_expr,
         check_expr: with_check_expr,
+        eval_expr: with_eval_expr,
     }
     register(reg, f)
 }
@@ -32,5 +33,12 @@ fn with_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(checked, o.ty)
         }
         _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn with_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .With(_, _) -> error_result(rt, "with expression is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected With")
     }
 }

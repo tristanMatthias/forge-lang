@@ -6,6 +6,7 @@ export fn init_null_safety(reg: Registry) {
         emit_expr: nc_emit,
         resolve_expr: nc_resolve_expr,
         check_expr: nc_check_expr,
+        eval_expr: nc_eval_expr,
     }
     register(reg, f1)
 
@@ -14,6 +15,7 @@ export fn init_null_safety(reg: Registry) {
         emit_expr: oc_emit,
         resolve_expr: oc_resolve_expr,
         check_expr: oc_check_expr,
+        eval_expr: oc_eval_expr,
     }
     register(reg, f2)
 
@@ -22,6 +24,7 @@ export fn init_null_safety(reg: Registry) {
         emit_expr: try_emit,
         resolve_expr: try_resolve_expr,
         check_expr: try_check_expr,
+        eval_expr: try_eval_expr,
     }
     register(reg, f3)
 }
@@ -76,4 +79,25 @@ fn oc_check_expr(tc: TC, expr: Expr) -> ExprResult {
 
 fn try_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, ValueType.Int) }
+}
+
+fn nc_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .NullCoalesce(_, _) -> error_result(rt, "null coalesce is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected NullCoalesce")
+    }
+}
+
+fn oc_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .OptionalChain(_, _) -> error_result(rt, "optional chain is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected OptionalChain")
+    }
+}
+
+fn try_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .Try(_) -> error_result(rt, "try operator is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected Try")
+    }
 }

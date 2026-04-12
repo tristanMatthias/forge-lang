@@ -15,6 +15,8 @@ export fn init_if_stmt(reg: Registry) {
         resolve_expr: if_resolve_expr,
         check_stmt: if_check_stmt,
         check_expr: if_check_expr,
+        eval_stmt: if_eval_stmt,
+        eval_expr: if_eval_expr,
         stmt_keyword: "kw_if",
         parse_stmt: kw_parse_if,
     }
@@ -87,5 +89,31 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(e.tc, t.ty)
         }
         _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn if_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .If(condition, then_branch, else_branch) -> {
+            let cond_result = eval_expr(rt, condition)
+            if cond_result.had_error {
+                return cond_result
+            }
+            if is_truthy(cond_result.value) {
+                return execute_stmt(cond_result.runtime, then_branch)
+            }
+            if else_branch != null {
+                return execute_stmt(cond_result.runtime, else_branch!)
+            }
+            ok_result(cond_result.runtime, value_null())
+        }
+        _ -> error_result(rt, "expected If")
+    }
+}
+
+fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .IfExpr(_, _, _) -> error_result(rt, "if expressions are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected IfExpr")
     }
 }

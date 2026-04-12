@@ -6,6 +6,7 @@ export fn init_tuples(reg: Registry) {
         emit_expr: tuple_emit,
         resolve_expr: tuple_resolve_expr,
         check_expr: tuple_check_expr,
+        eval_expr: tuple_eval_expr,
     }
     register(reg, f1)
 
@@ -14,6 +15,7 @@ export fn init_tuples(reg: Registry) {
         emit_expr: tuple_idx_emit,
         resolve_expr: tuple_idx_resolve_expr,
         check_expr: tuple_idx_check_expr,
+        eval_expr: tuple_idx_eval_expr,
     }
     register(reg, f2)
 }
@@ -51,5 +53,19 @@ fn tuple_idx_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(o.tc, vtype_tuple_at(o.ty, idx))
         }
         _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn tuple_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .Tuple(_) -> error_result(rt, "tuples are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected Tuple")
+    }
+}
+
+fn tuple_idx_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .TupleIndex(_, _) -> error_result(rt, "tuple indexing is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected TupleIndex")
     }
 }

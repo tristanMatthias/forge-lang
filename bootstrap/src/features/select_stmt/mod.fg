@@ -9,6 +9,7 @@ export fn init_select_stmt(reg: Registry) {
         stmt_tag: Stmt.Select(SelectArmList.End),
         emit_stmt: select_emit_stmt,
         resolve_stmt: select_resolve_stmt,
+        eval_stmt: select_eval_stmt,
         decl_keyword: "kw_select",
         parse_decl: kw_parse_select,
     }
@@ -17,4 +18,11 @@ export fn init_select_stmt(reg: Registry) {
 
 fn select_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r }
+}
+
+fn select_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Select(_) -> error_result(rt, "select is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected Select")
+    }
 }

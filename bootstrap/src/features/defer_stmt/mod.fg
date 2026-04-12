@@ -11,6 +11,7 @@ export fn init_defer_stmt(reg: Registry) {
         emit_stmt: defer_emit_stmt,
         resolve_stmt: defer_resolve_stmt,
         check_stmt: defer_check_stmt,
+        eval_stmt: defer_eval_stmt,
         stmt_keyword: "kw_defer",
         parse_stmt: kw_parse_defer,
     }
@@ -38,5 +39,12 @@ fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             ok_stmt(env)
         }
         _ -> err_stmt("expected Defer")
+    }
+}
+
+fn defer_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Defer(_) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected Defer")
     }
 }

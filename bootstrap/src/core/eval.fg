@@ -400,25 +400,6 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
 
             ok_result(exited, body_result.value)
         }
-        .If(condition, then_branch, else_branch) -> {
-            let cond_result = eval_expr(runtime, condition)
-            if cond_result.had_error {
-                return cond_result
-            }
-
-            if is_truthy(cond_result.value) {
-                return execute_stmt(cond_result.runtime, then_branch)
-            }
-
-            if else_branch != null {
-                return execute_stmt(cond_result.runtime, else_branch!)
-            }
-
-            ok_result(cond_result.runtime, value_null())
-        }
-        .While(condition, body) -> {
-            execute_while(runtime, condition, body)
-        }
         .Function(name, params, _, body) -> {
             let next_runtime = define_function(runtime, name, params, body)
             ok_result(next_runtime, value_null())
@@ -441,24 +422,13 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             ok_result(runtime, value_null())
         }
         .EnumDecl(_, _) -> ok_result(runtime, value_null())
-        .Match(_, _) -> error_result(runtime, "match statements are not supported by the tree-walk evaluator")
         .Impl(_, _) -> ok_result(runtime, value_null())
         .NoOp -> ok_result(runtime, value_null())
         .ExternFn(_, _, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
         .TraitDecl(_, _) -> ok_result(runtime, 0)
-        .LetDestructure(_, _) -> error_result(runtime, "destructuring is not supported by the tree-walk evaluator")
-        .ForIn(_, _, _) -> error_result(runtime, "for-in is not supported by the tree-walk evaluator")
         .Annotated(_, inner) -> execute_stmt(runtime, inner)
-        .Defer(_) -> ok_result(runtime, value_null())
-        .SpecBlock(_, _) -> ok_result(runtime, value_null())
-        .GivenBlock(_, _) -> ok_result(runtime, value_null())
-        .ThenBlock(_, _) -> ok_result(runtime, value_null())
-        .Select(_) -> error_result(runtime, "select is not supported by the tree-walk evaluator")
-        .Parallel(_) -> error_result(runtime, "parallel is not supported by the tree-walk evaluator")
-        .Module(_, _) -> ok_result(runtime, value_null())
-        .Use(_, _) -> ok_result(runtime, value_null())
         _ -> {
             let tag = forge_stmt_tag(stmt)
             let result = dispatch_stmt_eval(runtime.features, tag, runtime, stmt)
@@ -544,25 +514,9 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
         .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
         .Call(callee, args) -> eval_call(runtime, callee, args)
-        .StructLit(_, _) -> error_result(runtime, "struct literals are not supported by the tree-walk evaluator")
-        .FieldAccess(_, _) -> error_result(runtime, "field access is not supported by the tree-walk evaluator")
-        .EnumCtor(_, _, _) -> error_result(runtime, "enum constructors are not supported by the tree-walk evaluator")
         .Index(_, _) -> error_result(runtime, "index expressions are not supported by the tree-walk evaluator")
         .Block(_) -> error_result(runtime, "block expressions are not supported by the tree-walk evaluator")
-        .MatchExpr(_, _) -> error_result(runtime, "match expressions are not supported by the tree-walk evaluator")
-        .FieldAssign(_, _, _) -> error_result(runtime, "field assignment is not supported by the tree-walk evaluator")
-        .IfExpr(_, _, _) -> error_result(runtime, "if expressions are not supported by the tree-walk evaluator")
-        .NullCoalesce(_, _) -> error_result(runtime, "null coalesce is not supported by the tree-walk evaluator")
-        .OptionalChain(_, _) -> error_result(runtime, "optional chain is not supported by the tree-walk evaluator")
-        .Try(_) -> error_result(runtime, "try operator is not supported by the tree-walk evaluator")
-        .Tuple(_) -> error_result(runtime, "tuples are not supported by the tree-walk evaluator")
-        .TupleIndex(_, _) -> error_result(runtime, "tuple indexing is not supported by the tree-walk evaluator")
-        .With(_, _) -> error_result(runtime, "with expression is not supported by the tree-walk evaluator")
-        .ListLit(_) -> error_result(runtime, "list literals are not supported by the tree-walk evaluator")
-        .Lambda(_, _) -> error_result(runtime, "lambdas are not supported by the tree-walk evaluator")
-        .MapLit(_) -> error_result(runtime, "map literals are not supported by the tree-walk evaluator")
         .Slice(_, _, _) -> error_result(runtime, "slicing is not supported by the tree-walk evaluator")
-        .IsCheck(_, _) -> error_result(runtime, "is-check is not supported by the tree-walk evaluator")
         .QualifiedIdent(path) -> {
             let fn_result = lookup_function(runtime.functions, path)
             if fn_result.found {

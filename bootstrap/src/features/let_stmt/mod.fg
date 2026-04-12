@@ -15,6 +15,7 @@ export fn init_let_stmt(reg: Registry) {
         emit_stmt: let_destr_emit,
         resolve_stmt: let_destr_resolve_stmt,
         check_stmt: let_destr_check_stmt,
+        eval_stmt: let_destr_eval_stmt,
     }
     register(reg, f)
 
@@ -58,5 +59,12 @@ fn let_destr_check_stmt(tc: TC, stmt: Stmt) -> TC {
             bind_destructure(r.tc, names, r.ty)
         }
         _ -> tc
+    }
+}
+
+fn let_destr_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .LetDestructure(_, _) -> error_result(rt, "destructuring is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected LetDestructure")
     }
 }

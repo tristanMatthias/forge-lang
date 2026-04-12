@@ -11,6 +11,7 @@ export fn init_struct_decl(reg: Registry) {
         emit_expr: struct_lit_emit,
         resolve_expr: struct_lit_resolve_expr,
         check_expr: struct_lit_check_expr,
+        eval_expr: struct_lit_eval_expr,
     }
     register(reg, f1)
 
@@ -19,6 +20,7 @@ export fn init_struct_decl(reg: Registry) {
         emit_expr: field_access_emit,
         resolve_expr: field_access_resolve_expr,
         check_expr: field_access_check_expr,
+        eval_expr: field_access_eval_expr,
     }
     register(reg, f2)
 
@@ -27,6 +29,7 @@ export fn init_struct_decl(reg: Registry) {
         emit_expr: enum_ctor_emit,
         resolve_expr: enum_ctor_resolve_expr,
         check_expr: enum_ctor_check_expr,
+        eval_expr: enum_ctor_eval_expr,
     }
     register(reg, f3)
 
@@ -35,6 +38,7 @@ export fn init_struct_decl(reg: Registry) {
         emit_expr: field_assign_emit,
         resolve_expr: field_assign_resolve_expr,
         check_expr: field_assign_check_expr,
+        eval_expr: field_assign_eval_expr,
     }
     register(reg, f4)
 
@@ -131,5 +135,33 @@ fn field_assign_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(v.tc, v.ty)
         }
         _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn struct_lit_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .StructLit(_, _) -> error_result(rt, "struct literals are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected StructLit")
+    }
+}
+
+fn field_access_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .FieldAccess(_, _) -> error_result(rt, "field access is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected FieldAccess")
+    }
+}
+
+fn enum_ctor_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .EnumCtor(_, _, _) -> error_result(rt, "enum constructors are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected EnumCtor")
+    }
+}
+
+fn field_assign_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .FieldAssign(_, _, _) -> error_result(rt, "field assignment is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected FieldAssign")
     }
 }

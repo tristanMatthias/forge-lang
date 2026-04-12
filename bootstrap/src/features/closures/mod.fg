@@ -6,6 +6,7 @@ export fn init_closures(reg: Registry) {
         emit_expr: lambda_emit,
         resolve_expr: lambda_resolve_expr,
         check_expr: lambda_check_expr,
+        eval_expr: lambda_eval_expr,
     }
     register(reg, f)
 }
@@ -36,5 +37,12 @@ fn lambda_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(after, ValueType.Fn(b.ty))
         }
         _ -> tc_er(tc, ValueType.Int)
+    }
+}
+
+fn lambda_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .Lambda(_, _) -> error_result(rt, "lambdas are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected Lambda")
     }
 }
