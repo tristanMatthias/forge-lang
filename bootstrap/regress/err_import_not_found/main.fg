@@ -1,0 +1,3 @@
+mod helpers
+use helpers.{add, nonexistent_fn}
+fn main() { println(string(add(1, 2))) }

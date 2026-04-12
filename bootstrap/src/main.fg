@@ -233,6 +233,8 @@ fn main() {
         let entry_dir = dirname(path)
         let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
         if mod_resolved.had_error {
+            let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
+            render_bag(source, path, mod_bag)
             fail(mod_resolved.error_message)
         }
         let named = resolve_names(mod_resolved.stmts)
@@ -269,6 +271,8 @@ fn main() {
         let entry_dir = dirname(path)
         let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
         if mod_resolved.had_error {
+            let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
+            render_bag(source, path, mod_bag)
             fail(mod_resolved.error_message)
         }
         let named = resolve_names(mod_resolved.stmts)

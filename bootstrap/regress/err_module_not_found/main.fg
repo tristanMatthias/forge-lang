@@ -1,0 +1,2 @@
+mod nonexistent
+fn main() { println("hi") }

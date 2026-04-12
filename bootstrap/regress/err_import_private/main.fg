@@ -1,0 +1,3 @@
+mod mathlib
+use mathlib.{add, secret}
+fn main() { println(string(add(1, 2))) }

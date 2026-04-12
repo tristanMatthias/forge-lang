@@ -725,7 +725,8 @@ mode_regress() {
       name=$(basename "$fg" .fg)
       expected="$(dirname "$fg")/$name.out"
     fi
-    [ -f "$expected" ] || continue
+    local err_file="${expected%.out}.err"
+    [ -f "$expected" ] || [ -f "$err_file" ] || continue
     slug=$(echo "$fg" | sed 's|[/.]|_|g')
     names+=("$name")
     expecteds+=("$expected")
@@ -751,6 +752,25 @@ mode_regress() {
 
   link_and_run() {
     local fg="$1" bin="$2" expected="$3" slug="$4" compiled="$5" results_dir="$6"
+
+    # Error tests: expected.err contains an error code that must appear
+    # in the compilation output. Compilation should FAIL.
+    local err_expected="${expected%.out}.err"
+    if [ -f "$err_expected" ]; then
+      if [ "$compiled" = "1" ]; then
+        echo "FAIL expected compilation error but it succeeded" > "$results_dir/$slug"; return
+      fi
+      local error_code; error_code=$(cat "$err_expected" | tr -d '[:space:]')
+      local codegen_log="$BUILD_DIR/regress_${slug}.codegen.log"
+      if grep -q "$error_code" "$codegen_log" 2>/dev/null; then
+        echo "PASS" > "$results_dir/$slug"
+      else
+        echo "FAIL expected error $error_code not found in output" > "$results_dir/$slug"
+      fi
+      return
+    fi
+
+    # Normal tests: compile, link, run, compare output
     if [ "$compiled" != "1" ]; then
       echo "FAIL codegen failed" > "$results_dir/$slug"; return
     fi
