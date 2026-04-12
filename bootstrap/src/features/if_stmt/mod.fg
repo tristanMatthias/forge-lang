@@ -7,7 +7,11 @@ export fn register_if_stmt(reg: Registry) -> Registry {
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
         resolve_expr: noop_resolve,
+        resolve_stmt: noop_resolve_stmt,
         check_expr: noop_check,
+        check_stmt: noop_check_stmt,
+        eval_expr: noop_eval_expr,
+        eval_stmt: noop_eval_stmt,
     })
 }
 

@@ -184,6 +184,7 @@ ensure_seed() {
     "$LLC" -O2 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed.o" \
       || die "seed llc failed"
     cc -o "$SEED_BIN" "$BUILD_DIR/seed.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+      -Wl,-stack_size,0x800000 \
       -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$BUILD_DIR/seed.link.log" \
       || { cat "$BUILD_DIR/seed.link.log" >&2; die "seed link failed"; }
   fi
@@ -195,6 +196,7 @@ link_ll() {
   "$LLC" -O2 -filetype=obj "$ll" -o "${out}.o" \
     || die "llc failed for $ll"
   cc -o "$out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+    -Wl,-stack_size,0x800000 \
     -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$logfile" \
     || { cat "$logfile" >&2; die "link failed for $out"; }
 }
@@ -228,6 +230,7 @@ ensure_bs2() {
       "$LLC" -O0 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed_o0.o" \
         || die "seed llc -O0 failed"
       cc -o "$BUILD_DIR/seed_o0" "$BUILD_DIR/seed_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+        -Wl,-stack_size,0x800000 \
         -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null \
         || die "seed -O0 link failed"
       if "$BUILD_DIR/seed_o0" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
@@ -350,6 +353,7 @@ mode_build_bs2() {
   warn "auto-cycle failed — checking for LLVM -O2 miscompilation"
   "$LLC" -O0 -filetype=obj "$BOOTSTRAP_DIR/src/main.fg.ll" -o "$BUILD_DIR/bs2_o0.o" 2>/dev/null
   if cc -o "$BUILD_DIR/bs2_o0" "$BUILD_DIR/bs2_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+       -Wl,-stack_size,0x800000 \
        -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null; then
     if "$BUILD_DIR/bs2_o0" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1; then
       err ""

@@ -40,13 +40,13 @@ enum FunctionList {
     Node(name: string, params: ParamList, body: StmtList, next: FunctionList)
 }
 
-type Runtime = {
+export type Runtime = {
     bindings: BindingList,
     functions: FunctionList,
     depth: int,
 }
 
-type StepResult = {
+export type StepResult = {
     runtime: Runtime,
     value: Value,
     had_error: bool,
