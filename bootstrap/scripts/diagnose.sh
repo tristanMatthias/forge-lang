@@ -138,6 +138,12 @@ SEED MANAGEMENT
                          verifies the resulting binary can also self-compile.
                          Prints OK or specific failure point. Use this to
                          check seed health before committing.
+  --seed-patch           Incremental seed update. Compiles src/main.fg with
+                         bs2, diffs against seed/seed.ll per-function, copies
+                         the new IR to seed, and reports exactly which
+                         functions changed. Much faster feedback loop than
+                         a full 'make update-seed' because it skips the
+                         verify-seed rebuild. Use when iterating on source.
   --seed-sigs            Compare function signatures (parameter counts)
                          between seed/seed.ll and src/**/*.fg. Reports
                          mismatches, new functions, and removed functions.
@@ -159,6 +165,7 @@ EXAMPLES
   diagnose.sh --asan /tmp/big.fg    # find heap corruption with ASan
   diagnose.sh --regress             # run regression suite
   diagnose.sh --regress-add hello /tmp/hello.fg
+  diagnose.sh --seed-patch            # incremental seed update with diff report
 EOF
 }
 
@@ -1040,6 +1047,7 @@ main() {
     --build-seed)         ensure_seed; ok "$SEED_BIN" ;;
     --update-seed)        mode_update_seed "$@" ;;
     --verify-seed)        mode_verify_seed "$@" ;;
+    --seed-patch)         mode_seed_patch "$@" ;;
     --seed-sigs)          mode_seed_sigs "$@" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
@@ -1216,6 +1224,137 @@ mode_verify_seed() {
   ok "bs3 self-compile succeeded"
 
   ok "seed verification passed — full bootstrap chain is healthy"
+}
+
+# Incremental seed update: compile source with bs2, diff per-function against
+# seed, copy new IR to seed, and report exactly which functions changed.
+# Faster than 'make update-seed' because it skips the verification rebuild.
+mode_seed_patch() {
+  ensure_bs2
+
+  log "compiling src/main.fg with bs2 for incremental seed update"
+  if ! "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1; then
+    die "bs2 cannot compile src/main.fg — fix errors first"
+  fi
+
+  local new_ir="$BOOTSTRAP_DIR/src/main.fg.ll"
+  [ -f "$new_ir" ] || die "no IR produced at $new_ir"
+  [ -f "$SEED_LL" ] || die "no seed found at $SEED_LL"
+
+  # Use python3 to do per-function diffing (awk would be fragile for
+  # multiline function bodies with metadata references).
+  local result
+  result=$(python3 -c "
+import re, sys
+
+def extract_functions(path):
+    \"\"\"Extract function name -> body text from LLVM IR.\"\"\"
+    fns = {}
+    current_name = None
+    current_lines = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith('define '):
+                m = re.search(r'@\"?([^\"(]+)\"?\(', line)
+                if m:
+                    current_name = m.group(1)
+                    current_lines = [line]
+            elif current_name is not None:
+                current_lines.append(line)
+                if line.rstrip() == '}':
+                    fns[current_name] = ''.join(current_lines)
+                    current_name = None
+                    current_lines = []
+    return fns
+
+old_fns = extract_functions('$SEED_LL')
+new_fns = extract_functions('$new_ir')
+
+added = sorted(set(new_fns) - set(old_fns))
+removed = sorted(set(old_fns) - set(new_fns))
+common = set(old_fns) & set(new_fns)
+changed = sorted(n for n in common if old_fns[n] != new_fns[n])
+
+total_new = len(new_fns)
+total_changed = len(added) + len(removed) + len(changed)
+
+if total_changed == 0:
+    print('UNCHANGED')
+    sys.exit(0)
+
+# Print report
+if added:
+    print(f'ADDED:{len(added)}')
+    for n in added[:20]:
+        print(f'  + {n}')
+    if len(added) > 20:
+        print(f'  ... and {len(added)-20} more')
+
+if removed:
+    print(f'REMOVED:{len(removed)}')
+    for n in removed[:20]:
+        print(f'  - {n}')
+    if len(removed) > 20:
+        print(f'  ... and {len(removed)-20} more')
+
+if changed:
+    print(f'CHANGED:{len(changed)}')
+    for n in changed[:30]:
+        old_lines = old_fns[n].count('\n')
+        new_lines = new_fns[n].count('\n')
+        delta = new_lines - old_lines
+        sign = '+' if delta > 0 else '' if delta < 0 else '='
+        print(f'  ~ {n} ({old_lines} -> {new_lines} lines, {sign}{delta})')
+    if len(changed) > 30:
+        print(f'  ... and {len(changed)-30} more')
+
+print(f'TOTAL:{total_changed}/{total_new}')
+") || die "per-function diff failed"
+
+  if [ "$result" = "UNCHANGED" ]; then
+    ok "seed is already up to date (0 functions changed)"
+    return
+  fi
+
+  # Print the diff report
+  echo "$result" | while IFS= read -r line; do
+    case "$line" in
+      ADDED:*)   printf "${C_GREEN}%s new functions${C_RESET}\n" "${line#ADDED:}" ;;
+      REMOVED:*) printf "${C_RED}%s removed functions${C_RESET}\n" "${line#REMOVED:}" ;;
+      CHANGED:*) printf "${C_YELLOW}%s changed functions${C_RESET}\n" "${line#CHANGED:}" ;;
+      TOTAL:*)
+        local nums="${line#TOTAL:}"
+        local diff_count="${nums%%/*}"
+        local fn_total="${nums##*/}"
+        printf "\n${C_BLUE}Summary: %s of %s functions differ${C_RESET}\n" "$diff_count" "$fn_total"
+        ;;
+      "  + "*)    printf "  ${C_GREEN}%s${C_RESET}\n" "${line#  }" ;;
+      "  - "*)    printf "  ${C_RED}%s${C_RESET}\n" "${line#  }" ;;
+      "  ~ "*)    printf "  ${C_YELLOW}%s${C_RESET}\n" "${line#  }" ;;
+      "  ..."*)   printf "  ${C_DIM}%s${C_RESET}\n" "${line#  }" ;;
+      *)          echo "$line" ;;
+    esac
+  done
+
+  # Copy new IR to seed with provenance
+  cp "$new_ir" "$SEED_LL"
+
+  local commit timestamp src_hash
+  commit=$(git -C "$BOOTSTRAP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  src_hash=$(find "$BOOTSTRAP_DIR/src" -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
+
+  {
+    printf '; seed built from commit %s at %s\n' "$commit" "$timestamp"
+    printf '; source hash: %s\n' "$src_hash"
+    cat "$SEED_LL"
+  } > "${SEED_LL}.tmp" && mv "${SEED_LL}.tmp" "$SEED_LL"
+
+  # Invalidate cached seed binary so next build uses new seed
+  rm -f "$SEED_BIN" "$BUILD_DIR/seed.o"
+
+  ok "seed/seed.ll updated ($(wc -l < "$SEED_LL" | tr -d ' ') lines)"
+  log "provenance: commit=$commit time=$timestamp"
 }
 
 # Compare function signatures between seed IR and source .fg files.

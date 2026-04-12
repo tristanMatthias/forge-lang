@@ -16,7 +16,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed verify-seed seed-sigs
+.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs
 
 DIAG := bash scripts/diagnose.sh
 
@@ -29,7 +29,8 @@ help:
 	@echo "  make run FILE=x.fg Compile and run a Forge program."
 	@echo "  make selfhost      Verify bs2 and bs3 emit byte-identical IR."
 	@echo "  make regress       Run regression suite only (faster than 'test')."
-	@echo "  make update-seed   Rebuild seed/seed.ll from current source."
+	@echo "  make update-seed   Rebuild seed/seed.ll from current source (with verify)."
+	@echo "  make seed-patch    Incremental seed update with per-function diff report."
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
 	@echo "  make seed-sigs     Compare function signatures between seed and source."
 	@echo "  make clean         Remove all build artifacts."
@@ -90,6 +91,11 @@ update-seed:
 	@rm -rf build
 	@$(DIAG) --build-bs2
 	@echo "clean rebuild from new seed: OK"
+
+# Incremental seed update: compile with bs2, report per-function diff, copy.
+# Faster than 'update-seed' — skips the verification rebuild.
+seed-patch:
+	@$(DIAG) --seed-patch
 
 # Verify bootstrap chain integrity (no auto-cycle on failure).
 # Builds seed → bs2 → verifies bs2 self-compiles → verifies bs3 self-compiles.
