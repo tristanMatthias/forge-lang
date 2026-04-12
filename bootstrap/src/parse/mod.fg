@@ -113,6 +113,7 @@ fn table_zip_entries(headers: ExprList, values: ExprList) -> ExprList {
 fn expr_is_ident(e: Expr) -> bool {
     match e {
         .Ident(_) -> true
+        .QualifiedIdent(_) -> true
         _ -> false
     }
 }
@@ -120,6 +121,7 @@ fn expr_is_ident(e: Expr) -> bool {
 fn expr_is_upper_ident(e: Expr) -> bool {
     match e {
         .Ident(n) -> p_starts_with_upper(n)
+        .QualifiedIdent(n) -> p_starts_with_upper(n)
         _ -> false
     }
 }
@@ -133,6 +135,7 @@ fn exprs_to_params(exprs: ExprList) -> ParamList {
         .Node(se, next) -> {
             let name = match se.node {
                 .Ident(n) -> n
+                .QualifiedIdent(n) -> n
                 _ -> "_"  // non-ident in lambda params — use placeholder
             }
             ParamList.Node(name, "i64", exprs_to_params(next))
@@ -386,22 +389,38 @@ impl Parser {
             return Stmt.Annotated(annotations, inner!)
         }
 
-        // `export` is currently a no-op modifier — every top-level
-        // declaration is reachable from main, so the visibility tag
-        // is irrelevant for single-file MVP compilation. Recorded
-        // here so bootstrap source files parse cleanly.
+        // `export` wraps the inner declaration in an @export annotation
+        // so the module system's name resolution pass can enforce visibility.
+        // Only fn, type, enum, trait, and extern are exportable — no stacking.
         if self.check("kw_export") {
             self.advance()
+            let kind = self.current_kind
+            let inner = match kind {
+                "kw_fn" -> self.parse_function_declaration()
+                "kw_type" -> self.parse_type_declaration()
+                "kw_enum" -> self.parse_enum_declaration()
+                "kw_trait" -> self.parse_trait_declaration()
+                "kw_extern" -> self.parse_extern_declaration()
+                "kw_let" -> self.parse_let_statement()
+                "kw_const" -> self.parse_let_statement()
+                "kw_mut" -> self.parse_mut_statement()
+                _ -> {
+                    self.set_error("expected declaration after `export`")
+                    null
+                }
+            }
+            if inner == null { return null }
+            return Stmt.Annotated(
+                AnnotationList.Node("export", ExprList.End, AnnotationList.End),
+                inner!
+            )
         }
 
-        // `use ...` and `mod ...` parse to NoOp. Multi-file modules
-        // aren't supported yet — we expect every file the bootstrap
-        // compiles to be self-contained.
         if self.check("kw_use") {
-            return self.parse_use_or_mod_skip()
+            return self.parse_use_declaration()
         }
         if self.check("kw_mod") {
-            return self.parse_use_or_mod_skip()
+            return self.parse_module_declaration()
         }
 
         if self.check("kw_fn") {
@@ -584,19 +603,52 @@ impl Parser {
         Expr.ListLit(reverse_expr_list(rows))
     }
 
-    fn parse_use_or_mod_skip(self) -> Stmt? {
-        // Skip everything until we hit a top-level token that
-        // could start a new declaration. This is intentionally
-        // lazy — `use ast.{a, b, c}` and `mod foo` both
-        // disappear into the void.
-        self.advance()
-        while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_export") || self.check("kw_use") || self.check("kw_mod") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_break") || self.check("kw_continue") || self.check("kw_trait") || self.check("kw_defer") || self.check("at") || self.check("kw_spec") {
-                break
+    // Parse `mod name` — produces an unresolved Stmt.Module with an
+    // empty body. The module resolution pass (resolve_module_files in
+    // main.fg) fills in the body by reading the file from disk. This
+    // keeps the parser pure — no I/O, no filesystem access.
+    fn parse_module_declaration(self) -> Stmt? {
+        self.advance()  // consume `mod`
+        let name = self.consume_identifier("expected module name after `mod`")?
+        Stmt.Module(name, StmtList.End)
+    }
+
+    // Parse `use path.{name1, name2, ...}` — an import declaration.
+    // Stores the dotted module path and the imported symbol names.
+    fn parse_use_declaration(self) -> Stmt? {
+        self.advance()  // consume `use`
+        // Parse dotted path: core.ast, features.match_expr.codegen, etc.
+        mut path = self.consume_identifier("expected module path after `use`")?
+        while self.check("dot") {
+            self.advance()  // consume `.`
+            if self.check("left_brace") {
+                break  // reached `{names}` part
             }
+            let segment = self.consume_identifier("expected path segment")?
+            path = path + "." + segment
+        }
+        // Parse {name1, name2, ...}
+        if !self.consume("left_brace", "expected `{` in use declaration") {
+            return null
+        }
+        let names = self.parse_use_name_list()?
+        if !self.consume("right_brace", "expected `}` in use declaration") {
+            return null
+        }
+        Stmt.Use(path, names)
+    }
+
+    // Parse comma-separated identifier list inside `use path.{...}`.
+    fn parse_use_name_list(self) -> ParamList? {
+        if self.check("right_brace") {
+            return ParamList.End
+        }
+        let name = self.consume_identifier("expected import name")?
+        if self.check("comma") {
             self.advance()
         }
-        Stmt.NoOp
+        let rest = self.parse_use_name_list()?
+        ParamList.Node(name, "", rest)
     }
 
     // Feature-specific parsers live in features/*/parser.fg.

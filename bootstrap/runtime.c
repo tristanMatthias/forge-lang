@@ -77,11 +77,15 @@ static void forge_signal_handler(int sig) {
                      : "unknown signal";
     fprintf(stderr, "\nforge: fatal error — %s\n", name);
 
-    // Print backtrace
-    void* frames[32];
-    int n = backtrace(frames, 32);
-    fprintf(stderr, "\nBacktrace:\n");
-    backtrace_symbols_fd(frames, n, STDERR_FILENO);
+    // Print full backtrace with symbolicated names
+    void* frames[64];
+    int n = backtrace(frames, 64);
+    char** symbols = backtrace_symbols(frames, n);
+    fprintf(stderr, "\nBacktrace (%d frames):\n", n);
+    for (int i = 0; i < n; i++) {
+        fprintf(stderr, "  %2d  %s\n", i, symbols ? symbols[i] : "(unknown)");
+    }
+    if (symbols) free(symbols);
 
     _exit(128 + sig);
 }
@@ -1410,4 +1414,29 @@ void forge_channel_close(void* channel) {
     pthread_cond_destroy(&ch->send_cond);
     pthread_cond_destroy(&ch->recv_cond);
     free(ch);
+}
+
+// ── Debug: enum tag validation ──
+//
+// Call before matching on an enum to catch corrupt tags early with a
+// clear error instead of segfaulting in the generated switch dispatch.
+// Usage from Forge: forge_validate_tag(expr, 35, "Expr")
+//   - ptr: pointer to the enum value
+//   - max_tag: highest valid tag number for this enum type
+//   - type_name: name for the error message
+void forge_validate_tag(void *ptr, int64_t max_tag, const char *type_name) {
+    if (!ptr) {
+        fprintf(stderr, "FATAL: null %s pointer passed to match\n", type_name);
+        exit(99);
+    }
+    uint8_t tag = *(uint8_t *)ptr;
+    if (tag > max_tag) {
+        fprintf(stderr, "FATAL: %s tag %d exceeds max %lld (ptr=%p)\n",
+                type_name, tag, (long long)max_tag, ptr);
+        // Check if ptr looks like a valid address
+        if ((uintptr_t)ptr < 0x100000) {
+            fprintf(stderr, "  → pointer %p is suspiciously low — likely a corrupt integer, not a real pointer\n", ptr);
+        }
+        exit(99);
+    }
 }

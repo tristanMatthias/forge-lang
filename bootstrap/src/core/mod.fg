@@ -6,6 +6,7 @@ mod token
 mod ast
 mod scanner
 mod resolver
+mod names
 mod eval
 mod cg
 mod llvm

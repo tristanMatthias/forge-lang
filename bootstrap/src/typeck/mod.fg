@@ -320,7 +320,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
         .Node(ss, next) -> {
-            let updated = match ss.node {
+            let updated = match stmt_unwrap(ss.node) {
                 .TypeDecl(name, fields) -> tc with {
                     structs: StructTypeReg.Node(name, fields, tc.structs)
                 }
@@ -334,6 +334,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns)
                 }
                 .Impl(_, methods) -> collect_decls(tc, methods)
+                .Module(_, body) -> collect_decls(tc, body)
                 .TraitDecl(name, methods) -> tc with {
                     traits: TraitRegistry.Node(name, collect_method_names_from_stmts(methods), tc.traits)
                 }
@@ -441,7 +442,9 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let r = check_expr(tc, body)
             r.tc
         }
-        _ -> tc  // TypeDecl, EnumDecl, ExternFn, NoOp, Break, Continue, TraitDecl
+        .Module(_, body) -> check_stmts(tc, body)
+        .Annotated(_, inner) -> check_stmt(tc, inner)
+        _ -> tc  // TypeDecl, EnumDecl, ExternFn, NoOp, Break, Continue, TraitDecl, Use
     }
 }
 
@@ -496,69 +499,117 @@ fn impl_has_method(methods: StmtList, name: string) -> bool {
 
 fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, body: StmtList) -> TC {
     let checked = check_stmts(tc, body)
-    // If the function has a declared return type AND no explicit return
-    // statements, check the last expression's type matches. Functions
-    // with explicit returns use multiple return paths that the simple
-    // last-statement check can't handle (causes false positives).
-    if ret_ty_str.length > 0 && !tc_has_return(body) && !ret_ty_str.contains("?") {
-        let declared_ret = translate_type(checked, ret_ty_str)
-        let body_ty = tc_last_stmt_type(checked, body)
-        if !vtype_eq(declared_ret, body_ty) && !vtype_eq(body_ty, ValueType.Void) {
-            let msg = "function `" + name + "` returns `" + vtype_display(declared_ret) + "`, but body produces `" + vtype_display(body_ty) + "`"
-            return tc_report(checked, DiagCode.TypeMismatch, msg)
-        }
+    // Skip return type checking for functions without a declared
+    // return type, or with nullable returns (where body can
+    // legitimately produce null or a value through many paths).
+    if ret_ty_str.length == 0 || ret_ty_str.contains("?") {
+        return checked
     }
-    checked
+    let declared_ret = translate_type(checked, ret_ty_str)
+    // Check every explicit `return expr` produces a compatible type.
+    let after_explicit = tc_check_explicit_returns(checked, name, declared_ret, body)
+    // Check implicit return: the last expression in the body.
+    // Functions with explicit returns on every path don't need this
+    // (but checking it anyway is harmless — it's the same type).
+    tc_check_implicit_return(after_explicit, name, declared_ret, body)
 }
 
-fn tc_has_return(stmts: StmtList) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            let has = match ss.node {
-                .Return(_) -> true
-                .ReturnEmpty -> true
-                .If(_, then_branch, else_branch) -> {
-                    tc_stmt_has_return(then_branch) || if else_branch != null { tc_stmt_has_return(else_branch!) } else { false }
-                }
-                _ -> false
+// Check the type of the last expression in a function body against
+// the declared return type. Only flags concrete mismatches (e.g.
+// string vs int). Skips Void (statements/loops with no value) and
+// functions whose last statement isn't an expression.
+fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
+    let body_ty = tc_body_tail_type(tc, stmts)
+    match body_ty {
+        .Void -> tc   // last stmt is not an expression — nothing to check
+        .Int -> tc    // default/fallback type — not reliable enough to flag
+        _ -> {
+            if !vtype_eq(declared, body_ty) {
+                let msg = "function `" + fn_name + "` returns `" + vtype_display(declared) + "`, but body produces `" + vtype_display(body_ty) + "`"
+                return tc_report(tc, DiagCode.TypeMismatch, msg)
             }
-            has || tc_has_return(next)
+            tc
         }
     }
 }
 
-fn tc_stmt_has_return(stmt: Stmt) -> bool {
-    match stmt {
-        .Return(_) -> true
-        .ReturnEmpty -> true
-        .Block(body) -> tc_has_return(body)
-        _ -> false
-    }
-}
-
-// Get the type of the last expression in a statement list
-fn tc_last_stmt_type(tc: TC, stmts: StmtList) -> ValueType {
+// Get the type of the last expression in a statement list.
+// Returns Void if the last statement is not an expression.
+fn tc_body_tail_type(tc: TC, stmts: StmtList) -> ValueType {
     match stmts {
         .End -> ValueType.Void
         .Node(ss, next) -> {
             match next {
                 .End -> {
-                    // Last statement — check if it's an expression
                     match ss.node {
                         .Expr(e) -> {
                             let r = check_expr(tc, e)
                             r.ty
                         }
-                        .Return(e) -> {
-                            let r = check_expr(tc, e)
-                            r.ty
-                        }
+                        .Return(_) -> ValueType.Void  // explicit return — handled elsewhere
+                        .ReturnEmpty -> ValueType.Void
                         _ -> ValueType.Void
                     }
                 }
-                _ -> tc_last_stmt_type(tc, next)
+                _ -> tc_body_tail_type(tc, next)
             }
+        }
+    }
+}
+
+// Walk all statements and check that every `return expr` and
+// `return` matches the declared return type. This is flow-insensitive
+// (checks ALL returns regardless of reachability) but sound — every
+// return statement must produce the right type even if dead.
+fn tc_check_explicit_returns(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
+    match stmts {
+        .End -> tc
+        .Node(ss, next) -> {
+            let updated = tc_check_stmt_returns(tc, fn_name, declared, ss.node)
+            tc_check_explicit_returns(updated, fn_name, declared, next)
+        }
+    }
+}
+
+fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stmt) -> TC {
+    match stmt {
+        .Return(value) -> {
+            let r = check_expr(tc, value)
+            if !vtype_eq(declared, r.ty) && !vtype_eq(r.ty, ValueType.Int) && !vtype_eq(r.ty, ValueType.Void) {
+                let msg = "function `" + fn_name + "` returns `" + vtype_display(declared) + "`, but return produces `" + vtype_display(r.ty) + "`"
+                return tc_report(r.tc, DiagCode.TypeMismatch, msg)
+            }
+            r.tc
+        }
+        .Block(body) -> tc_check_explicit_returns(tc, fn_name, declared, body)
+        .If(_, then_branch, else_branch) -> {
+            let after_then = tc_check_stmt_returns(tc, fn_name, declared, then_branch)
+            if else_branch != null {
+                return tc_check_stmt_returns(after_then, fn_name, declared, else_branch!)
+            }
+            after_then
+        }
+        .While(_, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
+        .For(_, _, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
+        .ForIn(_, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
+        .Match(_, arms) -> tc_check_match_arm_returns(tc, fn_name, declared, arms)
+        .Annotated(_, inner) -> tc_check_stmt_returns(tc, fn_name, declared, inner)
+        _ -> tc
+    }
+}
+
+fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueType, arms: MatchArmList) -> TC {
+    match arms {
+        .End -> tc
+        .Node(_, _, body, next) -> {
+            // Match arm body is an SExpr — check if it contains return stmts.
+            // Since match arms are expressions, not statement lists, we
+            // only check Block bodies for nested returns.
+            let after = match body.node {
+                .Block(stmts) -> tc_check_explicit_returns(tc, fn_name, declared, stmts)
+                _ -> tc
+            }
+            tc_check_match_arm_returns(after, fn_name, declared, next)
         }
     }
 }
@@ -728,6 +779,10 @@ fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let s = check_expr(tc, subject)
             tc_er(s.tc, ValueType.Bool)
         }
+        .QualifiedIdent(path) -> {
+            let fn_ty = fn_type_lookup(tc.fns, path)
+            tc_er(tc, fn_ty)
+        }
         _ -> tc_er(tc, ValueType.Int)
     }
 }
@@ -781,6 +836,19 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                 return tc_er(checked, ValueType.Int) // unknown
             }
             tc_er(checked, vtype_fn_ret(var_ty))
+        }
+        .QualifiedIdent(path) -> {
+            let checked = check_expr_list(tc, args)
+            if fn_type_has(checked.fns, path) {
+                let expected = tc_fn_arity(checked.fns, path)
+                let actual = tc_count_args(args)
+                if expected != actual {
+                    let msg = "`" + path + "` expects " + string(expected) + " argument" + if expected != 1 { "s" } else { "" } + ", got " + string(actual)
+                    return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, path))
+                }
+                return tc_er(checked, fn_type_lookup(checked.fns, path))
+            }
+            tc_er(checked, ValueType.Int)
         }
         .FieldAccess(obj, method) -> check_method_call(tc, obj, method, args)
         _ -> {

@@ -450,6 +450,8 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .ThenBlock(_, _) -> ok_result(runtime, value_null())
         .Select(_) -> error_result(runtime, "select is not supported by the tree-walk evaluator")
         .Parallel(_) -> error_result(runtime, "parallel is not supported by the tree-walk evaluator")
+        .Module(_, _) -> ok_result(runtime, value_null())
+        .Use(_, _) -> ok_result(runtime, value_null())
     }
 }
 
@@ -547,6 +549,13 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .MapLit(_) -> error_result(runtime, "map literals are not supported by the tree-walk evaluator")
         .Slice(_, _, _) -> error_result(runtime, "slicing is not supported by the tree-walk evaluator")
         .IsCheck(_, _) -> error_result(runtime, "is-check is not supported by the tree-walk evaluator")
+        .QualifiedIdent(path) -> {
+            let fn_result = lookup_function(runtime.functions, path)
+            if fn_result.found {
+                return ok_result(runtime, value_function(path))
+            }
+            error_result(runtime, "undefined qualified name `" + path + "`")
+        }
     }
 }
 

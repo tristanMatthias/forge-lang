@@ -5,7 +5,7 @@
 // while, let, mut, fn, struct, enum, impl, extern, break, continue)
 // use a `_stmt` or `_decl` suffix in the directory name.
 
-mod match
+mod match_expr
 mod return_stmt
 mod if_stmt
 mod while_stmt

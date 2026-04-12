@@ -39,6 +39,7 @@ use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list}
 use core.eval.{eval_expression_source, execute_program_source, render_value}
 use core.resolver.{resolve_program}
+use core.names.{resolve_names}
 use typeck.{typecheck_program}
 use diagnostics.{bag_has_errors}
 use diagnostics.render.{render_bag}
@@ -54,8 +55,14 @@ fn fail(message: string) {
     exit(1)
 }
 
-// Returns the directory portion of a path, with trailing slash, or
-// "" if the path has no slash.
+// ── Module file resolution ──
+//
+// The parser produces unresolved Stmt.Module(name, StmtList.End) stubs.
+// This pass walks the AST, resolves each module name to a file on disk,
+// parses the file, and replaces the empty body with the parsed content.
+// The parser stays pure (no I/O) and this pass owns all file access.
+
+// Returns the directory portion of a path (with trailing slash), or ""
 fn dirname(path: string) -> string {
     let len = path.length
     mut i = len
@@ -69,136 +76,96 @@ fn dirname(path: string) -> string {
     ""
 }
 
-// Walk the source line by line. For each `mod foo` line, replace it
-// with the content of `<dir>/foo.fg` OR `<dir>/foo/mod.fg`, then
-// recursively preprocess the inlined content so nested module
-// hierarchies work. The directory style (`foo/mod.fg`) is what
-// powers the feature-organized layout where each language feature
-// lives under `features/<name>/`.
-fn preprocess_modules(source: string, entry_path: string) -> string {
-    preprocess_modules_inner(source, entry_path, true)
+// Set of loaded file paths — prevents double-parsing.
+enum LoadedPaths {
+    End
+    Node(path: string, next: LoadedPaths)
 }
 
-fn preprocess_modules_inner(source: string, entry_path: string, resolve_use: bool) -> string {
-    let dir = dirname(entry_path)
-    mut out = ""
-    mut inlined = ""  // Comma-separated list of already-inlined module names
-    mut i = 0
-    let n = source.length
-    while i < n {
-        let line_start = i
-        while i < n {
-            if source[i] == "\n" {
-                i = i + 1
-                break
+fn loaded_has(paths: LoadedPaths, path: string) -> bool {
+    match paths {
+        .End -> false
+        .Node(p, next) -> {
+            if p == path { return true }
+            loaded_has(next, path)
+        }
+    }
+}
+
+// Result of resolving module files in a StmtList.
+type ModListResult = {
+    stmts: StmtList,
+    loaded: LoadedPaths,
+    had_error: bool,
+    error_message: string,
+}
+
+// Result of resolving a single module statement.
+type ModStmtResult = {
+    stmt: Stmt,
+    loaded: LoadedPaths,
+    had_error: bool,
+    error_message: string,
+}
+
+// Resolve all Stmt.Module stubs in a StmtList. `dir` is the directory
+// to resolve relative module paths against.
+fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths) -> ModListResult {
+    match stmts {
+        .End -> ModListResult { stmts: StmtList.End, loaded, had_error: false, error_message: "" }
+        .Node(ss, next) -> {
+            let head = resolve_module_stmt(ss.node, dir, loaded)
+            if head.had_error {
+                return ModListResult { stmts: StmtList.End, loaded: head.loaded, had_error: true, error_message: head.error_message }
             }
-            i = i + 1
-        }
-        let line = source.substring(line_start, i)
-        let mod_name = extract_mod_name(line)
-        if mod_name != "" {
-            if !inlined.contains("," + mod_name + ",") {
-                out = out + inline_module_inner(dir, mod_name)
-                inlined = inlined + "," + mod_name + ","
-            }
-            continue
-        }
-        // Handle `use module.{...}` — only at entry-file level.
-        // Recursively inlined modules already have their symbols
-        // available from mod declarations.
-        if resolve_use {
-            let use_mod = extract_use_module(line)
-            if use_mod != "" {
-                if !inlined.contains("," + use_mod + ",") {
-                    out = out + inline_module_inner(dir, use_mod)
-                    inlined = inlined + "," + use_mod + ","
-                }
-                out = out + "// " + line
-                continue
+            let rest = resolve_module_files(next, dir, head.loaded)
+            if rest.had_error { return rest }
+            ModListResult {
+                stmts: StmtList.Node(sstmt(head.stmt, ss.line, ss.col), rest.stmts),
+                loaded: rest.loaded,
+                had_error: false,
+                error_message: "",
             }
         }
-        out = out + line
     }
-    out
 }
 
-fn inline_module_inner(dir: string, mod_name: string) -> string {
-    let sibling_path = dir + mod_name + ".fg"
-    let dir_mod_path = dir + mod_name + "/mod.fg"
-    if file_exists(sibling_path) {
-        let mod_src = read_file(sibling_path)
-        // Recursively process but WITHOUT use-inlining (only mod)
-        let inlined = preprocess_modules_inner(mod_src, sibling_path, false)
-        return "// === module " + mod_name + " ===\n" + inlined + "\n"
-    }
-    if file_exists(dir_mod_path) {
-        let mod_src = read_file(dir_mod_path)
-        let inlined = preprocess_modules_inner(mod_src, dir_mod_path, false)
-        return "// === module " + mod_name + " ===\n" + inlined + "\n"
-    }
-    "// === module " + mod_name + " (not found) ===\n"
-}
-
-// inline_module delegates to inline_module_inner (above)
-
-// Extract the top-level module name from `use module.{...}` or
-// `use module.submodule.{...}`. Returns just the first component.
-fn extract_use_module(line: string) -> string {
-    let len = line.length
-    mut i = 0
-    while i < len {
-        let ch = line[i]
-        if ch != " " && ch != "\t" { break }
-        i = i + 1
-    }
-    if i + 4 > len { return "" }
-    if line[i] != "u" { return "" }
-    if line[i + 1] != "s" { return "" }
-    if line[i + 2] != "e" { return "" }
-    if line[i + 3] != " " { return "" }
-    // Skip `use ` prefix, then read the module name until `.` or `{` or space
-    mut j = i + 4
-    // Skip @ prefix for package imports
-    if j < len && line[j] == "@" { return "" }
-    let name_start = j
-    while j < len {
-        let ch = line[j]
-        if ch == "." || ch == " " || ch == "{" || ch == "\n" { break }
-        j = j + 1
-    }
-    if j == name_start { return "" }
-    line.substring(name_start, j)
-}
-
-// If `line` starts with `mod <name>`, return `<name>`. Otherwise "".
-// Trims leading whitespace.
-fn extract_mod_name(line: string) -> string {
-    let len = line.length
-    mut i = 0
-    while i < len {
-        let ch = line[i]
-        if ch != " " && ch != "\t" {
-            break
+// Resolve a single statement. If it's a Module stub, read the file,
+// parse it, and recursively resolve its children.
+fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths) -> ModStmtResult {
+    match stmt {
+        .Module(name, _) -> {
+            let sibling = dir + name + ".fg"
+            let dir_mod = dir + name + "/mod.fg"
+            mut mod_path = ""
+            if file_exists(sibling) { mod_path = sibling }
+            if mod_path == "" && file_exists(dir_mod) { mod_path = dir_mod }
+            if mod_path == "" {
+                return ModStmtResult { stmt, loaded, had_error: false, error_message: "" }
+            }
+            if loaded_has(loaded, mod_path) {
+                return ModStmtResult { stmt: Stmt.Module(name, StmtList.End), loaded, had_error: false, error_message: "" }
+            }
+            let new_loaded = LoadedPaths.Node(mod_path, loaded)
+            let mod_source = read_file(mod_path)
+            let parsed = parse_program_source(mod_source)
+            if parsed.had_error || parsed.stmts == null {
+                return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `" + name + "`: " + parsed.error_message }
+            }
+            let mod_dir = dirname(mod_path)
+            let resolved = resolve_module_files(parsed.stmts!, mod_dir, new_loaded)
+            if resolved.had_error {
+                return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
+            }
+            ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
         }
-        i = i + 1
-    }
-    if i + 4 > len {
-        return ""
-    }
-    if line[i] != "m" { return "" }
-    if line[i + 1] != "o" { return "" }
-    if line[i + 2] != "d" { return "" }
-    if line[i + 3] != " " { return "" }
-    mut j = i + 4
-    let name_start = j
-    while j < len {
-        let ch = line[j]
-        if ch == " " || ch == "\n" || ch == "\t" || ch == "\r" {
-            break
+        .Annotated(annotations, inner) -> {
+            let r = resolve_module_stmt(inner, dir, loaded)
+            if r.had_error { return r }
+            ModStmtResult { stmt: Stmt.Annotated(annotations, r.stmt), loaded: r.loaded, had_error: false, error_message: "" }
         }
-        j = j + 1
+        _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }
     }
-    line.substring(name_start, j)
 }
 
 fn main() {
@@ -262,7 +229,15 @@ fn main() {
             }
             fail(parsed.error_message)
         }
-        let resolved = resolve_program(parsed.stmts!)
+        // Resolve module files
+        let entry_dir = dirname(path)
+        let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+        if mod_resolved.had_error {
+            fail(mod_resolved.error_message)
+        }
+        let named = resolve_names(mod_resolved.stmts)
+        if named.had_error { fail(named.error_message) }
+        let resolved = resolve_program(named.stmts)
         if resolved.had_error {
             if bag_has_errors(resolved.bag) {
                 render_bag(source, path, resolved.bag)
@@ -270,7 +245,7 @@ fn main() {
             fail(resolved.error_message)
         }
         // Type check
-        let tc_result = typecheck_program(parsed.stmts!)
+        let tc_result = typecheck_program(named.stmts)
         if bag_has_errors(tc_result.bag) {
             render_bag(source, path, tc_result.bag)
         }
@@ -279,28 +254,36 @@ fn main() {
     }
 
     if command == "compile" {
-        let merged = preprocess_modules(source, path)
-        let parsed = parse_program_source(merged)
+        let parsed = parse_program_source(source)
         if parsed.had_error || parsed.stmts == null {
             if bag_has_errors(parsed.bag) {
-                render_bag(merged, path, parsed.bag)
+                render_bag(source, path, parsed.bag)
             }
             fail(parsed.error_message)
         }
-        let resolved = resolve_program(parsed.stmts!)
+        // Resolve module files: walk the AST, find `mod` stubs, read
+        // and parse the referenced files, attach parsed bodies.
+        let entry_dir = dirname(path)
+        let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+        if mod_resolved.had_error {
+            fail(mod_resolved.error_message)
+        }
+        let named = resolve_names(mod_resolved.stmts)
+        if named.had_error { fail(named.error_message) }
+        let resolved = resolve_program(named.stmts)
         if resolved.had_error {
             if bag_has_errors(resolved.bag) {
-                render_bag(merged, path, resolved.bag)
+                render_bag(source, path, resolved.bag)
             }
             fail(resolved.error_message)
         }
         // Type check (additive — reports but doesn't block compilation)
-        let tc_result = typecheck_program(parsed.stmts!)
+        let tc_result = typecheck_program(named.stmts)
         if bag_has_errors(tc_result.bag) {
-            render_bag(merged, path, tc_result.bag)
+            render_bag(source, path, tc_result.bag)
         }
         let output = path + ".ll"
-        let compiled = compile_program(parsed.stmts!, output)
+        let compiled = compile_program(named.stmts, output)
         if compiled.had_error {
             fail(compiled.error_message)
         }

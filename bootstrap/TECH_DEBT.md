@@ -394,6 +394,82 @@ Float binary ops (+ - * / % == != < <= > >=) and unary negation now
 use fadd/fsub/fmul/fdiv/frem/fcmp/fneg instructions. Int operands
 are auto-promoted to float via sitofp when mixed with float.
 
+### ~~32. Parser does file I/O directly~~ (FIXED)
+
+**Status:** fixed (April 11 2026). The parser is now pure — `mod foo`
+produces an unresolved `Stmt.Module("foo", StmtList.End)` stub. A
+separate `resolve_module_files` pass in main.fg walks the AST, resolves
+file paths, reads files, parses them, and attaches bodies. The parser
+has zero I/O. Module deduplication is handled by a `LoadedPaths` set
+threaded through the resolution pass.
+
+### ~~33. No module deduplication~~ (FIXED)
+
+**Status:** fixed (April 11 2026). Parser tracks loaded file paths in
+a `LoadedPaths` linked list threaded through recursive sub-parsers.
+When `parse_module_declaration` resolves a file that's already loaded,
+it returns an empty `Stmt.Module` instead of re-parsing.
+
+### ~~34. Type checker: implicit return type not checked~~ (FIXED)
+
+**Status:** fixed (April 11 2026). `tc_check_fn_body` now calls
+`tc_check_implicit_return` which uses `tc_body_tail_type` to get the
+type of the last expression in the body and compares it against the
+declared return type. Only flags concrete mismatches (skips Void and
+Int fallback).
+
+### 37. Name resolution pass crashes in self-compiled binary
+
+**Severity:** high (blocks full module name qualification)
+**Impact:** `core/names.fg` implements a complete 3-pass name resolution
+system (build module tree → resolve use aliases → rewrite identifiers).
+The pass works when run by the seed-compiled binary. However, when bs2
+(compiled by seed) self-compiles, its `rewrite_expr` crashes at an early
+offset — a codegen fidelity issue where the bootstrap produces subtly
+wrong code for match expressions with many arms constructing enums.
+
+**Root cause:** The bs2 codegen produces a crashing `rewrite_expr`. The
+seed's version works. This is a one-generation codegen divergence bug.
+
+**Proper fix:** Diff the seed's `rewrite_expr` IR against bs2's version
+using `--diff-fn rewrite_expr`. The divergence is the bug. Fix the
+codegen to produce identical IR for match-heavy enum-constructing
+functions.
+
+**Status:** Pass is complete and tested on small programs. Wired into
+the pipeline but currently bypassed (commented out in main.fg check
+and compile paths).
+
+### 36. Map method codegen passes i64 instead of ptr
+
+**Severity:** high (Maps unusable at compile time)
+**Impact:** `forge_map_set_cstr`, `forge_map_has_cstr`, `forge_map_get_cstr`
+expect `ptr` for the map argument but codegen passes `i64` (the
+everything-is-i64 model). `llc` rejects the IR with "Call parameter
+type does not match function signature." Maps work in the C runtime
+but can't be called from Forge code.
+
+**Proper fix:** The method call codegen for `.set`, `.has`, `.get` on
+Map values needs to cast the receiver from i64 to ptr before passing
+to the C function. This is the same class of issue as the ptr-vs-i64
+mismatch in other runtime calls.
+
+### ~~35. `export` can stack: `export export fn` double-wraps~~ (FIXED)
+
+**Status:** fixed (April 11 2026). `export` now uses a match on the
+next token kind and only accepts fn, type, enum, trait, extern, let,
+mut — no recursive `parse_declaration` call, no stacking possible.
+
+**Severity:** low (grammar enforcement)
+**Impact:** `export export fn foo()` produces
+`Annotated(@export, Annotated(@export, Function(...)))`. Not a crash
+but not clean. The parser should reject double-export.
+
+**Proper fix:** After consuming `export`, check that the next token
+is NOT `export` before recursing into `parse_declaration`. Or: don't
+recurse — call a restricted `parse_exportable_declaration` that only
+handles `fn`, `type`, `enum`, `trait`, `extern`.
+
 ## Closed (previously from Rust host era)
 
 Items 1–9 from the old TECH_DEBT.md related to the Rust host compiler

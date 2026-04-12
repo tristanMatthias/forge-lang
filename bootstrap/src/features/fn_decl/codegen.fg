@@ -11,8 +11,11 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> StmtResult {
         .End -> ok_stmt(VarEnv.End)
         .Node(ss, next) -> {
             let r = match stmt_unwrap(ss.node) {
+                // Function names are already qualified by the name
+                // resolution pass — use them as-is for LLVM lookup.
                 .Function(name, params, _, body) -> emit_function_body(ctx, name, params, body)
                 .Impl(_, methods) -> emit_function_bodies(ctx, methods)
+                .Module(_, body) -> emit_function_bodies(ctx, body)
                 _ -> ok_stmt(VarEnv.End)
             }
             if r.had_error { return r }

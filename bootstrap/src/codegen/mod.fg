@@ -479,6 +479,7 @@ fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> Stru
                     forge_llvm_type_array_free(field_arr)
                     StructReg.Node(name, resolved_fields, reg)
                 }
+                .Module(_, body) -> declare_structs(ctx, i64t, body, reg)
                 _ -> reg
             }
             declare_structs(ctx, i64t, next, updated)
@@ -511,6 +512,7 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumR
                     forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
                     TopLevelVars.Node(name, g, translate_param_type(structs, enums, ty), reg)
                 }
+                .Module(_, body) -> declare_globals(m, ctx, i64t, structs, enums, body, reg)
                 _ -> reg
             }
             declare_globals(m, ctx, i64t, structs, enums, next, updated)
@@ -537,6 +539,7 @@ fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg 
                     forge_llvm_type_array_free(field_arr)
                     EnumReg.Node(name, variants, reg)
                 }
+                .Module(_, body) -> declare_enums(ctx, i64t, body, reg)
                 _ -> reg
             }
             declare_enums(ctx, i64t, next, updated)
@@ -550,6 +553,7 @@ fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
                 .TraitDecl(name, methods) -> TraitDeclReg.Node(name, collect_trait_fn_names(methods), reg)
+                .Module(_, body) -> collect_trait_decls(body, reg)
                 _ -> reg
             }
             collect_trait_decls(next, updated)
@@ -651,10 +655,8 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .Function(name, params, ret_ty, body) -> {
+                    // Names are already qualified by the name resolution pass
                     let arity = param_list_length(params)
-                    // Detect function name collisions: if a function with
-                    // this name already exists, it's a silent crash
-                    // waiting to happen (see TECH_DEBT #14).
                     let existing = forge_llvm_get_named_function(m, name)
                     if existing != null {
                         eprintln("FATAL: duplicate function `" + name + "` — rename to avoid collision")
@@ -677,6 +679,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
                     FnRetTypes.Node(name, translate_param_type(structs, enums, ret_ty), reg)
                 }
                 .Impl(_, methods) -> declare_functions(m, ctx, i64t, structs, enums, methods, reg)
+                .Module(_, body) -> declare_functions(m, ctx, i64t, structs, enums, body, reg)
                 _ -> reg
             }
             declare_functions(m, ctx, i64t, structs, enums, next, updated)
@@ -715,6 +718,11 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
             let stmt = stmt_unwrap(ss.node)
             match stmt {
                 .Function(_, _, _, _) -> emit_top_level(ctx, env, next)
+                .Module(_, body) -> {
+                    let r = emit_top_level(ctx, env, body)
+                    if r.had_error { return r }
+                    emit_top_level(ctx, r.env, next)
+                }
                 .Let(name, _, init) -> {
                     let result = emit_top_level_init(ctx, env, name, init)
                     if result.had_error {
@@ -811,6 +819,9 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         .ExternFn(_, _, _) -> ok_stmt(env)
         .NoOp -> ok_stmt(env)
         .TraitDecl(_, _) -> ok_stmt(env)
+        .Module(_, _) -> ok_stmt(env)
+        .Use(_, _) -> ok_stmt(env)
+        .Annotated(_, inner) -> emit_stmt(ctx, env, inner)
         // Loop control: must stay in core (needs access to LoopStack)
         .Break -> {
             let frame = loops_top(ctx.loops)
@@ -997,6 +1008,31 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
                 return ok_emit_typed(closure_i64, ValueType.Closure(0, ret_ty))
             }
             err_emit("undefined variable `" + name + "`")
+        }
+        .QualifiedIdent(path) -> {
+            let local = env_lookup(env, path)
+            if local.found {
+                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, local.alloca, path)
+                return EmitResult { value: loaded, ty: local.ty, had_error: false, error_message: "" }
+            }
+            let g = toplevel_lookup(ctx.top_level_vars, path)
+            if g.found {
+                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, g.llvm_global, path)
+                return EmitResult { value: loaded, ty: g.ty, had_error: false, error_message: "" }
+            }
+            let fn_val = forge_llvm_get_named_function(ctx.module, path)
+            if fn_val != null {
+                let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "fn_ref")
+                let arr_fn = get_fn(ctx, "forge_array_new")
+                let push_fn = get_fn(ctx, "forge_array_push")
+                let closure_arr = call_0(ctx, arr_fn, "fn_wrap")
+                call_2(ctx, push_fn, closure_arr, const_i64(ctx, -559038737), "")
+                call_2(ctx, push_fn, closure_arr, fn_i64, "")
+                let closure_i64 = to_i64(ctx, closure_arr, "fn_ref_i64")
+                let ret_ty = fn_ret_lookup(ctx.fn_rets, path)
+                return ok_emit_typed(closure_i64, ValueType.Closure(0, ret_ty))
+            }
+            err_emit("undefined qualified name `" + path + "`")
         }
         .Assign(name, value) -> {
             let r = emit_expr(ctx, env, value)
@@ -1196,7 +1232,7 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
     }
 }
 
-// Match codegen lives in features/match/codegen.fg.
+// Match codegen lives in features/match_expr/codegen.fg.
 
 fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     let r = emit_expr(ctx, env, obj)
@@ -1304,6 +1340,7 @@ fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitRes
 fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
     match callee {
         .Ident(name) -> emit_call_named(ctx, env, name, args)
+        .QualifiedIdent(path) -> emit_call_named(ctx, env, path, args)
         .FieldAccess(obj, method) -> emit_method_call(ctx, env, obj, method, args)
         _ -> {
             // Expression callee: evaluate it and call indirectly.

@@ -61,13 +61,18 @@ endif
 
 # Update the seed IR from the current self-hosted compiler.
 # Run this after dogfooding new syntax into bootstrap source.
-# Verifies fixed point first, then copies bs2's IR to seed/seed.ll.
+# The auto-cycle in --build-bs2 handles most seed updates automatically,
+# but this target does a VERIFIED update with fixed-point check.
 update-seed:
 	@$(DIAG) --build-bs2
 	@$(DIAG) --check-fixedpoint
 	@cp src/main.fg.ll seed/seed.ll
+	@rm -f build/seed build/seed.o
 	@echo "seed/seed.ll updated ($$(wc -l < seed/seed.ll | tr -d ' ') lines)"
-	@echo "IMPORTANT: commit seed/seed.ll — it's the bootstrap lifeline"
+	@echo "build/seed invalidated — next 'make build' rebuilds from new seed"
+	@rm -rf build
+	@$(DIAG) --build-bs2
+	@echo "clean rebuild from new seed: OK"
 
 # Install the pre-commit hook (idempotent).
 install-hooks:

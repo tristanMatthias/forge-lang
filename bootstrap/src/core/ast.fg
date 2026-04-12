@@ -306,6 +306,7 @@ export enum Expr {
     Slice(obj: Expr, start: Expr, end: Expr)
     FloatLit(value: string)
     IsCheck(subject: Expr, variant_name: string)
+    QualifiedIdent(path: string)
 }
 
 export enum Stmt {
@@ -341,6 +342,8 @@ export enum Stmt {
     ThenBlock(name: string, condition: Expr)
     Select(arms: SelectArmList)
     Parallel(body: StmtList)
+    Module(name: string, body: StmtList)
+    Use(module_path: string, names: ParamList)
 }
 
 // Select arms: `binding <- channel -> body`
@@ -578,6 +581,7 @@ export fn render_expr(expr: Expr) -> string {
         .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice " + render_expr(obj) + " " + render_expr(start) + ".." + render_expr(end) + ")"
         .IsCheck(subject, vname) -> "(is " + render_expr(subject) + " ." + vname + ")"
+        .QualifiedIdent(path) -> path
     }
 }
 
@@ -689,6 +693,8 @@ export fn render_stmt(stmt: Stmt) -> string {
         .ThenBlock(name, cond) -> "(then " + name + " " + render_expr(cond) + ")"
         .Select(_) -> "(select ...)"
         .Parallel(_) -> "(parallel ...)"
+        .Module(name, body) -> "(module " + name + " " + render_stmt_list(body) + ")"
+        .Use(path, _) -> "(use " + path + ")"
     }
 }
 

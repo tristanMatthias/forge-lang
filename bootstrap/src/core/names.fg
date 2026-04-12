@@ -1,0 +1,538 @@
+// WHY: module-aware name resolution — builds a module tree from
+// Stmt.Module nodes, resolves `use` imports into alias tables, and
+// rewrites Expr.Ident references to Expr.QualifiedIdent with their
+// fully-qualified canonical paths (e.g. "core::ast::render_expr").
+//
+// This pass runs AFTER module file resolution (resolve_module_files
+// in main.fg) and BEFORE the existing resolver (core/resolver.fg).
+// The existing resolver handles variable scoping; this pass handles
+// module-level name qualification.
+//
+//   read this file when:    working on module visibility, use imports,
+//                           or qualified name resolution
+//   do NOT read this file when:   the issue is variable scoping or
+//                                  type checking
+
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
+
+// ── Module tree ──
+//
+// Hierarchical namespace built from Stmt.Module nodes. Each node
+// contains the items (functions, types, enums) defined in that module
+// and links to child modules.
+
+enum ModuleItem {
+    End
+    Node(short_name: string, canonical: string, exported: bool, next: ModuleItem)
+}
+
+enum ModuleNode {
+    End
+    Node(name: string, path: string, items: ModuleItem, children: ModuleNode, next: ModuleNode)
+}
+
+// ── Alias table ──
+//
+// Maps short names to canonical paths within a module scope.
+// Built from `use` declarations.
+
+enum AliasEntry {
+    End
+    Node(short_name: string, canonical: string, next: AliasEntry)
+}
+
+fn alias_lookup(aliases: AliasEntry, name: string) -> string {
+    match aliases {
+        .End -> ""
+        .Node(short, canonical, next) -> {
+            if short == name { return canonical }
+            alias_lookup(next, name)
+        }
+    }
+}
+
+// ── Module item lookup ──
+
+fn item_lookup(items: ModuleItem, name: string) -> string {
+    match items {
+        .End -> ""
+        .Node(short, canonical, _, next) -> {
+            if short == name { return canonical }
+            item_lookup(next, name)
+        }
+    }
+}
+
+fn item_is_exported(items: ModuleItem, name: string) -> bool {
+    match items {
+        .End -> false
+        .Node(short, _, exported, next) -> {
+            if short == name { return exported }
+            item_is_exported(next, name)
+        }
+    }
+}
+
+// Search ALL modules in the tree for an item by short name.
+// Returns the canonical path if found, "" otherwise.
+fn item_search_all(tree: ModuleNode, name: string) -> string {
+    match tree {
+        .End -> ""
+        .Node(_, _, items, children, next) -> {
+            let found = item_lookup(items, name)
+            if found != "" { return found }
+            let in_children = item_search_all(children, name)
+            if in_children != "" { return in_children }
+            item_search_all(next, name)
+        }
+    }
+}
+
+// Find a module node by path (e.g. "helpers" or "core::ast")
+fn module_find(tree: ModuleNode, path: string) -> ModuleNode {
+    match tree {
+        .End -> ModuleNode.End
+        .Node(name, mod_path, items, children, next) -> {
+            if mod_path == path { return tree }
+            // Search children
+            let in_children = module_find(children, path)
+            match in_children {
+                .End -> module_find(next, path)
+                _ -> in_children
+            }
+        }
+    }
+}
+
+// ── Pass 1: Build module tree ──
+//
+// Walk the AST and collect all module-level declarations (fn, type,
+// enum, trait, extern fn) into a hierarchical ModuleNode tree.
+
+fn build_module_tree(stmts: StmtList, parent_path: string, tree: ModuleNode) -> ModuleNode {
+    match stmts {
+        .End -> tree
+        .Node(ss, next) -> {
+            let updated = build_tree_from_stmt(ss.node, parent_path, tree)
+            build_module_tree(next, parent_path, updated)
+        }
+    }
+}
+
+fn build_tree_from_stmt(stmt: Stmt, parent_path: string, tree: ModuleNode) -> ModuleNode {
+    match stmt {
+        .Module(name, body) -> {
+            let mod_path = if parent_path == "" { name } else { parent_path + "::" + name }
+            // Collect items in this module
+            let items = collect_module_items(body, mod_path)
+            // Recursively build tree for nested modules
+            let children = build_module_tree(body, mod_path, ModuleNode.End)
+            // Add this module to the tree
+            ModuleNode.Node(name, mod_path, items, children, tree)
+        }
+        .Annotated(_, inner) -> build_tree_from_stmt(inner, parent_path, tree)
+        _ -> tree
+    }
+}
+
+// Collect all declaration names in a module's body
+fn collect_module_items(stmts: StmtList, mod_path: string) -> ModuleItem {
+    match stmts {
+        .End -> ModuleItem.End
+        .Node(ss, next) -> {
+            let rest = collect_module_items(next, mod_path)
+            collect_item_from_stmt(ss.node, mod_path, false, rest)
+        }
+    }
+}
+
+fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, rest: ModuleItem) -> ModuleItem {
+    match stmt {
+        .Function(name, _, _, _) -> {
+            let canonical = mod_path + "::" + name
+            ModuleItem.Node(name, canonical, exported, rest)
+        }
+        .ExternFn(name, _, _) -> {
+            // Extern fns keep bare names (C ABI) but are registered
+            // for visibility tracking
+            ModuleItem.Node(name, name, true, rest)
+        }
+        .TypeDecl(name, _) -> {
+            let canonical = mod_path + "::" + name
+            ModuleItem.Node(name, canonical, exported, rest)
+        }
+        .EnumDecl(name, _) -> {
+            let canonical = mod_path + "::" + name
+            ModuleItem.Node(name, canonical, exported, rest)
+        }
+        .TraitDecl(name, _) -> {
+            let canonical = mod_path + "::" + name
+            ModuleItem.Node(name, canonical, exported, rest)
+        }
+        .Impl(_, methods) -> collect_impl_items(methods, mod_path, rest)
+        .Annotated(annotations, inner) -> {
+            let is_export = annotation_has_export(annotations)
+            collect_item_from_stmt(inner, mod_path, is_export, rest)
+        }
+        _ -> rest
+    }
+}
+
+fn collect_impl_items(stmts: StmtList, mod_path: string, rest: ModuleItem) -> ModuleItem {
+    match stmts {
+        .End -> rest
+        .Node(ss, next) -> {
+            let with_this = match stmt_unwrap(ss.node) {
+                .Function(name, _, _, _) -> {
+                    // Impl methods are already mangled as Type__method.
+                    // Keep bare name — method call codegen uses Type__method directly.
+                    ModuleItem.Node(name, name, true, rest)
+                }
+                _ -> rest
+            }
+            collect_impl_items(next, mod_path, with_this)
+        }
+    }
+}
+
+fn annotation_has_export(annotations: AnnotationList) -> bool {
+    match annotations {
+        .End -> false
+        .Node(name, _, next) -> {
+            if name == "export" { return true }
+            annotation_has_export(next)
+        }
+    }
+}
+
+// ── Pass 2: Resolve use aliases ──
+//
+// Walk the AST and for each Stmt.Use, look up the imported names in
+// the module tree and build an alias table for the containing scope.
+
+fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> AliasEntry {
+    match stmts {
+        .End -> AliasEntry.End
+        .Node(ss, next) -> {
+            let rest = resolve_use_aliases(next, tree)
+            match ss.node {
+                .Use(mod_path, names) -> {
+                    // Convert dotted path to :: form: core.ast -> core::ast
+                    let canonical_path = dots_to_colons(mod_path)
+                    resolve_use_names(canonical_path, names, tree, rest)
+                }
+                _ -> rest
+            }
+        }
+    }
+}
+
+fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, aliases: AliasEntry) -> AliasEntry {
+    match names {
+        .End -> aliases
+        .Node(name, _, next) -> {
+            // Find the module in the tree
+            let mod_node = module_find(tree, mod_path)
+            let canonical = match mod_node {
+                .End -> ""  // Module not found — leave unresolved
+                .Node(_, _, items, _, _) -> item_lookup(items, name)
+            }
+            let updated = if canonical != "" {
+                AliasEntry.Node(name, canonical, aliases)
+            } else {
+                aliases
+            }
+            resolve_use_names(mod_path, next, tree, updated)
+        }
+    }
+}
+
+fn dots_to_colons(path: string) -> string {
+    mut result = ""
+    mut i = 0
+    let len = path.length
+    while i < len {
+        let ch = path[i]
+        if ch == "." {
+            result = result + "::"
+        } else {
+            result = result + ch
+        }
+        i = i + 1
+    }
+    result
+}
+
+// ── Pass 3: Rewrite identifiers ──
+//
+// Walk all expressions in the AST. For each Expr.Ident that references
+// a module-level item (via use aliases or implicit sibling access),
+// rewrite it to Expr.QualifiedIdent with the canonical path.
+//
+// Local variables (let/mut/fn params/for/match bindings) are tracked
+// in a scope stack and are NOT rewritten — they stay as Expr.Ident.
+
+enum LocalScope {
+    End
+    Node(name: string, next: LocalScope)
+}
+
+fn scope_has(scope: LocalScope, name: string) -> bool {
+    match scope {
+        .End -> false
+        .Node(n, next) -> {
+            if n == name { return true }
+            scope_has(next, name)
+        }
+    }
+}
+
+// Builtin functions that should never be qualified
+fn is_builtin_name(name: string) -> bool {
+    name == "println" || name == "eprintln" || name == "print" || name == "eprint" ||
+    name == "string" || name == "int" || name == "float" || name == "panic" ||
+    name == "exit"
+}
+
+// ── Name resolution context ──
+
+// Name resolution state — module-level globals instead of threaded
+// struct parameters. Avoids argument-passing bugs in the bootstrap
+// codegen that corrupt struct values across deep recursive chains.
+export mut NR_TREE: ModuleNode = ModuleNode.End
+export mut NR_ALIASES: AliasEntry = AliasEntry.End
+export mut NR_MODULE: string = ""
+export mut NR_LOCALS: LocalScope = LocalScope.End
+
+fn push_params_to_locals(params: ParamList) {
+    match params {
+        .End -> {}
+        .Node(name, _, next) -> {
+            NR_LOCALS = LocalScope.Node(name, NR_LOCALS)
+            push_params_to_locals(next)
+        }
+    }
+}
+
+fn push_pattern_to_locals(pattern: Pattern) {
+    match pattern {
+        .Wildcard -> {}
+        .Variant(_, bindings) -> push_params_to_locals(bindings)
+    }
+}
+
+fn merge_aliases(base: AliasEntry, extra: AliasEntry) -> AliasEntry {
+    match extra {
+        .End -> base
+        .Node(short, canonical, next) -> {
+            merge_aliases(AliasEntry.Node(short, canonical, base), next)
+        }
+    }
+}
+
+// ── Public entry point ──
+
+export type NameResolveResult = {
+    stmts: StmtList,
+    had_error: bool,
+    error_message: string,
+}
+
+export fn resolve_names(stmts: StmtList) -> NameResolveResult {
+    // Pass 1: build module tree
+    let tree = build_module_tree(stmts, "", ModuleNode.End)
+    // Pass 2: resolve use aliases (top-level)
+    let aliases = resolve_use_aliases(stmts, tree)
+    // Pass 3: rewrite identifiers
+    NR_TREE = tree
+    NR_ALIASES = aliases
+    NR_MODULE = ""
+    NR_LOCALS = LocalScope.End
+    let rewritten = rewrite_stmt_list(stmts)
+    NameResolveResult { stmts: rewritten, had_error: false, error_message: "" }
+}
+
+// ── Statement rewriting ──
+
+fn rewrite_stmt_list(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            let new_stmt = rewrite_stmt(ss.node)
+            let new_next = rewrite_stmt_list(next)
+            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), new_next)
+        }
+    }
+}
+
+fn rewrite_stmt(stmt: Stmt) -> Stmt {
+    match stmt {
+        .Let(name, ty, init) -> {
+            let new_init = rewrite_expr(init)
+            Stmt.Let(name, ty, new_init)
+        }
+        .Mut(name, ty, init) -> {
+            let new_init = rewrite_expr(init)
+            Stmt.Mut(name, ty, new_init)
+        }
+        .Expr(e) -> Stmt.Expr(rewrite_expr(e))
+        .Return(e) -> Stmt.Return(rewrite_expr(e))
+        .Block(body) -> Stmt.Block(rewrite_stmt_list(body))
+        .If(cond, then_b, else_b) -> {
+            let new_cond = rewrite_expr(cond)
+            let new_then = rewrite_stmt(then_b)
+            let new_else = if else_b != null { rewrite_stmt(else_b!) } else { null }
+            Stmt.If(new_cond, new_then, new_else)
+        }
+        .While(cond, body) -> Stmt.While(rewrite_expr(cond), rewrite_stmt(body))
+        .For(var, start, end, body) -> Stmt.For(var, rewrite_expr(start), rewrite_expr(end), rewrite_stmt(body))
+        .ForIn(var, coll, body) -> Stmt.ForIn(var, rewrite_expr(coll), rewrite_stmt(body))
+        .Function(name, params, ret_ty, body) -> {
+            // Qualify function name with module path.
+            // Skip: main (entry point), extern fns (C ABI), and impl
+            // methods (already mangled as Type__method by the parser).
+            let is_impl_method = name.contains("__")
+            let qualified = if NR_MODULE != "" && name != "main" && !is_impl_method {
+                NR_MODULE + "::" + name
+            } else { name }
+            // Function params are locals inside the body — save/restore scope
+            let saved_locals = NR_LOCALS
+            push_params_to_locals(params)
+            let result = Stmt.Function(qualified, params, ret_ty, rewrite_stmt_list(body))
+            NR_LOCALS = saved_locals
+            result
+        }
+        .Match(subject, arms) -> Stmt.Match(rewrite_expr(subject), rewrite_match_arms(arms))
+        .Module(name, body) -> {
+            // Enter the module scope: update current_module and resolve
+            // use aliases for this module's body
+            let saved_module = NR_MODULE
+            let saved_aliases = NR_ALIASES
+            NR_MODULE = if saved_module == "" { name } else { saved_module + "::" + name }
+            let mod_aliases = resolve_use_aliases(body, NR_TREE)
+            NR_ALIASES = merge_aliases(saved_aliases, mod_aliases)
+            let result = Stmt.Module(name, rewrite_stmt_list(body))
+            NR_MODULE = saved_module
+            NR_ALIASES = saved_aliases
+            result
+        }
+        .Impl(type_name, methods) -> Stmt.Impl(type_name, rewrite_stmt_list(methods))
+        .Annotated(annotations, inner) -> Stmt.Annotated(annotations, rewrite_stmt(inner))
+        .Defer(body) -> Stmt.Defer(rewrite_expr(body))
+        .LetDestructure(names, init) -> Stmt.LetDestructure(names, rewrite_expr(init))
+        _ -> stmt  // ReturnEmpty, TypeDecl, EnumDecl, NoOp, ExternFn, Break, Continue, TraitDecl, Use, etc.
+    }
+}
+
+// ── Expression rewriting ──
+
+fn rewrite_expr(expr: Expr) -> Expr {
+    if expr == null { return Expr.Null }
+    match expr {
+        .Ident(name) -> rewrite_ident(name, expr)
+        .Call(callee, args) -> Expr.Call(rewrite_expr(callee), rewrite_expr_list(args))
+        .Binary(l, op, r) -> Expr.Binary(rewrite_expr(l), op, rewrite_expr(r))
+        .Unary(op, r) -> Expr.Unary(op, rewrite_expr(r))
+        .Logical(l, op, r) -> Expr.Logical(rewrite_expr(l), op, rewrite_expr(r))
+        .Grouping(inner) -> Expr.Grouping(rewrite_expr(inner))
+        .Assign(name, val) -> Expr.Assign(name, rewrite_expr(val))
+        .Index(obj, idx) -> Expr.Index(rewrite_expr(obj), rewrite_expr(idx))
+        .Try(inner) -> Expr.Try(rewrite_expr(inner))
+        .Block(body) -> Expr.Block(rewrite_stmt_list(body))
+        _ -> rewrite_expr_compound(expr)
+    }
+}
+
+// Handle compound expressions that require field access or construction.
+// Split out to keep rewrite_expr's match arm count low (bootstrap codegen
+// has issues with functions that have 30+ match arms and 60+ allocas).
+fn rewrite_expr_compound(expr: Expr) -> Expr {
+    if expr == null { return Expr.Null }
+    match expr {
+        .FieldAccess(obj, field) -> Expr.FieldAccess(rewrite_expr(obj), field)
+        .FieldAssign(obj, field, val) -> Expr.FieldAssign(rewrite_expr(obj), field, rewrite_expr(val))
+        .IfExpr(c, t, e) -> Expr.IfExpr(rewrite_expr(c), rewrite_expr(t), rewrite_expr(e))
+        .NullCoalesce(l, r) -> Expr.NullCoalesce(rewrite_expr(l), rewrite_expr(r))
+        .OptionalChain(obj, field) -> Expr.OptionalChain(rewrite_expr(obj), field)
+        .Tuple(elems) -> Expr.Tuple(rewrite_expr_list(elems))
+        .TupleIndex(obj, idx) -> Expr.TupleIndex(rewrite_expr(obj), idx)
+        .ListLit(elems) -> Expr.ListLit(rewrite_expr_list(elems))
+        .MapLit(entries) -> Expr.MapLit(rewrite_expr_list(entries))
+        .Slice(obj, s, e) -> Expr.Slice(rewrite_expr(obj), rewrite_expr(s), rewrite_expr(e))
+        .With(obj, overrides) -> Expr.With(rewrite_expr(obj), rewrite_field_inits(overrides))
+        .StructLit(name, inits) -> Expr.StructLit(name, rewrite_field_inits(inits))
+        .EnumCtor(type_name, variant, args) -> Expr.EnumCtor(type_name, variant, rewrite_expr_list(args))
+        .MatchExpr(subject, arms) -> Expr.MatchExpr(rewrite_expr(subject), rewrite_match_arms(arms))
+        .Lambda(params, body) -> {
+            // Lambda params are locals inside the body — save/restore scope
+            let saved_locals = NR_LOCALS
+            push_params_to_locals(params)
+            let result = Expr.Lambda(params, rewrite_expr(body))
+            NR_LOCALS = saved_locals
+            result
+        }
+        .IsCheck(subject, variant) -> Expr.IsCheck(rewrite_expr(subject), variant)
+        _ -> expr  // Number, String, Bool, Null, FloatLit, QualifiedIdent
+    }
+}
+
+// Resolve an identifier: check locals, builtins, aliases, siblings
+fn rewrite_ident(name: string, original: Expr) -> Expr {
+    if scope_has(NR_LOCALS, name) { return original }
+    if is_builtin_name(name) { return original }
+    // Uppercase = type/enum name, resolved by codegen registries
+    if name.length > 0 && name[0] >= "A" && name[0] <= "Z" { return original }
+    // Use alias
+    let from_alias = alias_lookup(NR_ALIASES, name)
+    if from_alias != "" { return Expr.QualifiedIdent(from_alias) }
+    // Sibling in current module
+    if NR_MODULE != "" {
+        let mod_node = module_find(NR_TREE, NR_MODULE)
+        let from_sibling = match mod_node {
+            .End -> ""
+            .Node(_, _, items, _, _) -> item_lookup(items, name)
+        }
+        if from_sibling != "" { return Expr.QualifiedIdent(from_sibling) }
+    }
+    // Global search: check all modules for the name. This handles the
+    // case where code calls a function from another module without an
+    // explicit `use` import (common in the bootstrap's flat source).
+    let from_global = item_search_all(NR_TREE, name)
+    if from_global != "" { return Expr.QualifiedIdent(from_global) }
+    original
+}
+
+fn rewrite_expr_list(exprs: ExprList) -> ExprList {
+    match exprs {
+        .End -> ExprList.End
+        .Node(se, next) -> {
+            ExprList.Node(sexpr(rewrite_expr(se.node), se.line, se.col), rewrite_expr_list(next))
+        }
+    }
+}
+
+fn rewrite_field_inits(inits: FieldInitList) -> FieldInitList {
+    match inits {
+        .End -> FieldInitList.End
+        .Node(name, se, next) -> {
+            FieldInitList.Node(name, sexpr(rewrite_expr(se.node), se.line, se.col), rewrite_field_inits(next))
+        }
+    }
+}
+
+fn rewrite_match_arms(arms: MatchArmList) -> MatchArmList {
+    match arms {
+        .End -> MatchArmList.End
+        .Node(pattern, guard, body, next) -> {
+            // Bind pattern variables into scope for the arm body — save/restore scope
+            let saved_locals = NR_LOCALS
+            push_pattern_to_locals(pattern)
+            let new_guard = if guard != null {
+                sexpr(rewrite_expr(guard!.node), guard!.line, guard!.col)
+            } else { null }
+            let new_body = sexpr(rewrite_expr(body.node), body.line, body.col)
+            NR_LOCALS = saved_locals
+            MatchArmList.Node(pattern, new_guard, new_body, rewrite_match_arms(next))
+        }
+    }
+}

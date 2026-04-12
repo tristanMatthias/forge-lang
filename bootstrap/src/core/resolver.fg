@@ -53,6 +53,7 @@ fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
                     .Function(name, _, _, _) -> declare_function(res, name)
                     .ExternFn(name, _, _) -> declare_function(res, name)
                     .Impl(type_name, methods) -> collect_method_names(res, type_name, methods)
+                    .Module(_, body) -> collect_function_names(res, body)
                     _ -> res
                 }
                 current = next
@@ -306,6 +307,8 @@ fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .ThenBlock(_, cond) -> resolve_expr(r, cond)
         .Select(arms) -> resolve_select_arms(r, arms)
         .Parallel(body) -> resolve_stmt_list(r, body)
+        .Module(_, body) -> resolve_stmt_list(r, body)
+        .Use(_, _) -> r
     }
 }
 
@@ -503,6 +506,7 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             resolve_field_init_list(after_obj, overrides)
         }
         .IsCheck(subject, _) -> resolve_expr(r, subject)
+        .QualifiedIdent(_) -> r
     }
 }
 

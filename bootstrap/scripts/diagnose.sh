@@ -111,6 +111,17 @@ HEAP / MEMORY DEBUGGING
                        the smallest prefix that still makes bs2 crash.
                        Useful for isolating heap-corruption triggers.
 
+SEED MANAGEMENT
+  --seed-status          Compare seed vs current source: show new, removed,
+                         and changed functions. First thing to check when a
+                         build fails.
+  --seed-diff [fn]       Show IR diff between seed and fresh compile. With a
+                         function name, shows just that function's diff.
+  --build-seed           Build the seed binary from seed/seed.ll.
+
+  NOTE: 'make build' now AUTO-CYCLES the seed when self-compile fails.
+  You rarely need to run 'make update-seed' manually anymore.
+
 ENVIRONMENT
   LLVM_PREFIX  Override the LLVM install prefix.
                Default: /opt/homebrew/opt/llvm
@@ -248,26 +259,128 @@ mode_build() {
 mode_build_runtime() { ensure_runtime; ok "$RUNTIME_O"; }
 mode_build_bs2() {
   ensure_bs2
-  # ALWAYS verify bs2 can compile itself. This catches bootstrap
-  # chicken-and-egg bugs at build time instead of hours later when
-  # you try to update the seed. If this fails, your changes broke
-  # the self-hosting chain — fix before proceeding.
+  # Verify bs2 can compile itself (bootstrap chain integrity).
   log "verifying bs2 can self-compile (bootstrap safety check)"
-  if ! "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
-    err "bs2 CANNOT compile itself — bootstrap chain is broken!"
-    err "This means the seed binary compiled your code, but the"
-    err "resulting bs2 cannot parse/compile the same source."
-    err ""
-    err "Common causes:"
-    err "  - New syntax that the seed-compiled parser doesn't handle"
-    err "  - New enum variant that shifts tags in the seed-compiled binary"
-    err "  - Two-phase bootstrap needed (add types first, update seed, then use them)"
-    err ""
-    err "Log: $BUILD_DIR/bs2_selfcheck.log"
-    head -30 "$BUILD_DIR/bs2_selfcheck.log" >&2
-    die "fix the self-compile error before proceeding"
+  if "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
+    ok "$BS2"
+    return
   fi
-  ok "$BS2"
+
+  # Self-compile failed. Before giving up, try an AUTO-CYCLE:
+  # The seed may be stale (missing new functions/types). We can
+  # fix this automatically by updating the seed from bs2's output
+  # (which the seed DID compile successfully) and rebuilding.
+  warn "bs2 self-compile failed — attempting auto-cycle to update seed"
+  warn "(the seed may be stale — this is normal when adding new code)"
+
+  # bs2 was compiled by the seed successfully (ensure_bs2 passed).
+  # Its IR is the best candidate for a new seed.
+  local bs2_ll="$BOOTSTRAP_DIR/src/main.fg.ll"
+  if [ ! -f "$bs2_ll" ]; then
+    err "no IR file found at $bs2_ll — cannot auto-cycle"
+    head -30 "$BUILD_DIR/bs2_selfcheck.log" >&2
+    die "manual seed update required"
+  fi
+
+  # Save the current seed as backup
+  cp "$SEED_LL" "$BUILD_DIR/seed_backup.ll"
+  log "backed up seed to $BUILD_DIR/seed_backup.ll"
+
+  # Update seed with bs2's IR
+  cp "$bs2_ll" "$SEED_LL"
+  rm -f "$SEED_BIN" "$BUILD_DIR/seed.o"
+  log "seed updated from bs2 output — rebuilding from new seed"
+
+  # Rebuild everything from the new seed
+  rm -f "$BS2" "$BS3"
+  ensure_seed
+  ensure_bs2
+
+  # Try self-compile again
+  log "retrying self-compile with updated seed"
+  if "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_selfcheck.log" 2>&1; then
+    ok "auto-cycle succeeded — bs2 self-compiles after seed update"
+    ok "$BS2"
+
+    # Verify fixed point: bs2 and bs3 should agree
+    log "verifying fixed point after auto-cycle"
+    local bs2_ir="$BUILD_DIR/fp_autocycle_bs2.ll"
+    cp "$BOOTSTRAP_DIR/src/main.fg.ll" "$bs2_ir"
+    if "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1; then
+      if diff -q "$bs2_ir" "$BOOTSTRAP_DIR/src/main.fg.ll" >/dev/null 2>&1; then
+        ok "fixed point holds after auto-cycle"
+      else
+        warn "fixed point does NOT hold after auto-cycle — run 'make update-seed' to stabilize"
+      fi
+    fi
+    return
+  fi
+
+  # Auto-cycle didn't help. Restore the backup and report the real error.
+  err "auto-cycle FAILED — self-compile still broken after seed update"
+  cp "$BUILD_DIR/seed_backup.ll" "$SEED_LL"
+  rm -f "$SEED_BIN" "$BUILD_DIR/seed.o"
+  err ""
+  err "Self-compile error log:"
+  head -30 "$BUILD_DIR/bs2_selfcheck.log" >&2
+  err ""
+
+  # Diagnose: diff the seed vs bs2 IR to show which functions diverge
+  mode_diagnose_selfcompile_failure
+
+  die "bootstrap chain is broken — see diagnostics above"
+}
+
+# When self-compile fails, show which functions in the seed vs bs2 IR
+# are different. This pinpoints the codegen bug immediately instead of
+# requiring manual investigation.
+mode_diagnose_selfcompile_failure() {
+  local seed_ir="$SEED_LL"
+  local bs2_ir="$BOOTSTRAP_DIR/src/main.fg.ll"
+  [ -f "$bs2_ir" ] || return
+
+  # Extract function names from both
+  local seed_fns bs2_fns
+  seed_fns=$(grep '^define ' "$seed_ir" | sed 's/define [^ ]* @//' | sed 's/(.*//' | sort)
+  bs2_fns=$(grep '^define ' "$bs2_ir" | sed 's/define [^ ]* @//' | sed 's/(.*//' | sort)
+
+  # Functions in bs2 but not in seed (newly added)
+  local new_fns
+  new_fns=$(comm -13 <(echo "$seed_fns") <(echo "$bs2_fns"))
+  if [ -n "$new_fns" ]; then
+    local count
+    count=$(echo "$new_fns" | wc -l | tr -d ' ')
+    warn "$count functions in bs2 that are NOT in the seed:"
+    echo "$new_fns" | head -20 | while read -r fn; do
+      printf "  ${C_YELLOW}+ %s${C_RESET}\n" "$fn" >&2
+    done
+    if [ "$count" -gt 20 ]; then
+      warn "  ... and $((count - 20)) more"
+    fi
+    warn ""
+    warn "These functions were compiled by the OLD seed which didn't"
+    warn "have them. The seed needs updating. Run: make update-seed"
+  fi
+
+  # Functions that exist in both but have different IR
+  local common_fns diverged=0
+  common_fns=$(comm -12 <(echo "$seed_fns") <(echo "$bs2_fns"))
+  for fn in $common_fns; do
+    local seed_body bs2_body
+    seed_body=$(sed -n "/^define.*@${fn}(/,/^}/p" "$seed_ir" 2>/dev/null | wc -l | tr -d ' ')
+    bs2_body=$(sed -n "/^define.*@${fn}(/,/^}/p" "$bs2_ir" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$seed_body" != "$bs2_body" ]; then
+      if [ "$diverged" -eq 0 ]; then
+        warn "Functions with different IR between seed and bs2:"
+      fi
+      printf "  ${C_RED}~ %s${C_RESET} (seed: %s lines, bs2: %s lines)\n" "$fn" "$seed_body" "$bs2_body" >&2
+      diverged=$((diverged + 1))
+      if [ "$diverged" -ge 15 ]; then
+        warn "  ... stopping at 15 divergences"
+        break
+      fi
+    fi
+  done
 }
 mode_build_bs2_asan() { ensure_bs2_asan; ok "$BS2_ASAN"; }
 mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
@@ -772,8 +885,123 @@ main() {
     --asan)               mode_asan "$@" ;;
     --malloc-trace)       mode_malloc_trace "$@" ;;
     --bisect-lines)       mode_bisect_lines "$@" ;;
+    --seed-status)        mode_seed_status "$@" ;;
+    --seed-diff)          mode_seed_diff "$@" ;;
+    --build-seed)         ensure_seed; ok "$SEED_BIN" ;;
     *) err "unknown mode: $mode"; print_help; exit 1 ;;
   esac
+}
+
+# Show what's in the seed vs the current source — functions added, removed,
+# changed. This is the first thing to check when a build fails.
+mode_seed_status() {
+  [ -f "$SEED_LL" ] || die "no seed found"
+
+  # Compile current source with the seed (without linking) to get fresh IR
+  ensure_seed
+  log "compiling source with seed to compare..."
+  if ! "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1; then
+    err "seed cannot compile current source — seed is too old"
+    return 1
+  fi
+
+  local fresh_ir="$BOOTSTRAP_DIR/src/main.fg.ll"
+  [ -f "$fresh_ir" ] || die "no IR produced"
+
+  local seed_fn_count fresh_fn_count
+  seed_fn_count=$(grep -c '^define ' "$SEED_LL")
+  fresh_fn_count=$(grep -c '^define ' "$fresh_ir")
+
+  local seed_fns fresh_fns
+  seed_fns=$(grep '^define ' "$SEED_LL" | sed 's/define [^ ]* @//' | sed 's/(.*//' | sort)
+  fresh_fns=$(grep '^define ' "$fresh_ir" | sed 's/define [^ ]* @//' | sed 's/(.*//' | sort)
+
+  echo "Seed: $seed_fn_count functions ($(wc -l < "$SEED_LL" | tr -d ' ') lines)"
+  echo "Fresh: $fresh_fn_count functions ($(wc -l < "$fresh_ir" | tr -d ' ') lines)"
+  echo ""
+
+  # New functions (in source but not seed)
+  local new_fns
+  new_fns=$(comm -13 <(echo "$seed_fns") <(echo "$fresh_fns"))
+  if [ -n "$new_fns" ]; then
+    local count; count=$(echo "$new_fns" | wc -l | tr -d ' ')
+    printf "${C_GREEN}+ %s new functions:${C_RESET}\n" "$count"
+    echo "$new_fns" | while read -r fn; do
+      printf "  ${C_GREEN}+ %s${C_RESET}\n" "$fn"
+    done
+    echo ""
+  fi
+
+  # Removed functions (in seed but not source)
+  local removed_fns
+  removed_fns=$(comm -23 <(echo "$seed_fns") <(echo "$fresh_fns"))
+  if [ -n "$removed_fns" ]; then
+    local count; count=$(echo "$removed_fns" | wc -l | tr -d ' ')
+    printf "${C_RED}- %s removed functions:${C_RESET}\n" "$count"
+    echo "$removed_fns" | while read -r fn; do
+      printf "  ${C_RED}- %s${C_RESET}\n" "$fn"
+    done
+    echo ""
+  fi
+
+  # Changed functions (different line count)
+  local common_fns changed=0
+  common_fns=$(comm -12 <(echo "$seed_fns") <(echo "$fresh_fns"))
+  local changed_list=""
+  for fn in $common_fns; do
+    local seed_lines fresh_lines
+    seed_lines=$(sed -n "/^define.*@${fn}(/,/^}/p" "$SEED_LL" 2>/dev/null | wc -l | tr -d ' ')
+    fresh_lines=$(sed -n "/^define.*@${fn}(/,/^}/p" "$fresh_ir" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$seed_lines" != "$fresh_lines" ]; then
+      changed=$((changed + 1))
+      changed_list="${changed_list}  ~ ${fn} (${seed_lines} → ${fresh_lines} lines)\n"
+    fi
+  done
+  if [ "$changed" -gt 0 ]; then
+    printf "${C_YELLOW}~ %s changed functions:${C_RESET}\n" "$changed"
+    printf "$changed_list"
+    echo ""
+  fi
+
+  if [ -z "$new_fns" ] && [ -z "$removed_fns" ] && [ "$changed" -eq 0 ]; then
+    ok "seed is up to date — no differences"
+  fi
+}
+
+# Show a per-function diff between seed IR and fresh-compiled IR.
+mode_seed_diff() {
+  local fn_name="${1:-}"
+  [ -f "$SEED_LL" ] || die "no seed found"
+
+  ensure_seed
+  if ! "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1; then
+    die "seed cannot compile current source"
+  fi
+
+  local fresh_ir="$BOOTSTRAP_DIR/src/main.fg.ll"
+  if [ -n "$fn_name" ]; then
+    # Diff a specific function. Handles both bare names (@foo) and
+    # qualified names (@"core::names::foo"). Matches any function
+    # whose name ENDS with the given string.
+    local seed_fn fresh_fn
+    seed_fn=$(awk "/^define.*${fn_name}\"?\\(/{found=1} found{print} found&&/^\\}/{exit}" "$SEED_LL")
+    fresh_fn=$(awk "/^define.*${fn_name}\"?\\(/{found=1} found{print} found&&/^\\}/{exit}" "$fresh_ir")
+    if [ -z "$seed_fn" ]; then
+      warn "function '$fn_name' not found in seed — it may be new"
+      if [ -n "$fresh_fn" ]; then
+        echo "$fresh_fn" | head -20
+      fi
+      return
+    fi
+    if [ -z "$fresh_fn" ]; then
+      warn "function '$fn_name' not found in fresh IR — it was removed"
+      return
+    fi
+    diff --color=always <(echo "$seed_fn") <(echo "$fresh_fn") || true
+  else
+    # Overview: just count differences
+    mode_seed_status
+  fi
 }
 
 main "$@"

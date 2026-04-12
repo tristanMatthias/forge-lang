@@ -555,8 +555,8 @@ If -O0 works but -O2 crashes, it's an alignment/optimization bug.
 
 ### Step 4: Check struct arg corruption
 If the crash is in a function that takes TWO struct arguments, the
-second arg is likely corrupt. This is a known codegen bug (#16 in
-TECH_DEBT.md). **Inline the function body** to work around it.
+second arg is likely corrupt. This is a codegen bug (#16 in
+TECH_DEBT.md). **Fix the codegen** — do NOT inline or work around it.
 
 ### Available C-side tools (runtime.c)
 ```forge
@@ -590,22 +590,29 @@ Prefix with module name if ambiguous: `tc_bind_params`, not `bind_params`.
 
 1. **Two-struct-arg calling convention bug.** Any function taking two
    struct parameters where the first has 4+ fields will corrupt the
-   second argument. Inline the function or pass one arg as a global.
+   second argument. This must be fixed in the codegen — do NOT work
+   around it with inlining, globals, or argument reordering.
    See TECH_DEBT #16.
 
 2. **~~`align 4` on i64 loads.~~** FIXED. The `llvm_wrapper.c` forces
    `align 8` on all load/store instructions.
 
-3. **Seed bootstrap chicken-and-egg.** Any change that modifies
-   enum/struct field types in container types (ExprList, StmtList,
-   MatchArmList, etc.) requires a TWO-PHASE bootstrap:
-   (a) Phase A: add new types WITHOUT changing containers → update seed
-   (b) Phase B: change containers → the Phase A seed can compile it
-   Adding a new module requires:
-   (a) compile WITHOUT the module → update seed → (b) compile WITH
-   the module → update seed. If the new module has errors, the OLD
-   seed binary crashes trying to render them. Always remove
-   `render_bag` from the compile path before adding new modules.
+3. **Seed bootstrap — AUTO-CYCLING.** `make build` now automatically
+   detects when bs2 can't self-compile (stale seed) and cycles the
+   seed forward. You rarely need to run `make update-seed` manually.
+   
+   The auto-cycle works because: the seed compiles bs2 successfully
+   (step 1 passes), so bs2's IR is a valid next-generation seed.
+   The build copies it to seed.ll, rebuilds from the new seed, and
+   retries. If that also fails, it restores the backup and shows
+   diagnostics (which functions diverged, which are new, etc.).
+   
+   **When auto-cycle CAN'T help:** Adding new enum variants to the
+   MIDDLE of an existing enum (shifts tags). Always add at the END.
+   
+   **Diagnostic tools:**
+   - `bash scripts/diagnose.sh --seed-status` — show new/removed/changed functions
+   - `bash scripts/diagnose.sh --seed-diff <fn>` — diff a specific function's IR
 
    **`make build` catches this automatically.** After building bs2
    from the seed, it runs `bs2 compile src/main.fg` as a safety
