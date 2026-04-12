@@ -7,7 +7,7 @@ fn kw_parse_fn(p: Parser) -> Stmt? {
 
 export fn init_fn_decl(reg: Registry) {
     let f = feature_new("fn_decl") with {
-        decl_keyword: "fn",
+        decl_keyword: "kw_fn",
         parse_decl: kw_parse_fn,
     }
     register(reg, f)

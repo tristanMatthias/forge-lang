@@ -1,6 +1,10 @@
 mod parser
 mod codegen
 
+fn kw_parse_type(p: Parser) -> Stmt? {
+    p.parse_type_declaration()
+}
+
 export fn init_struct_decl(reg: Registry) {
     let f1 = feature_new("struct_lit") with {
         expr_tag: Expr.StructLit("", FieldInitList.End),
@@ -25,6 +29,12 @@ export fn init_struct_decl(reg: Registry) {
         emit_expr: field_assign_emit,
     }
     register(reg, f4)
+
+    let f5 = feature_new("type_decl") with {
+        decl_keyword: "kw_type",
+        parse_decl: kw_parse_type,
+    }
+    register(reg, f5)
 }
 
 fn struct_lit_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {

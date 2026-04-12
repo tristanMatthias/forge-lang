@@ -1,12 +1,18 @@
 mod parser
 mod codegen
 
+fn kw_parse_match(p: Parser) -> Stmt? {
+    p.parse_match_statement()
+}
+
 export fn init_match_expr(reg: Registry) {
     let f = feature_new("match") with {
         expr_tag: Expr.MatchExpr(Expr.Null, MatchArmList.End),
         stmt_tag: Stmt.Match(Expr.Null, MatchArmList.End),
         emit_expr: match_emit_expr,
         emit_stmt: match_emit_stmt,
+        stmt_keyword: "kw_match",
+        parse_stmt: kw_parse_match,
     }
     register(reg, f)
 }

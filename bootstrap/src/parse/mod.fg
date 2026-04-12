@@ -5,6 +5,7 @@
 // Feature-specific parsers extend Parser via cross-file impl blocks.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList}
+use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
 export type ParseResult = {
@@ -48,6 +49,7 @@ export type Parser = {
     mut allow_it_sugar: bool,
     mut current_start: int,   // byte offset where current token started
     mut bag: DiagnosticBag,
+    features: Registry,
 }
 
 export fn parse_expression_source(source: string) -> ParseResult {
@@ -291,6 +293,7 @@ export fn parser_new(source: string) -> Parser {
         allow_it_sugar: false,
         current_start: 0,
         bag: bag_new(),
+        features: build_registry(),
     }
     parser.advance_token()
     parser
@@ -397,20 +400,13 @@ impl Parser {
         // Only fn, type, enum, trait, and extern are exportable — no stacking.
         if self.check("kw_export") {
             self.advance()
-            let kind = self.current_kind
-            let inner = match kind {
-                "kw_fn" -> self.parse_function_declaration()
-                "kw_type" -> self.parse_type_declaration()
-                "kw_enum" -> self.parse_enum_declaration()
-                "kw_trait" -> self.parse_trait_declaration()
-                "kw_extern" -> self.parse_extern_declaration()
-                "kw_let" -> self.parse_let_statement()
-                "kw_const" -> self.parse_let_statement()
-                "kw_mut" -> self.parse_mut_statement()
-                _ -> {
-                    self.set_error("expected declaration after `export`")
-                    null
-                }
+            let export_handler_raw = lookup_decl_parser(self.features, self.current_kind)
+            let inner = if export_handler_raw != null {
+                let handler: fn(Parser) -> Stmt? = export_handler_raw!
+                handler(self)
+            } else {
+                self.set_error("expected declaration after `export`")
+                null
             }
             if inner == null { return null }
             return Stmt.Annotated(
@@ -419,55 +415,10 @@ impl Parser {
             )
         }
 
-        if self.check("kw_use") {
-            return self.parse_use_declaration()
-        }
-        if self.check("kw_mod") {
-            return self.parse_module_declaration()
-        }
-
-        if self.check("kw_fn") {
-            return self.parse_function_declaration()
-        }
-
-        if self.check("kw_let") || self.check("kw_const") {
-            return self.parse_let_statement()
-        }
-
-        if self.check("kw_mut") {
-            return self.parse_mut_statement()
-        }
-
-        if self.check("kw_type") {
-            return self.parse_type_declaration()
-        }
-
-        if self.check("kw_enum") {
-            return self.parse_enum_declaration()
-        }
-
-        if self.check("kw_impl") {
-            return self.parse_impl_declaration()
-        }
-
-        if self.check("kw_extern") {
-            return self.parse_extern_declaration()
-        }
-
-        if self.check("kw_trait") {
-            return self.parse_trait_declaration()
-        }
-
-        if self.check("kw_spec") {
-            return self.parse_spec_block()
-        }
-
-        if self.check("kw_select") {
-            return self.parse_select_statement()
-        }
-
-        if self.check("kw_parallel") {
-            return self.parse_parallel_statement()
+        let decl_raw = lookup_decl_parser(self.features, self.current_kind)
+        if decl_raw != null {
+            let handler: fn(Parser) -> Stmt? = decl_raw!
+            return handler(self)
         }
 
         self.parse_statement()
@@ -622,26 +573,6 @@ impl Parser {
             return Stmt.Block(body)
         }
 
-        if self.check("kw_if") {
-            return self.parse_if_statement()
-        }
-
-        if self.check("kw_while") {
-            return self.parse_while_statement()
-        }
-
-        if self.check("kw_for") {
-            return self.parse_for_statement()
-        }
-
-        if self.check("kw_return") {
-            return self.parse_return_statement()
-        }
-
-        if self.check("kw_match") {
-            return self.parse_match_statement()
-        }
-
         if self.check("kw_break") {
             self.advance()
             return Stmt.Break
@@ -652,8 +583,10 @@ impl Parser {
             return Stmt.Continue
         }
 
-        if self.check("kw_defer") {
-            return self.parse_defer_statement()
+        let stmt_raw = lookup_stmt_parser(self.features, self.current_kind)
+        if stmt_raw != null {
+            let handler: fn(Parser) -> Stmt? = stmt_raw!
+            return handler(self)
         }
 
         let expr = self.parse_expression()?

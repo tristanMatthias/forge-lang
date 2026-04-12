@@ -6,7 +6,7 @@ fn kw_parse_impl(p: Parser) -> Stmt? {
 
 export fn init_impl_decl(reg: Registry) {
     let f = feature_new("impl_decl") with {
-        decl_keyword: "impl",
+        decl_keyword: "kw_impl",
         parse_decl: kw_parse_impl,
     }
     register(reg, f)

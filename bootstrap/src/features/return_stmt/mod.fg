@@ -10,7 +10,7 @@ fn kw_parse_return(p: Parser) -> Stmt? {
 
 export fn init_return_stmt(reg: Registry) {
     let f = feature_new("return_stmt") with {
-        stmt_keyword: "return",
+        stmt_keyword: "kw_return",
         parse_stmt: kw_parse_return,
     }
     register(reg, f)

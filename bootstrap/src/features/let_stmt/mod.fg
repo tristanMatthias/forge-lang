@@ -1,12 +1,38 @@
 mod parser
 mod codegen
 
+fn kw_parse_let(p: Parser) -> Stmt? {
+    p.parse_let_statement()
+}
+
+fn kw_parse_mut(p: Parser) -> Stmt? {
+    p.parse_mut_statement()
+}
+
 export fn init_let_stmt(reg: Registry) {
     let f = feature_new("let_destructure") with {
         stmt_tag: Stmt.LetDestructure(ParamList.End, Expr.Null),
         emit_stmt: let_destr_emit,
     }
     register(reg, f)
+
+    let f_let = feature_new("let") with {
+        decl_keyword: "kw_let",
+        parse_decl: kw_parse_let,
+    }
+    register(reg, f_let)
+
+    let f_const = feature_new("const") with {
+        decl_keyword: "kw_const",
+        parse_decl: kw_parse_let,
+    }
+    register(reg, f_const)
+
+    let f_mut = feature_new("mut") with {
+        decl_keyword: "kw_mut",
+        parse_decl: kw_parse_mut,
+    }
+    register(reg, f_mut)
 }
 
 fn let_destr_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
