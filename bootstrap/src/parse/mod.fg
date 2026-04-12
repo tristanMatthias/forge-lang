@@ -1432,8 +1432,18 @@ impl Parser {
             self.set_error(message)
             return null
         }
-        let name = self.current_lexeme
+        mut name = self.current_lexeme
         self.advance()
+        // Consume dotted path: core.ast.BinOp -> "core.ast.BinOp"
+        while self.check("dot") {
+            self.advance()
+            if !self.check("identifier") {
+                self.set_error("expected identifier after '.' in type path")
+                return null
+            }
+            name = name + "." + self.current_lexeme
+            self.advance()
+        }
         // Skip generic arguments: Type<A, B>
         if self.check("less") {
             self.skip_angle_brackets()

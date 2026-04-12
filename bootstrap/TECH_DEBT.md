@@ -134,14 +134,14 @@ because the crash is in the OLD seed binary, not the new code.
 4. Consider a "bridge" compilation mode that compiles new modules with
    the old seed but links them separately
 
-### 13. Dotted types not supported in parameters
+### ~~13. Dotted types not supported in parameters~~ (FIXED)
 
-**Severity:** low (easy workaround)
-**Impact:** `fn foo(x: core.ast.BinOp)` fails to parse. Must import
-the type first: `use core.ast.{BinOp}` then `fn foo(x: BinOp)`.
+**Status:** fixed (April 11 2026)
 
-**Fix:** Support dotted type names in `consume_type` parser function.
-Low priority since the import workaround is clean.
+**Root cause:** `consume_type()` only consumed a single identifier token.
+**Fix:** Added a loop in `consume_type()` that consumes `.identifier`
+sequences after the initial identifier, building the full dotted path
+(e.g., `core.ast.BinOp` parses as the type name `"core.ast.BinOp"`).
 
 ### ~~14. Function name collision~~ (FIXED)
 
