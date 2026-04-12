@@ -418,20 +418,37 @@ type of the last expression in the body and compares it against the
 declared return type. Only flags concrete mismatches (skips Void and
 Int fallback).
 
-### 37. rewrite_expr crashes after ~8200 expressions on large source
+### 37. Phantom parameter bug in seed codegen
 
-**Severity:** medium (blocks parameter-passing refactor of names.fg)
-**Impact:** The name resolution pass's `rewrite_expr` crashes when the
-bootstrap source exceeds ~8200 total expressions. The globals-based
-version works (fewer helper functions = under threshold). Adding 5
-helper functions for parameter passing pushes past it.
+**Severity:** high (blocks parameter-passing refactor of names.fg)
+**Impact:** The seed's compiled `rewrite_expr(expr: Expr)` (1 parameter)
+generates code that treats x1 (the second register) as the primary
+value instead of x0. Disassembly shows:
+```
+stp x0, x1, [sp, #0x8]   ; stores BOTH x0 and x1
+cbnz x1, ...             ; null check on x1, not x0!
+ldr x8, [sp, #0x10]      ; loads x1's value as the expr pointer
+```
+When x1 happens to be a valid pointer (which it is for the globals
+version because the caller's calling context leaves a valid value in
+x1), the function works. When source changes alter the calling pattern
+(parameter version), x1 is garbage → segfault.
 
-**Root cause:** Unknown. Crash at `rewrite_expr + 104` (ARM64 tag-load
-after null check). Pointer is valid (bump arena) but tag appears
-corrupt. Needs investigation with ASan or expression-count bisection.
+**Root cause:** The bootstrap codegen's parameter binding generates code
+that accesses the WRONG register for single-parameter functions. This
+is likely an off-by-one in `bind_params_inline` or `forge_llvm_get_param`
+indexing. Specifically, the LLVM IR for `rewrite_expr` shows `(i64 %0)`
+(1 param) but the compiled ARM64 code uses x1 instead of x0.
 
-**Current status:** Globals-based name resolution works and is committed.
-Parameter-passing version is better architecture but blocked by this.
+**Proper fix:** Check `bind_params_inline` in `features/fn_decl/codegen.fg`
+for the parameter index calculation. Also check if `llc -O2` is
+reordering parameters or if the LLVM function type has a phantom
+parameter. Compare the LLVM IR parameter count vs the ARM64 register
+usage.
+
+**Current status:** Globals-based name resolution works (x1 happens to
+be valid). Parameter-passing version is architecturally better but
+blocked by this codegen bug.
 
 ### 36. Map method codegen passes i64 instead of ptr
 
