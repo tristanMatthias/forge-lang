@@ -237,8 +237,11 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
 fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList) -> TypeList {
     match params {
         .End -> TypeList.End
-        .Node(name, _, next) -> {
-            let ty = if param_used_with_float(name, body, ctx, env, captures, params) {
+        .Node(name, type_ann, next) -> {
+            // Priority: explicit annotation > float inference > default Int
+            let ty = if type_ann != "" && type_ann != "i64" {
+                translate_param_type(ctx.structs, ctx.enums, type_ann)
+            } else if param_used_with_float(name, body, ctx, env, captures, params) {
                 ValueType.Float
             } else {
                 ValueType.Int
@@ -544,14 +547,20 @@ fn fill_i64_params(arr: ptr, i64t: ptr, idx: int, count: int) {
 fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int, types: TypeList) -> VarEnv {
     match params {
         .End -> env
-        .Node(name, _, next) -> {
+        .Node(name, type_ann, next) -> {
             let param_val = forge_llvm_get_param(fn_val, idx)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, param_val, alloca)
-            // Use the provided type if available, else default to Int
+            // Priority: external TypeList > param annotation > default Int
             let ty = match types {
                 .Node(t, _) -> t
-                .End -> ValueType.Int
+                .End -> {
+                    if type_ann != "" && type_ann != "i64" {
+                        translate_param_type(ctx.structs, ctx.enums, type_ann)
+                    } else {
+                        ValueType.Int
+                    }
+                }
             }
             let rest_types = match types {
                 .Node(_, rest) -> rest
