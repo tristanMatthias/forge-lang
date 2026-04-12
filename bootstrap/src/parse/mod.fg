@@ -1665,13 +1665,55 @@ impl Parser {
     fn scan_string_token(self) {
         // Build the lexeme with escapes resolved. Surrounding quotes
         // are kept so codegen.fg's strip_quotes still works.
+        //
+        // If ${...} is found, the string is emitted as a "template"
+        // token instead. Inside ${}, nested "..." are tracked via
+        // brace-depth so inner quotes don't end the outer string.
         mut content = "\""
-        while !self.is_at_end() && self.peek_char() != "\"" {
-            if self.peek_char() == "\\" {
-                self.advance_char()
-                if self.is_at_end() {
-                    break
+        mut has_interpolation = false
+        mut brace_depth = 0
+        while !self.is_at_end() {
+            let ch = self.peek_char()
+            // Inside ${...}: track braces, skip nested strings
+            if brace_depth > 0 {
+                if ch == "\"" {
+                    content = content + ch
+                    self.advance_char()
+                    while !self.is_at_end() && self.peek_char() != "\"" {
+                        if self.peek_char() == "\\" {
+                            content = content + self.peek_char()
+                            self.advance_char()
+                        }
+                        if !self.is_at_end() {
+                            content = content + self.peek_char()
+                            self.advance_char()
+                        }
+                    }
+                    if !self.is_at_end() {
+                        content = content + self.peek_char()
+                        self.advance_char()
+                    }
+                    continue
                 }
+                if ch == "{" { brace_depth = brace_depth + 1 }
+                if ch == "}" { brace_depth = brace_depth - 1 }
+                content = content + ch
+                self.advance_char()
+                continue
+            }
+            // Outside ${}: check for end of string or start of interpolation
+            if ch == "\"" { break }
+            if ch == "$" && self.peek_next_char() == "{" {
+                has_interpolation = true
+                brace_depth = 1
+                content = content + "$" + "{"
+                self.advance_char()
+                self.advance_char()
+                continue
+            }
+            if ch == "\\" {
+                self.advance_char()
+                if self.is_at_end() { break }
                 let esc = self.peek_char()
                 self.advance_char()
                 if esc == "n" {
@@ -1687,7 +1729,6 @@ impl Parser {
                 } else if esc == "0" {
                     content = content + "\0"
                 } else if esc == "x" {
-                    // \xHH — two hex digits → one byte
                     let hi = self.advance_char()
                     let lo = self.advance_char()
                     content = content + forge_char_from_hex(hi, lo)
@@ -1695,7 +1736,7 @@ impl Parser {
                     content = content + "\\" + esc
                 }
             } else {
-                content = content + self.peek_char()
+                content = content + ch
                 self.advance_char()
             }
         }
@@ -1707,8 +1748,13 @@ impl Parser {
         }
 
         self.advance_char()
-        content = content + "\""
-        self.set_current("string", content)
+        if has_interpolation {
+            // Strip leading quote, emit as template for desugaring
+            self.set_current("template", content.substring(1, content.length))
+        } else {
+            content = content + "\""
+            self.set_current("string", content)
+        }
     }
 
     // Scan a backtick-delimited template string. The raw content between
