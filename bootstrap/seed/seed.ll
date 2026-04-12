@@ -1,3 +1,5 @@
+; seed built from commit b3c62a35 at 2026-04-12T09:20:02Z
+; source hash: 1aba0aac475dfffb77731d3f7ebd3be60a5a96fbc0e4cb6311e9b0befaaf160b
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -571,27 +573,27 @@ source_filename = "bootstrap"
 @.str.476 = private unnamed_addr constant [7 x i8] c"number\00", align 1
 @.str.477 = private unnamed_addr constant [2 x i8] c".\00", align 1
 @.str.478 = private unnamed_addr constant [7 x i8] c"number\00", align 1
-@.match_fn.479 = private unnamed_addr constant [39 x i8] c"core::resolver::collect_function_names\00", align 1
-@.match_fn.480 = private unnamed_addr constant [39 x i8] c"core::resolver::collect_function_names\00", align 1
-@.match_fn.481 = private unnamed_addr constant [37 x i8] c"core::resolver::collect_method_names\00", align 1
-@.match_fn.482 = private unnamed_addr constant [37 x i8] c"core::resolver::collect_method_names\00", align 1
-@.str.483 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.484 = private unnamed_addr constant [16 x i8] c"resolve error: \00", align 1
-@.match_fn.485 = private unnamed_addr constant [34 x i8] c"core::resolver::pop_resolve_scope\00", align 1
-@.match_fn.486 = private unnamed_addr constant [35 x i8] c"core::resolver::define_param_names\00", align 1
-@.match_fn.487 = private unnamed_addr constant [29 x i8] c"core::resolver::mark_defined\00", align 1
-@.match_fn.488 = private unnamed_addr constant [28 x i8] c"core::resolver::lookup_name\00", align 1
-@.match_fn.489 = private unnamed_addr constant [26 x i8] c"core::resolver::lookup_fn\00", align 1
-@.str.490 = private unnamed_addr constant [8 x i8] c"println\00", align 1
-@.str.491 = private unnamed_addr constant [9 x i8] c"eprintln\00", align 1
-@.str.492 = private unnamed_addr constant [6 x i8] c"print\00", align 1
-@.str.493 = private unnamed_addr constant [7 x i8] c"eprint\00", align 1
-@.str.494 = private unnamed_addr constant [7 x i8] c"string\00", align 1
-@.str.495 = private unnamed_addr constant [4 x i8] c"int\00", align 1
-@.str.496 = private unnamed_addr constant [6 x i8] c"float\00", align 1
-@.str.497 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
-@.str.498 = private unnamed_addr constant [5 x i8] c"exit\00", align 1
-@.str.499 = private unnamed_addr constant [5 x i8] c"self\00", align 1
+@.str.479 = private unnamed_addr constant [8 x i8] c"println\00", align 1
+@.str.480 = private unnamed_addr constant [9 x i8] c"eprintln\00", align 1
+@.str.481 = private unnamed_addr constant [6 x i8] c"print\00", align 1
+@.str.482 = private unnamed_addr constant [7 x i8] c"eprint\00", align 1
+@.str.483 = private unnamed_addr constant [7 x i8] c"string\00", align 1
+@.str.484 = private unnamed_addr constant [4 x i8] c"int\00", align 1
+@.str.485 = private unnamed_addr constant [6 x i8] c"float\00", align 1
+@.str.486 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
+@.str.487 = private unnamed_addr constant [5 x i8] c"exit\00", align 1
+@.str.488 = private unnamed_addr constant [5 x i8] c"self\00", align 1
+@.match_fn.489 = private unnamed_addr constant [39 x i8] c"core::resolver::collect_function_names\00", align 1
+@.match_fn.490 = private unnamed_addr constant [39 x i8] c"core::resolver::collect_function_names\00", align 1
+@.match_fn.491 = private unnamed_addr constant [37 x i8] c"core::resolver::collect_method_names\00", align 1
+@.match_fn.492 = private unnamed_addr constant [37 x i8] c"core::resolver::collect_method_names\00", align 1
+@.str.493 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.494 = private unnamed_addr constant [16 x i8] c"resolve error: \00", align 1
+@.match_fn.495 = private unnamed_addr constant [34 x i8] c"core::resolver::pop_resolve_scope\00", align 1
+@.match_fn.496 = private unnamed_addr constant [35 x i8] c"core::resolver::define_param_names\00", align 1
+@.match_fn.497 = private unnamed_addr constant [29 x i8] c"core::resolver::mark_defined\00", align 1
+@.match_fn.498 = private unnamed_addr constant [28 x i8] c"core::resolver::lookup_name\00", align 1
+@.match_fn.499 = private unnamed_addr constant [26 x i8] c"core::resolver::lookup_fn\00", align 1
 @.match_fn.500 = private unnamed_addr constant [34 x i8] c"core::resolver::resolve_stmt_list\00", align 1
 @.match_fn.501 = private unnamed_addr constant [29 x i8] c"core::resolver::resolve_stmt\00", align 1
 @.match_fn.502 = private unnamed_addr constant [36 x i8] c"core::resolver::resolve_select_arms\00", align 1
@@ -14316,32 +14318,62 @@ entry:
   %calltmp = call i64 @"core::resolver::resolver_new"()
   store i64 %calltmp, ptr %r, align 8
   %r1 = load i64, ptr %r, align 8
-  %stmts2 = load i64, ptr %stmts, align 8
-  %calltmp3 = call i64 @"core::resolver::collect_function_names"(i64 %r1, i64 %stmts2)
-  store i64 %calltmp3, ptr %r, align 8
-  %r4 = load i64, ptr %r, align 8
-  %stmts5 = load i64, ptr %stmts, align 8
-  %calltmp6 = call i64 @"core::resolver::resolve_stmt_list"(i64 %r4, i64 %stmts5)
+  %calltmp2 = call i64 @"core::resolver::declare_function"(i64 %r1, i64 ptrtoint (ptr @.str.479 to i64))
+  store i64 %calltmp2, ptr %r, align 8
+  %r3 = load i64, ptr %r, align 8
+  %calltmp4 = call i64 @"core::resolver::declare_function"(i64 %r3, i64 ptrtoint (ptr @.str.480 to i64))
+  store i64 %calltmp4, ptr %r, align 8
+  %r5 = load i64, ptr %r, align 8
+  %calltmp6 = call i64 @"core::resolver::declare_function"(i64 %r5, i64 ptrtoint (ptr @.str.481 to i64))
   store i64 %calltmp6, ptr %r, align 8
-  %buf = call ptr @forge_bump_alloc(i64 24)
   %r7 = load i64, ptr %r, align 8
-  %obj_ptr = inttoptr i64 %r7 to ptr
+  %calltmp8 = call i64 @"core::resolver::declare_function"(i64 %r7, i64 ptrtoint (ptr @.str.482 to i64))
+  store i64 %calltmp8, ptr %r, align 8
+  %r9 = load i64, ptr %r, align 8
+  %calltmp10 = call i64 @"core::resolver::declare_function"(i64 %r9, i64 ptrtoint (ptr @.str.483 to i64))
+  store i64 %calltmp10, ptr %r, align 8
+  %r11 = load i64, ptr %r, align 8
+  %calltmp12 = call i64 @"core::resolver::declare_function"(i64 %r11, i64 ptrtoint (ptr @.str.484 to i64))
+  store i64 %calltmp12, ptr %r, align 8
+  %r13 = load i64, ptr %r, align 8
+  %calltmp14 = call i64 @"core::resolver::declare_function"(i64 %r13, i64 ptrtoint (ptr @.str.485 to i64))
+  store i64 %calltmp14, ptr %r, align 8
+  %r15 = load i64, ptr %r, align 8
+  %calltmp16 = call i64 @"core::resolver::declare_function"(i64 %r15, i64 ptrtoint (ptr @.str.486 to i64))
+  store i64 %calltmp16, ptr %r, align 8
+  %r17 = load i64, ptr %r, align 8
+  %calltmp18 = call i64 @"core::resolver::declare_function"(i64 %r17, i64 ptrtoint (ptr @.str.487 to i64))
+  store i64 %calltmp18, ptr %r, align 8
+  %r19 = load i64, ptr %r, align 8
+  %calltmp20 = call i64 @"core::resolver::declare_function"(i64 %r19, i64 ptrtoint (ptr @.str.488 to i64))
+  store i64 %calltmp20, ptr %r, align 8
+  %r21 = load i64, ptr %r, align 8
+  %stmts22 = load i64, ptr %stmts, align 8
+  %calltmp23 = call i64 @"core::resolver::collect_function_names"(i64 %r21, i64 %stmts22)
+  store i64 %calltmp23, ptr %r, align 8
+  %r24 = load i64, ptr %r, align 8
+  %stmts25 = load i64, ptr %stmts, align 8
+  %calltmp26 = call i64 @"core::resolver::resolve_stmt_list"(i64 %r24, i64 %stmts25)
+  store i64 %calltmp26, ptr %r, align 8
+  %buf = call ptr @forge_bump_alloc(i64 24)
+  %r27 = load i64, ptr %r, align 8
+  %obj_ptr = inttoptr i64 %r27 to ptr
   %fld_ptr = getelementptr inbounds nuw %Resolver, ptr %obj_ptr, i32 0, i32 3
   %had_error = load i64, ptr %fld_ptr, align 8
-  %fld_ptr8 = getelementptr inbounds nuw %ResolveResult, ptr %buf, i32 0, i32 0
-  store i64 %had_error, ptr %fld_ptr8, align 8
-  %r9 = load i64, ptr %r, align 8
-  %obj_ptr10 = inttoptr i64 %r9 to ptr
-  %fld_ptr11 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr10, i32 0, i32 4
-  %error_message = load i64, ptr %fld_ptr11, align 8
-  %fld_ptr12 = getelementptr inbounds nuw %ResolveResult, ptr %buf, i32 0, i32 1
-  store i64 %error_message, ptr %fld_ptr12, align 8
-  %r13 = load i64, ptr %r, align 8
-  %obj_ptr14 = inttoptr i64 %r13 to ptr
-  %fld_ptr15 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr14, i32 0, i32 5
-  %bag = load i64, ptr %fld_ptr15, align 8
-  %fld_ptr16 = getelementptr inbounds nuw %ResolveResult, ptr %buf, i32 0, i32 2
-  store i64 %bag, ptr %fld_ptr16, align 8
+  %fld_ptr28 = getelementptr inbounds nuw %ResolveResult, ptr %buf, i32 0, i32 0
+  store i64 %had_error, ptr %fld_ptr28, align 8
+  %r29 = load i64, ptr %r, align 8
+  %obj_ptr30 = inttoptr i64 %r29 to ptr
+  %fld_ptr31 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr30, i32 0, i32 4
+  %error_message = load i64, ptr %fld_ptr31, align 8
+  %fld_ptr32 = getelementptr inbounds nuw %ResolveResult, ptr %buf, i32 0, i32 1
+  store i64 %error_message, ptr %fld_ptr32, align 8
+  %r33 = load i64, ptr %r, align 8
+  %obj_ptr34 = inttoptr i64 %r33 to ptr
+  %fld_ptr35 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr34, i32 0, i32 5
+  %bag = load i64, ptr %fld_ptr35, align 8
+  %fld_ptr36 = getelementptr inbounds nuw %ResolveResult, ptr %buf, i32 0, i32 2
+  store i64 %bag, ptr %fld_ptr36, align 8
   %struct_i64 = ptrtoint ptr %buf to i64
   ret i64 %struct_i64
 }
@@ -14415,7 +14447,7 @@ match_arm5:                                       ; preds = %match_next
 
 match_next6:                                      ; preds = %match_next
   %tag_ext54 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.480, i64 %tag_ext54)
+  call void @forge_match_unreachable(ptr @.match_fn.490, i64 %tag_ext54)
   unreachable
 
 match_end15:                                      ; preds = %march_arm50, %march_arm42, %march_arm31, %march_arm22, %march_arm
@@ -14491,7 +14523,7 @@ march_arm50:                                      ; preds = %march_next43
 
 march_next51:                                     ; No predecessors!
   %tag_ext = sext i8 %tag14 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.479, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.489, i64 %tag_ext)
   unreachable
 }
 
@@ -14562,7 +14594,7 @@ match_arm5:                                       ; preds = %match_next
 
 match_next6:                                      ; preds = %match_next
   %tag_ext26 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.482, i64 %tag_ext26)
+  call void @forge_match_unreachable(ptr @.match_fn.492, i64 %tag_ext26)
   unreachable
 
 match_end15:                                      ; preds = %march_arm22, %march_arm
@@ -14592,7 +14624,7 @@ march_arm22:                                      ; preds = %march_next
 
 march_next23:                                     ; No predecessors!
   %tag_ext = sext i8 %tag14 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.481, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.491, i64 %tag_ext)
   unreachable
 }
 
@@ -14616,7 +14648,7 @@ entry:
   %fld_ptr7 = getelementptr inbounds nuw %Resolver, ptr %buf, i32 0, i32 3
   store i64 0, ptr %fld_ptr7, align 8
   %fld_ptr8 = getelementptr inbounds nuw %Resolver, ptr %buf, i32 0, i32 4
-  store i64 ptrtoint (ptr @.str.483 to i64), ptr %fld_ptr8, align 8
+  store i64 ptrtoint (ptr @.str.493 to i64), ptr %fld_ptr8, align 8
   %calltmp = call i64 @"diagnostics::bag_new"()
   %fld_ptr9 = getelementptr inbounds nuw %Resolver, ptr %buf, i32 0, i32 5
   store i64 %calltmp, ptr %fld_ptr9, align 8
@@ -14706,12 +14738,12 @@ entry:
 ife_then:                                         ; preds = %entry
   %message24 = load i64, ptr %message, align 8
   %concat_r = inttoptr i64 %message24 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.484)
+  %lhs_len = call i64 @strlen(ptr @.str.494)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf25 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %3 = call ptr @memcpy(ptr %buf25, ptr @.str.484, i64 %lhs_len)
+  %3 = call ptr @memcpy(ptr %buf25, ptr @.str.494, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf25 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -14909,7 +14941,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.485, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.495, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm3
@@ -15146,7 +15178,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.486, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.496, i64 %tag_ext)
   unreachable
 }
 
@@ -15217,7 +15249,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.487, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.497, i64 %tag_ext)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm3
@@ -15406,7 +15438,7 @@ march_arm4:                                       ; preds = %march_next
 
 march_next5:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.488, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.498, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm4
@@ -15482,7 +15514,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.489, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.499, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm2
@@ -15497,163 +15529,6 @@ ifcont:                                           ; preds = %else
   %calltmp = call i64 @"core::resolver::lookup_fn"(i64 %next10, i64 %name11)
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
-}
-
-define i64 @"core::resolver::is_builtin"(i64 %0) {
-entry:
-  %name = alloca i64, align 8
-  store i64 %0, ptr %name, align 8
-  %name1 = load i64, ptr %name, align 8
-  %streq_l = inttoptr i64 %name1 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.490)
-  %strcmp_sext = sext i32 %strcmp_call to i64
-  %streq_cmp = icmp eq i64 %strcmp_sext, 0
-  %streq_ext = zext i1 %streq_cmp to i64
-  %l_bool = icmp ne i64 %streq_ext, 0
-  br i1 %l_bool, label %sc_merge, label %sc_rhs
-
-sc_rhs:                                           ; preds = %entry
-  %name2 = load i64, ptr %name, align 8
-  %streq_l3 = inttoptr i64 %name2 to ptr
-  %strcmp_call4 = call i32 @strcmp(ptr %streq_l3, ptr @.str.491)
-  %strcmp_sext5 = sext i32 %strcmp_call4 to i64
-  %streq_cmp6 = icmp eq i64 %strcmp_sext5, 0
-  %streq_ext7 = zext i1 %streq_cmp6 to i64
-  %r_bool = icmp ne i64 %streq_ext7, 0
-  br label %sc_merge
-
-sc_merge:                                         ; preds = %sc_rhs, %entry
-  %sc_phi = phi i1 [ true, %entry ], [ %r_bool, %sc_rhs ]
-  %sc_ext = zext i1 %sc_phi to i64
-  %l_bool8 = icmp ne i64 %sc_ext, 0
-  br i1 %l_bool8, label %sc_merge10, label %sc_rhs9
-
-sc_rhs9:                                          ; preds = %sc_merge
-  %name11 = load i64, ptr %name, align 8
-  %streq_l12 = inttoptr i64 %name11 to ptr
-  %strcmp_call13 = call i32 @strcmp(ptr %streq_l12, ptr @.str.492)
-  %strcmp_sext14 = sext i32 %strcmp_call13 to i64
-  %streq_cmp15 = icmp eq i64 %strcmp_sext14, 0
-  %streq_ext16 = zext i1 %streq_cmp15 to i64
-  %r_bool17 = icmp ne i64 %streq_ext16, 0
-  br label %sc_merge10
-
-sc_merge10:                                       ; preds = %sc_rhs9, %sc_merge
-  %sc_phi18 = phi i1 [ true, %sc_merge ], [ %r_bool17, %sc_rhs9 ]
-  %sc_ext19 = zext i1 %sc_phi18 to i64
-  %l_bool20 = icmp ne i64 %sc_ext19, 0
-  br i1 %l_bool20, label %sc_merge22, label %sc_rhs21
-
-sc_rhs21:                                         ; preds = %sc_merge10
-  %name23 = load i64, ptr %name, align 8
-  %streq_l24 = inttoptr i64 %name23 to ptr
-  %strcmp_call25 = call i32 @strcmp(ptr %streq_l24, ptr @.str.493)
-  %strcmp_sext26 = sext i32 %strcmp_call25 to i64
-  %streq_cmp27 = icmp eq i64 %strcmp_sext26, 0
-  %streq_ext28 = zext i1 %streq_cmp27 to i64
-  %r_bool29 = icmp ne i64 %streq_ext28, 0
-  br label %sc_merge22
-
-sc_merge22:                                       ; preds = %sc_rhs21, %sc_merge10
-  %sc_phi30 = phi i1 [ true, %sc_merge10 ], [ %r_bool29, %sc_rhs21 ]
-  %sc_ext31 = zext i1 %sc_phi30 to i64
-  %l_bool32 = icmp ne i64 %sc_ext31, 0
-  br i1 %l_bool32, label %sc_merge34, label %sc_rhs33
-
-sc_rhs33:                                         ; preds = %sc_merge22
-  %name35 = load i64, ptr %name, align 8
-  %streq_l36 = inttoptr i64 %name35 to ptr
-  %strcmp_call37 = call i32 @strcmp(ptr %streq_l36, ptr @.str.494)
-  %strcmp_sext38 = sext i32 %strcmp_call37 to i64
-  %streq_cmp39 = icmp eq i64 %strcmp_sext38, 0
-  %streq_ext40 = zext i1 %streq_cmp39 to i64
-  %r_bool41 = icmp ne i64 %streq_ext40, 0
-  br label %sc_merge34
-
-sc_merge34:                                       ; preds = %sc_rhs33, %sc_merge22
-  %sc_phi42 = phi i1 [ true, %sc_merge22 ], [ %r_bool41, %sc_rhs33 ]
-  %sc_ext43 = zext i1 %sc_phi42 to i64
-  %l_bool44 = icmp ne i64 %sc_ext43, 0
-  br i1 %l_bool44, label %sc_merge46, label %sc_rhs45
-
-sc_rhs45:                                         ; preds = %sc_merge34
-  %name47 = load i64, ptr %name, align 8
-  %streq_l48 = inttoptr i64 %name47 to ptr
-  %strcmp_call49 = call i32 @strcmp(ptr %streq_l48, ptr @.str.495)
-  %strcmp_sext50 = sext i32 %strcmp_call49 to i64
-  %streq_cmp51 = icmp eq i64 %strcmp_sext50, 0
-  %streq_ext52 = zext i1 %streq_cmp51 to i64
-  %r_bool53 = icmp ne i64 %streq_ext52, 0
-  br label %sc_merge46
-
-sc_merge46:                                       ; preds = %sc_rhs45, %sc_merge34
-  %sc_phi54 = phi i1 [ true, %sc_merge34 ], [ %r_bool53, %sc_rhs45 ]
-  %sc_ext55 = zext i1 %sc_phi54 to i64
-  %l_bool56 = icmp ne i64 %sc_ext55, 0
-  br i1 %l_bool56, label %sc_merge58, label %sc_rhs57
-
-sc_rhs57:                                         ; preds = %sc_merge46
-  %name59 = load i64, ptr %name, align 8
-  %streq_l60 = inttoptr i64 %name59 to ptr
-  %strcmp_call61 = call i32 @strcmp(ptr %streq_l60, ptr @.str.496)
-  %strcmp_sext62 = sext i32 %strcmp_call61 to i64
-  %streq_cmp63 = icmp eq i64 %strcmp_sext62, 0
-  %streq_ext64 = zext i1 %streq_cmp63 to i64
-  %r_bool65 = icmp ne i64 %streq_ext64, 0
-  br label %sc_merge58
-
-sc_merge58:                                       ; preds = %sc_rhs57, %sc_merge46
-  %sc_phi66 = phi i1 [ true, %sc_merge46 ], [ %r_bool65, %sc_rhs57 ]
-  %sc_ext67 = zext i1 %sc_phi66 to i64
-  %l_bool68 = icmp ne i64 %sc_ext67, 0
-  br i1 %l_bool68, label %sc_merge70, label %sc_rhs69
-
-sc_rhs69:                                         ; preds = %sc_merge58
-  %name71 = load i64, ptr %name, align 8
-  %streq_l72 = inttoptr i64 %name71 to ptr
-  %strcmp_call73 = call i32 @strcmp(ptr %streq_l72, ptr @.str.497)
-  %strcmp_sext74 = sext i32 %strcmp_call73 to i64
-  %streq_cmp75 = icmp eq i64 %strcmp_sext74, 0
-  %streq_ext76 = zext i1 %streq_cmp75 to i64
-  %r_bool77 = icmp ne i64 %streq_ext76, 0
-  br label %sc_merge70
-
-sc_merge70:                                       ; preds = %sc_rhs69, %sc_merge58
-  %sc_phi78 = phi i1 [ true, %sc_merge58 ], [ %r_bool77, %sc_rhs69 ]
-  %sc_ext79 = zext i1 %sc_phi78 to i64
-  %l_bool80 = icmp ne i64 %sc_ext79, 0
-  br i1 %l_bool80, label %sc_merge82, label %sc_rhs81
-
-sc_rhs81:                                         ; preds = %sc_merge70
-  %name83 = load i64, ptr %name, align 8
-  %streq_l84 = inttoptr i64 %name83 to ptr
-  %strcmp_call85 = call i32 @strcmp(ptr %streq_l84, ptr @.str.498)
-  %strcmp_sext86 = sext i32 %strcmp_call85 to i64
-  %streq_cmp87 = icmp eq i64 %strcmp_sext86, 0
-  %streq_ext88 = zext i1 %streq_cmp87 to i64
-  %r_bool89 = icmp ne i64 %streq_ext88, 0
-  br label %sc_merge82
-
-sc_merge82:                                       ; preds = %sc_rhs81, %sc_merge70
-  %sc_phi90 = phi i1 [ true, %sc_merge70 ], [ %r_bool89, %sc_rhs81 ]
-  %sc_ext91 = zext i1 %sc_phi90 to i64
-  %l_bool92 = icmp ne i64 %sc_ext91, 0
-  br i1 %l_bool92, label %sc_merge94, label %sc_rhs93
-
-sc_rhs93:                                         ; preds = %sc_merge82
-  %name95 = load i64, ptr %name, align 8
-  %streq_l96 = inttoptr i64 %name95 to ptr
-  %strcmp_call97 = call i32 @strcmp(ptr %streq_l96, ptr @.str.499)
-  %strcmp_sext98 = sext i32 %strcmp_call97 to i64
-  %streq_cmp99 = icmp eq i64 %strcmp_sext98, 0
-  %streq_ext100 = zext i1 %streq_cmp99 to i64
-  %r_bool101 = icmp ne i64 %streq_ext100, 0
-  br label %sc_merge94
-
-sc_merge94:                                       ; preds = %sc_rhs93, %sc_merge82
-  %sc_phi102 = phi i1 [ true, %sc_merge82 ], [ %r_bool101, %sc_rhs93 ]
-  %sc_ext103 = zext i1 %sc_phi102 to i64
-  ret i64 %sc_ext103
 }
 
 define i64 @"core::resolver::resolve_stmt_list"(i64 %0, i64 %1) {
@@ -16806,68 +16681,68 @@ match_next6:                                      ; preds = %match_next
 
 define i64 @"core::resolver::resolve_expr"(i64 %0, i64 %1) {
 entry:
-  %result530 = alloca i64, align 8
-  %tag522 = alloca i64, align 8
-  %subject510 = alloca i64, align 8
-  %after_obj501 = alloca i64, align 8
-  %overrides497 = alloca i64, align 8
-  %obj495 = alloca i64, align 8
+  %result523 = alloca i64, align 8
+  %tag515 = alloca i64, align 8
+  %subject503 = alloca i64, align 8
+  %after_obj494 = alloca i64, align 8
+  %overrides490 = alloca i64, align 8
+  %obj488 = alloca i64, align 8
   %after_body = alloca i64, align 8
   %with_params = alloca i64, align 8
-  %entered481 = alloca i64, align 8
-  %body478 = alloca i64, align 8
-  %params475 = alloca i64, align 8
+  %entered474 = alloca i64, align 8
+  %body471 = alloca i64, align 8
+  %params468 = alloca i64, align 8
   %b = alloca i64, align 8
   %a = alloca i64, align 8
-  %end461 = alloca i64, align 8
-  %start459 = alloca i64, align 8
-  %obj457 = alloca i64, align 8
-  %entries448 = alloca i64, align 8
-  %elements440 = alloca i64, align 8
-  %obj431 = alloca i64, align 8
-  %elements422 = alloca i64, align 8
-  %inner414 = alloca i64, align 8
-  %obj405 = alloca i64, align 8
-  %after_left396 = alloca i64, align 8
-  %right392 = alloca i64, align 8
-  %left389 = alloca i64, align 8
+  %end454 = alloca i64, align 8
+  %start452 = alloca i64, align 8
+  %obj450 = alloca i64, align 8
+  %entries441 = alloca i64, align 8
+  %elements433 = alloca i64, align 8
+  %obj424 = alloca i64, align 8
+  %elements415 = alloca i64, align 8
+  %inner407 = alloca i64, align 8
+  %obj398 = alloca i64, align 8
+  %after_left389 = alloca i64, align 8
+  %right385 = alloca i64, align 8
+  %left382 = alloca i64, align 8
   %after_t = alloca i64, align 8
   %after_c = alloca i64, align 8
-  %e374 = alloca i64, align 8
-  %t372 = alloca i64, align 8
-  %c370 = alloca i64, align 8
-  %after_obj362 = alloca i64, align 8
-  %value358 = alloca i64, align 8
-  %obj355 = alloca i64, align 8
+  %e367 = alloca i64, align 8
+  %t365 = alloca i64, align 8
+  %c363 = alloca i64, align 8
+  %after_obj355 = alloca i64, align 8
+  %value351 = alloca i64, align 8
+  %obj348 = alloca i64, align 8
   %after_subject = alloca i64, align 8
-  %arms343 = alloca i64, align 8
-  %subject341 = alloca i64, align 8
+  %arms336 = alloca i64, align 8
+  %subject334 = alloca i64, align 8
   %after = alloca i64, align 8
   %entered = alloca i64, align 8
-  %body329 = alloca i64, align 8
+  %body322 = alloca i64, align 8
   %after_obj = alloca i64, align 8
-  %idx318 = alloca i64, align 8
-  %obj316 = alloca i64, align 8
-  %args307 = alloca i64, align 8
-  %name286 = alloca i64, align 8
-  %match_result279 = alloca i64, align 8
-  %obj274 = alloca i64, align 8
-  %inits266 = alloca i64, align 8
+  %idx311 = alloca i64, align 8
+  %obj309 = alloca i64, align 8
+  %args300 = alloca i64, align 8
+  %name279 = alloca i64, align 8
+  %match_result272 = alloca i64, align 8
+  %obj267 = alloca i64, align 8
+  %inits259 = alloca i64, align 8
   %after_callee = alloca i64, align 8
-  %args255 = alloca i64, align 8
-  %callee253 = alloca i64, align 8
-  %after_left245 = alloca i64, align 8
-  %right241 = alloca i64, align 8
-  %left238 = alloca i64, align 8
+  %args248 = alloca i64, align 8
+  %callee246 = alloca i64, align 8
+  %after_left238 = alloca i64, align 8
+  %right234 = alloca i64, align 8
+  %left231 = alloca i64, align 8
   %after_left = alloca i64, align 8
-  %right226 = alloca i64, align 8
-  %left223 = alloca i64, align 8
-  %right215 = alloca i64, align 8
-  %inner207 = alloca i64, align 8
-  %result130 = alloca i64, align 8
+  %right219 = alloca i64, align 8
+  %left216 = alloca i64, align 8
+  %right208 = alloca i64, align 8
+  %inner200 = alloca i64, align 8
+  %result123 = alloca i64, align 8
   %after_value = alloca i64, align 8
-  %value113 = alloca i64, align 8
-  %name111 = alloca i64, align 8
+  %value106 = alloca i64, align 8
+  %name104 = alloca i64, align 8
   %result = alloca i64, align 8
   %name24 = alloca i64, align 8
   %match_result = alloca i64, align 8
@@ -16898,9 +16773,9 @@ ifcont:                                           ; preds = %else
   %tag_eq = icmp eq i8 %tag, 0
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %ifcont535, %march_arm514, %march_arm505, %march_arm490, %march_arm471, %march_arm452, %march_arm444, %march_arm435, %march_arm426, %march_arm418, %march_arm409, %march_arm400, %march_arm384, %march_arm366, %march_arm350, %march_arm337, %march_arm325, %march_arm311, %march_arm302, %match_end280, %march_arm262, %march_arm249, %march_arm233, %march_arm219, %march_arm211, %march_arm203, %ifcont174, %ifcont79, %march_arm17, %march_arm13, %march_arm9, %march_arm5, %march_arm
-  %match_val539 = load i64, ptr %match_result, align 8
-  ret i64 %match_val539
+match_end:                                        ; preds = %ifcont528, %march_arm507, %march_arm498, %march_arm483, %march_arm464, %march_arm445, %march_arm437, %march_arm428, %march_arm419, %march_arm411, %march_arm402, %march_arm393, %march_arm377, %march_arm359, %march_arm343, %march_arm330, %march_arm318, %march_arm304, %march_arm295, %match_end273, %march_arm255, %march_arm242, %march_arm226, %march_arm212, %march_arm204, %march_arm196, %ifcont167, %ifcont72, %march_arm17, %march_arm13, %march_arm9, %march_arm5, %march_arm
+  %match_val532 = load i64, ptr %match_result, align 8
+  ret i64 %match_val532
 
 march_arm:                                        ; preds = %ifcont
   %r4 = load i64, ptr %r, align 8
@@ -16952,13 +16827,13 @@ march_arm21:                                      ; preds = %march_next18
   %name = load i64, ptr %pbind_ptr, align 8
   store i64 %name, ptr %name24, align 8
   %name25 = load i64, ptr %name24, align 8
-  %calltmp = call i64 @"core::resolver::is_builtin"(i64 %name25)
+  %calltmp = call i64 @"core::resolver::starts_with_upper"(i64 %name25)
   %if_cond26 = icmp ne i64 %calltmp, 0
   br i1 %if_cond26, label %then27, label %else28
 
 march_next22:                                     ; preds = %march_next18
-  %tag_eq108 = icmp eq i8 %tag, 5
-  br i1 %tag_eq108, label %march_arm106, label %march_next107
+  %tag_eq101 = icmp eq i8 %tag, 5
+  br i1 %tag_eq101, label %march_arm99, label %march_next100
 
 then27:                                           ; preds = %march_arm21
   %r30 = load i64, ptr %r, align 8
@@ -16968,60 +16843,47 @@ else28:                                           ; preds = %march_arm21
   br label %ifcont29
 
 ifcont29:                                         ; preds = %else28
-  %name31 = load i64, ptr %name24, align 8
-  %calltmp32 = call i64 @"core::resolver::starts_with_upper"(i64 %name31)
-  %if_cond33 = icmp ne i64 %calltmp32, 0
-  br i1 %if_cond33, label %then34, label %else35
+  %r31 = load i64, ptr %r, align 8
+  %obj_ptr32 = inttoptr i64 %r31 to ptr
+  %fld_ptr33 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr32, i32 0, i32 0
+  %scopes = load i64, ptr %fld_ptr33, align 8
+  %name34 = load i64, ptr %name24, align 8
+  %calltmp35 = call i64 @"core::resolver::lookup_name"(i64 %scopes, i64 %name34)
+  store i64 %calltmp35, ptr %result, align 8
+  %result36 = load i64, ptr %result, align 8
+  %obj_ptr37 = inttoptr i64 %result36 to ptr
+  %fld_ptr38 = getelementptr inbounds nuw %NameLookup, ptr %obj_ptr37, i32 0, i32 0
+  %found = load i64, ptr %fld_ptr38, align 8
+  %if_cond39 = icmp ne i64 %found, 0
+  br i1 %if_cond39, label %then40, label %else41
 
-then34:                                           ; preds = %ifcont29
-  %r37 = load i64, ptr %r, align 8
-  ret i64 %r37
-
-else35:                                           ; preds = %ifcont29
-  br label %ifcont36
-
-ifcont36:                                         ; preds = %else35
-  %r38 = load i64, ptr %r, align 8
-  %obj_ptr39 = inttoptr i64 %r38 to ptr
-  %fld_ptr40 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr39, i32 0, i32 0
-  %scopes = load i64, ptr %fld_ptr40, align 8
-  %name41 = load i64, ptr %name24, align 8
-  %calltmp42 = call i64 @"core::resolver::lookup_name"(i64 %scopes, i64 %name41)
-  store i64 %calltmp42, ptr %result, align 8
+then40:                                           ; preds = %ifcont29
   %result43 = load i64, ptr %result, align 8
   %obj_ptr44 = inttoptr i64 %result43 to ptr
-  %fld_ptr45 = getelementptr inbounds nuw %NameLookup, ptr %obj_ptr44, i32 0, i32 0
-  %found = load i64, ptr %fld_ptr45, align 8
-  %if_cond46 = icmp ne i64 %found, 0
-  br i1 %if_cond46, label %then47, label %else48
-
-then47:                                           ; preds = %ifcont36
-  %result50 = load i64, ptr %result, align 8
-  %obj_ptr51 = inttoptr i64 %result50 to ptr
-  %fld_ptr52 = getelementptr inbounds nuw %NameLookup, ptr %obj_ptr51, i32 0, i32 1
-  %defined = load i64, ptr %fld_ptr52, align 8
+  %fld_ptr45 = getelementptr inbounds nuw %NameLookup, ptr %obj_ptr44, i32 0, i32 1
+  %defined = load i64, ptr %fld_ptr45, align 8
   %not_cmp = icmp eq i64 %defined, 0
   %not = zext i1 %not_cmp to i64
-  %if_cond53 = icmp ne i64 %not, 0
-  br i1 %if_cond53, label %then54, label %else55
+  %if_cond46 = icmp ne i64 %not, 0
+  br i1 %if_cond46, label %then47, label %else48
 
-else48:                                           ; preds = %ifcont36
-  br label %ifcont49
+else41:                                           ; preds = %ifcont29
+  br label %ifcont42
 
-ifcont49:                                         ; preds = %else48
-  %r71 = load i64, ptr %r, align 8
-  %obj_ptr72 = inttoptr i64 %r71 to ptr
-  %fld_ptr73 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr72, i32 0, i32 1
-  %functions = load i64, ptr %fld_ptr73, align 8
-  %name74 = load i64, ptr %name24, align 8
-  %calltmp75 = call i64 @"core::resolver::lookup_fn"(i64 %functions, i64 %name74)
-  %if_cond76 = icmp ne i64 %calltmp75, 0
-  br i1 %if_cond76, label %then77, label %else78
+ifcont42:                                         ; preds = %else41
+  %r64 = load i64, ptr %r, align 8
+  %obj_ptr65 = inttoptr i64 %r64 to ptr
+  %fld_ptr66 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr65, i32 0, i32 1
+  %functions = load i64, ptr %fld_ptr66, align 8
+  %name67 = load i64, ptr %name24, align 8
+  %calltmp68 = call i64 @"core::resolver::lookup_fn"(i64 %functions, i64 %name67)
+  %if_cond69 = icmp ne i64 %calltmp68, 0
+  br i1 %if_cond69, label %then70, label %else71
 
-then54:                                           ; preds = %then47
-  %r57 = load i64, ptr %r, align 8
-  %name58 = load i64, ptr %name24, align 8
-  %concat_r = inttoptr i64 %name58 to ptr
+then47:                                           ; preds = %then40
+  %r50 = load i64, ptr %r, align 8
+  %name51 = load i64, ptr %name24, align 8
+  %concat_r = inttoptr i64 %name51 to ptr
   %lhs_len = call i64 @strlen(ptr @.str.507)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
@@ -17035,727 +16897,727 @@ then54:                                           ; preds = %then47
   %3 = call ptr @memcpy(ptr %dst2, ptr %concat_r, i64 %rhs_len_p1)
   %concat_i64 = ptrtoint ptr %buf to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
-  %lhs_len59 = call i64 @strlen(ptr %concat_l)
-  %rhs_len60 = call i64 @strlen(ptr @.str.508)
-  %concat_total61 = add i64 %lhs_len59, %rhs_len60
-  %concat_size62 = add i64 %concat_total61, 1
-  %buf63 = call ptr @forge_bump_alloc(i64 %concat_size62)
-  %4 = call ptr @memcpy(ptr %buf63, ptr %concat_l, i64 %lhs_len59)
-  %buf_int64 = ptrtoint ptr %buf63 to i64
-  %dst2_int65 = add i64 %buf_int64, %lhs_len59
-  %dst266 = inttoptr i64 %dst2_int65 to ptr
-  %rhs_len_p167 = add i64 %rhs_len60, 1
-  %5 = call ptr @memcpy(ptr %dst266, ptr @.str.508, i64 %rhs_len_p167)
-  %concat_i6468 = ptrtoint ptr %buf63 to i64
-  %calltmp69 = call i64 @"core::resolver::set_resolve_error"(i64 %r57, i64 %concat_i6468)
-  ret i64 %calltmp69
+  %lhs_len52 = call i64 @strlen(ptr %concat_l)
+  %rhs_len53 = call i64 @strlen(ptr @.str.508)
+  %concat_total54 = add i64 %lhs_len52, %rhs_len53
+  %concat_size55 = add i64 %concat_total54, 1
+  %buf56 = call ptr @forge_bump_alloc(i64 %concat_size55)
+  %4 = call ptr @memcpy(ptr %buf56, ptr %concat_l, i64 %lhs_len52)
+  %buf_int57 = ptrtoint ptr %buf56 to i64
+  %dst2_int58 = add i64 %buf_int57, %lhs_len52
+  %dst259 = inttoptr i64 %dst2_int58 to ptr
+  %rhs_len_p160 = add i64 %rhs_len53, 1
+  %5 = call ptr @memcpy(ptr %dst259, ptr @.str.508, i64 %rhs_len_p160)
+  %concat_i6461 = ptrtoint ptr %buf56 to i64
+  %calltmp62 = call i64 @"core::resolver::set_resolve_error"(i64 %r50, i64 %concat_i6461)
+  ret i64 %calltmp62
 
-else55:                                           ; preds = %then47
-  br label %ifcont56
+else48:                                           ; preds = %then40
+  br label %ifcont49
 
-ifcont56:                                         ; preds = %else55
-  %r70 = load i64, ptr %r, align 8
-  ret i64 %r70
+ifcont49:                                         ; preds = %else48
+  %r63 = load i64, ptr %r, align 8
+  ret i64 %r63
 
-then77:                                           ; preds = %ifcont49
-  %r80 = load i64, ptr %r, align 8
-  ret i64 %r80
+then70:                                           ; preds = %ifcont42
+  %r73 = load i64, ptr %r, align 8
+  ret i64 %r73
 
-else78:                                           ; preds = %ifcont49
-  br label %ifcont79
+else71:                                           ; preds = %ifcont42
+  br label %ifcont72
 
-ifcont79:                                         ; preds = %else78
-  %r81 = load i64, ptr %r, align 8
-  %name82 = load i64, ptr %name24, align 8
-  %concat_r83 = inttoptr i64 %name82 to ptr
-  %lhs_len84 = call i64 @strlen(ptr @.str.509)
-  %rhs_len85 = call i64 @strlen(ptr %concat_r83)
-  %concat_total86 = add i64 %lhs_len84, %rhs_len85
-  %concat_size87 = add i64 %concat_total86, 1
-  %buf88 = call ptr @forge_bump_alloc(i64 %concat_size87)
-  %6 = call ptr @memcpy(ptr %buf88, ptr @.str.509, i64 %lhs_len84)
-  %buf_int89 = ptrtoint ptr %buf88 to i64
-  %dst2_int90 = add i64 %buf_int89, %lhs_len84
-  %dst291 = inttoptr i64 %dst2_int90 to ptr
-  %rhs_len_p192 = add i64 %rhs_len85, 1
-  %7 = call ptr @memcpy(ptr %dst291, ptr %concat_r83, i64 %rhs_len_p192)
-  %concat_i6493 = ptrtoint ptr %buf88 to i64
-  %concat_l94 = inttoptr i64 %concat_i6493 to ptr
-  %lhs_len95 = call i64 @strlen(ptr %concat_l94)
-  %rhs_len96 = call i64 @strlen(ptr @.str.510)
-  %concat_total97 = add i64 %lhs_len95, %rhs_len96
-  %concat_size98 = add i64 %concat_total97, 1
-  %buf99 = call ptr @forge_bump_alloc(i64 %concat_size98)
-  %8 = call ptr @memcpy(ptr %buf99, ptr %concat_l94, i64 %lhs_len95)
-  %buf_int100 = ptrtoint ptr %buf99 to i64
-  %dst2_int101 = add i64 %buf_int100, %lhs_len95
-  %dst2102 = inttoptr i64 %dst2_int101 to ptr
-  %rhs_len_p1103 = add i64 %rhs_len96, 1
-  %9 = call ptr @memcpy(ptr %dst2102, ptr @.str.510, i64 %rhs_len_p1103)
-  %concat_i64104 = ptrtoint ptr %buf99 to i64
-  %calltmp105 = call i64 @"core::resolver::set_resolve_error"(i64 %r81, i64 %concat_i64104)
-  store i64 %calltmp105, ptr %match_result, align 8
+ifcont72:                                         ; preds = %else71
+  %r74 = load i64, ptr %r, align 8
+  %name75 = load i64, ptr %name24, align 8
+  %concat_r76 = inttoptr i64 %name75 to ptr
+  %lhs_len77 = call i64 @strlen(ptr @.str.509)
+  %rhs_len78 = call i64 @strlen(ptr %concat_r76)
+  %concat_total79 = add i64 %lhs_len77, %rhs_len78
+  %concat_size80 = add i64 %concat_total79, 1
+  %buf81 = call ptr @forge_bump_alloc(i64 %concat_size80)
+  %6 = call ptr @memcpy(ptr %buf81, ptr @.str.509, i64 %lhs_len77)
+  %buf_int82 = ptrtoint ptr %buf81 to i64
+  %dst2_int83 = add i64 %buf_int82, %lhs_len77
+  %dst284 = inttoptr i64 %dst2_int83 to ptr
+  %rhs_len_p185 = add i64 %rhs_len78, 1
+  %7 = call ptr @memcpy(ptr %dst284, ptr %concat_r76, i64 %rhs_len_p185)
+  %concat_i6486 = ptrtoint ptr %buf81 to i64
+  %concat_l87 = inttoptr i64 %concat_i6486 to ptr
+  %lhs_len88 = call i64 @strlen(ptr %concat_l87)
+  %rhs_len89 = call i64 @strlen(ptr @.str.510)
+  %concat_total90 = add i64 %lhs_len88, %rhs_len89
+  %concat_size91 = add i64 %concat_total90, 1
+  %buf92 = call ptr @forge_bump_alloc(i64 %concat_size91)
+  %8 = call ptr @memcpy(ptr %buf92, ptr %concat_l87, i64 %lhs_len88)
+  %buf_int93 = ptrtoint ptr %buf92 to i64
+  %dst2_int94 = add i64 %buf_int93, %lhs_len88
+  %dst295 = inttoptr i64 %dst2_int94 to ptr
+  %rhs_len_p196 = add i64 %rhs_len89, 1
+  %9 = call ptr @memcpy(ptr %dst295, ptr @.str.510, i64 %rhs_len_p196)
+  %concat_i6497 = ptrtoint ptr %buf92 to i64
+  %calltmp98 = call i64 @"core::resolver::set_resolve_error"(i64 %r74, i64 %concat_i6497)
+  store i64 %calltmp98, ptr %match_result, align 8
   br label %match_end
 
-march_arm106:                                     ; preds = %march_next22
-  %pbind_ptr109 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %name110 = load i64, ptr %pbind_ptr109, align 8
-  store i64 %name110, ptr %name111, align 8
-  %pbind_ptr112 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %value = load i64, ptr %pbind_ptr112, align 8
-  store i64 %value, ptr %value113, align 8
-  %r114 = load i64, ptr %r, align 8
-  %value115 = load i64, ptr %value113, align 8
-  %calltmp116 = call i64 @"core::resolver::resolve_expr"(i64 %r114, i64 %value115)
-  store i64 %calltmp116, ptr %after_value, align 8
-  %name117 = load i64, ptr %name111, align 8
-  %calltmp118 = call i64 @"core::resolver::starts_with_upper"(i64 %name117)
-  %if_cond119 = icmp ne i64 %calltmp118, 0
-  br i1 %if_cond119, label %then120, label %else121
+march_arm99:                                      ; preds = %march_next22
+  %pbind_ptr102 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %name103 = load i64, ptr %pbind_ptr102, align 8
+  store i64 %name103, ptr %name104, align 8
+  %pbind_ptr105 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %value = load i64, ptr %pbind_ptr105, align 8
+  store i64 %value, ptr %value106, align 8
+  %r107 = load i64, ptr %r, align 8
+  %value108 = load i64, ptr %value106, align 8
+  %calltmp109 = call i64 @"core::resolver::resolve_expr"(i64 %r107, i64 %value108)
+  store i64 %calltmp109, ptr %after_value, align 8
+  %name110 = load i64, ptr %name104, align 8
+  %calltmp111 = call i64 @"core::resolver::starts_with_upper"(i64 %name110)
+  %if_cond112 = icmp ne i64 %calltmp111, 0
+  br i1 %if_cond112, label %then113, label %else114
 
-march_next107:                                    ; preds = %march_next22
-  %tag_eq205 = icmp eq i8 %tag, 6
-  br i1 %tag_eq205, label %march_arm203, label %march_next204
+march_next100:                                    ; preds = %march_next22
+  %tag_eq198 = icmp eq i8 %tag, 6
+  br i1 %tag_eq198, label %march_arm196, label %march_next197
 
-then120:                                          ; preds = %march_arm106
-  %after_value123 = load i64, ptr %after_value, align 8
-  ret i64 %after_value123
+then113:                                          ; preds = %march_arm99
+  %after_value116 = load i64, ptr %after_value, align 8
+  ret i64 %after_value116
 
-else121:                                          ; preds = %march_arm106
-  br label %ifcont122
+else114:                                          ; preds = %march_arm99
+  br label %ifcont115
 
-ifcont122:                                        ; preds = %else121
-  %after_value124 = load i64, ptr %after_value, align 8
-  %obj_ptr125 = inttoptr i64 %after_value124 to ptr
-  %fld_ptr126 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr125, i32 0, i32 0
-  %scopes127 = load i64, ptr %fld_ptr126, align 8
-  %name128 = load i64, ptr %name111, align 8
-  %calltmp129 = call i64 @"core::resolver::lookup_name"(i64 %scopes127, i64 %name128)
-  store i64 %calltmp129, ptr %result130, align 8
-  %result131 = load i64, ptr %result130, align 8
-  %obj_ptr132 = inttoptr i64 %result131 to ptr
-  %fld_ptr133 = getelementptr inbounds nuw %NameLookup, ptr %obj_ptr132, i32 0, i32 0
-  %found134 = load i64, ptr %fld_ptr133, align 8
-  %not_cmp135 = icmp eq i64 %found134, 0
-  %not136 = zext i1 %not_cmp135 to i64
-  %if_cond137 = icmp ne i64 %not136, 0
-  br i1 %if_cond137, label %then138, label %else139
+ifcont115:                                        ; preds = %else114
+  %after_value117 = load i64, ptr %after_value, align 8
+  %obj_ptr118 = inttoptr i64 %after_value117 to ptr
+  %fld_ptr119 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr118, i32 0, i32 0
+  %scopes120 = load i64, ptr %fld_ptr119, align 8
+  %name121 = load i64, ptr %name104, align 8
+  %calltmp122 = call i64 @"core::resolver::lookup_name"(i64 %scopes120, i64 %name121)
+  store i64 %calltmp122, ptr %result123, align 8
+  %result124 = load i64, ptr %result123, align 8
+  %obj_ptr125 = inttoptr i64 %result124 to ptr
+  %fld_ptr126 = getelementptr inbounds nuw %NameLookup, ptr %obj_ptr125, i32 0, i32 0
+  %found127 = load i64, ptr %fld_ptr126, align 8
+  %not_cmp128 = icmp eq i64 %found127, 0
+  %not129 = zext i1 %not_cmp128 to i64
+  %if_cond130 = icmp ne i64 %not129, 0
+  br i1 %if_cond130, label %then131, label %else132
 
-then138:                                          ; preds = %ifcont122
-  %after_value141 = load i64, ptr %after_value, align 8
-  %name142 = load i64, ptr %name111, align 8
-  %concat_r143 = inttoptr i64 %name142 to ptr
-  %lhs_len144 = call i64 @strlen(ptr @.str.511)
-  %rhs_len145 = call i64 @strlen(ptr %concat_r143)
-  %concat_total146 = add i64 %lhs_len144, %rhs_len145
-  %concat_size147 = add i64 %concat_total146, 1
-  %buf148 = call ptr @forge_bump_alloc(i64 %concat_size147)
-  %10 = call ptr @memcpy(ptr %buf148, ptr @.str.511, i64 %lhs_len144)
-  %buf_int149 = ptrtoint ptr %buf148 to i64
-  %dst2_int150 = add i64 %buf_int149, %lhs_len144
-  %dst2151 = inttoptr i64 %dst2_int150 to ptr
-  %rhs_len_p1152 = add i64 %rhs_len145, 1
-  %11 = call ptr @memcpy(ptr %dst2151, ptr %concat_r143, i64 %rhs_len_p1152)
-  %concat_i64153 = ptrtoint ptr %buf148 to i64
-  %concat_l154 = inttoptr i64 %concat_i64153 to ptr
-  %lhs_len155 = call i64 @strlen(ptr %concat_l154)
-  %rhs_len156 = call i64 @strlen(ptr @.str.512)
-  %concat_total157 = add i64 %lhs_len155, %rhs_len156
-  %concat_size158 = add i64 %concat_total157, 1
-  %buf159 = call ptr @forge_bump_alloc(i64 %concat_size158)
-  %12 = call ptr @memcpy(ptr %buf159, ptr %concat_l154, i64 %lhs_len155)
-  %buf_int160 = ptrtoint ptr %buf159 to i64
-  %dst2_int161 = add i64 %buf_int160, %lhs_len155
-  %dst2162 = inttoptr i64 %dst2_int161 to ptr
-  %rhs_len_p1163 = add i64 %rhs_len156, 1
-  %13 = call ptr @memcpy(ptr %dst2162, ptr @.str.512, i64 %rhs_len_p1163)
-  %concat_i64164 = ptrtoint ptr %buf159 to i64
-  %calltmp165 = call i64 @"core::resolver::set_resolve_error"(i64 %after_value141, i64 %concat_i64164)
-  ret i64 %calltmp165
+then131:                                          ; preds = %ifcont115
+  %after_value134 = load i64, ptr %after_value, align 8
+  %name135 = load i64, ptr %name104, align 8
+  %concat_r136 = inttoptr i64 %name135 to ptr
+  %lhs_len137 = call i64 @strlen(ptr @.str.511)
+  %rhs_len138 = call i64 @strlen(ptr %concat_r136)
+  %concat_total139 = add i64 %lhs_len137, %rhs_len138
+  %concat_size140 = add i64 %concat_total139, 1
+  %buf141 = call ptr @forge_bump_alloc(i64 %concat_size140)
+  %10 = call ptr @memcpy(ptr %buf141, ptr @.str.511, i64 %lhs_len137)
+  %buf_int142 = ptrtoint ptr %buf141 to i64
+  %dst2_int143 = add i64 %buf_int142, %lhs_len137
+  %dst2144 = inttoptr i64 %dst2_int143 to ptr
+  %rhs_len_p1145 = add i64 %rhs_len138, 1
+  %11 = call ptr @memcpy(ptr %dst2144, ptr %concat_r136, i64 %rhs_len_p1145)
+  %concat_i64146 = ptrtoint ptr %buf141 to i64
+  %concat_l147 = inttoptr i64 %concat_i64146 to ptr
+  %lhs_len148 = call i64 @strlen(ptr %concat_l147)
+  %rhs_len149 = call i64 @strlen(ptr @.str.512)
+  %concat_total150 = add i64 %lhs_len148, %rhs_len149
+  %concat_size151 = add i64 %concat_total150, 1
+  %buf152 = call ptr @forge_bump_alloc(i64 %concat_size151)
+  %12 = call ptr @memcpy(ptr %buf152, ptr %concat_l147, i64 %lhs_len148)
+  %buf_int153 = ptrtoint ptr %buf152 to i64
+  %dst2_int154 = add i64 %buf_int153, %lhs_len148
+  %dst2155 = inttoptr i64 %dst2_int154 to ptr
+  %rhs_len_p1156 = add i64 %rhs_len149, 1
+  %13 = call ptr @memcpy(ptr %dst2155, ptr @.str.512, i64 %rhs_len_p1156)
+  %concat_i64157 = ptrtoint ptr %buf152 to i64
+  %calltmp158 = call i64 @"core::resolver::set_resolve_error"(i64 %after_value134, i64 %concat_i64157)
+  ret i64 %calltmp158
 
-else139:                                          ; preds = %ifcont122
-  br label %ifcont140
+else132:                                          ; preds = %ifcont115
+  br label %ifcont133
 
-ifcont140:                                        ; preds = %else139
-  %result166 = load i64, ptr %result130, align 8
-  %obj_ptr167 = inttoptr i64 %result166 to ptr
-  %fld_ptr168 = getelementptr inbounds nuw %NameLookup, ptr %obj_ptr167, i32 0, i32 2
-  %mutable = load i64, ptr %fld_ptr168, align 8
-  %not_cmp169 = icmp eq i64 %mutable, 0
-  %not170 = zext i1 %not_cmp169 to i64
-  %if_cond171 = icmp ne i64 %not170, 0
-  br i1 %if_cond171, label %then172, label %else173
+ifcont133:                                        ; preds = %else132
+  %result159 = load i64, ptr %result123, align 8
+  %obj_ptr160 = inttoptr i64 %result159 to ptr
+  %fld_ptr161 = getelementptr inbounds nuw %NameLookup, ptr %obj_ptr160, i32 0, i32 2
+  %mutable = load i64, ptr %fld_ptr161, align 8
+  %not_cmp162 = icmp eq i64 %mutable, 0
+  %not163 = zext i1 %not_cmp162 to i64
+  %if_cond164 = icmp ne i64 %not163, 0
+  br i1 %if_cond164, label %then165, label %else166
 
-then172:                                          ; preds = %ifcont140
-  %after_value175 = load i64, ptr %after_value, align 8
-  %buf176 = call ptr @forge_bump_alloc(i64 8)
-  %tag_ptr177 = getelementptr inbounds nuw %DiagCode, ptr %buf176, i32 0, i32 0
-  store i8 13, ptr %tag_ptr177, align 8
-  %enum_i64 = ptrtoint ptr %buf176 to i64
-  %name178 = load i64, ptr %name111, align 8
-  %concat_r179 = inttoptr i64 %name178 to ptr
-  %lhs_len180 = call i64 @strlen(ptr @.str.513)
-  %rhs_len181 = call i64 @strlen(ptr %concat_r179)
-  %concat_total182 = add i64 %lhs_len180, %rhs_len181
-  %concat_size183 = add i64 %concat_total182, 1
-  %buf184 = call ptr @forge_bump_alloc(i64 %concat_size183)
-  %14 = call ptr @memcpy(ptr %buf184, ptr @.str.513, i64 %lhs_len180)
-  %buf_int185 = ptrtoint ptr %buf184 to i64
-  %dst2_int186 = add i64 %buf_int185, %lhs_len180
-  %dst2187 = inttoptr i64 %dst2_int186 to ptr
-  %rhs_len_p1188 = add i64 %rhs_len181, 1
-  %15 = call ptr @memcpy(ptr %dst2187, ptr %concat_r179, i64 %rhs_len_p1188)
-  %concat_i64189 = ptrtoint ptr %buf184 to i64
-  %concat_l190 = inttoptr i64 %concat_i64189 to ptr
-  %lhs_len191 = call i64 @strlen(ptr %concat_l190)
-  %rhs_len192 = call i64 @strlen(ptr @.str.514)
-  %concat_total193 = add i64 %lhs_len191, %rhs_len192
-  %concat_size194 = add i64 %concat_total193, 1
-  %buf195 = call ptr @forge_bump_alloc(i64 %concat_size194)
-  %16 = call ptr @memcpy(ptr %buf195, ptr %concat_l190, i64 %lhs_len191)
-  %buf_int196 = ptrtoint ptr %buf195 to i64
-  %dst2_int197 = add i64 %buf_int196, %lhs_len191
-  %dst2198 = inttoptr i64 %dst2_int197 to ptr
-  %rhs_len_p1199 = add i64 %rhs_len192, 1
-  %17 = call ptr @memcpy(ptr %dst2198, ptr @.str.514, i64 %rhs_len_p1199)
-  %concat_i64200 = ptrtoint ptr %buf195 to i64
-  %calltmp201 = call i64 @"core::resolver::resolve_report"(i64 %after_value175, i64 %enum_i64, i64 %concat_i64200)
-  ret i64 %calltmp201
+then165:                                          ; preds = %ifcont133
+  %after_value168 = load i64, ptr %after_value, align 8
+  %buf169 = call ptr @forge_bump_alloc(i64 8)
+  %tag_ptr170 = getelementptr inbounds nuw %DiagCode, ptr %buf169, i32 0, i32 0
+  store i8 13, ptr %tag_ptr170, align 8
+  %enum_i64 = ptrtoint ptr %buf169 to i64
+  %name171 = load i64, ptr %name104, align 8
+  %concat_r172 = inttoptr i64 %name171 to ptr
+  %lhs_len173 = call i64 @strlen(ptr @.str.513)
+  %rhs_len174 = call i64 @strlen(ptr %concat_r172)
+  %concat_total175 = add i64 %lhs_len173, %rhs_len174
+  %concat_size176 = add i64 %concat_total175, 1
+  %buf177 = call ptr @forge_bump_alloc(i64 %concat_size176)
+  %14 = call ptr @memcpy(ptr %buf177, ptr @.str.513, i64 %lhs_len173)
+  %buf_int178 = ptrtoint ptr %buf177 to i64
+  %dst2_int179 = add i64 %buf_int178, %lhs_len173
+  %dst2180 = inttoptr i64 %dst2_int179 to ptr
+  %rhs_len_p1181 = add i64 %rhs_len174, 1
+  %15 = call ptr @memcpy(ptr %dst2180, ptr %concat_r172, i64 %rhs_len_p1181)
+  %concat_i64182 = ptrtoint ptr %buf177 to i64
+  %concat_l183 = inttoptr i64 %concat_i64182 to ptr
+  %lhs_len184 = call i64 @strlen(ptr %concat_l183)
+  %rhs_len185 = call i64 @strlen(ptr @.str.514)
+  %concat_total186 = add i64 %lhs_len184, %rhs_len185
+  %concat_size187 = add i64 %concat_total186, 1
+  %buf188 = call ptr @forge_bump_alloc(i64 %concat_size187)
+  %16 = call ptr @memcpy(ptr %buf188, ptr %concat_l183, i64 %lhs_len184)
+  %buf_int189 = ptrtoint ptr %buf188 to i64
+  %dst2_int190 = add i64 %buf_int189, %lhs_len184
+  %dst2191 = inttoptr i64 %dst2_int190 to ptr
+  %rhs_len_p1192 = add i64 %rhs_len185, 1
+  %17 = call ptr @memcpy(ptr %dst2191, ptr @.str.514, i64 %rhs_len_p1192)
+  %concat_i64193 = ptrtoint ptr %buf188 to i64
+  %calltmp194 = call i64 @"core::resolver::resolve_report"(i64 %after_value168, i64 %enum_i64, i64 %concat_i64193)
+  ret i64 %calltmp194
 
-else173:                                          ; preds = %ifcont140
-  br label %ifcont174
+else166:                                          ; preds = %ifcont133
+  br label %ifcont167
 
-ifcont174:                                        ; preds = %else173
-  %after_value202 = load i64, ptr %after_value, align 8
-  store i64 %after_value202, ptr %match_result, align 8
+ifcont167:                                        ; preds = %else166
+  %after_value195 = load i64, ptr %after_value, align 8
+  store i64 %after_value195, ptr %match_result, align 8
   br label %match_end
 
-march_arm203:                                     ; preds = %march_next107
-  %pbind_ptr206 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %inner = load i64, ptr %pbind_ptr206, align 8
-  store i64 %inner, ptr %inner207, align 8
-  %r208 = load i64, ptr %r, align 8
-  %inner209 = load i64, ptr %inner207, align 8
-  %calltmp210 = call i64 @"core::resolver::resolve_expr"(i64 %r208, i64 %inner209)
-  store i64 %calltmp210, ptr %match_result, align 8
+march_arm196:                                     ; preds = %march_next100
+  %pbind_ptr199 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %inner = load i64, ptr %pbind_ptr199, align 8
+  store i64 %inner, ptr %inner200, align 8
+  %r201 = load i64, ptr %r, align 8
+  %inner202 = load i64, ptr %inner200, align 8
+  %calltmp203 = call i64 @"core::resolver::resolve_expr"(i64 %r201, i64 %inner202)
+  store i64 %calltmp203, ptr %match_result, align 8
   br label %match_end
 
-march_next204:                                    ; preds = %march_next107
-  %tag_eq213 = icmp eq i8 %tag, 7
-  br i1 %tag_eq213, label %march_arm211, label %march_next212
+march_next197:                                    ; preds = %march_next100
+  %tag_eq206 = icmp eq i8 %tag, 7
+  br i1 %tag_eq206, label %march_arm204, label %march_next205
 
-march_arm211:                                     ; preds = %march_next204
-  %pbind_ptr214 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %right = load i64, ptr %pbind_ptr214, align 8
-  store i64 %right, ptr %right215, align 8
-  %r216 = load i64, ptr %r, align 8
-  %right217 = load i64, ptr %right215, align 8
-  %calltmp218 = call i64 @"core::resolver::resolve_expr"(i64 %r216, i64 %right217)
-  store i64 %calltmp218, ptr %match_result, align 8
+march_arm204:                                     ; preds = %march_next197
+  %pbind_ptr207 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %right = load i64, ptr %pbind_ptr207, align 8
+  store i64 %right, ptr %right208, align 8
+  %r209 = load i64, ptr %r, align 8
+  %right210 = load i64, ptr %right208, align 8
+  %calltmp211 = call i64 @"core::resolver::resolve_expr"(i64 %r209, i64 %right210)
+  store i64 %calltmp211, ptr %match_result, align 8
   br label %match_end
 
-march_next212:                                    ; preds = %march_next204
-  %tag_eq221 = icmp eq i8 %tag, 8
-  br i1 %tag_eq221, label %march_arm219, label %march_next220
+march_next205:                                    ; preds = %march_next197
+  %tag_eq214 = icmp eq i8 %tag, 8
+  br i1 %tag_eq214, label %march_arm212, label %march_next213
 
-march_arm219:                                     ; preds = %march_next212
-  %pbind_ptr222 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %left = load i64, ptr %pbind_ptr222, align 8
-  store i64 %left, ptr %left223, align 8
-  %pbind_ptr224 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %right225 = load i64, ptr %pbind_ptr224, align 8
-  store i64 %right225, ptr %right226, align 8
-  %r227 = load i64, ptr %r, align 8
-  %left228 = load i64, ptr %left223, align 8
-  %calltmp229 = call i64 @"core::resolver::resolve_expr"(i64 %r227, i64 %left228)
-  store i64 %calltmp229, ptr %after_left, align 8
-  %after_left230 = load i64, ptr %after_left, align 8
-  %right231 = load i64, ptr %right226, align 8
-  %calltmp232 = call i64 @"core::resolver::resolve_expr"(i64 %after_left230, i64 %right231)
-  store i64 %calltmp232, ptr %match_result, align 8
+march_arm212:                                     ; preds = %march_next205
+  %pbind_ptr215 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %left = load i64, ptr %pbind_ptr215, align 8
+  store i64 %left, ptr %left216, align 8
+  %pbind_ptr217 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %right218 = load i64, ptr %pbind_ptr217, align 8
+  store i64 %right218, ptr %right219, align 8
+  %r220 = load i64, ptr %r, align 8
+  %left221 = load i64, ptr %left216, align 8
+  %calltmp222 = call i64 @"core::resolver::resolve_expr"(i64 %r220, i64 %left221)
+  store i64 %calltmp222, ptr %after_left, align 8
+  %after_left223 = load i64, ptr %after_left, align 8
+  %right224 = load i64, ptr %right219, align 8
+  %calltmp225 = call i64 @"core::resolver::resolve_expr"(i64 %after_left223, i64 %right224)
+  store i64 %calltmp225, ptr %match_result, align 8
   br label %match_end
 
-march_next220:                                    ; preds = %march_next212
-  %tag_eq235 = icmp eq i8 %tag, 9
-  br i1 %tag_eq235, label %march_arm233, label %march_next234
+march_next213:                                    ; preds = %march_next205
+  %tag_eq228 = icmp eq i8 %tag, 9
+  br i1 %tag_eq228, label %march_arm226, label %march_next227
 
-march_arm233:                                     ; preds = %march_next220
-  %pbind_ptr236 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %left237 = load i64, ptr %pbind_ptr236, align 8
-  store i64 %left237, ptr %left238, align 8
-  %pbind_ptr239 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %right240 = load i64, ptr %pbind_ptr239, align 8
-  store i64 %right240, ptr %right241, align 8
-  %r242 = load i64, ptr %r, align 8
-  %left243 = load i64, ptr %left238, align 8
-  %calltmp244 = call i64 @"core::resolver::resolve_expr"(i64 %r242, i64 %left243)
-  store i64 %calltmp244, ptr %after_left245, align 8
-  %after_left246 = load i64, ptr %after_left245, align 8
-  %right247 = load i64, ptr %right241, align 8
-  %calltmp248 = call i64 @"core::resolver::resolve_expr"(i64 %after_left246, i64 %right247)
-  store i64 %calltmp248, ptr %match_result, align 8
+march_arm226:                                     ; preds = %march_next213
+  %pbind_ptr229 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %left230 = load i64, ptr %pbind_ptr229, align 8
+  store i64 %left230, ptr %left231, align 8
+  %pbind_ptr232 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %right233 = load i64, ptr %pbind_ptr232, align 8
+  store i64 %right233, ptr %right234, align 8
+  %r235 = load i64, ptr %r, align 8
+  %left236 = load i64, ptr %left231, align 8
+  %calltmp237 = call i64 @"core::resolver::resolve_expr"(i64 %r235, i64 %left236)
+  store i64 %calltmp237, ptr %after_left238, align 8
+  %after_left239 = load i64, ptr %after_left238, align 8
+  %right240 = load i64, ptr %right234, align 8
+  %calltmp241 = call i64 @"core::resolver::resolve_expr"(i64 %after_left239, i64 %right240)
+  store i64 %calltmp241, ptr %match_result, align 8
   br label %match_end
 
-march_next234:                                    ; preds = %march_next220
-  %tag_eq251 = icmp eq i8 %tag, 10
-  br i1 %tag_eq251, label %march_arm249, label %march_next250
+march_next227:                                    ; preds = %march_next213
+  %tag_eq244 = icmp eq i8 %tag, 10
+  br i1 %tag_eq244, label %march_arm242, label %march_next243
 
-march_arm249:                                     ; preds = %march_next234
-  %pbind_ptr252 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %callee = load i64, ptr %pbind_ptr252, align 8
-  store i64 %callee, ptr %callee253, align 8
-  %pbind_ptr254 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %args = load i64, ptr %pbind_ptr254, align 8
-  store i64 %args, ptr %args255, align 8
-  %r256 = load i64, ptr %r, align 8
-  %callee257 = load i64, ptr %callee253, align 8
-  %calltmp258 = call i64 @"core::resolver::resolve_expr"(i64 %r256, i64 %callee257)
-  store i64 %calltmp258, ptr %after_callee, align 8
-  %after_callee259 = load i64, ptr %after_callee, align 8
-  %args260 = load i64, ptr %args255, align 8
-  %calltmp261 = call i64 @"core::resolver::resolve_expr_list"(i64 %after_callee259, i64 %args260)
-  store i64 %calltmp261, ptr %match_result, align 8
+march_arm242:                                     ; preds = %march_next227
+  %pbind_ptr245 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %callee = load i64, ptr %pbind_ptr245, align 8
+  store i64 %callee, ptr %callee246, align 8
+  %pbind_ptr247 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %args = load i64, ptr %pbind_ptr247, align 8
+  store i64 %args, ptr %args248, align 8
+  %r249 = load i64, ptr %r, align 8
+  %callee250 = load i64, ptr %callee246, align 8
+  %calltmp251 = call i64 @"core::resolver::resolve_expr"(i64 %r249, i64 %callee250)
+  store i64 %calltmp251, ptr %after_callee, align 8
+  %after_callee252 = load i64, ptr %after_callee, align 8
+  %args253 = load i64, ptr %args248, align 8
+  %calltmp254 = call i64 @"core::resolver::resolve_expr_list"(i64 %after_callee252, i64 %args253)
+  store i64 %calltmp254, ptr %match_result, align 8
   br label %match_end
 
-march_next250:                                    ; preds = %march_next234
-  %tag_eq264 = icmp eq i8 %tag, 11
-  br i1 %tag_eq264, label %march_arm262, label %march_next263
+march_next243:                                    ; preds = %march_next227
+  %tag_eq257 = icmp eq i8 %tag, 11
+  br i1 %tag_eq257, label %march_arm255, label %march_next256
 
-march_arm262:                                     ; preds = %march_next250
-  %pbind_ptr265 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %inits = load i64, ptr %pbind_ptr265, align 8
-  store i64 %inits, ptr %inits266, align 8
-  %r267 = load i64, ptr %r, align 8
-  %inits268 = load i64, ptr %inits266, align 8
-  %calltmp269 = call i64 @"core::resolver::resolve_field_init_list"(i64 %r267, i64 %inits268)
-  store i64 %calltmp269, ptr %match_result, align 8
+march_arm255:                                     ; preds = %march_next243
+  %pbind_ptr258 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %inits = load i64, ptr %pbind_ptr258, align 8
+  store i64 %inits, ptr %inits259, align 8
+  %r260 = load i64, ptr %r, align 8
+  %inits261 = load i64, ptr %inits259, align 8
+  %calltmp262 = call i64 @"core::resolver::resolve_field_init_list"(i64 %r260, i64 %inits261)
+  store i64 %calltmp262, ptr %match_result, align 8
   br label %match_end
 
-march_next263:                                    ; preds = %march_next250
-  %tag_eq272 = icmp eq i8 %tag, 12
-  br i1 %tag_eq272, label %march_arm270, label %march_next271
+march_next256:                                    ; preds = %march_next243
+  %tag_eq265 = icmp eq i8 %tag, 12
+  br i1 %tag_eq265, label %march_arm263, label %march_next264
 
-march_arm270:                                     ; preds = %march_next263
-  %pbind_ptr273 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj = load i64, ptr %pbind_ptr273, align 8
-  store i64 %obj, ptr %obj274, align 8
-  %obj275 = load i64, ptr %obj274, align 8
-  %match_subj276 = inttoptr i64 %obj275 to ptr
-  %tag_ptr277 = getelementptr inbounds nuw %Expr, ptr %match_subj276, i32 0, i32 0
-  %tag278 = load i8, ptr %tag_ptr277, align 8
-  store i64 0, ptr %match_result279, align 8
-  %tag_eq283 = icmp eq i8 %tag278, 4
-  br i1 %tag_eq283, label %march_arm281, label %march_next282
+march_arm263:                                     ; preds = %march_next256
+  %pbind_ptr266 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj = load i64, ptr %pbind_ptr266, align 8
+  store i64 %obj, ptr %obj267, align 8
+  %obj268 = load i64, ptr %obj267, align 8
+  %match_subj269 = inttoptr i64 %obj268 to ptr
+  %tag_ptr270 = getelementptr inbounds nuw %Expr, ptr %match_subj269, i32 0, i32 0
+  %tag271 = load i8, ptr %tag_ptr270, align 8
+  store i64 0, ptr %match_result272, align 8
+  %tag_eq276 = icmp eq i8 %tag271, 4
+  br i1 %tag_eq276, label %march_arm274, label %march_next275
 
-march_next271:                                    ; preds = %march_next263
-  %tag_eq304 = icmp eq i8 %tag, 13
-  br i1 %tag_eq304, label %march_arm302, label %march_next303
+march_next264:                                    ; preds = %march_next256
+  %tag_eq297 = icmp eq i8 %tag, 13
+  br i1 %tag_eq297, label %march_arm295, label %march_next296
 
-match_end280:                                     ; preds = %march_arm297, %ifcont292
-  %match_val = load i64, ptr %match_result279, align 8
+match_end273:                                     ; preds = %march_arm290, %ifcont285
+  %match_val = load i64, ptr %match_result272, align 8
   store i64 %match_val, ptr %match_result, align 8
   br label %match_end
 
-march_arm281:                                     ; preds = %march_arm270
-  %pbind_ptr284 = getelementptr inbounds nuw %Expr, ptr %match_subj276, i32 0, i32 1
-  %name285 = load i64, ptr %pbind_ptr284, align 8
-  store i64 %name285, ptr %name286, align 8
-  %name287 = load i64, ptr %name286, align 8
-  %calltmp288 = call i64 @"core::resolver::starts_with_upper"(i64 %name287)
-  %if_cond289 = icmp ne i64 %calltmp288, 0
-  br i1 %if_cond289, label %then290, label %else291
+march_arm274:                                     ; preds = %march_arm263
+  %pbind_ptr277 = getelementptr inbounds nuw %Expr, ptr %match_subj269, i32 0, i32 1
+  %name278 = load i64, ptr %pbind_ptr277, align 8
+  store i64 %name278, ptr %name279, align 8
+  %name280 = load i64, ptr %name279, align 8
+  %calltmp281 = call i64 @"core::resolver::starts_with_upper"(i64 %name280)
+  %if_cond282 = icmp ne i64 %calltmp281, 0
+  br i1 %if_cond282, label %then283, label %else284
 
-march_next282:                                    ; preds = %march_arm270
-  br label %march_arm297
+march_next275:                                    ; preds = %march_arm263
+  br label %march_arm290
 
-then290:                                          ; preds = %march_arm281
-  %r293 = load i64, ptr %r, align 8
-  ret i64 %r293
+then283:                                          ; preds = %march_arm274
+  %r286 = load i64, ptr %r, align 8
+  ret i64 %r286
 
-else291:                                          ; preds = %march_arm281
-  br label %ifcont292
+else284:                                          ; preds = %march_arm274
+  br label %ifcont285
 
-ifcont292:                                        ; preds = %else291
-  %r294 = load i64, ptr %r, align 8
-  %obj295 = load i64, ptr %obj274, align 8
-  %calltmp296 = call i64 @"core::resolver::resolve_expr"(i64 %r294, i64 %obj295)
-  store i64 %calltmp296, ptr %match_result279, align 8
-  br label %match_end280
+ifcont285:                                        ; preds = %else284
+  %r287 = load i64, ptr %r, align 8
+  %obj288 = load i64, ptr %obj267, align 8
+  %calltmp289 = call i64 @"core::resolver::resolve_expr"(i64 %r287, i64 %obj288)
+  store i64 %calltmp289, ptr %match_result272, align 8
+  br label %match_end273
 
-march_arm297:                                     ; preds = %march_next282
-  %r299 = load i64, ptr %r, align 8
-  %obj300 = load i64, ptr %obj274, align 8
-  %calltmp301 = call i64 @"core::resolver::resolve_expr"(i64 %r299, i64 %obj300)
-  store i64 %calltmp301, ptr %match_result279, align 8
-  br label %match_end280
+march_arm290:                                     ; preds = %march_next275
+  %r292 = load i64, ptr %r, align 8
+  %obj293 = load i64, ptr %obj267, align 8
+  %calltmp294 = call i64 @"core::resolver::resolve_expr"(i64 %r292, i64 %obj293)
+  store i64 %calltmp294, ptr %match_result272, align 8
+  br label %match_end273
 
-march_next298:                                    ; No predecessors!
-  %tag_ext = sext i8 %tag278 to i64
+march_next291:                                    ; No predecessors!
+  %tag_ext = sext i8 %tag271 to i64
   call void @forge_match_unreachable(ptr @.match_fn.515, i64 %tag_ext)
   unreachable
 
-march_arm302:                                     ; preds = %march_next271
-  %pbind_ptr305 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %args306 = load i64, ptr %pbind_ptr305, align 8
-  store i64 %args306, ptr %args307, align 8
-  %r308 = load i64, ptr %r, align 8
-  %args309 = load i64, ptr %args307, align 8
-  %calltmp310 = call i64 @"core::resolver::resolve_expr_list"(i64 %r308, i64 %args309)
-  store i64 %calltmp310, ptr %match_result, align 8
+march_arm295:                                     ; preds = %march_next264
+  %pbind_ptr298 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %args299 = load i64, ptr %pbind_ptr298, align 8
+  store i64 %args299, ptr %args300, align 8
+  %r301 = load i64, ptr %r, align 8
+  %args302 = load i64, ptr %args300, align 8
+  %calltmp303 = call i64 @"core::resolver::resolve_expr_list"(i64 %r301, i64 %args302)
+  store i64 %calltmp303, ptr %match_result, align 8
   br label %match_end
 
-march_next303:                                    ; preds = %march_next271
-  %tag_eq313 = icmp eq i8 %tag, 14
-  br i1 %tag_eq313, label %march_arm311, label %march_next312
+march_next296:                                    ; preds = %march_next264
+  %tag_eq306 = icmp eq i8 %tag, 14
+  br i1 %tag_eq306, label %march_arm304, label %march_next305
 
-march_arm311:                                     ; preds = %march_next303
-  %pbind_ptr314 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj315 = load i64, ptr %pbind_ptr314, align 8
-  store i64 %obj315, ptr %obj316, align 8
-  %pbind_ptr317 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %idx = load i64, ptr %pbind_ptr317, align 8
-  store i64 %idx, ptr %idx318, align 8
-  %r319 = load i64, ptr %r, align 8
-  %obj320 = load i64, ptr %obj316, align 8
-  %calltmp321 = call i64 @"core::resolver::resolve_expr"(i64 %r319, i64 %obj320)
-  store i64 %calltmp321, ptr %after_obj, align 8
-  %after_obj322 = load i64, ptr %after_obj, align 8
-  %idx323 = load i64, ptr %idx318, align 8
-  %calltmp324 = call i64 @"core::resolver::resolve_expr"(i64 %after_obj322, i64 %idx323)
-  store i64 %calltmp324, ptr %match_result, align 8
+march_arm304:                                     ; preds = %march_next296
+  %pbind_ptr307 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj308 = load i64, ptr %pbind_ptr307, align 8
+  store i64 %obj308, ptr %obj309, align 8
+  %pbind_ptr310 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %idx = load i64, ptr %pbind_ptr310, align 8
+  store i64 %idx, ptr %idx311, align 8
+  %r312 = load i64, ptr %r, align 8
+  %obj313 = load i64, ptr %obj309, align 8
+  %calltmp314 = call i64 @"core::resolver::resolve_expr"(i64 %r312, i64 %obj313)
+  store i64 %calltmp314, ptr %after_obj, align 8
+  %after_obj315 = load i64, ptr %after_obj, align 8
+  %idx316 = load i64, ptr %idx311, align 8
+  %calltmp317 = call i64 @"core::resolver::resolve_expr"(i64 %after_obj315, i64 %idx316)
+  store i64 %calltmp317, ptr %match_result, align 8
   br label %match_end
 
-march_next312:                                    ; preds = %march_next303
-  %tag_eq327 = icmp eq i8 %tag, 15
-  br i1 %tag_eq327, label %march_arm325, label %march_next326
+march_next305:                                    ; preds = %march_next296
+  %tag_eq320 = icmp eq i8 %tag, 15
+  br i1 %tag_eq320, label %march_arm318, label %march_next319
 
-march_arm325:                                     ; preds = %march_next312
-  %pbind_ptr328 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %body = load i64, ptr %pbind_ptr328, align 8
-  store i64 %body, ptr %body329, align 8
-  %r330 = load i64, ptr %r, align 8
-  %calltmp331 = call i64 @"core::resolver::enter_resolve_scope"(i64 %r330)
-  store i64 %calltmp331, ptr %entered, align 8
-  %entered332 = load i64, ptr %entered, align 8
-  %body333 = load i64, ptr %body329, align 8
-  %calltmp334 = call i64 @"core::resolver::resolve_stmt_list"(i64 %entered332, i64 %body333)
-  store i64 %calltmp334, ptr %after, align 8
-  %after335 = load i64, ptr %after, align 8
-  %calltmp336 = call i64 @"core::resolver::exit_resolve_scope"(i64 %after335)
-  store i64 %calltmp336, ptr %match_result, align 8
+march_arm318:                                     ; preds = %march_next305
+  %pbind_ptr321 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %body = load i64, ptr %pbind_ptr321, align 8
+  store i64 %body, ptr %body322, align 8
+  %r323 = load i64, ptr %r, align 8
+  %calltmp324 = call i64 @"core::resolver::enter_resolve_scope"(i64 %r323)
+  store i64 %calltmp324, ptr %entered, align 8
+  %entered325 = load i64, ptr %entered, align 8
+  %body326 = load i64, ptr %body322, align 8
+  %calltmp327 = call i64 @"core::resolver::resolve_stmt_list"(i64 %entered325, i64 %body326)
+  store i64 %calltmp327, ptr %after, align 8
+  %after328 = load i64, ptr %after, align 8
+  %calltmp329 = call i64 @"core::resolver::exit_resolve_scope"(i64 %after328)
+  store i64 %calltmp329, ptr %match_result, align 8
   br label %match_end
 
-march_next326:                                    ; preds = %march_next312
-  %tag_eq339 = icmp eq i8 %tag, 16
-  br i1 %tag_eq339, label %march_arm337, label %march_next338
+march_next319:                                    ; preds = %march_next305
+  %tag_eq332 = icmp eq i8 %tag, 16
+  br i1 %tag_eq332, label %march_arm330, label %march_next331
 
-march_arm337:                                     ; preds = %march_next326
-  %pbind_ptr340 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %subject = load i64, ptr %pbind_ptr340, align 8
-  store i64 %subject, ptr %subject341, align 8
-  %pbind_ptr342 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %arms = load i64, ptr %pbind_ptr342, align 8
-  store i64 %arms, ptr %arms343, align 8
-  %r344 = load i64, ptr %r, align 8
-  %subject345 = load i64, ptr %subject341, align 8
-  %calltmp346 = call i64 @"core::resolver::resolve_expr"(i64 %r344, i64 %subject345)
-  store i64 %calltmp346, ptr %after_subject, align 8
-  %after_subject347 = load i64, ptr %after_subject, align 8
-  %arms348 = load i64, ptr %arms343, align 8
-  %calltmp349 = call i64 @"core::resolver::resolve_match_arms"(i64 %after_subject347, i64 %arms348)
-  store i64 %calltmp349, ptr %match_result, align 8
+march_arm330:                                     ; preds = %march_next319
+  %pbind_ptr333 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %subject = load i64, ptr %pbind_ptr333, align 8
+  store i64 %subject, ptr %subject334, align 8
+  %pbind_ptr335 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %arms = load i64, ptr %pbind_ptr335, align 8
+  store i64 %arms, ptr %arms336, align 8
+  %r337 = load i64, ptr %r, align 8
+  %subject338 = load i64, ptr %subject334, align 8
+  %calltmp339 = call i64 @"core::resolver::resolve_expr"(i64 %r337, i64 %subject338)
+  store i64 %calltmp339, ptr %after_subject, align 8
+  %after_subject340 = load i64, ptr %after_subject, align 8
+  %arms341 = load i64, ptr %arms336, align 8
+  %calltmp342 = call i64 @"core::resolver::resolve_match_arms"(i64 %after_subject340, i64 %arms341)
+  store i64 %calltmp342, ptr %match_result, align 8
   br label %match_end
 
-march_next338:                                    ; preds = %march_next326
-  %tag_eq352 = icmp eq i8 %tag, 17
-  br i1 %tag_eq352, label %march_arm350, label %march_next351
+march_next331:                                    ; preds = %march_next319
+  %tag_eq345 = icmp eq i8 %tag, 17
+  br i1 %tag_eq345, label %march_arm343, label %march_next344
 
-march_arm350:                                     ; preds = %march_next338
-  %pbind_ptr353 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj354 = load i64, ptr %pbind_ptr353, align 8
-  store i64 %obj354, ptr %obj355, align 8
-  %pbind_ptr356 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %value357 = load i64, ptr %pbind_ptr356, align 8
-  store i64 %value357, ptr %value358, align 8
-  %r359 = load i64, ptr %r, align 8
-  %obj360 = load i64, ptr %obj355, align 8
-  %calltmp361 = call i64 @"core::resolver::resolve_expr"(i64 %r359, i64 %obj360)
-  store i64 %calltmp361, ptr %after_obj362, align 8
-  %after_obj363 = load i64, ptr %after_obj362, align 8
-  %value364 = load i64, ptr %value358, align 8
-  %calltmp365 = call i64 @"core::resolver::resolve_expr"(i64 %after_obj363, i64 %value364)
-  store i64 %calltmp365, ptr %match_result, align 8
+march_arm343:                                     ; preds = %march_next331
+  %pbind_ptr346 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj347 = load i64, ptr %pbind_ptr346, align 8
+  store i64 %obj347, ptr %obj348, align 8
+  %pbind_ptr349 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %value350 = load i64, ptr %pbind_ptr349, align 8
+  store i64 %value350, ptr %value351, align 8
+  %r352 = load i64, ptr %r, align 8
+  %obj353 = load i64, ptr %obj348, align 8
+  %calltmp354 = call i64 @"core::resolver::resolve_expr"(i64 %r352, i64 %obj353)
+  store i64 %calltmp354, ptr %after_obj355, align 8
+  %after_obj356 = load i64, ptr %after_obj355, align 8
+  %value357 = load i64, ptr %value351, align 8
+  %calltmp358 = call i64 @"core::resolver::resolve_expr"(i64 %after_obj356, i64 %value357)
+  store i64 %calltmp358, ptr %match_result, align 8
   br label %match_end
 
-march_next351:                                    ; preds = %march_next338
-  %tag_eq368 = icmp eq i8 %tag, 18
-  br i1 %tag_eq368, label %march_arm366, label %march_next367
+march_next344:                                    ; preds = %march_next331
+  %tag_eq361 = icmp eq i8 %tag, 18
+  br i1 %tag_eq361, label %march_arm359, label %march_next360
 
-march_arm366:                                     ; preds = %march_next351
-  %pbind_ptr369 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %c = load i64, ptr %pbind_ptr369, align 8
-  store i64 %c, ptr %c370, align 8
-  %pbind_ptr371 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %t = load i64, ptr %pbind_ptr371, align 8
-  store i64 %t, ptr %t372, align 8
-  %pbind_ptr373 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %e = load i64, ptr %pbind_ptr373, align 8
-  store i64 %e, ptr %e374, align 8
-  %r375 = load i64, ptr %r, align 8
-  %c376 = load i64, ptr %c370, align 8
-  %calltmp377 = call i64 @"core::resolver::resolve_expr"(i64 %r375, i64 %c376)
-  store i64 %calltmp377, ptr %after_c, align 8
-  %after_c378 = load i64, ptr %after_c, align 8
-  %t379 = load i64, ptr %t372, align 8
-  %calltmp380 = call i64 @"core::resolver::resolve_expr"(i64 %after_c378, i64 %t379)
-  store i64 %calltmp380, ptr %after_t, align 8
-  %after_t381 = load i64, ptr %after_t, align 8
-  %e382 = load i64, ptr %e374, align 8
-  %calltmp383 = call i64 @"core::resolver::resolve_expr"(i64 %after_t381, i64 %e382)
-  store i64 %calltmp383, ptr %match_result, align 8
+march_arm359:                                     ; preds = %march_next344
+  %pbind_ptr362 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %c = load i64, ptr %pbind_ptr362, align 8
+  store i64 %c, ptr %c363, align 8
+  %pbind_ptr364 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %t = load i64, ptr %pbind_ptr364, align 8
+  store i64 %t, ptr %t365, align 8
+  %pbind_ptr366 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %e = load i64, ptr %pbind_ptr366, align 8
+  store i64 %e, ptr %e367, align 8
+  %r368 = load i64, ptr %r, align 8
+  %c369 = load i64, ptr %c363, align 8
+  %calltmp370 = call i64 @"core::resolver::resolve_expr"(i64 %r368, i64 %c369)
+  store i64 %calltmp370, ptr %after_c, align 8
+  %after_c371 = load i64, ptr %after_c, align 8
+  %t372 = load i64, ptr %t365, align 8
+  %calltmp373 = call i64 @"core::resolver::resolve_expr"(i64 %after_c371, i64 %t372)
+  store i64 %calltmp373, ptr %after_t, align 8
+  %after_t374 = load i64, ptr %after_t, align 8
+  %e375 = load i64, ptr %e367, align 8
+  %calltmp376 = call i64 @"core::resolver::resolve_expr"(i64 %after_t374, i64 %e375)
+  store i64 %calltmp376, ptr %match_result, align 8
   br label %match_end
 
-march_next367:                                    ; preds = %march_next351
-  %tag_eq386 = icmp eq i8 %tag, 19
-  br i1 %tag_eq386, label %march_arm384, label %march_next385
+march_next360:                                    ; preds = %march_next344
+  %tag_eq379 = icmp eq i8 %tag, 19
+  br i1 %tag_eq379, label %march_arm377, label %march_next378
 
-march_arm384:                                     ; preds = %march_next367
-  %pbind_ptr387 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %left388 = load i64, ptr %pbind_ptr387, align 8
-  store i64 %left388, ptr %left389, align 8
-  %pbind_ptr390 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %right391 = load i64, ptr %pbind_ptr390, align 8
-  store i64 %right391, ptr %right392, align 8
-  %r393 = load i64, ptr %r, align 8
-  %left394 = load i64, ptr %left389, align 8
-  %calltmp395 = call i64 @"core::resolver::resolve_expr"(i64 %r393, i64 %left394)
-  store i64 %calltmp395, ptr %after_left396, align 8
-  %after_left397 = load i64, ptr %after_left396, align 8
-  %right398 = load i64, ptr %right392, align 8
-  %calltmp399 = call i64 @"core::resolver::resolve_expr"(i64 %after_left397, i64 %right398)
-  store i64 %calltmp399, ptr %match_result, align 8
+march_arm377:                                     ; preds = %march_next360
+  %pbind_ptr380 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %left381 = load i64, ptr %pbind_ptr380, align 8
+  store i64 %left381, ptr %left382, align 8
+  %pbind_ptr383 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %right384 = load i64, ptr %pbind_ptr383, align 8
+  store i64 %right384, ptr %right385, align 8
+  %r386 = load i64, ptr %r, align 8
+  %left387 = load i64, ptr %left382, align 8
+  %calltmp388 = call i64 @"core::resolver::resolve_expr"(i64 %r386, i64 %left387)
+  store i64 %calltmp388, ptr %after_left389, align 8
+  %after_left390 = load i64, ptr %after_left389, align 8
+  %right391 = load i64, ptr %right385, align 8
+  %calltmp392 = call i64 @"core::resolver::resolve_expr"(i64 %after_left390, i64 %right391)
+  store i64 %calltmp392, ptr %match_result, align 8
   br label %match_end
 
-march_next385:                                    ; preds = %march_next367
-  %tag_eq402 = icmp eq i8 %tag, 20
-  br i1 %tag_eq402, label %march_arm400, label %march_next401
+march_next378:                                    ; preds = %march_next360
+  %tag_eq395 = icmp eq i8 %tag, 20
+  br i1 %tag_eq395, label %march_arm393, label %march_next394
 
-march_arm400:                                     ; preds = %march_next385
-  %pbind_ptr403 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj404 = load i64, ptr %pbind_ptr403, align 8
-  store i64 %obj404, ptr %obj405, align 8
-  %r406 = load i64, ptr %r, align 8
-  %obj407 = load i64, ptr %obj405, align 8
-  %calltmp408 = call i64 @"core::resolver::resolve_expr"(i64 %r406, i64 %obj407)
-  store i64 %calltmp408, ptr %match_result, align 8
+march_arm393:                                     ; preds = %march_next378
+  %pbind_ptr396 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj397 = load i64, ptr %pbind_ptr396, align 8
+  store i64 %obj397, ptr %obj398, align 8
+  %r399 = load i64, ptr %r, align 8
+  %obj400 = load i64, ptr %obj398, align 8
+  %calltmp401 = call i64 @"core::resolver::resolve_expr"(i64 %r399, i64 %obj400)
+  store i64 %calltmp401, ptr %match_result, align 8
   br label %match_end
 
-march_next401:                                    ; preds = %march_next385
-  %tag_eq411 = icmp eq i8 %tag, 21
-  br i1 %tag_eq411, label %march_arm409, label %march_next410
+march_next394:                                    ; preds = %march_next378
+  %tag_eq404 = icmp eq i8 %tag, 21
+  br i1 %tag_eq404, label %march_arm402, label %march_next403
 
-march_arm409:                                     ; preds = %march_next401
-  %pbind_ptr412 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %inner413 = load i64, ptr %pbind_ptr412, align 8
-  store i64 %inner413, ptr %inner414, align 8
-  %r415 = load i64, ptr %r, align 8
-  %inner416 = load i64, ptr %inner414, align 8
-  %calltmp417 = call i64 @"core::resolver::resolve_expr"(i64 %r415, i64 %inner416)
-  store i64 %calltmp417, ptr %match_result, align 8
+march_arm402:                                     ; preds = %march_next394
+  %pbind_ptr405 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %inner406 = load i64, ptr %pbind_ptr405, align 8
+  store i64 %inner406, ptr %inner407, align 8
+  %r408 = load i64, ptr %r, align 8
+  %inner409 = load i64, ptr %inner407, align 8
+  %calltmp410 = call i64 @"core::resolver::resolve_expr"(i64 %r408, i64 %inner409)
+  store i64 %calltmp410, ptr %match_result, align 8
   br label %match_end
 
-march_next410:                                    ; preds = %march_next401
-  %tag_eq420 = icmp eq i8 %tag, 22
-  br i1 %tag_eq420, label %march_arm418, label %march_next419
+march_next403:                                    ; preds = %march_next394
+  %tag_eq413 = icmp eq i8 %tag, 22
+  br i1 %tag_eq413, label %march_arm411, label %march_next412
 
-march_arm418:                                     ; preds = %march_next410
-  %pbind_ptr421 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %elements = load i64, ptr %pbind_ptr421, align 8
-  store i64 %elements, ptr %elements422, align 8
-  %r423 = load i64, ptr %r, align 8
-  %elements424 = load i64, ptr %elements422, align 8
-  %calltmp425 = call i64 @"core::resolver::resolve_expr_list"(i64 %r423, i64 %elements424)
-  store i64 %calltmp425, ptr %match_result, align 8
+march_arm411:                                     ; preds = %march_next403
+  %pbind_ptr414 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %elements = load i64, ptr %pbind_ptr414, align 8
+  store i64 %elements, ptr %elements415, align 8
+  %r416 = load i64, ptr %r, align 8
+  %elements417 = load i64, ptr %elements415, align 8
+  %calltmp418 = call i64 @"core::resolver::resolve_expr_list"(i64 %r416, i64 %elements417)
+  store i64 %calltmp418, ptr %match_result, align 8
   br label %match_end
 
-march_next419:                                    ; preds = %march_next410
-  %tag_eq428 = icmp eq i8 %tag, 23
-  br i1 %tag_eq428, label %march_arm426, label %march_next427
+march_next412:                                    ; preds = %march_next403
+  %tag_eq421 = icmp eq i8 %tag, 23
+  br i1 %tag_eq421, label %march_arm419, label %march_next420
 
-march_arm426:                                     ; preds = %march_next419
-  %pbind_ptr429 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj430 = load i64, ptr %pbind_ptr429, align 8
-  store i64 %obj430, ptr %obj431, align 8
-  %r432 = load i64, ptr %r, align 8
-  %obj433 = load i64, ptr %obj431, align 8
-  %calltmp434 = call i64 @"core::resolver::resolve_expr"(i64 %r432, i64 %obj433)
-  store i64 %calltmp434, ptr %match_result, align 8
+march_arm419:                                     ; preds = %march_next412
+  %pbind_ptr422 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj423 = load i64, ptr %pbind_ptr422, align 8
+  store i64 %obj423, ptr %obj424, align 8
+  %r425 = load i64, ptr %r, align 8
+  %obj426 = load i64, ptr %obj424, align 8
+  %calltmp427 = call i64 @"core::resolver::resolve_expr"(i64 %r425, i64 %obj426)
+  store i64 %calltmp427, ptr %match_result, align 8
   br label %match_end
 
-march_next427:                                    ; preds = %march_next419
-  %tag_eq437 = icmp eq i8 %tag, 25
-  br i1 %tag_eq437, label %march_arm435, label %march_next436
+march_next420:                                    ; preds = %march_next412
+  %tag_eq430 = icmp eq i8 %tag, 25
+  br i1 %tag_eq430, label %march_arm428, label %march_next429
 
-march_arm435:                                     ; preds = %march_next427
-  %pbind_ptr438 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %elements439 = load i64, ptr %pbind_ptr438, align 8
-  store i64 %elements439, ptr %elements440, align 8
-  %r441 = load i64, ptr %r, align 8
-  %elements442 = load i64, ptr %elements440, align 8
-  %calltmp443 = call i64 @"core::resolver::resolve_expr_list"(i64 %r441, i64 %elements442)
-  store i64 %calltmp443, ptr %match_result, align 8
+march_arm428:                                     ; preds = %march_next420
+  %pbind_ptr431 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %elements432 = load i64, ptr %pbind_ptr431, align 8
+  store i64 %elements432, ptr %elements433, align 8
+  %r434 = load i64, ptr %r, align 8
+  %elements435 = load i64, ptr %elements433, align 8
+  %calltmp436 = call i64 @"core::resolver::resolve_expr_list"(i64 %r434, i64 %elements435)
+  store i64 %calltmp436, ptr %match_result, align 8
   br label %match_end
 
-march_next436:                                    ; preds = %march_next427
-  %tag_eq446 = icmp eq i8 %tag, 27
-  br i1 %tag_eq446, label %march_arm444, label %march_next445
+march_next429:                                    ; preds = %march_next420
+  %tag_eq439 = icmp eq i8 %tag, 27
+  br i1 %tag_eq439, label %march_arm437, label %march_next438
 
-march_arm444:                                     ; preds = %march_next436
-  %pbind_ptr447 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %entries = load i64, ptr %pbind_ptr447, align 8
-  store i64 %entries, ptr %entries448, align 8
-  %r449 = load i64, ptr %r, align 8
-  %entries450 = load i64, ptr %entries448, align 8
-  %calltmp451 = call i64 @"core::resolver::resolve_expr_list"(i64 %r449, i64 %entries450)
-  store i64 %calltmp451, ptr %match_result, align 8
+march_arm437:                                     ; preds = %march_next429
+  %pbind_ptr440 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %entries = load i64, ptr %pbind_ptr440, align 8
+  store i64 %entries, ptr %entries441, align 8
+  %r442 = load i64, ptr %r, align 8
+  %entries443 = load i64, ptr %entries441, align 8
+  %calltmp444 = call i64 @"core::resolver::resolve_expr_list"(i64 %r442, i64 %entries443)
+  store i64 %calltmp444, ptr %match_result, align 8
   br label %match_end
 
-march_next445:                                    ; preds = %march_next436
-  %tag_eq454 = icmp eq i8 %tag, 28
-  br i1 %tag_eq454, label %march_arm452, label %march_next453
+march_next438:                                    ; preds = %march_next429
+  %tag_eq447 = icmp eq i8 %tag, 28
+  br i1 %tag_eq447, label %march_arm445, label %march_next446
 
-march_arm452:                                     ; preds = %march_next445
-  %pbind_ptr455 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj456 = load i64, ptr %pbind_ptr455, align 8
-  store i64 %obj456, ptr %obj457, align 8
-  %pbind_ptr458 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %start = load i64, ptr %pbind_ptr458, align 8
-  store i64 %start, ptr %start459, align 8
-  %pbind_ptr460 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
-  %end = load i64, ptr %pbind_ptr460, align 8
-  store i64 %end, ptr %end461, align 8
-  %r462 = load i64, ptr %r, align 8
-  %obj463 = load i64, ptr %obj457, align 8
-  %calltmp464 = call i64 @"core::resolver::resolve_expr"(i64 %r462, i64 %obj463)
-  store i64 %calltmp464, ptr %a, align 8
-  %a465 = load i64, ptr %a, align 8
-  %start466 = load i64, ptr %start459, align 8
-  %calltmp467 = call i64 @"core::resolver::resolve_expr"(i64 %a465, i64 %start466)
-  store i64 %calltmp467, ptr %b, align 8
-  %b468 = load i64, ptr %b, align 8
-  %end469 = load i64, ptr %end461, align 8
-  %calltmp470 = call i64 @"core::resolver::resolve_expr"(i64 %b468, i64 %end469)
-  store i64 %calltmp470, ptr %match_result, align 8
+march_arm445:                                     ; preds = %march_next438
+  %pbind_ptr448 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj449 = load i64, ptr %pbind_ptr448, align 8
+  store i64 %obj449, ptr %obj450, align 8
+  %pbind_ptr451 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %start = load i64, ptr %pbind_ptr451, align 8
+  store i64 %start, ptr %start452, align 8
+  %pbind_ptr453 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 3
+  %end = load i64, ptr %pbind_ptr453, align 8
+  store i64 %end, ptr %end454, align 8
+  %r455 = load i64, ptr %r, align 8
+  %obj456 = load i64, ptr %obj450, align 8
+  %calltmp457 = call i64 @"core::resolver::resolve_expr"(i64 %r455, i64 %obj456)
+  store i64 %calltmp457, ptr %a, align 8
+  %a458 = load i64, ptr %a, align 8
+  %start459 = load i64, ptr %start452, align 8
+  %calltmp460 = call i64 @"core::resolver::resolve_expr"(i64 %a458, i64 %start459)
+  store i64 %calltmp460, ptr %b, align 8
+  %b461 = load i64, ptr %b, align 8
+  %end462 = load i64, ptr %end454, align 8
+  %calltmp463 = call i64 @"core::resolver::resolve_expr"(i64 %b461, i64 %end462)
+  store i64 %calltmp463, ptr %match_result, align 8
   br label %match_end
 
-march_next453:                                    ; preds = %march_next445
-  %tag_eq473 = icmp eq i8 %tag, 26
-  br i1 %tag_eq473, label %march_arm471, label %march_next472
+march_next446:                                    ; preds = %march_next438
+  %tag_eq466 = icmp eq i8 %tag, 26
+  br i1 %tag_eq466, label %march_arm464, label %march_next465
 
-march_arm471:                                     ; preds = %march_next453
-  %pbind_ptr474 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %params = load i64, ptr %pbind_ptr474, align 8
-  store i64 %params, ptr %params475, align 8
-  %pbind_ptr476 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %body477 = load i64, ptr %pbind_ptr476, align 8
-  store i64 %body477, ptr %body478, align 8
-  %r479 = load i64, ptr %r, align 8
-  %calltmp480 = call i64 @"core::resolver::enter_resolve_scope"(i64 %r479)
-  store i64 %calltmp480, ptr %entered481, align 8
-  %entered482 = load i64, ptr %entered481, align 8
-  %params483 = load i64, ptr %params475, align 8
-  %calltmp484 = call i64 @"core::resolver::declare_params"(i64 %entered482, i64 %params483)
-  store i64 %calltmp484, ptr %with_params, align 8
-  %with_params485 = load i64, ptr %with_params, align 8
-  %body486 = load i64, ptr %body478, align 8
-  %calltmp487 = call i64 @"core::resolver::resolve_expr"(i64 %with_params485, i64 %body486)
-  store i64 %calltmp487, ptr %after_body, align 8
-  %after_body488 = load i64, ptr %after_body, align 8
-  %calltmp489 = call i64 @"core::resolver::exit_resolve_scope"(i64 %after_body488)
-  store i64 %calltmp489, ptr %match_result, align 8
+march_arm464:                                     ; preds = %march_next446
+  %pbind_ptr467 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %params = load i64, ptr %pbind_ptr467, align 8
+  store i64 %params, ptr %params468, align 8
+  %pbind_ptr469 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %body470 = load i64, ptr %pbind_ptr469, align 8
+  store i64 %body470, ptr %body471, align 8
+  %r472 = load i64, ptr %r, align 8
+  %calltmp473 = call i64 @"core::resolver::enter_resolve_scope"(i64 %r472)
+  store i64 %calltmp473, ptr %entered474, align 8
+  %entered475 = load i64, ptr %entered474, align 8
+  %params476 = load i64, ptr %params468, align 8
+  %calltmp477 = call i64 @"core::resolver::declare_params"(i64 %entered475, i64 %params476)
+  store i64 %calltmp477, ptr %with_params, align 8
+  %with_params478 = load i64, ptr %with_params, align 8
+  %body479 = load i64, ptr %body471, align 8
+  %calltmp480 = call i64 @"core::resolver::resolve_expr"(i64 %with_params478, i64 %body479)
+  store i64 %calltmp480, ptr %after_body, align 8
+  %after_body481 = load i64, ptr %after_body, align 8
+  %calltmp482 = call i64 @"core::resolver::exit_resolve_scope"(i64 %after_body481)
+  store i64 %calltmp482, ptr %match_result, align 8
   br label %match_end
 
-march_next472:                                    ; preds = %march_next453
-  %tag_eq492 = icmp eq i8 %tag, 24
-  br i1 %tag_eq492, label %march_arm490, label %march_next491
+march_next465:                                    ; preds = %march_next446
+  %tag_eq485 = icmp eq i8 %tag, 24
+  br i1 %tag_eq485, label %march_arm483, label %march_next484
 
-march_arm490:                                     ; preds = %march_next472
-  %pbind_ptr493 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %obj494 = load i64, ptr %pbind_ptr493, align 8
-  store i64 %obj494, ptr %obj495, align 8
-  %pbind_ptr496 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
-  %overrides = load i64, ptr %pbind_ptr496, align 8
-  store i64 %overrides, ptr %overrides497, align 8
-  %r498 = load i64, ptr %r, align 8
-  %obj499 = load i64, ptr %obj495, align 8
-  %calltmp500 = call i64 @"core::resolver::resolve_expr"(i64 %r498, i64 %obj499)
-  store i64 %calltmp500, ptr %after_obj501, align 8
-  %after_obj502 = load i64, ptr %after_obj501, align 8
-  %overrides503 = load i64, ptr %overrides497, align 8
-  %calltmp504 = call i64 @"core::resolver::resolve_field_init_list"(i64 %after_obj502, i64 %overrides503)
-  store i64 %calltmp504, ptr %match_result, align 8
+march_arm483:                                     ; preds = %march_next465
+  %pbind_ptr486 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %obj487 = load i64, ptr %pbind_ptr486, align 8
+  store i64 %obj487, ptr %obj488, align 8
+  %pbind_ptr489 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 2
+  %overrides = load i64, ptr %pbind_ptr489, align 8
+  store i64 %overrides, ptr %overrides490, align 8
+  %r491 = load i64, ptr %r, align 8
+  %obj492 = load i64, ptr %obj488, align 8
+  %calltmp493 = call i64 @"core::resolver::resolve_expr"(i64 %r491, i64 %obj492)
+  store i64 %calltmp493, ptr %after_obj494, align 8
+  %after_obj495 = load i64, ptr %after_obj494, align 8
+  %overrides496 = load i64, ptr %overrides490, align 8
+  %calltmp497 = call i64 @"core::resolver::resolve_field_init_list"(i64 %after_obj495, i64 %overrides496)
+  store i64 %calltmp497, ptr %match_result, align 8
   br label %match_end
 
-march_next491:                                    ; preds = %march_next472
-  %tag_eq507 = icmp eq i8 %tag, 30
-  br i1 %tag_eq507, label %march_arm505, label %march_next506
+march_next484:                                    ; preds = %march_next465
+  %tag_eq500 = icmp eq i8 %tag, 30
+  br i1 %tag_eq500, label %march_arm498, label %march_next499
 
-march_arm505:                                     ; preds = %march_next491
-  %pbind_ptr508 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
-  %subject509 = load i64, ptr %pbind_ptr508, align 8
-  store i64 %subject509, ptr %subject510, align 8
-  %r511 = load i64, ptr %r, align 8
-  %subject512 = load i64, ptr %subject510, align 8
-  %calltmp513 = call i64 @"core::resolver::resolve_expr"(i64 %r511, i64 %subject512)
-  store i64 %calltmp513, ptr %match_result, align 8
+march_arm498:                                     ; preds = %march_next484
+  %pbind_ptr501 = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 1
+  %subject502 = load i64, ptr %pbind_ptr501, align 8
+  store i64 %subject502, ptr %subject503, align 8
+  %r504 = load i64, ptr %r, align 8
+  %subject505 = load i64, ptr %subject503, align 8
+  %calltmp506 = call i64 @"core::resolver::resolve_expr"(i64 %r504, i64 %subject505)
+  store i64 %calltmp506, ptr %match_result, align 8
   br label %match_end
 
-march_next506:                                    ; preds = %march_next491
-  %tag_eq516 = icmp eq i8 %tag, 31
-  br i1 %tag_eq516, label %march_arm514, label %march_next515
+march_next499:                                    ; preds = %march_next484
+  %tag_eq509 = icmp eq i8 %tag, 31
+  br i1 %tag_eq509, label %march_arm507, label %march_next508
 
-march_arm514:                                     ; preds = %march_next506
-  %r517 = load i64, ptr %r, align 8
-  store i64 %r517, ptr %match_result, align 8
+march_arm507:                                     ; preds = %march_next499
+  %r510 = load i64, ptr %r, align 8
+  store i64 %r510, ptr %match_result, align 8
   br label %match_end
 
-march_next515:                                    ; preds = %march_next506
-  br label %march_arm518
+march_next508:                                    ; preds = %march_next499
+  br label %march_arm511
 
-march_arm518:                                     ; preds = %march_next515
-  %expr520 = load i64, ptr %expr, align 8
-  %calltmp521 = call i64 @forge_expr_tag(i64 %expr520)
-  store i64 %calltmp521, ptr %tag522, align 8
-  %r523 = load i64, ptr %r, align 8
-  %obj_ptr524 = inttoptr i64 %r523 to ptr
-  %fld_ptr525 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr524, i32 0, i32 6
-  %features = load i64, ptr %fld_ptr525, align 8
-  %tag526 = load i64, ptr %tag522, align 8
-  %r527 = load i64, ptr %r, align 8
-  %expr528 = load i64, ptr %expr, align 8
-  %calltmp529 = call i64 @"core::registry::dispatch_expr_resolve"(i64 %features, i64 %tag526, i64 %r527, i64 %expr528)
-  store i64 %calltmp529, ptr %result530, align 8
-  %result531 = load i64, ptr %result530, align 8
-  %ne = icmp ne i64 %result531, 0
+march_arm511:                                     ; preds = %march_next508
+  %expr513 = load i64, ptr %expr, align 8
+  %calltmp514 = call i64 @forge_expr_tag(i64 %expr513)
+  store i64 %calltmp514, ptr %tag515, align 8
+  %r516 = load i64, ptr %r, align 8
+  %obj_ptr517 = inttoptr i64 %r516 to ptr
+  %fld_ptr518 = getelementptr inbounds nuw %Resolver, ptr %obj_ptr517, i32 0, i32 6
+  %features = load i64, ptr %fld_ptr518, align 8
+  %tag519 = load i64, ptr %tag515, align 8
+  %r520 = load i64, ptr %r, align 8
+  %expr521 = load i64, ptr %expr, align 8
+  %calltmp522 = call i64 @"core::registry::dispatch_expr_resolve"(i64 %features, i64 %tag519, i64 %r520, i64 %expr521)
+  store i64 %calltmp522, ptr %result523, align 8
+  %result524 = load i64, ptr %result523, align 8
+  %ne = icmp ne i64 %result524, 0
   %ne_ext = zext i1 %ne to i64
-  %if_cond532 = icmp ne i64 %ne_ext, 0
-  br i1 %if_cond532, label %then533, label %else534
+  %if_cond525 = icmp ne i64 %ne_ext, 0
+  br i1 %if_cond525, label %then526, label %else527
 
-march_next519:                                    ; No predecessors!
-  %tag_ext538 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.516, i64 %tag_ext538)
+march_next512:                                    ; No predecessors!
+  %tag_ext531 = sext i8 %tag to i64
+  call void @forge_match_unreachable(ptr @.match_fn.516, i64 %tag_ext531)
   unreachable
 
-then533:                                          ; preds = %march_arm518
-  %result536 = load i64, ptr %result530, align 8
-  ret i64 %result536
+then526:                                          ; preds = %march_arm511
+  %result529 = load i64, ptr %result523, align 8
+  ret i64 %result529
 
-else534:                                          ; preds = %march_arm518
-  br label %ifcont535
+else527:                                          ; preds = %march_arm511
+  br label %ifcont528
 
-ifcont535:                                        ; preds = %else534
-  %r537 = load i64, ptr %r, align 8
-  store i64 %r537, ptr %match_result, align 8
+ifcont528:                                        ; preds = %else527
+  %r530 = load i64, ptr %r, align 8
+  store i64 %r530, ptr %match_result, align 8
   br label %match_end
 }
 

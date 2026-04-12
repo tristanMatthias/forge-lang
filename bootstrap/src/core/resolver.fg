@@ -35,6 +35,17 @@ type Resolver = {
 
 export fn resolve_program(stmts: StmtList) -> ResolveResult {
     mut r = resolver_new()
+    // Pre-declare builtins so they resolve like any other function
+    r = declare_function(r, "println")
+    r = declare_function(r, "eprintln")
+    r = declare_function(r, "print")
+    r = declare_function(r, "eprint")
+    r = declare_function(r, "string")
+    r = declare_function(r, "int")
+    r = declare_function(r, "float")
+    r = declare_function(r, "panic")
+    r = declare_function(r, "exit")
+    r = declare_function(r, "self")
     r = collect_function_names(r, stmts)
     r = resolve_stmt_list(r, stmts)
     ResolveResult {
@@ -199,12 +210,6 @@ fn lookup_fn(fns: FnEntry, name: string) -> bool {
             lookup_fn(next, name)
         }
     }
-}
-
-fn is_builtin(name: string) -> bool {
-    name == "println" || name == "eprintln" || name == "print" || name == "eprint" ||
-    name == "string" || name == "int" || name == "float" || name == "panic" ||
-    name == "exit" || name == "self"
 }
 
 fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
@@ -394,9 +399,6 @@ fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .Bool(_) -> r
         .Null -> r
         .Ident(name) -> {
-            if is_builtin(name) {
-                return r
-            }
             // Uppercase identifiers are treated as type names — the
             // resolver doesn't track them, codegen does.
             if starts_with_upper(name) {

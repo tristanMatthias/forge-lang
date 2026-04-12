@@ -281,25 +281,16 @@ The `malloc_struct_bytes` and `malloc_enum_bytes` functions were
 fixed, but the SEED hasn't been fully regenerated to eliminate all
 old `malloc` patterns.
 
-### 23. Hardcoded `is_builtin` list in resolver
+### 23. ~~Hardcoded `is_builtin` list in resolver~~ FIXED
 
-**Severity:** medium (doesn't scale)
-**Impact:** every new builtin function (println, string, int, panic,
-etc.) requires adding a line to `is_builtin()` in resolver.fg. This
-is a maintenance trap — the resolver and codegen must stay in sync
-manually.
+**Fixed:** removed `is_builtin()` function. Builtins are now
+pre-declared via `declare_function()` in `resolve_program()` before
+walking the AST, so they resolve through the normal function lookup
+path (`lookup_fn`). No separate hardcoded list needed.
 
-**Proper fix:** declare builtins as `extern fn` in a prelude that
-gets prepended to every program before parsing:
-```forge
-extern fn println(s: string)
-extern fn string(x: int) -> string
-extern fn int(s: string) -> int
-extern fn panic(msg: string)
-```
-The resolver would find them via normal function pre-declaration,
-and the codegen would intercept them in `emit_call_named` as today.
-No hardcoded list needed.
+Note: `features/modules/names.fg` still has a similar `is_builtin_name()`
+for module name rewriting (preventing builtins from being qualified).
+That's a separate concern.
 
 ### 26. Stmt.Defer stores Expr, not SExpr — loses source location
 
