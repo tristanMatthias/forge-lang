@@ -114,45 +114,80 @@ static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
         _exit(1);
     }
 
-    fprintf(stderr, "\n=== CRASH ===\n");
-    fprintf(stderr, "Signal: %d (%s)\n", sig, name);
-    if (si) {
-        fprintf(stderr, "Address: %p\n", si->si_addr);
-    }
-
-    // Register dump (ARM64 macOS)
-#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
-    if (context) {
-        ucontext_t *uc = (ucontext_t *)context;
-        arm_thread_state64_t *ts = (arm_thread_state64_t *)&uc->uc_mcontext->__ss;
-        fprintf(stderr, "Registers:\n");
-        fprintf(stderr, "  x0=%016llx  x1=%016llx  x2=%016llx  x3=%016llx\n",
-                (unsigned long long)ts->__x[0], (unsigned long long)ts->__x[1],
-                (unsigned long long)ts->__x[2], (unsigned long long)ts->__x[3]);
-        fprintf(stderr, "  x4=%016llx  x5=%016llx  x6=%016llx  x7=%016llx\n",
-                (unsigned long long)ts->__x[4], (unsigned long long)ts->__x[5],
-                (unsigned long long)ts->__x[6], (unsigned long long)ts->__x[7]);
-        fprintf(stderr, "  sp=%016llx  lr=%016llx  pc=%016llx\n",
-                (unsigned long long)arm_thread_state64_get_sp(*ts),
-                (unsigned long long)arm_thread_state64_get_lr(*ts),
-                (unsigned long long)arm_thread_state64_get_pc(*ts));
-    }
-#endif
-
-    // Symbolicated backtrace via dladdr
+    // ── User-friendly crash report ──
+    // Find the first user function (skip signal handler + system frames)
     void* frames[64];
     int n = backtrace(frames, 64);
-    fprintf(stderr, "Backtrace (%d frames):\n", n);
+    const char* crash_fn = NULL;
+    const char* caller_fn = NULL;
     for (int i = 0; i < n; i++) {
         Dl_info info;
         if (dladdr(frames[i], &info) && info.dli_sname) {
-            long long offset = (long long)((char*)frames[i] - (char*)info.dli_saddr);
-            fprintf(stderr, "  %2d  %-40s %s + %lld\n", i,
-                    info.dli_fname ? info.dli_fname : "???",
-                    info.dli_sname, offset);
-        } else {
-            fprintf(stderr, "  %2d  %p\n", i, frames[i]);
+            // Skip signal handler, system libs, forge_ runtime fns
+            if (strstr(info.dli_sname, "signal") || strstr(info.dli_sname, "sigtramp") ||
+                strstr(info.dli_sname, "pthread") || strstr(info.dli_sname, "libsystem")) continue;
+            if (strncmp(info.dli_sname, "forge_", 6) == 0) continue;
+            if (!crash_fn) { crash_fn = info.dli_sname; }
+            else if (!caller_fn) { caller_fn = info.dli_sname; break; }
         }
+    }
+
+    fprintf(stderr, "\n");
+    fprintf(stderr, "error: unexpected runtime error");
+    if (crash_fn) fprintf(stderr, " in function `%s`", crash_fn);
+    fprintf(stderr, "\n");
+
+    if (si && sig == SIGSEGV) {
+        uintptr_t addr = (uintptr_t)si->si_addr;
+        if (addr < 0x10000) {
+            fprintf(stderr, "  A null value was used where an object was expected.\n");
+        } else {
+            fprintf(stderr, "  Memory access violation at address %p.\n", si->si_addr);
+        }
+    } else if (sig == SIGBUS) {
+        fprintf(stderr, "  Invalid memory access (bus error).\n");
+    } else {
+        fprintf(stderr, "  Signal %d (%s).\n", sig, name);
+    }
+
+    if (caller_fn) {
+        fprintf(stderr, "  Called from: %s\n", caller_fn);
+    }
+
+    fprintf(stderr, "\n");
+    fprintf(stderr, "  Suggestions:\n");
+    fprintf(stderr, "    - Check for null values passed to functions\n");
+    fprintf(stderr, "    - Recompile with --debug-null to find the exact null argument\n");
+    fprintf(stderr, "    - Run with FORGE_CRASH_DETAIL=1 for the full technical dump\n");
+    fprintf(stderr, "\n");
+
+    // Full technical dump only with FORGE_CRASH_DETAIL=1
+    if (getenv("FORGE_CRASH_DETAIL")) {
+        fprintf(stderr, "  --- Technical details ---\n");
+        fprintf(stderr, "  Signal: %d (%s)\n", sig, name);
+        if (si) fprintf(stderr, "  Address: %p\n", si->si_addr);
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+        if (context) {
+            ucontext_t *uc = (ucontext_t *)context;
+            arm_thread_state64_t *ts = (arm_thread_state64_t *)&uc->uc_mcontext->__ss;
+            fprintf(stderr, "  x0=%016llx x1=%016llx x2=%016llx x3=%016llx\n",
+                    (unsigned long long)ts->__x[0], (unsigned long long)ts->__x[1],
+                    (unsigned long long)ts->__x[2], (unsigned long long)ts->__x[3]);
+            fprintf(stderr, "  sp=%016llx lr=%016llx pc=%016llx\n",
+                    (unsigned long long)arm_thread_state64_get_sp(*ts),
+                    (unsigned long long)arm_thread_state64_get_lr(*ts),
+                    (unsigned long long)arm_thread_state64_get_pc(*ts));
+        }
+#endif
+        fprintf(stderr, "  Backtrace:\n");
+        for (int i = 0; i < n; i++) {
+            Dl_info info;
+            if (dladdr(frames[i], &info) && info.dli_sname) {
+                long long offset = (long long)((char*)frames[i] - (char*)info.dli_saddr);
+                fprintf(stderr, "    %2d  %s + %lld\n", i, info.dli_sname, offset);
+            }
+        }
+        fprintf(stderr, "\n");
     }
 
     _exit(128 + sig);
