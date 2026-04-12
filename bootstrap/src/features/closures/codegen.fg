@@ -12,8 +12,8 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, SExpr, SStmt}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, const_i64, to_ptr, to_i64, ctx_with_fn, get_fn, call_0, call_2, DeferStack}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, const_i64, to_ptr, to_i64, ctx_with_fn, get_fn, call_0, call_2, DeferStack, toplevel_lookup}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 
@@ -138,6 +138,116 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
     }
 }
 
+// ── Parameter type inference ──
+//
+// When a lambda has no explicit parameter types (the common case), we
+// infer types from the body. If a parameter appears in a binary
+// expression with a Float-typed variable (from captures or the enclosing
+// env), we infer the parameter as Float. This prevents the lambda from
+// treating float bits (passed as i64) as integer values and applying
+// sitofp instead of bitcast.
+
+fn env_type_of(ctx: Ctx, env: VarEnv, name: string) -> ValueType {
+    let lookup = env_lookup(env, name)
+    if lookup.found { return lookup.ty }
+    let g = toplevel_lookup(ctx.top_level_vars, name)
+    if g.found { return g.ty }
+    ValueType.Int
+}
+
+fn capture_type_of(captures: CaptureList, name: string) -> ValueType {
+    match captures {
+        .End -> ValueType.Int
+        .Node(cname, _, ty, next) -> {
+            if cname == name { return ty }
+            capture_type_of(next, name)
+        }
+    }
+}
+
+// Check if an expression contains a Float-typed identifier (from captures, env, or globals).
+fn has_float_ident(expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+    match expr {
+        .Ident(name) -> {
+            if is_param(params, name) { return false }
+            let ty = capture_type_of(captures, name)
+            if vtype_eq(ty, ValueType.Float) { return true }
+            let ety = env_type_of(ctx, env, name)
+            vtype_eq(ety, ValueType.Float)
+        }
+        .FloatLit(_) -> true
+        .Binary(left, _, right) -> {
+            has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
+        }
+        .Unary(_, inner) -> has_float_ident(inner, ctx, env, captures, params)
+        .Grouping(inner) -> has_float_ident(inner, ctx, env, captures, params)
+        _ -> false
+    }
+}
+
+// Check if a parameter is used in a binary expression with a Float value.
+fn param_used_with_float(param_name: string, expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+    match expr {
+        .Binary(left, _, right) -> {
+            let left_is_param = match left { .Ident(n) -> n == param_name, _ -> false }
+            let right_is_param = match right { .Ident(n) -> n == param_name, _ -> false }
+            if left_is_param && has_float_ident(right, ctx, env, captures, params) { return true }
+            if right_is_param && has_float_ident(left, ctx, env, captures, params) { return true }
+            param_used_with_float(param_name, left, ctx, env, captures, params) || param_used_with_float(param_name, right, ctx, env, captures, params)
+        }
+        .Unary(_, inner) -> param_used_with_float(param_name, inner, ctx, env, captures, params)
+        .Grouping(inner) -> param_used_with_float(param_name, inner, ctx, env, captures, params)
+        .Call(callee, args) -> {
+            param_used_with_float(param_name, callee, ctx, env, captures, params) || param_used_with_float_list(param_name, args, ctx, env, captures, params)
+        }
+        .Block(stmts) -> param_used_with_float_stmts(param_name, stmts, ctx, env, captures, params)
+        .IfExpr(c, t, e) -> {
+            param_used_with_float(param_name, c, ctx, env, captures, params) || param_used_with_float(param_name, t, ctx, env, captures, params) || param_used_with_float(param_name, e, ctx, env, captures, params)
+        }
+        _ -> false
+    }
+}
+
+fn param_used_with_float_list(param_name: string, exprs: ExprList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+    match exprs {
+        .End -> false
+        .Node(se, next) -> {
+            param_used_with_float(param_name, se.node, ctx, env, captures, params) || param_used_with_float_list(param_name, next, ctx, env, captures, params)
+        }
+    }
+}
+
+fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> {
+            let found = match ss.node {
+                .Expr(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
+                .Return(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
+                .Let(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
+                .Mut(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
+                _ -> false
+            }
+            if found { return true }
+            param_used_with_float_stmts(param_name, next, ctx, env, captures, params)
+        }
+    }
+}
+
+fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList) -> TypeList {
+    match params {
+        .End -> TypeList.End
+        .Node(name, _, next) -> {
+            let ty = if param_used_with_float(name, body, ctx, env, captures, params) {
+                ValueType.Float
+            } else {
+                ValueType.Int
+            }
+            TypeList.Node(ty, infer_param_types(next, body, ctx, env, captures))
+        }
+    }
+}
+
 // Global lambda counter for unique names.
 // This is the ONE allowed mutable global — it's a monotonic counter
 // that never resets. Thread-safe because the bootstrap is single-threaded.
@@ -172,9 +282,15 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
     forge_llvm_position_at_end(ctx.builder, entry)
 
-    // Bind declared params first, then captured vars as extra params
+    // Bind declared params first, then captured vars as extra params.
+    // If no explicit types were provided, infer from body usage
+    // (e.g., a param used with a Float capture should be Float).
     let num_declared = param_list_length(params)
-    let env_with_params = bind_lambda_params_typed(ctx, env, params, fn_val, 0, param_types)
+    let effective_types = match param_types {
+        .End -> infer_param_types(params, body, ctx, env, captures)
+        _ -> param_types
+    }
+    let env_with_params = bind_lambda_params_typed(ctx, env, params, fn_val, 0, effective_types)
     let body_env = bind_captures_as_params(ctx, env_with_params, captures, fn_val, num_declared)
 
     let body_ctx = ctx_with_fn(ctx, fn_val, name)
