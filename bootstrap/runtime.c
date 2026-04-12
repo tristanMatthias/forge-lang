@@ -17,6 +17,13 @@
 #include <signal.h>
 #include <execinfo.h>
 #include <unistd.h>
+#include <dlfcn.h>
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+#define _XOPEN_SOURCE
+#include <ucontext.h>
+#undef _XOPEN_SOURCE
+#include <mach/mach.h>
+#endif
 
 // ─── Bump allocator ──────────────────────────────────────────────
 //
@@ -70,31 +77,64 @@ void *forge_bump_alloc(size_t size) {
 
 // ─── Signal handler ───────────────────────────────────────────────
 
-static void forge_signal_handler(int sig) {
+static void forge_signal_handler(int sig, siginfo_t *si, void *context) {
     const char* name = sig == SIGSEGV ? "segmentation fault"
                      : sig == SIGBUS  ? "bus error"
                      : sig == SIGABRT ? "abort"
                      : "unknown signal";
-    fprintf(stderr, "\nforge: fatal error — %s\n", name);
+    fprintf(stderr, "\n=== CRASH ===\n");
+    fprintf(stderr, "Signal: %d (%s)\n", sig, name);
+    if (si) {
+        fprintf(stderr, "Address: %p\n", si->si_addr);
+    }
 
-    // Print full backtrace with symbolicated names
+    // Register dump (ARM64 macOS)
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+    if (context) {
+        ucontext_t *uc = (ucontext_t *)context;
+        arm_thread_state64_t *ts = (arm_thread_state64_t *)&uc->uc_mcontext->__ss;
+        fprintf(stderr, "Registers:\n");
+        fprintf(stderr, "  x0=%016llx  x1=%016llx  x2=%016llx  x3=%016llx\n",
+                (unsigned long long)ts->__x[0], (unsigned long long)ts->__x[1],
+                (unsigned long long)ts->__x[2], (unsigned long long)ts->__x[3]);
+        fprintf(stderr, "  x4=%016llx  x5=%016llx  x6=%016llx  x7=%016llx\n",
+                (unsigned long long)ts->__x[4], (unsigned long long)ts->__x[5],
+                (unsigned long long)ts->__x[6], (unsigned long long)ts->__x[7]);
+        fprintf(stderr, "  sp=%016llx  lr=%016llx  pc=%016llx\n",
+                (unsigned long long)arm_thread_state64_get_sp(*ts),
+                (unsigned long long)arm_thread_state64_get_lr(*ts),
+                (unsigned long long)arm_thread_state64_get_pc(*ts));
+    }
+#endif
+
+    // Symbolicated backtrace via dladdr
     void* frames[64];
     int n = backtrace(frames, 64);
-    char** symbols = backtrace_symbols(frames, n);
-    fprintf(stderr, "\nBacktrace (%d frames):\n", n);
+    fprintf(stderr, "Backtrace (%d frames):\n", n);
     for (int i = 0; i < n; i++) {
-        fprintf(stderr, "  %2d  %s\n", i, symbols ? symbols[i] : "(unknown)");
+        Dl_info info;
+        if (dladdr(frames[i], &info) && info.dli_sname) {
+            long long offset = (long long)((char*)frames[i] - (char*)info.dli_saddr);
+            fprintf(stderr, "  %2d  %-40s %s + %lld\n", i,
+                    info.dli_fname ? info.dli_fname : "???",
+                    info.dli_sname, offset);
+        } else {
+            fprintf(stderr, "  %2d  %p\n", i, frames[i]);
+        }
     }
-    if (symbols) free(symbols);
 
     _exit(128 + sig);
 }
 
 __attribute__((constructor))
 static void forge_install_signal_handlers(void) {
-    signal(SIGSEGV, forge_signal_handler);
-    signal(SIGBUS,  forge_signal_handler);
-    signal(SIGABRT, forge_signal_handler);
+    struct sigaction sa;
+    sa.sa_sigaction = forge_signal_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS,  &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
 }
 
 // ─── Selfhost helpers ─────────────────────────────────────────────
@@ -737,7 +777,7 @@ static void forge_crash_guard_handler(int sig) {
         longjmp(forge_crash_jmp, sig);
     }
     // Not guarded — fall through to normal handler
-    forge_signal_handler(sig);
+    forge_signal_handler(sig, NULL, NULL);
 }
 
 // Returns 0 on success, signal number on crash.
