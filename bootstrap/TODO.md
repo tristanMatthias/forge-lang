@@ -282,6 +282,23 @@ Remove when Application-level ref-counting is implemented.
 Every compile leaks all malloc'd data. Acceptable because the compiler is one-shot and the OS
 reclaims. Blocked on real memory management (above).
 
+### Per-module compilation
+**type:** debt
+**priority:** low
+**source:** architecture review (April 12, 2026)
+
+Currently all modules compile into a single LLVM module. Names are properly qualified
+(`module::path::fn`), so this is correct — but it means the entire program recompiles on
+every change. At 829 functions and <1s compile time, this is fine.
+
+When the codebase grows past ~5,000 functions or LLVM passes take multiple seconds, split
+to per-module compilation: each `mod` directory/file produces its own `.o`, linked at the end.
+This enables incremental builds, parallel compilation, and smaller LLVM working sets.
+
+Production compilers for reference: Rust compiles per-crate, Go per-package, C per-file,
+Swift per-module. All compile units are larger than a single file. The Forge `mod` directory
+is the natural boundary.
+
 ---
 
 ## Bugs
