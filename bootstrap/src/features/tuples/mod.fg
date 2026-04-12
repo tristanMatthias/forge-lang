@@ -1,4 +1,3 @@
-mod parser
 mod codegen
 
 export fn register_tuples(reg: Registry) -> Registry {

@@ -1,4 +1,3 @@
-mod parser
 mod codegen
 
 export fn register_null_safety(reg: Registry) -> Registry {

@@ -141,7 +141,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths) -> ModStmtR
             if file_exists(sibling) { mod_path = sibling }
             if mod_path == "" && file_exists(dir_mod) { mod_path = dir_mod }
             if mod_path == "" {
-                return ModStmtResult { stmt, loaded, had_error: false, error_message: "" }
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `" + name + "` not found (looked for " + sibling + " and " + dir_mod + ")" }
             }
             if loaded_has(loaded, mod_path) {
                 return ModStmtResult { stmt: Stmt.Module(name, StmtList.End), loaded, had_error: false, error_message: "" }
