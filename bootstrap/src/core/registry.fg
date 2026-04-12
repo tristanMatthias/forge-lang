@@ -44,9 +44,9 @@ export type Feature = {
 
 fn noop_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult { err_emit("no expr handler") }
 fn noop_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult { err_stmt("no stmt handler") }
-fn noop_resolve(r: Resolver, expr: Expr) -> Resolver { r }
+fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
 fn noop_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver { r }
-fn noop_check(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, ValueType.Int) }
+fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, ValueType.Int) }
 fn noop_check_stmt(tc: TC, stmt: Stmt) -> TC { tc }
 fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_expr handler" }
@@ -67,9 +67,9 @@ export fn feature_new(name: string) -> Feature {
         parse_stmt: noop_parse,
         emit_expr: noop_emit_expr,
         emit_stmt: noop_emit_stmt,
-        resolve_expr: noop_resolve,
+        resolve_expr: noop_resolve_expr,
         resolve_stmt: noop_resolve_stmt,
-        check_expr: noop_check,
+        check_expr: noop_check_expr,
         check_stmt: noop_check_stmt,
         eval_expr: noop_eval_expr,
         eval_stmt: noop_eval_stmt,

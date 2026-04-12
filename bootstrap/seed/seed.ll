@@ -1,5 +1,5 @@
-; seed built from commit 9fe65f92 at 2026-04-12T18:59:50Z
-; source hash: da046aaf1ffc8befdc89a47b8fc7cfeea751fd779945652b9c7d0554fcc819e5
+; seed built from commit 9eb7edb3 at 2026-04-12T19:07:36Z
+; source hash: de86b9243ccefbb5a5cc27b1d00e7adb26ba9f3895177a5bed36e746550a2c3b
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -35656,7 +35656,7 @@ entry:
   ret i64 %calltmp
 }
 
-define i64 @"core::registry::noop_resolve"(i64 %0, i64 %1) {
+define i64 @"core::registry::noop_resolve_expr"(i64 %0, i64 %1) {
 entry:
   %expr = alloca i64, align 8
   %r = alloca i64, align 8
@@ -35676,7 +35676,7 @@ entry:
   ret i64 %r1
 }
 
-define i64 @"core::registry::noop_check"(i64 %0, i64 %1) {
+define i64 @"core::registry::noop_check_expr"(i64 %0, i64 %1) {
 entry:
   %expr = alloca i64, align 8
   %tc = alloca i64, align 8
@@ -35814,7 +35814,7 @@ entry:
   store i64 %fn_ref_i6414, ptr %fld_ptr15, align 8
   %fn_wrap16 = call ptr @forge_array_new()
   call void @forge_array_push(ptr %fn_wrap16, i64 -559038737)
-  call void @forge_array_push(ptr %fn_wrap16, i64 ptrtoint (ptr @"core::registry::noop_resolve" to i64))
+  call void @forge_array_push(ptr %fn_wrap16, i64 ptrtoint (ptr @"core::registry::noop_resolve_expr" to i64))
   %fn_ref_i6417 = ptrtoint ptr %fn_wrap16 to i64
   %fld_ptr18 = getelementptr inbounds nuw %Feature, ptr %buf, i32 0, i32 9
   store i64 %fn_ref_i6417, ptr %fld_ptr18, align 8
@@ -35826,7 +35826,7 @@ entry:
   store i64 %fn_ref_i6420, ptr %fld_ptr21, align 8
   %fn_wrap22 = call ptr @forge_array_new()
   call void @forge_array_push(ptr %fn_wrap22, i64 -559038737)
-  call void @forge_array_push(ptr %fn_wrap22, i64 ptrtoint (ptr @"core::registry::noop_check" to i64))
+  call void @forge_array_push(ptr %fn_wrap22, i64 ptrtoint (ptr @"core::registry::noop_check_expr" to i64))
   %fn_ref_i6423 = ptrtoint ptr %fn_wrap22 to i64
   %fld_ptr24 = getelementptr inbounds nuw %Feature, ptr %buf, i32 0, i32 11
   store i64 %fn_ref_i6423, ptr %fld_ptr24, align 8
