@@ -6,7 +6,7 @@
 // resolved globally by the host compiler's cross-file impl lookup.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, field_list_length, field_init_length, field_index_of, field_type_of, variant_lookup, variant_max_payload, ValueType, vtype_eq, vtype_is_str, vtype_is_list, vtype_is_fn, vtype_list_elem, vtype_struct_name, vtype_enum_name, vtype_display, SStmt, SExpr, sexpr_dummy, stmt_unwrap}
-use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, TraitDeclReg, TraitMethodNames, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, toplevel_lookup, loops_top, trait_decl_lookup, translate_param_type, translate_type_ctx, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
+use core.cg.{Ctx, EmitResult, StmtResult, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, err_emit, ok_stmt, err_stmt, err_stmt_from_expr, advance_field_list, field_type_at, EnumLookup, StructLookup, StructReg, EnumReg, FnRetTypes, FnParamTypes, ParamTypeList, TopLevelVars, LoopStack, DeferStack, TopLevelLookup, LoopFrame, TraitDeclReg, TraitMethodNames, enum_reg_lookup, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, toplevel_lookup, loops_top, trait_decl_lookup, trait_decl_has, translate_param_type, translate_type_ctx, new_bb, const_i64, const_i8, to_ptr, to_i64, get_fn, call_0, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, ctx_with_defers}
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag}
 
 // ── Direct C extern declarations ──
@@ -429,6 +429,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
     let top_level_vars = declare_globals(m, lc, i64t, structs, enums, stmts, TopLevelVars.End)
     let fn_rets = declare_functions(m, lc, i64t, structs, enums, stmts, FnRetTypes.End)
+    let fn_params = collect_fn_params(stmts, FnParamTypes.End)
 
     // Synthesize a wrapper function for the top-level non-function
     // statements. If the source already defines its own `fn main`,
@@ -457,6 +458,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         structs,
         enums,
         fn_rets,
+        fn_params,
         top_level_vars,
         loops: LoopStack.End,
         defers: DeferStack.End,
@@ -783,6 +785,33 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
                 _ -> reg
             }
             declare_functions(m, ctx, i64t, structs, enums, next, updated)
+        }
+    }
+}
+
+// Convert a ParamList to a ParamTypeList (list of type annotation strings).
+fn params_to_type_list(params: ParamList) -> ParamTypeList {
+    match params {
+        .End -> ParamTypeList.End
+        .Node(_, ty, next) -> ParamTypeList.Node(ty, params_to_type_list(next))
+    }
+}
+
+// Collect parameter type annotations for all functions.
+fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let stmt = stmt_unwrap(ss.node)
+            let updated = match stmt {
+                .Function(name, params, _, _) -> {
+                    FnParamTypes.Node(name, params_to_type_list(params), reg)
+                }
+                .Impl(_, methods) -> collect_fn_params(methods, reg)
+                .Module(_, body) -> collect_fn_params(body, reg)
+                _ -> reg
+            }
+            collect_fn_params(next, updated)
         }
     }
 }
@@ -1791,7 +1820,8 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
 
     let arg_count = expr_list_length(args)
     let arg_arr = forge_llvm_value_array_new(arg_count)
-    let fill = fill_arg_array(ctx, env, arg_arr, args, 0)
+    let ptypes = fn_param_lookup(ctx.fn_params, name)
+    let fill = fill_arg_array_boxing(ctx, env, arg_arr, args, ptypes, 0)
     if fill.had_error {
         forge_llvm_value_array_free(arg_arr)
         return fill
@@ -2176,6 +2206,80 @@ fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> 
             }
             forge_llvm_value_array_set(arr, idx, r.value)
             fill_arg_array(ctx, env, arr, next, idx + 1)
+        }
+    }
+}
+
+// Like fill_arg_array but checks each parameter's declared type annotation.
+// If the parameter expects a trait type and the argument is a concrete
+// struct/enum, box the argument into a trait object before passing it.
+fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: ParamTypeList, idx: int) -> EmitResult {
+    match args {
+        .End -> ok_emit(null_ptr_val())
+        .Node(se, next) -> {
+            let r = emit_expr(ctx, env, se.node)
+            if r.had_error {
+                return r
+            }
+            let ptype_str = param_type_at(ptypes, idx)
+            // Check if the parameter type is a trait and the argument is concrete
+            let value = if ptype_str != "" && trait_decl_has(ctx.trait_decls, ptype_str) {
+                let concrete_name = resolve_concrete_type_name(r.ty)
+                if concrete_name != "" && !trait_decl_has(ctx.trait_decls, concrete_name) {
+                    // The argument is a concrete type but the parameter expects a trait.
+                    // Box the value into a trait object.
+                    box_for_trait(ctx, r.value, ptype_str, concrete_name)
+                } else {
+                    // Already a trait object or same trait — pass through.
+                    r.value
+                }
+            } else {
+                r.value
+            }
+            forge_llvm_value_array_set(arr, idx, value)
+            fill_arg_array_boxing(ctx, env, arr, next, ptypes, idx + 1)
+        }
+    }
+}
+
+// Resolve the concrete type name (struct or enum) from a ValueType.
+fn resolve_concrete_type_name(ty: ValueType) -> string {
+    let s = vtype_struct_name(ty)
+    if s != "" { return s }
+    let e = vtype_enum_name(ty)
+    if e != "" { return e }
+    ""
+}
+
+// Box a concrete value into a trait object for dynamic dispatch.
+// Creates a vtable array with closure-wrapped method pointers, then
+// calls forge_trait_object_new(value, vtable).
+fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name: string) -> ptr {
+    let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
+    let arr_fn = get_fn(ctx, "forge_array_new")
+    let vtable = call_0(ctx, arr_fn, "vtable")
+    push_vtable_entries_call(ctx, vtable, methods, concrete_name)
+    let obj_val = call_2(ctx, get_fn(ctx, "forge_trait_object_new"), value, vtable, "tobj")
+    to_i64(ctx, obj_val, "tobj_i64")
+}
+
+// Push closure-wrapped method pointers into a vtable array for trait boxing.
+fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
+    match methods {
+        .End -> {}
+        .Node(method_name, _, next) -> {
+            let mangled = concrete_name + "__" + method_name
+            let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
+            let push_fn = get_fn(ctx, "forge_array_push")
+            // Wrap in closure array: [TAG, fn_ptr]
+            let closure = call_0(ctx, get_fn(ctx, "forge_array_new"), "vclosure")
+            let tag = const_i64(ctx, -559038737)
+            call_2(ctx, push_fn, closure, tag, "")
+            let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "vfn_ptr")
+            call_2(ctx, push_fn, closure, fn_i64, "")
+            let closure_i64 = to_i64(ctx, closure, "vcl_i64")
+            call_2(ctx, push_fn, vtable, closure_i64, "")
+            push_vtable_entries_call(ctx, vtable, next, concrete_name)
         }
     }
 }

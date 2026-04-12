@@ -39,6 +39,7 @@ export type Ctx = {
     structs: StructReg,
     enums: EnumReg,
     fn_rets: FnRetTypes,
+    fn_params: FnParamTypes,
     top_level_vars: TopLevelVars,
     loops: LoopStack,
     defers: DeferStack,
@@ -173,6 +174,39 @@ export fn field_type_at(fields: FieldList, idx: int) -> string {
 export enum FnRetTypes {
     End
     Node(name: string, ret_ty: ValueType, next: FnRetTypes)
+}
+
+// Per-parameter type string list — one entry per parameter of a function.
+export enum ParamTypeList {
+    End
+    Node(ty: string, next: ParamTypeList)
+}
+
+// Maps function name → parameter type list (type annotation strings).
+export enum FnParamTypes {
+    End
+    Node(name: string, params: ParamTypeList, next: FnParamTypes)
+}
+
+export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
+    match reg {
+        .End -> ParamTypeList.End
+        .Node(n, params, next) -> {
+            if n == name { return params }
+            fn_param_lookup(next, name)
+        }
+    }
+}
+
+// Get the Nth type string from a ParamTypeList (0-indexed).
+export fn param_type_at(list: ParamTypeList, idx: int) -> string {
+    match list {
+        .End -> ""
+        .Node(ty, next) -> {
+            if idx == 0 { return ty }
+            param_type_at(next, idx - 1)
+        }
+    }
 }
 
 export enum TopLevelVars {

@@ -1,0 +1,37 @@
+// Automatic trait boxing at call site: passing a concrete struct
+// directly to a function expecting a trait parameter should auto-box.
+
+trait Greet {
+    fn greet(self) -> string
+}
+
+type Dog = { name: string }
+type Cat = { name: string }
+
+impl Greet for Dog {
+    fn greet(self) -> string {
+        "woof from " + self.name
+    }
+}
+
+impl Greet for Cat {
+    fn greet(self) -> string {
+        "meow from " + self.name
+    }
+}
+
+fn say_hi(g: Greet) {
+    println(g.greet())
+}
+
+fn main() {
+    // Direct concrete-to-trait auto-boxing at call site
+    say_hi(Dog { name: "Rex" })
+    say_hi(Cat { name: "Whiskers" })
+
+    // Also works with variables that are concrete (not pre-boxed)
+    let d = Dog { name: "Buddy" }
+    let c = Cat { name: "Luna" }
+    say_hi(d)
+    say_hi(c)
+}
