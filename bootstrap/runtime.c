@@ -1440,3 +1440,19 @@ void forge_validate_tag(void *ptr, int64_t max_tag, const char *type_name) {
         exit(99);
     }
 }
+
+// ── Match fallthrough trap ──
+//
+// Called when a match expression falls through all arms without finding
+// a match. This should never happen with correct enum tags. If it does,
+// the data is corrupt. Prints the function name and tag value so the
+// developer knows exactly where and why.
+void forge_match_unreachable(const char *fn_name, int64_t tag) {
+    fprintf(stderr, "\nFATAL: match fallthrough in `%s` — no arm matched tag %lld\n", fn_name, (long long)tag);
+    fprintf(stderr, "This means an enum value has a corrupt or unexpected tag byte.\n");
+    fprintf(stderr, "Common causes:\n");
+    fprintf(stderr, "  - Bump allocator returned uninitialized memory\n");
+    fprintf(stderr, "  - Enum variant was added but match arms weren't updated\n");
+    fprintf(stderr, "  - Struct field read at wrong offset (enum layout mismatch)\n");
+    exit(99);
+}
