@@ -427,7 +427,7 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .ExternFn(_, _, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
-        .TraitDecl(_, _) -> ok_result(runtime, 0)
+        .TraitDecl(_, _) -> ok_result(runtime, value_null())
         .Annotated(_, inner) -> execute_stmt(runtime, inner)
         _ -> {
             let tag = forge_stmt_tag(stmt)
@@ -514,9 +514,6 @@ fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
         .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
         .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
         .Call(callee, args) -> eval_call(runtime, callee, args)
-        .Index(_, _) -> error_result(runtime, "index expressions are not supported by the tree-walk evaluator")
-        .Block(_) -> error_result(runtime, "block expressions are not supported by the tree-walk evaluator")
-        .Slice(_, _, _) -> error_result(runtime, "slicing is not supported by the tree-walk evaluator")
         .QualifiedIdent(path) -> {
             let fn_result = lookup_function(runtime.functions, path)
             if fn_result.found {
