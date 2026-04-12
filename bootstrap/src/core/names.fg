@@ -245,7 +245,11 @@ type UseResult = {
 fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, result: UseResult, sp: Span) -> UseResult {
     match names {
         .End -> result
-        .Node(name, _, next) -> {
+        .Node(name, col_str, next) -> {
+            // Build a span pointing at this specific import name.
+            // start/end encode the highlight length; line/col encode position.
+            let name_col = int(col_str)
+            let name_sp = if name_col > 0 { span_new(0, name.length, sp.line, name_col) } else { sp }
             let mod_node = module_find(tree, mod_path)
             let found_info = match mod_node {
                 .End -> {
@@ -255,10 +259,10 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, resul
                 .Node(_, _, items, _, _) -> {
                     let found = item_lookup(items, name)
                     if found == "" {
-                        let d = diag_error(DiagCode.ImportNotFound, "`" + name + "` not found in module `" + mod_path + "`", sp)
+                        let d = diag_error(DiagCode.ImportNotFound, "`" + name + "` not found in module `" + mod_path + "`", name_sp)
                         UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                     } else if !item_is_exported(items, name) {
-                        let d = diag_error(DiagCode.ImportPrivate, "`" + name + "` is private in module `" + mod_path + "`", sp)
+                        let d = diag_error(DiagCode.ImportPrivate, "`" + name + "` is private in module `" + mod_path + "`", name_sp)
                         UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
                     } else {
                         UseResult { aliases: AliasEntry.Node(name, found, result.aliases), bag: result.bag }

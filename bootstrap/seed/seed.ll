@@ -39,6 +39,7 @@ source_filename = "bootstrap"
 %ModuleItem = type { i8, i64, i64, i64, i64 }
 %ModuleNode = type { i8, i64, i64, i64, i64, i64 }
 %UseResult = type { i64, i64 }
+%Span = type { i64, i64, i64, i64 }
 %LocalScope = type { i8, i64, i64 }
 %NameCtx = type { i64, i64, i64, i64, i64 }
 %NameResolveResult = type { i64, i64, i64, i64 }
@@ -73,7 +74,6 @@ source_filename = "bootstrap"
 %Feature = type { i64, i64, i64, i64, i64 }
 %Severity = type { i8 }
 %Diagnostic = type { i64, i64, i64, i64, i64 }
-%Span = type { i64, i64, i64, i64 }
 %DiagnosticBag = type { i64, i64, i64 }
 %DiagnosticList = type { i8, i64, i64 }
 %StringList = type { i8, i64, i64 }
@@ -1022,9 +1022,9 @@ source_filename = "bootstrap"
 @.str.922 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
 @.str.923 = private unnamed_addr constant [32 x i8] c"expected `}` in use declaration\00", align 1
 @.str.924 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
-@.str.925 = private unnamed_addr constant [21 x i8] c"expected import name\00", align 1
-@.str.926 = private unnamed_addr constant [6 x i8] c"comma\00", align 1
-@.str.927 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.i2s_fmt.925 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.926 = private unnamed_addr constant [21 x i8] c"expected import name\00", align 1
+@.str.927 = private unnamed_addr constant [6 x i8] c"comma\00", align 1
 @.str.928 = private unnamed_addr constant [11 x i8] c"left_brace\00", align 1
 @.str.929 = private unnamed_addr constant [12 x i8] c"right_brace\00", align 1
 @.str.930 = private unnamed_addr constant [25 x i8] c"expected `}` after block\00", align 1
@@ -18630,16 +18630,20 @@ march_next44:                                     ; No predecessors!
 define i64 @"core::names::resolve_use_names"(i64 %0, i64 %1, i64 %2, i64 %3, i64 %4) {
 entry:
   %found_info = alloca i64, align 8
-  %d180 = alloca i64, align 8
-  %sif_result127 = alloca i64, align 8
-  %d105 = alloca i64, align 8
+  %d191 = alloca i64, align 8
+  %sif_result138 = alloca i64, align 8
+  %d116 = alloca i64, align 8
   %sif_result = alloca i64, align 8
   %found = alloca i64, align 8
-  %items48 = alloca i64, align 8
+  %items59 = alloca i64, align 8
   %d = alloca i64, align 8
-  %match_result15 = alloca i64, align 8
+  %match_result24 = alloca i64, align 8
   %mod_node = alloca i64, align 8
-  %next8 = alloca i64, align 8
+  %name_sp = alloca i64, align 8
+  %ife_result = alloca i64, align 8
+  %name_col = alloca i64, align 8
+  %next10 = alloca i64, align 8
+  %col_str8 = alloca i64, align 8
   %name6 = alloca i64, align 8
   %match_result = alloca i64, align 8
   %sp = alloca i64, align 8
@@ -18660,9 +18664,9 @@ entry:
   %tag_eq = icmp eq i8 %tag, 0
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_next225, %march_arm224, %match_end16, %march_arm
-  %match_val227 = load i64, ptr %match_result, align 8
-  ret i64 %match_val227
+match_end:                                        ; preds = %march_next236, %march_arm235, %match_end25, %march_arm
+  %match_val238 = load i64, ptr %match_result, align 8
+  ret i64 %match_val238
 
 march_arm:                                        ; preds = %entry
   %result2 = load i64, ptr %result, align 8
@@ -18677,104 +18681,140 @@ march_arm3:                                       ; preds = %march_next
   %pbind_ptr = getelementptr inbounds nuw %ParamList, ptr %match_subj, i32 0, i32 1
   %name = load i64, ptr %pbind_ptr, align 8
   store i64 %name, ptr %name6, align 8
-  %pbind_ptr7 = getelementptr inbounds nuw %ParamList, ptr %match_subj, i32 0, i32 3
-  %next = load i64, ptr %pbind_ptr7, align 8
-  store i64 %next, ptr %next8, align 8
-  %tree9 = load i64, ptr %tree, align 8
-  %mod_path10 = load i64, ptr %mod_path, align 8
-  %calltmp = call i64 @"core::names::module_find"(i64 %tree9, i64 %mod_path10)
-  store i64 %calltmp, ptr %mod_node, align 8
-  %mod_node11 = load i64, ptr %mod_node, align 8
-  %match_subj12 = inttoptr i64 %mod_node11 to ptr
-  %tag_ptr13 = getelementptr inbounds nuw %ModuleNode, ptr %match_subj12, i32 0, i32 0
-  %tag14 = load i8, ptr %tag_ptr13, align 8
-  store i64 0, ptr %match_result15, align 8
-  %tag_eq19 = icmp eq i8 %tag14, 0
-  br i1 %tag_eq19, label %march_arm17, label %march_next18
+  %pbind_ptr7 = getelementptr inbounds nuw %ParamList, ptr %match_subj, i32 0, i32 2
+  %col_str = load i64, ptr %pbind_ptr7, align 8
+  store i64 %col_str, ptr %col_str8, align 8
+  %pbind_ptr9 = getelementptr inbounds nuw %ParamList, ptr %match_subj, i32 0, i32 3
+  %next = load i64, ptr %pbind_ptr9, align 8
+  store i64 %next, ptr %next10, align 8
+  %col_str11 = load i64, ptr %col_str8, align 8
+  %atoi_arg = inttoptr i64 %col_str11 to ptr
+  %atoi_call = call i32 @atoi(ptr %atoi_arg)
+  %atoi_ext = sext i32 %atoi_call to i64
+  store i64 %atoi_ext, ptr %name_col, align 8
+  %name_col12 = load i64, ptr %name_col, align 8
+  %sgt = icmp sgt i64 %name_col12, 0
+  %sgt_ext = zext i1 %sgt to i64
+  %ife_cond = icmp ne i64 %sgt_ext, 0
+  store i64 0, ptr %ife_result, align 8
+  br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  br label %march_arm224
+  br label %march_arm235
 
-match_end16:                                      ; preds = %march_next216, %march_arm215, %sif_end, %march_arm17
-  %match_val = load i64, ptr %match_result15, align 8
+ife_then:                                         ; preds = %march_arm3
+  %name13 = load i64, ptr %name6, align 8
+  %len_arg = inttoptr i64 %name13 to ptr
+  %strlen_call = call i64 @strlen(ptr %len_arg)
+  %sp14 = load i64, ptr %sp, align 8
+  %obj_ptr = inttoptr i64 %sp14 to ptr
+  %fld_ptr = getelementptr inbounds nuw %Span, ptr %obj_ptr, i32 0, i32 2
+  %line = load i64, ptr %fld_ptr, align 8
+  %name_col15 = load i64, ptr %name_col, align 8
+  %calltmp = call i64 @"diagnostics::span_new"(i64 0, i64 %strlen_call, i64 %line, i64 %name_col15)
+  store i64 %calltmp, ptr %ife_result, align 8
+  br label %ife_end
+
+ife_else:                                         ; preds = %march_arm3
+  %sp16 = load i64, ptr %sp, align 8
+  store i64 %sp16, ptr %ife_result, align 8
+  br label %ife_end
+
+ife_end:                                          ; preds = %ife_else, %ife_then
+  %ife_val = load i64, ptr %ife_result, align 8
+  store i64 %ife_val, ptr %name_sp, align 8
+  %tree17 = load i64, ptr %tree, align 8
+  %mod_path18 = load i64, ptr %mod_path, align 8
+  %calltmp19 = call i64 @"core::names::module_find"(i64 %tree17, i64 %mod_path18)
+  store i64 %calltmp19, ptr %mod_node, align 8
+  %mod_node20 = load i64, ptr %mod_node, align 8
+  %match_subj21 = inttoptr i64 %mod_node20 to ptr
+  %tag_ptr22 = getelementptr inbounds nuw %ModuleNode, ptr %match_subj21, i32 0, i32 0
+  %tag23 = load i8, ptr %tag_ptr22, align 8
+  store i64 0, ptr %match_result24, align 8
+  %tag_eq28 = icmp eq i8 %tag23, 0
+  br i1 %tag_eq28, label %march_arm26, label %march_next27
+
+match_end25:                                      ; preds = %march_next227, %march_arm226, %sif_end, %march_arm26
+  %match_val = load i64, ptr %match_result24, align 8
   store i64 %match_val, ptr %found_info, align 8
-  %mod_path218 = load i64, ptr %mod_path, align 8
-  %next219 = load i64, ptr %next8, align 8
-  %tree220 = load i64, ptr %tree, align 8
-  %found_info221 = load i64, ptr %found_info, align 8
-  %sp222 = load i64, ptr %sp, align 8
-  %calltmp223 = call i64 @"core::names::resolve_use_names"(i64 %mod_path218, i64 %next219, i64 %tree220, i64 %found_info221, i64 %sp222)
-  store i64 %calltmp223, ptr %match_result, align 8
+  %mod_path229 = load i64, ptr %mod_path, align 8
+  %next230 = load i64, ptr %next10, align 8
+  %tree231 = load i64, ptr %tree, align 8
+  %found_info232 = load i64, ptr %found_info, align 8
+  %sp233 = load i64, ptr %sp, align 8
+  %calltmp234 = call i64 @"core::names::resolve_use_names"(i64 %mod_path229, i64 %next230, i64 %tree231, i64 %found_info232, i64 %sp233)
+  store i64 %calltmp234, ptr %match_result, align 8
   br label %match_end
 
-march_arm17:                                      ; preds = %march_arm3
+march_arm26:                                      ; preds = %ife_end
   %buf = call ptr @forge_bump_alloc(i64 8)
-  %tag_ptr20 = getelementptr inbounds nuw %DiagCode, ptr %buf, i32 0, i32 0
-  store i8 17, ptr %tag_ptr20, align 8
+  %tag_ptr29 = getelementptr inbounds nuw %DiagCode, ptr %buf, i32 0, i32 0
+  store i8 17, ptr %tag_ptr29, align 8
   %enum_i64 = ptrtoint ptr %buf to i64
-  %mod_path21 = load i64, ptr %mod_path, align 8
-  %concat_r = inttoptr i64 %mod_path21 to ptr
+  %mod_path30 = load i64, ptr %mod_path, align 8
+  %concat_r = inttoptr i64 %mod_path30 to ptr
   %lhs_len = call i64 @strlen(ptr @.str.446)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
-  %buf22 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %5 = call ptr @memcpy(ptr %buf22, ptr @.str.446, i64 %lhs_len)
-  %buf_int = ptrtoint ptr %buf22 to i64
+  %buf31 = call ptr @forge_bump_alloc(i64 %concat_size)
+  %5 = call ptr @memcpy(ptr %buf31, ptr @.str.446, i64 %lhs_len)
+  %buf_int = ptrtoint ptr %buf31 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %rhs_len, 1
   %6 = call ptr @memcpy(ptr %dst2, ptr %concat_r, i64 %rhs_len_p1)
-  %concat_i64 = ptrtoint ptr %buf22 to i64
+  %concat_i64 = ptrtoint ptr %buf31 to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
-  %lhs_len23 = call i64 @strlen(ptr %concat_l)
-  %rhs_len24 = call i64 @strlen(ptr @.str.447)
-  %concat_total25 = add i64 %lhs_len23, %rhs_len24
-  %concat_size26 = add i64 %concat_total25, 1
-  %buf27 = call ptr @forge_bump_alloc(i64 %concat_size26)
-  %7 = call ptr @memcpy(ptr %buf27, ptr %concat_l, i64 %lhs_len23)
-  %buf_int28 = ptrtoint ptr %buf27 to i64
-  %dst2_int29 = add i64 %buf_int28, %lhs_len23
-  %dst230 = inttoptr i64 %dst2_int29 to ptr
-  %rhs_len_p131 = add i64 %rhs_len24, 1
-  %8 = call ptr @memcpy(ptr %dst230, ptr @.str.447, i64 %rhs_len_p131)
-  %concat_i6432 = ptrtoint ptr %buf27 to i64
-  %sp33 = load i64, ptr %sp, align 8
-  %calltmp34 = call i64 @"diagnostics::diag_error"(i64 %enum_i64, i64 %concat_i6432, i64 %sp33)
-  store i64 %calltmp34, ptr %d, align 8
-  %buf35 = call ptr @forge_bump_alloc(i64 16)
-  %result36 = load i64, ptr %result, align 8
-  %obj_ptr = inttoptr i64 %result36 to ptr
-  %fld_ptr = getelementptr inbounds nuw %UseResult, ptr %obj_ptr, i32 0, i32 0
-  %aliases = load i64, ptr %fld_ptr, align 8
-  %fld_ptr37 = getelementptr inbounds nuw %UseResult, ptr %buf35, i32 0, i32 0
-  store i64 %aliases, ptr %fld_ptr37, align 8
-  %result38 = load i64, ptr %result, align 8
-  %obj_ptr39 = inttoptr i64 %result38 to ptr
-  %fld_ptr40 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr39, i32 0, i32 1
-  %bag = load i64, ptr %fld_ptr40, align 8
-  %d41 = load i64, ptr %d, align 8
-  %calltmp42 = call i64 @"diagnostics::bag_report"(i64 %bag, i64 %d41)
-  %fld_ptr43 = getelementptr inbounds nuw %UseResult, ptr %buf35, i32 0, i32 1
-  store i64 %calltmp42, ptr %fld_ptr43, align 8
-  %struct_i64 = ptrtoint ptr %buf35 to i64
-  store i64 %struct_i64, ptr %match_result15, align 8
-  br label %match_end16
+  %lhs_len32 = call i64 @strlen(ptr %concat_l)
+  %rhs_len33 = call i64 @strlen(ptr @.str.447)
+  %concat_total34 = add i64 %lhs_len32, %rhs_len33
+  %concat_size35 = add i64 %concat_total34, 1
+  %buf36 = call ptr @forge_bump_alloc(i64 %concat_size35)
+  %7 = call ptr @memcpy(ptr %buf36, ptr %concat_l, i64 %lhs_len32)
+  %buf_int37 = ptrtoint ptr %buf36 to i64
+  %dst2_int38 = add i64 %buf_int37, %lhs_len32
+  %dst239 = inttoptr i64 %dst2_int38 to ptr
+  %rhs_len_p140 = add i64 %rhs_len33, 1
+  %8 = call ptr @memcpy(ptr %dst239, ptr @.str.447, i64 %rhs_len_p140)
+  %concat_i6441 = ptrtoint ptr %buf36 to i64
+  %sp42 = load i64, ptr %sp, align 8
+  %calltmp43 = call i64 @"diagnostics::diag_error"(i64 %enum_i64, i64 %concat_i6441, i64 %sp42)
+  store i64 %calltmp43, ptr %d, align 8
+  %buf44 = call ptr @forge_bump_alloc(i64 16)
+  %result45 = load i64, ptr %result, align 8
+  %obj_ptr46 = inttoptr i64 %result45 to ptr
+  %fld_ptr47 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr46, i32 0, i32 0
+  %aliases = load i64, ptr %fld_ptr47, align 8
+  %fld_ptr48 = getelementptr inbounds nuw %UseResult, ptr %buf44, i32 0, i32 0
+  store i64 %aliases, ptr %fld_ptr48, align 8
+  %result49 = load i64, ptr %result, align 8
+  %obj_ptr50 = inttoptr i64 %result49 to ptr
+  %fld_ptr51 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr50, i32 0, i32 1
+  %bag = load i64, ptr %fld_ptr51, align 8
+  %d52 = load i64, ptr %d, align 8
+  %calltmp53 = call i64 @"diagnostics::bag_report"(i64 %bag, i64 %d52)
+  %fld_ptr54 = getelementptr inbounds nuw %UseResult, ptr %buf44, i32 0, i32 1
+  store i64 %calltmp53, ptr %fld_ptr54, align 8
+  %struct_i64 = ptrtoint ptr %buf44 to i64
+  store i64 %struct_i64, ptr %match_result24, align 8
+  br label %match_end25
 
-march_next18:                                     ; preds = %march_arm3
-  %tag_eq46 = icmp eq i8 %tag14, 1
-  br i1 %tag_eq46, label %march_arm44, label %march_next45
+march_next27:                                     ; preds = %ife_end
+  %tag_eq57 = icmp eq i8 %tag23, 1
+  br i1 %tag_eq57, label %march_arm55, label %march_next56
 
-march_arm44:                                      ; preds = %march_next18
-  %pbind_ptr47 = getelementptr inbounds nuw %ModuleNode, ptr %match_subj12, i32 0, i32 3
-  %items = load i64, ptr %pbind_ptr47, align 8
-  store i64 %items, ptr %items48, align 8
-  %items49 = load i64, ptr %items48, align 8
-  %name50 = load i64, ptr %name6, align 8
-  %calltmp51 = call i64 @"core::names::item_lookup"(i64 %items49, i64 %name50)
-  store i64 %calltmp51, ptr %found, align 8
-  %found52 = load i64, ptr %found, align 8
-  %streq_l = inttoptr i64 %found52 to ptr
+march_arm55:                                      ; preds = %march_next27
+  %pbind_ptr58 = getelementptr inbounds nuw %ModuleNode, ptr %match_subj21, i32 0, i32 3
+  %items = load i64, ptr %pbind_ptr58, align 8
+  store i64 %items, ptr %items59, align 8
+  %items60 = load i64, ptr %items59, align 8
+  %name61 = load i64, ptr %name6, align 8
+  %calltmp62 = call i64 @"core::names::item_lookup"(i64 %items60, i64 %name61)
+  store i64 %calltmp62, ptr %found, align 8
+  %found63 = load i64, ptr %found, align 8
+  %streq_l = inttoptr i64 %found63 to ptr
   %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.448)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
@@ -18783,237 +18823,237 @@ march_arm44:                                      ; preds = %march_next18
   store i64 0, ptr %sif_result, align 8
   br i1 %sif_cond, label %sif_then, label %sif_else
 
-march_next45:                                     ; preds = %march_next18
-  br label %march_arm215
+march_next56:                                     ; preds = %march_next27
+  br label %march_arm226
 
-sif_then:                                         ; preds = %march_arm44
-  %buf53 = call ptr @forge_bump_alloc(i64 8)
-  %tag_ptr54 = getelementptr inbounds nuw %DiagCode, ptr %buf53, i32 0, i32 0
-  store i8 17, ptr %tag_ptr54, align 8
-  %enum_i6455 = ptrtoint ptr %buf53 to i64
-  %name56 = load i64, ptr %name6, align 8
-  %concat_r57 = inttoptr i64 %name56 to ptr
-  %lhs_len58 = call i64 @strlen(ptr @.str.449)
-  %rhs_len59 = call i64 @strlen(ptr %concat_r57)
-  %concat_total60 = add i64 %lhs_len58, %rhs_len59
-  %concat_size61 = add i64 %concat_total60, 1
-  %buf62 = call ptr @forge_bump_alloc(i64 %concat_size61)
-  %9 = call ptr @memcpy(ptr %buf62, ptr @.str.449, i64 %lhs_len58)
-  %buf_int63 = ptrtoint ptr %buf62 to i64
-  %dst2_int64 = add i64 %buf_int63, %lhs_len58
-  %dst265 = inttoptr i64 %dst2_int64 to ptr
-  %rhs_len_p166 = add i64 %rhs_len59, 1
-  %10 = call ptr @memcpy(ptr %dst265, ptr %concat_r57, i64 %rhs_len_p166)
-  %concat_i6467 = ptrtoint ptr %buf62 to i64
-  %concat_l68 = inttoptr i64 %concat_i6467 to ptr
-  %lhs_len69 = call i64 @strlen(ptr %concat_l68)
-  %rhs_len70 = call i64 @strlen(ptr @.str.450)
+sif_then:                                         ; preds = %march_arm55
+  %buf64 = call ptr @forge_bump_alloc(i64 8)
+  %tag_ptr65 = getelementptr inbounds nuw %DiagCode, ptr %buf64, i32 0, i32 0
+  store i8 17, ptr %tag_ptr65, align 8
+  %enum_i6466 = ptrtoint ptr %buf64 to i64
+  %name67 = load i64, ptr %name6, align 8
+  %concat_r68 = inttoptr i64 %name67 to ptr
+  %lhs_len69 = call i64 @strlen(ptr @.str.449)
+  %rhs_len70 = call i64 @strlen(ptr %concat_r68)
   %concat_total71 = add i64 %lhs_len69, %rhs_len70
   %concat_size72 = add i64 %concat_total71, 1
   %buf73 = call ptr @forge_bump_alloc(i64 %concat_size72)
-  %11 = call ptr @memcpy(ptr %buf73, ptr %concat_l68, i64 %lhs_len69)
+  %9 = call ptr @memcpy(ptr %buf73, ptr @.str.449, i64 %lhs_len69)
   %buf_int74 = ptrtoint ptr %buf73 to i64
   %dst2_int75 = add i64 %buf_int74, %lhs_len69
   %dst276 = inttoptr i64 %dst2_int75 to ptr
   %rhs_len_p177 = add i64 %rhs_len70, 1
-  %12 = call ptr @memcpy(ptr %dst276, ptr @.str.450, i64 %rhs_len_p177)
+  %10 = call ptr @memcpy(ptr %dst276, ptr %concat_r68, i64 %rhs_len_p177)
   %concat_i6478 = ptrtoint ptr %buf73 to i64
-  %mod_path79 = load i64, ptr %mod_path, align 8
-  %concat_l80 = inttoptr i64 %concat_i6478 to ptr
-  %concat_r81 = inttoptr i64 %mod_path79 to ptr
-  %lhs_len82 = call i64 @strlen(ptr %concat_l80)
-  %rhs_len83 = call i64 @strlen(ptr %concat_r81)
-  %concat_total84 = add i64 %lhs_len82, %rhs_len83
-  %concat_size85 = add i64 %concat_total84, 1
-  %buf86 = call ptr @forge_bump_alloc(i64 %concat_size85)
-  %13 = call ptr @memcpy(ptr %buf86, ptr %concat_l80, i64 %lhs_len82)
-  %buf_int87 = ptrtoint ptr %buf86 to i64
-  %dst2_int88 = add i64 %buf_int87, %lhs_len82
-  %dst289 = inttoptr i64 %dst2_int88 to ptr
-  %rhs_len_p190 = add i64 %rhs_len83, 1
-  %14 = call ptr @memcpy(ptr %dst289, ptr %concat_r81, i64 %rhs_len_p190)
-  %concat_i6491 = ptrtoint ptr %buf86 to i64
-  %concat_l92 = inttoptr i64 %concat_i6491 to ptr
-  %lhs_len93 = call i64 @strlen(ptr %concat_l92)
-  %rhs_len94 = call i64 @strlen(ptr @.str.451)
+  %concat_l79 = inttoptr i64 %concat_i6478 to ptr
+  %lhs_len80 = call i64 @strlen(ptr %concat_l79)
+  %rhs_len81 = call i64 @strlen(ptr @.str.450)
+  %concat_total82 = add i64 %lhs_len80, %rhs_len81
+  %concat_size83 = add i64 %concat_total82, 1
+  %buf84 = call ptr @forge_bump_alloc(i64 %concat_size83)
+  %11 = call ptr @memcpy(ptr %buf84, ptr %concat_l79, i64 %lhs_len80)
+  %buf_int85 = ptrtoint ptr %buf84 to i64
+  %dst2_int86 = add i64 %buf_int85, %lhs_len80
+  %dst287 = inttoptr i64 %dst2_int86 to ptr
+  %rhs_len_p188 = add i64 %rhs_len81, 1
+  %12 = call ptr @memcpy(ptr %dst287, ptr @.str.450, i64 %rhs_len_p188)
+  %concat_i6489 = ptrtoint ptr %buf84 to i64
+  %mod_path90 = load i64, ptr %mod_path, align 8
+  %concat_l91 = inttoptr i64 %concat_i6489 to ptr
+  %concat_r92 = inttoptr i64 %mod_path90 to ptr
+  %lhs_len93 = call i64 @strlen(ptr %concat_l91)
+  %rhs_len94 = call i64 @strlen(ptr %concat_r92)
   %concat_total95 = add i64 %lhs_len93, %rhs_len94
   %concat_size96 = add i64 %concat_total95, 1
   %buf97 = call ptr @forge_bump_alloc(i64 %concat_size96)
-  %15 = call ptr @memcpy(ptr %buf97, ptr %concat_l92, i64 %lhs_len93)
+  %13 = call ptr @memcpy(ptr %buf97, ptr %concat_l91, i64 %lhs_len93)
   %buf_int98 = ptrtoint ptr %buf97 to i64
   %dst2_int99 = add i64 %buf_int98, %lhs_len93
   %dst2100 = inttoptr i64 %dst2_int99 to ptr
   %rhs_len_p1101 = add i64 %rhs_len94, 1
-  %16 = call ptr @memcpy(ptr %dst2100, ptr @.str.451, i64 %rhs_len_p1101)
+  %14 = call ptr @memcpy(ptr %dst2100, ptr %concat_r92, i64 %rhs_len_p1101)
   %concat_i64102 = ptrtoint ptr %buf97 to i64
-  %sp103 = load i64, ptr %sp, align 8
-  %calltmp104 = call i64 @"diagnostics::diag_error"(i64 %enum_i6455, i64 %concat_i64102, i64 %sp103)
-  store i64 %calltmp104, ptr %d105, align 8
-  %buf106 = call ptr @forge_bump_alloc(i64 16)
-  %result107 = load i64, ptr %result, align 8
-  %obj_ptr108 = inttoptr i64 %result107 to ptr
-  %fld_ptr109 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr108, i32 0, i32 0
-  %aliases110 = load i64, ptr %fld_ptr109, align 8
-  %fld_ptr111 = getelementptr inbounds nuw %UseResult, ptr %buf106, i32 0, i32 0
-  store i64 %aliases110, ptr %fld_ptr111, align 8
-  %result112 = load i64, ptr %result, align 8
-  %obj_ptr113 = inttoptr i64 %result112 to ptr
-  %fld_ptr114 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr113, i32 0, i32 1
-  %bag115 = load i64, ptr %fld_ptr114, align 8
-  %d116 = load i64, ptr %d105, align 8
-  %calltmp117 = call i64 @"diagnostics::bag_report"(i64 %bag115, i64 %d116)
-  %fld_ptr118 = getelementptr inbounds nuw %UseResult, ptr %buf106, i32 0, i32 1
-  store i64 %calltmp117, ptr %fld_ptr118, align 8
-  %struct_i64119 = ptrtoint ptr %buf106 to i64
-  store i64 %struct_i64119, ptr %sif_result, align 8
+  %concat_l103 = inttoptr i64 %concat_i64102 to ptr
+  %lhs_len104 = call i64 @strlen(ptr %concat_l103)
+  %rhs_len105 = call i64 @strlen(ptr @.str.451)
+  %concat_total106 = add i64 %lhs_len104, %rhs_len105
+  %concat_size107 = add i64 %concat_total106, 1
+  %buf108 = call ptr @forge_bump_alloc(i64 %concat_size107)
+  %15 = call ptr @memcpy(ptr %buf108, ptr %concat_l103, i64 %lhs_len104)
+  %buf_int109 = ptrtoint ptr %buf108 to i64
+  %dst2_int110 = add i64 %buf_int109, %lhs_len104
+  %dst2111 = inttoptr i64 %dst2_int110 to ptr
+  %rhs_len_p1112 = add i64 %rhs_len105, 1
+  %16 = call ptr @memcpy(ptr %dst2111, ptr @.str.451, i64 %rhs_len_p1112)
+  %concat_i64113 = ptrtoint ptr %buf108 to i64
+  %name_sp114 = load i64, ptr %name_sp, align 8
+  %calltmp115 = call i64 @"diagnostics::diag_error"(i64 %enum_i6466, i64 %concat_i64113, i64 %name_sp114)
+  store i64 %calltmp115, ptr %d116, align 8
+  %buf117 = call ptr @forge_bump_alloc(i64 16)
+  %result118 = load i64, ptr %result, align 8
+  %obj_ptr119 = inttoptr i64 %result118 to ptr
+  %fld_ptr120 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr119, i32 0, i32 0
+  %aliases121 = load i64, ptr %fld_ptr120, align 8
+  %fld_ptr122 = getelementptr inbounds nuw %UseResult, ptr %buf117, i32 0, i32 0
+  store i64 %aliases121, ptr %fld_ptr122, align 8
+  %result123 = load i64, ptr %result, align 8
+  %obj_ptr124 = inttoptr i64 %result123 to ptr
+  %fld_ptr125 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr124, i32 0, i32 1
+  %bag126 = load i64, ptr %fld_ptr125, align 8
+  %d127 = load i64, ptr %d116, align 8
+  %calltmp128 = call i64 @"diagnostics::bag_report"(i64 %bag126, i64 %d127)
+  %fld_ptr129 = getelementptr inbounds nuw %UseResult, ptr %buf117, i32 0, i32 1
+  store i64 %calltmp128, ptr %fld_ptr129, align 8
+  %struct_i64130 = ptrtoint ptr %buf117 to i64
+  store i64 %struct_i64130, ptr %sif_result, align 8
   br label %sif_end
 
-sif_else:                                         ; preds = %march_arm44
-  %items120 = load i64, ptr %items48, align 8
-  %name121 = load i64, ptr %name6, align 8
-  %calltmp122 = call i64 @"core::names::item_is_exported"(i64 %items120, i64 %name121)
-  %not_cmp = icmp eq i64 %calltmp122, 0
+sif_else:                                         ; preds = %march_arm55
+  %items131 = load i64, ptr %items59, align 8
+  %name132 = load i64, ptr %name6, align 8
+  %calltmp133 = call i64 @"core::names::item_is_exported"(i64 %items131, i64 %name132)
+  %not_cmp = icmp eq i64 %calltmp133, 0
   %not = zext i1 %not_cmp to i64
-  %sif_cond123 = icmp ne i64 %not, 0
-  store i64 0, ptr %sif_result127, align 8
-  br i1 %sif_cond123, label %sif_then124, label %sif_else125
+  %sif_cond134 = icmp ne i64 %not, 0
+  store i64 0, ptr %sif_result138, align 8
+  br i1 %sif_cond134, label %sif_then135, label %sif_else136
 
-sif_end:                                          ; preds = %sif_end126, %sif_then
-  %sif_val214 = load i64, ptr %sif_result, align 8
-  store i64 %sif_val214, ptr %match_result15, align 8
-  br label %match_end16
+sif_end:                                          ; preds = %sif_end137, %sif_then
+  %sif_val225 = load i64, ptr %sif_result, align 8
+  store i64 %sif_val225, ptr %match_result24, align 8
+  br label %match_end25
 
-sif_then124:                                      ; preds = %sif_else
-  %buf128 = call ptr @forge_bump_alloc(i64 8)
-  %tag_ptr129 = getelementptr inbounds nuw %DiagCode, ptr %buf128, i32 0, i32 0
-  store i8 18, ptr %tag_ptr129, align 8
-  %enum_i64130 = ptrtoint ptr %buf128 to i64
-  %name131 = load i64, ptr %name6, align 8
-  %concat_r132 = inttoptr i64 %name131 to ptr
-  %lhs_len133 = call i64 @strlen(ptr @.str.452)
-  %rhs_len134 = call i64 @strlen(ptr %concat_r132)
-  %concat_total135 = add i64 %lhs_len133, %rhs_len134
-  %concat_size136 = add i64 %concat_total135, 1
-  %buf137 = call ptr @forge_bump_alloc(i64 %concat_size136)
-  %17 = call ptr @memcpy(ptr %buf137, ptr @.str.452, i64 %lhs_len133)
-  %buf_int138 = ptrtoint ptr %buf137 to i64
-  %dst2_int139 = add i64 %buf_int138, %lhs_len133
-  %dst2140 = inttoptr i64 %dst2_int139 to ptr
-  %rhs_len_p1141 = add i64 %rhs_len134, 1
-  %18 = call ptr @memcpy(ptr %dst2140, ptr %concat_r132, i64 %rhs_len_p1141)
-  %concat_i64142 = ptrtoint ptr %buf137 to i64
-  %concat_l143 = inttoptr i64 %concat_i64142 to ptr
-  %lhs_len144 = call i64 @strlen(ptr %concat_l143)
-  %rhs_len145 = call i64 @strlen(ptr @.str.453)
+sif_then135:                                      ; preds = %sif_else
+  %buf139 = call ptr @forge_bump_alloc(i64 8)
+  %tag_ptr140 = getelementptr inbounds nuw %DiagCode, ptr %buf139, i32 0, i32 0
+  store i8 18, ptr %tag_ptr140, align 8
+  %enum_i64141 = ptrtoint ptr %buf139 to i64
+  %name142 = load i64, ptr %name6, align 8
+  %concat_r143 = inttoptr i64 %name142 to ptr
+  %lhs_len144 = call i64 @strlen(ptr @.str.452)
+  %rhs_len145 = call i64 @strlen(ptr %concat_r143)
   %concat_total146 = add i64 %lhs_len144, %rhs_len145
   %concat_size147 = add i64 %concat_total146, 1
   %buf148 = call ptr @forge_bump_alloc(i64 %concat_size147)
-  %19 = call ptr @memcpy(ptr %buf148, ptr %concat_l143, i64 %lhs_len144)
+  %17 = call ptr @memcpy(ptr %buf148, ptr @.str.452, i64 %lhs_len144)
   %buf_int149 = ptrtoint ptr %buf148 to i64
   %dst2_int150 = add i64 %buf_int149, %lhs_len144
   %dst2151 = inttoptr i64 %dst2_int150 to ptr
   %rhs_len_p1152 = add i64 %rhs_len145, 1
-  %20 = call ptr @memcpy(ptr %dst2151, ptr @.str.453, i64 %rhs_len_p1152)
+  %18 = call ptr @memcpy(ptr %dst2151, ptr %concat_r143, i64 %rhs_len_p1152)
   %concat_i64153 = ptrtoint ptr %buf148 to i64
-  %mod_path154 = load i64, ptr %mod_path, align 8
-  %concat_l155 = inttoptr i64 %concat_i64153 to ptr
-  %concat_r156 = inttoptr i64 %mod_path154 to ptr
-  %lhs_len157 = call i64 @strlen(ptr %concat_l155)
-  %rhs_len158 = call i64 @strlen(ptr %concat_r156)
-  %concat_total159 = add i64 %lhs_len157, %rhs_len158
-  %concat_size160 = add i64 %concat_total159, 1
-  %buf161 = call ptr @forge_bump_alloc(i64 %concat_size160)
-  %21 = call ptr @memcpy(ptr %buf161, ptr %concat_l155, i64 %lhs_len157)
-  %buf_int162 = ptrtoint ptr %buf161 to i64
-  %dst2_int163 = add i64 %buf_int162, %lhs_len157
-  %dst2164 = inttoptr i64 %dst2_int163 to ptr
-  %rhs_len_p1165 = add i64 %rhs_len158, 1
-  %22 = call ptr @memcpy(ptr %dst2164, ptr %concat_r156, i64 %rhs_len_p1165)
-  %concat_i64166 = ptrtoint ptr %buf161 to i64
-  %concat_l167 = inttoptr i64 %concat_i64166 to ptr
-  %lhs_len168 = call i64 @strlen(ptr %concat_l167)
-  %rhs_len169 = call i64 @strlen(ptr @.str.454)
+  %concat_l154 = inttoptr i64 %concat_i64153 to ptr
+  %lhs_len155 = call i64 @strlen(ptr %concat_l154)
+  %rhs_len156 = call i64 @strlen(ptr @.str.453)
+  %concat_total157 = add i64 %lhs_len155, %rhs_len156
+  %concat_size158 = add i64 %concat_total157, 1
+  %buf159 = call ptr @forge_bump_alloc(i64 %concat_size158)
+  %19 = call ptr @memcpy(ptr %buf159, ptr %concat_l154, i64 %lhs_len155)
+  %buf_int160 = ptrtoint ptr %buf159 to i64
+  %dst2_int161 = add i64 %buf_int160, %lhs_len155
+  %dst2162 = inttoptr i64 %dst2_int161 to ptr
+  %rhs_len_p1163 = add i64 %rhs_len156, 1
+  %20 = call ptr @memcpy(ptr %dst2162, ptr @.str.453, i64 %rhs_len_p1163)
+  %concat_i64164 = ptrtoint ptr %buf159 to i64
+  %mod_path165 = load i64, ptr %mod_path, align 8
+  %concat_l166 = inttoptr i64 %concat_i64164 to ptr
+  %concat_r167 = inttoptr i64 %mod_path165 to ptr
+  %lhs_len168 = call i64 @strlen(ptr %concat_l166)
+  %rhs_len169 = call i64 @strlen(ptr %concat_r167)
   %concat_total170 = add i64 %lhs_len168, %rhs_len169
   %concat_size171 = add i64 %concat_total170, 1
   %buf172 = call ptr @forge_bump_alloc(i64 %concat_size171)
-  %23 = call ptr @memcpy(ptr %buf172, ptr %concat_l167, i64 %lhs_len168)
+  %21 = call ptr @memcpy(ptr %buf172, ptr %concat_l166, i64 %lhs_len168)
   %buf_int173 = ptrtoint ptr %buf172 to i64
   %dst2_int174 = add i64 %buf_int173, %lhs_len168
   %dst2175 = inttoptr i64 %dst2_int174 to ptr
   %rhs_len_p1176 = add i64 %rhs_len169, 1
-  %24 = call ptr @memcpy(ptr %dst2175, ptr @.str.454, i64 %rhs_len_p1176)
+  %22 = call ptr @memcpy(ptr %dst2175, ptr %concat_r167, i64 %rhs_len_p1176)
   %concat_i64177 = ptrtoint ptr %buf172 to i64
-  %sp178 = load i64, ptr %sp, align 8
-  %calltmp179 = call i64 @"diagnostics::diag_error"(i64 %enum_i64130, i64 %concat_i64177, i64 %sp178)
-  store i64 %calltmp179, ptr %d180, align 8
-  %buf181 = call ptr @forge_bump_alloc(i64 16)
-  %result182 = load i64, ptr %result, align 8
-  %obj_ptr183 = inttoptr i64 %result182 to ptr
-  %fld_ptr184 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr183, i32 0, i32 0
-  %aliases185 = load i64, ptr %fld_ptr184, align 8
-  %fld_ptr186 = getelementptr inbounds nuw %UseResult, ptr %buf181, i32 0, i32 0
-  store i64 %aliases185, ptr %fld_ptr186, align 8
-  %result187 = load i64, ptr %result, align 8
-  %obj_ptr188 = inttoptr i64 %result187 to ptr
-  %fld_ptr189 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr188, i32 0, i32 1
-  %bag190 = load i64, ptr %fld_ptr189, align 8
-  %d191 = load i64, ptr %d180, align 8
-  %calltmp192 = call i64 @"diagnostics::bag_report"(i64 %bag190, i64 %d191)
-  %fld_ptr193 = getelementptr inbounds nuw %UseResult, ptr %buf181, i32 0, i32 1
-  store i64 %calltmp192, ptr %fld_ptr193, align 8
-  %struct_i64194 = ptrtoint ptr %buf181 to i64
-  store i64 %struct_i64194, ptr %sif_result127, align 8
-  br label %sif_end126
+  %concat_l178 = inttoptr i64 %concat_i64177 to ptr
+  %lhs_len179 = call i64 @strlen(ptr %concat_l178)
+  %rhs_len180 = call i64 @strlen(ptr @.str.454)
+  %concat_total181 = add i64 %lhs_len179, %rhs_len180
+  %concat_size182 = add i64 %concat_total181, 1
+  %buf183 = call ptr @forge_bump_alloc(i64 %concat_size182)
+  %23 = call ptr @memcpy(ptr %buf183, ptr %concat_l178, i64 %lhs_len179)
+  %buf_int184 = ptrtoint ptr %buf183 to i64
+  %dst2_int185 = add i64 %buf_int184, %lhs_len179
+  %dst2186 = inttoptr i64 %dst2_int185 to ptr
+  %rhs_len_p1187 = add i64 %rhs_len180, 1
+  %24 = call ptr @memcpy(ptr %dst2186, ptr @.str.454, i64 %rhs_len_p1187)
+  %concat_i64188 = ptrtoint ptr %buf183 to i64
+  %name_sp189 = load i64, ptr %name_sp, align 8
+  %calltmp190 = call i64 @"diagnostics::diag_error"(i64 %enum_i64141, i64 %concat_i64188, i64 %name_sp189)
+  store i64 %calltmp190, ptr %d191, align 8
+  %buf192 = call ptr @forge_bump_alloc(i64 16)
+  %result193 = load i64, ptr %result, align 8
+  %obj_ptr194 = inttoptr i64 %result193 to ptr
+  %fld_ptr195 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr194, i32 0, i32 0
+  %aliases196 = load i64, ptr %fld_ptr195, align 8
+  %fld_ptr197 = getelementptr inbounds nuw %UseResult, ptr %buf192, i32 0, i32 0
+  store i64 %aliases196, ptr %fld_ptr197, align 8
+  %result198 = load i64, ptr %result, align 8
+  %obj_ptr199 = inttoptr i64 %result198 to ptr
+  %fld_ptr200 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr199, i32 0, i32 1
+  %bag201 = load i64, ptr %fld_ptr200, align 8
+  %d202 = load i64, ptr %d191, align 8
+  %calltmp203 = call i64 @"diagnostics::bag_report"(i64 %bag201, i64 %d202)
+  %fld_ptr204 = getelementptr inbounds nuw %UseResult, ptr %buf192, i32 0, i32 1
+  store i64 %calltmp203, ptr %fld_ptr204, align 8
+  %struct_i64205 = ptrtoint ptr %buf192 to i64
+  store i64 %struct_i64205, ptr %sif_result138, align 8
+  br label %sif_end137
 
-sif_else125:                                      ; preds = %sif_else
-  %buf195 = call ptr @forge_bump_alloc(i64 16)
-  %buf196 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr197 = getelementptr inbounds nuw %AliasEntry, ptr %buf196, i32 0, i32 0
-  store i8 1, ptr %tag_ptr197, align 8
-  %name198 = load i64, ptr %name6, align 8
-  %epay_ptr = getelementptr inbounds nuw %AliasEntry, ptr %buf196, i32 0, i32 1
-  store i64 %name198, ptr %epay_ptr, align 8
-  %found199 = load i64, ptr %found, align 8
-  %epay_ptr200 = getelementptr inbounds nuw %AliasEntry, ptr %buf196, i32 0, i32 2
-  store i64 %found199, ptr %epay_ptr200, align 8
-  %result201 = load i64, ptr %result, align 8
-  %obj_ptr202 = inttoptr i64 %result201 to ptr
-  %fld_ptr203 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr202, i32 0, i32 0
-  %aliases204 = load i64, ptr %fld_ptr203, align 8
-  %epay_ptr205 = getelementptr inbounds nuw %AliasEntry, ptr %buf196, i32 0, i32 3
-  store i64 %aliases204, ptr %epay_ptr205, align 8
-  %enum_i64206 = ptrtoint ptr %buf196 to i64
-  %fld_ptr207 = getelementptr inbounds nuw %UseResult, ptr %buf195, i32 0, i32 0
-  store i64 %enum_i64206, ptr %fld_ptr207, align 8
-  %result208 = load i64, ptr %result, align 8
-  %obj_ptr209 = inttoptr i64 %result208 to ptr
-  %fld_ptr210 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr209, i32 0, i32 1
-  %bag211 = load i64, ptr %fld_ptr210, align 8
-  %fld_ptr212 = getelementptr inbounds nuw %UseResult, ptr %buf195, i32 0, i32 1
-  store i64 %bag211, ptr %fld_ptr212, align 8
-  %struct_i64213 = ptrtoint ptr %buf195 to i64
-  store i64 %struct_i64213, ptr %sif_result127, align 8
-  br label %sif_end126
+sif_else136:                                      ; preds = %sif_else
+  %buf206 = call ptr @forge_bump_alloc(i64 16)
+  %buf207 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr208 = getelementptr inbounds nuw %AliasEntry, ptr %buf207, i32 0, i32 0
+  store i8 1, ptr %tag_ptr208, align 8
+  %name209 = load i64, ptr %name6, align 8
+  %epay_ptr = getelementptr inbounds nuw %AliasEntry, ptr %buf207, i32 0, i32 1
+  store i64 %name209, ptr %epay_ptr, align 8
+  %found210 = load i64, ptr %found, align 8
+  %epay_ptr211 = getelementptr inbounds nuw %AliasEntry, ptr %buf207, i32 0, i32 2
+  store i64 %found210, ptr %epay_ptr211, align 8
+  %result212 = load i64, ptr %result, align 8
+  %obj_ptr213 = inttoptr i64 %result212 to ptr
+  %fld_ptr214 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr213, i32 0, i32 0
+  %aliases215 = load i64, ptr %fld_ptr214, align 8
+  %epay_ptr216 = getelementptr inbounds nuw %AliasEntry, ptr %buf207, i32 0, i32 3
+  store i64 %aliases215, ptr %epay_ptr216, align 8
+  %enum_i64217 = ptrtoint ptr %buf207 to i64
+  %fld_ptr218 = getelementptr inbounds nuw %UseResult, ptr %buf206, i32 0, i32 0
+  store i64 %enum_i64217, ptr %fld_ptr218, align 8
+  %result219 = load i64, ptr %result, align 8
+  %obj_ptr220 = inttoptr i64 %result219 to ptr
+  %fld_ptr221 = getelementptr inbounds nuw %UseResult, ptr %obj_ptr220, i32 0, i32 1
+  %bag222 = load i64, ptr %fld_ptr221, align 8
+  %fld_ptr223 = getelementptr inbounds nuw %UseResult, ptr %buf206, i32 0, i32 1
+  store i64 %bag222, ptr %fld_ptr223, align 8
+  %struct_i64224 = ptrtoint ptr %buf206 to i64
+  store i64 %struct_i64224, ptr %sif_result138, align 8
+  br label %sif_end137
 
-sif_end126:                                       ; preds = %sif_else125, %sif_then124
-  %sif_val = load i64, ptr %sif_result127, align 8
+sif_end137:                                       ; preds = %sif_else136, %sif_then135
+  %sif_val = load i64, ptr %sif_result138, align 8
   store i64 %sif_val, ptr %sif_result, align 8
   br label %sif_end
 
-march_arm215:                                     ; preds = %march_next45
-  %result217 = load i64, ptr %result, align 8
-  store i64 %result217, ptr %match_result15, align 8
-  br label %match_end16
+march_arm226:                                     ; preds = %march_next56
+  %result228 = load i64, ptr %result, align 8
+  store i64 %result228, ptr %match_result24, align 8
+  br label %match_end25
 
-march_next216:                                    ; No predecessors!
-  br label %match_end16
+march_next227:                                    ; No predecessors!
+  br label %match_end25
 
-march_arm224:                                     ; preds = %march_next4
-  %result226 = load i64, ptr %result, align 8
-  store i64 %result226, ptr %match_result, align 8
+march_arm235:                                     ; preds = %march_next4
+  %result237 = load i64, ptr %result, align 8
+  store i64 %result237, ptr %match_result, align 8
   br label %match_end
 
-march_next225:                                    ; No predecessors!
+march_next236:                                    ; No predecessors!
   br label %match_end
 }
 
@@ -36975,6 +37015,7 @@ define i64 @Parser__parse_use_name_list(i64 %0) {
 entry:
   %rest = alloca i64, align 8
   %name = alloca i64, align 8
+  %col = alloca i64, align 8
   %self = alloca i64, align 8
   store i64 %0, ptr %self, align 8
   %self1 = load i64, ptr %self, align 8
@@ -36994,51 +37035,60 @@ else:                                             ; preds = %entry
 
 ifcont:                                           ; preds = %else
   %self2 = load i64, ptr %self, align 8
-  %methcall3 = call i64 @Parser__consume_identifier(i64 %self2, i64 ptrtoint (ptr @.str.925 to i64))
-  %try_null = icmp eq i64 %methcall3, 0
+  %obj_ptr = inttoptr i64 %self2 to ptr
+  %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 8
+  %current_column = load i64, ptr %fld_ptr, align 8
+  %buf3 = call ptr @forge_bump_alloc(i64 32)
+  %1 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf3, i64 32, ptr @.i2s_fmt.925, i64 %current_column)
+  %i2s_result = ptrtoint ptr %buf3 to i64
+  store i64 %i2s_result, ptr %col, align 8
+  %self4 = load i64, ptr %self, align 8
+  %methcall5 = call i64 @Parser__consume_identifier(i64 %self4, i64 ptrtoint (ptr @.str.926 to i64))
+  %try_null = icmp eq i64 %methcall5, 0
   br i1 %try_null, label %try_ret, label %try_ok
 
 try_ok:                                           ; preds = %ifcont
-  store i64 %methcall3, ptr %name, align 8
-  %self4 = load i64, ptr %self, align 8
-  %methcall5 = call i64 @Parser__check(i64 %self4, i64 ptrtoint (ptr @.str.926 to i64))
-  %if_cond6 = icmp ne i64 %methcall5, 0
-  br i1 %if_cond6, label %then7, label %else8
+  store i64 %methcall5, ptr %name, align 8
+  %self6 = load i64, ptr %self, align 8
+  %methcall7 = call i64 @Parser__check(i64 %self6, i64 ptrtoint (ptr @.str.927 to i64))
+  %if_cond8 = icmp ne i64 %methcall7, 0
+  br i1 %if_cond8, label %then9, label %else10
 
 try_ret:                                          ; preds = %ifcont
   ret i64 0
 
-then7:                                            ; preds = %try_ok
-  %self10 = load i64, ptr %self, align 8
-  %methcall11 = call i64 @Parser__advance(i64 %self10)
-  br label %ifcont9
-
-else8:                                            ; preds = %try_ok
-  br label %ifcont9
-
-ifcont9:                                          ; preds = %else8, %then7
+then9:                                            ; preds = %try_ok
   %self12 = load i64, ptr %self, align 8
-  %methcall13 = call i64 @Parser__parse_use_name_list(i64 %self12)
-  %try_null14 = icmp eq i64 %methcall13, 0
-  br i1 %try_null14, label %try_ret16, label %try_ok15
+  %methcall13 = call i64 @Parser__advance(i64 %self12)
+  br label %ifcont11
 
-try_ok15:                                         ; preds = %ifcont9
-  store i64 %methcall13, ptr %rest, align 8
-  %buf17 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr18 = getelementptr inbounds nuw %ParamList, ptr %buf17, i32 0, i32 0
-  store i8 1, ptr %tag_ptr18, align 8
-  %name19 = load i64, ptr %name, align 8
-  %epay_ptr = getelementptr inbounds nuw %ParamList, ptr %buf17, i32 0, i32 1
-  store i64 %name19, ptr %epay_ptr, align 8
-  %epay_ptr20 = getelementptr inbounds nuw %ParamList, ptr %buf17, i32 0, i32 2
-  store i64 ptrtoint (ptr @.str.927 to i64), ptr %epay_ptr20, align 8
-  %rest21 = load i64, ptr %rest, align 8
-  %epay_ptr22 = getelementptr inbounds nuw %ParamList, ptr %buf17, i32 0, i32 3
-  store i64 %rest21, ptr %epay_ptr22, align 8
-  %enum_i6423 = ptrtoint ptr %buf17 to i64
-  ret i64 %enum_i6423
+else10:                                           ; preds = %try_ok
+  br label %ifcont11
 
-try_ret16:                                        ; preds = %ifcont9
+ifcont11:                                         ; preds = %else10, %then9
+  %self14 = load i64, ptr %self, align 8
+  %methcall15 = call i64 @Parser__parse_use_name_list(i64 %self14)
+  %try_null16 = icmp eq i64 %methcall15, 0
+  br i1 %try_null16, label %try_ret18, label %try_ok17
+
+try_ok17:                                         ; preds = %ifcont11
+  store i64 %methcall15, ptr %rest, align 8
+  %buf19 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr20 = getelementptr inbounds nuw %ParamList, ptr %buf19, i32 0, i32 0
+  store i8 1, ptr %tag_ptr20, align 8
+  %name21 = load i64, ptr %name, align 8
+  %epay_ptr = getelementptr inbounds nuw %ParamList, ptr %buf19, i32 0, i32 1
+  store i64 %name21, ptr %epay_ptr, align 8
+  %col22 = load i64, ptr %col, align 8
+  %epay_ptr23 = getelementptr inbounds nuw %ParamList, ptr %buf19, i32 0, i32 2
+  store i64 %col22, ptr %epay_ptr23, align 8
+  %rest24 = load i64, ptr %rest, align 8
+  %epay_ptr25 = getelementptr inbounds nuw %ParamList, ptr %buf19, i32 0, i32 3
+  store i64 %rest24, ptr %epay_ptr25, align 8
+  %enum_i6426 = ptrtoint ptr %buf19 to i64
+  ret i64 %enum_i6426
+
+try_ret18:                                        ; preds = %ifcont11
   ret i64 0
 }
 

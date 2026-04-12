@@ -646,12 +646,14 @@ impl Parser {
         if self.check("right_brace") {
             return ParamList.End
         }
+        // Store column position in ty field for diagnostic spans
+        let col = string(self.current_column)
         let name = self.consume_identifier("expected import name")?
         if self.check("comma") {
             self.advance()
         }
         let rest = self.parse_use_name_list()?
-        ParamList.Node(name, "", rest)
+        ParamList.Node(name, col, rest)
     }
 
     // Feature-specific parsers live in features/*/parser.fg.
