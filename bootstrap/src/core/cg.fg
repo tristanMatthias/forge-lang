@@ -45,6 +45,8 @@ export type Ctx = {
     features: Registry,
     trait_decls: TraitDeclReg,
     debug_null_checks: bool,
+    source_file: string,
+    source_line: int,
 }
 
 // Trait declaration registry — maps trait name to method names + return types.

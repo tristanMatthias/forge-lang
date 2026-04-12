@@ -1702,8 +1702,11 @@ void forge_null_arg_check(const char *fn_name, int64_t fn_len,
 // a match. This should never happen with correct enum tags. If it does,
 // the data is corrupt. Prints the function name and tag value so the
 // developer knows exactly where and why.
-void forge_match_unreachable(const char *fn_name, int64_t tag) {
+void forge_match_unreachable(const char *fn_name, int64_t tag, const char *file, int64_t line) {
     forge_runtime_errorf("non-exhaustive match in function `%s` — unmatched tag %lld", fn_name, (long long)tag);
+    if (file && file[0]) {
+        fprintf(stderr, "  --> %s:%lld\n", file, (long long)line);
+    }
     fprintf(stderr, "This means an enum value has a corrupt or unexpected tag byte.\n");
     fprintf(stderr, "Common causes:\n");
     fprintf(stderr, "  - Bump allocator returned uninitialized memory\n");
@@ -1719,7 +1722,9 @@ void forge_match_unreachable(const char *fn_name, int64_t tag) {
 // C function checks internally, avoiding basic block creation in the IR.
 void forge_null_deref_trap(const char *field, int64_t field_len,
                            const char *type_name, int64_t type_len,
-                           int64_t is_null) {
+                           int64_t is_null,
+                           const char *file, int64_t file_len,
+                           int64_t line) {
     if (!is_null) return;
     fprintf(stderr, "\nerror: null pointer dereference accessing field `");
     fwrite(field, 1, (size_t)field_len, stderr);
@@ -1730,6 +1735,11 @@ void forge_null_deref_trap(const char *field, int64_t field_len,
         fprintf(stderr, "` value");
     }
     fprintf(stderr, "\n");
+    if (file_len > 0) {
+        fprintf(stderr, "  --> ");
+        fwrite(file, 1, (size_t)file_len, stderr);
+        fprintf(stderr, ":%lld\n", (long long)line);
+    }
     abort();
 }
 
@@ -1737,8 +1747,13 @@ void forge_null_deref_trap(const char *field, int64_t field_len,
 //
 // Called before every sdiv/srem. Uses the branchless pattern: codegen
 // passes is_zero (0 or 1) and the C function checks internally.
-void forge_div_by_zero_trap(int64_t is_zero) {
+void forge_div_by_zero_trap(int64_t is_zero, const char *file, int64_t file_len, int64_t line) {
     if (!is_zero) return;
     forge_runtime_error("division by zero");
+    if (file_len > 0) {
+        fprintf(stderr, "  --> ");
+        fwrite(file, 1, (size_t)file_len, stderr);
+        fprintf(stderr, ":%lld\n", (long long)line);
+    }
     abort();
 }

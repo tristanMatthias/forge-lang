@@ -95,6 +95,13 @@ export enum DiagCode {
     ImportPrivate
     // Internal (F09xx)
     InternalError
+    // Runtime errors (F10xx)
+    RuntimeNullDeref
+    RuntimeDivByZero
+    RuntimeIndexOOB
+    RuntimeMatchFallthrough
+    RuntimeStackOverflow
+    RuntimeNullArg
 }
 
 export type ErrorDef = { code: string, help: string }

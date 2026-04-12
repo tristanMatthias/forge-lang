@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
-use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, to_f64, get_fn, call_1, call_2}
+use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, to_f64, get_fn, call_1, call_2, call_4}
 use codegen.{emit_expr}
 
 
@@ -38,7 +38,9 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
                 let tag_i64 = forge_llvm_build_sext(ctx.builder, tag_val, ctx.i64_type, "tag_ext")
-                call_2(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, "")
+                let mu_file = forge_llvm_build_global_string_ptr(ctx.builder, ctx.source_file, "mu_file")
+                let mu_line = const_i64(ctx, ctx.source_line)
+                call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
             EmitResult { value: null_ptr_val(), ty: ValueType.Int, had_error: false, error_message: "" }
@@ -106,7 +108,9 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
                 let tag_i64 = forge_llvm_build_sext(ctx.builder, tag_val, ctx.i64_type, "tag_ext")
-                call_2(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, "")
+                let mu_file = forge_llvm_build_global_string_ptr(ctx.builder, ctx.source_file, "mu_file")
+                let mu_line = const_i64(ctx, ctx.source_line)
+                call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ok_stmt(env)
@@ -395,7 +399,9 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
-                call_2(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, const_i64(ctx, -1), "")
+                let mu_file = forge_llvm_build_global_string_ptr(ctx.builder, ctx.source_file, "mu_file")
+                let mu_line = const_i64(ctx, ctx.source_line)
+                call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, const_i64(ctx, -1), mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
             forge_llvm_position_at_end(ctx.builder, merge_bb)
@@ -460,7 +466,9 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
-                call_2(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, const_i64(ctx, -1), "")
+                let mu_file = forge_llvm_build_global_string_ptr(ctx.builder, ctx.source_file, "mu_file")
+                let mu_line = const_i64(ctx, ctx.source_line)
+                call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, const_i64(ctx, -1), mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
             forge_llvm_position_at_end(ctx.builder, merge_bb)
