@@ -418,19 +418,20 @@ type of the last expression in the body and compares it against the
 declared return type. Only flags concrete mismatches (skips Void and
 Int fallback).
 
-### ~~37. Name resolution pass crashes in self-compiled binary~~ (FIXED)
+### 37. rewrite_expr crashes after ~8200 expressions on large source
 
-**Status:** fixed (April 11 2026). Root cause was stale seed — the seed
-didn't contain names.fg code, so it compiled rewrite_expr with a calling
-convention that didn't match the source. The "two-struct-arg bug" was
-a red herring (debunked: tested directly, works fine). Solution: update
-the seed to include names.fg, then use globals for pass state to avoid
-deep parameter threading. Auto-cycle in `make build` now prevents this
-class of issue entirely.
+**Severity:** medium (blocks parameter-passing refactor of names.fg)
+**Impact:** The name resolution pass's `rewrite_expr` crashes when the
+bootstrap source exceeds ~8200 total expressions. The globals-based
+version works (fewer helper functions = under threshold). Adding 5
+helper functions for parameter passing pushes past it.
 
-**Previously reported as:** Pass is complete and tested on small programs. Wired into
-the pipeline but currently bypassed (commented out in main.fg check
-and compile paths).
+**Root cause:** Unknown. Crash at `rewrite_expr + 104` (ARM64 tag-load
+after null check). Pointer is valid (bump arena) but tag appears
+corrupt. Needs investigation with ASan or expression-count bisection.
+
+**Current status:** Globals-based name resolution works and is committed.
+Parameter-passing version is better architecture but blocked by this.
 
 ### 36. Map method codegen passes i64 instead of ptr
 
