@@ -213,11 +213,36 @@ ensure_bs2() {
      || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$BS2" ] \
      || [ "$SEED_LL" -nt "$BS2" ]; then
     log "compiling bootstrap/src/main.fg with seed compiler"
-    "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1 \
-      || { cat "$BUILD_DIR/bs2.codegen.log" >&2; die "bs2 codegen failed"; }
-    log "linking $BS2"
-    link_ll "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
-    ok "built $BS2"
+    if "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
+      log "linking $BS2"
+      link_ll "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
+      ok "built $BS2"
+    else
+      # Seed crashed. Check if it's an LLVM -O2 miscompilation by
+      # rebuilding the seed at -O0 and retrying.
+      warn "seed crashed at -O2 — testing for LLVM optimization bug"
+      "$LLC" -O0 -filetype=obj "$SEED_LL" -o "$BUILD_DIR/seed_o0.o" \
+        || die "seed llc -O0 failed"
+      cc -o "$BUILD_DIR/seed_o0" "$BUILD_DIR/seed_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+        -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null \
+        || die "seed -O0 link failed"
+      if "$BUILD_DIR/seed_o0" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
+        warn "LLVM OPTIMIZATION BUG: seed works at -O0 but crashes at -O2"
+        warn "This is an llc -O2 miscompilation on $(uname -m), not a Forge bug."
+        warn "Fix: run 'make update-seed' to regenerate the seed IR, which"
+        warn "      typically produces a different IR pattern that avoids the bug."
+        warn ""
+        warn "Continuing build with -O0 seed..."
+        # Use the -O0 seed to complete the build
+        cp "$BUILD_DIR/seed_o0" "$SEED_BIN"
+        log "linking $BS2"
+        link_ll "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
+        ok "built $BS2 (via -O0 seed fallback)"
+      else
+        cat "$BUILD_DIR/bs2.codegen.log" >&2
+        die "bs2 codegen failed (crashes at both -O2 and -O0)"
+      fi
+    fi
   fi
 }
 
@@ -316,8 +341,29 @@ mode_build_bs2() {
     return
   fi
 
-  # Auto-cycle didn't help. Restore the backup and report the real error.
-  err "auto-cycle FAILED — self-compile still broken after seed update"
+  # Auto-cycle didn't help. Before giving up, check if it's an LLVM
+  # -O2 miscompilation: rebuild bs2 at -O0 and test self-compile.
+  warn "auto-cycle failed — checking for LLVM -O2 miscompilation"
+  "$LLC" -O0 -filetype=obj "$BOOTSTRAP_DIR/src/main.fg.ll" -o "$BUILD_DIR/bs2_o0.o" 2>/dev/null
+  if cc -o "$BUILD_DIR/bs2_o0" "$BUILD_DIR/bs2_o0.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
+       -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>/dev/null; then
+    if "$BUILD_DIR/bs2_o0" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1; then
+      err ""
+      err "LLVM OPTIMIZATION BUG DETECTED"
+      err "bs2 works at -O0 but crashes at -O2."
+      err "This is an llc -O2 miscompilation on $(uname -m), not a Forge bug."
+      err ""
+      err "Fix: run 'make update-seed' to regenerate the seed IR."
+      err "The new IR pattern typically avoids the LLVM bug."
+      # Restore backup and continue with -O0 bs2
+      cp "$BUILD_DIR/seed_backup.ll" "$SEED_LL"
+      rm -f "$SEED_BIN" "$BUILD_DIR/seed.o"
+      die "rebuild with: make update-seed"
+    fi
+  fi
+
+  # Not an -O2 issue. Restore backup and show diagnostics.
+  err "auto-cycle FAILED — self-compile broken at all optimization levels"
   cp "$BUILD_DIR/seed_backup.ll" "$SEED_LL"
   rm -f "$SEED_BIN" "$BUILD_DIR/seed.o"
   err ""
