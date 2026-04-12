@@ -303,20 +303,19 @@ If a defer body has a compile error, the error points to line 0.
 `Stmt.Defer(body: SExpr)`. This is a container type change requiring
 a two-phase bootstrap (Phase A: add variant, Phase B: switch parser).
 
-### 27. Closures returned through functions lose Closure type
+### ~~27. Closures returned through functions lose Closure type~~ (FIXED)
 
-**Severity:** medium (forces trampoline fallback path)
-**Impact:** When a function's return type annotation says `fn(int) -> int`
-but it returns a closure, the call site gets `Fn`/`FnTyped` type instead
-of `Closure`. `vtype_is_closure` returns false, so the call goes through
-`emit_indirect_call_value` which uses C trampolines (forge_closure_call_N)
-instead of direct LLVM calls.
-
-**Proper fix:** Propagate `Closure` through return type inference. When
-codegen sees a function that returns a lambda, the `FnRetTypes` registry
-should store `Closure(n, ret)` instead of `Fn(ret)`. Requires analyzing
-function bodies during the declaration pass, not just reading the type
-annotation string.
+**Status:** fixed (April 12 2026)
+The declaration pass now analyzes function bodies: `decl_fn_ret_type`
+checks if the last expression is a Lambda. If so, `FnRetTypes` stores
+`Closure(-1, ret_ty)` instead of `FnTyped(...)`. The `-1` means
+"closure with unknown capture count." At call sites, `vtype_is_closure`
+now returns true for these values. The call still routes through
+`forge_closure_call_N` trampolines (which resolve captures at runtime),
+but the type system correctly identifies the value as a closure.
+Direct LLVM calls (bypassing trampolines) remain available when the
+exact capture count is known (e.g., lambdas assigned directly to local
+variables where `emit_lambda` sets the precise count).
 
 ### ~~28. Registry dispatch is O(n) linked-list scan~~ (FIXED)
 

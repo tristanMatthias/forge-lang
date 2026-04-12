@@ -650,6 +650,50 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
     fill_i64_param_array_offset(arr, i64t, base + 1, count - 1)
 }
 
+// ── Helpers: detect lambda returns in function bodies ──
+//
+// During the declaration pass we check if a function body's last
+// expression is a Lambda. If so, we mark the return type as
+// Closure(-1, ret_ty) — the -1 means "closure with unknown capture
+// count." At the call site, vtype_is_closure returns true so the
+// codegen knows to use the closure-aware call path (trampolines that
+// handle captures at runtime).
+
+// Get the last Expr from a StmtList. Returns Expr.Null if none found.
+fn stmts_last_expr(stmts: StmtList) -> Expr {
+    match stmts {
+        .End -> Expr.Null
+        .Node(ss, next) -> {
+            match next {
+                .End -> {
+                    let inner = stmt_unwrap(ss.node)
+                    match inner {
+                        .Expr(e) -> e
+                        .Return(e) -> e
+                        _ -> Expr.Null
+                    }
+                }
+                _ -> stmts_last_expr(next)
+            }
+        }
+    }
+}
+
+// Compute the return type for a function. If the function body's last
+// expression is a lambda, return Closure(-1, ret_ty) so call sites
+// know the value is a closure array and use the trampoline path.
+fn decl_fn_ret_type(structs: StructReg, enums: EnumReg, ret_ty: string, body: StmtList) -> ValueType {
+    let base = translate_param_type(structs, enums, ret_ty)
+    let last = stmts_last_expr(body)
+    match last {
+        .Lambda(_, _) -> {
+            let inner_ret = vtype_fn_ret(base)
+            ValueType.Closure(-1, inner_ret)
+        }
+        _ -> base
+    }
+}
+
 // ── Function declaration pass ──
 
 fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
@@ -671,7 +715,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
                     let fn_type = forge_llvm_function_type(i64t, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
-                    FnRetTypes.Node(name, translate_param_type(structs, enums, ret_ty), reg)
+                    FnRetTypes.Node(name, decl_fn_ret_type(structs, enums, ret_ty, body), reg)
                 }
                 .ExternFn(name, params, ret_ty) -> {
                     let arity = param_list_length(params)
@@ -1355,7 +1399,9 @@ fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult 
             let ret_ty = vtype_fn_ret(callee_r.ty)
             if vtype_is_closure(callee_r.ty) {
                 let num_caps = vtype_closure_captures(callee_r.ty)
-                return emit_closure_call_typed(ctx, env, callee_r.value, args, num_caps, ret_ty)
+                if num_caps >= 0 {
+                    return emit_closure_call_typed(ctx, env, callee_r.value, args, num_caps, ret_ty)
+                }
             }
             // For values with Fn/FnTyped type (e.g. from intmap_get),
             // the runtime value is still a closure array — route
