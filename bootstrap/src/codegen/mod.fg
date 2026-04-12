@@ -2254,7 +2254,7 @@ fn resolve_concrete_type_name(ty: ValueType) -> string {
 // Box a concrete value into a trait object for dynamic dispatch.
 // Creates a vtable array with closure-wrapped method pointers, then
 // calls forge_trait_object_new(value, vtable).
-fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name: string) -> ptr {
+export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name: string) -> ptr {
     let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
     let arr_fn = get_fn(ctx, "forge_array_new")
     let vtable = call_0(ctx, arr_fn, "vtable")

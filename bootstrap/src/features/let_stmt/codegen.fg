@@ -3,8 +3,8 @@
 // a trait object with a vtable for dynamic dispatch.
 
 use core.ast.{Expr, ValueType, VarEnv, env_extend, vtype_trait_name, vtype_struct_name, vtype_enum_name}
-use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt_from_expr, translate_type_ctx, trait_decl_lookup, TraitMethodNames, get_fn, call_0, call_2, to_ptr, to_i64, const_i64}
-use codegen.{emit_expr}
+use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt_from_expr, translate_type_ctx, get_fn, call_2, to_i64}
+use codegen.{emit_expr, box_for_trait}
 
 
 export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: string, initializer: Expr) -> StmtResult {
@@ -23,9 +23,7 @@ export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: stri
     if trait_name != "" {
         let concrete_name = resolve_concrete_name(r.ty)
         if concrete_name != "" {
-            let vtable = build_vtable(ctx, trait_name, concrete_name)
-            let obj_val = call_2(ctx, get_fn(ctx, "forge_trait_object_new"), r.value, vtable, "tobj")
-            let obj_i64 = to_i64(ctx, obj_val, "tobj_i64")
+            let obj_i64 = box_for_trait(ctx, r.value, trait_name, concrete_name)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, obj_i64, alloca)
             return ok_stmt(env_extend(env, name, alloca, var_ty))
@@ -45,35 +43,4 @@ fn resolve_concrete_name(ty: ValueType) -> string {
     ""
 }
 
-// Build a vtable (ForgeArray of closure-wrapped fn pointers) for a
-// concrete type implementing a trait.
-fn build_vtable(ctx: Ctx, trait_name: string, concrete_name: string) -> ptr {
-    let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
-    let arr_fn = get_fn(ctx, "forge_array_new")
-    let vtable = call_0(ctx, arr_fn, "vtable")
-    push_vtable_entries(ctx, vtable, methods, concrete_name)
-    vtable
-}
-
-// For each method in the trait, look up `ConcreteType__method` and
-// wrap it in a closure array [TAG, fn_ptr].
-fn push_vtable_entries(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
-    match methods {
-        .End -> {}
-        .Node(method_name, _, next) -> {
-            let mangled = concrete_name + "__" + method_name
-            let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
-            let push_fn = get_fn(ctx, "forge_array_push")
-            // Wrap in closure array: [TAG, fn_ptr]
-            let closure = call_0(ctx, get_fn(ctx, "forge_array_new"), "vclosure")
-            let tag = const_i64(ctx, -559038737)  // FORGE_CLOSURE_TAG
-            call_2(ctx, push_fn, closure, tag, "")
-            let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "vfn_ptr")
-            call_2(ctx, push_fn, closure, fn_i64, "")
-            // Push the closure into the vtable
-            let closure_i64 = to_i64(ctx, closure, "vcl_i64")
-            call_2(ctx, push_fn, vtable, closure_i64, "")
-            push_vtable_entries(ctx, vtable, next, concrete_name)
-        }
-    }
-}
+// build_vtable and push_vtable_entries removed — use box_for_trait from codegen/mod.fg
