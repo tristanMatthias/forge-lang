@@ -1,0 +1,39 @@
+/// expect: matched A
+/// expect: matched other
+/// expect: got value
+
+// Exhaustive match — all variants covered, no warning expected.
+enum Color { Red, Green, Blue }
+
+fn describe(c: Color) -> string {
+    match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue -> "blue"
+    }
+}
+
+// Match with wildcard — exhaustive by default.
+enum AB { A, B, C }
+fn test_wildcard(x: AB) {
+    match x {
+        .A -> println("matched A")
+        _ -> println("matched other")
+    }
+}
+
+// Match expression with wildcard — exhaustive.
+enum Maybe { None, Some(value: int) }
+fn test_expr(m: Maybe) -> string {
+    let result = match m {
+        .Some(v) -> "got value"
+        _ -> "nothing"
+    }
+    result
+}
+
+fn main() {
+    test_wildcard(AB.A)
+    test_wildcard(AB.B)
+    println(test_expr(Maybe.Some(42)))
+}

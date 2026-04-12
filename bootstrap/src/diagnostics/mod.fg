@@ -102,6 +102,8 @@ export enum DiagCode {
     RuntimeMatchFallthrough
     RuntimeStackOverflow
     RuntimeNullArg
+    // Warnings (F08xx)
+    NonExhaustiveMatch
 }
 
 export type ErrorDef = { code: string, help: string }
@@ -130,6 +132,13 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ImportNotFound      -> ErrorDef { code: "F0301", help: "check the spelling or add `export` to the function in the target module" }
         .ImportPrivate       -> ErrorDef { code: "F0302", help: "add `export` before the declaration to make it importable" }
         .InternalError       -> ErrorDef { code: "F0999", help: "" }
+        .RuntimeNullDeref    -> ErrorDef { code: "F1000", help: "" }
+        .RuntimeDivByZero    -> ErrorDef { code: "F1001", help: "" }
+        .RuntimeIndexOOB     -> ErrorDef { code: "F1002", help: "" }
+        .RuntimeMatchFallthrough -> ErrorDef { code: "F1003", help: "" }
+        .RuntimeStackOverflow -> ErrorDef { code: "F1004", help: "" }
+        .RuntimeNullArg      -> ErrorDef { code: "F1005", help: "" }
+        .NonExhaustiveMatch  -> ErrorDef { code: "F0801", help: "add a wildcard `_ -> ...` arm, or handle all variants explicitly" }
     }
 }
 
@@ -199,6 +208,10 @@ export fn bag_report(bag: DiagnosticBag, diag: Diagnostic) -> DiagnosticBag {
 
 export fn bag_has_errors(bag: DiagnosticBag) -> bool {
     bag.error_count > 0
+}
+
+export fn bag_has_warnings(bag: DiagnosticBag) -> bool {
+    bag.warning_count > 0
 }
 
 export fn bag_merge(a: DiagnosticBag, b: DiagnosticBag) -> DiagnosticBag {

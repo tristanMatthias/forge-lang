@@ -55,7 +55,8 @@ fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Match(subject, arms) -> {
             let s = check_expr(tc, subject)
-            check_match_arms(s.tc, arms)
+            let checked = tc_check_exhaustive(s.tc, s.ty, arms)
+            check_match_arms(checked, arms)
         }
         _ -> tc
     }
@@ -63,7 +64,11 @@ fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
 
 fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
-        .MatchExpr(subject, arms) -> check_match_expr(tc, subject, arms)
+        .MatchExpr(subject, arms) -> {
+            let s = check_expr(tc, subject)
+            let checked = tc_check_exhaustive(s.tc, s.ty, arms)
+            check_match_expr_arms(checked, arms, ValueType.Int)
+        }
         _ -> tc_er(tc, ValueType.Int)
     }
 }

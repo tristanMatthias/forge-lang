@@ -42,7 +42,7 @@ use core.resolver.{resolve_program}
 use features.modules.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use typeck.{typecheck_program}
-use diagnostics.{bag_has_errors}
+use diagnostics.{bag_has_errors, bag_has_warnings}
 use diagnostics.render.{render_bag}
 use codegen.{compile_program}
 
@@ -145,9 +145,10 @@ fn main() {
         }
         // Type check
         let tc_result = typecheck_program(named.stmts)
-        if bag_has_errors(tc_result.bag) {
+        if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
             render_bag(source, path, tc_result.bag)
         }
+        if bag_has_errors(tc_result.bag) { return }
         println("ok")
         return
     }
