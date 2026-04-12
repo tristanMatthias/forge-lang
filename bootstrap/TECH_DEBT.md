@@ -272,14 +272,10 @@ compile mode. The render_first_n limit (10) prevents stack overflow.
 **Status:** fixed. render_bag re-enabled for both parse and resolver
 error paths in the compile command.
 
-### 22. Remaining `malloc` calls in struct/enum constructors
+### ~~22. Remaining malloc calls~~ (RESOLVED)
 
-**Severity:** low (doesn't affect correctness with bump allocator)
-**Impact:** 137 `malloc` calls remain in the seed (enum and struct
-constructors). These should use `forge_bump_alloc` via `cg_malloc`.
-The `malloc_struct_bytes` and `malloc_enum_bytes` functions were
-fixed, but the SEED hasn't been fully regenerated to eliminate all
-old `malloc` patterns.
+**Status:** resolved. Only 1 malloc call remains in seed. The codegen
+uses `cg_malloc` (bump allocator) for all struct/enum constructors.
 
 ### 23. ~~Hardcoded `is_builtin` list in resolver~~ FIXED
 
@@ -352,12 +348,16 @@ This requires parser + codegen changes: when an enum variant with
 fields is referenced without calling it, emit its tag as a constant
 instead of requiring field arguments.
 
-### 30. Resolver and typeck not yet dispatched through registry
+### 30. Resolver and typeck not yet dispatched through registry (PARTIALLY DONE)
 
 **Severity:** medium (adding a feature still requires match arms in 2 central files)
 **Impact:** The Feature struct has resolve_expr and check_expr handlers
 but resolve_expr and check_expr in resolver.fg and typeck/mod.fg still
 use hardcoded match statements. Features must add arms in both files.
+
+**Progress:** Catch-all dispatch arms wired in resolver.fg, typeck/mod.fg,
+and eval.fg. Match arms not yet extracted from core into features —
+features can provide handlers but the explicit arms in core take priority.
 
 **Proper fix:** Wire dispatch_expr_resolve and dispatch_expr_check into
 the catch-all arms of resolve_expr and check_expr, same pattern as
