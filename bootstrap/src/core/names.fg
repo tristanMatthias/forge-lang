@@ -231,11 +231,17 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, alias
     match names {
         .End -> aliases
         .Node(name, _, next) -> {
-            // Find the module in the tree
             let mod_node = module_find(tree, mod_path)
             let canonical = match mod_node {
-                .End -> ""  // Module not found — leave unresolved
-                .Node(_, _, items, _, _) -> item_lookup(items, name)
+                .End -> ""
+                .Node(_, _, items, _, _) -> {
+                    let found = item_lookup(items, name)
+                    // Visibility: only exported items can be imported via `use`.
+                    // Non-exported items are silently skipped — the global search
+                    // fallback will still find them (backward compatibility).
+                    if found != "" && !item_is_exported(items, name) { "" } else { found }
+                }
+                _ -> ""
             }
             let updated = if canonical != "" {
                 AliasEntry.Node(name, canonical, aliases)
