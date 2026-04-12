@@ -1352,85 +1352,8 @@ fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
 
 // emit_struct_lit, malloc_struct_bytes, fill_struct_fields → features/struct_decl/codegen.fg
 
-fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitResult {
-    // Special case: bare `EnumName.Variant` (zero-arg enum
-    // constructor). The parser models this as
-    // FieldAccess(Ident(EnumName), Variant).
-    match obj {
-        .Ident(head) -> {
-            let enum_l = enum_reg_lookup(ctx.enums, head)
-            if enum_l.found {
-                return emit_enum_ctor(ctx, env, head, field, ExprList.End)
-            }
-        }
-        _ -> {} // not an Ident — fall through to regular field access
-    }
-
-    let r = emit_expr(ctx, env, obj)
-    if r.had_error {
-        return r
-    }
-    // String property access — `s.length` is a libc strlen.
-    if vtype_is_str(r.ty) && field == "length" {
-        let str_ptr = to_ptr(ctx, r.value, "len_arg")
-        return ok_emit(call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call"))
-    }
-    // List property access — `list.length`
-    if vtype_is_list(r.ty) && field == "length" {
-        return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), r.value, "list_len"))
-    }
-    // Map property access — `map.length`
-    if vtype_is_map(r.ty) && field == "length" {
-        return ok_emit(call_1(ctx, get_fn(ctx, "forge_map_len_cstr"), r.value, "map_len"))
-    }
-    // The object's ty tag tells us which struct it is.
-    let struct_name = vtype_struct_name(r.ty)
-    if struct_name == "" {
-        return err_emit("field access on non-struct value (ty=" + vtype_display(r.ty) + ", field=" + field + ")")
-    }
-    let lookup = struct_reg_lookup(ctx.structs, struct_name)
-    if !lookup.found {
-        return err_emit("unknown struct `" + struct_name + "`")
-    }
-    let idx = field_index_of(lookup.fields, field)
-    if idx < 0 {
-        return err_emit("unknown field `" + field + "` on struct `" + struct_name + "`")
-    }
-    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
-    let obj_ptr = to_ptr(ctx, r.value, "obj_ptr")
-
-    // Runtime null-pointer dereference check (branchless — C function checks internally).
-    let zero = const_i64(ctx, 0)
-    let is_null_i1 = forge_llvm_build_icmp(ctx.builder, 32, r.value, zero, "null_fld_chk")
-    let is_null = forge_llvm_build_zext(ctx.builder, is_null_i1, ctx.i64_type, "null_fld_ext")
-    let fld_str = forge_llvm_build_global_string_ptr(ctx.builder, field, "fld_name")
-    let fld_len = const_i64(ctx, field.length)
-    let ty_str = forge_llvm_build_global_string_ptr(ctx.builder, struct_name, "sty_name")
-    let ty_len = const_i64(ctx, struct_name.length)
-    let file_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.source_file, "src_file")
-    let file_len = const_i64(ctx, ctx.source_file.length)
-    let src_line = const_i64(ctx, ctx.source_line)
-    let trap_fn = get_fn(ctx, "forge_null_deref_trap")
-    let trap_ft = forge_llvm_fn_type_of(trap_fn)
-    let trap_args = forge_llvm_value_array_new(8)
-    forge_llvm_value_array_set(trap_args, 0, fld_str)
-    forge_llvm_value_array_set(trap_args, 1, fld_len)
-    forge_llvm_value_array_set(trap_args, 2, ty_str)
-    forge_llvm_value_array_set(trap_args, 3, ty_len)
-    forge_llvm_value_array_set(trap_args, 4, is_null)
-    forge_llvm_value_array_set(trap_args, 5, file_str)
-    forge_llvm_value_array_set(trap_args, 6, file_len)
-    forge_llvm_value_array_set(trap_args, 7, src_line)
-    forge_llvm_build_call(ctx.builder, trap_ft, trap_fn, trap_args, 8, "")
-    forge_llvm_value_array_free(trap_args)
-
-    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fld_ptr")
-    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, field)
-    let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
-    EmitResult { value: loaded, ty: field_ty, had_error: false, error_message: "" }
-}
-
-// emit_enum_ctor, malloc_enum_bytes, fill_enum_payload → features/enum_decl/codegen.fg
+// emit_field_access moved to features/struct_decl/codegen.fg
+// emit_enum_ctor → features/enum_decl/codegen.fg
 
 
 fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
