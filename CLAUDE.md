@@ -568,22 +568,17 @@ forge_selfhost_trace_int(label, n)  // prints label + i64 to stderr
 ```
 
 ### Step 5: Check function name collisions
-The bootstrap inlines ALL modules into a single compilation unit. If
-two modules define a function with the same name (e.g. `bind_params`
-in both `eval.fg` and `typeck/mod.fg`), the linker picks ONE definition
-and ALL call sites use it — even if the signatures differ. This causes
-silent argument corruption.
-
-**Check:** `grep -rn "fn <name>" src/` before naming any function.
-Prefix with module name if ambiguous: `tc_bind_params`, not `bind_params`.
+The bootstrap compiles all modules into a single LLVM module. Function
+names are qualified by module path (e.g. `typeck::check_expr`), so
+collisions are rare. The codegen detects duplicates and exits with
+`FATAL: duplicate function`. Impl methods use `Type__method` naming.
 
 ### Rules
 - **NEVER do more than ONE seed cycle to diagnose a crash.** Use LLDB.
 - **NEVER guess the cause.** Read the register values. Read the IR.
 - **NEVER chase heap corruption without first testing -O0.**
-- **NEVER reuse function names across modules.** The bootstrap inlines
-  everything — duplicate names cause silent call resolution to the
-  wrong function with wrong arity. ALWAYS prefix with module name.
+- **Function names are module-qualified** (e.g. `typeck::check_expr`).
+  Duplicates are caught at compile time. Impl methods use `Type__method`.
 - **Log EVERY crash diagnosis in TECH_DEBT.md** with the root cause,
   LLDB output, and fix. Future agents need this history.
 
@@ -642,12 +637,11 @@ containers, update seed. Phase B: change containers.
 ### Build works for small files but fails on main.fg
 **Symptom:** `./build/bs2 compile /tmp/small.fg` works, but
 `./build/bs2 compile src/main.fg` crashes or errors.
-**Root cause:** the merged source has 8000+ lines. Issues that
-don't appear in small files: function name collisions, scope depth
+**Root cause:** the full source has 8000+ lines compiled into one
+LLVM module. Issues that don't appear in small files: scope depth
 limits, stack overflow from recursive rendering, enum variant
 ordering mismatches.
-**Fix:** check for name collisions first (`grep -rn "fn <name>" src/`).
-Then check if the error is from the old seed vs the new source
+**Fix:** check if the error is from the old seed vs the new source
 (struct layout mismatch). Use LLDB to find the exact crash point.
 
 ### Adding new enum variants MUST go at the END
