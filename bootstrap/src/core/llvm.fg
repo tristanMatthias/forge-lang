@@ -100,6 +100,7 @@ extern fn forge_llvm_build_call(b: ptr, fn_type: ptr, fn_val: ptr, args: ptr, co
 extern fn forge_llvm_build_br(b: ptr, bb: ptr) -> ptr
 extern fn forge_llvm_build_cond_br(b: ptr, cond: ptr, then_bb: ptr, else_bb: ptr) -> ptr
 extern fn forge_llvm_build_ret(b: ptr, val: ptr) -> ptr
+extern fn forge_llvm_build_unreachable(b: ptr) -> ptr
 
 // ── Builder — PHI nodes ──
 extern fn forge_llvm_build_phi(b: ptr, ty: ptr, name: string) -> ptr

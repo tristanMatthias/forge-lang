@@ -177,7 +177,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     let env_with_params = bind_lambda_params_typed(ctx, env, params, fn_val, 0, param_types)
     let body_env = bind_captures_as_params(ctx, env_with_params, captures, fn_val, num_declared)
 
-    let body_ctx = ctx_with_fn(ctx, fn_val)
+    let body_ctx = ctx_with_fn(ctx, fn_val, name)
     // Save/restore defer stack so lambda's `return` doesn't emit
     // the outer function's defers.
     let saved_defers = DEFER_STACK

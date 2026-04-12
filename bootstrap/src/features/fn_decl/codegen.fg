@@ -35,7 +35,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     let empty_env: VarEnv = VarEnv.End
     let env = bind_params_inline(ctx, fn_val, params, 0, empty_env)
 
-    let body_cg = ctx_with_fn(ctx, fn_val)
+    let body_cg = ctx_with_fn(ctx, fn_val, name)
     defer_reset()
 
     let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), ValueType.Int)

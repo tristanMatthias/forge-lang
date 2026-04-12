@@ -36,7 +36,10 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
     match arms {
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                forge_llvm_build_br(ctx.builder, merge_bb)
+                let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
+                let tag_i64 = forge_llvm_build_sext(ctx.builder, tag_val, ctx.i64_type, "tag_ext")
+                call_2(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, "")
+                forge_llvm_build_unreachable(ctx.builder)
             }
             EmitResult { value: null_ptr_val(), ty: ValueType.Int, had_error: false, error_message: "" }
         }
@@ -101,7 +104,10 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
     match arms {
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                forge_llvm_build_br(ctx.builder, merge_bb)
+                let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
+                let tag_i64 = forge_llvm_build_sext(ctx.builder, tag_val, ctx.i64_type, "tag_ext")
+                call_2(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, "")
+                forge_llvm_build_unreachable(ctx.builder)
             }
             ok_stmt(env)
         }
@@ -388,7 +394,9 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
     match arms {
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                forge_llvm_build_br(ctx.builder, merge_bb)
+                let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
+                call_2(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, const_i64(ctx, -1), "")
+                forge_llvm_build_unreachable(ctx.builder)
             }
             forge_llvm_position_at_end(ctx.builder, merge_bb)
             let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "pmatch_val")
@@ -451,7 +459,9 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
     match arms {
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                forge_llvm_build_br(ctx.builder, merge_bb)
+                let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
+                call_2(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, const_i64(ctx, -1), "")
+                forge_llvm_build_unreachable(ctx.builder)
             }
             forge_llvm_position_at_end(ctx.builder, merge_bb)
             ok_stmt(env)

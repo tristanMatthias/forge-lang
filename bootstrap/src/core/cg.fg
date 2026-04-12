@@ -29,6 +29,7 @@ export type Ctx = {
     // append_basic_block needs this; codegen for `if`/`while` and
     // function bodies all use it.
     current_fn: ptr,
+    current_fn_name: string,
     i64_type: ptr,
     i1_type: ptr,
     ptr_type: ptr,
@@ -391,8 +392,8 @@ export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
 // Functional struct update via `with`. Adding a new field to Ctx
 // requires ZERO changes here.
 
-export fn ctx_with_fn(ctx: Ctx, fn_val: ptr) -> Ctx {
-    ctx with { current_fn: fn_val }
+export fn ctx_with_fn(ctx: Ctx, fn_val: ptr, fn_name: string) -> Ctx {
+    ctx with { current_fn: fn_val, current_fn_name: fn_name }
 }
 
 export fn ctx_with_loops(ctx: Ctx, loops: LoopStack) -> Ctx {

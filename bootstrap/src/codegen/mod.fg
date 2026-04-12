@@ -369,6 +369,9 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     forge_llvm_add_function(m, "forge_test_run_then", arr_get_type)
     forge_llvm_add_function(m, "forge_test_summary", puts_type)
 
+    // Match fallthrough trap — called when no arm matches at runtime.
+    forge_llvm_add_function(m, "forge_match_unreachable", arr_push_type)
+
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
@@ -398,6 +401,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         module: m,
         builder,
         current_fn: main_fn,
+        current_fn_name: main_name,
         i64_type: i64t,
         i1_type: i1t,
         ptr_type: pt,

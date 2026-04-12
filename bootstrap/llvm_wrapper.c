@@ -349,6 +349,10 @@ LLVMValueRef forge_llvm_build_ret(LLVMBuilderRef b, LLVMValueRef val) {
     return LLVMBuildRet(b, val);
 }
 
+LLVMValueRef forge_llvm_build_unreachable(LLVMBuilderRef b) {
+    return LLVMBuildUnreachable(b);
+}
+
 // ── PHI nodes ──
 
 LLVMValueRef forge_llvm_build_phi(LLVMBuilderRef b, LLVMTypeRef ty, const char* name) {
