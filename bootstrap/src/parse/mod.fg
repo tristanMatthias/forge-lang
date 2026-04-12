@@ -426,63 +426,7 @@ impl Parser {
 
     // Parse parallel block: parallel { stmt1; stmt2 }
     // Each statement runs in its own thread, all joined at block end.
-    fn parse_parallel_statement(self) -> Stmt? {
-        self.advance()  // consume `parallel`
-        if !self.consume("left_brace", "expected `{` after parallel") {
-            return null
-        }
-        let body = self.parse_statement_list(true)
-        if body == null { return null }
-        if !self.consume("right_brace", "expected `}` to close parallel block") {
-            return null
-        }
-        Stmt.Parallel(body!)
-    }
 
-    // Parse select statement: select { binding <- channel -> { body } }
-    fn parse_select_statement(self) -> Stmt? {
-        self.advance()  // consume `select`
-        if !self.consume("left_brace", "expected `{` after select") {
-            return null
-        }
-        let arms = self.parse_select_arm_list()
-        if !self.consume("right_brace", "expected `}` to close select") {
-            return null
-        }
-        Stmt.Select(arms)
-    }
-
-    fn parse_select_arm_list(self) -> SelectArmList {
-        if self.check("right_brace") || self.check("eof") {
-            return SelectArmList.End
-        }
-        // Parse: binding <- channel -> { body }
-        if !self.check("identifier") { return SelectArmList.End }
-        let binding = self.current_lexeme
-        self.advance()
-        // Expect `<-`
-        if !self.check("less") { return SelectArmList.End }
-        self.advance()  // consume <
-        if !self.check("minus") { return SelectArmList.End }
-        self.advance()  // consume -
-        // Parse channel expression
-        let channel = self.parse_expression()
-        if channel == null { return SelectArmList.End }
-        // Expect `->`
-        if !self.consume("arrow", "expected `->` after channel in select arm") {
-            return SelectArmList.End
-        }
-        // Parse body block
-        if !self.consume("left_brace", "expected `{` for select arm body") {
-            return SelectArmList.End
-        }
-        let body = self.parse_statement_list(true)
-        if body == null { return SelectArmList.End }
-        if !self.consume("right_brace", "expected `}` to close select arm") {
-            return SelectArmList.End
-        }
-        SelectArmList.Node(binding, channel!, body!, self.parse_select_arm_list())
-    }
 
     // Parse one or more annotations: @name or @name(arg1, arg2)
     fn parse_annotations(self) -> AnnotationList {

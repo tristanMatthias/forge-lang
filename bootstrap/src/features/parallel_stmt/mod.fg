@@ -1,4 +1,5 @@
 mod codegen
+mod parser
 
 fn kw_parse_parallel(p: Parser) -> Stmt? {
     p.parse_parallel_statement()
