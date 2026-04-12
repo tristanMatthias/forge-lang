@@ -16,7 +16,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 test run selfhost clean help install-hooks regress score update-seed verify-seed seed-sigs
+.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed verify-seed seed-sigs
 
 DIAG := bash scripts/diagnose.sh
 
@@ -44,6 +44,10 @@ build:
 # Build at -O0 for lldb debugging. Produces build/bs2_O0.
 build-O0:
 	@$(DIAG) --build-O0
+
+# Build with --debug-null for null argument detection. Produces build/bs2_debug.
+build-debug:
+	@$(DIAG) --build-debug
 
 # Full safety net: regression suite + fixed-point invariant.
 test:

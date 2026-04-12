@@ -1481,6 +1481,30 @@ void forge_validate_tag(void *ptr, int64_t max_tag, const char *type_name) {
     }
 }
 
+// ── Null argument trap ──
+//
+// Called by --debug-null compiled code when a null argument is detected
+// at function entry. Prints the function and parameter name, then aborts.
+// The is_null flag is checked at runtime to avoid branching in the IR
+// (which would require creating basic blocks in the correct function).
+void forge_null_arg_trap(const char *fn_name, int64_t fn_len,
+                         const char *param_name, int64_t param_len) {
+    fprintf(stderr, "FATAL: null argument `");
+    fwrite(param_name, 1, (size_t)param_len, stderr);
+    fprintf(stderr, "` in function `");
+    fwrite(fn_name, 1, (size_t)fn_len, stderr);
+    fprintf(stderr, "`\n");
+    abort();
+}
+
+// Conditional version: only traps if is_null != 0.
+void forge_null_arg_check(const char *fn_name, int64_t fn_len,
+                          const char *param_name, int64_t param_len,
+                          int64_t is_null) {
+    if (!is_null) return;
+    forge_null_arg_trap(fn_name, fn_len, param_name, param_len);
+}
+
 // ── Match fallthrough trap ──
 //
 // Called when a match expression falls through all arms without finding

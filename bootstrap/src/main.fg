@@ -153,18 +153,35 @@ fn main() {
     }
 
     if command == "compile" {
-        // Check for --stop-after=<pass> flag. When present, arg 2 is the
-        // flag and arg 3 is the file path.
-        let has_stop_flag = path.length > 13 && path.substring(0, 13) == "--stop-after="
-        let stop_after = if has_stop_flag { path.substring(13, path.length) } else { "" }
-        if has_stop_flag && forge_selfhost_argc() < 4 {
-            fail("error: --stop-after requires a file path argument")
+        // Parse compile flags. Flags are any args starting with "--"
+        // that appear before the file path (always the last argument).
+        mut stop_after = ""
+        mut debug_null = false
+        let argc = forge_selfhost_argc()
+        // The file path is always the last argument.
+        let cpath_idx = argc - 1
+        // Scan args 2..last for flags.
+        mut flag_idx = 2
+        while flag_idx < cpath_idx {
+            let arg = forge_selfhost_get_arg_cstr(flag_idx)
+            if arg.length > 13 && arg.substring(0, 13) == "--stop-after=" {
+                stop_after = arg.substring(13, arg.length)
+            }
+            if arg == "--debug-null" {
+                debug_null = true
+            }
+            flag_idx = flag_idx + 1
         }
-        let cpath = if has_stop_flag { forge_selfhost_get_arg_cstr(3) } else { path }
-        if has_stop_flag && !file_exists(cpath) {
+        let has_flags = cpath_idx > 2
+        let cpath = forge_selfhost_get_arg_cstr(cpath_idx)
+        // If no flags were present and arg 2 looks like a flag, it's an error.
+        if !has_flags && is_flag {
+            fail("error: compile requires a file path argument")
+        }
+        if !file_exists(cpath) {
             fail("error: file not found: " + cpath)
         }
-        let csource = if has_stop_flag { read_file(cpath) } else { source }
+        let csource = read_file(cpath)
 
         let parsed = parse_program_source(csource)
         if parsed.had_error || parsed.stmts == null {
@@ -216,7 +233,7 @@ fn main() {
             return
         }
         let output = cpath + ".ll"
-        let compiled = compile_program(named.stmts, output)
+        let compiled = compile_program(named.stmts, output, debug_null)
         if compiled.had_error {
             fail(compiled.error_message)
         }

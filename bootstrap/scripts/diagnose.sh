@@ -25,6 +25,7 @@ RUNTIME_ASAN_O="$BUILD_DIR/runtime_asan.o"
 BS2="$BUILD_DIR/bs2"
 BS2_O0="$BUILD_DIR/bs2_O0"
 BS2_ASAN="$BUILD_DIR/bs2_asan"
+BS2_DEBUG="$BUILD_DIR/bs2_debug"
 BS3="$BUILD_DIR/bs3"
 
 LLVM_PREFIX="${LLVM_PREFIX:-/opt/homebrew/opt/llvm}"
@@ -64,6 +65,10 @@ BUILD MODES
   --build-O0           Build bs2 at -O0 (no optimization) for debuggability.
                        Makes lldb usable with breakpoints and variable inspection.
                        Output: build/bs2_O0.
+  --build-debug        Build bs2 with --debug-null (null argument detection).
+                       Emits null checks at every function entry for ptr/struct/enum
+                       parameters. Catches null propagation at the source.
+                       Output: build/bs2_debug.
   --build-bs2-asan     Same as --build-bs2 but link with -fsanitize=address.
   --build-bs3          Compile bootstrap/src/main.fg with bs2 → build/bs3.
                        (The fixed-point self-host check.)
@@ -297,6 +302,22 @@ ensure_bs2_O0() {
   fi
 }
 
+ensure_bs2_debug() {
+  ensure_seed
+  if [ ! -x "$BS2_DEBUG" ] \
+     || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$BS2_DEBUG" ] \
+     || [ "$SEED_LL" -nt "$BS2_DEBUG" ]; then
+    log "compiling bootstrap/src/main.fg with seed compiler (--debug-null)"
+    if ! "$SEED_BIN" compile --debug-null "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_debug.codegen.log" 2>&1; then
+      cat "$BUILD_DIR/bs2_debug.codegen.log" >&2
+      die "bs2_debug codegen failed"
+    fi
+    log "linking $BS2_DEBUG at -O0"
+    link_ll_O0 "$BOOTSTRAP_DIR/src/main.fg.ll" "$BS2_DEBUG" "$BUILD_DIR/bs2_debug.link.log"
+    ok "built $BS2_DEBUG (null checks enabled, -O0)"
+  fi
+}
+
 ensure_bs2_asan() {
   ensure_seed
   ensure_runtime_asan
@@ -481,6 +502,7 @@ mode_diagnose_selfcompile_failure() {
   done
 }
 mode_build_O0()       { ensure_bs2_O0;   ok "$BS2_O0"; }
+mode_build_debug()    { ensure_bs2_debug; ok "$BS2_DEBUG"; }
 mode_build_bs2_asan() { ensure_bs2_asan; ok "$BS2_ASAN"; }
 mode_build_bs3()      { ensure_bs3;      ok "$BS3"; }
 
@@ -996,6 +1018,7 @@ main() {
     --build-runtime)      mode_build_runtime "$@" ;;
     --build-bs2)          mode_build_bs2 "$@" ;;
     --build-O0)           mode_build_O0 "$@" ;;
+    --build-debug)        mode_build_debug "$@" ;;
     --build-bs2-asan)     mode_build_bs2_asan "$@" ;;
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;

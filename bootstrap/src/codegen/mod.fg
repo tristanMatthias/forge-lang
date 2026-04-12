@@ -40,7 +40,7 @@ export type CodegenResult = {
 // Shared types (Ctx, EmitResult, StmtResult, registries, helpers)
 // live in core/cg.fg and are imported at the top of this file.
 
-export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult {
+export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool) -> CodegenResult {
     let lc = forge_llvm_context_create()
     let m = forge_llvm_module_create("bootstrap", lc)
     let builder = forge_llvm_create_builder(lc)
@@ -125,6 +125,19 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
     let exit_type = forge_llvm_function_type(forge_llvm_void_type(lc), exit_param_arr, 1, 0)
     forge_llvm_type_array_free(exit_param_arr)
     forge_llvm_add_function(m, "exit", exit_type)
+
+    // forge_null_arg_check(fn_name: ptr, fn_len: i64, param_name: ptr, param_len: i64, is_null: i64) -> void
+    // Called in debug mode to check for null arguments at function entry.
+    // The check is done C-side so we don't need to create basic blocks in the IR.
+    let null_check_arr = forge_llvm_type_array_new(5)
+    forge_llvm_type_array_set(null_check_arr, 0, pt)
+    forge_llvm_type_array_set(null_check_arr, 1, i64t)
+    forge_llvm_type_array_set(null_check_arr, 2, pt)
+    forge_llvm_type_array_set(null_check_arr, 3, i64t)
+    forge_llvm_type_array_set(null_check_arr, 4, i64t)
+    let null_check_type = forge_llvm_function_type(forge_llvm_void_type(lc), null_check_arr, 5, 0)
+    forge_llvm_type_array_free(null_check_arr)
+    forge_llvm_add_function(m, "forge_null_arg_check", null_check_type)
 
     // C-runtime: dynamic arrays (forge_array_*)
     let arr_new_type = forge_llvm_function_type(pt, forge_llvm_type_array_new(0), 0, 0)
@@ -413,6 +426,7 @@ export fn compile_program(stmts: StmtList, output_path: string) -> CodegenResult
         defers: DeferStack.End,
         features: build_registry(),
         trait_decls,
+        debug_null_checks,
     }
 
     // Pass 2: emit each user-defined function's body, then emit

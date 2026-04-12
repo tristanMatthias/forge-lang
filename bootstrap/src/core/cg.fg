@@ -44,6 +44,7 @@ export type Ctx = {
     defers: DeferStack,
     features: Registry,
     trait_decls: TraitDeclReg,
+    debug_null_checks: bool,
 }
 
 // Trait declaration registry — maps trait name to method names + return types.

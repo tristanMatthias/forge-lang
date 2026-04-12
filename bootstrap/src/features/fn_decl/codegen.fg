@@ -1,7 +1,8 @@
 // WHY: emits function bodies and binds parameters into the body scope.
+// Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend, ValueType, SStmt, stmt_unwrap}
-use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_type_ctx, ctx_with_fn}
+use core.ast.{Stmt, StmtList, ParamList, VarEnv, env_extend, env_lookup, ValueType, SStmt, stmt_unwrap}
+use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt, translate_type_ctx, ctx_with_fn, const_i64, get_fn, new_bb}
 use codegen.{emit_block_loop}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 
@@ -32,10 +33,16 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
     forge_llvm_position_at_end(ctx.builder, entry)
 
-    let empty_env: VarEnv = VarEnv.End
-    let env = bind_params_inline(ctx, fn_val, params, 0, empty_env)
-
     let body_cg = ctx_with_fn(ctx, fn_val, name)
+
+    let empty_env: VarEnv = VarEnv.End
+    let env = bind_params_inline(body_cg, fn_val, params, 0, empty_env)
+
+    // Emit null checks for all ptr/struct/enum parameters when debug mode is on.
+    if body_cg.debug_null_checks {
+        emit_null_checks(body_cg, name, params, env)
+    }
+
     defer_reset()
 
     let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), ValueType.Int)
@@ -58,4 +65,68 @@ fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: ParamList, idx: int, env: V
             bind_params_inline(ctx, fn_val, next, idx + 1, env_extend(env, name, alloca, internal_ty))
         }
     }
+}
+
+// ── Debug null checks ──
+//
+// When --debug-null is active, emit an icmp eq i64 %val, 0 check for
+// every parameter whose declared type is ptr, a struct, or an enum.
+// If null, call forge_null_arg_trap with the function name and
+// parameter name, then emit unreachable. This catches null propagation
+// at the source function instead of crashing 8000 calls later.
+
+fn should_null_check(ty: string) -> bool {
+    // Check types that are pointers at runtime: ptr, string, structs,
+    // enums, lists, maps, and named types (which are usually structs/enums).
+    // Skip: int, bool, float, fn (which are value types).
+    if ty == "ptr" { return true }
+    if ty == "string" { return true }
+    // If it starts with uppercase, it's likely a named struct/enum type.
+    if ty.length > 0 {
+        let first = ty.substring(0, 1)
+        if first >= "A" && first <= "Z" { return true }
+    }
+    false
+}
+
+fn emit_null_checks(ctx: Ctx, fn_name: string, params: ParamList, env: VarEnv) {
+    match params {
+        .End -> {}
+        .Node(name, ty, next) -> {
+            if should_null_check(ty) {
+                emit_one_null_check(ctx, fn_name, name, env)
+            }
+            emit_null_checks(ctx, fn_name, next, env)
+        }
+    }
+}
+
+fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: VarEnv) {
+    let lookup = env_lookup(env, param_name)
+    if !lookup.found { return }
+
+    // Load the parameter value (stored as i64 in the alloca).
+    let val = forge_llvm_build_load(ctx.builder, ctx.i64_type, lookup.alloca, param_name + "_val")
+    let zero = const_i64(ctx, 0)
+    // icmp eq i64 %val, 0 → i1
+    let is_null_i1 = forge_llvm_build_icmp(ctx.builder, 32, val, zero, param_name + "_null")
+    // zext i1 to i64 for the C function
+    let is_null = forge_llvm_build_zext(ctx.builder, is_null_i1, ctx.i64_type, param_name + "_nz")
+
+    // Build the call to forge_null_arg_check(fn_name, fn_len, param_name, param_len, is_null).
+    // No branching — the C function does the check internally.
+    let fn_str = forge_llvm_build_global_string_ptr(ctx.builder, fn_name, "dbg_fn")
+    let fn_len = const_i64(ctx, fn_name.length)
+    let p_str = forge_llvm_build_global_string_ptr(ctx.builder, param_name, "dbg_param")
+    let p_len = const_i64(ctx, param_name.length)
+    let check_fn = get_fn(ctx, "forge_null_arg_check")
+    let ft = forge_llvm_fn_type_of(check_fn)
+    let args = forge_llvm_value_array_new(5)
+    forge_llvm_value_array_set(args, 0, fn_str)
+    forge_llvm_value_array_set(args, 1, fn_len)
+    forge_llvm_value_array_set(args, 2, p_str)
+    forge_llvm_value_array_set(args, 3, p_len)
+    forge_llvm_value_array_set(args, 4, is_null)
+    forge_llvm_build_call(ctx.builder, ft, check_fn, args, 5, "")
+    forge_llvm_value_array_free(args)
 }
