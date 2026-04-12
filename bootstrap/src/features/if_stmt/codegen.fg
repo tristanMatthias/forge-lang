@@ -1,7 +1,7 @@
-// WHY: emits LLVM IR for `if` as a statement (with optional else).
+// WHY: emits LLVM IR for `if` as statement and expression.
 
 use core.ast.{Expr, Stmt, VarEnv}
-use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt_from_expr}
+use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, ok_emit_typed, err_stmt_from_expr, new_bb, const_i64}
 use codegen.{emit_expr, emit_stmt}
 
 
@@ -34,4 +34,36 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
 
     forge_llvm_position_at_end(ctx.builder, merge_bb)
     ok_stmt(env)
+}
+
+export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
+    let cond = emit_expr(ctx, env, condition)
+    if cond.had_error { return cond }
+    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, const_i64(ctx, 0), "ife_cond")
+    let then_bb = new_bb(ctx, "ife_then")
+    let else_bb = new_bb(ctx, "ife_else")
+    let merge_bb = new_bb(ctx, "ife_end")
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "ife_result")
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
+    forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
+
+    forge_llvm_position_at_end(ctx.builder, then_bb)
+    let t = emit_expr(ctx, env, then_branch)
+    if t.had_error { return t }
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_store(ctx.builder, t.value, result_slot)
+        forge_llvm_build_br(ctx.builder, merge_bb)
+    }
+
+    forge_llvm_position_at_end(ctx.builder, else_bb)
+    let e = emit_expr(ctx, env, else_branch)
+    if e.had_error { return e }
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_store(ctx.builder, e.value, result_slot)
+        forge_llvm_build_br(ctx.builder, merge_bb)
+    }
+
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "ife_val")
+    ok_emit_typed(loaded, t.ty)
 }

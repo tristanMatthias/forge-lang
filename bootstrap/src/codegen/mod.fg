@@ -1201,71 +1201,9 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
 
 // emit_is_check moved to features/is_keyword/codegen.fg
 
-fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
-    let cond = emit_expr(ctx, env, condition)
-    if cond.had_error {
-        return cond
-    }
-    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, const_i64(ctx, 0), "ife_cond")
-    let then_bb = new_bb(ctx, "ife_then")
-    let else_bb = new_bb(ctx, "ife_else")
-    let merge_bb = new_bb(ctx, "ife_end")
-    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "ife_result")
-    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
-    forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
+// emit_if_expr moved to features/if_stmt/codegen.fg
 
-    forge_llvm_position_at_end(ctx.builder, then_bb)
-    let t = emit_expr(ctx, env, then_branch)
-    if t.had_error {
-        return t
-    }
-    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-        forge_llvm_build_store(ctx.builder, t.value, result_slot)
-        forge_llvm_build_br(ctx.builder, merge_bb)
-    }
-
-    forge_llvm_position_at_end(ctx.builder, else_bb)
-    let e = emit_expr(ctx, env, else_branch)
-    if e.had_error {
-        return e
-    }
-    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-        forge_llvm_build_store(ctx.builder, e.value, result_slot)
-        forge_llvm_build_br(ctx.builder, merge_bb)
-    }
-
-    forge_llvm_position_at_end(ctx.builder, merge_bb)
-    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "ife_val")
-    ok_emit_typed(loaded, t.ty)
-}
-
-fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> EmitResult {
-    let r = emit_expr(ctx, env, obj)
-    if r.had_error {
-        return r
-    }
-    let struct_name = vtype_struct_name(r.ty)
-    if struct_name == "" {
-        return err_emit("field assignment on non-struct value (ty=" + vtype_display(r.ty) + ")")
-    }
-    let lookup = struct_reg_lookup(ctx.structs, struct_name)
-    if !lookup.found {
-        return err_emit("unknown struct `" + struct_name + "`")
-    }
-    let idx = field_index_of(lookup.fields, field)
-    if idx < 0 {
-        return err_emit("unknown field `" + field + "` on struct `" + struct_name + "`")
-    }
-    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
-    let obj_ptr = to_ptr(ctx, r.value, "fa_ptr")
-    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fa_fld")
-    let v = emit_expr(ctx, env, value)
-    if v.had_error {
-        return v
-    }
-    forge_llvm_build_store(ctx.builder, v.value, gep)
-    ok_emit(v.value)
-}
+// emit_field_assign moved to features/struct_decl/codegen.fg
 
 fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
     // A block expression's value is the value of the LAST
