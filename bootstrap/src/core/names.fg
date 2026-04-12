@@ -13,7 +13,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
 
 // ── Module tree ──
 //
@@ -73,17 +73,25 @@ fn item_is_exported(items: ModuleItem, name: string) -> bool {
     }
 }
 
-// Search ALL modules in the tree for an item by short name.
-// Returns the canonical path if found, "" otherwise.
-fn item_search_all(tree: ModuleNode, name: string) -> string {
+// Build a flat index of ALL items across ALL modules. Called once
+// at the start of resolve_names. Turns the O(n*m) tree traversal
+// per identifier into an O(m) linked-list scan (same as alias_lookup).
+fn build_global_index(tree: ModuleNode, index: ModuleItem) -> ModuleItem {
     match tree {
-        .End -> ""
+        .End -> index
         .Node(_, _, items, children, next) -> {
-            let found = item_lookup(items, name)
-            if found != "" { return found }
-            let in_children = item_search_all(children, name)
-            if in_children != "" { return in_children }
-            item_search_all(next, name)
+            let with_items = append_items(items, index)
+            let with_children = build_global_index(children, with_items)
+            build_global_index(next, with_children)
+        }
+    }
+}
+
+fn append_items(items: ModuleItem, rest: ModuleItem) -> ModuleItem {
+    match items {
+        .End -> rest
+        .Node(short, canonical, exported, next) -> {
+            append_items(next, ModuleItem.Node(short, canonical, exported, rest))
         }
     }
 }
@@ -297,17 +305,55 @@ fn scope_has(scope: LocalScope, name: string) -> bool {
 fn is_builtin_name(name: string) -> bool {
     name == "println" || name == "eprintln" || name == "print" || name == "eprint" ||
     name == "string" || name == "int" || name == "float" || name == "panic" ||
-    name == "exit"
+    name == "exit" || name == "self"
 }
 
 
 // ── Name resolution context ──
 
-type NameCtx = { tree: ModuleNode, aliases: AliasEntry, current_module: string, locals: LocalScope }
-fn ctx_with_locals(ctx: NameCtx, locals: LocalScope) -> NameCtx { NameCtx { tree: ctx.tree, aliases: ctx.aliases, current_module: ctx.current_module, locals } }
-fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) -> NameCtx { NameCtx { tree: ctx.tree, aliases, current_module, locals: ctx.locals } }
-fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx { match params { .End -> ctx, .Node(name, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, ctx.locals)), next), _ -> ctx } }
-fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx { match pattern { .Wildcard -> ctx, .Variant(_, bindings) -> bind_params_ctx(ctx, bindings), _ -> ctx } }
+type NameCtx = {
+    tree: ModuleNode,
+    aliases: AliasEntry,
+    current_module: string,
+    locals: LocalScope,
+    // Flat index of ALL items across ALL modules — O(1) lookup
+    // by short name. Built once in resolve_names, used by the
+    // global search fallback in rewrite_ident.
+    global_index: ModuleItem,
+}
+
+fn ctx_with_locals(ctx: NameCtx, locals: LocalScope) -> NameCtx {
+    NameCtx { tree: ctx.tree, aliases: ctx.aliases, current_module: ctx.current_module, locals, global_index: ctx.global_index }
+}
+
+fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) -> NameCtx {
+    NameCtx { tree: ctx.tree, aliases, current_module, locals: ctx.locals, global_index: ctx.global_index }
+}
+
+fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
+    match params {
+        .End -> ctx
+        .Node(name, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, ctx.locals)), next)
+        _ -> ctx
+    }
+}
+
+fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
+    match pattern {
+        .Wildcard -> ctx
+        .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
+        .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)
+        _ -> ctx  // LitString, LitInt, LitBool, LitFloat — no bindings
+    }
+}
+
+fn bind_pattern_list(ctx: NameCtx, pats: PatternList) -> NameCtx {
+    match pats {
+        .End -> ctx
+        .Node(pat, next) -> bind_pattern_list(bind_pattern_ctx(ctx, pat), next)
+        _ -> ctx
+    }
+}
 
 
 fn merge_aliases(base: AliasEntry, extra: AliasEntry) -> AliasEntry {
@@ -324,7 +370,8 @@ export type NameResolveResult = { stmts: StmtList, had_error: bool, error_messag
 export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let aliases = resolve_use_aliases(stmts, tree)
-    let ctx = NameCtx { tree, aliases, current_module: "", locals: LocalScope.End }
+    let global_index = build_global_index(tree, ModuleItem.End)
+    let ctx = NameCtx { tree, aliases, current_module: "", locals: LocalScope.End, global_index }
     NameResolveResult { stmts: rewrite_stmt_list(ctx, stmts), had_error: false, error_message: "" }
 }
 
@@ -412,17 +459,27 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
 }
 
 fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
+    // 1. Local variable — don't rewrite
     if scope_has(ctx.locals, name) { return original }
+    // 2. Builtin function — don't rewrite
     if is_builtin_name(name) { return original }
+    // 3. Uppercase = type/enum name — resolved by codegen registries
     if name.length > 0 && name[0] >= "A" && name[0] <= "Z" { return original }
+    // 4. Use alias (from `use path.{name}`)
     let from_alias = alias_lookup(ctx.aliases, name)
     if from_alias != "" { return Expr.QualifiedIdent(from_alias) }
+    // 5. Sibling in current module
     if ctx.current_module != "" {
         let mod_node = module_find(ctx.tree, ctx.current_module)
-        let from_sibling = match mod_node { .End -> "", .Node(_, _, items, _, _) -> item_lookup(items, name) }
+        let from_sibling = match mod_node {
+            .End -> ""
+            .Node(_, _, items, _, _) -> item_lookup(items, name)
+            _ -> ""
+        }
         if from_sibling != "" { return Expr.QualifiedIdent(from_sibling) }
     }
-    let from_global = item_search_all(ctx.tree, name)
+    // 6. Global index — flat scan of all module items (O(m) not O(n*m))
+    let from_global = item_lookup(ctx.global_index, name)
     if from_global != "" { return Expr.QualifiedIdent(from_global) }
     original
 }

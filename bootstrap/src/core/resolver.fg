@@ -199,14 +199,9 @@ fn lookup_fn(fns: FnEntry, name: string) -> bool {
 }
 
 fn is_builtin(name: string) -> bool {
-    if name == "println" { return true }
-    if name == "eprintln" { return true }
-    if name == "string" { return true }
-    if name == "int" { return true }
-    if name == "float" { return true }
-    if name == "panic" { return true }
-    if name == "self" { return true }
-    false
+    name == "println" || name == "eprintln" || name == "print" || name == "eprint" ||
+    name == "string" || name == "int" || name == "float" || name == "panic" ||
+    name == "exit" || name == "self"
 }
 
 fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {

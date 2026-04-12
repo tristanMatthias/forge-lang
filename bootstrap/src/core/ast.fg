@@ -694,7 +694,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Select(_) -> "(select ...)"
         .Parallel(_) -> "(parallel ...)"
         .Module(name, body) -> "(module " + name + " " + render_stmt_list(body) + ")"
-        .Use(path, _) -> "(use " + path + ")"
+        .Use(path, names) -> "(use " + path + " " + render_param_list(names) + ")"
     }
 }
 
