@@ -1,0 +1,108 @@
+// WHY: resolves module file references. Walks the AST, finds
+// Stmt.Module stubs, reads the corresponding .fg files, parses
+// them, and attaches the parsed bodies. This is the bridge between
+// the pure parser (no I/O) and the file system.
+
+use core.ast.{Stmt, StmtList, SStmt, sstmt, AnnotationList}
+use parse.{parse_program_source}
+
+// Returns the directory portion of a path (with trailing slash), or ""
+export fn modules_dirname(path: string) -> string {
+    let len = path.length
+    mut i = len
+    while i > 0 {
+        let prev = i - 1
+        if path[prev] == "/" {
+            return path.substring(0, i)
+        }
+        i = prev
+    }
+    ""
+}
+
+// Set of loaded file paths — prevents double-parsing.
+export enum LoadedPaths {
+    End
+    Node(path: string, next: LoadedPaths)
+}
+
+fn loaded_has(paths: LoadedPaths, path: string) -> bool {
+    match paths {
+        .End -> false
+        .Node(p, next) -> {
+            if p == path { return true }
+            loaded_has(next, path)
+        }
+    }
+}
+
+export type ModListResult = {
+    stmts: StmtList,
+    loaded: LoadedPaths,
+    had_error: bool,
+    error_message: string,
+}
+
+type ModStmtResult = {
+    stmt: Stmt,
+    loaded: LoadedPaths,
+    had_error: bool,
+    error_message: string,
+}
+
+// Resolve all Stmt.Module stubs in a StmtList.
+export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths) -> ModListResult {
+    match stmts {
+        .End -> ModListResult { stmts: StmtList.End, loaded, had_error: false, error_message: "" }
+        .Node(ss, next) -> {
+            let head = resolve_module_stmt(ss.node, dir, loaded)
+            if head.had_error {
+                return ModListResult { stmts: StmtList.End, loaded: head.loaded, had_error: true, error_message: head.error_message }
+            }
+            let rest = resolve_module_files(next, dir, head.loaded)
+            if rest.had_error { return rest }
+            ModListResult {
+                stmts: StmtList.Node(sstmt(head.stmt, ss.line, ss.col), rest.stmts),
+                loaded: rest.loaded,
+                had_error: false,
+                error_message: "",
+            }
+        }
+    }
+}
+
+fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths) -> ModStmtResult {
+    match stmt {
+        .Module(name, _) -> {
+            let sibling = dir + name + ".fg"
+            let dir_mod = dir + name + "/mod.fg"
+            mut mod_path = ""
+            if forge_selfhost_file_exists(sibling) { mod_path = sibling }
+            if mod_path == "" && forge_selfhost_file_exists(dir_mod) { mod_path = dir_mod }
+            if mod_path == "" {
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `" + name + "` not found (looked for " + sibling + " and " + dir_mod + ")" }
+            }
+            if loaded_has(loaded, mod_path) {
+                return ModStmtResult { stmt: Stmt.Module(name, StmtList.End), loaded, had_error: false, error_message: "" }
+            }
+            let new_loaded = LoadedPaths.Node(mod_path, loaded)
+            let mod_source = forge_selfhost_read_file(mod_path)
+            let parsed = parse_program_source(mod_source)
+            if parsed.had_error || parsed.stmts == null {
+                return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `" + name + "`: " + parsed.error_message }
+            }
+            let mod_dir = modules_dirname(mod_path)
+            let resolved = resolve_module_files(parsed.stmts!, mod_dir, new_loaded)
+            if resolved.had_error {
+                return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
+            }
+            ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
+        }
+        .Annotated(annotations, inner) -> {
+            let r = resolve_module_stmt(inner, dir, loaded)
+            if r.had_error { return r }
+            ModStmtResult { stmt: Stmt.Annotated(annotations, r.stmt), loaded: r.loaded, had_error: false, error_message: "" }
+        }
+        _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }
+    }
+}

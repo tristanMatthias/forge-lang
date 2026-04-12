@@ -29,3 +29,4 @@ mod is_keyword
 mod spec_test
 mod select_stmt
 mod parallel_stmt
+mod modules

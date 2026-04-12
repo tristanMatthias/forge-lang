@@ -606,55 +606,8 @@ impl Parser {
         Expr.ListLit(reverse_expr_list(rows))
     }
 
-    // Parse `mod name` — produces an unresolved Stmt.Module with an
-    // empty body. The module resolution pass (resolve_module_files in
-    // main.fg) fills in the body by reading the file from disk. This
-    // keeps the parser pure — no I/O, no filesystem access.
-    fn parse_module_declaration(self) -> Stmt? {
-        self.advance()  // consume `mod`
-        let name = self.consume_identifier("expected module name after `mod`")?
-        Stmt.Module(name, StmtList.End)
-    }
-
-    // Parse `use path.{name1, name2, ...}` — an import declaration.
-    // Stores the dotted module path and the imported symbol names.
-    fn parse_use_declaration(self) -> Stmt? {
-        self.advance()  // consume `use`
-        // Parse dotted path: core.ast, features.match_expr.codegen, etc.
-        mut path = self.consume_identifier("expected module path after `use`")?
-        while self.check("dot") {
-            self.advance()  // consume `.`
-            if self.check("left_brace") {
-                break  // reached `{names}` part
-            }
-            let segment = self.consume_identifier("expected path segment")?
-            path = path + "." + segment
-        }
-        // Parse {name1, name2, ...}
-        if !self.consume("left_brace", "expected `{` in use declaration") {
-            return null
-        }
-        let names = self.parse_use_name_list()?
-        if !self.consume("right_brace", "expected `}` in use declaration") {
-            return null
-        }
-        Stmt.Use(path, names)
-    }
-
-    // Parse comma-separated identifier list inside `use path.{...}`.
-    fn parse_use_name_list(self) -> ParamList? {
-        if self.check("right_brace") {
-            return ParamList.End
-        }
-        // Store column position in ty field for diagnostic spans
-        let col = string(self.current_column)
-        let name = self.consume_identifier("expected import name")?
-        if self.check("comma") {
-            self.advance()
-        }
-        let rest = self.parse_use_name_list()?
-        ParamList.Node(name, col, rest)
-    }
+    // Module parser (parse_module_declaration, parse_use_declaration)
+    // lives in features/modules/parser.fg.
 
     // Feature-specific parsers live in features/*/parser.fg.
     // They extend Parser via `impl Parser { ... }` blocks.
