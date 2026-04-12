@@ -1,5 +1,3 @@
-; seed built from commit 74c10fd4 at 2026-04-12T09:36:46Z
-; source hash: 4ae032707b5d5e8f233bf6cfc2856d9c4f071cfcadc4c0c0b5702e0ac1083e32
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -2681,520 +2679,525 @@ source_filename = "bootstrap"
 @.match_fn.2583 = private unnamed_addr constant [31 x i8] c"codegen::filter_fields_without\00", align 1
 @.match_fn.2584 = private unnamed_addr constant [28 x i8] c"codegen::filter_fields_only\00", align 1
 @.match_fn.2585 = private unnamed_addr constant [24 x i8] c"codegen::field_list_has\00", align 1
-@.str.2586 = private unnamed_addr constant [28 x i8] c"FATAL: duplicate function `\00", align 1
-@.str.2587 = private unnamed_addr constant [32 x i8] c"` \E2\80\94 rename to avoid collision\00", align 1
-@.match_fn.2588 = private unnamed_addr constant [27 x i8] c"codegen::declare_functions\00", align 1
-@.match_fn.2589 = private unnamed_addr constant [27 x i8] c"codegen::declare_functions\00", align 1
-@.match_fn.2590 = private unnamed_addr constant [24 x i8] c"codegen::emit_top_level\00", align 1
-@.match_fn.2591 = private unnamed_addr constant [24 x i8] c"codegen::emit_top_level\00", align 1
-@.str.2592 = private unnamed_addr constant [24 x i8] c"codegen error: global `\00", align 1
-@.str.2593 = private unnamed_addr constant [15 x i8] c"` not declared\00", align 1
-@.str.2594 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.2595 = private unnamed_addr constant [24 x i8] c"codegen::emit_stmt_list\00", align 1
-@.str.2596 = private unnamed_addr constant [34 x i8] c"codegen error: break outside loop\00", align 1
-@.str.2597 = private unnamed_addr constant [37 x i8] c"codegen error: continue outside loop\00", align 1
-@.str.2598 = private unnamed_addr constant [48 x i8] c"codegen error: unsupported statement type (tag=\00", align 1
-@.i2s_fmt.2599 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.2600 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.match_fn.2601 = private unnamed_addr constant [19 x i8] c"codegen::emit_stmt\00", align 1
-@.str.2602 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2603 = private unnamed_addr constant [2 x i8] c"_\00", align 1
-@.str.2604 = private unnamed_addr constant [3 x i8] c"0x\00", align 1
-@.str.2605 = private unnamed_addr constant [3 x i8] c"0X\00", align 1
-@.str.2606 = private unnamed_addr constant [3 x i8] c"0b\00", align 1
-@.str.2607 = private unnamed_addr constant [3 x i8] c"0B\00", align 1
-@.str.2608 = private unnamed_addr constant [3 x i8] c"0o\00", align 1
-@.str.2609 = private unnamed_addr constant [3 x i8] c"0O\00", align 1
-@.str.2610 = private unnamed_addr constant [2 x i8] c"0\00", align 1
-@.str.2611 = private unnamed_addr constant [2 x i8] c"1\00", align 1
-@.str.2612 = private unnamed_addr constant [2 x i8] c"2\00", align 1
-@.str.2613 = private unnamed_addr constant [2 x i8] c"3\00", align 1
-@.str.2614 = private unnamed_addr constant [2 x i8] c"4\00", align 1
-@.str.2615 = private unnamed_addr constant [2 x i8] c"5\00", align 1
-@.str.2616 = private unnamed_addr constant [2 x i8] c"6\00", align 1
-@.str.2617 = private unnamed_addr constant [2 x i8] c"7\00", align 1
-@.str.2618 = private unnamed_addr constant [2 x i8] c"8\00", align 1
-@.str.2619 = private unnamed_addr constant [2 x i8] c"9\00", align 1
-@.str.2620 = private unnamed_addr constant [2 x i8] c"a\00", align 1
-@.str.2621 = private unnamed_addr constant [2 x i8] c"A\00", align 1
-@.str.2622 = private unnamed_addr constant [2 x i8] c"b\00", align 1
-@.str.2623 = private unnamed_addr constant [2 x i8] c"B\00", align 1
-@.str.2624 = private unnamed_addr constant [2 x i8] c"c\00", align 1
-@.str.2625 = private unnamed_addr constant [2 x i8] c"C\00", align 1
-@.str.2626 = private unnamed_addr constant [2 x i8] c"d\00", align 1
-@.str.2627 = private unnamed_addr constant [2 x i8] c"D\00", align 1
-@.str.2628 = private unnamed_addr constant [2 x i8] c"e\00", align 1
-@.str.2629 = private unnamed_addr constant [2 x i8] c"E\00", align 1
-@.str.2630 = private unnamed_addr constant [2 x i8] c"f\00", align 1
-@.str.2631 = private unnamed_addr constant [2 x i8] c"F\00", align 1
-@.str.2632 = private unnamed_addr constant [2 x i8] c"1\00", align 1
-@.str.2633 = private unnamed_addr constant [2 x i8] c"0\00", align 1
-@.str.2634 = private unnamed_addr constant [2 x i8] c"1\00", align 1
-@.str.2635 = private unnamed_addr constant [2 x i8] c"2\00", align 1
-@.str.2636 = private unnamed_addr constant [2 x i8] c"3\00", align 1
-@.str.2637 = private unnamed_addr constant [2 x i8] c"4\00", align 1
-@.str.2638 = private unnamed_addr constant [2 x i8] c"5\00", align 1
-@.str.2639 = private unnamed_addr constant [2 x i8] c"6\00", align 1
-@.str.2640 = private unnamed_addr constant [2 x i8] c"7\00", align 1
-@.str.2641 = private unnamed_addr constant [2 x i8] c"8\00", align 1
-@.str.2642 = private unnamed_addr constant [2 x i8] c"9\00", align 1
-@.str.2643 = private unnamed_addr constant [11 x i8] c".float_str\00", align 1
-@.str.2644 = private unnamed_addr constant [18 x i8] c"forge_float_parse\00", align 1
-@.str.2645 = private unnamed_addr constant [11 x i8] c"float_bits\00", align 1
-@.str.2646 = private unnamed_addr constant [5 x i8] c"true\00", align 1
-@.str.2647 = private unnamed_addr constant [5 x i8] c".str\00", align 1
-@.str.2648 = private unnamed_addr constant [8 x i8] c"str_i64\00", align 1
-@.str.2649 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2650 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2651 = private unnamed_addr constant [7 x i8] c"fn_ref\00", align 1
-@.str.2652 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
-@.str.2653 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
-@.str.2654 = private unnamed_addr constant [8 x i8] c"fn_wrap\00", align 1
-@.str.2655 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2656 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2657 = private unnamed_addr constant [11 x i8] c"fn_ref_i64\00", align 1
-@.str.2658 = private unnamed_addr constant [21 x i8] c"undefined variable `\00", align 1
-@.str.2659 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.match_fn.2586 = private unnamed_addr constant [25 x i8] c"codegen::stmts_last_expr\00", align 1
+@.match_fn.2587 = private unnamed_addr constant [25 x i8] c"codegen::stmts_last_expr\00", align 1
+@.match_fn.2588 = private unnamed_addr constant [25 x i8] c"codegen::stmts_last_expr\00", align 1
+@.match_fn.2589 = private unnamed_addr constant [26 x i8] c"codegen::decl_fn_ret_type\00", align 1
+@.str.2590 = private unnamed_addr constant [28 x i8] c"FATAL: duplicate function `\00", align 1
+@.str.2591 = private unnamed_addr constant [32 x i8] c"` \E2\80\94 rename to avoid collision\00", align 1
+@.match_fn.2592 = private unnamed_addr constant [27 x i8] c"codegen::declare_functions\00", align 1
+@.match_fn.2593 = private unnamed_addr constant [27 x i8] c"codegen::declare_functions\00", align 1
+@.match_fn.2594 = private unnamed_addr constant [24 x i8] c"codegen::emit_top_level\00", align 1
+@.match_fn.2595 = private unnamed_addr constant [24 x i8] c"codegen::emit_top_level\00", align 1
+@.str.2596 = private unnamed_addr constant [24 x i8] c"codegen error: global `\00", align 1
+@.str.2597 = private unnamed_addr constant [15 x i8] c"` not declared\00", align 1
+@.str.2598 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.2599 = private unnamed_addr constant [24 x i8] c"codegen::emit_stmt_list\00", align 1
+@.str.2600 = private unnamed_addr constant [34 x i8] c"codegen error: break outside loop\00", align 1
+@.str.2601 = private unnamed_addr constant [37 x i8] c"codegen error: continue outside loop\00", align 1
+@.str.2602 = private unnamed_addr constant [48 x i8] c"codegen error: unsupported statement type (tag=\00", align 1
+@.i2s_fmt.2603 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.2604 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.match_fn.2605 = private unnamed_addr constant [19 x i8] c"codegen::emit_stmt\00", align 1
+@.str.2606 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2607 = private unnamed_addr constant [2 x i8] c"_\00", align 1
+@.str.2608 = private unnamed_addr constant [3 x i8] c"0x\00", align 1
+@.str.2609 = private unnamed_addr constant [3 x i8] c"0X\00", align 1
+@.str.2610 = private unnamed_addr constant [3 x i8] c"0b\00", align 1
+@.str.2611 = private unnamed_addr constant [3 x i8] c"0B\00", align 1
+@.str.2612 = private unnamed_addr constant [3 x i8] c"0o\00", align 1
+@.str.2613 = private unnamed_addr constant [3 x i8] c"0O\00", align 1
+@.str.2614 = private unnamed_addr constant [2 x i8] c"0\00", align 1
+@.str.2615 = private unnamed_addr constant [2 x i8] c"1\00", align 1
+@.str.2616 = private unnamed_addr constant [2 x i8] c"2\00", align 1
+@.str.2617 = private unnamed_addr constant [2 x i8] c"3\00", align 1
+@.str.2618 = private unnamed_addr constant [2 x i8] c"4\00", align 1
+@.str.2619 = private unnamed_addr constant [2 x i8] c"5\00", align 1
+@.str.2620 = private unnamed_addr constant [2 x i8] c"6\00", align 1
+@.str.2621 = private unnamed_addr constant [2 x i8] c"7\00", align 1
+@.str.2622 = private unnamed_addr constant [2 x i8] c"8\00", align 1
+@.str.2623 = private unnamed_addr constant [2 x i8] c"9\00", align 1
+@.str.2624 = private unnamed_addr constant [2 x i8] c"a\00", align 1
+@.str.2625 = private unnamed_addr constant [2 x i8] c"A\00", align 1
+@.str.2626 = private unnamed_addr constant [2 x i8] c"b\00", align 1
+@.str.2627 = private unnamed_addr constant [2 x i8] c"B\00", align 1
+@.str.2628 = private unnamed_addr constant [2 x i8] c"c\00", align 1
+@.str.2629 = private unnamed_addr constant [2 x i8] c"C\00", align 1
+@.str.2630 = private unnamed_addr constant [2 x i8] c"d\00", align 1
+@.str.2631 = private unnamed_addr constant [2 x i8] c"D\00", align 1
+@.str.2632 = private unnamed_addr constant [2 x i8] c"e\00", align 1
+@.str.2633 = private unnamed_addr constant [2 x i8] c"E\00", align 1
+@.str.2634 = private unnamed_addr constant [2 x i8] c"f\00", align 1
+@.str.2635 = private unnamed_addr constant [2 x i8] c"F\00", align 1
+@.str.2636 = private unnamed_addr constant [2 x i8] c"1\00", align 1
+@.str.2637 = private unnamed_addr constant [2 x i8] c"0\00", align 1
+@.str.2638 = private unnamed_addr constant [2 x i8] c"1\00", align 1
+@.str.2639 = private unnamed_addr constant [2 x i8] c"2\00", align 1
+@.str.2640 = private unnamed_addr constant [2 x i8] c"3\00", align 1
+@.str.2641 = private unnamed_addr constant [2 x i8] c"4\00", align 1
+@.str.2642 = private unnamed_addr constant [2 x i8] c"5\00", align 1
+@.str.2643 = private unnamed_addr constant [2 x i8] c"6\00", align 1
+@.str.2644 = private unnamed_addr constant [2 x i8] c"7\00", align 1
+@.str.2645 = private unnamed_addr constant [2 x i8] c"8\00", align 1
+@.str.2646 = private unnamed_addr constant [2 x i8] c"9\00", align 1
+@.str.2647 = private unnamed_addr constant [11 x i8] c".float_str\00", align 1
+@.str.2648 = private unnamed_addr constant [18 x i8] c"forge_float_parse\00", align 1
+@.str.2649 = private unnamed_addr constant [11 x i8] c"float_bits\00", align 1
+@.str.2650 = private unnamed_addr constant [5 x i8] c"true\00", align 1
+@.str.2651 = private unnamed_addr constant [5 x i8] c".str\00", align 1
+@.str.2652 = private unnamed_addr constant [8 x i8] c"str_i64\00", align 1
+@.str.2653 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2654 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2655 = private unnamed_addr constant [7 x i8] c"fn_ref\00", align 1
+@.str.2656 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
+@.str.2657 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
+@.str.2658 = private unnamed_addr constant [8 x i8] c"fn_wrap\00", align 1
+@.str.2659 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @.str.2660 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2661 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2662 = private unnamed_addr constant [7 x i8] c"fn_ref\00", align 1
-@.str.2663 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
-@.str.2664 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
-@.str.2665 = private unnamed_addr constant [8 x i8] c"fn_wrap\00", align 1
-@.str.2666 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2667 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2668 = private unnamed_addr constant [11 x i8] c"fn_ref_i64\00", align 1
-@.str.2669 = private unnamed_addr constant [27 x i8] c"undefined qualified name `\00", align 1
-@.str.2670 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2661 = private unnamed_addr constant [11 x i8] c"fn_ref_i64\00", align 1
+@.str.2662 = private unnamed_addr constant [21 x i8] c"undefined variable `\00", align 1
+@.str.2663 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2664 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2665 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2666 = private unnamed_addr constant [7 x i8] c"fn_ref\00", align 1
+@.str.2667 = private unnamed_addr constant [16 x i8] c"forge_array_new\00", align 1
+@.str.2668 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
+@.str.2669 = private unnamed_addr constant [8 x i8] c"fn_wrap\00", align 1
+@.str.2670 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @.str.2671 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2672 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2673 = private unnamed_addr constant [35 x i8] c"assignment to undefined variable `\00", align 1
+@.str.2672 = private unnamed_addr constant [11 x i8] c"fn_ref_i64\00", align 1
+@.str.2673 = private unnamed_addr constant [27 x i8] c"undefined qualified name `\00", align 1
 @.str.2674 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@.str.2675 = private unnamed_addr constant [34 x i8] c"unsupported expression type (tag=\00", align 1
-@.i2s_fmt.2676 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.2677 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.match_fn.2678 = private unnamed_addr constant [19 x i8] c"codegen::emit_expr\00", align 1
-@.str.2679 = private unnamed_addr constant [9 x i8] c"ife_cond\00", align 1
-@.str.2680 = private unnamed_addr constant [9 x i8] c"ife_then\00", align 1
-@.str.2681 = private unnamed_addr constant [9 x i8] c"ife_else\00", align 1
-@.str.2682 = private unnamed_addr constant [8 x i8] c"ife_end\00", align 1
-@.str.2683 = private unnamed_addr constant [11 x i8] c"ife_result\00", align 1
-@.str.2684 = private unnamed_addr constant [8 x i8] c"ife_val\00", align 1
-@.str.2685 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2686 = private unnamed_addr constant [42 x i8] c"field assignment on non-struct value (ty=\00", align 1
-@.str.2687 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.str.2688 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
-@.str.2689 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@.str.2690 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
-@.str.2691 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
-@.str.2692 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@.str.2693 = private unnamed_addr constant [7 x i8] c"fa_ptr\00", align 1
-@.str.2694 = private unnamed_addr constant [7 x i8] c"fa_fld\00", align 1
-@.str.2695 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.2696 = private unnamed_addr constant [28 x i8] c"codegen::emit_stmt_as_value\00", align 1
-@.str.2697 = private unnamed_addr constant [9 x i8] c"sif_cond\00", align 1
-@.str.2698 = private unnamed_addr constant [9 x i8] c"sif_then\00", align 1
-@.str.2699 = private unnamed_addr constant [9 x i8] c"sif_else\00", align 1
-@.str.2700 = private unnamed_addr constant [8 x i8] c"sif_end\00", align 1
-@.str.2701 = private unnamed_addr constant [11 x i8] c"sif_result\00", align 1
-@.str.2702 = private unnamed_addr constant [8 x i8] c"sif_val\00", align 1
-@.str.2703 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2704 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.2705 = private unnamed_addr constant [25 x i8] c"codegen::emit_block_loop\00", align 1
-@.match_fn.2706 = private unnamed_addr constant [25 x i8] c"codegen::emit_block_loop\00", align 1
-@.str.2707 = private unnamed_addr constant [8 x i8] c"ptr_off\00", align 1
-@.str.2708 = private unnamed_addr constant [8 x i8] c"ptr_idx\00", align 1
-@.str.2709 = private unnamed_addr constant [9 x i8] c"ptr_byte\00", align 1
-@.str.2710 = private unnamed_addr constant [13 x i8] c"ptr_byte_ext\00", align 1
-@.str.2711 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
-@.str.2712 = private unnamed_addr constant [9 x i8] c"list_idx\00", align 1
-@.str.2713 = private unnamed_addr constant [39 x i8] c"indexing on non-string/list value (ty=\00", align 1
-@.str.2714 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.str.2715 = private unnamed_addr constant [12 x i8] c"idx_off_int\00", align 1
-@.str.2716 = private unnamed_addr constant [8 x i8] c"idx_off\00", align 1
-@.str.2717 = private unnamed_addr constant [9 x i8] c"idx_byte\00", align 1
-@.str.2718 = private unnamed_addr constant [12 x i8] c"idx_buf_int\00", align 1
-@.str.2719 = private unnamed_addr constant [12 x i8] c"idx_nul_int\00", align 1
-@.str.2720 = private unnamed_addr constant [8 x i8] c"idx_nul\00", align 1
-@.str.2721 = private unnamed_addr constant [11 x i8] c"idx_result\00", align 1
-@.match_fn.2722 = private unnamed_addr constant [27 x i8] c"codegen::emit_field_access\00", align 1
-@.str.2723 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@.str.2724 = private unnamed_addr constant [8 x i8] c"len_arg\00", align 1
-@.str.2725 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
-@.str.2726 = private unnamed_addr constant [12 x i8] c"strlen_call\00", align 1
+@.str.2675 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2676 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2677 = private unnamed_addr constant [35 x i8] c"assignment to undefined variable `\00", align 1
+@.str.2678 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2679 = private unnamed_addr constant [34 x i8] c"unsupported expression type (tag=\00", align 1
+@.i2s_fmt.2680 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.2681 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.match_fn.2682 = private unnamed_addr constant [19 x i8] c"codegen::emit_expr\00", align 1
+@.str.2683 = private unnamed_addr constant [9 x i8] c"ife_cond\00", align 1
+@.str.2684 = private unnamed_addr constant [9 x i8] c"ife_then\00", align 1
+@.str.2685 = private unnamed_addr constant [9 x i8] c"ife_else\00", align 1
+@.str.2686 = private unnamed_addr constant [8 x i8] c"ife_end\00", align 1
+@.str.2687 = private unnamed_addr constant [11 x i8] c"ife_result\00", align 1
+@.str.2688 = private unnamed_addr constant [8 x i8] c"ife_val\00", align 1
+@.str.2689 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2690 = private unnamed_addr constant [42 x i8] c"field assignment on non-struct value (ty=\00", align 1
+@.str.2691 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.str.2692 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
+@.str.2693 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2694 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
+@.str.2695 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
+@.str.2696 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2697 = private unnamed_addr constant [7 x i8] c"fa_ptr\00", align 1
+@.str.2698 = private unnamed_addr constant [7 x i8] c"fa_fld\00", align 1
+@.str.2699 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.2700 = private unnamed_addr constant [28 x i8] c"codegen::emit_stmt_as_value\00", align 1
+@.str.2701 = private unnamed_addr constant [9 x i8] c"sif_cond\00", align 1
+@.str.2702 = private unnamed_addr constant [9 x i8] c"sif_then\00", align 1
+@.str.2703 = private unnamed_addr constant [9 x i8] c"sif_else\00", align 1
+@.str.2704 = private unnamed_addr constant [8 x i8] c"sif_end\00", align 1
+@.str.2705 = private unnamed_addr constant [11 x i8] c"sif_result\00", align 1
+@.str.2706 = private unnamed_addr constant [8 x i8] c"sif_val\00", align 1
+@.str.2707 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2708 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.2709 = private unnamed_addr constant [25 x i8] c"codegen::emit_block_loop\00", align 1
+@.match_fn.2710 = private unnamed_addr constant [25 x i8] c"codegen::emit_block_loop\00", align 1
+@.str.2711 = private unnamed_addr constant [8 x i8] c"ptr_off\00", align 1
+@.str.2712 = private unnamed_addr constant [8 x i8] c"ptr_idx\00", align 1
+@.str.2713 = private unnamed_addr constant [9 x i8] c"ptr_byte\00", align 1
+@.str.2714 = private unnamed_addr constant [13 x i8] c"ptr_byte_ext\00", align 1
+@.str.2715 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
+@.str.2716 = private unnamed_addr constant [9 x i8] c"list_idx\00", align 1
+@.str.2717 = private unnamed_addr constant [39 x i8] c"indexing on non-string/list value (ty=\00", align 1
+@.str.2718 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.str.2719 = private unnamed_addr constant [12 x i8] c"idx_off_int\00", align 1
+@.str.2720 = private unnamed_addr constant [8 x i8] c"idx_off\00", align 1
+@.str.2721 = private unnamed_addr constant [9 x i8] c"idx_byte\00", align 1
+@.str.2722 = private unnamed_addr constant [12 x i8] c"idx_buf_int\00", align 1
+@.str.2723 = private unnamed_addr constant [12 x i8] c"idx_nul_int\00", align 1
+@.str.2724 = private unnamed_addr constant [8 x i8] c"idx_nul\00", align 1
+@.str.2725 = private unnamed_addr constant [11 x i8] c"idx_result\00", align 1
+@.match_fn.2726 = private unnamed_addr constant [27 x i8] c"codegen::emit_field_access\00", align 1
 @.str.2727 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@.str.2728 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
-@.str.2729 = private unnamed_addr constant [9 x i8] c"list_len\00", align 1
-@.str.2730 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@.str.2731 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
-@.str.2732 = private unnamed_addr constant [8 x i8] c"map_len\00", align 1
-@.str.2733 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2734 = private unnamed_addr constant [38 x i8] c"field access on non-struct value (ty=\00", align 1
-@.str.2735 = private unnamed_addr constant [9 x i8] c", field=\00", align 1
-@.str.2736 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.str.2737 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
-@.str.2738 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@.str.2739 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
-@.str.2740 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
-@.str.2741 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@.str.2742 = private unnamed_addr constant [8 x i8] c"obj_ptr\00", align 1
-@.str.2743 = private unnamed_addr constant [8 x i8] c"fld_ptr\00", align 1
-@.str.2744 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.2745 = private unnamed_addr constant [19 x i8] c"codegen::emit_call\00", align 1
-@.str.2746 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@.str.2747 = private unnamed_addr constant [8 x i8] c"len_arg\00", align 1
-@.str.2748 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
-@.str.2749 = private unnamed_addr constant [12 x i8] c"strlen_call\00", align 1
-@.str.2750 = private unnamed_addr constant [10 x i8] c"substring\00", align 1
-@.str.2751 = private unnamed_addr constant [9 x i8] c"contains\00", align 1
-@.str.2752 = private unnamed_addr constant [12 x i8] c"starts_with\00", align 1
-@.str.2753 = private unnamed_addr constant [10 x i8] c"ends_with\00", align 1
-@.str.2754 = private unnamed_addr constant [9 x i8] c"index_of\00", align 1
-@.str.2755 = private unnamed_addr constant [11 x i8] c"forge_str_\00", align 1
-@.str.2756 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@.str.2757 = private unnamed_addr constant [8 x i8] c"str_arg\00", align 1
-@.str.2758 = private unnamed_addr constant [8 x i8] c"replace\00", align 1
-@.str.2759 = private unnamed_addr constant [5 x i8] c"trim\00", align 1
+@.str.2728 = private unnamed_addr constant [8 x i8] c"len_arg\00", align 1
+@.str.2729 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
+@.str.2730 = private unnamed_addr constant [12 x i8] c"strlen_call\00", align 1
+@.str.2731 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@.str.2732 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
+@.str.2733 = private unnamed_addr constant [9 x i8] c"list_len\00", align 1
+@.str.2734 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@.str.2735 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
+@.str.2736 = private unnamed_addr constant [8 x i8] c"map_len\00", align 1
+@.str.2737 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2738 = private unnamed_addr constant [38 x i8] c"field access on non-struct value (ty=\00", align 1
+@.str.2739 = private unnamed_addr constant [9 x i8] c", field=\00", align 1
+@.str.2740 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.str.2741 = private unnamed_addr constant [17 x i8] c"unknown struct `\00", align 1
+@.str.2742 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2743 = private unnamed_addr constant [16 x i8] c"unknown field `\00", align 1
+@.str.2744 = private unnamed_addr constant [14 x i8] c"` on struct `\00", align 1
+@.str.2745 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2746 = private unnamed_addr constant [8 x i8] c"obj_ptr\00", align 1
+@.str.2747 = private unnamed_addr constant [8 x i8] c"fld_ptr\00", align 1
+@.str.2748 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.2749 = private unnamed_addr constant [19 x i8] c"codegen::emit_call\00", align 1
+@.str.2750 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@.str.2751 = private unnamed_addr constant [8 x i8] c"len_arg\00", align 1
+@.str.2752 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
+@.str.2753 = private unnamed_addr constant [12 x i8] c"strlen_call\00", align 1
+@.str.2754 = private unnamed_addr constant [10 x i8] c"substring\00", align 1
+@.str.2755 = private unnamed_addr constant [9 x i8] c"contains\00", align 1
+@.str.2756 = private unnamed_addr constant [12 x i8] c"starts_with\00", align 1
+@.str.2757 = private unnamed_addr constant [10 x i8] c"ends_with\00", align 1
+@.str.2758 = private unnamed_addr constant [9 x i8] c"index_of\00", align 1
+@.str.2759 = private unnamed_addr constant [11 x i8] c"forge_str_\00", align 1
 @.str.2760 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@.str.2761 = private unnamed_addr constant [15 x i8] c"forge_str_trim\00", align 1
-@.str.2762 = private unnamed_addr constant [8 x i8] c"trimmed\00", align 1
-@.str.2763 = private unnamed_addr constant [9 x i8] c"trim_i64\00", align 1
-@.str.2764 = private unnamed_addr constant [9 x i8] c"to_upper\00", align 1
-@.str.2765 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
-@.str.2766 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@.str.2767 = private unnamed_addr constant [19 x i8] c"forge_str_to_upper\00", align 1
-@.str.2768 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
-@.str.2769 = private unnamed_addr constant [10 x i8] c"upper_i64\00", align 1
-@.str.2770 = private unnamed_addr constant [9 x i8] c"to_lower\00", align 1
-@.str.2771 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
-@.str.2772 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@.str.2773 = private unnamed_addr constant [19 x i8] c"forge_str_to_lower\00", align 1
-@.str.2774 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
-@.str.2775 = private unnamed_addr constant [10 x i8] c"lower_i64\00", align 1
-@.str.2776 = private unnamed_addr constant [6 x i8] c"split\00", align 1
-@.str.2777 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@.str.2778 = private unnamed_addr constant [8 x i8] c"sep_arg\00", align 1
-@.str.2779 = private unnamed_addr constant [16 x i8] c"forge_str_split\00", align 1
-@.str.2780 = private unnamed_addr constant [13 x i8] c"split_result\00", align 1
-@.str.2781 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2782 = private unnamed_addr constant [10 x i8] c"char_code\00", align 1
-@.str.2783 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
-@.str.2784 = private unnamed_addr constant [10 x i8] c"char_byte\00", align 1
-@.str.2785 = private unnamed_addr constant [10 x i8] c"char_code\00", align 1
-@.str.2786 = private unnamed_addr constant [16 x i8] c"string method `\00", align 1
-@.str.2787 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
-@.str.2788 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@.str.2789 = private unnamed_addr constant [4 x i8] c"len\00", align 1
-@.str.2790 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
-@.str.2791 = private unnamed_addr constant [9 x i8] c"list_len\00", align 1
-@.str.2792 = private unnamed_addr constant [5 x i8] c"push\00", align 1
-@.str.2793 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
-@.str.2794 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2795 = private unnamed_addr constant [4 x i8] c"pop\00", align 1
-@.str.2796 = private unnamed_addr constant [16 x i8] c"forge_array_pop\00", align 1
-@.str.2797 = private unnamed_addr constant [9 x i8] c"list_pop\00", align 1
-@.str.2798 = private unnamed_addr constant [4 x i8] c"get\00", align 1
-@.str.2799 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
-@.str.2800 = private unnamed_addr constant [9 x i8] c"list_get\00", align 1
-@.str.2801 = private unnamed_addr constant [4 x i8] c"set\00", align 1
-@.str.2802 = private unnamed_addr constant [4 x i8] c"map\00", align 1
-@.str.2803 = private unnamed_addr constant [16 x i8] c"forge_array_map\00", align 1
-@.str.2804 = private unnamed_addr constant [4 x i8] c"map\00", align 1
-@.str.2805 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2806 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
-@.str.2807 = private unnamed_addr constant [19 x i8] c"forge_array_filter\00", align 1
-@.str.2808 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@.str.2761 = private unnamed_addr constant [8 x i8] c"str_arg\00", align 1
+@.str.2762 = private unnamed_addr constant [8 x i8] c"replace\00", align 1
+@.str.2763 = private unnamed_addr constant [5 x i8] c"trim\00", align 1
+@.str.2764 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@.str.2765 = private unnamed_addr constant [15 x i8] c"forge_str_trim\00", align 1
+@.str.2766 = private unnamed_addr constant [8 x i8] c"trimmed\00", align 1
+@.str.2767 = private unnamed_addr constant [9 x i8] c"trim_i64\00", align 1
+@.str.2768 = private unnamed_addr constant [9 x i8] c"to_upper\00", align 1
+@.str.2769 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
+@.str.2770 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@.str.2771 = private unnamed_addr constant [19 x i8] c"forge_str_to_upper\00", align 1
+@.str.2772 = private unnamed_addr constant [6 x i8] c"upper\00", align 1
+@.str.2773 = private unnamed_addr constant [10 x i8] c"upper_i64\00", align 1
+@.str.2774 = private unnamed_addr constant [9 x i8] c"to_lower\00", align 1
+@.str.2775 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
+@.str.2776 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@.str.2777 = private unnamed_addr constant [19 x i8] c"forge_str_to_lower\00", align 1
+@.str.2778 = private unnamed_addr constant [6 x i8] c"lower\00", align 1
+@.str.2779 = private unnamed_addr constant [10 x i8] c"lower_i64\00", align 1
+@.str.2780 = private unnamed_addr constant [6 x i8] c"split\00", align 1
+@.str.2781 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@.str.2782 = private unnamed_addr constant [8 x i8] c"sep_arg\00", align 1
+@.str.2783 = private unnamed_addr constant [16 x i8] c"forge_str_split\00", align 1
+@.str.2784 = private unnamed_addr constant [13 x i8] c"split_result\00", align 1
+@.str.2785 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2786 = private unnamed_addr constant [10 x i8] c"char_code\00", align 1
+@.str.2787 = private unnamed_addr constant [9 x i8] c"str_self\00", align 1
+@.str.2788 = private unnamed_addr constant [10 x i8] c"char_byte\00", align 1
+@.str.2789 = private unnamed_addr constant [10 x i8] c"char_code\00", align 1
+@.str.2790 = private unnamed_addr constant [16 x i8] c"string method `\00", align 1
+@.str.2791 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
+@.str.2792 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@.str.2793 = private unnamed_addr constant [4 x i8] c"len\00", align 1
+@.str.2794 = private unnamed_addr constant [16 x i8] c"forge_array_len\00", align 1
+@.str.2795 = private unnamed_addr constant [9 x i8] c"list_len\00", align 1
+@.str.2796 = private unnamed_addr constant [5 x i8] c"push\00", align 1
+@.str.2797 = private unnamed_addr constant [17 x i8] c"forge_array_push\00", align 1
+@.str.2798 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2799 = private unnamed_addr constant [4 x i8] c"pop\00", align 1
+@.str.2800 = private unnamed_addr constant [16 x i8] c"forge_array_pop\00", align 1
+@.str.2801 = private unnamed_addr constant [9 x i8] c"list_pop\00", align 1
+@.str.2802 = private unnamed_addr constant [4 x i8] c"get\00", align 1
+@.str.2803 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
+@.str.2804 = private unnamed_addr constant [9 x i8] c"list_get\00", align 1
+@.str.2805 = private unnamed_addr constant [4 x i8] c"set\00", align 1
+@.str.2806 = private unnamed_addr constant [4 x i8] c"map\00", align 1
+@.str.2807 = private unnamed_addr constant [16 x i8] c"forge_array_map\00", align 1
+@.str.2808 = private unnamed_addr constant [4 x i8] c"map\00", align 1
 @.str.2809 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2810 = private unnamed_addr constant [8 x i8] c"foreach\00", align 1
-@.str.2811 = private unnamed_addr constant [20 x i8] c"forge_array_foreach\00", align 1
-@.str.2812 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2813 = private unnamed_addr constant [7 x i8] c"reduce\00", align 1
-@.str.2814 = private unnamed_addr constant [14 x i8] c"list method `\00", align 1
-@.str.2815 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
-@.str.2816 = private unnamed_addr constant [4 x i8] c"get\00", align 1
-@.str.2817 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
-@.str.2818 = private unnamed_addr constant [19 x i8] c"forge_map_get_cstr\00", align 1
-@.str.2819 = private unnamed_addr constant [8 x i8] c"map_get\00", align 1
-@.str.2820 = private unnamed_addr constant [4 x i8] c"has\00", align 1
-@.str.2821 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
-@.str.2822 = private unnamed_addr constant [19 x i8] c"forge_map_has_cstr\00", align 1
-@.str.2823 = private unnamed_addr constant [8 x i8] c"map_has\00", align 1
-@.str.2824 = private unnamed_addr constant [4 x i8] c"set\00", align 1
-@.str.2825 = private unnamed_addr constant [4 x i8] c"len\00", align 1
-@.str.2826 = private unnamed_addr constant [7 x i8] c"length\00", align 1
-@.str.2827 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
-@.str.2828 = private unnamed_addr constant [8 x i8] c"map_len\00", align 1
-@.str.2829 = private unnamed_addr constant [5 x i8] c"keys\00", align 1
-@.str.2830 = private unnamed_addr constant [20 x i8] c"forge_map_keys_cstr\00", align 1
-@.str.2831 = private unnamed_addr constant [9 x i8] c"map_keys\00", align 1
-@.str.2832 = private unnamed_addr constant [13 x i8] c"map method `\00", align 1
-@.str.2833 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
-@.str.2834 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2835 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2836 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2837 = private unnamed_addr constant [42 x i8] c"method call on non-struct/enum value (ty=\00", align 1
-@.str.2838 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.str.2839 = private unnamed_addr constant [3 x i8] c"__\00", align 1
+@.str.2810 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@.str.2811 = private unnamed_addr constant [19 x i8] c"forge_array_filter\00", align 1
+@.str.2812 = private unnamed_addr constant [7 x i8] c"filter\00", align 1
+@.str.2813 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2814 = private unnamed_addr constant [8 x i8] c"foreach\00", align 1
+@.str.2815 = private unnamed_addr constant [20 x i8] c"forge_array_foreach\00", align 1
+@.str.2816 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2817 = private unnamed_addr constant [7 x i8] c"reduce\00", align 1
+@.str.2818 = private unnamed_addr constant [14 x i8] c"list method `\00", align 1
+@.str.2819 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
+@.str.2820 = private unnamed_addr constant [8 x i8] c"map_ptr\00", align 1
+@.str.2821 = private unnamed_addr constant [4 x i8] c"get\00", align 1
+@.str.2822 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
+@.str.2823 = private unnamed_addr constant [19 x i8] c"forge_map_get_cstr\00", align 1
+@.str.2824 = private unnamed_addr constant [8 x i8] c"map_get\00", align 1
+@.str.2825 = private unnamed_addr constant [4 x i8] c"has\00", align 1
+@.str.2826 = private unnamed_addr constant [8 x i8] c"map_key\00", align 1
+@.str.2827 = private unnamed_addr constant [19 x i8] c"forge_map_has_cstr\00", align 1
+@.str.2828 = private unnamed_addr constant [8 x i8] c"map_has\00", align 1
+@.str.2829 = private unnamed_addr constant [4 x i8] c"set\00", align 1
+@.str.2830 = private unnamed_addr constant [4 x i8] c"len\00", align 1
+@.str.2831 = private unnamed_addr constant [7 x i8] c"length\00", align 1
+@.str.2832 = private unnamed_addr constant [19 x i8] c"forge_map_len_cstr\00", align 1
+@.str.2833 = private unnamed_addr constant [8 x i8] c"map_len\00", align 1
+@.str.2834 = private unnamed_addr constant [5 x i8] c"keys\00", align 1
+@.str.2835 = private unnamed_addr constant [20 x i8] c"forge_map_keys_cstr\00", align 1
+@.str.2836 = private unnamed_addr constant [9 x i8] c"map_keys\00", align 1
+@.str.2837 = private unnamed_addr constant [13 x i8] c"map method `\00", align 1
+@.str.2838 = private unnamed_addr constant [18 x i8] c"` not implemented\00", align 1
+@.str.2839 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
 @.str.2840 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2841 = private unnamed_addr constant [13 x i8] c"fn_field_obj\00", align 1
-@.str.2842 = private unnamed_addr constant [13 x i8] c"fn_field_ptr\00", align 1
-@.str.2843 = private unnamed_addr constant [13 x i8] c"fn_field_val\00", align 1
-@.str.2844 = private unnamed_addr constant [19 x i8] c"undefined method `\00", align 1
-@.str.2845 = private unnamed_addr constant [2 x i8] c".\00", align 1
-@.str.2846 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@.str.2847 = private unnamed_addr constant [9 x i8] c"methcall\00", align 1
-@.match_fn.2848 = private unnamed_addr constant [26 x i8] c"codegen::trait_method_idx\00", align 1
-@.str.2849 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.2850 = private unnamed_addr constant [29 x i8] c"codegen::trait_method_ret_ty\00", align 1
-@.str.2851 = private unnamed_addr constant [9 x i8] c"tobj_ptr\00", align 1
-@.str.2852 = private unnamed_addr constant [25 x i8] c"forge_trait_object_value\00", align 1
-@.str.2853 = private unnamed_addr constant [9 x i8] c"concrete\00", align 1
-@.str.2854 = private unnamed_addr constant [26 x i8] c"forge_trait_object_vtable\00", align 1
-@.str.2855 = private unnamed_addr constant [7 x i8] c"vtable\00", align 1
-@.str.2856 = private unnamed_addr constant [22 x i8] c"trait has no method `\00", align 1
-@.str.2857 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@.str.2858 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
-@.str.2859 = private unnamed_addr constant [8 x i8] c"vmethod\00", align 1
-@.str.2860 = private unnamed_addr constant [21 x i8] c"forge_closure_call_1\00", align 1
-@.str.2861 = private unnamed_addr constant [6 x i8] c"tcall\00", align 1
-@.str.2862 = private unnamed_addr constant [21 x i8] c"forge_closure_call_2\00", align 1
-@.str.2863 = private unnamed_addr constant [6 x i8] c"tcall\00", align 1
-@.str.2864 = private unnamed_addr constant [18 x i8] c"expected argument\00", align 1
-@.match_fn.2865 = private unnamed_addr constant [24 x i8] c"codegen::emit_first_arg\00", align 1
-@.str.2866 = private unnamed_addr constant [8 x i8] c"println\00", align 1
-@.str.2867 = private unnamed_addr constant [9 x i8] c"eprintln\00", align 1
-@.str.2868 = private unnamed_addr constant [7 x i8] c"string\00", align 1
-@.str.2869 = private unnamed_addr constant [4 x i8] c"int\00", align 1
-@.str.2870 = private unnamed_addr constant [6 x i8] c"float\00", align 1
-@.str.2871 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
-@.str.2872 = private unnamed_addr constant [21 x i8] c"undefined function `\00", align 1
-@.str.2873 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@.str.2874 = private unnamed_addr constant [8 x i8] c"calltmp\00", align 1
-@.str.2875 = private unnamed_addr constant [23 x i8] c"string() expects 1 arg\00", align 1
-@.str.2876 = private unnamed_addr constant [22 x i8] c"forge_float_to_string\00", align 1
-@.str.2877 = private unnamed_addr constant [4 x i8] c"f2s\00", align 1
-@.str.2878 = private unnamed_addr constant [8 x i8] c"f2s_i64\00", align 1
-@.str.2879 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.2880 = private unnamed_addr constant [9 x i8] c".i2s_fmt\00", align 1
-@.str.2881 = private unnamed_addr constant [9 x i8] c"snprintf\00", align 1
-@.str.2882 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2883 = private unnamed_addr constant [11 x i8] c"i2s_result\00", align 1
-@.match_fn.2884 = private unnamed_addr constant [28 x i8] c"codegen::emit_int_to_string\00", align 1
-@.str.2885 = private unnamed_addr constant [20 x i8] c"int() expects 1 arg\00", align 1
-@.str.2886 = private unnamed_addr constant [9 x i8] c"atoi_arg\00", align 1
-@.str.2887 = private unnamed_addr constant [5 x i8] c"atoi\00", align 1
-@.str.2888 = private unnamed_addr constant [10 x i8] c"atoi_call\00", align 1
-@.str.2889 = private unnamed_addr constant [9 x i8] c"atoi_ext\00", align 1
-@.match_fn.2890 = private unnamed_addr constant [28 x i8] c"codegen::emit_string_to_int\00", align 1
-@.str.2891 = private unnamed_addr constant [22 x i8] c"float() expects 1 arg\00", align 1
-@.str.2892 = private unnamed_addr constant [12 x i8] c"f_parse_arg\00", align 1
-@.str.2893 = private unnamed_addr constant [18 x i8] c"forge_float_parse\00", align 1
-@.str.2894 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
-@.str.2895 = private unnamed_addr constant [4 x i8] c"i2f\00", align 1
-@.str.2896 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
-@.match_fn.2897 = private unnamed_addr constant [30 x i8] c"codegen::emit_string_to_float\00", align 1
-@.str.2898 = private unnamed_addr constant [27 x i8] c"panic() expects 1 argument\00", align 1
-@.str.2899 = private unnamed_addr constant [8 x i8] c"panic: \00", align 1
-@.str.2900 = private unnamed_addr constant [14 x i8] c".panic_prefix\00", align 1
-@.str.2901 = private unnamed_addr constant [11 x i8] c"prefix_i64\00", align 1
-@.str.2902 = private unnamed_addr constant [10 x i8] c"panic_msg\00", align 1
-@.str.2903 = private unnamed_addr constant [15 x i8] c"forge_eprintln\00", align 1
-@.str.2904 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2905 = private unnamed_addr constant [5 x i8] c"exit\00", align 1
-@.str.2906 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.2907 = private unnamed_addr constant [20 x i8] c"codegen::emit_panic\00", align 1
-@.str.2908 = private unnamed_addr constant [25 x i8] c"eprintln() expects 1 arg\00", align 1
-@.str.2909 = private unnamed_addr constant [22 x i8] c"forge_float_to_string\00", align 1
-@.str.2910 = private unnamed_addr constant [5 x i8] c"ef2s\00", align 1
-@.str.2911 = private unnamed_addr constant [9 x i8] c"ef2s_i64\00", align 1
-@.str.2912 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.2913 = private unnamed_addr constant [12 x i8] c".eprint_fmt\00", align 1
-@.str.2914 = private unnamed_addr constant [9 x i8] c"snprintf\00", align 1
-@.str.2915 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2916 = private unnamed_addr constant [11 x i8] c"eprint_str\00", align 1
-@.str.2917 = private unnamed_addr constant [11 x i8] c"eprint_arg\00", align 1
-@.str.2918 = private unnamed_addr constant [15 x i8] c"forge_eprintln\00", align 1
-@.str.2919 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.2920 = private unnamed_addr constant [23 x i8] c"codegen::emit_eprintln\00", align 1
-@.str.2921 = private unnamed_addr constant [5 x i8] c".str\00", align 1
-@.str.2922 = private unnamed_addr constant [8 x i8] c"str_i64\00", align 1
-@.str.2923 = private unnamed_addr constant [22 x i8] c"forge_float_to_string\00", align 1
-@.str.2924 = private unnamed_addr constant [4 x i8] c"f2s\00", align 1
-@.str.2925 = private unnamed_addr constant [8 x i8] c"f2s_i64\00", align 1
-@.match_fn.2926 = private unnamed_addr constant [22 x i8] c"codegen::emit_println\00", align 1
-@.str.2927 = private unnamed_addr constant [27 x i8] c"println expects 1 argument\00", align 1
-@.match_fn.2928 = private unnamed_addr constant [22 x i8] c"codegen::emit_println\00", align 1
-@.str.2929 = private unnamed_addr constant [8 x i8] c"str_ptr\00", align 1
-@.str.2930 = private unnamed_addr constant [5 x i8] c"puts\00", align 1
-@.str.2931 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2932 = private unnamed_addr constant [9 x i8] c"concat_l\00", align 1
-@.str.2933 = private unnamed_addr constant [9 x i8] c"concat_r\00", align 1
-@.str.2934 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
-@.str.2935 = private unnamed_addr constant [8 x i8] c"lhs_len\00", align 1
-@.str.2936 = private unnamed_addr constant [8 x i8] c"rhs_len\00", align 1
-@.str.2937 = private unnamed_addr constant [13 x i8] c"concat_total\00", align 1
-@.str.2938 = private unnamed_addr constant [12 x i8] c"concat_size\00", align 1
-@.str.2939 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
-@.str.2940 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2941 = private unnamed_addr constant [8 x i8] c"buf_int\00", align 1
-@.str.2942 = private unnamed_addr constant [9 x i8] c"dst2_int\00", align 1
-@.str.2943 = private unnamed_addr constant [5 x i8] c"dst2\00", align 1
-@.str.2944 = private unnamed_addr constant [11 x i8] c"rhs_len_p1\00", align 1
+@.str.2841 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2842 = private unnamed_addr constant [42 x i8] c"method call on non-struct/enum value (ty=\00", align 1
+@.str.2843 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.str.2844 = private unnamed_addr constant [3 x i8] c"__\00", align 1
+@.str.2845 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2846 = private unnamed_addr constant [13 x i8] c"fn_field_obj\00", align 1
+@.str.2847 = private unnamed_addr constant [13 x i8] c"fn_field_ptr\00", align 1
+@.str.2848 = private unnamed_addr constant [13 x i8] c"fn_field_val\00", align 1
+@.str.2849 = private unnamed_addr constant [19 x i8] c"undefined method `\00", align 1
+@.str.2850 = private unnamed_addr constant [2 x i8] c".\00", align 1
+@.str.2851 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2852 = private unnamed_addr constant [9 x i8] c"methcall\00", align 1
+@.match_fn.2853 = private unnamed_addr constant [26 x i8] c"codegen::trait_method_idx\00", align 1
+@.str.2854 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.2855 = private unnamed_addr constant [29 x i8] c"codegen::trait_method_ret_ty\00", align 1
+@.str.2856 = private unnamed_addr constant [9 x i8] c"tobj_ptr\00", align 1
+@.str.2857 = private unnamed_addr constant [25 x i8] c"forge_trait_object_value\00", align 1
+@.str.2858 = private unnamed_addr constant [9 x i8] c"concrete\00", align 1
+@.str.2859 = private unnamed_addr constant [26 x i8] c"forge_trait_object_vtable\00", align 1
+@.str.2860 = private unnamed_addr constant [7 x i8] c"vtable\00", align 1
+@.str.2861 = private unnamed_addr constant [22 x i8] c"trait has no method `\00", align 1
+@.str.2862 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2863 = private unnamed_addr constant [16 x i8] c"forge_array_get\00", align 1
+@.str.2864 = private unnamed_addr constant [8 x i8] c"vmethod\00", align 1
+@.str.2865 = private unnamed_addr constant [21 x i8] c"forge_closure_call_1\00", align 1
+@.str.2866 = private unnamed_addr constant [6 x i8] c"tcall\00", align 1
+@.str.2867 = private unnamed_addr constant [21 x i8] c"forge_closure_call_2\00", align 1
+@.str.2868 = private unnamed_addr constant [6 x i8] c"tcall\00", align 1
+@.str.2869 = private unnamed_addr constant [18 x i8] c"expected argument\00", align 1
+@.match_fn.2870 = private unnamed_addr constant [24 x i8] c"codegen::emit_first_arg\00", align 1
+@.str.2871 = private unnamed_addr constant [8 x i8] c"println\00", align 1
+@.str.2872 = private unnamed_addr constant [9 x i8] c"eprintln\00", align 1
+@.str.2873 = private unnamed_addr constant [7 x i8] c"string\00", align 1
+@.str.2874 = private unnamed_addr constant [4 x i8] c"int\00", align 1
+@.str.2875 = private unnamed_addr constant [6 x i8] c"float\00", align 1
+@.str.2876 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
+@.str.2877 = private unnamed_addr constant [21 x i8] c"undefined function `\00", align 1
+@.str.2878 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@.str.2879 = private unnamed_addr constant [8 x i8] c"calltmp\00", align 1
+@.str.2880 = private unnamed_addr constant [23 x i8] c"string() expects 1 arg\00", align 1
+@.str.2881 = private unnamed_addr constant [22 x i8] c"forge_float_to_string\00", align 1
+@.str.2882 = private unnamed_addr constant [4 x i8] c"f2s\00", align 1
+@.str.2883 = private unnamed_addr constant [8 x i8] c"f2s_i64\00", align 1
+@.str.2884 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.2885 = private unnamed_addr constant [9 x i8] c".i2s_fmt\00", align 1
+@.str.2886 = private unnamed_addr constant [9 x i8] c"snprintf\00", align 1
+@.str.2887 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2888 = private unnamed_addr constant [11 x i8] c"i2s_result\00", align 1
+@.match_fn.2889 = private unnamed_addr constant [28 x i8] c"codegen::emit_int_to_string\00", align 1
+@.str.2890 = private unnamed_addr constant [20 x i8] c"int() expects 1 arg\00", align 1
+@.str.2891 = private unnamed_addr constant [9 x i8] c"atoi_arg\00", align 1
+@.str.2892 = private unnamed_addr constant [5 x i8] c"atoi\00", align 1
+@.str.2893 = private unnamed_addr constant [10 x i8] c"atoi_call\00", align 1
+@.str.2894 = private unnamed_addr constant [9 x i8] c"atoi_ext\00", align 1
+@.match_fn.2895 = private unnamed_addr constant [28 x i8] c"codegen::emit_string_to_int\00", align 1
+@.str.2896 = private unnamed_addr constant [22 x i8] c"float() expects 1 arg\00", align 1
+@.str.2897 = private unnamed_addr constant [12 x i8] c"f_parse_arg\00", align 1
+@.str.2898 = private unnamed_addr constant [18 x i8] c"forge_float_parse\00", align 1
+@.str.2899 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
+@.str.2900 = private unnamed_addr constant [4 x i8] c"i2f\00", align 1
+@.str.2901 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
+@.match_fn.2902 = private unnamed_addr constant [30 x i8] c"codegen::emit_string_to_float\00", align 1
+@.str.2903 = private unnamed_addr constant [27 x i8] c"panic() expects 1 argument\00", align 1
+@.str.2904 = private unnamed_addr constant [8 x i8] c"panic: \00", align 1
+@.str.2905 = private unnamed_addr constant [14 x i8] c".panic_prefix\00", align 1
+@.str.2906 = private unnamed_addr constant [11 x i8] c"prefix_i64\00", align 1
+@.str.2907 = private unnamed_addr constant [10 x i8] c"panic_msg\00", align 1
+@.str.2908 = private unnamed_addr constant [15 x i8] c"forge_eprintln\00", align 1
+@.str.2909 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2910 = private unnamed_addr constant [5 x i8] c"exit\00", align 1
+@.str.2911 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.2912 = private unnamed_addr constant [20 x i8] c"codegen::emit_panic\00", align 1
+@.str.2913 = private unnamed_addr constant [25 x i8] c"eprintln() expects 1 arg\00", align 1
+@.str.2914 = private unnamed_addr constant [22 x i8] c"forge_float_to_string\00", align 1
+@.str.2915 = private unnamed_addr constant [5 x i8] c"ef2s\00", align 1
+@.str.2916 = private unnamed_addr constant [9 x i8] c"ef2s_i64\00", align 1
+@.str.2917 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.2918 = private unnamed_addr constant [12 x i8] c".eprint_fmt\00", align 1
+@.str.2919 = private unnamed_addr constant [9 x i8] c"snprintf\00", align 1
+@.str.2920 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2921 = private unnamed_addr constant [11 x i8] c"eprint_str\00", align 1
+@.str.2922 = private unnamed_addr constant [11 x i8] c"eprint_arg\00", align 1
+@.str.2923 = private unnamed_addr constant [15 x i8] c"forge_eprintln\00", align 1
+@.str.2924 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.2925 = private unnamed_addr constant [23 x i8] c"codegen::emit_eprintln\00", align 1
+@.str.2926 = private unnamed_addr constant [5 x i8] c".str\00", align 1
+@.str.2927 = private unnamed_addr constant [8 x i8] c"str_i64\00", align 1
+@.str.2928 = private unnamed_addr constant [22 x i8] c"forge_float_to_string\00", align 1
+@.str.2929 = private unnamed_addr constant [4 x i8] c"f2s\00", align 1
+@.str.2930 = private unnamed_addr constant [8 x i8] c"f2s_i64\00", align 1
+@.match_fn.2931 = private unnamed_addr constant [22 x i8] c"codegen::emit_println\00", align 1
+@.str.2932 = private unnamed_addr constant [27 x i8] c"println expects 1 argument\00", align 1
+@.match_fn.2933 = private unnamed_addr constant [22 x i8] c"codegen::emit_println\00", align 1
+@.str.2934 = private unnamed_addr constant [8 x i8] c"str_ptr\00", align 1
+@.str.2935 = private unnamed_addr constant [5 x i8] c"puts\00", align 1
+@.str.2936 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2937 = private unnamed_addr constant [9 x i8] c"concat_l\00", align 1
+@.str.2938 = private unnamed_addr constant [9 x i8] c"concat_r\00", align 1
+@.str.2939 = private unnamed_addr constant [7 x i8] c"strlen\00", align 1
+@.str.2940 = private unnamed_addr constant [8 x i8] c"lhs_len\00", align 1
+@.str.2941 = private unnamed_addr constant [8 x i8] c"rhs_len\00", align 1
+@.str.2942 = private unnamed_addr constant [13 x i8] c"concat_total\00", align 1
+@.str.2943 = private unnamed_addr constant [12 x i8] c"concat_size\00", align 1
+@.str.2944 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
 @.str.2945 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2946 = private unnamed_addr constant [11 x i8] c"concat_i64\00", align 1
-@.str.2947 = private unnamed_addr constant [16 x i8] c"forge_array_set\00", align 1
-@.str.2948 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2949 = private unnamed_addr constant [46 x i8] c"list.set expects 2 arguments: index and value\00", align 1
-@.match_fn.2950 = private unnamed_addr constant [23 x i8] c"codegen::emit_list_set\00", align 1
-@.str.2951 = private unnamed_addr constant [46 x i8] c"list.set expects 2 arguments: index and value\00", align 1
-@.match_fn.2952 = private unnamed_addr constant [23 x i8] c"codegen::emit_list_set\00", align 1
-@.str.2953 = private unnamed_addr constant [18 x i8] c"forge_array_slice\00", align 1
-@.str.2954 = private unnamed_addr constant [6 x i8] c"slice\00", align 1
-@.str.2955 = private unnamed_addr constant [8 x i8] c"set_key\00", align 1
-@.str.2956 = private unnamed_addr constant [19 x i8] c"forge_map_set_cstr\00", align 1
-@.str.2957 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2958 = private unnamed_addr constant [43 x i8] c"map.set expects 2 arguments: key and value\00", align 1
-@.match_fn.2959 = private unnamed_addr constant [22 x i8] c"codegen::emit_map_set\00", align 1
-@.str.2960 = private unnamed_addr constant [43 x i8] c"map.set expects 2 arguments: key and value\00", align 1
-@.match_fn.2961 = private unnamed_addr constant [22 x i8] c"codegen::emit_map_set\00", align 1
-@.str.2962 = private unnamed_addr constant [27 x i8] c"expected 1 argument, got 0\00", align 1
-@.match_fn.2963 = private unnamed_addr constant [25 x i8] c"codegen::emit_single_arg\00", align 1
-@.str.2964 = private unnamed_addr constant [9 x i8] c"rep_self\00", align 1
-@.str.2965 = private unnamed_addr constant [9 x i8] c"rep_from\00", align 1
-@.str.2966 = private unnamed_addr constant [7 x i8] c"rep_to\00", align 1
-@.str.2967 = private unnamed_addr constant [18 x i8] c"forge_str_replace\00", align 1
-@.str.2968 = private unnamed_addr constant [9 x i8] c"replaced\00", align 1
-@.str.2969 = private unnamed_addr constant [8 x i8] c"rep_i64\00", align 1
-@.str.2970 = private unnamed_addr constant [28 x i8] c"replace expects 2 arguments\00", align 1
-@.match_fn.2971 = private unnamed_addr constant [26 x i8] c"codegen::emit_str_replace\00", align 1
-@.str.2972 = private unnamed_addr constant [28 x i8] c"replace expects 2 arguments\00", align 1
-@.match_fn.2973 = private unnamed_addr constant [26 x i8] c"codegen::emit_str_replace\00", align 1
-@.str.2974 = private unnamed_addr constant [32 x i8] c"substring expects 2 args, got 0\00", align 1
-@.str.2975 = private unnamed_addr constant [32 x i8] c"substring expects 2 args, got 1\00", align 1
-@.match_fn.2976 = private unnamed_addr constant [24 x i8] c"codegen::emit_substring\00", align 1
-@.match_fn.2977 = private unnamed_addr constant [24 x i8] c"codegen::emit_substring\00", align 1
-@.str.2978 = private unnamed_addr constant [8 x i8] c"sub_src\00", align 1
-@.str.2979 = private unnamed_addr constant [8 x i8] c"sub_len\00", align 1
-@.str.2980 = private unnamed_addr constant [10 x i8] c"sub_alloc\00", align 1
-@.str.2981 = private unnamed_addr constant [12 x i8] c"sub_src_int\00", align 1
-@.str.2982 = private unnamed_addr constant [12 x i8] c"sub_off_int\00", align 1
-@.str.2983 = private unnamed_addr constant [8 x i8] c"sub_off\00", align 1
-@.str.2984 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
-@.str.2985 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.2986 = private unnamed_addr constant [12 x i8] c"sub_buf_int\00", align 1
-@.str.2987 = private unnamed_addr constant [12 x i8] c"sub_nul_int\00", align 1
-@.str.2988 = private unnamed_addr constant [8 x i8] c"sub_nul\00", align 1
-@.str.2989 = private unnamed_addr constant [11 x i8] c"sub_result\00", align 1
-@.str.2990 = private unnamed_addr constant [7 x i8] c"scmp_l\00", align 1
-@.str.2991 = private unnamed_addr constant [7 x i8] c"scmp_r\00", align 1
-@.str.2992 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
-@.str.2993 = private unnamed_addr constant [12 x i8] c"strcmp_call\00", align 1
-@.str.2994 = private unnamed_addr constant [12 x i8] c"strcmp_sext\00", align 1
-@.str.2995 = private unnamed_addr constant [9 x i8] c"scmp_cmp\00", align 1
-@.str.2996 = private unnamed_addr constant [9 x i8] c"scmp_ext\00", align 1
-@.str.2997 = private unnamed_addr constant [8 x i8] c"streq_l\00", align 1
-@.str.2998 = private unnamed_addr constant [8 x i8] c"streq_r\00", align 1
-@.str.2999 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
-@.str.3000 = private unnamed_addr constant [12 x i8] c"strcmp_call\00", align 1
-@.str.3001 = private unnamed_addr constant [12 x i8] c"strcmp_sext\00", align 1
-@.str.3002 = private unnamed_addr constant [10 x i8] c"streq_cmp\00", align 1
-@.str.3003 = private unnamed_addr constant [10 x i8] c"streq_ext\00", align 1
-@.match_fn.3004 = private unnamed_addr constant [24 x i8] c"codegen::fill_arg_array\00", align 1
-@.str.3005 = private unnamed_addr constant [8 x i8] c"fneg_in\00", align 1
-@.str.3006 = private unnamed_addr constant [5 x i8] c"fneg\00", align 1
-@.str.3007 = private unnamed_addr constant [10 x i8] c"fneg_bits\00", align 1
-@.str.3008 = private unnamed_addr constant [4 x i8] c"neg\00", align 1
-@.str.3009 = private unnamed_addr constant [8 x i8] c"not_cmp\00", align 1
-@.str.3010 = private unnamed_addr constant [4 x i8] c"not\00", align 1
-@.str.3011 = private unnamed_addr constant [5 x i8] c"bnot\00", align 1
-@.match_fn.3012 = private unnamed_addr constant [20 x i8] c"codegen::emit_unary\00", align 1
-@.match_fn.3013 = private unnamed_addr constant [25 x i8] c"codegen::is_null_literal\00", align 1
-@.str.3014 = private unnamed_addr constant [8 x i8] c"ptr_add\00", align 1
-@.str.3015 = private unnamed_addr constant [4 x i8] c"add\00", align 1
-@.str.3016 = private unnamed_addr constant [8 x i8] c"ptr_sub\00", align 1
-@.str.3017 = private unnamed_addr constant [4 x i8] c"sub\00", align 1
-@.str.3018 = private unnamed_addr constant [4 x i8] c"mul\00", align 1
-@.str.3019 = private unnamed_addr constant [4 x i8] c"div\00", align 1
-@.str.3020 = private unnamed_addr constant [4 x i8] c"mod\00", align 1
-@.str.3021 = private unnamed_addr constant [5 x i8] c"band\00", align 1
-@.str.3022 = private unnamed_addr constant [4 x i8] c"bor\00", align 1
-@.str.3023 = private unnamed_addr constant [5 x i8] c"bxor\00", align 1
-@.str.3024 = private unnamed_addr constant [4 x i8] c"shl\00", align 1
-@.str.3025 = private unnamed_addr constant [4 x i8] c"shr\00", align 1
-@.str.3026 = private unnamed_addr constant [3 x i8] c"eq\00", align 1
-@.str.3027 = private unnamed_addr constant [7 x i8] c"eq_ext\00", align 1
-@.str.3028 = private unnamed_addr constant [3 x i8] c"ne\00", align 1
-@.str.3029 = private unnamed_addr constant [7 x i8] c"ne_ext\00", align 1
-@.str.3030 = private unnamed_addr constant [4 x i8] c"slt\00", align 1
-@.str.3031 = private unnamed_addr constant [8 x i8] c"slt_ext\00", align 1
-@.str.3032 = private unnamed_addr constant [4 x i8] c"sle\00", align 1
-@.str.3033 = private unnamed_addr constant [8 x i8] c"sle_ext\00", align 1
-@.str.3034 = private unnamed_addr constant [4 x i8] c"sgt\00", align 1
-@.str.3035 = private unnamed_addr constant [8 x i8] c"sgt_ext\00", align 1
-@.str.3036 = private unnamed_addr constant [4 x i8] c"sge\00", align 1
-@.str.3037 = private unnamed_addr constant [8 x i8] c"sge_ext\00", align 1
-@.match_fn.3038 = private unnamed_addr constant [21 x i8] c"codegen::emit_binary\00", align 1
-@.str.3039 = private unnamed_addr constant [4 x i8] c"f64\00", align 1
-@.str.3040 = private unnamed_addr constant [4 x i8] c"i2f\00", align 1
-@.str.3041 = private unnamed_addr constant [5 x i8] c"fadd\00", align 1
-@.str.3042 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
-@.str.3043 = private unnamed_addr constant [5 x i8] c"fsub\00", align 1
-@.str.3044 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
-@.str.3045 = private unnamed_addr constant [5 x i8] c"fmul\00", align 1
-@.str.3046 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
-@.str.3047 = private unnamed_addr constant [5 x i8] c"fdiv\00", align 1
-@.str.3048 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
-@.str.3049 = private unnamed_addr constant [5 x i8] c"frem\00", align 1
-@.str.3050 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
-@.str.3051 = private unnamed_addr constant [4 x i8] c"feq\00", align 1
-@.str.3052 = private unnamed_addr constant [8 x i8] c"feq_ext\00", align 1
-@.str.3053 = private unnamed_addr constant [4 x i8] c"fne\00", align 1
-@.str.3054 = private unnamed_addr constant [8 x i8] c"fne_ext\00", align 1
-@.str.3055 = private unnamed_addr constant [4 x i8] c"flt\00", align 1
-@.str.3056 = private unnamed_addr constant [8 x i8] c"flt_ext\00", align 1
-@.str.3057 = private unnamed_addr constant [4 x i8] c"fle\00", align 1
-@.str.3058 = private unnamed_addr constant [8 x i8] c"fle_ext\00", align 1
-@.str.3059 = private unnamed_addr constant [4 x i8] c"fgt\00", align 1
-@.str.3060 = private unnamed_addr constant [8 x i8] c"fgt_ext\00", align 1
-@.str.3061 = private unnamed_addr constant [4 x i8] c"fge\00", align 1
-@.str.3062 = private unnamed_addr constant [8 x i8] c"fge_ext\00", align 1
-@.str.3063 = private unnamed_addr constant [4 x i8] c"add\00", align 1
-@.match_fn.3064 = private unnamed_addr constant [27 x i8] c"codegen::emit_float_binary\00", align 1
-@.str.3065 = private unnamed_addr constant [7 x i8] c"l_bool\00", align 1
-@.str.3066 = private unnamed_addr constant [7 x i8] c"sc_rhs\00", align 1
-@.str.3067 = private unnamed_addr constant [9 x i8] c"sc_merge\00", align 1
-@.match_fn.3068 = private unnamed_addr constant [22 x i8] c"codegen::emit_logical\00", align 1
-@.str.3069 = private unnamed_addr constant [7 x i8] c"r_bool\00", align 1
-@.str.3070 = private unnamed_addr constant [7 x i8] c"sc_phi\00", align 1
-@.match_fn.3071 = private unnamed_addr constant [22 x i8] c"codegen::emit_logical\00", align 1
-@.str.3072 = private unnamed_addr constant [7 x i8] c"sc_ext\00", align 1
-@.str.3073 = private unnamed_addr constant [23 x i8] c"forge-bootstrap v0.1.0\00", align 1
-@.str.3074 = private unnamed_addr constant [73 x i8] c"Usage: bootstrapc <tokens|expr|program|eval|check|compile|run> <file.fg>\00", align 1
-@.str.3075 = private unnamed_addr constant [77 x i8] c"       bootstrapc compile --stop-after=<parse|resolve|names|check> <file.fg>\00", align 1
-@.str.3076 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.3077 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
-@.str.3078 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.3079 = private unnamed_addr constant [7 x i8] c"tokens\00", align 1
-@.str.3080 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@.str.3081 = private unnamed_addr constant [8 x i8] c"program\00", align 1
-@.str.3082 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
-@.str.3083 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.3084 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@.str.3085 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.3086 = private unnamed_addr constant [14 x i8] c"--stop-after=\00", align 1
-@.str.3087 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.3088 = private unnamed_addr constant [50 x i8] c"error: --stop-after requires a file path argument\00", align 1
-@.str.3089 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
-@.str.3090 = private unnamed_addr constant [6 x i8] c"parse\00", align 1
-@.str.3091 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@.str.3092 = private unnamed_addr constant [8 x i8] c"resolve\00", align 1
-@.str.3093 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@.str.3094 = private unnamed_addr constant [6 x i8] c"names\00", align 1
-@.str.3095 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@.str.3096 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.3097 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@.str.3098 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
-@.str.3099 = private unnamed_addr constant [4 x i8] c"run\00", align 1
+@.str.2946 = private unnamed_addr constant [8 x i8] c"buf_int\00", align 1
+@.str.2947 = private unnamed_addr constant [9 x i8] c"dst2_int\00", align 1
+@.str.2948 = private unnamed_addr constant [5 x i8] c"dst2\00", align 1
+@.str.2949 = private unnamed_addr constant [11 x i8] c"rhs_len_p1\00", align 1
+@.str.2950 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2951 = private unnamed_addr constant [11 x i8] c"concat_i64\00", align 1
+@.str.2952 = private unnamed_addr constant [16 x i8] c"forge_array_set\00", align 1
+@.str.2953 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2954 = private unnamed_addr constant [46 x i8] c"list.set expects 2 arguments: index and value\00", align 1
+@.match_fn.2955 = private unnamed_addr constant [23 x i8] c"codegen::emit_list_set\00", align 1
+@.str.2956 = private unnamed_addr constant [46 x i8] c"list.set expects 2 arguments: index and value\00", align 1
+@.match_fn.2957 = private unnamed_addr constant [23 x i8] c"codegen::emit_list_set\00", align 1
+@.str.2958 = private unnamed_addr constant [18 x i8] c"forge_array_slice\00", align 1
+@.str.2959 = private unnamed_addr constant [6 x i8] c"slice\00", align 1
+@.str.2960 = private unnamed_addr constant [8 x i8] c"set_key\00", align 1
+@.str.2961 = private unnamed_addr constant [19 x i8] c"forge_map_set_cstr\00", align 1
+@.str.2962 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2963 = private unnamed_addr constant [43 x i8] c"map.set expects 2 arguments: key and value\00", align 1
+@.match_fn.2964 = private unnamed_addr constant [22 x i8] c"codegen::emit_map_set\00", align 1
+@.str.2965 = private unnamed_addr constant [43 x i8] c"map.set expects 2 arguments: key and value\00", align 1
+@.match_fn.2966 = private unnamed_addr constant [22 x i8] c"codegen::emit_map_set\00", align 1
+@.str.2967 = private unnamed_addr constant [27 x i8] c"expected 1 argument, got 0\00", align 1
+@.match_fn.2968 = private unnamed_addr constant [25 x i8] c"codegen::emit_single_arg\00", align 1
+@.str.2969 = private unnamed_addr constant [9 x i8] c"rep_self\00", align 1
+@.str.2970 = private unnamed_addr constant [9 x i8] c"rep_from\00", align 1
+@.str.2971 = private unnamed_addr constant [7 x i8] c"rep_to\00", align 1
+@.str.2972 = private unnamed_addr constant [18 x i8] c"forge_str_replace\00", align 1
+@.str.2973 = private unnamed_addr constant [9 x i8] c"replaced\00", align 1
+@.str.2974 = private unnamed_addr constant [8 x i8] c"rep_i64\00", align 1
+@.str.2975 = private unnamed_addr constant [28 x i8] c"replace expects 2 arguments\00", align 1
+@.match_fn.2976 = private unnamed_addr constant [26 x i8] c"codegen::emit_str_replace\00", align 1
+@.str.2977 = private unnamed_addr constant [28 x i8] c"replace expects 2 arguments\00", align 1
+@.match_fn.2978 = private unnamed_addr constant [26 x i8] c"codegen::emit_str_replace\00", align 1
+@.str.2979 = private unnamed_addr constant [32 x i8] c"substring expects 2 args, got 0\00", align 1
+@.str.2980 = private unnamed_addr constant [32 x i8] c"substring expects 2 args, got 1\00", align 1
+@.match_fn.2981 = private unnamed_addr constant [24 x i8] c"codegen::emit_substring\00", align 1
+@.match_fn.2982 = private unnamed_addr constant [24 x i8] c"codegen::emit_substring\00", align 1
+@.str.2983 = private unnamed_addr constant [8 x i8] c"sub_src\00", align 1
+@.str.2984 = private unnamed_addr constant [8 x i8] c"sub_len\00", align 1
+@.str.2985 = private unnamed_addr constant [10 x i8] c"sub_alloc\00", align 1
+@.str.2986 = private unnamed_addr constant [12 x i8] c"sub_src_int\00", align 1
+@.str.2987 = private unnamed_addr constant [12 x i8] c"sub_off_int\00", align 1
+@.str.2988 = private unnamed_addr constant [8 x i8] c"sub_off\00", align 1
+@.str.2989 = private unnamed_addr constant [7 x i8] c"memcpy\00", align 1
+@.str.2990 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.2991 = private unnamed_addr constant [12 x i8] c"sub_buf_int\00", align 1
+@.str.2992 = private unnamed_addr constant [12 x i8] c"sub_nul_int\00", align 1
+@.str.2993 = private unnamed_addr constant [8 x i8] c"sub_nul\00", align 1
+@.str.2994 = private unnamed_addr constant [11 x i8] c"sub_result\00", align 1
+@.str.2995 = private unnamed_addr constant [7 x i8] c"scmp_l\00", align 1
+@.str.2996 = private unnamed_addr constant [7 x i8] c"scmp_r\00", align 1
+@.str.2997 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
+@.str.2998 = private unnamed_addr constant [12 x i8] c"strcmp_call\00", align 1
+@.str.2999 = private unnamed_addr constant [12 x i8] c"strcmp_sext\00", align 1
+@.str.3000 = private unnamed_addr constant [9 x i8] c"scmp_cmp\00", align 1
+@.str.3001 = private unnamed_addr constant [9 x i8] c"scmp_ext\00", align 1
+@.str.3002 = private unnamed_addr constant [8 x i8] c"streq_l\00", align 1
+@.str.3003 = private unnamed_addr constant [8 x i8] c"streq_r\00", align 1
+@.str.3004 = private unnamed_addr constant [7 x i8] c"strcmp\00", align 1
+@.str.3005 = private unnamed_addr constant [12 x i8] c"strcmp_call\00", align 1
+@.str.3006 = private unnamed_addr constant [12 x i8] c"strcmp_sext\00", align 1
+@.str.3007 = private unnamed_addr constant [10 x i8] c"streq_cmp\00", align 1
+@.str.3008 = private unnamed_addr constant [10 x i8] c"streq_ext\00", align 1
+@.match_fn.3009 = private unnamed_addr constant [24 x i8] c"codegen::fill_arg_array\00", align 1
+@.str.3010 = private unnamed_addr constant [8 x i8] c"fneg_in\00", align 1
+@.str.3011 = private unnamed_addr constant [5 x i8] c"fneg\00", align 1
+@.str.3012 = private unnamed_addr constant [10 x i8] c"fneg_bits\00", align 1
+@.str.3013 = private unnamed_addr constant [4 x i8] c"neg\00", align 1
+@.str.3014 = private unnamed_addr constant [8 x i8] c"not_cmp\00", align 1
+@.str.3015 = private unnamed_addr constant [4 x i8] c"not\00", align 1
+@.str.3016 = private unnamed_addr constant [5 x i8] c"bnot\00", align 1
+@.match_fn.3017 = private unnamed_addr constant [20 x i8] c"codegen::emit_unary\00", align 1
+@.match_fn.3018 = private unnamed_addr constant [25 x i8] c"codegen::is_null_literal\00", align 1
+@.str.3019 = private unnamed_addr constant [8 x i8] c"ptr_add\00", align 1
+@.str.3020 = private unnamed_addr constant [4 x i8] c"add\00", align 1
+@.str.3021 = private unnamed_addr constant [8 x i8] c"ptr_sub\00", align 1
+@.str.3022 = private unnamed_addr constant [4 x i8] c"sub\00", align 1
+@.str.3023 = private unnamed_addr constant [4 x i8] c"mul\00", align 1
+@.str.3024 = private unnamed_addr constant [4 x i8] c"div\00", align 1
+@.str.3025 = private unnamed_addr constant [4 x i8] c"mod\00", align 1
+@.str.3026 = private unnamed_addr constant [5 x i8] c"band\00", align 1
+@.str.3027 = private unnamed_addr constant [4 x i8] c"bor\00", align 1
+@.str.3028 = private unnamed_addr constant [5 x i8] c"bxor\00", align 1
+@.str.3029 = private unnamed_addr constant [4 x i8] c"shl\00", align 1
+@.str.3030 = private unnamed_addr constant [4 x i8] c"shr\00", align 1
+@.str.3031 = private unnamed_addr constant [3 x i8] c"eq\00", align 1
+@.str.3032 = private unnamed_addr constant [7 x i8] c"eq_ext\00", align 1
+@.str.3033 = private unnamed_addr constant [3 x i8] c"ne\00", align 1
+@.str.3034 = private unnamed_addr constant [7 x i8] c"ne_ext\00", align 1
+@.str.3035 = private unnamed_addr constant [4 x i8] c"slt\00", align 1
+@.str.3036 = private unnamed_addr constant [8 x i8] c"slt_ext\00", align 1
+@.str.3037 = private unnamed_addr constant [4 x i8] c"sle\00", align 1
+@.str.3038 = private unnamed_addr constant [8 x i8] c"sle_ext\00", align 1
+@.str.3039 = private unnamed_addr constant [4 x i8] c"sgt\00", align 1
+@.str.3040 = private unnamed_addr constant [8 x i8] c"sgt_ext\00", align 1
+@.str.3041 = private unnamed_addr constant [4 x i8] c"sge\00", align 1
+@.str.3042 = private unnamed_addr constant [8 x i8] c"sge_ext\00", align 1
+@.match_fn.3043 = private unnamed_addr constant [21 x i8] c"codegen::emit_binary\00", align 1
+@.str.3044 = private unnamed_addr constant [4 x i8] c"f64\00", align 1
+@.str.3045 = private unnamed_addr constant [4 x i8] c"i2f\00", align 1
+@.str.3046 = private unnamed_addr constant [5 x i8] c"fadd\00", align 1
+@.str.3047 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
+@.str.3048 = private unnamed_addr constant [5 x i8] c"fsub\00", align 1
+@.str.3049 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
+@.str.3050 = private unnamed_addr constant [5 x i8] c"fmul\00", align 1
+@.str.3051 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
+@.str.3052 = private unnamed_addr constant [5 x i8] c"fdiv\00", align 1
+@.str.3053 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
+@.str.3054 = private unnamed_addr constant [5 x i8] c"frem\00", align 1
+@.str.3055 = private unnamed_addr constant [7 x i8] c"f_bits\00", align 1
+@.str.3056 = private unnamed_addr constant [4 x i8] c"feq\00", align 1
+@.str.3057 = private unnamed_addr constant [8 x i8] c"feq_ext\00", align 1
+@.str.3058 = private unnamed_addr constant [4 x i8] c"fne\00", align 1
+@.str.3059 = private unnamed_addr constant [8 x i8] c"fne_ext\00", align 1
+@.str.3060 = private unnamed_addr constant [4 x i8] c"flt\00", align 1
+@.str.3061 = private unnamed_addr constant [8 x i8] c"flt_ext\00", align 1
+@.str.3062 = private unnamed_addr constant [4 x i8] c"fle\00", align 1
+@.str.3063 = private unnamed_addr constant [8 x i8] c"fle_ext\00", align 1
+@.str.3064 = private unnamed_addr constant [4 x i8] c"fgt\00", align 1
+@.str.3065 = private unnamed_addr constant [8 x i8] c"fgt_ext\00", align 1
+@.str.3066 = private unnamed_addr constant [4 x i8] c"fge\00", align 1
+@.str.3067 = private unnamed_addr constant [8 x i8] c"fge_ext\00", align 1
+@.str.3068 = private unnamed_addr constant [4 x i8] c"add\00", align 1
+@.match_fn.3069 = private unnamed_addr constant [27 x i8] c"codegen::emit_float_binary\00", align 1
+@.str.3070 = private unnamed_addr constant [7 x i8] c"l_bool\00", align 1
+@.str.3071 = private unnamed_addr constant [7 x i8] c"sc_rhs\00", align 1
+@.str.3072 = private unnamed_addr constant [9 x i8] c"sc_merge\00", align 1
+@.match_fn.3073 = private unnamed_addr constant [22 x i8] c"codegen::emit_logical\00", align 1
+@.str.3074 = private unnamed_addr constant [7 x i8] c"r_bool\00", align 1
+@.str.3075 = private unnamed_addr constant [7 x i8] c"sc_phi\00", align 1
+@.match_fn.3076 = private unnamed_addr constant [22 x i8] c"codegen::emit_logical\00", align 1
+@.str.3077 = private unnamed_addr constant [7 x i8] c"sc_ext\00", align 1
+@.str.3078 = private unnamed_addr constant [23 x i8] c"forge-bootstrap v0.1.0\00", align 1
+@.str.3079 = private unnamed_addr constant [73 x i8] c"Usage: bootstrapc <tokens|expr|program|eval|check|compile|run> <file.fg>\00", align 1
+@.str.3080 = private unnamed_addr constant [77 x i8] c"       bootstrapc compile --stop-after=<parse|resolve|names|check> <file.fg>\00", align 1
+@.str.3081 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.3082 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@.str.3083 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.3084 = private unnamed_addr constant [7 x i8] c"tokens\00", align 1
+@.str.3085 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@.str.3086 = private unnamed_addr constant [8 x i8] c"program\00", align 1
+@.str.3087 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
+@.str.3088 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.3089 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3090 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.3091 = private unnamed_addr constant [14 x i8] c"--stop-after=\00", align 1
+@.str.3092 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.3093 = private unnamed_addr constant [50 x i8] c"error: --stop-after requires a file path argument\00", align 1
+@.str.3094 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@.str.3095 = private unnamed_addr constant [6 x i8] c"parse\00", align 1
+@.str.3096 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3097 = private unnamed_addr constant [8 x i8] c"resolve\00", align 1
+@.str.3098 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3099 = private unnamed_addr constant [6 x i8] c"names\00", align 1
+@.str.3100 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3101 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.3102 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.str.3103 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
+@.str.3104 = private unnamed_addr constant [4 x i8] c"run\00", align 1
 
 declare i32 @puts(ptr)
 
@@ -61619,26 +61622,39 @@ then:                                             ; preds = %entry
   %ty22 = load i64, ptr %fld_ptr21, align 8
   %calltmp23 = call i64 @"core::ast::vtype_closure_captures"(i64 %ty22)
   store i64 %calltmp23, ptr %num_caps, align 8
-  %ctx24 = load i64, ptr %ctx, align 8
-  %env25 = load i64, ptr %env, align 8
-  %fn_i6426 = load i64, ptr %fn_i64, align 8
-  %args27 = load i64, ptr %args, align 8
-  %num_caps28 = load i64, ptr %num_caps, align 8
-  %ret_ty29 = load i64, ptr %ret_ty, align 8
-  %calltmp30 = call i64 @"features::closures::codegen::emit_closure_call_typed"(i64 %ctx24, i64 %env25, i64 %fn_i6426, i64 %args27, i64 %num_caps28, i64 %ret_ty29)
-  ret i64 %calltmp30
+  %num_caps24 = load i64, ptr %num_caps, align 8
+  %sge = icmp sge i64 %num_caps24, 0
+  %sge_ext = zext i1 %sge to i64
+  %if_cond25 = icmp ne i64 %sge_ext, 0
+  br i1 %if_cond25, label %then26, label %else27
 
 else:                                             ; preds = %entry
   br label %ifcont
 
-ifcont:                                           ; preds = %else
-  %ctx31 = load i64, ptr %ctx, align 8
-  %env32 = load i64, ptr %env, align 8
-  %fn_i6433 = load i64, ptr %fn_i64, align 8
-  %args34 = load i64, ptr %args, align 8
-  %ret_ty35 = load i64, ptr %ret_ty, align 8
-  %calltmp36 = call i64 @"features::closures::codegen::emit_indirect_call_typed"(i64 %ctx31, i64 %env32, i64 %fn_i6433, i64 %args34, i64 %ret_ty35)
-  ret i64 %calltmp36
+ifcont:                                           ; preds = %else, %ifcont28
+  %ctx36 = load i64, ptr %ctx, align 8
+  %env37 = load i64, ptr %env, align 8
+  %fn_i6438 = load i64, ptr %fn_i64, align 8
+  %args39 = load i64, ptr %args, align 8
+  %ret_ty40 = load i64, ptr %ret_ty, align 8
+  %calltmp41 = call i64 @"features::closures::codegen::emit_indirect_call_typed"(i64 %ctx36, i64 %env37, i64 %fn_i6438, i64 %args39, i64 %ret_ty40)
+  ret i64 %calltmp41
+
+then26:                                           ; preds = %then
+  %ctx29 = load i64, ptr %ctx, align 8
+  %env30 = load i64, ptr %env, align 8
+  %fn_i6431 = load i64, ptr %fn_i64, align 8
+  %args32 = load i64, ptr %args, align 8
+  %num_caps33 = load i64, ptr %num_caps, align 8
+  %ret_ty34 = load i64, ptr %ret_ty, align 8
+  %calltmp35 = call i64 @"features::closures::codegen::emit_closure_call_typed"(i64 %ctx29, i64 %env30, i64 %fn_i6431, i64 %args32, i64 %num_caps33, i64 %ret_ty34)
+  ret i64 %calltmp35
+
+else27:                                           ; preds = %then
+  br label %ifcont28
+
+ifcont28:                                         ; preds = %else27
+  br label %ifcont
 }
 
 define i64 @"features::closures::codegen::emit_indirect_call_from_global"(i64 %0, i64 %1, i64 %2, i64 %3, i64 %4, i64 %5) {
@@ -61682,26 +61698,39 @@ then:                                             ; preds = %entry
   %ty11 = load i64, ptr %ty, align 8
   %calltmp12 = call i64 @"core::ast::vtype_closure_captures"(i64 %ty11)
   store i64 %calltmp12, ptr %num_caps, align 8
-  %ctx13 = load i64, ptr %ctx, align 8
-  %env14 = load i64, ptr %env, align 8
-  %fn_i6415 = load i64, ptr %fn_i64, align 8
-  %args16 = load i64, ptr %args, align 8
-  %num_caps17 = load i64, ptr %num_caps, align 8
-  %ret_ty18 = load i64, ptr %ret_ty, align 8
-  %calltmp19 = call i64 @"features::closures::codegen::emit_closure_call_typed"(i64 %ctx13, i64 %env14, i64 %fn_i6415, i64 %args16, i64 %num_caps17, i64 %ret_ty18)
-  ret i64 %calltmp19
+  %num_caps13 = load i64, ptr %num_caps, align 8
+  %sge = icmp sge i64 %num_caps13, 0
+  %sge_ext = zext i1 %sge to i64
+  %if_cond14 = icmp ne i64 %sge_ext, 0
+  br i1 %if_cond14, label %then15, label %else16
 
 else:                                             ; preds = %entry
   br label %ifcont
 
-ifcont:                                           ; preds = %else
-  %ctx20 = load i64, ptr %ctx, align 8
-  %env21 = load i64, ptr %env, align 8
-  %fn_i6422 = load i64, ptr %fn_i64, align 8
-  %args23 = load i64, ptr %args, align 8
-  %ret_ty24 = load i64, ptr %ret_ty, align 8
-  %calltmp25 = call i64 @"features::closures::codegen::emit_indirect_call_typed"(i64 %ctx20, i64 %env21, i64 %fn_i6422, i64 %args23, i64 %ret_ty24)
-  ret i64 %calltmp25
+ifcont:                                           ; preds = %else, %ifcont17
+  %ctx25 = load i64, ptr %ctx, align 8
+  %env26 = load i64, ptr %env, align 8
+  %fn_i6427 = load i64, ptr %fn_i64, align 8
+  %args28 = load i64, ptr %args, align 8
+  %ret_ty29 = load i64, ptr %ret_ty, align 8
+  %calltmp30 = call i64 @"features::closures::codegen::emit_indirect_call_typed"(i64 %ctx25, i64 %env26, i64 %fn_i6427, i64 %args28, i64 %ret_ty29)
+  ret i64 %calltmp30
+
+then15:                                           ; preds = %then
+  %ctx18 = load i64, ptr %ctx, align 8
+  %env19 = load i64, ptr %env, align 8
+  %fn_i6420 = load i64, ptr %fn_i64, align 8
+  %args21 = load i64, ptr %args, align 8
+  %num_caps22 = load i64, ptr %num_caps, align 8
+  %ret_ty23 = load i64, ptr %ret_ty, align 8
+  %calltmp24 = call i64 @"features::closures::codegen::emit_closure_call_typed"(i64 %ctx18, i64 %env19, i64 %fn_i6420, i64 %args21, i64 %num_caps22, i64 %ret_ty23)
+  ret i64 %calltmp24
+
+else16:                                           ; preds = %then
+  br label %ifcont17
+
+ifcont17:                                         ; preds = %else16
+  br label %ifcont
 }
 
 define i64 @"features::closures::codegen::emit_closure_call"(i64 %0, i64 %1, i64 %2, i64 %3, i64 %4) {
@@ -84224,17 +84253,213 @@ ifcont:                                           ; preds = %else
   ret i64 %calltmp9
 }
 
+define i64 @"codegen::stmts_last_expr"(i64 %0) {
+entry:
+  %e36 = alloca i64, align 8
+  %e29 = alloca i64, align 8
+  %match_result23 = alloca i64, align 8
+  %inner = alloca i64, align 8
+  %match_result13 = alloca i64, align 8
+  %next8 = alloca i64, align 8
+  %ss6 = alloca i64, align 8
+  %match_result = alloca i64, align 8
+  %stmts = alloca i64, align 8
+  store i64 %0, ptr %stmts, align 8
+  %stmts1 = load i64, ptr %stmts, align 8
+  %match_subj = inttoptr i64 %stmts1 to ptr
+  %tag_ptr = getelementptr inbounds nuw %StmtList, ptr %match_subj, i32 0, i32 0
+  %tag = load i8, ptr %tag_ptr, align 8
+  store i64 0, ptr %match_result, align 8
+  %tag_eq = icmp eq i8 %tag, 0
+  br i1 %tag_eq, label %march_arm, label %march_next
+
+match_end:                                        ; preds = %match_end14, %march_arm
+  %match_val50 = load i64, ptr %match_result, align 8
+  ret i64 %match_val50
+
+march_arm:                                        ; preds = %entry
+  %buf = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr2 = getelementptr inbounds nuw %Expr, ptr %buf, i32 0, i32 0
+  store i8 3, ptr %tag_ptr2, align 8
+  %enum_i64 = ptrtoint ptr %buf to i64
+  store i64 %enum_i64, ptr %match_result, align 8
+  br label %match_end
+
+march_next:                                       ; preds = %entry
+  %tag_eq5 = icmp eq i8 %tag, 1
+  br i1 %tag_eq5, label %march_arm3, label %march_next4
+
+march_arm3:                                       ; preds = %march_next
+  %pbind_ptr = getelementptr inbounds nuw %StmtList, ptr %match_subj, i32 0, i32 1
+  %ss = load i64, ptr %pbind_ptr, align 8
+  store i64 %ss, ptr %ss6, align 8
+  %pbind_ptr7 = getelementptr inbounds nuw %StmtList, ptr %match_subj, i32 0, i32 2
+  %next = load i64, ptr %pbind_ptr7, align 8
+  store i64 %next, ptr %next8, align 8
+  %next9 = load i64, ptr %next8, align 8
+  %match_subj10 = inttoptr i64 %next9 to ptr
+  %tag_ptr11 = getelementptr inbounds nuw %StmtList, ptr %match_subj10, i32 0, i32 0
+  %tag12 = load i8, ptr %tag_ptr11, align 8
+  store i64 0, ptr %match_result13, align 8
+  %tag_eq17 = icmp eq i8 %tag12, 0
+  br i1 %tag_eq17, label %march_arm15, label %march_next16
+
+march_next4:                                      ; preds = %march_next
+  %tag_ext49 = sext i8 %tag to i64
+  call void @forge_match_unreachable(ptr @.match_fn.2588, i64 %tag_ext49)
+  unreachable
+
+match_end14:                                      ; preds = %march_arm43, %match_end24
+  %match_val48 = load i64, ptr %match_result13, align 8
+  store i64 %match_val48, ptr %match_result, align 8
+  br label %match_end
+
+march_arm15:                                      ; preds = %march_arm3
+  %ss18 = load i64, ptr %ss6, align 8
+  %obj_ptr = inttoptr i64 %ss18 to ptr
+  %fld_ptr = getelementptr inbounds nuw %SStmt, ptr %obj_ptr, i32 0, i32 0
+  %node = load i64, ptr %fld_ptr, align 8
+  %calltmp = call i64 @"core::ast::stmt_unwrap"(i64 %node)
+  store i64 %calltmp, ptr %inner, align 8
+  %inner19 = load i64, ptr %inner, align 8
+  %match_subj20 = inttoptr i64 %inner19 to ptr
+  %tag_ptr21 = getelementptr inbounds nuw %Stmt, ptr %match_subj20, i32 0, i32 0
+  %tag22 = load i8, ptr %tag_ptr21, align 8
+  store i64 0, ptr %match_result23, align 8
+  %tag_eq27 = icmp eq i8 %tag22, 2
+  br i1 %tag_eq27, label %march_arm25, label %march_next26
+
+march_next16:                                     ; preds = %march_arm3
+  br label %march_arm43
+
+match_end24:                                      ; preds = %march_arm38, %march_arm31, %march_arm25
+  %match_val = load i64, ptr %match_result23, align 8
+  store i64 %match_val, ptr %match_result13, align 8
+  br label %match_end14
+
+march_arm25:                                      ; preds = %march_arm15
+  %pbind_ptr28 = getelementptr inbounds nuw %Stmt, ptr %match_subj20, i32 0, i32 1
+  %e = load i64, ptr %pbind_ptr28, align 8
+  store i64 %e, ptr %e29, align 8
+  %e30 = load i64, ptr %e29, align 8
+  store i64 %e30, ptr %match_result23, align 8
+  br label %match_end24
+
+march_next26:                                     ; preds = %march_arm15
+  %tag_eq33 = icmp eq i8 %tag22, 9
+  br i1 %tag_eq33, label %march_arm31, label %march_next32
+
+march_arm31:                                      ; preds = %march_next26
+  %pbind_ptr34 = getelementptr inbounds nuw %Stmt, ptr %match_subj20, i32 0, i32 1
+  %e35 = load i64, ptr %pbind_ptr34, align 8
+  store i64 %e35, ptr %e36, align 8
+  %e37 = load i64, ptr %e36, align 8
+  store i64 %e37, ptr %match_result23, align 8
+  br label %match_end24
+
+march_next32:                                     ; preds = %march_next26
+  br label %march_arm38
+
+march_arm38:                                      ; preds = %march_next32
+  %buf40 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr41 = getelementptr inbounds nuw %Expr, ptr %buf40, i32 0, i32 0
+  store i8 3, ptr %tag_ptr41, align 8
+  %enum_i6442 = ptrtoint ptr %buf40 to i64
+  store i64 %enum_i6442, ptr %match_result23, align 8
+  br label %match_end24
+
+march_next39:                                     ; No predecessors!
+  %tag_ext = sext i8 %tag22 to i64
+  call void @forge_match_unreachable(ptr @.match_fn.2586, i64 %tag_ext)
+  unreachable
+
+march_arm43:                                      ; preds = %march_next16
+  %next45 = load i64, ptr %next8, align 8
+  %calltmp46 = call i64 @"codegen::stmts_last_expr"(i64 %next45)
+  store i64 %calltmp46, ptr %match_result13, align 8
+  br label %match_end14
+
+march_next44:                                     ; No predecessors!
+  %tag_ext47 = sext i8 %tag12 to i64
+  call void @forge_match_unreachable(ptr @.match_fn.2587, i64 %tag_ext47)
+  unreachable
+}
+
+define i64 @"codegen::decl_fn_ret_type"(i64 %0, i64 %1, i64 %2, i64 %3) {
+entry:
+  %inner_ret = alloca i64, align 8
+  %match_result = alloca i64, align 8
+  %last = alloca i64, align 8
+  %base = alloca i64, align 8
+  %body = alloca i64, align 8
+  %ret_ty = alloca i64, align 8
+  %enums = alloca i64, align 8
+  %structs = alloca i64, align 8
+  store i64 %0, ptr %structs, align 8
+  store i64 %1, ptr %enums, align 8
+  store i64 %2, ptr %ret_ty, align 8
+  store i64 %3, ptr %body, align 8
+  %structs1 = load i64, ptr %structs, align 8
+  %enums2 = load i64, ptr %enums, align 8
+  %ret_ty3 = load i64, ptr %ret_ty, align 8
+  %calltmp = call i64 @"core::cg::translate_param_type"(i64 %structs1, i64 %enums2, i64 %ret_ty3)
+  store i64 %calltmp, ptr %base, align 8
+  %body4 = load i64, ptr %body, align 8
+  %calltmp5 = call i64 @"codegen::stmts_last_expr"(i64 %body4)
+  store i64 %calltmp5, ptr %last, align 8
+  %last6 = load i64, ptr %last, align 8
+  %match_subj = inttoptr i64 %last6 to ptr
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %match_subj, i32 0, i32 0
+  %tag = load i8, ptr %tag_ptr, align 8
+  store i64 0, ptr %match_result, align 8
+  %tag_eq = icmp eq i8 %tag, 26
+  br i1 %tag_eq, label %march_arm, label %march_next
+
+match_end:                                        ; preds = %march_arm12, %march_arm
+  %match_val = load i64, ptr %match_result, align 8
+  ret i64 %match_val
+
+march_arm:                                        ; preds = %entry
+  %base7 = load i64, ptr %base, align 8
+  %calltmp8 = call i64 @"core::ast::vtype_fn_ret"(i64 %base7)
+  store i64 %calltmp8, ptr %inner_ret, align 8
+  %buf = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr9 = getelementptr inbounds nuw %ValueType, ptr %buf, i32 0, i32 0
+  store i8 10, ptr %tag_ptr9, align 8
+  %epay_ptr = getelementptr inbounds nuw %ValueType, ptr %buf, i32 0, i32 1
+  store i64 -1, ptr %epay_ptr, align 8
+  %inner_ret10 = load i64, ptr %inner_ret, align 8
+  %epay_ptr11 = getelementptr inbounds nuw %ValueType, ptr %buf, i32 0, i32 2
+  store i64 %inner_ret10, ptr %epay_ptr11, align 8
+  %enum_i64 = ptrtoint ptr %buf to i64
+  store i64 %enum_i64, ptr %match_result, align 8
+  br label %match_end
+
+march_next:                                       ; preds = %entry
+  br label %march_arm12
+
+march_arm12:                                      ; preds = %march_next
+  %base14 = load i64, ptr %base, align 8
+  store i64 %base14, ptr %match_result, align 8
+  br label %match_end
+
+march_next13:                                     ; No predecessors!
+  %tag_ext = sext i8 %tag to i64
+  call void @forge_match_unreachable(ptr @.match_fn.2589, i64 %tag_ext)
+  unreachable
+}
+
 define i64 @"codegen::declare_functions"(i64 %0, i64 %1, i64 %2, i64 %3, i64 %4, i64 %5, i64 %6) {
 entry:
   %updated = alloca i64, align 8
-  %body134 = alloca i64, align 8
-  %methods120 = alloca i64, align 8
-  %fn_type97 = alloca i64, align 8
-  %param_arr88 = alloca i64, align 8
-  %arity85 = alloca i64, align 8
-  %ret_ty82 = alloca i64, align 8
-  %params79 = alloca i64, align 8
-  %name76 = alloca i64, align 8
+  %body135 = alloca i64, align 8
+  %methods121 = alloca i64, align 8
+  %fn_type98 = alloca i64, align 8
+  %param_arr89 = alloca i64, align 8
+  %arity86 = alloca i64, align 8
+  %ret_ty83 = alloca i64, align 8
+  %params80 = alloca i64, align 8
+  %name77 = alloca i64, align 8
   %fn_type = alloca i64, align 8
   %param_arr = alloca i64, align 8
   %existing = alloca i64, align 8
@@ -84271,8 +84496,8 @@ entry:
   br i1 %tag_eq, label %march_arm, label %march_next
 
 match_end:                                        ; preds = %match_end15, %march_arm
-  %match_val155 = load i64, ptr %match_result, align 8
-  ret i64 %match_val155
+  %match_val156 = load i64, ptr %match_result, align 8
+  ret i64 %match_val156
 
 march_arm:                                        ; preds = %entry
   %reg2 = load i64, ptr %reg, align 8
@@ -84305,22 +84530,22 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  %tag_ext154 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2589, i64 %tag_ext154)
+  %tag_ext155 = sext i8 %tag to i64
+  call void @forge_match_unreachable(ptr @.match_fn.2593, i64 %tag_ext155)
   unreachable
 
-match_end15:                                      ; preds = %march_arm143, %march_arm129, %march_arm116, %march_arm71, %ifcont
+match_end15:                                      ; preds = %march_arm144, %march_arm130, %march_arm117, %march_arm72, %ifcont
   %match_val = load i64, ptr %match_result14, align 8
   store i64 %match_val, ptr %updated, align 8
-  %m146 = load i64, ptr %m, align 8
-  %ctx147 = load i64, ptr %ctx, align 8
-  %i64t148 = load i64, ptr %i64t, align 8
-  %structs149 = load i64, ptr %structs, align 8
-  %enums150 = load i64, ptr %enums, align 8
-  %next151 = load i64, ptr %next8, align 8
-  %updated152 = load i64, ptr %updated, align 8
-  %calltmp153 = call i64 @"codegen::declare_functions"(i64 %m146, i64 %ctx147, i64 %i64t148, i64 %structs149, i64 %enums150, i64 %next151, i64 %updated152)
-  store i64 %calltmp153, ptr %match_result, align 8
+  %m147 = load i64, ptr %m, align 8
+  %ctx148 = load i64, ptr %ctx, align 8
+  %i64t149 = load i64, ptr %i64t, align 8
+  %structs150 = load i64, ptr %structs, align 8
+  %enums151 = load i64, ptr %enums, align 8
+  %next152 = load i64, ptr %next8, align 8
+  %updated153 = load i64, ptr %updated, align 8
+  %calltmp154 = call i64 @"codegen::declare_functions"(i64 %m147, i64 %ctx148, i64 %i64t149, i64 %structs150, i64 %enums151, i64 %next152, i64 %updated153)
+  store i64 %calltmp154, ptr %match_result, align 8
   br label %match_end
 
 march_arm16:                                      ; preds = %march_arm3
@@ -84350,18 +84575,18 @@ march_arm16:                                      ; preds = %march_arm3
   br i1 %if_cond, label %then, label %else
 
 march_next17:                                     ; preds = %march_arm3
-  %tag_eq73 = icmp eq i8 %tag13, 16
-  br i1 %tag_eq73, label %march_arm71, label %march_next72
+  %tag_eq74 = icmp eq i8 %tag13, 16
+  br i1 %tag_eq74, label %march_arm72, label %march_next73
 
 then:                                             ; preds = %march_arm16
   %name33 = load i64, ptr %name20, align 8
   %concat_r = inttoptr i64 %name33 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2586)
+  %lhs_len = call i64 @strlen(ptr @.str.2590)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf = call ptr @forge_bump_alloc(i64 %concat_size)
-  %7 = call ptr @memcpy(ptr %buf, ptr @.str.2586, i64 %lhs_len)
+  %7 = call ptr @memcpy(ptr %buf, ptr @.str.2590, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -84370,7 +84595,7 @@ then:                                             ; preds = %march_arm16
   %concat_i64 = ptrtoint ptr %buf to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len34 = call i64 @strlen(ptr %concat_l)
-  %rhs_len35 = call i64 @strlen(ptr @.str.2587)
+  %rhs_len35 = call i64 @strlen(ptr @.str.2591)
   %concat_total36 = add i64 %lhs_len34, %rhs_len35
   %concat_size37 = add i64 %concat_total36, 1
   %buf38 = call ptr @forge_bump_alloc(i64 %concat_size37)
@@ -84379,7 +84604,7 @@ then:                                             ; preds = %march_arm16
   %dst2_int40 = add i64 %buf_int39, %lhs_len34
   %dst241 = inttoptr i64 %dst2_int40 to ptr
   %rhs_len_p142 = add i64 %rhs_len35, 1
-  %10 = call ptr @memcpy(ptr %dst241, ptr @.str.2587, i64 %rhs_len_p142)
+  %10 = call ptr @memcpy(ptr %dst241, ptr @.str.2591, i64 %rhs_len_p142)
   %concat_i6443 = ptrtoint ptr %buf38 to i64
   %eprint_arg = inttoptr i64 %concat_i6443 to ptr
   call void @forge_eprintln(ptr %eprint_arg)
@@ -84417,115 +84642,116 @@ ifcont:                                           ; preds = %else, %then
   %structs64 = load i64, ptr %structs, align 8
   %enums65 = load i64, ptr %enums, align 8
   %ret_ty66 = load i64, ptr %ret_ty24, align 8
-  %calltmp67 = call i64 @"core::cg::translate_param_type"(i64 %structs64, i64 %enums65, i64 %ret_ty66)
-  %epay_ptr68 = getelementptr inbounds nuw %FnRetTypes, ptr %buf61, i32 0, i32 2
-  store i64 %calltmp67, ptr %epay_ptr68, align 8
-  %reg69 = load i64, ptr %reg, align 8
-  %epay_ptr70 = getelementptr inbounds nuw %FnRetTypes, ptr %buf61, i32 0, i32 3
-  store i64 %reg69, ptr %epay_ptr70, align 8
+  %body67 = load i64, ptr %body26, align 8
+  %calltmp68 = call i64 @"codegen::decl_fn_ret_type"(i64 %structs64, i64 %enums65, i64 %ret_ty66, i64 %body67)
+  %epay_ptr69 = getelementptr inbounds nuw %FnRetTypes, ptr %buf61, i32 0, i32 2
+  store i64 %calltmp68, ptr %epay_ptr69, align 8
+  %reg70 = load i64, ptr %reg, align 8
+  %epay_ptr71 = getelementptr inbounds nuw %FnRetTypes, ptr %buf61, i32 0, i32 3
+  store i64 %reg70, ptr %epay_ptr71, align 8
   %enum_i64 = ptrtoint ptr %buf61 to i64
   store i64 %enum_i64, ptr %match_result14, align 8
   br label %match_end15
 
-march_arm71:                                      ; preds = %march_next17
-  %pbind_ptr74 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 1
-  %name75 = load i64, ptr %pbind_ptr74, align 8
-  store i64 %name75, ptr %name76, align 8
-  %pbind_ptr77 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 2
-  %params78 = load i64, ptr %pbind_ptr77, align 8
-  store i64 %params78, ptr %params79, align 8
-  %pbind_ptr80 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 3
-  %ret_ty81 = load i64, ptr %pbind_ptr80, align 8
-  store i64 %ret_ty81, ptr %ret_ty82, align 8
-  %params83 = load i64, ptr %params79, align 8
-  %calltmp84 = call i64 @"core::ast::param_list_length"(i64 %params83)
-  store i64 %calltmp84, ptr %arity85, align 8
-  %arity86 = load i64, ptr %arity85, align 8
-  %calltmp87 = call i64 @forge_llvm_type_array_new(i64 %arity86)
-  store i64 %calltmp87, ptr %param_arr88, align 8
-  %param_arr89 = load i64, ptr %param_arr88, align 8
-  %i64t90 = load i64, ptr %i64t, align 8
-  %arity91 = load i64, ptr %arity85, align 8
-  %calltmp92 = call i64 @"codegen::fill_i64_param_array"(i64 %param_arr89, i64 %i64t90, i64 0, i64 %arity91)
-  %i64t93 = load i64, ptr %i64t, align 8
-  %param_arr94 = load i64, ptr %param_arr88, align 8
-  %arity95 = load i64, ptr %arity85, align 8
-  %calltmp96 = call i64 @forge_llvm_function_type(i64 %i64t93, i64 %param_arr94, i64 %arity95, i64 0)
-  store i64 %calltmp96, ptr %fn_type97, align 8
-  %param_arr98 = load i64, ptr %param_arr88, align 8
-  %calltmp99 = call i64 @forge_llvm_type_array_free(i64 %param_arr98)
-  %m100 = load i64, ptr %m, align 8
-  %name101 = load i64, ptr %name76, align 8
-  %fn_type102 = load i64, ptr %fn_type97, align 8
-  %calltmp103 = call i64 @forge_llvm_add_function(i64 %m100, i64 %name101, i64 %fn_type102)
-  %buf104 = call ptr @forge_bump_alloc(i64 32)
-  %tag_ptr105 = getelementptr inbounds nuw %FnRetTypes, ptr %buf104, i32 0, i32 0
-  store i8 1, ptr %tag_ptr105, align 8
-  %name106 = load i64, ptr %name76, align 8
-  %epay_ptr107 = getelementptr inbounds nuw %FnRetTypes, ptr %buf104, i32 0, i32 1
-  store i64 %name106, ptr %epay_ptr107, align 8
-  %structs108 = load i64, ptr %structs, align 8
-  %enums109 = load i64, ptr %enums, align 8
-  %ret_ty110 = load i64, ptr %ret_ty82, align 8
-  %calltmp111 = call i64 @"core::cg::translate_param_type"(i64 %structs108, i64 %enums109, i64 %ret_ty110)
-  %epay_ptr112 = getelementptr inbounds nuw %FnRetTypes, ptr %buf104, i32 0, i32 2
-  store i64 %calltmp111, ptr %epay_ptr112, align 8
-  %reg113 = load i64, ptr %reg, align 8
-  %epay_ptr114 = getelementptr inbounds nuw %FnRetTypes, ptr %buf104, i32 0, i32 3
-  store i64 %reg113, ptr %epay_ptr114, align 8
-  %enum_i64115 = ptrtoint ptr %buf104 to i64
-  store i64 %enum_i64115, ptr %match_result14, align 8
+march_arm72:                                      ; preds = %march_next17
+  %pbind_ptr75 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 1
+  %name76 = load i64, ptr %pbind_ptr75, align 8
+  store i64 %name76, ptr %name77, align 8
+  %pbind_ptr78 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 2
+  %params79 = load i64, ptr %pbind_ptr78, align 8
+  store i64 %params79, ptr %params80, align 8
+  %pbind_ptr81 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 3
+  %ret_ty82 = load i64, ptr %pbind_ptr81, align 8
+  store i64 %ret_ty82, ptr %ret_ty83, align 8
+  %params84 = load i64, ptr %params80, align 8
+  %calltmp85 = call i64 @"core::ast::param_list_length"(i64 %params84)
+  store i64 %calltmp85, ptr %arity86, align 8
+  %arity87 = load i64, ptr %arity86, align 8
+  %calltmp88 = call i64 @forge_llvm_type_array_new(i64 %arity87)
+  store i64 %calltmp88, ptr %param_arr89, align 8
+  %param_arr90 = load i64, ptr %param_arr89, align 8
+  %i64t91 = load i64, ptr %i64t, align 8
+  %arity92 = load i64, ptr %arity86, align 8
+  %calltmp93 = call i64 @"codegen::fill_i64_param_array"(i64 %param_arr90, i64 %i64t91, i64 0, i64 %arity92)
+  %i64t94 = load i64, ptr %i64t, align 8
+  %param_arr95 = load i64, ptr %param_arr89, align 8
+  %arity96 = load i64, ptr %arity86, align 8
+  %calltmp97 = call i64 @forge_llvm_function_type(i64 %i64t94, i64 %param_arr95, i64 %arity96, i64 0)
+  store i64 %calltmp97, ptr %fn_type98, align 8
+  %param_arr99 = load i64, ptr %param_arr89, align 8
+  %calltmp100 = call i64 @forge_llvm_type_array_free(i64 %param_arr99)
+  %m101 = load i64, ptr %m, align 8
+  %name102 = load i64, ptr %name77, align 8
+  %fn_type103 = load i64, ptr %fn_type98, align 8
+  %calltmp104 = call i64 @forge_llvm_add_function(i64 %m101, i64 %name102, i64 %fn_type103)
+  %buf105 = call ptr @forge_bump_alloc(i64 32)
+  %tag_ptr106 = getelementptr inbounds nuw %FnRetTypes, ptr %buf105, i32 0, i32 0
+  store i8 1, ptr %tag_ptr106, align 8
+  %name107 = load i64, ptr %name77, align 8
+  %epay_ptr108 = getelementptr inbounds nuw %FnRetTypes, ptr %buf105, i32 0, i32 1
+  store i64 %name107, ptr %epay_ptr108, align 8
+  %structs109 = load i64, ptr %structs, align 8
+  %enums110 = load i64, ptr %enums, align 8
+  %ret_ty111 = load i64, ptr %ret_ty83, align 8
+  %calltmp112 = call i64 @"core::cg::translate_param_type"(i64 %structs109, i64 %enums110, i64 %ret_ty111)
+  %epay_ptr113 = getelementptr inbounds nuw %FnRetTypes, ptr %buf105, i32 0, i32 2
+  store i64 %calltmp112, ptr %epay_ptr113, align 8
+  %reg114 = load i64, ptr %reg, align 8
+  %epay_ptr115 = getelementptr inbounds nuw %FnRetTypes, ptr %buf105, i32 0, i32 3
+  store i64 %reg114, ptr %epay_ptr115, align 8
+  %enum_i64116 = ptrtoint ptr %buf105 to i64
+  store i64 %enum_i64116, ptr %match_result14, align 8
   br label %match_end15
 
-march_next72:                                     ; preds = %march_next17
-  %tag_eq118 = icmp eq i8 %tag13, 14
-  br i1 %tag_eq118, label %march_arm116, label %march_next117
+march_next73:                                     ; preds = %march_next17
+  %tag_eq119 = icmp eq i8 %tag13, 14
+  br i1 %tag_eq119, label %march_arm117, label %march_next118
 
-march_arm116:                                     ; preds = %march_next72
-  %pbind_ptr119 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 2
-  %methods = load i64, ptr %pbind_ptr119, align 8
-  store i64 %methods, ptr %methods120, align 8
-  %m121 = load i64, ptr %m, align 8
-  %ctx122 = load i64, ptr %ctx, align 8
-  %i64t123 = load i64, ptr %i64t, align 8
-  %structs124 = load i64, ptr %structs, align 8
-  %enums125 = load i64, ptr %enums, align 8
-  %methods126 = load i64, ptr %methods120, align 8
-  %reg127 = load i64, ptr %reg, align 8
-  %calltmp128 = call i64 @"codegen::declare_functions"(i64 %m121, i64 %ctx122, i64 %i64t123, i64 %structs124, i64 %enums125, i64 %methods126, i64 %reg127)
-  store i64 %calltmp128, ptr %match_result14, align 8
+march_arm117:                                     ; preds = %march_next73
+  %pbind_ptr120 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 2
+  %methods = load i64, ptr %pbind_ptr120, align 8
+  store i64 %methods, ptr %methods121, align 8
+  %m122 = load i64, ptr %m, align 8
+  %ctx123 = load i64, ptr %ctx, align 8
+  %i64t124 = load i64, ptr %i64t, align 8
+  %structs125 = load i64, ptr %structs, align 8
+  %enums126 = load i64, ptr %enums, align 8
+  %methods127 = load i64, ptr %methods121, align 8
+  %reg128 = load i64, ptr %reg, align 8
+  %calltmp129 = call i64 @"codegen::declare_functions"(i64 %m122, i64 %ctx123, i64 %i64t124, i64 %structs125, i64 %enums126, i64 %methods127, i64 %reg128)
+  store i64 %calltmp129, ptr %match_result14, align 8
   br label %match_end15
 
-march_next117:                                    ; preds = %march_next72
-  %tag_eq131 = icmp eq i8 %tag13, 28
-  br i1 %tag_eq131, label %march_arm129, label %march_next130
+march_next118:                                    ; preds = %march_next73
+  %tag_eq132 = icmp eq i8 %tag13, 28
+  br i1 %tag_eq132, label %march_arm130, label %march_next131
 
-march_arm129:                                     ; preds = %march_next117
-  %pbind_ptr132 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 2
-  %body133 = load i64, ptr %pbind_ptr132, align 8
-  store i64 %body133, ptr %body134, align 8
-  %m135 = load i64, ptr %m, align 8
-  %ctx136 = load i64, ptr %ctx, align 8
-  %i64t137 = load i64, ptr %i64t, align 8
-  %structs138 = load i64, ptr %structs, align 8
-  %enums139 = load i64, ptr %enums, align 8
-  %body140 = load i64, ptr %body134, align 8
-  %reg141 = load i64, ptr %reg, align 8
-  %calltmp142 = call i64 @"codegen::declare_functions"(i64 %m135, i64 %ctx136, i64 %i64t137, i64 %structs138, i64 %enums139, i64 %body140, i64 %reg141)
-  store i64 %calltmp142, ptr %match_result14, align 8
+march_arm130:                                     ; preds = %march_next118
+  %pbind_ptr133 = getelementptr inbounds nuw %Stmt, ptr %match_subj11, i32 0, i32 2
+  %body134 = load i64, ptr %pbind_ptr133, align 8
+  store i64 %body134, ptr %body135, align 8
+  %m136 = load i64, ptr %m, align 8
+  %ctx137 = load i64, ptr %ctx, align 8
+  %i64t138 = load i64, ptr %i64t, align 8
+  %structs139 = load i64, ptr %structs, align 8
+  %enums140 = load i64, ptr %enums, align 8
+  %body141 = load i64, ptr %body135, align 8
+  %reg142 = load i64, ptr %reg, align 8
+  %calltmp143 = call i64 @"codegen::declare_functions"(i64 %m136, i64 %ctx137, i64 %i64t138, i64 %structs139, i64 %enums140, i64 %body141, i64 %reg142)
+  store i64 %calltmp143, ptr %match_result14, align 8
   br label %match_end15
 
-march_next130:                                    ; preds = %march_next117
-  br label %march_arm143
+march_next131:                                    ; preds = %march_next118
+  br label %march_arm144
 
-march_arm143:                                     ; preds = %march_next130
-  %reg145 = load i64, ptr %reg, align 8
-  store i64 %reg145, ptr %match_result14, align 8
+march_arm144:                                     ; preds = %march_next131
+  %reg146 = load i64, ptr %reg, align 8
+  store i64 %reg146, ptr %match_result14, align 8
   br label %match_end15
 
-march_next144:                                    ; No predecessors!
+march_next145:                                    ; No predecessors!
   %tag_ext = sext i8 %tag13 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2588, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2592, i64 %tag_ext)
   unreachable
 }
 
@@ -84633,7 +84859,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext139 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2591, i64 %tag_ext139)
+  call void @forge_match_unreachable(ptr @.match_fn.2595, i64 %tag_ext139)
   unreachable
 
 match_end16:                                      ; preds = %ifcont130, %ifcont100, %ifcont63, %ifcont, %march_arm17
@@ -84803,7 +85029,7 @@ march_arm116:                                     ; preds = %march_next79
 
 march_next117:                                    ; No predecessors!
   %tag_ext = sext i8 %tag14 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2590, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2594, i64 %tag_ext)
   unreachable
 
 then128:                                          ; preds = %march_arm116
@@ -84867,12 +85093,12 @@ then:                                             ; preds = %entry
   store i64 1, ptr %fld_ptr10, align 8
   %name11 = load i64, ptr %name, align 8
   %concat_r = inttoptr i64 %name11 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2592)
+  %lhs_len = call i64 @strlen(ptr @.str.2596)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf12 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %4 = call ptr @memcpy(ptr %buf12, ptr @.str.2592, i64 %lhs_len)
+  %4 = call ptr @memcpy(ptr %buf12, ptr @.str.2596, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf12 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -84881,7 +85107,7 @@ then:                                             ; preds = %entry
   %concat_i64 = ptrtoint ptr %buf12 to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len13 = call i64 @strlen(ptr %concat_l)
-  %rhs_len14 = call i64 @strlen(ptr @.str.2593)
+  %rhs_len14 = call i64 @strlen(ptr @.str.2597)
   %concat_total15 = add i64 %lhs_len13, %rhs_len14
   %concat_size16 = add i64 %concat_total15, 1
   %buf17 = call ptr @forge_bump_alloc(i64 %concat_size16)
@@ -84890,7 +85116,7 @@ then:                                             ; preds = %entry
   %dst2_int19 = add i64 %buf_int18, %lhs_len13
   %dst220 = inttoptr i64 %dst2_int19 to ptr
   %rhs_len_p121 = add i64 %rhs_len14, 1
-  %7 = call ptr @memcpy(ptr %dst220, ptr @.str.2593, i64 %rhs_len_p121)
+  %7 = call ptr @memcpy(ptr %dst220, ptr @.str.2597, i64 %rhs_len_p121)
   %concat_i6422 = ptrtoint ptr %buf17 to i64
   %fld_ptr23 = getelementptr inbounds nuw %TopLevelResult, ptr %buf, i32 0, i32 3
   store i64 %concat_i6422, ptr %fld_ptr23, align 8
@@ -84989,7 +85215,7 @@ ifcont34:                                         ; preds = %else33
   %fld_ptr80 = getelementptr inbounds nuw %TopLevelResult, ptr %buf75, i32 0, i32 2
   store i64 0, ptr %fld_ptr80, align 8
   %fld_ptr81 = getelementptr inbounds nuw %TopLevelResult, ptr %buf75, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2594 to i64), ptr %fld_ptr81, align 8
+  store i64 ptrtoint (ptr @.str.2598 to i64), ptr %fld_ptr81, align 8
   %struct_i6482 = ptrtoint ptr %buf75 to i64
   ret i64 %struct_i6482
 }
@@ -85052,7 +85278,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2595, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2599, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm3
@@ -85407,7 +85633,7 @@ march_next163:                                    ; preds = %march_next153
   br i1 %tag_eq189, label %march_arm187, label %march_next188
 
 then173:                                          ; preds = %march_arm162
-  %calltmp176 = call i64 @"core::cg::err_stmt"(i64 ptrtoint (ptr @.str.2596 to i64))
+  %calltmp176 = call i64 @"core::cg::err_stmt"(i64 ptrtoint (ptr @.str.2600 to i64))
   ret i64 %calltmp176
 
 else174:                                          ; preds = %march_arm162
@@ -85448,7 +85674,7 @@ march_next188:                                    ; preds = %march_next163
   br label %march_arm217
 
 then203:                                          ; preds = %march_arm187
-  %calltmp206 = call i64 @"core::cg::err_stmt"(i64 ptrtoint (ptr @.str.2597 to i64))
+  %calltmp206 = call i64 @"core::cg::err_stmt"(i64 ptrtoint (ptr @.str.2601 to i64))
   ret i64 %calltmp206
 
 else204:                                          ; preds = %march_arm187
@@ -85491,7 +85717,7 @@ march_arm217:                                     ; preds = %march_next188
 
 march_next218:                                    ; No predecessors!
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2601, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2605, i64 %tag_ext)
   unreachable
 
 then232:                                          ; preds = %march_arm217
@@ -85504,15 +85730,15 @@ else233:                                          ; preds = %march_arm217
 ifcont234:                                        ; preds = %else233
   %tag236 = load i64, ptr %tag221, align 8
   %buf = call ptr @forge_bump_alloc(i64 32)
-  %3 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 32, ptr @.i2s_fmt.2599, i64 %tag236)
+  %3 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 32, ptr @.i2s_fmt.2603, i64 %tag236)
   %i2s_result = ptrtoint ptr %buf to i64
   %concat_r = inttoptr i64 %i2s_result to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2598)
+  %lhs_len = call i64 @strlen(ptr @.str.2602)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf237 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %4 = call ptr @memcpy(ptr %buf237, ptr @.str.2598, i64 %lhs_len)
+  %4 = call ptr @memcpy(ptr %buf237, ptr @.str.2602, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf237 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -85521,7 +85747,7 @@ ifcont234:                                        ; preds = %else233
   %concat_i64 = ptrtoint ptr %buf237 to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len238 = call i64 @strlen(ptr %concat_l)
-  %rhs_len239 = call i64 @strlen(ptr @.str.2600)
+  %rhs_len239 = call i64 @strlen(ptr @.str.2604)
   %concat_total240 = add i64 %lhs_len238, %rhs_len239
   %concat_size241 = add i64 %concat_total240, 1
   %buf242 = call ptr @forge_bump_alloc(i64 %concat_size241)
@@ -85530,7 +85756,7 @@ ifcont234:                                        ; preds = %else233
   %dst2_int244 = add i64 %buf_int243, %lhs_len238
   %dst2245 = inttoptr i64 %dst2_int244 to ptr
   %rhs_len_p1246 = add i64 %rhs_len239, 1
-  %7 = call ptr @memcpy(ptr %dst2245, ptr @.str.2600, i64 %rhs_len_p1246)
+  %7 = call ptr @memcpy(ptr %dst2245, ptr @.str.2604, i64 %rhs_len_p1246)
   %concat_i64247 = ptrtoint ptr %buf242 to i64
   %calltmp248 = call i64 @"core::cg::err_stmt"(i64 %concat_i64247)
   store i64 %calltmp248, ptr %match_result, align 8
@@ -85543,7 +85769,7 @@ entry:
   %out = alloca i64, align 8
   %s = alloca i64, align 8
   store i64 %0, ptr %s, align 8
-  store i64 ptrtoint (ptr @.str.2602 to i64), ptr %out, align 8
+  store i64 ptrtoint (ptr @.str.2606 to i64), ptr %out, align 8
   store i64 0, ptr %i, align 8
   br label %while.cond
 
@@ -85571,7 +85797,7 @@ while.body:                                       ; preds = %while.cond
   store i8 0, ptr %idx_nul, align 8
   %idx_result = ptrtoint ptr %buf to i64
   %streq_l = inttoptr i64 %idx_result to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2603)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2607)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp ne i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -85656,7 +85882,7 @@ then:                                             ; preds = %entry
   store i64 %sub_result, ptr %prefix, align 8
   %prefix4 = load i64, ptr %prefix, align 8
   %streq_l = inttoptr i64 %prefix4 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2604)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2608)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -85676,7 +85902,7 @@ ifcont:                                           ; preds = %else, %ifcont88
 sc_rhs:                                           ; preds = %then
   %prefix5 = load i64, ptr %prefix, align 8
   %streq_l6 = inttoptr i64 %prefix5 to ptr
-  %strcmp_call7 = call i32 @strcmp(ptr %streq_l6, ptr @.str.2605)
+  %strcmp_call7 = call i32 @strcmp(ptr %streq_l6, ptr @.str.2609)
   %strcmp_sext8 = sext i32 %strcmp_call7 to i64
   %streq_cmp9 = icmp eq i64 %strcmp_sext8, 0
   %streq_ext10 = zext i1 %streq_cmp9 to i64
@@ -85716,7 +85942,7 @@ else13:                                           ; preds = %sc_merge
 ifcont14:                                         ; preds = %else13
   %prefix29 = load i64, ptr %prefix, align 8
   %streq_l30 = inttoptr i64 %prefix29 to ptr
-  %strcmp_call31 = call i32 @strcmp(ptr %streq_l30, ptr @.str.2606)
+  %strcmp_call31 = call i32 @strcmp(ptr %streq_l30, ptr @.str.2610)
   %strcmp_sext32 = sext i32 %strcmp_call31 to i64
   %streq_cmp33 = icmp eq i64 %strcmp_sext32, 0
   %streq_ext34 = zext i1 %streq_cmp33 to i64
@@ -85726,7 +85952,7 @@ ifcont14:                                         ; preds = %else13
 sc_rhs36:                                         ; preds = %ifcont14
   %prefix38 = load i64, ptr %prefix, align 8
   %streq_l39 = inttoptr i64 %prefix38 to ptr
-  %strcmp_call40 = call i32 @strcmp(ptr %streq_l39, ptr @.str.2607)
+  %strcmp_call40 = call i32 @strcmp(ptr %streq_l39, ptr @.str.2611)
   %strcmp_sext41 = sext i32 %strcmp_call40 to i64
   %streq_cmp42 = icmp eq i64 %strcmp_sext41, 0
   %streq_ext43 = zext i1 %streq_cmp42 to i64
@@ -85766,7 +85992,7 @@ else49:                                           ; preds = %sc_merge37
 ifcont50:                                         ; preds = %else49
   %prefix67 = load i64, ptr %prefix, align 8
   %streq_l68 = inttoptr i64 %prefix67 to ptr
-  %strcmp_call69 = call i32 @strcmp(ptr %streq_l68, ptr @.str.2608)
+  %strcmp_call69 = call i32 @strcmp(ptr %streq_l68, ptr @.str.2612)
   %strcmp_sext70 = sext i32 %strcmp_call69 to i64
   %streq_cmp71 = icmp eq i64 %strcmp_sext70, 0
   %streq_ext72 = zext i1 %streq_cmp71 to i64
@@ -85776,7 +86002,7 @@ ifcont50:                                         ; preds = %else49
 sc_rhs74:                                         ; preds = %ifcont50
   %prefix76 = load i64, ptr %prefix, align 8
   %streq_l77 = inttoptr i64 %prefix76 to ptr
-  %strcmp_call78 = call i32 @strcmp(ptr %streq_l77, ptr @.str.2609)
+  %strcmp_call78 = call i32 @strcmp(ptr %streq_l77, ptr @.str.2613)
   %strcmp_sext79 = sext i32 %strcmp_call78 to i64
   %streq_cmp80 = icmp eq i64 %strcmp_sext79, 0
   %streq_ext81 = zext i1 %streq_cmp80 to i64
@@ -85823,7 +86049,7 @@ entry:
   store i64 %0, ptr %ch, align 8
   %ch1 = load i64, ptr %ch, align 8
   %streq_l = inttoptr i64 %ch1 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2610)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2614)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -85839,7 +86065,7 @@ else:                                             ; preds = %entry
 ifcont:                                           ; preds = %else
   %ch2 = load i64, ptr %ch, align 8
   %streq_l3 = inttoptr i64 %ch2 to ptr
-  %strcmp_call4 = call i32 @strcmp(ptr %streq_l3, ptr @.str.2611)
+  %strcmp_call4 = call i32 @strcmp(ptr %streq_l3, ptr @.str.2615)
   %strcmp_sext5 = sext i32 %strcmp_call4 to i64
   %streq_cmp6 = icmp eq i64 %strcmp_sext5, 0
   %streq_ext7 = zext i1 %streq_cmp6 to i64
@@ -85855,7 +86081,7 @@ else10:                                           ; preds = %ifcont
 ifcont11:                                         ; preds = %else10
   %ch12 = load i64, ptr %ch, align 8
   %streq_l13 = inttoptr i64 %ch12 to ptr
-  %strcmp_call14 = call i32 @strcmp(ptr %streq_l13, ptr @.str.2612)
+  %strcmp_call14 = call i32 @strcmp(ptr %streq_l13, ptr @.str.2616)
   %strcmp_sext15 = sext i32 %strcmp_call14 to i64
   %streq_cmp16 = icmp eq i64 %strcmp_sext15, 0
   %streq_ext17 = zext i1 %streq_cmp16 to i64
@@ -85871,7 +86097,7 @@ else20:                                           ; preds = %ifcont11
 ifcont21:                                         ; preds = %else20
   %ch22 = load i64, ptr %ch, align 8
   %streq_l23 = inttoptr i64 %ch22 to ptr
-  %strcmp_call24 = call i32 @strcmp(ptr %streq_l23, ptr @.str.2613)
+  %strcmp_call24 = call i32 @strcmp(ptr %streq_l23, ptr @.str.2617)
   %strcmp_sext25 = sext i32 %strcmp_call24 to i64
   %streq_cmp26 = icmp eq i64 %strcmp_sext25, 0
   %streq_ext27 = zext i1 %streq_cmp26 to i64
@@ -85887,7 +86113,7 @@ else30:                                           ; preds = %ifcont21
 ifcont31:                                         ; preds = %else30
   %ch32 = load i64, ptr %ch, align 8
   %streq_l33 = inttoptr i64 %ch32 to ptr
-  %strcmp_call34 = call i32 @strcmp(ptr %streq_l33, ptr @.str.2614)
+  %strcmp_call34 = call i32 @strcmp(ptr %streq_l33, ptr @.str.2618)
   %strcmp_sext35 = sext i32 %strcmp_call34 to i64
   %streq_cmp36 = icmp eq i64 %strcmp_sext35, 0
   %streq_ext37 = zext i1 %streq_cmp36 to i64
@@ -85903,7 +86129,7 @@ else40:                                           ; preds = %ifcont31
 ifcont41:                                         ; preds = %else40
   %ch42 = load i64, ptr %ch, align 8
   %streq_l43 = inttoptr i64 %ch42 to ptr
-  %strcmp_call44 = call i32 @strcmp(ptr %streq_l43, ptr @.str.2615)
+  %strcmp_call44 = call i32 @strcmp(ptr %streq_l43, ptr @.str.2619)
   %strcmp_sext45 = sext i32 %strcmp_call44 to i64
   %streq_cmp46 = icmp eq i64 %strcmp_sext45, 0
   %streq_ext47 = zext i1 %streq_cmp46 to i64
@@ -85919,7 +86145,7 @@ else50:                                           ; preds = %ifcont41
 ifcont51:                                         ; preds = %else50
   %ch52 = load i64, ptr %ch, align 8
   %streq_l53 = inttoptr i64 %ch52 to ptr
-  %strcmp_call54 = call i32 @strcmp(ptr %streq_l53, ptr @.str.2616)
+  %strcmp_call54 = call i32 @strcmp(ptr %streq_l53, ptr @.str.2620)
   %strcmp_sext55 = sext i32 %strcmp_call54 to i64
   %streq_cmp56 = icmp eq i64 %strcmp_sext55, 0
   %streq_ext57 = zext i1 %streq_cmp56 to i64
@@ -85935,7 +86161,7 @@ else60:                                           ; preds = %ifcont51
 ifcont61:                                         ; preds = %else60
   %ch62 = load i64, ptr %ch, align 8
   %streq_l63 = inttoptr i64 %ch62 to ptr
-  %strcmp_call64 = call i32 @strcmp(ptr %streq_l63, ptr @.str.2617)
+  %strcmp_call64 = call i32 @strcmp(ptr %streq_l63, ptr @.str.2621)
   %strcmp_sext65 = sext i32 %strcmp_call64 to i64
   %streq_cmp66 = icmp eq i64 %strcmp_sext65, 0
   %streq_ext67 = zext i1 %streq_cmp66 to i64
@@ -85951,7 +86177,7 @@ else70:                                           ; preds = %ifcont61
 ifcont71:                                         ; preds = %else70
   %ch72 = load i64, ptr %ch, align 8
   %streq_l73 = inttoptr i64 %ch72 to ptr
-  %strcmp_call74 = call i32 @strcmp(ptr %streq_l73, ptr @.str.2618)
+  %strcmp_call74 = call i32 @strcmp(ptr %streq_l73, ptr @.str.2622)
   %strcmp_sext75 = sext i32 %strcmp_call74 to i64
   %streq_cmp76 = icmp eq i64 %strcmp_sext75, 0
   %streq_ext77 = zext i1 %streq_cmp76 to i64
@@ -85967,7 +86193,7 @@ else80:                                           ; preds = %ifcont71
 ifcont81:                                         ; preds = %else80
   %ch82 = load i64, ptr %ch, align 8
   %streq_l83 = inttoptr i64 %ch82 to ptr
-  %strcmp_call84 = call i32 @strcmp(ptr %streq_l83, ptr @.str.2619)
+  %strcmp_call84 = call i32 @strcmp(ptr %streq_l83, ptr @.str.2623)
   %strcmp_sext85 = sext i32 %strcmp_call84 to i64
   %streq_cmp86 = icmp eq i64 %strcmp_sext85, 0
   %streq_ext87 = zext i1 %streq_cmp86 to i64
@@ -85983,7 +86209,7 @@ else90:                                           ; preds = %ifcont81
 ifcont91:                                         ; preds = %else90
   %ch92 = load i64, ptr %ch, align 8
   %streq_l93 = inttoptr i64 %ch92 to ptr
-  %strcmp_call94 = call i32 @strcmp(ptr %streq_l93, ptr @.str.2620)
+  %strcmp_call94 = call i32 @strcmp(ptr %streq_l93, ptr @.str.2624)
   %strcmp_sext95 = sext i32 %strcmp_call94 to i64
   %streq_cmp96 = icmp eq i64 %strcmp_sext95, 0
   %streq_ext97 = zext i1 %streq_cmp96 to i64
@@ -85993,7 +86219,7 @@ ifcont91:                                         ; preds = %else90
 sc_rhs:                                           ; preds = %ifcont91
   %ch98 = load i64, ptr %ch, align 8
   %streq_l99 = inttoptr i64 %ch98 to ptr
-  %strcmp_call100 = call i32 @strcmp(ptr %streq_l99, ptr @.str.2621)
+  %strcmp_call100 = call i32 @strcmp(ptr %streq_l99, ptr @.str.2625)
   %strcmp_sext101 = sext i32 %strcmp_call100 to i64
   %streq_cmp102 = icmp eq i64 %strcmp_sext101, 0
   %streq_ext103 = zext i1 %streq_cmp102 to i64
@@ -86015,7 +86241,7 @@ else106:                                          ; preds = %sc_merge
 ifcont107:                                        ; preds = %else106
   %ch108 = load i64, ptr %ch, align 8
   %streq_l109 = inttoptr i64 %ch108 to ptr
-  %strcmp_call110 = call i32 @strcmp(ptr %streq_l109, ptr @.str.2622)
+  %strcmp_call110 = call i32 @strcmp(ptr %streq_l109, ptr @.str.2626)
   %strcmp_sext111 = sext i32 %strcmp_call110 to i64
   %streq_cmp112 = icmp eq i64 %strcmp_sext111, 0
   %streq_ext113 = zext i1 %streq_cmp112 to i64
@@ -86025,7 +86251,7 @@ ifcont107:                                        ; preds = %else106
 sc_rhs115:                                        ; preds = %ifcont107
   %ch117 = load i64, ptr %ch, align 8
   %streq_l118 = inttoptr i64 %ch117 to ptr
-  %strcmp_call119 = call i32 @strcmp(ptr %streq_l118, ptr @.str.2623)
+  %strcmp_call119 = call i32 @strcmp(ptr %streq_l118, ptr @.str.2627)
   %strcmp_sext120 = sext i32 %strcmp_call119 to i64
   %streq_cmp121 = icmp eq i64 %strcmp_sext120, 0
   %streq_ext122 = zext i1 %streq_cmp121 to i64
@@ -86047,7 +86273,7 @@ else128:                                          ; preds = %sc_merge116
 ifcont129:                                        ; preds = %else128
   %ch130 = load i64, ptr %ch, align 8
   %streq_l131 = inttoptr i64 %ch130 to ptr
-  %strcmp_call132 = call i32 @strcmp(ptr %streq_l131, ptr @.str.2624)
+  %strcmp_call132 = call i32 @strcmp(ptr %streq_l131, ptr @.str.2628)
   %strcmp_sext133 = sext i32 %strcmp_call132 to i64
   %streq_cmp134 = icmp eq i64 %strcmp_sext133, 0
   %streq_ext135 = zext i1 %streq_cmp134 to i64
@@ -86057,7 +86283,7 @@ ifcont129:                                        ; preds = %else128
 sc_rhs137:                                        ; preds = %ifcont129
   %ch139 = load i64, ptr %ch, align 8
   %streq_l140 = inttoptr i64 %ch139 to ptr
-  %strcmp_call141 = call i32 @strcmp(ptr %streq_l140, ptr @.str.2625)
+  %strcmp_call141 = call i32 @strcmp(ptr %streq_l140, ptr @.str.2629)
   %strcmp_sext142 = sext i32 %strcmp_call141 to i64
   %streq_cmp143 = icmp eq i64 %strcmp_sext142, 0
   %streq_ext144 = zext i1 %streq_cmp143 to i64
@@ -86079,7 +86305,7 @@ else150:                                          ; preds = %sc_merge138
 ifcont151:                                        ; preds = %else150
   %ch152 = load i64, ptr %ch, align 8
   %streq_l153 = inttoptr i64 %ch152 to ptr
-  %strcmp_call154 = call i32 @strcmp(ptr %streq_l153, ptr @.str.2626)
+  %strcmp_call154 = call i32 @strcmp(ptr %streq_l153, ptr @.str.2630)
   %strcmp_sext155 = sext i32 %strcmp_call154 to i64
   %streq_cmp156 = icmp eq i64 %strcmp_sext155, 0
   %streq_ext157 = zext i1 %streq_cmp156 to i64
@@ -86089,7 +86315,7 @@ ifcont151:                                        ; preds = %else150
 sc_rhs159:                                        ; preds = %ifcont151
   %ch161 = load i64, ptr %ch, align 8
   %streq_l162 = inttoptr i64 %ch161 to ptr
-  %strcmp_call163 = call i32 @strcmp(ptr %streq_l162, ptr @.str.2627)
+  %strcmp_call163 = call i32 @strcmp(ptr %streq_l162, ptr @.str.2631)
   %strcmp_sext164 = sext i32 %strcmp_call163 to i64
   %streq_cmp165 = icmp eq i64 %strcmp_sext164, 0
   %streq_ext166 = zext i1 %streq_cmp165 to i64
@@ -86111,7 +86337,7 @@ else172:                                          ; preds = %sc_merge160
 ifcont173:                                        ; preds = %else172
   %ch174 = load i64, ptr %ch, align 8
   %streq_l175 = inttoptr i64 %ch174 to ptr
-  %strcmp_call176 = call i32 @strcmp(ptr %streq_l175, ptr @.str.2628)
+  %strcmp_call176 = call i32 @strcmp(ptr %streq_l175, ptr @.str.2632)
   %strcmp_sext177 = sext i32 %strcmp_call176 to i64
   %streq_cmp178 = icmp eq i64 %strcmp_sext177, 0
   %streq_ext179 = zext i1 %streq_cmp178 to i64
@@ -86121,7 +86347,7 @@ ifcont173:                                        ; preds = %else172
 sc_rhs181:                                        ; preds = %ifcont173
   %ch183 = load i64, ptr %ch, align 8
   %streq_l184 = inttoptr i64 %ch183 to ptr
-  %strcmp_call185 = call i32 @strcmp(ptr %streq_l184, ptr @.str.2629)
+  %strcmp_call185 = call i32 @strcmp(ptr %streq_l184, ptr @.str.2633)
   %strcmp_sext186 = sext i32 %strcmp_call185 to i64
   %streq_cmp187 = icmp eq i64 %strcmp_sext186, 0
   %streq_ext188 = zext i1 %streq_cmp187 to i64
@@ -86143,7 +86369,7 @@ else194:                                          ; preds = %sc_merge182
 ifcont195:                                        ; preds = %else194
   %ch196 = load i64, ptr %ch, align 8
   %streq_l197 = inttoptr i64 %ch196 to ptr
-  %strcmp_call198 = call i32 @strcmp(ptr %streq_l197, ptr @.str.2630)
+  %strcmp_call198 = call i32 @strcmp(ptr %streq_l197, ptr @.str.2634)
   %strcmp_sext199 = sext i32 %strcmp_call198 to i64
   %streq_cmp200 = icmp eq i64 %strcmp_sext199, 0
   %streq_ext201 = zext i1 %streq_cmp200 to i64
@@ -86153,7 +86379,7 @@ ifcont195:                                        ; preds = %else194
 sc_rhs203:                                        ; preds = %ifcont195
   %ch205 = load i64, ptr %ch, align 8
   %streq_l206 = inttoptr i64 %ch205 to ptr
-  %strcmp_call207 = call i32 @strcmp(ptr %streq_l206, ptr @.str.2631)
+  %strcmp_call207 = call i32 @strcmp(ptr %streq_l206, ptr @.str.2635)
   %strcmp_sext208 = sext i32 %strcmp_call207 to i64
   %streq_cmp209 = icmp eq i64 %strcmp_sext208, 0
   %streq_ext210 = zext i1 %streq_cmp209 to i64
@@ -86261,7 +86487,7 @@ while.body:                                       ; preds = %while.cond
   store i64 %idx_result, ptr %ch, align 8
   %ch5 = load i64, ptr %ch, align 8
   %streq_l = inttoptr i64 %ch5 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2632)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2636)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -86346,7 +86572,7 @@ entry:
   store i64 %0, ptr %ch, align 8
   %ch1 = load i64, ptr %ch, align 8
   %streq_l = inttoptr i64 %ch1 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2633)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2637)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -86362,7 +86588,7 @@ else:                                             ; preds = %entry
 ifcont:                                           ; preds = %else
   %ch2 = load i64, ptr %ch, align 8
   %streq_l3 = inttoptr i64 %ch2 to ptr
-  %strcmp_call4 = call i32 @strcmp(ptr %streq_l3, ptr @.str.2634)
+  %strcmp_call4 = call i32 @strcmp(ptr %streq_l3, ptr @.str.2638)
   %strcmp_sext5 = sext i32 %strcmp_call4 to i64
   %streq_cmp6 = icmp eq i64 %strcmp_sext5, 0
   %streq_ext7 = zext i1 %streq_cmp6 to i64
@@ -86378,7 +86604,7 @@ else10:                                           ; preds = %ifcont
 ifcont11:                                         ; preds = %else10
   %ch12 = load i64, ptr %ch, align 8
   %streq_l13 = inttoptr i64 %ch12 to ptr
-  %strcmp_call14 = call i32 @strcmp(ptr %streq_l13, ptr @.str.2635)
+  %strcmp_call14 = call i32 @strcmp(ptr %streq_l13, ptr @.str.2639)
   %strcmp_sext15 = sext i32 %strcmp_call14 to i64
   %streq_cmp16 = icmp eq i64 %strcmp_sext15, 0
   %streq_ext17 = zext i1 %streq_cmp16 to i64
@@ -86394,7 +86620,7 @@ else20:                                           ; preds = %ifcont11
 ifcont21:                                         ; preds = %else20
   %ch22 = load i64, ptr %ch, align 8
   %streq_l23 = inttoptr i64 %ch22 to ptr
-  %strcmp_call24 = call i32 @strcmp(ptr %streq_l23, ptr @.str.2636)
+  %strcmp_call24 = call i32 @strcmp(ptr %streq_l23, ptr @.str.2640)
   %strcmp_sext25 = sext i32 %strcmp_call24 to i64
   %streq_cmp26 = icmp eq i64 %strcmp_sext25, 0
   %streq_ext27 = zext i1 %streq_cmp26 to i64
@@ -86410,7 +86636,7 @@ else30:                                           ; preds = %ifcont21
 ifcont31:                                         ; preds = %else30
   %ch32 = load i64, ptr %ch, align 8
   %streq_l33 = inttoptr i64 %ch32 to ptr
-  %strcmp_call34 = call i32 @strcmp(ptr %streq_l33, ptr @.str.2637)
+  %strcmp_call34 = call i32 @strcmp(ptr %streq_l33, ptr @.str.2641)
   %strcmp_sext35 = sext i32 %strcmp_call34 to i64
   %streq_cmp36 = icmp eq i64 %strcmp_sext35, 0
   %streq_ext37 = zext i1 %streq_cmp36 to i64
@@ -86426,7 +86652,7 @@ else40:                                           ; preds = %ifcont31
 ifcont41:                                         ; preds = %else40
   %ch42 = load i64, ptr %ch, align 8
   %streq_l43 = inttoptr i64 %ch42 to ptr
-  %strcmp_call44 = call i32 @strcmp(ptr %streq_l43, ptr @.str.2638)
+  %strcmp_call44 = call i32 @strcmp(ptr %streq_l43, ptr @.str.2642)
   %strcmp_sext45 = sext i32 %strcmp_call44 to i64
   %streq_cmp46 = icmp eq i64 %strcmp_sext45, 0
   %streq_ext47 = zext i1 %streq_cmp46 to i64
@@ -86442,7 +86668,7 @@ else50:                                           ; preds = %ifcont41
 ifcont51:                                         ; preds = %else50
   %ch52 = load i64, ptr %ch, align 8
   %streq_l53 = inttoptr i64 %ch52 to ptr
-  %strcmp_call54 = call i32 @strcmp(ptr %streq_l53, ptr @.str.2639)
+  %strcmp_call54 = call i32 @strcmp(ptr %streq_l53, ptr @.str.2643)
   %strcmp_sext55 = sext i32 %strcmp_call54 to i64
   %streq_cmp56 = icmp eq i64 %strcmp_sext55, 0
   %streq_ext57 = zext i1 %streq_cmp56 to i64
@@ -86458,7 +86684,7 @@ else60:                                           ; preds = %ifcont51
 ifcont61:                                         ; preds = %else60
   %ch62 = load i64, ptr %ch, align 8
   %streq_l63 = inttoptr i64 %ch62 to ptr
-  %strcmp_call64 = call i32 @strcmp(ptr %streq_l63, ptr @.str.2640)
+  %strcmp_call64 = call i32 @strcmp(ptr %streq_l63, ptr @.str.2644)
   %strcmp_sext65 = sext i32 %strcmp_call64 to i64
   %streq_cmp66 = icmp eq i64 %strcmp_sext65, 0
   %streq_ext67 = zext i1 %streq_cmp66 to i64
@@ -86474,7 +86700,7 @@ else70:                                           ; preds = %ifcont61
 ifcont71:                                         ; preds = %else70
   %ch72 = load i64, ptr %ch, align 8
   %streq_l73 = inttoptr i64 %ch72 to ptr
-  %strcmp_call74 = call i32 @strcmp(ptr %streq_l73, ptr @.str.2641)
+  %strcmp_call74 = call i32 @strcmp(ptr %streq_l73, ptr @.str.2645)
   %strcmp_sext75 = sext i32 %strcmp_call74 to i64
   %streq_cmp76 = icmp eq i64 %strcmp_sext75, 0
   %streq_ext77 = zext i1 %streq_cmp76 to i64
@@ -86490,7 +86716,7 @@ else80:                                           ; preds = %ifcont71
 ifcont81:                                         ; preds = %else80
   %ch82 = load i64, ptr %ch, align 8
   %streq_l83 = inttoptr i64 %ch82 to ptr
-  %strcmp_call84 = call i32 @strcmp(ptr %streq_l83, ptr @.str.2642)
+  %strcmp_call84 = call i32 @strcmp(ptr %streq_l83, ptr @.str.2646)
   %strcmp_sext85 = sext i32 %strcmp_call84 to i64
   %streq_cmp86 = icmp eq i64 %strcmp_sext85, 0
   %streq_ext87 = zext i1 %streq_cmp86 to i64
@@ -86612,13 +86838,13 @@ march_arm8:                                       ; preds = %march_next
   %fld_ptr = getelementptr inbounds nuw %Ctx, ptr %obj_ptr, i32 0, i32 2
   %builder = load i64, ptr %fld_ptr, align 8
   %text15 = load i64, ptr %text13, align 8
-  %calltmp16 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 %text15, i64 ptrtoint (ptr @.str.2643 to i64))
+  %calltmp16 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 %text15, i64 ptrtoint (ptr @.str.2647 to i64))
   store i64 %calltmp16, ptr %str_ptr, align 8
   %ctx17 = load i64, ptr %ctx, align 8
   %ctx18 = load i64, ptr %ctx, align 8
-  %calltmp19 = call i64 @"core::cg::get_fn"(i64 %ctx18, i64 ptrtoint (ptr @.str.2644 to i64))
+  %calltmp19 = call i64 @"core::cg::get_fn"(i64 %ctx18, i64 ptrtoint (ptr @.str.2648 to i64))
   %str_ptr20 = load i64, ptr %str_ptr, align 8
-  %calltmp21 = call i64 @"core::cg::call_1"(i64 %ctx17, i64 %calltmp19, i64 %str_ptr20, i64 ptrtoint (ptr @.str.2645 to i64))
+  %calltmp21 = call i64 @"core::cg::call_1"(i64 %ctx17, i64 %calltmp19, i64 %str_ptr20, i64 ptrtoint (ptr @.str.2649 to i64))
   store i64 %calltmp21, ptr %bits, align 8
   %bits22 = load i64, ptr %bits, align 8
   %buf = call ptr @forge_bump_alloc(i64 24)
@@ -86639,7 +86865,7 @@ march_arm25:                                      ; preds = %march_next9
   store i64 %text29, ptr %text30, align 8
   %text31 = load i64, ptr %text30, align 8
   %streq_l = inttoptr i64 %text31 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2646)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2650)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -86689,11 +86915,11 @@ march_arm44:                                      ; preds = %march_next39
   %fld_ptr54 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr53, i32 0, i32 2
   %builder55 = load i64, ptr %fld_ptr54, align 8
   %inner56 = load i64, ptr %inner, align 8
-  %calltmp57 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder55, i64 %inner56, i64 ptrtoint (ptr @.str.2647 to i64))
+  %calltmp57 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder55, i64 %inner56, i64 ptrtoint (ptr @.str.2651 to i64))
   store i64 %calltmp57, ptr %str_ptr58, align 8
   %ctx59 = load i64, ptr %ctx, align 8
   %str_ptr60 = load i64, ptr %str_ptr58, align 8
-  %calltmp61 = call i64 @"core::cg::to_i64"(i64 %ctx59, i64 %str_ptr60, i64 ptrtoint (ptr @.str.2648 to i64))
+  %calltmp61 = call i64 @"core::cg::to_i64"(i64 %ctx59, i64 %str_ptr60, i64 ptrtoint (ptr @.str.2652 to i64))
   %calltmp62 = call i64 @"core::cg::ok_emit_str"(i64 %calltmp61)
   store i64 %calltmp62, ptr %match_result, align 8
   br label %match_end
@@ -86830,7 +87056,7 @@ then132:                                          ; preds = %march_arm120
   %fld_ptr154 = getelementptr inbounds nuw %EmitResult, ptr %buf147, i32 0, i32 2
   store i64 0, ptr %fld_ptr154, align 8
   %fld_ptr155 = getelementptr inbounds nuw %EmitResult, ptr %buf147, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2649 to i64), ptr %fld_ptr155, align 8
+  store i64 ptrtoint (ptr @.str.2653 to i64), ptr %fld_ptr155, align 8
   %struct_i64 = ptrtoint ptr %buf147 to i64
   ret i64 %struct_i64
 
@@ -86881,7 +87107,7 @@ then166:                                          ; preds = %ifcont134
   %fld_ptr191 = getelementptr inbounds nuw %EmitResult, ptr %buf183, i32 0, i32 2
   store i64 0, ptr %fld_ptr191, align 8
   %fld_ptr192 = getelementptr inbounds nuw %EmitResult, ptr %buf183, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2650 to i64), ptr %fld_ptr192, align 8
+  store i64 ptrtoint (ptr @.str.2654 to i64), ptr %fld_ptr192, align 8
   %struct_i64193 = ptrtoint ptr %buf183 to i64
   ret i64 %struct_i64193
 
@@ -86912,32 +87138,32 @@ then201:                                          ; preds = %ifcont168
   %obj_ptr210 = inttoptr i64 %ctx209 to ptr
   %fld_ptr211 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr210, i32 0, i32 5
   %i64_type212 = load i64, ptr %fld_ptr211, align 8
-  %calltmp213 = call i64 @forge_llvm_build_ptr_to_int(i64 %builder207, i64 %fn_val208, i64 %i64_type212, i64 ptrtoint (ptr @.str.2651 to i64))
+  %calltmp213 = call i64 @forge_llvm_build_ptr_to_int(i64 %builder207, i64 %fn_val208, i64 %i64_type212, i64 ptrtoint (ptr @.str.2655 to i64))
   store i64 %calltmp213, ptr %fn_i64, align 8
   %ctx214 = load i64, ptr %ctx, align 8
-  %calltmp215 = call i64 @"core::cg::get_fn"(i64 %ctx214, i64 ptrtoint (ptr @.str.2652 to i64))
+  %calltmp215 = call i64 @"core::cg::get_fn"(i64 %ctx214, i64 ptrtoint (ptr @.str.2656 to i64))
   store i64 %calltmp215, ptr %arr_fn, align 8
   %ctx216 = load i64, ptr %ctx, align 8
-  %calltmp217 = call i64 @"core::cg::get_fn"(i64 %ctx216, i64 ptrtoint (ptr @.str.2653 to i64))
+  %calltmp217 = call i64 @"core::cg::get_fn"(i64 %ctx216, i64 ptrtoint (ptr @.str.2657 to i64))
   store i64 %calltmp217, ptr %push_fn, align 8
   %ctx218 = load i64, ptr %ctx, align 8
   %arr_fn219 = load i64, ptr %arr_fn, align 8
-  %calltmp220 = call i64 @"core::cg::call_0"(i64 %ctx218, i64 %arr_fn219, i64 ptrtoint (ptr @.str.2654 to i64))
+  %calltmp220 = call i64 @"core::cg::call_0"(i64 %ctx218, i64 %arr_fn219, i64 ptrtoint (ptr @.str.2658 to i64))
   store i64 %calltmp220, ptr %closure_arr, align 8
   %ctx221 = load i64, ptr %ctx, align 8
   %push_fn222 = load i64, ptr %push_fn, align 8
   %closure_arr223 = load i64, ptr %closure_arr, align 8
   %ctx224 = load i64, ptr %ctx, align 8
   %calltmp225 = call i64 @"core::cg::const_i64"(i64 %ctx224, i64 -559038737)
-  %calltmp226 = call i64 @"core::cg::call_2"(i64 %ctx221, i64 %push_fn222, i64 %closure_arr223, i64 %calltmp225, i64 ptrtoint (ptr @.str.2655 to i64))
+  %calltmp226 = call i64 @"core::cg::call_2"(i64 %ctx221, i64 %push_fn222, i64 %closure_arr223, i64 %calltmp225, i64 ptrtoint (ptr @.str.2659 to i64))
   %ctx227 = load i64, ptr %ctx, align 8
   %push_fn228 = load i64, ptr %push_fn, align 8
   %closure_arr229 = load i64, ptr %closure_arr, align 8
   %fn_i64230 = load i64, ptr %fn_i64, align 8
-  %calltmp231 = call i64 @"core::cg::call_2"(i64 %ctx227, i64 %push_fn228, i64 %closure_arr229, i64 %fn_i64230, i64 ptrtoint (ptr @.str.2656 to i64))
+  %calltmp231 = call i64 @"core::cg::call_2"(i64 %ctx227, i64 %push_fn228, i64 %closure_arr229, i64 %fn_i64230, i64 ptrtoint (ptr @.str.2660 to i64))
   %ctx232 = load i64, ptr %ctx, align 8
   %closure_arr233 = load i64, ptr %closure_arr, align 8
-  %calltmp234 = call i64 @"core::cg::to_i64"(i64 %ctx232, i64 %closure_arr233, i64 ptrtoint (ptr @.str.2657 to i64))
+  %calltmp234 = call i64 @"core::cg::to_i64"(i64 %ctx232, i64 %closure_arr233, i64 ptrtoint (ptr @.str.2661 to i64))
   store i64 %calltmp234, ptr %closure_i64, align 8
   %ctx235 = load i64, ptr %ctx, align 8
   %obj_ptr236 = inttoptr i64 %ctx235 to ptr
@@ -86965,12 +87191,12 @@ else202:                                          ; preds = %ifcont168
 ifcont203:                                        ; preds = %else202
   %name247 = load i64, ptr %name124, align 8
   %concat_r = inttoptr i64 %name247 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2658)
+  %lhs_len = call i64 @strlen(ptr @.str.2662)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf248 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %3 = call ptr @memcpy(ptr %buf248, ptr @.str.2658, i64 %lhs_len)
+  %3 = call ptr @memcpy(ptr %buf248, ptr @.str.2662, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf248 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -86979,7 +87205,7 @@ ifcont203:                                        ; preds = %else202
   %concat_i64 = ptrtoint ptr %buf248 to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len249 = call i64 @strlen(ptr %concat_l)
-  %rhs_len250 = call i64 @strlen(ptr @.str.2659)
+  %rhs_len250 = call i64 @strlen(ptr @.str.2663)
   %concat_total251 = add i64 %lhs_len249, %rhs_len250
   %concat_size252 = add i64 %concat_total251, 1
   %buf253 = call ptr @forge_bump_alloc(i64 %concat_size252)
@@ -86988,7 +87214,7 @@ ifcont203:                                        ; preds = %else202
   %dst2_int255 = add i64 %buf_int254, %lhs_len249
   %dst2256 = inttoptr i64 %dst2_int255 to ptr
   %rhs_len_p1257 = add i64 %rhs_len250, 1
-  %6 = call ptr @memcpy(ptr %dst2256, ptr @.str.2659, i64 %rhs_len_p1257)
+  %6 = call ptr @memcpy(ptr %dst2256, ptr @.str.2663, i64 %rhs_len_p1257)
   %concat_i64258 = ptrtoint ptr %buf253 to i64
   %calltmp259 = call i64 @"core::cg::err_emit"(i64 %concat_i64258)
   store i64 %calltmp259, ptr %match_result, align 8
@@ -87042,7 +87268,7 @@ then274:                                          ; preds = %march_arm260
   %fld_ptr300 = getelementptr inbounds nuw %EmitResult, ptr %buf292, i32 0, i32 2
   store i64 0, ptr %fld_ptr300, align 8
   %fld_ptr301 = getelementptr inbounds nuw %EmitResult, ptr %buf292, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2660 to i64), ptr %fld_ptr301, align 8
+  store i64 ptrtoint (ptr @.str.2664 to i64), ptr %fld_ptr301, align 8
   %struct_i64302 = ptrtoint ptr %buf292 to i64
   ret i64 %struct_i64302
 
@@ -87093,7 +87319,7 @@ then315:                                          ; preds = %ifcont276
   %fld_ptr341 = getelementptr inbounds nuw %EmitResult, ptr %buf333, i32 0, i32 2
   store i64 0, ptr %fld_ptr341, align 8
   %fld_ptr342 = getelementptr inbounds nuw %EmitResult, ptr %buf333, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2661 to i64), ptr %fld_ptr342, align 8
+  store i64 ptrtoint (ptr @.str.2665 to i64), ptr %fld_ptr342, align 8
   %struct_i64343 = ptrtoint ptr %buf333 to i64
   ret i64 %struct_i64343
 
@@ -87124,32 +87350,32 @@ then355:                                          ; preds = %ifcont317
   %obj_ptr364 = inttoptr i64 %ctx363 to ptr
   %fld_ptr365 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr364, i32 0, i32 5
   %i64_type366 = load i64, ptr %fld_ptr365, align 8
-  %calltmp367 = call i64 @forge_llvm_build_ptr_to_int(i64 %builder361, i64 %fn_val362, i64 %i64_type366, i64 ptrtoint (ptr @.str.2662 to i64))
+  %calltmp367 = call i64 @forge_llvm_build_ptr_to_int(i64 %builder361, i64 %fn_val362, i64 %i64_type366, i64 ptrtoint (ptr @.str.2666 to i64))
   store i64 %calltmp367, ptr %fn_i64368, align 8
   %ctx369 = load i64, ptr %ctx, align 8
-  %calltmp370 = call i64 @"core::cg::get_fn"(i64 %ctx369, i64 ptrtoint (ptr @.str.2663 to i64))
+  %calltmp370 = call i64 @"core::cg::get_fn"(i64 %ctx369, i64 ptrtoint (ptr @.str.2667 to i64))
   store i64 %calltmp370, ptr %arr_fn371, align 8
   %ctx372 = load i64, ptr %ctx, align 8
-  %calltmp373 = call i64 @"core::cg::get_fn"(i64 %ctx372, i64 ptrtoint (ptr @.str.2664 to i64))
+  %calltmp373 = call i64 @"core::cg::get_fn"(i64 %ctx372, i64 ptrtoint (ptr @.str.2668 to i64))
   store i64 %calltmp373, ptr %push_fn374, align 8
   %ctx375 = load i64, ptr %ctx, align 8
   %arr_fn376 = load i64, ptr %arr_fn371, align 8
-  %calltmp377 = call i64 @"core::cg::call_0"(i64 %ctx375, i64 %arr_fn376, i64 ptrtoint (ptr @.str.2665 to i64))
+  %calltmp377 = call i64 @"core::cg::call_0"(i64 %ctx375, i64 %arr_fn376, i64 ptrtoint (ptr @.str.2669 to i64))
   store i64 %calltmp377, ptr %closure_arr378, align 8
   %ctx379 = load i64, ptr %ctx, align 8
   %push_fn380 = load i64, ptr %push_fn374, align 8
   %closure_arr381 = load i64, ptr %closure_arr378, align 8
   %ctx382 = load i64, ptr %ctx, align 8
   %calltmp383 = call i64 @"core::cg::const_i64"(i64 %ctx382, i64 -559038737)
-  %calltmp384 = call i64 @"core::cg::call_2"(i64 %ctx379, i64 %push_fn380, i64 %closure_arr381, i64 %calltmp383, i64 ptrtoint (ptr @.str.2666 to i64))
+  %calltmp384 = call i64 @"core::cg::call_2"(i64 %ctx379, i64 %push_fn380, i64 %closure_arr381, i64 %calltmp383, i64 ptrtoint (ptr @.str.2670 to i64))
   %ctx385 = load i64, ptr %ctx, align 8
   %push_fn386 = load i64, ptr %push_fn374, align 8
   %closure_arr387 = load i64, ptr %closure_arr378, align 8
   %fn_i64388 = load i64, ptr %fn_i64368, align 8
-  %calltmp389 = call i64 @"core::cg::call_2"(i64 %ctx385, i64 %push_fn386, i64 %closure_arr387, i64 %fn_i64388, i64 ptrtoint (ptr @.str.2667 to i64))
+  %calltmp389 = call i64 @"core::cg::call_2"(i64 %ctx385, i64 %push_fn386, i64 %closure_arr387, i64 %fn_i64388, i64 ptrtoint (ptr @.str.2671 to i64))
   %ctx390 = load i64, ptr %ctx, align 8
   %closure_arr391 = load i64, ptr %closure_arr378, align 8
-  %calltmp392 = call i64 @"core::cg::to_i64"(i64 %ctx390, i64 %closure_arr391, i64 ptrtoint (ptr @.str.2668 to i64))
+  %calltmp392 = call i64 @"core::cg::to_i64"(i64 %ctx390, i64 %closure_arr391, i64 ptrtoint (ptr @.str.2672 to i64))
   store i64 %calltmp392, ptr %closure_i64393, align 8
   %ctx394 = load i64, ptr %ctx, align 8
   %obj_ptr395 = inttoptr i64 %ctx394 to ptr
@@ -87177,12 +87403,12 @@ else356:                                          ; preds = %ifcont317
 ifcont357:                                        ; preds = %else356
   %path409 = load i64, ptr %path264, align 8
   %concat_r410 = inttoptr i64 %path409 to ptr
-  %lhs_len411 = call i64 @strlen(ptr @.str.2669)
+  %lhs_len411 = call i64 @strlen(ptr @.str.2673)
   %rhs_len412 = call i64 @strlen(ptr %concat_r410)
   %concat_total413 = add i64 %lhs_len411, %rhs_len412
   %concat_size414 = add i64 %concat_total413, 1
   %buf415 = call ptr @forge_bump_alloc(i64 %concat_size414)
-  %7 = call ptr @memcpy(ptr %buf415, ptr @.str.2669, i64 %lhs_len411)
+  %7 = call ptr @memcpy(ptr %buf415, ptr @.str.2673, i64 %lhs_len411)
   %buf_int416 = ptrtoint ptr %buf415 to i64
   %dst2_int417 = add i64 %buf_int416, %lhs_len411
   %dst2418 = inttoptr i64 %dst2_int417 to ptr
@@ -87191,7 +87417,7 @@ ifcont357:                                        ; preds = %else356
   %concat_i64420 = ptrtoint ptr %buf415 to i64
   %concat_l421 = inttoptr i64 %concat_i64420 to ptr
   %lhs_len422 = call i64 @strlen(ptr %concat_l421)
-  %rhs_len423 = call i64 @strlen(ptr @.str.2670)
+  %rhs_len423 = call i64 @strlen(ptr @.str.2674)
   %concat_total424 = add i64 %lhs_len422, %rhs_len423
   %concat_size425 = add i64 %concat_total424, 1
   %buf426 = call ptr @forge_bump_alloc(i64 %concat_size425)
@@ -87200,7 +87426,7 @@ ifcont357:                                        ; preds = %else356
   %dst2_int428 = add i64 %buf_int427, %lhs_len422
   %dst2429 = inttoptr i64 %dst2_int428 to ptr
   %rhs_len_p1430 = add i64 %rhs_len423, 1
-  %10 = call ptr @memcpy(ptr %dst2429, ptr @.str.2670, i64 %rhs_len_p1430)
+  %10 = call ptr @memcpy(ptr %dst2429, ptr @.str.2674, i64 %rhs_len_p1430)
   %concat_i64431 = ptrtoint ptr %buf426 to i64
   %calltmp432 = call i64 @"core::cg::err_emit"(i64 %concat_i64431)
   store i64 %calltmp432, ptr %match_result, align 8
@@ -87278,7 +87504,7 @@ then463:                                          ; preds = %ifcont452
   %fld_ptr490 = getelementptr inbounds nuw %EmitResult, ptr %buf479, i32 0, i32 2
   store i64 0, ptr %fld_ptr490, align 8
   %fld_ptr491 = getelementptr inbounds nuw %EmitResult, ptr %buf479, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2671 to i64), ptr %fld_ptr491, align 8
+  store i64 ptrtoint (ptr @.str.2675 to i64), ptr %fld_ptr491, align 8
   %struct_i64492 = ptrtoint ptr %buf479 to i64
   ret i64 %struct_i64492
 
@@ -87330,7 +87556,7 @@ then505:                                          ; preds = %ifcont465
   %fld_ptr532 = getelementptr inbounds nuw %EmitResult, ptr %buf521, i32 0, i32 2
   store i64 0, ptr %fld_ptr532, align 8
   %fld_ptr533 = getelementptr inbounds nuw %EmitResult, ptr %buf521, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2672 to i64), ptr %fld_ptr533, align 8
+  store i64 ptrtoint (ptr @.str.2676 to i64), ptr %fld_ptr533, align 8
   %struct_i64534 = ptrtoint ptr %buf521 to i64
   ret i64 %struct_i64534
 
@@ -87340,12 +87566,12 @@ else506:                                          ; preds = %ifcont465
 ifcont507:                                        ; preds = %else506
   %name535 = load i64, ptr %name438, align 8
   %concat_r536 = inttoptr i64 %name535 to ptr
-  %lhs_len537 = call i64 @strlen(ptr @.str.2673)
+  %lhs_len537 = call i64 @strlen(ptr @.str.2677)
   %rhs_len538 = call i64 @strlen(ptr %concat_r536)
   %concat_total539 = add i64 %lhs_len537, %rhs_len538
   %concat_size540 = add i64 %concat_total539, 1
   %buf541 = call ptr @forge_bump_alloc(i64 %concat_size540)
-  %11 = call ptr @memcpy(ptr %buf541, ptr @.str.2673, i64 %lhs_len537)
+  %11 = call ptr @memcpy(ptr %buf541, ptr @.str.2677, i64 %lhs_len537)
   %buf_int542 = ptrtoint ptr %buf541 to i64
   %dst2_int543 = add i64 %buf_int542, %lhs_len537
   %dst2544 = inttoptr i64 %dst2_int543 to ptr
@@ -87354,7 +87580,7 @@ ifcont507:                                        ; preds = %else506
   %concat_i64546 = ptrtoint ptr %buf541 to i64
   %concat_l547 = inttoptr i64 %concat_i64546 to ptr
   %lhs_len548 = call i64 @strlen(ptr %concat_l547)
-  %rhs_len549 = call i64 @strlen(ptr @.str.2674)
+  %rhs_len549 = call i64 @strlen(ptr @.str.2678)
   %concat_total550 = add i64 %lhs_len548, %rhs_len549
   %concat_size551 = add i64 %concat_total550, 1
   %buf552 = call ptr @forge_bump_alloc(i64 %concat_size551)
@@ -87363,7 +87589,7 @@ ifcont507:                                        ; preds = %else506
   %dst2_int554 = add i64 %buf_int553, %lhs_len548
   %dst2555 = inttoptr i64 %dst2_int554 to ptr
   %rhs_len_p1556 = add i64 %rhs_len549, 1
-  %14 = call ptr @memcpy(ptr %dst2555, ptr @.str.2674, i64 %rhs_len_p1556)
+  %14 = call ptr @memcpy(ptr %dst2555, ptr @.str.2678, i64 %rhs_len_p1556)
   %concat_i64557 = ptrtoint ptr %buf552 to i64
   %calltmp558 = call i64 @"core::cg::err_emit"(i64 %concat_i64557)
   store i64 %calltmp558, ptr %match_result, align 8
@@ -87466,7 +87692,7 @@ march_arm608:                                     ; preds = %march_next593
 
 march_next609:                                    ; No predecessors!
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2678, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2682, i64 %tag_ext)
   unreachable
 
 then625:                                          ; preds = %march_arm608
@@ -87479,15 +87705,15 @@ else626:                                          ; preds = %march_arm608
 ifcont627:                                        ; preds = %else626
   %tag629 = load i64, ptr %tag612, align 8
   %buf630 = call ptr @forge_bump_alloc(i64 32)
-  %15 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf630, i64 32, ptr @.i2s_fmt.2676, i64 %tag629)
+  %15 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf630, i64 32, ptr @.i2s_fmt.2680, i64 %tag629)
   %i2s_result = ptrtoint ptr %buf630 to i64
   %concat_r631 = inttoptr i64 %i2s_result to ptr
-  %lhs_len632 = call i64 @strlen(ptr @.str.2675)
+  %lhs_len632 = call i64 @strlen(ptr @.str.2679)
   %rhs_len633 = call i64 @strlen(ptr %concat_r631)
   %concat_total634 = add i64 %lhs_len632, %rhs_len633
   %concat_size635 = add i64 %concat_total634, 1
   %buf636 = call ptr @forge_bump_alloc(i64 %concat_size635)
-  %16 = call ptr @memcpy(ptr %buf636, ptr @.str.2675, i64 %lhs_len632)
+  %16 = call ptr @memcpy(ptr %buf636, ptr @.str.2679, i64 %lhs_len632)
   %buf_int637 = ptrtoint ptr %buf636 to i64
   %dst2_int638 = add i64 %buf_int637, %lhs_len632
   %dst2639 = inttoptr i64 %dst2_int638 to ptr
@@ -87496,7 +87722,7 @@ ifcont627:                                        ; preds = %else626
   %concat_i64641 = ptrtoint ptr %buf636 to i64
   %concat_l642 = inttoptr i64 %concat_i64641 to ptr
   %lhs_len643 = call i64 @strlen(ptr %concat_l642)
-  %rhs_len644 = call i64 @strlen(ptr @.str.2677)
+  %rhs_len644 = call i64 @strlen(ptr @.str.2681)
   %concat_total645 = add i64 %lhs_len643, %rhs_len644
   %concat_size646 = add i64 %concat_total645, 1
   %buf647 = call ptr @forge_bump_alloc(i64 %concat_size646)
@@ -87505,7 +87731,7 @@ ifcont627:                                        ; preds = %else626
   %dst2_int649 = add i64 %buf_int648, %lhs_len643
   %dst2650 = inttoptr i64 %dst2_int649 to ptr
   %rhs_len_p1651 = add i64 %rhs_len644, 1
-  %19 = call ptr @memcpy(ptr %dst2650, ptr @.str.2677, i64 %rhs_len_p1651)
+  %19 = call ptr @memcpy(ptr %dst2650, ptr @.str.2681, i64 %rhs_len_p1651)
   %concat_i64652 = ptrtoint ptr %buf647 to i64
   %calltmp653 = call i64 @"core::cg::err_emit"(i64 %concat_i64652)
   store i64 %calltmp653, ptr %match_result, align 8
@@ -87563,16 +87789,16 @@ ifcont:                                           ; preds = %else
   %value = load i64, ptr %fld_ptr11, align 8
   %ctx12 = load i64, ptr %ctx, align 8
   %calltmp13 = call i64 @"core::cg::const_i64"(i64 %ctx12, i64 0)
-  %calltmp14 = call i64 @forge_llvm_build_icmp(i64 %builder, i64 33, i64 %value, i64 %calltmp13, i64 ptrtoint (ptr @.str.2679 to i64))
+  %calltmp14 = call i64 @forge_llvm_build_icmp(i64 %builder, i64 33, i64 %value, i64 %calltmp13, i64 ptrtoint (ptr @.str.2683 to i64))
   store i64 %calltmp14, ptr %cond_i1, align 8
   %ctx15 = load i64, ptr %ctx, align 8
-  %calltmp16 = call i64 @"core::cg::new_bb"(i64 %ctx15, i64 ptrtoint (ptr @.str.2680 to i64))
+  %calltmp16 = call i64 @"core::cg::new_bb"(i64 %ctx15, i64 ptrtoint (ptr @.str.2684 to i64))
   store i64 %calltmp16, ptr %then_bb, align 8
   %ctx17 = load i64, ptr %ctx, align 8
-  %calltmp18 = call i64 @"core::cg::new_bb"(i64 %ctx17, i64 ptrtoint (ptr @.str.2681 to i64))
+  %calltmp18 = call i64 @"core::cg::new_bb"(i64 %ctx17, i64 ptrtoint (ptr @.str.2685 to i64))
   store i64 %calltmp18, ptr %else_bb, align 8
   %ctx19 = load i64, ptr %ctx, align 8
-  %calltmp20 = call i64 @"core::cg::new_bb"(i64 %ctx19, i64 ptrtoint (ptr @.str.2682 to i64))
+  %calltmp20 = call i64 @"core::cg::new_bb"(i64 %ctx19, i64 ptrtoint (ptr @.str.2686 to i64))
   store i64 %calltmp20, ptr %merge_bb, align 8
   %ctx21 = load i64, ptr %ctx, align 8
   %obj_ptr22 = inttoptr i64 %ctx21 to ptr
@@ -87582,7 +87808,7 @@ ifcont:                                           ; preds = %else
   %obj_ptr26 = inttoptr i64 %ctx25 to ptr
   %fld_ptr27 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr26, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr27, align 8
-  %calltmp28 = call i64 @forge_llvm_build_alloca(i64 %builder24, i64 %i64_type, i64 ptrtoint (ptr @.str.2683 to i64))
+  %calltmp28 = call i64 @forge_llvm_build_alloca(i64 %builder24, i64 %i64_type, i64 ptrtoint (ptr @.str.2687 to i64))
   store i64 %calltmp28, ptr %result_slot, align 8
   %ctx29 = load i64, ptr %ctx, align 8
   %obj_ptr30 = inttoptr i64 %ctx29 to ptr
@@ -87733,7 +87959,7 @@ ifcont118:                                        ; preds = %else117, %then116
   %fld_ptr147 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr146, i32 0, i32 5
   %i64_type148 = load i64, ptr %fld_ptr147, align 8
   %result_slot149 = load i64, ptr %result_slot, align 8
-  %calltmp150 = call i64 @forge_llvm_build_load(i64 %builder144, i64 %i64_type148, i64 %result_slot149, i64 ptrtoint (ptr @.str.2684 to i64))
+  %calltmp150 = call i64 @forge_llvm_build_load(i64 %builder144, i64 %i64_type148, i64 %result_slot149, i64 ptrtoint (ptr @.str.2688 to i64))
   store i64 %calltmp150, ptr %loaded, align 8
   %loaded151 = load i64, ptr %loaded, align 8
   %t152 = load i64, ptr %t, align 8
@@ -87792,7 +88018,7 @@ ifcont:                                           ; preds = %else
   store i64 %calltmp9, ptr %struct_name, align 8
   %struct_name10 = load i64, ptr %struct_name, align 8
   %streq_l = inttoptr i64 %struct_name10 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2685)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2689)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -87806,12 +88032,12 @@ then12:                                           ; preds = %ifcont
   %ty18 = load i64, ptr %fld_ptr17, align 8
   %calltmp19 = call i64 @"core::ast::vtype_display"(i64 %ty18)
   %concat_r = inttoptr i64 %calltmp19 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2686)
+  %lhs_len = call i64 @strlen(ptr @.str.2690)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf = call ptr @forge_bump_alloc(i64 %concat_size)
-  %5 = call ptr @memcpy(ptr %buf, ptr @.str.2686, i64 %lhs_len)
+  %5 = call ptr @memcpy(ptr %buf, ptr @.str.2690, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -87820,7 +88046,7 @@ then12:                                           ; preds = %ifcont
   %concat_i64 = ptrtoint ptr %buf to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len20 = call i64 @strlen(ptr %concat_l)
-  %rhs_len21 = call i64 @strlen(ptr @.str.2687)
+  %rhs_len21 = call i64 @strlen(ptr @.str.2691)
   %concat_total22 = add i64 %lhs_len20, %rhs_len21
   %concat_size23 = add i64 %concat_total22, 1
   %buf24 = call ptr @forge_bump_alloc(i64 %concat_size23)
@@ -87829,7 +88055,7 @@ then12:                                           ; preds = %ifcont
   %dst2_int26 = add i64 %buf_int25, %lhs_len20
   %dst227 = inttoptr i64 %dst2_int26 to ptr
   %rhs_len_p128 = add i64 %rhs_len21, 1
-  %8 = call ptr @memcpy(ptr %dst227, ptr @.str.2687, i64 %rhs_len_p128)
+  %8 = call ptr @memcpy(ptr %dst227, ptr @.str.2691, i64 %rhs_len_p128)
   %concat_i6429 = ptrtoint ptr %buf24 to i64
   %calltmp30 = call i64 @"core::cg::err_emit"(i64 %concat_i6429)
   ret i64 %calltmp30
@@ -87857,12 +88083,12 @@ ifcont14:                                         ; preds = %else13
 then40:                                           ; preds = %ifcont14
   %struct_name43 = load i64, ptr %struct_name, align 8
   %concat_r44 = inttoptr i64 %struct_name43 to ptr
-  %lhs_len45 = call i64 @strlen(ptr @.str.2688)
+  %lhs_len45 = call i64 @strlen(ptr @.str.2692)
   %rhs_len46 = call i64 @strlen(ptr %concat_r44)
   %concat_total47 = add i64 %lhs_len45, %rhs_len46
   %concat_size48 = add i64 %concat_total47, 1
   %buf49 = call ptr @forge_bump_alloc(i64 %concat_size48)
-  %9 = call ptr @memcpy(ptr %buf49, ptr @.str.2688, i64 %lhs_len45)
+  %9 = call ptr @memcpy(ptr %buf49, ptr @.str.2692, i64 %lhs_len45)
   %buf_int50 = ptrtoint ptr %buf49 to i64
   %dst2_int51 = add i64 %buf_int50, %lhs_len45
   %dst252 = inttoptr i64 %dst2_int51 to ptr
@@ -87871,7 +88097,7 @@ then40:                                           ; preds = %ifcont14
   %concat_i6454 = ptrtoint ptr %buf49 to i64
   %concat_l55 = inttoptr i64 %concat_i6454 to ptr
   %lhs_len56 = call i64 @strlen(ptr %concat_l55)
-  %rhs_len57 = call i64 @strlen(ptr @.str.2689)
+  %rhs_len57 = call i64 @strlen(ptr @.str.2693)
   %concat_total58 = add i64 %lhs_len56, %rhs_len57
   %concat_size59 = add i64 %concat_total58, 1
   %buf60 = call ptr @forge_bump_alloc(i64 %concat_size59)
@@ -87880,7 +88106,7 @@ then40:                                           ; preds = %ifcont14
   %dst2_int62 = add i64 %buf_int61, %lhs_len56
   %dst263 = inttoptr i64 %dst2_int62 to ptr
   %rhs_len_p164 = add i64 %rhs_len57, 1
-  %12 = call ptr @memcpy(ptr %dst263, ptr @.str.2689, i64 %rhs_len_p164)
+  %12 = call ptr @memcpy(ptr %dst263, ptr @.str.2693, i64 %rhs_len_p164)
   %concat_i6465 = ptrtoint ptr %buf60 to i64
   %calltmp66 = call i64 @"core::cg::err_emit"(i64 %concat_i6465)
   ret i64 %calltmp66
@@ -87905,12 +88131,12 @@ ifcont42:                                         ; preds = %else41
 then74:                                           ; preds = %ifcont42
   %field77 = load i64, ptr %field, align 8
   %concat_r78 = inttoptr i64 %field77 to ptr
-  %lhs_len79 = call i64 @strlen(ptr @.str.2690)
+  %lhs_len79 = call i64 @strlen(ptr @.str.2694)
   %rhs_len80 = call i64 @strlen(ptr %concat_r78)
   %concat_total81 = add i64 %lhs_len79, %rhs_len80
   %concat_size82 = add i64 %concat_total81, 1
   %buf83 = call ptr @forge_bump_alloc(i64 %concat_size82)
-  %13 = call ptr @memcpy(ptr %buf83, ptr @.str.2690, i64 %lhs_len79)
+  %13 = call ptr @memcpy(ptr %buf83, ptr @.str.2694, i64 %lhs_len79)
   %buf_int84 = ptrtoint ptr %buf83 to i64
   %dst2_int85 = add i64 %buf_int84, %lhs_len79
   %dst286 = inttoptr i64 %dst2_int85 to ptr
@@ -87919,7 +88145,7 @@ then74:                                           ; preds = %ifcont42
   %concat_i6488 = ptrtoint ptr %buf83 to i64
   %concat_l89 = inttoptr i64 %concat_i6488 to ptr
   %lhs_len90 = call i64 @strlen(ptr %concat_l89)
-  %rhs_len91 = call i64 @strlen(ptr @.str.2691)
+  %rhs_len91 = call i64 @strlen(ptr @.str.2695)
   %concat_total92 = add i64 %lhs_len90, %rhs_len91
   %concat_size93 = add i64 %concat_total92, 1
   %buf94 = call ptr @forge_bump_alloc(i64 %concat_size93)
@@ -87928,7 +88154,7 @@ then74:                                           ; preds = %ifcont42
   %dst2_int96 = add i64 %buf_int95, %lhs_len90
   %dst297 = inttoptr i64 %dst2_int96 to ptr
   %rhs_len_p198 = add i64 %rhs_len91, 1
-  %16 = call ptr @memcpy(ptr %dst297, ptr @.str.2691, i64 %rhs_len_p198)
+  %16 = call ptr @memcpy(ptr %dst297, ptr @.str.2695, i64 %rhs_len_p198)
   %concat_i6499 = ptrtoint ptr %buf94 to i64
   %struct_name100 = load i64, ptr %struct_name, align 8
   %concat_l101 = inttoptr i64 %concat_i6499 to ptr
@@ -87947,7 +88173,7 @@ then74:                                           ; preds = %ifcont42
   %concat_i64112 = ptrtoint ptr %buf107 to i64
   %concat_l113 = inttoptr i64 %concat_i64112 to ptr
   %lhs_len114 = call i64 @strlen(ptr %concat_l113)
-  %rhs_len115 = call i64 @strlen(ptr @.str.2692)
+  %rhs_len115 = call i64 @strlen(ptr @.str.2696)
   %concat_total116 = add i64 %lhs_len114, %rhs_len115
   %concat_size117 = add i64 %concat_total116, 1
   %buf118 = call ptr @forge_bump_alloc(i64 %concat_size117)
@@ -87956,7 +88182,7 @@ then74:                                           ; preds = %ifcont42
   %dst2_int120 = add i64 %buf_int119, %lhs_len114
   %dst2121 = inttoptr i64 %dst2_int120 to ptr
   %rhs_len_p1122 = add i64 %rhs_len115, 1
-  %20 = call ptr @memcpy(ptr %dst2121, ptr @.str.2692, i64 %rhs_len_p1122)
+  %20 = call ptr @memcpy(ptr %dst2121, ptr @.str.2696, i64 %rhs_len_p1122)
   %concat_i64123 = ptrtoint ptr %buf118 to i64
   %calltmp124 = call i64 @"core::cg::err_emit"(i64 %concat_i64123)
   ret i64 %calltmp124
@@ -87977,7 +88203,7 @@ ifcont76:                                         ; preds = %else75
   %obj_ptr132 = inttoptr i64 %r131 to ptr
   %fld_ptr133 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr132, i32 0, i32 0
   %value134 = load i64, ptr %fld_ptr133, align 8
-  %calltmp135 = call i64 @"core::cg::to_ptr"(i64 %ctx130, i64 %value134, i64 ptrtoint (ptr @.str.2693 to i64))
+  %calltmp135 = call i64 @"core::cg::to_ptr"(i64 %ctx130, i64 %value134, i64 ptrtoint (ptr @.str.2697 to i64))
   store i64 %calltmp135, ptr %obj_ptr136, align 8
   %ctx137 = load i64, ptr %ctx, align 8
   %obj_ptr138 = inttoptr i64 %ctx137 to ptr
@@ -87986,7 +88212,7 @@ ifcont76:                                         ; preds = %else75
   %st_ty140 = load i64, ptr %st_ty, align 8
   %obj_ptr141 = load i64, ptr %obj_ptr136, align 8
   %idx142 = load i64, ptr %idx, align 8
-  %calltmp143 = call i64 @forge_llvm_build_struct_gep2(i64 %builder, i64 %st_ty140, i64 %obj_ptr141, i64 %idx142, i64 ptrtoint (ptr @.str.2694 to i64))
+  %calltmp143 = call i64 @forge_llvm_build_struct_gep2(i64 %builder, i64 %st_ty140, i64 %obj_ptr141, i64 %idx142, i64 ptrtoint (ptr @.str.2698 to i64))
   store i64 %calltmp143, ptr %gep, align 8
   %ctx144 = load i64, ptr %ctx, align 8
   %env145 = load i64, ptr %env, align 8
@@ -88166,7 +88392,7 @@ march_arm42:                                      ; preds = %march_next28
 
 march_next43:                                     ; No predecessors!
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2696, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2700, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm42
@@ -88191,7 +88417,7 @@ ifcont:                                           ; preds = %else
   %fld_ptr57 = getelementptr inbounds nuw %EmitResult, ptr %buf, i32 0, i32 2
   store i64 0, ptr %fld_ptr57, align 8
   %fld_ptr58 = getelementptr inbounds nuw %EmitResult, ptr %buf, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2695 to i64), ptr %fld_ptr58, align 8
+  store i64 ptrtoint (ptr @.str.2699 to i64), ptr %fld_ptr58, align 8
   %struct_i64 = ptrtoint ptr %buf to i64
   store i64 %struct_i64, ptr %match_result, align 8
   br label %match_end
@@ -88249,16 +88475,16 @@ ifcont:                                           ; preds = %else
   %value = load i64, ptr %fld_ptr11, align 8
   %ctx12 = load i64, ptr %ctx, align 8
   %calltmp13 = call i64 @"core::cg::const_i64"(i64 %ctx12, i64 0)
-  %calltmp14 = call i64 @forge_llvm_build_icmp(i64 %builder, i64 33, i64 %value, i64 %calltmp13, i64 ptrtoint (ptr @.str.2697 to i64))
+  %calltmp14 = call i64 @forge_llvm_build_icmp(i64 %builder, i64 33, i64 %value, i64 %calltmp13, i64 ptrtoint (ptr @.str.2701 to i64))
   store i64 %calltmp14, ptr %cond_i1, align 8
   %ctx15 = load i64, ptr %ctx, align 8
-  %calltmp16 = call i64 @"core::cg::new_bb"(i64 %ctx15, i64 ptrtoint (ptr @.str.2698 to i64))
+  %calltmp16 = call i64 @"core::cg::new_bb"(i64 %ctx15, i64 ptrtoint (ptr @.str.2702 to i64))
   store i64 %calltmp16, ptr %then_bb, align 8
   %ctx17 = load i64, ptr %ctx, align 8
-  %calltmp18 = call i64 @"core::cg::new_bb"(i64 %ctx17, i64 ptrtoint (ptr @.str.2699 to i64))
+  %calltmp18 = call i64 @"core::cg::new_bb"(i64 %ctx17, i64 ptrtoint (ptr @.str.2703 to i64))
   store i64 %calltmp18, ptr %else_bb, align 8
   %ctx19 = load i64, ptr %ctx, align 8
-  %calltmp20 = call i64 @"core::cg::new_bb"(i64 %ctx19, i64 ptrtoint (ptr @.str.2700 to i64))
+  %calltmp20 = call i64 @"core::cg::new_bb"(i64 %ctx19, i64 ptrtoint (ptr @.str.2704 to i64))
   store i64 %calltmp20, ptr %merge_bb, align 8
   %ctx21 = load i64, ptr %ctx, align 8
   %obj_ptr22 = inttoptr i64 %ctx21 to ptr
@@ -88268,7 +88494,7 @@ ifcont:                                           ; preds = %else
   %obj_ptr26 = inttoptr i64 %ctx25 to ptr
   %fld_ptr27 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr26, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr27, align 8
-  %calltmp28 = call i64 @forge_llvm_build_alloca(i64 %builder24, i64 %i64_type, i64 ptrtoint (ptr @.str.2701 to i64))
+  %calltmp28 = call i64 @forge_llvm_build_alloca(i64 %builder24, i64 %i64_type, i64 ptrtoint (ptr @.str.2705 to i64))
   store i64 %calltmp28, ptr %result_slot, align 8
   %ctx29 = load i64, ptr %ctx, align 8
   %obj_ptr30 = inttoptr i64 %ctx29 to ptr
@@ -88408,7 +88634,7 @@ ifcont102:                                        ; preds = %else101, %ifcont130
   %fld_ptr165 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr164, i32 0, i32 5
   %i64_type166 = load i64, ptr %fld_ptr165, align 8
   %result_slot167 = load i64, ptr %result_slot, align 8
-  %calltmp168 = call i64 @forge_llvm_build_load(i64 %builder162, i64 %i64_type166, i64 %result_slot167, i64 ptrtoint (ptr @.str.2702 to i64))
+  %calltmp168 = call i64 @forge_llvm_build_load(i64 %builder162, i64 %i64_type166, i64 %result_slot167, i64 ptrtoint (ptr @.str.2706 to i64))
   store i64 %calltmp168, ptr %loaded, align 8
   %buf169 = call ptr @forge_bump_alloc(i64 32)
   %loaded170 = load i64, ptr %loaded, align 8
@@ -88423,7 +88649,7 @@ ifcont102:                                        ; preds = %else101, %ifcont130
   %fld_ptr176 = getelementptr inbounds nuw %EmitResult, ptr %buf169, i32 0, i32 2
   store i64 0, ptr %fld_ptr176, align 8
   %fld_ptr177 = getelementptr inbounds nuw %EmitResult, ptr %buf169, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2703 to i64), ptr %fld_ptr177, align 8
+  store i64 ptrtoint (ptr @.str.2707 to i64), ptr %fld_ptr177, align 8
   %struct_i64 = ptrtoint ptr %buf169 to i64
   ret i64 %struct_i64
 
@@ -88511,7 +88737,7 @@ march_arm:                                        ; preds = %entry
   %fld_ptr5 = getelementptr inbounds nuw %EmitResult, ptr %buf, i32 0, i32 2
   store i64 0, ptr %fld_ptr5, align 8
   %fld_ptr6 = getelementptr inbounds nuw %EmitResult, ptr %buf, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2704 to i64), ptr %fld_ptr6, align 8
+  store i64 ptrtoint (ptr @.str.2708 to i64), ptr %fld_ptr6, align 8
   %struct_i64 = ptrtoint ptr %buf to i64
   store i64 %struct_i64, ptr %match_result, align 8
   br label %match_end
@@ -88537,7 +88763,7 @@ march_arm7:                                       ; preds = %march_next
 
 march_next8:                                      ; preds = %march_next
   %tag_ext53 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2706, i64 %tag_ext53)
+  call void @forge_match_unreachable(ptr @.match_fn.2710, i64 %tag_ext53)
   unreachable
 
 match_end18:                                      ; preds = %ifcont, %march_arm19
@@ -88579,7 +88805,7 @@ march_arm28:                                      ; preds = %march_next20
 
 march_next29:                                     ; No predecessors!
   %tag_ext = sext i8 %tag16 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2705, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2709, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm28
@@ -88712,11 +88938,11 @@ ifcont25:                                         ; preds = %else24
   %obj_ptr34 = inttoptr i64 %i_r33 to ptr
   %fld_ptr35 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr34, i32 0, i32 0
   %value36 = load i64, ptr %fld_ptr35, align 8
-  %calltmp37 = call i64 @forge_llvm_build_add(i64 %builder, i64 %value, i64 %value36, i64 ptrtoint (ptr @.str.2707 to i64))
+  %calltmp37 = call i64 @forge_llvm_build_add(i64 %builder, i64 %value, i64 %value36, i64 ptrtoint (ptr @.str.2711 to i64))
   store i64 %calltmp37, ptr %off, align 8
   %ctx38 = load i64, ptr %ctx, align 8
   %off39 = load i64, ptr %off, align 8
-  %calltmp40 = call i64 @"core::cg::to_ptr"(i64 %ctx38, i64 %off39, i64 ptrtoint (ptr @.str.2708 to i64))
+  %calltmp40 = call i64 @"core::cg::to_ptr"(i64 %ctx38, i64 %off39, i64 ptrtoint (ptr @.str.2712 to i64))
   store i64 %calltmp40, ptr %off_ptr, align 8
   %ctx41 = load i64, ptr %ctx, align 8
   %obj_ptr42 = inttoptr i64 %ctx41 to ptr
@@ -88728,7 +88954,7 @@ ifcont25:                                         ; preds = %else24
   %lc = load i64, ptr %fld_ptr47, align 8
   %calltmp48 = call i64 @forge_llvm_int8_type(i64 %lc)
   %off_ptr49 = load i64, ptr %off_ptr, align 8
-  %calltmp50 = call i64 @forge_llvm_build_load(i64 %builder44, i64 %calltmp48, i64 %off_ptr49, i64 ptrtoint (ptr @.str.2709 to i64))
+  %calltmp50 = call i64 @forge_llvm_build_load(i64 %builder44, i64 %calltmp48, i64 %off_ptr49, i64 ptrtoint (ptr @.str.2713 to i64))
   store i64 %calltmp50, ptr %byte, align 8
   %ctx51 = load i64, ptr %ctx, align 8
   %obj_ptr52 = inttoptr i64 %ctx51 to ptr
@@ -88739,7 +88965,7 @@ ifcont25:                                         ; preds = %else24
   %obj_ptr57 = inttoptr i64 %ctx56 to ptr
   %fld_ptr58 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr57, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr58, align 8
-  %calltmp59 = call i64 @forge_llvm_build_zext(i64 %builder54, i64 %byte55, i64 %i64_type, i64 ptrtoint (ptr @.str.2710 to i64))
+  %calltmp59 = call i64 @forge_llvm_build_zext(i64 %builder54, i64 %byte55, i64 %i64_type, i64 ptrtoint (ptr @.str.2714 to i64))
   %calltmp60 = call i64 @"core::cg::ok_emit"(i64 %calltmp59)
   ret i64 %calltmp60
 
@@ -88780,7 +89006,7 @@ else81:                                           ; preds = %then67
 ifcont82:                                         ; preds = %else81
   %ctx84 = load i64, ptr %ctx, align 8
   %ctx85 = load i64, ptr %ctx, align 8
-  %calltmp86 = call i64 @"core::cg::get_fn"(i64 %ctx85, i64 ptrtoint (ptr @.str.2711 to i64))
+  %calltmp86 = call i64 @"core::cg::get_fn"(i64 %ctx85, i64 ptrtoint (ptr @.str.2715 to i64))
   %r87 = load i64, ptr %r, align 8
   %obj_ptr88 = inttoptr i64 %r87 to ptr
   %fld_ptr89 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr88, i32 0, i32 0
@@ -88789,7 +89015,7 @@ ifcont82:                                         ; preds = %else81
   %obj_ptr92 = inttoptr i64 %i_r91 to ptr
   %fld_ptr93 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr92, i32 0, i32 0
   %value94 = load i64, ptr %fld_ptr93, align 8
-  %calltmp95 = call i64 @"core::cg::call_2"(i64 %ctx84, i64 %calltmp86, i64 %value90, i64 %value94, i64 ptrtoint (ptr @.str.2712 to i64))
+  %calltmp95 = call i64 @"core::cg::call_2"(i64 %ctx84, i64 %calltmp86, i64 %value90, i64 %value94, i64 ptrtoint (ptr @.str.2716 to i64))
   store i64 %calltmp95, ptr %elem, align 8
   %elem96 = load i64, ptr %elem, align 8
   %r97 = load i64, ptr %r, align 8
@@ -88807,12 +89033,12 @@ then109:                                          ; preds = %ifcont69
   %ty115 = load i64, ptr %fld_ptr114, align 8
   %calltmp116 = call i64 @"core::ast::vtype_display"(i64 %ty115)
   %concat_r = inttoptr i64 %calltmp116 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2713)
+  %lhs_len = call i64 @strlen(ptr @.str.2717)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf117 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %4 = call ptr @memcpy(ptr %buf117, ptr @.str.2713, i64 %lhs_len)
+  %4 = call ptr @memcpy(ptr %buf117, ptr @.str.2717, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf117 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -88821,7 +89047,7 @@ then109:                                          ; preds = %ifcont69
   %concat_i64 = ptrtoint ptr %buf117 to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len118 = call i64 @strlen(ptr %concat_l)
-  %rhs_len119 = call i64 @strlen(ptr @.str.2714)
+  %rhs_len119 = call i64 @strlen(ptr @.str.2718)
   %concat_total120 = add i64 %lhs_len118, %rhs_len119
   %concat_size121 = add i64 %concat_total120, 1
   %buf122 = call ptr @forge_bump_alloc(i64 %concat_size121)
@@ -88830,7 +89056,7 @@ then109:                                          ; preds = %ifcont69
   %dst2_int124 = add i64 %buf_int123, %lhs_len118
   %dst2125 = inttoptr i64 %dst2_int124 to ptr
   %rhs_len_p1126 = add i64 %rhs_len119, 1
-  %7 = call ptr @memcpy(ptr %dst2125, ptr @.str.2714, i64 %rhs_len_p1126)
+  %7 = call ptr @memcpy(ptr %dst2125, ptr @.str.2718, i64 %rhs_len_p1126)
   %concat_i64127 = ptrtoint ptr %buf122 to i64
   %calltmp128 = call i64 @"core::cg::err_emit"(i64 %concat_i64127)
   ret i64 %calltmp128
@@ -88873,11 +89099,11 @@ ifcont141:                                        ; preds = %else140
   %obj_ptr153 = inttoptr i64 %i_r152 to ptr
   %fld_ptr154 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr153, i32 0, i32 0
   %value155 = load i64, ptr %fld_ptr154, align 8
-  %calltmp156 = call i64 @forge_llvm_build_add(i64 %builder150, i64 %src_int151, i64 %value155, i64 ptrtoint (ptr @.str.2715 to i64))
+  %calltmp156 = call i64 @forge_llvm_build_add(i64 %builder150, i64 %src_int151, i64 %value155, i64 ptrtoint (ptr @.str.2719 to i64))
   store i64 %calltmp156, ptr %off_int, align 8
   %ctx157 = load i64, ptr %ctx, align 8
   %off_int158 = load i64, ptr %off_int, align 8
-  %calltmp159 = call i64 @"core::cg::to_ptr"(i64 %ctx157, i64 %off_int158, i64 ptrtoint (ptr @.str.2716 to i64))
+  %calltmp159 = call i64 @"core::cg::to_ptr"(i64 %ctx157, i64 %off_int158, i64 ptrtoint (ptr @.str.2720 to i64))
   store i64 %calltmp159, ptr %off_ptr160, align 8
   %ctx161 = load i64, ptr %ctx, align 8
   %obj_ptr162 = inttoptr i64 %ctx161 to ptr
@@ -88889,7 +89115,7 @@ ifcont141:                                        ; preds = %else140
   %lc168 = load i64, ptr %fld_ptr167, align 8
   %calltmp169 = call i64 @forge_llvm_int8_type(i64 %lc168)
   %off_ptr170 = load i64, ptr %off_ptr160, align 8
-  %calltmp171 = call i64 @forge_llvm_build_load(i64 %builder164, i64 %calltmp169, i64 %off_ptr170, i64 ptrtoint (ptr @.str.2717 to i64))
+  %calltmp171 = call i64 @forge_llvm_build_load(i64 %builder164, i64 %calltmp169, i64 %off_ptr170, i64 ptrtoint (ptr @.str.2721 to i64))
   store i64 %calltmp171, ptr %byte172, align 8
   %ctx173 = load i64, ptr %ctx, align 8
   %ctx174 = load i64, ptr %ctx, align 8
@@ -88905,7 +89131,7 @@ ifcont141:                                        ; preds = %else140
   %calltmp184 = call i64 @forge_llvm_build_store(i64 %builder181, i64 %byte182, i64 %buf183)
   %ctx185 = load i64, ptr %ctx, align 8
   %buf186 = load i64, ptr %buf177, align 8
-  %calltmp187 = call i64 @"core::cg::to_i64"(i64 %ctx185, i64 %buf186, i64 ptrtoint (ptr @.str.2718 to i64))
+  %calltmp187 = call i64 @"core::cg::to_i64"(i64 %ctx185, i64 %buf186, i64 ptrtoint (ptr @.str.2722 to i64))
   store i64 %calltmp187, ptr %buf_int188, align 8
   %ctx189 = load i64, ptr %ctx, align 8
   %calltmp190 = call i64 @"core::cg::const_i64"(i64 %ctx189, i64 1)
@@ -88916,11 +89142,11 @@ ifcont141:                                        ; preds = %else140
   %builder194 = load i64, ptr %fld_ptr193, align 8
   %buf_int195 = load i64, ptr %buf_int188, align 8
   %one196 = load i64, ptr %one, align 8
-  %calltmp197 = call i64 @forge_llvm_build_add(i64 %builder194, i64 %buf_int195, i64 %one196, i64 ptrtoint (ptr @.str.2719 to i64))
+  %calltmp197 = call i64 @forge_llvm_build_add(i64 %builder194, i64 %buf_int195, i64 %one196, i64 ptrtoint (ptr @.str.2723 to i64))
   store i64 %calltmp197, ptr %nul_int, align 8
   %ctx198 = load i64, ptr %ctx, align 8
   %nul_int199 = load i64, ptr %nul_int, align 8
-  %calltmp200 = call i64 @"core::cg::to_ptr"(i64 %ctx198, i64 %nul_int199, i64 ptrtoint (ptr @.str.2720 to i64))
+  %calltmp200 = call i64 @"core::cg::to_ptr"(i64 %ctx198, i64 %nul_int199, i64 ptrtoint (ptr @.str.2724 to i64))
   store i64 %calltmp200, ptr %nul_ptr, align 8
   %ctx201 = load i64, ptr %ctx, align 8
   %obj_ptr202 = inttoptr i64 %ctx201 to ptr
@@ -88932,7 +89158,7 @@ ifcont141:                                        ; preds = %else140
   %calltmp208 = call i64 @forge_llvm_build_store(i64 %builder204, i64 %calltmp206, i64 %nul_ptr207)
   %ctx209 = load i64, ptr %ctx, align 8
   %buf210 = load i64, ptr %buf177, align 8
-  %calltmp211 = call i64 @"core::cg::to_i64"(i64 %ctx209, i64 %buf210, i64 ptrtoint (ptr @.str.2721 to i64))
+  %calltmp211 = call i64 @"core::cg::to_i64"(i64 %ctx209, i64 %buf210, i64 ptrtoint (ptr @.str.2725 to i64))
   store i64 %calltmp211, ptr %result_i64, align 8
   %result_i64212 = load i64, ptr %result_i64, align 8
   %calltmp213 = call i64 @"core::cg::ok_emit_str"(i64 %result_i64212)
@@ -89029,7 +89255,7 @@ match_arm14:                                      ; preds = %match_next
 
 match_next15:                                     ; No predecessors!
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2722, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2726, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %match_end
@@ -89051,7 +89277,7 @@ ifcont:                                           ; preds = %else
 sc_rhs:                                           ; preds = %ifcont
   %field28 = load i64, ptr %field, align 8
   %streq_l = inttoptr i64 %field28 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2723)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2727)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -89070,13 +89296,13 @@ then30:                                           ; preds = %sc_merge
   %obj_ptr35 = inttoptr i64 %r34 to ptr
   %fld_ptr36 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr35, i32 0, i32 0
   %value = load i64, ptr %fld_ptr36, align 8
-  %calltmp37 = call i64 @"core::cg::to_ptr"(i64 %ctx33, i64 %value, i64 ptrtoint (ptr @.str.2724 to i64))
+  %calltmp37 = call i64 @"core::cg::to_ptr"(i64 %ctx33, i64 %value, i64 ptrtoint (ptr @.str.2728 to i64))
   store i64 %calltmp37, ptr %str_ptr, align 8
   %ctx38 = load i64, ptr %ctx, align 8
   %ctx39 = load i64, ptr %ctx, align 8
-  %calltmp40 = call i64 @"core::cg::get_fn"(i64 %ctx39, i64 ptrtoint (ptr @.str.2725 to i64))
+  %calltmp40 = call i64 @"core::cg::get_fn"(i64 %ctx39, i64 ptrtoint (ptr @.str.2729 to i64))
   %str_ptr41 = load i64, ptr %str_ptr, align 8
-  %calltmp42 = call i64 @"core::cg::call_1"(i64 %ctx38, i64 %calltmp40, i64 %str_ptr41, i64 ptrtoint (ptr @.str.2726 to i64))
+  %calltmp42 = call i64 @"core::cg::call_1"(i64 %ctx38, i64 %calltmp40, i64 %str_ptr41, i64 ptrtoint (ptr @.str.2730 to i64))
   %calltmp43 = call i64 @"core::cg::ok_emit"(i64 %calltmp42)
   ret i64 %calltmp43
 
@@ -89095,7 +89321,7 @@ ifcont32:                                         ; preds = %else31
 sc_rhs50:                                         ; preds = %ifcont32
   %field52 = load i64, ptr %field, align 8
   %streq_l53 = inttoptr i64 %field52 to ptr
-  %strcmp_call54 = call i32 @strcmp(ptr %streq_l53, ptr @.str.2727)
+  %strcmp_call54 = call i32 @strcmp(ptr %streq_l53, ptr @.str.2731)
   %strcmp_sext55 = sext i32 %strcmp_call54 to i64
   %streq_cmp56 = icmp eq i64 %strcmp_sext55, 0
   %streq_ext57 = zext i1 %streq_cmp56 to i64
@@ -89111,12 +89337,12 @@ sc_merge51:                                       ; preds = %sc_rhs50, %ifcont32
 then62:                                           ; preds = %sc_merge51
   %ctx65 = load i64, ptr %ctx, align 8
   %ctx66 = load i64, ptr %ctx, align 8
-  %calltmp67 = call i64 @"core::cg::get_fn"(i64 %ctx66, i64 ptrtoint (ptr @.str.2728 to i64))
+  %calltmp67 = call i64 @"core::cg::get_fn"(i64 %ctx66, i64 ptrtoint (ptr @.str.2732 to i64))
   %r68 = load i64, ptr %r, align 8
   %obj_ptr69 = inttoptr i64 %r68 to ptr
   %fld_ptr70 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr69, i32 0, i32 0
   %value71 = load i64, ptr %fld_ptr70, align 8
-  %calltmp72 = call i64 @"core::cg::call_1"(i64 %ctx65, i64 %calltmp67, i64 %value71, i64 ptrtoint (ptr @.str.2729 to i64))
+  %calltmp72 = call i64 @"core::cg::call_1"(i64 %ctx65, i64 %calltmp67, i64 %value71, i64 ptrtoint (ptr @.str.2733 to i64))
   %calltmp73 = call i64 @"core::cg::ok_emit"(i64 %calltmp72)
   ret i64 %calltmp73
 
@@ -89135,7 +89361,7 @@ ifcont64:                                         ; preds = %else63
 sc_rhs80:                                         ; preds = %ifcont64
   %field82 = load i64, ptr %field, align 8
   %streq_l83 = inttoptr i64 %field82 to ptr
-  %strcmp_call84 = call i32 @strcmp(ptr %streq_l83, ptr @.str.2730)
+  %strcmp_call84 = call i32 @strcmp(ptr %streq_l83, ptr @.str.2734)
   %strcmp_sext85 = sext i32 %strcmp_call84 to i64
   %streq_cmp86 = icmp eq i64 %strcmp_sext85, 0
   %streq_ext87 = zext i1 %streq_cmp86 to i64
@@ -89151,12 +89377,12 @@ sc_merge81:                                       ; preds = %sc_rhs80, %ifcont64
 then92:                                           ; preds = %sc_merge81
   %ctx95 = load i64, ptr %ctx, align 8
   %ctx96 = load i64, ptr %ctx, align 8
-  %calltmp97 = call i64 @"core::cg::get_fn"(i64 %ctx96, i64 ptrtoint (ptr @.str.2731 to i64))
+  %calltmp97 = call i64 @"core::cg::get_fn"(i64 %ctx96, i64 ptrtoint (ptr @.str.2735 to i64))
   %r98 = load i64, ptr %r, align 8
   %obj_ptr99 = inttoptr i64 %r98 to ptr
   %fld_ptr100 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr99, i32 0, i32 0
   %value101 = load i64, ptr %fld_ptr100, align 8
-  %calltmp102 = call i64 @"core::cg::call_1"(i64 %ctx95, i64 %calltmp97, i64 %value101, i64 ptrtoint (ptr @.str.2732 to i64))
+  %calltmp102 = call i64 @"core::cg::call_1"(i64 %ctx95, i64 %calltmp97, i64 %value101, i64 ptrtoint (ptr @.str.2736 to i64))
   %calltmp103 = call i64 @"core::cg::ok_emit"(i64 %calltmp102)
   ret i64 %calltmp103
 
@@ -89172,7 +89398,7 @@ ifcont94:                                         ; preds = %else93
   store i64 %calltmp108, ptr %struct_name, align 8
   %struct_name109 = load i64, ptr %struct_name, align 8
   %streq_l110 = inttoptr i64 %struct_name109 to ptr
-  %strcmp_call111 = call i32 @strcmp(ptr %streq_l110, ptr @.str.2733)
+  %strcmp_call111 = call i32 @strcmp(ptr %streq_l110, ptr @.str.2737)
   %strcmp_sext112 = sext i32 %strcmp_call111 to i64
   %streq_cmp113 = icmp eq i64 %strcmp_sext112, 0
   %streq_ext114 = zext i1 %streq_cmp113 to i64
@@ -89186,12 +89412,12 @@ then116:                                          ; preds = %ifcont94
   %ty122 = load i64, ptr %fld_ptr121, align 8
   %calltmp123 = call i64 @"core::ast::vtype_display"(i64 %ty122)
   %concat_r = inttoptr i64 %calltmp123 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2734)
+  %lhs_len = call i64 @strlen(ptr @.str.2738)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf124 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %4 = call ptr @memcpy(ptr %buf124, ptr @.str.2734, i64 %lhs_len)
+  %4 = call ptr @memcpy(ptr %buf124, ptr @.str.2738, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf124 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -89200,7 +89426,7 @@ then116:                                          ; preds = %ifcont94
   %concat_i64 = ptrtoint ptr %buf124 to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len125 = call i64 @strlen(ptr %concat_l)
-  %rhs_len126 = call i64 @strlen(ptr @.str.2735)
+  %rhs_len126 = call i64 @strlen(ptr @.str.2739)
   %concat_total127 = add i64 %lhs_len125, %rhs_len126
   %concat_size128 = add i64 %concat_total127, 1
   %buf129 = call ptr @forge_bump_alloc(i64 %concat_size128)
@@ -89209,7 +89435,7 @@ then116:                                          ; preds = %ifcont94
   %dst2_int131 = add i64 %buf_int130, %lhs_len125
   %dst2132 = inttoptr i64 %dst2_int131 to ptr
   %rhs_len_p1133 = add i64 %rhs_len126, 1
-  %7 = call ptr @memcpy(ptr %dst2132, ptr @.str.2735, i64 %rhs_len_p1133)
+  %7 = call ptr @memcpy(ptr %dst2132, ptr @.str.2739, i64 %rhs_len_p1133)
   %concat_i64134 = ptrtoint ptr %buf129 to i64
   %field135 = load i64, ptr %field, align 8
   %concat_l136 = inttoptr i64 %concat_i64134 to ptr
@@ -89228,7 +89454,7 @@ then116:                                          ; preds = %ifcont94
   %concat_i64147 = ptrtoint ptr %buf142 to i64
   %concat_l148 = inttoptr i64 %concat_i64147 to ptr
   %lhs_len149 = call i64 @strlen(ptr %concat_l148)
-  %rhs_len150 = call i64 @strlen(ptr @.str.2736)
+  %rhs_len150 = call i64 @strlen(ptr @.str.2740)
   %concat_total151 = add i64 %lhs_len149, %rhs_len150
   %concat_size152 = add i64 %concat_total151, 1
   %buf153 = call ptr @forge_bump_alloc(i64 %concat_size152)
@@ -89237,7 +89463,7 @@ then116:                                          ; preds = %ifcont94
   %dst2_int155 = add i64 %buf_int154, %lhs_len149
   %dst2156 = inttoptr i64 %dst2_int155 to ptr
   %rhs_len_p1157 = add i64 %rhs_len150, 1
-  %11 = call ptr @memcpy(ptr %dst2156, ptr @.str.2736, i64 %rhs_len_p1157)
+  %11 = call ptr @memcpy(ptr %dst2156, ptr @.str.2740, i64 %rhs_len_p1157)
   %concat_i64158 = ptrtoint ptr %buf153 to i64
   %calltmp159 = call i64 @"core::cg::err_emit"(i64 %concat_i64158)
   ret i64 %calltmp159
@@ -89265,12 +89491,12 @@ ifcont118:                                        ; preds = %else117
 then170:                                          ; preds = %ifcont118
   %struct_name173 = load i64, ptr %struct_name, align 8
   %concat_r174 = inttoptr i64 %struct_name173 to ptr
-  %lhs_len175 = call i64 @strlen(ptr @.str.2737)
+  %lhs_len175 = call i64 @strlen(ptr @.str.2741)
   %rhs_len176 = call i64 @strlen(ptr %concat_r174)
   %concat_total177 = add i64 %lhs_len175, %rhs_len176
   %concat_size178 = add i64 %concat_total177, 1
   %buf179 = call ptr @forge_bump_alloc(i64 %concat_size178)
-  %12 = call ptr @memcpy(ptr %buf179, ptr @.str.2737, i64 %lhs_len175)
+  %12 = call ptr @memcpy(ptr %buf179, ptr @.str.2741, i64 %lhs_len175)
   %buf_int180 = ptrtoint ptr %buf179 to i64
   %dst2_int181 = add i64 %buf_int180, %lhs_len175
   %dst2182 = inttoptr i64 %dst2_int181 to ptr
@@ -89279,7 +89505,7 @@ then170:                                          ; preds = %ifcont118
   %concat_i64184 = ptrtoint ptr %buf179 to i64
   %concat_l185 = inttoptr i64 %concat_i64184 to ptr
   %lhs_len186 = call i64 @strlen(ptr %concat_l185)
-  %rhs_len187 = call i64 @strlen(ptr @.str.2738)
+  %rhs_len187 = call i64 @strlen(ptr @.str.2742)
   %concat_total188 = add i64 %lhs_len186, %rhs_len187
   %concat_size189 = add i64 %concat_total188, 1
   %buf190 = call ptr @forge_bump_alloc(i64 %concat_size189)
@@ -89288,7 +89514,7 @@ then170:                                          ; preds = %ifcont118
   %dst2_int192 = add i64 %buf_int191, %lhs_len186
   %dst2193 = inttoptr i64 %dst2_int192 to ptr
   %rhs_len_p1194 = add i64 %rhs_len187, 1
-  %15 = call ptr @memcpy(ptr %dst2193, ptr @.str.2738, i64 %rhs_len_p1194)
+  %15 = call ptr @memcpy(ptr %dst2193, ptr @.str.2742, i64 %rhs_len_p1194)
   %concat_i64195 = ptrtoint ptr %buf190 to i64
   %calltmp196 = call i64 @"core::cg::err_emit"(i64 %concat_i64195)
   ret i64 %calltmp196
@@ -89313,12 +89539,12 @@ ifcont172:                                        ; preds = %else171
 then204:                                          ; preds = %ifcont172
   %field207 = load i64, ptr %field, align 8
   %concat_r208 = inttoptr i64 %field207 to ptr
-  %lhs_len209 = call i64 @strlen(ptr @.str.2739)
+  %lhs_len209 = call i64 @strlen(ptr @.str.2743)
   %rhs_len210 = call i64 @strlen(ptr %concat_r208)
   %concat_total211 = add i64 %lhs_len209, %rhs_len210
   %concat_size212 = add i64 %concat_total211, 1
   %buf213 = call ptr @forge_bump_alloc(i64 %concat_size212)
-  %16 = call ptr @memcpy(ptr %buf213, ptr @.str.2739, i64 %lhs_len209)
+  %16 = call ptr @memcpy(ptr %buf213, ptr @.str.2743, i64 %lhs_len209)
   %buf_int214 = ptrtoint ptr %buf213 to i64
   %dst2_int215 = add i64 %buf_int214, %lhs_len209
   %dst2216 = inttoptr i64 %dst2_int215 to ptr
@@ -89327,7 +89553,7 @@ then204:                                          ; preds = %ifcont172
   %concat_i64218 = ptrtoint ptr %buf213 to i64
   %concat_l219 = inttoptr i64 %concat_i64218 to ptr
   %lhs_len220 = call i64 @strlen(ptr %concat_l219)
-  %rhs_len221 = call i64 @strlen(ptr @.str.2740)
+  %rhs_len221 = call i64 @strlen(ptr @.str.2744)
   %concat_total222 = add i64 %lhs_len220, %rhs_len221
   %concat_size223 = add i64 %concat_total222, 1
   %buf224 = call ptr @forge_bump_alloc(i64 %concat_size223)
@@ -89336,7 +89562,7 @@ then204:                                          ; preds = %ifcont172
   %dst2_int226 = add i64 %buf_int225, %lhs_len220
   %dst2227 = inttoptr i64 %dst2_int226 to ptr
   %rhs_len_p1228 = add i64 %rhs_len221, 1
-  %19 = call ptr @memcpy(ptr %dst2227, ptr @.str.2740, i64 %rhs_len_p1228)
+  %19 = call ptr @memcpy(ptr %dst2227, ptr @.str.2744, i64 %rhs_len_p1228)
   %concat_i64229 = ptrtoint ptr %buf224 to i64
   %struct_name230 = load i64, ptr %struct_name, align 8
   %concat_l231 = inttoptr i64 %concat_i64229 to ptr
@@ -89355,7 +89581,7 @@ then204:                                          ; preds = %ifcont172
   %concat_i64242 = ptrtoint ptr %buf237 to i64
   %concat_l243 = inttoptr i64 %concat_i64242 to ptr
   %lhs_len244 = call i64 @strlen(ptr %concat_l243)
-  %rhs_len245 = call i64 @strlen(ptr @.str.2741)
+  %rhs_len245 = call i64 @strlen(ptr @.str.2745)
   %concat_total246 = add i64 %lhs_len244, %rhs_len245
   %concat_size247 = add i64 %concat_total246, 1
   %buf248 = call ptr @forge_bump_alloc(i64 %concat_size247)
@@ -89364,7 +89590,7 @@ then204:                                          ; preds = %ifcont172
   %dst2_int250 = add i64 %buf_int249, %lhs_len244
   %dst2251 = inttoptr i64 %dst2_int250 to ptr
   %rhs_len_p1252 = add i64 %rhs_len245, 1
-  %23 = call ptr @memcpy(ptr %dst2251, ptr @.str.2741, i64 %rhs_len_p1252)
+  %23 = call ptr @memcpy(ptr %dst2251, ptr @.str.2745, i64 %rhs_len_p1252)
   %concat_i64253 = ptrtoint ptr %buf248 to i64
   %calltmp254 = call i64 @"core::cg::err_emit"(i64 %concat_i64253)
   ret i64 %calltmp254
@@ -89385,7 +89611,7 @@ ifcont206:                                        ; preds = %else205
   %obj_ptr262 = inttoptr i64 %r261 to ptr
   %fld_ptr263 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr262, i32 0, i32 0
   %value264 = load i64, ptr %fld_ptr263, align 8
-  %calltmp265 = call i64 @"core::cg::to_ptr"(i64 %ctx260, i64 %value264, i64 ptrtoint (ptr @.str.2742 to i64))
+  %calltmp265 = call i64 @"core::cg::to_ptr"(i64 %ctx260, i64 %value264, i64 ptrtoint (ptr @.str.2746 to i64))
   store i64 %calltmp265, ptr %obj_ptr266, align 8
   %ctx267 = load i64, ptr %ctx, align 8
   %obj_ptr268 = inttoptr i64 %ctx267 to ptr
@@ -89394,7 +89620,7 @@ ifcont206:                                        ; preds = %else205
   %st_ty270 = load i64, ptr %st_ty, align 8
   %obj_ptr271 = load i64, ptr %obj_ptr266, align 8
   %idx272 = load i64, ptr %idx, align 8
-  %calltmp273 = call i64 @forge_llvm_build_struct_gep2(i64 %builder, i64 %st_ty270, i64 %obj_ptr271, i64 %idx272, i64 ptrtoint (ptr @.str.2743 to i64))
+  %calltmp273 = call i64 @forge_llvm_build_struct_gep2(i64 %builder, i64 %st_ty270, i64 %obj_ptr271, i64 %idx272, i64 ptrtoint (ptr @.str.2747 to i64))
   store i64 %calltmp273, ptr %gep, align 8
   %ctx274 = load i64, ptr %ctx, align 8
   %obj_ptr275 = inttoptr i64 %ctx274 to ptr
@@ -89434,7 +89660,7 @@ ifcont206:                                        ; preds = %else205
   %fld_ptr304 = getelementptr inbounds nuw %EmitResult, ptr %buf299, i32 0, i32 2
   store i64 0, ptr %fld_ptr304, align 8
   %fld_ptr305 = getelementptr inbounds nuw %EmitResult, ptr %buf299, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2744 to i64), ptr %fld_ptr305, align 8
+  store i64 ptrtoint (ptr @.str.2748 to i64), ptr %fld_ptr305, align 8
   %struct_i64 = ptrtoint ptr %buf299 to i64
   ret i64 %struct_i64
 }
@@ -89535,7 +89761,7 @@ march_arm30:                                      ; preds = %march_next18
 
 march_next31:                                     ; No predecessors!
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2745, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2749, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm30
@@ -89567,39 +89793,52 @@ then48:                                           ; preds = %ifcont
   %ty54 = load i64, ptr %fld_ptr53, align 8
   %calltmp55 = call i64 @"core::ast::vtype_closure_captures"(i64 %ty54)
   store i64 %calltmp55, ptr %num_caps, align 8
-  %ctx56 = load i64, ptr %ctx, align 8
-  %env57 = load i64, ptr %env, align 8
-  %callee_r58 = load i64, ptr %callee_r, align 8
-  %obj_ptr59 = inttoptr i64 %callee_r58 to ptr
-  %fld_ptr60 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr59, i32 0, i32 0
-  %value = load i64, ptr %fld_ptr60, align 8
-  %args61 = load i64, ptr %args, align 8
-  %num_caps62 = load i64, ptr %num_caps, align 8
-  %ret_ty63 = load i64, ptr %ret_ty, align 8
-  %calltmp64 = call i64 @"features::closures::codegen::emit_closure_call_typed"(i64 %ctx56, i64 %env57, i64 %value, i64 %args61, i64 %num_caps62, i64 %ret_ty63)
-  ret i64 %calltmp64
+  %num_caps56 = load i64, ptr %num_caps, align 8
+  %sge = icmp sge i64 %num_caps56, 0
+  %sge_ext = zext i1 %sge to i64
+  %if_cond57 = icmp ne i64 %sge_ext, 0
+  br i1 %if_cond57, label %then58, label %else59
 
 else49:                                           ; preds = %ifcont
   br label %ifcont50
 
-ifcont50:                                         ; preds = %else49
-  %ctx65 = load i64, ptr %ctx, align 8
-  %env66 = load i64, ptr %env, align 8
-  %callee_r67 = load i64, ptr %callee_r, align 8
-  %obj_ptr68 = inttoptr i64 %callee_r67 to ptr
-  %fld_ptr69 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr68, i32 0, i32 0
-  %value70 = load i64, ptr %fld_ptr69, align 8
-  %args71 = load i64, ptr %args, align 8
-  %ret_ty72 = load i64, ptr %ret_ty, align 8
-  %calltmp73 = call i64 @"features::closures::codegen::emit_indirect_call_typed"(i64 %ctx65, i64 %env66, i64 %value70, i64 %args71, i64 %ret_ty72)
-  store i64 %calltmp73, ptr %match_result, align 8
+ifcont50:                                         ; preds = %else49, %ifcont60
+  %ctx70 = load i64, ptr %ctx, align 8
+  %env71 = load i64, ptr %env, align 8
+  %callee_r72 = load i64, ptr %callee_r, align 8
+  %obj_ptr73 = inttoptr i64 %callee_r72 to ptr
+  %fld_ptr74 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr73, i32 0, i32 0
+  %value75 = load i64, ptr %fld_ptr74, align 8
+  %args76 = load i64, ptr %args, align 8
+  %ret_ty77 = load i64, ptr %ret_ty, align 8
+  %calltmp78 = call i64 @"features::closures::codegen::emit_indirect_call_typed"(i64 %ctx70, i64 %env71, i64 %value75, i64 %args76, i64 %ret_ty77)
+  store i64 %calltmp78, ptr %match_result, align 8
   br label %match_end
+
+then58:                                           ; preds = %then48
+  %ctx61 = load i64, ptr %ctx, align 8
+  %env62 = load i64, ptr %env, align 8
+  %callee_r63 = load i64, ptr %callee_r, align 8
+  %obj_ptr64 = inttoptr i64 %callee_r63 to ptr
+  %fld_ptr65 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr64, i32 0, i32 0
+  %value = load i64, ptr %fld_ptr65, align 8
+  %args66 = load i64, ptr %args, align 8
+  %num_caps67 = load i64, ptr %num_caps, align 8
+  %ret_ty68 = load i64, ptr %ret_ty, align 8
+  %calltmp69 = call i64 @"features::closures::codegen::emit_closure_call_typed"(i64 %ctx61, i64 %env62, i64 %value, i64 %args66, i64 %num_caps67, i64 %ret_ty68)
+  ret i64 %calltmp69
+
+else59:                                           ; preds = %then48
+  br label %ifcont60
+
+ifcont60:                                         ; preds = %else59
+  br label %ifcont50
 }
 
 define i64 @"codegen::emit_method_call"(i64 %0, i64 %1, i64 %2, i64 %3, i64 %4) {
 entry:
-  %ret_ty1210 = alloca i64, align 8
-  %result1202 = alloca i64, align 8
+  %ret_ty1201 = alloca i64, align 8
+  %result1193 = alloca i64, align 8
   %fn_type = alloca i64, align 8
   %param_arr = alloca i64, align 8
   %fill = alloca i64, align 8
@@ -89608,7 +89847,7 @@ entry:
   %extra_count = alloca i64, align 8
   %fn_i64 = alloca i64, align 8
   %gep = alloca i64, align 8
-  %obj_ptr1071 = alloca i64, align 8
+  %obj_ptr1062 = alloca i64, align 8
   %st_ty = alloca i64, align 8
   %field_ty = alloca i64, align 8
   %s_lookup = alloca i64, align 8
@@ -89620,10 +89859,11 @@ entry:
   %type_name = alloca i64, align 8
   %tn = alloca i64, align 8
   %keys = alloca i64, align 8
-  %key_ptr791 = alloca i64, align 8
-  %arg_r784 = alloca i64, align 8
+  %key_ptr794 = alloca i64, align 8
+  %arg_r787 = alloca i64, align 8
   %key_ptr = alloca i64, align 8
-  %arg_r750 = alloca i64, align 8
+  %arg_r756 = alloca i64, align 8
+  %map_ptr = alloca i64, align 8
   %elem_ty690 = alloca i64, align 8
   %arg_r650 = alloca i64, align 8
   %elem_ty636 = alloca i64, align 8
@@ -89694,7 +89934,7 @@ ifcont:                                           ; preds = %else
 then11:                                           ; preds = %ifcont
   %method14 = load i64, ptr %method, align 8
   %streq_l = inttoptr i64 %method14 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2746)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2750)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -89719,13 +89959,13 @@ then16:                                           ; preds = %then11
   %obj_ptr21 = inttoptr i64 %r20 to ptr
   %fld_ptr22 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr21, i32 0, i32 0
   %value = load i64, ptr %fld_ptr22, align 8
-  %calltmp23 = call i64 @"core::cg::to_ptr"(i64 %ctx19, i64 %value, i64 ptrtoint (ptr @.str.2747 to i64))
+  %calltmp23 = call i64 @"core::cg::to_ptr"(i64 %ctx19, i64 %value, i64 ptrtoint (ptr @.str.2751 to i64))
   store i64 %calltmp23, ptr %str_ptr, align 8
   %ctx24 = load i64, ptr %ctx, align 8
   %ctx25 = load i64, ptr %ctx, align 8
-  %calltmp26 = call i64 @"core::cg::get_fn"(i64 %ctx25, i64 ptrtoint (ptr @.str.2748 to i64))
+  %calltmp26 = call i64 @"core::cg::get_fn"(i64 %ctx25, i64 ptrtoint (ptr @.str.2752 to i64))
   %str_ptr27 = load i64, ptr %str_ptr, align 8
-  %calltmp28 = call i64 @"core::cg::call_1"(i64 %ctx24, i64 %calltmp26, i64 %str_ptr27, i64 ptrtoint (ptr @.str.2749 to i64))
+  %calltmp28 = call i64 @"core::cg::call_1"(i64 %ctx24, i64 %calltmp26, i64 %str_ptr27, i64 ptrtoint (ptr @.str.2753 to i64))
   %calltmp29 = call i64 @"core::cg::ok_emit"(i64 %calltmp28)
   ret i64 %calltmp29
 
@@ -89735,7 +89975,7 @@ else17:                                           ; preds = %then11
 ifcont18:                                         ; preds = %else17
   %method30 = load i64, ptr %method, align 8
   %streq_l31 = inttoptr i64 %method30 to ptr
-  %strcmp_call32 = call i32 @strcmp(ptr %streq_l31, ptr @.str.2750)
+  %strcmp_call32 = call i32 @strcmp(ptr %streq_l31, ptr @.str.2754)
   %strcmp_sext33 = sext i32 %strcmp_call32 to i64
   %streq_cmp34 = icmp eq i64 %strcmp_sext33, 0
   %streq_ext35 = zext i1 %streq_cmp34 to i64
@@ -89759,7 +89999,7 @@ else38:                                           ; preds = %ifcont18
 ifcont39:                                         ; preds = %else38
   %method48 = load i64, ptr %method, align 8
   %streq_l49 = inttoptr i64 %method48 to ptr
-  %strcmp_call50 = call i32 @strcmp(ptr %streq_l49, ptr @.str.2751)
+  %strcmp_call50 = call i32 @strcmp(ptr %streq_l49, ptr @.str.2755)
   %strcmp_sext51 = sext i32 %strcmp_call50 to i64
   %streq_cmp52 = icmp eq i64 %strcmp_sext51, 0
   %streq_ext53 = zext i1 %streq_cmp52 to i64
@@ -89769,7 +90009,7 @@ ifcont39:                                         ; preds = %else38
 sc_rhs:                                           ; preds = %ifcont39
   %method54 = load i64, ptr %method, align 8
   %streq_l55 = inttoptr i64 %method54 to ptr
-  %strcmp_call56 = call i32 @strcmp(ptr %streq_l55, ptr @.str.2752)
+  %strcmp_call56 = call i32 @strcmp(ptr %streq_l55, ptr @.str.2756)
   %strcmp_sext57 = sext i32 %strcmp_call56 to i64
   %streq_cmp58 = icmp eq i64 %strcmp_sext57, 0
   %streq_ext59 = zext i1 %streq_cmp58 to i64
@@ -89785,7 +90025,7 @@ sc_merge:                                         ; preds = %sc_rhs, %ifcont39
 sc_rhs61:                                         ; preds = %sc_merge
   %method63 = load i64, ptr %method, align 8
   %streq_l64 = inttoptr i64 %method63 to ptr
-  %strcmp_call65 = call i32 @strcmp(ptr %streq_l64, ptr @.str.2753)
+  %strcmp_call65 = call i32 @strcmp(ptr %streq_l64, ptr @.str.2757)
   %strcmp_sext66 = sext i32 %strcmp_call65 to i64
   %streq_cmp67 = icmp eq i64 %strcmp_sext66, 0
   %streq_ext68 = zext i1 %streq_cmp67 to i64
@@ -89801,7 +90041,7 @@ sc_merge62:                                       ; preds = %sc_rhs61, %sc_merge
 sc_rhs73:                                         ; preds = %sc_merge62
   %method75 = load i64, ptr %method, align 8
   %streq_l76 = inttoptr i64 %method75 to ptr
-  %strcmp_call77 = call i32 @strcmp(ptr %streq_l76, ptr @.str.2754)
+  %strcmp_call77 = call i32 @strcmp(ptr %streq_l76, ptr @.str.2758)
   %strcmp_sext78 = sext i32 %strcmp_call77 to i64
   %streq_cmp79 = icmp eq i64 %strcmp_sext78, 0
   %streq_ext80 = zext i1 %streq_cmp79 to i64
@@ -89828,7 +90068,7 @@ else86:                                           ; preds = %sc_merge74
 ifcont87:                                         ; preds = %else86
   %method115 = load i64, ptr %method, align 8
   %streq_l116 = inttoptr i64 %method115 to ptr
-  %strcmp_call117 = call i32 @strcmp(ptr %streq_l116, ptr @.str.2758)
+  %strcmp_call117 = call i32 @strcmp(ptr %streq_l116, ptr @.str.2762)
   %strcmp_sext118 = sext i32 %strcmp_call117 to i64
   %streq_cmp119 = icmp eq i64 %strcmp_sext118, 0
   %streq_ext120 = zext i1 %streq_cmp119 to i64
@@ -89839,12 +90079,12 @@ try_ok:                                           ; preds = %then85
   store i64 %calltmp91, ptr %arg_r, align 8
   %method92 = load i64, ptr %method, align 8
   %concat_r = inttoptr i64 %method92 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2755)
+  %lhs_len = call i64 @strlen(ptr @.str.2759)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf = call ptr @forge_bump_alloc(i64 %concat_size)
-  %5 = call ptr @memcpy(ptr %buf, ptr @.str.2755, i64 %lhs_len)
+  %5 = call ptr @memcpy(ptr %buf, ptr @.str.2759, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -89857,14 +90097,14 @@ try_ok:                                           ; preds = %then85
   %obj_ptr95 = inttoptr i64 %r94 to ptr
   %fld_ptr96 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr95, i32 0, i32 0
   %value97 = load i64, ptr %fld_ptr96, align 8
-  %calltmp98 = call i64 @"core::cg::to_ptr"(i64 %ctx93, i64 %value97, i64 ptrtoint (ptr @.str.2756 to i64))
+  %calltmp98 = call i64 @"core::cg::to_ptr"(i64 %ctx93, i64 %value97, i64 ptrtoint (ptr @.str.2760 to i64))
   store i64 %calltmp98, ptr %str_ptr99, align 8
   %ctx100 = load i64, ptr %ctx, align 8
   %arg_r101 = load i64, ptr %arg_r, align 8
   %obj_ptr102 = inttoptr i64 %arg_r101 to ptr
   %fld_ptr103 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr102, i32 0, i32 0
   %value104 = load i64, ptr %fld_ptr103, align 8
-  %calltmp105 = call i64 @"core::cg::to_ptr"(i64 %ctx100, i64 %value104, i64 ptrtoint (ptr @.str.2757 to i64))
+  %calltmp105 = call i64 @"core::cg::to_ptr"(i64 %ctx100, i64 %value104, i64 ptrtoint (ptr @.str.2761 to i64))
   store i64 %calltmp105, ptr %arg_ptr, align 8
   %ctx106 = load i64, ptr %ctx, align 8
   %ctx107 = load i64, ptr %ctx, align 8
@@ -89897,7 +90137,7 @@ else123:                                          ; preds = %ifcont87
 ifcont124:                                        ; preds = %else123
   %method133 = load i64, ptr %method, align 8
   %streq_l134 = inttoptr i64 %method133 to ptr
-  %strcmp_call135 = call i32 @strcmp(ptr %streq_l134, ptr @.str.2759)
+  %strcmp_call135 = call i32 @strcmp(ptr %streq_l134, ptr @.str.2763)
   %strcmp_sext136 = sext i32 %strcmp_call135 to i64
   %streq_cmp137 = icmp eq i64 %strcmp_sext136, 0
   %streq_ext138 = zext i1 %streq_cmp137 to i64
@@ -89910,15 +90150,15 @@ then140:                                          ; preds = %ifcont124
   %obj_ptr145 = inttoptr i64 %r144 to ptr
   %fld_ptr146 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr145, i32 0, i32 0
   %value147 = load i64, ptr %fld_ptr146, align 8
-  %calltmp148 = call i64 @"core::cg::to_ptr"(i64 %ctx143, i64 %value147, i64 ptrtoint (ptr @.str.2760 to i64))
+  %calltmp148 = call i64 @"core::cg::to_ptr"(i64 %ctx143, i64 %value147, i64 ptrtoint (ptr @.str.2764 to i64))
   store i64 %calltmp148, ptr %str_ptr149, align 8
   %ctx150 = load i64, ptr %ctx, align 8
   %ctx151 = load i64, ptr %ctx, align 8
   %ctx152 = load i64, ptr %ctx, align 8
-  %calltmp153 = call i64 @"core::cg::get_fn"(i64 %ctx152, i64 ptrtoint (ptr @.str.2761 to i64))
+  %calltmp153 = call i64 @"core::cg::get_fn"(i64 %ctx152, i64 ptrtoint (ptr @.str.2765 to i64))
   %str_ptr154 = load i64, ptr %str_ptr149, align 8
-  %calltmp155 = call i64 @"core::cg::call_1"(i64 %ctx151, i64 %calltmp153, i64 %str_ptr154, i64 ptrtoint (ptr @.str.2762 to i64))
-  %calltmp156 = call i64 @"core::cg::to_i64"(i64 %ctx150, i64 %calltmp155, i64 ptrtoint (ptr @.str.2763 to i64))
+  %calltmp155 = call i64 @"core::cg::call_1"(i64 %ctx151, i64 %calltmp153, i64 %str_ptr154, i64 ptrtoint (ptr @.str.2766 to i64))
+  %calltmp156 = call i64 @"core::cg::to_i64"(i64 %ctx150, i64 %calltmp155, i64 ptrtoint (ptr @.str.2767 to i64))
   %calltmp157 = call i64 @"core::cg::ok_emit_str"(i64 %calltmp156)
   ret i64 %calltmp157
 
@@ -89928,7 +90168,7 @@ else141:                                          ; preds = %ifcont124
 ifcont142:                                        ; preds = %else141
   %method158 = load i64, ptr %method, align 8
   %streq_l159 = inttoptr i64 %method158 to ptr
-  %strcmp_call160 = call i32 @strcmp(ptr %streq_l159, ptr @.str.2764)
+  %strcmp_call160 = call i32 @strcmp(ptr %streq_l159, ptr @.str.2768)
   %strcmp_sext161 = sext i32 %strcmp_call160 to i64
   %streq_cmp162 = icmp eq i64 %strcmp_sext161, 0
   %streq_ext163 = zext i1 %streq_cmp162 to i64
@@ -89938,7 +90178,7 @@ ifcont142:                                        ; preds = %else141
 sc_rhs165:                                        ; preds = %ifcont142
   %method167 = load i64, ptr %method, align 8
   %streq_l168 = inttoptr i64 %method167 to ptr
-  %strcmp_call169 = call i32 @strcmp(ptr %streq_l168, ptr @.str.2765)
+  %strcmp_call169 = call i32 @strcmp(ptr %streq_l168, ptr @.str.2769)
   %strcmp_sext170 = sext i32 %strcmp_call169 to i64
   %streq_cmp171 = icmp eq i64 %strcmp_sext170, 0
   %streq_ext172 = zext i1 %streq_cmp171 to i64
@@ -89957,15 +90197,15 @@ then177:                                          ; preds = %sc_merge166
   %obj_ptr182 = inttoptr i64 %r181 to ptr
   %fld_ptr183 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr182, i32 0, i32 0
   %value184 = load i64, ptr %fld_ptr183, align 8
-  %calltmp185 = call i64 @"core::cg::to_ptr"(i64 %ctx180, i64 %value184, i64 ptrtoint (ptr @.str.2766 to i64))
+  %calltmp185 = call i64 @"core::cg::to_ptr"(i64 %ctx180, i64 %value184, i64 ptrtoint (ptr @.str.2770 to i64))
   store i64 %calltmp185, ptr %str_ptr186, align 8
   %ctx187 = load i64, ptr %ctx, align 8
   %ctx188 = load i64, ptr %ctx, align 8
   %ctx189 = load i64, ptr %ctx, align 8
-  %calltmp190 = call i64 @"core::cg::get_fn"(i64 %ctx189, i64 ptrtoint (ptr @.str.2767 to i64))
+  %calltmp190 = call i64 @"core::cg::get_fn"(i64 %ctx189, i64 ptrtoint (ptr @.str.2771 to i64))
   %str_ptr191 = load i64, ptr %str_ptr186, align 8
-  %calltmp192 = call i64 @"core::cg::call_1"(i64 %ctx188, i64 %calltmp190, i64 %str_ptr191, i64 ptrtoint (ptr @.str.2768 to i64))
-  %calltmp193 = call i64 @"core::cg::to_i64"(i64 %ctx187, i64 %calltmp192, i64 ptrtoint (ptr @.str.2769 to i64))
+  %calltmp192 = call i64 @"core::cg::call_1"(i64 %ctx188, i64 %calltmp190, i64 %str_ptr191, i64 ptrtoint (ptr @.str.2772 to i64))
+  %calltmp193 = call i64 @"core::cg::to_i64"(i64 %ctx187, i64 %calltmp192, i64 ptrtoint (ptr @.str.2773 to i64))
   %calltmp194 = call i64 @"core::cg::ok_emit_str"(i64 %calltmp193)
   ret i64 %calltmp194
 
@@ -89975,7 +90215,7 @@ else178:                                          ; preds = %sc_merge166
 ifcont179:                                        ; preds = %else178
   %method195 = load i64, ptr %method, align 8
   %streq_l196 = inttoptr i64 %method195 to ptr
-  %strcmp_call197 = call i32 @strcmp(ptr %streq_l196, ptr @.str.2770)
+  %strcmp_call197 = call i32 @strcmp(ptr %streq_l196, ptr @.str.2774)
   %strcmp_sext198 = sext i32 %strcmp_call197 to i64
   %streq_cmp199 = icmp eq i64 %strcmp_sext198, 0
   %streq_ext200 = zext i1 %streq_cmp199 to i64
@@ -89985,7 +90225,7 @@ ifcont179:                                        ; preds = %else178
 sc_rhs202:                                        ; preds = %ifcont179
   %method204 = load i64, ptr %method, align 8
   %streq_l205 = inttoptr i64 %method204 to ptr
-  %strcmp_call206 = call i32 @strcmp(ptr %streq_l205, ptr @.str.2771)
+  %strcmp_call206 = call i32 @strcmp(ptr %streq_l205, ptr @.str.2775)
   %strcmp_sext207 = sext i32 %strcmp_call206 to i64
   %streq_cmp208 = icmp eq i64 %strcmp_sext207, 0
   %streq_ext209 = zext i1 %streq_cmp208 to i64
@@ -90004,15 +90244,15 @@ then214:                                          ; preds = %sc_merge203
   %obj_ptr219 = inttoptr i64 %r218 to ptr
   %fld_ptr220 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr219, i32 0, i32 0
   %value221 = load i64, ptr %fld_ptr220, align 8
-  %calltmp222 = call i64 @"core::cg::to_ptr"(i64 %ctx217, i64 %value221, i64 ptrtoint (ptr @.str.2772 to i64))
+  %calltmp222 = call i64 @"core::cg::to_ptr"(i64 %ctx217, i64 %value221, i64 ptrtoint (ptr @.str.2776 to i64))
   store i64 %calltmp222, ptr %str_ptr223, align 8
   %ctx224 = load i64, ptr %ctx, align 8
   %ctx225 = load i64, ptr %ctx, align 8
   %ctx226 = load i64, ptr %ctx, align 8
-  %calltmp227 = call i64 @"core::cg::get_fn"(i64 %ctx226, i64 ptrtoint (ptr @.str.2773 to i64))
+  %calltmp227 = call i64 @"core::cg::get_fn"(i64 %ctx226, i64 ptrtoint (ptr @.str.2777 to i64))
   %str_ptr228 = load i64, ptr %str_ptr223, align 8
-  %calltmp229 = call i64 @"core::cg::call_1"(i64 %ctx225, i64 %calltmp227, i64 %str_ptr228, i64 ptrtoint (ptr @.str.2774 to i64))
-  %calltmp230 = call i64 @"core::cg::to_i64"(i64 %ctx224, i64 %calltmp229, i64 ptrtoint (ptr @.str.2775 to i64))
+  %calltmp229 = call i64 @"core::cg::call_1"(i64 %ctx225, i64 %calltmp227, i64 %str_ptr228, i64 ptrtoint (ptr @.str.2778 to i64))
+  %calltmp230 = call i64 @"core::cg::to_i64"(i64 %ctx224, i64 %calltmp229, i64 ptrtoint (ptr @.str.2779 to i64))
   %calltmp231 = call i64 @"core::cg::ok_emit_str"(i64 %calltmp230)
   ret i64 %calltmp231
 
@@ -90022,7 +90262,7 @@ else215:                                          ; preds = %sc_merge203
 ifcont216:                                        ; preds = %else215
   %method232 = load i64, ptr %method, align 8
   %streq_l233 = inttoptr i64 %method232 to ptr
-  %strcmp_call234 = call i32 @strcmp(ptr %streq_l233, ptr @.str.2776)
+  %strcmp_call234 = call i32 @strcmp(ptr %streq_l233, ptr @.str.2780)
   %strcmp_sext235 = sext i32 %strcmp_call234 to i64
   %streq_cmp236 = icmp eq i64 %strcmp_sext235, 0
   %streq_ext237 = zext i1 %streq_cmp236 to i64
@@ -90043,7 +90283,7 @@ else240:                                          ; preds = %ifcont216
 ifcont241:                                        ; preds = %else240
   %method279 = load i64, ptr %method, align 8
   %streq_l280 = inttoptr i64 %method279 to ptr
-  %strcmp_call281 = call i32 @strcmp(ptr %streq_l280, ptr @.str.2782)
+  %strcmp_call281 = call i32 @strcmp(ptr %streq_l280, ptr @.str.2786)
   %strcmp_sext282 = sext i32 %strcmp_call281 to i64
   %streq_cmp283 = icmp eq i64 %strcmp_sext282, 0
   %streq_ext284 = zext i1 %streq_cmp283 to i64
@@ -90057,21 +90297,21 @@ try_ok247:                                        ; preds = %then239
   %obj_ptr252 = inttoptr i64 %r251 to ptr
   %fld_ptr253 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr252, i32 0, i32 0
   %value254 = load i64, ptr %fld_ptr253, align 8
-  %calltmp255 = call i64 @"core::cg::to_ptr"(i64 %ctx250, i64 %value254, i64 ptrtoint (ptr @.str.2777 to i64))
+  %calltmp255 = call i64 @"core::cg::to_ptr"(i64 %ctx250, i64 %value254, i64 ptrtoint (ptr @.str.2781 to i64))
   store i64 %calltmp255, ptr %str_ptr256, align 8
   %ctx257 = load i64, ptr %ctx, align 8
   %arg_r258 = load i64, ptr %arg_r249, align 8
   %obj_ptr259 = inttoptr i64 %arg_r258 to ptr
   %fld_ptr260 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr259, i32 0, i32 0
   %value261 = load i64, ptr %fld_ptr260, align 8
-  %calltmp262 = call i64 @"core::cg::to_ptr"(i64 %ctx257, i64 %value261, i64 ptrtoint (ptr @.str.2778 to i64))
+  %calltmp262 = call i64 @"core::cg::to_ptr"(i64 %ctx257, i64 %value261, i64 ptrtoint (ptr @.str.2782 to i64))
   store i64 %calltmp262, ptr %sep_ptr, align 8
   %ctx263 = load i64, ptr %ctx, align 8
   %ctx264 = load i64, ptr %ctx, align 8
-  %calltmp265 = call i64 @"core::cg::get_fn"(i64 %ctx264, i64 ptrtoint (ptr @.str.2779 to i64))
+  %calltmp265 = call i64 @"core::cg::get_fn"(i64 %ctx264, i64 ptrtoint (ptr @.str.2783 to i64))
   %str_ptr266 = load i64, ptr %str_ptr256, align 8
   %sep_ptr267 = load i64, ptr %sep_ptr, align 8
-  %calltmp268 = call i64 @"core::cg::call_2"(i64 %ctx263, i64 %calltmp265, i64 %str_ptr266, i64 %sep_ptr267, i64 ptrtoint (ptr @.str.2780 to i64))
+  %calltmp268 = call i64 @"core::cg::call_2"(i64 %ctx263, i64 %calltmp265, i64 %str_ptr266, i64 %sep_ptr267, i64 ptrtoint (ptr @.str.2784 to i64))
   store i64 %calltmp268, ptr %result, align 8
   %buf269 = call ptr @forge_bump_alloc(i64 32)
   %result270 = load i64, ptr %result, align 8
@@ -90092,7 +90332,7 @@ try_ok247:                                        ; preds = %then239
   %fld_ptr277 = getelementptr inbounds nuw %EmitResult, ptr %buf269, i32 0, i32 2
   store i64 0, ptr %fld_ptr277, align 8
   %fld_ptr278 = getelementptr inbounds nuw %EmitResult, ptr %buf269, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2781 to i64), ptr %fld_ptr278, align 8
+  store i64 ptrtoint (ptr @.str.2785 to i64), ptr %fld_ptr278, align 8
   %struct_i64 = ptrtoint ptr %buf269 to i64
   ret i64 %struct_i64
 
@@ -90105,7 +90345,7 @@ then286:                                          ; preds = %ifcont241
   %obj_ptr291 = inttoptr i64 %r290 to ptr
   %fld_ptr292 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr291, i32 0, i32 0
   %value293 = load i64, ptr %fld_ptr292, align 8
-  %calltmp294 = call i64 @"core::cg::to_ptr"(i64 %ctx289, i64 %value293, i64 ptrtoint (ptr @.str.2783 to i64))
+  %calltmp294 = call i64 @"core::cg::to_ptr"(i64 %ctx289, i64 %value293, i64 ptrtoint (ptr @.str.2787 to i64))
   store i64 %calltmp294, ptr %str_ptr295, align 8
   %ctx296 = load i64, ptr %ctx, align 8
   %obj_ptr297 = inttoptr i64 %ctx296 to ptr
@@ -90117,7 +90357,7 @@ then286:                                          ; preds = %ifcont241
   %lc = load i64, ptr %fld_ptr301, align 8
   %calltmp302 = call i64 @forge_llvm_int8_type(i64 %lc)
   %str_ptr303 = load i64, ptr %str_ptr295, align 8
-  %calltmp304 = call i64 @forge_llvm_build_load(i64 %builder, i64 %calltmp302, i64 %str_ptr303, i64 ptrtoint (ptr @.str.2784 to i64))
+  %calltmp304 = call i64 @forge_llvm_build_load(i64 %builder, i64 %calltmp302, i64 %str_ptr303, i64 ptrtoint (ptr @.str.2788 to i64))
   store i64 %calltmp304, ptr %byte_val, align 8
   %ctx305 = load i64, ptr %ctx, align 8
   %obj_ptr306 = inttoptr i64 %ctx305 to ptr
@@ -90128,7 +90368,7 @@ then286:                                          ; preds = %ifcont241
   %obj_ptr311 = inttoptr i64 %ctx310 to ptr
   %fld_ptr312 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr311, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr312, align 8
-  %calltmp313 = call i64 @forge_llvm_build_zext(i64 %builder308, i64 %byte_val309, i64 %i64_type, i64 ptrtoint (ptr @.str.2785 to i64))
+  %calltmp313 = call i64 @forge_llvm_build_zext(i64 %builder308, i64 %byte_val309, i64 %i64_type, i64 ptrtoint (ptr @.str.2789 to i64))
   store i64 %calltmp313, ptr %as_i64, align 8
   %as_i64314 = load i64, ptr %as_i64, align 8
   %calltmp315 = call i64 @"core::cg::ok_emit"(i64 %as_i64314)
@@ -90140,12 +90380,12 @@ else287:                                          ; preds = %ifcont241
 ifcont288:                                        ; preds = %else287
   %method316 = load i64, ptr %method, align 8
   %concat_r317 = inttoptr i64 %method316 to ptr
-  %lhs_len318 = call i64 @strlen(ptr @.str.2786)
+  %lhs_len318 = call i64 @strlen(ptr @.str.2790)
   %rhs_len319 = call i64 @strlen(ptr %concat_r317)
   %concat_total320 = add i64 %lhs_len318, %rhs_len319
   %concat_size321 = add i64 %concat_total320, 1
   %buf322 = call ptr @forge_bump_alloc(i64 %concat_size321)
-  %7 = call ptr @memcpy(ptr %buf322, ptr @.str.2786, i64 %lhs_len318)
+  %7 = call ptr @memcpy(ptr %buf322, ptr @.str.2790, i64 %lhs_len318)
   %buf_int323 = ptrtoint ptr %buf322 to i64
   %dst2_int324 = add i64 %buf_int323, %lhs_len318
   %dst2325 = inttoptr i64 %dst2_int324 to ptr
@@ -90154,7 +90394,7 @@ ifcont288:                                        ; preds = %else287
   %concat_i64327 = ptrtoint ptr %buf322 to i64
   %concat_l = inttoptr i64 %concat_i64327 to ptr
   %lhs_len328 = call i64 @strlen(ptr %concat_l)
-  %rhs_len329 = call i64 @strlen(ptr @.str.2787)
+  %rhs_len329 = call i64 @strlen(ptr @.str.2791)
   %concat_total330 = add i64 %lhs_len328, %rhs_len329
   %concat_size331 = add i64 %concat_total330, 1
   %buf332 = call ptr @forge_bump_alloc(i64 %concat_size331)
@@ -90163,7 +90403,7 @@ ifcont288:                                        ; preds = %else287
   %dst2_int334 = add i64 %buf_int333, %lhs_len328
   %dst2335 = inttoptr i64 %dst2_int334 to ptr
   %rhs_len_p1336 = add i64 %rhs_len329, 1
-  %10 = call ptr @memcpy(ptr %dst2335, ptr @.str.2787, i64 %rhs_len_p1336)
+  %10 = call ptr @memcpy(ptr %dst2335, ptr @.str.2791, i64 %rhs_len_p1336)
   %concat_i64337 = ptrtoint ptr %buf332 to i64
   %calltmp338 = call i64 @"core::cg::err_emit"(i64 %concat_i64337)
   ret i64 %calltmp338
@@ -90171,7 +90411,7 @@ ifcont288:                                        ; preds = %else287
 then345:                                          ; preds = %ifcont13
   %method348 = load i64, ptr %method, align 8
   %streq_l349 = inttoptr i64 %method348 to ptr
-  %strcmp_call350 = call i32 @strcmp(ptr %streq_l349, ptr @.str.2788)
+  %strcmp_call350 = call i32 @strcmp(ptr %streq_l349, ptr @.str.2792)
   %strcmp_sext351 = sext i32 %strcmp_call350 to i64
   %streq_cmp352 = icmp eq i64 %strcmp_sext351, 0
   %streq_ext353 = zext i1 %streq_cmp352 to i64
@@ -90193,7 +90433,7 @@ ifcont347:                                        ; preds = %else346
 sc_rhs355:                                        ; preds = %then345
   %method357 = load i64, ptr %method, align 8
   %streq_l358 = inttoptr i64 %method357 to ptr
-  %strcmp_call359 = call i32 @strcmp(ptr %streq_l358, ptr @.str.2789)
+  %strcmp_call359 = call i32 @strcmp(ptr %streq_l358, ptr @.str.2793)
   %strcmp_sext360 = sext i32 %strcmp_call359 to i64
   %streq_cmp361 = icmp eq i64 %strcmp_sext360, 0
   %streq_ext362 = zext i1 %streq_cmp361 to i64
@@ -90209,12 +90449,12 @@ sc_merge356:                                      ; preds = %sc_rhs355, %then345
 then367:                                          ; preds = %sc_merge356
   %ctx370 = load i64, ptr %ctx, align 8
   %ctx371 = load i64, ptr %ctx, align 8
-  %calltmp372 = call i64 @"core::cg::get_fn"(i64 %ctx371, i64 ptrtoint (ptr @.str.2790 to i64))
+  %calltmp372 = call i64 @"core::cg::get_fn"(i64 %ctx371, i64 ptrtoint (ptr @.str.2794 to i64))
   %r373 = load i64, ptr %r, align 8
   %obj_ptr374 = inttoptr i64 %r373 to ptr
   %fld_ptr375 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr374, i32 0, i32 0
   %value376 = load i64, ptr %fld_ptr375, align 8
-  %calltmp377 = call i64 @"core::cg::call_1"(i64 %ctx370, i64 %calltmp372, i64 %value376, i64 ptrtoint (ptr @.str.2791 to i64))
+  %calltmp377 = call i64 @"core::cg::call_1"(i64 %ctx370, i64 %calltmp372, i64 %value376, i64 ptrtoint (ptr @.str.2795 to i64))
   %calltmp378 = call i64 @"core::cg::ok_emit"(i64 %calltmp377)
   ret i64 %calltmp378
 
@@ -90224,7 +90464,7 @@ else368:                                          ; preds = %sc_merge356
 ifcont369:                                        ; preds = %else368
   %method379 = load i64, ptr %method, align 8
   %streq_l380 = inttoptr i64 %method379 to ptr
-  %strcmp_call381 = call i32 @strcmp(ptr %streq_l380, ptr @.str.2792)
+  %strcmp_call381 = call i32 @strcmp(ptr %streq_l380, ptr @.str.2796)
   %strcmp_sext382 = sext i32 %strcmp_call381 to i64
   %streq_cmp383 = icmp eq i64 %strcmp_sext382, 0
   %streq_ext384 = zext i1 %streq_cmp383 to i64
@@ -90245,7 +90485,7 @@ else387:                                          ; preds = %ifcont369
 ifcont388:                                        ; preds = %else387
   %method414 = load i64, ptr %method, align 8
   %streq_l415 = inttoptr i64 %method414 to ptr
-  %strcmp_call416 = call i32 @strcmp(ptr %streq_l415, ptr @.str.2795)
+  %strcmp_call416 = call i32 @strcmp(ptr %streq_l415, ptr @.str.2799)
   %strcmp_sext417 = sext i32 %strcmp_call416 to i64
   %streq_cmp418 = icmp eq i64 %strcmp_sext417, 0
   %streq_ext419 = zext i1 %streq_cmp418 to i64
@@ -90256,7 +90496,7 @@ try_ok394:                                        ; preds = %then386
   store i64 %calltmp392, ptr %arg_r396, align 8
   %ctx397 = load i64, ptr %ctx, align 8
   %ctx398 = load i64, ptr %ctx, align 8
-  %calltmp399 = call i64 @"core::cg::get_fn"(i64 %ctx398, i64 ptrtoint (ptr @.str.2793 to i64))
+  %calltmp399 = call i64 @"core::cg::get_fn"(i64 %ctx398, i64 ptrtoint (ptr @.str.2797 to i64))
   %r400 = load i64, ptr %r, align 8
   %obj_ptr401 = inttoptr i64 %r400 to ptr
   %fld_ptr402 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr401, i32 0, i32 0
@@ -90265,7 +90505,7 @@ try_ok394:                                        ; preds = %then386
   %obj_ptr405 = inttoptr i64 %arg_r404 to ptr
   %fld_ptr406 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr405, i32 0, i32 0
   %value407 = load i64, ptr %fld_ptr406, align 8
-  %calltmp408 = call i64 @"core::cg::call_2"(i64 %ctx397, i64 %calltmp399, i64 %value403, i64 %value407, i64 ptrtoint (ptr @.str.2794 to i64))
+  %calltmp408 = call i64 @"core::cg::call_2"(i64 %ctx397, i64 %calltmp399, i64 %value403, i64 %value407, i64 ptrtoint (ptr @.str.2798 to i64))
   %r409 = load i64, ptr %r, align 8
   %obj_ptr410 = inttoptr i64 %r409 to ptr
   %fld_ptr411 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr410, i32 0, i32 0
@@ -90279,12 +90519,12 @@ try_ret395:                                       ; preds = %then386
 then421:                                          ; preds = %ifcont388
   %ctx424 = load i64, ptr %ctx, align 8
   %ctx425 = load i64, ptr %ctx, align 8
-  %calltmp426 = call i64 @"core::cg::get_fn"(i64 %ctx425, i64 ptrtoint (ptr @.str.2796 to i64))
+  %calltmp426 = call i64 @"core::cg::get_fn"(i64 %ctx425, i64 ptrtoint (ptr @.str.2800 to i64))
   %r427 = load i64, ptr %r, align 8
   %obj_ptr428 = inttoptr i64 %r427 to ptr
   %fld_ptr429 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr428, i32 0, i32 0
   %value430 = load i64, ptr %fld_ptr429, align 8
-  %calltmp431 = call i64 @"core::cg::call_1"(i64 %ctx424, i64 %calltmp426, i64 %value430, i64 ptrtoint (ptr @.str.2797 to i64))
+  %calltmp431 = call i64 @"core::cg::call_1"(i64 %ctx424, i64 %calltmp426, i64 %value430, i64 ptrtoint (ptr @.str.2801 to i64))
   %calltmp432 = call i64 @"core::cg::ok_emit"(i64 %calltmp431)
   ret i64 %calltmp432
 
@@ -90294,7 +90534,7 @@ else422:                                          ; preds = %ifcont388
 ifcont423:                                        ; preds = %else422
   %method433 = load i64, ptr %method, align 8
   %streq_l434 = inttoptr i64 %method433 to ptr
-  %strcmp_call435 = call i32 @strcmp(ptr %streq_l434, ptr @.str.2798)
+  %strcmp_call435 = call i32 @strcmp(ptr %streq_l434, ptr @.str.2802)
   %strcmp_sext436 = sext i32 %strcmp_call435 to i64
   %streq_cmp437 = icmp eq i64 %strcmp_sext436, 0
   %streq_ext438 = zext i1 %streq_cmp437 to i64
@@ -90315,7 +90555,7 @@ else441:                                          ; preds = %ifcont423
 ifcont442:                                        ; preds = %else441
   %method470 = load i64, ptr %method, align 8
   %streq_l471 = inttoptr i64 %method470 to ptr
-  %strcmp_call472 = call i32 @strcmp(ptr %streq_l471, ptr @.str.2801)
+  %strcmp_call472 = call i32 @strcmp(ptr %streq_l471, ptr @.str.2805)
   %strcmp_sext473 = sext i32 %strcmp_call472 to i64
   %streq_cmp474 = icmp eq i64 %strcmp_sext473, 0
   %streq_ext475 = zext i1 %streq_cmp474 to i64
@@ -90332,7 +90572,7 @@ try_ok448:                                        ; preds = %then440
   store i64 %calltmp455, ptr %elem_ty, align 8
   %ctx456 = load i64, ptr %ctx, align 8
   %ctx457 = load i64, ptr %ctx, align 8
-  %calltmp458 = call i64 @"core::cg::get_fn"(i64 %ctx457, i64 ptrtoint (ptr @.str.2799 to i64))
+  %calltmp458 = call i64 @"core::cg::get_fn"(i64 %ctx457, i64 ptrtoint (ptr @.str.2803 to i64))
   %r459 = load i64, ptr %r, align 8
   %obj_ptr460 = inttoptr i64 %r459 to ptr
   %fld_ptr461 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr460, i32 0, i32 0
@@ -90341,7 +90581,7 @@ try_ok448:                                        ; preds = %then440
   %obj_ptr464 = inttoptr i64 %arg_r463 to ptr
   %fld_ptr465 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr464, i32 0, i32 0
   %value466 = load i64, ptr %fld_ptr465, align 8
-  %calltmp467 = call i64 @"core::cg::call_2"(i64 %ctx456, i64 %calltmp458, i64 %value462, i64 %value466, i64 ptrtoint (ptr @.str.2800 to i64))
+  %calltmp467 = call i64 @"core::cg::call_2"(i64 %ctx456, i64 %calltmp458, i64 %value462, i64 %value466, i64 ptrtoint (ptr @.str.2804 to i64))
   %elem_ty468 = load i64, ptr %elem_ty, align 8
   %calltmp469 = call i64 @"core::cg::ok_emit_typed"(i64 %calltmp467, i64 %elem_ty468)
   ret i64 %calltmp469
@@ -90366,7 +90606,7 @@ else478:                                          ; preds = %ifcont442
 ifcont479:                                        ; preds = %else478
   %method488 = load i64, ptr %method, align 8
   %streq_l489 = inttoptr i64 %method488 to ptr
-  %strcmp_call490 = call i32 @strcmp(ptr %streq_l489, ptr @.str.2802)
+  %strcmp_call490 = call i32 @strcmp(ptr %streq_l489, ptr @.str.2806)
   %strcmp_sext491 = sext i32 %strcmp_call490 to i64
   %streq_cmp492 = icmp eq i64 %strcmp_sext491, 0
   %streq_ext493 = zext i1 %streq_cmp492 to i64
@@ -90411,7 +90651,7 @@ else496:                                          ; preds = %ifcont479
 ifcont497:                                        ; preds = %else496
   %method557 = load i64, ptr %method, align 8
   %streq_l558 = inttoptr i64 %method557 to ptr
-  %strcmp_call559 = call i32 @strcmp(ptr %streq_l558, ptr @.str.2806)
+  %strcmp_call559 = call i32 @strcmp(ptr %streq_l558, ptr @.str.2810)
   %strcmp_sext560 = sext i32 %strcmp_call559 to i64
   %streq_cmp561 = icmp eq i64 %strcmp_sext560, 0
   %streq_ext562 = zext i1 %streq_cmp561 to i64
@@ -90428,7 +90668,7 @@ else524:                                          ; preds = %then495
 ifcont525:                                        ; preds = %else524
   %ctx527 = load i64, ptr %ctx, align 8
   %ctx528 = load i64, ptr %ctx, align 8
-  %calltmp529 = call i64 @"core::cg::get_fn"(i64 %ctx528, i64 ptrtoint (ptr @.str.2803 to i64))
+  %calltmp529 = call i64 @"core::cg::get_fn"(i64 %ctx528, i64 ptrtoint (ptr @.str.2807 to i64))
   %r530 = load i64, ptr %r, align 8
   %obj_ptr531 = inttoptr i64 %r530 to ptr
   %fld_ptr532 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr531, i32 0, i32 0
@@ -90437,7 +90677,7 @@ ifcont525:                                        ; preds = %else524
   %obj_ptr535 = inttoptr i64 %arg_r534 to ptr
   %fld_ptr536 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr535, i32 0, i32 0
   %value537 = load i64, ptr %fld_ptr536, align 8
-  %calltmp538 = call i64 @"core::cg::call_2"(i64 %ctx527, i64 %calltmp529, i64 %value533, i64 %value537, i64 ptrtoint (ptr @.str.2804 to i64))
+  %calltmp538 = call i64 @"core::cg::call_2"(i64 %ctx527, i64 %calltmp529, i64 %value533, i64 %value537, i64 ptrtoint (ptr @.str.2808 to i64))
   store i64 %calltmp538, ptr %result539, align 8
   %arg_r540 = load i64, ptr %arg_r517, align 8
   %obj_ptr541 = inttoptr i64 %arg_r540 to ptr
@@ -90461,7 +90701,7 @@ ifcont525:                                        ; preds = %else524
   %fld_ptr554 = getelementptr inbounds nuw %EmitResult, ptr %buf545, i32 0, i32 2
   store i64 0, ptr %fld_ptr554, align 8
   %fld_ptr555 = getelementptr inbounds nuw %EmitResult, ptr %buf545, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2805 to i64), ptr %fld_ptr555, align 8
+  store i64 ptrtoint (ptr @.str.2809 to i64), ptr %fld_ptr555, align 8
   %struct_i64556 = ptrtoint ptr %buf545 to i64
   ret i64 %struct_i64556
 
@@ -90503,7 +90743,7 @@ else565:                                          ; preds = %ifcont497
 ifcont566:                                        ; preds = %else565
   %method621 = load i64, ptr %method, align 8
   %streq_l622 = inttoptr i64 %method621 to ptr
-  %strcmp_call623 = call i32 @strcmp(ptr %streq_l622, ptr @.str.2810)
+  %strcmp_call623 = call i32 @strcmp(ptr %streq_l622, ptr @.str.2814)
   %strcmp_sext624 = sext i32 %strcmp_call623 to i64
   %streq_cmp625 = icmp eq i64 %strcmp_sext624, 0
   %streq_ext626 = zext i1 %streq_cmp625 to i64
@@ -90520,7 +90760,7 @@ else593:                                          ; preds = %then564
 ifcont594:                                        ; preds = %else593
   %ctx596 = load i64, ptr %ctx, align 8
   %ctx597 = load i64, ptr %ctx, align 8
-  %calltmp598 = call i64 @"core::cg::get_fn"(i64 %ctx597, i64 ptrtoint (ptr @.str.2807 to i64))
+  %calltmp598 = call i64 @"core::cg::get_fn"(i64 %ctx597, i64 ptrtoint (ptr @.str.2811 to i64))
   %r599 = load i64, ptr %r, align 8
   %obj_ptr600 = inttoptr i64 %r599 to ptr
   %fld_ptr601 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr600, i32 0, i32 0
@@ -90529,7 +90769,7 @@ ifcont594:                                        ; preds = %else593
   %obj_ptr604 = inttoptr i64 %arg_r603 to ptr
   %fld_ptr605 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr604, i32 0, i32 0
   %value606 = load i64, ptr %fld_ptr605, align 8
-  %calltmp607 = call i64 @"core::cg::call_2"(i64 %ctx596, i64 %calltmp598, i64 %value602, i64 %value606, i64 ptrtoint (ptr @.str.2808 to i64))
+  %calltmp607 = call i64 @"core::cg::call_2"(i64 %ctx596, i64 %calltmp598, i64 %value602, i64 %value606, i64 ptrtoint (ptr @.str.2812 to i64))
   store i64 %calltmp607, ptr %result608, align 8
   %buf609 = call ptr @forge_bump_alloc(i64 32)
   %result610 = load i64, ptr %result608, align 8
@@ -90547,7 +90787,7 @@ ifcont594:                                        ; preds = %else593
   %fld_ptr618 = getelementptr inbounds nuw %EmitResult, ptr %buf609, i32 0, i32 2
   store i64 0, ptr %fld_ptr618, align 8
   %fld_ptr619 = getelementptr inbounds nuw %EmitResult, ptr %buf609, i32 0, i32 3
-  store i64 ptrtoint (ptr @.str.2809 to i64), ptr %fld_ptr619, align 8
+  store i64 ptrtoint (ptr @.str.2813 to i64), ptr %fld_ptr619, align 8
   %struct_i64620 = ptrtoint ptr %buf609 to i64
   ret i64 %struct_i64620
 
@@ -90589,7 +90829,7 @@ else629:                                          ; preds = %ifcont566
 ifcont630:                                        ; preds = %else629
   %method675 = load i64, ptr %method, align 8
   %streq_l676 = inttoptr i64 %method675 to ptr
-  %strcmp_call677 = call i32 @strcmp(ptr %streq_l676, ptr @.str.2813)
+  %strcmp_call677 = call i32 @strcmp(ptr %streq_l676, ptr @.str.2817)
   %strcmp_sext678 = sext i32 %strcmp_call677 to i64
   %streq_cmp679 = icmp eq i64 %strcmp_sext678, 0
   %streq_ext680 = zext i1 %streq_cmp679 to i64
@@ -90606,7 +90846,7 @@ else657:                                          ; preds = %then628
 ifcont658:                                        ; preds = %else657
   %ctx660 = load i64, ptr %ctx, align 8
   %ctx661 = load i64, ptr %ctx, align 8
-  %calltmp662 = call i64 @"core::cg::get_fn"(i64 %ctx661, i64 ptrtoint (ptr @.str.2811 to i64))
+  %calltmp662 = call i64 @"core::cg::get_fn"(i64 %ctx661, i64 ptrtoint (ptr @.str.2815 to i64))
   %r663 = load i64, ptr %r, align 8
   %obj_ptr664 = inttoptr i64 %r663 to ptr
   %fld_ptr665 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr664, i32 0, i32 0
@@ -90615,7 +90855,7 @@ ifcont658:                                        ; preds = %else657
   %obj_ptr668 = inttoptr i64 %arg_r667 to ptr
   %fld_ptr669 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr668, i32 0, i32 0
   %value670 = load i64, ptr %fld_ptr669, align 8
-  %calltmp671 = call i64 @"core::cg::call_2"(i64 %ctx660, i64 %calltmp662, i64 %value666, i64 %value670, i64 ptrtoint (ptr @.str.2812 to i64))
+  %calltmp671 = call i64 @"core::cg::call_2"(i64 %ctx660, i64 %calltmp662, i64 %value666, i64 %value670, i64 ptrtoint (ptr @.str.2816 to i64))
   %ctx672 = load i64, ptr %ctx, align 8
   %calltmp673 = call i64 @"core::cg::const_i64"(i64 %ctx672, i64 0)
   %calltmp674 = call i64 @"core::cg::ok_emit"(i64 %calltmp673)
@@ -90645,12 +90885,12 @@ else683:                                          ; preds = %ifcont630
 ifcont684:                                        ; preds = %else683
   %method700 = load i64, ptr %method, align 8
   %concat_r701 = inttoptr i64 %method700 to ptr
-  %lhs_len702 = call i64 @strlen(ptr @.str.2814)
+  %lhs_len702 = call i64 @strlen(ptr @.str.2818)
   %rhs_len703 = call i64 @strlen(ptr %concat_r701)
   %concat_total704 = add i64 %lhs_len702, %rhs_len703
   %concat_size705 = add i64 %concat_total704, 1
   %buf706 = call ptr @forge_bump_alloc(i64 %concat_size705)
-  %11 = call ptr @memcpy(ptr %buf706, ptr @.str.2814, i64 %lhs_len702)
+  %11 = call ptr @memcpy(ptr %buf706, ptr @.str.2818, i64 %lhs_len702)
   %buf_int707 = ptrtoint ptr %buf706 to i64
   %dst2_int708 = add i64 %buf_int707, %lhs_len702
   %dst2709 = inttoptr i64 %dst2_int708 to ptr
@@ -90659,7 +90899,7 @@ ifcont684:                                        ; preds = %else683
   %concat_i64711 = ptrtoint ptr %buf706 to i64
   %concat_l712 = inttoptr i64 %concat_i64711 to ptr
   %lhs_len713 = call i64 @strlen(ptr %concat_l712)
-  %rhs_len714 = call i64 @strlen(ptr @.str.2815)
+  %rhs_len714 = call i64 @strlen(ptr @.str.2819)
   %concat_total715 = add i64 %lhs_len713, %rhs_len714
   %concat_size716 = add i64 %concat_total715, 1
   %buf717 = call ptr @forge_bump_alloc(i64 %concat_size716)
@@ -90668,649 +90908,641 @@ ifcont684:                                        ; preds = %else683
   %dst2_int719 = add i64 %buf_int718, %lhs_len713
   %dst2720 = inttoptr i64 %dst2_int719 to ptr
   %rhs_len_p1721 = add i64 %rhs_len714, 1
-  %14 = call ptr @memcpy(ptr %dst2720, ptr @.str.2815, i64 %rhs_len_p1721)
+  %14 = call ptr @memcpy(ptr %dst2720, ptr @.str.2819, i64 %rhs_len_p1721)
   %concat_i64722 = ptrtoint ptr %buf717 to i64
   %calltmp723 = call i64 @"core::cg::err_emit"(i64 %concat_i64722)
   ret i64 %calltmp723
 
 then730:                                          ; preds = %ifcont347
-  %method733 = load i64, ptr %method, align 8
-  %streq_l734 = inttoptr i64 %method733 to ptr
-  %strcmp_call735 = call i32 @strcmp(ptr %streq_l734, ptr @.str.2816)
-  %strcmp_sext736 = sext i32 %strcmp_call735 to i64
-  %streq_cmp737 = icmp eq i64 %strcmp_sext736, 0
-  %streq_ext738 = zext i1 %streq_cmp737 to i64
-  %if_cond739 = icmp ne i64 %streq_ext738, 0
-  br i1 %if_cond739, label %then740, label %else741
+  %ctx733 = load i64, ptr %ctx, align 8
+  %r734 = load i64, ptr %r, align 8
+  %obj_ptr735 = inttoptr i64 %r734 to ptr
+  %fld_ptr736 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr735, i32 0, i32 0
+  %value737 = load i64, ptr %fld_ptr736, align 8
+  %calltmp738 = call i64 @"core::cg::to_ptr"(i64 %ctx733, i64 %value737, i64 ptrtoint (ptr @.str.2820 to i64))
+  store i64 %calltmp738, ptr %map_ptr, align 8
+  %method739 = load i64, ptr %method, align 8
+  %streq_l740 = inttoptr i64 %method739 to ptr
+  %strcmp_call741 = call i32 @strcmp(ptr %streq_l740, ptr @.str.2821)
+  %strcmp_sext742 = sext i32 %strcmp_call741 to i64
+  %streq_cmp743 = icmp eq i64 %strcmp_sext742, 0
+  %streq_ext744 = zext i1 %streq_cmp743 to i64
+  %if_cond745 = icmp ne i64 %streq_ext744, 0
+  br i1 %if_cond745, label %then746, label %else747
 
 else731:                                          ; preds = %ifcont347
   br label %ifcont732
 
 ifcont732:                                        ; preds = %else731
-  %r902 = load i64, ptr %r, align 8
-  %obj_ptr903 = inttoptr i64 %r902 to ptr
-  %fld_ptr904 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr903, i32 0, i32 1
-  %ty905 = load i64, ptr %fld_ptr904, align 8
-  %calltmp906 = call i64 @"core::ast::vtype_trait_name"(i64 %ty905)
-  store i64 %calltmp906, ptr %tn, align 8
-  %tn907 = load i64, ptr %tn, align 8
-  %streq_l908 = inttoptr i64 %tn907 to ptr
-  %strcmp_call909 = call i32 @strcmp(ptr %streq_l908, ptr @.str.2834)
-  %strcmp_sext910 = sext i32 %strcmp_call909 to i64
-  %streq_cmp911 = icmp ne i64 %strcmp_sext910, 0
-  %streq_ext912 = zext i1 %streq_cmp911 to i64
-  %if_cond913 = icmp ne i64 %streq_ext912, 0
-  br i1 %if_cond913, label %then914, label %else915
+  %r893 = load i64, ptr %r, align 8
+  %obj_ptr894 = inttoptr i64 %r893 to ptr
+  %fld_ptr895 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr894, i32 0, i32 1
+  %ty896 = load i64, ptr %fld_ptr895, align 8
+  %calltmp897 = call i64 @"core::ast::vtype_trait_name"(i64 %ty896)
+  store i64 %calltmp897, ptr %tn, align 8
+  %tn898 = load i64, ptr %tn, align 8
+  %streq_l899 = inttoptr i64 %tn898 to ptr
+  %strcmp_call900 = call i32 @strcmp(ptr %streq_l899, ptr @.str.2839)
+  %strcmp_sext901 = sext i32 %strcmp_call900 to i64
+  %streq_cmp902 = icmp ne i64 %strcmp_sext901, 0
+  %streq_ext903 = zext i1 %streq_cmp902 to i64
+  %if_cond904 = icmp ne i64 %streq_ext903, 0
+  br i1 %if_cond904, label %then905, label %else906
 
-then740:                                          ; preds = %then730
-  %ctx743 = load i64, ptr %ctx, align 8
-  %env744 = load i64, ptr %env, align 8
-  %args745 = load i64, ptr %args, align 8
-  %calltmp746 = call i64 @"codegen::emit_single_arg"(i64 %ctx743, i64 %env744, i64 %args745)
-  %try_null747 = icmp eq i64 %calltmp746, 0
-  br i1 %try_null747, label %try_ret749, label %try_ok748
+then746:                                          ; preds = %then730
+  %ctx749 = load i64, ptr %ctx, align 8
+  %env750 = load i64, ptr %env, align 8
+  %args751 = load i64, ptr %args, align 8
+  %calltmp752 = call i64 @"codegen::emit_single_arg"(i64 %ctx749, i64 %env750, i64 %args751)
+  %try_null753 = icmp eq i64 %calltmp752, 0
+  br i1 %try_null753, label %try_ret755, label %try_ok754
 
-else741:                                          ; preds = %then730
-  br label %ifcont742
+else747:                                          ; preds = %then730
+  br label %ifcont748
 
-ifcont742:                                        ; preds = %else741
-  %method767 = load i64, ptr %method, align 8
-  %streq_l768 = inttoptr i64 %method767 to ptr
-  %strcmp_call769 = call i32 @strcmp(ptr %streq_l768, ptr @.str.2820)
-  %strcmp_sext770 = sext i32 %strcmp_call769 to i64
-  %streq_cmp771 = icmp eq i64 %strcmp_sext770, 0
-  %streq_ext772 = zext i1 %streq_cmp771 to i64
-  %if_cond773 = icmp ne i64 %streq_ext772, 0
-  br i1 %if_cond773, label %then774, label %else775
+ifcont748:                                        ; preds = %else747
+  %method770 = load i64, ptr %method, align 8
+  %streq_l771 = inttoptr i64 %method770 to ptr
+  %strcmp_call772 = call i32 @strcmp(ptr %streq_l771, ptr @.str.2825)
+  %strcmp_sext773 = sext i32 %strcmp_call772 to i64
+  %streq_cmp774 = icmp eq i64 %strcmp_sext773, 0
+  %streq_ext775 = zext i1 %streq_cmp774 to i64
+  %if_cond776 = icmp ne i64 %streq_ext775, 0
+  br i1 %if_cond776, label %then777, label %else778
 
-try_ok748:                                        ; preds = %then740
-  store i64 %calltmp746, ptr %arg_r750, align 8
-  %ctx751 = load i64, ptr %ctx, align 8
-  %arg_r752 = load i64, ptr %arg_r750, align 8
-  %obj_ptr753 = inttoptr i64 %arg_r752 to ptr
-  %fld_ptr754 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr753, i32 0, i32 0
-  %value755 = load i64, ptr %fld_ptr754, align 8
-  %calltmp756 = call i64 @"core::cg::to_ptr"(i64 %ctx751, i64 %value755, i64 ptrtoint (ptr @.str.2817 to i64))
-  store i64 %calltmp756, ptr %key_ptr, align 8
+try_ok754:                                        ; preds = %then746
+  store i64 %calltmp752, ptr %arg_r756, align 8
   %ctx757 = load i64, ptr %ctx, align 8
-  %ctx758 = load i64, ptr %ctx, align 8
-  %calltmp759 = call i64 @"core::cg::get_fn"(i64 %ctx758, i64 ptrtoint (ptr @.str.2818 to i64))
-  %r760 = load i64, ptr %r, align 8
-  %obj_ptr761 = inttoptr i64 %r760 to ptr
-  %fld_ptr762 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr761, i32 0, i32 0
-  %value763 = load i64, ptr %fld_ptr762, align 8
-  %key_ptr764 = load i64, ptr %key_ptr, align 8
-  %calltmp765 = call i64 @"core::cg::call_2"(i64 %ctx757, i64 %calltmp759, i64 %value763, i64 %key_ptr764, i64 ptrtoint (ptr @.str.2819 to i64))
-  %calltmp766 = call i64 @"core::cg::ok_emit"(i64 %calltmp765)
-  ret i64 %calltmp766
+  %arg_r758 = load i64, ptr %arg_r756, align 8
+  %obj_ptr759 = inttoptr i64 %arg_r758 to ptr
+  %fld_ptr760 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr759, i32 0, i32 0
+  %value761 = load i64, ptr %fld_ptr760, align 8
+  %calltmp762 = call i64 @"core::cg::to_ptr"(i64 %ctx757, i64 %value761, i64 ptrtoint (ptr @.str.2822 to i64))
+  store i64 %calltmp762, ptr %key_ptr, align 8
+  %ctx763 = load i64, ptr %ctx, align 8
+  %ctx764 = load i64, ptr %ctx, align 8
+  %calltmp765 = call i64 @"core::cg::get_fn"(i64 %ctx764, i64 ptrtoint (ptr @.str.2823 to i64))
+  %map_ptr766 = load i64, ptr %map_ptr, align 8
+  %key_ptr767 = load i64, ptr %key_ptr, align 8
+  %calltmp768 = call i64 @"core::cg::call_2"(i64 %ctx763, i64 %calltmp765, i64 %map_ptr766, i64 %key_ptr767, i64 ptrtoint (ptr @.str.2824 to i64))
+  %calltmp769 = call i64 @"core::cg::ok_emit"(i64 %calltmp768)
+  ret i64 %calltmp769
 
-try_ret749:                                       ; preds = %then740
+try_ret755:                                       ; preds = %then746
   ret i64 0
 
-then774:                                          ; preds = %ifcont742
-  %ctx777 = load i64, ptr %ctx, align 8
-  %env778 = load i64, ptr %env, align 8
-  %args779 = load i64, ptr %args, align 8
-  %calltmp780 = call i64 @"codegen::emit_single_arg"(i64 %ctx777, i64 %env778, i64 %args779)
-  %try_null781 = icmp eq i64 %calltmp780, 0
-  br i1 %try_null781, label %try_ret783, label %try_ok782
+then777:                                          ; preds = %ifcont748
+  %ctx780 = load i64, ptr %ctx, align 8
+  %env781 = load i64, ptr %env, align 8
+  %args782 = load i64, ptr %args, align 8
+  %calltmp783 = call i64 @"codegen::emit_single_arg"(i64 %ctx780, i64 %env781, i64 %args782)
+  %try_null784 = icmp eq i64 %calltmp783, 0
+  br i1 %try_null784, label %try_ret786, label %try_ok785
 
-else775:                                          ; preds = %ifcont742
-  br label %ifcont776
+else778:                                          ; preds = %ifcont748
+  br label %ifcont779
 
-ifcont776:                                        ; preds = %else775
+ifcont779:                                        ; preds = %else778
   %method802 = load i64, ptr %method, align 8
   %streq_l803 = inttoptr i64 %method802 to ptr
-  %strcmp_call804 = call i32 @strcmp(ptr %streq_l803, ptr @.str.2824)
+  %strcmp_call804 = call i32 @strcmp(ptr %streq_l803, ptr @.str.2829)
   %strcmp_sext805 = sext i32 %strcmp_call804 to i64
   %streq_cmp806 = icmp eq i64 %strcmp_sext805, 0
   %streq_ext807 = zext i1 %streq_cmp806 to i64
   %if_cond808 = icmp ne i64 %streq_ext807, 0
   br i1 %if_cond808, label %then809, label %else810
 
-try_ok782:                                        ; preds = %then774
-  store i64 %calltmp780, ptr %arg_r784, align 8
-  %ctx785 = load i64, ptr %ctx, align 8
-  %arg_r786 = load i64, ptr %arg_r784, align 8
-  %obj_ptr787 = inttoptr i64 %arg_r786 to ptr
-  %fld_ptr788 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr787, i32 0, i32 0
-  %value789 = load i64, ptr %fld_ptr788, align 8
-  %calltmp790 = call i64 @"core::cg::to_ptr"(i64 %ctx785, i64 %value789, i64 ptrtoint (ptr @.str.2821 to i64))
-  store i64 %calltmp790, ptr %key_ptr791, align 8
-  %ctx792 = load i64, ptr %ctx, align 8
-  %ctx793 = load i64, ptr %ctx, align 8
-  %calltmp794 = call i64 @"core::cg::get_fn"(i64 %ctx793, i64 ptrtoint (ptr @.str.2822 to i64))
-  %r795 = load i64, ptr %r, align 8
-  %obj_ptr796 = inttoptr i64 %r795 to ptr
-  %fld_ptr797 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr796, i32 0, i32 0
-  %value798 = load i64, ptr %fld_ptr797, align 8
-  %key_ptr799 = load i64, ptr %key_ptr791, align 8
-  %calltmp800 = call i64 @"core::cg::call_2"(i64 %ctx792, i64 %calltmp794, i64 %value798, i64 %key_ptr799, i64 ptrtoint (ptr @.str.2823 to i64))
+try_ok785:                                        ; preds = %then777
+  store i64 %calltmp783, ptr %arg_r787, align 8
+  %ctx788 = load i64, ptr %ctx, align 8
+  %arg_r789 = load i64, ptr %arg_r787, align 8
+  %obj_ptr790 = inttoptr i64 %arg_r789 to ptr
+  %fld_ptr791 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr790, i32 0, i32 0
+  %value792 = load i64, ptr %fld_ptr791, align 8
+  %calltmp793 = call i64 @"core::cg::to_ptr"(i64 %ctx788, i64 %value792, i64 ptrtoint (ptr @.str.2826 to i64))
+  store i64 %calltmp793, ptr %key_ptr794, align 8
+  %ctx795 = load i64, ptr %ctx, align 8
+  %ctx796 = load i64, ptr %ctx, align 8
+  %calltmp797 = call i64 @"core::cg::get_fn"(i64 %ctx796, i64 ptrtoint (ptr @.str.2827 to i64))
+  %map_ptr798 = load i64, ptr %map_ptr, align 8
+  %key_ptr799 = load i64, ptr %key_ptr794, align 8
+  %calltmp800 = call i64 @"core::cg::call_2"(i64 %ctx795, i64 %calltmp797, i64 %map_ptr798, i64 %key_ptr799, i64 ptrtoint (ptr @.str.2828 to i64))
   %calltmp801 = call i64 @"core::cg::ok_emit"(i64 %calltmp800)
   ret i64 %calltmp801
 
-try_ret783:                                       ; preds = %then774
+try_ret786:                                       ; preds = %then777
   ret i64 0
 
-then809:                                          ; preds = %ifcont776
+then809:                                          ; preds = %ifcont779
   %ctx812 = load i64, ptr %ctx, align 8
   %env813 = load i64, ptr %env, align 8
-  %r814 = load i64, ptr %r, align 8
-  %obj_ptr815 = inttoptr i64 %r814 to ptr
-  %fld_ptr816 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr815, i32 0, i32 0
-  %value817 = load i64, ptr %fld_ptr816, align 8
-  %args818 = load i64, ptr %args, align 8
-  %calltmp819 = call i64 @"codegen::emit_map_set"(i64 %ctx812, i64 %env813, i64 %value817, i64 %args818)
-  ret i64 %calltmp819
+  %map_ptr814 = load i64, ptr %map_ptr, align 8
+  %args815 = load i64, ptr %args, align 8
+  %calltmp816 = call i64 @"codegen::emit_map_set"(i64 %ctx812, i64 %env813, i64 %map_ptr814, i64 %args815)
+  ret i64 %calltmp816
 
-else810:                                          ; preds = %ifcont776
+else810:                                          ; preds = %ifcont779
   br label %ifcont811
 
 ifcont811:                                        ; preds = %else810
-  %method820 = load i64, ptr %method, align 8
-  %streq_l821 = inttoptr i64 %method820 to ptr
-  %strcmp_call822 = call i32 @strcmp(ptr %streq_l821, ptr @.str.2825)
-  %strcmp_sext823 = sext i32 %strcmp_call822 to i64
-  %streq_cmp824 = icmp eq i64 %strcmp_sext823, 0
-  %streq_ext825 = zext i1 %streq_cmp824 to i64
-  %l_bool826 = icmp ne i64 %streq_ext825, 0
-  br i1 %l_bool826, label %sc_merge828, label %sc_rhs827
+  %method817 = load i64, ptr %method, align 8
+  %streq_l818 = inttoptr i64 %method817 to ptr
+  %strcmp_call819 = call i32 @strcmp(ptr %streq_l818, ptr @.str.2830)
+  %strcmp_sext820 = sext i32 %strcmp_call819 to i64
+  %streq_cmp821 = icmp eq i64 %strcmp_sext820, 0
+  %streq_ext822 = zext i1 %streq_cmp821 to i64
+  %l_bool823 = icmp ne i64 %streq_ext822, 0
+  br i1 %l_bool823, label %sc_merge825, label %sc_rhs824
 
-sc_rhs827:                                        ; preds = %ifcont811
-  %method829 = load i64, ptr %method, align 8
-  %streq_l830 = inttoptr i64 %method829 to ptr
-  %strcmp_call831 = call i32 @strcmp(ptr %streq_l830, ptr @.str.2826)
-  %strcmp_sext832 = sext i32 %strcmp_call831 to i64
-  %streq_cmp833 = icmp eq i64 %strcmp_sext832, 0
-  %streq_ext834 = zext i1 %streq_cmp833 to i64
-  %r_bool835 = icmp ne i64 %streq_ext834, 0
-  br label %sc_merge828
+sc_rhs824:                                        ; preds = %ifcont811
+  %method826 = load i64, ptr %method, align 8
+  %streq_l827 = inttoptr i64 %method826 to ptr
+  %strcmp_call828 = call i32 @strcmp(ptr %streq_l827, ptr @.str.2831)
+  %strcmp_sext829 = sext i32 %strcmp_call828 to i64
+  %streq_cmp830 = icmp eq i64 %strcmp_sext829, 0
+  %streq_ext831 = zext i1 %streq_cmp830 to i64
+  %r_bool832 = icmp ne i64 %streq_ext831, 0
+  br label %sc_merge825
 
-sc_merge828:                                      ; preds = %sc_rhs827, %ifcont811
-  %sc_phi836 = phi i1 [ true, %ifcont811 ], [ %r_bool835, %sc_rhs827 ]
-  %sc_ext837 = zext i1 %sc_phi836 to i64
-  %if_cond838 = icmp ne i64 %sc_ext837, 0
-  br i1 %if_cond838, label %then839, label %else840
+sc_merge825:                                      ; preds = %sc_rhs824, %ifcont811
+  %sc_phi833 = phi i1 [ true, %ifcont811 ], [ %r_bool832, %sc_rhs824 ]
+  %sc_ext834 = zext i1 %sc_phi833 to i64
+  %if_cond835 = icmp ne i64 %sc_ext834, 0
+  br i1 %if_cond835, label %then836, label %else837
 
-then839:                                          ; preds = %sc_merge828
-  %ctx842 = load i64, ptr %ctx, align 8
-  %ctx843 = load i64, ptr %ctx, align 8
-  %calltmp844 = call i64 @"core::cg::get_fn"(i64 %ctx843, i64 ptrtoint (ptr @.str.2827 to i64))
-  %r845 = load i64, ptr %r, align 8
-  %obj_ptr846 = inttoptr i64 %r845 to ptr
-  %fld_ptr847 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr846, i32 0, i32 0
-  %value848 = load i64, ptr %fld_ptr847, align 8
-  %calltmp849 = call i64 @"core::cg::call_1"(i64 %ctx842, i64 %calltmp844, i64 %value848, i64 ptrtoint (ptr @.str.2828 to i64))
-  %calltmp850 = call i64 @"core::cg::ok_emit"(i64 %calltmp849)
-  ret i64 %calltmp850
+then836:                                          ; preds = %sc_merge825
+  %ctx839 = load i64, ptr %ctx, align 8
+  %ctx840 = load i64, ptr %ctx, align 8
+  %calltmp841 = call i64 @"core::cg::get_fn"(i64 %ctx840, i64 ptrtoint (ptr @.str.2832 to i64))
+  %map_ptr842 = load i64, ptr %map_ptr, align 8
+  %calltmp843 = call i64 @"core::cg::call_1"(i64 %ctx839, i64 %calltmp841, i64 %map_ptr842, i64 ptrtoint (ptr @.str.2833 to i64))
+  %calltmp844 = call i64 @"core::cg::ok_emit"(i64 %calltmp843)
+  ret i64 %calltmp844
 
-else840:                                          ; preds = %sc_merge828
-  br label %ifcont841
+else837:                                          ; preds = %sc_merge825
+  br label %ifcont838
 
-ifcont841:                                        ; preds = %else840
-  %method851 = load i64, ptr %method, align 8
-  %streq_l852 = inttoptr i64 %method851 to ptr
-  %strcmp_call853 = call i32 @strcmp(ptr %streq_l852, ptr @.str.2829)
-  %strcmp_sext854 = sext i32 %strcmp_call853 to i64
-  %streq_cmp855 = icmp eq i64 %strcmp_sext854, 0
-  %streq_ext856 = zext i1 %streq_cmp855 to i64
-  %if_cond857 = icmp ne i64 %streq_ext856, 0
-  br i1 %if_cond857, label %then858, label %else859
+ifcont838:                                        ; preds = %else837
+  %method845 = load i64, ptr %method, align 8
+  %streq_l846 = inttoptr i64 %method845 to ptr
+  %strcmp_call847 = call i32 @strcmp(ptr %streq_l846, ptr @.str.2834)
+  %strcmp_sext848 = sext i32 %strcmp_call847 to i64
+  %streq_cmp849 = icmp eq i64 %strcmp_sext848, 0
+  %streq_ext850 = zext i1 %streq_cmp849 to i64
+  %if_cond851 = icmp ne i64 %streq_ext850, 0
+  br i1 %if_cond851, label %then852, label %else853
 
-then858:                                          ; preds = %ifcont841
-  %ctx861 = load i64, ptr %ctx, align 8
-  %ctx862 = load i64, ptr %ctx, align 8
-  %calltmp863 = call i64 @"core::cg::get_fn"(i64 %ctx862, i64 ptrtoint (ptr @.str.2830 to i64))
-  %r864 = load i64, ptr %r, align 8
-  %obj_ptr865 = inttoptr i64 %r864 to ptr
-  %fld_ptr866 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr865, i32 0, i32 0
-  %value867 = load i64, ptr %fld_ptr866, align 8
-  %calltmp868 = call i64 @"core::cg::call_1"(i64 %ctx861, i64 %calltmp863, i64 %value867, i64 ptrtoint (ptr @.str.2831 to i64))
-  store i64 %calltmp868, ptr %keys, align 8
-  %keys869 = load i64, ptr %keys, align 8
-  %buf870 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr871 = getelementptr inbounds nuw %ValueType, ptr %buf870, i32 0, i32 0
-  store i8 7, ptr %tag_ptr871, align 8
-  %buf872 = call ptr @forge_bump_alloc(i64 24)
-  %tag_ptr873 = getelementptr inbounds nuw %ValueType, ptr %buf872, i32 0, i32 0
-  store i8 1, ptr %tag_ptr873, align 8
-  %enum_i64874 = ptrtoint ptr %buf872 to i64
-  %epay_ptr875 = getelementptr inbounds nuw %ValueType, ptr %buf870, i32 0, i32 1
-  store i64 %enum_i64874, ptr %epay_ptr875, align 8
-  %enum_i64876 = ptrtoint ptr %buf870 to i64
-  %calltmp877 = call i64 @"core::cg::ok_emit_typed"(i64 %keys869, i64 %enum_i64876)
-  ret i64 %calltmp877
+then852:                                          ; preds = %ifcont838
+  %ctx855 = load i64, ptr %ctx, align 8
+  %ctx856 = load i64, ptr %ctx, align 8
+  %calltmp857 = call i64 @"core::cg::get_fn"(i64 %ctx856, i64 ptrtoint (ptr @.str.2835 to i64))
+  %map_ptr858 = load i64, ptr %map_ptr, align 8
+  %calltmp859 = call i64 @"core::cg::call_1"(i64 %ctx855, i64 %calltmp857, i64 %map_ptr858, i64 ptrtoint (ptr @.str.2836 to i64))
+  store i64 %calltmp859, ptr %keys, align 8
+  %keys860 = load i64, ptr %keys, align 8
+  %buf861 = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr862 = getelementptr inbounds nuw %ValueType, ptr %buf861, i32 0, i32 0
+  store i8 7, ptr %tag_ptr862, align 8
+  %buf863 = call ptr @forge_bump_alloc(i64 24)
+  %tag_ptr864 = getelementptr inbounds nuw %ValueType, ptr %buf863, i32 0, i32 0
+  store i8 1, ptr %tag_ptr864, align 8
+  %enum_i64865 = ptrtoint ptr %buf863 to i64
+  %epay_ptr866 = getelementptr inbounds nuw %ValueType, ptr %buf861, i32 0, i32 1
+  store i64 %enum_i64865, ptr %epay_ptr866, align 8
+  %enum_i64867 = ptrtoint ptr %buf861 to i64
+  %calltmp868 = call i64 @"core::cg::ok_emit_typed"(i64 %keys860, i64 %enum_i64867)
+  ret i64 %calltmp868
 
-else859:                                          ; preds = %ifcont841
-  br label %ifcont860
+else853:                                          ; preds = %ifcont838
+  br label %ifcont854
 
-ifcont860:                                        ; preds = %else859
-  %method878 = load i64, ptr %method, align 8
-  %concat_r879 = inttoptr i64 %method878 to ptr
-  %lhs_len880 = call i64 @strlen(ptr @.str.2832)
-  %rhs_len881 = call i64 @strlen(ptr %concat_r879)
-  %concat_total882 = add i64 %lhs_len880, %rhs_len881
-  %concat_size883 = add i64 %concat_total882, 1
-  %buf884 = call ptr @forge_bump_alloc(i64 %concat_size883)
-  %15 = call ptr @memcpy(ptr %buf884, ptr @.str.2832, i64 %lhs_len880)
-  %buf_int885 = ptrtoint ptr %buf884 to i64
-  %dst2_int886 = add i64 %buf_int885, %lhs_len880
-  %dst2887 = inttoptr i64 %dst2_int886 to ptr
-  %rhs_len_p1888 = add i64 %rhs_len881, 1
-  %16 = call ptr @memcpy(ptr %dst2887, ptr %concat_r879, i64 %rhs_len_p1888)
-  %concat_i64889 = ptrtoint ptr %buf884 to i64
-  %concat_l890 = inttoptr i64 %concat_i64889 to ptr
-  %lhs_len891 = call i64 @strlen(ptr %concat_l890)
-  %rhs_len892 = call i64 @strlen(ptr @.str.2833)
-  %concat_total893 = add i64 %lhs_len891, %rhs_len892
-  %concat_size894 = add i64 %concat_total893, 1
-  %buf895 = call ptr @forge_bump_alloc(i64 %concat_size894)
-  %17 = call ptr @memcpy(ptr %buf895, ptr %concat_l890, i64 %lhs_len891)
-  %buf_int896 = ptrtoint ptr %buf895 to i64
-  %dst2_int897 = add i64 %buf_int896, %lhs_len891
-  %dst2898 = inttoptr i64 %dst2_int897 to ptr
-  %rhs_len_p1899 = add i64 %rhs_len892, 1
-  %18 = call ptr @memcpy(ptr %dst2898, ptr @.str.2833, i64 %rhs_len_p1899)
-  %concat_i64900 = ptrtoint ptr %buf895 to i64
-  %calltmp901 = call i64 @"core::cg::err_emit"(i64 %concat_i64900)
-  ret i64 %calltmp901
+ifcont854:                                        ; preds = %else853
+  %method869 = load i64, ptr %method, align 8
+  %concat_r870 = inttoptr i64 %method869 to ptr
+  %lhs_len871 = call i64 @strlen(ptr @.str.2837)
+  %rhs_len872 = call i64 @strlen(ptr %concat_r870)
+  %concat_total873 = add i64 %lhs_len871, %rhs_len872
+  %concat_size874 = add i64 %concat_total873, 1
+  %buf875 = call ptr @forge_bump_alloc(i64 %concat_size874)
+  %15 = call ptr @memcpy(ptr %buf875, ptr @.str.2837, i64 %lhs_len871)
+  %buf_int876 = ptrtoint ptr %buf875 to i64
+  %dst2_int877 = add i64 %buf_int876, %lhs_len871
+  %dst2878 = inttoptr i64 %dst2_int877 to ptr
+  %rhs_len_p1879 = add i64 %rhs_len872, 1
+  %16 = call ptr @memcpy(ptr %dst2878, ptr %concat_r870, i64 %rhs_len_p1879)
+  %concat_i64880 = ptrtoint ptr %buf875 to i64
+  %concat_l881 = inttoptr i64 %concat_i64880 to ptr
+  %lhs_len882 = call i64 @strlen(ptr %concat_l881)
+  %rhs_len883 = call i64 @strlen(ptr @.str.2838)
+  %concat_total884 = add i64 %lhs_len882, %rhs_len883
+  %concat_size885 = add i64 %concat_total884, 1
+  %buf886 = call ptr @forge_bump_alloc(i64 %concat_size885)
+  %17 = call ptr @memcpy(ptr %buf886, ptr %concat_l881, i64 %lhs_len882)
+  %buf_int887 = ptrtoint ptr %buf886 to i64
+  %dst2_int888 = add i64 %buf_int887, %lhs_len882
+  %dst2889 = inttoptr i64 %dst2_int888 to ptr
+  %rhs_len_p1890 = add i64 %rhs_len883, 1
+  %18 = call ptr @memcpy(ptr %dst2889, ptr @.str.2838, i64 %rhs_len_p1890)
+  %concat_i64891 = ptrtoint ptr %buf886 to i64
+  %calltmp892 = call i64 @"core::cg::err_emit"(i64 %concat_i64891)
+  ret i64 %calltmp892
 
-then914:                                          ; preds = %ifcont732
-  %ctx917 = load i64, ptr %ctx, align 8
-  %env918 = load i64, ptr %env, align 8
-  %r919 = load i64, ptr %r, align 8
-  %obj_ptr920 = inttoptr i64 %r919 to ptr
-  %fld_ptr921 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr920, i32 0, i32 0
-  %value922 = load i64, ptr %fld_ptr921, align 8
-  %tn923 = load i64, ptr %tn, align 8
-  %method924 = load i64, ptr %method, align 8
-  %args925 = load i64, ptr %args, align 8
-  %calltmp926 = call i64 @"codegen::emit_trait_dispatch"(i64 %ctx917, i64 %env918, i64 %value922, i64 %tn923, i64 %method924, i64 %args925)
-  ret i64 %calltmp926
+then905:                                          ; preds = %ifcont732
+  %ctx908 = load i64, ptr %ctx, align 8
+  %env909 = load i64, ptr %env, align 8
+  %r910 = load i64, ptr %r, align 8
+  %obj_ptr911 = inttoptr i64 %r910 to ptr
+  %fld_ptr912 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr911, i32 0, i32 0
+  %value913 = load i64, ptr %fld_ptr912, align 8
+  %tn914 = load i64, ptr %tn, align 8
+  %method915 = load i64, ptr %method, align 8
+  %args916 = load i64, ptr %args, align 8
+  %calltmp917 = call i64 @"codegen::emit_trait_dispatch"(i64 %ctx908, i64 %env909, i64 %value913, i64 %tn914, i64 %method915, i64 %args916)
+  ret i64 %calltmp917
 
-else915:                                          ; preds = %ifcont732
-  br label %ifcont916
+else906:                                          ; preds = %ifcont732
+  br label %ifcont907
 
-ifcont916:                                        ; preds = %else915
-  %r927 = load i64, ptr %r, align 8
-  %obj_ptr928 = inttoptr i64 %r927 to ptr
-  %fld_ptr929 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr928, i32 0, i32 1
-  %ty930 = load i64, ptr %fld_ptr929, align 8
-  %calltmp931 = call i64 @"core::ast::vtype_struct_name"(i64 %ty930)
-  store i64 %calltmp931, ptr %type_name, align 8
-  %r932 = load i64, ptr %r, align 8
-  %obj_ptr933 = inttoptr i64 %r932 to ptr
-  %fld_ptr934 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr933, i32 0, i32 1
-  %ty935 = load i64, ptr %fld_ptr934, align 8
-  %calltmp936 = call i64 @"core::ast::vtype_enum_name"(i64 %ty935)
-  store i64 %calltmp936, ptr %enum_name, align 8
-  %type_name937 = load i64, ptr %type_name, align 8
-  %streq_l938 = inttoptr i64 %type_name937 to ptr
-  %strcmp_call939 = call i32 @strcmp(ptr %streq_l938, ptr @.str.2835)
-  %strcmp_sext940 = sext i32 %strcmp_call939 to i64
-  %streq_cmp941 = icmp ne i64 %strcmp_sext940, 0
-  %streq_ext942 = zext i1 %streq_cmp941 to i64
-  %ife_cond = icmp ne i64 %streq_ext942, 0
+ifcont907:                                        ; preds = %else906
+  %r918 = load i64, ptr %r, align 8
+  %obj_ptr919 = inttoptr i64 %r918 to ptr
+  %fld_ptr920 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr919, i32 0, i32 1
+  %ty921 = load i64, ptr %fld_ptr920, align 8
+  %calltmp922 = call i64 @"core::ast::vtype_struct_name"(i64 %ty921)
+  store i64 %calltmp922, ptr %type_name, align 8
+  %r923 = load i64, ptr %r, align 8
+  %obj_ptr924 = inttoptr i64 %r923 to ptr
+  %fld_ptr925 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr924, i32 0, i32 1
+  %ty926 = load i64, ptr %fld_ptr925, align 8
+  %calltmp927 = call i64 @"core::ast::vtype_enum_name"(i64 %ty926)
+  store i64 %calltmp927, ptr %enum_name, align 8
+  %type_name928 = load i64, ptr %type_name, align 8
+  %streq_l929 = inttoptr i64 %type_name928 to ptr
+  %strcmp_call930 = call i32 @strcmp(ptr %streq_l929, ptr @.str.2840)
+  %strcmp_sext931 = sext i32 %strcmp_call930 to i64
+  %streq_cmp932 = icmp ne i64 %strcmp_sext931, 0
+  %streq_ext933 = zext i1 %streq_cmp932 to i64
+  %ife_cond = icmp ne i64 %streq_ext933, 0
   store i64 0, ptr %ife_result, align 8
   br i1 %ife_cond, label %ife_then, label %ife_else
 
-ife_then:                                         ; preds = %ifcont916
-  %type_name943 = load i64, ptr %type_name, align 8
-  store i64 %type_name943, ptr %ife_result, align 8
+ife_then:                                         ; preds = %ifcont907
+  %type_name934 = load i64, ptr %type_name, align 8
+  store i64 %type_name934, ptr %ife_result, align 8
   br label %ife_end
 
-ife_else:                                         ; preds = %ifcont916
-  %enum_name944 = load i64, ptr %enum_name, align 8
-  store i64 %enum_name944, ptr %ife_result, align 8
+ife_else:                                         ; preds = %ifcont907
+  %enum_name935 = load i64, ptr %enum_name, align 8
+  store i64 %enum_name935, ptr %ife_result, align 8
   br label %ife_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
   store i64 %ife_val, ptr %owner, align 8
-  %owner945 = load i64, ptr %owner, align 8
-  %streq_l946 = inttoptr i64 %owner945 to ptr
-  %strcmp_call947 = call i32 @strcmp(ptr %streq_l946, ptr @.str.2836)
-  %strcmp_sext948 = sext i32 %strcmp_call947 to i64
-  %streq_cmp949 = icmp eq i64 %strcmp_sext948, 0
-  %streq_ext950 = zext i1 %streq_cmp949 to i64
-  %if_cond951 = icmp ne i64 %streq_ext950, 0
-  br i1 %if_cond951, label %then952, label %else953
+  %owner936 = load i64, ptr %owner, align 8
+  %streq_l937 = inttoptr i64 %owner936 to ptr
+  %strcmp_call938 = call i32 @strcmp(ptr %streq_l937, ptr @.str.2841)
+  %strcmp_sext939 = sext i32 %strcmp_call938 to i64
+  %streq_cmp940 = icmp eq i64 %strcmp_sext939, 0
+  %streq_ext941 = zext i1 %streq_cmp940 to i64
+  %if_cond942 = icmp ne i64 %streq_ext941, 0
+  br i1 %if_cond942, label %then943, label %else944
 
-then952:                                          ; preds = %ife_end
-  %r955 = load i64, ptr %r, align 8
-  %obj_ptr956 = inttoptr i64 %r955 to ptr
-  %fld_ptr957 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr956, i32 0, i32 1
-  %ty958 = load i64, ptr %fld_ptr957, align 8
-  %calltmp959 = call i64 @"core::ast::vtype_display"(i64 %ty958)
-  %concat_r960 = inttoptr i64 %calltmp959 to ptr
-  %lhs_len961 = call i64 @strlen(ptr @.str.2837)
-  %rhs_len962 = call i64 @strlen(ptr %concat_r960)
-  %concat_total963 = add i64 %lhs_len961, %rhs_len962
-  %concat_size964 = add i64 %concat_total963, 1
-  %buf965 = call ptr @forge_bump_alloc(i64 %concat_size964)
-  %19 = call ptr @memcpy(ptr %buf965, ptr @.str.2837, i64 %lhs_len961)
-  %buf_int966 = ptrtoint ptr %buf965 to i64
-  %dst2_int967 = add i64 %buf_int966, %lhs_len961
-  %dst2968 = inttoptr i64 %dst2_int967 to ptr
-  %rhs_len_p1969 = add i64 %rhs_len962, 1
-  %20 = call ptr @memcpy(ptr %dst2968, ptr %concat_r960, i64 %rhs_len_p1969)
-  %concat_i64970 = ptrtoint ptr %buf965 to i64
-  %concat_l971 = inttoptr i64 %concat_i64970 to ptr
-  %lhs_len972 = call i64 @strlen(ptr %concat_l971)
-  %rhs_len973 = call i64 @strlen(ptr @.str.2838)
-  %concat_total974 = add i64 %lhs_len972, %rhs_len973
-  %concat_size975 = add i64 %concat_total974, 1
-  %buf976 = call ptr @forge_bump_alloc(i64 %concat_size975)
-  %21 = call ptr @memcpy(ptr %buf976, ptr %concat_l971, i64 %lhs_len972)
-  %buf_int977 = ptrtoint ptr %buf976 to i64
-  %dst2_int978 = add i64 %buf_int977, %lhs_len972
-  %dst2979 = inttoptr i64 %dst2_int978 to ptr
-  %rhs_len_p1980 = add i64 %rhs_len973, 1
-  %22 = call ptr @memcpy(ptr %dst2979, ptr @.str.2838, i64 %rhs_len_p1980)
-  %concat_i64981 = ptrtoint ptr %buf976 to i64
-  %calltmp982 = call i64 @"core::cg::err_emit"(i64 %concat_i64981)
-  ret i64 %calltmp982
+then943:                                          ; preds = %ife_end
+  %r946 = load i64, ptr %r, align 8
+  %obj_ptr947 = inttoptr i64 %r946 to ptr
+  %fld_ptr948 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr947, i32 0, i32 1
+  %ty949 = load i64, ptr %fld_ptr948, align 8
+  %calltmp950 = call i64 @"core::ast::vtype_display"(i64 %ty949)
+  %concat_r951 = inttoptr i64 %calltmp950 to ptr
+  %lhs_len952 = call i64 @strlen(ptr @.str.2842)
+  %rhs_len953 = call i64 @strlen(ptr %concat_r951)
+  %concat_total954 = add i64 %lhs_len952, %rhs_len953
+  %concat_size955 = add i64 %concat_total954, 1
+  %buf956 = call ptr @forge_bump_alloc(i64 %concat_size955)
+  %19 = call ptr @memcpy(ptr %buf956, ptr @.str.2842, i64 %lhs_len952)
+  %buf_int957 = ptrtoint ptr %buf956 to i64
+  %dst2_int958 = add i64 %buf_int957, %lhs_len952
+  %dst2959 = inttoptr i64 %dst2_int958 to ptr
+  %rhs_len_p1960 = add i64 %rhs_len953, 1
+  %20 = call ptr @memcpy(ptr %dst2959, ptr %concat_r951, i64 %rhs_len_p1960)
+  %concat_i64961 = ptrtoint ptr %buf956 to i64
+  %concat_l962 = inttoptr i64 %concat_i64961 to ptr
+  %lhs_len963 = call i64 @strlen(ptr %concat_l962)
+  %rhs_len964 = call i64 @strlen(ptr @.str.2843)
+  %concat_total965 = add i64 %lhs_len963, %rhs_len964
+  %concat_size966 = add i64 %concat_total965, 1
+  %buf967 = call ptr @forge_bump_alloc(i64 %concat_size966)
+  %21 = call ptr @memcpy(ptr %buf967, ptr %concat_l962, i64 %lhs_len963)
+  %buf_int968 = ptrtoint ptr %buf967 to i64
+  %dst2_int969 = add i64 %buf_int968, %lhs_len963
+  %dst2970 = inttoptr i64 %dst2_int969 to ptr
+  %rhs_len_p1971 = add i64 %rhs_len964, 1
+  %22 = call ptr @memcpy(ptr %dst2970, ptr @.str.2843, i64 %rhs_len_p1971)
+  %concat_i64972 = ptrtoint ptr %buf967 to i64
+  %calltmp973 = call i64 @"core::cg::err_emit"(i64 %concat_i64972)
+  ret i64 %calltmp973
 
-else953:                                          ; preds = %ife_end
-  br label %ifcont954
+else944:                                          ; preds = %ife_end
+  br label %ifcont945
 
-ifcont954:                                        ; preds = %else953
-  %owner983 = load i64, ptr %owner, align 8
-  %concat_l984 = inttoptr i64 %owner983 to ptr
-  %lhs_len985 = call i64 @strlen(ptr %concat_l984)
-  %rhs_len986 = call i64 @strlen(ptr @.str.2839)
-  %concat_total987 = add i64 %lhs_len985, %rhs_len986
-  %concat_size988 = add i64 %concat_total987, 1
-  %buf989 = call ptr @forge_bump_alloc(i64 %concat_size988)
-  %23 = call ptr @memcpy(ptr %buf989, ptr %concat_l984, i64 %lhs_len985)
-  %buf_int990 = ptrtoint ptr %buf989 to i64
-  %dst2_int991 = add i64 %buf_int990, %lhs_len985
-  %dst2992 = inttoptr i64 %dst2_int991 to ptr
-  %rhs_len_p1993 = add i64 %rhs_len986, 1
-  %24 = call ptr @memcpy(ptr %dst2992, ptr @.str.2839, i64 %rhs_len_p1993)
-  %concat_i64994 = ptrtoint ptr %buf989 to i64
-  %method995 = load i64, ptr %method, align 8
-  %concat_l996 = inttoptr i64 %concat_i64994 to ptr
-  %concat_r997 = inttoptr i64 %method995 to ptr
-  %lhs_len998 = call i64 @strlen(ptr %concat_l996)
-  %rhs_len999 = call i64 @strlen(ptr %concat_r997)
-  %concat_total1000 = add i64 %lhs_len998, %rhs_len999
-  %concat_size1001 = add i64 %concat_total1000, 1
-  %buf1002 = call ptr @forge_bump_alloc(i64 %concat_size1001)
-  %25 = call ptr @memcpy(ptr %buf1002, ptr %concat_l996, i64 %lhs_len998)
-  %buf_int1003 = ptrtoint ptr %buf1002 to i64
-  %dst2_int1004 = add i64 %buf_int1003, %lhs_len998
-  %dst21005 = inttoptr i64 %dst2_int1004 to ptr
-  %rhs_len_p11006 = add i64 %rhs_len999, 1
-  %26 = call ptr @memcpy(ptr %dst21005, ptr %concat_r997, i64 %rhs_len_p11006)
-  %concat_i641007 = ptrtoint ptr %buf1002 to i64
-  store i64 %concat_i641007, ptr %mangled, align 8
-  %ctx1008 = load i64, ptr %ctx, align 8
-  %obj_ptr1009 = inttoptr i64 %ctx1008 to ptr
-  %fld_ptr1010 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1009, i32 0, i32 1
-  %module = load i64, ptr %fld_ptr1010, align 8
-  %mangled1011 = load i64, ptr %mangled, align 8
-  %calltmp1012 = call i64 @forge_llvm_get_named_function(i64 %module, i64 %mangled1011)
-  store i64 %calltmp1012, ptr %fn_val, align 8
-  %fn_val1013 = load i64, ptr %fn_val, align 8
-  %eq = icmp eq i64 %fn_val1013, 0
+ifcont945:                                        ; preds = %else944
+  %owner974 = load i64, ptr %owner, align 8
+  %concat_l975 = inttoptr i64 %owner974 to ptr
+  %lhs_len976 = call i64 @strlen(ptr %concat_l975)
+  %rhs_len977 = call i64 @strlen(ptr @.str.2844)
+  %concat_total978 = add i64 %lhs_len976, %rhs_len977
+  %concat_size979 = add i64 %concat_total978, 1
+  %buf980 = call ptr @forge_bump_alloc(i64 %concat_size979)
+  %23 = call ptr @memcpy(ptr %buf980, ptr %concat_l975, i64 %lhs_len976)
+  %buf_int981 = ptrtoint ptr %buf980 to i64
+  %dst2_int982 = add i64 %buf_int981, %lhs_len976
+  %dst2983 = inttoptr i64 %dst2_int982 to ptr
+  %rhs_len_p1984 = add i64 %rhs_len977, 1
+  %24 = call ptr @memcpy(ptr %dst2983, ptr @.str.2844, i64 %rhs_len_p1984)
+  %concat_i64985 = ptrtoint ptr %buf980 to i64
+  %method986 = load i64, ptr %method, align 8
+  %concat_l987 = inttoptr i64 %concat_i64985 to ptr
+  %concat_r988 = inttoptr i64 %method986 to ptr
+  %lhs_len989 = call i64 @strlen(ptr %concat_l987)
+  %rhs_len990 = call i64 @strlen(ptr %concat_r988)
+  %concat_total991 = add i64 %lhs_len989, %rhs_len990
+  %concat_size992 = add i64 %concat_total991, 1
+  %buf993 = call ptr @forge_bump_alloc(i64 %concat_size992)
+  %25 = call ptr @memcpy(ptr %buf993, ptr %concat_l987, i64 %lhs_len989)
+  %buf_int994 = ptrtoint ptr %buf993 to i64
+  %dst2_int995 = add i64 %buf_int994, %lhs_len989
+  %dst2996 = inttoptr i64 %dst2_int995 to ptr
+  %rhs_len_p1997 = add i64 %rhs_len990, 1
+  %26 = call ptr @memcpy(ptr %dst2996, ptr %concat_r988, i64 %rhs_len_p1997)
+  %concat_i64998 = ptrtoint ptr %buf993 to i64
+  store i64 %concat_i64998, ptr %mangled, align 8
+  %ctx999 = load i64, ptr %ctx, align 8
+  %obj_ptr1000 = inttoptr i64 %ctx999 to ptr
+  %fld_ptr1001 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1000, i32 0, i32 1
+  %module = load i64, ptr %fld_ptr1001, align 8
+  %mangled1002 = load i64, ptr %mangled, align 8
+  %calltmp1003 = call i64 @forge_llvm_get_named_function(i64 %module, i64 %mangled1002)
+  store i64 %calltmp1003, ptr %fn_val, align 8
+  %fn_val1004 = load i64, ptr %fn_val, align 8
+  %eq = icmp eq i64 %fn_val1004, 0
   %eq_ext = zext i1 %eq to i64
-  %if_cond1014 = icmp ne i64 %eq_ext, 0
-  br i1 %if_cond1014, label %then1015, label %else1016
+  %if_cond1005 = icmp ne i64 %eq_ext, 0
+  br i1 %if_cond1005, label %then1006, label %else1007
 
-then1015:                                         ; preds = %ifcont954
-  %type_name1018 = load i64, ptr %type_name, align 8
-  %streq_l1019 = inttoptr i64 %type_name1018 to ptr
-  %strcmp_call1020 = call i32 @strcmp(ptr %streq_l1019, ptr @.str.2840)
-  %strcmp_sext1021 = sext i32 %strcmp_call1020 to i64
-  %streq_cmp1022 = icmp ne i64 %strcmp_sext1021, 0
-  %streq_ext1023 = zext i1 %streq_cmp1022 to i64
-  %if_cond1024 = icmp ne i64 %streq_ext1023, 0
-  br i1 %if_cond1024, label %then1025, label %else1026
+then1006:                                         ; preds = %ifcont945
+  %type_name1009 = load i64, ptr %type_name, align 8
+  %streq_l1010 = inttoptr i64 %type_name1009 to ptr
+  %strcmp_call1011 = call i32 @strcmp(ptr %streq_l1010, ptr @.str.2845)
+  %strcmp_sext1012 = sext i32 %strcmp_call1011 to i64
+  %streq_cmp1013 = icmp ne i64 %strcmp_sext1012, 0
+  %streq_ext1014 = zext i1 %streq_cmp1013 to i64
+  %if_cond1015 = icmp ne i64 %streq_ext1014, 0
+  br i1 %if_cond1015, label %then1016, label %else1017
 
-else1016:                                         ; preds = %ifcont954
-  br label %ifcont1017
+else1007:                                         ; preds = %ifcont945
+  br label %ifcont1008
 
-ifcont1017:                                       ; preds = %else1016
-  %args1148 = load i64, ptr %args, align 8
-  %calltmp1149 = call i64 @"core::ast::expr_list_length"(i64 %args1148)
-  store i64 %calltmp1149, ptr %extra_count, align 8
-  %extra_count1150 = load i64, ptr %extra_count, align 8
-  %add = add i64 %extra_count1150, 1
+ifcont1008:                                       ; preds = %else1007
+  %args1139 = load i64, ptr %args, align 8
+  %calltmp1140 = call i64 @"core::ast::expr_list_length"(i64 %args1139)
+  store i64 %calltmp1140, ptr %extra_count, align 8
+  %extra_count1141 = load i64, ptr %extra_count, align 8
+  %add = add i64 %extra_count1141, 1
   store i64 %add, ptr %arg_count, align 8
-  %arg_count1151 = load i64, ptr %arg_count, align 8
-  %calltmp1152 = call i64 @forge_llvm_value_array_new(i64 %arg_count1151)
-  store i64 %calltmp1152, ptr %arg_arr, align 8
-  %arg_arr1153 = load i64, ptr %arg_arr, align 8
-  %r1154 = load i64, ptr %r, align 8
-  %obj_ptr1155 = inttoptr i64 %r1154 to ptr
-  %fld_ptr1156 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr1155, i32 0, i32 0
-  %value1157 = load i64, ptr %fld_ptr1156, align 8
-  %calltmp1158 = call i64 @forge_llvm_value_array_set(i64 %arg_arr1153, i64 0, i64 %value1157)
-  %ctx1159 = load i64, ptr %ctx, align 8
-  %env1160 = load i64, ptr %env, align 8
-  %arg_arr1161 = load i64, ptr %arg_arr, align 8
-  %args1162 = load i64, ptr %args, align 8
-  %calltmp1163 = call i64 @"codegen::fill_arg_array"(i64 %ctx1159, i64 %env1160, i64 %arg_arr1161, i64 %args1162, i64 1)
-  store i64 %calltmp1163, ptr %fill, align 8
-  %fill1164 = load i64, ptr %fill, align 8
-  %obj_ptr1165 = inttoptr i64 %fill1164 to ptr
-  %fld_ptr1166 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr1165, i32 0, i32 2
-  %had_error1167 = load i64, ptr %fld_ptr1166, align 8
-  %if_cond1168 = icmp ne i64 %had_error1167, 0
-  br i1 %if_cond1168, label %then1169, label %else1170
+  %arg_count1142 = load i64, ptr %arg_count, align 8
+  %calltmp1143 = call i64 @forge_llvm_value_array_new(i64 %arg_count1142)
+  store i64 %calltmp1143, ptr %arg_arr, align 8
+  %arg_arr1144 = load i64, ptr %arg_arr, align 8
+  %r1145 = load i64, ptr %r, align 8
+  %obj_ptr1146 = inttoptr i64 %r1145 to ptr
+  %fld_ptr1147 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr1146, i32 0, i32 0
+  %value1148 = load i64, ptr %fld_ptr1147, align 8
+  %calltmp1149 = call i64 @forge_llvm_value_array_set(i64 %arg_arr1144, i64 0, i64 %value1148)
+  %ctx1150 = load i64, ptr %ctx, align 8
+  %env1151 = load i64, ptr %env, align 8
+  %arg_arr1152 = load i64, ptr %arg_arr, align 8
+  %args1153 = load i64, ptr %args, align 8
+  %calltmp1154 = call i64 @"codegen::fill_arg_array"(i64 %ctx1150, i64 %env1151, i64 %arg_arr1152, i64 %args1153, i64 1)
+  store i64 %calltmp1154, ptr %fill, align 8
+  %fill1155 = load i64, ptr %fill, align 8
+  %obj_ptr1156 = inttoptr i64 %fill1155 to ptr
+  %fld_ptr1157 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr1156, i32 0, i32 2
+  %had_error1158 = load i64, ptr %fld_ptr1157, align 8
+  %if_cond1159 = icmp ne i64 %had_error1158, 0
+  br i1 %if_cond1159, label %then1160, label %else1161
 
-then1025:                                         ; preds = %then1015
-  %ctx1028 = load i64, ptr %ctx, align 8
-  %obj_ptr1029 = inttoptr i64 %ctx1028 to ptr
-  %fld_ptr1030 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1029, i32 0, i32 8
-  %structs = load i64, ptr %fld_ptr1030, align 8
-  %type_name1031 = load i64, ptr %type_name, align 8
-  %calltmp1032 = call i64 @"core::cg::struct_reg_lookup"(i64 %structs, i64 %type_name1031)
-  store i64 %calltmp1032, ptr %s_lookup, align 8
-  %s_lookup1033 = load i64, ptr %s_lookup, align 8
-  %obj_ptr1034 = inttoptr i64 %s_lookup1033 to ptr
-  %fld_ptr1035 = getelementptr inbounds nuw %StructLookup, ptr %obj_ptr1034, i32 0, i32 0
-  %found = load i64, ptr %fld_ptr1035, align 8
-  %if_cond1036 = icmp ne i64 %found, 0
-  br i1 %if_cond1036, label %then1037, label %else1038
+then1016:                                         ; preds = %then1006
+  %ctx1019 = load i64, ptr %ctx, align 8
+  %obj_ptr1020 = inttoptr i64 %ctx1019 to ptr
+  %fld_ptr1021 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1020, i32 0, i32 8
+  %structs = load i64, ptr %fld_ptr1021, align 8
+  %type_name1022 = load i64, ptr %type_name, align 8
+  %calltmp1023 = call i64 @"core::cg::struct_reg_lookup"(i64 %structs, i64 %type_name1022)
+  store i64 %calltmp1023, ptr %s_lookup, align 8
+  %s_lookup1024 = load i64, ptr %s_lookup, align 8
+  %obj_ptr1025 = inttoptr i64 %s_lookup1024 to ptr
+  %fld_ptr1026 = getelementptr inbounds nuw %StructLookup, ptr %obj_ptr1025, i32 0, i32 0
+  %found = load i64, ptr %fld_ptr1026, align 8
+  %if_cond1027 = icmp ne i64 %found, 0
+  br i1 %if_cond1027, label %then1028, label %else1029
 
-else1026:                                         ; preds = %then1015
-  br label %ifcont1027
+else1017:                                         ; preds = %then1006
+  br label %ifcont1018
 
-ifcont1027:                                       ; preds = %else1026, %ifcont1039
-  %owner1100 = load i64, ptr %owner, align 8
-  %concat_r1101 = inttoptr i64 %owner1100 to ptr
-  %lhs_len1102 = call i64 @strlen(ptr @.str.2844)
-  %rhs_len1103 = call i64 @strlen(ptr %concat_r1101)
-  %concat_total1104 = add i64 %lhs_len1102, %rhs_len1103
-  %concat_size1105 = add i64 %concat_total1104, 1
-  %buf1106 = call ptr @forge_bump_alloc(i64 %concat_size1105)
-  %27 = call ptr @memcpy(ptr %buf1106, ptr @.str.2844, i64 %lhs_len1102)
-  %buf_int1107 = ptrtoint ptr %buf1106 to i64
-  %dst2_int1108 = add i64 %buf_int1107, %lhs_len1102
-  %dst21109 = inttoptr i64 %dst2_int1108 to ptr
-  %rhs_len_p11110 = add i64 %rhs_len1103, 1
-  %28 = call ptr @memcpy(ptr %dst21109, ptr %concat_r1101, i64 %rhs_len_p11110)
-  %concat_i641111 = ptrtoint ptr %buf1106 to i64
-  %concat_l1112 = inttoptr i64 %concat_i641111 to ptr
-  %lhs_len1113 = call i64 @strlen(ptr %concat_l1112)
-  %rhs_len1114 = call i64 @strlen(ptr @.str.2845)
-  %concat_total1115 = add i64 %lhs_len1113, %rhs_len1114
-  %concat_size1116 = add i64 %concat_total1115, 1
-  %buf1117 = call ptr @forge_bump_alloc(i64 %concat_size1116)
-  %29 = call ptr @memcpy(ptr %buf1117, ptr %concat_l1112, i64 %lhs_len1113)
-  %buf_int1118 = ptrtoint ptr %buf1117 to i64
-  %dst2_int1119 = add i64 %buf_int1118, %lhs_len1113
-  %dst21120 = inttoptr i64 %dst2_int1119 to ptr
-  %rhs_len_p11121 = add i64 %rhs_len1114, 1
-  %30 = call ptr @memcpy(ptr %dst21120, ptr @.str.2845, i64 %rhs_len_p11121)
-  %concat_i641122 = ptrtoint ptr %buf1117 to i64
-  %method1123 = load i64, ptr %method, align 8
-  %concat_l1124 = inttoptr i64 %concat_i641122 to ptr
-  %concat_r1125 = inttoptr i64 %method1123 to ptr
-  %lhs_len1126 = call i64 @strlen(ptr %concat_l1124)
-  %rhs_len1127 = call i64 @strlen(ptr %concat_r1125)
-  %concat_total1128 = add i64 %lhs_len1126, %rhs_len1127
-  %concat_size1129 = add i64 %concat_total1128, 1
-  %buf1130 = call ptr @forge_bump_alloc(i64 %concat_size1129)
-  %31 = call ptr @memcpy(ptr %buf1130, ptr %concat_l1124, i64 %lhs_len1126)
-  %buf_int1131 = ptrtoint ptr %buf1130 to i64
-  %dst2_int1132 = add i64 %buf_int1131, %lhs_len1126
-  %dst21133 = inttoptr i64 %dst2_int1132 to ptr
-  %rhs_len_p11134 = add i64 %rhs_len1127, 1
-  %32 = call ptr @memcpy(ptr %dst21133, ptr %concat_r1125, i64 %rhs_len_p11134)
-  %concat_i641135 = ptrtoint ptr %buf1130 to i64
-  %concat_l1136 = inttoptr i64 %concat_i641135 to ptr
-  %lhs_len1137 = call i64 @strlen(ptr %concat_l1136)
-  %rhs_len1138 = call i64 @strlen(ptr @.str.2846)
-  %concat_total1139 = add i64 %lhs_len1137, %rhs_len1138
-  %concat_size1140 = add i64 %concat_total1139, 1
-  %buf1141 = call ptr @forge_bump_alloc(i64 %concat_size1140)
-  %33 = call ptr @memcpy(ptr %buf1141, ptr %concat_l1136, i64 %lhs_len1137)
-  %buf_int1142 = ptrtoint ptr %buf1141 to i64
-  %dst2_int1143 = add i64 %buf_int1142, %lhs_len1137
-  %dst21144 = inttoptr i64 %dst2_int1143 to ptr
-  %rhs_len_p11145 = add i64 %rhs_len1138, 1
-  %34 = call ptr @memcpy(ptr %dst21144, ptr @.str.2846, i64 %rhs_len_p11145)
-  %concat_i641146 = ptrtoint ptr %buf1141 to i64
-  %calltmp1147 = call i64 @"core::cg::err_emit"(i64 %concat_i641146)
-  ret i64 %calltmp1147
+ifcont1018:                                       ; preds = %else1017, %ifcont1030
+  %owner1091 = load i64, ptr %owner, align 8
+  %concat_r1092 = inttoptr i64 %owner1091 to ptr
+  %lhs_len1093 = call i64 @strlen(ptr @.str.2849)
+  %rhs_len1094 = call i64 @strlen(ptr %concat_r1092)
+  %concat_total1095 = add i64 %lhs_len1093, %rhs_len1094
+  %concat_size1096 = add i64 %concat_total1095, 1
+  %buf1097 = call ptr @forge_bump_alloc(i64 %concat_size1096)
+  %27 = call ptr @memcpy(ptr %buf1097, ptr @.str.2849, i64 %lhs_len1093)
+  %buf_int1098 = ptrtoint ptr %buf1097 to i64
+  %dst2_int1099 = add i64 %buf_int1098, %lhs_len1093
+  %dst21100 = inttoptr i64 %dst2_int1099 to ptr
+  %rhs_len_p11101 = add i64 %rhs_len1094, 1
+  %28 = call ptr @memcpy(ptr %dst21100, ptr %concat_r1092, i64 %rhs_len_p11101)
+  %concat_i641102 = ptrtoint ptr %buf1097 to i64
+  %concat_l1103 = inttoptr i64 %concat_i641102 to ptr
+  %lhs_len1104 = call i64 @strlen(ptr %concat_l1103)
+  %rhs_len1105 = call i64 @strlen(ptr @.str.2850)
+  %concat_total1106 = add i64 %lhs_len1104, %rhs_len1105
+  %concat_size1107 = add i64 %concat_total1106, 1
+  %buf1108 = call ptr @forge_bump_alloc(i64 %concat_size1107)
+  %29 = call ptr @memcpy(ptr %buf1108, ptr %concat_l1103, i64 %lhs_len1104)
+  %buf_int1109 = ptrtoint ptr %buf1108 to i64
+  %dst2_int1110 = add i64 %buf_int1109, %lhs_len1104
+  %dst21111 = inttoptr i64 %dst2_int1110 to ptr
+  %rhs_len_p11112 = add i64 %rhs_len1105, 1
+  %30 = call ptr @memcpy(ptr %dst21111, ptr @.str.2850, i64 %rhs_len_p11112)
+  %concat_i641113 = ptrtoint ptr %buf1108 to i64
+  %method1114 = load i64, ptr %method, align 8
+  %concat_l1115 = inttoptr i64 %concat_i641113 to ptr
+  %concat_r1116 = inttoptr i64 %method1114 to ptr
+  %lhs_len1117 = call i64 @strlen(ptr %concat_l1115)
+  %rhs_len1118 = call i64 @strlen(ptr %concat_r1116)
+  %concat_total1119 = add i64 %lhs_len1117, %rhs_len1118
+  %concat_size1120 = add i64 %concat_total1119, 1
+  %buf1121 = call ptr @forge_bump_alloc(i64 %concat_size1120)
+  %31 = call ptr @memcpy(ptr %buf1121, ptr %concat_l1115, i64 %lhs_len1117)
+  %buf_int1122 = ptrtoint ptr %buf1121 to i64
+  %dst2_int1123 = add i64 %buf_int1122, %lhs_len1117
+  %dst21124 = inttoptr i64 %dst2_int1123 to ptr
+  %rhs_len_p11125 = add i64 %rhs_len1118, 1
+  %32 = call ptr @memcpy(ptr %dst21124, ptr %concat_r1116, i64 %rhs_len_p11125)
+  %concat_i641126 = ptrtoint ptr %buf1121 to i64
+  %concat_l1127 = inttoptr i64 %concat_i641126 to ptr
+  %lhs_len1128 = call i64 @strlen(ptr %concat_l1127)
+  %rhs_len1129 = call i64 @strlen(ptr @.str.2851)
+  %concat_total1130 = add i64 %lhs_len1128, %rhs_len1129
+  %concat_size1131 = add i64 %concat_total1130, 1
+  %buf1132 = call ptr @forge_bump_alloc(i64 %concat_size1131)
+  %33 = call ptr @memcpy(ptr %buf1132, ptr %concat_l1127, i64 %lhs_len1128)
+  %buf_int1133 = ptrtoint ptr %buf1132 to i64
+  %dst2_int1134 = add i64 %buf_int1133, %lhs_len1128
+  %dst21135 = inttoptr i64 %dst2_int1134 to ptr
+  %rhs_len_p11136 = add i64 %rhs_len1129, 1
+  %34 = call ptr @memcpy(ptr %dst21135, ptr @.str.2851, i64 %rhs_len_p11136)
+  %concat_i641137 = ptrtoint ptr %buf1132 to i64
+  %calltmp1138 = call i64 @"core::cg::err_emit"(i64 %concat_i641137)
+  ret i64 %calltmp1138
 
-then1037:                                         ; preds = %then1025
-  %ctx1040 = load i64, ptr %ctx, align 8
-  %obj_ptr1041 = inttoptr i64 %ctx1040 to ptr
-  %fld_ptr1042 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1041, i32 0, i32 8
-  %structs1043 = load i64, ptr %fld_ptr1042, align 8
-  %ctx1044 = load i64, ptr %ctx, align 8
-  %obj_ptr1045 = inttoptr i64 %ctx1044 to ptr
-  %fld_ptr1046 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1045, i32 0, i32 9
-  %enums = load i64, ptr %fld_ptr1046, align 8
-  %s_lookup1047 = load i64, ptr %s_lookup, align 8
-  %obj_ptr1048 = inttoptr i64 %s_lookup1047 to ptr
-  %fld_ptr1049 = getelementptr inbounds nuw %StructLookup, ptr %obj_ptr1048, i32 0, i32 1
-  %fields = load i64, ptr %fld_ptr1049, align 8
-  %method1050 = load i64, ptr %method, align 8
-  %calltmp1051 = call i64 @"core::ast::field_type_of"(i64 %fields, i64 %method1050)
-  %calltmp1052 = call i64 @"core::cg::translate_param_type"(i64 %structs1043, i64 %enums, i64 %calltmp1051)
-  store i64 %calltmp1052, ptr %field_ty, align 8
-  %field_ty1053 = load i64, ptr %field_ty, align 8
-  %calltmp1054 = call i64 @"core::ast::vtype_is_fn"(i64 %field_ty1053)
-  %if_cond1055 = icmp ne i64 %calltmp1054, 0
-  br i1 %if_cond1055, label %then1056, label %else1057
+then1028:                                         ; preds = %then1016
+  %ctx1031 = load i64, ptr %ctx, align 8
+  %obj_ptr1032 = inttoptr i64 %ctx1031 to ptr
+  %fld_ptr1033 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1032, i32 0, i32 8
+  %structs1034 = load i64, ptr %fld_ptr1033, align 8
+  %ctx1035 = load i64, ptr %ctx, align 8
+  %obj_ptr1036 = inttoptr i64 %ctx1035 to ptr
+  %fld_ptr1037 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1036, i32 0, i32 9
+  %enums = load i64, ptr %fld_ptr1037, align 8
+  %s_lookup1038 = load i64, ptr %s_lookup, align 8
+  %obj_ptr1039 = inttoptr i64 %s_lookup1038 to ptr
+  %fld_ptr1040 = getelementptr inbounds nuw %StructLookup, ptr %obj_ptr1039, i32 0, i32 1
+  %fields = load i64, ptr %fld_ptr1040, align 8
+  %method1041 = load i64, ptr %method, align 8
+  %calltmp1042 = call i64 @"core::ast::field_type_of"(i64 %fields, i64 %method1041)
+  %calltmp1043 = call i64 @"core::cg::translate_param_type"(i64 %structs1034, i64 %enums, i64 %calltmp1042)
+  store i64 %calltmp1043, ptr %field_ty, align 8
+  %field_ty1044 = load i64, ptr %field_ty, align 8
+  %calltmp1045 = call i64 @"core::ast::vtype_is_fn"(i64 %field_ty1044)
+  %if_cond1046 = icmp ne i64 %calltmp1045, 0
+  br i1 %if_cond1046, label %then1047, label %else1048
 
-else1038:                                         ; preds = %then1025
-  br label %ifcont1039
+else1029:                                         ; preds = %then1016
+  br label %ifcont1030
 
-ifcont1039:                                       ; preds = %else1038, %ifcont1058
-  br label %ifcont1027
+ifcont1030:                                       ; preds = %else1029, %ifcont1049
+  br label %ifcont1018
 
-then1056:                                         ; preds = %then1037
-  %ctx1059 = load i64, ptr %ctx, align 8
-  %obj_ptr1060 = inttoptr i64 %ctx1059 to ptr
-  %fld_ptr1061 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1060, i32 0, i32 0
-  %lc1062 = load i64, ptr %fld_ptr1061, align 8
-  %type_name1063 = load i64, ptr %type_name, align 8
-  %calltmp1064 = call i64 @forge_llvm_get_type_by_name(i64 %lc1062, i64 %type_name1063)
-  store i64 %calltmp1064, ptr %st_ty, align 8
-  %ctx1065 = load i64, ptr %ctx, align 8
-  %r1066 = load i64, ptr %r, align 8
-  %obj_ptr1067 = inttoptr i64 %r1066 to ptr
-  %fld_ptr1068 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr1067, i32 0, i32 0
-  %value1069 = load i64, ptr %fld_ptr1068, align 8
-  %calltmp1070 = call i64 @"core::cg::to_ptr"(i64 %ctx1065, i64 %value1069, i64 ptrtoint (ptr @.str.2841 to i64))
-  store i64 %calltmp1070, ptr %obj_ptr1071, align 8
-  %ctx1072 = load i64, ptr %ctx, align 8
-  %obj_ptr1073 = inttoptr i64 %ctx1072 to ptr
-  %fld_ptr1074 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1073, i32 0, i32 2
-  %builder1075 = load i64, ptr %fld_ptr1074, align 8
-  %st_ty1076 = load i64, ptr %st_ty, align 8
-  %obj_ptr1077 = load i64, ptr %obj_ptr1071, align 8
-  %s_lookup1078 = load i64, ptr %s_lookup, align 8
-  %obj_ptr1079 = inttoptr i64 %s_lookup1078 to ptr
-  %fld_ptr1080 = getelementptr inbounds nuw %StructLookup, ptr %obj_ptr1079, i32 0, i32 1
-  %fields1081 = load i64, ptr %fld_ptr1080, align 8
-  %method1082 = load i64, ptr %method, align 8
-  %calltmp1083 = call i64 @"core::ast::field_index_of"(i64 %fields1081, i64 %method1082)
-  %calltmp1084 = call i64 @forge_llvm_build_struct_gep2(i64 %builder1075, i64 %st_ty1076, i64 %obj_ptr1077, i64 %calltmp1083, i64 ptrtoint (ptr @.str.2842 to i64))
-  store i64 %calltmp1084, ptr %gep, align 8
-  %ctx1085 = load i64, ptr %ctx, align 8
-  %obj_ptr1086 = inttoptr i64 %ctx1085 to ptr
-  %fld_ptr1087 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1086, i32 0, i32 2
-  %builder1088 = load i64, ptr %fld_ptr1087, align 8
-  %ctx1089 = load i64, ptr %ctx, align 8
-  %obj_ptr1090 = inttoptr i64 %ctx1089 to ptr
-  %fld_ptr1091 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1090, i32 0, i32 5
-  %i64_type1092 = load i64, ptr %fld_ptr1091, align 8
-  %gep1093 = load i64, ptr %gep, align 8
-  %calltmp1094 = call i64 @forge_llvm_build_load(i64 %builder1088, i64 %i64_type1092, i64 %gep1093, i64 ptrtoint (ptr @.str.2843 to i64))
-  store i64 %calltmp1094, ptr %fn_i64, align 8
-  %ctx1095 = load i64, ptr %ctx, align 8
-  %env1096 = load i64, ptr %env, align 8
-  %fn_i641097 = load i64, ptr %fn_i64, align 8
-  %args1098 = load i64, ptr %args, align 8
-  %calltmp1099 = call i64 @"features::closures::codegen::emit_indirect_call_value"(i64 %ctx1095, i64 %env1096, i64 %fn_i641097, i64 %args1098)
-  ret i64 %calltmp1099
+then1047:                                         ; preds = %then1028
+  %ctx1050 = load i64, ptr %ctx, align 8
+  %obj_ptr1051 = inttoptr i64 %ctx1050 to ptr
+  %fld_ptr1052 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1051, i32 0, i32 0
+  %lc1053 = load i64, ptr %fld_ptr1052, align 8
+  %type_name1054 = load i64, ptr %type_name, align 8
+  %calltmp1055 = call i64 @forge_llvm_get_type_by_name(i64 %lc1053, i64 %type_name1054)
+  store i64 %calltmp1055, ptr %st_ty, align 8
+  %ctx1056 = load i64, ptr %ctx, align 8
+  %r1057 = load i64, ptr %r, align 8
+  %obj_ptr1058 = inttoptr i64 %r1057 to ptr
+  %fld_ptr1059 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr1058, i32 0, i32 0
+  %value1060 = load i64, ptr %fld_ptr1059, align 8
+  %calltmp1061 = call i64 @"core::cg::to_ptr"(i64 %ctx1056, i64 %value1060, i64 ptrtoint (ptr @.str.2846 to i64))
+  store i64 %calltmp1061, ptr %obj_ptr1062, align 8
+  %ctx1063 = load i64, ptr %ctx, align 8
+  %obj_ptr1064 = inttoptr i64 %ctx1063 to ptr
+  %fld_ptr1065 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1064, i32 0, i32 2
+  %builder1066 = load i64, ptr %fld_ptr1065, align 8
+  %st_ty1067 = load i64, ptr %st_ty, align 8
+  %obj_ptr1068 = load i64, ptr %obj_ptr1062, align 8
+  %s_lookup1069 = load i64, ptr %s_lookup, align 8
+  %obj_ptr1070 = inttoptr i64 %s_lookup1069 to ptr
+  %fld_ptr1071 = getelementptr inbounds nuw %StructLookup, ptr %obj_ptr1070, i32 0, i32 1
+  %fields1072 = load i64, ptr %fld_ptr1071, align 8
+  %method1073 = load i64, ptr %method, align 8
+  %calltmp1074 = call i64 @"core::ast::field_index_of"(i64 %fields1072, i64 %method1073)
+  %calltmp1075 = call i64 @forge_llvm_build_struct_gep2(i64 %builder1066, i64 %st_ty1067, i64 %obj_ptr1068, i64 %calltmp1074, i64 ptrtoint (ptr @.str.2847 to i64))
+  store i64 %calltmp1075, ptr %gep, align 8
+  %ctx1076 = load i64, ptr %ctx, align 8
+  %obj_ptr1077 = inttoptr i64 %ctx1076 to ptr
+  %fld_ptr1078 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1077, i32 0, i32 2
+  %builder1079 = load i64, ptr %fld_ptr1078, align 8
+  %ctx1080 = load i64, ptr %ctx, align 8
+  %obj_ptr1081 = inttoptr i64 %ctx1080 to ptr
+  %fld_ptr1082 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1081, i32 0, i32 5
+  %i64_type1083 = load i64, ptr %fld_ptr1082, align 8
+  %gep1084 = load i64, ptr %gep, align 8
+  %calltmp1085 = call i64 @forge_llvm_build_load(i64 %builder1079, i64 %i64_type1083, i64 %gep1084, i64 ptrtoint (ptr @.str.2848 to i64))
+  store i64 %calltmp1085, ptr %fn_i64, align 8
+  %ctx1086 = load i64, ptr %ctx, align 8
+  %env1087 = load i64, ptr %env, align 8
+  %fn_i641088 = load i64, ptr %fn_i64, align 8
+  %args1089 = load i64, ptr %args, align 8
+  %calltmp1090 = call i64 @"features::closures::codegen::emit_indirect_call_value"(i64 %ctx1086, i64 %env1087, i64 %fn_i641088, i64 %args1089)
+  ret i64 %calltmp1090
 
-else1057:                                         ; preds = %then1037
-  br label %ifcont1058
+else1048:                                         ; preds = %then1028
+  br label %ifcont1049
 
-ifcont1058:                                       ; preds = %else1057
-  br label %ifcont1039
+ifcont1049:                                       ; preds = %else1048
+  br label %ifcont1030
 
-then1169:                                         ; preds = %ifcont1017
-  %arg_arr1172 = load i64, ptr %arg_arr, align 8
-  %calltmp1173 = call i64 @forge_llvm_value_array_free(i64 %arg_arr1172)
-  %fill1174 = load i64, ptr %fill, align 8
-  ret i64 %fill1174
+then1160:                                         ; preds = %ifcont1008
+  %arg_arr1163 = load i64, ptr %arg_arr, align 8
+  %calltmp1164 = call i64 @forge_llvm_value_array_free(i64 %arg_arr1163)
+  %fill1165 = load i64, ptr %fill, align 8
+  ret i64 %fill1165
 
-else1170:                                         ; preds = %ifcont1017
-  br label %ifcont1171
+else1161:                                         ; preds = %ifcont1008
+  br label %ifcont1162
 
-ifcont1171:                                       ; preds = %else1170
-  %arg_count1175 = load i64, ptr %arg_count, align 8
-  %calltmp1176 = call i64 @forge_llvm_type_array_new(i64 %arg_count1175)
-  store i64 %calltmp1176, ptr %param_arr, align 8
-  %param_arr1177 = load i64, ptr %param_arr, align 8
-  %ctx1178 = load i64, ptr %ctx, align 8
-  %obj_ptr1179 = inttoptr i64 %ctx1178 to ptr
-  %fld_ptr1180 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1179, i32 0, i32 5
-  %i64_type1181 = load i64, ptr %fld_ptr1180, align 8
-  %arg_count1182 = load i64, ptr %arg_count, align 8
-  %calltmp1183 = call i64 @"codegen::fill_i64_param_array"(i64 %param_arr1177, i64 %i64_type1181, i64 0, i64 %arg_count1182)
+ifcont1162:                                       ; preds = %else1161
+  %arg_count1166 = load i64, ptr %arg_count, align 8
+  %calltmp1167 = call i64 @forge_llvm_type_array_new(i64 %arg_count1166)
+  store i64 %calltmp1167, ptr %param_arr, align 8
+  %param_arr1168 = load i64, ptr %param_arr, align 8
+  %ctx1169 = load i64, ptr %ctx, align 8
+  %obj_ptr1170 = inttoptr i64 %ctx1169 to ptr
+  %fld_ptr1171 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1170, i32 0, i32 5
+  %i64_type1172 = load i64, ptr %fld_ptr1171, align 8
+  %arg_count1173 = load i64, ptr %arg_count, align 8
+  %calltmp1174 = call i64 @"codegen::fill_i64_param_array"(i64 %param_arr1168, i64 %i64_type1172, i64 0, i64 %arg_count1173)
+  %ctx1175 = load i64, ptr %ctx, align 8
+  %obj_ptr1176 = inttoptr i64 %ctx1175 to ptr
+  %fld_ptr1177 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1176, i32 0, i32 5
+  %i64_type1178 = load i64, ptr %fld_ptr1177, align 8
+  %param_arr1179 = load i64, ptr %param_arr, align 8
+  %arg_count1180 = load i64, ptr %arg_count, align 8
+  %calltmp1181 = call i64 @forge_llvm_function_type(i64 %i64_type1178, i64 %param_arr1179, i64 %arg_count1180, i64 0)
+  store i64 %calltmp1181, ptr %fn_type, align 8
+  %param_arr1182 = load i64, ptr %param_arr, align 8
+  %calltmp1183 = call i64 @forge_llvm_type_array_free(i64 %param_arr1182)
   %ctx1184 = load i64, ptr %ctx, align 8
   %obj_ptr1185 = inttoptr i64 %ctx1184 to ptr
-  %fld_ptr1186 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1185, i32 0, i32 5
-  %i64_type1187 = load i64, ptr %fld_ptr1186, align 8
-  %param_arr1188 = load i64, ptr %param_arr, align 8
-  %arg_count1189 = load i64, ptr %arg_count, align 8
-  %calltmp1190 = call i64 @forge_llvm_function_type(i64 %i64_type1187, i64 %param_arr1188, i64 %arg_count1189, i64 0)
-  store i64 %calltmp1190, ptr %fn_type, align 8
-  %param_arr1191 = load i64, ptr %param_arr, align 8
-  %calltmp1192 = call i64 @forge_llvm_type_array_free(i64 %param_arr1191)
-  %ctx1193 = load i64, ptr %ctx, align 8
-  %obj_ptr1194 = inttoptr i64 %ctx1193 to ptr
-  %fld_ptr1195 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1194, i32 0, i32 2
-  %builder1196 = load i64, ptr %fld_ptr1195, align 8
-  %fn_type1197 = load i64, ptr %fn_type, align 8
-  %fn_val1198 = load i64, ptr %fn_val, align 8
-  %arg_arr1199 = load i64, ptr %arg_arr, align 8
-  %arg_count1200 = load i64, ptr %arg_count, align 8
-  %calltmp1201 = call i64 @forge_llvm_build_call(i64 %builder1196, i64 %fn_type1197, i64 %fn_val1198, i64 %arg_arr1199, i64 %arg_count1200, i64 ptrtoint (ptr @.str.2847 to i64))
-  store i64 %calltmp1201, ptr %result1202, align 8
-  %arg_arr1203 = load i64, ptr %arg_arr, align 8
-  %calltmp1204 = call i64 @forge_llvm_value_array_free(i64 %arg_arr1203)
-  %ctx1205 = load i64, ptr %ctx, align 8
-  %obj_ptr1206 = inttoptr i64 %ctx1205 to ptr
-  %fld_ptr1207 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1206, i32 0, i32 10
-  %fn_rets = load i64, ptr %fld_ptr1207, align 8
-  %mangled1208 = load i64, ptr %mangled, align 8
-  %calltmp1209 = call i64 @"core::cg::fn_ret_lookup"(i64 %fn_rets, i64 %mangled1208)
-  store i64 %calltmp1209, ptr %ret_ty1210, align 8
-  %result1211 = load i64, ptr %result1202, align 8
-  %ret_ty1212 = load i64, ptr %ret_ty1210, align 8
-  %calltmp1213 = call i64 @"core::cg::ok_emit_typed"(i64 %result1211, i64 %ret_ty1212)
-  ret i64 %calltmp1213
+  %fld_ptr1186 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1185, i32 0, i32 2
+  %builder1187 = load i64, ptr %fld_ptr1186, align 8
+  %fn_type1188 = load i64, ptr %fn_type, align 8
+  %fn_val1189 = load i64, ptr %fn_val, align 8
+  %arg_arr1190 = load i64, ptr %arg_arr, align 8
+  %arg_count1191 = load i64, ptr %arg_count, align 8
+  %calltmp1192 = call i64 @forge_llvm_build_call(i64 %builder1187, i64 %fn_type1188, i64 %fn_val1189, i64 %arg_arr1190, i64 %arg_count1191, i64 ptrtoint (ptr @.str.2852 to i64))
+  store i64 %calltmp1192, ptr %result1193, align 8
+  %arg_arr1194 = load i64, ptr %arg_arr, align 8
+  %calltmp1195 = call i64 @forge_llvm_value_array_free(i64 %arg_arr1194)
+  %ctx1196 = load i64, ptr %ctx, align 8
+  %obj_ptr1197 = inttoptr i64 %ctx1196 to ptr
+  %fld_ptr1198 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr1197, i32 0, i32 10
+  %fn_rets = load i64, ptr %fld_ptr1198, align 8
+  %mangled1199 = load i64, ptr %mangled, align 8
+  %calltmp1200 = call i64 @"core::cg::fn_ret_lookup"(i64 %fn_rets, i64 %mangled1199)
+  store i64 %calltmp1200, ptr %ret_ty1201, align 8
+  %result1202 = load i64, ptr %result1193, align 8
+  %ret_ty1203 = load i64, ptr %ret_ty1201, align 8
+  %calltmp1204 = call i64 @"core::cg::ok_emit_typed"(i64 %result1202, i64 %ret_ty1203)
+  ret i64 %calltmp1204
 }
 
 define i64 @"codegen::trait_method_idx"(i64 %0, i64 %1, i64 %2) {
@@ -91364,7 +91596,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2848, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2853, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm2
@@ -91407,7 +91639,7 @@ match_end:                                        ; preds = %ifcont, %march_arm
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  store i64 ptrtoint (ptr @.str.2849 to i64), ptr %match_result, align 8
+  store i64 ptrtoint (ptr @.str.2854 to i64), ptr %match_result, align 8
   br label %match_end
 
 march_next:                                       ; preds = %entry
@@ -91437,7 +91669,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2850, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2855, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm2
@@ -91481,19 +91713,19 @@ entry:
   store i64 %5, ptr %args, align 8
   %ctx1 = load i64, ptr %ctx, align 8
   %obj_val2 = load i64, ptr %obj_val, align 8
-  %calltmp = call i64 @"core::cg::to_ptr"(i64 %ctx1, i64 %obj_val2, i64 ptrtoint (ptr @.str.2851 to i64))
+  %calltmp = call i64 @"core::cg::to_ptr"(i64 %ctx1, i64 %obj_val2, i64 ptrtoint (ptr @.str.2856 to i64))
   store i64 %calltmp, ptr %obj_ptr, align 8
   %ctx3 = load i64, ptr %ctx, align 8
   %ctx4 = load i64, ptr %ctx, align 8
-  %calltmp5 = call i64 @"core::cg::get_fn"(i64 %ctx4, i64 ptrtoint (ptr @.str.2852 to i64))
+  %calltmp5 = call i64 @"core::cg::get_fn"(i64 %ctx4, i64 ptrtoint (ptr @.str.2857 to i64))
   %obj_ptr6 = load i64, ptr %obj_ptr, align 8
-  %calltmp7 = call i64 @"core::cg::call_1"(i64 %ctx3, i64 %calltmp5, i64 %obj_ptr6, i64 ptrtoint (ptr @.str.2853 to i64))
+  %calltmp7 = call i64 @"core::cg::call_1"(i64 %ctx3, i64 %calltmp5, i64 %obj_ptr6, i64 ptrtoint (ptr @.str.2858 to i64))
   store i64 %calltmp7, ptr %concrete, align 8
   %ctx8 = load i64, ptr %ctx, align 8
   %ctx9 = load i64, ptr %ctx, align 8
-  %calltmp10 = call i64 @"core::cg::get_fn"(i64 %ctx9, i64 ptrtoint (ptr @.str.2854 to i64))
+  %calltmp10 = call i64 @"core::cg::get_fn"(i64 %ctx9, i64 ptrtoint (ptr @.str.2859 to i64))
   %obj_ptr11 = load i64, ptr %obj_ptr, align 8
-  %calltmp12 = call i64 @"core::cg::call_1"(i64 %ctx8, i64 %calltmp10, i64 %obj_ptr11, i64 ptrtoint (ptr @.str.2855 to i64))
+  %calltmp12 = call i64 @"core::cg::call_1"(i64 %ctx8, i64 %calltmp10, i64 %obj_ptr11, i64 ptrtoint (ptr @.str.2860 to i64))
   store i64 %calltmp12, ptr %vtable, align 8
   %ctx13 = load i64, ptr %ctx, align 8
   %obj_ptr14 = inttoptr i64 %ctx13 to ptr
@@ -91515,12 +91747,12 @@ entry:
 then:                                             ; preds = %entry
   %method21 = load i64, ptr %method, align 8
   %concat_r = inttoptr i64 %method21 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2856)
+  %lhs_len = call i64 @strlen(ptr @.str.2861)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf = call ptr @forge_bump_alloc(i64 %concat_size)
-  %6 = call ptr @memcpy(ptr %buf, ptr @.str.2856, i64 %lhs_len)
+  %6 = call ptr @memcpy(ptr %buf, ptr @.str.2861, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -91529,7 +91761,7 @@ then:                                             ; preds = %entry
   %concat_i64 = ptrtoint ptr %buf to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len22 = call i64 @strlen(ptr %concat_l)
-  %rhs_len23 = call i64 @strlen(ptr @.str.2857)
+  %rhs_len23 = call i64 @strlen(ptr @.str.2862)
   %concat_total24 = add i64 %lhs_len22, %rhs_len23
   %concat_size25 = add i64 %concat_total24, 1
   %buf26 = call ptr @forge_bump_alloc(i64 %concat_size25)
@@ -91538,7 +91770,7 @@ then:                                             ; preds = %entry
   %dst2_int28 = add i64 %buf_int27, %lhs_len22
   %dst229 = inttoptr i64 %dst2_int28 to ptr
   %rhs_len_p130 = add i64 %rhs_len23, 1
-  %9 = call ptr @memcpy(ptr %dst229, ptr @.str.2857, i64 %rhs_len_p130)
+  %9 = call ptr @memcpy(ptr %dst229, ptr @.str.2862, i64 %rhs_len_p130)
   %concat_i6431 = ptrtoint ptr %buf26 to i64
   %calltmp32 = call i64 @"core::cg::err_emit"(i64 %concat_i6431)
   ret i64 %calltmp32
@@ -91557,12 +91789,12 @@ ifcont:                                           ; preds = %else
   store i64 %calltmp38, ptr %ret_ty, align 8
   %ctx39 = load i64, ptr %ctx, align 8
   %ctx40 = load i64, ptr %ctx, align 8
-  %calltmp41 = call i64 @"core::cg::get_fn"(i64 %ctx40, i64 ptrtoint (ptr @.str.2858 to i64))
+  %calltmp41 = call i64 @"core::cg::get_fn"(i64 %ctx40, i64 ptrtoint (ptr @.str.2863 to i64))
   %vtable42 = load i64, ptr %vtable, align 8
   %ctx43 = load i64, ptr %ctx, align 8
   %idx44 = load i64, ptr %idx, align 8
   %calltmp45 = call i64 @"core::cg::const_i64"(i64 %ctx43, i64 %idx44)
-  %calltmp46 = call i64 @"core::cg::call_2"(i64 %ctx39, i64 %calltmp41, i64 %vtable42, i64 %calltmp45, i64 ptrtoint (ptr @.str.2859 to i64))
+  %calltmp46 = call i64 @"core::cg::call_2"(i64 %ctx39, i64 %calltmp41, i64 %vtable42, i64 %calltmp45, i64 ptrtoint (ptr @.str.2864 to i64))
   store i64 %calltmp46, ptr %fn_closure, align 8
   %args47 = load i64, ptr %args, align 8
   %calltmp48 = call i64 @"core::ast::expr_list_length"(i64 %args47)
@@ -91576,10 +91808,10 @@ ifcont:                                           ; preds = %else
 then51:                                           ; preds = %ifcont
   %ctx54 = load i64, ptr %ctx, align 8
   %ctx55 = load i64, ptr %ctx, align 8
-  %calltmp56 = call i64 @"core::cg::get_fn"(i64 %ctx55, i64 ptrtoint (ptr @.str.2860 to i64))
+  %calltmp56 = call i64 @"core::cg::get_fn"(i64 %ctx55, i64 ptrtoint (ptr @.str.2865 to i64))
   %fn_closure57 = load i64, ptr %fn_closure, align 8
   %concrete58 = load i64, ptr %concrete, align 8
-  %calltmp59 = call i64 @"core::cg::call_2"(i64 %ctx54, i64 %calltmp56, i64 %fn_closure57, i64 %concrete58, i64 ptrtoint (ptr @.str.2861 to i64))
+  %calltmp59 = call i64 @"core::cg::call_2"(i64 %ctx54, i64 %calltmp56, i64 %fn_closure57, i64 %concrete58, i64 ptrtoint (ptr @.str.2866 to i64))
   %ret_ty60 = load i64, ptr %ret_ty, align 8
   %calltmp61 = call i64 @"core::cg::ok_emit_typed"(i64 %calltmp59, i64 %ret_ty60)
   ret i64 %calltmp61
@@ -91610,14 +91842,14 @@ else71:                                           ; preds = %ifcont53
 ifcont72:                                         ; preds = %else71
   %ctx74 = load i64, ptr %ctx, align 8
   %ctx75 = load i64, ptr %ctx, align 8
-  %calltmp76 = call i64 @"core::cg::get_fn"(i64 %ctx75, i64 ptrtoint (ptr @.str.2862 to i64))
+  %calltmp76 = call i64 @"core::cg::get_fn"(i64 %ctx75, i64 ptrtoint (ptr @.str.2867 to i64))
   %fn_closure77 = load i64, ptr %fn_closure, align 8
   %concrete78 = load i64, ptr %concrete, align 8
   %first_arg79 = load i64, ptr %first_arg, align 8
   %obj_ptr80 = inttoptr i64 %first_arg79 to ptr
   %fld_ptr81 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr80, i32 0, i32 0
   %value = load i64, ptr %fld_ptr81, align 8
-  %calltmp82 = call i64 @"core::cg::call_3"(i64 %ctx74, i64 %calltmp76, i64 %fn_closure77, i64 %concrete78, i64 %value, i64 ptrtoint (ptr @.str.2863 to i64))
+  %calltmp82 = call i64 @"core::cg::call_3"(i64 %ctx74, i64 %calltmp76, i64 %fn_closure77, i64 %concrete78, i64 %value, i64 ptrtoint (ptr @.str.2868 to i64))
   %ret_ty83 = load i64, ptr %ret_ty, align 8
   %calltmp84 = call i64 @"core::cg::ok_emit_typed"(i64 %calltmp82, i64 %ret_ty83)
   ret i64 %calltmp84
@@ -91646,7 +91878,7 @@ match_end:                                        ; preds = %march_arm2, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2864 to i64))
+  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2869 to i64))
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
@@ -91670,7 +91902,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2865, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2870, i64 %tag_ext)
   unreachable
 }
 
@@ -91696,7 +91928,7 @@ entry:
   store i64 %3, ptr %args, align 8
   %name1 = load i64, ptr %name, align 8
   %streq_l = inttoptr i64 %name1 to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2866)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.2871)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -91716,7 +91948,7 @@ else:                                             ; preds = %entry
 ifcont:                                           ; preds = %else
   %name5 = load i64, ptr %name, align 8
   %streq_l6 = inttoptr i64 %name5 to ptr
-  %strcmp_call7 = call i32 @strcmp(ptr %streq_l6, ptr @.str.2867)
+  %strcmp_call7 = call i32 @strcmp(ptr %streq_l6, ptr @.str.2872)
   %strcmp_sext8 = sext i32 %strcmp_call7 to i64
   %streq_cmp9 = icmp eq i64 %strcmp_sext8, 0
   %streq_ext10 = zext i1 %streq_cmp9 to i64
@@ -91736,7 +91968,7 @@ else13:                                           ; preds = %ifcont
 ifcont14:                                         ; preds = %else13
   %name19 = load i64, ptr %name, align 8
   %streq_l20 = inttoptr i64 %name19 to ptr
-  %strcmp_call21 = call i32 @strcmp(ptr %streq_l20, ptr @.str.2868)
+  %strcmp_call21 = call i32 @strcmp(ptr %streq_l20, ptr @.str.2873)
   %strcmp_sext22 = sext i32 %strcmp_call21 to i64
   %streq_cmp23 = icmp eq i64 %strcmp_sext22, 0
   %streq_ext24 = zext i1 %streq_cmp23 to i64
@@ -91756,7 +91988,7 @@ else27:                                           ; preds = %ifcont14
 ifcont28:                                         ; preds = %else27
   %name33 = load i64, ptr %name, align 8
   %streq_l34 = inttoptr i64 %name33 to ptr
-  %strcmp_call35 = call i32 @strcmp(ptr %streq_l34, ptr @.str.2869)
+  %strcmp_call35 = call i32 @strcmp(ptr %streq_l34, ptr @.str.2874)
   %strcmp_sext36 = sext i32 %strcmp_call35 to i64
   %streq_cmp37 = icmp eq i64 %strcmp_sext36, 0
   %streq_ext38 = zext i1 %streq_cmp37 to i64
@@ -91776,7 +92008,7 @@ else41:                                           ; preds = %ifcont28
 ifcont42:                                         ; preds = %else41
   %name47 = load i64, ptr %name, align 8
   %streq_l48 = inttoptr i64 %name47 to ptr
-  %strcmp_call49 = call i32 @strcmp(ptr %streq_l48, ptr @.str.2870)
+  %strcmp_call49 = call i32 @strcmp(ptr %streq_l48, ptr @.str.2875)
   %strcmp_sext50 = sext i32 %strcmp_call49 to i64
   %streq_cmp51 = icmp eq i64 %strcmp_sext50, 0
   %streq_ext52 = zext i1 %streq_cmp51 to i64
@@ -91796,7 +92028,7 @@ else55:                                           ; preds = %ifcont42
 ifcont56:                                         ; preds = %else55
   %name61 = load i64, ptr %name, align 8
   %streq_l62 = inttoptr i64 %name61 to ptr
-  %strcmp_call63 = call i32 @strcmp(ptr %streq_l62, ptr @.str.2871)
+  %strcmp_call63 = call i32 @strcmp(ptr %streq_l62, ptr @.str.2876)
   %strcmp_sext64 = sext i32 %strcmp_call63 to i64
   %streq_cmp65 = icmp eq i64 %strcmp_sext64, 0
   %streq_ext66 = zext i1 %streq_cmp65 to i64
@@ -91944,12 +92176,12 @@ else127:                                          ; preds = %sc_merge116
 ifcont128:                                        ; preds = %else127
   %name141 = load i64, ptr %name, align 8
   %concat_r = inttoptr i64 %name141 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.2872)
+  %lhs_len = call i64 @strlen(ptr @.str.2877)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf = call ptr @forge_bump_alloc(i64 %concat_size)
-  %4 = call ptr @memcpy(ptr %buf, ptr @.str.2872, i64 %lhs_len)
+  %4 = call ptr @memcpy(ptr %buf, ptr @.str.2877, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -91958,7 +92190,7 @@ ifcont128:                                        ; preds = %else127
   %concat_i64 = ptrtoint ptr %buf to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
   %lhs_len142 = call i64 @strlen(ptr %concat_l)
-  %rhs_len143 = call i64 @strlen(ptr @.str.2873)
+  %rhs_len143 = call i64 @strlen(ptr @.str.2878)
   %concat_total144 = add i64 %lhs_len142, %rhs_len143
   %concat_size145 = add i64 %concat_total144, 1
   %buf146 = call ptr @forge_bump_alloc(i64 %concat_size145)
@@ -91967,7 +92199,7 @@ ifcont128:                                        ; preds = %else127
   %dst2_int148 = add i64 %buf_int147, %lhs_len142
   %dst2149 = inttoptr i64 %dst2_int148 to ptr
   %rhs_len_p1150 = add i64 %rhs_len143, 1
-  %7 = call ptr @memcpy(ptr %dst2149, ptr @.str.2873, i64 %rhs_len_p1150)
+  %7 = call ptr @memcpy(ptr %dst2149, ptr @.str.2878, i64 %rhs_len_p1150)
   %concat_i64151 = ptrtoint ptr %buf146 to i64
   %calltmp152 = call i64 @"core::cg::err_emit"(i64 %concat_i64151)
   ret i64 %calltmp152
@@ -92010,7 +92242,7 @@ ifcont168:                                        ; preds = %else167
   %fn_val193 = load i64, ptr %fn_val, align 8
   %arg_arr194 = load i64, ptr %arg_arr, align 8
   %arg_count195 = load i64, ptr %arg_count, align 8
-  %calltmp196 = call i64 @forge_llvm_build_call(i64 %builder, i64 %fn_type192, i64 %fn_val193, i64 %arg_arr194, i64 %arg_count195, i64 ptrtoint (ptr @.str.2874 to i64))
+  %calltmp196 = call i64 @forge_llvm_build_call(i64 %builder, i64 %fn_type192, i64 %fn_val193, i64 %arg_arr194, i64 %arg_count195, i64 ptrtoint (ptr @.str.2879 to i64))
   store i64 %calltmp196, ptr %result, align 8
   %arg_arr197 = load i64, ptr %arg_arr, align 8
   %calltmp198 = call i64 @forge_llvm_value_array_free(i64 %arg_arr197)
@@ -92055,7 +92287,7 @@ match_end:                                        ; preds = %ifcont32, %march_ar
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2875 to i64))
+  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2880 to i64))
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
@@ -92084,7 +92316,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2884, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2889, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm2
@@ -92126,16 +92358,16 @@ ifcont21:                                         ; preds = %else20
 then30:                                           ; preds = %ifcont21
   %ctx33 = load i64, ptr %ctx, align 8
   %ctx34 = load i64, ptr %ctx, align 8
-  %calltmp35 = call i64 @"core::cg::get_fn"(i64 %ctx34, i64 ptrtoint (ptr @.str.2876 to i64))
+  %calltmp35 = call i64 @"core::cg::get_fn"(i64 %ctx34, i64 ptrtoint (ptr @.str.2881 to i64))
   %r36 = load i64, ptr %r, align 8
   %obj_ptr37 = inttoptr i64 %r36 to ptr
   %fld_ptr38 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr37, i32 0, i32 0
   %value = load i64, ptr %fld_ptr38, align 8
-  %calltmp39 = call i64 @"core::cg::call_1"(i64 %ctx33, i64 %calltmp35, i64 %value, i64 ptrtoint (ptr @.str.2877 to i64))
+  %calltmp39 = call i64 @"core::cg::call_1"(i64 %ctx33, i64 %calltmp35, i64 %value, i64 ptrtoint (ptr @.str.2882 to i64))
   store i64 %calltmp39, ptr %str_ptr, align 8
   %ctx40 = load i64, ptr %ctx, align 8
   %str_ptr41 = load i64, ptr %str_ptr, align 8
-  %calltmp42 = call i64 @"core::cg::to_i64"(i64 %ctx40, i64 %str_ptr41, i64 ptrtoint (ptr @.str.2878 to i64))
+  %calltmp42 = call i64 @"core::cg::to_i64"(i64 %ctx40, i64 %str_ptr41, i64 ptrtoint (ptr @.str.2883 to i64))
   %calltmp43 = call i64 @"core::cg::ok_emit_str"(i64 %calltmp42)
   ret i64 %calltmp43
 
@@ -92152,11 +92384,11 @@ ifcont32:                                         ; preds = %else31
   %obj_ptr50 = inttoptr i64 %ctx49 to ptr
   %fld_ptr51 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr50, i32 0, i32 2
   %builder = load i64, ptr %fld_ptr51, align 8
-  %calltmp52 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 ptrtoint (ptr @.str.2879 to i64), i64 ptrtoint (ptr @.str.2880 to i64))
+  %calltmp52 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 ptrtoint (ptr @.str.2884 to i64), i64 ptrtoint (ptr @.str.2885 to i64))
   store i64 %calltmp52, ptr %fmt, align 8
   %ctx53 = load i64, ptr %ctx, align 8
   %ctx54 = load i64, ptr %ctx, align 8
-  %calltmp55 = call i64 @"core::cg::get_fn"(i64 %ctx54, i64 ptrtoint (ptr @.str.2881 to i64))
+  %calltmp55 = call i64 @"core::cg::get_fn"(i64 %ctx54, i64 ptrtoint (ptr @.str.2886 to i64))
   %buf56 = load i64, ptr %buf48, align 8
   %ctx57 = load i64, ptr %ctx, align 8
   %calltmp58 = call i64 @"core::cg::const_i64"(i64 %ctx57, i64 32)
@@ -92165,10 +92397,10 @@ ifcont32:                                         ; preds = %else31
   %obj_ptr61 = inttoptr i64 %r60 to ptr
   %fld_ptr62 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr61, i32 0, i32 0
   %value63 = load i64, ptr %fld_ptr62, align 8
-  %calltmp64 = call i64 @"core::cg::call_4"(i64 %ctx53, i64 %calltmp55, i64 %buf56, i64 %calltmp58, i64 %fmt59, i64 %value63, i64 ptrtoint (ptr @.str.2882 to i64))
+  %calltmp64 = call i64 @"core::cg::call_4"(i64 %ctx53, i64 %calltmp55, i64 %buf56, i64 %calltmp58, i64 %fmt59, i64 %value63, i64 ptrtoint (ptr @.str.2887 to i64))
   %ctx65 = load i64, ptr %ctx, align 8
   %buf66 = load i64, ptr %buf48, align 8
-  %calltmp67 = call i64 @"core::cg::to_i64"(i64 %ctx65, i64 %buf66, i64 ptrtoint (ptr @.str.2883 to i64))
+  %calltmp67 = call i64 @"core::cg::to_i64"(i64 %ctx65, i64 %buf66, i64 ptrtoint (ptr @.str.2888 to i64))
   store i64 %calltmp67, ptr %result_i64, align 8
   %result_i6468 = load i64, ptr %result_i64, align 8
   %calltmp69 = call i64 @"core::cg::ok_emit_str"(i64 %result_i6468)
@@ -92202,7 +92434,7 @@ match_end:                                        ; preds = %ifcont21, %march_ar
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2885 to i64))
+  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2890 to i64))
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
@@ -92231,7 +92463,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2890, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2895, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm2
@@ -92265,13 +92497,13 @@ ifcont21:                                         ; preds = %else20
   %obj_ptr25 = inttoptr i64 %r24 to ptr
   %fld_ptr26 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr25, i32 0, i32 0
   %value = load i64, ptr %fld_ptr26, align 8
-  %calltmp27 = call i64 @"core::cg::to_ptr"(i64 %ctx23, i64 %value, i64 ptrtoint (ptr @.str.2886 to i64))
+  %calltmp27 = call i64 @"core::cg::to_ptr"(i64 %ctx23, i64 %value, i64 ptrtoint (ptr @.str.2891 to i64))
   store i64 %calltmp27, ptr %str_ptr, align 8
   %ctx28 = load i64, ptr %ctx, align 8
   %ctx29 = load i64, ptr %ctx, align 8
-  %calltmp30 = call i64 @"core::cg::get_fn"(i64 %ctx29, i64 ptrtoint (ptr @.str.2887 to i64))
+  %calltmp30 = call i64 @"core::cg::get_fn"(i64 %ctx29, i64 ptrtoint (ptr @.str.2892 to i64))
   %str_ptr31 = load i64, ptr %str_ptr, align 8
-  %calltmp32 = call i64 @"core::cg::call_1"(i64 %ctx28, i64 %calltmp30, i64 %str_ptr31, i64 ptrtoint (ptr @.str.2888 to i64))
+  %calltmp32 = call i64 @"core::cg::call_1"(i64 %ctx28, i64 %calltmp30, i64 %str_ptr31, i64 ptrtoint (ptr @.str.2893 to i64))
   store i64 %calltmp32, ptr %result32, align 8
   %ctx33 = load i64, ptr %ctx, align 8
   %obj_ptr34 = inttoptr i64 %ctx33 to ptr
@@ -92282,7 +92514,7 @@ ifcont21:                                         ; preds = %else20
   %obj_ptr38 = inttoptr i64 %ctx37 to ptr
   %fld_ptr39 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr38, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr39, align 8
-  %calltmp40 = call i64 @forge_llvm_build_sext(i64 %builder, i64 %result3236, i64 %i64_type, i64 ptrtoint (ptr @.str.2889 to i64))
+  %calltmp40 = call i64 @forge_llvm_build_sext(i64 %builder, i64 %result3236, i64 %i64_type, i64 ptrtoint (ptr @.str.2894 to i64))
   %calltmp41 = call i64 @"core::cg::ok_emit"(i64 %calltmp40)
   store i64 %calltmp41, ptr %match_result, align 8
   br label %match_end
@@ -92314,7 +92546,7 @@ match_end:                                        ; preds = %ifcont32, %march_ar
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2891 to i64))
+  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2896 to i64))
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
@@ -92343,7 +92575,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2897, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2902, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm2
@@ -92388,13 +92620,13 @@ then30:                                           ; preds = %ifcont22
   %obj_ptr35 = inttoptr i64 %r34 to ptr
   %fld_ptr36 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr35, i32 0, i32 0
   %value = load i64, ptr %fld_ptr36, align 8
-  %calltmp37 = call i64 @"core::cg::to_ptr"(i64 %ctx33, i64 %value, i64 ptrtoint (ptr @.str.2892 to i64))
+  %calltmp37 = call i64 @"core::cg::to_ptr"(i64 %ctx33, i64 %value, i64 ptrtoint (ptr @.str.2897 to i64))
   store i64 %calltmp37, ptr %str_ptr, align 8
   %ctx38 = load i64, ptr %ctx, align 8
   %ctx39 = load i64, ptr %ctx, align 8
-  %calltmp40 = call i64 @"core::cg::get_fn"(i64 %ctx39, i64 ptrtoint (ptr @.str.2893 to i64))
+  %calltmp40 = call i64 @"core::cg::get_fn"(i64 %ctx39, i64 ptrtoint (ptr @.str.2898 to i64))
   %str_ptr41 = load i64, ptr %str_ptr, align 8
-  %calltmp42 = call i64 @"core::cg::call_1"(i64 %ctx38, i64 %calltmp40, i64 %str_ptr41, i64 ptrtoint (ptr @.str.2894 to i64))
+  %calltmp42 = call i64 @"core::cg::call_1"(i64 %ctx38, i64 %calltmp40, i64 %str_ptr41, i64 ptrtoint (ptr @.str.2899 to i64))
   %buf43 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr44 = getelementptr inbounds nuw %ValueType, ptr %buf43, i32 0, i32 0
   store i8 12, ptr %tag_ptr44, align 8
@@ -92419,7 +92651,7 @@ ifcont32:                                         ; preds = %else31
   %fld_ptr56 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr55, i32 0, i32 0
   %lc = load i64, ptr %fld_ptr56, align 8
   %calltmp57 = call i64 @forge_llvm_double_type(i64 %lc)
-  %calltmp58 = call i64 @forge_llvm_build_si_to_fp(i64 %builder, i64 %value53, i64 %calltmp57, i64 ptrtoint (ptr @.str.2895 to i64))
+  %calltmp58 = call i64 @forge_llvm_build_si_to_fp(i64 %builder, i64 %value53, i64 %calltmp57, i64 ptrtoint (ptr @.str.2900 to i64))
   store i64 %calltmp58, ptr %dbl, align 8
   %ctx59 = load i64, ptr %ctx, align 8
   %obj_ptr60 = inttoptr i64 %ctx59 to ptr
@@ -92430,7 +92662,7 @@ ifcont32:                                         ; preds = %else31
   %obj_ptr65 = inttoptr i64 %ctx64 to ptr
   %fld_ptr66 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr65, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr66, align 8
-  %calltmp67 = call i64 @forge_llvm_build_bitcast(i64 %builder62, i64 %dbl63, i64 %i64_type, i64 ptrtoint (ptr @.str.2896 to i64))
+  %calltmp67 = call i64 @forge_llvm_build_bitcast(i64 %builder62, i64 %dbl63, i64 %i64_type, i64 ptrtoint (ptr @.str.2901 to i64))
   %buf68 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr69 = getelementptr inbounds nuw %ValueType, ptr %buf68, i32 0, i32 0
   store i8 12, ptr %tag_ptr69, align 8
@@ -92473,7 +92705,7 @@ match_end:                                        ; preds = %ifcont, %march_arm
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2898 to i64))
+  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2903 to i64))
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
@@ -92502,7 +92734,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2907, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2912, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm2
@@ -92517,11 +92749,11 @@ ifcont:                                           ; preds = %else
   %obj_ptr15 = inttoptr i64 %ctx14 to ptr
   %fld_ptr16 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr15, i32 0, i32 2
   %builder = load i64, ptr %fld_ptr16, align 8
-  %calltmp17 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 ptrtoint (ptr @.str.2899 to i64), i64 ptrtoint (ptr @.str.2900 to i64))
+  %calltmp17 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 ptrtoint (ptr @.str.2904 to i64), i64 ptrtoint (ptr @.str.2905 to i64))
   store i64 %calltmp17, ptr %prefix, align 8
   %ctx18 = load i64, ptr %ctx, align 8
   %prefix19 = load i64, ptr %prefix, align 8
-  %calltmp20 = call i64 @"core::cg::to_i64"(i64 %ctx18, i64 %prefix19, i64 ptrtoint (ptr @.str.2901 to i64))
+  %calltmp20 = call i64 @"core::cg::to_i64"(i64 %ctx18, i64 %prefix19, i64 ptrtoint (ptr @.str.2906 to i64))
   store i64 %calltmp20, ptr %prefix_i64, align 8
   %ctx21 = load i64, ptr %ctx, align 8
   %prefix_i6422 = load i64, ptr %prefix_i64, align 8
@@ -92536,10 +92768,10 @@ ifcont:                                           ; preds = %else
   %obj_ptr29 = inttoptr i64 %msg28 to ptr
   %fld_ptr30 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr29, i32 0, i32 0
   %value31 = load i64, ptr %fld_ptr30, align 8
-  %calltmp32 = call i64 @"core::cg::to_ptr"(i64 %ctx27, i64 %value31, i64 ptrtoint (ptr @.str.2902 to i64))
+  %calltmp32 = call i64 @"core::cg::to_ptr"(i64 %ctx27, i64 %value31, i64 ptrtoint (ptr @.str.2907 to i64))
   store i64 %calltmp32, ptr %msg_ptr, align 8
   %ctx33 = load i64, ptr %ctx, align 8
-  %calltmp34 = call i64 @"core::cg::get_fn"(i64 %ctx33, i64 ptrtoint (ptr @.str.2903 to i64))
+  %calltmp34 = call i64 @"core::cg::get_fn"(i64 %ctx33, i64 ptrtoint (ptr @.str.2908 to i64))
   store i64 %calltmp34, ptr %eprint_fn, align 8
   %calltmp35 = call i64 @forge_llvm_value_array_new(i64 1)
   store i64 %calltmp35, ptr %arr, align 8
@@ -92573,15 +92805,15 @@ ifcont:                                           ; preds = %else
   %fn_type58 = load i64, ptr %fn_type, align 8
   %eprint_fn59 = load i64, ptr %eprint_fn, align 8
   %arr60 = load i64, ptr %arr, align 8
-  %calltmp61 = call i64 @forge_llvm_build_call(i64 %builder57, i64 %fn_type58, i64 %eprint_fn59, i64 %arr60, i64 1, i64 ptrtoint (ptr @.str.2904 to i64))
+  %calltmp61 = call i64 @forge_llvm_build_call(i64 %builder57, i64 %fn_type58, i64 %eprint_fn59, i64 %arr60, i64 1, i64 ptrtoint (ptr @.str.2909 to i64))
   %arr62 = load i64, ptr %arr, align 8
   %calltmp63 = call i64 @forge_llvm_value_array_free(i64 %arr62)
   %ctx64 = load i64, ptr %ctx, align 8
   %ctx65 = load i64, ptr %ctx, align 8
-  %calltmp66 = call i64 @"core::cg::get_fn"(i64 %ctx65, i64 ptrtoint (ptr @.str.2905 to i64))
+  %calltmp66 = call i64 @"core::cg::get_fn"(i64 %ctx65, i64 ptrtoint (ptr @.str.2910 to i64))
   %ctx67 = load i64, ptr %ctx, align 8
   %calltmp68 = call i64 @"core::cg::const_i64"(i64 %ctx67, i64 1)
-  %calltmp69 = call i64 @"core::cg::call_1"(i64 %ctx64, i64 %calltmp66, i64 %calltmp68, i64 ptrtoint (ptr @.str.2906 to i64))
+  %calltmp69 = call i64 @"core::cg::call_1"(i64 %ctx64, i64 %calltmp66, i64 %calltmp68, i64 ptrtoint (ptr @.str.2911 to i64))
   %ctx70 = load i64, ptr %ctx, align 8
   %calltmp71 = call i64 @"core::cg::const_i64"(i64 %ctx70, i64 0)
   %calltmp72 = call i64 @"core::cg::ok_emit"(i64 %calltmp71)
@@ -92625,7 +92857,7 @@ match_end:                                        ; preds = %ife_end, %march_arm
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2908 to i64))
+  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2913 to i64))
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
@@ -92654,7 +92886,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2920, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2925, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm2
@@ -92701,10 +92933,10 @@ ife_end:                                          ; preds = %ife_end30, %ife_the
   store i64 %ife_val67, ptr %str_val, align 8
   %ctx68 = load i64, ptr %ctx, align 8
   %str_val69 = load i64, ptr %str_val, align 8
-  %calltmp70 = call i64 @"core::cg::to_ptr"(i64 %ctx68, i64 %str_val69, i64 ptrtoint (ptr @.str.2917 to i64))
+  %calltmp70 = call i64 @"core::cg::to_ptr"(i64 %ctx68, i64 %str_val69, i64 ptrtoint (ptr @.str.2922 to i64))
   store i64 %calltmp70, ptr %str_ptr, align 8
   %ctx71 = load i64, ptr %ctx, align 8
-  %calltmp72 = call i64 @"core::cg::get_fn"(i64 %ctx71, i64 ptrtoint (ptr @.str.2918 to i64))
+  %calltmp72 = call i64 @"core::cg::get_fn"(i64 %ctx71, i64 ptrtoint (ptr @.str.2923 to i64))
   store i64 %calltmp72, ptr %eprint_fn, align 8
   %calltmp73 = call i64 @forge_llvm_value_array_new(i64 1)
   store i64 %calltmp73, ptr %arr, align 8
@@ -92738,7 +92970,7 @@ ife_end:                                          ; preds = %ife_end30, %ife_the
   %fn_type96 = load i64, ptr %fn_type, align 8
   %eprint_fn97 = load i64, ptr %eprint_fn, align 8
   %arr98 = load i64, ptr %arr, align 8
-  %calltmp99 = call i64 @forge_llvm_build_call(i64 %builder95, i64 %fn_type96, i64 %eprint_fn97, i64 %arr98, i64 1, i64 ptrtoint (ptr @.str.2919 to i64))
+  %calltmp99 = call i64 @forge_llvm_build_call(i64 %builder95, i64 %fn_type96, i64 %eprint_fn97, i64 %arr98, i64 1, i64 ptrtoint (ptr @.str.2924 to i64))
   %arr100 = load i64, ptr %arr, align 8
   %calltmp101 = call i64 @forge_llvm_value_array_free(i64 %arr100)
   %ctx102 = load i64, ptr %ctx, align 8
@@ -92750,16 +92982,16 @@ ife_end:                                          ; preds = %ife_end30, %ife_the
 ife_then28:                                       ; preds = %ife_else
   %ctx32 = load i64, ptr %ctx, align 8
   %ctx33 = load i64, ptr %ctx, align 8
-  %calltmp34 = call i64 @"core::cg::get_fn"(i64 %ctx33, i64 ptrtoint (ptr @.str.2909 to i64))
+  %calltmp34 = call i64 @"core::cg::get_fn"(i64 %ctx33, i64 ptrtoint (ptr @.str.2914 to i64))
   %r35 = load i64, ptr %r, align 8
   %obj_ptr36 = inttoptr i64 %r35 to ptr
   %fld_ptr37 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr36, i32 0, i32 0
   %value38 = load i64, ptr %fld_ptr37, align 8
-  %calltmp39 = call i64 @"core::cg::call_1"(i64 %ctx32, i64 %calltmp34, i64 %value38, i64 ptrtoint (ptr @.str.2910 to i64))
+  %calltmp39 = call i64 @"core::cg::call_1"(i64 %ctx32, i64 %calltmp34, i64 %value38, i64 ptrtoint (ptr @.str.2915 to i64))
   store i64 %calltmp39, ptr %sp, align 8
   %ctx40 = load i64, ptr %ctx, align 8
   %sp41 = load i64, ptr %sp, align 8
-  %calltmp42 = call i64 @"core::cg::to_i64"(i64 %ctx40, i64 %sp41, i64 ptrtoint (ptr @.str.2911 to i64))
+  %calltmp42 = call i64 @"core::cg::to_i64"(i64 %ctx40, i64 %sp41, i64 ptrtoint (ptr @.str.2916 to i64))
   store i64 %calltmp42, ptr %ife_result31, align 8
   br label %ife_end30
 
@@ -92773,11 +93005,11 @@ ife_else29:                                       ; preds = %ife_else
   %obj_ptr49 = inttoptr i64 %ctx48 to ptr
   %fld_ptr50 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr49, i32 0, i32 2
   %builder = load i64, ptr %fld_ptr50, align 8
-  %calltmp51 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 ptrtoint (ptr @.str.2912 to i64), i64 ptrtoint (ptr @.str.2913 to i64))
+  %calltmp51 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 ptrtoint (ptr @.str.2917 to i64), i64 ptrtoint (ptr @.str.2918 to i64))
   store i64 %calltmp51, ptr %fmt, align 8
   %ctx52 = load i64, ptr %ctx, align 8
   %ctx53 = load i64, ptr %ctx, align 8
-  %calltmp54 = call i64 @"core::cg::get_fn"(i64 %ctx53, i64 ptrtoint (ptr @.str.2914 to i64))
+  %calltmp54 = call i64 @"core::cg::get_fn"(i64 %ctx53, i64 ptrtoint (ptr @.str.2919 to i64))
   %buf55 = load i64, ptr %buf47, align 8
   %ctx56 = load i64, ptr %ctx, align 8
   %calltmp57 = call i64 @"core::cg::const_i64"(i64 %ctx56, i64 32)
@@ -92786,10 +93018,10 @@ ife_else29:                                       ; preds = %ife_else
   %obj_ptr60 = inttoptr i64 %r59 to ptr
   %fld_ptr61 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr60, i32 0, i32 0
   %value62 = load i64, ptr %fld_ptr61, align 8
-  %calltmp63 = call i64 @"core::cg::call_4"(i64 %ctx52, i64 %calltmp54, i64 %buf55, i64 %calltmp57, i64 %fmt58, i64 %value62, i64 ptrtoint (ptr @.str.2915 to i64))
+  %calltmp63 = call i64 @"core::cg::call_4"(i64 %ctx52, i64 %calltmp54, i64 %buf55, i64 %calltmp57, i64 %fmt58, i64 %value62, i64 ptrtoint (ptr @.str.2920 to i64))
   %ctx64 = load i64, ptr %ctx, align 8
   %buf65 = load i64, ptr %buf47, align 8
-  %calltmp66 = call i64 @"core::cg::to_i64"(i64 %ctx64, i64 %buf65, i64 ptrtoint (ptr @.str.2916 to i64))
+  %calltmp66 = call i64 @"core::cg::to_i64"(i64 %ctx64, i64 %buf65, i64 ptrtoint (ptr @.str.2921 to i64))
   store i64 %calltmp66, ptr %ife_result31, align 8
   br label %ife_end30
 
@@ -92831,13 +93063,13 @@ match_end:                                        ; preds = %match_end8
   store i64 %match_val60, ptr %str_i64, align 8
   %ctx61 = load i64, ptr %ctx, align 8
   %str_i6462 = load i64, ptr %str_i64, align 8
-  %calltmp63 = call i64 @"core::cg::to_ptr"(i64 %ctx61, i64 %str_i6462, i64 ptrtoint (ptr @.str.2929 to i64))
+  %calltmp63 = call i64 @"core::cg::to_ptr"(i64 %ctx61, i64 %str_i6462, i64 ptrtoint (ptr @.str.2934 to i64))
   store i64 %calltmp63, ptr %str_ptr2, align 8
   %ctx64 = load i64, ptr %ctx, align 8
   %ctx65 = load i64, ptr %ctx, align 8
-  %calltmp66 = call i64 @"core::cg::get_fn"(i64 %ctx65, i64 ptrtoint (ptr @.str.2930 to i64))
+  %calltmp66 = call i64 @"core::cg::get_fn"(i64 %ctx65, i64 ptrtoint (ptr @.str.2935 to i64))
   %str_ptr267 = load i64, ptr %str_ptr2, align 8
-  %calltmp68 = call i64 @"core::cg::call_1"(i64 %ctx64, i64 %calltmp66, i64 %str_ptr267, i64 ptrtoint (ptr @.str.2931 to i64))
+  %calltmp68 = call i64 @"core::cg::call_1"(i64 %ctx64, i64 %calltmp66, i64 %str_ptr267, i64 ptrtoint (ptr @.str.2936 to i64))
   %ctx69 = load i64, ptr %ctx, align 8
   %calltmp70 = call i64 @"core::cg::const_i64"(i64 %ctx69, i64 0)
   %calltmp71 = call i64 @"core::cg::ok_emit"(i64 %calltmp70)
@@ -92879,11 +93111,11 @@ march_arm9:                                       ; preds = %march_arm
   %fld_ptr17 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr16, i32 0, i32 2
   %builder = load i64, ptr %fld_ptr17, align 8
   %inner18 = load i64, ptr %inner, align 8
-  %calltmp19 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 %inner18, i64 ptrtoint (ptr @.str.2921 to i64))
+  %calltmp19 = call i64 @forge_llvm_build_global_string_ptr(i64 %builder, i64 %inner18, i64 ptrtoint (ptr @.str.2926 to i64))
   store i64 %calltmp19, ptr %str_ptr, align 8
   %ctx20 = load i64, ptr %ctx, align 8
   %str_ptr21 = load i64, ptr %str_ptr, align 8
-  %calltmp22 = call i64 @"core::cg::to_i64"(i64 %ctx20, i64 %str_ptr21, i64 ptrtoint (ptr @.str.2922 to i64))
+  %calltmp22 = call i64 @"core::cg::to_i64"(i64 %ctx20, i64 %str_ptr21, i64 ptrtoint (ptr @.str.2927 to i64))
   store i64 %calltmp22, ptr %match_result7, align 8
   br label %match_end8
 
@@ -92908,7 +93140,7 @@ march_arm23:                                      ; preds = %march_next10
 
 march_next24:                                     ; No predecessors!
   %tag_ext = sext i8 %tag6 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2926, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2931, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm23
@@ -92935,16 +93167,16 @@ ifcont:                                           ; preds = %else
 sif_then:                                         ; preds = %ifcont
   %ctx41 = load i64, ptr %ctx, align 8
   %ctx42 = load i64, ptr %ctx, align 8
-  %calltmp43 = call i64 @"core::cg::get_fn"(i64 %ctx42, i64 ptrtoint (ptr @.str.2923 to i64))
+  %calltmp43 = call i64 @"core::cg::get_fn"(i64 %ctx42, i64 ptrtoint (ptr @.str.2928 to i64))
   %r44 = load i64, ptr %r, align 8
   %obj_ptr45 = inttoptr i64 %r44 to ptr
   %fld_ptr46 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr45, i32 0, i32 0
   %value = load i64, ptr %fld_ptr46, align 8
-  %calltmp47 = call i64 @"core::cg::call_1"(i64 %ctx41, i64 %calltmp43, i64 %value, i64 ptrtoint (ptr @.str.2924 to i64))
+  %calltmp47 = call i64 @"core::cg::call_1"(i64 %ctx41, i64 %calltmp43, i64 %value, i64 ptrtoint (ptr @.str.2929 to i64))
   store i64 %calltmp47, ptr %sp, align 8
   %ctx48 = load i64, ptr %ctx, align 8
   %sp49 = load i64, ptr %sp, align 8
-  %calltmp50 = call i64 @"core::cg::to_i64"(i64 %ctx48, i64 %sp49, i64 ptrtoint (ptr @.str.2925 to i64))
+  %calltmp50 = call i64 @"core::cg::to_i64"(i64 %ctx48, i64 %sp49, i64 ptrtoint (ptr @.str.2930 to i64))
   store i64 %calltmp50, ptr %sif_result, align 8
   br label %sif_end
 
@@ -92962,12 +93194,12 @@ sif_end:                                          ; preds = %sif_else, %sif_then
   br label %match_end8
 
 march_arm55:                                      ; preds = %march_next
-  %calltmp58 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2927 to i64))
+  %calltmp58 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2932 to i64))
   ret i64 %calltmp58
 
 march_next56:                                     ; preds = %march_next
   %tag_ext59 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2928, i64 %tag_ext59)
+  call void @forge_match_unreachable(ptr @.match_fn.2933, i64 %tag_ext59)
   unreachable
 }
 
@@ -92995,24 +93227,24 @@ entry:
   store i64 %2, ptr %rhs_i64, align 8
   %ctx1 = load i64, ptr %ctx, align 8
   %lhs_i642 = load i64, ptr %lhs_i64, align 8
-  %calltmp = call i64 @"core::cg::to_ptr"(i64 %ctx1, i64 %lhs_i642, i64 ptrtoint (ptr @.str.2932 to i64))
+  %calltmp = call i64 @"core::cg::to_ptr"(i64 %ctx1, i64 %lhs_i642, i64 ptrtoint (ptr @.str.2937 to i64))
   store i64 %calltmp, ptr %lhs_ptr, align 8
   %ctx3 = load i64, ptr %ctx, align 8
   %rhs_i644 = load i64, ptr %rhs_i64, align 8
-  %calltmp5 = call i64 @"core::cg::to_ptr"(i64 %ctx3, i64 %rhs_i644, i64 ptrtoint (ptr @.str.2933 to i64))
+  %calltmp5 = call i64 @"core::cg::to_ptr"(i64 %ctx3, i64 %rhs_i644, i64 ptrtoint (ptr @.str.2938 to i64))
   store i64 %calltmp5, ptr %rhs_ptr, align 8
   %ctx6 = load i64, ptr %ctx, align 8
-  %calltmp7 = call i64 @"core::cg::get_fn"(i64 %ctx6, i64 ptrtoint (ptr @.str.2934 to i64))
+  %calltmp7 = call i64 @"core::cg::get_fn"(i64 %ctx6, i64 ptrtoint (ptr @.str.2939 to i64))
   store i64 %calltmp7, ptr %strlen_fn, align 8
   %ctx8 = load i64, ptr %ctx, align 8
   %strlen_fn9 = load i64, ptr %strlen_fn, align 8
   %lhs_ptr10 = load i64, ptr %lhs_ptr, align 8
-  %calltmp11 = call i64 @"core::cg::call_1"(i64 %ctx8, i64 %strlen_fn9, i64 %lhs_ptr10, i64 ptrtoint (ptr @.str.2935 to i64))
+  %calltmp11 = call i64 @"core::cg::call_1"(i64 %ctx8, i64 %strlen_fn9, i64 %lhs_ptr10, i64 ptrtoint (ptr @.str.2940 to i64))
   store i64 %calltmp11, ptr %lhs_len, align 8
   %ctx12 = load i64, ptr %ctx, align 8
   %strlen_fn13 = load i64, ptr %strlen_fn, align 8
   %rhs_ptr14 = load i64, ptr %rhs_ptr, align 8
-  %calltmp15 = call i64 @"core::cg::call_1"(i64 %ctx12, i64 %strlen_fn13, i64 %rhs_ptr14, i64 ptrtoint (ptr @.str.2936 to i64))
+  %calltmp15 = call i64 @"core::cg::call_1"(i64 %ctx12, i64 %strlen_fn13, i64 %rhs_ptr14, i64 ptrtoint (ptr @.str.2941 to i64))
   store i64 %calltmp15, ptr %rhs_len, align 8
   %ctx16 = load i64, ptr %ctx, align 8
   %obj_ptr = inttoptr i64 %ctx16 to ptr
@@ -93020,7 +93252,7 @@ entry:
   %builder = load i64, ptr %fld_ptr, align 8
   %lhs_len17 = load i64, ptr %lhs_len, align 8
   %rhs_len18 = load i64, ptr %rhs_len, align 8
-  %calltmp19 = call i64 @forge_llvm_build_add(i64 %builder, i64 %lhs_len17, i64 %rhs_len18, i64 ptrtoint (ptr @.str.2937 to i64))
+  %calltmp19 = call i64 @forge_llvm_build_add(i64 %builder, i64 %lhs_len17, i64 %rhs_len18, i64 ptrtoint (ptr @.str.2942 to i64))
   store i64 %calltmp19, ptr %total, align 8
   %ctx20 = load i64, ptr %ctx, align 8
   %calltmp21 = call i64 @"core::cg::const_i64"(i64 %ctx20, i64 1)
@@ -93031,24 +93263,24 @@ entry:
   %builder25 = load i64, ptr %fld_ptr24, align 8
   %total26 = load i64, ptr %total, align 8
   %one27 = load i64, ptr %one, align 8
-  %calltmp28 = call i64 @forge_llvm_build_add(i64 %builder25, i64 %total26, i64 %one27, i64 ptrtoint (ptr @.str.2938 to i64))
+  %calltmp28 = call i64 @forge_llvm_build_add(i64 %builder25, i64 %total26, i64 %one27, i64 ptrtoint (ptr @.str.2943 to i64))
   store i64 %calltmp28, ptr %alloc_size, align 8
   %ctx29 = load i64, ptr %ctx, align 8
   %alloc_size30 = load i64, ptr %alloc_size, align 8
   %calltmp31 = call i64 @"core::cg::cg_malloc"(i64 %ctx29, i64 %alloc_size30)
   store i64 %calltmp31, ptr %buf, align 8
   %ctx32 = load i64, ptr %ctx, align 8
-  %calltmp33 = call i64 @"core::cg::get_fn"(i64 %ctx32, i64 ptrtoint (ptr @.str.2939 to i64))
+  %calltmp33 = call i64 @"core::cg::get_fn"(i64 %ctx32, i64 ptrtoint (ptr @.str.2944 to i64))
   store i64 %calltmp33, ptr %memcpy_fn, align 8
   %ctx34 = load i64, ptr %ctx, align 8
   %memcpy_fn35 = load i64, ptr %memcpy_fn, align 8
   %buf36 = load i64, ptr %buf, align 8
   %lhs_ptr37 = load i64, ptr %lhs_ptr, align 8
   %lhs_len38 = load i64, ptr %lhs_len, align 8
-  %calltmp39 = call i64 @"core::cg::call_3"(i64 %ctx34, i64 %memcpy_fn35, i64 %buf36, i64 %lhs_ptr37, i64 %lhs_len38, i64 ptrtoint (ptr @.str.2940 to i64))
+  %calltmp39 = call i64 @"core::cg::call_3"(i64 %ctx34, i64 %memcpy_fn35, i64 %buf36, i64 %lhs_ptr37, i64 %lhs_len38, i64 ptrtoint (ptr @.str.2945 to i64))
   %ctx40 = load i64, ptr %ctx, align 8
   %buf41 = load i64, ptr %buf, align 8
-  %calltmp42 = call i64 @"core::cg::to_i64"(i64 %ctx40, i64 %buf41, i64 ptrtoint (ptr @.str.2941 to i64))
+  %calltmp42 = call i64 @"core::cg::to_i64"(i64 %ctx40, i64 %buf41, i64 ptrtoint (ptr @.str.2946 to i64))
   store i64 %calltmp42, ptr %buf_int, align 8
   %ctx43 = load i64, ptr %ctx, align 8
   %obj_ptr44 = inttoptr i64 %ctx43 to ptr
@@ -93056,11 +93288,11 @@ entry:
   %builder46 = load i64, ptr %fld_ptr45, align 8
   %buf_int47 = load i64, ptr %buf_int, align 8
   %lhs_len48 = load i64, ptr %lhs_len, align 8
-  %calltmp49 = call i64 @forge_llvm_build_add(i64 %builder46, i64 %buf_int47, i64 %lhs_len48, i64 ptrtoint (ptr @.str.2942 to i64))
+  %calltmp49 = call i64 @forge_llvm_build_add(i64 %builder46, i64 %buf_int47, i64 %lhs_len48, i64 ptrtoint (ptr @.str.2947 to i64))
   store i64 %calltmp49, ptr %dst2_int, align 8
   %ctx50 = load i64, ptr %ctx, align 8
   %dst2_int51 = load i64, ptr %dst2_int, align 8
-  %calltmp52 = call i64 @"core::cg::to_ptr"(i64 %ctx50, i64 %dst2_int51, i64 ptrtoint (ptr @.str.2943 to i64))
+  %calltmp52 = call i64 @"core::cg::to_ptr"(i64 %ctx50, i64 %dst2_int51, i64 ptrtoint (ptr @.str.2948 to i64))
   store i64 %calltmp52, ptr %dst2, align 8
   %ctx53 = load i64, ptr %ctx, align 8
   %obj_ptr54 = inttoptr i64 %ctx53 to ptr
@@ -93068,17 +93300,17 @@ entry:
   %builder56 = load i64, ptr %fld_ptr55, align 8
   %rhs_len57 = load i64, ptr %rhs_len, align 8
   %one58 = load i64, ptr %one, align 8
-  %calltmp59 = call i64 @forge_llvm_build_add(i64 %builder56, i64 %rhs_len57, i64 %one58, i64 ptrtoint (ptr @.str.2944 to i64))
+  %calltmp59 = call i64 @forge_llvm_build_add(i64 %builder56, i64 %rhs_len57, i64 %one58, i64 ptrtoint (ptr @.str.2949 to i64))
   store i64 %calltmp59, ptr %rhs_len_plus_1, align 8
   %ctx60 = load i64, ptr %ctx, align 8
   %memcpy_fn61 = load i64, ptr %memcpy_fn, align 8
   %dst262 = load i64, ptr %dst2, align 8
   %rhs_ptr63 = load i64, ptr %rhs_ptr, align 8
   %rhs_len_plus_164 = load i64, ptr %rhs_len_plus_1, align 8
-  %calltmp65 = call i64 @"core::cg::call_3"(i64 %ctx60, i64 %memcpy_fn61, i64 %dst262, i64 %rhs_ptr63, i64 %rhs_len_plus_164, i64 ptrtoint (ptr @.str.2945 to i64))
+  %calltmp65 = call i64 @"core::cg::call_3"(i64 %ctx60, i64 %memcpy_fn61, i64 %dst262, i64 %rhs_ptr63, i64 %rhs_len_plus_164, i64 ptrtoint (ptr @.str.2950 to i64))
   %ctx66 = load i64, ptr %ctx, align 8
   %buf67 = load i64, ptr %buf, align 8
-  %calltmp68 = call i64 @"core::cg::to_i64"(i64 %ctx66, i64 %buf67, i64 ptrtoint (ptr @.str.2946 to i64))
+  %calltmp68 = call i64 @"core::cg::to_i64"(i64 %ctx66, i64 %buf67, i64 ptrtoint (ptr @.str.2951 to i64))
   %calltmp69 = call i64 @"core::cg::ok_emit_str"(i64 %calltmp68)
   ret i64 %calltmp69
 }
@@ -93190,7 +93422,7 @@ else36:                                           ; preds = %ifcont
 ifcont37:                                         ; preds = %else36
   %ctx39 = load i64, ptr %ctx, align 8
   %ctx40 = load i64, ptr %ctx, align 8
-  %calltmp41 = call i64 @"core::cg::get_fn"(i64 %ctx40, i64 ptrtoint (ptr @.str.2947 to i64))
+  %calltmp41 = call i64 @"core::cg::get_fn"(i64 %ctx40, i64 ptrtoint (ptr @.str.2952 to i64))
   %list42 = load i64, ptr %list, align 8
   %idx_r43 = load i64, ptr %idx_r, align 8
   %obj_ptr44 = inttoptr i64 %idx_r43 to ptr
@@ -93200,30 +93432,30 @@ ifcont37:                                         ; preds = %else36
   %obj_ptr47 = inttoptr i64 %val_r46 to ptr
   %fld_ptr48 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr47, i32 0, i32 0
   %value49 = load i64, ptr %fld_ptr48, align 8
-  %calltmp50 = call i64 @"core::cg::call_3"(i64 %ctx39, i64 %calltmp41, i64 %list42, i64 %value, i64 %value49, i64 ptrtoint (ptr @.str.2948 to i64))
+  %calltmp50 = call i64 @"core::cg::call_3"(i64 %ctx39, i64 %calltmp41, i64 %list42, i64 %value, i64 %value49, i64 ptrtoint (ptr @.str.2953 to i64))
   %list51 = load i64, ptr %list, align 8
   %calltmp52 = call i64 @"core::cg::ok_emit"(i64 %list51)
   store i64 %calltmp52, ptr %match_result9, align 8
   br label %match_end10
 
 march_arm53:                                      ; preds = %march_next12
-  %calltmp55 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2949 to i64))
+  %calltmp55 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2954 to i64))
   store i64 %calltmp55, ptr %match_result9, align 8
   br label %match_end10
 
 march_next54:                                     ; No predecessors!
   %tag_ext = sext i8 %tag8 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2950, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2955, i64 %tag_ext)
   unreachable
 
 march_arm56:                                      ; preds = %march_next
-  %calltmp58 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2951 to i64))
+  %calltmp58 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2956 to i64))
   store i64 %calltmp58, ptr %match_result, align 8
   br label %match_end
 
 march_next57:                                     ; No predecessors!
   %tag_ext59 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2952, i64 %tag_ext59)
+  call void @forge_match_unreachable(ptr @.match_fn.2957, i64 %tag_ext59)
   unreachable
 }
 
@@ -93305,7 +93537,7 @@ else29:                                           ; preds = %ifcont17
 ifcont30:                                         ; preds = %else29
   %ctx32 = load i64, ptr %ctx, align 8
   %ctx33 = load i64, ptr %ctx, align 8
-  %calltmp34 = call i64 @"core::cg::get_fn"(i64 %ctx33, i64 ptrtoint (ptr @.str.2953 to i64))
+  %calltmp34 = call i64 @"core::cg::get_fn"(i64 %ctx33, i64 ptrtoint (ptr @.str.2958 to i64))
   %obj_r35 = load i64, ptr %obj_r, align 8
   %obj_ptr36 = inttoptr i64 %obj_r35 to ptr
   %fld_ptr37 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr36, i32 0, i32 0
@@ -93318,7 +93550,7 @@ ifcont30:                                         ; preds = %else29
   %obj_ptr43 = inttoptr i64 %end_r42 to ptr
   %fld_ptr44 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr43, i32 0, i32 0
   %value45 = load i64, ptr %fld_ptr44, align 8
-  %calltmp46 = call i64 @"core::cg::call_3"(i64 %ctx32, i64 %calltmp34, i64 %value, i64 %value41, i64 %value45, i64 ptrtoint (ptr @.str.2954 to i64))
+  %calltmp46 = call i64 @"core::cg::call_3"(i64 %ctx32, i64 %calltmp34, i64 %value, i64 %value41, i64 %value45, i64 ptrtoint (ptr @.str.2959 to i64))
   store i64 %calltmp46, ptr %result, align 8
   %result47 = load i64, ptr %result, align 8
   %obj_r48 = load i64, ptr %obj_r, align 8
@@ -93440,41 +93672,41 @@ ifcont37:                                         ; preds = %else36
   %obj_ptr41 = inttoptr i64 %key_r40 to ptr
   %fld_ptr42 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr41, i32 0, i32 0
   %value = load i64, ptr %fld_ptr42, align 8
-  %calltmp43 = call i64 @"core::cg::to_ptr"(i64 %ctx39, i64 %value, i64 ptrtoint (ptr @.str.2955 to i64))
+  %calltmp43 = call i64 @"core::cg::to_ptr"(i64 %ctx39, i64 %value, i64 ptrtoint (ptr @.str.2960 to i64))
   store i64 %calltmp43, ptr %key_ptr, align 8
   %ctx44 = load i64, ptr %ctx, align 8
   %ctx45 = load i64, ptr %ctx, align 8
-  %calltmp46 = call i64 @"core::cg::get_fn"(i64 %ctx45, i64 ptrtoint (ptr @.str.2956 to i64))
+  %calltmp46 = call i64 @"core::cg::get_fn"(i64 %ctx45, i64 ptrtoint (ptr @.str.2961 to i64))
   %map47 = load i64, ptr %map, align 8
   %key_ptr48 = load i64, ptr %key_ptr, align 8
   %val_r49 = load i64, ptr %val_r, align 8
   %obj_ptr50 = inttoptr i64 %val_r49 to ptr
   %fld_ptr51 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr50, i32 0, i32 0
   %value52 = load i64, ptr %fld_ptr51, align 8
-  %calltmp53 = call i64 @"core::cg::call_3"(i64 %ctx44, i64 %calltmp46, i64 %map47, i64 %key_ptr48, i64 %value52, i64 ptrtoint (ptr @.str.2957 to i64))
+  %calltmp53 = call i64 @"core::cg::call_3"(i64 %ctx44, i64 %calltmp46, i64 %map47, i64 %key_ptr48, i64 %value52, i64 ptrtoint (ptr @.str.2962 to i64))
   %map54 = load i64, ptr %map, align 8
   %calltmp55 = call i64 @"core::cg::ok_emit"(i64 %map54)
   store i64 %calltmp55, ptr %match_result9, align 8
   br label %match_end10
 
 march_arm56:                                      ; preds = %march_next12
-  %calltmp58 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2958 to i64))
+  %calltmp58 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2963 to i64))
   store i64 %calltmp58, ptr %match_result9, align 8
   br label %match_end10
 
 march_next57:                                     ; No predecessors!
   %tag_ext = sext i8 %tag8 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2959, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2964, i64 %tag_ext)
   unreachable
 
 march_arm59:                                      ; preds = %march_next
-  %calltmp61 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2960 to i64))
+  %calltmp61 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2965 to i64))
   store i64 %calltmp61, ptr %match_result, align 8
   br label %match_end
 
 march_next60:                                     ; No predecessors!
   %tag_ext62 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2961, i64 %tag_ext62)
+  call void @forge_match_unreachable(ptr @.match_fn.2966, i64 %tag_ext62)
   unreachable
 }
 
@@ -93501,7 +93733,7 @@ match_end:                                        ; preds = %march_arm2, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2962 to i64))
+  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2967 to i64))
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
@@ -93525,7 +93757,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2963, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2968, i64 %tag_ext)
   unreachable
 }
 
@@ -93640,55 +93872,55 @@ else36:                                           ; preds = %ifcont
 ifcont37:                                         ; preds = %else36
   %ctx39 = load i64, ptr %ctx, align 8
   %str_i6440 = load i64, ptr %str_i64, align 8
-  %calltmp41 = call i64 @"core::cg::to_ptr"(i64 %ctx39, i64 %str_i6440, i64 ptrtoint (ptr @.str.2964 to i64))
+  %calltmp41 = call i64 @"core::cg::to_ptr"(i64 %ctx39, i64 %str_i6440, i64 ptrtoint (ptr @.str.2969 to i64))
   store i64 %calltmp41, ptr %str_ptr, align 8
   %ctx42 = load i64, ptr %ctx, align 8
   %from_r43 = load i64, ptr %from_r, align 8
   %obj_ptr44 = inttoptr i64 %from_r43 to ptr
   %fld_ptr45 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr44, i32 0, i32 0
   %value = load i64, ptr %fld_ptr45, align 8
-  %calltmp46 = call i64 @"core::cg::to_ptr"(i64 %ctx42, i64 %value, i64 ptrtoint (ptr @.str.2965 to i64))
+  %calltmp46 = call i64 @"core::cg::to_ptr"(i64 %ctx42, i64 %value, i64 ptrtoint (ptr @.str.2970 to i64))
   store i64 %calltmp46, ptr %from_ptr, align 8
   %ctx47 = load i64, ptr %ctx, align 8
   %to_r48 = load i64, ptr %to_r, align 8
   %obj_ptr49 = inttoptr i64 %to_r48 to ptr
   %fld_ptr50 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr49, i32 0, i32 0
   %value51 = load i64, ptr %fld_ptr50, align 8
-  %calltmp52 = call i64 @"core::cg::to_ptr"(i64 %ctx47, i64 %value51, i64 ptrtoint (ptr @.str.2966 to i64))
+  %calltmp52 = call i64 @"core::cg::to_ptr"(i64 %ctx47, i64 %value51, i64 ptrtoint (ptr @.str.2971 to i64))
   store i64 %calltmp52, ptr %to_ptr_v, align 8
   %ctx53 = load i64, ptr %ctx, align 8
   %ctx54 = load i64, ptr %ctx, align 8
-  %calltmp55 = call i64 @"core::cg::get_fn"(i64 %ctx54, i64 ptrtoint (ptr @.str.2967 to i64))
+  %calltmp55 = call i64 @"core::cg::get_fn"(i64 %ctx54, i64 ptrtoint (ptr @.str.2972 to i64))
   %str_ptr56 = load i64, ptr %str_ptr, align 8
   %from_ptr57 = load i64, ptr %from_ptr, align 8
   %to_ptr_v58 = load i64, ptr %to_ptr_v, align 8
-  %calltmp59 = call i64 @"core::cg::call_3"(i64 %ctx53, i64 %calltmp55, i64 %str_ptr56, i64 %from_ptr57, i64 %to_ptr_v58, i64 ptrtoint (ptr @.str.2968 to i64))
+  %calltmp59 = call i64 @"core::cg::call_3"(i64 %ctx53, i64 %calltmp55, i64 %str_ptr56, i64 %from_ptr57, i64 %to_ptr_v58, i64 ptrtoint (ptr @.str.2973 to i64))
   store i64 %calltmp59, ptr %result, align 8
   %ctx60 = load i64, ptr %ctx, align 8
   %result61 = load i64, ptr %result, align 8
-  %calltmp62 = call i64 @"core::cg::to_i64"(i64 %ctx60, i64 %result61, i64 ptrtoint (ptr @.str.2969 to i64))
+  %calltmp62 = call i64 @"core::cg::to_i64"(i64 %ctx60, i64 %result61, i64 ptrtoint (ptr @.str.2974 to i64))
   %calltmp63 = call i64 @"core::cg::ok_emit_str"(i64 %calltmp62)
   store i64 %calltmp63, ptr %match_result9, align 8
   br label %match_end10
 
 march_arm64:                                      ; preds = %march_next12
-  %calltmp66 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2970 to i64))
+  %calltmp66 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2975 to i64))
   store i64 %calltmp66, ptr %match_result9, align 8
   br label %match_end10
 
 march_next65:                                     ; No predecessors!
   %tag_ext = sext i8 %tag8 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2971, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2976, i64 %tag_ext)
   unreachable
 
 march_arm67:                                      ; preds = %march_next
-  %calltmp69 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2972 to i64))
+  %calltmp69 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2977 to i64))
   store i64 %calltmp69, ptr %match_result, align 8
   br label %match_end
 
 march_next68:                                     ; No predecessors!
   %tag_ext70 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2973, i64 %tag_ext70)
+  call void @forge_match_unreachable(ptr @.match_fn.2978, i64 %tag_ext70)
   unreachable
 }
 
@@ -93720,7 +93952,7 @@ match_end:                                        ; preds = %match_end13, %march
   ret i64 %match_val33
 
 march_arm:                                        ; preds = %entry
-  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2974 to i64))
+  %calltmp = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2979 to i64))
   store i64 %calltmp, ptr %match_result, align 8
   br label %match_end
 
@@ -93745,7 +93977,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; preds = %march_next
   %tag_ext32 = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2977, i64 %tag_ext32)
+  call void @forge_match_unreachable(ptr @.match_fn.2982, i64 %tag_ext32)
   unreachable
 
 match_end13:                                      ; preds = %march_arm18, %march_arm14
@@ -93754,7 +93986,7 @@ match_end13:                                      ; preds = %march_arm18, %march
   br label %match_end
 
 march_arm14:                                      ; preds = %march_arm2
-  %calltmp17 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2975 to i64))
+  %calltmp17 = call i64 @"core::cg::err_emit"(i64 ptrtoint (ptr @.str.2980 to i64))
   store i64 %calltmp17, ptr %match_result12, align 8
   br label %match_end13
 
@@ -93783,7 +94015,7 @@ march_arm18:                                      ; preds = %march_next15
 
 march_next19:                                     ; preds = %march_next15
   %tag_ext = sext i8 %tag11 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.2976, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.2981, i64 %tag_ext)
   unreachable
 }
 
@@ -93855,7 +94087,7 @@ else16:                                           ; preds = %ifcont
 ifcont17:                                         ; preds = %else16
   %ctx19 = load i64, ptr %ctx, align 8
   %str_i6420 = load i64, ptr %str_i64, align 8
-  %calltmp21 = call i64 @"core::cg::to_ptr"(i64 %ctx19, i64 %str_i6420, i64 ptrtoint (ptr @.str.2978 to i64))
+  %calltmp21 = call i64 @"core::cg::to_ptr"(i64 %ctx19, i64 %str_i6420, i64 ptrtoint (ptr @.str.2983 to i64))
   store i64 %calltmp21, ptr %str_ptr, align 8
   %ctx22 = load i64, ptr %ctx, align 8
   %obj_ptr23 = inttoptr i64 %ctx22 to ptr
@@ -93869,7 +94101,7 @@ ifcont17:                                         ; preds = %else16
   %obj_ptr29 = inttoptr i64 %start_r28 to ptr
   %fld_ptr30 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr29, i32 0, i32 0
   %value31 = load i64, ptr %fld_ptr30, align 8
-  %calltmp32 = call i64 @forge_llvm_build_sub(i64 %builder, i64 %value, i64 %value31, i64 ptrtoint (ptr @.str.2979 to i64))
+  %calltmp32 = call i64 @forge_llvm_build_sub(i64 %builder, i64 %value, i64 %value31, i64 ptrtoint (ptr @.str.2984 to i64))
   store i64 %calltmp32, ptr %len, align 8
   %ctx33 = load i64, ptr %ctx, align 8
   %calltmp34 = call i64 @"core::cg::const_i64"(i64 %ctx33, i64 1)
@@ -93880,7 +94112,7 @@ ifcont17:                                         ; preds = %else16
   %builder38 = load i64, ptr %fld_ptr37, align 8
   %len39 = load i64, ptr %len, align 8
   %one40 = load i64, ptr %one, align 8
-  %calltmp41 = call i64 @forge_llvm_build_add(i64 %builder38, i64 %len39, i64 %one40, i64 ptrtoint (ptr @.str.2980 to i64))
+  %calltmp41 = call i64 @forge_llvm_build_add(i64 %builder38, i64 %len39, i64 %one40, i64 ptrtoint (ptr @.str.2985 to i64))
   store i64 %calltmp41, ptr %alloc_size, align 8
   %ctx42 = load i64, ptr %ctx, align 8
   %alloc_size43 = load i64, ptr %alloc_size, align 8
@@ -93888,7 +94120,7 @@ ifcont17:                                         ; preds = %else16
   store i64 %calltmp44, ptr %buf, align 8
   %ctx45 = load i64, ptr %ctx, align 8
   %str_ptr46 = load i64, ptr %str_ptr, align 8
-  %calltmp47 = call i64 @"core::cg::to_i64"(i64 %ctx45, i64 %str_ptr46, i64 ptrtoint (ptr @.str.2981 to i64))
+  %calltmp47 = call i64 @"core::cg::to_i64"(i64 %ctx45, i64 %str_ptr46, i64 ptrtoint (ptr @.str.2986 to i64))
   store i64 %calltmp47, ptr %src_int, align 8
   %ctx48 = load i64, ptr %ctx, align 8
   %obj_ptr49 = inttoptr i64 %ctx48 to ptr
@@ -93899,22 +94131,22 @@ ifcont17:                                         ; preds = %else16
   %obj_ptr54 = inttoptr i64 %start_r53 to ptr
   %fld_ptr55 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr54, i32 0, i32 0
   %value56 = load i64, ptr %fld_ptr55, align 8
-  %calltmp57 = call i64 @forge_llvm_build_add(i64 %builder51, i64 %src_int52, i64 %value56, i64 ptrtoint (ptr @.str.2982 to i64))
+  %calltmp57 = call i64 @forge_llvm_build_add(i64 %builder51, i64 %src_int52, i64 %value56, i64 ptrtoint (ptr @.str.2987 to i64))
   store i64 %calltmp57, ptr %off_int, align 8
   %ctx58 = load i64, ptr %ctx, align 8
   %off_int59 = load i64, ptr %off_int, align 8
-  %calltmp60 = call i64 @"core::cg::to_ptr"(i64 %ctx58, i64 %off_int59, i64 ptrtoint (ptr @.str.2983 to i64))
+  %calltmp60 = call i64 @"core::cg::to_ptr"(i64 %ctx58, i64 %off_int59, i64 ptrtoint (ptr @.str.2988 to i64))
   store i64 %calltmp60, ptr %off_ptr, align 8
   %ctx61 = load i64, ptr %ctx, align 8
   %ctx62 = load i64, ptr %ctx, align 8
-  %calltmp63 = call i64 @"core::cg::get_fn"(i64 %ctx62, i64 ptrtoint (ptr @.str.2984 to i64))
+  %calltmp63 = call i64 @"core::cg::get_fn"(i64 %ctx62, i64 ptrtoint (ptr @.str.2989 to i64))
   %buf64 = load i64, ptr %buf, align 8
   %off_ptr65 = load i64, ptr %off_ptr, align 8
   %len66 = load i64, ptr %len, align 8
-  %calltmp67 = call i64 @"core::cg::call_3"(i64 %ctx61, i64 %calltmp63, i64 %buf64, i64 %off_ptr65, i64 %len66, i64 ptrtoint (ptr @.str.2985 to i64))
+  %calltmp67 = call i64 @"core::cg::call_3"(i64 %ctx61, i64 %calltmp63, i64 %buf64, i64 %off_ptr65, i64 %len66, i64 ptrtoint (ptr @.str.2990 to i64))
   %ctx68 = load i64, ptr %ctx, align 8
   %buf69 = load i64, ptr %buf, align 8
-  %calltmp70 = call i64 @"core::cg::to_i64"(i64 %ctx68, i64 %buf69, i64 ptrtoint (ptr @.str.2986 to i64))
+  %calltmp70 = call i64 @"core::cg::to_i64"(i64 %ctx68, i64 %buf69, i64 ptrtoint (ptr @.str.2991 to i64))
   store i64 %calltmp70, ptr %buf_int2, align 8
   %ctx71 = load i64, ptr %ctx, align 8
   %obj_ptr72 = inttoptr i64 %ctx71 to ptr
@@ -93922,11 +94154,11 @@ ifcont17:                                         ; preds = %else16
   %builder74 = load i64, ptr %fld_ptr73, align 8
   %buf_int275 = load i64, ptr %buf_int2, align 8
   %len76 = load i64, ptr %len, align 8
-  %calltmp77 = call i64 @forge_llvm_build_add(i64 %builder74, i64 %buf_int275, i64 %len76, i64 ptrtoint (ptr @.str.2987 to i64))
+  %calltmp77 = call i64 @forge_llvm_build_add(i64 %builder74, i64 %buf_int275, i64 %len76, i64 ptrtoint (ptr @.str.2992 to i64))
   store i64 %calltmp77, ptr %nul_int, align 8
   %ctx78 = load i64, ptr %ctx, align 8
   %nul_int79 = load i64, ptr %nul_int, align 8
-  %calltmp80 = call i64 @"core::cg::to_ptr"(i64 %ctx78, i64 %nul_int79, i64 ptrtoint (ptr @.str.2988 to i64))
+  %calltmp80 = call i64 @"core::cg::to_ptr"(i64 %ctx78, i64 %nul_int79, i64 ptrtoint (ptr @.str.2993 to i64))
   store i64 %calltmp80, ptr %nul_ptr, align 8
   %ctx81 = load i64, ptr %ctx, align 8
   %obj_ptr82 = inttoptr i64 %ctx81 to ptr
@@ -93938,7 +94170,7 @@ ifcont17:                                         ; preds = %else16
   %calltmp88 = call i64 @forge_llvm_build_store(i64 %builder84, i64 %calltmp86, i64 %nul_ptr87)
   %ctx89 = load i64, ptr %ctx, align 8
   %buf90 = load i64, ptr %buf, align 8
-  %calltmp91 = call i64 @"core::cg::to_i64"(i64 %ctx89, i64 %buf90, i64 ptrtoint (ptr @.str.2989 to i64))
+  %calltmp91 = call i64 @"core::cg::to_i64"(i64 %ctx89, i64 %buf90, i64 ptrtoint (ptr @.str.2994 to i64))
   store i64 %calltmp91, ptr %result_i64, align 8
   %result_i6492 = load i64, ptr %result_i64, align 8
   %calltmp93 = call i64 @"core::cg::ok_emit_str"(i64 %result_i6492)
@@ -93963,18 +94195,18 @@ entry:
   store i64 %3, ptr %pred, align 8
   %ctx1 = load i64, ptr %ctx, align 8
   %lhs_i642 = load i64, ptr %lhs_i64, align 8
-  %calltmp = call i64 @"core::cg::to_ptr"(i64 %ctx1, i64 %lhs_i642, i64 ptrtoint (ptr @.str.2990 to i64))
+  %calltmp = call i64 @"core::cg::to_ptr"(i64 %ctx1, i64 %lhs_i642, i64 ptrtoint (ptr @.str.2995 to i64))
   store i64 %calltmp, ptr %lhs_ptr, align 8
   %ctx3 = load i64, ptr %ctx, align 8
   %rhs_i644 = load i64, ptr %rhs_i64, align 8
-  %calltmp5 = call i64 @"core::cg::to_ptr"(i64 %ctx3, i64 %rhs_i644, i64 ptrtoint (ptr @.str.2991 to i64))
+  %calltmp5 = call i64 @"core::cg::to_ptr"(i64 %ctx3, i64 %rhs_i644, i64 ptrtoint (ptr @.str.2996 to i64))
   store i64 %calltmp5, ptr %rhs_ptr, align 8
   %ctx6 = load i64, ptr %ctx, align 8
   %ctx7 = load i64, ptr %ctx, align 8
-  %calltmp8 = call i64 @"core::cg::get_fn"(i64 %ctx7, i64 ptrtoint (ptr @.str.2992 to i64))
+  %calltmp8 = call i64 @"core::cg::get_fn"(i64 %ctx7, i64 ptrtoint (ptr @.str.2997 to i64))
   %lhs_ptr9 = load i64, ptr %lhs_ptr, align 8
   %rhs_ptr10 = load i64, ptr %rhs_ptr, align 8
-  %calltmp11 = call i64 @"core::cg::call_2"(i64 %ctx6, i64 %calltmp8, i64 %lhs_ptr9, i64 %rhs_ptr10, i64 ptrtoint (ptr @.str.2993 to i64))
+  %calltmp11 = call i64 @"core::cg::call_2"(i64 %ctx6, i64 %calltmp8, i64 %lhs_ptr9, i64 %rhs_ptr10, i64 ptrtoint (ptr @.str.2998 to i64))
   store i64 %calltmp11, ptr %result32, align 8
   %ctx12 = load i64, ptr %ctx, align 8
   %obj_ptr = inttoptr i64 %ctx12 to ptr
@@ -93985,7 +94217,7 @@ entry:
   %obj_ptr15 = inttoptr i64 %ctx14 to ptr
   %fld_ptr16 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr15, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr16, align 8
-  %calltmp17 = call i64 @forge_llvm_build_sext(i64 %builder, i64 %result3213, i64 %i64_type, i64 ptrtoint (ptr @.str.2994 to i64))
+  %calltmp17 = call i64 @forge_llvm_build_sext(i64 %builder, i64 %result3213, i64 %i64_type, i64 ptrtoint (ptr @.str.2999 to i64))
   store i64 %calltmp17, ptr %result64, align 8
   %ctx18 = load i64, ptr %ctx, align 8
   %calltmp19 = call i64 @"core::cg::const_i64"(i64 %ctx18, i64 0)
@@ -93997,7 +94229,7 @@ entry:
   %pred24 = load i64, ptr %pred, align 8
   %result6425 = load i64, ptr %result64, align 8
   %zero6426 = load i64, ptr %zero64, align 8
-  %calltmp27 = call i64 @forge_llvm_build_icmp(i64 %builder23, i64 %pred24, i64 %result6425, i64 %zero6426, i64 ptrtoint (ptr @.str.2995 to i64))
+  %calltmp27 = call i64 @forge_llvm_build_icmp(i64 %builder23, i64 %pred24, i64 %result6425, i64 %zero6426, i64 ptrtoint (ptr @.str.3000 to i64))
   store i64 %calltmp27, ptr %cmp, align 8
   %ctx28 = load i64, ptr %ctx, align 8
   %obj_ptr29 = inttoptr i64 %ctx28 to ptr
@@ -94008,7 +94240,7 @@ entry:
   %obj_ptr34 = inttoptr i64 %ctx33 to ptr
   %fld_ptr35 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr34, i32 0, i32 5
   %i64_type36 = load i64, ptr %fld_ptr35, align 8
-  %calltmp37 = call i64 @forge_llvm_build_zext(i64 %builder31, i64 %cmp32, i64 %i64_type36, i64 ptrtoint (ptr @.str.2996 to i64))
+  %calltmp37 = call i64 @forge_llvm_build_zext(i64 %builder31, i64 %cmp32, i64 %i64_type36, i64 ptrtoint (ptr @.str.3001 to i64))
   %calltmp38 = call i64 @"core::cg::ok_emit"(i64 %calltmp37)
   ret i64 %calltmp38
 }
@@ -94033,18 +94265,18 @@ entry:
   store i64 %3, ptr %invert, align 8
   %ctx1 = load i64, ptr %ctx, align 8
   %lhs_i642 = load i64, ptr %lhs_i64, align 8
-  %calltmp = call i64 @"core::cg::to_ptr"(i64 %ctx1, i64 %lhs_i642, i64 ptrtoint (ptr @.str.2997 to i64))
+  %calltmp = call i64 @"core::cg::to_ptr"(i64 %ctx1, i64 %lhs_i642, i64 ptrtoint (ptr @.str.3002 to i64))
   store i64 %calltmp, ptr %lhs_ptr, align 8
   %ctx3 = load i64, ptr %ctx, align 8
   %rhs_i644 = load i64, ptr %rhs_i64, align 8
-  %calltmp5 = call i64 @"core::cg::to_ptr"(i64 %ctx3, i64 %rhs_i644, i64 ptrtoint (ptr @.str.2998 to i64))
+  %calltmp5 = call i64 @"core::cg::to_ptr"(i64 %ctx3, i64 %rhs_i644, i64 ptrtoint (ptr @.str.3003 to i64))
   store i64 %calltmp5, ptr %rhs_ptr, align 8
   %ctx6 = load i64, ptr %ctx, align 8
   %ctx7 = load i64, ptr %ctx, align 8
-  %calltmp8 = call i64 @"core::cg::get_fn"(i64 %ctx7, i64 ptrtoint (ptr @.str.2999 to i64))
+  %calltmp8 = call i64 @"core::cg::get_fn"(i64 %ctx7, i64 ptrtoint (ptr @.str.3004 to i64))
   %lhs_ptr9 = load i64, ptr %lhs_ptr, align 8
   %rhs_ptr10 = load i64, ptr %rhs_ptr, align 8
-  %calltmp11 = call i64 @"core::cg::call_2"(i64 %ctx6, i64 %calltmp8, i64 %lhs_ptr9, i64 %rhs_ptr10, i64 ptrtoint (ptr @.str.3000 to i64))
+  %calltmp11 = call i64 @"core::cg::call_2"(i64 %ctx6, i64 %calltmp8, i64 %lhs_ptr9, i64 %rhs_ptr10, i64 ptrtoint (ptr @.str.3005 to i64))
   store i64 %calltmp11, ptr %result32, align 8
   %ctx12 = load i64, ptr %ctx, align 8
   %obj_ptr = inttoptr i64 %ctx12 to ptr
@@ -94055,7 +94287,7 @@ entry:
   %obj_ptr15 = inttoptr i64 %ctx14 to ptr
   %fld_ptr16 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr15, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr16, align 8
-  %calltmp17 = call i64 @forge_llvm_build_sext(i64 %builder, i64 %result3213, i64 %i64_type, i64 ptrtoint (ptr @.str.3001 to i64))
+  %calltmp17 = call i64 @forge_llvm_build_sext(i64 %builder, i64 %result3213, i64 %i64_type, i64 ptrtoint (ptr @.str.3006 to i64))
   store i64 %calltmp17, ptr %result64, align 8
   %ctx18 = load i64, ptr %ctx, align 8
   %calltmp19 = call i64 @"core::cg::const_i64"(i64 %ctx18, i64 0)
@@ -94083,7 +94315,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %pred25 = load i64, ptr %pred, align 8
   %result6426 = load i64, ptr %result64, align 8
   %zero6427 = load i64, ptr %zero64, align 8
-  %calltmp28 = call i64 @forge_llvm_build_icmp(i64 %builder24, i64 %pred25, i64 %result6426, i64 %zero6427, i64 ptrtoint (ptr @.str.3002 to i64))
+  %calltmp28 = call i64 @forge_llvm_build_icmp(i64 %builder24, i64 %pred25, i64 %result6426, i64 %zero6427, i64 ptrtoint (ptr @.str.3007 to i64))
   store i64 %calltmp28, ptr %cmp, align 8
   %ctx29 = load i64, ptr %ctx, align 8
   %obj_ptr30 = inttoptr i64 %ctx29 to ptr
@@ -94094,7 +94326,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %obj_ptr35 = inttoptr i64 %ctx34 to ptr
   %fld_ptr36 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr35, i32 0, i32 5
   %i64_type37 = load i64, ptr %fld_ptr36, align 8
-  %calltmp38 = call i64 @forge_llvm_build_zext(i64 %builder32, i64 %cmp33, i64 %i64_type37, i64 ptrtoint (ptr @.str.3003 to i64))
+  %calltmp38 = call i64 @forge_llvm_build_zext(i64 %builder32, i64 %cmp33, i64 %i64_type37, i64 ptrtoint (ptr @.str.3008 to i64))
   %calltmp39 = call i64 @"core::cg::ok_emit"(i64 %calltmp38)
   ret i64 %calltmp39
 }
@@ -94203,7 +94435,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.3004, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.3009, i64 %tag_ext)
   unreachable
 
 then:                                             ; preds = %march_arm3
@@ -94302,18 +94534,18 @@ then13:                                           ; preds = %march_arm
   %obj_ptr18 = inttoptr i64 %r17 to ptr
   %fld_ptr19 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr18, i32 0, i32 0
   %value = load i64, ptr %fld_ptr19, align 8
-  %calltmp20 = call i64 @"core::cg::to_f64"(i64 %ctx16, i64 %value, i64 ptrtoint (ptr @.str.3005 to i64))
+  %calltmp20 = call i64 @"core::cg::to_f64"(i64 %ctx16, i64 %value, i64 ptrtoint (ptr @.str.3010 to i64))
   store i64 %calltmp20, ptr %fval, align 8
   %ctx21 = load i64, ptr %ctx, align 8
   %obj_ptr22 = inttoptr i64 %ctx21 to ptr
   %fld_ptr23 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr22, i32 0, i32 2
   %builder = load i64, ptr %fld_ptr23, align 8
   %fval24 = load i64, ptr %fval, align 8
-  %calltmp25 = call i64 @forge_llvm_build_fneg(i64 %builder, i64 %fval24, i64 ptrtoint (ptr @.str.3006 to i64))
+  %calltmp25 = call i64 @forge_llvm_build_fneg(i64 %builder, i64 %fval24, i64 ptrtoint (ptr @.str.3011 to i64))
   store i64 %calltmp25, ptr %neg, align 8
   %ctx26 = load i64, ptr %ctx, align 8
   %neg27 = load i64, ptr %neg, align 8
-  %calltmp28 = call i64 @"core::cg::f64_to_i64"(i64 %ctx26, i64 %neg27, i64 ptrtoint (ptr @.str.3007 to i64))
+  %calltmp28 = call i64 @"core::cg::f64_to_i64"(i64 %ctx26, i64 %neg27, i64 ptrtoint (ptr @.str.3012 to i64))
   %buf29 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr30 = getelementptr inbounds nuw %ValueType, ptr %buf29, i32 0, i32 0
   store i8 12, ptr %tag_ptr30, align 8
@@ -94335,7 +94567,7 @@ ifcont15:                                         ; preds = %else14
   %obj_ptr40 = inttoptr i64 %r39 to ptr
   %fld_ptr41 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr40, i32 0, i32 0
   %value42 = load i64, ptr %fld_ptr41, align 8
-  %calltmp43 = call i64 @forge_llvm_build_sub(i64 %builder36, i64 %calltmp38, i64 %value42, i64 ptrtoint (ptr @.str.3008 to i64))
+  %calltmp43 = call i64 @forge_llvm_build_sub(i64 %builder36, i64 %calltmp38, i64 %value42, i64 ptrtoint (ptr @.str.3013 to i64))
   %calltmp44 = call i64 @"core::cg::ok_emit"(i64 %calltmp43)
   store i64 %calltmp44, ptr %match_result, align 8
   br label %match_end
@@ -94351,7 +94583,7 @@ march_arm45:                                      ; preds = %march_next
   %value55 = load i64, ptr %fld_ptr54, align 8
   %ctx56 = load i64, ptr %ctx, align 8
   %calltmp57 = call i64 @"core::cg::const_i64"(i64 %ctx56, i64 0)
-  %calltmp58 = call i64 @forge_llvm_build_icmp(i64 %builder51, i64 32, i64 %value55, i64 %calltmp57, i64 ptrtoint (ptr @.str.3009 to i64))
+  %calltmp58 = call i64 @forge_llvm_build_icmp(i64 %builder51, i64 32, i64 %value55, i64 %calltmp57, i64 ptrtoint (ptr @.str.3014 to i64))
   store i64 %calltmp58, ptr %cmp, align 8
   %ctx59 = load i64, ptr %ctx, align 8
   %obj_ptr60 = inttoptr i64 %ctx59 to ptr
@@ -94362,7 +94594,7 @@ march_arm45:                                      ; preds = %march_next
   %obj_ptr65 = inttoptr i64 %ctx64 to ptr
   %fld_ptr66 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr65, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr66, align 8
-  %calltmp67 = call i64 @forge_llvm_build_zext(i64 %builder62, i64 %cmp63, i64 %i64_type, i64 ptrtoint (ptr @.str.3010 to i64))
+  %calltmp67 = call i64 @forge_llvm_build_zext(i64 %builder62, i64 %cmp63, i64 %i64_type, i64 ptrtoint (ptr @.str.3015 to i64))
   %calltmp68 = call i64 @"core::cg::ok_emit"(i64 %calltmp67)
   store i64 %calltmp68, ptr %match_result, align 8
   br label %match_end
@@ -94380,14 +94612,14 @@ march_arm69:                                      ; preds = %march_next46
   %obj_ptr77 = inttoptr i64 %r76 to ptr
   %fld_ptr78 = getelementptr inbounds nuw %EmitResult, ptr %obj_ptr77, i32 0, i32 0
   %value79 = load i64, ptr %fld_ptr78, align 8
-  %calltmp80 = call i64 @forge_llvm_build_not(i64 %builder75, i64 %value79, i64 ptrtoint (ptr @.str.3011 to i64))
+  %calltmp80 = call i64 @forge_llvm_build_not(i64 %builder75, i64 %value79, i64 ptrtoint (ptr @.str.3016 to i64))
   %calltmp81 = call i64 @"core::cg::ok_emit"(i64 %calltmp80)
   store i64 %calltmp81, ptr %match_result, align 8
   br label %match_end
 
 march_next70:                                     ; preds = %march_next46
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.3012, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.3017, i64 %tag_ext)
   unreachable
 }
 
@@ -94421,7 +94653,7 @@ march_arm2:                                       ; preds = %march_next
 
 march_next3:                                      ; No predecessors!
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.3013, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.3018, i64 %tag_ext)
   unreachable
 }
 
@@ -94663,7 +94895,7 @@ then117:                                          ; preds = %ifcont110
   %builder = load i64, ptr %fld_ptr122, align 8
   %lhs123 = load i64, ptr %lhs, align 8
   %rhs124 = load i64, ptr %rhs, align 8
-  %calltmp125 = call i64 @forge_llvm_build_add(i64 %builder, i64 %lhs123, i64 %rhs124, i64 ptrtoint (ptr @.str.3014 to i64))
+  %calltmp125 = call i64 @forge_llvm_build_add(i64 %builder, i64 %lhs123, i64 %rhs124, i64 ptrtoint (ptr @.str.3019 to i64))
   %buf126 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr127 = getelementptr inbounds nuw %ValueType, ptr %buf126, i32 0, i32 0
   store i8 3, ptr %tag_ptr127, align 8
@@ -94681,7 +94913,7 @@ ifcont119:                                        ; preds = %else118
   %builder133 = load i64, ptr %fld_ptr132, align 8
   %lhs134 = load i64, ptr %lhs, align 8
   %rhs135 = load i64, ptr %rhs, align 8
-  %calltmp136 = call i64 @forge_llvm_build_add(i64 %builder133, i64 %lhs134, i64 %rhs135, i64 ptrtoint (ptr @.str.3015 to i64))
+  %calltmp136 = call i64 @forge_llvm_build_add(i64 %builder133, i64 %lhs134, i64 %rhs135, i64 ptrtoint (ptr @.str.3020 to i64))
   %calltmp137 = call i64 @"core::cg::ok_emit"(i64 %calltmp136)
   store i64 %calltmp137, ptr %match_result, align 8
   br label %match_end
@@ -94702,7 +94934,7 @@ then143:                                          ; preds = %march_arm138
   %builder149 = load i64, ptr %fld_ptr148, align 8
   %lhs150 = load i64, ptr %lhs, align 8
   %rhs151 = load i64, ptr %rhs, align 8
-  %calltmp152 = call i64 @forge_llvm_build_sub(i64 %builder149, i64 %lhs150, i64 %rhs151, i64 ptrtoint (ptr @.str.3016 to i64))
+  %calltmp152 = call i64 @forge_llvm_build_sub(i64 %builder149, i64 %lhs150, i64 %rhs151, i64 ptrtoint (ptr @.str.3021 to i64))
   %buf153 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr154 = getelementptr inbounds nuw %ValueType, ptr %buf153, i32 0, i32 0
   store i8 3, ptr %tag_ptr154, align 8
@@ -94720,7 +94952,7 @@ ifcont145:                                        ; preds = %else144
   %builder160 = load i64, ptr %fld_ptr159, align 8
   %lhs161 = load i64, ptr %lhs, align 8
   %rhs162 = load i64, ptr %rhs, align 8
-  %calltmp163 = call i64 @forge_llvm_build_sub(i64 %builder160, i64 %lhs161, i64 %rhs162, i64 ptrtoint (ptr @.str.3017 to i64))
+  %calltmp163 = call i64 @forge_llvm_build_sub(i64 %builder160, i64 %lhs161, i64 %rhs162, i64 ptrtoint (ptr @.str.3022 to i64))
   %calltmp164 = call i64 @"core::cg::ok_emit"(i64 %calltmp163)
   store i64 %calltmp164, ptr %match_result, align 8
   br label %match_end
@@ -94732,7 +94964,7 @@ march_arm165:                                     ; preds = %march_next139
   %builder171 = load i64, ptr %fld_ptr170, align 8
   %lhs172 = load i64, ptr %lhs, align 8
   %rhs173 = load i64, ptr %rhs, align 8
-  %calltmp174 = call i64 @forge_llvm_build_mul(i64 %builder171, i64 %lhs172, i64 %rhs173, i64 ptrtoint (ptr @.str.3018 to i64))
+  %calltmp174 = call i64 @forge_llvm_build_mul(i64 %builder171, i64 %lhs172, i64 %rhs173, i64 ptrtoint (ptr @.str.3023 to i64))
   %calltmp175 = call i64 @"core::cg::ok_emit"(i64 %calltmp174)
   store i64 %calltmp175, ptr %match_result, align 8
   br label %match_end
@@ -94748,7 +94980,7 @@ march_arm176:                                     ; preds = %march_next166
   %builder182 = load i64, ptr %fld_ptr181, align 8
   %lhs183 = load i64, ptr %lhs, align 8
   %rhs184 = load i64, ptr %rhs, align 8
-  %calltmp185 = call i64 @forge_llvm_build_sdiv(i64 %builder182, i64 %lhs183, i64 %rhs184, i64 ptrtoint (ptr @.str.3019 to i64))
+  %calltmp185 = call i64 @forge_llvm_build_sdiv(i64 %builder182, i64 %lhs183, i64 %rhs184, i64 ptrtoint (ptr @.str.3024 to i64))
   %calltmp186 = call i64 @"core::cg::ok_emit"(i64 %calltmp185)
   store i64 %calltmp186, ptr %match_result, align 8
   br label %match_end
@@ -94764,7 +94996,7 @@ march_arm187:                                     ; preds = %march_next177
   %builder193 = load i64, ptr %fld_ptr192, align 8
   %lhs194 = load i64, ptr %lhs, align 8
   %rhs195 = load i64, ptr %rhs, align 8
-  %calltmp196 = call i64 @forge_llvm_build_srem(i64 %builder193, i64 %lhs194, i64 %rhs195, i64 ptrtoint (ptr @.str.3020 to i64))
+  %calltmp196 = call i64 @forge_llvm_build_srem(i64 %builder193, i64 %lhs194, i64 %rhs195, i64 ptrtoint (ptr @.str.3025 to i64))
   %calltmp197 = call i64 @"core::cg::ok_emit"(i64 %calltmp196)
   store i64 %calltmp197, ptr %match_result, align 8
   br label %match_end
@@ -94780,7 +95012,7 @@ march_arm198:                                     ; preds = %march_next188
   %builder204 = load i64, ptr %fld_ptr203, align 8
   %lhs205 = load i64, ptr %lhs, align 8
   %rhs206 = load i64, ptr %rhs, align 8
-  %calltmp207 = call i64 @forge_llvm_build_and(i64 %builder204, i64 %lhs205, i64 %rhs206, i64 ptrtoint (ptr @.str.3021 to i64))
+  %calltmp207 = call i64 @forge_llvm_build_and(i64 %builder204, i64 %lhs205, i64 %rhs206, i64 ptrtoint (ptr @.str.3026 to i64))
   %calltmp208 = call i64 @"core::cg::ok_emit"(i64 %calltmp207)
   store i64 %calltmp208, ptr %match_result, align 8
   br label %match_end
@@ -94796,7 +95028,7 @@ march_arm209:                                     ; preds = %march_next199
   %builder215 = load i64, ptr %fld_ptr214, align 8
   %lhs216 = load i64, ptr %lhs, align 8
   %rhs217 = load i64, ptr %rhs, align 8
-  %calltmp218 = call i64 @forge_llvm_build_or(i64 %builder215, i64 %lhs216, i64 %rhs217, i64 ptrtoint (ptr @.str.3022 to i64))
+  %calltmp218 = call i64 @forge_llvm_build_or(i64 %builder215, i64 %lhs216, i64 %rhs217, i64 ptrtoint (ptr @.str.3027 to i64))
   %calltmp219 = call i64 @"core::cg::ok_emit"(i64 %calltmp218)
   store i64 %calltmp219, ptr %match_result, align 8
   br label %match_end
@@ -94812,7 +95044,7 @@ march_arm220:                                     ; preds = %march_next210
   %builder226 = load i64, ptr %fld_ptr225, align 8
   %lhs227 = load i64, ptr %lhs, align 8
   %rhs228 = load i64, ptr %rhs, align 8
-  %calltmp229 = call i64 @forge_llvm_build_xor(i64 %builder226, i64 %lhs227, i64 %rhs228, i64 ptrtoint (ptr @.str.3023 to i64))
+  %calltmp229 = call i64 @forge_llvm_build_xor(i64 %builder226, i64 %lhs227, i64 %rhs228, i64 ptrtoint (ptr @.str.3028 to i64))
   %calltmp230 = call i64 @"core::cg::ok_emit"(i64 %calltmp229)
   store i64 %calltmp230, ptr %match_result, align 8
   br label %match_end
@@ -94828,7 +95060,7 @@ march_arm231:                                     ; preds = %march_next221
   %builder237 = load i64, ptr %fld_ptr236, align 8
   %lhs238 = load i64, ptr %lhs, align 8
   %rhs239 = load i64, ptr %rhs, align 8
-  %calltmp240 = call i64 @forge_llvm_build_shl(i64 %builder237, i64 %lhs238, i64 %rhs239, i64 ptrtoint (ptr @.str.3024 to i64))
+  %calltmp240 = call i64 @forge_llvm_build_shl(i64 %builder237, i64 %lhs238, i64 %rhs239, i64 ptrtoint (ptr @.str.3029 to i64))
   %calltmp241 = call i64 @"core::cg::ok_emit"(i64 %calltmp240)
   store i64 %calltmp241, ptr %match_result, align 8
   br label %match_end
@@ -94844,7 +95076,7 @@ march_arm242:                                     ; preds = %march_next232
   %builder248 = load i64, ptr %fld_ptr247, align 8
   %lhs249 = load i64, ptr %lhs, align 8
   %rhs250 = load i64, ptr %rhs, align 8
-  %calltmp251 = call i64 @forge_llvm_build_ashr(i64 %builder248, i64 %lhs249, i64 %rhs250, i64 ptrtoint (ptr @.str.3025 to i64))
+  %calltmp251 = call i64 @forge_llvm_build_ashr(i64 %builder248, i64 %lhs249, i64 %rhs250, i64 ptrtoint (ptr @.str.3030 to i64))
   %calltmp252 = call i64 @"core::cg::ok_emit"(i64 %calltmp251)
   store i64 %calltmp252, ptr %match_result, align 8
   br label %match_end
@@ -94892,7 +95124,7 @@ ifcont267:                                        ; preds = %else266
   %builder275 = load i64, ptr %fld_ptr274, align 8
   %lhs276 = load i64, ptr %lhs, align 8
   %rhs277 = load i64, ptr %rhs, align 8
-  %calltmp278 = call i64 @forge_llvm_build_icmp(i64 %builder275, i64 32, i64 %lhs276, i64 %rhs277, i64 ptrtoint (ptr @.str.3026 to i64))
+  %calltmp278 = call i64 @forge_llvm_build_icmp(i64 %builder275, i64 32, i64 %lhs276, i64 %rhs277, i64 ptrtoint (ptr @.str.3031 to i64))
   store i64 %calltmp278, ptr %cmp, align 8
   %ctx279 = load i64, ptr %ctx, align 8
   %obj_ptr280 = inttoptr i64 %ctx279 to ptr
@@ -94903,7 +95135,7 @@ ifcont267:                                        ; preds = %else266
   %obj_ptr285 = inttoptr i64 %ctx284 to ptr
   %fld_ptr286 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr285, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr286, align 8
-  %calltmp287 = call i64 @forge_llvm_build_zext(i64 %builder282, i64 %cmp283, i64 %i64_type, i64 ptrtoint (ptr @.str.3027 to i64))
+  %calltmp287 = call i64 @forge_llvm_build_zext(i64 %builder282, i64 %cmp283, i64 %i64_type, i64 ptrtoint (ptr @.str.3032 to i64))
   %calltmp288 = call i64 @"core::cg::ok_emit"(i64 %calltmp287)
   store i64 %calltmp288, ptr %match_result, align 8
   br label %match_end
@@ -94947,7 +95179,7 @@ ifcont305:                                        ; preds = %else304
   %builder313 = load i64, ptr %fld_ptr312, align 8
   %lhs314 = load i64, ptr %lhs, align 8
   %rhs315 = load i64, ptr %rhs, align 8
-  %calltmp316 = call i64 @forge_llvm_build_icmp(i64 %builder313, i64 33, i64 %lhs314, i64 %rhs315, i64 ptrtoint (ptr @.str.3028 to i64))
+  %calltmp316 = call i64 @forge_llvm_build_icmp(i64 %builder313, i64 33, i64 %lhs314, i64 %rhs315, i64 ptrtoint (ptr @.str.3033 to i64))
   store i64 %calltmp316, ptr %cmp317, align 8
   %ctx318 = load i64, ptr %ctx, align 8
   %obj_ptr319 = inttoptr i64 %ctx318 to ptr
@@ -94958,7 +95190,7 @@ ifcont305:                                        ; preds = %else304
   %obj_ptr324 = inttoptr i64 %ctx323 to ptr
   %fld_ptr325 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr324, i32 0, i32 5
   %i64_type326 = load i64, ptr %fld_ptr325, align 8
-  %calltmp327 = call i64 @forge_llvm_build_zext(i64 %builder321, i64 %cmp322, i64 %i64_type326, i64 ptrtoint (ptr @.str.3029 to i64))
+  %calltmp327 = call i64 @forge_llvm_build_zext(i64 %builder321, i64 %cmp322, i64 %i64_type326, i64 ptrtoint (ptr @.str.3034 to i64))
   %calltmp328 = call i64 @"core::cg::ok_emit"(i64 %calltmp327)
   store i64 %calltmp328, ptr %match_result, align 8
   br label %match_end
@@ -94989,7 +95221,7 @@ ifcont336:                                        ; preds = %else335
   %builder344 = load i64, ptr %fld_ptr343, align 8
   %lhs345 = load i64, ptr %lhs, align 8
   %rhs346 = load i64, ptr %rhs, align 8
-  %calltmp347 = call i64 @forge_llvm_build_icmp(i64 %builder344, i64 40, i64 %lhs345, i64 %rhs346, i64 ptrtoint (ptr @.str.3030 to i64))
+  %calltmp347 = call i64 @forge_llvm_build_icmp(i64 %builder344, i64 40, i64 %lhs345, i64 %rhs346, i64 ptrtoint (ptr @.str.3035 to i64))
   store i64 %calltmp347, ptr %cmp348, align 8
   %ctx349 = load i64, ptr %ctx, align 8
   %obj_ptr350 = inttoptr i64 %ctx349 to ptr
@@ -95000,7 +95232,7 @@ ifcont336:                                        ; preds = %else335
   %obj_ptr355 = inttoptr i64 %ctx354 to ptr
   %fld_ptr356 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr355, i32 0, i32 5
   %i64_type357 = load i64, ptr %fld_ptr356, align 8
-  %calltmp358 = call i64 @forge_llvm_build_zext(i64 %builder352, i64 %cmp353, i64 %i64_type357, i64 ptrtoint (ptr @.str.3031 to i64))
+  %calltmp358 = call i64 @forge_llvm_build_zext(i64 %builder352, i64 %cmp353, i64 %i64_type357, i64 ptrtoint (ptr @.str.3036 to i64))
   %calltmp359 = call i64 @"core::cg::ok_emit"(i64 %calltmp358)
   store i64 %calltmp359, ptr %match_result, align 8
   br label %match_end
@@ -95031,7 +95263,7 @@ ifcont367:                                        ; preds = %else366
   %builder375 = load i64, ptr %fld_ptr374, align 8
   %lhs376 = load i64, ptr %lhs, align 8
   %rhs377 = load i64, ptr %rhs, align 8
-  %calltmp378 = call i64 @forge_llvm_build_icmp(i64 %builder375, i64 41, i64 %lhs376, i64 %rhs377, i64 ptrtoint (ptr @.str.3032 to i64))
+  %calltmp378 = call i64 @forge_llvm_build_icmp(i64 %builder375, i64 41, i64 %lhs376, i64 %rhs377, i64 ptrtoint (ptr @.str.3037 to i64))
   store i64 %calltmp378, ptr %cmp379, align 8
   %ctx380 = load i64, ptr %ctx, align 8
   %obj_ptr381 = inttoptr i64 %ctx380 to ptr
@@ -95042,7 +95274,7 @@ ifcont367:                                        ; preds = %else366
   %obj_ptr386 = inttoptr i64 %ctx385 to ptr
   %fld_ptr387 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr386, i32 0, i32 5
   %i64_type388 = load i64, ptr %fld_ptr387, align 8
-  %calltmp389 = call i64 @forge_llvm_build_zext(i64 %builder383, i64 %cmp384, i64 %i64_type388, i64 ptrtoint (ptr @.str.3033 to i64))
+  %calltmp389 = call i64 @forge_llvm_build_zext(i64 %builder383, i64 %cmp384, i64 %i64_type388, i64 ptrtoint (ptr @.str.3038 to i64))
   %calltmp390 = call i64 @"core::cg::ok_emit"(i64 %calltmp389)
   store i64 %calltmp390, ptr %match_result, align 8
   br label %match_end
@@ -95073,7 +95305,7 @@ ifcont398:                                        ; preds = %else397
   %builder406 = load i64, ptr %fld_ptr405, align 8
   %lhs407 = load i64, ptr %lhs, align 8
   %rhs408 = load i64, ptr %rhs, align 8
-  %calltmp409 = call i64 @forge_llvm_build_icmp(i64 %builder406, i64 38, i64 %lhs407, i64 %rhs408, i64 ptrtoint (ptr @.str.3034 to i64))
+  %calltmp409 = call i64 @forge_llvm_build_icmp(i64 %builder406, i64 38, i64 %lhs407, i64 %rhs408, i64 ptrtoint (ptr @.str.3039 to i64))
   store i64 %calltmp409, ptr %cmp410, align 8
   %ctx411 = load i64, ptr %ctx, align 8
   %obj_ptr412 = inttoptr i64 %ctx411 to ptr
@@ -95084,7 +95316,7 @@ ifcont398:                                        ; preds = %else397
   %obj_ptr417 = inttoptr i64 %ctx416 to ptr
   %fld_ptr418 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr417, i32 0, i32 5
   %i64_type419 = load i64, ptr %fld_ptr418, align 8
-  %calltmp420 = call i64 @forge_llvm_build_zext(i64 %builder414, i64 %cmp415, i64 %i64_type419, i64 ptrtoint (ptr @.str.3035 to i64))
+  %calltmp420 = call i64 @forge_llvm_build_zext(i64 %builder414, i64 %cmp415, i64 %i64_type419, i64 ptrtoint (ptr @.str.3040 to i64))
   %calltmp421 = call i64 @"core::cg::ok_emit"(i64 %calltmp420)
   store i64 %calltmp421, ptr %match_result, align 8
   br label %match_end
@@ -95096,7 +95328,7 @@ march_arm422:                                     ; preds = %march_next392
 
 march_next423:                                    ; preds = %march_next392
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.3038, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.3043, i64 %tag_ext)
   unreachable
 
 then427:                                          ; preds = %march_arm422
@@ -95116,7 +95348,7 @@ ifcont429:                                        ; preds = %else428
   %builder437 = load i64, ptr %fld_ptr436, align 8
   %lhs438 = load i64, ptr %lhs, align 8
   %rhs439 = load i64, ptr %rhs, align 8
-  %calltmp440 = call i64 @forge_llvm_build_icmp(i64 %builder437, i64 39, i64 %lhs438, i64 %rhs439, i64 ptrtoint (ptr @.str.3036 to i64))
+  %calltmp440 = call i64 @forge_llvm_build_icmp(i64 %builder437, i64 39, i64 %lhs438, i64 %rhs439, i64 ptrtoint (ptr @.str.3041 to i64))
   store i64 %calltmp440, ptr %cmp441, align 8
   %ctx442 = load i64, ptr %ctx, align 8
   %obj_ptr443 = inttoptr i64 %ctx442 to ptr
@@ -95127,7 +95359,7 @@ ifcont429:                                        ; preds = %else428
   %obj_ptr448 = inttoptr i64 %ctx447 to ptr
   %fld_ptr449 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr448, i32 0, i32 5
   %i64_type450 = load i64, ptr %fld_ptr449, align 8
-  %calltmp451 = call i64 @forge_llvm_build_zext(i64 %builder445, i64 %cmp446, i64 %i64_type450, i64 ptrtoint (ptr @.str.3037 to i64))
+  %calltmp451 = call i64 @forge_llvm_build_zext(i64 %builder445, i64 %cmp446, i64 %i64_type450, i64 ptrtoint (ptr @.str.3042 to i64))
   %calltmp452 = call i64 @"core::cg::ok_emit"(i64 %calltmp451)
   store i64 %calltmp452, ptr %match_result, align 8
   br label %match_end
@@ -95153,7 +95385,7 @@ entry:
 then:                                             ; preds = %entry
   %ctx2 = load i64, ptr %ctx, align 8
   %val3 = load i64, ptr %val, align 8
-  %calltmp4 = call i64 @"core::cg::to_f64"(i64 %ctx2, i64 %val3, i64 ptrtoint (ptr @.str.3039 to i64))
+  %calltmp4 = call i64 @"core::cg::to_f64"(i64 %ctx2, i64 %val3, i64 ptrtoint (ptr @.str.3044 to i64))
   ret i64 %calltmp4
 
 else:                                             ; preds = %entry
@@ -95170,7 +95402,7 @@ ifcont:                                           ; preds = %else
   %fld_ptr9 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr8, i32 0, i32 0
   %lc = load i64, ptr %fld_ptr9, align 8
   %calltmp10 = call i64 @forge_llvm_double_type(i64 %lc)
-  %calltmp11 = call i64 @forge_llvm_build_si_to_fp(i64 %builder, i64 %val6, i64 %calltmp10, i64 ptrtoint (ptr @.str.3040 to i64))
+  %calltmp11 = call i64 @forge_llvm_build_si_to_fp(i64 %builder, i64 %val6, i64 %calltmp10, i64 ptrtoint (ptr @.str.3045 to i64))
   ret i64 %calltmp11
 }
 
@@ -95227,8 +95459,8 @@ march_arm:                                        ; preds = %entry
   %builder = load i64, ptr %fld_ptr, align 8
   %fl11 = load i64, ptr %fl, align 8
   %fr12 = load i64, ptr %fr, align 8
-  %calltmp13 = call i64 @forge_llvm_build_fadd(i64 %builder, i64 %fl11, i64 %fr12, i64 ptrtoint (ptr @.str.3041 to i64))
-  %calltmp14 = call i64 @"core::cg::f64_to_i64"(i64 %ctx9, i64 %calltmp13, i64 ptrtoint (ptr @.str.3042 to i64))
+  %calltmp13 = call i64 @forge_llvm_build_fadd(i64 %builder, i64 %fl11, i64 %fr12, i64 ptrtoint (ptr @.str.3046 to i64))
+  %calltmp14 = call i64 @"core::cg::f64_to_i64"(i64 %ctx9, i64 %calltmp13, i64 ptrtoint (ptr @.str.3047 to i64))
   %buf = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr15 = getelementptr inbounds nuw %ValueType, ptr %buf, i32 0, i32 0
   store i8 12, ptr %tag_ptr15, align 8
@@ -95249,8 +95481,8 @@ march_arm17:                                      ; preds = %march_next
   %builder24 = load i64, ptr %fld_ptr23, align 8
   %fl25 = load i64, ptr %fl, align 8
   %fr26 = load i64, ptr %fr, align 8
-  %calltmp27 = call i64 @forge_llvm_build_fsub(i64 %builder24, i64 %fl25, i64 %fr26, i64 ptrtoint (ptr @.str.3043 to i64))
-  %calltmp28 = call i64 @"core::cg::f64_to_i64"(i64 %ctx20, i64 %calltmp27, i64 ptrtoint (ptr @.str.3044 to i64))
+  %calltmp27 = call i64 @forge_llvm_build_fsub(i64 %builder24, i64 %fl25, i64 %fr26, i64 ptrtoint (ptr @.str.3048 to i64))
+  %calltmp28 = call i64 @"core::cg::f64_to_i64"(i64 %ctx20, i64 %calltmp27, i64 ptrtoint (ptr @.str.3049 to i64))
   %buf29 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr30 = getelementptr inbounds nuw %ValueType, ptr %buf29, i32 0, i32 0
   store i8 12, ptr %tag_ptr30, align 8
@@ -95271,8 +95503,8 @@ march_arm33:                                      ; preds = %march_next18
   %builder40 = load i64, ptr %fld_ptr39, align 8
   %fl41 = load i64, ptr %fl, align 8
   %fr42 = load i64, ptr %fr, align 8
-  %calltmp43 = call i64 @forge_llvm_build_fmul(i64 %builder40, i64 %fl41, i64 %fr42, i64 ptrtoint (ptr @.str.3045 to i64))
-  %calltmp44 = call i64 @"core::cg::f64_to_i64"(i64 %ctx36, i64 %calltmp43, i64 ptrtoint (ptr @.str.3046 to i64))
+  %calltmp43 = call i64 @forge_llvm_build_fmul(i64 %builder40, i64 %fl41, i64 %fr42, i64 ptrtoint (ptr @.str.3050 to i64))
+  %calltmp44 = call i64 @"core::cg::f64_to_i64"(i64 %ctx36, i64 %calltmp43, i64 ptrtoint (ptr @.str.3051 to i64))
   %buf45 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr46 = getelementptr inbounds nuw %ValueType, ptr %buf45, i32 0, i32 0
   store i8 12, ptr %tag_ptr46, align 8
@@ -95293,8 +95525,8 @@ march_arm49:                                      ; preds = %march_next34
   %builder56 = load i64, ptr %fld_ptr55, align 8
   %fl57 = load i64, ptr %fl, align 8
   %fr58 = load i64, ptr %fr, align 8
-  %calltmp59 = call i64 @forge_llvm_build_fdiv(i64 %builder56, i64 %fl57, i64 %fr58, i64 ptrtoint (ptr @.str.3047 to i64))
-  %calltmp60 = call i64 @"core::cg::f64_to_i64"(i64 %ctx52, i64 %calltmp59, i64 ptrtoint (ptr @.str.3048 to i64))
+  %calltmp59 = call i64 @forge_llvm_build_fdiv(i64 %builder56, i64 %fl57, i64 %fr58, i64 ptrtoint (ptr @.str.3052 to i64))
+  %calltmp60 = call i64 @"core::cg::f64_to_i64"(i64 %ctx52, i64 %calltmp59, i64 ptrtoint (ptr @.str.3053 to i64))
   %buf61 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr62 = getelementptr inbounds nuw %ValueType, ptr %buf61, i32 0, i32 0
   store i8 12, ptr %tag_ptr62, align 8
@@ -95315,8 +95547,8 @@ march_arm65:                                      ; preds = %march_next50
   %builder72 = load i64, ptr %fld_ptr71, align 8
   %fl73 = load i64, ptr %fl, align 8
   %fr74 = load i64, ptr %fr, align 8
-  %calltmp75 = call i64 @forge_llvm_build_frem(i64 %builder72, i64 %fl73, i64 %fr74, i64 ptrtoint (ptr @.str.3049 to i64))
-  %calltmp76 = call i64 @"core::cg::f64_to_i64"(i64 %ctx68, i64 %calltmp75, i64 ptrtoint (ptr @.str.3050 to i64))
+  %calltmp75 = call i64 @forge_llvm_build_frem(i64 %builder72, i64 %fl73, i64 %fr74, i64 ptrtoint (ptr @.str.3054 to i64))
+  %calltmp76 = call i64 @"core::cg::f64_to_i64"(i64 %ctx68, i64 %calltmp75, i64 ptrtoint (ptr @.str.3055 to i64))
   %buf77 = call ptr @forge_bump_alloc(i64 24)
   %tag_ptr78 = getelementptr inbounds nuw %ValueType, ptr %buf77, i32 0, i32 0
   store i8 12, ptr %tag_ptr78, align 8
@@ -95336,7 +95568,7 @@ march_arm81:                                      ; preds = %march_next66
   %builder87 = load i64, ptr %fld_ptr86, align 8
   %fl88 = load i64, ptr %fl, align 8
   %fr89 = load i64, ptr %fr, align 8
-  %calltmp90 = call i64 @forge_llvm_build_fcmp(i64 %builder87, i64 1, i64 %fl88, i64 %fr89, i64 ptrtoint (ptr @.str.3051 to i64))
+  %calltmp90 = call i64 @forge_llvm_build_fcmp(i64 %builder87, i64 1, i64 %fl88, i64 %fr89, i64 ptrtoint (ptr @.str.3056 to i64))
   store i64 %calltmp90, ptr %cmp, align 8
   %ctx91 = load i64, ptr %ctx, align 8
   %obj_ptr92 = inttoptr i64 %ctx91 to ptr
@@ -95347,7 +95579,7 @@ march_arm81:                                      ; preds = %march_next66
   %obj_ptr97 = inttoptr i64 %ctx96 to ptr
   %fld_ptr98 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr97, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr98, align 8
-  %calltmp99 = call i64 @forge_llvm_build_zext(i64 %builder94, i64 %cmp95, i64 %i64_type, i64 ptrtoint (ptr @.str.3052 to i64))
+  %calltmp99 = call i64 @forge_llvm_build_zext(i64 %builder94, i64 %cmp95, i64 %i64_type, i64 ptrtoint (ptr @.str.3057 to i64))
   %calltmp100 = call i64 @"core::cg::ok_emit"(i64 %calltmp99)
   store i64 %calltmp100, ptr %match_result, align 8
   br label %match_end
@@ -95363,7 +95595,7 @@ march_arm101:                                     ; preds = %march_next82
   %builder107 = load i64, ptr %fld_ptr106, align 8
   %fl108 = load i64, ptr %fl, align 8
   %fr109 = load i64, ptr %fr, align 8
-  %calltmp110 = call i64 @forge_llvm_build_fcmp(i64 %builder107, i64 6, i64 %fl108, i64 %fr109, i64 ptrtoint (ptr @.str.3053 to i64))
+  %calltmp110 = call i64 @forge_llvm_build_fcmp(i64 %builder107, i64 6, i64 %fl108, i64 %fr109, i64 ptrtoint (ptr @.str.3058 to i64))
   store i64 %calltmp110, ptr %cmp111, align 8
   %ctx112 = load i64, ptr %ctx, align 8
   %obj_ptr113 = inttoptr i64 %ctx112 to ptr
@@ -95374,7 +95606,7 @@ march_arm101:                                     ; preds = %march_next82
   %obj_ptr118 = inttoptr i64 %ctx117 to ptr
   %fld_ptr119 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr118, i32 0, i32 5
   %i64_type120 = load i64, ptr %fld_ptr119, align 8
-  %calltmp121 = call i64 @forge_llvm_build_zext(i64 %builder115, i64 %cmp116, i64 %i64_type120, i64 ptrtoint (ptr @.str.3054 to i64))
+  %calltmp121 = call i64 @forge_llvm_build_zext(i64 %builder115, i64 %cmp116, i64 %i64_type120, i64 ptrtoint (ptr @.str.3059 to i64))
   %calltmp122 = call i64 @"core::cg::ok_emit"(i64 %calltmp121)
   store i64 %calltmp122, ptr %match_result, align 8
   br label %match_end
@@ -95390,7 +95622,7 @@ march_arm123:                                     ; preds = %march_next102
   %builder129 = load i64, ptr %fld_ptr128, align 8
   %fl130 = load i64, ptr %fl, align 8
   %fr131 = load i64, ptr %fr, align 8
-  %calltmp132 = call i64 @forge_llvm_build_fcmp(i64 %builder129, i64 4, i64 %fl130, i64 %fr131, i64 ptrtoint (ptr @.str.3055 to i64))
+  %calltmp132 = call i64 @forge_llvm_build_fcmp(i64 %builder129, i64 4, i64 %fl130, i64 %fr131, i64 ptrtoint (ptr @.str.3060 to i64))
   store i64 %calltmp132, ptr %cmp133, align 8
   %ctx134 = load i64, ptr %ctx, align 8
   %obj_ptr135 = inttoptr i64 %ctx134 to ptr
@@ -95401,7 +95633,7 @@ march_arm123:                                     ; preds = %march_next102
   %obj_ptr140 = inttoptr i64 %ctx139 to ptr
   %fld_ptr141 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr140, i32 0, i32 5
   %i64_type142 = load i64, ptr %fld_ptr141, align 8
-  %calltmp143 = call i64 @forge_llvm_build_zext(i64 %builder137, i64 %cmp138, i64 %i64_type142, i64 ptrtoint (ptr @.str.3056 to i64))
+  %calltmp143 = call i64 @forge_llvm_build_zext(i64 %builder137, i64 %cmp138, i64 %i64_type142, i64 ptrtoint (ptr @.str.3061 to i64))
   %calltmp144 = call i64 @"core::cg::ok_emit"(i64 %calltmp143)
   store i64 %calltmp144, ptr %match_result, align 8
   br label %match_end
@@ -95417,7 +95649,7 @@ march_arm145:                                     ; preds = %march_next124
   %builder151 = load i64, ptr %fld_ptr150, align 8
   %fl152 = load i64, ptr %fl, align 8
   %fr153 = load i64, ptr %fr, align 8
-  %calltmp154 = call i64 @forge_llvm_build_fcmp(i64 %builder151, i64 5, i64 %fl152, i64 %fr153, i64 ptrtoint (ptr @.str.3057 to i64))
+  %calltmp154 = call i64 @forge_llvm_build_fcmp(i64 %builder151, i64 5, i64 %fl152, i64 %fr153, i64 ptrtoint (ptr @.str.3062 to i64))
   store i64 %calltmp154, ptr %cmp155, align 8
   %ctx156 = load i64, ptr %ctx, align 8
   %obj_ptr157 = inttoptr i64 %ctx156 to ptr
@@ -95428,7 +95660,7 @@ march_arm145:                                     ; preds = %march_next124
   %obj_ptr162 = inttoptr i64 %ctx161 to ptr
   %fld_ptr163 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr162, i32 0, i32 5
   %i64_type164 = load i64, ptr %fld_ptr163, align 8
-  %calltmp165 = call i64 @forge_llvm_build_zext(i64 %builder159, i64 %cmp160, i64 %i64_type164, i64 ptrtoint (ptr @.str.3058 to i64))
+  %calltmp165 = call i64 @forge_llvm_build_zext(i64 %builder159, i64 %cmp160, i64 %i64_type164, i64 ptrtoint (ptr @.str.3063 to i64))
   %calltmp166 = call i64 @"core::cg::ok_emit"(i64 %calltmp165)
   store i64 %calltmp166, ptr %match_result, align 8
   br label %match_end
@@ -95444,7 +95676,7 @@ march_arm167:                                     ; preds = %march_next146
   %builder173 = load i64, ptr %fld_ptr172, align 8
   %fl174 = load i64, ptr %fl, align 8
   %fr175 = load i64, ptr %fr, align 8
-  %calltmp176 = call i64 @forge_llvm_build_fcmp(i64 %builder173, i64 2, i64 %fl174, i64 %fr175, i64 ptrtoint (ptr @.str.3059 to i64))
+  %calltmp176 = call i64 @forge_llvm_build_fcmp(i64 %builder173, i64 2, i64 %fl174, i64 %fr175, i64 ptrtoint (ptr @.str.3064 to i64))
   store i64 %calltmp176, ptr %cmp177, align 8
   %ctx178 = load i64, ptr %ctx, align 8
   %obj_ptr179 = inttoptr i64 %ctx178 to ptr
@@ -95455,7 +95687,7 @@ march_arm167:                                     ; preds = %march_next146
   %obj_ptr184 = inttoptr i64 %ctx183 to ptr
   %fld_ptr185 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr184, i32 0, i32 5
   %i64_type186 = load i64, ptr %fld_ptr185, align 8
-  %calltmp187 = call i64 @forge_llvm_build_zext(i64 %builder181, i64 %cmp182, i64 %i64_type186, i64 ptrtoint (ptr @.str.3060 to i64))
+  %calltmp187 = call i64 @forge_llvm_build_zext(i64 %builder181, i64 %cmp182, i64 %i64_type186, i64 ptrtoint (ptr @.str.3065 to i64))
   %calltmp188 = call i64 @"core::cg::ok_emit"(i64 %calltmp187)
   store i64 %calltmp188, ptr %match_result, align 8
   br label %match_end
@@ -95471,7 +95703,7 @@ march_arm189:                                     ; preds = %march_next168
   %builder195 = load i64, ptr %fld_ptr194, align 8
   %fl196 = load i64, ptr %fl, align 8
   %fr197 = load i64, ptr %fr, align 8
-  %calltmp198 = call i64 @forge_llvm_build_fcmp(i64 %builder195, i64 3, i64 %fl196, i64 %fr197, i64 ptrtoint (ptr @.str.3061 to i64))
+  %calltmp198 = call i64 @forge_llvm_build_fcmp(i64 %builder195, i64 3, i64 %fl196, i64 %fr197, i64 ptrtoint (ptr @.str.3066 to i64))
   store i64 %calltmp198, ptr %cmp199, align 8
   %ctx200 = load i64, ptr %ctx, align 8
   %obj_ptr201 = inttoptr i64 %ctx200 to ptr
@@ -95482,7 +95714,7 @@ march_arm189:                                     ; preds = %march_next168
   %obj_ptr206 = inttoptr i64 %ctx205 to ptr
   %fld_ptr207 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr206, i32 0, i32 5
   %i64_type208 = load i64, ptr %fld_ptr207, align 8
-  %calltmp209 = call i64 @forge_llvm_build_zext(i64 %builder203, i64 %cmp204, i64 %i64_type208, i64 ptrtoint (ptr @.str.3062 to i64))
+  %calltmp209 = call i64 @forge_llvm_build_zext(i64 %builder203, i64 %cmp204, i64 %i64_type208, i64 ptrtoint (ptr @.str.3067 to i64))
   %calltmp210 = call i64 @"core::cg::ok_emit"(i64 %calltmp209)
   store i64 %calltmp210, ptr %match_result, align 8
   br label %match_end
@@ -95497,14 +95729,14 @@ march_arm211:                                     ; preds = %march_next190
   %builder216 = load i64, ptr %fld_ptr215, align 8
   %lhs217 = load i64, ptr %lhs, align 8
   %rhs218 = load i64, ptr %rhs, align 8
-  %calltmp219 = call i64 @forge_llvm_build_add(i64 %builder216, i64 %lhs217, i64 %rhs218, i64 ptrtoint (ptr @.str.3063 to i64))
+  %calltmp219 = call i64 @forge_llvm_build_add(i64 %builder216, i64 %lhs217, i64 %rhs218, i64 ptrtoint (ptr @.str.3068 to i64))
   %calltmp220 = call i64 @"core::cg::ok_emit"(i64 %calltmp219)
   store i64 %calltmp220, ptr %match_result, align 8
   br label %match_end
 
 march_next212:                                    ; No predecessors!
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.3064, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.3069, i64 %tag_ext)
   unreachable
 }
 
@@ -95561,7 +95793,7 @@ ifcont:                                           ; preds = %else
   %value = load i64, ptr %fld_ptr11, align 8
   %ctx12 = load i64, ptr %ctx, align 8
   %calltmp13 = call i64 @"core::cg::const_i64"(i64 %ctx12, i64 0)
-  %calltmp14 = call i64 @forge_llvm_build_icmp(i64 %builder, i64 33, i64 %value, i64 %calltmp13, i64 ptrtoint (ptr @.str.3065 to i64))
+  %calltmp14 = call i64 @forge_llvm_build_icmp(i64 %builder, i64 33, i64 %value, i64 %calltmp13, i64 ptrtoint (ptr @.str.3070 to i64))
   store i64 %calltmp14, ptr %l_bool, align 8
   %ctx15 = load i64, ptr %ctx, align 8
   %obj_ptr16 = inttoptr i64 %ctx15 to ptr
@@ -95570,10 +95802,10 @@ ifcont:                                           ; preds = %else
   %calltmp19 = call i64 @forge_llvm_get_insert_block(i64 %builder18)
   store i64 %calltmp19, ptr %left_bb, align 8
   %ctx20 = load i64, ptr %ctx, align 8
-  %calltmp21 = call i64 @"core::cg::new_bb"(i64 %ctx20, i64 ptrtoint (ptr @.str.3066 to i64))
+  %calltmp21 = call i64 @"core::cg::new_bb"(i64 %ctx20, i64 ptrtoint (ptr @.str.3071 to i64))
   store i64 %calltmp21, ptr %rhs_bb, align 8
   %ctx22 = load i64, ptr %ctx, align 8
-  %calltmp23 = call i64 @"core::cg::new_bb"(i64 %ctx22, i64 ptrtoint (ptr @.str.3067 to i64))
+  %calltmp23 = call i64 @"core::cg::new_bb"(i64 %ctx22, i64 ptrtoint (ptr @.str.3072 to i64))
   store i64 %calltmp23, ptr %merge_bb, align 8
   %op24 = load i64, ptr %op, align 8
   %match_subj = inttoptr i64 %op24 to ptr
@@ -95629,7 +95861,7 @@ match_arm33:                                      ; preds = %match_next
 
 match_next34:                                     ; preds = %match_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.3068, i64 %tag_ext)
+  call void @forge_match_unreachable(ptr @.match_fn.3073, i64 %tag_ext)
   unreachable
 
 then59:                                           ; preds = %match_end
@@ -95650,7 +95882,7 @@ ifcont61:                                         ; preds = %else60
   %value70 = load i64, ptr %fld_ptr69, align 8
   %ctx71 = load i64, ptr %ctx, align 8
   %calltmp72 = call i64 @"core::cg::const_i64"(i64 %ctx71, i64 0)
-  %calltmp73 = call i64 @forge_llvm_build_icmp(i64 %builder66, i64 33, i64 %value70, i64 %calltmp72, i64 ptrtoint (ptr @.str.3069 to i64))
+  %calltmp73 = call i64 @forge_llvm_build_icmp(i64 %builder66, i64 33, i64 %value70, i64 %calltmp72, i64 ptrtoint (ptr @.str.3074 to i64))
   store i64 %calltmp73, ptr %r_bool, align 8
   %ctx74 = load i64, ptr %ctx, align 8
   %obj_ptr75 = inttoptr i64 %ctx74 to ptr
@@ -95679,7 +95911,7 @@ ifcont61:                                         ; preds = %else60
   %fld_ptr97 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr96, i32 0, i32 0
   %lc = load i64, ptr %fld_ptr97, align 8
   %calltmp98 = call i64 @forge_llvm_int1_type(i64 %lc)
-  %calltmp99 = call i64 @forge_llvm_build_phi(i64 %builder94, i64 %calltmp98, i64 ptrtoint (ptr @.str.3070 to i64))
+  %calltmp99 = call i64 @forge_llvm_build_phi(i64 %builder94, i64 %calltmp98, i64 ptrtoint (ptr @.str.3075 to i64))
   store i64 %calltmp99, ptr %phi, align 8
   %op100 = load i64, ptr %op, align 8
   %match_subj101 = inttoptr i64 %op100 to ptr
@@ -95709,7 +95941,7 @@ match_end104:                                     ; preds = %march_arm112, %marc
   %obj_ptr136 = inttoptr i64 %ctx135 to ptr
   %fld_ptr137 = getelementptr inbounds nuw %Ctx, ptr %obj_ptr136, i32 0, i32 5
   %i64_type = load i64, ptr %fld_ptr137, align 8
-  %calltmp138 = call i64 @forge_llvm_build_zext(i64 %builder133, i64 %phi134, i64 %i64_type, i64 ptrtoint (ptr @.str.3072 to i64))
+  %calltmp138 = call i64 @forge_llvm_build_zext(i64 %builder133, i64 %phi134, i64 %i64_type, i64 ptrtoint (ptr @.str.3077 to i64))
   %calltmp139 = call i64 @"core::cg::ok_emit"(i64 %calltmp138)
   ret i64 %calltmp139
 
@@ -95739,15 +95971,15 @@ march_arm112:                                     ; preds = %march_next
 
 march_next113:                                    ; preds = %march_next
   %tag_ext121 = sext i8 %tag103 to i64
-  call void @forge_match_unreachable(ptr @.match_fn.3071, i64 %tag_ext121)
+  call void @forge_match_unreachable(ptr @.match_fn.3076, i64 %tag_ext121)
   unreachable
 }
 
 define i64 @print_usage() {
 entry:
-  call void @forge_eprintln(ptr @.str.3073)
-  call void @forge_eprintln(ptr @.str.3074)
-  call void @forge_eprintln(ptr @.str.3075)
+  call void @forge_eprintln(ptr @.str.3078)
+  call void @forge_eprintln(ptr @.str.3079)
+  call void @forge_eprintln(ptr @.str.3080)
   ret i64 0
 }
 
@@ -95838,7 +96070,7 @@ sc_rhs:                                           ; preds = %ifcont
   store i8 0, ptr %sub_nul, align 8
   %sub_result = ptrtoint ptr %buf to i64
   %streq_l = inttoptr i64 %sub_result to ptr
-  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.3076)
+  %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.3081)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -95872,12 +96104,12 @@ sc_merge10:                                       ; preds = %sc_rhs9, %sc_merge
 then19:                                           ; preds = %sc_merge10
   %path22 = load i64, ptr %path, align 8
   %concat_r = inttoptr i64 %path22 to ptr
-  %lhs_len = call i64 @strlen(ptr @.str.3077)
+  %lhs_len = call i64 @strlen(ptr @.str.3082)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
   %buf23 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %1 = call ptr @memcpy(ptr %buf23, ptr @.str.3077, i64 %lhs_len)
+  %1 = call ptr @memcpy(ptr %buf23, ptr @.str.3082, i64 %lhs_len)
   %buf_int = ptrtoint ptr %buf23 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
@@ -95897,7 +96129,7 @@ ifcont21:                                         ; preds = %else20, %then19
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 ife_then:                                         ; preds = %ifcont21
-  store i64 ptrtoint (ptr @.str.3078 to i64), ptr %ife_result, align 8
+  store i64 ptrtoint (ptr @.str.3083 to i64), ptr %ife_result, align 8
   br label %ife_end
 
 ife_else:                                         ; preds = %ifcont21
@@ -95911,7 +96143,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   store i64 %ife_val, ptr %source, align 8
   %command28 = load i64, ptr %command, align 8
   %streq_l29 = inttoptr i64 %command28 to ptr
-  %strcmp_call30 = call i32 @strcmp(ptr %streq_l29, ptr @.str.3079)
+  %strcmp_call30 = call i32 @strcmp(ptr %streq_l29, ptr @.str.3084)
   %strcmp_sext31 = sext i32 %strcmp_call30 to i64
   %streq_cmp32 = icmp eq i64 %strcmp_sext31, 0
   %streq_ext33 = zext i1 %streq_cmp32 to i64
@@ -95935,7 +96167,7 @@ else36:                                           ; preds = %ife_end
 ifcont37:                                         ; preds = %else36
   %command51 = load i64, ptr %command, align 8
   %streq_l52 = inttoptr i64 %command51 to ptr
-  %strcmp_call53 = call i32 @strcmp(ptr %streq_l52, ptr @.str.3080)
+  %strcmp_call53 = call i32 @strcmp(ptr %streq_l52, ptr @.str.3085)
   %strcmp_sext54 = sext i32 %strcmp_call53 to i64
   %streq_cmp55 = icmp eq i64 %strcmp_sext54, 0
   %streq_ext56 = zext i1 %streq_cmp55 to i64
@@ -95977,7 +96209,7 @@ else59:                                           ; preds = %ifcont37
 ifcont60:                                         ; preds = %else59
   %command92 = load i64, ptr %command, align 8
   %streq_l93 = inttoptr i64 %command92 to ptr
-  %strcmp_call94 = call i32 @strcmp(ptr %streq_l93, ptr @.str.3081)
+  %strcmp_call94 = call i32 @strcmp(ptr %streq_l93, ptr @.str.3086)
   %strcmp_sext95 = sext i32 %strcmp_call94 to i64
   %streq_cmp96 = icmp eq i64 %strcmp_sext95, 0
   %streq_ext97 = zext i1 %streq_cmp96 to i64
@@ -96038,7 +96270,7 @@ else100:                                          ; preds = %ifcont60
 ifcont101:                                        ; preds = %else100
   %command135 = load i64, ptr %command, align 8
   %streq_l136 = inttoptr i64 %command135 to ptr
-  %strcmp_call137 = call i32 @strcmp(ptr %streq_l136, ptr @.str.3082)
+  %strcmp_call137 = call i32 @strcmp(ptr %streq_l136, ptr @.str.3087)
   %strcmp_sext138 = sext i32 %strcmp_call137 to i64
   %streq_cmp139 = icmp eq i64 %strcmp_sext138, 0
   %streq_ext140 = zext i1 %streq_cmp139 to i64
@@ -96099,7 +96331,7 @@ else143:                                          ; preds = %ifcont101
 ifcont144:                                        ; preds = %else143
   %command178 = load i64, ptr %command, align 8
   %streq_l179 = inttoptr i64 %command178 to ptr
-  %strcmp_call180 = call i32 @strcmp(ptr %streq_l179, ptr @.str.3083)
+  %strcmp_call180 = call i32 @strcmp(ptr %streq_l179, ptr @.str.3088)
   %strcmp_sext181 = sext i32 %strcmp_call180 to i64
   %streq_cmp182 = icmp eq i64 %strcmp_sext181, 0
   %streq_ext183 = zext i1 %streq_cmp182 to i64
@@ -96160,7 +96392,7 @@ else186:                                          ; preds = %ifcont144
 ifcont187:                                        ; preds = %else186
   %command356 = load i64, ptr %command, align 8
   %streq_l357 = inttoptr i64 %command356 to ptr
-  %strcmp_call358 = call i32 @strcmp(ptr %streq_l357, ptr @.str.3085)
+  %strcmp_call358 = call i32 @strcmp(ptr %streq_l357, ptr @.str.3090)
   %strcmp_sext359 = sext i32 %strcmp_call358 to i64
   %streq_cmp360 = icmp eq i64 %strcmp_sext359, 0
   %streq_ext361 = zext i1 %streq_cmp360 to i64
@@ -96389,7 +96621,7 @@ else347:                                          ; preds = %ifcont313
   br label %ifcont348
 
 ifcont348:                                        ; preds = %else347, %then346
-  %7 = call i32 @puts(ptr @.str.3084)
+  %7 = call i32 @puts(ptr @.str.3089)
   ret i64 0
 
 then363:                                          ; preds = %ifcont187
@@ -96407,7 +96639,7 @@ else364:                                          ; preds = %ifcont187
 ifcont365:                                        ; preds = %else364
   %command724 = load i64, ptr %command, align 8
   %streq_l725 = inttoptr i64 %command724 to ptr
-  %strcmp_call726 = call i32 @strcmp(ptr %streq_l725, ptr @.str.3099)
+  %strcmp_call726 = call i32 @strcmp(ptr %streq_l725, ptr @.str.3104)
   %strcmp_sext727 = sext i32 %strcmp_call726 to i64
   %streq_cmp728 = icmp eq i64 %strcmp_sext727, 0
   %streq_ext729 = zext i1 %streq_cmp728 to i64
@@ -96428,7 +96660,7 @@ sc_rhs372:                                        ; preds = %then363
   store i8 0, ptr %sub_nul382, align 8
   %sub_result383 = ptrtoint ptr %buf376 to i64
   %streq_l384 = inttoptr i64 %sub_result383 to ptr
-  %strcmp_call385 = call i32 @strcmp(ptr %streq_l384, ptr @.str.3086)
+  %strcmp_call385 = call i32 @strcmp(ptr %streq_l384, ptr @.str.3091)
   %strcmp_sext386 = sext i32 %strcmp_call385 to i64
   %streq_cmp387 = icmp eq i64 %strcmp_sext386, 0
   %streq_ext388 = zext i1 %streq_cmp387 to i64
@@ -96466,7 +96698,7 @@ ife_then394:                                      ; preds = %sc_merge373
   br label %ife_end396
 
 ife_else395:                                      ; preds = %sc_merge373
-  store i64 ptrtoint (ptr @.str.3087 to i64), ptr %ife_result397, align 8
+  store i64 ptrtoint (ptr @.str.3092 to i64), ptr %ife_result397, align 8
   br label %ife_end396
 
 ife_end396:                                       ; preds = %ife_else395, %ife_then394
@@ -96490,7 +96722,7 @@ sc_merge415:                                      ; preds = %sc_rhs414, %ife_end
   br i1 %if_cond422, label %then423, label %else424
 
 then423:                                          ; preds = %sc_merge415
-  %calltmp426 = call i64 @fail(i64 ptrtoint (ptr @.str.3088 to i64))
+  %calltmp426 = call i64 @fail(i64 ptrtoint (ptr @.str.3093 to i64))
   br label %ifcont425
 
 else424:                                          ; preds = %sc_merge415
@@ -96536,12 +96768,12 @@ sc_merge439:                                      ; preds = %sc_rhs438, %ife_end
 then448:                                          ; preds = %sc_merge439
   %cpath451 = load i64, ptr %cpath, align 8
   %concat_r452 = inttoptr i64 %cpath451 to ptr
-  %lhs_len453 = call i64 @strlen(ptr @.str.3089)
+  %lhs_len453 = call i64 @strlen(ptr @.str.3094)
   %rhs_len454 = call i64 @strlen(ptr %concat_r452)
   %concat_total455 = add i64 %lhs_len453, %rhs_len454
   %concat_size456 = add i64 %concat_total455, 1
   %buf457 = call ptr @forge_bump_alloc(i64 %concat_size456)
-  %10 = call ptr @memcpy(ptr %buf457, ptr @.str.3089, i64 %lhs_len453)
+  %10 = call ptr @memcpy(ptr %buf457, ptr @.str.3094, i64 %lhs_len453)
   %buf_int458 = ptrtoint ptr %buf457 to i64
   %dst2_int459 = add i64 %buf_int458, %lhs_len453
   %dst2460 = inttoptr i64 %dst2_int459 to ptr
@@ -96615,7 +96847,7 @@ else495:                                          ; preds = %sc_merge483
 ifcont496:                                        ; preds = %else495, %ifcont505
   %stop_after518 = load i64, ptr %stop_after, align 8
   %streq_l519 = inttoptr i64 %stop_after518 to ptr
-  %strcmp_call520 = call i32 @strcmp(ptr %streq_l519, ptr @.str.3090)
+  %strcmp_call520 = call i32 @strcmp(ptr %streq_l519, ptr @.str.3095)
   %strcmp_sext521 = sext i32 %strcmp_call520 to i64
   %streq_cmp522 = icmp eq i64 %strcmp_sext521, 0
   %streq_ext523 = zext i1 %streq_cmp522 to i64
@@ -96644,7 +96876,7 @@ ifcont505:                                        ; preds = %else504, %then503
   br label %ifcont496
 
 then525:                                          ; preds = %ifcont496
-  %12 = call i32 @puts(ptr @.str.3091)
+  %12 = call i32 @puts(ptr @.str.3096)
   ret i64 0
 
 else526:                                          ; preds = %ifcont496
@@ -96703,7 +96935,7 @@ else547:                                          ; preds = %ifcont527
 ifcont548:                                        ; preds = %else547, %then546
   %stop_after570 = load i64, ptr %stop_after, align 8
   %streq_l571 = inttoptr i64 %stop_after570 to ptr
-  %strcmp_call572 = call i32 @strcmp(ptr %streq_l571, ptr @.str.3092)
+  %strcmp_call572 = call i32 @strcmp(ptr %streq_l571, ptr @.str.3097)
   %strcmp_sext573 = sext i32 %strcmp_call572 to i64
   %streq_cmp574 = icmp eq i64 %strcmp_sext573, 0
   %streq_ext575 = zext i1 %streq_cmp574 to i64
@@ -96711,7 +96943,7 @@ ifcont548:                                        ; preds = %else547, %then546
   br i1 %if_cond576, label %then577, label %else578
 
 then577:                                          ; preds = %ifcont548
-  %13 = call i32 @puts(ptr @.str.3093)
+  %13 = call i32 @puts(ptr @.str.3098)
   ret i64 0
 
 else578:                                          ; preds = %ifcont548
@@ -96767,7 +96999,7 @@ else608:                                          ; preds = %ifcont594
 ifcont609:                                        ; preds = %else608, %then607
   %stop_after615 = load i64, ptr %stop_after, align 8
   %streq_l616 = inttoptr i64 %stop_after615 to ptr
-  %strcmp_call617 = call i32 @strcmp(ptr %streq_l616, ptr @.str.3094)
+  %strcmp_call617 = call i32 @strcmp(ptr %streq_l616, ptr @.str.3099)
   %strcmp_sext618 = sext i32 %strcmp_call617 to i64
   %streq_cmp619 = icmp eq i64 %strcmp_sext618, 0
   %streq_ext620 = zext i1 %streq_cmp619 to i64
@@ -96775,7 +97007,7 @@ ifcont609:                                        ; preds = %else608, %then607
   br i1 %if_cond621, label %then622, label %else623
 
 then622:                                          ; preds = %ifcont609
-  %14 = call i32 @puts(ptr @.str.3095)
+  %14 = call i32 @puts(ptr @.str.3100)
   ret i64 0
 
 else623:                                          ; preds = %ifcont609
@@ -96859,7 +97091,7 @@ else673:                                          ; preds = %ifcont638
 ifcont674:                                        ; preds = %else673, %then672
   %stop_after682 = load i64, ptr %stop_after, align 8
   %streq_l683 = inttoptr i64 %stop_after682 to ptr
-  %strcmp_call684 = call i32 @strcmp(ptr %streq_l683, ptr @.str.3096)
+  %strcmp_call684 = call i32 @strcmp(ptr %streq_l683, ptr @.str.3101)
   %strcmp_sext685 = sext i32 %strcmp_call684 to i64
   %streq_cmp686 = icmp eq i64 %strcmp_sext685, 0
   %streq_ext687 = zext i1 %streq_cmp686 to i64
@@ -96867,7 +97099,7 @@ ifcont674:                                        ; preds = %else673, %then672
   br i1 %if_cond688, label %then689, label %else690
 
 then689:                                          ; preds = %ifcont674
-  %15 = call i32 @puts(ptr @.str.3097)
+  %15 = call i32 @puts(ptr @.str.3102)
   ret i64 0
 
 else690:                                          ; preds = %ifcont674
@@ -96877,7 +97109,7 @@ ifcont691:                                        ; preds = %else690
   %cpath692 = load i64, ptr %cpath, align 8
   %concat_l = inttoptr i64 %cpath692 to ptr
   %lhs_len693 = call i64 @strlen(ptr %concat_l)
-  %rhs_len694 = call i64 @strlen(ptr @.str.3098)
+  %rhs_len694 = call i64 @strlen(ptr @.str.3103)
   %concat_total695 = add i64 %lhs_len693, %rhs_len694
   %concat_size696 = add i64 %concat_total695, 1
   %buf697 = call ptr @forge_bump_alloc(i64 %concat_size696)
@@ -96886,7 +97118,7 @@ ifcont691:                                        ; preds = %else690
   %dst2_int699 = add i64 %buf_int698, %lhs_len693
   %dst2700 = inttoptr i64 %dst2_int699 to ptr
   %rhs_len_p1701 = add i64 %rhs_len694, 1
-  %17 = call ptr @memcpy(ptr %dst2700, ptr @.str.3098, i64 %rhs_len_p1701)
+  %17 = call ptr @memcpy(ptr %dst2700, ptr @.str.3103, i64 %rhs_len_p1701)
   %concat_i64702 = ptrtoint ptr %buf697 to i64
   store i64 %concat_i64702, ptr %output, align 8
   %named703 = load i64, ptr %named585, align 8

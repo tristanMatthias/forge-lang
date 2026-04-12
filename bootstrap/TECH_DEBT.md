@@ -439,19 +439,13 @@ usage.
 be valid). Parameter-passing version is architecturally better but
 blocked by this codegen bug.
 
-### 36. Map method codegen passes i64 instead of ptr
+### ~~36. Map method codegen passes i64 instead of ptr~~ (FIXED)
 
-**Severity:** high (Maps unusable at compile time)
-**Impact:** `forge_map_set_cstr`, `forge_map_has_cstr`, `forge_map_get_cstr`
-expect `ptr` for the map argument but codegen passes `i64` (the
-everything-is-i64 model). `llc` rejects the IR with "Call parameter
-type does not match function signature." Maps work in the C runtime
-but can't be called from Forge code.
-
-**Proper fix:** The method call codegen for `.set`, `.has`, `.get` on
-Map values needs to cast the receiver from i64 to ptr before passing
-to the C function. This is the same class of issue as the ptr-vs-i64
-mismatch in other runtime calls.
+**Status:** fixed (April 11 2026). Map method dispatch now converts
+the receiver from i64 to ptr via `to_ptr(ctx, r.value, "map_ptr")`
+before passing to `forge_map_*_cstr` C functions. The conversion is
+done once at the top of the map method block, covering `.get`, `.has`,
+`.set`, `.len`, `.keys`.
 
 ### ~~35. `export` can stack: `export export fn` double-wraps~~ (FIXED)
 
