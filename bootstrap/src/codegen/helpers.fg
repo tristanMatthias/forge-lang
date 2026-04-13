@@ -1,0 +1,106 @@
+// WHY: shared codegen utilities used across features.
+
+use core.ast.{Expr, ExprList, StmtList, VarEnv, ValueType, SStmt, stmt_unwrap}
+use codegen.types.{Ctx, EmitResult, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, trait_decl_has}
+use codegen.{emit_expr}
+use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
+
+export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+    match args {
+        .End -> err_emit("expected 1 argument, got 0")
+        .Node(se, _) -> emit_expr(ctx, env, se.node)
+    }
+}
+
+
+export fn strip_quotes(s: string) -> string {
+    let len = s.length
+    if len < 2 {
+        return s
+    }
+    s.substring(1, len - 1)
+}
+
+
+export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
+    match args {
+        .End -> ok_emit(null_ptr_val())
+        .Node(se, next) -> {
+            let r = emit_expr(ctx, env, se.node)
+            if r.had_error {
+                return r
+            }
+            forge_llvm_value_array_set(arr, idx, r.value)
+            fill_arg_array(ctx, env, arr, next, idx + 1)
+        }
+    }
+}
+
+
+export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: ParamTypeList, idx: int) -> EmitResult {
+    match args {
+        .End -> ok_emit(null_ptr_val())
+        .Node(se, next) -> {
+            let r = emit_expr(ctx, env, se.node)
+            if r.had_error {
+                return r
+            }
+            let ptype_str = param_type_at(ptypes, idx)
+            // Check if the parameter type is a trait and the argument is concrete
+            let value = if ptype_str != "" && trait_decl_has(ctx.trait_decls, ptype_str) {
+                let concrete_name = resolve_concrete_type_name(r.ty)
+                if concrete_name != "" && !trait_decl_has(ctx.trait_decls, concrete_name) {
+                    // The argument is a concrete type but the parameter expects a trait.
+                    // Box the value into a trait object.
+                    box_for_trait(ctx, r.value, ptype_str, concrete_name)
+                } else {
+                    // Already a trait object or same trait — pass through.
+                    r.value
+                }
+            } else {
+                r.value
+            }
+            forge_llvm_value_array_set(arr, idx, value)
+            fill_arg_array_boxing(ctx, env, arr, next, ptypes, idx + 1)
+        }
+    }
+}
+
+
+export fn is_null_literal(e: Expr) -> bool {
+    match e {
+        .Null -> true
+        _ -> false
+    }
+}
+
+
+export fn stmts_last_expr(stmts: StmtList) -> Expr {
+    match stmts {
+        .End -> Expr.Null
+        .Node(ss, next) -> {
+            match next {
+                .End -> {
+                    let inner = stmt_unwrap(ss.node)
+                    match inner {
+                        .Expr(e) -> e
+                        .Return(e) -> e
+                        _ -> Expr.Null
+                    }
+                }
+                _ -> stmts_last_expr(next)
+            }
+        }
+    }
+}
+
+
+export fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
+    if idx >= count {
+        return
+    }
+    forge_llvm_type_array_set(arr, idx, i64t)
+    fill_i64_param_array(arr, i64t, idx + 1, count)
+}
+
+

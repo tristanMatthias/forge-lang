@@ -3,9 +3,9 @@
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList, vtype_list_elem, vtype_fn_ret, vtype_is_fn}
 use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, get_fn, call_0, call_1, call_2, call_3, const_i64}
-use codegen.{emit_single_arg}
 use codegen.{emit_expr}
 use features.closures.codegen.{emit_lambda_typed, emit_typed_lambda_arg}
+use codegen.helpers.{emit_single_arg}
 
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
     let arr_fn = get_fn(ctx, "forge_array_new")

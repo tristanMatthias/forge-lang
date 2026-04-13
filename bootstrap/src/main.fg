@@ -45,7 +45,7 @@ use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPath
 use typeck.{typecheck_program}
 use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, span_dummy}
 use diagnostics.render.{render_bag}
-use codegen.{compile_program}
+use codegen.setup.{compile_program}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")

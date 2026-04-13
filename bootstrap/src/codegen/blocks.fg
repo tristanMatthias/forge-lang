@@ -1,0 +1,97 @@
+// WHY: block expression codegen — evaluating statement blocks as values.
+
+use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
+use codegen.types.{Ctx, EmitResult, StmtResult, const_i64, err_emit, new_bb, ok_emit, ok_emit_typed, err_stmt_from_expr, ok_stmt}
+use codegen.{emit_expr, emit_stmt, emit_stmt_list}
+use features.match_expr.codegen.{emit_match_expr}
+
+export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
+    // A block expression's value is the value of the LAST
+    // statement, if that statement is a `Stmt.Expr`. Anything
+    // else (return, let, while, ...) yields i64 0. Each non-last
+    // statement is executed for its side effects.
+    emit_block_loop(ctx, env, stmts, const_i64(ctx, 0), ValueType.Int)
+}
+
+
+export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> EmitResult {
+    match stmt {
+        .Expr(e) -> emit_expr(ctx, env, e)
+        .Block(body) -> emit_block_expr(ctx, env, body)
+        .Match(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
+        .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
+        _ -> {
+            let s = emit_stmt(ctx, env, stmt)
+            if s.had_error {
+                return err_emit(s.error_message)
+            }
+            EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
+        }
+    }
+}
+
+
+export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
+    let cond = emit_expr(ctx, env, condition)
+    if cond.had_error {
+        return cond
+    }
+    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, const_i64(ctx, 0), "sif_cond")
+    let then_bb = new_bb(ctx, "sif_then")
+    let else_bb = new_bb(ctx, "sif_else")
+    let merge_bb = new_bb(ctx, "sif_end")
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "sif_result")
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
+    forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
+
+    forge_llvm_position_at_end(ctx.builder, then_bb)
+    let zero = const_i64(ctx, 0)
+    let t = emit_stmt_as_value(ctx, env, then_branch, zero, ValueType.Int)
+    if t.had_error {
+        return t
+    }
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_store(ctx.builder, t.value, result_slot)
+        forge_llvm_build_br(ctx.builder, merge_bb)
+    }
+
+    forge_llvm_position_at_end(ctx.builder, else_bb)
+    if else_branch != null {
+        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, ValueType.Int)
+        if e.had_error {
+            return e
+        }
+        if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+            forge_llvm_build_store(ctx.builder, e.value, result_slot)
+            forge_llvm_build_br(ctx.builder, merge_bb)
+        }
+    } else {
+        forge_llvm_build_br(ctx.builder, merge_bb)
+    }
+
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "sif_val")
+    EmitResult { value: loaded, ty: t.ty, had_error: false, error_message: "" }
+}
+
+
+export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> EmitResult {
+    match stmts {
+        .End -> EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
+        .Node(ss, next) -> {
+            let line_ctx = ctx with { source_line: ss.line }
+            match next {
+                .End -> emit_stmt_as_value(line_ctx, env, ss.node, last_val, last_ty)
+                _ -> {
+                    let s = emit_stmt(line_ctx, env, ss.node)
+                    if s.had_error {
+                        return err_emit(s.error_message)
+                    }
+                    emit_block_loop(ctx, s.env, next, last_val, last_ty)
+                }
+            }
+        }
+    }
+}
+
+

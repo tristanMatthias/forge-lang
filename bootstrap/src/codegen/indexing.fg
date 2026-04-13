@@ -1,0 +1,65 @@
+// WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
+
+use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_display, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem}
+use codegen.types.{Ctx, EmitResult, call_2, call_3, cg_malloc, const_i64, const_i8, err_emit, get_fn, ok_emit, ok_emit_str, ok_emit_typed, to_i64, to_ptr}
+use codegen.{emit_expr}
+
+export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
+    let r = emit_expr(ctx, env, obj)
+    if r.had_error {
+        return r
+    }
+    // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
+    if vtype_eq(r.ty, ValueType.Ptr) {
+        let i_r = emit_expr(ctx, env, idx)
+        if i_r.had_error { return i_r }
+        let off = forge_llvm_build_add(ctx.builder, r.value, i_r.value, "ptr_off")
+        let off_ptr = to_ptr(ctx, off, "ptr_idx")
+        let byte = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), off_ptr, "ptr_byte")
+        return ok_emit(forge_llvm_build_zext(ctx.builder, byte, ctx.i64_type, "ptr_byte_ext"))
+    }
+    // List indexing: list[i] → forge_array_get(list, i)
+    if vtype_is_list(r.ty) {
+        let i_r = emit_expr(ctx, env, idx)
+        if i_r.had_error { return i_r }
+        let elem = call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, i_r.value, "list_idx")
+        return ok_emit_typed(elem, vtype_list_elem(r.ty))
+    }
+    if !vtype_is_str(r.ty) {
+        return err_emit("indexing on non-string/list value (ty=" + vtype_display(r.ty) + ")")
+    }
+    let i_r = emit_expr(ctx, env, idx)
+    if i_r.had_error {
+        return i_r
+    }
+    // Allocate a 2-byte buffer (1 char + nul), copy the byte at
+    // src+i, set buf[1]=0. Returns a fresh str.
+    let src_int = r.value
+    let off_int = forge_llvm_build_add(ctx.builder, src_int, i_r.value, "idx_off_int")
+    let off_ptr = to_ptr(ctx, off_int, "idx_off")
+    let byte = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), off_ptr, "idx_byte")
+    let buf = cg_malloc(ctx, const_i64(ctx, 2))
+    forge_llvm_build_store(ctx.builder, byte, buf)
+    // buf[1] = 0
+    let buf_int = to_i64(ctx, buf, "idx_buf_int")
+    let one = const_i64(ctx, 1)
+    let nul_int = forge_llvm_build_add(ctx.builder, buf_int, one, "idx_nul_int")
+    let nul_ptr = to_ptr(ctx, nul_int, "idx_nul")
+    forge_llvm_build_store(ctx.builder, const_i8(ctx, 0), nul_ptr)
+    let result_i64 = to_i64(ctx, buf, "idx_result")
+    ok_emit_str(result_i64)
+}
+
+
+export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitResult {
+    let obj_r = emit_expr(ctx, env, obj)
+    if obj_r.had_error { return obj_r }
+    let start_r = emit_expr(ctx, env, start)
+    if start_r.had_error { return start_r }
+    let end_r = emit_expr(ctx, env, end)
+    if end_r.had_error { return end_r }
+    let result = call_3(ctx, get_fn(ctx, "forge_array_slice"), obj_r.value, start_r.value, end_r.value, "slice")
+    ok_emit_typed(result, obj_r.ty)
+}
+
+

@@ -2,9 +2,10 @@
 
 // Imports resolved by bootstrap's module-qualified name resolution.
 
-use codegen.{emit_block_loop, emit_expr}
+use codegen.{emit_expr}
 use core.ast.{sstmt_dummy}
 use codegen.types.{call_1, call_2, const_i64, err_stmt, get_fn, ok_stmt}
+use codegen.blocks.{emit_block_loop}
 export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
         .SpecBlock(name, body) -> emit_spec_block(ctx, env, name, body)

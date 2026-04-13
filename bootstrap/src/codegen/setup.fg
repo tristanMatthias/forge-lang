@@ -1,0 +1,802 @@
+// WHY: compilation setup — declaration passes and top-level emission.
+
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_length, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, env_extend}
+use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, cg_malloc, const_i64, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, get_fn, ok_emit, ok_stmt, struct_reg_lookup, toplevel_lookup, translate_param_type, translate_type_ctx}
+use core.registry.{build_registry}
+use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelResult}
+use codegen.helpers.{stmts_last_expr, fill_i64_param_array}
+use features.fn_decl.codegen.{emit_function_bodies}
+
+export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, source_file: string) -> CodegenResult {
+    let lc = forge_llvm_context_create()
+    let m = forge_llvm_module_create("bootstrap", lc)
+    let builder = forge_llvm_create_builder(lc)
+
+    let i64t = forge_llvm_int64_type(lc)
+    let i1t = forge_llvm_int1_type(lc)
+    let pt = forge_llvm_pointer_type(lc)
+
+    // Declare libc helpers we lower string ops onto.
+    //   puts(ptr) -> i32        — for println(str)
+    //   strlen(ptr) -> i64
+    //   malloc(i64) -> ptr
+    //   memcpy(ptr, ptr, i64) -> ptr
+    let puts_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(puts_param_arr, 0, pt)
+    let puts_type = forge_llvm_function_type(forge_llvm_int32_type(lc), puts_param_arr, 1, 0)
+    forge_llvm_type_array_free(puts_param_arr)
+    forge_llvm_add_function(m, "puts", puts_type)
+
+    // forge_eprintln(ptr) -> void — write string + newline to stderr
+    let eprint_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(eprint_param_arr, 0, pt)
+    let eprint_type = forge_llvm_function_type(forge_llvm_void_type(lc), eprint_param_arr, 1, 0)
+    forge_llvm_type_array_free(eprint_param_arr)
+    forge_llvm_add_function(m, "forge_eprintln", eprint_type)
+
+    let strlen_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(strlen_param_arr, 0, pt)
+    let strlen_type = forge_llvm_function_type(i64t, strlen_param_arr, 1, 0)
+    forge_llvm_type_array_free(strlen_param_arr)
+    forge_llvm_add_function(m, "strlen", strlen_type)
+
+    let malloc_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(malloc_param_arr, 0, i64t)
+    let malloc_type = forge_llvm_function_type(pt, malloc_param_arr, 1, 0)
+    forge_llvm_type_array_free(malloc_param_arr)
+    forge_llvm_add_function(m, "malloc", malloc_type)
+
+    // Bump allocator — used by cg_malloc for struct/enum/with allocations.
+    // Same signature as malloc: (i64) -> ptr
+    let bump_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(bump_param_arr, 0, i64t)
+    let bump_type = forge_llvm_function_type(pt, bump_param_arr, 1, 0)
+    forge_llvm_type_array_free(bump_param_arr)
+    forge_llvm_add_function(m, "forge_bump_alloc", bump_type)
+
+    let memcpy_param_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(memcpy_param_arr, 0, pt)
+    forge_llvm_type_array_set(memcpy_param_arr, 1, pt)
+    forge_llvm_type_array_set(memcpy_param_arr, 2, i64t)
+    let memcpy_type = forge_llvm_function_type(pt, memcpy_param_arr, 3, 0)
+    forge_llvm_type_array_free(memcpy_param_arr)
+    forge_llvm_add_function(m, "memcpy", memcpy_type)
+
+    let strcmp_param_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(strcmp_param_arr, 0, pt)
+    forge_llvm_type_array_set(strcmp_param_arr, 1, pt)
+    let strcmp_type = forge_llvm_function_type(forge_llvm_int32_type(lc), strcmp_param_arr, 2, 0)
+    forge_llvm_type_array_free(strcmp_param_arr)
+    forge_llvm_add_function(m, "strcmp", strcmp_type)
+
+    // snprintf(buf, size, fmt, ...) declared as variadic for the
+    // string() builtin's int → str conversion.
+    let snprintf_param_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(snprintf_param_arr, 0, pt)
+    forge_llvm_type_array_set(snprintf_param_arr, 1, i64t)
+    forge_llvm_type_array_set(snprintf_param_arr, 2, pt)
+    let snprintf_type = forge_llvm_function_type(forge_llvm_int32_type(lc), snprintf_param_arr, 3, 1)
+    forge_llvm_type_array_free(snprintf_param_arr)
+    forge_llvm_add_function(m, "snprintf", snprintf_type)
+
+    // atoi(str) -> i32 for the int() builtin.
+    let atoi_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(atoi_param_arr, 0, pt)
+    let atoi_type = forge_llvm_function_type(forge_llvm_int32_type(lc), atoi_param_arr, 1, 0)
+    forge_llvm_type_array_free(atoi_param_arr)
+    forge_llvm_add_function(m, "atoi", atoi_type)
+
+    // exit(int) for process.exit
+    let exit_param_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(exit_param_arr, 0, forge_llvm_int32_type(lc))
+    let exit_type = forge_llvm_function_type(forge_llvm_void_type(lc), exit_param_arr, 1, 0)
+    forge_llvm_type_array_free(exit_param_arr)
+    forge_llvm_add_function(m, "exit", exit_type)
+
+    // forge_null_arg_check(fn_name: ptr, fn_len: i64, param_name: ptr, param_len: i64, is_null: i64) -> void
+    // Called in debug mode to check for null arguments at function entry.
+    // The check is done C-side so we don't need to create basic blocks in the IR.
+    let null_check_arr = forge_llvm_type_array_new(5)
+    forge_llvm_type_array_set(null_check_arr, 0, pt)
+    forge_llvm_type_array_set(null_check_arr, 1, i64t)
+    forge_llvm_type_array_set(null_check_arr, 2, pt)
+    forge_llvm_type_array_set(null_check_arr, 3, i64t)
+    forge_llvm_type_array_set(null_check_arr, 4, i64t)
+    let null_check_type = forge_llvm_function_type(forge_llvm_void_type(lc), null_check_arr, 5, 0)
+    forge_llvm_type_array_free(null_check_arr)
+    forge_llvm_add_function(m, "forge_null_arg_check", null_check_type)
+
+    // forge_null_deref_trap(field: ptr, field_len: i64, type_name: ptr, type_len: i64, is_null: i64, file: ptr, file_len: i64, line: i64) -> void
+    // Called on every field access / method call to catch null pointer dereferences.
+    // Branchless: the C function checks is_null internally.
+    let null_deref_arr = forge_llvm_type_array_new(8)
+    forge_llvm_type_array_set(null_deref_arr, 0, pt)
+    forge_llvm_type_array_set(null_deref_arr, 1, i64t)
+    forge_llvm_type_array_set(null_deref_arr, 2, pt)
+    forge_llvm_type_array_set(null_deref_arr, 3, i64t)
+    forge_llvm_type_array_set(null_deref_arr, 4, i64t)
+    forge_llvm_type_array_set(null_deref_arr, 5, pt)
+    forge_llvm_type_array_set(null_deref_arr, 6, i64t)
+    forge_llvm_type_array_set(null_deref_arr, 7, i64t)
+    let null_deref_type = forge_llvm_function_type(forge_llvm_void_type(lc), null_deref_arr, 8, 0)
+    forge_llvm_type_array_free(null_deref_arr)
+    forge_llvm_add_function(m, "forge_null_deref_trap", null_deref_type)
+
+    // forge_div_by_zero_trap(is_zero: i64, file: ptr, file_len: i64, line: i64) -> void
+    // Called before every sdiv/srem to catch division by zero.
+    // Branchless: the C function checks is_zero internally.
+    let div_zero_arr = forge_llvm_type_array_new(4)
+    forge_llvm_type_array_set(div_zero_arr, 0, i64t)
+    forge_llvm_type_array_set(div_zero_arr, 1, pt)
+    forge_llvm_type_array_set(div_zero_arr, 2, i64t)
+    forge_llvm_type_array_set(div_zero_arr, 3, i64t)
+    let div_zero_type = forge_llvm_function_type(forge_llvm_void_type(lc), div_zero_arr, 4, 0)
+    forge_llvm_type_array_free(div_zero_arr)
+    forge_llvm_add_function(m, "forge_div_by_zero_trap", div_zero_type)
+
+    // C-runtime: dynamic arrays (forge_array_*)
+    let arr_new_type = forge_llvm_function_type(pt, forge_llvm_type_array_new(0), 0, 0)
+    forge_llvm_add_function(m, "forge_array_new", arr_new_type)
+
+    let arr_push_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(arr_push_arr, 0, pt)
+    forge_llvm_type_array_set(arr_push_arr, 1, i64t)
+    let arr_push_type = forge_llvm_function_type(forge_llvm_void_type(lc), arr_push_arr, 2, 0)
+    forge_llvm_type_array_free(arr_push_arr)
+    forge_llvm_add_function(m, "forge_array_push", arr_push_type)
+
+    let arr_get_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(arr_get_arr, 0, pt)
+    forge_llvm_type_array_set(arr_get_arr, 1, i64t)
+    let arr_get_type = forge_llvm_function_type(i64t, arr_get_arr, 2, 0)
+    forge_llvm_type_array_free(arr_get_arr)
+    forge_llvm_add_function(m, "forge_array_get", arr_get_type)
+
+    let arr_len_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(arr_len_arr, 0, pt)
+    let arr_len_type = forge_llvm_function_type(i64t, arr_len_arr, 1, 0)
+    forge_llvm_type_array_free(arr_len_arr)
+    forge_llvm_add_function(m, "forge_array_len", arr_len_type)
+
+    // forge_array_set(ptr, i64, i64) → void (3 args: arr, idx, val)
+    let arr_set_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(arr_set_arr, 0, pt)
+    forge_llvm_type_array_set(arr_set_arr, 1, i64t)
+    forge_llvm_type_array_set(arr_set_arr, 2, i64t)
+    let arr_set_type = forge_llvm_function_type(forge_llvm_void_type(lc), arr_set_arr, 3, 0)
+    forge_llvm_type_array_free(arr_set_arr)
+    forge_llvm_add_function(m, "forge_array_set", arr_set_type)
+    forge_llvm_add_function(m, "forge_array_pop", arr_len_type)
+
+    // forge_array_slice(ptr, i64, i64) → ptr
+    let arr_slice_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(arr_slice_arr, 0, pt)
+    forge_llvm_type_array_set(arr_slice_arr, 1, i64t)
+    forge_llvm_type_array_set(arr_slice_arr, 2, i64t)
+    let arr_slice_type = forge_llvm_function_type(pt, arr_slice_arr, 3, 0)
+    forge_llvm_type_array_free(arr_slice_arr)
+    forge_llvm_add_function(m, "forge_array_slice", arr_slice_type)
+
+    // C-runtime: closure helpers
+    // forge_closure_get_fn(i64) → i64
+    // forge_closure_num_captures(i64) → i64
+    // forge_closure_get_capture(i64, i64) → i64
+    let cl_1_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(cl_1_arr, 0, i64t)
+    let cl_i64_to_i64 = forge_llvm_function_type(i64t, cl_1_arr, 1, 0)
+    forge_llvm_type_array_free(cl_1_arr)
+    forge_llvm_add_function(m, "forge_closure_get_fn", cl_i64_to_i64)
+    forge_llvm_add_function(m, "forge_closure_num_captures", cl_i64_to_i64)
+    forge_llvm_add_function(m, "forge_closure_get_capture", arr_get_type)
+    // Closure trampolines: (i64, i64...) → i64
+    forge_llvm_add_function(m, "forge_closure_call_0", cl_i64_to_i64)
+
+    let cl_2_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(cl_2_arr, 0, i64t)
+    forge_llvm_type_array_set(cl_2_arr, 1, i64t)
+    let cl_2_type = forge_llvm_function_type(i64t, cl_2_arr, 2, 0)
+    forge_llvm_type_array_free(cl_2_arr)
+    forge_llvm_add_function(m, "forge_closure_call_1", cl_2_type)
+
+    let cl_3_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(cl_3_arr, 0, i64t)
+    forge_llvm_type_array_set(cl_3_arr, 1, i64t)
+    forge_llvm_type_array_set(cl_3_arr, 2, i64t)
+    let cl_3_type = forge_llvm_function_type(i64t, cl_3_arr, 3, 0)
+    forge_llvm_type_array_free(cl_3_arr)
+    forge_llvm_add_function(m, "forge_closure_call_2", cl_3_type)
+
+    let cl_4_arr = forge_llvm_type_array_new(4)
+    forge_llvm_type_array_set(cl_4_arr, 0, i64t)
+    forge_llvm_type_array_set(cl_4_arr, 1, i64t)
+    forge_llvm_type_array_set(cl_4_arr, 2, i64t)
+    forge_llvm_type_array_set(cl_4_arr, 3, i64t)
+    let cl_4_type = forge_llvm_function_type(i64t, cl_4_arr, 4, 0)
+    forge_llvm_type_array_free(cl_4_arr)
+    forge_llvm_add_function(m, "forge_closure_call_3", cl_4_type)
+
+    // C-runtime: higher-order list operations (map, filter, reduce, foreach)
+    // All take (ptr arr, i64 fn_ptr) and return ptr or i64.
+    let arr_ho_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(arr_ho_arr, 0, pt)
+    forge_llvm_type_array_set(arr_ho_arr, 1, i64t)
+    let arr_map_type = forge_llvm_function_type(pt, arr_ho_arr, 2, 0)
+    forge_llvm_type_array_free(arr_ho_arr)
+    forge_llvm_add_function(m, "forge_array_map", arr_map_type)
+    forge_llvm_add_function(m, "forge_array_filter", arr_map_type)
+
+    let arr_fe_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(arr_fe_arr, 0, pt)
+    forge_llvm_type_array_set(arr_fe_arr, 1, i64t)
+    let arr_fe_type = forge_llvm_function_type(forge_llvm_void_type(lc), arr_fe_arr, 2, 0)
+    forge_llvm_type_array_free(arr_fe_arr)
+    forge_llvm_add_function(m, "forge_array_foreach", arr_fe_type)
+
+    let arr_red_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(arr_red_arr, 0, pt)
+    forge_llvm_type_array_set(arr_red_arr, 1, i64t)
+    forge_llvm_type_array_set(arr_red_arr, 2, i64t)
+    let arr_reduce_type = forge_llvm_function_type(i64t, arr_red_arr, 3, 0)
+    forge_llvm_type_array_free(arr_red_arr)
+    forge_llvm_add_function(m, "forge_array_reduce", arr_reduce_type)
+
+    // C-runtime: string methods
+    let str2_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(str2_arr, 0, pt)
+    forge_llvm_type_array_set(str2_arr, 1, pt)
+    let str_str_to_i64 = forge_llvm_function_type(i64t, str2_arr, 2, 0)
+    let str_str_to_str = forge_llvm_function_type(pt, str2_arr, 2, 0)
+    forge_llvm_type_array_free(str2_arr)
+
+    forge_llvm_add_function(m, "forge_str_contains", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_str_starts_with", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_str_ends_with", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_str_index_of", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_str_split", str_str_to_str)
+
+    let str3_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(str3_arr, 0, pt)
+    forge_llvm_type_array_set(str3_arr, 1, pt)
+    forge_llvm_type_array_set(str3_arr, 2, pt)
+    let str3_to_str = forge_llvm_function_type(pt, str3_arr, 3, 0)
+    forge_llvm_type_array_free(str3_arr)
+    forge_llvm_add_function(m, "forge_str_replace", str3_to_str)
+
+    let str1_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(str1_arr, 0, pt)
+    let str_to_str = forge_llvm_function_type(pt, str1_arr, 1, 0)
+    forge_llvm_type_array_free(str1_arr)
+    forge_llvm_add_function(m, "forge_str_trim", str_to_str)
+    forge_llvm_add_function(m, "forge_str_to_upper", str_to_str)
+    forge_llvm_add_function(m, "forge_str_to_lower", str_to_str)
+
+    // C-runtime: hash maps
+    let map_new_type = forge_llvm_function_type(pt, forge_llvm_type_array_new(0), 0, 0)
+    forge_llvm_add_function(m, "forge_map_new_cstr", map_new_type)
+
+    // map_set(ptr, ptr, i64) → void
+    let map_set_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(map_set_arr, 0, pt)
+    forge_llvm_type_array_set(map_set_arr, 1, pt)
+    forge_llvm_type_array_set(map_set_arr, 2, i64t)
+    let map_set_type = forge_llvm_function_type(forge_llvm_void_type(lc), map_set_arr, 3, 0)
+    forge_llvm_type_array_free(map_set_arr)
+    forge_llvm_add_function(m, "forge_map_set_cstr", map_set_type)
+
+    // map_get(ptr, ptr) → i64
+    forge_llvm_add_function(m, "forge_map_get_cstr", str_str_to_i64)
+    forge_llvm_add_function(m, "forge_map_has_cstr", str_str_to_i64)
+
+    // map_len(ptr) → i64, map_keys(ptr) → ptr
+    forge_llvm_add_function(m, "forge_map_len_cstr", arr_len_type)
+
+    let map_keys_arr = forge_llvm_type_array_new(1)
+    forge_llvm_type_array_set(map_keys_arr, 0, pt)
+    let map_keys_type = forge_llvm_function_type(pt, map_keys_arr, 1, 0)
+    forge_llvm_type_array_free(map_keys_arr)
+    forge_llvm_add_function(m, "forge_map_keys_cstr", map_keys_type)
+
+    // Int-keyed map: O(1) lookup by integer key (used for feature registry dispatch)
+    forge_llvm_add_function(m, "forge_intmap_new", arr_new_type)
+    let im_set_arr = forge_llvm_type_array_new(3)
+    forge_llvm_type_array_set(im_set_arr, 0, pt)
+    forge_llvm_type_array_set(im_set_arr, 1, i64t)
+    forge_llvm_type_array_set(im_set_arr, 2, i64t)
+    let im_set_type = forge_llvm_function_type(forge_llvm_void_type(lc), im_set_arr, 3, 0)
+    forge_llvm_type_array_free(im_set_arr)
+    forge_llvm_add_function(m, "forge_intmap_set", im_set_type)
+    forge_llvm_add_function(m, "forge_intmap_get", arr_get_type)
+    forge_llvm_add_function(m, "forge_intmap_has", arr_get_type)
+
+    // Float support: forge_float_parse(ptr) → i64, forge_float_to_string(i64) → ptr
+    forge_llvm_add_function(m, "forge_float_parse", strlen_type)
+    forge_llvm_add_function(m, "forge_float_to_string", cl_i64_to_i64)
+
+    // Ptr ops
+    forge_llvm_add_function(m, "forge_ptr_store_byte", im_set_type)
+    forge_llvm_add_function(m, "forge_string_from_ptr", arr_get_type)
+
+    // Trait objects
+    forge_llvm_add_function(m, "forge_trait_object_new", arr_get_type)
+    forge_llvm_add_function(m, "forge_trait_object_value", strlen_type)
+    forge_llvm_add_function(m, "forge_trait_object_vtable", map_keys_type)
+
+    // DateTime
+    let noarg_i64_type = forge_llvm_function_type(i64t, forge_llvm_type_array_new(0), 0, 0)
+    forge_llvm_add_function(m, "forge_datetime_now", noarg_i64_type)
+    forge_llvm_add_function(m, "forge_datetime_format", arr_get_type)
+    forge_llvm_add_function(m, "forge_datetime_year", strlen_type)
+    forge_llvm_add_function(m, "forge_datetime_month", strlen_type)
+    forge_llvm_add_function(m, "forge_datetime_day", strlen_type)
+    forge_llvm_add_function(m, "forge_datetime_hour", strlen_type)
+    forge_llvm_add_function(m, "forge_datetime_minute", strlen_type)
+    forge_llvm_add_function(m, "forge_datetime_second", strlen_type)
+
+    // JSON
+    forge_llvm_add_function(m, "forge_json_stringify_int", map_keys_type)
+    forge_llvm_add_function(m, "forge_json_stringify_string", map_keys_type)
+    forge_llvm_add_function(m, "forge_json_stringify_bool", map_keys_type)
+    forge_llvm_add_function(m, "forge_json_get_int", arr_get_type)
+    forge_llvm_add_function(m, "forge_json_get_string", arr_get_type)
+    forge_llvm_add_function(m, "forge_json_get_bool", arr_get_type)
+
+    // Semver
+    forge_llvm_add_function(m, "forge_semver_major", strlen_type)
+    forge_llvm_add_function(m, "forge_semver_minor", strlen_type)
+    forge_llvm_add_function(m, "forge_semver_patch", strlen_type)
+    forge_llvm_add_function(m, "forge_semver_compare", arr_get_type)
+
+    // Validation
+    forge_llvm_add_function(m, "forge_validate_not_null", arr_get_type)
+    forge_llvm_add_function(m, "forge_validate_positive", arr_get_type)
+    forge_llvm_add_function(m, "forge_validate_not_empty", arr_get_type)
+
+    // TOML
+    forge_llvm_add_function(m, "forge_toml_get_string", arr_get_type)
+    forge_llvm_add_function(m, "forge_toml_get_int", arr_get_type)
+    forge_llvm_add_function(m, "forge_toml_get_bool", arr_get_type)
+
+    // Concurrency
+    forge_llvm_add_function(m, "forge_spawn", strlen_type)
+    forge_llvm_add_function(m, "forge_thread_join", puts_type)
+    forge_llvm_add_function(m, "forge_channel_new", arr_new_type)
+    forge_llvm_add_function(m, "forge_channel_send", arr_push_type)
+    forge_llvm_add_function(m, "forge_channel_recv", strlen_type)
+    forge_llvm_add_function(m, "forge_channel_close", puts_type)
+
+    forge_llvm_add_function(m, "forge_parallel_run", puts_type)
+    forge_llvm_add_function(m, "forge_select", arr_get_type)
+    forge_llvm_add_function(m, "forge_select_index", strlen_type)
+    forge_llvm_add_function(m, "forge_select_value", strlen_type)
+
+    // Spec test runtime
+    forge_llvm_add_function(m, "forge_test_start_spec", puts_type)
+    forge_llvm_add_function(m, "forge_test_end_spec", puts_type)
+    forge_llvm_add_function(m, "forge_test_start_given", puts_type)
+    forge_llvm_add_function(m, "forge_test_end_given", puts_type)
+    forge_llvm_add_function(m, "forge_test_run_then", arr_get_type)
+    forge_llvm_add_function(m, "forge_test_summary", puts_type)
+
+    // Match fallthrough trap — called when no arm matches at runtime.
+    // forge_match_unreachable(fn_name: ptr, tag: i64, file: ptr, line: i64) -> void
+    let match_trap_arr = forge_llvm_type_array_new(4)
+    forge_llvm_type_array_set(match_trap_arr, 0, pt)
+    forge_llvm_type_array_set(match_trap_arr, 1, i64t)
+    forge_llvm_type_array_set(match_trap_arr, 2, pt)
+    forge_llvm_type_array_set(match_trap_arr, 3, i64t)
+    let match_trap_type = forge_llvm_function_type(forge_llvm_void_type(lc), match_trap_arr, 4, 0)
+    forge_llvm_type_array_free(match_trap_arr)
+    forge_llvm_add_function(m, "forge_match_unreachable", match_trap_type)
+
+    // Build the per-compile registries by walking the AST once.
+    // These are threaded through Ctx as immutable data — no
+    // mutable globals.
+    let structs = declare_structs(lc, i64t, stmts, StructReg.End)
+    let enums = declare_enums(lc, i64t, stmts, EnumReg.End)
+    let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
+    let top_level_vars = declare_globals(m, lc, i64t, structs, enums, stmts, TopLevelVars.End)
+    let fn_rets = declare_functions(m, lc, i64t, structs, enums, stmts, FnRetTypes.End)
+    let fn_params = collect_fn_params(stmts, FnParamTypes.End)
+
+    // Synthesize a wrapper function for the top-level non-function
+    // statements. If the source already defines its own `fn main`,
+    // use a different name (`__bs_top_level`) so we don't collide
+    // — the user's main becomes the program entry point. Otherwise
+    // we name the wrapper `main` so it serves as the entry.
+    let user_main = forge_llvm_get_named_function(m, "main")
+    let main_name = if user_main == null { "main" } else { "__bs_top_level" }
+    let main_params = forge_llvm_type_array_new(0)
+    let main_type = forge_llvm_function_type(i64t, main_params, 0, 0)
+    forge_llvm_type_array_free(main_params)
+    let main_fn = forge_llvm_add_function(m, main_name, main_type)
+
+    let entry = forge_llvm_append_basic_block(lc, main_fn, "entry")
+    forge_llvm_position_at_end(builder, entry)
+
+    let ctx = Ctx {
+        lc,
+        module: m,
+        builder,
+        current_fn: main_fn,
+        current_fn_name: main_name,
+        i64_type: i64t,
+        i1_type: i1t,
+        ptr_type: pt,
+        structs,
+        enums,
+        fn_rets,
+        fn_params,
+        top_level_vars,
+        loops: LoopStack.End,
+        defers: DeferStack.End,
+        features: build_registry(),
+        trait_decls,
+        debug_null_checks,
+        source_file,
+        source_line: 0,
+    }
+
+    // Pass 2: emit each user-defined function's body, then emit
+    // every non-function top-level statement into main.
+    let body_result = emit_function_bodies(ctx, stmts)
+    if body_result.had_error {
+        forge_llvm_dispose_builder(builder)
+        forge_llvm_module_dispose(m)
+        forge_llvm_context_dispose(ctx.lc)
+        return CodegenResult { had_error: true, error_message: body_result.error_message }
+    }
+
+    // After emitting any function bodies, the builder may be sitting
+    // in a function-body block. Reposition it back at main's entry
+    // before emitting top-level statements.
+    forge_llvm_position_at_end(builder, entry)
+    let initial: VarEnv = VarEnv.End
+    let result = emit_top_level(ctx, initial, stmts)
+    if result.had_error {
+        forge_llvm_dispose_builder(builder)
+        forge_llvm_module_dispose(m)
+        forge_llvm_context_dispose(ctx.lc)
+        return CodegenResult { had_error: true, error_message: result.error_message }
+    }
+
+    // Default return 0 if the program didn't end in an explicit return
+    if forge_llvm_block_has_terminator(builder) == 0 {
+        forge_llvm_build_ret(builder, forge_llvm_const_int(i64t, 0, 0))
+    }
+
+    // Verification is advisory — the bootstrap's everything-is-i64 model
+    // produces benign type mismatches (i64 vs ptr) that LLVM flags but
+    // llc compiles correctly. Don't block on verification failures.
+    forge_llvm_verify_module_print(m)
+
+    let write_result = forge_llvm_print_module_to_file(m, output_path)
+
+    forge_llvm_dispose_builder(builder)
+    forge_llvm_module_dispose(m)
+    forge_llvm_context_dispose(ctx.lc)
+
+    if write_result != 0 {
+        return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to " + output_path }
+    }
+
+    CodegenResult { had_error: false, error_message: "" }
+}
+
+
+fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> StructReg {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let stmt = stmt_unwrap(ss.node)
+            let updated = match stmt {
+                .TypeDecl(name, fields) -> {
+                    // Check for type operator: __base sentinel
+                    let resolved_fields = resolve_type_operator(fields, reg)
+                    let count = field_list_length(resolved_fields)
+                    let field_arr = forge_llvm_type_array_new(count)
+                    fill_i64_param_array(field_arr, i64t, 0, count)
+                    let st = forge_llvm_struct_create_named(ctx, name)
+                    forge_llvm_struct_set_body(st, field_arr, count, 0)
+                    forge_llvm_type_array_free(field_arr)
+                    StructReg.Node(name, resolved_fields, reg)
+                }
+                .Module(_, body) -> declare_structs(ctx, i64t, body, reg)
+                _ -> reg
+            }
+            declare_structs(ctx, i64t, next, updated)
+        }
+    }
+}
+
+
+fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let stmt = stmt_unwrap(ss.node)
+            let updated = match stmt {
+                .Let(name, ty, _) -> {
+                    let g = forge_llvm_add_global(m, i64t, name)
+                    forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
+                    TopLevelVars.Node(name, g, translate_param_type(structs, enums, ty), reg)
+                }
+                .Mut(name, ty, _) -> {
+                    let g = forge_llvm_add_global(m, i64t, name)
+                    forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
+                    TopLevelVars.Node(name, g, translate_param_type(structs, enums, ty), reg)
+                }
+                .Module(_, body) -> declare_globals(m, ctx, i64t, structs, enums, body, reg)
+                _ -> reg
+            }
+            declare_globals(m, ctx, i64t, structs, enums, next, updated)
+        }
+    }
+}
+
+
+fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let stmt = stmt_unwrap(ss.node)
+            let updated = match stmt {
+                .EnumDecl(name, variants) -> {
+                    let max_fields = variant_max_payload(variants)
+                    let total_fields = max_fields + 1
+                    let field_arr = forge_llvm_type_array_new(total_fields)
+                    forge_llvm_type_array_set(field_arr, 0, forge_llvm_int8_type(ctx))
+                    fill_i64_param_array_offset(field_arr, i64t, 1, max_fields)
+                    let st = forge_llvm_struct_create_named(ctx, name)
+                    forge_llvm_struct_set_body(st, field_arr, total_fields, 0)
+                    forge_llvm_type_array_free(field_arr)
+                    EnumReg.Node(name, variants, reg)
+                }
+                .Module(_, body) -> declare_enums(ctx, i64t, body, reg)
+                _ -> reg
+            }
+            declare_enums(ctx, i64t, next, updated)
+        }
+    }
+}
+
+
+fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let updated = match stmt_unwrap(ss.node) {
+                .TraitDecl(name, methods) -> TraitDeclReg.Node(name, collect_trait_fn_names(methods), reg)
+                .Module(_, body) -> collect_trait_decls(body, reg)
+                _ -> reg
+            }
+            collect_trait_decls(next, updated)
+        }
+    }
+}
+
+
+fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
+    match stmts {
+        .End -> TraitMethodNames.End
+        .Node(ss, next) -> {
+            match stmt_unwrap(ss.node) {
+                .ExternFn(name, _, ret_ty) -> TraitMethodNames.Node(name, ret_ty, collect_trait_fn_names(next))
+                .Function(name, _, ret_ty, _) -> TraitMethodNames.Node(name, ret_ty, collect_trait_fn_names(next))
+                _ -> collect_trait_fn_names(next)
+            }
+        }
+    }
+}
+
+
+fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
+    match fields {
+        .Node(name, base_name, rest) -> {
+            if name == "__base" {
+                match rest {
+                    .Node(op_name, op, excluded_fields) -> {
+                        let base_lookup = struct_reg_lookup(reg, base_name)
+                        if !base_lookup.found { return FieldList.End }
+                        if op == "without" {
+                            return filter_fields_without(base_lookup.fields, excluded_fields)
+                        }
+                        if op == "only" {
+                            return filter_fields_only(base_lookup.fields, excluded_fields)
+                        }
+                        base_lookup.fields
+                    }
+                    _ -> fields
+                }
+            } else {
+                fields
+            }
+        }
+        _ -> fields
+    }
+}
+
+
+fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
+    match base {
+        .End -> FieldList.End
+        .Node(name, ty, next) -> {
+            if field_list_has(excluded, name) {
+                filter_fields_without(next, excluded)
+            } else {
+                FieldList.Node(name, ty, filter_fields_without(next, excluded))
+            }
+        }
+    }
+}
+
+
+fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
+    match base {
+        .End -> FieldList.End
+        .Node(name, ty, next) -> {
+            if field_list_has(included, name) {
+                FieldList.Node(name, ty, filter_fields_only(next, included))
+            } else {
+                filter_fields_only(next, included)
+            }
+        }
+    }
+}
+
+
+fn field_list_has(list: FieldList, target: string) -> bool {
+    match list {
+        .End -> false
+        .Node(name, _, next) -> {
+            if name == target { return true }
+            field_list_has(next, target)
+        }
+    }
+}
+
+
+fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
+    if count <= 0 {
+        return
+    }
+    forge_llvm_type_array_set(arr, base, i64t)
+    fill_i64_param_array_offset(arr, i64t, base + 1, count - 1)
+}
+
+
+fn decl_fn_ret_type(structs: StructReg, enums: EnumReg, ret_ty: string, body: StmtList) -> ValueType {
+    let base = translate_param_type(structs, enums, ret_ty)
+    let last = stmts_last_expr(body)
+    match last {
+        .Lambda(_, _) -> {
+            let inner_ret = vtype_fn_ret(base)
+            ValueType.Closure(-1, inner_ret)
+        }
+        _ -> base
+    }
+}
+
+
+fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let stmt = stmt_unwrap(ss.node)
+            let updated = match stmt {
+                .Function(name, params, ret_ty, body) -> {
+                    // Names are already qualified by the name resolution pass
+                    let arity = param_list_length(params)
+                    let existing = forge_llvm_get_named_function(m, name)
+                    if existing != null {
+                        eprintln("FATAL: duplicate function `" + name + "` — rename to avoid collision")
+                        exit(1)
+                    }
+                    let param_arr = forge_llvm_type_array_new(arity)
+                    fill_i64_param_array(param_arr, i64t, 0, arity)
+                    let fn_type = forge_llvm_function_type(i64t, param_arr, arity, 0)
+                    forge_llvm_type_array_free(param_arr)
+                    forge_llvm_add_function(m, name, fn_type)
+                    FnRetTypes.Node(name, decl_fn_ret_type(structs, enums, ret_ty, body), reg)
+                }
+                .ExternFn(name, params, ret_ty) -> {
+                    let arity = param_list_length(params)
+                    let param_arr = forge_llvm_type_array_new(arity)
+                    fill_i64_param_array(param_arr, i64t, 0, arity)
+                    let fn_type = forge_llvm_function_type(i64t, param_arr, arity, 0)
+                    forge_llvm_type_array_free(param_arr)
+                    forge_llvm_add_function(m, name, fn_type)
+                    FnRetTypes.Node(name, translate_param_type(structs, enums, ret_ty), reg)
+                }
+                .Impl(_, methods) -> declare_functions(m, ctx, i64t, structs, enums, methods, reg)
+                .Module(_, body) -> declare_functions(m, ctx, i64t, structs, enums, body, reg)
+                _ -> reg
+            }
+            declare_functions(m, ctx, i64t, structs, enums, next, updated)
+        }
+    }
+}
+
+
+fn params_to_type_list(params: ParamList) -> ParamTypeList {
+    match params {
+        .End -> ParamTypeList.End
+        .Node(_, ty, next) -> ParamTypeList.Node(ty, params_to_type_list(next))
+    }
+}
+
+
+fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let stmt = stmt_unwrap(ss.node)
+            let updated = match stmt {
+                .Function(name, params, _, _) -> {
+                    FnParamTypes.Node(name, params_to_type_list(params), reg)
+                }
+                .Impl(_, methods) -> collect_fn_params(methods, reg)
+                .Module(_, body) -> collect_fn_params(body, reg)
+                _ -> reg
+            }
+            collect_fn_params(next, updated)
+        }
+    }
+}
+
+
+fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
+    match stmts {
+        .End -> ok_stmt(env)
+        .Node(ss, next) -> {
+            let tl_ctx = ctx with { source_line: ss.line }
+            let stmt = stmt_unwrap(ss.node)
+            match stmt {
+                .Function(_, _, _, _) -> emit_top_level(ctx, env, next)
+                .Module(_, body) -> {
+                    let r = emit_top_level(tl_ctx, env, body)
+                    if r.had_error { return r }
+                    emit_top_level(ctx, r.env, next)
+                }
+                .Let(name, _, init) -> {
+                    let result = emit_top_level_init(tl_ctx, env, name, init)
+                    if result.had_error {
+                        return err_stmt(result.error_message)
+                    }
+                    emit_top_level(result.ctx, result.env, next)
+                }
+                .Mut(name, _, init) -> {
+                    let result = emit_top_level_init(tl_ctx, env, name, init)
+                    if result.had_error {
+                        return err_stmt(result.error_message)
+                    }
+                    emit_top_level(result.ctx, result.env, next)
+                }
+                _ -> {
+                    let result = emit_stmt(tl_ctx, env, stmt)
+                    if result.had_error {
+                        return result
+                    }
+                    emit_top_level(ctx, result.env, next)
+                }
+            }
+        }
+    }
+}
+
+
+fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLevelResult {
+    let g = toplevel_lookup(ctx.top_level_vars, name)
+    if !g.found {
+        return TopLevelResult { ctx, env, had_error: true, error_message: "codegen error: global `" + name + "` not declared" }
+    }
+    let r = emit_expr(ctx, env, init)
+    if r.had_error {
+        return TopLevelResult { ctx, env, had_error: true, error_message: r.error_message }
+    }
+    forge_llvm_build_store(ctx.builder, r.value, g.llvm_global)
+    let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
+    let updated_cg = ctx_with_top_level(ctx, updated_top)
+    TopLevelResult { ctx: updated_cg, env, had_error: false, error_message: "" }
+}
+
+

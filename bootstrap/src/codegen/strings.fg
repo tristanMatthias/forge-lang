@@ -2,7 +2,8 @@
 
 use core.ast.{Expr, ExprList, VarEnv}
 use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_str, err_emit, to_ptr, to_i64, get_fn, call_1, call_2, call_3}
-use codegen.{emit_expr, strip_quotes}
+use codegen.{emit_expr}
+use codegen.helpers.{strip_quotes}
 
 export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     let lhs_ptr = to_ptr(ctx, lhs_i64, "concat_l")
