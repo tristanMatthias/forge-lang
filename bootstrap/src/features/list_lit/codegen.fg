@@ -1,10 +1,11 @@
 // WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
 // Lists are backed by the C-runtime forge_array_* functions.
 
-use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList}
-use core.cg.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, get_fn, call_0, call_2, call_3}
+use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList, vtype_list_elem, vtype_fn_ret, vtype_is_fn}
+use core.cg.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, get_fn, call_0, call_1, call_2, call_3, const_i64}
+use codegen.{emit_single_arg}
 use codegen.{emit_expr}
-use features.closures.codegen.{emit_lambda_typed}
+use features.closures.codegen.{emit_lambda_typed, emit_typed_lambda_arg}
 
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
     let arr_fn = get_fn(ctx, "forge_array_new")
@@ -55,5 +56,73 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
             }
         }
         _ -> err_emit("reduce expects 2 arguments: initial value and function")
+    }
+}
+
+export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: ValueType, method: string, args: ExprList) -> EmitResult {
+    if method == "length" || method == "len" {
+        return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), list_val, "list_len"))
+    }
+    if method == "push" {
+        let arg_r = emit_single_arg(ctx, env, args)?
+        call_2(ctx, get_fn(ctx, "forge_array_push"), list_val, arg_r.value, "")
+        return ok_emit(list_val)
+    }
+    if method == "pop" {
+        return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_pop"), list_val, "list_pop"))
+    }
+    if method == "get" {
+        let arg_r = emit_single_arg(ctx, env, args)?
+        let elem_ty = vtype_list_elem(list_ty)
+        return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_array_get"), list_val, arg_r.value, "list_get"), elem_ty)
+    }
+    if method == "set" {
+        return emit_list_set(ctx, env, list_val, args)
+    }
+    if method == "map" {
+        let elem_ty = vtype_list_elem(list_ty)
+        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
+        if arg_r.had_error { return arg_r }
+        let result = call_2(ctx, get_fn(ctx, "forge_array_map"), list_val, arg_r.value, "map")
+        let ret_ty = vtype_fn_ret(arg_r.ty)
+        return EmitResult { value: result, ty: ValueType.List(ret_ty), had_error: false, error_message: "" }
+    }
+    if method == "filter" {
+        let elem_ty = vtype_list_elem(list_ty)
+        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
+        if arg_r.had_error { return arg_r }
+        let result = call_2(ctx, get_fn(ctx, "forge_array_filter"), list_val, arg_r.value, "filter")
+        return EmitResult { value: result, ty: ValueType.List(elem_ty), had_error: false, error_message: "" }
+    }
+    if method == "foreach" {
+        let elem_ty = vtype_list_elem(list_ty)
+        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
+        if arg_r.had_error { return arg_r }
+        call_2(ctx, get_fn(ctx, "forge_array_foreach"), list_val, arg_r.value, "")
+        return ok_emit(const_i64(ctx, 0))
+    }
+    if method == "reduce" {
+        let elem_ty = vtype_list_elem(list_ty)
+        return emit_list_reduce_typed(ctx, env, list_val, args, elem_ty)
+    }
+    err_emit("list method `" + method + "` not implemented")
+}
+
+fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> EmitResult {
+    match args {
+        .Node(se_idx, rest) -> {
+            match rest {
+                .Node(se_val, _) -> {
+                    let idx_r = emit_expr(ctx, env, se_idx.node)
+                    if idx_r.had_error { return idx_r }
+                    let val_r = emit_expr(ctx, env, se_val.node)
+                    if val_r.had_error { return val_r }
+                    call_3(ctx, get_fn(ctx, "forge_array_set"), list, idx_r.value, val_r.value, "")
+                    ok_emit(list)
+                }
+                _ -> err_emit("list.set expects 2 arguments: index and value")
+            }
+        }
+        _ -> err_emit("list.set expects 2 arguments: index and value")
     }
 }

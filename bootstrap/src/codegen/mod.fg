@@ -12,7 +12,8 @@ use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit
 use features.defer_stmt.codegen.{emit_defers}
 use features.fn_decl.codegen.{emit_function_bodies}
 use features.let_stmt.codegen.{emit_var_decl}
-use features.list_lit.codegen.{emit_list_reduce_typed}
+use features.list_lit.codegen.{emit_list_reduce_typed, emit_list_method_call}
+use features.map_lit.codegen.{emit_map_method_call}
 use features.match_expr.codegen.{emit_match_expr}
 
 // ── Direct C extern declarations ──
@@ -1433,81 +1434,14 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
         }
         return err_emit("string method `" + method + "` not implemented")
     }
-    // List methods backed by C runtime
+    // List methods — dispatched to features/list_lit/codegen.fg
     if vtype_is_list(r.ty) {
-        if method == "length" || method == "len" {
-            return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), r.value, "list_len"))
-        }
-        if method == "push" {
-            let arg_r = emit_single_arg(ctx, env, args)?
-            call_2(ctx, get_fn(ctx, "forge_array_push"), r.value, arg_r.value, "")
-            return ok_emit(r.value)
-        }
-        if method == "pop" {
-            return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_pop"), r.value, "list_pop"))
-        }
-        if method == "get" {
-            let arg_r = emit_single_arg(ctx, env, args)?
-            let elem_ty = vtype_list_elem(r.ty)
-            return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_array_get"), r.value, arg_r.value, "list_get"), elem_ty)
-        }
-        if method == "set" {
-            // list.set(index, value) → forge_array_set(list, index, value)
-            return emit_list_set(ctx, env, r.value, args)
-        }
-        if method == "map" {
-            let elem_ty = vtype_list_elem(r.ty)
-            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
-            if arg_r.had_error { return arg_r }
-            let result = call_2(ctx, get_fn(ctx, "forge_array_map"), r.value, arg_r.value, "map")
-            // Map's return type is the lambda's return type, not the input element type
-            let ret_ty = vtype_fn_ret(arg_r.ty)
-            return EmitResult { value: result, ty: ValueType.List(ret_ty), had_error: false, error_message: "" }
-        }
-        if method == "filter" {
-            let elem_ty = vtype_list_elem(r.ty)
-            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
-            if arg_r.had_error { return arg_r }
-            let result = call_2(ctx, get_fn(ctx, "forge_array_filter"), r.value, arg_r.value, "filter")
-            return EmitResult { value: result, ty: ValueType.List(elem_ty), had_error: false, error_message: "" }
-        }
-        if method == "foreach" {
-            let elem_ty = vtype_list_elem(r.ty)
-            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
-            if arg_r.had_error { return arg_r }
-            call_2(ctx, get_fn(ctx, "forge_array_foreach"), r.value, arg_r.value, "")
-            return ok_emit(const_i64(ctx, 0))
-        }
-        if method == "reduce" {
-            let elem_ty = vtype_list_elem(r.ty)
-            return emit_list_reduce_typed(ctx, env, r.value, args, elem_ty)
-        }
-        return err_emit("list method `" + method + "` not implemented")
+        return emit_list_method_call(ctx, env, r.value, r.ty, method, args)
     }
-    // Map methods backed by C runtime
+    // Map methods — dispatched to features/map_lit/codegen.fg
     if vtype_is_map(r.ty) {
         let map_ptr = to_ptr(ctx, r.value, "map_ptr")
-        if method == "get" {
-            let arg_r = emit_single_arg(ctx, env, args)?
-            let key_ptr = to_ptr(ctx, arg_r.value, "map_key")
-            return ok_emit(call_2(ctx, get_fn(ctx, "forge_map_get_cstr"), map_ptr, key_ptr, "map_get"))
-        }
-        if method == "has" {
-            let arg_r = emit_single_arg(ctx, env, args)?
-            let key_ptr = to_ptr(ctx, arg_r.value, "map_key")
-            return ok_emit(call_2(ctx, get_fn(ctx, "forge_map_has_cstr"), map_ptr, key_ptr, "map_has"))
-        }
-        if method == "set" {
-            return emit_map_set(ctx, env, map_ptr, args)
-        }
-        if method == "len" || method == "length" {
-            return ok_emit(call_1(ctx, get_fn(ctx, "forge_map_len_cstr"), map_ptr, "map_len"))
-        }
-        if method == "keys" {
-            let keys = call_1(ctx, get_fn(ctx, "forge_map_keys_cstr"), map_ptr, "map_keys")
-            return ok_emit_typed(keys, ValueType.List(ValueType.Str))
-        }
-        return err_emit("map method `" + method + "` not implemented")
+        return emit_map_method_call(ctx, env, map_ptr, method, args)
     }
     // Trait dispatch
     let tn = vtype_trait_name(r.ty)
@@ -1890,25 +1824,6 @@ fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     ok_emit_str(to_i64(ctx, buf, "concat_i64"))
 }
 
-fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> EmitResult {
-    match args {
-        .Node(se_idx, rest) -> {
-            match rest {
-                .Node(se_val, _) -> {
-                    let idx_r = emit_expr(ctx, env, se_idx.node)
-                    if idx_r.had_error { return idx_r }
-                    let val_r = emit_expr(ctx, env, se_val.node)
-                    if val_r.had_error { return val_r }
-                    call_3(ctx, get_fn(ctx, "forge_array_set"), list, idx_r.value, val_r.value, "")
-                    ok_emit(list)
-                }
-                _ -> err_emit("list.set expects 2 arguments: index and value")
-            }
-        }
-        _ -> err_emit("list.set expects 2 arguments: index and value")
-    }
-}
-
 fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitResult {
     let obj_r = emit_expr(ctx, env, obj)
     if obj_r.had_error { return obj_r }
@@ -1920,30 +1835,8 @@ fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitR
     ok_emit_typed(result, obj_r.ty)
 }
 
-fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
-    match args {
-        .Node(se_key, rest) -> {
-            match rest {
-                .Node(se_val, _) -> {
-                    let key_r = emit_expr(ctx, env, se_key.node)
-                    if key_r.had_error { return key_r }
-                    let val_r = emit_expr(ctx, env, se_val.node)
-                    if val_r.had_error { return val_r }
-                    let key_ptr = to_ptr(ctx, key_r.value, "set_key")
-                    call_3(ctx, get_fn(ctx, "forge_map_set_cstr"), map, key_ptr, val_r.value, "")
-                    ok_emit(map)
-                }
-                _ -> err_emit("map.set expects 2 arguments: key and value")
-            }
-        }
-        _ -> err_emit("map.set expects 2 arguments: key and value")
-    }
-}
-
-
-
 // Evaluate a single-argument method call. Returns the EmitResult for that arg.
-fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("expected 1 argument, got 0")
         .Node(se, _) -> emit_expr(ctx, env, se.node)
