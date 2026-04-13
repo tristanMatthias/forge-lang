@@ -8,14 +8,14 @@ use codegen.{emit_expr}
 
 // Global defer stack — reset at function entry, pushed by defer,
 // emitted before return.
-export mut DEFER_STACK: DeferStack = DeferStack.End
+export mut DEFER_STACK: DeferStack = .End
 
 export fn defer_push(body: SExpr) {
-    DEFER_STACK = DeferStack.Frame(body, DEFER_STACK)
+    DEFER_STACK = .Frame(body, DEFER_STACK)
 }
 
 export fn defer_reset() {
-    DEFER_STACK = DeferStack.End
+    DEFER_STACK = .End
 }
 
 // Emit all deferred expressions in LIFO order before a return.
