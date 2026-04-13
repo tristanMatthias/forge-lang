@@ -76,7 +76,7 @@ export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNa
             let closure = call_0(ctx, get_fn(ctx, "forge_array_new"), "vclosure")
             let tag = const_i64(ctx, closure_marker())
             call_2(ctx, push_fn, closure, tag, "")
-            let fn_i64 = ctx.ptr_to_int(fn_val, ctx.i64_type, "vfn_ptr")
+            let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "vfn_ptr")
             call_2(ctx, push_fn, closure, fn_i64, "")
             let closure_i64 = to_i64(ctx, closure, "vcl_i64")
             call_2(ctx, push_fn, vtable, closure_i64, "")

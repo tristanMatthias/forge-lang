@@ -19,7 +19,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
                 }
                 _ -> {
                     let buf = cg_malloc(ctx, const_i64(ctx, 32))
-                    let fmt = ctx.global_str("%lld", ".eprint_fmt")
+                    let fmt = forge_llvm_build_global_string_ptr(ctx.builder, "%lld", ".eprint_fmt")
                     call_4(ctx, get_fn(ctx, "snprintf"), buf, const_i64(ctx, 32), fmt, r.value, "")
                     to_i64(ctx, buf, "eprint_str")
                 }
@@ -50,7 +50,7 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             match se.node {
                 .String(text) -> {
                     let inner = strip_quotes(text)
-                    let str_ptr = ctx.global_str(inner, ".str")
+                    let str_ptr = forge_llvm_build_global_string_ptr(ctx.builder, inner, ".str")
                     to_i64(ctx, str_ptr, "str_i64")
                 }
                 _ -> {

@@ -18,22 +18,22 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     if l.had_error { return l }
 
     // Short-circuit: if left != 0 (non-null), skip right.
-    let is_null = ctx.icmp(32, l.value, const_i64(ctx, 0), "nc_null")
+    let is_null = forge_llvm_build_icmp(ctx.builder, 32, l.value, const_i64(ctx, 0), "nc_null")
     let then_bb = new_bb(ctx, "nc_rhs")
     let merge_bb = new_bb(ctx, "nc_end")
-    let result_slot = ctx.alloca_i64("nc_result")
-    ctx.store(l.value, result_slot)
-    ctx.cond_br(is_null, then_bb, merge_bb)
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "nc_result")
+    forge_llvm_build_store(ctx.builder, l.value, result_slot)
+    forge_llvm_build_cond_br(ctx.builder, is_null, then_bb, merge_bb)
 
     // Right-hand side: only evaluated when left is null.
-    ctx.position(then_bb)
+    forge_llvm_position_at_end(ctx.builder, then_bb)
     let r = emit_expr(ctx, env, right)
     if r.had_error { return r }
-    ctx.store(r.value, result_slot)
-    ctx.br(merge_bb)
+    forge_llvm_build_store(ctx.builder, r.value, result_slot)
+    forge_llvm_build_br(ctx.builder, merge_bb)
 
-    ctx.position(merge_bb)
-    let loaded = ctx.load_i64(result_slot, "nc_val")
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "nc_val")
     // Merge type: prefer the more specific type. If left is a bare
     // null (type Int), use the right side's type. Otherwise use
     // the left's type (the non-null value determines the type).
@@ -46,24 +46,24 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     if r.had_error { return r }
 
     // If the object is null (i64 0), produce null without accessing.
-    let is_null = ctx.icmp(32, r.value, const_i64(ctx, 0), "oc_null")
+    let is_null = forge_llvm_build_icmp(ctx.builder, 32, r.value, const_i64(ctx, 0), "oc_null")
     let access_bb = new_bb(ctx, "oc_access")
     let merge_bb = new_bb(ctx, "oc_end")
-    let result_slot = ctx.alloca_i64("oc_result")
-    ctx.store(const_i64(ctx, 0), result_slot)
-    ctx.cond_br(is_null, merge_bb, access_bb)
+    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "oc_result")
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
+    forge_llvm_build_cond_br(ctx.builder, is_null, merge_bb, access_bb)
 
     // Access the field (only reached when obj is non-null).
-    ctx.position(access_bb)
+    forge_llvm_position_at_end(ctx.builder, access_bb)
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
         // For non-struct types (e.g. strings), fall back to
         // returning the value itself. ?. on a non-struct is
         // effectively a null-check passthrough.
-        ctx.store(r.value, result_slot)
-        ctx.br(merge_bb)
-        ctx.position(merge_bb)
-        let loaded = ctx.load_i64(result_slot, "oc_val")
+        forge_llvm_build_store(ctx.builder, r.value, result_slot)
+        forge_llvm_build_br(ctx.builder, merge_bb)
+        forge_llvm_position_at_end(ctx.builder, merge_bb)
+        let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "oc_val")
         return ok_emit_typed(loaded, r.ty)
     }
     let lookup = struct_reg_lookup(ctx.structs, struct_name)
@@ -74,15 +74,15 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     if idx < 0 {
         return err_emit("unknown field `${field}` on struct `${struct_name}` in optional chain")
     }
-    let st_ty = ctx.get_type(struct_name)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
     let obj_ptr = to_ptr(ctx, r.value, "oc_ptr")
-    let gep = ctx.gep(st_ty, obj_ptr, idx, "oc_fld")
-    let loaded_field = ctx.load_i64(gep, field)
-    ctx.store(loaded_field, result_slot)
-    ctx.br(merge_bb)
+    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "oc_fld")
+    let loaded_field = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, field)
+    forge_llvm_build_store(ctx.builder, loaded_field, result_slot)
+    forge_llvm_build_br(ctx.builder, merge_bb)
 
-    ctx.position(merge_bb)
-    let final_val = ctx.load_i64(result_slot, "oc_val")
+    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    let final_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "oc_val")
     let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
     ok_emit_typed(final_val, field_ty)
 }
@@ -95,23 +95,23 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     // Check tag: Ok → extract payload value, Err → return Result.
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "Result" {
-        let enum_ty = ctx.get_type("Result")
+        let enum_ty = forge_llvm_get_type_by_name(ctx.lc, "Result")
         let enum_ptr = to_ptr(ctx, r.value, "try_res_ptr")
-        let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "try_tag_ptr")
-        let tag = ctx.load_i64(tag_gep, "try_tag")
+        let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, enum_ty, enum_ptr, 0, "try_tag_ptr")
+        let tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, tag_gep, "try_tag")
         let ok_tag = const_i64(ctx, forge_variant_hash("Ok"))
-        let is_ok = ctx.icmp(32, tag, ok_tag, "try_is_ok")
+        let is_ok = forge_llvm_build_icmp(ctx.builder, 32, tag, ok_tag, "try_is_ok")
         let ok_bb = new_bb(ctx, "try_ok")
         let err_bb = new_bb(ctx, "try_err")
-        ctx.cond_br(is_ok, ok_bb, err_bb)
+        forge_llvm_build_cond_br(ctx.builder, is_ok, ok_bb, err_bb)
 
-        ctx.position(err_bb)
-        ctx.build_ret(r.value)
+        forge_llvm_position_at_end(ctx.builder, err_bb)
+        forge_llvm_build_ret(ctx.builder, r.value)
 
-        ctx.position(ok_bb)
-        let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_pay_slot")
-        let pay_ptr = ctx.load(forge_llvm_pointer_type(ctx.lc), pay_gep, "try_payload")
-        let ok_val = ctx.load_i64(pay_ptr, "try_ok_val")
+        forge_llvm_position_at_end(ctx.builder, ok_bb)
+        let pay_gep = forge_llvm_build_struct_gep2(ctx.builder, enum_ty, enum_ptr, 1, "try_pay_slot")
+        let pay_ptr = forge_llvm_build_load(ctx.builder, forge_llvm_pointer_type(ctx.lc), pay_gep, "try_payload")
+        let ok_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, pay_ptr, "try_ok_val")
         return ok_emit_typed(ok_val, .Int)
     }
 
@@ -124,20 +124,20 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
         if lookup.found {
             let err_idx = field_index_of(lookup.fields, "had_error")
             if err_idx >= 0 {
-                let st_ty = ctx.get_type(struct_name)
+                let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
                 let obj_ptr = to_ptr(ctx, r.value, "try_ptr")
-                let gep = ctx.gep(st_ty, obj_ptr, err_idx, "try_err_ptr")
-                let err_val = ctx.load_i64(gep, "try_had_error")
+                let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, err_idx, "try_err_ptr")
+                let err_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "try_had_error")
                 // icmp ne (not-equal to 0) = truthy = had error
-                let is_err = ctx.icmp(33, err_val, const_i64(ctx, 0), "try_is_err")
+                let is_err = forge_llvm_build_icmp(ctx.builder, 33, err_val, const_i64(ctx, 0), "try_is_err")
                 let cont_bb = new_bb(ctx, "try_ok")
                 let ret_bb = new_bb(ctx, "try_err")
-                ctx.cond_br(is_err, ret_bb, cont_bb)
+                forge_llvm_build_cond_br(ctx.builder, is_err, ret_bb, cont_bb)
 
-                ctx.position(ret_bb)
-                ctx.build_ret(r.value)
+                forge_llvm_position_at_end(ctx.builder, ret_bb)
+                forge_llvm_build_ret(ctx.builder, r.value)
 
-                ctx.position(cont_bb)
+                forge_llvm_position_at_end(ctx.builder, cont_bb)
                 return EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
             }
         }
@@ -145,14 +145,14 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
 
     // ── Mode 3: Nullable ──
     // If value is null (0), return null from enclosing fn.
-    let is_null = ctx.icmp(32, r.value, const_i64(ctx, 0), "try_null")
+    let is_null = forge_llvm_build_icmp(ctx.builder, 32, r.value, const_i64(ctx, 0), "try_null")
     let cont_bb = new_bb(ctx, "try_ok")
     let ret_bb = new_bb(ctx, "try_ret")
-    ctx.cond_br(is_null, ret_bb, cont_bb)
+    forge_llvm_build_cond_br(ctx.builder, is_null, ret_bb, cont_bb)
 
-    ctx.position(ret_bb)
-    ctx.build_ret(const_i64(ctx, 0))
+    forge_llvm_position_at_end(ctx.builder, ret_bb)
+    forge_llvm_build_ret(ctx.builder, const_i64(ctx, 0))
 
-    ctx.position(cont_bb)
+    forge_llvm_position_at_end(ctx.builder, cont_bb)
     EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
 }

@@ -18,10 +18,10 @@ export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> 
         return err_emit("unknown variant `${vname}` in enum `${enum_name}`")
     }
     let subj_ptr = to_ptr(ctx, r.value, "is_subj")
-    let st_ty = ctx.get_type(enum_name)
-    let tag_gep = ctx.gep(st_ty, subj_ptr, 0, "is_tag_ptr")
-    let tag_val = ctx.load(forge_llvm_int8_type(ctx.lc), tag_gep, "is_tag")
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
+    let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, 0, "is_tag_ptr")
+    let tag_val = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), tag_gep, "is_tag")
     let want = const_i8(ctx, v.tag)
-    let cmp = ctx.icmp(32, tag_val, want, "is_eq")
-    ok_emit(ctx.zext(cmp, ctx.i64_type, "is_result"))
+    let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, want, "is_eq")
+    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "is_result"))
 }

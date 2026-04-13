@@ -565,7 +565,7 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLe
     if r.had_error {
         return TopLevelResult { ctx, env, had_error: true, error_message: r.error_message }
     }
-    ctx.store(r.value, g.llvm_global)
+    forge_llvm_build_store(ctx.builder, r.value, g.llvm_global)
     let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
     let updated_cg = ctx_with_top_level(ctx, updated_top)
     TopLevelResult { ctx: updated_cg, env, had_error: false, error_message: "" }

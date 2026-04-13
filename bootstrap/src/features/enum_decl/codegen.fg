@@ -26,27 +26,27 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     if !v.found {
         return err_emit("enum `${resolved_name}` has no variant `${variant}`")
     }
-    let st_ty = ctx.get_type(resolved_name)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, resolved_name)
     if st_ty == null {
         return err_emit("LLVM enum type `${resolved_name}` not declared")
     }
     // Enum layout: {i8 tag, ptr payload}
     // Allocate outer struct (always 16 bytes)
     let buf = cg_malloc(ctx, const_i64(ctx, 16))
-    let tag_gep = ctx.gep(st_ty, buf, 0, "tag_ptr")
-    ctx.store(const_i64(ctx, v.tag), tag_gep)
+    let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, buf, 0, "tag_ptr")
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, v.tag), tag_gep)
 
     // Allocate payload if variant has fields
     let num_fields = field_list_length(v.fields)
-    let payload_gep = ctx.gep(st_ty, buf, 1, "pay_ptr")
+    let payload_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, buf, 1, "pay_ptr")
     if num_fields == 0 {
         // Nullary variant — null payload
         let null_val = forge_llvm_const_null(forge_llvm_pointer_type(ctx.lc))
-        ctx.store(null_val, payload_gep)
+        forge_llvm_build_store(ctx.builder, null_val, payload_gep)
     } else {
         // Allocate payload: num_fields * 8 bytes
         let pay_buf = cg_malloc(ctx, const_i64(ctx, num_fields * 8))
-        ctx.store(pay_buf, payload_gep)
+        forge_llvm_build_store(ctx.builder, pay_buf, payload_gep)
         let fill = fill_enum_payload(ctx, env, pay_buf, args, 0)?
     }
     let as_i64 = to_i64(ctx, buf, "enum_i64")
@@ -64,11 +64,11 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, args: ExprList, id
         .Node(se, next) -> {
             let r = emit_expr(ctx, env, se.node)?
             // Write field at offset idx * 8 in the payload buffer
-            let base_i64 = ctx.ptr_to_int(payload_ptr, ctx.i64_type, "pay_base")
+            let base_i64 = forge_llvm_build_ptr_to_int(ctx.builder, payload_ptr, ctx.i64_type, "pay_base")
             let offset_val = const_i64(ctx, idx * 8)
-            let addr = ctx.build_add(base_i64, offset_val, "pay_addr")
-            let field_ptr = ctx.int_to_ptr(addr, forge_llvm_pointer_type(ctx.lc), "fld_ptr")
-            ctx.store(r.value, field_ptr)
+            let addr = forge_llvm_build_add(ctx.builder, base_i64, offset_val, "pay_addr")
+            let field_ptr = forge_llvm_build_int_to_ptr(ctx.builder, addr, forge_llvm_pointer_type(ctx.lc), "fld_ptr")
+            forge_llvm_build_store(ctx.builder, r.value, field_ptr)
             fill_enum_payload(ctx, env, payload_ptr, next, idx + 1)
         }
     }
@@ -78,13 +78,13 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, args: ExprList, id
 // Used by emit_binary for Eq/Ne on enum types.
 export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> EmitResult {
     let enum_name = vtype_enum_name(ty)
-    let st_ty = ctx.get_type(enum_name)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
     let lhs_ptr = to_ptr(ctx, lhs, "enum_l")
     let rhs_ptr = to_ptr(ctx, rhs, "enum_r")
-    let l_gep = ctx.gep(st_ty, lhs_ptr, 0, "ltag_ptr")
-    let r_gep = ctx.gep(st_ty, rhs_ptr, 0, "rtag_ptr")
-    let l_tag = ctx.load_i64(l_gep, "ltag")
-    let r_tag = ctx.load_i64(r_gep, "rtag")
-    let cmp = ctx.icmp(pred, l_tag, r_tag, "tag_cmp")
-    ok_emit(ctx.zext(cmp, ctx.i64_type, "tag_cmp_ext"))
+    let l_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, lhs_ptr, 0, "ltag_ptr")
+    let r_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, rhs_ptr, 0, "rtag_ptr")
+    let l_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, l_gep, "ltag")
+    let r_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, r_gep, "rtag")
+    let cmp = forge_llvm_build_icmp(ctx.builder, pred, l_tag, r_tag, "tag_cmp")
+    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "tag_cmp_ext"))
 }

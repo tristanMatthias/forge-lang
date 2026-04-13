@@ -277,7 +277,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     let saved_bb = forge_llvm_get_insert_block(ctx.builder)
 
     let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
-    ctx.position(entry)
+    forge_llvm_position_at_end(ctx.builder, entry)
 
     // Bind declared params first, then captured vars as extra params.
     // If no explicit types were provided, infer from body usage
@@ -298,15 +298,15 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     let result = emit_expr(body_ctx, body_env, body)
     DEFER_STACK = saved_defers  // restore outer function's defers
     if result.had_error {
-        ctx.position(saved_bb)
+        forge_llvm_position_at_end(ctx.builder, saved_bb)
         return result
     }
 
-    if !ctx.has_terminator() {
-        ctx.build_ret(result.value)
+    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
+        forge_llvm_build_ret(ctx.builder, result.value)
     }
 
-    ctx.position(saved_bb)
+    forge_llvm_position_at_end(ctx.builder, saved_bb)
 
     // If there are captures, we need to pass the captured values at call time.
     // Pack: [fn_ptr, cap1, cap2, ...] into an array. The C runtime's
@@ -319,7 +319,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     let closure_arr = call_0(ctx, arr_fn, "closure")
     let tag = const_i64(ctx, closure_marker())
     call_2(ctx, push_fn, closure_arr, tag, "")
-    let fn_ptr_i64 = ctx.ptr_to_int(fn_val, ctx.i64_type, "lambda_ptr")
+    let fn_ptr_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
     call_2(ctx, push_fn, closure_arr, fn_ptr_i64, "")
     if num_captures > 0 {
         push_captured_values(ctx, captures, closure_arr, push_fn)
@@ -333,8 +333,8 @@ fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val:
         .End -> env
         .Node(name, _, ty, next) -> {
             let param_val = forge_llvm_get_param(fn_val, idx)
-            let alloca = ctx.alloca_i64(name)
-            ctx.store(param_val, alloca)
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
+            forge_llvm_build_store(ctx.builder, param_val, alloca)
             let new_env = env_extend(env, name, alloca, ty)
             bind_captures_as_params(ctx, new_env, next, fn_val, idx + 1)
         }
@@ -345,7 +345,7 @@ fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr, push_fn: ptr)
     match captures {
         .End -> {}
         .Node(_, alloca, _, next) -> {
-            let val = ctx.load_i64(alloca, "cap_val")
+            let val = forge_llvm_build_load(ctx.builder, ctx.i64_type, alloca, "cap_val")
             call_2(ctx, push_fn, arr, val, "")
             push_captured_values(ctx, next, arr, push_fn)
         }
@@ -371,7 +371,7 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_typ
 // Call a function pointer stored in a local variable.
 // Load the pointer, cast to fn ptr, build indirect call.
 export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, args: ExprList) -> EmitResult {
-    let fn_i64 = ctx.load_i64(alloca, name)
+    let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, alloca, name)
     let local = env_lookup(env, name)
     let ret_ty = vtype_fn_ret(local.ty)
     // Closure values (lambda expressions) are arrays that need unpacking.
@@ -388,7 +388,7 @@ export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, a
 }
 
 export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, name: string, args: ExprList, ty: ValueType) -> EmitResult {
-    let fn_i64 = ctx.load_i64(global, name)
+    let fn_i64 = forge_llvm_build_load(ctx.builder, ctx.i64_type, global, name)
     let ret_ty = vtype_fn_ret(ty)
     if vtype_is_closure(ty) {
         let num_caps = vtype_closure_captures(ty)
@@ -408,7 +408,7 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
     let closure_ptr = to_ptr(ctx, closure_val, "closure_ptr")
     // Load fn_ptr from closure array[1] (index 0 is the TAG)
     let get_fn_call = call_2(ctx, get_fn(ctx, "forge_array_get"), closure_ptr, const_i64(ctx, 1), "closure_fn")
-    let fn_ptr = ctx.int_to_ptr(get_fn_call, ctx.ptr_type, "fn_ptr")
+    let fn_ptr = forge_llvm_build_int_to_ptr(ctx.builder, get_fn_call, ctx.ptr_type, "fn_ptr")
 
     let user_arg_count = expr_list_length(args)
     let total_args = user_arg_count + num_captures
@@ -534,8 +534,8 @@ fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: pt
         .End -> env
         .Node(name, type_ann, next) -> {
             let param_val = forge_llvm_get_param(fn_val, idx)
-            let alloca = ctx.alloca_i64(name)
-            ctx.store(param_val, alloca)
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
+            forge_llvm_build_store(ctx.builder, param_val, alloca)
             // Priority: external TypeList > param annotation > default Int
             let ty = match types {
                 .Node(t, _) -> t

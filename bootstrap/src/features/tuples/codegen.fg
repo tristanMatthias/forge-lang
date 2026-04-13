@@ -15,19 +15,19 @@ use codegen.{emit_expr}
 // ── Pointer arithmetic helpers ──
 
 fn tuple_load(ctx: Ctx, base: ptr, idx: int, name: string) -> ptr {
-    let base_int = ctx.ptr_to_int(base, ctx.i64_type, "tup_base")
+    let base_int = forge_llvm_build_ptr_to_int(ctx.builder, base, ctx.i64_type, "tup_base")
     let offset = const_i64(ctx, idx * 8)
-    let addr = ctx.build_add(base_int, offset, "tup_addr")
-    let slot_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "tup_slot")
-    ctx.load_i64(slot_ptr, name)
+    let addr = forge_llvm_build_add(ctx.builder, base_int, offset, "tup_addr")
+    let slot_ptr = forge_llvm_build_int_to_ptr(ctx.builder, addr, ctx.ptr_type, "tup_slot")
+    forge_llvm_build_load(ctx.builder, ctx.i64_type, slot_ptr, name)
 }
 
 fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) {
-    let base_int = ctx.ptr_to_int(base, ctx.i64_type, "ts_base")
+    let base_int = forge_llvm_build_ptr_to_int(ctx.builder, base, ctx.i64_type, "ts_base")
     let offset = const_i64(ctx, idx * 8)
-    let addr = ctx.build_add(base_int, offset, "ts_addr")
-    let slot_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "ts_slot")
-    ctx.store(value, slot_ptr)
+    let addr = forge_llvm_build_add(ctx.builder, base_int, offset, "ts_addr")
+    let slot_ptr = forge_llvm_build_int_to_ptr(ctx.builder, addr, ctx.ptr_type, "ts_slot")
+    forge_llvm_build_store(ctx.builder, value, slot_ptr)
 }
 
 // ── Emit functions ──
@@ -80,8 +80,8 @@ fn destructure_names(ctx: Ctx, env: VarEnv, names: ParamList, base: ptr, tuple_t
         .End -> ok_stmt(env)
         .Node(name, _, next) -> {
             let loaded = tuple_load(ctx, base, idx, name)
-            let alloca = ctx.alloca_i64(name)
-            ctx.store(loaded, alloca)
+            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
+            forge_llvm_build_store(ctx.builder, loaded, alloca)
             let elem_ty = vtype_tuple_at(tuple_ty, idx)
             let new_env = env_extend(env, name, alloca, elem_ty)
             destructure_names(ctx, new_env, next, base, tuple_ty, idx + 1)
