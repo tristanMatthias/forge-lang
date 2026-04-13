@@ -566,7 +566,7 @@ fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .TraitDecl(name, methods) -> TraitDeclReg.Node(name, collect_trait_fn_names(methods), reg)
+                .TraitDecl(name, methods) -> .Node(name, collect_trait_fn_names(methods), reg)
                 .Module(_, body) -> collect_trait_decls(body, reg)
                 _ -> reg
             }
@@ -578,11 +578,11 @@ fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
 
 fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
     match stmts {
-        .End -> TraitMethodNames.End
+        .End -> .End
         .Node(ss, next) -> {
             match stmt_unwrap(ss.node) {
-                .ExternFn(name, _, ret_ty) -> TraitMethodNames.Node(name, ret_ty, collect_trait_fn_names(next))
-                .Function(name, _, ret_ty, _) -> TraitMethodNames.Node(name, ret_ty, collect_trait_fn_names(next))
+                .ExternFn(name, _, ret_ty) -> .Node(name, ret_ty, collect_trait_fn_names(next))
+                .Function(name, _, ret_ty, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
         }
@@ -615,17 +615,17 @@ fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
 
 fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
     match base {
-        .End -> FieldList.End
+        .End -> .End
         .Node(name, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
-        .Node(name, ty, next) -> FieldList.Node(name, ty, filter_fields_without(next, excluded))
+        .Node(name, ty, next) -> .Node(name, ty, filter_fields_without(next, excluded))
     }
 }
 
 
 fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
     match base {
-        .End -> FieldList.End
-        .Node(name, ty, next) if field_list_has(included, name) -> FieldList.Node(name, ty, filter_fields_only(next, included))
+        .End -> .End
+        .Node(name, ty, next) if field_list_has(included, name) -> .Node(name, ty, filter_fields_only(next, included))
         .Node(_, _, next) -> filter_fields_only(next, included)
     }
 }
@@ -704,8 +704,8 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
 
 fn params_to_type_list(params: ParamList) -> ParamTypeList {
     match params {
-        .End -> ParamTypeList.End
-        .Node(_, ty, next) -> ParamTypeList.Node(ty, params_to_type_list(next))
+        .End -> .End
+        .Node(_, ty, next) -> .Node(ty, params_to_type_list(next))
     }
 }
 
@@ -717,7 +717,7 @@ fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .Function(name, params, _, _) -> {
-                    FnParamTypes.Node(name, params_to_type_list(params), reg)
+                    .Node(name, params_to_type_list(params), reg)
                 }
                 .Impl(_, methods) -> collect_fn_params(methods, reg)
                 .Module(_, body) -> collect_fn_params(body, reg)
