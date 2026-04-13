@@ -47,7 +47,7 @@ fn pattern_variant_names(pattern: Pattern) -> string {
         .Or(left, right) -> {
             let l = pattern_variant_names(left)
             let r = pattern_variant_names(right)
-            if l == "" { r } else if r == "" { l } else { "${l}|${r}" }
+            match { l == "" -> r, r == "" -> l, _ -> "${l}|${r}" }
         }
         _ -> ""
     }

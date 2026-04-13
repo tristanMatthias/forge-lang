@@ -26844,6 +26844,8 @@ sc_merge:                                         ; preds = %sc_rhs, %entry
 
 define i64 @Parser__advance_token(i64 %0) {
 entry:
+  %when_result490 = alloca i64, align 8
+  %when_result = alloca i64, align 8
   %ch = alloca i64, align 8
   %self = alloca i64, align 8
   store i64 %0, ptr %self, align 8
@@ -26935,11 +26937,11 @@ ifcont:                                           ; preds = %else
   %str_eq = icmp eq i64 %strcmp_sext, 0
   br i1 %str_eq, label %parm_body, label %parm_next
 
-pmatch_end:                                       ; preds = %parm_body600
-  %ch602 = load i64, ptr %ch, align 8
-  %calltmp = call i64 @"parse::lexer::p_is_digit"(i64 %ch602)
-  %if_cond603 = icmp ne i64 %calltmp, 0
-  br i1 %if_cond603, label %then604, label %else605
+pmatch_end:                                       ; preds = %parm_body596
+  %ch598 = load i64, ptr %ch, align 8
+  %calltmp = call i64 @"parse::lexer::p_is_digit"(i64 %ch598)
+  %if_cond599 = icmp ne i64 %calltmp, 0
+  br i1 %if_cond599, label %then600, label %else601
 
 parm_body:                                        ; preds = %ifcont
   %self42 = load i64, ptr %self, align 8
@@ -27351,546 +27353,550 @@ ifcont289:                                        ; preds = %else288, %then287
   ret i64 0
 
 parm_body306:                                     ; preds = %parm_next277
+  store i64 0, ptr %when_result, align 8
   %self312 = load i64, ptr %self, align 8
   %null_meth_chk313 = icmp eq i64 %self312, 0
   %null_meth_ext314 = zext i1 %null_meth_chk313 to i64
   call void @forge_null_deref_trap(ptr @meth_name.1027, i64 10, ptr @mowner_name.1028, i64 6, i64 %null_meth_ext314, ptr @msrc_file.1029, i64 11, i64 78)
   %methcall315 = call i64 @Parser__match_next(i64 %self312, i64 ptrtoint (ptr @.str.1030 to i64))
-  %if_cond316 = icmp ne i64 %methcall315, 0
-  br i1 %if_cond316, label %then317, label %else318
+  %when_cond = icmp ne i64 %methcall315, 0
+  br i1 %when_cond, label %when_arm, label %when_next
 
 parm_next307:                                     ; preds = %parm_next277
-  %lit_str_ptr354 = inttoptr i64 %ch41 to ptr
-  %strcmp_r355 = call i32 @strcmp(ptr %lit_str_ptr354, ptr @.lit_str.1047)
-  %strcmp_sext356 = sext i32 %strcmp_r355 to i64
-  %str_eq357 = icmp eq i64 %strcmp_sext356, 0
-  br i1 %str_eq357, label %parm_body352, label %parm_next353
+  %lit_str_ptr349 = inttoptr i64 %ch41 to ptr
+  %strcmp_r350 = call i32 @strcmp(ptr %lit_str_ptr349, ptr @.lit_str.1047)
+  %strcmp_sext351 = sext i32 %strcmp_r350 to i64
+  %str_eq352 = icmp eq i64 %strcmp_sext351, 0
+  br i1 %str_eq352, label %parm_body347, label %parm_next348
 
-then317:                                          ; preds = %parm_body306
-  %self320 = load i64, ptr %self, align 8
-  %null_meth_chk321 = icmp eq i64 %self320, 0
-  %null_meth_ext322 = zext i1 %null_meth_chk321 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1031, i64 11, ptr @mowner_name.1032, i64 6, i64 %null_meth_ext322, ptr @msrc_file.1033, i64 11, i64 78)
-  %buf323 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr324 = getelementptr inbounds nuw %Tk, ptr %buf323, i32 0, i32 0
-  store i64 8985887445905136501, ptr %tag_ptr324, align 8
-  %pay_ptr325 = getelementptr inbounds nuw %Tk, ptr %buf323, i32 0, i32 1
-  store ptr null, ptr %pay_ptr325, align 8
-  %enum_i64326 = ptrtoint ptr %buf323 to i64
-  %methcall327 = call i64 @Parser__set_current(i64 %self320, i64 %enum_i64326, i64 ptrtoint (ptr @.str.1034 to i64))
-  br label %ifcont319
-
-else318:                                          ; preds = %parm_body306
-  %self328 = load i64, ptr %self, align 8
-  %null_meth_chk329 = icmp eq i64 %self328, 0
-  %null_meth_ext330 = zext i1 %null_meth_chk329 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1035, i64 10, ptr @mowner_name.1036, i64 6, i64 %null_meth_ext330, ptr @msrc_file.1037, i64 11, i64 78)
-  %methcall331 = call i64 @Parser__match_next(i64 %self328, i64 ptrtoint (ptr @.str.1038 to i64))
-  %if_cond332 = icmp ne i64 %methcall331, 0
-  br i1 %if_cond332, label %then333, label %else334
-
-ifcont319:                                        ; preds = %ifcont335, %then317
+when_end:                                         ; preds = %when_next330, %when_arm329, %when_arm
+  %when_val = load i64, ptr %when_result, align 8
   ret i64 0
 
-then333:                                          ; preds = %else318
-  %self336 = load i64, ptr %self, align 8
-  %null_meth_chk337 = icmp eq i64 %self336, 0
-  %null_meth_ext338 = zext i1 %null_meth_chk337 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1039, i64 11, ptr @mowner_name.1040, i64 6, i64 %null_meth_ext338, ptr @msrc_file.1041, i64 11, i64 79)
-  %buf339 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr340 = getelementptr inbounds nuw %Tk, ptr %buf339, i32 0, i32 0
-  store i64 -4604450811351269596, ptr %tag_ptr340, align 8
-  %pay_ptr341 = getelementptr inbounds nuw %Tk, ptr %buf339, i32 0, i32 1
-  store ptr null, ptr %pay_ptr341, align 8
-  %enum_i64342 = ptrtoint ptr %buf339 to i64
-  %methcall343 = call i64 @Parser__set_current(i64 %self336, i64 %enum_i64342, i64 ptrtoint (ptr @.str.1042 to i64))
-  br label %ifcont335
+when_arm:                                         ; preds = %parm_body306
+  %self316 = load i64, ptr %self, align 8
+  %null_meth_chk317 = icmp eq i64 %self316, 0
+  %null_meth_ext318 = zext i1 %null_meth_chk317 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1031, i64 11, ptr @mowner_name.1032, i64 6, i64 %null_meth_ext318, ptr @msrc_file.1033, i64 11, i64 78)
+  %buf319 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr320 = getelementptr inbounds nuw %Tk, ptr %buf319, i32 0, i32 0
+  store i64 8985887445905136501, ptr %tag_ptr320, align 8
+  %pay_ptr321 = getelementptr inbounds nuw %Tk, ptr %buf319, i32 0, i32 1
+  store ptr null, ptr %pay_ptr321, align 8
+  %enum_i64322 = ptrtoint ptr %buf319 to i64
+  %methcall323 = call i64 @Parser__set_current(i64 %self316, i64 %enum_i64322, i64 ptrtoint (ptr @.str.1034 to i64))
+  store i64 %methcall323, ptr %when_result, align 8
+  br label %when_end
 
-else334:                                          ; preds = %else318
-  %self344 = load i64, ptr %self, align 8
-  %null_meth_chk345 = icmp eq i64 %self344, 0
-  %null_meth_ext346 = zext i1 %null_meth_chk345 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1043, i64 11, ptr @mowner_name.1044, i64 6, i64 %null_meth_ext346, ptr @msrc_file.1045, i64 11, i64 80)
-  %buf347 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr348 = getelementptr inbounds nuw %Tk, ptr %buf347, i32 0, i32 0
-  store i64 7571492063730749, ptr %tag_ptr348, align 8
-  %pay_ptr349 = getelementptr inbounds nuw %Tk, ptr %buf347, i32 0, i32 1
-  store ptr null, ptr %pay_ptr349, align 8
-  %enum_i64350 = ptrtoint ptr %buf347 to i64
-  %methcall351 = call i64 @Parser__set_current(i64 %self344, i64 %enum_i64350, i64 ptrtoint (ptr @.str.1046 to i64))
-  br label %ifcont335
+when_next:                                        ; preds = %parm_body306
+  %self324 = load i64, ptr %self, align 8
+  %null_meth_chk325 = icmp eq i64 %self324, 0
+  %null_meth_ext326 = zext i1 %null_meth_chk325 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1035, i64 10, ptr @mowner_name.1036, i64 6, i64 %null_meth_ext326, ptr @msrc_file.1037, i64 11, i64 78)
+  %methcall327 = call i64 @Parser__match_next(i64 %self324, i64 ptrtoint (ptr @.str.1038 to i64))
+  %when_cond328 = icmp ne i64 %methcall327, 0
+  br i1 %when_cond328, label %when_arm329, label %when_next330
 
-ifcont335:                                        ; preds = %else334, %then333
-  br label %ifcont319
+when_arm329:                                      ; preds = %when_next
+  %self331 = load i64, ptr %self, align 8
+  %null_meth_chk332 = icmp eq i64 %self331, 0
+  %null_meth_ext333 = zext i1 %null_meth_chk332 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1039, i64 11, ptr @mowner_name.1040, i64 6, i64 %null_meth_ext333, ptr @msrc_file.1041, i64 11, i64 78)
+  %buf334 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr335 = getelementptr inbounds nuw %Tk, ptr %buf334, i32 0, i32 0
+  store i64 -4604450811351269596, ptr %tag_ptr335, align 8
+  %pay_ptr336 = getelementptr inbounds nuw %Tk, ptr %buf334, i32 0, i32 1
+  store ptr null, ptr %pay_ptr336, align 8
+  %enum_i64337 = ptrtoint ptr %buf334 to i64
+  %methcall338 = call i64 @Parser__set_current(i64 %self331, i64 %enum_i64337, i64 ptrtoint (ptr @.str.1042 to i64))
+  store i64 %methcall338, ptr %when_result, align 8
+  br label %when_end
 
-parm_body352:                                     ; preds = %parm_next307
-  %self358 = load i64, ptr %self, align 8
-  %null_meth_chk359 = icmp eq i64 %self358, 0
-  %null_meth_ext360 = zext i1 %null_meth_chk359 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1048, i64 10, ptr @mowner_name.1049, i64 6, i64 %null_meth_ext360, ptr @msrc_file.1050, i64 11, i64 85)
-  %methcall361 = call i64 @Parser__match_next(i64 %self358, i64 ptrtoint (ptr @.str.1051 to i64))
-  %if_cond362 = icmp ne i64 %methcall361, 0
-  br i1 %if_cond362, label %then363, label %else364
+when_next330:                                     ; preds = %when_next
+  %self339 = load i64, ptr %self, align 8
+  %null_meth_chk340 = icmp eq i64 %self339, 0
+  %null_meth_ext341 = zext i1 %null_meth_chk340 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1043, i64 11, ptr @mowner_name.1044, i64 6, i64 %null_meth_ext341, ptr @msrc_file.1045, i64 11, i64 78)
+  %buf342 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr343 = getelementptr inbounds nuw %Tk, ptr %buf342, i32 0, i32 0
+  store i64 7571492063730749, ptr %tag_ptr343, align 8
+  %pay_ptr344 = getelementptr inbounds nuw %Tk, ptr %buf342, i32 0, i32 1
+  store ptr null, ptr %pay_ptr344, align 8
+  %enum_i64345 = ptrtoint ptr %buf342 to i64
+  %methcall346 = call i64 @Parser__set_current(i64 %self339, i64 %enum_i64345, i64 ptrtoint (ptr @.str.1046 to i64))
+  store i64 %methcall346, ptr %when_result, align 8
+  br label %when_end
 
-parm_next353:                                     ; preds = %parm_next307
-  %lit_str_ptr384 = inttoptr i64 %ch41 to ptr
-  %strcmp_r385 = call i32 @strcmp(ptr %lit_str_ptr384, ptr @.lit_str.1060)
-  %strcmp_sext386 = sext i32 %strcmp_r385 to i64
-  %str_eq387 = icmp eq i64 %strcmp_sext386, 0
-  br i1 %str_eq387, label %parm_body382, label %parm_next383
+parm_body347:                                     ; preds = %parm_next307
+  %self353 = load i64, ptr %self, align 8
+  %null_meth_chk354 = icmp eq i64 %self353, 0
+  %null_meth_ext355 = zext i1 %null_meth_chk354 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1048, i64 10, ptr @mowner_name.1049, i64 6, i64 %null_meth_ext355, ptr @msrc_file.1050, i64 11, i64 87)
+  %methcall356 = call i64 @Parser__match_next(i64 %self353, i64 ptrtoint (ptr @.str.1051 to i64))
+  %if_cond357 = icmp ne i64 %methcall356, 0
+  br i1 %if_cond357, label %then358, label %else359
 
-then363:                                          ; preds = %parm_body352
-  %self366 = load i64, ptr %self, align 8
-  %null_meth_chk367 = icmp eq i64 %self366, 0
-  %null_meth_ext368 = zext i1 %null_meth_chk367 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1052, i64 11, ptr @mowner_name.1053, i64 6, i64 %null_meth_ext368, ptr @msrc_file.1054, i64 11, i64 85)
-  %buf369 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr370 = getelementptr inbounds nuw %Tk, ptr %buf369, i32 0, i32 0
-  store i64 6952066306561, ptr %tag_ptr370, align 8
-  %pay_ptr371 = getelementptr inbounds nuw %Tk, ptr %buf369, i32 0, i32 1
-  store ptr null, ptr %pay_ptr371, align 8
-  %enum_i64372 = ptrtoint ptr %buf369 to i64
-  %methcall373 = call i64 @Parser__set_current(i64 %self366, i64 %enum_i64372, i64 ptrtoint (ptr @.str.1055 to i64))
-  br label %ifcont365
+parm_next348:                                     ; preds = %parm_next307
+  %lit_str_ptr379 = inttoptr i64 %ch41 to ptr
+  %strcmp_r380 = call i32 @strcmp(ptr %lit_str_ptr379, ptr @.lit_str.1060)
+  %strcmp_sext381 = sext i32 %strcmp_r380 to i64
+  %str_eq382 = icmp eq i64 %strcmp_sext381, 0
+  br i1 %str_eq382, label %parm_body377, label %parm_next378
 
-else364:                                          ; preds = %parm_body352
-  %self374 = load i64, ptr %self, align 8
-  %null_meth_chk375 = icmp eq i64 %self374, 0
-  %null_meth_ext376 = zext i1 %null_meth_chk375 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1056, i64 11, ptr @mowner_name.1057, i64 6, i64 %null_meth_ext376, ptr @msrc_file.1058, i64 11, i64 86)
-  %buf377 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr378 = getelementptr inbounds nuw %Tk, ptr %buf377, i32 0, i32 0
-  store i64 193451491, ptr %tag_ptr378, align 8
-  %pay_ptr379 = getelementptr inbounds nuw %Tk, ptr %buf377, i32 0, i32 1
-  store ptr null, ptr %pay_ptr379, align 8
-  %enum_i64380 = ptrtoint ptr %buf377 to i64
-  %methcall381 = call i64 @Parser__set_current(i64 %self374, i64 %enum_i64380, i64 ptrtoint (ptr @.str.1059 to i64))
-  br label %ifcont365
+then358:                                          ; preds = %parm_body347
+  %self361 = load i64, ptr %self, align 8
+  %null_meth_chk362 = icmp eq i64 %self361, 0
+  %null_meth_ext363 = zext i1 %null_meth_chk362 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1052, i64 11, ptr @mowner_name.1053, i64 6, i64 %null_meth_ext363, ptr @msrc_file.1054, i64 11, i64 87)
+  %buf364 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr365 = getelementptr inbounds nuw %Tk, ptr %buf364, i32 0, i32 0
+  store i64 6952066306561, ptr %tag_ptr365, align 8
+  %pay_ptr366 = getelementptr inbounds nuw %Tk, ptr %buf364, i32 0, i32 1
+  store ptr null, ptr %pay_ptr366, align 8
+  %enum_i64367 = ptrtoint ptr %buf364 to i64
+  %methcall368 = call i64 @Parser__set_current(i64 %self361, i64 %enum_i64367, i64 ptrtoint (ptr @.str.1055 to i64))
+  br label %ifcont360
 
-ifcont365:                                        ; preds = %else364, %then363
+else359:                                          ; preds = %parm_body347
+  %self369 = load i64, ptr %self, align 8
+  %null_meth_chk370 = icmp eq i64 %self369, 0
+  %null_meth_ext371 = zext i1 %null_meth_chk370 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1056, i64 11, ptr @mowner_name.1057, i64 6, i64 %null_meth_ext371, ptr @msrc_file.1058, i64 11, i64 88)
+  %buf372 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr373 = getelementptr inbounds nuw %Tk, ptr %buf372, i32 0, i32 0
+  store i64 193451491, ptr %tag_ptr373, align 8
+  %pay_ptr374 = getelementptr inbounds nuw %Tk, ptr %buf372, i32 0, i32 1
+  store ptr null, ptr %pay_ptr374, align 8
+  %enum_i64375 = ptrtoint ptr %buf372 to i64
+  %methcall376 = call i64 @Parser__set_current(i64 %self369, i64 %enum_i64375, i64 ptrtoint (ptr @.str.1059 to i64))
+  br label %ifcont360
+
+ifcont360:                                        ; preds = %else359, %then358
   ret i64 0
 
-parm_body382:                                     ; preds = %parm_next353
-  %self388 = load i64, ptr %self, align 8
-  %null_meth_chk389 = icmp eq i64 %self388, 0
-  %null_meth_ext390 = zext i1 %null_meth_chk389 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1061, i64 10, ptr @mowner_name.1062, i64 6, i64 %null_meth_ext390, ptr @msrc_file.1063, i64 11, i64 91)
-  %methcall391 = call i64 @Parser__match_next(i64 %self388, i64 ptrtoint (ptr @.str.1064 to i64))
-  %if_cond392 = icmp ne i64 %methcall391, 0
-  br i1 %if_cond392, label %then393, label %else394
+parm_body377:                                     ; preds = %parm_next348
+  %self383 = load i64, ptr %self, align 8
+  %null_meth_chk384 = icmp eq i64 %self383, 0
+  %null_meth_ext385 = zext i1 %null_meth_chk384 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1061, i64 10, ptr @mowner_name.1062, i64 6, i64 %null_meth_ext385, ptr @msrc_file.1063, i64 11, i64 93)
+  %methcall386 = call i64 @Parser__match_next(i64 %self383, i64 ptrtoint (ptr @.str.1064 to i64))
+  %if_cond387 = icmp ne i64 %methcall386, 0
+  br i1 %if_cond387, label %then388, label %else389
 
-parm_next383:                                     ; preds = %parm_next353
-  %lit_str_ptr430 = inttoptr i64 %ch41 to ptr
-  %strcmp_r431 = call i32 @strcmp(ptr %lit_str_ptr430, ptr @.lit_str.1081)
-  %strcmp_sext432 = sext i32 %strcmp_r431 to i64
-  %str_eq433 = icmp eq i64 %strcmp_sext432, 0
-  br i1 %str_eq433, label %parm_body428, label %parm_next429
+parm_next378:                                     ; preds = %parm_next348
+  %lit_str_ptr425 = inttoptr i64 %ch41 to ptr
+  %strcmp_r426 = call i32 @strcmp(ptr %lit_str_ptr425, ptr @.lit_str.1081)
+  %strcmp_sext427 = sext i32 %strcmp_r426 to i64
+  %str_eq428 = icmp eq i64 %strcmp_sext427, 0
+  br i1 %str_eq428, label %parm_body423, label %parm_next424
 
-then393:                                          ; preds = %parm_body382
-  %self396 = load i64, ptr %self, align 8
-  %null_meth_chk397 = icmp eq i64 %self396, 0
-  %null_meth_ext398 = zext i1 %null_meth_chk397 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1065, i64 11, ptr @mowner_name.1066, i64 6, i64 %null_meth_ext398, ptr @msrc_file.1067, i64 11, i64 91)
-  %buf399 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr400 = getelementptr inbounds nuw %Tk, ptr %buf399, i32 0, i32 0
-  store i64 7571434360264865, ptr %tag_ptr400, align 8
-  %pay_ptr401 = getelementptr inbounds nuw %Tk, ptr %buf399, i32 0, i32 1
-  store ptr null, ptr %pay_ptr401, align 8
-  %enum_i64402 = ptrtoint ptr %buf399 to i64
-  %methcall403 = call i64 @Parser__set_current(i64 %self396, i64 %enum_i64402, i64 ptrtoint (ptr @.str.1068 to i64))
+then388:                                          ; preds = %parm_body377
+  %self391 = load i64, ptr %self, align 8
+  %null_meth_chk392 = icmp eq i64 %self391, 0
+  %null_meth_ext393 = zext i1 %null_meth_chk392 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1065, i64 11, ptr @mowner_name.1066, i64 6, i64 %null_meth_ext393, ptr @msrc_file.1067, i64 11, i64 93)
+  %buf394 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr395 = getelementptr inbounds nuw %Tk, ptr %buf394, i32 0, i32 0
+  store i64 7571434360264865, ptr %tag_ptr395, align 8
+  %pay_ptr396 = getelementptr inbounds nuw %Tk, ptr %buf394, i32 0, i32 1
+  store ptr null, ptr %pay_ptr396, align 8
+  %enum_i64397 = ptrtoint ptr %buf394 to i64
+  %methcall398 = call i64 @Parser__set_current(i64 %self391, i64 %enum_i64397, i64 ptrtoint (ptr @.str.1068 to i64))
   ret i64 0
 
-else394:                                          ; preds = %parm_body382
-  br label %ifcont395
+else389:                                          ; preds = %parm_body377
+  br label %ifcont390
 
-ifcont395:                                        ; preds = %else394
-  %self404 = load i64, ptr %self, align 8
-  %null_meth_chk405 = icmp eq i64 %self404, 0
-  %null_meth_ext406 = zext i1 %null_meth_chk405 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1069, i64 10, ptr @mowner_name.1070, i64 6, i64 %null_meth_ext406, ptr @msrc_file.1071, i64 11, i64 92)
-  %methcall407 = call i64 @Parser__match_next(i64 %self404, i64 ptrtoint (ptr @.str.1072 to i64))
-  %if_cond408 = icmp ne i64 %methcall407, 0
-  br i1 %if_cond408, label %then409, label %else410
+ifcont390:                                        ; preds = %else389
+  %self399 = load i64, ptr %self, align 8
+  %null_meth_chk400 = icmp eq i64 %self399, 0
+  %null_meth_ext401 = zext i1 %null_meth_chk400 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1069, i64 10, ptr @mowner_name.1070, i64 6, i64 %null_meth_ext401, ptr @msrc_file.1071, i64 11, i64 94)
+  %methcall402 = call i64 @Parser__match_next(i64 %self399, i64 ptrtoint (ptr @.str.1072 to i64))
+  %if_cond403 = icmp ne i64 %methcall402, 0
+  br i1 %if_cond403, label %then404, label %else405
 
-then409:                                          ; preds = %ifcont395
-  %self412 = load i64, ptr %self, align 8
-  %null_meth_chk413 = icmp eq i64 %self412, 0
-  %null_meth_ext414 = zext i1 %null_meth_chk413 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1073, i64 11, ptr @mowner_name.1074, i64 6, i64 %null_meth_ext414, ptr @msrc_file.1075, i64 11, i64 92)
-  %buf415 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr416 = getelementptr inbounds nuw %Tk, ptr %buf415, i32 0, i32 0
-  store i64 6952648631726, ptr %tag_ptr416, align 8
-  %pay_ptr417 = getelementptr inbounds nuw %Tk, ptr %buf415, i32 0, i32 1
-  store ptr null, ptr %pay_ptr417, align 8
-  %enum_i64418 = ptrtoint ptr %buf415 to i64
-  %methcall419 = call i64 @Parser__set_current(i64 %self412, i64 %enum_i64418, i64 ptrtoint (ptr @.str.1076 to i64))
+then404:                                          ; preds = %ifcont390
+  %self407 = load i64, ptr %self, align 8
+  %null_meth_chk408 = icmp eq i64 %self407, 0
+  %null_meth_ext409 = zext i1 %null_meth_chk408 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1073, i64 11, ptr @mowner_name.1074, i64 6, i64 %null_meth_ext409, ptr @msrc_file.1075, i64 11, i64 94)
+  %buf410 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr411 = getelementptr inbounds nuw %Tk, ptr %buf410, i32 0, i32 0
+  store i64 6952648631726, ptr %tag_ptr411, align 8
+  %pay_ptr412 = getelementptr inbounds nuw %Tk, ptr %buf410, i32 0, i32 1
+  store ptr null, ptr %pay_ptr412, align 8
+  %enum_i64413 = ptrtoint ptr %buf410 to i64
+  %methcall414 = call i64 @Parser__set_current(i64 %self407, i64 %enum_i64413, i64 ptrtoint (ptr @.str.1076 to i64))
   ret i64 0
 
-else410:                                          ; preds = %ifcont395
-  br label %ifcont411
+else405:                                          ; preds = %ifcont390
+  br label %ifcont406
 
-ifcont411:                                        ; preds = %else410
-  %self420 = load i64, ptr %self, align 8
-  %null_meth_chk421 = icmp eq i64 %self420, 0
-  %null_meth_ext422 = zext i1 %null_meth_chk421 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1077, i64 11, ptr @mowner_name.1078, i64 6, i64 %null_meth_ext422, ptr @msrc_file.1079, i64 11, i64 93)
-  %buf423 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr424 = getelementptr inbounds nuw %Tk, ptr %buf423, i32 0, i32 0
-  store i64 6384434003, ptr %tag_ptr424, align 8
-  %pay_ptr425 = getelementptr inbounds nuw %Tk, ptr %buf423, i32 0, i32 1
-  store ptr null, ptr %pay_ptr425, align 8
-  %enum_i64426 = ptrtoint ptr %buf423 to i64
-  %methcall427 = call i64 @Parser__set_current(i64 %self420, i64 %enum_i64426, i64 ptrtoint (ptr @.str.1080 to i64))
+ifcont406:                                        ; preds = %else405
+  %self415 = load i64, ptr %self, align 8
+  %null_meth_chk416 = icmp eq i64 %self415, 0
+  %null_meth_ext417 = zext i1 %null_meth_chk416 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1077, i64 11, ptr @mowner_name.1078, i64 6, i64 %null_meth_ext417, ptr @msrc_file.1079, i64 11, i64 95)
+  %buf418 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr419 = getelementptr inbounds nuw %Tk, ptr %buf418, i32 0, i32 0
+  store i64 6384434003, ptr %tag_ptr419, align 8
+  %pay_ptr420 = getelementptr inbounds nuw %Tk, ptr %buf418, i32 0, i32 1
+  store ptr null, ptr %pay_ptr420, align 8
+  %enum_i64421 = ptrtoint ptr %buf418 to i64
+  %methcall422 = call i64 @Parser__set_current(i64 %self415, i64 %enum_i64421, i64 ptrtoint (ptr @.str.1080 to i64))
   ret i64 0
 
-parm_body428:                                     ; preds = %parm_next383
-  %self434 = load i64, ptr %self, align 8
-  %null_meth_chk435 = icmp eq i64 %self434, 0
-  %null_meth_ext436 = zext i1 %null_meth_chk435 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1082, i64 10, ptr @mowner_name.1083, i64 6, i64 %null_meth_ext436, ptr @msrc_file.1084, i64 11, i64 98)
-  %methcall437 = call i64 @Parser__match_next(i64 %self434, i64 ptrtoint (ptr @.str.1085 to i64))
-  %if_cond438 = icmp ne i64 %methcall437, 0
-  br i1 %if_cond438, label %then439, label %else440
+parm_body423:                                     ; preds = %parm_next378
+  %self429 = load i64, ptr %self, align 8
+  %null_meth_chk430 = icmp eq i64 %self429, 0
+  %null_meth_ext431 = zext i1 %null_meth_chk430 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1082, i64 10, ptr @mowner_name.1083, i64 6, i64 %null_meth_ext431, ptr @msrc_file.1084, i64 11, i64 100)
+  %methcall432 = call i64 @Parser__match_next(i64 %self429, i64 ptrtoint (ptr @.str.1085 to i64))
+  %if_cond433 = icmp ne i64 %methcall432, 0
+  br i1 %if_cond433, label %then434, label %else435
 
-parm_next429:                                     ; preds = %parm_next383
-  %lit_str_ptr460 = inttoptr i64 %ch41 to ptr
-  %strcmp_r461 = call i32 @strcmp(ptr %lit_str_ptr460, ptr @.lit_str.1094)
-  %strcmp_sext462 = sext i32 %strcmp_r461 to i64
-  %str_eq463 = icmp eq i64 %strcmp_sext462, 0
-  br i1 %str_eq463, label %parm_body458, label %parm_next459
+parm_next424:                                     ; preds = %parm_next378
+  %lit_str_ptr455 = inttoptr i64 %ch41 to ptr
+  %strcmp_r456 = call i32 @strcmp(ptr %lit_str_ptr455, ptr @.lit_str.1094)
+  %strcmp_sext457 = sext i32 %strcmp_r456 to i64
+  %str_eq458 = icmp eq i64 %strcmp_sext457, 0
+  br i1 %str_eq458, label %parm_body453, label %parm_next454
 
-then439:                                          ; preds = %parm_body428
-  %self442 = load i64, ptr %self, align 8
-  %null_meth_chk443 = icmp eq i64 %self442, 0
-  %null_meth_ext444 = zext i1 %null_meth_chk443 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1086, i64 11, ptr @mowner_name.1087, i64 6, i64 %null_meth_ext444, ptr @msrc_file.1088, i64 11, i64 98)
-  %buf445 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr446 = getelementptr inbounds nuw %Tk, ptr %buf445, i32 0, i32 0
-  store i64 249837300703123989, ptr %tag_ptr446, align 8
-  %pay_ptr447 = getelementptr inbounds nuw %Tk, ptr %buf445, i32 0, i32 1
-  store ptr null, ptr %pay_ptr447, align 8
-  %enum_i64448 = ptrtoint ptr %buf445 to i64
-  %methcall449 = call i64 @Parser__set_current(i64 %self442, i64 %enum_i64448, i64 ptrtoint (ptr @.str.1089 to i64))
-  br label %ifcont441
+then434:                                          ; preds = %parm_body423
+  %self437 = load i64, ptr %self, align 8
+  %null_meth_chk438 = icmp eq i64 %self437, 0
+  %null_meth_ext439 = zext i1 %null_meth_chk438 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1086, i64 11, ptr @mowner_name.1087, i64 6, i64 %null_meth_ext439, ptr @msrc_file.1088, i64 11, i64 100)
+  %buf440 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr441 = getelementptr inbounds nuw %Tk, ptr %buf440, i32 0, i32 0
+  store i64 249837300703123989, ptr %tag_ptr441, align 8
+  %pay_ptr442 = getelementptr inbounds nuw %Tk, ptr %buf440, i32 0, i32 1
+  store ptr null, ptr %pay_ptr442, align 8
+  %enum_i64443 = ptrtoint ptr %buf440 to i64
+  %methcall444 = call i64 @Parser__set_current(i64 %self437, i64 %enum_i64443, i64 ptrtoint (ptr @.str.1089 to i64))
+  br label %ifcont436
 
-else440:                                          ; preds = %parm_body428
-  %self450 = load i64, ptr %self, align 8
-  %null_meth_chk451 = icmp eq i64 %self450, 0
-  %null_meth_ext452 = zext i1 %null_meth_chk451 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1090, i64 11, ptr @mowner_name.1091, i64 6, i64 %null_meth_ext452, ptr @msrc_file.1092, i64 11, i64 99)
-  %buf453 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr454 = getelementptr inbounds nuw %Tk, ptr %buf453, i32 0, i32 0
-  store i64 6383922109, ptr %tag_ptr454, align 8
-  %pay_ptr455 = getelementptr inbounds nuw %Tk, ptr %buf453, i32 0, i32 1
-  store ptr null, ptr %pay_ptr455, align 8
-  %enum_i64456 = ptrtoint ptr %buf453 to i64
-  %methcall457 = call i64 @Parser__set_current(i64 %self450, i64 %enum_i64456, i64 ptrtoint (ptr @.str.1093 to i64))
-  br label %ifcont441
+else435:                                          ; preds = %parm_body423
+  %self445 = load i64, ptr %self, align 8
+  %null_meth_chk446 = icmp eq i64 %self445, 0
+  %null_meth_ext447 = zext i1 %null_meth_chk446 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1090, i64 11, ptr @mowner_name.1091, i64 6, i64 %null_meth_ext447, ptr @msrc_file.1092, i64 11, i64 101)
+  %buf448 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr449 = getelementptr inbounds nuw %Tk, ptr %buf448, i32 0, i32 0
+  store i64 6383922109, ptr %tag_ptr449, align 8
+  %pay_ptr450 = getelementptr inbounds nuw %Tk, ptr %buf448, i32 0, i32 1
+  store ptr null, ptr %pay_ptr450, align 8
+  %enum_i64451 = ptrtoint ptr %buf448 to i64
+  %methcall452 = call i64 @Parser__set_current(i64 %self445, i64 %enum_i64451, i64 ptrtoint (ptr @.str.1093 to i64))
+  br label %ifcont436
 
-ifcont441:                                        ; preds = %else440, %then439
+ifcont436:                                        ; preds = %else435, %then434
   ret i64 0
 
-parm_body458:                                     ; preds = %parm_next429
-  %self464 = load i64, ptr %self, align 8
-  %null_meth_chk465 = icmp eq i64 %self464, 0
-  %null_meth_ext466 = zext i1 %null_meth_chk465 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1095, i64 10, ptr @mowner_name.1096, i64 6, i64 %null_meth_ext466, ptr @msrc_file.1097, i64 11, i64 104)
-  %methcall467 = call i64 @Parser__match_next(i64 %self464, i64 ptrtoint (ptr @.str.1098 to i64))
-  %if_cond468 = icmp ne i64 %methcall467, 0
-  br i1 %if_cond468, label %then469, label %else470
+parm_body453:                                     ; preds = %parm_next424
+  %self459 = load i64, ptr %self, align 8
+  %null_meth_chk460 = icmp eq i64 %self459, 0
+  %null_meth_ext461 = zext i1 %null_meth_chk460 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1095, i64 10, ptr @mowner_name.1096, i64 6, i64 %null_meth_ext461, ptr @msrc_file.1097, i64 11, i64 106)
+  %methcall462 = call i64 @Parser__match_next(i64 %self459, i64 ptrtoint (ptr @.str.1098 to i64))
+  %if_cond463 = icmp ne i64 %methcall462, 0
+  br i1 %if_cond463, label %then464, label %else465
 
-parm_next459:                                     ; preds = %parm_next429
-  %lit_str_ptr490 = inttoptr i64 %ch41 to ptr
-  %strcmp_r491 = call i32 @strcmp(ptr %lit_str_ptr490, ptr @.lit_str.1107)
-  %strcmp_sext492 = sext i32 %strcmp_r491 to i64
-  %str_eq493 = icmp eq i64 %strcmp_sext492, 0
-  br i1 %str_eq493, label %parm_body488, label %parm_next489
+parm_next454:                                     ; preds = %parm_next424
+  %lit_str_ptr485 = inttoptr i64 %ch41 to ptr
+  %strcmp_r486 = call i32 @strcmp(ptr %lit_str_ptr485, ptr @.lit_str.1107)
+  %strcmp_sext487 = sext i32 %strcmp_r486 to i64
+  %str_eq488 = icmp eq i64 %strcmp_sext487, 0
+  br i1 %str_eq488, label %parm_body483, label %parm_next484
 
-then469:                                          ; preds = %parm_body458
-  %self472 = load i64, ptr %self, align 8
-  %null_meth_chk473 = icmp eq i64 %self472, 0
-  %null_meth_ext474 = zext i1 %null_meth_chk473 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1099, i64 11, ptr @mowner_name.1100, i64 6, i64 %null_meth_ext474, ptr @msrc_file.1101, i64 11, i64 104)
-  %buf475 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr476 = getelementptr inbounds nuw %Tk, ptr %buf475, i32 0, i32 0
-  store i64 8244792952248459957, ptr %tag_ptr476, align 8
-  %pay_ptr477 = getelementptr inbounds nuw %Tk, ptr %buf475, i32 0, i32 1
-  store ptr null, ptr %pay_ptr477, align 8
-  %enum_i64478 = ptrtoint ptr %buf475 to i64
-  %methcall479 = call i64 @Parser__set_current(i64 %self472, i64 %enum_i64478, i64 ptrtoint (ptr @.str.1102 to i64))
-  br label %ifcont471
+then464:                                          ; preds = %parm_body453
+  %self467 = load i64, ptr %self, align 8
+  %null_meth_chk468 = icmp eq i64 %self467, 0
+  %null_meth_ext469 = zext i1 %null_meth_chk468 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1099, i64 11, ptr @mowner_name.1100, i64 6, i64 %null_meth_ext469, ptr @msrc_file.1101, i64 11, i64 106)
+  %buf470 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr471 = getelementptr inbounds nuw %Tk, ptr %buf470, i32 0, i32 0
+  store i64 8244792952248459957, ptr %tag_ptr471, align 8
+  %pay_ptr472 = getelementptr inbounds nuw %Tk, ptr %buf470, i32 0, i32 1
+  store ptr null, ptr %pay_ptr472, align 8
+  %enum_i64473 = ptrtoint ptr %buf470 to i64
+  %methcall474 = call i64 @Parser__set_current(i64 %self467, i64 %enum_i64473, i64 ptrtoint (ptr @.str.1102 to i64))
+  br label %ifcont466
 
-else470:                                          ; preds = %parm_body458
-  %self480 = load i64, ptr %self, align 8
-  %null_meth_chk481 = icmp eq i64 %self480, 0
-  %null_meth_ext482 = zext i1 %null_meth_chk481 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1103, i64 11, ptr @mowner_name.1104, i64 6, i64 %null_meth_ext482, ptr @msrc_file.1105, i64 11, i64 105)
-  %buf483 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr484 = getelementptr inbounds nuw %Tk, ptr %buf483, i32 0, i32 0
-  store i64 210673569885, ptr %tag_ptr484, align 8
-  %pay_ptr485 = getelementptr inbounds nuw %Tk, ptr %buf483, i32 0, i32 1
-  store ptr null, ptr %pay_ptr485, align 8
-  %enum_i64486 = ptrtoint ptr %buf483 to i64
-  %methcall487 = call i64 @Parser__set_current(i64 %self480, i64 %enum_i64486, i64 ptrtoint (ptr @.str.1106 to i64))
-  br label %ifcont471
+else465:                                          ; preds = %parm_body453
+  %self475 = load i64, ptr %self, align 8
+  %null_meth_chk476 = icmp eq i64 %self475, 0
+  %null_meth_ext477 = zext i1 %null_meth_chk476 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1103, i64 11, ptr @mowner_name.1104, i64 6, i64 %null_meth_ext477, ptr @msrc_file.1105, i64 11, i64 107)
+  %buf478 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr479 = getelementptr inbounds nuw %Tk, ptr %buf478, i32 0, i32 0
+  store i64 210673569885, ptr %tag_ptr479, align 8
+  %pay_ptr480 = getelementptr inbounds nuw %Tk, ptr %buf478, i32 0, i32 1
+  store ptr null, ptr %pay_ptr480, align 8
+  %enum_i64481 = ptrtoint ptr %buf478 to i64
+  %methcall482 = call i64 @Parser__set_current(i64 %self475, i64 %enum_i64481, i64 ptrtoint (ptr @.str.1106 to i64))
+  br label %ifcont466
 
-ifcont471:                                        ; preds = %else470, %then469
+ifcont466:                                        ; preds = %else465, %then464
   ret i64 0
 
-parm_body488:                                     ; preds = %parm_next459
-  %self494 = load i64, ptr %self, align 8
-  %null_meth_chk495 = icmp eq i64 %self494, 0
-  %null_meth_ext496 = zext i1 %null_meth_chk495 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1108, i64 10, ptr @mowner_name.1109, i64 6, i64 %null_meth_ext496, ptr @msrc_file.1110, i64 11, i64 110)
-  %methcall497 = call i64 @Parser__match_next(i64 %self494, i64 ptrtoint (ptr @.str.1111 to i64))
-  %if_cond498 = icmp ne i64 %methcall497, 0
-  br i1 %if_cond498, label %then499, label %else500
+parm_body483:                                     ; preds = %parm_next454
+  store i64 0, ptr %when_result490, align 8
+  %self491 = load i64, ptr %self, align 8
+  %null_meth_chk492 = icmp eq i64 %self491, 0
+  %null_meth_ext493 = zext i1 %null_meth_chk492 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1108, i64 10, ptr @mowner_name.1109, i64 6, i64 %null_meth_ext493, ptr @msrc_file.1110, i64 11, i64 112)
+  %methcall494 = call i64 @Parser__match_next(i64 %self491, i64 ptrtoint (ptr @.str.1111 to i64))
+  %when_cond495 = icmp ne i64 %methcall494, 0
+  br i1 %when_cond495, label %when_arm496, label %when_next497
 
-parm_next489:                                     ; preds = %parm_next459
-  %lit_str_ptr536 = inttoptr i64 %ch41 to ptr
-  %strcmp_r537 = call i32 @strcmp(ptr %lit_str_ptr536, ptr @.lit_str.1128)
-  %strcmp_sext538 = sext i32 %strcmp_r537 to i64
-  %str_eq539 = icmp eq i64 %strcmp_sext538, 0
-  br i1 %str_eq539, label %parm_body534, label %parm_next535
+parm_next484:                                     ; preds = %parm_next454
+  %lit_str_ptr532 = inttoptr i64 %ch41 to ptr
+  %strcmp_r533 = call i32 @strcmp(ptr %lit_str_ptr532, ptr @.lit_str.1128)
+  %strcmp_sext534 = sext i32 %strcmp_r533 to i64
+  %str_eq535 = icmp eq i64 %strcmp_sext534, 0
+  br i1 %str_eq535, label %parm_body530, label %parm_next531
 
-then499:                                          ; preds = %parm_body488
-  %self502 = load i64, ptr %self, align 8
-  %null_meth_chk503 = icmp eq i64 %self502, 0
-  %null_meth_ext504 = zext i1 %null_meth_chk503 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1112, i64 11, ptr @mowner_name.1113, i64 6, i64 %null_meth_ext504, ptr @msrc_file.1114, i64 11, i64 110)
-  %buf505 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr506 = getelementptr inbounds nuw %Tk, ptr %buf505, i32 0, i32 0
-  store i64 193470924, ptr %tag_ptr506, align 8
-  %pay_ptr507 = getelementptr inbounds nuw %Tk, ptr %buf505, i32 0, i32 1
-  store ptr null, ptr %pay_ptr507, align 8
-  %enum_i64508 = ptrtoint ptr %buf505 to i64
-  %methcall509 = call i64 @Parser__set_current(i64 %self502, i64 %enum_i64508, i64 ptrtoint (ptr @.str.1115 to i64))
-  br label %ifcont501
-
-else500:                                          ; preds = %parm_body488
-  %self510 = load i64, ptr %self, align 8
-  %null_meth_chk511 = icmp eq i64 %self510, 0
-  %null_meth_ext512 = zext i1 %null_meth_chk511 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1116, i64 10, ptr @mowner_name.1117, i64 6, i64 %null_meth_ext512, ptr @msrc_file.1118, i64 11, i64 110)
-  %methcall513 = call i64 @Parser__match_next(i64 %self510, i64 ptrtoint (ptr @.str.1119 to i64))
-  %if_cond514 = icmp ne i64 %methcall513, 0
-  br i1 %if_cond514, label %then515, label %else516
-
-ifcont501:                                        ; preds = %ifcont517, %then499
+when_end489:                                      ; preds = %when_next512, %when_arm511, %when_arm496
+  %when_val529 = load i64, ptr %when_result490, align 8
   ret i64 0
 
-then515:                                          ; preds = %else500
-  %self518 = load i64, ptr %self, align 8
-  %null_meth_chk519 = icmp eq i64 %self518, 0
-  %null_meth_ext520 = zext i1 %null_meth_chk519 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1120, i64 11, ptr @mowner_name.1121, i64 6, i64 %null_meth_ext520, ptr @msrc_file.1122, i64 11, i64 111)
-  %buf521 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr522 = getelementptr inbounds nuw %Tk, ptr %buf521, i32 0, i32 0
-  store i64 249851542190042868, ptr %tag_ptr522, align 8
-  %pay_ptr523 = getelementptr inbounds nuw %Tk, ptr %buf521, i32 0, i32 1
-  store ptr null, ptr %pay_ptr523, align 8
-  %enum_i64524 = ptrtoint ptr %buf521 to i64
-  %methcall525 = call i64 @Parser__set_current(i64 %self518, i64 %enum_i64524, i64 ptrtoint (ptr @.str.1123 to i64))
-  br label %ifcont517
+when_arm496:                                      ; preds = %parm_body483
+  %self498 = load i64, ptr %self, align 8
+  %null_meth_chk499 = icmp eq i64 %self498, 0
+  %null_meth_ext500 = zext i1 %null_meth_chk499 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1112, i64 11, ptr @mowner_name.1113, i64 6, i64 %null_meth_ext500, ptr @msrc_file.1114, i64 11, i64 112)
+  %buf501 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr502 = getelementptr inbounds nuw %Tk, ptr %buf501, i32 0, i32 0
+  store i64 193470924, ptr %tag_ptr502, align 8
+  %pay_ptr503 = getelementptr inbounds nuw %Tk, ptr %buf501, i32 0, i32 1
+  store ptr null, ptr %pay_ptr503, align 8
+  %enum_i64504 = ptrtoint ptr %buf501 to i64
+  %methcall505 = call i64 @Parser__set_current(i64 %self498, i64 %enum_i64504, i64 ptrtoint (ptr @.str.1115 to i64))
+  store i64 %methcall505, ptr %when_result490, align 8
+  br label %when_end489
 
-else516:                                          ; preds = %else500
-  %self526 = load i64, ptr %self, align 8
-  %null_meth_chk527 = icmp eq i64 %self526, 0
-  %null_meth_ext528 = zext i1 %null_meth_chk527 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1124, i64 11, ptr @mowner_name.1125, i64 6, i64 %null_meth_ext528, ptr @msrc_file.1126, i64 11, i64 112)
-  %buf529 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr530 = getelementptr inbounds nuw %Tk, ptr %buf529, i32 0, i32 0
-  store i64 6384286012, ptr %tag_ptr530, align 8
-  %pay_ptr531 = getelementptr inbounds nuw %Tk, ptr %buf529, i32 0, i32 1
-  store ptr null, ptr %pay_ptr531, align 8
-  %enum_i64532 = ptrtoint ptr %buf529 to i64
-  %methcall533 = call i64 @Parser__set_current(i64 %self526, i64 %enum_i64532, i64 ptrtoint (ptr @.str.1127 to i64))
-  br label %ifcont517
+when_next497:                                     ; preds = %parm_body483
+  %self506 = load i64, ptr %self, align 8
+  %null_meth_chk507 = icmp eq i64 %self506, 0
+  %null_meth_ext508 = zext i1 %null_meth_chk507 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1116, i64 10, ptr @mowner_name.1117, i64 6, i64 %null_meth_ext508, ptr @msrc_file.1118, i64 11, i64 112)
+  %methcall509 = call i64 @Parser__match_next(i64 %self506, i64 ptrtoint (ptr @.str.1119 to i64))
+  %when_cond510 = icmp ne i64 %methcall509, 0
+  br i1 %when_cond510, label %when_arm511, label %when_next512
 
-ifcont517:                                        ; preds = %else516, %then515
-  br label %ifcont501
+when_arm511:                                      ; preds = %when_next497
+  %self513 = load i64, ptr %self, align 8
+  %null_meth_chk514 = icmp eq i64 %self513, 0
+  %null_meth_ext515 = zext i1 %null_meth_chk514 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1120, i64 11, ptr @mowner_name.1121, i64 6, i64 %null_meth_ext515, ptr @msrc_file.1122, i64 11, i64 112)
+  %buf516 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr517 = getelementptr inbounds nuw %Tk, ptr %buf516, i32 0, i32 0
+  store i64 249851542190042868, ptr %tag_ptr517, align 8
+  %pay_ptr518 = getelementptr inbounds nuw %Tk, ptr %buf516, i32 0, i32 1
+  store ptr null, ptr %pay_ptr518, align 8
+  %enum_i64519 = ptrtoint ptr %buf516 to i64
+  %methcall520 = call i64 @Parser__set_current(i64 %self513, i64 %enum_i64519, i64 ptrtoint (ptr @.str.1123 to i64))
+  store i64 %methcall520, ptr %when_result490, align 8
+  br label %when_end489
 
-parm_body534:                                     ; preds = %parm_next489
-  %self540 = load i64, ptr %self, align 8
-  %null_meth_chk541 = icmp eq i64 %self540, 0
-  %null_meth_ext542 = zext i1 %null_meth_chk541 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1129, i64 10, ptr @mowner_name.1130, i64 6, i64 %null_meth_ext542, ptr @msrc_file.1131, i64 11, i64 117)
-  %methcall543 = call i64 @Parser__match_next(i64 %self540, i64 ptrtoint (ptr @.str.1132 to i64))
-  %if_cond544 = icmp ne i64 %methcall543, 0
-  br i1 %if_cond544, label %then545, label %else546
+when_next512:                                     ; preds = %when_next497
+  %self521 = load i64, ptr %self, align 8
+  %null_meth_chk522 = icmp eq i64 %self521, 0
+  %null_meth_ext523 = zext i1 %null_meth_chk522 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1124, i64 11, ptr @mowner_name.1125, i64 6, i64 %null_meth_ext523, ptr @msrc_file.1126, i64 11, i64 112)
+  %buf524 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr525 = getelementptr inbounds nuw %Tk, ptr %buf524, i32 0, i32 0
+  store i64 6384286012, ptr %tag_ptr525, align 8
+  %pay_ptr526 = getelementptr inbounds nuw %Tk, ptr %buf524, i32 0, i32 1
+  store ptr null, ptr %pay_ptr526, align 8
+  %enum_i64527 = ptrtoint ptr %buf524 to i64
+  %methcall528 = call i64 @Parser__set_current(i64 %self521, i64 %enum_i64527, i64 ptrtoint (ptr @.str.1127 to i64))
+  store i64 %methcall528, ptr %when_result490, align 8
+  br label %when_end489
 
-parm_next535:                                     ; preds = %parm_next489
-  %lit_str_ptr582 = inttoptr i64 %ch41 to ptr
-  %strcmp_r583 = call i32 @strcmp(ptr %lit_str_ptr582, ptr @.lit_str.1149)
-  %strcmp_sext584 = sext i32 %strcmp_r583 to i64
-  %str_eq585 = icmp eq i64 %strcmp_sext584, 0
-  br i1 %str_eq585, label %parm_body580, label %parm_next581
+parm_body530:                                     ; preds = %parm_next484
+  %self536 = load i64, ptr %self, align 8
+  %null_meth_chk537 = icmp eq i64 %self536, 0
+  %null_meth_ext538 = zext i1 %null_meth_chk537 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1129, i64 10, ptr @mowner_name.1130, i64 6, i64 %null_meth_ext538, ptr @msrc_file.1131, i64 11, i64 121)
+  %methcall539 = call i64 @Parser__match_next(i64 %self536, i64 ptrtoint (ptr @.str.1132 to i64))
+  %if_cond540 = icmp ne i64 %methcall539, 0
+  br i1 %if_cond540, label %then541, label %else542
 
-then545:                                          ; preds = %parm_body534
-  %self548 = load i64, ptr %self, align 8
-  %null_meth_chk549 = icmp eq i64 %self548, 0
-  %null_meth_ext550 = zext i1 %null_meth_chk549 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1133, i64 11, ptr @mowner_name.1134, i64 6, i64 %null_meth_ext550, ptr @msrc_file.1135, i64 11, i64 117)
-  %buf551 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr552 = getelementptr inbounds nuw %Tk, ptr %buf551, i32 0, i32 0
-  store i64 193470930, ptr %tag_ptr552, align 8
-  %pay_ptr553 = getelementptr inbounds nuw %Tk, ptr %buf551, i32 0, i32 1
-  store ptr null, ptr %pay_ptr553, align 8
-  %enum_i64554 = ptrtoint ptr %buf551 to i64
-  %methcall555 = call i64 @Parser__set_current(i64 %self548, i64 %enum_i64554, i64 ptrtoint (ptr @.str.1136 to i64))
+parm_next531:                                     ; preds = %parm_next484
+  %lit_str_ptr578 = inttoptr i64 %ch41 to ptr
+  %strcmp_r579 = call i32 @strcmp(ptr %lit_str_ptr578, ptr @.lit_str.1149)
+  %strcmp_sext580 = sext i32 %strcmp_r579 to i64
+  %str_eq581 = icmp eq i64 %strcmp_sext580, 0
+  br i1 %str_eq581, label %parm_body576, label %parm_next577
+
+then541:                                          ; preds = %parm_body530
+  %self544 = load i64, ptr %self, align 8
+  %null_meth_chk545 = icmp eq i64 %self544, 0
+  %null_meth_ext546 = zext i1 %null_meth_chk545 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1133, i64 11, ptr @mowner_name.1134, i64 6, i64 %null_meth_ext546, ptr @msrc_file.1135, i64 11, i64 121)
+  %buf547 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr548 = getelementptr inbounds nuw %Tk, ptr %buf547, i32 0, i32 0
+  store i64 193470930, ptr %tag_ptr548, align 8
+  %pay_ptr549 = getelementptr inbounds nuw %Tk, ptr %buf547, i32 0, i32 1
+  store ptr null, ptr %pay_ptr549, align 8
+  %enum_i64550 = ptrtoint ptr %buf547 to i64
+  %methcall551 = call i64 @Parser__set_current(i64 %self544, i64 %enum_i64550, i64 ptrtoint (ptr @.str.1136 to i64))
   ret i64 0
 
-else546:                                          ; preds = %parm_body534
-  br label %ifcont547
+else542:                                          ; preds = %parm_body530
+  br label %ifcont543
 
-ifcont547:                                        ; preds = %else546
-  %self556 = load i64, ptr %self, align 8
-  %null_meth_chk557 = icmp eq i64 %self556, 0
-  %null_meth_ext558 = zext i1 %null_meth_chk557 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1137, i64 10, ptr @mowner_name.1138, i64 6, i64 %null_meth_ext558, ptr @msrc_file.1139, i64 11, i64 118)
-  %methcall559 = call i64 @Parser__match_next(i64 %self556, i64 ptrtoint (ptr @.str.1140 to i64))
-  %if_cond560 = icmp ne i64 %methcall559, 0
-  br i1 %if_cond560, label %then561, label %else562
+ifcont543:                                        ; preds = %else542
+  %self552 = load i64, ptr %self, align 8
+  %null_meth_chk553 = icmp eq i64 %self552, 0
+  %null_meth_ext554 = zext i1 %null_meth_chk553 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1137, i64 10, ptr @mowner_name.1138, i64 6, i64 %null_meth_ext554, ptr @msrc_file.1139, i64 11, i64 122)
+  %methcall555 = call i64 @Parser__match_next(i64 %self552, i64 ptrtoint (ptr @.str.1140 to i64))
+  %if_cond556 = icmp ne i64 %methcall555, 0
+  br i1 %if_cond556, label %then557, label %else558
 
-then561:                                          ; preds = %ifcont547
-  %self564 = load i64, ptr %self, align 8
-  %null_meth_chk565 = icmp eq i64 %self564, 0
-  %null_meth_ext566 = zext i1 %null_meth_chk565 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1141, i64 11, ptr @mowner_name.1142, i64 6, i64 %null_meth_ext566, ptr @msrc_file.1143, i64 11, i64 118)
-  %buf567 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr568 = getelementptr inbounds nuw %Tk, ptr %buf567, i32 0, i32 0
-  store i64 -4882965307459138873, ptr %tag_ptr568, align 8
-  %pay_ptr569 = getelementptr inbounds nuw %Tk, ptr %buf567, i32 0, i32 1
-  store ptr null, ptr %pay_ptr569, align 8
-  %enum_i64570 = ptrtoint ptr %buf567 to i64
-  %methcall571 = call i64 @Parser__set_current(i64 %self564, i64 %enum_i64570, i64 ptrtoint (ptr @.str.1144 to i64))
-  br label %ifcont563
+then557:                                          ; preds = %ifcont543
+  %self560 = load i64, ptr %self, align 8
+  %null_meth_chk561 = icmp eq i64 %self560, 0
+  %null_meth_ext562 = zext i1 %null_meth_chk561 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1141, i64 11, ptr @mowner_name.1142, i64 6, i64 %null_meth_ext562, ptr @msrc_file.1143, i64 11, i64 122)
+  %buf563 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr564 = getelementptr inbounds nuw %Tk, ptr %buf563, i32 0, i32 0
+  store i64 -4882965307459138873, ptr %tag_ptr564, align 8
+  %pay_ptr565 = getelementptr inbounds nuw %Tk, ptr %buf563, i32 0, i32 1
+  store ptr null, ptr %pay_ptr565, align 8
+  %enum_i64566 = ptrtoint ptr %buf563 to i64
+  %methcall567 = call i64 @Parser__set_current(i64 %self560, i64 %enum_i64566, i64 ptrtoint (ptr @.str.1144 to i64))
+  br label %ifcont559
 
-else562:                                          ; preds = %ifcont547
-  %self572 = load i64, ptr %self, align 8
-  %null_meth_chk573 = icmp eq i64 %self572, 0
-  %null_meth_ext574 = zext i1 %null_meth_chk573 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1145, i64 11, ptr @mowner_name.1146, i64 6, i64 %null_meth_ext574, ptr @msrc_file.1147, i64 11, i64 119)
-  %buf575 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr576 = getelementptr inbounds nuw %Tk, ptr %buf575, i32 0, i32 0
-  store i64 229426120713519, ptr %tag_ptr576, align 8
-  %pay_ptr577 = getelementptr inbounds nuw %Tk, ptr %buf575, i32 0, i32 1
-  store ptr null, ptr %pay_ptr577, align 8
-  %enum_i64578 = ptrtoint ptr %buf575 to i64
-  %methcall579 = call i64 @Parser__set_current(i64 %self572, i64 %enum_i64578, i64 ptrtoint (ptr @.str.1148 to i64))
-  br label %ifcont563
+else558:                                          ; preds = %ifcont543
+  %self568 = load i64, ptr %self, align 8
+  %null_meth_chk569 = icmp eq i64 %self568, 0
+  %null_meth_ext570 = zext i1 %null_meth_chk569 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1145, i64 11, ptr @mowner_name.1146, i64 6, i64 %null_meth_ext570, ptr @msrc_file.1147, i64 11, i64 123)
+  %buf571 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr572 = getelementptr inbounds nuw %Tk, ptr %buf571, i32 0, i32 0
+  store i64 229426120713519, ptr %tag_ptr572, align 8
+  %pay_ptr573 = getelementptr inbounds nuw %Tk, ptr %buf571, i32 0, i32 1
+  store ptr null, ptr %pay_ptr573, align 8
+  %enum_i64574 = ptrtoint ptr %buf571 to i64
+  %methcall575 = call i64 @Parser__set_current(i64 %self568, i64 %enum_i64574, i64 ptrtoint (ptr @.str.1148 to i64))
+  br label %ifcont559
 
-ifcont563:                                        ; preds = %else562, %then561
+ifcont559:                                        ; preds = %else558, %then557
   ret i64 0
 
-parm_body580:                                     ; preds = %parm_next535
-  %self586 = load i64, ptr %self, align 8
-  %null_meth_chk587 = icmp eq i64 %self586, 0
-  %null_meth_ext588 = zext i1 %null_meth_chk587 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1150, i64 17, ptr @mowner_name.1151, i64 6, i64 %null_meth_ext588, ptr @msrc_file.1152, i64 11, i64 122)
-  %methcall589 = call i64 @Parser__scan_string_token(i64 %self586)
+parm_body576:                                     ; preds = %parm_next531
+  %self582 = load i64, ptr %self, align 8
+  %null_meth_chk583 = icmp eq i64 %self582, 0
+  %null_meth_ext584 = zext i1 %null_meth_chk583 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1150, i64 17, ptr @mowner_name.1151, i64 6, i64 %null_meth_ext584, ptr @msrc_file.1152, i64 11, i64 126)
+  %methcall585 = call i64 @Parser__scan_string_token(i64 %self582)
   ret i64 0
 
-parm_next581:                                     ; preds = %parm_next535
-  %lit_str_ptr592 = inttoptr i64 %ch41 to ptr
-  %strcmp_r593 = call i32 @strcmp(ptr %lit_str_ptr592, ptr @.lit_str.1153)
-  %strcmp_sext594 = sext i32 %strcmp_r593 to i64
-  %str_eq595 = icmp eq i64 %strcmp_sext594, 0
-  br i1 %str_eq595, label %parm_body590, label %parm_next591
+parm_next577:                                     ; preds = %parm_next531
+  %lit_str_ptr588 = inttoptr i64 %ch41 to ptr
+  %strcmp_r589 = call i32 @strcmp(ptr %lit_str_ptr588, ptr @.lit_str.1153)
+  %strcmp_sext590 = sext i32 %strcmp_r589 to i64
+  %str_eq591 = icmp eq i64 %strcmp_sext590, 0
+  br i1 %str_eq591, label %parm_body586, label %parm_next587
 
-parm_body590:                                     ; preds = %parm_next581
-  %self596 = load i64, ptr %self, align 8
-  %null_meth_chk597 = icmp eq i64 %self596, 0
-  %null_meth_ext598 = zext i1 %null_meth_chk597 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1154, i64 19, ptr @mowner_name.1155, i64 6, i64 %null_meth_ext598, ptr @msrc_file.1156, i64 11, i64 123)
-  %methcall599 = call i64 @Parser__scan_template_token(i64 %self596)
+parm_body586:                                     ; preds = %parm_next577
+  %self592 = load i64, ptr %self, align 8
+  %null_meth_chk593 = icmp eq i64 %self592, 0
+  %null_meth_ext594 = zext i1 %null_meth_chk593 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1154, i64 19, ptr @mowner_name.1155, i64 6, i64 %null_meth_ext594, ptr @msrc_file.1156, i64 11, i64 127)
+  %methcall595 = call i64 @Parser__scan_template_token(i64 %self592)
   ret i64 0
 
-parm_next591:                                     ; preds = %parm_next581
-  br label %parm_body600
+parm_next587:                                     ; preds = %parm_next577
+  br label %parm_body596
 
-parm_body600:                                     ; preds = %parm_next591
+parm_body596:                                     ; preds = %parm_next587
   %map = call ptr @forge_map_new_cstr()
   br label %pmatch_end
 
-parm_next601:                                     ; No predecessors!
+parm_next597:                                     ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.1157, i64 -1, ptr @mu_file.1158, i64 48)
   unreachable
 
-then604:                                          ; preds = %pmatch_end
-  %self607 = load i64, ptr %self, align 8
-  %null_meth_chk608 = icmp eq i64 %self607, 0
-  %null_meth_ext609 = zext i1 %null_meth_chk608 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1159, i64 17, ptr @mowner_name.1160, i64 6, i64 %null_meth_ext609, ptr @msrc_file.1161, i64 11, i64 128)
-  %methcall610 = call i64 @Parser__scan_number_token(i64 %self607)
+then600:                                          ; preds = %pmatch_end
+  %self603 = load i64, ptr %self, align 8
+  %null_meth_chk604 = icmp eq i64 %self603, 0
+  %null_meth_ext605 = zext i1 %null_meth_chk604 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1159, i64 17, ptr @mowner_name.1160, i64 6, i64 %null_meth_ext605, ptr @msrc_file.1161, i64 11, i64 132)
+  %methcall606 = call i64 @Parser__scan_number_token(i64 %self603)
   ret i64 0
 
-else605:                                          ; preds = %pmatch_end
-  br label %ifcont606
+else601:                                          ; preds = %pmatch_end
+  br label %ifcont602
 
-ifcont606:                                        ; preds = %else605
-  %ch611 = load i64, ptr %ch, align 8
-  %calltmp612 = call i64 @"parse::lexer::p_is_alpha"(i64 %ch611)
-  %if_cond613 = icmp ne i64 %calltmp612, 0
-  br i1 %if_cond613, label %then614, label %else615
+ifcont602:                                        ; preds = %else601
+  %ch607 = load i64, ptr %ch, align 8
+  %calltmp608 = call i64 @"parse::lexer::p_is_alpha"(i64 %ch607)
+  %if_cond609 = icmp ne i64 %calltmp608, 0
+  br i1 %if_cond609, label %then610, label %else611
 
-then614:                                          ; preds = %ifcont606
+then610:                                          ; preds = %ifcont602
+  %self613 = load i64, ptr %self, align 8
+  %null_meth_chk614 = icmp eq i64 %self613, 0
+  %null_meth_ext615 = zext i1 %null_meth_chk614 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1162, i64 21, ptr @mowner_name.1163, i64 6, i64 %null_meth_ext615, ptr @msrc_file.1164, i64 11, i64 137)
+  %methcall616 = call i64 @Parser__scan_identifier_token(i64 %self613)
+  ret i64 0
+
+else611:                                          ; preds = %ifcont602
+  br label %ifcont612
+
+ifcont612:                                        ; preds = %else611
   %self617 = load i64, ptr %self, align 8
   %null_meth_chk618 = icmp eq i64 %self617, 0
   %null_meth_ext619 = zext i1 %null_meth_chk618 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1162, i64 21, ptr @mowner_name.1163, i64 6, i64 %null_meth_ext619, ptr @msrc_file.1164, i64 11, i64 133)
-  %methcall620 = call i64 @Parser__scan_identifier_token(i64 %self617)
-  ret i64 0
-
-else615:                                          ; preds = %ifcont606
-  br label %ifcont616
-
-ifcont616:                                        ; preds = %else615
-  %self621 = load i64, ptr %self, align 8
-  %null_meth_chk622 = icmp eq i64 %self621, 0
-  %null_meth_ext623 = zext i1 %null_meth_chk622 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1165, i64 9, ptr @mowner_name.1166, i64 6, i64 %null_meth_ext623, ptr @msrc_file.1167, i64 11, i64 137)
-  %ch624 = load i64, ptr %ch, align 8
-  %concat_r = inttoptr i64 %ch624 to ptr
+  call void @forge_null_deref_trap(ptr @meth_name.1165, i64 9, ptr @mowner_name.1166, i64 6, i64 %null_meth_ext619, ptr @msrc_file.1167, i64 11, i64 141)
+  %ch620 = load i64, ptr %ch, align 8
+  %concat_r = inttoptr i64 %ch620 to ptr
   %lhs_len = call i64 @strlen(ptr @.str.1168)
   %rhs_len = call i64 @strlen(ptr %concat_r)
   %concat_total = add i64 %lhs_len, %rhs_len
   %concat_size = add i64 %concat_total, 1
-  %buf625 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %1 = call ptr @memcpy(ptr %buf625, ptr @.str.1168, i64 %lhs_len)
-  %buf_int = ptrtoint ptr %buf625 to i64
+  %buf621 = call ptr @forge_bump_alloc(i64 %concat_size)
+  %1 = call ptr @memcpy(ptr %buf621, ptr @.str.1168, i64 %lhs_len)
+  %buf_int = ptrtoint ptr %buf621 to i64
   %dst2_int = add i64 %buf_int, %lhs_len
   %dst2 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %rhs_len, 1
   %2 = call ptr @memcpy(ptr %dst2, ptr %concat_r, i64 %rhs_len_p1)
-  %concat_i64 = ptrtoint ptr %buf625 to i64
+  %concat_i64 = ptrtoint ptr %buf621 to i64
   %concat_l = inttoptr i64 %concat_i64 to ptr
-  %lhs_len626 = call i64 @strlen(ptr %concat_l)
-  %rhs_len627 = call i64 @strlen(ptr @.str.1169)
-  %concat_total628 = add i64 %lhs_len626, %rhs_len627
-  %concat_size629 = add i64 %concat_total628, 1
-  %buf630 = call ptr @forge_bump_alloc(i64 %concat_size629)
-  %3 = call ptr @memcpy(ptr %buf630, ptr %concat_l, i64 %lhs_len626)
-  %buf_int631 = ptrtoint ptr %buf630 to i64
-  %dst2_int632 = add i64 %buf_int631, %lhs_len626
-  %dst2633 = inttoptr i64 %dst2_int632 to ptr
-  %rhs_len_p1634 = add i64 %rhs_len627, 1
-  %4 = call ptr @memcpy(ptr %dst2633, ptr @.str.1169, i64 %rhs_len_p1634)
-  %concat_i64635 = ptrtoint ptr %buf630 to i64
-  %methcall636 = call i64 @Parser__set_error(i64 %self621, i64 %concat_i64635)
-  %self637 = load i64, ptr %self, align 8
-  %null_meth_chk638 = icmp eq i64 %self637, 0
-  %null_meth_ext639 = zext i1 %null_meth_chk638 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1170, i64 11, ptr @mowner_name.1171, i64 6, i64 %null_meth_ext639, ptr @msrc_file.1172, i64 11, i64 138)
-  %buf640 = call ptr @forge_bump_alloc(i64 16)
-  %tag_ptr641 = getelementptr inbounds nuw %Tk, ptr %buf640, i32 0, i32 0
-  store i64 210673603023, ptr %tag_ptr641, align 8
-  %pay_ptr642 = getelementptr inbounds nuw %Tk, ptr %buf640, i32 0, i32 1
-  store ptr null, ptr %pay_ptr642, align 8
-  %enum_i64643 = ptrtoint ptr %buf640 to i64
-  %ch644 = load i64, ptr %ch, align 8
-  %methcall645 = call i64 @Parser__set_current(i64 %self637, i64 %enum_i64643, i64 %ch644)
-  ret i64 %methcall645
+  %lhs_len622 = call i64 @strlen(ptr %concat_l)
+  %rhs_len623 = call i64 @strlen(ptr @.str.1169)
+  %concat_total624 = add i64 %lhs_len622, %rhs_len623
+  %concat_size625 = add i64 %concat_total624, 1
+  %buf626 = call ptr @forge_bump_alloc(i64 %concat_size625)
+  %3 = call ptr @memcpy(ptr %buf626, ptr %concat_l, i64 %lhs_len622)
+  %buf_int627 = ptrtoint ptr %buf626 to i64
+  %dst2_int628 = add i64 %buf_int627, %lhs_len622
+  %dst2629 = inttoptr i64 %dst2_int628 to ptr
+  %rhs_len_p1630 = add i64 %rhs_len623, 1
+  %4 = call ptr @memcpy(ptr %dst2629, ptr @.str.1169, i64 %rhs_len_p1630)
+  %concat_i64631 = ptrtoint ptr %buf626 to i64
+  %methcall632 = call i64 @Parser__set_error(i64 %self617, i64 %concat_i64631)
+  %self633 = load i64, ptr %self, align 8
+  %null_meth_chk634 = icmp eq i64 %self633, 0
+  %null_meth_ext635 = zext i1 %null_meth_chk634 to i64
+  call void @forge_null_deref_trap(ptr @meth_name.1170, i64 11, ptr @mowner_name.1171, i64 6, i64 %null_meth_ext635, ptr @msrc_file.1172, i64 11, i64 142)
+  %buf636 = call ptr @forge_bump_alloc(i64 16)
+  %tag_ptr637 = getelementptr inbounds nuw %Tk, ptr %buf636, i32 0, i32 0
+  store i64 210673603023, ptr %tag_ptr637, align 8
+  %pay_ptr638 = getelementptr inbounds nuw %Tk, ptr %buf636, i32 0, i32 1
+  store ptr null, ptr %pay_ptr638, align 8
+  %enum_i64639 = ptrtoint ptr %buf636 to i64
+  %ch640 = load i64, ptr %ch, align 8
+  %methcall641 = call i64 @Parser__set_current(i64 %self633, i64 %enum_i64639, i64 %ch640)
+  ret i64 %methcall641
 }
 
 define i64 @Parser__scan_template_token(i64 %0) {
@@ -27905,7 +27911,7 @@ while.cond:                                       ; preds = %while.body, %entry
   %self1 = load i64, ptr %self, align 8
   %null_meth_chk = icmp eq i64 %self1, 0
   %null_meth_ext = zext i1 %null_meth_chk to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1174, i64 9, ptr @mowner_name.1175, i64 6, i64 %null_meth_ext, ptr @msrc_file.1176, i64 11, i64 145)
+  call void @forge_null_deref_trap(ptr @meth_name.1174, i64 9, ptr @mowner_name.1175, i64 6, i64 %null_meth_ext, ptr @msrc_file.1176, i64 11, i64 149)
   %methcall = call i64 @Parser__is_at_end(i64 %self1)
   %not_cmp = icmp eq i64 %methcall, 0
   %not = zext i1 %not_cmp to i64
@@ -27917,7 +27923,7 @@ while.body:                                       ; preds = %sc_merge
   %self7 = load i64, ptr %self, align 8
   %null_meth_chk8 = icmp eq i64 %self7, 0
   %null_meth_ext9 = zext i1 %null_meth_chk8 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1181, i64 9, ptr @mowner_name.1182, i64 6, i64 %null_meth_ext9, ptr @msrc_file.1183, i64 11, i64 146)
+  call void @forge_null_deref_trap(ptr @meth_name.1181, i64 9, ptr @mowner_name.1182, i64 6, i64 %null_meth_ext9, ptr @msrc_file.1183, i64 11, i64 150)
   %methcall10 = call i64 @Parser__peek_char(i64 %self7)
   %concat_l = inttoptr i64 %content6 to ptr
   %concat_r = inttoptr i64 %methcall10 to ptr
@@ -27937,7 +27943,7 @@ while.body:                                       ; preds = %sc_merge
   %self11 = load i64, ptr %self, align 8
   %null_meth_chk12 = icmp eq i64 %self11, 0
   %null_meth_ext13 = zext i1 %null_meth_chk12 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1184, i64 12, ptr @mowner_name.1185, i64 6, i64 %null_meth_ext13, ptr @msrc_file.1186, i64 11, i64 147)
+  call void @forge_null_deref_trap(ptr @meth_name.1184, i64 12, ptr @mowner_name.1185, i64 6, i64 %null_meth_ext13, ptr @msrc_file.1186, i64 11, i64 151)
   %methcall14 = call i64 @Parser__advance_char(i64 %self11)
   br label %while.cond
 
@@ -27945,7 +27951,7 @@ while.exit:                                       ; preds = %sc_merge
   %self15 = load i64, ptr %self, align 8
   %null_meth_chk16 = icmp eq i64 %self15, 0
   %null_meth_ext17 = zext i1 %null_meth_chk16 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1187, i64 9, ptr @mowner_name.1188, i64 6, i64 %null_meth_ext17, ptr @msrc_file.1189, i64 11, i64 149)
+  call void @forge_null_deref_trap(ptr @meth_name.1187, i64 9, ptr @mowner_name.1188, i64 6, i64 %null_meth_ext17, ptr @msrc_file.1189, i64 11, i64 153)
   %methcall18 = call i64 @Parser__is_at_end(i64 %self15)
   %if_cond = icmp ne i64 %methcall18, 0
   br i1 %if_cond, label %then, label %else
@@ -27954,7 +27960,7 @@ sc_rhs:                                           ; preds = %while.cond
   %self2 = load i64, ptr %self, align 8
   %null_meth_chk3 = icmp eq i64 %self2, 0
   %null_meth_ext4 = zext i1 %null_meth_chk3 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1177, i64 9, ptr @mowner_name.1178, i64 6, i64 %null_meth_ext4, ptr @msrc_file.1179, i64 11, i64 145)
+  call void @forge_null_deref_trap(ptr @meth_name.1177, i64 9, ptr @mowner_name.1178, i64 6, i64 %null_meth_ext4, ptr @msrc_file.1179, i64 11, i64 149)
   %methcall5 = call i64 @Parser__peek_char(i64 %self2)
   %streq_l = inttoptr i64 %methcall5 to ptr
   %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.1180)
@@ -27974,7 +27980,7 @@ then:                                             ; preds = %while.exit
   %self19 = load i64, ptr %self, align 8
   %null_meth_chk20 = icmp eq i64 %self19, 0
   %null_meth_ext21 = zext i1 %null_meth_chk20 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1190, i64 6, ptr @mowner_name.1191, i64 6, i64 %null_meth_ext21, ptr @msrc_file.1192, i64 11, i64 150)
+  call void @forge_null_deref_trap(ptr @meth_name.1190, i64 6, ptr @mowner_name.1191, i64 6, i64 %null_meth_ext21, ptr @msrc_file.1192, i64 11, i64 154)
   %buf22 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw %DiagCode, ptr %buf22, i32 0, i32 0
   store i64 1575989551210784849, ptr %tag_ptr, align 8
@@ -27985,7 +27991,7 @@ then:                                             ; preds = %while.exit
   %self24 = load i64, ptr %self, align 8
   %null_meth_chk25 = icmp eq i64 %self24, 0
   %null_meth_ext26 = zext i1 %null_meth_chk25 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1194, i64 11, ptr @mowner_name.1195, i64 6, i64 %null_meth_ext26, ptr @msrc_file.1196, i64 11, i64 151)
+  call void @forge_null_deref_trap(ptr @meth_name.1194, i64 11, ptr @mowner_name.1195, i64 6, i64 %null_meth_ext26, ptr @msrc_file.1196, i64 11, i64 155)
   %buf27 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr28 = getelementptr inbounds nuw %Tk, ptr %buf27, i32 0, i32 0
   store i64 210673603023, ptr %tag_ptr28, align 8
@@ -28002,12 +28008,12 @@ ifcont:                                           ; preds = %else
   %self32 = load i64, ptr %self, align 8
   %null_meth_chk33 = icmp eq i64 %self32, 0
   %null_meth_ext34 = zext i1 %null_meth_chk33 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1198, i64 12, ptr @mowner_name.1199, i64 6, i64 %null_meth_ext34, ptr @msrc_file.1200, i64 11, i64 154)
+  call void @forge_null_deref_trap(ptr @meth_name.1198, i64 12, ptr @mowner_name.1199, i64 6, i64 %null_meth_ext34, ptr @msrc_file.1200, i64 11, i64 158)
   %methcall35 = call i64 @Parser__advance_char(i64 %self32)
   %self36 = load i64, ptr %self, align 8
   %null_meth_chk37 = icmp eq i64 %self36, 0
   %null_meth_ext38 = zext i1 %null_meth_chk37 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1201, i64 11, ptr @mowner_name.1202, i64 6, i64 %null_meth_ext38, ptr @msrc_file.1203, i64 11, i64 155)
+  call void @forge_null_deref_trap(ptr @meth_name.1201, i64 11, ptr @mowner_name.1202, i64 6, i64 %null_meth_ext38, ptr @msrc_file.1203, i64 11, i64 159)
   %buf39 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr40 = getelementptr inbounds nuw %Tk, ptr %buf39, i32 0, i32 0
   store i64 7571599564801505, ptr %tag_ptr40, align 8
@@ -28035,14 +28041,14 @@ entry:
   %obj_ptr = inttoptr i64 %self1 to ptr
   %null_fld_chk = icmp eq i64 %self1, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1204, i64 6, ptr @sty_name.1205, i64 6, i64 %null_fld_ext, ptr @src_file.1206, i64 11, i64 160)
+  call void @forge_null_deref_trap(ptr @fld_name.1204, i64 6, ptr @sty_name.1205, i64 6, i64 %null_fld_ext, ptr @src_file.1206, i64 11, i64 164)
   %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 0
   %source = load i64, ptr %fld_ptr, align 8
   %self2 = load i64, ptr %self, align 8
   %obj_ptr3 = inttoptr i64 %self2 to ptr
   %null_fld_chk4 = icmp eq i64 %self2, 0
   %null_fld_ext5 = zext i1 %null_fld_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1207, i64 5, ptr @sty_name.1208, i64 6, i64 %null_fld_ext5, ptr @src_file.1209, i64 11, i64 160)
+  call void @forge_null_deref_trap(ptr @fld_name.1207, i64 5, ptr @sty_name.1208, i64 6, i64 %null_fld_ext5, ptr @src_file.1209, i64 11, i64 164)
   %fld_ptr6 = getelementptr inbounds nuw %Parser, ptr %obj_ptr3, i32 0, i32 1
   %start = load i64, ptr %fld_ptr6, align 8
   %idx_off_int = add i64 %source, %start
@@ -28069,7 +28075,7 @@ then:                                             ; preds = %entry
   %self8 = load i64, ptr %self, align 8
   %null_meth_chk = icmp eq i64 %self8, 0
   %null_meth_ext = zext i1 %null_meth_chk to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1211, i64 9, ptr @mowner_name.1212, i64 6, i64 %null_meth_ext, ptr @msrc_file.1213, i64 11, i64 162)
+  call void @forge_null_deref_trap(ptr @meth_name.1211, i64 9, ptr @mowner_name.1212, i64 6, i64 %null_meth_ext, ptr @msrc_file.1213, i64 11, i64 166)
   %methcall = call i64 @Parser__peek_char(i64 %self8)
   store i64 %methcall, ptr %prefix, align 8
   %prefix9 = load i64, ptr %prefix, align 8
@@ -28097,7 +28103,7 @@ parm_body:                                        ; preds = %then
   %self15 = load i64, ptr %self, align 8
   %null_meth_chk16 = icmp eq i64 %self15, 0
   %null_meth_ext17 = zext i1 %null_meth_chk16 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1216, i64 12, ptr @mowner_name.1217, i64 6, i64 %null_meth_ext17, ptr @msrc_file.1218, i64 11, i64 166)
+  call void @forge_null_deref_trap(ptr @meth_name.1216, i64 12, ptr @mowner_name.1217, i64 6, i64 %null_meth_ext17, ptr @msrc_file.1218, i64 11, i64 170)
   %methcall18 = call i64 @Parser__advance_char(i64 %self15)
   br label %while.cond
 
@@ -28117,7 +28123,7 @@ while.cond:                                       ; preds = %while.body, %parm_b
   %self19 = load i64, ptr %self, align 8
   %null_meth_chk20 = icmp eq i64 %self19, 0
   %null_meth_ext21 = zext i1 %null_meth_chk20 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1219, i64 9, ptr @mowner_name.1220, i64 6, i64 %null_meth_ext21, ptr @msrc_file.1221, i64 11, i64 167)
+  call void @forge_null_deref_trap(ptr @meth_name.1219, i64 9, ptr @mowner_name.1220, i64 6, i64 %null_meth_ext21, ptr @msrc_file.1221, i64 11, i64 171)
   %methcall22 = call i64 @Parser__peek_char(i64 %self19)
   %calltmp = call i64 @"parse::lexer::p_is_hex_digit"(i64 %methcall22)
   %l_bool = icmp ne i64 %calltmp, 0
@@ -28127,7 +28133,7 @@ while.body:                                       ; preds = %sc_merge
   %self32 = load i64, ptr %self, align 8
   %null_meth_chk33 = icmp eq i64 %self32, 0
   %null_meth_ext34 = zext i1 %null_meth_chk33 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1226, i64 12, ptr @mowner_name.1227, i64 6, i64 %null_meth_ext34, ptr @msrc_file.1228, i64 11, i64 167)
+  call void @forge_null_deref_trap(ptr @meth_name.1226, i64 12, ptr @mowner_name.1227, i64 6, i64 %null_meth_ext34, ptr @msrc_file.1228, i64 11, i64 171)
   %methcall35 = call i64 @Parser__advance_char(i64 %self32)
   br label %while.cond
 
@@ -28135,7 +28141,7 @@ while.exit:                                       ; preds = %sc_merge
   %self36 = load i64, ptr %self, align 8
   %null_meth_chk37 = icmp eq i64 %self36, 0
   %null_meth_ext38 = zext i1 %null_meth_chk37 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1229, i64 11, ptr @mowner_name.1230, i64 6, i64 %null_meth_ext38, ptr @msrc_file.1231, i64 11, i64 168)
+  call void @forge_null_deref_trap(ptr @meth_name.1229, i64 11, ptr @mowner_name.1230, i64 6, i64 %null_meth_ext38, ptr @msrc_file.1231, i64 11, i64 172)
   %buf39 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw %Tk, ptr %buf39, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr, align 8
@@ -28146,21 +28152,21 @@ while.exit:                                       ; preds = %sc_merge
   %obj_ptr41 = inttoptr i64 %self40 to ptr
   %null_fld_chk42 = icmp eq i64 %self40, 0
   %null_fld_ext43 = zext i1 %null_fld_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1232, i64 6, ptr @sty_name.1233, i64 6, i64 %null_fld_ext43, ptr @src_file.1234, i64 11, i64 168)
+  call void @forge_null_deref_trap(ptr @fld_name.1232, i64 6, ptr @sty_name.1233, i64 6, i64 %null_fld_ext43, ptr @src_file.1234, i64 11, i64 172)
   %fld_ptr44 = getelementptr inbounds nuw %Parser, ptr %obj_ptr41, i32 0, i32 0
   %source45 = load i64, ptr %fld_ptr44, align 8
   %self46 = load i64, ptr %self, align 8
   %obj_ptr47 = inttoptr i64 %self46 to ptr
   %null_fld_chk48 = icmp eq i64 %self46, 0
   %null_fld_ext49 = zext i1 %null_fld_chk48 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1235, i64 5, ptr @sty_name.1236, i64 6, i64 %null_fld_ext49, ptr @src_file.1237, i64 11, i64 168)
+  call void @forge_null_deref_trap(ptr @fld_name.1235, i64 5, ptr @sty_name.1236, i64 6, i64 %null_fld_ext49, ptr @src_file.1237, i64 11, i64 172)
   %fld_ptr50 = getelementptr inbounds nuw %Parser, ptr %obj_ptr47, i32 0, i32 1
   %start51 = load i64, ptr %fld_ptr50, align 8
   %self52 = load i64, ptr %self, align 8
   %obj_ptr53 = inttoptr i64 %self52 to ptr
   %null_fld_chk54 = icmp eq i64 %self52, 0
   %null_fld_ext55 = zext i1 %null_fld_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1238, i64 7, ptr @sty_name.1239, i64 6, i64 %null_fld_ext55, ptr @src_file.1240, i64 11, i64 168)
+  call void @forge_null_deref_trap(ptr @fld_name.1238, i64 7, ptr @sty_name.1239, i64 6, i64 %null_fld_ext55, ptr @src_file.1240, i64 11, i64 172)
   %fld_ptr56 = getelementptr inbounds nuw %Parser, ptr %obj_ptr53, i32 0, i32 2
   %current = load i64, ptr %fld_ptr56, align 8
   %sub_src = inttoptr i64 %source45 to ptr
@@ -28183,7 +28189,7 @@ sc_rhs:                                           ; preds = %while.cond
   %self23 = load i64, ptr %self, align 8
   %null_meth_chk24 = icmp eq i64 %self23, 0
   %null_meth_ext25 = zext i1 %null_meth_chk24 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1222, i64 9, ptr @mowner_name.1223, i64 6, i64 %null_meth_ext25, ptr @msrc_file.1224, i64 11, i64 167)
+  call void @forge_null_deref_trap(ptr @meth_name.1222, i64 9, ptr @mowner_name.1223, i64 6, i64 %null_meth_ext25, ptr @msrc_file.1224, i64 11, i64 171)
   %methcall26 = call i64 @Parser__peek_char(i64 %self23)
   %streq_l27 = inttoptr i64 %methcall26 to ptr
   %strcmp_call28 = call i32 @strcmp(ptr %streq_l27, ptr @.str.1225)
@@ -28203,7 +28209,7 @@ parm_body59:                                      ; preds = %parm_next
   %self70 = load i64, ptr %self, align 8
   %null_meth_chk71 = icmp eq i64 %self70, 0
   %null_meth_ext72 = zext i1 %null_meth_chk71 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1243, i64 12, ptr @mowner_name.1244, i64 6, i64 %null_meth_ext72, ptr @msrc_file.1245, i64 11, i64 173)
+  call void @forge_null_deref_trap(ptr @meth_name.1243, i64 12, ptr @mowner_name.1244, i64 6, i64 %null_meth_ext72, ptr @msrc_file.1245, i64 11, i64 177)
   %methcall73 = call i64 @Parser__advance_char(i64 %self70)
   br label %while.cond74
 
@@ -28223,7 +28229,7 @@ while.cond74:                                     ; preds = %while.body75, %parm
   %self77 = load i64, ptr %self, align 8
   %null_meth_chk78 = icmp eq i64 %self77, 0
   %null_meth_ext79 = zext i1 %null_meth_chk78 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1246, i64 9, ptr @mowner_name.1247, i64 6, i64 %null_meth_ext79, ptr @msrc_file.1248, i64 11, i64 174)
+  call void @forge_null_deref_trap(ptr @meth_name.1246, i64 9, ptr @mowner_name.1247, i64 6, i64 %null_meth_ext79, ptr @msrc_file.1248, i64 11, i64 178)
   %methcall80 = call i64 @Parser__peek_char(i64 %self77)
   %calltmp81 = call i64 @"parse::lexer::p_is_binary_digit"(i64 %methcall80)
   %l_bool82 = icmp ne i64 %calltmp81, 0
@@ -28233,7 +28239,7 @@ while.body75:                                     ; preds = %sc_merge84
   %self98 = load i64, ptr %self, align 8
   %null_meth_chk99 = icmp eq i64 %self98, 0
   %null_meth_ext100 = zext i1 %null_meth_chk99 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1253, i64 12, ptr @mowner_name.1254, i64 6, i64 %null_meth_ext100, ptr @msrc_file.1255, i64 11, i64 174)
+  call void @forge_null_deref_trap(ptr @meth_name.1253, i64 12, ptr @mowner_name.1254, i64 6, i64 %null_meth_ext100, ptr @msrc_file.1255, i64 11, i64 178)
   %methcall101 = call i64 @Parser__advance_char(i64 %self98)
   br label %while.cond74
 
@@ -28241,7 +28247,7 @@ while.exit76:                                     ; preds = %sc_merge84
   %self102 = load i64, ptr %self, align 8
   %null_meth_chk103 = icmp eq i64 %self102, 0
   %null_meth_ext104 = zext i1 %null_meth_chk103 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1256, i64 11, ptr @mowner_name.1257, i64 6, i64 %null_meth_ext104, ptr @msrc_file.1258, i64 11, i64 175)
+  call void @forge_null_deref_trap(ptr @meth_name.1256, i64 11, ptr @mowner_name.1257, i64 6, i64 %null_meth_ext104, ptr @msrc_file.1258, i64 11, i64 179)
   %buf105 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr106 = getelementptr inbounds nuw %Tk, ptr %buf105, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr106, align 8
@@ -28252,21 +28258,21 @@ while.exit76:                                     ; preds = %sc_merge84
   %obj_ptr110 = inttoptr i64 %self109 to ptr
   %null_fld_chk111 = icmp eq i64 %self109, 0
   %null_fld_ext112 = zext i1 %null_fld_chk111 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1259, i64 6, ptr @sty_name.1260, i64 6, i64 %null_fld_ext112, ptr @src_file.1261, i64 11, i64 175)
+  call void @forge_null_deref_trap(ptr @fld_name.1259, i64 6, ptr @sty_name.1260, i64 6, i64 %null_fld_ext112, ptr @src_file.1261, i64 11, i64 179)
   %fld_ptr113 = getelementptr inbounds nuw %Parser, ptr %obj_ptr110, i32 0, i32 0
   %source114 = load i64, ptr %fld_ptr113, align 8
   %self115 = load i64, ptr %self, align 8
   %obj_ptr116 = inttoptr i64 %self115 to ptr
   %null_fld_chk117 = icmp eq i64 %self115, 0
   %null_fld_ext118 = zext i1 %null_fld_chk117 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1262, i64 5, ptr @sty_name.1263, i64 6, i64 %null_fld_ext118, ptr @src_file.1264, i64 11, i64 175)
+  call void @forge_null_deref_trap(ptr @fld_name.1262, i64 5, ptr @sty_name.1263, i64 6, i64 %null_fld_ext118, ptr @src_file.1264, i64 11, i64 179)
   %fld_ptr119 = getelementptr inbounds nuw %Parser, ptr %obj_ptr116, i32 0, i32 1
   %start120 = load i64, ptr %fld_ptr119, align 8
   %self121 = load i64, ptr %self, align 8
   %obj_ptr122 = inttoptr i64 %self121 to ptr
   %null_fld_chk123 = icmp eq i64 %self121, 0
   %null_fld_ext124 = zext i1 %null_fld_chk123 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1265, i64 7, ptr @sty_name.1266, i64 6, i64 %null_fld_ext124, ptr @src_file.1267, i64 11, i64 175)
+  call void @forge_null_deref_trap(ptr @fld_name.1265, i64 7, ptr @sty_name.1266, i64 6, i64 %null_fld_ext124, ptr @src_file.1267, i64 11, i64 179)
   %fld_ptr125 = getelementptr inbounds nuw %Parser, ptr %obj_ptr122, i32 0, i32 2
   %current126 = load i64, ptr %fld_ptr125, align 8
   %sub_src127 = inttoptr i64 %source114 to ptr
@@ -28289,7 +28295,7 @@ sc_rhs83:                                         ; preds = %while.cond74
   %self85 = load i64, ptr %self, align 8
   %null_meth_chk86 = icmp eq i64 %self85, 0
   %null_meth_ext87 = zext i1 %null_meth_chk86 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1249, i64 9, ptr @mowner_name.1250, i64 6, i64 %null_meth_ext87, ptr @msrc_file.1251, i64 11, i64 174)
+  call void @forge_null_deref_trap(ptr @meth_name.1249, i64 9, ptr @mowner_name.1250, i64 6, i64 %null_meth_ext87, ptr @msrc_file.1251, i64 11, i64 178)
   %methcall88 = call i64 @Parser__peek_char(i64 %self85)
   %streq_l89 = inttoptr i64 %methcall88 to ptr
   %strcmp_call90 = call i32 @strcmp(ptr %streq_l89, ptr @.str.1252)
@@ -28309,7 +28315,7 @@ parm_body139:                                     ; preds = %parm_next60
   %self150 = load i64, ptr %self, align 8
   %null_meth_chk151 = icmp eq i64 %self150, 0
   %null_meth_ext152 = zext i1 %null_meth_chk151 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1270, i64 12, ptr @mowner_name.1271, i64 6, i64 %null_meth_ext152, ptr @msrc_file.1272, i64 11, i64 180)
+  call void @forge_null_deref_trap(ptr @meth_name.1270, i64 12, ptr @mowner_name.1271, i64 6, i64 %null_meth_ext152, ptr @msrc_file.1272, i64 11, i64 184)
   %methcall153 = call i64 @Parser__advance_char(i64 %self150)
   br label %while.cond154
 
@@ -28320,7 +28326,7 @@ while.cond154:                                    ; preds = %while.body155, %par
   %self157 = load i64, ptr %self, align 8
   %null_meth_chk158 = icmp eq i64 %self157, 0
   %null_meth_ext159 = zext i1 %null_meth_chk158 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1273, i64 9, ptr @mowner_name.1274, i64 6, i64 %null_meth_ext159, ptr @msrc_file.1275, i64 11, i64 181)
+  call void @forge_null_deref_trap(ptr @meth_name.1273, i64 9, ptr @mowner_name.1274, i64 6, i64 %null_meth_ext159, ptr @msrc_file.1275, i64 11, i64 185)
   %methcall160 = call i64 @Parser__peek_char(i64 %self157)
   %calltmp161 = call i64 @"parse::lexer::p_is_octal_digit"(i64 %methcall160)
   %l_bool162 = icmp ne i64 %calltmp161, 0
@@ -28330,7 +28336,7 @@ while.body155:                                    ; preds = %sc_merge164
   %self178 = load i64, ptr %self, align 8
   %null_meth_chk179 = icmp eq i64 %self178, 0
   %null_meth_ext180 = zext i1 %null_meth_chk179 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1280, i64 12, ptr @mowner_name.1281, i64 6, i64 %null_meth_ext180, ptr @msrc_file.1282, i64 11, i64 181)
+  call void @forge_null_deref_trap(ptr @meth_name.1280, i64 12, ptr @mowner_name.1281, i64 6, i64 %null_meth_ext180, ptr @msrc_file.1282, i64 11, i64 185)
   %methcall181 = call i64 @Parser__advance_char(i64 %self178)
   br label %while.cond154
 
@@ -28338,7 +28344,7 @@ while.exit156:                                    ; preds = %sc_merge164
   %self182 = load i64, ptr %self, align 8
   %null_meth_chk183 = icmp eq i64 %self182, 0
   %null_meth_ext184 = zext i1 %null_meth_chk183 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1283, i64 11, ptr @mowner_name.1284, i64 6, i64 %null_meth_ext184, ptr @msrc_file.1285, i64 11, i64 182)
+  call void @forge_null_deref_trap(ptr @meth_name.1283, i64 11, ptr @mowner_name.1284, i64 6, i64 %null_meth_ext184, ptr @msrc_file.1285, i64 11, i64 186)
   %buf185 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr186 = getelementptr inbounds nuw %Tk, ptr %buf185, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr186, align 8
@@ -28349,21 +28355,21 @@ while.exit156:                                    ; preds = %sc_merge164
   %obj_ptr190 = inttoptr i64 %self189 to ptr
   %null_fld_chk191 = icmp eq i64 %self189, 0
   %null_fld_ext192 = zext i1 %null_fld_chk191 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1286, i64 6, ptr @sty_name.1287, i64 6, i64 %null_fld_ext192, ptr @src_file.1288, i64 11, i64 182)
+  call void @forge_null_deref_trap(ptr @fld_name.1286, i64 6, ptr @sty_name.1287, i64 6, i64 %null_fld_ext192, ptr @src_file.1288, i64 11, i64 186)
   %fld_ptr193 = getelementptr inbounds nuw %Parser, ptr %obj_ptr190, i32 0, i32 0
   %source194 = load i64, ptr %fld_ptr193, align 8
   %self195 = load i64, ptr %self, align 8
   %obj_ptr196 = inttoptr i64 %self195 to ptr
   %null_fld_chk197 = icmp eq i64 %self195, 0
   %null_fld_ext198 = zext i1 %null_fld_chk197 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1289, i64 5, ptr @sty_name.1290, i64 6, i64 %null_fld_ext198, ptr @src_file.1291, i64 11, i64 182)
+  call void @forge_null_deref_trap(ptr @fld_name.1289, i64 5, ptr @sty_name.1290, i64 6, i64 %null_fld_ext198, ptr @src_file.1291, i64 11, i64 186)
   %fld_ptr199 = getelementptr inbounds nuw %Parser, ptr %obj_ptr196, i32 0, i32 1
   %start200 = load i64, ptr %fld_ptr199, align 8
   %self201 = load i64, ptr %self, align 8
   %obj_ptr202 = inttoptr i64 %self201 to ptr
   %null_fld_chk203 = icmp eq i64 %self201, 0
   %null_fld_ext204 = zext i1 %null_fld_chk203 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1292, i64 7, ptr @sty_name.1293, i64 6, i64 %null_fld_ext204, ptr @src_file.1294, i64 11, i64 182)
+  call void @forge_null_deref_trap(ptr @fld_name.1292, i64 7, ptr @sty_name.1293, i64 6, i64 %null_fld_ext204, ptr @src_file.1294, i64 11, i64 186)
   %fld_ptr205 = getelementptr inbounds nuw %Parser, ptr %obj_ptr202, i32 0, i32 2
   %current206 = load i64, ptr %fld_ptr205, align 8
   %sub_src207 = inttoptr i64 %source194 to ptr
@@ -28386,7 +28392,7 @@ sc_rhs163:                                        ; preds = %while.cond154
   %self165 = load i64, ptr %self, align 8
   %null_meth_chk166 = icmp eq i64 %self165, 0
   %null_meth_ext167 = zext i1 %null_meth_chk166 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1276, i64 9, ptr @mowner_name.1277, i64 6, i64 %null_meth_ext167, ptr @msrc_file.1278, i64 11, i64 181)
+  call void @forge_null_deref_trap(ptr @meth_name.1276, i64 9, ptr @mowner_name.1277, i64 6, i64 %null_meth_ext167, ptr @msrc_file.1278, i64 11, i64 185)
   %methcall168 = call i64 @Parser__peek_char(i64 %self165)
   %streq_l169 = inttoptr i64 %methcall168 to ptr
   %strcmp_call170 = call i32 @strcmp(ptr %streq_l169, ptr @.str.1279)
@@ -28407,14 +28413,14 @@ parm_body219:                                     ; preds = %parm_next140
   br label %pmatch_end
 
 parm_next220:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1295, i64 -1, ptr @mu_file.1296, i64 163)
+  call void @forge_match_unreachable(ptr @.match_fn.1295, i64 -1, ptr @mu_file.1296, i64 167)
   unreachable
 
 while.cond221:                                    ; preds = %while.body222, %ifcont
   %self224 = load i64, ptr %self, align 8
   %null_meth_chk225 = icmp eq i64 %self224, 0
   %null_meth_ext226 = zext i1 %null_meth_chk225 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1297, i64 9, ptr @mowner_name.1298, i64 6, i64 %null_meth_ext226, ptr @msrc_file.1299, i64 11, i64 189)
+  call void @forge_null_deref_trap(ptr @meth_name.1297, i64 9, ptr @mowner_name.1298, i64 6, i64 %null_meth_ext226, ptr @msrc_file.1299, i64 11, i64 193)
   %methcall227 = call i64 @Parser__peek_char(i64 %self224)
   %calltmp228 = call i64 @"parse::lexer::p_is_digit"(i64 %methcall227)
   %l_bool229 = icmp ne i64 %calltmp228, 0
@@ -28424,7 +28430,7 @@ while.body222:                                    ; preds = %sc_merge231
   %self245 = load i64, ptr %self, align 8
   %null_meth_chk246 = icmp eq i64 %self245, 0
   %null_meth_ext247 = zext i1 %null_meth_chk246 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1304, i64 12, ptr @mowner_name.1305, i64 6, i64 %null_meth_ext247, ptr @msrc_file.1306, i64 11, i64 190)
+  call void @forge_null_deref_trap(ptr @meth_name.1304, i64 12, ptr @mowner_name.1305, i64 6, i64 %null_meth_ext247, ptr @msrc_file.1306, i64 11, i64 194)
   %methcall248 = call i64 @Parser__advance_char(i64 %self245)
   br label %while.cond221
 
@@ -28432,7 +28438,7 @@ while.exit223:                                    ; preds = %sc_merge231
   %self249 = load i64, ptr %self, align 8
   %null_meth_chk250 = icmp eq i64 %self249, 0
   %null_meth_ext251 = zext i1 %null_meth_chk250 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1307, i64 9, ptr @mowner_name.1308, i64 6, i64 %null_meth_ext251, ptr @msrc_file.1309, i64 11, i64 193)
+  call void @forge_null_deref_trap(ptr @meth_name.1307, i64 9, ptr @mowner_name.1308, i64 6, i64 %null_meth_ext251, ptr @msrc_file.1309, i64 11, i64 197)
   %methcall252 = call i64 @Parser__peek_char(i64 %self249)
   %streq_l253 = inttoptr i64 %methcall252 to ptr
   %strcmp_call254 = call i32 @strcmp(ptr %streq_l253, ptr @.str.1310)
@@ -28446,7 +28452,7 @@ sc_rhs230:                                        ; preds = %while.cond221
   %self232 = load i64, ptr %self, align 8
   %null_meth_chk233 = icmp eq i64 %self232, 0
   %null_meth_ext234 = zext i1 %null_meth_chk233 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1300, i64 9, ptr @mowner_name.1301, i64 6, i64 %null_meth_ext234, ptr @msrc_file.1302, i64 11, i64 189)
+  call void @forge_null_deref_trap(ptr @meth_name.1300, i64 9, ptr @mowner_name.1301, i64 6, i64 %null_meth_ext234, ptr @msrc_file.1302, i64 11, i64 193)
   %methcall235 = call i64 @Parser__peek_char(i64 %self232)
   %streq_l236 = inttoptr i64 %methcall235 to ptr
   %strcmp_call237 = call i32 @strcmp(ptr %streq_l236, ptr @.str.1303)
@@ -28466,7 +28472,7 @@ sc_rhs259:                                        ; preds = %while.exit223
   %self261 = load i64, ptr %self, align 8
   %null_meth_chk262 = icmp eq i64 %self261, 0
   %null_meth_ext263 = zext i1 %null_meth_chk262 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1311, i64 14, ptr @mowner_name.1312, i64 6, i64 %null_meth_ext263, ptr @msrc_file.1313, i64 11, i64 193)
+  call void @forge_null_deref_trap(ptr @meth_name.1311, i64 14, ptr @mowner_name.1312, i64 6, i64 %null_meth_ext263, ptr @msrc_file.1313, i64 11, i64 197)
   %methcall264 = call i64 @Parser__peek_next_char(i64 %self261)
   %calltmp265 = call i64 @"parse::lexer::p_is_digit"(i64 %methcall264)
   %r_bool266 = icmp ne i64 %calltmp265, 0
@@ -28482,7 +28488,7 @@ then270:                                          ; preds = %sc_merge260
   %self273 = load i64, ptr %self, align 8
   %null_meth_chk274 = icmp eq i64 %self273, 0
   %null_meth_ext275 = zext i1 %null_meth_chk274 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1314, i64 12, ptr @mowner_name.1315, i64 6, i64 %null_meth_ext275, ptr @msrc_file.1316, i64 11, i64 194)
+  call void @forge_null_deref_trap(ptr @meth_name.1314, i64 12, ptr @mowner_name.1315, i64 6, i64 %null_meth_ext275, ptr @msrc_file.1316, i64 11, i64 198)
   %methcall276 = call i64 @Parser__advance_char(i64 %self273)
   br label %while.cond277
 
@@ -28493,7 +28499,7 @@ ifcont272:                                        ; preds = %else271
   %self342 = load i64, ptr %self, align 8
   %null_meth_chk343 = icmp eq i64 %self342, 0
   %null_meth_ext344 = zext i1 %null_meth_chk343 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1339, i64 9, ptr @mowner_name.1340, i64 6, i64 %null_meth_ext344, ptr @msrc_file.1341, i64 11, i64 203)
+  call void @forge_null_deref_trap(ptr @meth_name.1339, i64 9, ptr @mowner_name.1340, i64 6, i64 %null_meth_ext344, ptr @msrc_file.1341, i64 11, i64 207)
   %methcall345 = call i64 @Parser__peek_char(i64 %self342)
   store i64 %methcall345, ptr %next, align 8
   %next346 = load i64, ptr %next, align 8
@@ -28509,7 +28515,7 @@ while.cond277:                                    ; preds = %while.body278, %the
   %self280 = load i64, ptr %self, align 8
   %null_meth_chk281 = icmp eq i64 %self280, 0
   %null_meth_ext282 = zext i1 %null_meth_chk281 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1317, i64 9, ptr @mowner_name.1318, i64 6, i64 %null_meth_ext282, ptr @msrc_file.1319, i64 11, i64 195)
+  call void @forge_null_deref_trap(ptr @meth_name.1317, i64 9, ptr @mowner_name.1318, i64 6, i64 %null_meth_ext282, ptr @msrc_file.1319, i64 11, i64 199)
   %methcall283 = call i64 @Parser__peek_char(i64 %self280)
   %calltmp284 = call i64 @"parse::lexer::p_is_digit"(i64 %methcall283)
   %l_bool285 = icmp ne i64 %calltmp284, 0
@@ -28519,7 +28525,7 @@ while.body278:                                    ; preds = %sc_merge287
   %self301 = load i64, ptr %self, align 8
   %null_meth_chk302 = icmp eq i64 %self301, 0
   %null_meth_ext303 = zext i1 %null_meth_chk302 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1324, i64 12, ptr @mowner_name.1325, i64 6, i64 %null_meth_ext303, ptr @msrc_file.1326, i64 11, i64 196)
+  call void @forge_null_deref_trap(ptr @meth_name.1324, i64 12, ptr @mowner_name.1325, i64 6, i64 %null_meth_ext303, ptr @msrc_file.1326, i64 11, i64 200)
   %methcall304 = call i64 @Parser__advance_char(i64 %self301)
   br label %while.cond277
 
@@ -28527,7 +28533,7 @@ while.exit279:                                    ; preds = %sc_merge287
   %self305 = load i64, ptr %self, align 8
   %null_meth_chk306 = icmp eq i64 %self305, 0
   %null_meth_ext307 = zext i1 %null_meth_chk306 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1327, i64 11, ptr @mowner_name.1328, i64 6, i64 %null_meth_ext307, ptr @msrc_file.1329, i64 11, i64 198)
+  call void @forge_null_deref_trap(ptr @meth_name.1327, i64 11, ptr @mowner_name.1328, i64 6, i64 %null_meth_ext307, ptr @msrc_file.1329, i64 11, i64 202)
   %buf308 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr309 = getelementptr inbounds nuw %Tk, ptr %buf308, i32 0, i32 0
   store i64 210674569595, ptr %tag_ptr309, align 8
@@ -28538,21 +28544,21 @@ while.exit279:                                    ; preds = %sc_merge287
   %obj_ptr313 = inttoptr i64 %self312 to ptr
   %null_fld_chk314 = icmp eq i64 %self312, 0
   %null_fld_ext315 = zext i1 %null_fld_chk314 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1330, i64 6, ptr @sty_name.1331, i64 6, i64 %null_fld_ext315, ptr @src_file.1332, i64 11, i64 198)
+  call void @forge_null_deref_trap(ptr @fld_name.1330, i64 6, ptr @sty_name.1331, i64 6, i64 %null_fld_ext315, ptr @src_file.1332, i64 11, i64 202)
   %fld_ptr316 = getelementptr inbounds nuw %Parser, ptr %obj_ptr313, i32 0, i32 0
   %source317 = load i64, ptr %fld_ptr316, align 8
   %self318 = load i64, ptr %self, align 8
   %obj_ptr319 = inttoptr i64 %self318 to ptr
   %null_fld_chk320 = icmp eq i64 %self318, 0
   %null_fld_ext321 = zext i1 %null_fld_chk320 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1333, i64 5, ptr @sty_name.1334, i64 6, i64 %null_fld_ext321, ptr @src_file.1335, i64 11, i64 198)
+  call void @forge_null_deref_trap(ptr @fld_name.1333, i64 5, ptr @sty_name.1334, i64 6, i64 %null_fld_ext321, ptr @src_file.1335, i64 11, i64 202)
   %fld_ptr322 = getelementptr inbounds nuw %Parser, ptr %obj_ptr319, i32 0, i32 1
   %start323 = load i64, ptr %fld_ptr322, align 8
   %self324 = load i64, ptr %self, align 8
   %obj_ptr325 = inttoptr i64 %self324 to ptr
   %null_fld_chk326 = icmp eq i64 %self324, 0
   %null_fld_ext327 = zext i1 %null_fld_chk326 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1336, i64 7, ptr @sty_name.1337, i64 6, i64 %null_fld_ext327, ptr @src_file.1338, i64 11, i64 198)
+  call void @forge_null_deref_trap(ptr @fld_name.1336, i64 7, ptr @sty_name.1337, i64 6, i64 %null_fld_ext327, ptr @src_file.1338, i64 11, i64 202)
   %fld_ptr328 = getelementptr inbounds nuw %Parser, ptr %obj_ptr325, i32 0, i32 2
   %current329 = load i64, ptr %fld_ptr328, align 8
   %sub_src330 = inttoptr i64 %source317 to ptr
@@ -28575,7 +28581,7 @@ sc_rhs286:                                        ; preds = %while.cond277
   %self288 = load i64, ptr %self, align 8
   %null_meth_chk289 = icmp eq i64 %self288, 0
   %null_meth_ext290 = zext i1 %null_meth_chk289 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1320, i64 9, ptr @mowner_name.1321, i64 6, i64 %null_meth_ext290, ptr @msrc_file.1322, i64 11, i64 195)
+  call void @forge_null_deref_trap(ptr @meth_name.1320, i64 9, ptr @mowner_name.1321, i64 6, i64 %null_meth_ext290, ptr @msrc_file.1322, i64 11, i64 199)
   %methcall291 = call i64 @Parser__peek_char(i64 %self288)
   %streq_l292 = inttoptr i64 %methcall291 to ptr
   %strcmp_call293 = call i32 @strcmp(ptr %streq_l292, ptr @.str.1323)
@@ -28595,7 +28601,7 @@ sc_rhs353:                                        ; preds = %ifcont272
   %self355 = load i64, ptr %self, align 8
   %null_meth_chk356 = icmp eq i64 %self355, 0
   %null_meth_ext357 = zext i1 %null_meth_chk356 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1343, i64 14, ptr @mowner_name.1344, i64 6, i64 %null_meth_ext357, ptr @msrc_file.1345, i64 11, i64 204)
+  call void @forge_null_deref_trap(ptr @meth_name.1343, i64 14, ptr @mowner_name.1344, i64 6, i64 %null_meth_ext357, ptr @msrc_file.1345, i64 11, i64 208)
   %methcall358 = call i64 @Parser__peek_next_char(i64 %self355)
   %calltmp359 = call i64 @"parse::lexer::p_is_alpha_numeric"(i64 %methcall358)
   %not_cmp = icmp eq i64 %calltmp359, 0
@@ -28613,27 +28619,27 @@ then364:                                          ; preds = %sc_merge354
   %self367 = load i64, ptr %self, align 8
   %null_meth_chk368 = icmp eq i64 %self367, 0
   %null_meth_ext369 = zext i1 %null_meth_chk368 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1346, i64 12, ptr @mowner_name.1347, i64 6, i64 %null_meth_ext369, ptr @msrc_file.1348, i64 11, i64 205)
+  call void @forge_null_deref_trap(ptr @meth_name.1346, i64 12, ptr @mowner_name.1347, i64 6, i64 %null_meth_ext369, ptr @msrc_file.1348, i64 11, i64 209)
   %methcall370 = call i64 @Parser__advance_char(i64 %self367)
   %self371 = load i64, ptr %self, align 8
   %obj_ptr372 = inttoptr i64 %self371 to ptr
   %null_fld_chk373 = icmp eq i64 %self371, 0
   %null_fld_ext374 = zext i1 %null_fld_chk373 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1349, i64 6, ptr @sty_name.1350, i64 6, i64 %null_fld_ext374, ptr @src_file.1351, i64 11, i64 206)
+  call void @forge_null_deref_trap(ptr @fld_name.1349, i64 6, ptr @sty_name.1350, i64 6, i64 %null_fld_ext374, ptr @src_file.1351, i64 11, i64 210)
   %fld_ptr375 = getelementptr inbounds nuw %Parser, ptr %obj_ptr372, i32 0, i32 0
   %source376 = load i64, ptr %fld_ptr375, align 8
   %self377 = load i64, ptr %self, align 8
   %obj_ptr378 = inttoptr i64 %self377 to ptr
   %null_fld_chk379 = icmp eq i64 %self377, 0
   %null_fld_ext380 = zext i1 %null_fld_chk379 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1352, i64 5, ptr @sty_name.1353, i64 6, i64 %null_fld_ext380, ptr @src_file.1354, i64 11, i64 206)
+  call void @forge_null_deref_trap(ptr @fld_name.1352, i64 5, ptr @sty_name.1353, i64 6, i64 %null_fld_ext380, ptr @src_file.1354, i64 11, i64 210)
   %fld_ptr381 = getelementptr inbounds nuw %Parser, ptr %obj_ptr378, i32 0, i32 1
   %start382 = load i64, ptr %fld_ptr381, align 8
   %self383 = load i64, ptr %self, align 8
   %obj_ptr384 = inttoptr i64 %self383 to ptr
   %null_fld_chk385 = icmp eq i64 %self383, 0
   %null_fld_ext386 = zext i1 %null_fld_chk385 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1355, i64 7, ptr @sty_name.1356, i64 6, i64 %null_fld_ext386, ptr @src_file.1357, i64 11, i64 206)
+  call void @forge_null_deref_trap(ptr @fld_name.1355, i64 7, ptr @sty_name.1356, i64 6, i64 %null_fld_ext386, ptr @src_file.1357, i64 11, i64 210)
   %fld_ptr387 = getelementptr inbounds nuw %Parser, ptr %obj_ptr384, i32 0, i32 2
   %current388 = load i64, ptr %fld_ptr387, align 8
   %sub = sub i64 %current388, 1
@@ -28654,7 +28660,7 @@ then364:                                          ; preds = %sc_merge354
   %self400 = load i64, ptr %self, align 8
   %null_meth_chk401 = icmp eq i64 %self400, 0
   %null_meth_ext402 = zext i1 %null_meth_chk401 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1358, i64 11, ptr @mowner_name.1359, i64 6, i64 %null_meth_ext402, ptr @msrc_file.1360, i64 11, i64 207)
+  call void @forge_null_deref_trap(ptr @meth_name.1358, i64 11, ptr @mowner_name.1359, i64 6, i64 %null_meth_ext402, ptr @msrc_file.1360, i64 11, i64 211)
   %buf403 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr404 = getelementptr inbounds nuw %Tk, ptr %buf403, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr404, align 8
@@ -28689,7 +28695,7 @@ sc_rhs417:                                        ; preds = %ifcont366
   %self419 = load i64, ptr %self, align 8
   %null_meth_chk420 = icmp eq i64 %self419, 0
   %null_meth_ext421 = zext i1 %null_meth_chk420 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1363, i64 14, ptr @mowner_name.1364, i64 6, i64 %null_meth_ext421, ptr @msrc_file.1365, i64 11, i64 210)
+  call void @forge_null_deref_trap(ptr @meth_name.1363, i64 14, ptr @mowner_name.1364, i64 6, i64 %null_meth_ext421, ptr @msrc_file.1365, i64 11, i64 214)
   %methcall422 = call i64 @Parser__peek_next_char(i64 %self419)
   %calltmp423 = call i64 @"parse::lexer::p_is_alpha_numeric"(i64 %methcall422)
   %not_cmp424 = icmp eq i64 %calltmp423, 0
@@ -28707,27 +28713,27 @@ then430:                                          ; preds = %sc_merge418
   %self433 = load i64, ptr %self, align 8
   %null_meth_chk434 = icmp eq i64 %self433, 0
   %null_meth_ext435 = zext i1 %null_meth_chk434 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1366, i64 12, ptr @mowner_name.1367, i64 6, i64 %null_meth_ext435, ptr @msrc_file.1368, i64 11, i64 211)
+  call void @forge_null_deref_trap(ptr @meth_name.1366, i64 12, ptr @mowner_name.1367, i64 6, i64 %null_meth_ext435, ptr @msrc_file.1368, i64 11, i64 215)
   %methcall436 = call i64 @Parser__advance_char(i64 %self433)
   %self437 = load i64, ptr %self, align 8
   %obj_ptr438 = inttoptr i64 %self437 to ptr
   %null_fld_chk439 = icmp eq i64 %self437, 0
   %null_fld_ext440 = zext i1 %null_fld_chk439 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1369, i64 6, ptr @sty_name.1370, i64 6, i64 %null_fld_ext440, ptr @src_file.1371, i64 11, i64 212)
+  call void @forge_null_deref_trap(ptr @fld_name.1369, i64 6, ptr @sty_name.1370, i64 6, i64 %null_fld_ext440, ptr @src_file.1371, i64 11, i64 216)
   %fld_ptr441 = getelementptr inbounds nuw %Parser, ptr %obj_ptr438, i32 0, i32 0
   %source442 = load i64, ptr %fld_ptr441, align 8
   %self443 = load i64, ptr %self, align 8
   %obj_ptr444 = inttoptr i64 %self443 to ptr
   %null_fld_chk445 = icmp eq i64 %self443, 0
   %null_fld_ext446 = zext i1 %null_fld_chk445 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1372, i64 5, ptr @sty_name.1373, i64 6, i64 %null_fld_ext446, ptr @src_file.1374, i64 11, i64 212)
+  call void @forge_null_deref_trap(ptr @fld_name.1372, i64 5, ptr @sty_name.1373, i64 6, i64 %null_fld_ext446, ptr @src_file.1374, i64 11, i64 216)
   %fld_ptr447 = getelementptr inbounds nuw %Parser, ptr %obj_ptr444, i32 0, i32 1
   %start448 = load i64, ptr %fld_ptr447, align 8
   %self449 = load i64, ptr %self, align 8
   %obj_ptr450 = inttoptr i64 %self449 to ptr
   %null_fld_chk451 = icmp eq i64 %self449, 0
   %null_fld_ext452 = zext i1 %null_fld_chk451 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1375, i64 7, ptr @sty_name.1376, i64 6, i64 %null_fld_ext452, ptr @src_file.1377, i64 11, i64 212)
+  call void @forge_null_deref_trap(ptr @fld_name.1375, i64 7, ptr @sty_name.1376, i64 6, i64 %null_fld_ext452, ptr @src_file.1377, i64 11, i64 216)
   %fld_ptr453 = getelementptr inbounds nuw %Parser, ptr %obj_ptr450, i32 0, i32 2
   %current454 = load i64, ptr %fld_ptr453, align 8
   %sub455 = sub i64 %current454, 1
@@ -28748,7 +28754,7 @@ then430:                                          ; preds = %sc_merge418
   %self468 = load i64, ptr %self, align 8
   %null_meth_chk469 = icmp eq i64 %self468, 0
   %null_meth_ext470 = zext i1 %null_meth_chk469 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1378, i64 11, ptr @mowner_name.1379, i64 6, i64 %null_meth_ext470, ptr @msrc_file.1380, i64 11, i64 213)
+  call void @forge_null_deref_trap(ptr @meth_name.1378, i64 11, ptr @mowner_name.1379, i64 6, i64 %null_meth_ext470, ptr @msrc_file.1380, i64 11, i64 217)
   %buf471 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr472 = getelementptr inbounds nuw %Tk, ptr %buf471, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr472, align 8
@@ -28783,7 +28789,7 @@ then490:                                          ; preds = %ifcont432
   %self493 = load i64, ptr %self, align 8
   %null_meth_chk494 = icmp eq i64 %self493, 0
   %null_meth_ext495 = zext i1 %null_meth_chk494 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1383, i64 14, ptr @mowner_name.1384, i64 6, i64 %null_meth_ext495, ptr @msrc_file.1385, i64 11, i64 217)
+  call void @forge_null_deref_trap(ptr @meth_name.1383, i64 14, ptr @mowner_name.1384, i64 6, i64 %null_meth_ext495, ptr @msrc_file.1385, i64 11, i64 221)
   %methcall496 = call i64 @Parser__peek_next_char(i64 %self493)
   %streq_l497 = inttoptr i64 %methcall496 to ptr
   %strcmp_call498 = call i32 @strcmp(ptr %streq_l497, ptr @.str.1386)
@@ -28810,32 +28816,32 @@ then503:                                          ; preds = %then490
   %self506 = load i64, ptr %self, align 8
   %null_meth_chk507 = icmp eq i64 %self506, 0
   %null_meth_ext508 = zext i1 %null_meth_chk507 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1387, i64 12, ptr @mowner_name.1388, i64 6, i64 %null_meth_ext508, ptr @msrc_file.1389, i64 11, i64 218)
+  call void @forge_null_deref_trap(ptr @meth_name.1387, i64 12, ptr @mowner_name.1388, i64 6, i64 %null_meth_ext508, ptr @msrc_file.1389, i64 11, i64 222)
   %methcall509 = call i64 @Parser__advance_char(i64 %self506)
   %self510 = load i64, ptr %self, align 8
   %null_meth_chk511 = icmp eq i64 %self510, 0
   %null_meth_ext512 = zext i1 %null_meth_chk511 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1390, i64 12, ptr @mowner_name.1391, i64 6, i64 %null_meth_ext512, ptr @msrc_file.1392, i64 11, i64 219)
+  call void @forge_null_deref_trap(ptr @meth_name.1390, i64 12, ptr @mowner_name.1391, i64 6, i64 %null_meth_ext512, ptr @msrc_file.1392, i64 11, i64 223)
   %methcall513 = call i64 @Parser__advance_char(i64 %self510)
   %self514 = load i64, ptr %self, align 8
   %obj_ptr515 = inttoptr i64 %self514 to ptr
   %null_fld_chk516 = icmp eq i64 %self514, 0
   %null_fld_ext517 = zext i1 %null_fld_chk516 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1393, i64 6, ptr @sty_name.1394, i64 6, i64 %null_fld_ext517, ptr @src_file.1395, i64 11, i64 220)
+  call void @forge_null_deref_trap(ptr @fld_name.1393, i64 6, ptr @sty_name.1394, i64 6, i64 %null_fld_ext517, ptr @src_file.1395, i64 11, i64 224)
   %fld_ptr518 = getelementptr inbounds nuw %Parser, ptr %obj_ptr515, i32 0, i32 0
   %source519 = load i64, ptr %fld_ptr518, align 8
   %self520 = load i64, ptr %self, align 8
   %obj_ptr521 = inttoptr i64 %self520 to ptr
   %null_fld_chk522 = icmp eq i64 %self520, 0
   %null_fld_ext523 = zext i1 %null_fld_chk522 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1396, i64 5, ptr @sty_name.1397, i64 6, i64 %null_fld_ext523, ptr @src_file.1398, i64 11, i64 220)
+  call void @forge_null_deref_trap(ptr @fld_name.1396, i64 5, ptr @sty_name.1397, i64 6, i64 %null_fld_ext523, ptr @src_file.1398, i64 11, i64 224)
   %fld_ptr524 = getelementptr inbounds nuw %Parser, ptr %obj_ptr521, i32 0, i32 1
   %start525 = load i64, ptr %fld_ptr524, align 8
   %self526 = load i64, ptr %self, align 8
   %obj_ptr527 = inttoptr i64 %self526 to ptr
   %null_fld_chk528 = icmp eq i64 %self526, 0
   %null_fld_ext529 = zext i1 %null_fld_chk528 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1399, i64 7, ptr @sty_name.1400, i64 6, i64 %null_fld_ext529, ptr @src_file.1401, i64 11, i64 220)
+  call void @forge_null_deref_trap(ptr @fld_name.1399, i64 7, ptr @sty_name.1400, i64 6, i64 %null_fld_ext529, ptr @src_file.1401, i64 11, i64 224)
   %fld_ptr530 = getelementptr inbounds nuw %Parser, ptr %obj_ptr527, i32 0, i32 2
   %current531 = load i64, ptr %fld_ptr530, align 8
   %sub532 = sub i64 %current531, 2
@@ -28856,7 +28862,7 @@ then503:                                          ; preds = %then490
   %self545 = load i64, ptr %self, align 8
   %null_meth_chk546 = icmp eq i64 %self545, 0
   %null_meth_ext547 = zext i1 %null_meth_chk546 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1402, i64 11, ptr @mowner_name.1403, i64 6, i64 %null_meth_ext547, ptr @msrc_file.1404, i64 11, i64 221)
+  call void @forge_null_deref_trap(ptr @meth_name.1402, i64 11, ptr @mowner_name.1403, i64 6, i64 %null_meth_ext547, ptr @msrc_file.1404, i64 11, i64 225)
   %buf548 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr549 = getelementptr inbounds nuw %Tk, ptr %buf548, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr549, align 8
@@ -28880,7 +28886,7 @@ ifcont505:                                        ; preds = %else504
   %self559 = load i64, ptr %self, align 8
   %null_meth_chk560 = icmp eq i64 %self559, 0
   %null_meth_ext561 = zext i1 %null_meth_chk560 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1406, i64 14, ptr @mowner_name.1407, i64 6, i64 %null_meth_ext561, ptr @msrc_file.1408, i64 11, i64 224)
+  call void @forge_null_deref_trap(ptr @meth_name.1406, i64 14, ptr @mowner_name.1407, i64 6, i64 %null_meth_ext561, ptr @msrc_file.1408, i64 11, i64 228)
   %methcall562 = call i64 @Parser__peek_next_char(i64 %self559)
   %calltmp563 = call i64 @"parse::lexer::p_is_alpha_numeric"(i64 %methcall562)
   %not_cmp564 = icmp eq i64 %calltmp563, 0
@@ -28892,27 +28898,27 @@ then567:                                          ; preds = %ifcont505
   %self570 = load i64, ptr %self, align 8
   %null_meth_chk571 = icmp eq i64 %self570, 0
   %null_meth_ext572 = zext i1 %null_meth_chk571 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1409, i64 12, ptr @mowner_name.1410, i64 6, i64 %null_meth_ext572, ptr @msrc_file.1411, i64 11, i64 225)
+  call void @forge_null_deref_trap(ptr @meth_name.1409, i64 12, ptr @mowner_name.1410, i64 6, i64 %null_meth_ext572, ptr @msrc_file.1411, i64 11, i64 229)
   %methcall573 = call i64 @Parser__advance_char(i64 %self570)
   %self574 = load i64, ptr %self, align 8
   %obj_ptr575 = inttoptr i64 %self574 to ptr
   %null_fld_chk576 = icmp eq i64 %self574, 0
   %null_fld_ext577 = zext i1 %null_fld_chk576 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1412, i64 6, ptr @sty_name.1413, i64 6, i64 %null_fld_ext577, ptr @src_file.1414, i64 11, i64 226)
+  call void @forge_null_deref_trap(ptr @fld_name.1412, i64 6, ptr @sty_name.1413, i64 6, i64 %null_fld_ext577, ptr @src_file.1414, i64 11, i64 230)
   %fld_ptr578 = getelementptr inbounds nuw %Parser, ptr %obj_ptr575, i32 0, i32 0
   %source579 = load i64, ptr %fld_ptr578, align 8
   %self580 = load i64, ptr %self, align 8
   %obj_ptr581 = inttoptr i64 %self580 to ptr
   %null_fld_chk582 = icmp eq i64 %self580, 0
   %null_fld_ext583 = zext i1 %null_fld_chk582 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1415, i64 5, ptr @sty_name.1416, i64 6, i64 %null_fld_ext583, ptr @src_file.1417, i64 11, i64 226)
+  call void @forge_null_deref_trap(ptr @fld_name.1415, i64 5, ptr @sty_name.1416, i64 6, i64 %null_fld_ext583, ptr @src_file.1417, i64 11, i64 230)
   %fld_ptr584 = getelementptr inbounds nuw %Parser, ptr %obj_ptr581, i32 0, i32 1
   %start585 = load i64, ptr %fld_ptr584, align 8
   %self586 = load i64, ptr %self, align 8
   %obj_ptr587 = inttoptr i64 %self586 to ptr
   %null_fld_chk588 = icmp eq i64 %self586, 0
   %null_fld_ext589 = zext i1 %null_fld_chk588 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1418, i64 7, ptr @sty_name.1419, i64 6, i64 %null_fld_ext589, ptr @src_file.1420, i64 11, i64 226)
+  call void @forge_null_deref_trap(ptr @fld_name.1418, i64 7, ptr @sty_name.1419, i64 6, i64 %null_fld_ext589, ptr @src_file.1420, i64 11, i64 230)
   %fld_ptr590 = getelementptr inbounds nuw %Parser, ptr %obj_ptr587, i32 0, i32 2
   %current591 = load i64, ptr %fld_ptr590, align 8
   %sub592 = sub i64 %current591, 1
@@ -28933,7 +28939,7 @@ then567:                                          ; preds = %ifcont505
   %self605 = load i64, ptr %self, align 8
   %null_meth_chk606 = icmp eq i64 %self605, 0
   %null_meth_ext607 = zext i1 %null_meth_chk606 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1421, i64 11, ptr @mowner_name.1422, i64 6, i64 %null_meth_ext607, ptr @msrc_file.1423, i64 11, i64 227)
+  call void @forge_null_deref_trap(ptr @meth_name.1421, i64 11, ptr @mowner_name.1422, i64 6, i64 %null_meth_ext607, ptr @msrc_file.1423, i64 11, i64 231)
   %buf608 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr609 = getelementptr inbounds nuw %Tk, ptr %buf608, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr609, align 8
@@ -28961,7 +28967,7 @@ sc_rhs627:                                        ; preds = %ifcont492
   %self629 = load i64, ptr %self, align 8
   %null_meth_chk630 = icmp eq i64 %self629, 0
   %null_meth_ext631 = zext i1 %null_meth_chk630 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1426, i64 14, ptr @mowner_name.1427, i64 6, i64 %null_meth_ext631, ptr @msrc_file.1428, i64 11, i64 231)
+  call void @forge_null_deref_trap(ptr @meth_name.1426, i64 14, ptr @mowner_name.1427, i64 6, i64 %null_meth_ext631, ptr @msrc_file.1428, i64 11, i64 235)
   %methcall632 = call i64 @Parser__peek_next_char(i64 %self629)
   %calltmp633 = call i64 @"parse::lexer::p_is_alpha_numeric"(i64 %methcall632)
   %not_cmp634 = icmp eq i64 %calltmp633, 0
@@ -28979,27 +28985,27 @@ then640:                                          ; preds = %sc_merge628
   %self643 = load i64, ptr %self, align 8
   %null_meth_chk644 = icmp eq i64 %self643, 0
   %null_meth_ext645 = zext i1 %null_meth_chk644 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1429, i64 12, ptr @mowner_name.1430, i64 6, i64 %null_meth_ext645, ptr @msrc_file.1431, i64 11, i64 232)
+  call void @forge_null_deref_trap(ptr @meth_name.1429, i64 12, ptr @mowner_name.1430, i64 6, i64 %null_meth_ext645, ptr @msrc_file.1431, i64 11, i64 236)
   %methcall646 = call i64 @Parser__advance_char(i64 %self643)
   %self647 = load i64, ptr %self, align 8
   %obj_ptr648 = inttoptr i64 %self647 to ptr
   %null_fld_chk649 = icmp eq i64 %self647, 0
   %null_fld_ext650 = zext i1 %null_fld_chk649 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1432, i64 6, ptr @sty_name.1433, i64 6, i64 %null_fld_ext650, ptr @src_file.1434, i64 11, i64 233)
+  call void @forge_null_deref_trap(ptr @fld_name.1432, i64 6, ptr @sty_name.1433, i64 6, i64 %null_fld_ext650, ptr @src_file.1434, i64 11, i64 237)
   %fld_ptr651 = getelementptr inbounds nuw %Parser, ptr %obj_ptr648, i32 0, i32 0
   %source652 = load i64, ptr %fld_ptr651, align 8
   %self653 = load i64, ptr %self, align 8
   %obj_ptr654 = inttoptr i64 %self653 to ptr
   %null_fld_chk655 = icmp eq i64 %self653, 0
   %null_fld_ext656 = zext i1 %null_fld_chk655 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1435, i64 5, ptr @sty_name.1436, i64 6, i64 %null_fld_ext656, ptr @src_file.1437, i64 11, i64 233)
+  call void @forge_null_deref_trap(ptr @fld_name.1435, i64 5, ptr @sty_name.1436, i64 6, i64 %null_fld_ext656, ptr @src_file.1437, i64 11, i64 237)
   %fld_ptr657 = getelementptr inbounds nuw %Parser, ptr %obj_ptr654, i32 0, i32 1
   %start658 = load i64, ptr %fld_ptr657, align 8
   %self659 = load i64, ptr %self, align 8
   %obj_ptr660 = inttoptr i64 %self659 to ptr
   %null_fld_chk661 = icmp eq i64 %self659, 0
   %null_fld_ext662 = zext i1 %null_fld_chk661 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1438, i64 7, ptr @sty_name.1439, i64 6, i64 %null_fld_ext662, ptr @src_file.1440, i64 11, i64 233)
+  call void @forge_null_deref_trap(ptr @fld_name.1438, i64 7, ptr @sty_name.1439, i64 6, i64 %null_fld_ext662, ptr @src_file.1440, i64 11, i64 237)
   %fld_ptr663 = getelementptr inbounds nuw %Parser, ptr %obj_ptr660, i32 0, i32 2
   %current664 = load i64, ptr %fld_ptr663, align 8
   %sub665 = sub i64 %current664, 1
@@ -29020,7 +29026,7 @@ then640:                                          ; preds = %sc_merge628
   %self678 = load i64, ptr %self, align 8
   %null_meth_chk679 = icmp eq i64 %self678, 0
   %null_meth_ext680 = zext i1 %null_meth_chk679 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1441, i64 11, ptr @mowner_name.1442, i64 6, i64 %null_meth_ext680, ptr @msrc_file.1443, i64 11, i64 234)
+  call void @forge_null_deref_trap(ptr @meth_name.1441, i64 11, ptr @mowner_name.1442, i64 6, i64 %null_meth_ext680, ptr @msrc_file.1443, i64 11, i64 238)
   %buf681 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr682 = getelementptr inbounds nuw %Tk, ptr %buf681, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr682, align 8
@@ -29045,7 +29051,7 @@ ifcont642:                                        ; preds = %else641
   %self693 = load i64, ptr %self, align 8
   %null_meth_chk694 = icmp eq i64 %self693, 0
   %null_meth_ext695 = zext i1 %null_meth_chk694 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1445, i64 11, ptr @mowner_name.1446, i64 6, i64 %null_meth_ext695, ptr @msrc_file.1447, i64 11, i64 237)
+  call void @forge_null_deref_trap(ptr @meth_name.1445, i64 11, ptr @mowner_name.1446, i64 6, i64 %null_meth_ext695, ptr @msrc_file.1447, i64 11, i64 241)
   %buf696 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr697 = getelementptr inbounds nuw %Tk, ptr %buf696, i32 0, i32 0
   store i64 6952584481902, ptr %tag_ptr697, align 8
@@ -29056,21 +29062,21 @@ ifcont642:                                        ; preds = %else641
   %obj_ptr701 = inttoptr i64 %self700 to ptr
   %null_fld_chk702 = icmp eq i64 %self700, 0
   %null_fld_ext703 = zext i1 %null_fld_chk702 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1448, i64 6, ptr @sty_name.1449, i64 6, i64 %null_fld_ext703, ptr @src_file.1450, i64 11, i64 237)
+  call void @forge_null_deref_trap(ptr @fld_name.1448, i64 6, ptr @sty_name.1449, i64 6, i64 %null_fld_ext703, ptr @src_file.1450, i64 11, i64 241)
   %fld_ptr704 = getelementptr inbounds nuw %Parser, ptr %obj_ptr701, i32 0, i32 0
   %source705 = load i64, ptr %fld_ptr704, align 8
   %self706 = load i64, ptr %self, align 8
   %obj_ptr707 = inttoptr i64 %self706 to ptr
   %null_fld_chk708 = icmp eq i64 %self706, 0
   %null_fld_ext709 = zext i1 %null_fld_chk708 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1451, i64 5, ptr @sty_name.1452, i64 6, i64 %null_fld_ext709, ptr @src_file.1453, i64 11, i64 237)
+  call void @forge_null_deref_trap(ptr @fld_name.1451, i64 5, ptr @sty_name.1452, i64 6, i64 %null_fld_ext709, ptr @src_file.1453, i64 11, i64 241)
   %fld_ptr710 = getelementptr inbounds nuw %Parser, ptr %obj_ptr707, i32 0, i32 1
   %start711 = load i64, ptr %fld_ptr710, align 8
   %self712 = load i64, ptr %self, align 8
   %obj_ptr713 = inttoptr i64 %self712 to ptr
   %null_fld_chk714 = icmp eq i64 %self712, 0
   %null_fld_ext715 = zext i1 %null_fld_chk714 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1454, i64 7, ptr @sty_name.1455, i64 6, i64 %null_fld_ext715, ptr @src_file.1456, i64 11, i64 237)
+  call void @forge_null_deref_trap(ptr @fld_name.1454, i64 7, ptr @sty_name.1455, i64 6, i64 %null_fld_ext715, ptr @src_file.1456, i64 11, i64 241)
   %fld_ptr716 = getelementptr inbounds nuw %Parser, ptr %obj_ptr713, i32 0, i32 2
   %current717 = load i64, ptr %fld_ptr716, align 8
   %sub_src718 = inttoptr i64 %source705 to ptr
@@ -29101,7 +29107,7 @@ while.cond:                                       ; preds = %while.body, %entry
   %self1 = load i64, ptr %self, align 8
   %null_meth_chk = icmp eq i64 %self1, 0
   %null_meth_ext = zext i1 %null_meth_chk to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1457, i64 9, ptr @mowner_name.1458, i64 6, i64 %null_meth_ext, ptr @msrc_file.1459, i64 11, i64 241)
+  call void @forge_null_deref_trap(ptr @meth_name.1457, i64 9, ptr @mowner_name.1458, i64 6, i64 %null_meth_ext, ptr @msrc_file.1459, i64 11, i64 245)
   %methcall = call i64 @Parser__peek_char(i64 %self1)
   %calltmp = call i64 @"parse::lexer::p_is_alpha_numeric"(i64 %methcall)
   %while_cond = icmp ne i64 %calltmp, 0
@@ -29111,7 +29117,7 @@ while.body:                                       ; preds = %while.cond
   %self2 = load i64, ptr %self, align 8
   %null_meth_chk3 = icmp eq i64 %self2, 0
   %null_meth_ext4 = zext i1 %null_meth_chk3 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1460, i64 12, ptr @mowner_name.1461, i64 6, i64 %null_meth_ext4, ptr @msrc_file.1462, i64 11, i64 242)
+  call void @forge_null_deref_trap(ptr @meth_name.1460, i64 12, ptr @mowner_name.1461, i64 6, i64 %null_meth_ext4, ptr @msrc_file.1462, i64 11, i64 246)
   %methcall5 = call i64 @Parser__advance_char(i64 %self2)
   br label %while.cond
 
@@ -29120,21 +29126,21 @@ while.exit:                                       ; preds = %while.cond
   %obj_ptr = inttoptr i64 %self6 to ptr
   %null_fld_chk = icmp eq i64 %self6, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1463, i64 6, ptr @sty_name.1464, i64 6, i64 %null_fld_ext, ptr @src_file.1465, i64 11, i64 245)
+  call void @forge_null_deref_trap(ptr @fld_name.1463, i64 6, ptr @sty_name.1464, i64 6, i64 %null_fld_ext, ptr @src_file.1465, i64 11, i64 249)
   %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 0
   %source = load i64, ptr %fld_ptr, align 8
   %self7 = load i64, ptr %self, align 8
   %obj_ptr8 = inttoptr i64 %self7 to ptr
   %null_fld_chk9 = icmp eq i64 %self7, 0
   %null_fld_ext10 = zext i1 %null_fld_chk9 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1466, i64 5, ptr @sty_name.1467, i64 6, i64 %null_fld_ext10, ptr @src_file.1468, i64 11, i64 245)
+  call void @forge_null_deref_trap(ptr @fld_name.1466, i64 5, ptr @sty_name.1467, i64 6, i64 %null_fld_ext10, ptr @src_file.1468, i64 11, i64 249)
   %fld_ptr11 = getelementptr inbounds nuw %Parser, ptr %obj_ptr8, i32 0, i32 1
   %start = load i64, ptr %fld_ptr11, align 8
   %self12 = load i64, ptr %self, align 8
   %obj_ptr13 = inttoptr i64 %self12 to ptr
   %null_fld_chk14 = icmp eq i64 %self12, 0
   %null_fld_ext15 = zext i1 %null_fld_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1469, i64 7, ptr @sty_name.1470, i64 6, i64 %null_fld_ext15, ptr @src_file.1471, i64 11, i64 245)
+  call void @forge_null_deref_trap(ptr @fld_name.1469, i64 7, ptr @sty_name.1470, i64 6, i64 %null_fld_ext15, ptr @src_file.1471, i64 11, i64 249)
   %fld_ptr16 = getelementptr inbounds nuw %Parser, ptr %obj_ptr13, i32 0, i32 2
   %current = load i64, ptr %fld_ptr16, align 8
   %sub_src = inttoptr i64 %source to ptr
@@ -29154,7 +29160,7 @@ while.exit:                                       ; preds = %while.cond
   %self17 = load i64, ptr %self, align 8
   %null_meth_chk18 = icmp eq i64 %self17, 0
   %null_meth_ext19 = zext i1 %null_meth_chk18 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1472, i64 11, ptr @mowner_name.1473, i64 6, i64 %null_meth_ext19, ptr @msrc_file.1474, i64 11, i64 246)
+  call void @forge_null_deref_trap(ptr @meth_name.1472, i64 11, ptr @mowner_name.1473, i64 6, i64 %null_meth_ext19, ptr @msrc_file.1474, i64 11, i64 250)
   %text20 = load i64, ptr %text, align 8
   %calltmp21 = call i64 @"parse::p_keyword_kind"(i64 %text20)
   %text22 = load i64, ptr %text, align 8
@@ -29194,7 +29200,7 @@ while.cond:                                       ; preds = %ifcont, %entry
   %self1 = load i64, ptr %self, align 8
   %null_meth_chk = icmp eq i64 %self1, 0
   %null_meth_ext = zext i1 %null_meth_chk to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1475, i64 9, ptr @mowner_name.1476, i64 6, i64 %null_meth_ext, ptr @msrc_file.1477, i64 11, i64 255)
+  call void @forge_null_deref_trap(ptr @meth_name.1475, i64 9, ptr @mowner_name.1476, i64 6, i64 %null_meth_ext, ptr @msrc_file.1477, i64 11, i64 259)
   %methcall = call i64 @Parser__is_at_end(i64 %self1)
   %not_cmp = icmp eq i64 %methcall, 0
   %not = zext i1 %not_cmp to i64
@@ -29205,7 +29211,7 @@ while.body:                                       ; preds = %while.cond
   %self2 = load i64, ptr %self, align 8
   %null_meth_chk3 = icmp eq i64 %self2, 0
   %null_meth_ext4 = zext i1 %null_meth_chk3 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1478, i64 9, ptr @mowner_name.1479, i64 6, i64 %null_meth_ext4, ptr @msrc_file.1480, i64 11, i64 256)
+  call void @forge_null_deref_trap(ptr @meth_name.1478, i64 9, ptr @mowner_name.1479, i64 6, i64 %null_meth_ext4, ptr @msrc_file.1480, i64 11, i64 260)
   %methcall5 = call i64 @Parser__peek_char(i64 %self2)
   store i64 %methcall5, ptr %ch, align 8
   %ch6 = load i64, ptr %ch, align 8
@@ -29272,7 +29278,7 @@ then:                                             ; preds = %sc_merge27
   %self37 = load i64, ptr %self, align 8
   %null_meth_chk38 = icmp eq i64 %self37, 0
   %null_meth_ext39 = zext i1 %null_meth_chk38 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1485, i64 12, ptr @mowner_name.1486, i64 6, i64 %null_meth_ext39, ptr @msrc_file.1487, i64 11, i64 258)
+  call void @forge_null_deref_trap(ptr @meth_name.1485, i64 12, ptr @mowner_name.1486, i64 6, i64 %null_meth_ext39, ptr @msrc_file.1487, i64 11, i64 262)
   %methcall40 = call i64 @Parser__advance_char(i64 %self37)
   br label %ifcont
 
@@ -29293,7 +29299,7 @@ sc_rhs48:                                         ; preds = %else
   %self50 = load i64, ptr %self, align 8
   %null_meth_chk51 = icmp eq i64 %self50, 0
   %null_meth_ext52 = zext i1 %null_meth_chk51 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1489, i64 14, ptr @mowner_name.1490, i64 6, i64 %null_meth_ext52, ptr @msrc_file.1491, i64 11, i64 257)
+  call void @forge_null_deref_trap(ptr @meth_name.1489, i64 14, ptr @mowner_name.1490, i64 6, i64 %null_meth_ext52, ptr @msrc_file.1491, i64 11, i64 261)
   %methcall53 = call i64 @Parser__peek_next_char(i64 %self50)
   %streq_l54 = inttoptr i64 %methcall53 to ptr
   %strcmp_call55 = call i32 @strcmp(ptr %streq_l54, ptr @.str.1492)
@@ -29322,7 +29328,7 @@ while.cond66:                                     ; preds = %while.body67, %then
   %self69 = load i64, ptr %self, align 8
   %null_meth_chk70 = icmp eq i64 %self69, 0
   %null_meth_ext71 = zext i1 %null_meth_chk70 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1493, i64 9, ptr @mowner_name.1494, i64 6, i64 %null_meth_ext71, ptr @msrc_file.1495, i64 11, i64 260)
+  call void @forge_null_deref_trap(ptr @meth_name.1493, i64 9, ptr @mowner_name.1494, i64 6, i64 %null_meth_ext71, ptr @msrc_file.1495, i64 11, i64 264)
   %methcall72 = call i64 @Parser__is_at_end(i64 %self69)
   %not_cmp73 = icmp eq i64 %methcall72, 0
   %not74 = zext i1 %not_cmp73 to i64
@@ -29333,7 +29339,7 @@ while.body67:                                     ; preds = %sc_merge77
   %self91 = load i64, ptr %self, align 8
   %null_meth_chk92 = icmp eq i64 %self91, 0
   %null_meth_ext93 = zext i1 %null_meth_chk92 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1500, i64 12, ptr @mowner_name.1501, i64 6, i64 %null_meth_ext93, ptr @msrc_file.1502, i64 11, i64 261)
+  call void @forge_null_deref_trap(ptr @meth_name.1500, i64 12, ptr @mowner_name.1501, i64 6, i64 %null_meth_ext93, ptr @msrc_file.1502, i64 11, i64 265)
   %methcall94 = call i64 @Parser__advance_char(i64 %self91)
   br label %while.cond66
 
@@ -29344,7 +29350,7 @@ sc_rhs76:                                         ; preds = %while.cond66
   %self78 = load i64, ptr %self, align 8
   %null_meth_chk79 = icmp eq i64 %self78, 0
   %null_meth_ext80 = zext i1 %null_meth_chk79 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1496, i64 9, ptr @mowner_name.1497, i64 6, i64 %null_meth_ext80, ptr @msrc_file.1498, i64 11, i64 260)
+  call void @forge_null_deref_trap(ptr @meth_name.1496, i64 9, ptr @mowner_name.1497, i64 6, i64 %null_meth_ext80, ptr @msrc_file.1498, i64 11, i64 264)
   %methcall81 = call i64 @Parser__peek_char(i64 %self78)
   %streq_l82 = inttoptr i64 %methcall81 to ptr
   %strcmp_call83 = call i32 @strcmp(ptr %streq_l82, ptr @.str.1499)
@@ -29369,14 +29375,14 @@ entry:
   %obj_ptr = inttoptr i64 %self1 to ptr
   %null_fld_chk = icmp eq i64 %self1, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1503, i64 7, ptr @sty_name.1504, i64 6, i64 %null_fld_ext, ptr @src_file.1505, i64 11, i64 270)
+  call void @forge_null_deref_trap(ptr @fld_name.1503, i64 7, ptr @sty_name.1504, i64 6, i64 %null_fld_ext, ptr @src_file.1505, i64 11, i64 274)
   %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 2
   %current = load i64, ptr %fld_ptr, align 8
   %self2 = load i64, ptr %self, align 8
   %obj_ptr3 = inttoptr i64 %self2 to ptr
   %null_fld_chk4 = icmp eq i64 %self2, 0
   %null_fld_ext5 = zext i1 %null_fld_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1506, i64 6, ptr @sty_name.1507, i64 6, i64 %null_fld_ext5, ptr @src_file.1508, i64 11, i64 270)
+  call void @forge_null_deref_trap(ptr @fld_name.1506, i64 6, ptr @sty_name.1507, i64 6, i64 %null_fld_ext5, ptr @src_file.1508, i64 11, i64 274)
   %fld_ptr6 = getelementptr inbounds nuw %Parser, ptr %obj_ptr3, i32 0, i32 0
   %source = load i64, ptr %fld_ptr6, align 8
   %len_arg = inttoptr i64 %source to ptr
@@ -29394,14 +29400,14 @@ entry:
   %obj_ptr = inttoptr i64 %self1 to ptr
   %null_fld_chk = icmp eq i64 %self1, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1509, i64 7, ptr @sty_name.1510, i64 6, i64 %null_fld_ext, ptr @src_file.1511, i64 11, i64 274)
+  call void @forge_null_deref_trap(ptr @fld_name.1509, i64 7, ptr @sty_name.1510, i64 6, i64 %null_fld_ext, ptr @src_file.1511, i64 11, i64 278)
   %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 2
   %current = load i64, ptr %fld_ptr, align 8
   %self2 = load i64, ptr %self, align 8
   %obj_ptr3 = inttoptr i64 %self2 to ptr
   %null_fld_chk4 = icmp eq i64 %self2, 0
   %null_fld_ext5 = zext i1 %null_fld_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1512, i64 6, ptr @sty_name.1513, i64 6, i64 %null_fld_ext5, ptr @src_file.1514, i64 11, i64 274)
+  call void @forge_null_deref_trap(ptr @fld_name.1512, i64 6, ptr @sty_name.1513, i64 6, i64 %null_fld_ext5, ptr @src_file.1514, i64 11, i64 278)
   %fld_ptr6 = getelementptr inbounds nuw %Parser, ptr %obj_ptr3, i32 0, i32 0
   %source = load i64, ptr %fld_ptr6, align 8
   %len_arg = inttoptr i64 %source to ptr
@@ -29422,14 +29428,14 @@ ifcont:                                           ; preds = %else
   %obj_ptr8 = inttoptr i64 %self7 to ptr
   %null_fld_chk9 = icmp eq i64 %self7, 0
   %null_fld_ext10 = zext i1 %null_fld_chk9 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1516, i64 6, ptr @sty_name.1517, i64 6, i64 %null_fld_ext10, ptr @src_file.1518, i64 11, i64 277)
+  call void @forge_null_deref_trap(ptr @fld_name.1516, i64 6, ptr @sty_name.1517, i64 6, i64 %null_fld_ext10, ptr @src_file.1518, i64 11, i64 281)
   %fld_ptr11 = getelementptr inbounds nuw %Parser, ptr %obj_ptr8, i32 0, i32 0
   %source12 = load i64, ptr %fld_ptr11, align 8
   %self13 = load i64, ptr %self, align 8
   %obj_ptr14 = inttoptr i64 %self13 to ptr
   %null_fld_chk15 = icmp eq i64 %self13, 0
   %null_fld_ext16 = zext i1 %null_fld_chk15 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1519, i64 7, ptr @sty_name.1520, i64 6, i64 %null_fld_ext16, ptr @src_file.1521, i64 11, i64 277)
+  call void @forge_null_deref_trap(ptr @fld_name.1519, i64 7, ptr @sty_name.1520, i64 6, i64 %null_fld_ext16, ptr @src_file.1521, i64 11, i64 281)
   %fld_ptr17 = getelementptr inbounds nuw %Parser, ptr %obj_ptr14, i32 0, i32 2
   %current18 = load i64, ptr %fld_ptr17, align 8
   %idx_off_int = add i64 %source12, %current18
@@ -29453,7 +29459,7 @@ entry:
   %obj_ptr = inttoptr i64 %self1 to ptr
   %null_fld_chk = icmp eq i64 %self1, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1522, i64 7, ptr @sty_name.1523, i64 6, i64 %null_fld_ext, ptr @src_file.1524, i64 11, i64 281)
+  call void @forge_null_deref_trap(ptr @fld_name.1522, i64 7, ptr @sty_name.1523, i64 6, i64 %null_fld_ext, ptr @src_file.1524, i64 11, i64 285)
   %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 2
   %current = load i64, ptr %fld_ptr, align 8
   %add = add i64 %current, 1
@@ -29461,7 +29467,7 @@ entry:
   %obj_ptr3 = inttoptr i64 %self2 to ptr
   %null_fld_chk4 = icmp eq i64 %self2, 0
   %null_fld_ext5 = zext i1 %null_fld_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1525, i64 6, ptr @sty_name.1526, i64 6, i64 %null_fld_ext5, ptr @src_file.1527, i64 11, i64 281)
+  call void @forge_null_deref_trap(ptr @fld_name.1525, i64 6, ptr @sty_name.1526, i64 6, i64 %null_fld_ext5, ptr @src_file.1527, i64 11, i64 285)
   %fld_ptr6 = getelementptr inbounds nuw %Parser, ptr %obj_ptr3, i32 0, i32 0
   %source = load i64, ptr %fld_ptr6, align 8
   %len_arg = inttoptr i64 %source to ptr
@@ -29482,14 +29488,14 @@ ifcont:                                           ; preds = %else
   %obj_ptr8 = inttoptr i64 %self7 to ptr
   %null_fld_chk9 = icmp eq i64 %self7, 0
   %null_fld_ext10 = zext i1 %null_fld_chk9 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1529, i64 6, ptr @sty_name.1530, i64 6, i64 %null_fld_ext10, ptr @src_file.1531, i64 11, i64 284)
+  call void @forge_null_deref_trap(ptr @fld_name.1529, i64 6, ptr @sty_name.1530, i64 6, i64 %null_fld_ext10, ptr @src_file.1531, i64 11, i64 288)
   %fld_ptr11 = getelementptr inbounds nuw %Parser, ptr %obj_ptr8, i32 0, i32 0
   %source12 = load i64, ptr %fld_ptr11, align 8
   %self13 = load i64, ptr %self, align 8
   %obj_ptr14 = inttoptr i64 %self13 to ptr
   %null_fld_chk15 = icmp eq i64 %self13, 0
   %null_fld_ext16 = zext i1 %null_fld_chk15 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1532, i64 7, ptr @sty_name.1533, i64 6, i64 %null_fld_ext16, ptr @src_file.1534, i64 11, i64 284)
+  call void @forge_null_deref_trap(ptr @fld_name.1532, i64 7, ptr @sty_name.1533, i64 6, i64 %null_fld_ext16, ptr @src_file.1534, i64 11, i64 288)
   %fld_ptr17 = getelementptr inbounds nuw %Parser, ptr %obj_ptr14, i32 0, i32 2
   %current18 = load i64, ptr %fld_ptr17, align 8
   %add19 = add i64 %current18, 1
@@ -29515,7 +29521,7 @@ entry:
   %self1 = load i64, ptr %self, align 8
   %null_meth_chk = icmp eq i64 %self1, 0
   %null_meth_ext = zext i1 %null_meth_chk to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1535, i64 9, ptr @mowner_name.1536, i64 6, i64 %null_meth_ext, ptr @msrc_file.1537, i64 11, i64 288)
+  call void @forge_null_deref_trap(ptr @meth_name.1535, i64 9, ptr @mowner_name.1536, i64 6, i64 %null_meth_ext, ptr @msrc_file.1537, i64 11, i64 292)
   %methcall = call i64 @Parser__is_at_end(i64 %self1)
   %if_cond = icmp ne i64 %methcall, 0
   br i1 %if_cond, label %then, label %else
@@ -29531,14 +29537,14 @@ ifcont:                                           ; preds = %else
   %obj_ptr = inttoptr i64 %self2 to ptr
   %null_fld_chk = icmp eq i64 %self2, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1538, i64 6, ptr @sty_name.1539, i64 6, i64 %null_fld_ext, ptr @src_file.1540, i64 11, i64 291)
+  call void @forge_null_deref_trap(ptr @fld_name.1538, i64 6, ptr @sty_name.1539, i64 6, i64 %null_fld_ext, ptr @src_file.1540, i64 11, i64 295)
   %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 0
   %source = load i64, ptr %fld_ptr, align 8
   %self3 = load i64, ptr %self, align 8
   %obj_ptr4 = inttoptr i64 %self3 to ptr
   %null_fld_chk5 = icmp eq i64 %self3, 0
   %null_fld_ext6 = zext i1 %null_fld_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1541, i64 7, ptr @sty_name.1542, i64 6, i64 %null_fld_ext6, ptr @src_file.1543, i64 11, i64 291)
+  call void @forge_null_deref_trap(ptr @fld_name.1541, i64 7, ptr @sty_name.1542, i64 6, i64 %null_fld_ext6, ptr @src_file.1543, i64 11, i64 295)
   %fld_ptr7 = getelementptr inbounds nuw %Parser, ptr %obj_ptr4, i32 0, i32 2
   %current = load i64, ptr %fld_ptr7, align 8
   %idx_off_int = add i64 %source, %current
@@ -29571,7 +29577,7 @@ ifcont12:                                         ; preds = %else11
   %self13 = load i64, ptr %self, align 8
   %null_meth_chk14 = icmp eq i64 %self13, 0
   %null_meth_ext15 = zext i1 %null_meth_chk14 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1544, i64 12, ptr @mowner_name.1545, i64 6, i64 %null_meth_ext15, ptr @msrc_file.1546, i64 11, i64 294)
+  call void @forge_null_deref_trap(ptr @meth_name.1544, i64 12, ptr @mowner_name.1545, i64 6, i64 %null_meth_ext15, ptr @msrc_file.1546, i64 11, i64 298)
   %methcall16 = call i64 @Parser__advance_char(i64 %self13)
   ret i64 1
 }
@@ -29585,14 +29591,14 @@ entry:
   %obj_ptr = inttoptr i64 %self1 to ptr
   %null_fld_chk = icmp eq i64 %self1, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1547, i64 6, ptr @sty_name.1548, i64 6, i64 %null_fld_ext, ptr @src_file.1549, i64 11, i64 299)
+  call void @forge_null_deref_trap(ptr @fld_name.1547, i64 6, ptr @sty_name.1548, i64 6, i64 %null_fld_ext, ptr @src_file.1549, i64 11, i64 303)
   %fld_ptr = getelementptr inbounds nuw %Parser, ptr %obj_ptr, i32 0, i32 0
   %source = load i64, ptr %fld_ptr, align 8
   %self2 = load i64, ptr %self, align 8
   %obj_ptr3 = inttoptr i64 %self2 to ptr
   %null_fld_chk4 = icmp eq i64 %self2, 0
   %null_fld_ext5 = zext i1 %null_fld_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1550, i64 7, ptr @sty_name.1551, i64 6, i64 %null_fld_ext5, ptr @src_file.1552, i64 11, i64 299)
+  call void @forge_null_deref_trap(ptr @fld_name.1550, i64 7, ptr @sty_name.1551, i64 6, i64 %null_fld_ext5, ptr @src_file.1552, i64 11, i64 303)
   %fld_ptr6 = getelementptr inbounds nuw %Parser, ptr %obj_ptr3, i32 0, i32 2
   %current = load i64, ptr %fld_ptr6, align 8
   %idx_off_int = add i64 %source, %current
@@ -29613,7 +29619,7 @@ entry:
   %obj_ptr9 = inttoptr i64 %self8 to ptr
   %null_fld_chk10 = icmp eq i64 %self8, 0
   %null_fld_ext11 = zext i1 %null_fld_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1553, i64 7, ptr @sty_name.1554, i64 6, i64 %null_fld_ext11, ptr @src_file.1555, i64 11, i64 300)
+  call void @forge_null_deref_trap(ptr @fld_name.1553, i64 7, ptr @sty_name.1554, i64 6, i64 %null_fld_ext11, ptr @src_file.1555, i64 11, i64 304)
   %fld_ptr12 = getelementptr inbounds nuw %Parser, ptr %obj_ptr9, i32 0, i32 2
   %current13 = load i64, ptr %fld_ptr12, align 8
   %add = add i64 %current13, 1
@@ -29635,7 +29641,7 @@ then:                                             ; preds = %entry
   %obj_ptr19 = inttoptr i64 %self18 to ptr
   %null_fld_chk20 = icmp eq i64 %self18, 0
   %null_fld_ext21 = zext i1 %null_fld_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1557, i64 4, ptr @sty_name.1558, i64 6, i64 %null_fld_ext21, ptr @src_file.1559, i64 11, i64 302)
+  call void @forge_null_deref_trap(ptr @fld_name.1557, i64 4, ptr @sty_name.1558, i64 6, i64 %null_fld_ext21, ptr @src_file.1559, i64 11, i64 306)
   %fld_ptr22 = getelementptr inbounds nuw %Parser, ptr %obj_ptr19, i32 0, i32 3
   %line = load i64, ptr %fld_ptr22, align 8
   %add23 = add i64 %line, 1
@@ -29654,7 +29660,7 @@ else:                                             ; preds = %entry
   %obj_ptr31 = inttoptr i64 %self30 to ptr
   %null_fld_chk32 = icmp eq i64 %self30, 0
   %null_fld_ext33 = zext i1 %null_fld_chk32 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.1560, i64 6, ptr @sty_name.1561, i64 6, i64 %null_fld_ext33, ptr @src_file.1562, i64 11, i64 305)
+  call void @forge_null_deref_trap(ptr @fld_name.1560, i64 6, ptr @sty_name.1561, i64 6, i64 %null_fld_ext33, ptr @src_file.1562, i64 11, i64 309)
   %fld_ptr34 = getelementptr inbounds nuw %Parser, ptr %obj_ptr31, i32 0, i32 4
   %column = load i64, ptr %fld_ptr34, align 8
   %add35 = add i64 %column, 1
@@ -29687,7 +29693,7 @@ while.cond:                                       ; preds = %ifcont248, %then205
   %self1 = load i64, ptr %self, align 8
   %null_meth_chk = icmp eq i64 %self1, 0
   %null_meth_ext = zext i1 %null_meth_chk to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1564, i64 9, ptr @mowner_name.1565, i64 6, i64 %null_meth_ext, ptr @msrc_file.1566, i64 11, i64 320)
+  call void @forge_null_deref_trap(ptr @meth_name.1564, i64 9, ptr @mowner_name.1565, i64 6, i64 %null_meth_ext, ptr @msrc_file.1566, i64 11, i64 324)
   %methcall = call i64 @Parser__is_at_end(i64 %self1)
   %not_cmp = icmp eq i64 %methcall, 0
   %not = zext i1 %not_cmp to i64
@@ -29698,7 +29704,7 @@ while.body:                                       ; preds = %while.cond
   %self2 = load i64, ptr %self, align 8
   %null_meth_chk3 = icmp eq i64 %self2, 0
   %null_meth_ext4 = zext i1 %null_meth_chk3 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1567, i64 9, ptr @mowner_name.1568, i64 6, i64 %null_meth_ext4, ptr @msrc_file.1569, i64 11, i64 321)
+  call void @forge_null_deref_trap(ptr @meth_name.1567, i64 9, ptr @mowner_name.1568, i64 6, i64 %null_meth_ext4, ptr @msrc_file.1569, i64 11, i64 325)
   %methcall5 = call i64 @Parser__peek_char(i64 %self2)
   store i64 %methcall5, ptr %ch, align 8
   %brace_depth6 = load i64, ptr %brace_depth, align 8
@@ -29711,7 +29717,7 @@ while.exit:                                       ; preds = %then258, %then180, 
   %self447 = load i64, ptr %self, align 8
   %null_meth_chk448 = icmp eq i64 %self447, 0
   %null_meth_ext449 = zext i1 %null_meth_chk448 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1666, i64 9, ptr @mowner_name.1667, i64 6, i64 %null_meth_ext449, ptr @msrc_file.1668, i64 11, i64 385)
+  call void @forge_null_deref_trap(ptr @meth_name.1666, i64 9, ptr @mowner_name.1667, i64 6, i64 %null_meth_ext449, ptr @msrc_file.1668, i64 11, i64 389)
   %methcall450 = call i64 @Parser__is_at_end(i64 %self447)
   %if_cond451 = icmp ne i64 %methcall450, 0
   br i1 %if_cond451, label %then452, label %else453
@@ -29760,7 +29766,7 @@ then9:                                            ; preds = %then
   %self14 = load i64, ptr %self, align 8
   %null_meth_chk15 = icmp eq i64 %self14, 0
   %null_meth_ext16 = zext i1 %null_meth_chk15 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1571, i64 12, ptr @mowner_name.1572, i64 6, i64 %null_meth_ext16, ptr @msrc_file.1573, i64 11, i64 326)
+  call void @forge_null_deref_trap(ptr @meth_name.1571, i64 12, ptr @mowner_name.1572, i64 6, i64 %null_meth_ext16, ptr @msrc_file.1573, i64 11, i64 330)
   %methcall17 = call i64 @Parser__advance_char(i64 %self14)
   br label %while.cond18
 
@@ -29781,7 +29787,7 @@ while.cond18:                                     ; preds = %ifcont80, %then9
   %self21 = load i64, ptr %self, align 8
   %null_meth_chk22 = icmp eq i64 %self21, 0
   %null_meth_ext23 = zext i1 %null_meth_chk22 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1574, i64 9, ptr @mowner_name.1575, i64 6, i64 %null_meth_ext23, ptr @msrc_file.1576, i64 11, i64 327)
+  call void @forge_null_deref_trap(ptr @meth_name.1574, i64 9, ptr @mowner_name.1575, i64 6, i64 %null_meth_ext23, ptr @msrc_file.1576, i64 11, i64 331)
   %methcall24 = call i64 @Parser__is_at_end(i64 %self21)
   %not_cmp25 = icmp eq i64 %methcall24, 0
   %not26 = zext i1 %not_cmp25 to i64
@@ -29792,7 +29798,7 @@ while.body19:                                     ; preds = %sc_merge
   %self37 = load i64, ptr %self, align 8
   %null_meth_chk38 = icmp eq i64 %self37, 0
   %null_meth_ext39 = zext i1 %null_meth_chk38 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1581, i64 9, ptr @mowner_name.1582, i64 6, i64 %null_meth_ext39, ptr @msrc_file.1583, i64 11, i64 328)
+  call void @forge_null_deref_trap(ptr @meth_name.1581, i64 9, ptr @mowner_name.1582, i64 6, i64 %null_meth_ext39, ptr @msrc_file.1583, i64 11, i64 332)
   %methcall40 = call i64 @Parser__peek_char(i64 %self37)
   %streq_l41 = inttoptr i64 %methcall40 to ptr
   %strcmp_call42 = call i32 @strcmp(ptr %streq_l41, ptr @.str.1584)
@@ -29806,7 +29812,7 @@ while.exit20:                                     ; preds = %sc_merge
   %self102 = load i64, ptr %self, align 8
   %null_meth_chk103 = icmp eq i64 %self102, 0
   %null_meth_ext104 = zext i1 %null_meth_chk103 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1600, i64 9, ptr @mowner_name.1601, i64 6, i64 %null_meth_ext104, ptr @msrc_file.1602, i64 11, i64 337)
+  call void @forge_null_deref_trap(ptr @meth_name.1600, i64 9, ptr @mowner_name.1601, i64 6, i64 %null_meth_ext104, ptr @msrc_file.1602, i64 11, i64 341)
   %methcall105 = call i64 @Parser__is_at_end(i64 %self102)
   %not_cmp106 = icmp eq i64 %methcall105, 0
   %not107 = zext i1 %not_cmp106 to i64
@@ -29817,7 +29823,7 @@ sc_rhs:                                           ; preds = %while.cond18
   %self27 = load i64, ptr %self, align 8
   %null_meth_chk28 = icmp eq i64 %self27, 0
   %null_meth_ext29 = zext i1 %null_meth_chk28 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1577, i64 9, ptr @mowner_name.1578, i64 6, i64 %null_meth_ext29, ptr @msrc_file.1579, i64 11, i64 327)
+  call void @forge_null_deref_trap(ptr @meth_name.1577, i64 9, ptr @mowner_name.1578, i64 6, i64 %null_meth_ext29, ptr @msrc_file.1579, i64 11, i64 331)
   %methcall30 = call i64 @Parser__peek_char(i64 %self27)
   %streq_l31 = inttoptr i64 %methcall30 to ptr
   %strcmp_call32 = call i32 @strcmp(ptr %streq_l31, ptr @.str.1580)
@@ -29838,7 +29844,7 @@ then47:                                           ; preds = %while.body19
   %self51 = load i64, ptr %self, align 8
   %null_meth_chk52 = icmp eq i64 %self51, 0
   %null_meth_ext53 = zext i1 %null_meth_chk52 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1585, i64 9, ptr @mowner_name.1586, i64 6, i64 %null_meth_ext53, ptr @msrc_file.1587, i64 11, i64 329)
+  call void @forge_null_deref_trap(ptr @meth_name.1585, i64 9, ptr @mowner_name.1586, i64 6, i64 %null_meth_ext53, ptr @msrc_file.1587, i64 11, i64 333)
   %methcall54 = call i64 @Parser__peek_char(i64 %self51)
   %concat_l55 = inttoptr i64 %content50 to ptr
   %concat_r56 = inttoptr i64 %methcall54 to ptr
@@ -29858,7 +29864,7 @@ then47:                                           ; preds = %while.body19
   %self67 = load i64, ptr %self, align 8
   %null_meth_chk68 = icmp eq i64 %self67, 0
   %null_meth_ext69 = zext i1 %null_meth_chk68 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1588, i64 12, ptr @mowner_name.1589, i64 6, i64 %null_meth_ext69, ptr @msrc_file.1590, i64 11, i64 330)
+  call void @forge_null_deref_trap(ptr @meth_name.1588, i64 12, ptr @mowner_name.1589, i64 6, i64 %null_meth_ext69, ptr @msrc_file.1590, i64 11, i64 334)
   %methcall70 = call i64 @Parser__advance_char(i64 %self67)
   br label %ifcont49
 
@@ -29869,7 +29875,7 @@ ifcont49:                                         ; preds = %else48, %then47
   %self71 = load i64, ptr %self, align 8
   %null_meth_chk72 = icmp eq i64 %self71, 0
   %null_meth_ext73 = zext i1 %null_meth_chk72 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1591, i64 9, ptr @mowner_name.1592, i64 6, i64 %null_meth_ext73, ptr @msrc_file.1593, i64 11, i64 332)
+  call void @forge_null_deref_trap(ptr @meth_name.1591, i64 9, ptr @mowner_name.1592, i64 6, i64 %null_meth_ext73, ptr @msrc_file.1593, i64 11, i64 336)
   %methcall74 = call i64 @Parser__is_at_end(i64 %self71)
   %not_cmp75 = icmp eq i64 %methcall74, 0
   %not76 = zext i1 %not_cmp75 to i64
@@ -29881,7 +29887,7 @@ then78:                                           ; preds = %ifcont49
   %self82 = load i64, ptr %self, align 8
   %null_meth_chk83 = icmp eq i64 %self82, 0
   %null_meth_ext84 = zext i1 %null_meth_chk83 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1594, i64 9, ptr @mowner_name.1595, i64 6, i64 %null_meth_ext84, ptr @msrc_file.1596, i64 11, i64 333)
+  call void @forge_null_deref_trap(ptr @meth_name.1594, i64 9, ptr @mowner_name.1595, i64 6, i64 %null_meth_ext84, ptr @msrc_file.1596, i64 11, i64 337)
   %methcall85 = call i64 @Parser__peek_char(i64 %self82)
   %concat_l86 = inttoptr i64 %content81 to ptr
   %concat_r87 = inttoptr i64 %methcall85 to ptr
@@ -29901,7 +29907,7 @@ then78:                                           ; preds = %ifcont49
   %self98 = load i64, ptr %self, align 8
   %null_meth_chk99 = icmp eq i64 %self98, 0
   %null_meth_ext100 = zext i1 %null_meth_chk99 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1597, i64 12, ptr @mowner_name.1598, i64 6, i64 %null_meth_ext100, ptr @msrc_file.1599, i64 11, i64 334)
+  call void @forge_null_deref_trap(ptr @meth_name.1597, i64 12, ptr @mowner_name.1598, i64 6, i64 %null_meth_ext100, ptr @msrc_file.1599, i64 11, i64 338)
   %methcall101 = call i64 @Parser__advance_char(i64 %self98)
   br label %ifcont80
 
@@ -29916,7 +29922,7 @@ then109:                                          ; preds = %while.exit20
   %self113 = load i64, ptr %self, align 8
   %null_meth_chk114 = icmp eq i64 %self113, 0
   %null_meth_ext115 = zext i1 %null_meth_chk114 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1603, i64 9, ptr @mowner_name.1604, i64 6, i64 %null_meth_ext115, ptr @msrc_file.1605, i64 11, i64 338)
+  call void @forge_null_deref_trap(ptr @meth_name.1603, i64 9, ptr @mowner_name.1604, i64 6, i64 %null_meth_ext115, ptr @msrc_file.1605, i64 11, i64 342)
   %methcall116 = call i64 @Parser__peek_char(i64 %self113)
   %concat_l117 = inttoptr i64 %content112 to ptr
   %concat_r118 = inttoptr i64 %methcall116 to ptr
@@ -29936,7 +29942,7 @@ then109:                                          ; preds = %while.exit20
   %self129 = load i64, ptr %self, align 8
   %null_meth_chk130 = icmp eq i64 %self129, 0
   %null_meth_ext131 = zext i1 %null_meth_chk130 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1606, i64 12, ptr @mowner_name.1607, i64 6, i64 %null_meth_ext131, ptr @msrc_file.1608, i64 11, i64 339)
+  call void @forge_null_deref_trap(ptr @meth_name.1606, i64 12, ptr @mowner_name.1607, i64 6, i64 %null_meth_ext131, ptr @msrc_file.1608, i64 11, i64 343)
   %methcall132 = call i64 @Parser__advance_char(i64 %self129)
   br label %ifcont111
 
@@ -29995,7 +30001,7 @@ ifcont153:                                        ; preds = %else152, %then151
   %self169 = load i64, ptr %self, align 8
   %null_meth_chk170 = icmp eq i64 %self169, 0
   %null_meth_ext171 = zext i1 %null_meth_chk170 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1611, i64 12, ptr @mowner_name.1612, i64 6, i64 %null_meth_ext171, ptr @msrc_file.1613, i64 11, i64 346)
+  call void @forge_null_deref_trap(ptr @meth_name.1611, i64 12, ptr @mowner_name.1612, i64 6, i64 %null_meth_ext171, ptr @msrc_file.1613, i64 11, i64 350)
   %methcall172 = call i64 @Parser__advance_char(i64 %self169)
   br label %while.cond
 
@@ -30019,7 +30025,7 @@ sc_rhs190:                                        ; preds = %ifcont182
   %self192 = load i64, ptr %self, align 8
   %null_meth_chk193 = icmp eq i64 %self192, 0
   %null_meth_ext194 = zext i1 %null_meth_chk193 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1616, i64 14, ptr @mowner_name.1617, i64 6, i64 %null_meth_ext194, ptr @msrc_file.1618, i64 11, i64 351)
+  call void @forge_null_deref_trap(ptr @meth_name.1616, i64 14, ptr @mowner_name.1617, i64 6, i64 %null_meth_ext194, ptr @msrc_file.1618, i64 11, i64 355)
   %methcall195 = call i64 @Parser__peek_next_char(i64 %self192)
   %streq_l196 = inttoptr i64 %methcall195 to ptr
   %strcmp_call197 = call i32 @strcmp(ptr %streq_l196, ptr @.str.1619)
@@ -30069,12 +30075,12 @@ then205:                                          ; preds = %sc_merge191
   %self231 = load i64, ptr %self, align 8
   %null_meth_chk232 = icmp eq i64 %self231, 0
   %null_meth_ext233 = zext i1 %null_meth_chk232 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1622, i64 12, ptr @mowner_name.1623, i64 6, i64 %null_meth_ext233, ptr @msrc_file.1624, i64 11, i64 355)
+  call void @forge_null_deref_trap(ptr @meth_name.1622, i64 12, ptr @mowner_name.1623, i64 6, i64 %null_meth_ext233, ptr @msrc_file.1624, i64 11, i64 359)
   %methcall234 = call i64 @Parser__advance_char(i64 %self231)
   %self235 = load i64, ptr %self, align 8
   %null_meth_chk236 = icmp eq i64 %self235, 0
   %null_meth_ext237 = zext i1 %null_meth_chk236 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1625, i64 12, ptr @mowner_name.1626, i64 6, i64 %null_meth_ext237, ptr @msrc_file.1627, i64 11, i64 356)
+  call void @forge_null_deref_trap(ptr @meth_name.1625, i64 12, ptr @mowner_name.1626, i64 6, i64 %null_meth_ext237, ptr @msrc_file.1627, i64 11, i64 360)
   %methcall238 = call i64 @Parser__advance_char(i64 %self235)
   br label %while.cond
 
@@ -30095,12 +30101,12 @@ then246:                                          ; preds = %ifcont207
   %self249 = load i64, ptr %self, align 8
   %null_meth_chk250 = icmp eq i64 %self249, 0
   %null_meth_ext251 = zext i1 %null_meth_chk250 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1629, i64 12, ptr @mowner_name.1630, i64 6, i64 %null_meth_ext251, ptr @msrc_file.1631, i64 11, i64 360)
+  call void @forge_null_deref_trap(ptr @meth_name.1629, i64 12, ptr @mowner_name.1630, i64 6, i64 %null_meth_ext251, ptr @msrc_file.1631, i64 11, i64 364)
   %methcall252 = call i64 @Parser__advance_char(i64 %self249)
   %self253 = load i64, ptr %self, align 8
   %null_meth_chk254 = icmp eq i64 %self253, 0
   %null_meth_ext255 = zext i1 %null_meth_chk254 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1632, i64 9, ptr @mowner_name.1633, i64 6, i64 %null_meth_ext255, ptr @msrc_file.1634, i64 11, i64 361)
+  call void @forge_null_deref_trap(ptr @meth_name.1632, i64 9, ptr @mowner_name.1633, i64 6, i64 %null_meth_ext255, ptr @msrc_file.1634, i64 11, i64 365)
   %methcall256 = call i64 @Parser__is_at_end(i64 %self253)
   %if_cond257 = icmp ne i64 %methcall256, 0
   br i1 %if_cond257, label %then258, label %else259
@@ -30126,7 +30132,7 @@ else247:                                          ; preds = %ifcont207
   %self443 = load i64, ptr %self, align 8
   %null_meth_chk444 = icmp eq i64 %self443, 0
   %null_meth_ext445 = zext i1 %null_meth_chk444 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1663, i64 12, ptr @mowner_name.1664, i64 6, i64 %null_meth_ext445, ptr @msrc_file.1665, i64 11, i64 381)
+  call void @forge_null_deref_trap(ptr @meth_name.1663, i64 12, ptr @mowner_name.1664, i64 6, i64 %null_meth_ext445, ptr @msrc_file.1665, i64 11, i64 385)
   %methcall446 = call i64 @Parser__advance_char(i64 %self443)
   br label %ifcont248
 
@@ -30143,13 +30149,13 @@ ifcont260:                                        ; preds = %else259
   %self261 = load i64, ptr %self, align 8
   %null_meth_chk262 = icmp eq i64 %self261, 0
   %null_meth_ext263 = zext i1 %null_meth_chk262 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1635, i64 9, ptr @mowner_name.1636, i64 6, i64 %null_meth_ext263, ptr @msrc_file.1637, i64 11, i64 362)
+  call void @forge_null_deref_trap(ptr @meth_name.1635, i64 9, ptr @mowner_name.1636, i64 6, i64 %null_meth_ext263, ptr @msrc_file.1637, i64 11, i64 366)
   %methcall264 = call i64 @Parser__peek_char(i64 %self261)
   store i64 %methcall264, ptr %esc, align 8
   %self265 = load i64, ptr %self, align 8
   %null_meth_chk266 = icmp eq i64 %self265, 0
   %null_meth_ext267 = zext i1 %null_meth_chk266 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1638, i64 12, ptr @mowner_name.1639, i64 6, i64 %null_meth_ext267, ptr @msrc_file.1640, i64 11, i64 363)
+  call void @forge_null_deref_trap(ptr @meth_name.1638, i64 12, ptr @mowner_name.1639, i64 6, i64 %null_meth_ext267, ptr @msrc_file.1640, i64 11, i64 367)
   %methcall268 = call i64 @Parser__advance_char(i64 %self265)
   %esc269 = load i64, ptr %esc, align 8
   %lit_str_ptr = inttoptr i64 %esc269 to ptr
@@ -30315,13 +30321,13 @@ parm_body373:                                     ; preds = %parm_next356
   %self379 = load i64, ptr %self, align 8
   %null_meth_chk380 = icmp eq i64 %self379, 0
   %null_meth_ext381 = zext i1 %null_meth_chk380 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1654, i64 12, ptr @mowner_name.1655, i64 6, i64 %null_meth_ext381, ptr @msrc_file.1656, i64 11, i64 373)
+  call void @forge_null_deref_trap(ptr @meth_name.1654, i64 12, ptr @mowner_name.1655, i64 6, i64 %null_meth_ext381, ptr @msrc_file.1656, i64 11, i64 377)
   %methcall382 = call i64 @Parser__advance_char(i64 %self379)
   store i64 %methcall382, ptr %hi, align 8
   %self383 = load i64, ptr %self, align 8
   %null_meth_chk384 = icmp eq i64 %self383, 0
   %null_meth_ext385 = zext i1 %null_meth_chk384 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1657, i64 12, ptr @mowner_name.1658, i64 6, i64 %null_meth_ext385, ptr @msrc_file.1659, i64 11, i64 374)
+  call void @forge_null_deref_trap(ptr @meth_name.1657, i64 12, ptr @mowner_name.1658, i64 6, i64 %null_meth_ext385, ptr @msrc_file.1659, i64 11, i64 378)
   %methcall386 = call i64 @Parser__advance_char(i64 %self383)
   store i64 %methcall386, ptr %lo, align 8
   %content387 = load i64, ptr %content, align 8
@@ -30382,14 +30388,14 @@ parm_body402:                                     ; preds = %parm_next374
   br label %pmatch_end
 
 parm_next403:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1661, i64 -1, ptr @mu_file.1662, i64 364)
+  call void @forge_match_unreachable(ptr @.match_fn.1661, i64 -1, ptr @mu_file.1662, i64 368)
   unreachable
 
 then452:                                          ; preds = %while.exit
   %self455 = load i64, ptr %self, align 8
   %null_meth_chk456 = icmp eq i64 %self455, 0
   %null_meth_ext457 = zext i1 %null_meth_chk456 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1669, i64 6, ptr @mowner_name.1670, i64 6, i64 %null_meth_ext457, ptr @msrc_file.1671, i64 11, i64 386)
+  call void @forge_null_deref_trap(ptr @meth_name.1669, i64 6, ptr @mowner_name.1670, i64 6, i64 %null_meth_ext457, ptr @msrc_file.1671, i64 11, i64 390)
   %buf458 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw %DiagCode, ptr %buf458, i32 0, i32 0
   store i64 -1878799451472551348, ptr %tag_ptr, align 8
@@ -30400,7 +30406,7 @@ then452:                                          ; preds = %while.exit
   %self460 = load i64, ptr %self, align 8
   %null_meth_chk461 = icmp eq i64 %self460, 0
   %null_meth_ext462 = zext i1 %null_meth_chk461 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1673, i64 11, ptr @mowner_name.1674, i64 6, i64 %null_meth_ext462, ptr @msrc_file.1675, i64 11, i64 387)
+  call void @forge_null_deref_trap(ptr @meth_name.1673, i64 11, ptr @mowner_name.1674, i64 6, i64 %null_meth_ext462, ptr @msrc_file.1675, i64 11, i64 391)
   %buf463 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr464 = getelementptr inbounds nuw %Tk, ptr %buf463, i32 0, i32 0
   store i64 210673603023, ptr %tag_ptr464, align 8
@@ -30417,7 +30423,7 @@ ifcont454:                                        ; preds = %else453
   %self468 = load i64, ptr %self, align 8
   %null_meth_chk469 = icmp eq i64 %self468, 0
   %null_meth_ext470 = zext i1 %null_meth_chk469 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1677, i64 12, ptr @mowner_name.1678, i64 6, i64 %null_meth_ext470, ptr @msrc_file.1679, i64 11, i64 391)
+  call void @forge_null_deref_trap(ptr @meth_name.1677, i64 12, ptr @mowner_name.1678, i64 6, i64 %null_meth_ext470, ptr @msrc_file.1679, i64 11, i64 395)
   %methcall471 = call i64 @Parser__advance_char(i64 %self468)
   %has_interpolation472 = load i64, ptr %has_interpolation, align 8
   %sif_cond = icmp ne i64 %has_interpolation472, 0
@@ -30428,7 +30434,7 @@ sif_then:                                         ; preds = %ifcont454
   %self473 = load i64, ptr %self, align 8
   %null_meth_chk474 = icmp eq i64 %self473, 0
   %null_meth_ext475 = zext i1 %null_meth_chk474 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1680, i64 11, ptr @mowner_name.1681, i64 6, i64 %null_meth_ext475, ptr @msrc_file.1682, i64 11, i64 394)
+  call void @forge_null_deref_trap(ptr @meth_name.1680, i64 11, ptr @mowner_name.1681, i64 6, i64 %null_meth_ext475, ptr @msrc_file.1682, i64 11, i64 398)
   %buf476 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr477 = getelementptr inbounds nuw %Tk, ptr %buf476, i32 0, i32 0
   store i64 7571599564801505, ptr %tag_ptr477, align 8
@@ -30475,7 +30481,7 @@ sif_else:                                         ; preds = %ifcont454
   %self496 = load i64, ptr %self, align 8
   %null_meth_chk497 = icmp eq i64 %self496, 0
   %null_meth_ext498 = zext i1 %null_meth_chk497 to i64
-  call void @forge_null_deref_trap(ptr @meth_name.1684, i64 11, ptr @mowner_name.1685, i64 6, i64 %null_meth_ext498, ptr @msrc_file.1686, i64 11, i64 397)
+  call void @forge_null_deref_trap(ptr @meth_name.1684, i64 11, ptr @mowner_name.1685, i64 6, i64 %null_meth_ext498, ptr @msrc_file.1686, i64 11, i64 401)
   %buf499 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr500 = getelementptr inbounds nuw %Tk, ptr %buf499, i32 0, i32 0
   store i64 6952779160540, ptr %tag_ptr500, align 8
@@ -30953,7 +30959,7 @@ parm_body121:                                     ; preds = %parm_next111
   br label %pmatch_end
 
 parm_next122:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1717, i64 -1, ptr @mu_file.1718, i64 432)
+  call void @forge_match_unreachable(ptr @.match_fn.1717, i64 -1, ptr @mu_file.1718, i64 436)
   unreachable
 }
 
@@ -31249,7 +31255,7 @@ parm_body56:                                      ; preds = %parm_next51
   br label %pmatch_end
 
 parm_next57:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1730, i64 -1, ptr @mu_file.1731, i64 493)
+  call void @forge_match_unreachable(ptr @.match_fn.1730, i64 -1, ptr @mu_file.1731, i64 497)
   unreachable
 }
 
@@ -50719,8 +50725,7 @@ sif_end:                                          ; preds = %sif_else, %sif_then
 
 define i64 @"features::match_expr::typeck::pattern_variant_names"(i64 %0) {
 entry:
-  %sif_result45 = alloca i64, align 8
-  %sif_result = alloca i64, align 8
+  %when_result = alloca i64, align 8
   %r = alloca i64, align 8
   %l = alloca i64, align 8
   %right29 = alloca i64, align 8
@@ -50738,7 +50743,7 @@ entry:
   %tag_eq = icmp eq i64 %tag, 229444843115450
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm61, %sif_end, %march_arm4, %march_arm
+match_end:                                        ; preds = %march_arm58, %when_end, %march_arm4, %march_arm
   %match_val = load i64, ptr %match_result, align 8
   ret i64 %match_val
 
@@ -50795,48 +50800,47 @@ march_arm15:                                      ; preds = %march_next5
   %right31 = load i64, ptr %right29, align 8
   %calltmp32 = call i64 @"features::match_expr::typeck::pattern_variant_names"(i64 %right31)
   store i64 %calltmp32, ptr %r, align 8
+  store i64 0, ptr %when_result, align 8
   %l33 = load i64, ptr %l, align 8
   %streq_l = inttoptr i64 %l33 to ptr
   %strcmp_call = call i32 @strcmp(ptr %streq_l, ptr @.str.4560)
   %strcmp_sext = sext i32 %strcmp_call to i64
   %streq_cmp = icmp eq i64 %strcmp_sext, 0
   %streq_ext = zext i1 %streq_cmp to i64
-  %sif_cond = icmp ne i64 %streq_ext, 0
-  store i64 0, ptr %sif_result, align 8
-  br i1 %sif_cond, label %sif_then, label %sif_else
+  %when_cond = icmp ne i64 %streq_ext, 0
+  br i1 %when_cond, label %when_arm, label %when_next
 
 march_next16:                                     ; preds = %march_next5
-  br label %march_arm61
+  br label %march_arm58
 
-sif_then:                                         ; preds = %march_arm15
+when_end:                                         ; preds = %when_next43, %when_arm42, %when_arm
+  %when_val = load i64, ptr %when_result, align 8
+  store i64 %when_val, ptr %match_result, align 8
+  br label %match_end
+
+when_arm:                                         ; preds = %march_arm15
   %r34 = load i64, ptr %r, align 8
-  store i64 %r34, ptr %sif_result, align 8
-  br label %sif_end
+  store i64 %r34, ptr %when_result, align 8
+  br label %when_end
 
-sif_else:                                         ; preds = %march_arm15
+when_next:                                        ; preds = %march_arm15
   %r35 = load i64, ptr %r, align 8
   %streq_l36 = inttoptr i64 %r35 to ptr
   %strcmp_call37 = call i32 @strcmp(ptr %streq_l36, ptr @.str.4561)
   %strcmp_sext38 = sext i32 %strcmp_call37 to i64
   %streq_cmp39 = icmp eq i64 %strcmp_sext38, 0
   %streq_ext40 = zext i1 %streq_cmp39 to i64
-  %sif_cond41 = icmp ne i64 %streq_ext40, 0
-  store i64 0, ptr %sif_result45, align 8
-  br i1 %sif_cond41, label %sif_then42, label %sif_else43
+  %when_cond41 = icmp ne i64 %streq_ext40, 0
+  br i1 %when_cond41, label %when_arm42, label %when_next43
 
-sif_end:                                          ; preds = %sif_end44, %sif_then
-  %sif_val60 = load i64, ptr %sif_result, align 8
-  store i64 %sif_val60, ptr %match_result, align 8
-  br label %match_end
+when_arm42:                                       ; preds = %when_next
+  %l44 = load i64, ptr %l, align 8
+  store i64 %l44, ptr %when_result, align 8
+  br label %when_end
 
-sif_then42:                                       ; preds = %sif_else
-  %l46 = load i64, ptr %l, align 8
-  store i64 %l46, ptr %sif_result45, align 8
-  br label %sif_end44
-
-sif_else43:                                       ; preds = %sif_else
-  %l47 = load i64, ptr %l, align 8
-  %concat_l = inttoptr i64 %l47 to ptr
+when_next43:                                      ; preds = %when_next
+  %l45 = load i64, ptr %l, align 8
+  %concat_l = inttoptr i64 %l45 to ptr
   %lhs_len = call i64 @strlen(ptr %concat_l)
   %rhs_len = call i64 @strlen(ptr @.str.4562)
   %concat_total = add i64 %lhs_len, %rhs_len
@@ -50849,34 +50853,29 @@ sif_else43:                                       ; preds = %sif_else
   %rhs_len_p1 = add i64 %rhs_len, 1
   %2 = call ptr @memcpy(ptr %dst2, ptr @.str.4562, i64 %rhs_len_p1)
   %concat_i64 = ptrtoint ptr %buf to i64
-  %r48 = load i64, ptr %r, align 8
-  %concat_l49 = inttoptr i64 %concat_i64 to ptr
-  %concat_r = inttoptr i64 %r48 to ptr
-  %lhs_len50 = call i64 @strlen(ptr %concat_l49)
-  %rhs_len51 = call i64 @strlen(ptr %concat_r)
-  %concat_total52 = add i64 %lhs_len50, %rhs_len51
-  %concat_size53 = add i64 %concat_total52, 1
-  %buf54 = call ptr @forge_bump_alloc(i64 %concat_size53)
-  %3 = call ptr @memcpy(ptr %buf54, ptr %concat_l49, i64 %lhs_len50)
-  %buf_int55 = ptrtoint ptr %buf54 to i64
-  %dst2_int56 = add i64 %buf_int55, %lhs_len50
-  %dst257 = inttoptr i64 %dst2_int56 to ptr
-  %rhs_len_p158 = add i64 %rhs_len51, 1
-  %4 = call ptr @memcpy(ptr %dst257, ptr %concat_r, i64 %rhs_len_p158)
-  %concat_i6459 = ptrtoint ptr %buf54 to i64
-  store i64 %concat_i6459, ptr %sif_result45, align 8
-  br label %sif_end44
+  %r46 = load i64, ptr %r, align 8
+  %concat_l47 = inttoptr i64 %concat_i64 to ptr
+  %concat_r = inttoptr i64 %r46 to ptr
+  %lhs_len48 = call i64 @strlen(ptr %concat_l47)
+  %rhs_len49 = call i64 @strlen(ptr %concat_r)
+  %concat_total50 = add i64 %lhs_len48, %rhs_len49
+  %concat_size51 = add i64 %concat_total50, 1
+  %buf52 = call ptr @forge_bump_alloc(i64 %concat_size51)
+  %3 = call ptr @memcpy(ptr %buf52, ptr %concat_l47, i64 %lhs_len48)
+  %buf_int53 = ptrtoint ptr %buf52 to i64
+  %dst2_int54 = add i64 %buf_int53, %lhs_len48
+  %dst255 = inttoptr i64 %dst2_int54 to ptr
+  %rhs_len_p156 = add i64 %rhs_len49, 1
+  %4 = call ptr @memcpy(ptr %dst255, ptr %concat_r, i64 %rhs_len_p156)
+  %concat_i6457 = ptrtoint ptr %buf52 to i64
+  store i64 %concat_i6457, ptr %when_result, align 8
+  br label %when_end
 
-sif_end44:                                        ; preds = %sif_else43, %sif_then42
-  %sif_val = load i64, ptr %sif_result45, align 8
-  store i64 %sif_val, ptr %sif_result, align 8
-  br label %sif_end
-
-march_arm61:                                      ; preds = %march_next16
+march_arm58:                                      ; preds = %march_next16
   store i64 ptrtoint (ptr @.str.4563 to i64), ptr %match_result, align 8
   br label %match_end
 
-march_next62:                                     ; No predecessors!
+march_next59:                                     ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.4564, i64 %tag, ptr @mu_file.4565, i64 46)
   unreachable
 }
