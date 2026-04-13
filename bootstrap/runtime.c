@@ -576,9 +576,10 @@ static void forge_map_grow(ForgeHashMap* m) {
 // dispatch where keys are small sequential integers (0-63).
 // Values are i64 (function pointers, struct pointers, etc.).
 
-#define FORGE_INTMAP_CAP 64
+#define FORGE_INTMAP_CAP 256
 
 typedef struct {
+    int64_t keys[FORGE_INTMAP_CAP];
     int64_t values[FORGE_INTMAP_CAP];
     int8_t  occupied[FORGE_INTMAP_CAP];
 } ForgeIntMap;
@@ -590,24 +591,36 @@ void* forge_intmap_new(void) {
 
 void forge_intmap_set(void* map, int64_t key, int64_t value) {
     ForgeIntMap* m = (ForgeIntMap*)map;
-    if (key >= 0 && key < FORGE_INTMAP_CAP) {
-        m->values[key] = value;
-        m->occupied[key] = 1;
+    uint64_t idx = (uint64_t)key % FORGE_INTMAP_CAP;
+    for (int i = 0; i < FORGE_INTMAP_CAP; i++) {
+        uint64_t slot = (idx + i) % FORGE_INTMAP_CAP;
+        if (!m->occupied[slot] || m->keys[slot] == key) {
+            m->keys[slot] = key;
+            m->values[slot] = value;
+            m->occupied[slot] = 1;
+            return;
+        }
     }
 }
 
 int64_t forge_intmap_get(void* map, int64_t key) {
     ForgeIntMap* m = (ForgeIntMap*)map;
-    if (key >= 0 && key < FORGE_INTMAP_CAP && m->occupied[key]) {
-        return m->values[key];
+    uint64_t idx = (uint64_t)key % FORGE_INTMAP_CAP;
+    for (int i = 0; i < FORGE_INTMAP_CAP; i++) {
+        uint64_t slot = (idx + i) % FORGE_INTMAP_CAP;
+        if (!m->occupied[slot]) return 0;
+        if (m->keys[slot] == key) return m->values[slot];
     }
     return 0;
 }
 
 int64_t forge_intmap_has(void* map, int64_t key) {
     ForgeIntMap* m = (ForgeIntMap*)map;
-    if (key >= 0 && key < FORGE_INTMAP_CAP) {
-        return m->occupied[key];
+    uint64_t idx = (uint64_t)key % FORGE_INTMAP_CAP;
+    for (int i = 0; i < FORGE_INTMAP_CAP; i++) {
+        uint64_t slot = (idx + i) % FORGE_INTMAP_CAP;
+        if (!m->occupied[slot]) return 0;
+        if (m->keys[slot] == key) return 1;
     }
     return 0;
 }
@@ -1116,13 +1129,13 @@ const char* forge_float_to_string(int64_t bits) {
 // Extract the enum discriminant tag (first byte) from an enum value.
 // Enums are heap-allocated structs with {i8 tag, i64 field1, ...}.
 int64_t forge_expr_tag(int64_t expr_val) {
-    uint8_t* p = (uint8_t*)(uintptr_t)expr_val;
-    return (int64_t)p[0];
+    int64_t* p = (int64_t*)(uintptr_t)expr_val;
+    return p[0];
 }
 
 int64_t forge_stmt_tag(int64_t stmt_val) {
-    uint8_t* p = (uint8_t*)(uintptr_t)stmt_val;
-    return (int64_t)p[0];
+    int64_t* p = (int64_t*)(uintptr_t)stmt_val;
+    return p[0];
 }
 
 // ── Ptr byte write ──
@@ -1764,6 +1777,7 @@ int64_t forge_variant_hash(const char* name) {
     while (*name) {
         hash = hash * 33 + (unsigned char)*name;
         name++;
+
     }
     return (int64_t)hash;
 }

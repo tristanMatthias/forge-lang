@@ -502,18 +502,20 @@ export type VariantLookup = {
     tag: int,
 }
 
+extern fn forge_variant_hash(name: string) -> int
+
 export fn variant_lookup(variants: VariantList, name: string) -> VariantLookup {
-    variant_lookup_loop(variants, name, 0)
+    variant_lookup_by_hash(variants, name)
 }
 
-fn variant_lookup_loop(variants: VariantList, name: string, idx: int) -> VariantLookup {
+fn variant_lookup_by_hash(variants: VariantList, name: string) -> VariantLookup {
     match variants {
         .End -> VariantLookup { found: false, fields: FieldList.End, tag: -1 }
         .Node(n, fields, next) -> {
             if n == name {
-                return VariantLookup { found: true, fields, tag: idx }
+                return VariantLookup { found: true, fields, tag: forge_variant_hash(name) }
             }
-            variant_lookup_loop(next, name, idx + 1)
+            variant_lookup_by_hash(next, name)
         }
     }
 }
