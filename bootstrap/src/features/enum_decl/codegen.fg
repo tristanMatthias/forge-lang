@@ -1,7 +1,7 @@
 // WHY: emits enum constructors (heap-allocated tagged unions).
 
 use core.ast.{Expr, ExprList, VariantList, VarEnv, variant_lookup, variant_max_payload, ValueType}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, const_i64, const_i8, to_i64, cg_malloc}
+use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, const_i64, const_i8, to_i64, cg_malloc}
 use codegen.{emit_expr}
 
 

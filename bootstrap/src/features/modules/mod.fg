@@ -14,7 +14,7 @@
 mod parser
 mod resolver
 mod names
-use core.eval.{error_result, ok_result, value_null}
+use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, register}
 use resolve.{resolve_stmt_list}
 

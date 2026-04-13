@@ -1,8 +1,8 @@
 mod parser
 mod codegen
 mod typeck
-use core.cg.{err_stmt}
-use core.eval.{error_result}
+use codegen.types.{err_stmt}
+use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{define_param_names, resolve_expr}
 use features.let_stmt.typeck.{bind_destructure}

@@ -1,8 +1,8 @@
 mod parser
 mod codegen
 use core.ast.{sexpr_dummy}
-use core.cg.{err_stmt, ok_stmt}
-use core.eval.{error_result, ok_result, value_null}
+use codegen.types.{err_stmt, ok_stmt}
+use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr}
 use features.defer_stmt.codegen.{defer_push}

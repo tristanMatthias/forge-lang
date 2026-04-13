@@ -1,6 +1,6 @@
 mod codegen
-use core.cg.{err_emit}
-use core.eval.{error_result}
+use codegen.types.{err_emit}
+use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}

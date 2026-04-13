@@ -1,6 +1,6 @@
 mod codegen
 mod parser
-use core.eval.{error_result}
+use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{resolve_stmt_list}
 use features.parallel_stmt.codegen.{parallel_emit_stmt}

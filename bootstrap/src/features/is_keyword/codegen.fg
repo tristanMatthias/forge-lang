@@ -2,7 +2,7 @@
 
 use codegen.{emit_expr}
 use core.ast.{variant_lookup, vtype_display, vtype_enum_name}
-use core.cg.{const_i8, enum_reg_lookup, err_emit, ok_emit, to_ptr}
+use codegen.types.{const_i8, enum_reg_lookup, err_emit, ok_emit, to_ptr}
 export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> EmitResult {
     let r = emit_expr(ctx, env, subject)
     if r.had_error { return r }

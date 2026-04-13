@@ -1,7 +1,7 @@
 // WHY: codegen for trait dynamic dispatch.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_display, vtype_struct_name, vtype_enum_name, expr_list_length}
-use core.cg.{Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, const_i64, to_ptr, to_i64, get_fn, call_0, call_1, call_2, call_3, cg_malloc, new_bb, translate_type_ctx, trait_decl_lookup}
+use codegen.types.{Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, const_i64, to_ptr, to_i64, get_fn, call_0, call_1, call_2, call_3, cg_malloc, new_bb, translate_type_ctx, trait_decl_lookup}
 use codegen.{emit_expr}
 use features.fn_decl.codegen.{emit_first_arg}
 

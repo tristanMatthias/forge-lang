@@ -8,7 +8,7 @@
 // operators compile to simple i64 null-check branches.
 
 use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, new_bb, const_i64, to_ptr}
+use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, new_bb, const_i64, to_ptr}
 use codegen.{emit_expr}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {

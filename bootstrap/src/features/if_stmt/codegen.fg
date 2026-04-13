@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `if` as statement and expression.
 
 use core.ast.{Expr, Stmt, VarEnv}
-use core.cg.{Ctx, EmitResult, StmtResult, ok_stmt, ok_emit_typed, err_stmt_from_expr, new_bb, const_i64}
+use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, ok_emit_typed, err_stmt_from_expr, new_bb, const_i64}
 use codegen.{emit_expr, emit_stmt}
 
 

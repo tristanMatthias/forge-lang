@@ -1,8 +1,8 @@
 mod parser
 mod codegen
 use core.ast.{vtype_display, vtype_eq}
-use core.cg.{err_stmt}
-use core.eval.{error_result}
+use codegen.types.{err_stmt}
+use features.eval.{error_result}
 use features.eval.{execute_while}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr, resolve_stmt}

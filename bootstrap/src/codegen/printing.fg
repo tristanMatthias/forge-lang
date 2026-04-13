@@ -1,7 +1,7 @@
 // WHY: codegen for println/eprintln builtins.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_is_str, vtype_eq}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, const_i64, to_ptr, to_i64, get_fn, call_1, call_2}
+use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, const_i64, to_ptr, to_i64, get_fn, call_1, call_2}
 use codegen.{emit_expr, strip_quotes}
 use codegen.strings.{emit_concat}
 

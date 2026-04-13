@@ -3,7 +3,7 @@
 // Uses a global stack since the Ctx isn't threaded through emit_stmt.
 
 use core.ast.{Expr, VarEnv, SExpr}
-use core.cg.{Ctx, DeferStack}
+use codegen.types.{Ctx, DeferStack}
 use codegen.{emit_expr}
 
 // Global defer stack — reset at function entry, pushed by defer,

@@ -13,7 +13,7 @@
 // is just the function pointer with a null environment.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
-use core.cg.{Ctx, DeferStack, EmitResult, call_0, call_1, call_2, call_3, call_4, const_i64, ctx_with_fn, err_emit, get_fn, null_ptr_val, ok_emit, ok_emit_typed, to_i64, to_ptr, toplevel_lookup, translate_param_type}
+use codegen.types.{Ctx, DeferStack, EmitResult, call_0, call_1, call_2, call_3, call_4, const_i64, ctx_with_fn, err_emit, get_fn, null_ptr_val, ok_emit, ok_emit_typed, to_i64, to_ptr, toplevel_lookup, translate_param_type}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 

@@ -2,7 +2,7 @@
 // support via the scoped loop stack in Ctx.
 
 use core.ast.{Expr, Stmt, VarEnv}
-use core.cg.{Ctx, LoopStack, StmtResult, const_i64, ctx_with_loops, err_stmt_from_expr, new_bb, ok_stmt}
+use codegen.types.{Ctx, LoopStack, StmtResult, const_i64, ctx_with_loops, err_stmt_from_expr, new_bb, ok_stmt}
 use codegen.{emit_expr, emit_stmt}
 
 export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {

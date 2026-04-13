@@ -1,13 +1,137 @@
+// WHY: eval types shared across features. Actual tree-walk
+// evaluator lives in features/eval/mod.fg.
+
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, SExpr, SStmt}
+use core.registry.{Registry, build_registry}
+
+// WHY: tree-walk expression evaluator — used by `eval` and `check`
+// commands. Interprets AST directly without LLVM, so it works even
+// when codegen would fail. Limited to expressions + simple
+// statements; complex features (match, for, etc.) are codegen-only.
+
+use parse.{parse_expression_source, parse_program_source}
+use core.registry.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_eval, forge_stmt_tag, forge_expr_tag}
+
+// `float` is a host built-in that the bootstrap evaluator uses to
+// parse numeric literal strings. The bootstrap codegen doesn't
+// model floats so we declare it as an i64-returning extern that
+// links to the forge_selfhost_string_to_float C-wrapper (which
+// takes `const char*` to match the bootstrap's calling
+// convention); the wrapper `fn float(s)` lets the rest of the
+// source keep using the short name.
+extern fn forge_selfhost_string_to_float(s: string) -> int
+
+fn float(s: string) -> int { forge_selfhost_string_to_float(s) }
+
+export type Value = {
+    kind: string,
+    number_text: string,
+    text: string,
+    bool_value: bool,
+}
+
+export type EvalResult = {
+    value: Value?,
+    had_error: bool,
+    error_message: string,
+}
+
+enum BindingList {
+    End
+    Node(name: string, mutable_binding: bool, depth: int, value: Value, next: BindingList)
+}
+
+enum FunctionList {
+    End
+    Node(name: string, params: ParamList, body: StmtList, next: FunctionList)
+}
+
+export type Runtime = {
+    bindings: BindingList,
+    functions: FunctionList,
+    depth: int,
+    features: Registry,
+}
+
+export type StepResult = {
+    runtime: Runtime,
+    value: Value,
+    had_error: bool,
+    is_return: bool,
+    error_message: string,
+}
+
+type AssignBindingsResult = {
+    bindings: BindingList,
+    found: bool,
+    had_error: bool,
+    error_message: string,
+}
+
+
+export fn render_value(value: Value) -> string {
+    if value.kind == "number" {
+        return value.number_text
+    }
+
+    if value.kind == "string" {
+        return value.text
+    }
+
+    if value.kind == "bool" {
+        if value.bool_value { return "true" }
+        return "false"
+    }
+
+    "null"
+}
+
+export fn ok_result(runtime: Runtime, value: Value) -> StepResult {
+    StepResult {
+        runtime,
+        value,
+        had_error: false,
+        is_return: false,
+        error_message: "",
+    }
+}
+
+export fn error_result(runtime: Runtime, message: string) -> StepResult {
+    StepResult {
+        runtime,
+        value: value_null(),
+        had_error: true,
+        is_return: false,
+        error_message: "eval error: " + message,
+    }
+}
+
+export fn value_null() -> Value {
+    Value {
+        kind: "null",
+        number_text: "",
+        text: "",
+        bool_value: false,
+    }
+}
+
+export fn is_truthy(value: Value) -> bool {
+    if value.kind == "bool" {
+        return value.bool_value
+    }
+
+    if value.kind == "null" {
+        return false
+    }
+
+    true
+}
+
 // WHY: tree-walk evaluator for eval/run debug commands.
 // Not part of the compiler pipeline — used for interactive expression evaluation.
 
-use parse.{parse_expression_source, parse_program_source}
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, SExpr, SStmt}
-use core.registry.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_eval, forge_stmt_tag, forge_expr_tag}
-use core.eval.{Value, EvalResult, Runtime, StepResult, ok_result, error_result, value_null, is_truthy, render_value}
+use features.eval.{Value, EvalResult, Runtime, StepResult, ok_result, error_result, value_null, is_truthy, render_value}
 
-extern fn forge_selfhost_string_to_float(s: string) -> int
-fn float(s: string) -> int { forge_selfhost_string_to_float(s) }
 
 export fn eval_expression_source(source: string) -> EvalResult {
     let parsed = parse_expression_source(source)

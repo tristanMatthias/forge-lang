@@ -1,6 +1,6 @@
 mod codegen
-use core.cg.{err_emit}
-use core.eval.{error_result}
+use codegen.types.{err_emit}
+use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use features.closures.codegen.{emit_lambda}

@@ -1,7 +1,7 @@
 // WHY: emits struct literal construction and field-filling.
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_type_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, SExpr}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup, enum_reg_lookup, translate_param_type, const_i64, to_ptr, to_i64, get_fn, call_1, cg_malloc}
+use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup, enum_reg_lookup, translate_param_type, const_i64, to_ptr, to_i64, get_fn, call_1, cg_malloc}
 use codegen.{emit_expr, emit_enum_ctor}
 use features.enum_decl.codegen.{emit_enum_ctor}
 

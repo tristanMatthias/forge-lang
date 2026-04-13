@@ -37,7 +37,7 @@ mod codegen
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list}
-use core.eval.{render_value}
+use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
 use resolve.{resolve_program}
 use features.modules.names.{resolve_names}

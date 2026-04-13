@@ -3,7 +3,7 @@
 // spawned in parallel threads via forge_parallel_run.
 
 use codegen.{emit_expr}
-use core.cg.{call_0, call_1, call_2, err_stmt, get_fn, ok_stmt}
+use codegen.types.{call_0, call_1, call_2, err_stmt, get_fn, ok_stmt}
 export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
         .Parallel(body) -> emit_parallel(ctx, env, body)
