@@ -336,6 +336,20 @@ void forge_selfhost_trace_int(const char* label, int64_t val) {
     fprintf(stderr, "[trace] %s: %lld\n", label, (long long)val);
 }
 
+// Debug: dump an Expr's tag and first payload field
+void forge_debug_expr(const char* label, int64_t expr_i64) {
+    if (expr_i64 == 0) { fprintf(stderr, "[dbg] %s: null\n", label); return; }
+    int64_t* p = (int64_t*)expr_i64;
+    int64_t tag = p[0];
+    int64_t payload_ptr = p[1];
+    fprintf(stderr, "[dbg] %s: ptr=%lld tag=%lld", label, (long long)expr_i64, (long long)tag);
+    if (payload_ptr != 0) {
+        int64_t* pay = (int64_t*)payload_ptr;
+        fprintf(stderr, " pay[0]=%lld pay[1]=%lld", (long long)pay[0], (long long)pay[1]);
+    }
+    fprintf(stderr, "\n");
+}
+
 int64_t forge_selfhost_file_exists(const char* path) {
     FILE* f = fopen(path, "r");
     if (!f) return 0;

@@ -251,14 +251,16 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, resul
                 }
                 .Node(_, _, items, _, _) -> {
                     let found = item_lookup(items, name)
-                    if found == "" {
-                        let d = diag_error(DiagCode.ImportNotFound, "`${name}` not found in module `${mod_path}`", name_sp)
-                        UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
-                    } else if !item_is_exported(items, name) {
-                        let d = diag_error(DiagCode.ImportPrivate, "`${name}` is private in module `${mod_path}`", name_sp)
-                        UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
-                    } else {
-                        UseResult { aliases: AliasEntry.Node(name, found, result.aliases), bag: result.bag }
+                    match {
+                        found == "" -> {
+                            let d = diag_error(DiagCode.ImportNotFound, "`${name}` not found in module `${mod_path}`", name_sp)
+                            UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
+                        }
+                        !item_is_exported(items, name) -> {
+                            let d = diag_error(DiagCode.ImportPrivate, "`${name}` is private in module `${mod_path}`", name_sp)
+                            UseResult { aliases: result.aliases, bag: bag_report(result.bag, d) }
+                        }
+                        _ -> UseResult { aliases: AliasEntry.Node(name, found, result.aliases), bag: result.bag }
                     }
                 }
                 _ -> result

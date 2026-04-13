@@ -38,6 +38,7 @@ std/mobile
 - @std/observability
 - @std.cli
   - Typed args based on sub commands
+- Import / compile Typespec projects
 
 - # Compiler
 - Single output compiler

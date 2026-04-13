@@ -4,7 +4,6 @@ use core.ast.{Expr, Stmt, VarEnv}
 use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, ok_emit_typed, err_stmt_from_expr, new_bb, const_i64}
 use codegen.{emit_expr, emit_stmt}
 
-
 export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> StmtResult {
     let cond = emit_expr(ctx, env, condition)
     if cond.had_error {
