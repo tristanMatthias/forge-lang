@@ -728,7 +728,7 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 // handle captures at runtime).
 
 // Get the last Expr from a StmtList. Returns Expr.Null if none found.
-fn stmts_last_expr(stmts: StmtList) -> Expr {
+export fn stmts_last_expr(stmts: StmtList) -> Expr {
     match stmts {
         .End -> Expr.Null
         .Node(ss, next) -> {
@@ -910,7 +910,7 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLe
 
 // ── Statement emission ──
 
-fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
+export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(env)
         .Node(ss, next) -> {
@@ -998,7 +998,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 
 // ── Number literal parsing ──
 
-fn strip_underscores(s: string) -> string {
+export fn strip_underscores(s: string) -> string {
     mut out = ""
     mut i = 0
     while i < s.length {
@@ -1010,7 +1010,7 @@ fn strip_underscores(s: string) -> string {
     out
 }
 
-fn parse_int_literal(text: string) -> int {
+export fn parse_int_literal(text: string) -> int {
     let clean = strip_underscores(text)
     if clean.length > 2 {
         let prefix = clean.substring(0, 2)
@@ -1027,7 +1027,7 @@ fn parse_int_literal(text: string) -> int {
     int(clean)
 }
 
-fn hex_digit_value(ch: string) -> int {
+export fn hex_digit_value(ch: string) -> int {
     if ch == "0" { return 0 }
     if ch == "1" { return 1 }
     if ch == "2" { return 2 }
@@ -1047,7 +1047,7 @@ fn hex_digit_value(ch: string) -> int {
     0
 }
 
-fn parse_hex(digits: string) -> int {
+export fn parse_hex(digits: string) -> int {
     mut result = 0
     mut i = 0
     while i < digits.length {
@@ -1057,7 +1057,7 @@ fn parse_hex(digits: string) -> int {
     result
 }
 
-fn parse_binary(digits: string) -> int {
+export fn parse_binary(digits: string) -> int {
     mut result = 0
     mut i = 0
     while i < digits.length {
@@ -1072,7 +1072,7 @@ fn parse_binary(digits: string) -> int {
     result
 }
 
-fn parse_octal(digits: string) -> int {
+export fn parse_octal(digits: string) -> int {
     mut result = 0
     mut i = 0
     while i < digits.length {
@@ -1082,7 +1082,7 @@ fn parse_octal(digits: string) -> int {
     result
 }
 
-fn decimal_digit_value(ch: string) -> int {
+export fn decimal_digit_value(ch: string) -> int {
     if ch == "0" { return 0 }
     if ch == "1" { return 1 }
     if ch == "2" { return 2 }
@@ -1213,7 +1213,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
     }
 }
 
-fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
+export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
     // A block expression's value is the value of the LAST
     // statement, if that statement is a `Stmt.Expr`. Anything
     // else (return, let, while, ...) yields i64 0. Each non-last
@@ -1227,7 +1227,7 @@ fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
 // matching expression-emission helper, recursing through nested
 // blocks/ifs as needed. Anything that has no value (let/while/return)
 // falls through to emit_stmt and the caller's default last_val.
-fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> EmitResult {
+export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> EmitResult {
     match stmt {
         .Expr(e) -> emit_expr(ctx, env, e)
         .Block(body) -> emit_block_expr(ctx, env, body)
@@ -1248,7 +1248,7 @@ fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty:
 // of a block expression. We need to phi the branch values back out,
 // recursing into emit_stmt_as_value so nested blocks/matches/ifs in
 // the branches also propagate their values.
-fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
+export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
     let cond = emit_expr(ctx, env, condition)
     if cond.had_error {
         return cond
@@ -1312,7 +1312,7 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
 
 // Match codegen lives in features/match_expr/codegen.fg.
 
-fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
+export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     let r = emit_expr(ctx, env, obj)
     if r.had_error {
         return r
@@ -1360,7 +1360,7 @@ fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
 
 
 
-fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
+export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
     match callee {
         .Ident(name) -> emit_call_named(ctx, env, name, args)
         .QualifiedIdent(path) -> emit_call_named(ctx, env, path, args)
@@ -1386,7 +1386,7 @@ fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult 
     }
 }
 
-fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: ExprList) -> EmitResult {
+export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: ExprList) -> EmitResult {
     // Special-case `.length` and `.substring` on strings — these are
     // emitted via libc strlen / a custom substring helper rather than
     // dispatched as methods.
@@ -1532,7 +1532,7 @@ fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: Expr
     ok_emit_typed(result, ret_ty)
 }
 
-fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
+export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
     match methods {
         .End -> 0 - 1
         .Node(n, _, next) -> {
@@ -1543,7 +1543,7 @@ fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
 }
 
 // Look up the return type string for a trait method.
-fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string {
+export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string {
     match methods {
         .End -> ""
         .Node(n, ret, next) -> {
@@ -1553,7 +1553,7 @@ fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string {
     }
 }
 
-fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> EmitResult {
+export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> EmitResult {
     let obj_ptr = to_ptr(ctx, obj_val, "tobj_ptr")
     let concrete = call_1(ctx, get_fn(ctx, "forge_trait_object_value"), obj_ptr, "concrete")
     let vtable = call_1(ctx, get_fn(ctx, "forge_trait_object_vtable"), obj_ptr, "vtable")
@@ -1576,14 +1576,14 @@ fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, 
     ok_emit_typed(call_3(ctx, get_fn(ctx, "forge_closure_call_2"), fn_closure, concrete, first_arg.value, "tcall"), ret_ty)
 }
 
-fn emit_first_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_first_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("expected argument")
         .Node(se, _) -> emit_expr(ctx, env, se.node)
     }
 }
 
-fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitResult {
+export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitResult {
     if name == "println" {
         return emit_println(ctx, env, args)
     }
@@ -1636,7 +1636,7 @@ fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitR
     ok_emit_typed(result, ret_ty)
 }
 
-fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // string(i64) → str via snprintf into a 32-byte malloc'd buffer.
     match args {
         .End -> err_emit("string() expects 1 arg")
@@ -1664,7 +1664,7 @@ fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     }
 }
 
-fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // int(str) → i64 via libc atoi.
     match args {
         .End -> err_emit("int() expects 1 arg")
@@ -1685,7 +1685,7 @@ fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     }
 }
 
-fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // float(str) → f64 bits via forge_float_parse.
     // float(int) → f64 bits via int-to-double cast + bitcast.
     match args {
@@ -1707,7 +1707,7 @@ fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     }
 }
 
-fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("panic() expects 1 argument")
         .Node(se, _) -> {
@@ -1736,7 +1736,7 @@ fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     }
 }
 
-fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitResult {
+export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitResult {
     let obj_r = emit_expr(ctx, env, obj)
     if obj_r.had_error { return obj_r }
     let start_r = emit_expr(ctx, env, start)
@@ -1763,7 +1763,7 @@ export fn strip_quotes(s: string) -> string {
     s.substring(1, len - 1)
 }
 
-fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
+export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
@@ -1780,7 +1780,7 @@ fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> 
 // Like fill_arg_array but checks each parameter's declared type annotation.
 // If the parameter expects a trait type and the argument is a concrete
 // struct/enum, box the argument into a trait object before passing it.
-fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: ParamTypeList, idx: int) -> EmitResult {
+export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: ParamTypeList, idx: int) -> EmitResult {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
@@ -1810,7 +1810,7 @@ fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes
 }
 
 // Resolve the concrete type name (struct or enum) from a ValueType.
-fn resolve_concrete_type_name(ty: ValueType) -> string {
+export fn resolve_concrete_type_name(ty: ValueType) -> string {
     let s = vtype_struct_name(ty)
     if s != "" { return s }
     let e = vtype_enum_name(ty)
@@ -1831,7 +1831,7 @@ export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name:
 }
 
 // Push closure-wrapped method pointers into a vtable array for trait boxing.
-fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
+export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
     match methods {
         .End -> {}
         .Node(method_name, _, next) -> {
