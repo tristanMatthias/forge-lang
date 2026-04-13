@@ -69,10 +69,8 @@ fn extract_line(source: string, target: int) -> string {
 fn repeat_char(ch: string, n: int) -> string {
     if n <= 0 { return "" }
     mut out = ""
-    mut i = 0
-    while i < n {
+    for i in 0..n {
         out = out + ch
-        i = i + 1
     }
     out
 }

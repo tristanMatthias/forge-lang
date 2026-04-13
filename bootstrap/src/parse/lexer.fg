@@ -491,12 +491,10 @@ impl Parser {
 
 export fn strip_underscores(s: string) -> string {
     mut out = ""
-    mut i = 0
-    while i < s.length {
+    for i in 0..s.length {
         if s[i] != "_" {
             out = out + s[i]
         }
-        i = i + 1
     }
     out
 }

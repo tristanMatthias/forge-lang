@@ -145,8 +145,7 @@ fn main() {
         // The file path is always the last argument.
         let cpath_idx = argc - 1
         // Scan args 2..last for flags.
-        mut flag_idx = 2
-        while flag_idx < cpath_idx {
+        for flag_idx in 2..cpath_idx {
             let arg = forge_selfhost_get_arg_cstr(flag_idx)
             if arg.starts_with("--stop-after=") {
                 stop_after = arg.substring(13, arg.length)
@@ -154,7 +153,6 @@ fn main() {
             if arg == "--debug-null" {
                 debug_null = true
             }
-            flag_idx = flag_idx + 1
         }
         let has_flags = cpath_idx > 2
         let cpath = forge_selfhost_get_arg_cstr(cpath_idx)
