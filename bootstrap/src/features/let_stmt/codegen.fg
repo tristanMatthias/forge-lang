@@ -4,7 +4,8 @@
 
 use core.ast.{Expr, ValueType, VarEnv, env_extend, vtype_trait_name, vtype_struct_name, vtype_enum_name}
 use core.cg.{Ctx, StmtResult, ok_stmt, err_stmt_from_expr, translate_type_ctx, get_fn, call_2, to_i64}
-use codegen.{emit_expr, box_for_trait}
+use codegen.{emit_expr}
+use features.trait_decl.codegen.{box_for_trait}
 
 
 export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: string, initializer: Expr) -> StmtResult {
