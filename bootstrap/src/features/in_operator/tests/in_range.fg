@@ -1,0 +1,54 @@
+/// expect: digit
+/// expect: lower
+/// expect: upper
+/// expect: other
+/// expect: in_range
+/// expect: not_in_range
+/// expect: boundary_low
+/// expect: boundary_high
+/// expect: match_range
+
+fn classify(ch: string) -> string {
+    match {
+        ch in "0".."9" -> "digit"
+        ch in "a".."z" -> "lower"
+        ch in "A".."Z" -> "upper"
+        _ -> "other"
+    }
+}
+
+fn main() {
+    println(classify("5"))
+    println(classify("m"))
+    println(classify("G"))
+    println(classify("!"))
+
+    // Integer range
+    let x = 42
+    if x in 1..100 {
+        println("in_range")
+    }
+    if !(x in 200..300) {
+        println("not_in_range")
+    }
+
+    // Boundary values (inclusive on both ends)
+    if 0 in 0..10 {
+        println("boundary_low")
+    }
+    if 10 in 0..10 {
+        println("boundary_high")
+    }
+
+    // In match condition
+    let grade = 85
+    let label = match {
+        grade in 90..100 -> "A"
+        grade in 80..89  -> "B"
+        grade in 70..79  -> "C"
+        _ -> "F"
+    }
+    if label == "B" {
+        println("match_range")
+    }
+}

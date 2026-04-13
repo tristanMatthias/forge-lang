@@ -6,11 +6,11 @@ use diagnostics.{DiagCode}
 use parse.{p_keyword_kind}
 
 export fn p_is_digit(ch: string) -> bool {
-    ch >= "0" && ch <= "9"
+    ch in "0".."9"
 }
 
 export fn p_is_alpha(ch: string) -> bool {
-    (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+    ch in "a".."z" || ch in "A".."Z" || ch == "_"
 }
 
 export fn p_is_alpha_numeric(ch: string) -> bool {
@@ -18,7 +18,7 @@ export fn p_is_alpha_numeric(ch: string) -> bool {
 }
 
 export fn p_is_hex_digit(ch: string) -> bool {
-    p_is_digit(ch) || (ch >= "a" && ch <= "f") || (ch >= "A" && ch <= "F")
+    p_is_digit(ch) || ch in "a".."f" || ch in "A".."F"
 }
 
 export fn p_is_binary_digit(ch: string) -> bool {
@@ -26,7 +26,7 @@ export fn p_is_binary_digit(ch: string) -> bool {
 }
 
 export fn p_is_octal_digit(ch: string) -> bool {
-    ch >= "0" && ch <= "7"
+    ch in "0".."7"
 }
 
 impl Parser {

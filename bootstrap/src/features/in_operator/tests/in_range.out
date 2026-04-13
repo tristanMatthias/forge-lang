@@ -1,0 +1,9 @@
+digit
+lower
+upper
+other
+in_range
+not_in_range
+boundary_low
+boundary_high
+match_range

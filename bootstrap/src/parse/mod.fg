@@ -131,7 +131,7 @@ fn p_starts_with_upper(name: string) -> bool {
         return false
     }
     let head = name.substring(0, 1)
-    head >= "A" && head <= "Z"
+    head in "A".."Z"
 }
 
 // Check if a template interpolation content is a simple identifier
@@ -553,18 +553,30 @@ impl Parser {
 
         if self.check(Tk.KwIn) {
             self.advance()
-            if !self.consume(Tk.LeftBracket, "expected `[` after `in`") {
+            if self.check(Tk.LeftBracket) {
+                // List membership: x in [a, b, c]
+                self.advance()
+                let items = if self.check(Tk.RightBracket) {
+                    ExprList.End
+                } else {
+                    self.parse_arg_list_inner()?
+                }
+                if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
+                    return null
+                }
+                return Expr.InCheck(left, items)
+            }
+            // Range membership: x in start..end → x >= start && x <= end
+            let start = self.parse_bitwise_or()?
+            if !self.consume(Tk.DotDot, "expected `..` in range expression after `in`") {
                 return null
             }
-            let items = if self.check(Tk.RightBracket) {
-                ExprList.End
-            } else {
-                self.parse_arg_list_inner()?
-            }
-            if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
-                return null
-            }
-            return Expr.InCheck(left, items)
+            let end = self.parse_bitwise_or()?
+            return Expr.Logical(
+                Expr.Binary(left, BinOp.Ge, start),
+                LogicOp.And,
+                Expr.Binary(left, BinOp.Le, end)
+            )
         }
 
         mut expr = left
@@ -710,7 +722,7 @@ impl Parser {
             return false
         }
         let ch = self.source[self.current]
-        ch >= "A" && ch <= "Z"
+        ch in "A".."Z"
     }
 
     // Should the current `.` token be consumed as a field / method

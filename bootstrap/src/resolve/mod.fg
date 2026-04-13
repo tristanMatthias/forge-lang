@@ -362,7 +362,7 @@ export fn starts_with_upper(name: string) -> bool {
         return false
     }
     let head = name.substring(0, 1)
-    head >= "A" && head <= "Z"
+    head in "A".."Z"
 }
 
 export fn resolve_field_init_list(r: Resolver, inits: FieldInitList) -> Resolver {

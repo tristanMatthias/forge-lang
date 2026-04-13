@@ -491,7 +491,7 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
     // 2. Builtin function — don't rewrite
     if is_builtin_name(name) { return original }
     // 3. Uppercase = type/enum name — resolved by codegen registries
-    if name.length > 0 && name[0] >= "A" && name[0] <= "Z" { return original }
+    if name.length > 0 && name[0] in "A".."Z" { return original }
     // 4. Use alias (from `use path.{name}`)
     let from_alias = alias_lookup(ctx.aliases, name)
     if from_alias != "" { return Expr.QualifiedIdent(from_alias) }

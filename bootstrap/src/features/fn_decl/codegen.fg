@@ -82,7 +82,7 @@ fn should_null_check(ty: string) -> bool {
     // If it starts with uppercase, it's likely a named struct/enum type.
     if ty.length > 0 {
         let first = ty.substring(0, 1)
-        if first >= "A" && first <= "Z" { return true }
+        if first in "A".."Z" { return true }
     }
     false
 }

@@ -222,4 +222,4 @@ No partial credit. A feature is not done until the codebase actually uses it.
 |11 | Compile-time `const`        | [ ] Not started | Medium     | Medium       | Named constants for magic numbers (16, 8, 112...); safer refactors |
 |12 | List comprehensions         | [ ] Not started | Medium     | Medium       | `[f(x) for x in list]`; recursive map/filter helpers → one-liners |
 |13 | Trait objects (dyn dispatch)| [ ] Not started | High       | Medium       | Replace hand-rolled registry dispatch with virtual trait calls |
-|14 | Range patterns              | [ ] Not started | Low        | Medium       | `'a'..'z'` in match; cleans up lexer char-range checks |
+|14 | Range patterns              | [x] Done        | Low        | Medium       | `x in "a".."z"` range membership; dogfooded in lexer, parser, resolver, codegen |
