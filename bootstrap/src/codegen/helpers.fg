@@ -67,12 +67,7 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
 }
 
 
-export fn is_null_literal(e: Expr) -> bool {
-    match e {
-        .Null -> true
-        _ -> false
-    }
-}
+export fn is_null_literal(e: Expr) -> bool { e is .Null }
 
 
 export fn stmts_last_expr(stmts: StmtList) -> Expr {

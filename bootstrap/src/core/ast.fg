@@ -106,37 +106,31 @@ export enum ValueType {
 
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
-        .Int -> match b { .Int -> true, _ -> false }
-        .Str -> match b { .Str -> true, _ -> false }
-        .Bool -> match b { .Bool -> true, _ -> false }
-        .Ptr -> match b { .Ptr -> true, _ -> false }
-        .List -> match b { .List -> true, _ -> false }
-        .Fn -> match b { .Fn -> true, _ -> false }
-        .Void -> match b { .Void -> true, _ -> false }
+        .Int -> b is .Int
+        .Str -> b is .Str
+        .Bool -> b is .Bool
+        .Ptr -> b is .Ptr
+        .List -> b is .List
+        .Fn -> b is .Fn
+        .Void -> b is .Void
         .Struct(n1) -> match b { .Struct(n2) -> n1 == n2, _ -> false }
         .Enum(n1) -> match b { .Enum(n2) -> n1 == n2, _ -> false }
-        .Float -> match b { .Float -> true, _ -> false }
+        .Float -> b is .Float
         .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
         .Trait(n1) -> match b { .Trait(n2) -> n1 == n2, _ -> false }
         _ -> false
     }
 }
 
-export fn vtype_is_str(t: ValueType) -> bool {
-    match t { .Str -> true, _ -> false }
-}
+export fn vtype_is_str(t: ValueType) -> bool { t is .Str }
 
-export fn vtype_is_list(t: ValueType) -> bool {
-    match t { .List(_) -> true, _ -> false }
-}
+export fn vtype_is_list(t: ValueType) -> bool { t is .List }
 
 export fn vtype_list_elem(t: ValueType) -> ValueType {
     match t { .List(e) -> e, _ -> ValueType.Int }
 }
 
-export fn vtype_is_map(t: ValueType) -> bool {
-    match t { .Map -> true, _ -> false }
-}
+export fn vtype_is_map(t: ValueType) -> bool { t is .Map }
 
 export fn vtype_is_fn(t: ValueType) -> bool {
     match t { .Fn(_) -> true, .Closure(_, _) -> true, .FnTyped(_, _) -> true, _ -> false }
@@ -154,9 +148,7 @@ export fn vtype_closure_captures(t: ValueType) -> int {
     match t { .Closure(n, _) -> n, _ -> 0 }
 }
 
-export fn vtype_is_closure(t: ValueType) -> bool {
-    match t { .Closure(_, _) -> true, _ -> false }
-}
+export fn vtype_is_closure(t: ValueType) -> bool { t is .Closure }
 
 export fn vtype_struct_name(t: ValueType) -> string {
     match t { .Struct(n) -> n, _ -> "" }

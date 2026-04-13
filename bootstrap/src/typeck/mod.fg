@@ -647,8 +647,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     }
 
     // List methods — dispatched to features/list_lit/typeck.fg
-    let is_list = match o.ty { .List(_) -> true, _ -> false }
-    if is_list {
+    if o.ty is .List {
         return check_list_method(checked_args, vtype_list_elem(o.ty), method, args)
     }
 
