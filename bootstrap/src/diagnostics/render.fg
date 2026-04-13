@@ -6,14 +6,14 @@ use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, Span, Severity, seve
 
 // ── ANSI colors ──
 
-fn color_red(s: string) -> string { "\x1b[1;31m" + s + "\x1b[0m" }
-fn color_yellow(s: string) -> string { "\x1b[1;33m" + s + "\x1b[0m" }
-fn color_cyan(s: string) -> string { "\x1b[1;36m" + s + "\x1b[0m" }
-fn color_bold(s: string) -> string { "\x1b[1m" + s + "\x1b[0m" }
-fn color_dim(s: string) -> string { "\x1b[2m" + s + "\x1b[0m" }
-fn color_blue(s: string) -> string { "\x1b[1;34m" + s + "\x1b[0m" }
-fn color_gray(s: string) -> string { "\x1b[90m" + s + "\x1b[0m" }
-fn color_magenta(s: string) -> string { "\x1b[1;35m" + s + "\x1b[0m" }
+fn color_red(s: string) -> string { "\x1b[1;31m${s}\x1b[0m" }
+fn color_yellow(s: string) -> string { "\x1b[1;33m${s}\x1b[0m" }
+fn color_cyan(s: string) -> string { "\x1b[1;36m${s}\x1b[0m" }
+fn color_bold(s: string) -> string { "\x1b[1m${s}\x1b[0m" }
+fn color_dim(s: string) -> string { "\x1b[2m${s}\x1b[0m" }
+fn color_blue(s: string) -> string { "\x1b[1;34m${s}\x1b[0m" }
+fn color_gray(s: string) -> string { "\x1b[90m${s}\x1b[0m" }
+fn color_magenta(s: string) -> string { "\x1b[1;35m${s}\x1b[0m" }
 
 fn severity_color(sev: Severity, text: string) -> string {
     match sev {
@@ -140,23 +140,23 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
         if underline_len == 1 {
             // Single char: just ┬
             let caret = severity_color(diag.severity, chr_caret())
-            eprintln(`  ${color_gray(pad + " " + chr_dot())} ${before}${caret}`)
+            eprintln(`  ${color_gray("${pad} ${chr_dot()}")} ${before}${caret}`)
         } else {
             // Multi char: ──┬──
             let half = underline_len / 2
             let left_bars = repeat_hbar(half)
             let right_bars = repeat_hbar(underline_len - half - 1)
-            let caret_line = severity_color(diag.severity, left_bars + chr_caret() + right_bars)
-            eprintln(`  ${color_gray(pad + " " + chr_dot())} ${before}${caret_line}`)
+            let caret_line = severity_color(diag.severity, "${left_bars}${chr_caret()}${right_bars}")
+            eprintln(`  ${color_gray("${pad} ${chr_dot()}")} ${before}${caret_line}`)
         }
 
         // Label line:  · │   ╰── message
         let label_pad = repeat_char(" ", col - 1 + underline_len / 2)
         let connector = severity_color(diag.severity, chr_lbot() + chr_hbar() + chr_hbar())
-        eprintln(`  ${color_gray(pad + " " + chr_dot())} ${label_pad}${connector} ${diag.message}`)
+        eprintln(`  ${color_gray("${pad} ${chr_dot()}")} ${label_pad}${connector} ${diag.message}`)
 
         // Box bottom: ───╯
-        eprintln(color_gray(repeat_hbar(w + 3) + chr_rbot()))
+        eprintln(color_gray("${repeat_hbar(w + 3)}${chr_rbot()}"))
     }
 
     // Help text
@@ -175,13 +175,13 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
     if bag.error_count > 0 || bag.warning_count > 0 {
         mut parts = ""
         if bag.error_count > 0 {
-            let label = string(bag.error_count) + " error" + if bag.error_count > 1 { "s" } else { "" }
+            let label = "${string(bag.error_count)} error${if bag.error_count > 1 { "s" } else { "" }}"
             parts = color_red(label)
         }
         if bag.warning_count > 0 {
-            if parts.length > 0 { parts = parts + " and " }
-            let label = string(bag.warning_count) + " warning" + if bag.warning_count > 1 { "s" } else { "" }
-            parts = parts + color_yellow(label)
+            if parts.length > 0 { parts = "${parts} and " }
+            let label = "${string(bag.warning_count)} warning${if bag.warning_count > 1 { "s" } else { "" }}"
+            parts = "${parts}${color_yellow(label)}"
         }
         eprintln(`${color_bold("Found")} ${parts}${color_bold(".")}`)
         eprintln("")

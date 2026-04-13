@@ -74,13 +74,13 @@ export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths
 fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths) -> ModStmtResult {
     match stmt {
         .Module(name, _) -> {
-            let sibling = dir + name + ".fg"
-            let dir_mod = dir + name + "/mod.fg"
+            let sibling = "${dir}${name}.fg"
+            let dir_mod = "${dir}${name}/mod.fg"
             mut mod_path = ""
             if forge_selfhost_file_exists(sibling) { mod_path = sibling }
             if mod_path == "" && forge_selfhost_file_exists(dir_mod) { mod_path = dir_mod }
             if mod_path == "" {
-                return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `" + name + "` not found (looked for " + sibling + " and " + dir_mod + ")" }
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})" }
             }
             if loaded_has(loaded, mod_path) {
                 return ModStmtResult { stmt: Stmt.Module(name, StmtList.End), loaded, had_error: false, error_message: "" }
@@ -89,7 +89,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths) -> ModStmtR
             let mod_source = forge_selfhost_read_file(mod_path)
             let parsed = parse_program_source(mod_source)
             if parsed.had_error || parsed.stmts == null {
-                return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `" + name + "`: " + parsed.error_message }
+                return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `${name}`: ${parsed.error_message}" }
             }
             let mod_dir = modules_dirname(mod_path)
             let resolved = resolve_module_files(parsed.stmts!, mod_dir, new_loaded)

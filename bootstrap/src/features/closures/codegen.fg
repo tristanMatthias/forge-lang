@@ -267,7 +267,7 @@ export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> E
 export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr, param_types: TypeList) -> EmitResult {
     let id = LAMBDA_COUNTER
     LAMBDA_COUNTER = LAMBDA_COUNTER + 1
-    let name = "__lambda_" + string(id)
+    let name = "__lambda_${string(id)}"
 
     // Detect captured variables from the enclosing scope
     let captures = find_captures(body, params, env, CaptureList.End)
@@ -523,7 +523,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
             _ -> { return err_emit("expected 3 args") }
         }
     }
-    err_emit("indirect calls with " + string(user_arg_count) + " args not yet supported")
+    err_emit("indirect calls with ${string(user_arg_count)} args not yet supported")
 }
 
 fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {

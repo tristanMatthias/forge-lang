@@ -208,7 +208,7 @@ export fn tc_bind(tc: TC, name: string, ty: ValueType) -> TC {
 }
 export fn tc_report(tc: TC, code: DiagCode, msg: string) -> TC {
     let message = if tc.current_fn.length > 0 {
-        msg + " (in function `" + tc.current_fn + "`)"
+        "${msg} (in function `${tc.current_fn}`)"
     } else { msg }
     let sp = if tc.current_line > 0 { span_new(0, 0, tc.current_line, tc.current_col) } else { span_dummy() }
     tc with { bag: bag_report(tc.bag, diag_error(code, message, sp)) }
@@ -420,7 +420,7 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
         .Int -> tc    // default/fallback type — not reliable enough to flag
         _ -> {
             if !vtype_eq(declared, body_ty) {
-                let msg = "function `" + fn_name + "` returns `" + vtype_display(declared) + "`, but body produces `" + vtype_display(body_ty) + "`"
+                let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but body produces `${vtype_display(body_ty)}`"
                 return tc_report(tc, DiagCode.TypeMismatch, msg)
             }
             tc
@@ -471,7 +471,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
         .Return(value) -> {
             let r = check_expr(tc, value)
             if !vtype_eq(declared, r.ty) && !vtype_eq(r.ty, ValueType.Int) && !vtype_eq(r.ty, ValueType.Void) {
-                let msg = "function `" + fn_name + "` returns `" + vtype_display(declared) + "`, but return produces `" + vtype_display(r.ty) + "`"
+                let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but return produces `${vtype_display(r.ty)}`"
                 return tc_report(r.tc, DiagCode.TypeMismatch, msg)
             }
             r.tc
@@ -611,7 +611,7 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                 let expected = tc_fn_arity(checked.fns, name)
                 let actual = tc_count_args(args)
                 if expected != actual {
-                    let msg = "`" + name + "` expects " + string(expected) + " argument" + if expected != 1 { "s" } else { "" } + ", got " + string(actual)
+                    let msg = "`${name}` expects ${string(expected)} argument${if expected != 1 { "s" } else { ""}}, got ${string(actual)}"
                     return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, name))
                 }
                 return tc_er(checked, fn_type_lookup(checked.fns, name))
@@ -629,7 +629,7 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                 let expected = tc_fn_arity(checked.fns, path)
                 let actual = tc_count_args(args)
                 if expected != actual {
-                    let msg = "`" + path + "` expects " + string(expected) + " argument" + if expected != 1 { "s" } else { "" } + ", got " + string(actual)
+                    let msg = "`${path}` expects ${string(expected)} argument${if expected != 1 { "s" } else { ""}}, got ${string(actual)}"
                     return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, path))
                 }
                 return tc_er(checked, fn_type_lookup(checked.fns, path))
@@ -683,7 +683,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
         _ -> ""
     }
     if struct_name.length > 0 {
-        let qualified = struct_name + "__" + method
+        let qualified = "${struct_name}__${method}"
         if fn_type_has(checked_args.fns, qualified) {
             return tc_er(checked_args, fn_type_lookup(checked_args.fns, qualified))
         }

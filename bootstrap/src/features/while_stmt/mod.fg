@@ -45,7 +45,7 @@ fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {
         .While(cond, body) -> {
             let c = check_expr(tc, cond)
             let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
-                tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `" + vtype_display(c.ty) + "`")
+                tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
             check_stmt(after_cond, body)
         }

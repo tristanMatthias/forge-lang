@@ -9,3 +9,4 @@ regress/**/*.fg.ll
 regress/**/*.bin
 build/
 *.bin.o
+dogfood_progress.csv

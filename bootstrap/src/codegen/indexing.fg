@@ -26,7 +26,7 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
         return ok_emit_typed(elem, vtype_list_elem(r.ty))
     }
     if !vtype_is_str(r.ty) {
-        return err_emit("indexing on non-string/list value (ty=" + vtype_display(r.ty) + ")")
+        return err_emit("indexing on non-string/list value (ty=${vtype_display(r.ty)})")
     }
     let i_r = emit_expr(ctx, env, idx)
     if i_r.had_error {

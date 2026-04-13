@@ -66,11 +66,11 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     }
     let lookup = struct_reg_lookup(ctx.structs, struct_name)
     if !lookup.found {
-        return err_emit("unknown struct `" + struct_name + "` in optional chain")
+        return err_emit("unknown struct `${struct_name}` in optional chain")
     }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 {
-        return err_emit("unknown field `" + field + "` on struct `" + struct_name + "` in optional chain")
+        return err_emit("unknown field `${field}` on struct `${struct_name}` in optional chain")
     }
     let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
     let obj_ptr = to_ptr(ctx, r.value, "oc_ptr")

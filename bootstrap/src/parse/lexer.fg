@@ -217,7 +217,7 @@ impl Parser {
             return
         }
 
-        self.set_error("unexpected character `" + ch + "`")
+        self.set_error("unexpected character `${ch}`")
         self.set_current(Tk.Error, ch)
     }
 

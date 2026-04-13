@@ -12,7 +12,7 @@ export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) 
     let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
 
     if !trait_has(tc.traits, trait_name) {
-        return tc_report(tc, DiagCode.TypeMismatch, "unknown trait `" + trait_name + "`")
+        return tc_report(tc, DiagCode.TypeMismatch, "unknown trait `${trait_name}`")
     }
 
     let required = trait_lookup(tc.traits, trait_name)
@@ -23,9 +23,9 @@ fn check_required_methods(tc: TC, trait_name: string, type_name: string, require
     match required {
         .End -> tc
         .Node(name, next) -> {
-            let mangled = type_name + "__" + name
+            let mangled = "${type_name}__${name}"
             if !impl_has_method(impl_methods, mangled) {
-                let after = tc_report(tc, DiagCode.TypeMismatch, "trait `" + trait_name + "` requires method `" + name + "` but `" + type_name + "` does not implement it")
+                let after = tc_report(tc, DiagCode.TypeMismatch, "trait `${trait_name}` requires method `${name}` but `${type_name}` does not implement it")
                 check_required_methods(after, trait_name, type_name, next, impl_methods)
             } else {
                 check_required_methods(tc, trait_name, type_name, next, impl_methods)

@@ -11,7 +11,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     let resolved_name = if type_name == "" {
         let found = enum_reg_find_by_variant(ctx.enums, variant)
         if found == "" {
-            return err_emit("no enum has variant `" + variant + "`")
+            return err_emit("no enum has variant `${variant}`")
         }
         found
     } else {
@@ -19,15 +19,15 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     }
     let enum_l = enum_reg_lookup(ctx.enums, resolved_name)
     if !enum_l.found {
-        return err_emit("undefined enum type `" + resolved_name + "`")
+        return err_emit("undefined enum type `${resolved_name}`")
     }
     let v = variant_lookup(enum_l.variants, variant)
     if !v.found {
-        return err_emit("enum `" + resolved_name + "` has no variant `" + variant + "`")
+        return err_emit("enum `${resolved_name}` has no variant `${variant}`")
     }
     let st_ty = forge_llvm_get_type_by_name(ctx.lc, resolved_name)
     if st_ty == null {
-        return err_emit("LLVM enum type `" + resolved_name + "` not declared")
+        return err_emit("LLVM enum type `${resolved_name}` not declared")
     }
     // Enum layout: {i8 tag, ptr payload}
     // Allocate outer struct (always 16 bytes)

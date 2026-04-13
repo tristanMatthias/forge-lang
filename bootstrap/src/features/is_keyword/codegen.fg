@@ -8,15 +8,15 @@ export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> 
     if r.had_error { return r }
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {
-        return err_emit("`is` requires an enum value, got `" + vtype_display(r.ty) + "`")
+        return err_emit("`is` requires an enum value, got `${vtype_display(r.ty)}`")
     }
     let lookup = enum_reg_lookup(ctx.enums, enum_name)
     if !lookup.found {
-        return err_emit("unknown enum `" + enum_name + "`")
+        return err_emit("unknown enum `${enum_name}`")
     }
     let v = variant_lookup(lookup.variants, vname)
     if !v.found {
-        return err_emit("unknown variant `" + vname + "` in enum `" + enum_name + "`")
+        return err_emit("unknown variant `${vname}` in enum `${enum_name}`")
     }
     let subj_ptr = to_ptr(ctx, r.value, "is_subj")
     let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)

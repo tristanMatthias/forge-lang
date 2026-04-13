@@ -24,7 +24,7 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     if struct_name.length > 0 {
         let fields = struct_type_lookup(o.tc.structs, struct_name)
         if !tc_field_exists(fields, field) {
-            let msg = "no field `" + field + "` on type `" + struct_name + "`"
+            let msg = "no field `${field}` on type `${struct_name}`"
             return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), ValueType.Int)
         }
         let field_ty = field_type_in(o.tc, fields, field)

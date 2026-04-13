@@ -181,8 +181,8 @@ export fn vtype_display(t: ValueType) -> string {
         .Closure(_, _) -> "fn"
         .Void -> "void"
         .Float -> "float"
-        .FnTyped(params, ret) -> "fn(" + render_type_list(params) + ") -> " + vtype_display(ret)
-        .Trait(n) -> "dyn " + n
+        .FnTyped(params, ret) -> "fn(${render_type_list(params)}) -> ${vtype_display(ret)}"
+        .Trait(n) -> "dyn ${n}"
     }
 }
 
@@ -198,7 +198,7 @@ export fn render_type_list(tl: TypeList) -> string {
             if rest == "" {
                 vtype_display(ty)
             } else {
-                vtype_display(ty) + ", " + rest
+                "${vtype_display(ty)}, ${rest}"
             }
         }
     }
@@ -557,32 +557,32 @@ export fn render_expr(expr: Expr) -> string {
         .Bool(value) -> value
         .Null -> "null"
         .Ident(name) -> name
-        .Assign(name, value) -> "(assign " + name + " " + render_expr(value) + ")"
-        .Grouping(inner) -> "(group " + render_expr(inner) + ")"
-        .Unary(op, right) -> "(" + unop_str(op) + " " + render_expr(right) + ")"
-        .Binary(left, op, right) -> "(" + binop_str(op) + " " + render_expr(left) + " " + render_expr(right) + ")"
-        .Logical(left, op, right) -> "(" + logicop_str(op) + " " + render_expr(left) + " " + render_expr(right) + ")"
-        .Call(callee, args) -> "(call " + render_expr(callee) + " " + render_expr_list(args) + ")"
-        .StructLit(name, inits) -> "(struct " + name + " " + render_field_init_list(inits) + ")"
-        .FieldAccess(obj, field) -> "(field " + render_expr(obj) + " " + field + ")"
-        .EnumCtor(type_name, variant, args) -> "(ctor " + type_name + "." + variant + " " + render_expr_list(args) + ")"
-        .Index(obj, idx) -> "(index " + render_expr(obj) + " " + render_expr(idx) + ")"
-        .Block(body) -> "(block-expr " + render_stmt_list(body) + ")"
-        .MatchExpr(subject, arms) -> "(match-expr " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"
-        .FieldAssign(obj, field, value) -> "(field-assign " + render_expr(obj) + " " + field + " " + render_expr(value) + ")"
-        .IfExpr(c, t, e) -> "(if-expr " + render_expr(c) + " " + render_expr(t) + " " + render_expr(e) + ")"
-        .NullCoalesce(left, right) -> "(?? " + render_expr(left) + " " + render_expr(right) + ")"
-        .OptionalChain(obj, field) -> "(?. " + render_expr(obj) + " " + field + ")"
-        .Try(inner) -> "(? " + render_expr(inner) + ")"
-        .Tuple(elements) -> "(tuple " + render_expr_list(elements) + ")"
-        .TupleIndex(obj, idx) -> "(tuple-idx " + render_expr(obj) + " " + string(idx) + ")"
-        .With(obj, overrides) -> "(with " + render_expr(obj) + " " + render_field_init_list(overrides) + ")"
-        .ListLit(elements) -> "(list " + render_expr_list(elements) + ")"
-        .Lambda(params, body) -> "(lambda " + render_param_list(params) + " " + render_expr(body) + ")"
-        .MapLit(entries) -> "(map " + render_expr_list(entries) + ")"
+        .Assign(name, value) -> "(assign ${name} ${render_expr(value)})"
+        .Grouping(inner) -> "(group ${render_expr(inner)})"
+        .Unary(op, right) -> "(${unop_str(op)} ${render_expr(right)})"
+        .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(left)} ${render_expr(right)})"
+        .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(left)} ${render_expr(right)})"
+        .Call(callee, args) -> "(call ${render_expr(callee)} ${render_expr_list(args)})"
+        .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(inits)})"
+        .FieldAccess(obj, field) -> "(field ${render_expr(obj)} ${field})"
+        .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_list(args)})"
+        .Index(obj, idx) -> "(index ${render_expr(obj)} ${render_expr(idx)})"
+        .Block(body) -> "(block-expr ${render_stmt_list(body)})"
+        .MatchExpr(subject, arms) -> "(match-expr ${render_expr(subject)} ${render_match_arm_list(arms)})"
+        .FieldAssign(obj, field, value) -> "(field-assign ${render_expr(obj)} ${field} ${render_expr(value)})"
+        .IfExpr(c, t, e) -> "(if-expr ${render_expr(c)} ${render_expr(t)} ${render_expr(e)})"
+        .NullCoalesce(left, right) -> "(?? ${render_expr(left)} ${render_expr(right)})"
+        .OptionalChain(obj, field) -> "(?. ${render_expr(obj)} ${field})"
+        .Try(inner) -> "(? ${render_expr(inner)})"
+        .Tuple(elements) -> "(tuple ${render_expr_list(elements)})"
+        .TupleIndex(obj, idx) -> "(tuple-idx ${render_expr(obj)} ${string(idx)})"
+        .With(obj, overrides) -> "(with ${render_expr(obj)} ${render_field_init_list(overrides)})"
+        .ListLit(elements) -> "(list ${render_expr_list(elements)})"
+        .Lambda(params, body) -> "(lambda ${render_param_list(params)} ${render_expr(body)})"
+        .MapLit(entries) -> "(map ${render_expr_list(entries)})"
         .FloatLit(value) -> value
-        .Slice(obj, start, end) -> "(slice " + render_expr(obj) + " " + render_expr(start) + ".." + render_expr(end) + ")"
-        .IsCheck(subject, vname) -> "(is " + render_expr(subject) + " ." + vname + ")"
+        .Slice(obj, start, end) -> "(slice ${render_expr(obj)} ${render_expr(start)}..${render_expr(end)})"
+        .IsCheck(subject, vname) -> "(is ${render_expr(subject)} .${vname})"
         .QualifiedIdent(path) -> path
     }
 }
@@ -591,9 +591,9 @@ export fn render_field_init_list(inits: FieldInitList) -> string {
     match inits {
         .End -> "()"
         .Node(name, sv, next) -> {
-            let head = name + "=" + render_expr(sv.node)
+            let head = "${name}=${render_expr(sv.node)}"
             let tail = render_field_init_tail(next)
-            "(" + head + tail + ")"
+            "(${head}${tail})"
         }
     }
 }
@@ -601,7 +601,7 @@ export fn render_field_init_list(inits: FieldInitList) -> string {
 fn render_field_init_tail(inits: FieldInitList) -> string {
     match inits {
         .End -> ""
-        .Node(name, sv, next) -> ", " + name + "=" + render_expr(sv.node) + render_field_init_tail(next)
+        .Node(name, sv, next) -> ", ${name}=${render_expr(sv.node)}${render_field_init_tail(next)}"
     }
 }
 
@@ -609,9 +609,9 @@ export fn render_field_list(fields: FieldList) -> string {
     match fields {
         .End -> "()"
         .Node(name, ty, next) -> {
-            let head = name + ":" + ty
+            let head = "${name}:${ty}"
             let tail = render_field_list_tail(next)
-            "(" + head + tail + ")"
+            "(${head}${tail})"
         }
     }
 }
@@ -619,7 +619,7 @@ export fn render_field_list(fields: FieldList) -> string {
 fn render_field_list_tail(fields: FieldList) -> string {
     match fields {
         .End -> ""
-        .Node(name, ty, next) -> ", " + name + ":" + ty + render_field_list_tail(next)
+        .Node(name, ty, next) -> ", ${name}:${ty}${render_field_list_tail(next)}"
     }
 }
 
@@ -629,7 +629,7 @@ export fn render_expr_list(exprs: ExprList) -> string {
         .Node(se, next) -> {
             let head = render_expr(se.node)
             let tail = render_expr_list_tail(next)
-            "(" + head + tail + ")"
+            "(${head}${tail})"
         }
     }
 }
@@ -637,7 +637,7 @@ export fn render_expr_list(exprs: ExprList) -> string {
 fn render_expr_list_tail(exprs: ExprList) -> string {
     match exprs {
         .End -> ""
-        .Node(se, next) -> ", " + render_expr(se.node) + render_expr_list_tail(next)
+        .Node(se, next) -> ", ${render_expr(se.node)}${render_expr_list_tail(next)}"
     }
 }
 
@@ -646,7 +646,7 @@ export fn render_param_list(params: ParamList) -> string {
         .End -> "()"
         .Node(name, _, next) -> {
             let tail = render_param_list_tail(next)
-            "(" + name + tail + ")"
+            "(${name}${tail})"
         }
     }
 }
@@ -654,56 +654,56 @@ export fn render_param_list(params: ParamList) -> string {
 fn render_param_list_tail(params: ParamList) -> string {
     match params {
         .End -> ""
-        .Node(name, _, next) -> ", " + name + render_param_list_tail(next)
+        .Node(name, _, next) -> ", ${name}${render_param_list_tail(next)}"
     }
 }
 
 export fn render_stmt(stmt: Stmt) -> string {
     match stmt {
-        .Let(name, ty, initializer) -> "(let " + name + ":" + ty + " " + render_expr(initializer) + ")"
-        .Mut(name, ty, initializer) -> "(mut " + name + ":" + ty + " " + render_expr(initializer) + ")"
-        .Expr(expr) -> "(expr " + render_expr(expr) + ")"
-        .Block(body) -> "(block " + render_stmt_list(body) + ")"
+        .Let(name, ty, initializer) -> "(let ${name}:${ty} ${render_expr(initializer)})"
+        .Mut(name, ty, initializer) -> "(mut ${name}:${ty} ${render_expr(initializer)})"
+        .Expr(expr) -> "(expr ${render_expr(expr)})"
+        .Block(body) -> "(block ${render_stmt_list(body)})"
         .If(condition, then_branch, else_branch) -> {
-            let base = "(if " + render_expr(condition) + " " + render_stmt(then_branch)
+            let base = "(if ${render_expr(condition)} ${render_stmt(then_branch)}"
             if else_branch == null {
-                base + ")"
+                "${base})"
             } else {
-                base + " " + render_stmt(else_branch!) + ")"
+                "${base} ${render_stmt(else_branch!)})"
             }
         }
-        .While(condition, body) -> "(while " + render_expr(condition) + " " + render_stmt(body) + ")"
-        .For(variable, start, end, body) -> "(for " + variable + " " + render_expr(start) + ".." + render_expr(end) + " " + render_stmt(body) + ")"
-        .ForIn(variable, collection, body) -> "(for-in " + variable + " " + render_expr(collection) + " " + render_stmt(body) + ")"
-        .Function(name, params, ret_ty, body) -> "(fn " + name + " " + render_param_list(params) + " -> " + ret_ty + " " + render_stmt_list(body) + ")"
-        .Return(value) -> "(return " + render_expr(value) + ")"
+        .While(condition, body) -> "(while ${render_expr(condition)} ${render_stmt(body)})"
+        .For(variable, start, end, body) -> "(for ${variable} ${render_expr(start)}..${render_expr(end)} ${render_stmt(body)})"
+        .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr(collection)} ${render_stmt(body)})"
+        .Function(name, params, ret_ty, body) -> "(fn ${name} ${render_param_list(params)} -> ${ret_ty} ${render_stmt_list(body)})"
+        .Return(value) -> "(return ${render_expr(value)})"
         .ReturnEmpty -> "(return)"
-        .TypeDecl(name, fields) -> "(type " + name + " " + render_field_list(fields) + ")"
-        .EnumDecl(name, variants) -> "(enum " + name + " " + render_variant_list(variants) + ")"
-        .Match(subject, arms) -> "(match " + render_expr(subject) + " " + render_match_arm_list(arms) + ")"
-        .Impl(name, methods) -> "(impl " + name + " " + render_stmt_list(methods) + ")"
+        .TypeDecl(name, fields) -> "(type ${name} ${render_field_list(fields)})"
+        .EnumDecl(name, variants) -> "(enum ${name} ${render_variant_list(variants)})"
+        .Match(subject, arms) -> "(match ${render_expr(subject)} ${render_match_arm_list(arms)})"
+        .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(methods)})"
         .NoOp -> "(noop)"
-        .ExternFn(name, params, ret_ty) -> "(extern " + name + " " + render_param_list(params) + " -> " + ret_ty + ")"
+        .ExternFn(name, params, ret_ty) -> "(extern ${name} ${render_param_list(params)} -> ${ret_ty})"
         .Break -> "(break)"
         .Continue -> "(continue)"
-        .TraitDecl(name, methods) -> "(trait " + name + " " + render_stmt_list(methods) + ")"
-        .LetDestructure(names, initializer) -> "(let-destruct " + render_param_list(names) + " " + render_expr(initializer) + ")"
-        .Defer(body) -> "(defer " + render_expr(body) + ")"
-        .Annotated(annotations, inner) -> "(@annotated " + render_annotation_list(annotations) + " " + render_stmt(inner) + ")"
-        .SpecBlock(name, _) -> "(spec " + name + " ...)"
-        .GivenBlock(name, _) -> "(given " + name + " ...)"
-        .ThenBlock(name, cond) -> "(then " + name + " " + render_expr(cond) + ")"
+        .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(methods)})"
+        .LetDestructure(names, initializer) -> "(let-destruct ${render_param_list(names)} ${render_expr(initializer)})"
+        .Defer(body) -> "(defer ${render_expr(body)})"
+        .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(annotations)} ${render_stmt(inner)})"
+        .SpecBlock(name, _) -> "(spec ${name} ...)"
+        .GivenBlock(name, _) -> "(given ${name} ...)"
+        .ThenBlock(name, cond) -> "(then ${name} ${render_expr(cond)})"
         .Select(_) -> "(select ...)"
         .Parallel(_) -> "(parallel ...)"
-        .Module(name, body) -> "(module " + name + " " + render_stmt_list(body) + ")"
-        .Use(path, names) -> "(use " + path + " " + render_param_list(names) + ")"
+        .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
+        .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
     }
 }
 
 export fn render_annotation_list(annots: AnnotationList) -> string {
     match annots {
         .End -> ""
-        .Node(name, _, next) -> "@" + name + " " + render_annotation_list(next)
+        .Node(name, _, next) -> "@${name} ${render_annotation_list(next)}"
     }
 }
 
@@ -711,9 +711,9 @@ export fn render_variant_list(variants: VariantList) -> string {
     match variants {
         .End -> "()"
         .Node(name, fields, next) -> {
-            let head = name + render_field_list(fields)
+            let head = "${name}${render_field_list(fields)}"
             let tail = render_variant_tail(next)
-            "(" + head + tail + ")"
+            "(${head}${tail})"
         }
     }
 }
@@ -721,14 +721,14 @@ export fn render_variant_list(variants: VariantList) -> string {
 fn render_variant_tail(variants: VariantList) -> string {
     match variants {
         .End -> ""
-        .Node(name, fields, next) -> ", " + name + render_field_list(fields) + render_variant_tail(next)
+        .Node(name, fields, next) -> ", ${name}${render_field_list(fields)}${render_variant_tail(next)}"
     }
 }
 
 export fn render_pattern(p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
-        .Variant(name, bindings) -> "." + name + render_param_list(bindings)
+        .Variant(name, bindings) -> ".${name}${render_param_list(bindings)}"
     }
 }
 
@@ -736,10 +736,10 @@ export fn render_match_arm_list(arms: MatchArmList) -> string {
     match arms {
         .End -> "()"
         .Node(pattern, guard, body, next) -> {
-            let guard_str = if guard != null { " if " + render_expr(guard!.node) } else { "" }
-            let head = render_pattern(pattern) + guard_str + " -> " + render_expr(body.node)
+            let guard_str = if guard != null { " if ${render_expr(guard!.node)}" } else { "" }
+            let head = "${render_pattern(pattern)}${guard_str} -> ${render_expr(body.node)}"
             let tail = render_match_arm_tail(next)
-            "(" + head + tail + ")"
+            "(${head}${tail})"
         }
     }
 }
@@ -748,8 +748,8 @@ fn render_match_arm_tail(arms: MatchArmList) -> string {
     match arms {
         .End -> ""
         .Node(pattern, guard, body, next) -> {
-            let guard_str = if guard != null { " if " + render_expr(guard!.node) } else { "" }
-            "; " + render_pattern(pattern) + guard_str + " -> " + render_expr(body.node) + render_match_arm_tail(next)
+            let guard_str = if guard != null { " if ${render_expr(guard!.node)}" } else { "" }
+            "; ${render_pattern(pattern)}${guard_str} -> ${render_expr(body.node)}${render_match_arm_tail(next)}"
         }
     }
 }
@@ -763,7 +763,7 @@ export fn render_stmt_list(stmts: StmtList) -> string {
             if tail == "" {
                 head
             } else {
-                head + "\n" + tail
+                "${head}\n${tail}"
             }
         }
     }

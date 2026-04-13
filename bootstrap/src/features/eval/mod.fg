@@ -329,7 +329,7 @@ fn assign_binding(bindings: BindingList, name: string, value: Value) -> AssignBi
                         bindings,
                         found: true,
                         had_error: true,
-                        error_message: "eval error: cannot assign to immutable variable `" + name + "`",
+                        error_message: "eval error: cannot assign to immutable variable `${name}`",
                     }
                 }
 
@@ -506,7 +506,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
                 return ok_result(runtime, value_builtin(name))
             }
 
-            error_result(runtime, "undefined variable `" + name + "`")
+            error_result(runtime, "undefined variable `${name}`")
         }
         .Assign(name, value_expr) -> {
             let value_result = eval_expr(runtime, value_expr)
@@ -526,7 +526,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             }
 
             if !assigned.found {
-                return error_result(value_result.runtime, "undefined variable `" + name + "`")
+                return error_result(value_result.runtime, "undefined variable `${name}`")
             }
 
             let next_runtime = Runtime {
@@ -547,7 +547,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
             if fn_result.found {
                 return ok_result(runtime, value_function(path))
             }
-            error_result(runtime, "undefined qualified name `" + path + "`")
+            error_result(runtime, "undefined qualified name `${path}`")
         }
         _ -> {
             let tag = forge_expr_tag(expr)
@@ -642,13 +642,13 @@ fn eval_call(runtime: Runtime, callee: Expr, args: ExprList) -> StepResult {
     let fn_name = callee_value.text
     let fn_lookup = lookup_function(args_result.runtime.functions, fn_name)
     if !fn_lookup.found {
-        return error_result(args_result.runtime, "undefined function `" + fn_name + "`")
+        return error_result(args_result.runtime, "undefined function `${fn_name}`")
     }
 
     let param_count = count_params(fn_lookup.params)
     let arg_count = count_values(args_result.values)
     if param_count != arg_count {
-        return error_result(args_result.runtime, "expected " + string(param_count) + " arguments but got " + string(arg_count))
+        return error_result(args_result.runtime, "expected ${string(param_count)} arguments but got ${string(arg_count)}")
     }
 
     let call_env = enter_scope(args_result.runtime)
@@ -710,7 +710,7 @@ fn call_builtin(runtime: Runtime, name: string, args: ValueList) -> StepResult {
         }
     }
 
-    error_result(runtime, "unknown builtin `" + name + "`")
+    error_result(runtime, "unknown builtin `${name}`")
 }
 
 fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {

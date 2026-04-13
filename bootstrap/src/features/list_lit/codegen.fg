@@ -105,7 +105,7 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
         let elem_ty = vtype_list_elem(list_ty)
         return emit_list_reduce_typed(ctx, env, list_val, args, elem_ty)
     }
-    err_emit("list method `" + method + "` not implemented")
+    err_emit("list method `${method}` not implemented")
 }
 
 fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> EmitResult {

@@ -137,7 +137,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             if result != null {
                 return result!
             }
-            err_stmt("codegen error: unsupported statement type (tag=" + string(tag) + ")")
+            err_stmt("codegen error: unsupported statement type (tag=${string(tag)})")
         }
     }
 }
@@ -195,7 +195,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
                 let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
                 return ok_emit_typed(closure_i64, ValueType.Closure(0, ret_ty))
             }
-            err_emit("undefined variable `" + name + "`")
+            err_emit("undefined variable `${name}`")
         }
         .QualifiedIdent(path) -> {
             let local = env_lookup(env, path)
@@ -220,7 +220,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
                 let ret_ty = fn_ret_lookup(ctx.fn_rets, path)
                 return ok_emit_typed(closure_i64, ValueType.Closure(0, ret_ty))
             }
-            err_emit("undefined qualified name `" + path + "`")
+            err_emit("undefined qualified name `${path}`")
         }
         .Assign(name, value) -> {
             let r = emit_expr(ctx, env, value)
@@ -237,7 +237,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
                 forge_llvm_build_store(ctx.builder, r.value, g.llvm_global)
                 return EmitResult { value: r.value, ty: g.ty, had_error: false, error_message: "" }
             }
-            err_emit("assignment to undefined variable `" + name + "`")
+            err_emit("assignment to undefined variable `${name}`")
         }
         .Call(callee, args) -> emit_call(ctx, env, callee, args)
         .Index(obj, idx) -> emit_index(ctx, env, obj, idx)
@@ -249,7 +249,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
             if result != null {
                 return result!
             }
-            err_emit("unsupported expression type (tag=" + string(tag) + ")")
+            err_emit("unsupported expression type (tag=${string(tag)})")
         }
     }
 }

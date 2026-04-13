@@ -23,7 +23,7 @@ impl Parser {
             self.advance()
             if self.check(Tk.LeftBrace) { break }
             let segment = self.consume_identifier("expected path segment")?
-            path = path + "." + segment
+            path = "${path}.${segment}"
         }
         if !self.consume(Tk.LeftBrace, "expected `{` in use declaration") {
             return null

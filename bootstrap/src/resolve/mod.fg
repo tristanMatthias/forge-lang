@@ -315,14 +315,14 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             let result = lookup_name(r.scopes, name)
             if result.found {
                 if !result.defined {
-                    return set_resolve_error(r, "cannot read variable `" + name + "` in its own initializer")
+                    return set_resolve_error(r, "cannot read variable `${name}` in its own initializer")
                 }
                 return r
             }
             if lookup_fn(r.functions, name) {
                 return r
             }
-            set_resolve_error(r, "undefined variable `" + name + "`")
+            set_resolve_error(r, "undefined variable `${name}`")
         }
         .Assign(name, value) -> {
             let after_value = resolve_expr(r, value)
@@ -332,10 +332,10 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             }
             let result = lookup_name(after_value.scopes, name)
             if !result.found {
-                return set_resolve_error(after_value, "undefined variable `" + name + "`")
+                return set_resolve_error(after_value, "undefined variable `${name}`")
             }
             if !result.mutable {
-                return resolve_report(after_value, DiagCode.ImmutableAssign, "cannot assign to immutable variable `" + name + "`")
+                return resolve_report(after_value, DiagCode.ImmutableAssign, "cannot assign to immutable variable `${name}`")
             }
             after_value
         }

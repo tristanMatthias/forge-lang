@@ -48,7 +48,7 @@ impl Parser {
                 let col = self.current_lexeme
                 self.advance()
                 // Wrap in quotes so strip_quotes in codegen produces the correct key
-                let quoted_col = "\"" + col + "\""
+                let quoted_col = "\"${col}\""
                 headers = ExprList.Node(sexpr(Expr.String(quoted_col), self.current_line, self.current_column), headers)
                 header_count = header_count + 1
                 if self.check(Tk.Pipe) { self.advance() }

@@ -15,11 +15,11 @@ export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) 
 
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
-        return err_emit("`with` requires a struct value (got ty=" + vtype_display(r.ty) + ")")
+        return err_emit("`with` requires a struct value (got ty=${vtype_display(r.ty)})")
     }
     let lookup = struct_reg_lookup(ctx.structs, struct_name)
     if !lookup.found {
-        return err_emit("unknown struct `" + struct_name + "` in with expression")
+        return err_emit("unknown struct `${struct_name}` in with expression")
     }
 
     // Count fields and allocate new struct

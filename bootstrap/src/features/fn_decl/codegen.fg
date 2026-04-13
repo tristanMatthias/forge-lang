@@ -28,7 +28,7 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> StmtResult {
 export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: StmtList) -> StmtResult {
     let fn_val = forge_llvm_get_named_function(ctx.module, name)
     if fn_val == null {
-        return err_stmt("codegen error: function `" + name + "` was not declared in pass 1")
+        return err_stmt("codegen error: function `${name}` was not declared in pass 1")
     }
     let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
     forge_llvm_position_at_end(ctx.builder, entry)
@@ -106,12 +106,12 @@ fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: VarEn
     if !lookup.found { return }
 
     // Load the parameter value (stored as i64 in the alloca).
-    let val = forge_llvm_build_load(ctx.builder, ctx.i64_type, lookup.alloca, param_name + "_val")
+    let val = forge_llvm_build_load(ctx.builder, ctx.i64_type, lookup.alloca, "${param_name}_val")
     let zero = const_i64(ctx, 0)
     // icmp eq i64 %val, 0 → i1
-    let is_null_i1 = forge_llvm_build_icmp(ctx.builder, 32, val, zero, param_name + "_null")
+    let is_null_i1 = forge_llvm_build_icmp(ctx.builder, 32, val, zero, "${param_name}_null")
     // zext i1 to i64 for the C function
-    let is_null = forge_llvm_build_zext(ctx.builder, is_null_i1, ctx.i64_type, param_name + "_nz")
+    let is_null = forge_llvm_build_zext(ctx.builder, is_null_i1, ctx.i64_type, "${param_name}_nz")
 
     // Build the call to forge_null_arg_check(fn_name, fn_len, param_name, param_len, is_null).
     // No branching — the C function does the check internally.
@@ -223,7 +223,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
             let as_i64 = forge_llvm_build_zext(ctx.builder, byte_val, ctx.i64_type, "char_code")
             return ok_emit(as_i64)
         }
-        return err_emit("string method `" + method + "` not implemented")
+        return err_emit("string method `${method}` not implemented")
     }
     // List methods — dispatched to features/list_lit/codegen.fg
     if vtype_is_list(r.ty) {
@@ -248,9 +248,9 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         enum_name
     }
     if owner == "" {
-        return err_emit("method call on non-struct/enum value (ty=" + vtype_display(r.ty) + ")")
+        return err_emit("method call on non-struct/enum value (ty=${vtype_display(r.ty)})")
     }
-    let mangled = owner + "__" + method
+    let mangled = "${owner}__${method}"
     let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
     if fn_val == null {
         // Not a method — check if it's a struct field with fn type.
@@ -269,7 +269,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
                 }
             }
         }
-        return err_emit("undefined method `" + owner + "." + method + "`")
+        return err_emit("undefined method `${owner}.${method}`")
     }
     // Runtime null-pointer dereference check on method receiver (branchless).
     let mzero = const_i64(ctx, 0)
@@ -355,7 +355,7 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
         if g.found && vtype_is_fn(g.ty) {
             return emit_indirect_call_from_global(ctx, env, g.llvm_global, name, args, g.ty)
         }
-        return err_emit("undefined function `" + name + "`")
+        return err_emit("undefined function `${name}`")
     }
 
     let arg_count = expr_list_length(args)

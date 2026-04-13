@@ -209,7 +209,7 @@ fn main() {
             println("ok")
             return
         }
-        let output = cpath + ".ll"
+        let output = "${cpath}.ll"
         let compiled = compile_program(named.stmts, output, debug_null, cpath)
         if compiled.had_error {
             fail(compiled.error_message)

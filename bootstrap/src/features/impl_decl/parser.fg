@@ -39,7 +39,7 @@ impl Parser {
         // Encode trait info in the type_name: "Trait:Type" for trait impls,
         // just "Type" for plain impls. Downstream can split on ':'.
         let impl_name = if type_name != target_name {
-            type_name + ":" + target_name
+            "${type_name}:${target_name}"
         } else {
             target_name
         }
@@ -87,7 +87,7 @@ impl Parser {
             return null
         }
         // Desugar to a top-level function named `Type__method`.
-        let mangled = type_name + "__" + name
+        let mangled = "${type_name}__${name}"
         Stmt.Function(mangled, params, ret_ty, body)
     }
 

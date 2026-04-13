@@ -437,7 +437,7 @@ impl Parser {
             if self.check(Tk.Identifier) {
                 let col = self.current_lexeme
                 self.advance()
-                let quoted_col = "\"" + col + "\""
+                let quoted_col = "\"${col}\""
                 headers = ExprList.Node(sexpr(Expr.String(quoted_col), self.current_line, self.current_column), headers)
                 header_count = header_count + 1
                 if self.check(Tk.Pipe) {
@@ -1121,7 +1121,7 @@ impl Parser {
             if i + 1 < len && raw[i] == "$" && raw[i + 1] == "{" {
                 // Flush text segment before the interpolation.
                 if i > text_start {
-                    let seg = "\"" + raw.substring(text_start, i) + "\""
+                    let seg = "\"${raw.substring(text_start, i)}\""
                     let str_expr = Expr.String(seg)
                     if result == null {
                         result = str_expr
@@ -1177,7 +1177,7 @@ impl Parser {
         }
         // Flush trailing text after last interpolation.
         if text_start < len {
-            let seg = "\"" + raw.substring(text_start, len) + "\""
+            let seg = "\"${raw.substring(text_start, len)}\""
             let str_expr = Expr.String(seg)
             if result == null {
                 result = str_expr
@@ -1362,7 +1362,7 @@ impl Parser {
                     if param_str == "" {
                         param_str = pty
                     } else {
-                        param_str = param_str + "," + pty
+                        param_str = "${param_str},${pty}"
                     }
                 }
                 if self.check(Tk.RightParen) { self.advance() }
@@ -1371,12 +1371,12 @@ impl Parser {
                 self.advance()
                 let ret = self.consume_type("expected return type after `->`")?
                 if param_str != "" {
-                    return "fn(" + param_str + ")->" + ret
+                    return "fn(${param_str})->${ret}"
                 }
                 return "fn->" + ret
             }
             if param_str != "" {
-                return "fn(" + param_str + ")"
+                return "fn(${param_str})"
             }
             return "fn"
         }
@@ -1393,7 +1393,7 @@ impl Parser {
                 self.set_error("expected identifier after '.' in type path")
                 return null
             }
-            name = name + "." + self.current_lexeme
+            name = "${name}.${self.current_lexeme}"
             self.advance()
         }
         // Skip generic arguments: Type<A, B>
@@ -1437,7 +1437,7 @@ impl Parser {
         // Set had_error + message for backward compat (first error wins)
         if !self.had_error {
             self.had_error = true
-            self.error_message = "parse error at " + string(self.current_line) + ":" + string(self.current_column) + ": " + message
+            self.error_message = "parse error at ${string(self.current_line)}:${string(self.current_column)}: ${message}"
         }
     }
 
