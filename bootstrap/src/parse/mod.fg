@@ -1277,6 +1277,15 @@ impl Parser {
             }
             return "fn"
         }
+        // [T] → List type
+        if self.check(Tk.LeftBracket) {
+            self.advance()
+            let inner = self.consume_type("expected element type in `[T]`")?
+            if !self.consume(Tk.RightBracket, "expected `]` after list type") {
+                return null
+            }
+            return "List(${inner})"
+        }
         if !self.check(Tk.Identifier) {
             self.set_error(message)
             return null

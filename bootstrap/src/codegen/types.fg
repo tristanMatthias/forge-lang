@@ -356,6 +356,12 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
         "Map"             -> return ValueType.Map
         _ -> {}
     }
+    // List(T) → List type with inner
+    if ty.starts_with("List(") && ty.length > 6 {
+        let inner_name = ty.substring(5, ty.length - 1)
+        let inner = translate_param_type(structs, enums, inner_name)
+        return ValueType.List(inner)
+    }
     if ty.starts_with("fn") && ty.length > 2 {
         // Parse fn(...)->Ret or fn->Ret
         let rest = ty.substring(2, ty.length)

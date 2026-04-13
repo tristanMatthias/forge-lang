@@ -22,7 +22,7 @@ Based on the ideas that:
 # Language
 - Pascal's const recurision declaration
 - Pascal's if i in [0..3, 7, 9, 12..15] 
-
+- Enforce types for every variable (params too)
 # Std libs
 - @std/config
 - @@std/logs
