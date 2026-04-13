@@ -9,55 +9,55 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
     if cond.had_error {
         return err_stmt_from_expr(cond)
     }
-    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, const_i64(ctx, 0), "if_cond")
+    let cond_i1 = ctx.icmp(33, cond.value, const_i64(ctx, 0), "if_cond")
     let then_bb = new_bb(ctx, "then")
     let else_bb = new_bb(ctx, "else")
     let merge_bb = new_bb(ctx, "ifcont")
-    forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
+    ctx.cond_br(cond_i1, then_bb, else_bb)
 
-    forge_llvm_position_at_end(ctx.builder, then_bb)
+    ctx.position(then_bb)
     let then_result = emit_stmt(ctx, env, then_branch)?
-    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-        forge_llvm_build_br(ctx.builder, merge_bb)
+    if !ctx.has_terminator() {
+        ctx.br(merge_bb)
     }
 
-    forge_llvm_position_at_end(ctx.builder, else_bb)
+    ctx.position(else_bb)
     if else_branch != null {
         let else_result = emit_stmt(ctx, env, else_branch!)?
     }
-    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-        forge_llvm_build_br(ctx.builder, merge_bb)
+    if !ctx.has_terminator() {
+        ctx.br(merge_bb)
     }
 
-    forge_llvm_position_at_end(ctx.builder, merge_bb)
+    ctx.position(merge_bb)
     ok_stmt(env)
 }
 
 export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
     let cond = emit_expr(ctx, env, condition)?
-    let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, const_i64(ctx, 0), "ife_cond")
+    let cond_i1 = ctx.icmp(33, cond.value, const_i64(ctx, 0), "ife_cond")
     let then_bb = new_bb(ctx, "ife_then")
     let else_bb = new_bb(ctx, "ife_else")
     let merge_bb = new_bb(ctx, "ife_end")
-    let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "ife_result")
-    forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
-    forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
+    let result_slot = ctx.alloca_i64("ife_result")
+    ctx.store(const_i64(ctx, 0), result_slot)
+    ctx.cond_br(cond_i1, then_bb, else_bb)
 
-    forge_llvm_position_at_end(ctx.builder, then_bb)
+    ctx.position(then_bb)
     let t = emit_expr(ctx, env, then_branch)?
-    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-        forge_llvm_build_store(ctx.builder, t.value, result_slot)
-        forge_llvm_build_br(ctx.builder, merge_bb)
+    if !ctx.has_terminator() {
+        ctx.store(t.value, result_slot)
+        ctx.br(merge_bb)
     }
 
-    forge_llvm_position_at_end(ctx.builder, else_bb)
+    ctx.position(else_bb)
     let e = emit_expr(ctx, env, else_branch)?
-    if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-        forge_llvm_build_store(ctx.builder, e.value, result_slot)
-        forge_llvm_build_br(ctx.builder, merge_bb)
+    if !ctx.has_terminator() {
+        ctx.store(e.value, result_slot)
+        ctx.br(merge_bb)
     }
 
-    forge_llvm_position_at_end(ctx.builder, merge_bb)
-    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "ife_val")
+    ctx.position(merge_bb)
+    let loaded = ctx.load_i64(result_slot, "ife_val")
     ok_emit_typed(loaded, t.ty)
 }

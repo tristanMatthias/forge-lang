@@ -13,18 +13,18 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     let lhs_len = call_1(ctx, strlen_fn, lhs_ptr, "lhs_len")
     let rhs_len = call_1(ctx, strlen_fn, rhs_ptr, "rhs_len")
 
-    let total = forge_llvm_build_add(ctx.builder, lhs_len, rhs_len, "concat_total")
+    let total = ctx.build_add(lhs_len, rhs_len, "concat_total")
     let one = const_i64(ctx, 1)
-    let alloc_size = forge_llvm_build_add(ctx.builder, total, one, "concat_size")
+    let alloc_size = ctx.build_add(total, one, "concat_size")
     let buf = cg_malloc(ctx, alloc_size)
 
     let memcpy_fn = get_fn(ctx, "memcpy")
     call_3(ctx, memcpy_fn, buf, lhs_ptr, lhs_len, "")
 
     let buf_int = to_i64(ctx, buf, "buf_int")
-    let dst2_int = forge_llvm_build_add(ctx.builder, buf_int, lhs_len, "dst2_int")
+    let dst2_int = ctx.build_add(buf_int, lhs_len, "dst2_int")
     let dst2 = to_ptr(ctx, dst2_int, "dst2")
-    let rhs_len_plus_1 = forge_llvm_build_add(ctx.builder, rhs_len, one, "rhs_len_p1")
+    let rhs_len_plus_1 = ctx.build_add(rhs_len, one, "rhs_len_p1")
     call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
 
     ok_emit_str(to_i64(ctx, buf, "concat_i64"))
@@ -69,21 +69,21 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     let start_r = emit_expr(ctx, env, start_arg)?
     let end_r = emit_expr(ctx, env, end_arg)?
     let str_ptr = to_ptr(ctx, str_i64, "sub_src")
-    let len = forge_llvm_build_sub(ctx.builder, end_r.value, start_r.value, "sub_len")
+    let len = ctx.build_sub(end_r.value, start_r.value, "sub_len")
     let one = const_i64(ctx, 1)
-    let alloc_size = forge_llvm_build_add(ctx.builder, len, one, "sub_alloc")
+    let alloc_size = ctx.build_add(len, one, "sub_alloc")
     // malloc(alloc_size)
     let buf = cg_malloc(ctx, alloc_size)
     // memcpy(buf, src + start, len)
     let src_int = to_i64(ctx, str_ptr, "sub_src_int")
-    let off_int = forge_llvm_build_add(ctx.builder, src_int, start_r.value, "sub_off_int")
+    let off_int = ctx.build_add(src_int, start_r.value, "sub_off_int")
     let off_ptr = to_ptr(ctx, off_int, "sub_off")
     call_3(ctx, get_fn(ctx, "memcpy"), buf, off_ptr, len, "")
     // Null-terminate at buf[len].
     let buf_int2 = to_i64(ctx, buf, "sub_buf_int")
-    let nul_int = forge_llvm_build_add(ctx.builder, buf_int2, len, "sub_nul_int")
+    let nul_int = ctx.build_add(buf_int2, len, "sub_nul_int")
     let nul_ptr = to_ptr(ctx, nul_int, "sub_nul")
-    forge_llvm_build_store(ctx.builder, const_i8(ctx, 0), nul_ptr)
+    ctx.store(const_i8(ctx, 0), nul_ptr)
     let result_i64 = to_i64(ctx, buf, "sub_result")
     ok_emit_str(result_i64)
 }
@@ -101,8 +101,8 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitR
     let result32 = call_2(ctx, get_fn(ctx, "strcmp"), lhs_ptr, rhs_ptr, "strcmp_call")
     let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
     let zero64 = const_i64(ctx, 0)
-    let cmp = forge_llvm_build_icmp(ctx.builder, pred, result64, zero64, "scmp_cmp")
-    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "scmp_ext"))
+    let cmp = ctx.icmp(pred, result64, zero64, "scmp_cmp")
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"))
 }
 
 export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult {
@@ -113,7 +113,7 @@ export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Emi
     let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
     let zero64 = const_i64(ctx, 0)
     let pred = if invert { 33 } else { 32 }
-    let cmp = forge_llvm_build_icmp(ctx.builder, pred, result64, zero64, "streq_cmp")
-    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "streq_ext"))
+    let cmp = ctx.icmp(pred, result64, zero64, "streq_cmp")
+    ok_emit(ctx.zext(cmp, ctx.i64_type, "streq_ext"))
 }
 

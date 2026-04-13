@@ -40,7 +40,7 @@ fn emit_then_block(ctx: Ctx, env: VarEnv, name: string, cond: Expr) -> StmtResul
 }
 
 fn emit_string_const(ctx: Ctx, s: string) -> ptr {
-    let global = forge_llvm_build_global_string_ptr(ctx.builder, s, "spec_str")
+    let global = ctx.global_str(s, "spec_str")
     global
 }
 

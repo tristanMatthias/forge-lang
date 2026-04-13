@@ -11,7 +11,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     if !lookup.found {
         return err_emit("undefined struct type `${name}`")
     }
-    let st_ty = forge_llvm_get_type_by_name(ctx.lc, name)
+    let st_ty = ctx.get_type(name)
     if st_ty == null {
         return err_emit("LLVM struct type `${name}` not declared")
     }
@@ -33,8 +33,8 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
             let idx = field_index_of(fields, field_name)
             if idx < 0 { return err_emit("unknown field `${field_name}`") }
             let r = emit_expr(ctx, env, sv.node)?
-            let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, alloca, idx, "fld_ptr")
-            forge_llvm_build_store(ctx.builder, r.value, gep)
+            let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
+            ctx.store(r.value, gep)
             fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
         }
     }
@@ -50,11 +50,11 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
-    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
+    let st_ty = ctx.get_type(struct_name)
     let obj_ptr = to_ptr(ctx, r.value, "fa_ptr")
-    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fa_fld")
+    let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
     let v = emit_expr(ctx, env, value)?
-    forge_llvm_build_store(ctx.builder, v.value, gep)
+    ctx.store(v.value, gep)
     ok_emit(v.value)
 }
 
@@ -92,18 +92,18 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
-    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
+    let st_ty = ctx.get_type(struct_name)
     let obj_ptr = to_ptr(ctx, r.value, "obj_ptr")
 
     // Null deref check
     let zero = const_i64(ctx, 0)
-    let is_null_i1 = forge_llvm_build_icmp(ctx.builder, 32, r.value, zero, "null_fld_chk")
-    let is_null = forge_llvm_build_zext(ctx.builder, is_null_i1, ctx.i64_type, "null_fld_ext")
-    let fld_str = forge_llvm_build_global_string_ptr(ctx.builder, field, "fld_name")
+    let is_null_i1 = ctx.icmp(32, r.value, zero, "null_fld_chk")
+    let is_null = ctx.zext(is_null_i1, ctx.i64_type, "null_fld_ext")
+    let fld_str = ctx.global_str(field, "fld_name")
     let fld_len = const_i64(ctx, field.length)
-    let ty_str = forge_llvm_build_global_string_ptr(ctx.builder, struct_name, "sty_name")
+    let ty_str = ctx.global_str(struct_name, "sty_name")
     let ty_len = const_i64(ctx, struct_name.length)
-    let file_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.source_file, "src_file")
+    let file_str = ctx.global_str(ctx.source_file, "src_file")
     let file_len = const_i64(ctx, ctx.source_file.length)
     let src_line = const_i64(ctx, ctx.source_line)
     let trap_fn = get_fn(ctx, "forge_null_deref_trap")
@@ -120,8 +120,8 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     forge_llvm_build_call(ctx.builder, trap_ft, trap_fn, trap_args, 8, "")
     forge_llvm_value_array_free(trap_args)
 
-    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fld_ptr")
-    let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, field)
+    let gep = ctx.gep(st_ty, obj_ptr, idx, "fld_ptr")
+    let loaded = ctx.load_i64(gep, field)
     let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
     ok_emit_typed(loaded, field_ty)
 }

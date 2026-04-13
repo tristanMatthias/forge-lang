@@ -52,32 +52,32 @@ fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, va
         .End -> ok_stmt(env)
         .Node(binding, _, body, next) -> {
             // if idx == arm_idx { let binding = val; body }
-            let cmp = forge_llvm_build_icmp(ctx.builder, 32, idx, const_i64(ctx, arm_idx), "sel_cmp")
+            let cmp = ctx.icmp(32, idx, const_i64(ctx, arm_idx), "sel_cmp")
             let then_bb = new_bb(ctx, "sel_then")
             let else_bb = new_bb(ctx, "sel_else")
             let merge_bb = new_bb(ctx, "sel_merge")
 
-            forge_llvm_build_cond_br(ctx.builder, cmp, then_bb, else_bb)
+            ctx.cond_br(cmp, then_bb, else_bb)
 
             // Then: bind value and run body
-            forge_llvm_position_at_end(ctx.builder, then_bb)
-            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, binding)
-            forge_llvm_build_store(ctx.builder, val, alloca)
+            ctx.position(then_bb)
+            let alloca = ctx.alloca_i64(binding)
+            ctx.store(val, alloca)
             let body_env = env_extend(env, binding, alloca, .Int)
             let body_r = emit_block_loop(ctx, body_env, body, const_i64(ctx, 0), .Int)
             if body_r.had_error { return err_stmt(body_r.error_message) }
-            if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                forge_llvm_build_br(ctx.builder, merge_bb)
+            if !ctx.has_terminator() {
+                ctx.br(merge_bb)
             }
 
             // Else: try next arm
-            forge_llvm_position_at_end(ctx.builder, else_bb)
+            ctx.position(else_bb)
             let next_r = emit_select_dispatch(ctx, env, next, idx, val, arm_idx + 1)?
-            if forge_llvm_block_has_terminator(ctx.builder) == 0 {
-                forge_llvm_build_br(ctx.builder, merge_bb)
+            if !ctx.has_terminator() {
+                ctx.br(merge_bb)
             }
 
-            forge_llvm_position_at_end(ctx.builder, merge_bb)
+            ctx.position(merge_bb)
             ok_stmt(env)
         }
     }
