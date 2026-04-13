@@ -229,14 +229,17 @@ fn tc_parse_type_list_str(tc: TC, s: string) -> TypeList {
 }
 
 export fn translate_type(tc: TC, ty: string) -> ValueType {
-    if ty == "str" || ty == "string" { return ValueType.Str }
-    if ty == "i64" || ty == "int" { return ValueType.Int }
-    if ty == "bool" { return ValueType.Bool }
-    if ty == "ptr" { return ValueType.Ptr }
-    if ty == "fn" { return ValueType.Fn(ValueType.Int) }
-    if ty == "float" || ty == "f64" { return ValueType.Float }
-    if ty == "List" { return ValueType.List(ValueType.Int) }
-    if ty == "Map" { return ValueType.Map }
+    match ty {
+        "str" or "string" -> return ValueType.Str
+        "i64" or "int"    -> return ValueType.Int
+        "float" or "f64"  -> return ValueType.Float
+        "bool"            -> return ValueType.Bool
+        "ptr"             -> return ValueType.Ptr
+        "fn"              -> return ValueType.Fn(ValueType.Int)
+        "List"            -> return ValueType.List(ValueType.Int)
+        "Map"             -> return ValueType.Map
+        _ -> {}
+    }
     if ty.starts_with("fn") && ty.length > 2 {
         let rest = ty.substring(2, ty.length)
         if rest.starts_with("(") {

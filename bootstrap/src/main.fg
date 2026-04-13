@@ -75,65 +75,70 @@ fn main() {
     }
 
     let source = if is_flag { "" } else { read_file(path) }
-    if command == "expr" {
-        let result = parse_expression_source(source)
-        if result.had_error || result.expr == null {
-            fail(result.error_message)
-        }
-
-        println(render_expr(result.expr!))
-        return
-    }
-
-    if command == "program" {
-        let result = parse_program_source(source)
-        if result.had_error || result.stmts == null {
-            fail(result.error_message)
-        }
-
-        println(render_stmt_list(result.stmts!))
-        return
-    }
-
-    if command == "eval" {
-        let result = eval_expression_source(source)
-        if result.had_error || result.value == null {
-            fail(result.error_message)
-        }
-
-        println(render_value(result.value!))
-        return
-    }
-
-    if command == "check" {
-        let parsed = parse_program_source(source)
-        if parsed.had_error || parsed.stmts == null {
-            if bag_has_errors(parsed.bag) {
-                render_bag(source, path, parsed.bag)
+    match command {
+        "expr" -> {
+            let result = parse_expression_source(source)
+            if result.had_error || result.expr == null {
+                fail(result.error_message)
             }
-            fail(parsed.error_message)
+            println(render_expr(result.expr!))
+            return
         }
-        // Resolve module files
-        let entry_dir = modules_dirname(path)
-        let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
-        if mod_resolved.had_error {
-            let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-            render_bag(source, path, mod_bag)
-            fail(mod_resolved.error_message)
+        "program" -> {
+            let result = parse_program_source(source)
+            if result.had_error || result.stmts == null {
+                fail(result.error_message)
+            }
+            println(render_stmt_list(result.stmts!))
+            return
         }
-        let named = resolve_names(mod_resolved.stmts)
-        if bag_has_errors(named.bag) {
-            render_bag(source, path, named.bag)
+        "eval" -> {
+            let result = eval_expression_source(source)
+            if result.had_error || result.value == null {
+                fail(result.error_message)
+            }
+            println(render_value(result.value!))
+            return
         }
-        if named.had_error { fail(named.error_message) }
-        // Type check
-        let tc_result = typecheck_program(named.stmts)
-        if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
-            render_bag(source, path, tc_result.bag)
+        "check" -> {
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    render_bag(source, path, parsed.bag)
+                }
+                fail(parsed.error_message)
+            }
+            // Resolve module files
+            let entry_dir = modules_dirname(path)
+            let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+            if mod_resolved.had_error {
+                let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
+                render_bag(source, path, mod_bag)
+                fail(mod_resolved.error_message)
+            }
+            let named = resolve_names(mod_resolved.stmts)
+            if bag_has_errors(named.bag) {
+                render_bag(source, path, named.bag)
+            }
+            if named.had_error { fail(named.error_message) }
+            // Type check
+            let tc_result = typecheck_program(named.stmts)
+            if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
+                render_bag(source, path, tc_result.bag)
+            }
+            if bag_has_errors(tc_result.bag) { return }
+            println("ok")
+            return
         }
-        if bag_has_errors(tc_result.bag) { return }
-        println("ok")
-        return
+        "run" -> {
+            let result = execute_program_source(source)
+            if result.had_error || result.value == null {
+                fail(result.error_message)
+            }
+            println(render_value(result.value!))
+            return
+        }
+        _ -> {}
     }
 
     if command == "compile" {
@@ -213,16 +218,6 @@ fn main() {
             fail(compiled.error_message)
         }
         println(output)
-        return
-    }
-
-    if command == "run" {
-        let result = execute_program_source(source)
-        if result.had_error || result.value == null {
-            fail(result.error_message)
-        }
-
-        println(render_value(result.value!))
         return
     }
 

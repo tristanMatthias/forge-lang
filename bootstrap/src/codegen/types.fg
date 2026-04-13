@@ -345,14 +345,17 @@ fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> TypeLis
 }
 
 export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -> ValueType {
-    if ty == "str" { return ValueType.Str }
-    if ty == "string" { return ValueType.Str }
-    if ty == "i64" { return ValueType.Int }
-    if ty == "int" { return ValueType.Int }
-    if ty == "float" || ty == "f64" { return ValueType.Float }
-    if ty == "bool" { return ValueType.Bool }
-    if ty == "ptr" { return ValueType.Ptr }
-    if ty == "fn" { return ValueType.Fn(ValueType.Int) }
+    match ty {
+        "str" or "string" -> return ValueType.Str
+        "i64" or "int"    -> return ValueType.Int
+        "float" or "f64"  -> return ValueType.Float
+        "bool"            -> return ValueType.Bool
+        "ptr"             -> return ValueType.Ptr
+        "fn"              -> return ValueType.Fn(ValueType.Int)
+        "List"            -> return ValueType.List(ValueType.Int)
+        "Map"             -> return ValueType.Map
+        _ -> {}
+    }
     if ty.starts_with("fn") && ty.length > 2 {
         // Parse fn(...)->Ret or fn->Ret
         let rest = ty.substring(2, ty.length)
@@ -376,8 +379,6 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
         }
         return ValueType.Fn(ValueType.Int)
     }
-    if ty == "List" { return ValueType.List(ValueType.Int) }
-    if ty == "Map" { return ValueType.Map }
     let enum_l = enum_reg_lookup(enums, ty)
     if enum_l.found {
         return ValueType.Enum(ty)
