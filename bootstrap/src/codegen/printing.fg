@@ -1,0 +1,77 @@
+// WHY: codegen for println/eprintln builtins.
+
+use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_is_str, vtype_eq}
+use core.cg.{Ctx, EmitResult, ok_emit, err_emit, const_i64, to_ptr, to_i64, get_fn, call_1, call_2}
+use codegen.{emit_expr, strip_quotes}
+use codegen.strings.{emit_concat}
+
+export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+    match args {
+        .End -> err_emit("eprintln() expects 1 arg")
+        .Node(se, _) -> {
+            let r = emit_expr(ctx, env, se.node)
+            if r.had_error { return r }
+            let str_val = if vtype_is_str(r.ty) {
+                r.value
+            } else if vtype_eq(r.ty, ValueType.Float) {
+                let sp = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "ef2s")
+                to_i64(ctx, sp, "ef2s_i64")
+            } else {
+                // Convert to string first
+                let buf = cg_malloc(ctx, const_i64(ctx, 32))
+                let fmt = forge_llvm_build_global_string_ptr(ctx.builder, "%lld", ".eprint_fmt")
+                call_4(ctx, get_fn(ctx, "snprintf"), buf, const_i64(ctx, 32), fmt, r.value, "")
+                to_i64(ctx, buf, "eprint_str")
+            }
+            let str_ptr = to_ptr(ctx, str_val, "eprint_arg")
+            let eprint_fn = get_fn(ctx, "forge_eprintln")
+            let arr = forge_llvm_value_array_new(1)
+            forge_llvm_value_array_set(arr, 0, str_ptr)
+            let void_type = forge_llvm_void_type(ctx.lc)
+            let pa = forge_llvm_type_array_new(1)
+            forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
+            let fn_type = forge_llvm_function_type(void_type, pa, 1, 0)
+            forge_llvm_type_array_free(pa)
+            forge_llvm_build_call(ctx.builder, fn_type, eprint_fn, arr, 1, "")
+            forge_llvm_value_array_free(arr)
+            ok_emit(const_i64(ctx, 0))
+        }
+    }
+}
+
+export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+    // Special-case the most common shape: `println("literal")`. We
+    // destructure straight to the inner string text in a single
+    // match — going through any extra binding clobbers the payload
+    // (host miscompilation, see TECH_DEBT.md #11).
+    let str_i64 = match args {
+        .Node(se, _) -> {
+            match se.node {
+                .String(text) -> {
+                    let inner = strip_quotes(text)
+                    let str_ptr = forge_llvm_build_global_string_ptr(ctx.builder, inner, ".str")
+                    to_i64(ctx, str_ptr, "str_i64")
+                }
+                _ -> {
+                    let r = emit_expr(ctx, env, se.node)
+                    if r.had_error {
+                        return r
+                    }
+                    if vtype_eq(r.ty, ValueType.Float) {
+                        let sp = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "f2s")
+                        to_i64(ctx, sp, "f2s_i64")
+                    } else {
+                        r.value
+                    }
+                }
+            }
+        }
+        .End -> {
+            return err_emit("println expects 1 argument")
+        }
+    }
+    let str_ptr2 = to_ptr(ctx, str_i64, "str_ptr")
+    call_1(ctx, get_fn(ctx, "puts"), str_ptr2, "")
+    ok_emit(const_i64(ctx, 0))
+}
+
