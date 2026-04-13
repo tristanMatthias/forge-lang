@@ -548,13 +548,9 @@ impl Parser {
             self.advance()
             let rhs = self.parse_or()?
             // Desugar: `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`
-            match rhs {
-                .Call(callee, args) -> {
-                    expr = Expr.Call(callee, ExprList.Node(sexpr(expr, self.current_line, self.current_column), args))
-                }
-                _ -> {
-                    expr = Expr.Call(rhs, ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End))
-                }
+            expr = match rhs {
+                .Call(callee, args) -> Expr.Call(callee, ExprList.Node(sexpr(expr, self.current_line, self.current_column), args))
+                _ -> Expr.Call(rhs, ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End))
             }
         }
 
