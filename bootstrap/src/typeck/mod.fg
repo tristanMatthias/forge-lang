@@ -10,6 +10,8 @@ use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, d
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
 use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts}
+use features.list_lit.typeck.{check_list_method}
+use features.map_lit.typeck.{check_map_method}
 
 // ── Type environment ──
 
@@ -664,31 +666,15 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
         if method == "char_code" { return tc_er(checked_args, ValueType.Int) }
     }
 
-    // List methods
+    // List methods — dispatched to features/list_lit/typeck.fg
     let is_list = match o.ty { .List(_) -> true, _ -> false }
     if is_list {
-        let elem = vtype_list_elem(o.ty)
-        if method == "length" { return tc_er(checked_args, ValueType.Int) }
-        if method == "push" { return tc_er(checked_args, ValueType.Void) }
-        if method == "pop" { return tc_er(checked_args, elem) }
-        if method == "get" { return tc_er(checked_args, elem) }
-        if method == "map" {
-            // Infer return type from the lambda argument
-            let map_ret = tc_infer_lambda_ret(checked_args, args, elem)
-            return tc_er(checked_args, ValueType.List(map_ret))
-        }
-        if method == "filter" { return tc_er(checked_args, o.ty) }
-        if method == "reduce" { return tc_er(checked_args, ValueType.Int) }
-        if method == "foreach" { return tc_er(checked_args, ValueType.Void) }
+        return check_list_method(checked_args, vtype_list_elem(o.ty), method, args)
     }
 
-    // Map methods
+    // Map methods — dispatched to features/map_lit/typeck.fg
     if vtype_eq(o.ty, ValueType.Map) {
-        if method == "get" { return tc_er(checked_args, ValueType.Str) }
-        if method == "has" { return tc_er(checked_args, ValueType.Bool) }
-        if method == "set" { return tc_er(checked_args, ValueType.Void) }
-        if method == "keys" { return tc_er(checked_args, ValueType.List(ValueType.Str)) }
-        if method == "length" { return tc_er(checked_args, ValueType.Int) }
+        return check_map_method(checked_args, method)
     }
 
     // Struct method — look up in fn registry as TypeName__method
@@ -705,31 +691,6 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
 
     // Fallback
     tc_er(checked_args, ValueType.Int)
-}
-
-// ── Field access type inference ──
-
-// Infer the return type of a lambda argument (e.g. for .map)
-fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {
-    match args {
-        .End -> ValueType.Int
-        .Node(se, _) -> {
-            match se.node {
-                .Lambda(params, body) -> {
-                    // Bind lambda params with the element type
-                    let inner = tc_enter(tc)
-                    let with_params = match params {
-                        .End -> inner
-                        .Node(pname, _, _) -> tc_bind(inner, pname, elem_ty)
-                    }
-                    let r = check_expr(with_params, body)
-                    tc_exit(r.tc)
-                    r.ty
-                }
-                _ -> ValueType.Int
-            }
-        }
-    }
 }
 
 // ── Block expression type ──

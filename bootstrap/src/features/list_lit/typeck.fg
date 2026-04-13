@@ -1,7 +1,7 @@
-// WHY: type checking for list literals — infers element type from first element.
+// WHY: type checking for list literals and list method calls.
 
-use core.ast.{ExprList, ValueType}
-use typeck.{TC, ExprResult, tc_er, check_expr, check_expr_list}
+use core.ast.{Expr, ExprList, ParamList, ValueType, vtype_list_elem}
+use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list}
 
 export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
     match elements {
@@ -10,6 +10,42 @@ export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
             let r = check_expr(tc, se.node)
             let checked = check_expr_list(r.tc, elements)
             tc_er(checked, ValueType.List(r.ty))
+        }
+    }
+}
+
+export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprList) -> ExprResult {
+    if method == "length" { return tc_er(tc, ValueType.Int) }
+    if method == "push" { return tc_er(tc, ValueType.Void) }
+    if method == "pop" { return tc_er(tc, elem) }
+    if method == "get" { return tc_er(tc, elem) }
+    if method == "map" {
+        let map_ret = tc_infer_lambda_ret(tc, args, elem)
+        return tc_er(tc, ValueType.List(map_ret))
+    }
+    if method == "filter" { return tc_er(tc, ValueType.List(elem)) }
+    if method == "reduce" { return tc_er(tc, ValueType.Int) }
+    if method == "foreach" { return tc_er(tc, ValueType.Void) }
+    tc_er(tc, ValueType.Int)
+}
+
+fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {
+    match args {
+        .End -> ValueType.Int
+        .Node(se, _) -> {
+            match se.node {
+                .Lambda(params, body) -> {
+                    let inner = tc_enter(tc)
+                    let with_params = match params {
+                        .End -> inner
+                        .Node(pname, _, _) -> tc_bind(inner, pname, elem_ty)
+                    }
+                    let r = check_expr(with_params, body)
+                    tc_exit(r.tc)
+                    r.ty
+                }
+                _ -> ValueType.Int
+            }
         }
     }
 }

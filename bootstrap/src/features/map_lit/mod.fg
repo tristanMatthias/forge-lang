@@ -1,4 +1,5 @@
 mod codegen
+mod typeck
 use core.cg.{err_emit}
 use core.eval.{error_result}
 use core.registry.{feature_new, register}
