@@ -1,9 +1,6 @@
-// WHY: main LLVM IR emission — three-pass compilation:
-//   1. Declare all types, globals, and function signatures
-//   2. Emit function bodies
-//   3. Emit top-level statements into main()
-// Feature-specific codegen lives in features/*/codegen.fg and is
-// resolved globally by the host compiler's cross-file impl lookup.
+// WHY: LLVM IR emission — declaration passes, dispatch, and top-level setup.
+// Feature-specific codegen lives in features/*/codegen.fg.
+// Operators in codegen/operators.fg, strings in codegen/strings.fg, etc.
 
 mod types
 mod operators
