@@ -7,9 +7,9 @@ fn find(name: string) -> string? {
 fn greet_pair(a: string, b: string) -> int? {
     let name_a = find(a)?
     let name_b = find(b)?
-    let pair = (name_a, name_b)
-    println(pair.0)
-    println(pair.1)
+    let (pa, pb) = (name_a, name_b)
+    println(pa)
+    println(pb)
     1
 }
 
