@@ -97,11 +97,22 @@ impl Parser {
         MatchArmList.Node(pattern, null, sexpr(body, self.current_line, self.current_column), rest)
     }
 
+    // Parse a pattern that may be an OR of alternatives: `pat or pat or pat`.
+    // Only used in normal match arms — table rows use parse_pattern directly
+    // so that `|` column separators are not consumed as part of OR patterns.
+    fn parse_pattern_or(self) -> Pattern? {
+        let left = self.parse_pattern()?
+        if !self.check(Tk.KwOr) { return left }
+        self.advance()
+        let right = self.parse_pattern_or()?
+        Pattern.Or(left, right)
+    }
+
     fn parse_match_arm_list(self) -> MatchArmList? {
         if self.check(Tk.RightBrace) {
             return MatchArmList.End
         }
-        let pattern = self.parse_pattern()?
+        let pattern = self.parse_pattern_or()?
         // Optional guard: `pattern if cond ->`
         let guard: SExpr? = if self.check(Tk.KwIf) {
             self.advance()

@@ -106,14 +106,8 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             }
             ok_stmt(env)
         }
-        .TypeDecl(_, _) -> ok_stmt(env)
-        .EnumDecl(_, _) -> ok_stmt(env)
-        .Impl(_, _) -> ok_stmt(env)
-        .ExternFn(_, _, _) -> ok_stmt(env)
-        .NoOp -> ok_stmt(env)
-        .TraitDecl(_, _) -> ok_stmt(env)
-        .Module(_, _) -> ok_stmt(env)
-        .Use(_, _) -> ok_stmt(env)
+        .TypeDecl(_, _) or .EnumDecl(_, _) or .Impl(_, _) or .ExternFn(_, _, _)
+        or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) -> ok_stmt(env)
         .Annotated(_, inner) -> emit_stmt(ctx, env, inner)
         .Break -> {
             let frame = loops_top(ctx.loops)

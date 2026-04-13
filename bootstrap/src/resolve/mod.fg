@@ -245,17 +245,11 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             exit_resolve_scope(after_body)
         }
         .Return(value) -> resolve_expr(r, value)
-        .ReturnEmpty -> r
-        .TypeDecl(_, _) -> r
-        .EnumDecl(_, _) -> r
+        .ReturnEmpty or .NoOp or .Break or .Continue -> r
+        .TypeDecl(_, _) or .EnumDecl(_, _) or .TraitDecl(_, _) or .Use(_, _) -> r
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
-        .NoOp -> r
         .ExternFn(name, _, _) -> declare_function(r, name)
-        .Break -> r
-        .Continue -> r
-        .TraitDecl(_, _) -> r  // trait declarations are no-ops
         .Annotated(_, inner) -> resolve_stmt(r, inner)
-        .Use(_, _) -> r
         _ -> {
             let tag = forge_stmt_tag(stmt)
             let result = dispatch_stmt_resolve(r.features, tag, r, stmt)

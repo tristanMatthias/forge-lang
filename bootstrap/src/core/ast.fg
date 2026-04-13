@@ -67,6 +67,7 @@ export enum Pattern {
     LitBool(value: bool)
     LitFloat(value: string)
     NestedVariant(name: string, sub_patterns: PatternList)
+    Or(left: Pattern, right: Pattern)
 }
 
 // Arms of a match expression/statement, terminated by `End`.
@@ -703,6 +704,8 @@ export fn render_pattern(p: Pattern) -> string {
     match p {
         .Wildcard -> "_"
         .Variant(name, bindings) -> ".${name}${render_param_list(bindings)}"
+        .Or(left, right) -> "${render_pattern(left)} or ${render_pattern(right)}"
+        _ -> "?"
     }
 }
 

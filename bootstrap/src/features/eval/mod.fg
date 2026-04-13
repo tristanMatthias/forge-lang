@@ -410,20 +410,12 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         .ReturnEmpty -> {
             make_return(runtime, value_null())
         }
-        .TypeDecl(_, _) -> {
-            // Type declarations are erased at the eval layer — the
-            // tree-walk runtime is value-untyped, so a struct type
-            // has no runtime existence here. Codegen is the layer
-            // that cares.
-            ok_result(runtime, value_null())
-        }
-        .EnumDecl(_, _) -> ok_result(runtime, value_null())
-        .Impl(_, _) -> ok_result(runtime, value_null())
-        .NoOp -> ok_result(runtime, value_null())
-        .ExternFn(_, _, _) -> ok_result(runtime, value_null())
+        // These declarations are erased at the eval layer — the tree-walk runtime
+        // is value-untyped, so types/enums/traits/impls have no runtime existence.
+        .TypeDecl(_, _) or .EnumDecl(_, _) or .Impl(_, _) or .NoOp
+        or .ExternFn(_, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
-        .TraitDecl(_, _) -> ok_result(runtime, value_null())
         .Annotated(_, inner) -> execute_stmt(runtime, inner)
         _ -> {
             let tag = forge_stmt_tag(stmt)

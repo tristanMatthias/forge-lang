@@ -147,17 +147,28 @@ fn pattern_variant_name(pattern: Pattern) -> string {
 }
 
 fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: VariantList, arm_bb: ptr, next_bb: ptr) -> ptr {
-    let vname = pattern_variant_name(pattern)
-    if vname == "" {
-        // Wildcard or literal: always take arm
-        return forge_llvm_build_br(ctx.builder, arm_bb)
+    match pattern {
+        .Or(left, right) -> {
+            // Try left alternative; if it fails, try right.
+            let mid_bb = new_bb(ctx, "or_mid")
+            emit_pattern_tag_branch(ctx, left, tag_val, variants, arm_bb, mid_bb)
+            forge_llvm_position_at_end(ctx.builder, mid_bb)
+            emit_pattern_tag_branch(ctx, right, tag_val, variants, arm_bb, next_bb)
+        }
+        _ -> {
+            let vname = pattern_variant_name(pattern)
+            if vname == "" {
+                // Wildcard or literal: always take arm
+                return forge_llvm_build_br(ctx.builder, arm_bb)
+            }
+            let v = variant_lookup(variants, vname)
+            if !v.found {
+                return forge_llvm_build_br(ctx.builder, next_bb)
+            }
+            let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, const_i64(ctx, v.tag), "tag_eq")
+            forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
+        }
     }
-    let v = variant_lookup(variants, vname)
-    if !v.found {
-        return forge_llvm_build_br(ctx.builder, next_bb)
-    }
-    let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, const_i64(ctx, v.tag), "tag_eq")
-    forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
 }
 
 // Emit runtime checks for inner variant tags in nested patterns.
@@ -256,6 +267,7 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
             if !v.found { return env }
             bind_nested_patterns(ctx, env, st_ty, subj_ptr, sub_pats, v.fields, 0)
         }
+        .Or(_, _) -> env  // OR patterns don't bind variables
         _ -> env  // Literal patterns don't bind variables
     }
 }
@@ -377,6 +389,12 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
             // OEQ = 1 (ordered equal)
             forge_llvm_build_fcmp(ctx.builder, 1, subj_f64, lit_f64, "flit_eq")
         }
+        .Or(left, right) -> {
+            // OR two i1 comparison results — both sub-patterns are literals
+            let l = emit_literal_cmp(ctx, subj, left)
+            let r = emit_literal_cmp(ctx, subj, right)
+            forge_llvm_build_or(ctx.builder, l, r, "or_cmp")
+        }
         _ -> {
             // Wildcard / Variant — should not reach here
             const_i64(ctx, 1)
@@ -390,6 +408,7 @@ fn is_literal_pattern(pattern: Pattern) -> bool {
         .LitInt(_) -> true
         .LitBool(_) -> true
         .LitFloat(_) -> true
+        .Or(left, _) -> is_literal_pattern(left)
         _ -> false
     }
 }

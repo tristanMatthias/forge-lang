@@ -32,14 +32,24 @@ fn arms_matched_variants(arms: MatchArmList) -> string {
         .End -> ""
         .Node(pattern, _, _, next) -> {
             let rest = arms_matched_variants(next)
-            let vname = match pattern {
-                .Variant(name, _) -> name
-                .NestedVariant(name, _) -> name
-                _ -> ""
-            }
-            if vname == "" { return rest }
-            if rest == "" { vname } else { "${rest}|${vname}" }
+            let vnames = pattern_variant_names(pattern)
+            if vnames == "" { return rest }
+            if rest == "" { vnames } else { "${rest}|${vnames}" }
         }
+    }
+}
+
+// Collect all variant names covered by a pattern (handles Or chains).
+fn pattern_variant_names(pattern: Pattern) -> string {
+    match pattern {
+        .Variant(name, _) -> name
+        .NestedVariant(name, _) -> name
+        .Or(left, right) -> {
+            let l = pattern_variant_names(left)
+            let r = pattern_variant_names(right)
+            if l == "" { r } else if r == "" { l } else { "${l}|${r}" }
+        }
+        _ -> ""
     }
 }
 

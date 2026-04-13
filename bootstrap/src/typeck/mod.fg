@@ -396,8 +396,7 @@ fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, body: StmtList) ->
 fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
     let body_ty = tc_body_tail_type(tc, stmts)
     match body_ty {
-        .Void -> tc   // last stmt is not an expression — nothing to check
-        .Int -> tc    // default/fallback type — not reliable enough to flag
+        .Void or .Int -> tc   // Void: not an expr; Int: fallback type, unreliable
         _ -> {
             if !vtype_eq(declared, body_ty) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but body produces `${vtype_display(body_ty)}`"

@@ -1,0 +1,45 @@
+// String literal patterns in match expressions and statements.
+
+fn classify(s: string) -> string {
+    match s {
+        "hello" -> "greeting"
+        "bye"   -> "farewell"
+        "yes"   -> "affirmative"
+        "no"    -> "negative"
+        _       -> "unknown"
+    }
+}
+
+println(classify("hello"))
+println(classify("bye"))
+println(classify("yes"))
+println(classify("no"))
+println(classify("maybe"))
+
+// String match as a statement
+fn announce(cmd: string) {
+    match cmd {
+        "start" -> println("starting...")
+        "stop"  -> println("stopping...")
+        _       -> println("unknown command")
+    }
+}
+
+announce("start")
+announce("stop")
+announce("pause")
+
+// String match with guard
+fn grade(s: string) -> string {
+    match s {
+        "A" -> "excellent"
+        "B" -> "good"
+        "C" -> "average"
+        _   -> "other"
+    }
+}
+
+println(grade("A"))
+println(grade("B"))
+println(grade("C"))
+println(grade("D"))

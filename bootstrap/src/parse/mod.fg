@@ -158,42 +158,44 @@ fn parse_template_expr(source: string) -> Expr? {
 }
 
 export fn p_keyword_kind(text: string) -> Tk {
-    if text == "and" { return Tk.KwAnd }
-    if text == "const" { return Tk.KwConst }
-    if text == "else" { return Tk.KwElse }
-    if text == "false" { return Tk.KwFalse }
-    if text == "fn" { return Tk.KwFn }
-    if text == "if" { return Tk.KwIf }
-    if text == "let" { return Tk.KwLet }
-    if text == "mut" { return Tk.KwMut }
-    if text == "not" { return Tk.KwNot }
-    if text == "null" { return Tk.KwNull }
-    if text == "or" { return Tk.KwOr }
-    if text == "return" { return Tk.KwReturn }
-    if text == "true" { return Tk.KwTrue }
-    if text == "for" { return Tk.KwFor }
-    if text == "in" { return Tk.KwIn }
-    if text == "while" { return Tk.KwWhile }
-    if text == "type" { return Tk.KwType }
-    if text == "enum" { return Tk.KwEnum }
-    if text == "match" { return Tk.KwMatch }
-    if text == "export" { return Tk.KwExport }
-    if text == "use" { return Tk.KwUse }
-    if text == "mod" { return Tk.KwMod }
-    if text == "impl" { return Tk.KwImpl }
-    if text == "extern" { return Tk.KwExtern }
-    if text == "break" { return Tk.KwBreak }
-    if text == "continue" { return Tk.KwContinue }
-    if text == "defer" { return Tk.KwDefer }
-    if text == "trait" { return Tk.KwTrait }
-    if text == "with" { return Tk.KwWith }
-    if text == "is" { return Tk.KwIs }
-    if text == "spec" { return Tk.KwSpec }
-    if text == "given" { return Tk.KwGiven }
-    if text == "then" { return Tk.KwThen }
-    if text == "select" { return Tk.KwSelect }
-    if text == "parallel" { return Tk.KwParallel }
-    Tk.Identifier
+    match text {
+        "and"      -> Tk.KwAnd
+        "const"    -> Tk.KwConst
+        "else"     -> Tk.KwElse
+        "false"    -> Tk.KwFalse
+        "fn"       -> Tk.KwFn
+        "if"       -> Tk.KwIf
+        "let"      -> Tk.KwLet
+        "mut"      -> Tk.KwMut
+        "not"      -> Tk.KwNot
+        "null"     -> Tk.KwNull
+        "or"       -> Tk.KwOr
+        "return"   -> Tk.KwReturn
+        "true"     -> Tk.KwTrue
+        "for"      -> Tk.KwFor
+        "in"       -> Tk.KwIn
+        "while"    -> Tk.KwWhile
+        "type"     -> Tk.KwType
+        "enum"     -> Tk.KwEnum
+        "match"    -> Tk.KwMatch
+        "export"   -> Tk.KwExport
+        "use"      -> Tk.KwUse
+        "mod"      -> Tk.KwMod
+        "impl"     -> Tk.KwImpl
+        "extern"   -> Tk.KwExtern
+        "break"    -> Tk.KwBreak
+        "continue" -> Tk.KwContinue
+        "defer"    -> Tk.KwDefer
+        "trait"    -> Tk.KwTrait
+        "with"     -> Tk.KwWith
+        "is"       -> Tk.KwIs
+        "spec"     -> Tk.KwSpec
+        "given"    -> Tk.KwGiven
+        "then"     -> Tk.KwThen
+        "select"   -> Tk.KwSelect
+        "parallel" -> Tk.KwParallel
+        _          -> Tk.Identifier
+    }
 }
 
 export fn parser_new(source: string) -> Parser {
