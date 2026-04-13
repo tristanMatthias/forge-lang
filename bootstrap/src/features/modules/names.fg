@@ -506,7 +506,11 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
         }
         if from_sibling != "" { return Expr.QualifiedIdent(from_sibling) }
     }
-    // 6. Global index — flat scan of all module items (O(m) not O(n*m))
+    // 6. Global index fallback — TEMPORARY: resolves cross-module names
+    // that lack explicit `use` imports. 187 missing imports identified
+    // across 50 modules. Remove once all files have proper imports.
+    // Run with eprintln trace to find remaining hits:
+    //   eprintln("[GLOBAL] `" + name + "` -> `" + from_global + "`")
     let from_global = item_lookup(ctx.global_index, name)
     if from_global != "" { return Expr.QualifiedIdent(from_global) }
     original

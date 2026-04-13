@@ -98031,7 +98031,7 @@ ifcont67:                                         ; preds = %else66, %ifcont100
   %obj_ptr107 = inttoptr i64 %ctx106 to ptr
   %null_fld_chk108 = icmp eq i64 %ctx106, 0
   %null_fld_ext109 = zext i1 %null_fld_chk108 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10451, i64 12, ptr @sty_name.10452, i64 7, i64 %null_fld_ext109, ptr @src_file.10453, i64 11, i64 543)
+  call void @forge_null_deref_trap(ptr @fld_name.10451, i64 12, ptr @sty_name.10452, i64 7, i64 %null_fld_ext109, ptr @src_file.10453, i64 11, i64 547)
   %fld_ptr110 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr107, i32 0, i32 4
   %global_index = load i64, ptr %fld_ptr110, align 8
   %name111 = load i64, ptr %name, align 8
@@ -98170,7 +98170,7 @@ march_arm3:                                       ; preds = %march_next
   %obj_ptr = inttoptr i64 %se12 to ptr
   %null_fld_chk = icmp eq i64 %se12, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10455, i64 4, ptr @sty_name.10456, i64 5, i64 %null_fld_ext, ptr @src_file.10457, i64 11, i64 549)
+  call void @forge_null_deref_trap(ptr @fld_name.10455, i64 4, ptr @sty_name.10456, i64 5, i64 %null_fld_ext, ptr @src_file.10457, i64 11, i64 553)
   %fld_ptr = getelementptr inbounds nuw %SExpr, ptr %obj_ptr, i32 0, i32 0
   %node = load i64, ptr %fld_ptr, align 8
   %calltmp = call i64 @"features::modules::names::rewrite_expr"(i64 %ctx11, i64 %node)
@@ -98178,14 +98178,14 @@ march_arm3:                                       ; preds = %march_next
   %obj_ptr14 = inttoptr i64 %se13 to ptr
   %null_fld_chk15 = icmp eq i64 %se13, 0
   %null_fld_ext16 = zext i1 %null_fld_chk15 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10458, i64 4, ptr @sty_name.10459, i64 5, i64 %null_fld_ext16, ptr @src_file.10460, i64 11, i64 549)
+  call void @forge_null_deref_trap(ptr @fld_name.10458, i64 4, ptr @sty_name.10459, i64 5, i64 %null_fld_ext16, ptr @src_file.10460, i64 11, i64 553)
   %fld_ptr17 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr14, i32 0, i32 1
   %line = load i64, ptr %fld_ptr17, align 8
   %se18 = load i64, ptr %se6, align 8
   %obj_ptr19 = inttoptr i64 %se18 to ptr
   %null_fld_chk20 = icmp eq i64 %se18, 0
   %null_fld_ext21 = zext i1 %null_fld_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10461, i64 3, ptr @sty_name.10462, i64 5, i64 %null_fld_ext21, ptr @src_file.10463, i64 11, i64 549)
+  call void @forge_null_deref_trap(ptr @fld_name.10461, i64 3, ptr @sty_name.10462, i64 5, i64 %null_fld_ext21, ptr @src_file.10463, i64 11, i64 553)
   %fld_ptr22 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr19, i32 0, i32 2
   %col = load i64, ptr %fld_ptr22, align 8
   %calltmp23 = call i64 @"core::ast::sexpr"(i64 %calltmp, i64 %line, i64 %col)
@@ -98202,7 +98202,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.10464, i64 %tag_ext, ptr @mu_file.10465, i64 549)
+  call void @forge_match_unreachable(ptr @.match_fn.10464, i64 %tag_ext, ptr @mu_file.10465, i64 553)
   unreachable
 }
 
@@ -98261,7 +98261,7 @@ march_arm3:                                       ; preds = %march_next
   %obj_ptr = inttoptr i64 %se15 to ptr
   %null_fld_chk = icmp eq i64 %se15, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10466, i64 4, ptr @sty_name.10467, i64 5, i64 %null_fld_ext, ptr @src_file.10468, i64 11, i64 556)
+  call void @forge_null_deref_trap(ptr @fld_name.10466, i64 4, ptr @sty_name.10467, i64 5, i64 %null_fld_ext, ptr @src_file.10468, i64 11, i64 560)
   %fld_ptr = getelementptr inbounds nuw %SExpr, ptr %obj_ptr, i32 0, i32 0
   %node = load i64, ptr %fld_ptr, align 8
   %calltmp = call i64 @"features::modules::names::rewrite_expr"(i64 %ctx14, i64 %node)
@@ -98269,14 +98269,14 @@ march_arm3:                                       ; preds = %march_next
   %obj_ptr17 = inttoptr i64 %se16 to ptr
   %null_fld_chk18 = icmp eq i64 %se16, 0
   %null_fld_ext19 = zext i1 %null_fld_chk18 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10469, i64 4, ptr @sty_name.10470, i64 5, i64 %null_fld_ext19, ptr @src_file.10471, i64 11, i64 556)
+  call void @forge_null_deref_trap(ptr @fld_name.10469, i64 4, ptr @sty_name.10470, i64 5, i64 %null_fld_ext19, ptr @src_file.10471, i64 11, i64 560)
   %fld_ptr20 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr17, i32 0, i32 1
   %line = load i64, ptr %fld_ptr20, align 8
   %se21 = load i64, ptr %se8, align 8
   %obj_ptr22 = inttoptr i64 %se21 to ptr
   %null_fld_chk23 = icmp eq i64 %se21, 0
   %null_fld_ext24 = zext i1 %null_fld_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10472, i64 3, ptr @sty_name.10473, i64 5, i64 %null_fld_ext24, ptr @src_file.10474, i64 11, i64 556)
+  call void @forge_null_deref_trap(ptr @fld_name.10472, i64 3, ptr @sty_name.10473, i64 5, i64 %null_fld_ext24, ptr @src_file.10474, i64 11, i64 560)
   %fld_ptr25 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr22, i32 0, i32 2
   %col = load i64, ptr %fld_ptr25, align 8
   %calltmp26 = call i64 @"core::ast::sexpr"(i64 %calltmp, i64 %line, i64 %col)
@@ -98293,7 +98293,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.10475, i64 %tag_ext, ptr @mu_file.10476, i64 556)
+  call void @forge_match_unreachable(ptr @.match_fn.10475, i64 %tag_ext, ptr @mu_file.10476, i64 560)
   unreachable
 }
 
@@ -98361,7 +98361,7 @@ march_arm3:                                       ; preds = %march_next
 
 march_next4:                                      ; preds = %march_next
   %tag_ext = sext i8 %tag to i64
-  call void @forge_match_unreachable(ptr @.match_fn.10495, i64 %tag_ext, ptr @mu_file.10496, i64 563)
+  call void @forge_match_unreachable(ptr @.match_fn.10495, i64 %tag_ext, ptr @mu_file.10496, i64 567)
   unreachable
 
 ife_then:                                         ; preds = %march_arm3
@@ -98370,7 +98370,7 @@ ife_then:                                         ; preds = %march_arm3
   %obj_ptr = inttoptr i64 %guard17 to ptr
   %null_fld_chk = icmp eq i64 %guard17, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10477, i64 4, ptr @sty_name.10478, i64 5, i64 %null_fld_ext, ptr @src_file.10479, i64 11, i64 568)
+  call void @forge_null_deref_trap(ptr @fld_name.10477, i64 4, ptr @sty_name.10478, i64 5, i64 %null_fld_ext, ptr @src_file.10479, i64 11, i64 572)
   %fld_ptr = getelementptr inbounds nuw %SExpr, ptr %obj_ptr, i32 0, i32 0
   %node = load i64, ptr %fld_ptr, align 8
   %calltmp18 = call i64 @"features::modules::names::rewrite_expr"(i64 %arm_ctx16, i64 %node)
@@ -98378,14 +98378,14 @@ ife_then:                                         ; preds = %march_arm3
   %obj_ptr20 = inttoptr i64 %guard19 to ptr
   %null_fld_chk21 = icmp eq i64 %guard19, 0
   %null_fld_ext22 = zext i1 %null_fld_chk21 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10480, i64 4, ptr @sty_name.10481, i64 5, i64 %null_fld_ext22, ptr @src_file.10482, i64 11, i64 568)
+  call void @forge_null_deref_trap(ptr @fld_name.10480, i64 4, ptr @sty_name.10481, i64 5, i64 %null_fld_ext22, ptr @src_file.10482, i64 11, i64 572)
   %fld_ptr23 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr20, i32 0, i32 1
   %line = load i64, ptr %fld_ptr23, align 8
   %guard24 = load i64, ptr %guard8, align 8
   %obj_ptr25 = inttoptr i64 %guard24 to ptr
   %null_fld_chk26 = icmp eq i64 %guard24, 0
   %null_fld_ext27 = zext i1 %null_fld_chk26 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10483, i64 3, ptr @sty_name.10484, i64 5, i64 %null_fld_ext27, ptr @src_file.10485, i64 11, i64 568)
+  call void @forge_null_deref_trap(ptr @fld_name.10483, i64 3, ptr @sty_name.10484, i64 5, i64 %null_fld_ext27, ptr @src_file.10485, i64 11, i64 572)
   %fld_ptr28 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr25, i32 0, i32 2
   %col = load i64, ptr %fld_ptr28, align 8
   %calltmp29 = call i64 @"core::ast::sexpr"(i64 %calltmp18, i64 %line, i64 %col)
@@ -98413,7 +98413,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %obj_ptr37 = inttoptr i64 %body36 to ptr
   %null_fld_chk38 = icmp eq i64 %body36, 0
   %null_fld_ext39 = zext i1 %null_fld_chk38 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10486, i64 4, ptr @sty_name.10487, i64 5, i64 %null_fld_ext39, ptr @src_file.10488, i64 11, i64 569)
+  call void @forge_null_deref_trap(ptr @fld_name.10486, i64 4, ptr @sty_name.10487, i64 5, i64 %null_fld_ext39, ptr @src_file.10488, i64 11, i64 573)
   %fld_ptr40 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr37, i32 0, i32 0
   %node41 = load i64, ptr %fld_ptr40, align 8
   %calltmp42 = call i64 @"features::modules::names::rewrite_expr"(i64 %arm_ctx35, i64 %node41)
@@ -98421,14 +98421,14 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %obj_ptr44 = inttoptr i64 %body43 to ptr
   %null_fld_chk45 = icmp eq i64 %body43, 0
   %null_fld_ext46 = zext i1 %null_fld_chk45 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10489, i64 4, ptr @sty_name.10490, i64 5, i64 %null_fld_ext46, ptr @src_file.10491, i64 11, i64 569)
+  call void @forge_null_deref_trap(ptr @fld_name.10489, i64 4, ptr @sty_name.10490, i64 5, i64 %null_fld_ext46, ptr @src_file.10491, i64 11, i64 573)
   %fld_ptr47 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr44, i32 0, i32 1
   %line48 = load i64, ptr %fld_ptr47, align 8
   %body49 = load i64, ptr %body10, align 8
   %obj_ptr50 = inttoptr i64 %body49 to ptr
   %null_fld_chk51 = icmp eq i64 %body49, 0
   %null_fld_ext52 = zext i1 %null_fld_chk51 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10492, i64 3, ptr @sty_name.10493, i64 5, i64 %null_fld_ext52, ptr @src_file.10494, i64 11, i64 569)
+  call void @forge_null_deref_trap(ptr @fld_name.10492, i64 3, ptr @sty_name.10493, i64 5, i64 %null_fld_ext52, ptr @src_file.10494, i64 11, i64 573)
   %fld_ptr53 = getelementptr inbounds nuw %SExpr, ptr %obj_ptr50, i32 0, i32 2
   %col54 = load i64, ptr %fld_ptr53, align 8
   %calltmp55 = call i64 @"core::ast::sexpr"(i64 %calltmp42, i64 %line48, i64 %col54)

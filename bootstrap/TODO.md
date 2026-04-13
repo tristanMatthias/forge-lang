@@ -282,47 +282,35 @@ Remove when Application-level ref-counting is implemented.
 Every compile leaks all malloc'd data. Acceptable because the compiler is one-shot and the OS
 reclaims. Blocked on real memory management (above).
 
-### Enforce module visibility — bare names resolve globally (BROKEN)
+### Enforce module visibility — remove global name fallback
 **type:** debt
 **priority:** high
 **source:** architecture review (April 12, 2026)
 
-**The problem:** Any function can call any other function from anywhere without an import.
-The name resolution pass (`features/modules/names.fg`) qualifies names for LLVM symbols,
-but the compiler's internal resolution falls back to a global scan when a bare name isn't
-found locally. This means `use` imports are cosmetic — removing them changes nothing.
+**The problem:** `rewrite_ident` in `features/modules/names.fg` has a step 6 "global index
+fallback" that resolves ANY bare name by scanning ALL modules. Steps 1-5 (local, builtin,
+uppercase, use-alias, sibling) are correct and handle most names. Step 6 is the escape hatch.
 
-This is dangerous because:
-- No encapsulation: internal helpers are callable from anywhere
-- No dependency tracking: can't know what depends on what
-- Silent coupling: moving a function doesn't break callers (looks safe, isn't)
-- Refactoring is blind: no way to find all callers via imports
-- Name collisions are silent until they shadow the wrong thing
-
-**The fix:** The resolver should reject bare names that aren't:
-1. Defined in the current file/module
-2. Explicitly imported via `use`
-3. A builtin (`println`, `string`, etc.)
-
-If a bare name isn't in one of those three categories, it should be a compile error:
+**Measured impact:** 187 missing `use` imports across 50 modules. The full list of needed
+imports was generated and saved — run the trace to regenerate:
+```forge
+// In rewrite_ident step 6, add:
+eprintln("[GLOBAL] `" + name + "` -> `" + from_global + "` (module: " + ctx.current_module + ")")
 ```
-error: `check_match_arms` is not defined in this scope
-  help: add `use features.match_expr.typeck.{check_match_arms}`
-```
+Then `./build/bs2 compile src/main.fg 2>&1 | grep "[GLOBAL]"` shows every hit.
 
-This is how Rust, Go, Python, and every modern language works. The global fallback in
-`rewrite_ident` (features/modules/names.fg line ~510, the `item_lookup(ctx.global_index, name)`
-path) needs to be removed or gated behind a flag.
+**The fix:** Add 187 `use` statements to 50 files, then delete step 6. Purely mechanical.
+The architecture is sound — the module tree, use-alias resolution, and sibling lookup all
+work correctly. Only the global fallback needs removal.
 
-**Scope:** Large. Every file that relies on implicit global resolution will need explicit
-`use` imports added. The compiler itself has ~700 qualified functions — many call sites
-rely on the global fallback. This is a multi-session refactor.
-
-**Incremental approach:**
-1. Add a `--strict-imports` flag that enables the check
-2. Fix one module at a time, adding explicit imports
-3. Once all modules pass with `--strict-imports`, make it the default
-4. Remove the global fallback
+**Largest offenders** (by missing import count):
+- `codegen` (89) — uses `forge_llvm_*` externs + cross-feature helpers
+- `features::closures::codegen` (25) — uses core cg helpers
+- `features` (24) — calls `init_*` for each feature
+- `features::if_stmt` (20) — uses core resolver/typeck/eval helpers
+- `features::select_stmt::codegen` (19)
+- `features::for_stmt` (18)
+- `features::struct_decl` (17)
 
 ### Per-module compilation
 **type:** debt
