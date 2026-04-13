@@ -545,7 +545,7 @@ fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg 
                     // Payload is heap-allocated per-variant. Nullary variants have null payload.
                     // This fixed layout means adding fields to a variant never changes the enum's struct size.
                     let field_arr = forge_llvm_type_array_new(2)
-                    forge_llvm_type_array_set(field_arr, 0, forge_llvm_int8_type(ctx))
+                    forge_llvm_type_array_set(field_arr, 0, i64t)
                     forge_llvm_type_array_set(field_arr, 1, forge_llvm_pointer_type(ctx))
                     let st = forge_llvm_struct_create_named(ctx, name)
                     forge_llvm_struct_set_body(st, field_arr, 2, 0)

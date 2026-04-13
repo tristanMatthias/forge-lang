@@ -1757,3 +1757,13 @@ void forge_div_by_zero_trap(int64_t is_zero, const char *file, int64_t file_len,
     }
     abort();
 }
+
+// djb2 hash of a string → i64. Used for stable enum variant tags.
+int64_t forge_variant_hash(const char* name) {
+    uint64_t hash = 5381;
+    while (*name) {
+        hash = hash * 33 + (unsigned char)*name;
+        name++;
+    }
+    return (int64_t)hash;
+}

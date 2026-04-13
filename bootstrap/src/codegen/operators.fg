@@ -126,11 +126,10 @@ export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: i
     let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
     let lhs_ptr = to_ptr(ctx, lhs, "enum_l")
     let rhs_ptr = to_ptr(ctx, rhs, "enum_r")
-    let i8_ty = forge_llvm_int8_type(ctx.lc)
     let l_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, lhs_ptr, 0, "ltag_ptr")
     let r_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, rhs_ptr, 0, "rtag_ptr")
-    let l_tag = forge_llvm_build_load(ctx.builder, i8_ty, l_gep, "ltag")
-    let r_tag = forge_llvm_build_load(ctx.builder, i8_ty, r_gep, "rtag")
+    let l_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, l_gep, "ltag")
+    let r_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, r_gep, "rtag")
     let cmp = forge_llvm_build_icmp(ctx.builder, pred, l_tag, r_tag, "tag_cmp")
     ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "tag_cmp_ext"))
 }

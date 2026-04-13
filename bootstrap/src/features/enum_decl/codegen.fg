@@ -33,7 +33,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     // Allocate outer struct (always 16 bytes)
     let buf = cg_malloc(ctx, const_i64(ctx, 16))
     let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, buf, 0, "tag_ptr")
-    forge_llvm_build_store(ctx.builder, const_i8(ctx, v.tag), tag_gep)
+    forge_llvm_build_store(ctx.builder, const_i64(ctx, v.tag), tag_gep)
 
     // Allocate payload if variant has fields
     let num_fields = field_list_length(v.fields)

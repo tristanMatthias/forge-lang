@@ -21,7 +21,7 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
     let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
     let subj_ptr = to_ptr(ctx, r.value, "match_subj")
     let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, 0, "tag_ptr")
-    let tag_val = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), tag_gep, "tag")
+    let tag_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, tag_gep, "tag")
     let result_slot = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, "match_result")
     forge_llvm_build_store(ctx.builder, const_i64(ctx, 0), result_slot)
     let merge_bb = new_bb(ctx, "match_end")
@@ -37,7 +37,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
-                let tag_i64 = forge_llvm_build_sext(ctx.builder, tag_val, ctx.i64_type, "tag_ext")
+                let tag_i64 = tag_val
                 let mu_file = forge_llvm_build_global_string_ptr(ctx.builder, ctx.source_file, "mu_file")
                 let mu_line = const_i64(ctx, ctx.source_line)
                 call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
@@ -94,7 +94,7 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
     let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
     let subj_ptr = to_ptr(ctx, r.value, "match_subj")
     let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, 0, "tag_ptr")
-    let tag_val = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), tag_gep, "tag")
+    let tag_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, tag_gep, "tag")
     let merge_bb = new_bb(ctx, "match_end")
     let arm_result = emit_match_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)
     if arm_result.had_error { return arm_result }
@@ -107,7 +107,7 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
         .End -> {
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 let fn_name_str = forge_llvm_build_global_string_ptr(ctx.builder, ctx.current_fn_name, ".match_fn")
-                let tag_i64 = forge_llvm_build_sext(ctx.builder, tag_val, ctx.i64_type, "tag_ext")
+                let tag_i64 = tag_val
                 let mu_file = forge_llvm_build_global_string_ptr(ctx.builder, ctx.source_file, "mu_file")
                 let mu_line = const_i64(ctx, ctx.source_line)
                 call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
@@ -162,7 +162,7 @@ fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: V
     if !v.found {
         return forge_llvm_build_br(ctx.builder, next_bb)
     }
-    let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, const_i8(ctx, v.tag), "tag_eq")
+    let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, const_i64(ctx, v.tag), "tag_eq")
     forge_llvm_build_cond_br(ctx.builder, cmp, arm_bb, next_bb)
 }
 
@@ -197,8 +197,8 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                                 let inner_ptr = to_ptr(ctx, inner_val, "inner_enum_ptr")
                                 let inner_struct_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
                                 let inner_tag_gep = forge_llvm_build_struct_gep2(ctx.builder, inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
-                                let inner_tag = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), inner_tag_gep, "inner_tag")
-                                let want = const_i8(ctx, iv.tag)
+                                let inner_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, inner_tag_gep, "inner_tag")
+                                let want = const_i64(ctx, iv.tag)
                                 let cmp = forge_llvm_build_icmp(ctx.builder, 32, inner_tag, want, "inner_tag_eq")
                                 let pass_bb = new_bb(ctx, "inner_pass")
                                 forge_llvm_build_cond_br(ctx.builder, cmp, pass_bb, next_bb)
@@ -221,8 +221,8 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                                 let inner_ptr = to_ptr(ctx, inner_val, "inner_enum_ptr")
                                 let inner_struct_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
                                 let inner_tag_gep = forge_llvm_build_struct_gep2(ctx.builder, inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
-                                let inner_tag = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), inner_tag_gep, "inner_tag")
-                                let want = const_i8(ctx, iv.tag)
+                                let inner_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, inner_tag_gep, "inner_tag")
+                                let want = const_i64(ctx, iv.tag)
                                 let cmp = forge_llvm_build_icmp(ctx.builder, 32, inner_tag, want, "inner_tag_eq")
                                 let pass_bb = new_bb(ctx, "inner_pass")
                                 forge_llvm_build_cond_br(ctx.builder, cmp, pass_bb, next_bb)
