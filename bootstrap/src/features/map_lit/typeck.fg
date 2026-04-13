@@ -4,10 +4,12 @@ use core.ast.{ExprList, ValueType}
 use typeck.{TC, ExprResult, tc_er}
 
 export fn check_map_method(tc: TC, method: string) -> ExprResult {
-    if method == "get" { return tc_er(tc, .Str) }
-    if method == "has" { return tc_er(tc, .Bool) }
-    if method == "set" { return tc_er(tc, .Void) }
-    if method == "keys" { return tc_er(tc, .List(.Str)) }
-    if method == "length" { return tc_er(tc, .Int) }
-    tc_er(tc, .Int)
+    match method {
+        "get"              -> tc_er(tc, .Str)
+        "has"              -> tc_er(tc, .Bool)
+        "set"              -> tc_er(tc, .Void)
+        "keys"             -> tc_er(tc, .List(.Str))
+        "length" or "len"  -> tc_er(tc, .Int)
+        _                  -> tc_er(tc, .Int)
+    }
 }

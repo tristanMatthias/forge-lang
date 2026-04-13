@@ -45,166 +45,74 @@ impl Parser {
 
         let ch = self.advance_char()
 
-        if ch == "," {
-            self.set_current(Tk.Comma, ",")
-            return
-        }
-        if ch == "(" {
-            self.set_current(Tk.LeftParen, "(")
-            return
-        }
-        if ch == ")" {
-            self.set_current(Tk.RightParen, ")")
-            return
-        }
-        if ch == "{" {
-            self.set_current(Tk.LeftBrace, "{")
-            return
-        }
-        if ch == "}" {
-            self.set_current(Tk.RightBrace, "}")
-            return
-        }
-        if ch == "+" {
-            self.set_current(Tk.Plus, "+")
-            return
-        }
-        if ch == "-" {
-            if self.match_next(">") {
-                self.set_current(Tk.Arrow, "->")
-            } else {
-                self.set_current(Tk.Minus, "-")
-            }
-            return
-        }
-        if ch == "*" {
-            self.set_current(Tk.Star, "*")
-            return
-        }
-        if ch == "/" {
-            self.set_current(Tk.Slash, "/")
-            return
-        }
-        if ch == ":" {
-            self.set_current(Tk.Colon, ":")
-            return
-        }
-        if ch == "." {
-            if self.match_next(".") {
-                self.set_current(Tk.DotDot, "..")
+        match ch {
+            "," -> { self.set_current(Tk.Comma, ",")        return }
+            "(" -> { self.set_current(Tk.LeftParen, "(")    return }
+            ")" -> { self.set_current(Tk.RightParen, ")")   return }
+            "{" -> { self.set_current(Tk.LeftBrace, "{")    return }
+            "}" -> { self.set_current(Tk.RightBrace, "}")   return }
+            "+" -> { self.set_current(Tk.Plus, "+")         return }
+            "*" -> { self.set_current(Tk.Star, "*")         return }
+            "/" -> { self.set_current(Tk.Slash, "/")        return }
+            ":" -> { self.set_current(Tk.Colon, ":")        return }
+            "@" -> { self.set_current(Tk.At, "@")           return }
+            "[" -> { self.set_current(Tk.LeftBracket, "[")  return }
+            "]" -> { self.set_current(Tk.RightBracket, "]") return }
+            "^" -> { self.set_current(Tk.Caret, "^")        return }
+            "~" -> { self.set_current(Tk.Tilde, "~")        return }
+            "%" -> { self.set_current(Tk.Percent, "%")      return }
+            "-" -> {
+                if self.match_next(">") { self.set_current(Tk.Arrow, "->") }
+                else { self.set_current(Tk.Minus, "-") }
                 return
             }
-            self.set_current(Tk.Dot, ".")
-            return
-        }
-        if ch == "?" {
-            if self.match_next("?") {
-                self.set_current(Tk.QuestionQuestion, "??")
-            } else if self.match_next(".") {
-                self.set_current(Tk.QuestionDot, "?.")
-            } else {
-                self.set_current(Tk.Question, "?")
-            }
-            return
-        }
-        if ch == "@" {
-            self.set_current(Tk.At, "@")
-            return
-        }
-        if ch == "[" {
-            self.set_current(Tk.LeftBracket, "[")
-            return
-        }
-        if ch == "]" {
-            self.set_current(Tk.RightBracket, "]")
-            return
-        }
-
-        if ch == "&" {
-            if self.match_next("&") {
-                self.set_current(Tk.AmpAmp, "&&")
-            } else {
-                self.set_current(Tk.Amp, "&")
-            }
-            return
-        }
-
-        if ch == "|" {
-            if self.match_next("|") {
-                self.set_current(Tk.PipePipe, "||")
+            "." -> {
+                if self.match_next(".") { self.set_current(Tk.DotDot, "..") }
+                else { self.set_current(Tk.Dot, ".") }
                 return
             }
-            if self.match_next(">") {
-                self.set_current(Tk.PipeGt, "|>")
+            "?" -> {
+                if self.match_next("?") { self.set_current(Tk.QuestionQuestion, "??") }
+                else if self.match_next(".") { self.set_current(Tk.QuestionDot, "?.") }
+                else { self.set_current(Tk.Question, "?") }
                 return
             }
-            self.set_current(Tk.Pipe, "|")
-            return
-        }
-
-        if ch == "^" {
-            self.set_current(Tk.Caret, "^")
-            return
-        }
-        if ch == "~" {
-            self.set_current(Tk.Tilde, "~")
-            return
-        }
-        if ch == "%" {
-            self.set_current(Tk.Percent, "%")
-            return
-        }
-
-        if ch == "!" {
-            if self.match_next("=") {
-                self.set_current(Tk.BangEqual, "!=")
-            } else {
-                self.set_current(Tk.Bang, "!")
-            }
-            return
-        }
-
-        if ch == "=" {
-            if self.match_next("=") {
-                self.set_current(Tk.EqualEqual, "==")
-            } else {
-                self.set_current(Tk.Equal, "=")
-            }
-            return
-        }
-
-        if ch == "<" {
-            if self.match_next("<") {
-                self.set_current(Tk.Shl, "<<")
-            } else if self.match_next("=") {
-                self.set_current(Tk.LessEqual, "<=")
-            } else {
-                self.set_current(Tk.Less, "<")
-            }
-            return
-        }
-
-        if ch == ">" {
-            if self.match_next(">") {
-                self.set_current(Tk.Shr, ">>")
+            "&" -> {
+                if self.match_next("&") { self.set_current(Tk.AmpAmp, "&&") }
+                else { self.set_current(Tk.Amp, "&") }
                 return
             }
-            if self.match_next("=") {
-                self.set_current(Tk.GreaterEqual, ">=")
-            } else {
-                self.set_current(Tk.Greater, ">")
+            "|" -> {
+                if self.match_next("|") { self.set_current(Tk.PipePipe, "||")  return }
+                if self.match_next(">") { self.set_current(Tk.PipeGt, "|>")   return }
+                self.set_current(Tk.Pipe, "|")
+                return
             }
-            return
-        }
-
-        if ch == "\"" {
-            self.scan_string_token()
-            return
-        }
-
-        if ch == "`" {
-            self.scan_template_token()
-            return
+            "!" -> {
+                if self.match_next("=") { self.set_current(Tk.BangEqual, "!=") }
+                else { self.set_current(Tk.Bang, "!") }
+                return
+            }
+            "=" -> {
+                if self.match_next("=") { self.set_current(Tk.EqualEqual, "==") }
+                else { self.set_current(Tk.Equal, "=") }
+                return
+            }
+            "<" -> {
+                if self.match_next("<") { self.set_current(Tk.Shl, "<<") }
+                else if self.match_next("=") { self.set_current(Tk.LessEqual, "<=") }
+                else { self.set_current(Tk.Less, "<") }
+                return
+            }
+            ">" -> {
+                if self.match_next(">") { self.set_current(Tk.Shr, ">>")  return }
+                if self.match_next("=") { self.set_current(Tk.GreaterEqual, ">=") }
+                else { self.set_current(Tk.Greater, ">") }
+                return
+            }
+            "\"" -> { self.scan_string_token()    return }
+            "`"  -> { self.scan_template_token()  return }
+            _ -> {}
         }
 
         if p_is_digit(ch) {
@@ -243,29 +151,26 @@ impl Parser {
         let first = self.source[self.start]
         if first == "0" {
             let prefix = self.peek_char()
-            if prefix == "x" || prefix == "X" {
-                self.advance_char()
-                while p_is_hex_digit(self.peek_char()) || self.peek_char() == "_" {
+            match prefix {
+                "x" or "X" -> {
                     self.advance_char()
+                    while p_is_hex_digit(self.peek_char()) || self.peek_char() == "_" { self.advance_char() }
+                    self.set_current(Tk.Number, self.source.substring(self.start, self.current))
+                    return
                 }
-                self.set_current(Tk.Number, self.source.substring(self.start, self.current))
-                return
-            }
-            if prefix == "b" || prefix == "B" {
-                self.advance_char()
-                while p_is_binary_digit(self.peek_char()) || self.peek_char() == "_" {
+                "b" or "B" -> {
                     self.advance_char()
+                    while p_is_binary_digit(self.peek_char()) || self.peek_char() == "_" { self.advance_char() }
+                    self.set_current(Tk.Number, self.source.substring(self.start, self.current))
+                    return
                 }
-                self.set_current(Tk.Number, self.source.substring(self.start, self.current))
-                return
-            }
-            if prefix == "o" || prefix == "O" {
-                self.advance_char()
-                while p_is_octal_digit(self.peek_char()) || self.peek_char() == "_" {
+                "o" or "O" -> {
                     self.advance_char()
+                    while p_is_octal_digit(self.peek_char()) || self.peek_char() == "_" { self.advance_char() }
+                    self.set_current(Tk.Number, self.source.substring(self.start, self.current))
+                    return
                 }
-                self.set_current(Tk.Number, self.source.substring(self.start, self.current))
-                return
+                _ -> {}
             }
         }
 

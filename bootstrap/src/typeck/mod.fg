@@ -583,10 +583,11 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
         .Ident(name) -> {
             let checked = check_expr_list(tc, args)
             // Built-in functions
-            if name == "string" { return tc_er(checked, .Str) }
-            if name == "int" { return tc_er(checked, .Int) }
-            if name == "println" || name == "eprintln" || name == "print" || name == "eprint" {
-                return tc_er(checked, .Void)
+            match name {
+                "string" -> return tc_er(checked, .Str)
+                "int"    -> return tc_er(checked, .Int)
+                "println" or "eprintln" or "print" or "eprint" -> return tc_er(checked, .Void)
+                _ -> {}
             }
             // User-defined function
             if fn_type_has(checked.fns, name) {
@@ -636,16 +637,14 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
 
     // String methods
     if vtype_eq(o.ty, .Str) {
-        if method == "length" { return tc_er(checked_args, .Int) }
-        if method == "substring" || method == "trim" || method == "upper" || method == "lower" || method == "replace" {
-            return tc_er(checked_args, .Str)
+        match method {
+            "length" or "index_of" or "char_code" -> return tc_er(checked_args, .Int)
+            "substring" or "trim" or "upper" or "lower" or "replace"
+            or "to_upper" or "to_lower" -> return tc_er(checked_args, .Str)
+            "contains" or "starts_with" or "ends_with" -> return tc_er(checked_args, .Bool)
+            "split" -> return tc_er(checked_args, .List(ValueType.Str))
+            _ -> {}
         }
-        if method == "contains" || method == "starts_with" || method == "ends_with" {
-            return tc_er(checked_args, .Bool)
-        }
-        if method == "index_of" { return tc_er(checked_args, .Int) }
-        if method == "split" { return tc_er(checked_args, .List(ValueType.Str)) }
-        if method == "char_code" { return tc_er(checked_args, .Int) }
     }
 
     // List methods — dispatched to features/list_lit/typeck.fg

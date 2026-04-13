@@ -15,18 +15,14 @@ export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
 }
 
 export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprList) -> ExprResult {
-    if method == "length" { return tc_er(tc, .Int) }
-    if method == "push" { return tc_er(tc, .Void) }
-    if method == "pop" { return tc_er(tc, elem) }
-    if method == "get" { return tc_er(tc, elem) }
-    if method == "map" {
-        let map_ret = tc_infer_lambda_ret(tc, args, elem)
-        return tc_er(tc, .List(map_ret))
+    match method {
+        "length" or "len" or "reduce"            -> tc_er(tc, .Int)
+        "push" or "foreach"                      -> tc_er(tc, .Void)
+        "pop" or "get"                           -> tc_er(tc, elem)
+        "filter"                                 -> tc_er(tc, .List(elem))
+        "map"                                    -> tc_er(tc, .List(tc_infer_lambda_ret(tc, args, elem)))
+        _                                        -> tc_er(tc, .Int)
     }
-    if method == "filter" { return tc_er(tc, .List(elem)) }
-    if method == "reduce" { return tc_er(tc, .Int) }
-    if method == "foreach" { return tc_er(tc, .Void) }
-    tc_er(tc, .Int)
 }
 
 fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {

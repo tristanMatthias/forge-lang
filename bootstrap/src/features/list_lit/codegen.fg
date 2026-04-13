@@ -56,49 +56,43 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
 }
 
 export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: ValueType, method: string, args: ExprList) -> EmitResult {
-    if method == "length" || method == "len" {
-        return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), list_val, "list_len"))
+    match method {
+        "length" or "len" -> return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), list_val, "list_len"))
+        "push" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            call_2(ctx, get_fn(ctx, "forge_array_push"), list_val, arg_r.value, "")
+            return ok_emit(list_val)
+        }
+        "pop" -> return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_pop"), list_val, "list_pop"))
+        "get" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let elem_ty = vtype_list_elem(list_ty)
+            return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_array_get"), list_val, arg_r.value, "list_get"), elem_ty)
+        }
+        "set" -> return emit_list_set(ctx, env, list_val, args)
+        "map" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            let result = call_2(ctx, get_fn(ctx, "forge_array_map"), list_val, arg_r.value, "map")
+            return ok_emit_typed(result, .List(vtype_fn_ret(arg_r.ty)))
+        }
+        "filter" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_array_filter"), list_val, arg_r.value, "filter"), .List(elem_ty))
+        }
+        "foreach" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
+            call_2(ctx, get_fn(ctx, "forge_array_foreach"), list_val, arg_r.value, "")
+            return ok_emit(const_i64(ctx, 0))
+        }
+        "reduce" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            return emit_list_reduce_typed(ctx, env, list_val, args, elem_ty)
+        }
+        _ -> err_emit("list method `${method}` not implemented")
     }
-    if method == "push" {
-        let arg_r = emit_single_arg(ctx, env, args)?
-        call_2(ctx, get_fn(ctx, "forge_array_push"), list_val, arg_r.value, "")
-        return ok_emit(list_val)
-    }
-    if method == "pop" {
-        return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_pop"), list_val, "list_pop"))
-    }
-    if method == "get" {
-        let arg_r = emit_single_arg(ctx, env, args)?
-        let elem_ty = vtype_list_elem(list_ty)
-        return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_array_get"), list_val, arg_r.value, "list_get"), elem_ty)
-    }
-    if method == "set" {
-        return emit_list_set(ctx, env, list_val, args)
-    }
-    if method == "map" {
-        let elem_ty = vtype_list_elem(list_ty)
-        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
-        let result = call_2(ctx, get_fn(ctx, "forge_array_map"), list_val, arg_r.value, "map")
-        let ret_ty = vtype_fn_ret(arg_r.ty)
-        return ok_emit_typed(result, .List(ret_ty))
-    }
-    if method == "filter" {
-        let elem_ty = vtype_list_elem(list_ty)
-        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
-        let result = call_2(ctx, get_fn(ctx, "forge_array_filter"), list_val, arg_r.value, "filter")
-        return ok_emit_typed(result, .List(elem_ty))
-    }
-    if method == "foreach" {
-        let elem_ty = vtype_list_elem(list_ty)
-        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
-        call_2(ctx, get_fn(ctx, "forge_array_foreach"), list_val, arg_r.value, "")
-        return ok_emit(const_i64(ctx, 0))
-    }
-    if method == "reduce" {
-        let elem_ty = vtype_list_elem(list_ty)
-        return emit_list_reduce_typed(ctx, env, list_val, args, elem_ty)
-    }
-    err_emit("list method `${method}` not implemented")
 }
 
 fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> EmitResult {

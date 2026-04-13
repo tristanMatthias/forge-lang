@@ -33,27 +33,20 @@ fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr, set_fn
 }
 
 export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: string, args: ExprList) -> EmitResult {
-    if method == "get" {
-        let arg_r = emit_single_arg(ctx, env, args)?
-        let key_ptr = to_ptr(ctx, arg_r.value, "map_key")
-        return ok_emit(call_2(ctx, get_fn(ctx, "forge_map_get_cstr"), map_ptr, key_ptr, "map_get"))
+    match method {
+        "get" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(call_2(ctx, get_fn(ctx, "forge_map_get_cstr"), map_ptr, to_ptr(ctx, arg_r.value, "map_key"), "map_get"))
+        }
+        "has" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(call_2(ctx, get_fn(ctx, "forge_map_has_cstr"), map_ptr, to_ptr(ctx, arg_r.value, "map_key"), "map_has"))
+        }
+        "set" -> return emit_map_set(ctx, env, map_ptr, args)
+        "len" or "length" -> return ok_emit(call_1(ctx, get_fn(ctx, "forge_map_len_cstr"), map_ptr, "map_len"))
+        "keys" -> return ok_emit_typed(call_1(ctx, get_fn(ctx, "forge_map_keys_cstr"), map_ptr, "map_keys"), .List(.Str))
+        _ -> err_emit("map method `${method}` not implemented")
     }
-    if method == "has" {
-        let arg_r = emit_single_arg(ctx, env, args)?
-        let key_ptr = to_ptr(ctx, arg_r.value, "map_key")
-        return ok_emit(call_2(ctx, get_fn(ctx, "forge_map_has_cstr"), map_ptr, key_ptr, "map_has"))
-    }
-    if method == "set" {
-        return emit_map_set(ctx, env, map_ptr, args)
-    }
-    if method == "len" || method == "length" {
-        return ok_emit(call_1(ctx, get_fn(ctx, "forge_map_len_cstr"), map_ptr, "map_len"))
-    }
-    if method == "keys" {
-        let keys = call_1(ctx, get_fn(ctx, "forge_map_keys_cstr"), map_ptr, "map_keys")
-        return ok_emit_typed(keys, .List(.Str))
-    }
-    err_emit("map method `${method}` not implemented")
 }
 
 fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
