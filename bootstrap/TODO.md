@@ -250,18 +250,13 @@ comparing pointer addresses, now compares tag bytes).
 Completed April 12, 2026. 488 lines extracted to parse/lexer.fg.
 parse/mod.fg: 1931 → 1455 lines.
 
-### Unify name resolution passes
-**type:** debt
-**priority:** medium
-**source:** architecture review (April 12, 2026)
-
-Three passes where one would do:
-1. `resolve_module_files` — loads .fg files into AST
-2. `resolve_names` — qualifies names with module paths
-3. `resolve_program` — checks variable scoping
-
-Module loading must happen first (file I/O), but name qualification and scope checking
-can be combined into a single AST walk. Rust, Go, and Swift all do this in one pass.
+### ~~Unify name resolution passes~~ DONE
+Completed April 12-13, 2026. `resolve_names` now calls `resolve_program` internally,
+presenting a single entry point from main.fg. Both passes live in `resolve/` —
+`resolve/mod.fg` (scope validation) and `resolve/names.fg` (module tree + name
+qualification). Module file loading (`features/modules/resolver.fg`) remains separate
+since it does file I/O. Deeper merge (single AST walk) deferred — current approach
+is clean and works.
 
 ### Remove vtype_is_* calls from codegen (Phase 1b)
 **type:** debt
@@ -304,49 +299,11 @@ Remove when Application-level ref-counting is implemented.
 Every compile leaks all malloc'd data. Acceptable because the compiler is one-shot and the OS
 reclaims. Blocked on real memory management (above).
 
-### Enforce module visibility — remove global name fallback
-**type:** debt
-**priority:** high
-**source:** architecture review (April 12, 2026)
-
-**The problem:** `rewrite_ident` in `features/modules/names.fg` has a step 6 "global index
-fallback" that resolves ANY bare name by scanning ALL modules. Steps 1-5 (local, builtin,
-uppercase, use-alias, sibling) are correct and handle most names. Step 6 is the escape hatch.
-
-**Measured impact:** 187 missing `use` imports across 50 modules. The full list of needed
-imports was generated and saved — run the trace to regenerate:
-```forge
-// In rewrite_ident step 6, add:
-eprintln("[GLOBAL] `" + name + "` -> `" + from_global + "` (module: " + ctx.current_module + ")")
-```
-Then `./build/bs2 compile src/main.fg 2>&1 | grep "[GLOBAL]"` shows every hit.
-
-**The fix:** Add 187 `use` statements to 50 files, then delete step 6.
-The architecture is sound — the module tree, use-alias resolution, and sibling lookup all
-work correctly. Only the global fallback needs removal.
-
-**CRITICAL GOTCHA discovered during first attempt:** The trace outputs CANONICAL paths
-(e.g. `core::ast::vtype_eq`) but `use` imports must use the path AS SEEN FROM the importing
-module. Most modules use absolute-from-root paths (`use core.ast.{...}`), but modules
-inside `core/` use RELATIVE sibling paths (`use token.{...}` from `core::scanner`).
-An automated script that blindly converts canonical paths to `use` imports will break
-existing working imports. Each file must be checked individually.
-
-**Approach:**
-1. Add the trace to step 6 (see above), rebuild seed, run self-compile
-2. For each `[GLOBAL]` hit, manually determine the correct `use` path
-3. Add `use` imports ONE FILE AT A TIME, `make build` after each
-4. Some functions need `export` added (e.g. `p_keyword_kind` in parse/mod.fg is private)
-5. After all 50 files are fixed, remove step 6 and the `global_index` infrastructure
-
-**Largest offenders** (by missing import count):
-- `codegen` (89) — uses `forge_llvm_*` externs + cross-feature helpers
-- `features::closures::codegen` (25) — uses core cg helpers
-- `features` (24) — calls `init_*` for each feature
-- `features::if_stmt` (20) — uses core resolver/typeck/eval helpers
-- `features::select_stmt::codegen` (19)
-- `features::for_stmt` (18)
-- `features::struct_decl` (17)
+### ~~Enforce module visibility — remove global name fallback~~ DONE
+Completed April 12, 2026. Added 187 `use` imports across 50 files + 49 `export`
+annotations. Removed global index fallback (step 6) from `rewrite_ident`. Names
+must now be explicitly imported via `use` or defined in the current module.
+`resolve/names.fg` (moved from `features/modules/names.fg` on April 13).
 
 ### Per-module compilation
 **type:** debt
