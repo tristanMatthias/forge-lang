@@ -94650,7 +94650,7 @@ march_arm2:                                       ; preds = %march_next
   %pay_slot6 = getelementptr inbounds nuw %LocalScope, ptr %match_subj, i32 0, i32 1
   %payload7 = load ptr, ptr %pay_slot6, align 8
   %pay_base8 = ptrtoint ptr %payload7 to i64
-  %fld_addr9 = add i64 %pay_base8, 8
+  %fld_addr9 = add i64 %pay_base8, 32
   %fld_ptr10 = inttoptr i64 %fld_addr9 to ptr
   %next = load i64, ptr %fld_ptr10, align 8
   store i64 %next, ptr %next11, align 8
@@ -94953,7 +94953,7 @@ entry:
   %tag_eq = icmp eq i64 %tag, 193455868
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm26, %march_arm3, %march_arm
+match_end:                                        ; preds = %march_arm35, %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
   ret i64 %match_val
 
@@ -94986,40 +94986,52 @@ march_arm3:                                       ; preds = %march_next
   %tag_ptr14 = getelementptr inbounds nuw %LocalScope, ptr %buf, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr14, align 8
   %pay_ptr = getelementptr inbounds nuw %LocalScope, ptr %buf, i32 0, i32 1
-  %buf15 = call ptr @forge_bump_alloc(i64 16)
+  %buf15 = call ptr @forge_bump_alloc(i64 40)
   store ptr %buf15, ptr %pay_ptr, align 8
   %name16 = load i64, ptr %name6, align 8
   %pay_base17 = ptrtoint ptr %buf15 to i64
   %pay_addr = add i64 %pay_base17, 0
   %fld_ptr18 = inttoptr i64 %pay_addr to ptr
   store i64 %name16, ptr %fld_ptr18, align 8
-  %ctx19 = load i64, ptr %ctx, align 8
-  %obj_ptr = inttoptr i64 %ctx19 to ptr
-  %null_fld_chk = icmp eq i64 %ctx19, 0
+  %pay_base19 = ptrtoint ptr %buf15 to i64
+  %pay_addr20 = add i64 %pay_base19, 8
+  %fld_ptr21 = inttoptr i64 %pay_addr20 to ptr
+  store i64 0, ptr %fld_ptr21, align 8
+  %pay_base22 = ptrtoint ptr %buf15 to i64
+  %pay_addr23 = add i64 %pay_base22, 16
+  %fld_ptr24 = inttoptr i64 %pay_addr23 to ptr
+  store i64 1, ptr %fld_ptr24, align 8
+  %pay_base25 = ptrtoint ptr %buf15 to i64
+  %pay_addr26 = add i64 %pay_base25, 24
+  %fld_ptr27 = inttoptr i64 %pay_addr26 to ptr
+  store i64 0, ptr %fld_ptr27, align 8
+  %ctx28 = load i64, ptr %ctx, align 8
+  %obj_ptr = inttoptr i64 %ctx28 to ptr
+  %null_fld_chk = icmp eq i64 %ctx28, 0
   %null_fld_ext = zext i1 %null_fld_chk to i64
   call void @forge_null_deref_trap(ptr @fld_name.9161, i64 6, ptr @sty_name.9162, i64 7, i64 %null_fld_ext, ptr @src_file.9163, i64 11, i64 379)
-  %fld_ptr20 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr, i32 0, i32 3
-  %locals = load i64, ptr %fld_ptr20, align 8
-  %pay_base21 = ptrtoint ptr %buf15 to i64
-  %pay_addr22 = add i64 %pay_base21, 8
-  %fld_ptr23 = inttoptr i64 %pay_addr22 to ptr
-  store i64 %locals, ptr %fld_ptr23, align 8
+  %fld_ptr29 = getelementptr inbounds nuw %NameCtx, ptr %obj_ptr, i32 0, i32 3
+  %locals = load i64, ptr %fld_ptr29, align 8
+  %pay_base30 = ptrtoint ptr %buf15 to i64
+  %pay_addr31 = add i64 %pay_base30, 32
+  %fld_ptr32 = inttoptr i64 %pay_addr31 to ptr
+  store i64 %locals, ptr %fld_ptr32, align 8
   %enum_i64 = ptrtoint ptr %buf to i64
   %calltmp = call i64 @"features::modules::names::ctx_with_locals"(i64 %ctx13, i64 %enum_i64)
-  %next24 = load i64, ptr %next12, align 8
-  %calltmp25 = call i64 @"features::modules::names::bind_params_ctx"(i64 %calltmp, i64 %next24)
-  store i64 %calltmp25, ptr %match_result, align 8
+  %next33 = load i64, ptr %next12, align 8
+  %calltmp34 = call i64 @"features::modules::names::bind_params_ctx"(i64 %calltmp, i64 %next33)
+  store i64 %calltmp34, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  br label %march_arm26
+  br label %march_arm35
 
-march_arm26:                                      ; preds = %march_next4
-  %ctx28 = load i64, ptr %ctx, align 8
-  store i64 %ctx28, ptr %match_result, align 8
+march_arm35:                                      ; preds = %march_next4
+  %ctx37 = load i64, ptr %ctx, align 8
+  store i64 %ctx37, ptr %match_result, align 8
   br label %match_end
 
-march_next27:                                     ; No predecessors!
+march_next36:                                     ; No predecessors!
   call void @forge_match_unreachable(ptr @.match_fn.9164, i64 %tag, ptr @mu_file.9165, i64 379)
   unreachable
 }

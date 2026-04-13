@@ -303,13 +303,13 @@ fn dots_to_colons(path: string) -> string {
 
 enum LocalScope {
     End
-    Node(name: string, next: LocalScope)
+    Node(name: string, mutable: bool, defined: bool, depth: int, next: LocalScope)
 }
 
 fn scope_has(scope: LocalScope, name: string) -> bool {
     match scope {
         .End -> false
-        .Node(n, next) -> {
+        .Node(n, _, _, _, next) -> {
             if n == name { return true }
             scope_has(next, name)
         }
@@ -348,7 +348,7 @@ fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) ->
 fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
     match params {
         .End -> ctx
-        .Node(name, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, ctx.locals)), next)
+        .Node(name, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, false, true, 0, ctx.locals)), next)
         _ -> ctx
     }
 }
