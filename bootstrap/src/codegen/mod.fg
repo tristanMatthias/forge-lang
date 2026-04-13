@@ -12,7 +12,7 @@ mod indexing
 mod helpers
 
 use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, field_type_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, DeferStack, EmitResult, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, call_0, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, const_i64, const_i8, ctx_with_defers, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, f64_to_i64, field_type_at, fn_param_lookup, fn_ret_lookup, get_fn, loops_top, new_bb, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, struct_reg_lookup, to_f64, to_i64, to_ptr, toplevel_lookup, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, call_0, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, const_i64, const_i8, ctx_with_defers, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, f64_to_i64, field_type_at, fn_param_lookup, fn_ret_lookup, get_fn, loops_top, new_bb, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, struct_reg_lookup, to_f64, to_i64, to_ptr, toplevel_lookup, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
 use features.defer_stmt.codegen.{emit_defers}
@@ -171,57 +171,8 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .Unary(op, right) -> emit_unary(ctx, env, op, right)
         .Binary(left, op, right) -> emit_binary(ctx, env, left, op, right)
         .Logical(left, op, right) -> emit_logical(ctx, env, left, op, right)
-        .Ident(name) -> {
-            let local = env_lookup(env, name)
-            if local.found {
-                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, local.alloca, name)
-                return EmitResult { value: loaded, ty: local.ty, had_error: false, error_message: "" }
-            }
-            let g = toplevel_lookup(ctx.top_level_vars, name)
-            if g.found {
-                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, g.llvm_global, name)
-                return EmitResult { value: loaded, ty: g.ty, had_error: false, error_message: "" }
-            }
-            // and the same code handles named fn refs, lambdas, and closures.
-            let fn_val = forge_llvm_get_named_function(ctx.module, name)
-            if fn_val != null {
-                let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "fn_ref")
-                let arr_fn = get_fn(ctx, "forge_array_new")
-                let push_fn = get_fn(ctx, "forge_array_push")
-                let closure_arr = call_0(ctx, arr_fn, "fn_wrap")
-                call_2(ctx, push_fn, closure_arr, const_i64(ctx, -559038737), "")
-                call_2(ctx, push_fn, closure_arr, fn_i64, "")
-                let closure_i64 = to_i64(ctx, closure_arr, "fn_ref_i64")
-                let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
-                return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
-            }
-            err_emit("undefined variable `${name}`")
-        }
-        .QualifiedIdent(path) -> {
-            let local = env_lookup(env, path)
-            if local.found {
-                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, local.alloca, path)
-                return EmitResult { value: loaded, ty: local.ty, had_error: false, error_message: "" }
-            }
-            let g = toplevel_lookup(ctx.top_level_vars, path)
-            if g.found {
-                let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, g.llvm_global, path)
-                return EmitResult { value: loaded, ty: g.ty, had_error: false, error_message: "" }
-            }
-            let fn_val = forge_llvm_get_named_function(ctx.module, path)
-            if fn_val != null {
-                let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "fn_ref")
-                let arr_fn = get_fn(ctx, "forge_array_new")
-                let push_fn = get_fn(ctx, "forge_array_push")
-                let closure_arr = call_0(ctx, arr_fn, "fn_wrap")
-                call_2(ctx, push_fn, closure_arr, const_i64(ctx, -559038737), "")
-                call_2(ctx, push_fn, closure_arr, fn_i64, "")
-                let closure_i64 = to_i64(ctx, closure_arr, "fn_ref_i64")
-                let ret_ty = fn_ret_lookup(ctx.fn_rets, path)
-                return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
-            }
-            err_emit("undefined qualified name `${path}`")
-        }
+        .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
+        .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
         .Assign(name, value) -> {
             let r = emit_expr(ctx, env, value)
             if r.had_error {
@@ -230,12 +181,12 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
             let local = env_lookup(env, name)
             if local.found {
                 forge_llvm_build_store(ctx.builder, r.value, local.alloca)
-                return EmitResult { value: r.value, ty: local.ty, had_error: false, error_message: "" }
+                return ok_emit_typed(r.value, local.ty)
             }
             let g = toplevel_lookup(ctx.top_level_vars, name)
             if g.found {
                 forge_llvm_build_store(ctx.builder, r.value, g.llvm_global)
-                return EmitResult { value: r.value, ty: g.ty, had_error: false, error_message: "" }
+                return ok_emit_typed(r.value, g.ty)
             }
             err_emit("assignment to undefined variable `${name}`")
         }
@@ -252,4 +203,31 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
             err_emit("unsupported expression type (tag=${string(tag)})")
         }
     }
+}
+
+// Shared implementation for .Ident and .QualifiedIdent emission.
+// Checks local vars, top-level globals, then named LLVM functions.
+fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> EmitResult {
+    let local = env_lookup(env, name)
+    if local.found {
+        let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, local.alloca, name)
+        return ok_emit_typed(loaded, local.ty)
+    }
+    let g = toplevel_lookup(ctx.top_level_vars, name)
+    if g.found {
+        let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, g.llvm_global, name)
+        return ok_emit_typed(loaded, g.ty)
+    }
+    let fn_val = forge_llvm_get_named_function(ctx.module, name)
+    if fn_val != null {
+        let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "fn_ref")
+        let closure_arr = call_0(ctx, get_fn(ctx, "forge_array_new"), "fn_wrap")
+        let push_fn = get_fn(ctx, "forge_array_push")
+        call_2(ctx, push_fn, closure_arr, const_i64(ctx, closure_marker()), "")
+        call_2(ctx, push_fn, closure_arr, fn_i64, "")
+        let closure_i64 = to_i64(ctx, closure_arr, "fn_ref_i64")
+        let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
+        return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
+    }
+    err_emit("undefined ${label} `${name}`")
 }

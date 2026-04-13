@@ -13,7 +13,7 @@
 // is just the function pointer with a null environment.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
-use codegen.types.{Ctx, DeferStack, EmitResult, call_0, call_1, call_2, call_3, call_4, const_i64, ctx_with_fn, err_emit, get_fn, null_ptr_val, ok_emit, ok_emit_typed, to_i64, to_ptr, toplevel_lookup, translate_param_type}
+use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, call_0, call_1, call_2, call_3, call_4, const_i64, ctx_with_fn, err_emit, get_fn, null_ptr_val, ok_emit, ok_emit_typed, to_i64, to_ptr, toplevel_lookup, translate_param_type}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 
@@ -317,7 +317,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     let arr_fn = get_fn(ctx, "forge_array_new")
     let push_fn = get_fn(ctx, "forge_array_push")
     let closure_arr = call_0(ctx, arr_fn, "closure")
-    let tag = const_i64(ctx, -559038737)  // FORGE_CLOSURE_TAG
+    let tag = const_i64(ctx, closure_marker())
     call_2(ctx, push_fn, closure_arr, tag, "")
     let fn_ptr_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "lambda_ptr")
     call_2(ctx, push_fn, closure_arr, fn_ptr_i64, "")
@@ -325,7 +325,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
         push_captured_values(ctx, captures, closure_arr, push_fn)
     }
     let closure_i64 = to_i64(ctx, closure_arr, "closure_i64")
-    EmitResult { value: closure_i64, ty: ValueType.Closure(num_captures, result.ty), had_error: false, error_message: "" }
+    ok_emit_typed(closure_i64, ValueType.Closure(num_captures, result.ty))
 }
 
 fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val: ptr, idx: int) -> VarEnv {

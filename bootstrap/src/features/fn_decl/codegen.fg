@@ -209,7 +209,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
             let str_ptr = to_ptr(ctx, r.value, "str_self")
             let sep_ptr = to_ptr(ctx, arg_r.value, "sep_arg")
             let result = call_2(ctx, get_fn(ctx, "forge_str_split"), str_ptr, sep_ptr, "split_result")
-            return EmitResult { value: result, ty: .List(.Str), had_error: false, error_message: "" }
+            return ok_emit_typed(result, .List(.Str))
         }
         if method == "char_code" {
             // str.char_code() → int (first byte as integer)

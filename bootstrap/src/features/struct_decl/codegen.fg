@@ -1,7 +1,7 @@
 // WHY: emits struct literal construction and field-filling.
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_type_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, SExpr}
-use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup, enum_reg_lookup, translate_param_type, const_i64, to_ptr, to_i64, get_fn, call_1, cg_malloc}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, enum_reg_lookup, translate_param_type, const_i64, to_ptr, to_i64, get_fn, call_1, cg_malloc}
 use codegen.{emit_expr, emit_enum_ctor}
 use features.enum_decl.codegen.{emit_enum_ctor}
 
@@ -18,7 +18,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     let buf = malloc_struct_bytes(ctx, lookup.fields)
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
     let as_i64 = to_i64(ctx, buf, "struct_i64")
-    EmitResult { value: as_i64, ty: .Struct(name), had_error: false, error_message: "" }
+    ok_emit_typed(as_i64, .Struct(name))
 }
 
 fn malloc_struct_bytes(ctx: Ctx, fields: FieldList) -> ptr {
@@ -123,5 +123,5 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fld_ptr")
     let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, field)
     let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
-    EmitResult { value: loaded, ty: field_ty, had_error: false, error_message: "" }
+    ok_emit_typed(loaded, field_ty)
 }

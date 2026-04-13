@@ -113,6 +113,10 @@ export fn err_emit(message: string) -> EmitResult {
     EmitResult { value: null_ptr_val(), ty: .Int, had_error: true, error_message: "codegen error: ${message}" }
 }
 
+// 0xDEADBEEF as signed i64 — sentinel tag in closure arrays to
+// distinguish closure values from plain function pointers.
+export fn closure_marker() -> int { -559038737 }
+
 export type StmtResult = {
     env: VarEnv,
     had_error: bool,

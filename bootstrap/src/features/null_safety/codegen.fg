@@ -38,7 +38,7 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     // null (type Int), use the right side's type. Otherwise use
     // the left's type (the non-null value determines the type).
     let merged_ty = if vtype_eq(l.ty, ValueType.Int) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
-    EmitResult { value: loaded, ty: merged_ty, had_error: false, error_message: "" }
+    ok_emit_typed(loaded, merged_ty)
 }
 
 export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitResult {
@@ -64,7 +64,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
         forge_llvm_build_br(ctx.builder, merge_bb)
         forge_llvm_position_at_end(ctx.builder, merge_bb)
         let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "oc_val")
-        return EmitResult { value: loaded, ty: r.ty, had_error: false, error_message: "" }
+        return ok_emit_typed(loaded, r.ty)
     }
     let lookup = struct_reg_lookup(ctx.structs, struct_name)
     if !lookup.found {
@@ -84,7 +84,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     forge_llvm_position_at_end(ctx.builder, merge_bb)
     let final_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "oc_val")
     let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
-    EmitResult { value: final_val, ty: field_ty, had_error: false, error_message: "" }
+    ok_emit_typed(final_val, field_ty)
 }
 
 export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {

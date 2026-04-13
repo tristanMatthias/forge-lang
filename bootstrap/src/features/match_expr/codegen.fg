@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
-use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, to_f64, get_fn, call_1, call_2, call_4}
+use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, new_bb, const_i8, const_i64, to_ptr, to_i64, to_f64, get_fn, call_1, call_2, call_4}
 use codegen.{emit_expr}
 
 
@@ -27,7 +27,7 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
     let arm_result = emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)?
     forge_llvm_position_at_end(ctx.builder, merge_bb)
     let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "match_val")
-    EmitResult { value: loaded, ty: arm_result.ty, had_error: false, error_message: "" }
+    ok_emit_typed(loaded, arm_result.ty)
 }
 
 fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
@@ -41,7 +41,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                 call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
-            EmitResult { value: null_ptr_val(), ty: .Int, had_error: false, error_message: "" }
+            ok_emit(null_ptr_val())
         }
         .Node(pattern, guard, body, next) -> {
             let arm_bb = new_bb(ctx, "march_arm")
@@ -69,7 +69,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             if !vtype_eq(rest.ty, .Int) && !vtype_eq(body_result.ty, rest.ty) {
                 eprintln("warning: match arms have different types: `${vtype_display(body_result.ty)}` vs `${vtype_display(rest.ty)}`")
             }
-            EmitResult { value: body_result.value, ty: body_result.ty, had_error: false, error_message: "" }
+            ok_emit_typed(body_result.value, body_result.ty)
         }
     }
 }
@@ -406,7 +406,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             }
             forge_llvm_position_at_end(ctx.builder, merge_bb)
             let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "pmatch_val")
-            EmitResult { value: loaded, ty: .Int, had_error: false, error_message: "" }
+            ok_emit(loaded)
         }
         .Node(pattern, guard, body, next) -> {
             let body_bb = new_bb(ctx, "parm_body")
@@ -447,7 +447,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             let rest = emit_primitive_arms_expr(ctx, env, subj, next, merge_bb, result_slot)?
             // Return the merged loaded value from result_slot (via rest),
             // but carry the type from this arm's body.
-            EmitResult { value: rest.value, ty: body_r.ty, had_error: false, error_message: "" }
+            ok_emit_typed(rest.value, body_r.ty)
         }
     }
 }

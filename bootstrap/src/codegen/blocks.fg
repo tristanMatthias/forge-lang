@@ -1,7 +1,7 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
 use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitResult, StmtResult, const_i64, err_emit, new_bb, ok_emit, ok_emit_typed, err_stmt_from_expr, ok_stmt}
+use codegen.types.{Ctx, EmitResult, StmtResult, const_i64, err_emit, ok_emit_typed, new_bb, ok_emit, err_stmt_from_expr, ok_stmt}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.codegen.{emit_match_expr}
 
@@ -25,7 +25,7 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
             if s.had_error {
                 return err_emit(s.error_message)
             }
-            EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
+            ok_emit_typed(last_val, last_ty)
         }
     }
 }
@@ -71,13 +71,13 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
 
     forge_llvm_position_at_end(ctx.builder, merge_bb)
     let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "sif_val")
-    EmitResult { value: loaded, ty: t.ty, had_error: false, error_message: "" }
+    ok_emit_typed(loaded, t.ty)
 }
 
 
 export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> EmitResult {
     match stmts {
-        .End -> EmitResult { value: last_val, ty: last_ty, had_error: false, error_message: "" }
+        .End -> ok_emit_typed(last_val, last_ty)
         .Node(ss, next) -> {
             let line_ctx = ctx with { source_line: ss.line }
             match next {

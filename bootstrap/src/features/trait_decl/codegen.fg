@@ -1,7 +1,7 @@
 // WHY: codegen for trait dynamic dispatch.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_display, vtype_struct_name, vtype_enum_name, expr_list_length}
-use codegen.types.{Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, const_i64, to_ptr, to_i64, get_fn, call_0, call_1, call_2, call_3, cg_malloc, new_bb, translate_type_ctx, trait_decl_lookup}
+use codegen.types.{closure_marker, Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, const_i64, to_ptr, to_i64, get_fn, call_0, call_1, call_2, call_3, cg_malloc, new_bb, translate_type_ctx, trait_decl_lookup}
 use codegen.{emit_expr}
 use features.fn_decl.codegen.{emit_first_arg}
 
@@ -74,7 +74,7 @@ export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNa
             let push_fn = get_fn(ctx, "forge_array_push")
             // Wrap in closure array: [TAG, fn_ptr]
             let closure = call_0(ctx, get_fn(ctx, "forge_array_new"), "vclosure")
-            let tag = const_i64(ctx, -559038737)
+            let tag = const_i64(ctx, closure_marker())
             call_2(ctx, push_fn, closure, tag, "")
             let fn_i64 = forge_llvm_build_ptr_to_int(ctx.builder, fn_val, ctx.i64_type, "vfn_ptr")
             call_2(ctx, push_fn, closure, fn_i64, "")

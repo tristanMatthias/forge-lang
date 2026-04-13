@@ -12,7 +12,7 @@ export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult
     let push_fn = get_fn(ctx, "forge_array_push")
     let arr = call_0(ctx, arr_fn, "list")
     match elements {
-        .End -> EmitResult { value: arr, ty: .List(.Int), had_error: false, error_message: "" }
+        .End -> ok_emit_typed(arr, .List(.Int))
         .Node(se, next) -> {
             let r = emit_expr(ctx, env, se.node)?
             call_2(ctx, push_fn, arr, r.value, "")
@@ -23,7 +23,7 @@ export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult
 
 fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, push_fn: ptr, elem_ty: ValueType) -> EmitResult {
     match elements {
-        .End -> EmitResult { value: arr, ty: .List(elem_ty), had_error: false, error_message: "" }
+        .End -> ok_emit_typed(arr, .List(elem_ty))
         .Node(se, next) -> {
             let r = emit_expr(ctx, env, se.node)?
             call_2(ctx, push_fn, arr, r.value, "")
@@ -80,13 +80,13 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
         let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
         let result = call_2(ctx, get_fn(ctx, "forge_array_map"), list_val, arg_r.value, "map")
         let ret_ty = vtype_fn_ret(arg_r.ty)
-        return EmitResult { value: result, ty: .List(ret_ty), had_error: false, error_message: "" }
+        return ok_emit_typed(result, .List(ret_ty))
     }
     if method == "filter" {
         let elem_ty = vtype_list_elem(list_ty)
         let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
         let result = call_2(ctx, get_fn(ctx, "forge_array_filter"), list_val, arg_r.value, "filter")
-        return EmitResult { value: result, ty: .List(elem_ty), had_error: false, error_message: "" }
+        return ok_emit_typed(result, .List(elem_ty))
     }
     if method == "foreach" {
         let elem_ty = vtype_list_elem(list_ty)

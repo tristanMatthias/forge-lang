@@ -9,7 +9,7 @@
 // (critical for match on enum tuple elements).
 
 use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, TypeList, vtype_tuple_at}
-use codegen.types.{Ctx, EmitResult, StmtResult, ok_emit, err_emit, ok_stmt, err_stmt_from_expr, const_i64, to_ptr, to_i64, cg_malloc}
+use codegen.types.{Ctx, EmitResult, StmtResult, ok_emit, ok_emit_typed, err_emit, ok_stmt, err_stmt_from_expr, const_i64, to_ptr, to_i64, cg_malloc}
 use codegen.{emit_expr}
 
 // ── Pointer arithmetic helpers ──
@@ -42,7 +42,7 @@ fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx
     match elements {
         .End -> {
             let ty = .Tuple(reverse_type_list(types_acc, .End))
-            EmitResult { value: to_i64(ctx, buf, "tuple_i64"), ty, had_error: false, error_message: "" }
+            ok_emit_typed(to_i64(ctx, buf, "tuple_i64"), ty)
         }
         .Node(se, next) -> {
             let r = emit_expr(ctx, env, se.node)?
@@ -65,7 +65,7 @@ export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> EmitRe
     let ptr = to_ptr(ctx, r.value, "tup_ptr")
     let loaded = tuple_load(ctx, ptr, idx, "tup_val")
     let elem_ty = vtype_tuple_at(r.ty, idx)
-    EmitResult { value: loaded, ty: elem_ty, had_error: false, error_message: "" }
+    ok_emit_typed(loaded, elem_ty)
 }
 
 export fn emit_let_destructure(ctx: Ctx, env: VarEnv, names: ParamList, initializer: Expr) -> StmtResult {
