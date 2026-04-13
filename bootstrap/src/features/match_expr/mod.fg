@@ -1,6 +1,7 @@
 mod parser
 mod codegen
 mod resolver
+mod typeck
 
 fn kw_parse_match(p: Parser) -> Stmt? {
     p.parse_match_statement()

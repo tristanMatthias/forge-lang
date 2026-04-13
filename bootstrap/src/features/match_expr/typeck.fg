@@ -1,0 +1,172 @@
+// WHY: type checking for match statements and expressions.
+// Exhaustiveness checking, pattern variable binding, arm type unification.
+
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, ParamList, VariantList, ValueType, vtype_enum_name, vtype_eq}
+use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
+use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, EnumTypeReg}
+
+// ── Exhaustiveness checking ──
+
+fn enum_type_variants(reg: EnumTypeReg, name: string) -> VariantList {
+    match reg {
+        .End -> VariantList.End
+        .Node(n, variants, next) -> {
+            if n == name { return variants }
+            enum_type_variants(next, name)
+        }
+    }
+}
+
+fn arms_has_wildcard(arms: MatchArmList) -> bool {
+    match arms {
+        .End -> false
+        .Node(pattern, _, _, next) -> {
+            match pattern {
+                .Wildcard -> true
+                _ -> arms_has_wildcard(next)
+            }
+        }
+    }
+}
+
+fn arms_matched_variants(arms: MatchArmList) -> string {
+    match arms {
+        .End -> ""
+        .Node(pattern, _, _, next) -> {
+            let rest = arms_matched_variants(next)
+            let vname = match pattern {
+                .Variant(name, _) -> name
+                .NestedVariant(name, _) -> name
+                _ -> ""
+            }
+            if vname == "" { return rest }
+            if rest == "" { vname } else { rest + "|" + vname }
+        }
+    }
+}
+
+fn variant_in_matched(name: string, matched: string) -> bool {
+    if matched == name { return true }
+    if matched.contains("|" + name + "|") { return true }
+    if matched.length >= name.length + 1 {
+        if matched.substring(0, name.length + 1) == name + "|" { return true }
+        if matched.substring(matched.length - name.length - 1, matched.length) == "|" + name { return true }
+    }
+    false
+}
+
+fn find_missing_variants(variants: VariantList, matched: string) -> string {
+    match variants {
+        .End -> ""
+        .Node(name, _, next) -> {
+            let rest = find_missing_variants(next, matched)
+            if variant_in_matched(name, matched) {
+                rest
+            } else {
+                if rest == "" { "." + name } else { rest + ", ." + name }
+            }
+        }
+    }
+}
+
+export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList) -> TC {
+    let enum_name = vtype_enum_name(subject_ty)
+    if enum_name == "" { return tc }
+    let variants = enum_type_variants(tc.enums, enum_name)
+    match variants { .End -> return tc, _ -> {} }
+    if arms_has_wildcard(arms) { return tc }
+    let matched = arms_matched_variants(arms)
+    let missing = find_missing_variants(variants, matched)
+    if missing == "" { return tc }
+    if tc.current_line == 0 { return tc }
+    let span_len = 6 + enum_name.length
+    let sp = span_new(0, span_len, tc.current_line, tc.current_col)
+    let msg = "non-exhaustive match on `" + enum_name + "` — missing: " + missing
+    let diag = diag_warning(DiagCode.NonExhaustiveMatch, msg, sp)
+    tc with { bag: bag_report(tc.bag, diag) }
+}
+
+// ── Pattern variable binding ──
+
+fn tc_bind_pattern(tc: TC, pattern: Pattern) -> TC {
+    match pattern {
+        .Wildcard -> tc
+        .Variant(_, bindings) -> tc_bind_pattern_params(tc, bindings)
+        .NestedVariant(_, sub_pats) -> tc_bind_pattern_list(tc, sub_pats)
+        _ -> tc  // LitString, LitInt, LitBool, LitFloat — no bindings
+    }
+}
+
+fn tc_bind_pattern_list(tc: TC, pats: PatternList) -> TC {
+    match pats {
+        .End -> tc
+        .Node(p, next) -> tc_bind_pattern_list(tc_bind_pattern(tc, p), next)
+    }
+}
+
+fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
+    match params {
+        .End -> tc
+        .Node(name, _, next) -> {
+            if name == "_" { return tc_bind_pattern_params(tc, next) }
+            tc_bind_pattern_params(tc_bind(tc, name, ValueType.Int), next)
+        }
+    }
+}
+
+// ── Match arm checking ──
+
+fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
+    match arms {
+        .End -> tc
+        .Node(pattern, guard, body, next) -> {
+            let inner = tc_enter(tc)
+            let with_bindings = tc_bind_pattern(inner, pattern)
+            let with_guard = if guard != null {
+                let g = check_expr(with_bindings, guard!.node)
+                g.tc
+            } else { with_bindings }
+            let b = check_expr(with_guard, body.node)
+            let after = tc_exit(b.tc)
+            check_match_arms(after, next)
+        }
+    }
+}
+
+// ── Match expression type inference ──
+
+fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> ExprResult {
+    match arms {
+        .End -> tc_er(tc, first_ty)
+        .Node(_, guard, body, next) -> {
+            let inner = tc_enter(tc)
+            let with_guard = if guard != null {
+                let g = check_expr(inner, guard!.node)
+                g.tc
+            } else { inner }
+            let b = check_expr(with_guard, body.node)
+            let after = tc_exit(b.tc)
+            let result_ty = match next {
+                .End -> b.ty
+                _ -> first_ty
+            }
+            let use_ty = if vtype_eq(first_ty, ValueType.Int) { b.ty } else { first_ty }
+            check_match_expr_arms(after, next, use_ty)
+        }
+    }
+}
+
+// ── Return type checking in match arms ──
+
+fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueType, arms: MatchArmList) -> TC {
+    match arms {
+        .End -> tc
+        .Node(_, _, body, next) -> {
+            let after = match body.node {
+                .Block(stmts) -> tc_check_explicit_returns(tc, fn_name, declared, stmts)
+                _ -> tc
+            }
+            tc_check_match_arm_returns(after, fn_name, declared, next)
+        }
+    }
+}
