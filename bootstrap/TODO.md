@@ -282,6 +282,48 @@ Remove when Application-level ref-counting is implemented.
 Every compile leaks all malloc'd data. Acceptable because the compiler is one-shot and the OS
 reclaims. Blocked on real memory management (above).
 
+### Enforce module visibility — bare names resolve globally (BROKEN)
+**type:** debt
+**priority:** high
+**source:** architecture review (April 12, 2026)
+
+**The problem:** Any function can call any other function from anywhere without an import.
+The name resolution pass (`features/modules/names.fg`) qualifies names for LLVM symbols,
+but the compiler's internal resolution falls back to a global scan when a bare name isn't
+found locally. This means `use` imports are cosmetic — removing them changes nothing.
+
+This is dangerous because:
+- No encapsulation: internal helpers are callable from anywhere
+- No dependency tracking: can't know what depends on what
+- Silent coupling: moving a function doesn't break callers (looks safe, isn't)
+- Refactoring is blind: no way to find all callers via imports
+- Name collisions are silent until they shadow the wrong thing
+
+**The fix:** The resolver should reject bare names that aren't:
+1. Defined in the current file/module
+2. Explicitly imported via `use`
+3. A builtin (`println`, `string`, etc.)
+
+If a bare name isn't in one of those three categories, it should be a compile error:
+```
+error: `check_match_arms` is not defined in this scope
+  help: add `use features.match_expr.typeck.{check_match_arms}`
+```
+
+This is how Rust, Go, Python, and every modern language works. The global fallback in
+`rewrite_ident` (features/modules/names.fg line ~510, the `item_lookup(ctx.global_index, name)`
+path) needs to be removed or gated behind a flag.
+
+**Scope:** Large. Every file that relies on implicit global resolution will need explicit
+`use` imports added. The compiler itself has ~700 qualified functions — many call sites
+rely on the global fallback. This is a multi-session refactor.
+
+**Incremental approach:**
+1. Add a `--strict-imports` flag that enables the check
+2. Fix one module at a time, adding explicit imports
+3. Once all modules pass with `--strict-imports`, make it the default
+4. Remove the global fallback
+
 ### Per-module compilation
 **type:** debt
 **priority:** low
@@ -297,7 +339,8 @@ This enables incremental builds, parallel compilation, and smaller LLVM working 
 
 Production compilers for reference: Rust compiles per-crate, Go per-package, C per-file,
 Swift per-module. All compile units are larger than a single file. The Forge `mod` directory
-is the natural boundary.
+is the natural boundary. Blocked on enforcing module visibility (above) — without real
+imports, separate compilation can't know what to link.
 
 ---
 
