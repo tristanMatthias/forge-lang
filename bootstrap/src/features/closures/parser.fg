@@ -1,0 +1,75 @@
+// WHY: closure/lambda parser helpers.
+// `expr_contains_it` supports the implicit `it` parameter sugar:
+//   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
+// `parse_lambda_body` handles lambda body parsing (block or single expression).
+
+use core.ast.{Expr, ExprList, StmtList, ParamList}
+use parse.{Parser}
+use core.ast.{Tk}
+
+// Check if an expression tree references the identifier `it`.
+export fn expr_contains_it(expr: Expr) -> bool {
+    match expr {
+        .Ident(n) -> n == "it"
+        .Binary(l, _, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .Unary(_, r) -> expr_contains_it(r)
+        .Logical(l, _, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .Call(callee, args) -> expr_contains_it(callee) || expr_list_contains_it(args)
+        .Grouping(inner) -> expr_contains_it(inner)
+        .IfExpr(c, t, e) -> expr_contains_it(c) || expr_contains_it(t) || expr_contains_it(e)
+        .Block(stmts) -> stmt_list_contains_it(stmts)
+        .Index(obj, idx) -> expr_contains_it(obj) || expr_contains_it(idx)
+        .FieldAccess(obj, _) -> expr_contains_it(obj)
+        .FieldAssign(obj, _, val) -> expr_contains_it(obj) || expr_contains_it(val)
+        .Assign(_, val) -> expr_contains_it(val)
+        .NullCoalesce(l, r) -> expr_contains_it(l) || expr_contains_it(r)
+        .OptionalChain(obj, _) -> expr_contains_it(obj)
+        .Try(inner) -> expr_contains_it(inner)
+        .Tuple(elems) -> expr_list_contains_it(elems)
+        .TupleIndex(obj, _) -> expr_contains_it(obj)
+        .With(obj, _) -> expr_contains_it(obj)
+        .ListLit(elems) -> expr_list_contains_it(elems)
+        .MapLit(entries) -> expr_list_contains_it(entries)
+        .Slice(obj, s, e) -> expr_contains_it(obj) || expr_contains_it(s) || expr_contains_it(e)
+        .MatchExpr(subj, _) -> expr_contains_it(subj)
+        _ -> false
+    }
+}
+
+export fn expr_list_contains_it(list: ExprList) -> bool {
+    match list {
+        .End -> false
+        .Node(se, next) -> expr_contains_it(se.node) || expr_list_contains_it(next)
+    }
+}
+
+export fn stmt_list_contains_it(list: StmtList) -> bool {
+    match list {
+        .End -> false
+        .Node(ss, next) -> {
+            let has = match ss.node {
+                .Expr(e) -> expr_contains_it(e)
+                .Let(_, _, init) -> expr_contains_it(init)
+                .Mut(_, _, init) -> expr_contains_it(init)
+                .Return(val) -> expr_contains_it(val)
+                _ -> false
+            }
+            has || stmt_list_contains_it(next)
+        }
+    }
+}
+
+// Wrap an expression in an implicit `(it) -> { expr }` lambda.
+export fn wrap_in_it_lambda(expr: Expr) -> Expr {
+    Expr.Lambda(ParamList.Node("it", "", ParamList.End), expr)
+}
+
+impl Parser {
+    fn parse_lambda_body(self) -> Expr? {
+        // Lambda body: either a block { ... } or a single expression.
+        if self.check(Tk.LeftBrace) {
+            return self.parse_block_expression()
+        }
+        self.parse_expression()
+    }
+}

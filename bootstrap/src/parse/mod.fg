@@ -8,6 +8,7 @@ mod lexer
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str}
 use parse.lexer.{p_is_alpha, p_is_alpha_numeric, p_is_digit}
 use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
+use features.closures.parser.{expr_contains_it, wrap_in_it_lambda}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
 export type ParseResult = {
@@ -124,64 +125,6 @@ fn exprs_to_params(exprs: ExprList) -> ParamList {
     }
 }
 
-// Check if an expression tree references the identifier `it`.
-// Used by `it` parameter sugar: `list.map(it * 2)` becomes
-// `list.map((it) -> { it * 2 })`.
-fn expr_contains_it(expr: Expr) -> bool {
-    match expr {
-        .Ident(n) -> n == "it"
-        .Binary(l, _, r) -> expr_contains_it(l) || expr_contains_it(r)
-        .Unary(_, r) -> expr_contains_it(r)
-        .Logical(l, _, r) -> expr_contains_it(l) || expr_contains_it(r)
-        .Call(callee, args) -> expr_contains_it(callee) || expr_list_contains_it(args)
-        .Grouping(inner) -> expr_contains_it(inner)
-        .IfExpr(c, t, e) -> expr_contains_it(c) || expr_contains_it(t) || expr_contains_it(e)
-        .Block(stmts) -> stmt_list_contains_it(stmts)
-        .Index(obj, idx) -> expr_contains_it(obj) || expr_contains_it(idx)
-        .FieldAccess(obj, _) -> expr_contains_it(obj)
-        .FieldAssign(obj, _, val) -> expr_contains_it(obj) || expr_contains_it(val)
-        .Assign(_, val) -> expr_contains_it(val)
-        .NullCoalesce(l, r) -> expr_contains_it(l) || expr_contains_it(r)
-        .OptionalChain(obj, _) -> expr_contains_it(obj)
-        .Try(inner) -> expr_contains_it(inner)
-        .Tuple(elems) -> expr_list_contains_it(elems)
-        .TupleIndex(obj, _) -> expr_contains_it(obj)
-        .With(obj, _) -> expr_contains_it(obj)
-        .ListLit(elems) -> expr_list_contains_it(elems)
-        .MapLit(entries) -> expr_list_contains_it(entries)
-        .Slice(obj, s, e) -> expr_contains_it(obj) || expr_contains_it(s) || expr_contains_it(e)
-        .MatchExpr(subj, _) -> expr_contains_it(subj)
-        _ -> false
-    }
-}
-
-fn expr_list_contains_it(list: ExprList) -> bool {
-    match list {
-        .End -> false
-        .Node(se, next) -> expr_contains_it(se.node) || expr_list_contains_it(next)
-    }
-}
-
-fn stmt_list_contains_it(list: StmtList) -> bool {
-    match list {
-        .End -> false
-        .Node(ss, next) -> {
-            let has = match ss.node {
-                .Expr(e) -> expr_contains_it(e)
-                .Let(_, _, init) -> expr_contains_it(init)
-                .Mut(_, _, init) -> expr_contains_it(init)
-                .Return(val) -> expr_contains_it(val)
-                _ -> false
-            }
-            has || stmt_list_contains_it(next)
-        }
-    }
-}
-
-// Wrap an expression in an implicit `(it) -> { expr }` lambda.
-fn wrap_in_it_lambda(expr: Expr) -> Expr {
-    Expr.Lambda(ParamList.Node("it", "", ParamList.End), expr)
-}
 
 fn p_starts_with_upper(name: string) -> bool {
     if name.length < 1 {
@@ -1184,81 +1127,6 @@ impl Parser {
         result
     }
 
-    // Lookahead: is the current `{` the start of a map literal?
-    // A map starts with `{ "string" :` or `{ }` (empty map).
-    fn is_map_literal(self) -> bool {
-        // Save position for lookahead
-        let saved_pos = self.current
-        let saved_start = self.start
-        let saved_kind = self.current_kind
-        let saved_lex = self.current_lexeme
-
-        self.advance()  // consume {
-        let is_map = self.check(Tk.RightBrace) || (self.check(Tk.String) && {
-            self.advance()  // consume string
-            self.check(Tk.Colon)
-        })
-
-        // Restore position
-        self.current = saved_pos
-        self.start = saved_start
-        self.current_kind = saved_kind
-        self.current_lexeme = saved_lex
-        is_map
-    }
-
-    fn parse_map_literal(self) -> Expr? {
-        self.advance()  // consume {
-        if self.check(Tk.RightBrace) {
-            self.advance()
-            return Expr.MapLit(ExprList.End)
-        }
-        let entries = self.parse_map_entries()?
-        if !self.consume(Tk.RightBrace, "expected `}` after map") {
-            return null
-        }
-        Expr.MapLit(entries)
-    }
-
-    // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
-    fn parse_map_entries(self) -> ExprList? {
-        let key = self.parse_expression()?
-        if !self.consume(Tk.Colon, "expected `:` after map key") {
-            return null
-        }
-        let value = self.parse_expression()?
-        if self.check(Tk.Comma) {
-            self.advance()
-            if self.check(Tk.RightBrace) {
-                return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
-            }
-            let rest = self.parse_map_entries()?
-            return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), rest))
-        }
-        ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
-    }
-
-    fn parse_lambda_body(self) -> Expr? {
-        // Lambda body: either a block { ... } or a single expression.
-        if self.check(Tk.LeftBrace) {
-            return self.parse_block_expression()
-        }
-        self.parse_expression()
-    }
-
-    fn parse_list_elements(self) -> ExprList? {
-        let expr = self.parse_expression()?
-        if self.check(Tk.Comma) {
-            self.advance()
-            if self.check(Tk.RightBracket) {
-                // Trailing comma: [1, 2,]
-                return ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
-            }
-            let rest = self.parse_list_elements()?
-            return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
-        }
-        ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
-    }
 
     fn parse_tuple_rest(self) -> ExprList? {
         // After the first comma in a tuple. Parse remaining elements.

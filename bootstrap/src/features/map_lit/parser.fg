@@ -1,0 +1,62 @@
+// WHY: parses map literal expressions `{ "key": value, ... }`.
+// is_map_literal does lookahead to disambiguate map literals from blocks.
+
+use core.ast.{Expr, ExprList, SExpr, sexpr}
+use parse.{Parser}
+use core.ast.{Tk}
+
+impl Parser {
+    // Lookahead: is the current `{` the start of a map literal?
+    // A map starts with `{ "string" :` or `{ }` (empty map).
+    fn is_map_literal(self) -> bool {
+        // Save position for lookahead
+        let saved_pos = self.current
+        let saved_start = self.start
+        let saved_kind = self.current_kind
+        let saved_lex = self.current_lexeme
+
+        self.advance()  // consume {
+        let is_map = self.check(Tk.RightBrace) || (self.check(Tk.String) && {
+            self.advance()  // consume string
+            self.check(Tk.Colon)
+        })
+
+        // Restore position
+        self.current = saved_pos
+        self.start = saved_start
+        self.current_kind = saved_kind
+        self.current_lexeme = saved_lex
+        is_map
+    }
+
+    fn parse_map_literal(self) -> Expr? {
+        self.advance()  // consume {
+        if self.check(Tk.RightBrace) {
+            self.advance()
+            return Expr.MapLit(ExprList.End)
+        }
+        let entries = self.parse_map_entries()?
+        if !self.consume(Tk.RightBrace, "expected `}` after map") {
+            return null
+        }
+        Expr.MapLit(entries)
+    }
+
+    // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
+    fn parse_map_entries(self) -> ExprList? {
+        let key = self.parse_expression()?
+        if !self.consume(Tk.Colon, "expected `:` after map key") {
+            return null
+        }
+        let value = self.parse_expression()?
+        if self.check(Tk.Comma) {
+            self.advance()
+            if self.check(Tk.RightBrace) {
+                return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
+            }
+            let rest = self.parse_map_entries()?
+            return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), rest))
+        }
+        ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
+    }
+}
