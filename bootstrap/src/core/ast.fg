@@ -766,3 +766,137 @@ export fn render_stmt_list(stmts: StmtList) -> string {
         }
     }
 }
+
+// ── Token kinds ──
+// Enum-based token kinds replace string-based dispatch in the parser.
+// Type-safe, fast (integer comparison), and compiler-checked.
+
+export enum Tk {
+    // Punctuation
+    LeftParen
+    RightParen
+    LeftBrace
+    RightBrace
+    LeftBracket
+    RightBracket
+    Comma
+    Dot
+    DotDot
+    Colon
+    Arrow
+    At
+    Tilde
+    Question
+    QuestionDot
+    QuestionQuestion
+    // Operators
+    Plus
+    Minus
+    Star
+    Slash
+    Percent
+    Equal
+    EqualEqual
+    Bang
+    BangEqual
+    Less
+    LessEqual
+    Greater
+    GreaterEqual
+    Amp
+    AmpAmp
+    Pipe
+    PipePipe
+    PipeGt
+    Caret
+    Shl
+    Shr
+    // Literals
+    Number
+    Float
+    String
+    Template
+    Identifier
+    // Keywords
+    KwAnd
+    KwBreak
+    KwConst
+    KwContinue
+    KwDefer
+    KwElse
+    KwEnum
+    KwExport
+    KwExtern
+    KwFalse
+    KwFn
+    KwFor
+    KwGiven
+    KwIf
+    KwImpl
+    KwIn
+    KwIs
+    KwLet
+    KwMatch
+    KwMod
+    KwMut
+    KwNot
+    KwNull
+    KwOr
+    KwParallel
+    KwReturn
+    KwSelect
+    KwSpec
+    KwThen
+    KwTrait
+    KwTrue
+    KwType
+    KwUse
+    KwWhile
+    KwWith
+    // Special
+    Eof
+    Error
+}
+
+// Bridge: convert Tk keyword to the string used by the feature registry.
+// Returns "" for non-keyword tokens.
+export fn tk_keyword_str(tk: Tk) -> string {
+    match tk {
+        .KwAnd -> "kw_and"
+        .KwBreak -> "kw_break"
+        .KwConst -> "kw_const"
+        .KwContinue -> "kw_continue"
+        .KwDefer -> "kw_defer"
+        .KwElse -> "kw_else"
+        .KwEnum -> "kw_enum"
+        .KwExport -> "kw_export"
+        .KwExtern -> "kw_extern"
+        .KwFalse -> "kw_false"
+        .KwFn -> "kw_fn"
+        .KwFor -> "kw_for"
+        .KwGiven -> "kw_given"
+        .KwIf -> "kw_if"
+        .KwImpl -> "kw_impl"
+        .KwIn -> "kw_in"
+        .KwIs -> "kw_is"
+        .KwLet -> "kw_let"
+        .KwMatch -> "kw_match"
+        .KwMod -> "kw_mod"
+        .KwMut -> "kw_mut"
+        .KwNot -> "kw_not"
+        .KwNull -> "kw_null"
+        .KwOr -> "kw_or"
+        .KwParallel -> "kw_parallel"
+        .KwReturn -> "kw_return"
+        .KwSelect -> "kw_select"
+        .KwSpec -> "kw_spec"
+        .KwThen -> "kw_then"
+        .KwTrait -> "kw_trait"
+        .KwTrue -> "kw_true"
+        .KwType -> "kw_type"
+        .KwUse -> "kw_use"
+        .KwWhile -> "kw_while"
+        .KwWith -> "kw_with"
+        _ -> ""
+    }
+}
