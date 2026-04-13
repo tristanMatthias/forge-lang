@@ -1,0 +1,15 @@
+// WHY: type checking for list literals — infers element type from first element.
+
+use core.ast.{ExprList, ValueType}
+use typeck.{TC, ExprResult, tc_er, check_expr, check_expr_list}
+
+fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
+    match elements {
+        .End -> tc_er(tc, ValueType.List(ValueType.Int))
+        .Node(se, _) -> {
+            let r = check_expr(tc, se.node)
+            let checked = check_expr_list(r.tc, elements)
+            tc_er(checked, ValueType.List(r.ty))
+        }
+    }
+}

@@ -1,4 +1,5 @@
 mod codegen
+mod typeck
 
 export fn init_list_lit(reg: Registry) {
     let f = feature_new("list_lit") with {

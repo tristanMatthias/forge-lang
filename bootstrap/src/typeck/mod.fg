@@ -865,17 +865,6 @@ fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
 
 // ── List literal type ──
 
-fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
-    match elements {
-        .End -> tc_er(tc, ValueType.List(ValueType.Int))
-        .Node(se, _) -> {
-            let r = check_expr(tc, se.node)
-            let checked = check_expr_list(r.tc, elements)
-            tc_er(checked, ValueType.List(r.ty))
-        }
-    }
-}
-
 // ── Block expression type ──
 
 fn check_block(tc: TC, stmts: StmtList) -> ExprResult {
