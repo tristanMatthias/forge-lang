@@ -214,10 +214,8 @@ export fn vtype_tuple_at(t: ValueType, idx: int) -> ValueType {
 fn typelist_at(list: TypeList, idx: int) -> ValueType {
     match list {
         .End -> ValueType.Int
-        .Node(ty, next) -> {
-            if idx <= 0 { return ty }
-            typelist_at(next, idx - 1)
-        }
+        .Node(ty, _) if idx <= 0 -> ty
+        .Node(_, next) -> typelist_at(next, idx - 1)
     }
 }
 
@@ -398,12 +396,8 @@ export fn env_lookup(env: VarEnv, name: string) -> VarLookup {
             let n: ptr = null
             VarLookup { found: false, alloca: n, ty: ValueType.Int }
         }
-        .Node(n, alloca, ty, next) -> {
-            if n == name {
-                return VarLookup { found: true, alloca, ty }
-            }
-            env_lookup(next, name)
-        }
+        .Node(n, alloca, ty, _) if n == name -> VarLookup { found: true, alloca, ty }
+        .Node(_, _, _, next) -> env_lookup(next, name)
     }
 }
 
@@ -429,12 +423,8 @@ export fn fn_env_lookup(env: FnEnv, name: string) -> FnLookup {
             let n: ptr = null
             FnLookup { found: false, fn_val: n, arity: 0 }
         }
-        .Node(n, fn_val, arity, next) -> {
-            if n == name {
-                return FnLookup { found: true, fn_val, arity }
-            }
-            fn_env_lookup(next, name)
-        }
+        .Node(n, fn_val, arity, _) if n == name -> FnLookup { found: true, fn_val, arity }
+        .Node(_, _, _, next) -> fn_env_lookup(next, name)
     }
 }
 
@@ -478,12 +468,8 @@ export fn field_index_of(fields: FieldList, name: string) -> int {
 fn field_index_of_loop(fields: FieldList, name: string, idx: int) -> int {
     match fields {
         .End -> -1
-        .Node(n, _, next) -> {
-            if n == name {
-                return idx
-            }
-            field_index_of_loop(next, name, idx + 1)
-        }
+        .Node(n, _, _) if n == name -> idx
+        .Node(_, _, next) -> field_index_of_loop(next, name, idx + 1)
     }
 }
 
@@ -511,12 +497,8 @@ export fn variant_lookup(variants: VariantList, name: string) -> VariantLookup {
 fn variant_lookup_by_hash(variants: VariantList, name: string) -> VariantLookup {
     match variants {
         .End -> VariantLookup { found: false, fields: FieldList.End, tag: -1 }
-        .Node(n, fields, next) -> {
-            if n == name {
-                return VariantLookup { found: true, fields, tag: forge_variant_hash(name) }
-            }
-            variant_lookup_by_hash(next, name)
-        }
+        .Node(n, fields, _) if n == name -> VariantLookup { found: true, fields, tag: forge_variant_hash(name) }
+        .Node(_, _, next) -> variant_lookup_by_hash(next, name)
     }
 }
 

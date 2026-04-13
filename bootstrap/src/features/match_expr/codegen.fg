@@ -269,10 +269,9 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
 fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: FieldList, idx: int) -> VarEnv {
     match bindings {
         .End -> env
+        .Node(name, _, next_b) if name == "_" ->
+            bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
         .Node(name, _, next_b) -> {
-            if name == "_" {
-                return bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
-            }
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, name)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, loaded, alloca)
@@ -336,8 +335,8 @@ fn bind_single_sub_pattern(ctx: Ctx, env: VarEnv, pat: Pattern, value: ptr, ty: 
 fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: ValueType) -> VarEnv {
     match bindings {
         .End -> env
+        .Node(name, _, _) if name == "_" -> env
         .Node(name, _, _) -> {
-            if name == "_" { return env }
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, value, alloca)
             env_extend(env, name, alloca, ty)

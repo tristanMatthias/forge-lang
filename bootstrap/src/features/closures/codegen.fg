@@ -34,20 +34,16 @@ fn capture_list_len(list: CaptureList) -> int {
 fn is_param(params: ParamList, name: string) -> bool {
     match params {
         .End -> false
-        .Node(pname, _, next) -> {
-            if pname == name { return true }
-            is_param(next, name)
-        }
+        .Node(pname, _, _) if pname == name -> true
+        .Node(_, _, next) -> is_param(next, name)
     }
 }
 
 fn is_captured(captures: CaptureList, name: string) -> bool {
     match captures {
         .End -> false
-        .Node(cname, _, _, next) -> {
-            if cname == name { return true }
-            is_captured(next, name)
-        }
+        .Node(cname, _, _, _) if cname == name -> true
+        .Node(_, _, _, next) -> is_captured(next, name)
     }
 }
 
@@ -158,10 +154,8 @@ fn env_type_of(ctx: Ctx, env: VarEnv, name: string) -> ValueType {
 fn capture_type_of(captures: CaptureList, name: string) -> ValueType {
     match captures {
         .End -> ValueType.Int
-        .Node(cname, _, ty, next) -> {
-            if cname == name { return ty }
-            capture_type_of(next, name)
-        }
+        .Node(cname, _, ty, _) if cname == name -> ty
+        .Node(_, _, _, next) -> capture_type_of(next, name)
     }
 }
 

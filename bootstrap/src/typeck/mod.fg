@@ -23,10 +23,8 @@ enum TypeEntry {
 fn type_lookup(env: TypeEntry, name: string) -> ValueType {
     match env {
         .End -> ValueType.Int  // fallback — resolver already caught undefined
-        .Node(n, ty, _, next) -> {
-            if n == name { return ty }
-            type_lookup(next, name)
-        }
+        .Node(n, ty, _, _) if n == name -> ty
+        .Node(_, _, _, next) -> type_lookup(next, name)
     }
 }
 
@@ -37,10 +35,8 @@ fn type_bind(env: TypeEntry, name: string, ty: ValueType, depth: int) -> TypeEnt
 fn type_pop_scope(env: TypeEntry, depth: int) -> TypeEntry {
     match env {
         .End -> TypeEntry.End
-        .Node(_, _, d, next) -> {
-            if d >= depth { return type_pop_scope(next, depth) }
-            env
-        }
+        .Node(_, _, d, next) if d >= depth -> type_pop_scope(next, depth)
+        _ -> env
     }
 }
 
@@ -54,30 +50,24 @@ enum FnTypeEntry {
 fn fn_type_lookup(fns: FnTypeEntry, name: string) -> ValueType {
     match fns {
         .End -> ValueType.Int
-        .Node(n, _, ret, next) -> {
-            if n == name { return ret }
-            fn_type_lookup(next, name)
-        }
+        .Node(n, _, ret, _) if n == name -> ret
+        .Node(_, _, _, next) -> fn_type_lookup(next, name)
     }
 }
 
 fn fn_type_has(fns: FnTypeEntry, name: string) -> bool {
     match fns {
         .End -> false
-        .Node(n, _, _, next) -> {
-            if n == name { return true }
-            fn_type_has(next, name)
-        }
+        .Node(n, _, _, _) if n == name -> true
+        .Node(_, _, _, next) -> fn_type_has(next, name)
     }
 }
 
 fn tc_fn_arity(fns: FnTypeEntry, name: string) -> int {
     match fns {
         .End -> 0
-        .Node(n, params, _, next) -> {
-            if n == name { return param_list_length(params) }
-            tc_fn_arity(next, name)
-        }
+        .Node(n, params, _, _) if n == name -> param_list_length(params)
+        .Node(_, _, _, next) -> tc_fn_arity(next, name)
     }
 }
 
@@ -98,20 +88,16 @@ enum StructTypeReg {
 export fn struct_type_lookup(reg: StructTypeReg, name: string) -> FieldList {
     match reg {
         .End -> FieldList.End
-        .Node(n, fields, next) -> {
-            if n == name { return fields }
-            struct_type_lookup(next, name)
-        }
+        .Node(n, fields, _) if n == name -> fields
+        .Node(_, _, next) -> struct_type_lookup(next, name)
     }
 }
 
 fn struct_type_has(reg: StructTypeReg, name: string) -> bool {
     match reg {
         .End -> false
-        .Node(n, _, next) -> {
-            if n == name { return true }
-            struct_type_has(next, name)
-        }
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> struct_type_has(next, name)
     }
 }
 
@@ -123,10 +109,8 @@ enum EnumTypeReg {
 fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
     match reg {
         .End -> false
-        .Node(n, _, next) -> {
-            if n == name { return true }
-            enum_type_has(next, name)
-        }
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> enum_type_has(next, name)
     }
 }
 
@@ -146,20 +130,16 @@ enum TraitRegistry {
 export fn trait_lookup(reg: TraitRegistry, name: string) -> TraitMethodList {
     match reg {
         .End -> TraitMethodList.End
-        .Node(n, methods, next) -> {
-            if n == name { return methods }
-            trait_lookup(next, name)
-        }
+        .Node(n, methods, _) if n == name -> methods
+        .Node(_, _, next) -> trait_lookup(next, name)
     }
 }
 
 export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     match reg {
         .End -> false
-        .Node(n, _, next) -> {
-            if n == name { return true }
-            trait_has(next, name)
-        }
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> trait_has(next, name)
     }
 }
 

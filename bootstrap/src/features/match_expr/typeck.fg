@@ -10,10 +10,8 @@ use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_
 fn enum_type_variants(reg: EnumTypeReg, name: string) -> VariantList {
     match reg {
         .End -> VariantList.End
-        .Node(n, variants, next) -> {
-            if n == name { return variants }
-            enum_type_variants(next, name)
-        }
+        .Node(n, variants, _) if n == name -> variants
+        .Node(_, _, next) -> enum_type_variants(next, name)
     }
 }
 

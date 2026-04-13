@@ -39,10 +39,7 @@ fn impl_has_method(methods: StmtList, name: string) -> bool {
         .End -> false
         .Node(ss, next) -> {
             match ss.node {
-                .Function(fn_name, _, _, _) -> {
-                    if fn_name == name { return true }
-                    impl_has_method(next, name)
-                }
+                .Function(fn_name, _, _, _) if fn_name == name -> true
                 _ -> impl_has_method(next, name)
             }
         }
@@ -64,9 +61,7 @@ export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
 fn method_list_has(list: TraitMethodList, name: string) -> bool {
     match list {
         .End -> false
-        .Node(n, next) -> {
-            if n == name { return true }
-            method_list_has(next, name)
-        }
+        .Node(n, _) if n == name -> true
+        .Node(_, next) -> method_list_has(next, name)
     }
 }

@@ -47,19 +47,15 @@ export fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
 fn tc_field_exists(fields: FieldList, name: string) -> bool {
     match fields {
         .End -> false
-        .Node(fname, _, next) -> {
-            if fname == name { return true }
-            tc_field_exists(next, name)
-        }
+        .Node(fname, _, _) if fname == name -> true
+        .Node(_, _, next) -> tc_field_exists(next, name)
     }
 }
 
 fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
     match fields {
         .End -> ValueType.Int
-        .Node(fname, ftype, next) -> {
-            if fname == name { return translate_type(tc, ftype) }
-            field_type_in(tc, next, name)
-        }
+        .Node(fname, ftype, _) if fname == name -> translate_type(tc, ftype)
+        .Node(_, _, next) -> field_type_in(tc, next, name)
     }
 }

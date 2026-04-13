@@ -45,10 +45,8 @@ enum AliasEntry {
 fn alias_lookup(aliases: AliasEntry, name: string) -> string {
     match aliases {
         .End -> ""
-        .Node(short, canonical, next) -> {
-            if short == name { return canonical }
-            alias_lookup(next, name)
-        }
+        .Node(short, canonical, _) if short == name -> canonical
+        .Node(_, _, next) -> alias_lookup(next, name)
     }
 }
 
@@ -57,20 +55,16 @@ fn alias_lookup(aliases: AliasEntry, name: string) -> string {
 fn item_lookup(items: ModuleItem, name: string) -> string {
     match items {
         .End -> ""
-        .Node(short, canonical, _, next) -> {
-            if short == name { return canonical }
-            item_lookup(next, name)
-        }
+        .Node(short, canonical, _, _) if short == name -> canonical
+        .Node(_, _, _, next) -> item_lookup(next, name)
     }
 }
 
 fn item_is_exported(items: ModuleItem, name: string) -> bool {
     match items {
         .End -> false
-        .Node(short, _, exported, next) -> {
-            if short == name { return exported }
-            item_is_exported(next, name)
-        }
+        .Node(short, _, exported, _) if short == name -> exported
+        .Node(_, _, _, next) -> item_is_exported(next, name)
     }
 }
 
@@ -101,9 +95,8 @@ fn append_items(items: ModuleItem, rest: ModuleItem) -> ModuleItem {
 fn module_find(tree: ModuleNode, path: string) -> ModuleNode {
     match tree {
         .End -> ModuleNode.End
-        .Node(name, mod_path, items, children, next) -> {
-            if mod_path == path { return tree }
-            // Search children
+        .Node(_, mod_path, _, _, _) if mod_path == path -> tree
+        .Node(_, _, _, children, next) -> {
             let in_children = module_find(children, path)
             match in_children {
                 .End -> module_find(next, path)
@@ -309,10 +302,8 @@ enum LocalScope {
 fn scope_has(scope: LocalScope, name: string) -> bool {
     match scope {
         .End -> false
-        .Node(n, _, _, _, next) -> {
-            if n == name { return true }
-            scope_has(next, name)
-        }
+        .Node(n, _, _, _, _) if n == name -> true
+        .Node(_, _, _, _, next) -> scope_has(next, name)
     }
 }
 

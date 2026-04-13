@@ -64,20 +64,16 @@ export enum TraitDeclReg {
 export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames {
     match reg {
         .End -> TraitMethodNames.End
-        .Node(n, methods, next) -> {
-            if n == name { return methods }
-            trait_decl_lookup(next, name)
-        }
+        .Node(n, methods, _) if n == name -> methods
+        .Node(_, _, next) -> trait_decl_lookup(next, name)
     }
 }
 
 export fn trait_decl_has(reg: TraitDeclReg, name: string) -> bool {
     match reg {
         .End -> false
-        .Node(n, _, next) -> {
-            if n == name { return true }
-            trait_decl_has(next, name)
-        }
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> trait_decl_has(next, name)
     }
 }
 
@@ -153,12 +149,8 @@ export fn advance_field_list(fields: FieldList) -> FieldList {
 export fn field_type_at(fields: FieldList, idx: int) -> string {
     match fields {
         .End -> "i64"
-        .Node(_, ty, next) -> {
-            if idx <= 0 {
-                return ty
-            }
-            field_type_at(next, idx - 1)
-        }
+        .Node(_, ty, _) if idx <= 0 -> ty
+        .Node(_, _, next) -> field_type_at(next, idx - 1)
     }
 }
 
@@ -191,10 +183,8 @@ export enum FnParamTypes {
 export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
     match reg {
         .End -> ParamTypeList.End
-        .Node(n, params, next) -> {
-            if n == name { return params }
-            fn_param_lookup(next, name)
-        }
+        .Node(n, params, _) if n == name -> params
+        .Node(_, _, next) -> fn_param_lookup(next, name)
     }
 }
 
@@ -202,10 +192,8 @@ export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
 export fn param_type_at(list: ParamTypeList, idx: int) -> string {
     match list {
         .End -> ""
-        .Node(ty, next) -> {
-            if idx == 0 { return ty }
-            param_type_at(next, idx - 1)
-        }
+        .Node(ty, _) if idx == 0 -> ty
+        .Node(_, next) -> param_type_at(next, idx - 1)
     }
 }
 
@@ -241,12 +229,8 @@ export type StructLookup = {
 export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
     match reg {
         .End -> StructLookup { found: false, fields: FieldList.End }
-        .Node(n, fields, next) -> {
-            if n == name {
-                return StructLookup { found: true, fields }
-            }
-            struct_reg_lookup(next, name)
-        }
+        .Node(n, fields, _) if n == name -> StructLookup { found: true, fields }
+        .Node(_, _, next) -> struct_reg_lookup(next, name)
     }
 }
 
@@ -263,12 +247,8 @@ export type EnumLookup = {
 export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
     match reg {
         .End -> EnumLookup { found: false, variants: VariantList.End }
-        .Node(n, variants, next) -> {
-            if n == name {
-                return EnumLookup { found: true, variants }
-            }
-            enum_reg_lookup(next, name)
-        }
+        .Node(n, variants, _) if n == name -> EnumLookup { found: true, variants }
+        .Node(_, _, next) -> enum_reg_lookup(next, name)
     }
 }
 
@@ -277,11 +257,8 @@ export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
 export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
     match reg {
         .End -> ""
-        .Node(name, variants, next) -> {
-            let v = variant_lookup(variants, variant)
-            if v.found { return name }
-            enum_reg_find_by_variant(next, variant)
-        }
+        .Node(name, variants, _) if variant_lookup(variants, variant).found -> name
+        .Node(_, _, next) -> enum_reg_find_by_variant(next, variant)
     }
 }
 
@@ -292,10 +269,8 @@ export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
 export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Int
-        .Node(n, ty, next) -> {
-            if n == name { return ty }
-            fn_ret_lookup(next, name)
-        }
+        .Node(n, ty, _) if n == name -> ty
+        .Node(_, _, next) -> fn_ret_lookup(next, name)
     }
 }
 
@@ -311,10 +286,8 @@ export fn toplevel_lookup(reg: TopLevelVars, name: string) -> TopLevelLookup {
             let n: ptr = null
             TopLevelLookup { found: false, llvm_global: n, ty: ValueType.Int }
         }
-        .Node(n, g, ty, next) -> {
-            if n == name { return TopLevelLookup { found: true, llvm_global: g, ty } }
-            toplevel_lookup(next, name)
-        }
+        .Node(n, g, ty, _) if n == name -> TopLevelLookup { found: true, llvm_global: g, ty }
+        .Node(_, _, _, next) -> toplevel_lookup(next, name)
     }
 }
 

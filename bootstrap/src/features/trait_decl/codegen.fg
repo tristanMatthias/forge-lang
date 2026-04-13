@@ -8,10 +8,8 @@ use features.fn_decl.codegen.{emit_first_arg}
 export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
     match methods {
         .End -> 0 - 1
-        .Node(n, _, next) -> {
-            if n == name { return idx }
-            trait_method_idx(next, name, idx + 1)
-        }
+        .Node(n, _, _) if n == name -> idx
+        .Node(_, _, next) -> trait_method_idx(next, name, idx + 1)
     }
 }
 
@@ -19,10 +17,8 @@ export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) ->
 export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string {
     match methods {
         .End -> ""
-        .Node(n, ret, next) -> {
-            if n == name { return ret }
-            trait_method_ret_ty(next, name)
-        }
+        .Node(n, ret, _) if n == name -> ret
+        .Node(_, _, next) -> trait_method_ret_ty(next, name)
     }
 }
 

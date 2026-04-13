@@ -592,24 +592,20 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
 
 fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
     match fields {
-        .Node(name, base_name, rest) -> {
-            if name == "__base" {
-                match rest {
-                    .Node(op_name, op, excluded_fields) -> {
-                        let base_lookup = struct_reg_lookup(reg, base_name)
-                        if !base_lookup.found { return FieldList.End }
-                        if op == "without" {
-                            return filter_fields_without(base_lookup.fields, excluded_fields)
-                        }
-                        if op == "only" {
-                            return filter_fields_only(base_lookup.fields, excluded_fields)
-                        }
-                        base_lookup.fields
+        .Node(name, base_name, rest) if name == "__base" -> {
+            match rest {
+                .Node(op_name, op, excluded_fields) -> {
+                    let base_lookup = struct_reg_lookup(reg, base_name)
+                    if !base_lookup.found { return FieldList.End }
+                    if op == "without" {
+                        return filter_fields_without(base_lookup.fields, excluded_fields)
                     }
-                    _ -> fields
+                    if op == "only" {
+                        return filter_fields_only(base_lookup.fields, excluded_fields)
+                    }
+                    base_lookup.fields
                 }
-            } else {
-                fields
+                _ -> fields
             }
         }
         _ -> fields
@@ -620,13 +616,8 @@ fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
 fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
     match base {
         .End -> FieldList.End
-        .Node(name, ty, next) -> {
-            if field_list_has(excluded, name) {
-                filter_fields_without(next, excluded)
-            } else {
-                FieldList.Node(name, ty, filter_fields_without(next, excluded))
-            }
-        }
+        .Node(name, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
+        .Node(name, ty, next) -> FieldList.Node(name, ty, filter_fields_without(next, excluded))
     }
 }
 
@@ -634,13 +625,8 @@ fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
 fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
     match base {
         .End -> FieldList.End
-        .Node(name, ty, next) -> {
-            if field_list_has(included, name) {
-                FieldList.Node(name, ty, filter_fields_only(next, included))
-            } else {
-                filter_fields_only(next, included)
-            }
-        }
+        .Node(name, ty, next) if field_list_has(included, name) -> FieldList.Node(name, ty, filter_fields_only(next, included))
+        .Node(_, _, next) -> filter_fields_only(next, included)
     }
 }
 
@@ -648,10 +634,8 @@ fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
 fn field_list_has(list: FieldList, target: string) -> bool {
     match list {
         .End -> false
-        .Node(name, _, next) -> {
-            if name == target { return true }
-            field_list_has(next, target)
-        }
+        .Node(name, _, _) if name == target -> true
+        .Node(_, _, next) -> field_list_has(next, target)
     }
 }
 

@@ -29,10 +29,8 @@ export enum LoadedPaths {
 fn loaded_has(paths: LoadedPaths, path: string) -> bool {
     match paths {
         .End -> false
-        .Node(p, next) -> {
-            if p == path { return true }
-            loaded_has(next, path)
-        }
+        .Node(p, _) if p == path -> true
+        .Node(_, next) -> loaded_has(next, path)
     }
 }
 

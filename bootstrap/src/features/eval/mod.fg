@@ -249,13 +249,9 @@ fn exit_scope(runtime: Runtime) -> Runtime {
 fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
     match bindings {
         .End -> BindingList.End
-        .Node(name, mutable_binding, binding_depth, value, next) -> {
-            if binding_depth == depth {
-                return pop_scope_bindings(next, depth)
-            }
-
+        .Node(_, _, binding_depth, _, next) if binding_depth == depth -> pop_scope_bindings(next, depth)
+        .Node(name, mutable_binding, binding_depth, value, next) ->
             BindingList.Node(name, mutable_binding, binding_depth, value, next)
-        }
     }
 }
 
@@ -282,24 +278,16 @@ type FunctionLookupResult = {
 fn lookup_binding(bindings: BindingList, name: string) -> LookupResult {
     match bindings {
         .End -> LookupResult { value: value_null(), found: false }
-        .Node(binding_name, _, _, value, next) -> {
-            if binding_name == name {
-                return LookupResult { value, found: true }
-            }
-            lookup_binding(next, name)
-        }
+        .Node(binding_name, _, _, value, _) if binding_name == name -> LookupResult { value, found: true }
+        .Node(_, _, _, _, next) -> lookup_binding(next, name)
     }
 }
 
 fn lookup_function(functions: FunctionList, name: string) -> FunctionLookupResult {
     match functions {
         .End -> FunctionLookupResult { params: ParamList.End, body: StmtList.End, found: false }
-        .Node(fn_name, params, body, next) -> {
-            if fn_name == name {
-                return FunctionLookupResult { params, body, found: true }
-            }
-            lookup_function(next, name)
-        }
+        .Node(fn_name, params, body, _) if fn_name == name -> FunctionLookupResult { params, body, found: true }
+        .Node(_, _, _, next) -> lookup_function(next, name)
     }
 }
 

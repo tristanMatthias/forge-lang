@@ -132,12 +132,8 @@ export fn exit_resolve_scope(r: Resolver) -> Resolver {
 fn pop_resolve_scope(entries: ScopeEntry, depth: int) -> ScopeEntry {
     match entries {
         .End -> ScopeEntry.End
-        .Node(name, defined, is_mut, entry_depth, next) -> {
-            if entry_depth == depth {
-                return pop_resolve_scope(next, depth)
-            }
-            ScopeEntry.Node(name, defined, is_mut, entry_depth, next)
-        }
+        .Node(_, _, _, entry_depth, next) if entry_depth == depth -> pop_resolve_scope(next, depth)
+        .Node(name, defined, is_mut, entry_depth, next) -> ScopeEntry.Node(name, defined, is_mut, entry_depth, next)
     }
 }
 
@@ -171,12 +167,10 @@ export fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
 fn mark_defined(entries: ScopeEntry, name: string, depth: int) -> ScopeEntry {
     match entries {
         .End -> ScopeEntry.End
-        .Node(entry_name, defined, is_mut, entry_depth, next) -> {
-            if entry_name == name && entry_depth == depth {
-                return ScopeEntry.Node(entry_name, true, is_mut, entry_depth, next)
-            }
+        .Node(entry_name, _, is_mut, entry_depth, next) if entry_name == name && entry_depth == depth ->
+            ScopeEntry.Node(entry_name, true, is_mut, entry_depth, next)
+        .Node(entry_name, defined, is_mut, entry_depth, next) ->
             ScopeEntry.Node(entry_name, defined, is_mut, entry_depth, mark_defined(next, name, depth))
-        }
     }
 }
 
@@ -193,24 +187,16 @@ type NameLookup = {
 fn lookup_name(entries: ScopeEntry, name: string) -> NameLookup {
     match entries {
         .End -> NameLookup { found: false, defined: false, mutable: false }
-        .Node(entry_name, defined, is_mut, _, next) -> {
-            if entry_name == name {
-                return NameLookup { found: true, defined, mutable: is_mut }
-            }
-            lookup_name(next, name)
-        }
+        .Node(entry_name, defined, is_mut, _, _) if entry_name == name -> NameLookup { found: true, defined, mutable: is_mut }
+        .Node(_, _, _, _, next) -> lookup_name(next, name)
     }
 }
 
 fn lookup_fn(fns: FnEntry, name: string) -> bool {
     match fns {
         .End -> false
-        .Node(fn_name, next) -> {
-            if fn_name == name {
-                return true
-            }
-            lookup_fn(next, name)
-        }
+        .Node(fn_name, _) if fn_name == name -> true
+        .Node(_, next) -> lookup_fn(next, name)
     }
 }
 
