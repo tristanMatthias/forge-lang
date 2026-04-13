@@ -6,7 +6,7 @@ use core.ast.{Expr, ExprList, FieldList, FieldInitList, ValueType, SExpr, vtype_
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, struct_type_has, translate_type}
 use diagnostics.{DiagCode}
 
-fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
+export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     let o = check_expr(tc, obj)
     // String .length
     if vtype_eq(o.ty, ValueType.Str) && field == "length" {
@@ -34,7 +34,7 @@ fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     tc_er(o.tc, ValueType.Int)
 }
 
-fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
+export fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
     match inits {
         .End -> tc
         .Node(_, value, next) -> {

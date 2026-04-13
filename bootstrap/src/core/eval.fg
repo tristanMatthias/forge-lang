@@ -134,7 +134,7 @@ fn runtime_new() -> Runtime {
     }
 }
 
-fn ok_result(runtime: Runtime, value: Value) -> StepResult {
+export fn ok_result(runtime: Runtime, value: Value) -> StepResult {
     StepResult {
         runtime,
         value,
@@ -154,7 +154,7 @@ fn make_return(runtime: Runtime, value: Value) -> StepResult {
     }
 }
 
-fn error_result(runtime: Runtime, message: string) -> StepResult {
+export fn error_result(runtime: Runtime, message: string) -> StepResult {
     StepResult {
         runtime,
         value: value_null(),
@@ -191,7 +191,7 @@ fn value_bool(flag: bool) -> Value {
     }
 }
 
-fn value_null() -> Value {
+export fn value_null() -> Value {
     Value {
         kind: "null",
         number_text: "",
@@ -359,7 +359,7 @@ fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
     }
 }
 
-fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
+export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Let(name, _, initializer) -> {
             let init = eval_expr(runtime, initializer)
@@ -438,7 +438,7 @@ fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
-fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepResult {
+export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepResult {
     let cond_result = eval_expr(runtime, condition)
     if cond_result.had_error {
         return cond_result
@@ -456,7 +456,7 @@ fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepResult {
     execute_while(body_result.runtime, condition, body)
 }
 
-fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
+export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
     match expr {
         .Number(text) -> ok_result(runtime, value_number(render_number(float(text))))
         .FloatLit(text) -> ok_result(runtime, value_number(text))
@@ -799,7 +799,7 @@ fn as_string(value: Value) -> string? {
     null
 }
 
-fn is_truthy(value: Value) -> bool {
+export fn is_truthy(value: Value) -> bool {
     if value.kind == "bool" {
         return value.bool_value
     }

@@ -1,1 +1,1 @@
-fn greet() -> string { "from sibling" }
+export fn greet() -> string { "from sibling" }

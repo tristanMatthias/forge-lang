@@ -1,6 +1,13 @@
 mod parser
 mod codegen
 mod typeck
+use core.cg.{err_stmt}
+use core.eval.{error_result}
+use core.registry.{feature_new, register}
+use core.resolver.{define_param_names, resolve_expr}
+use features.let_stmt.typeck.{bind_destructure}
+use features.tuples.codegen.{emit_let_destructure}
+use typeck.{check_expr}
 
 fn kw_parse_let(p: Parser) -> Stmt? {
     p.parse_let_statement()

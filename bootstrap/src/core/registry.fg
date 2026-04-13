@@ -8,6 +8,10 @@
 //   3. Call register_feature() with a dummy Expr/Stmt value
 //   4. One line in build_registry()
 
+use core.cg.{err_emit, err_stmt}
+use features.{init_features}
+use typeck.{tc_er}
+
 // C-side helpers
 extern fn forge_expr_tag(expr: int) -> int
 extern fn forge_stmt_tag(stmt: int) -> int

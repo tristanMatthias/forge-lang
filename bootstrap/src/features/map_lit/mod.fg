@@ -1,4 +1,10 @@
 mod codegen
+use core.cg.{err_emit}
+use core.eval.{error_result}
+use core.registry.{feature_new, register}
+use core.resolver.{resolve_expr_list}
+use features.map_lit.codegen.{emit_map_lit}
+use typeck.{check_expr_list, tc_er}
 
 export fn init_map_lit(reg: Registry) {
     let f = feature_new("map_lit") with {

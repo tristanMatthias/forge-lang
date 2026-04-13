@@ -1,5 +1,6 @@
 mod parser
 mod codegen
+use core.registry.{feature_new, register}
 
 fn kw_parse_fn(p: Parser) -> Stmt? {
     p.parse_function_declaration()

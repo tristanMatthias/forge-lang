@@ -30,6 +30,30 @@ mod spec_test
 mod select_stmt
 mod parallel_stmt
 mod modules
+use features.closures.{init_closures}
+use features.defer_stmt.{init_defer_stmt}
+use features.enum_decl.{init_enum_decl}
+use features.extern_decl.{init_extern_decl}
+use features.fn_decl.{init_fn_decl}
+use features.for_stmt.{init_for_stmt}
+use features.if_stmt.{init_if_stmt}
+use features.impl_decl.{init_impl_decl}
+use features.is_keyword.{init_is_keyword}
+use features.let_stmt.{init_let_stmt}
+use features.list_lit.{init_list_lit}
+use features.map_lit.{init_map_lit}
+use features.match_expr.{init_match_expr}
+use features.modules.{init_modules}
+use features.null_safety.{init_null_safety}
+use features.parallel_stmt.{init_parallel_stmt}
+use features.return_stmt.{init_return_stmt}
+use features.select_stmt.{init_select_stmt}
+use features.spec_test.{init_spec_test}
+use features.struct_decl.{init_struct_decl}
+use features.trait_decl.{init_trait_decl}
+use features.tuples.{init_tuples}
+use features.while_stmt.{init_while_stmt}
+use features.with_expr.{init_with_expr}
 
 export fn init_features(reg: Registry) {
     init_if_stmt(reg)

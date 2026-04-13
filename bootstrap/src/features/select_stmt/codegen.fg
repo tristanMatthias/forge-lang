@@ -2,6 +2,9 @@
 // Builds an array of channel pointers, calls forge_select to block
 // until one has data, then dispatches to the matching arm.
 
+use codegen.{emit_block_loop, emit_expr}
+use core.ast.{env_extend}
+use core.cg.{call_0, call_1, call_2, const_i64, err_stmt, get_fn, new_bb, ok_stmt, to_i64}
 export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
         .Select(arms) -> emit_select(ctx, env, arms)

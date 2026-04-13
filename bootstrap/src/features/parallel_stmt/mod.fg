@@ -1,5 +1,9 @@
 mod codegen
 mod parser
+use core.eval.{error_result}
+use core.registry.{feature_new, register}
+use core.resolver.{resolve_stmt_list}
+use features.parallel_stmt.codegen.{parallel_emit_stmt}
 
 fn kw_parse_parallel(p: Parser) -> Stmt? {
     p.parse_parallel_statement()

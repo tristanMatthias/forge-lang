@@ -13,7 +13,7 @@
 // is just the function pointer with a null environment.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
-use core.cg.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, const_i64, to_ptr, to_i64, ctx_with_fn, get_fn, call_0, call_2, DeferStack, toplevel_lookup}
+use core.cg.{Ctx, DeferStack, EmitResult, call_0, call_1, call_2, call_3, call_4, const_i64, ctx_with_fn, err_emit, get_fn, null_ptr_val, ok_emit, ok_emit_typed, to_i64, to_ptr, toplevel_lookup, translate_param_type}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 
@@ -446,19 +446,19 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
     fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
 }
 
-fn emit_indirect_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> EmitResult {
+export fn emit_indirect_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> EmitResult {
     let r = emit_indirect_call_value(ctx, env, fn_i64, args)
     if r.had_error { return r }
     ok_emit_typed(r.value, ret_ty)
 }
 
-fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> EmitResult {
+export fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> EmitResult {
     let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)
     if r.had_error { return r }
     ok_emit_typed(r.value, ret_ty)
 }
 
-fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> EmitResult {
+export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> EmitResult {
     // Indirect call for values with unknown closure status at compile time.
     // This happens when a fn returns a closure but the return type says
     // Fn/FnTyped (the type system can't distinguish bare ptrs from

@@ -3,7 +3,7 @@
 use core.ast.{Pattern, PatternList, MatchArmList}
 use core.resolver.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params}
 
-fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
+export fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
     mut current = arms
     mut res = r
     while true {

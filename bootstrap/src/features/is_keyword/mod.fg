@@ -1,4 +1,10 @@
 mod codegen
+use core.cg.{err_emit}
+use core.eval.{error_result}
+use core.registry.{feature_new, register}
+use core.resolver.{resolve_expr}
+use features.is_keyword.codegen.{emit_is_check}
+use typeck.{check_expr, tc_er}
 
 export fn init_is_keyword(reg: Registry) {
     let f = feature_new("is") with {

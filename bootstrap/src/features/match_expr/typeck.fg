@@ -3,7 +3,7 @@
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, ParamList, VariantList, ValueType, vtype_enum_name, vtype_eq}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
-use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, EnumTypeReg}
+use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit}
 
 // ── Exhaustiveness checking ──
 
@@ -116,7 +116,7 @@ fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
 
 // ── Match arm checking ──
 
-fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
+export fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
     match arms {
         .End -> tc
         .Node(pattern, guard, body, next) -> {
@@ -135,7 +135,7 @@ fn check_match_arms(tc: TC, arms: MatchArmList) -> TC {
 
 // ── Match expression type inference ──
 
-fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> ExprResult {
+export fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> ExprResult {
     match arms {
         .End -> tc_er(tc, first_ty)
         .Node(_, guard, body, next) -> {
@@ -158,7 +158,7 @@ fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType) -> Exp
 
 // ── Return type checking in match arms ──
 
-fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueType, arms: MatchArmList) -> TC {
+export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueType, arms: MatchArmList) -> TC {
     match arms {
         .End -> tc
         .Node(_, _, body, next) -> {

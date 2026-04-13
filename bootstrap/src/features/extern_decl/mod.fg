@@ -1,4 +1,5 @@
 mod parser
+use core.registry.{feature_new, register}
 
 fn kw_parse_extern(p: Parser) -> Stmt? {
     p.parse_extern_declaration()

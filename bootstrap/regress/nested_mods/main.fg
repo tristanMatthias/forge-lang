@@ -1,6 +1,9 @@
 mod helpers
 mod sub
 
+use helpers.{greet}
+use sub.{deep_greet}
+
 fn main() {
     println(greet())
     println(deep_greet())

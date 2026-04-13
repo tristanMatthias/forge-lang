@@ -3,7 +3,7 @@
 use core.ast.{ParamList, ValueType, vtype_tuple_at}
 use typeck.{TC, tc_bind}
 
-fn bind_destructure(tc: TC, names: ParamList, tuple_ty: ValueType) -> TC {
+export fn bind_destructure(tc: TC, names: ParamList, tuple_ty: ValueType) -> TC {
     bind_destructure_idx(tc, names, tuple_ty, 0)
 }
 

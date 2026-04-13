@@ -2,7 +2,7 @@
 // break/continue support via the scoped loop stack in Ctx.
 
 use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem}
-use core.cg.{Ctx, LoopStack, StmtResult, ok_stmt, err_stmt_from_expr, ctx_with_loops, const_i64, get_fn, call_1, call_2}
+use core.cg.{Ctx, LoopStack, StmtResult, call_1, call_2, const_i64, ctx_with_loops, err_stmt_from_expr, get_fn, new_bb, ok_stmt}
 use codegen.{emit_expr, emit_stmt}
 
 export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> StmtResult {

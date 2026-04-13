@@ -2,6 +2,14 @@ mod parser
 mod codegen
 mod resolver
 mod typeck
+use core.cg.{err_emit, err_stmt}
+use core.eval.{error_result}
+use core.registry.{feature_new, register}
+use core.resolver.{resolve_expr}
+use features.match_expr.codegen.{emit_match, emit_match_expr}
+use features.match_expr.resolver.{resolve_match_arms}
+use features.match_expr.typeck.{check_match_arms, check_match_expr_arms, tc_check_exhaustive}
+use typeck.{check_expr, tc_er}
 
 fn kw_parse_match(p: Parser) -> Stmt? {
     p.parse_match_statement()

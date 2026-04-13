@@ -3,7 +3,8 @@
 // because the parser scans one token at a time during recursive
 // descent, whereas this module materializes the full stream.
 
-use token.{Token, token_new, token_render, token_render_struct}
+use core.token.{Token, token_new, token_render, token_render_struct}
+use parse.{p_keyword_kind}
 
 export type ScanResult = {
     rendered: string,

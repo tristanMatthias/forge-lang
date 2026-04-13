@@ -86,7 +86,7 @@ fn p_is_octal_digit(ch: string) -> bool {
     ch >= "0" && ch <= "7"
 }
 
-fn reverse_expr_list(list: ExprList) -> ExprList {
+export fn reverse_expr_list(list: ExprList) -> ExprList {
     reverse_expr_list_acc(list, ExprList.End)
 }
 fn reverse_expr_list_acc(list: ExprList, acc: ExprList) -> ExprList {
@@ -98,7 +98,7 @@ fn reverse_expr_list_acc(list: ExprList, acc: ExprList) -> ExprList {
 
 // Interleave header names and values: [k1,k2] + [v1,v2] → [k1,v1,k2,v2]
 // MapLit expects entries as flat: key1, val1, key2, val2, ...
-fn table_zip_entries(headers: ExprList, values: ExprList) -> ExprList {
+export fn table_zip_entries(headers: ExprList, values: ExprList) -> ExprList {
     match headers {
         .End -> ExprList.End
         .Node(hse, hnext) -> {
@@ -235,7 +235,7 @@ fn parse_template_expr(source: string) -> Expr? {
     p.parse_expression()
 }
 
-fn p_keyword_kind(text: string) -> string {
+export fn p_keyword_kind(text: string) -> string {
     if text == "and" { return "kw_and" }
     if text == "const" { return "kw_const" }
     if text == "else" { return "kw_else" }

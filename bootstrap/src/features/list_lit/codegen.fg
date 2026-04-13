@@ -4,6 +4,7 @@
 use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList}
 use core.cg.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, get_fn, call_0, call_2, call_3}
 use codegen.{emit_expr}
+use features.closures.codegen.{emit_lambda_typed}
 
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
     let arr_fn = get_fn(ctx, "forge_array_new")

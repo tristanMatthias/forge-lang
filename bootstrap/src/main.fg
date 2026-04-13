@@ -42,7 +42,7 @@ use core.resolver.{resolve_program}
 use features.modules.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use typeck.{typecheck_program}
-use diagnostics.{bag_has_errors, bag_has_warnings}
+use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, span_dummy}
 use diagnostics.render.{render_bag}
 use codegen.{compile_program}
 

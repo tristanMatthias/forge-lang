@@ -5,6 +5,7 @@
 
 mod parser
 mod typeck
+use core.registry.{feature_new, register}
 
 fn kw_parse_trait(p: Parser) -> Stmt? {
     p.parse_trait_declaration()

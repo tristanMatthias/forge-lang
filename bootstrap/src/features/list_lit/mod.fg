@@ -1,5 +1,12 @@
 mod codegen
 mod typeck
+use core.cg.{err_emit}
+use core.eval.{error_result}
+use core.registry.{feature_new, register}
+use core.resolver.{resolve_expr_list}
+use features.list_lit.codegen.{emit_list_lit}
+use features.list_lit.typeck.{check_list_lit}
+use typeck.{tc_er}
 
 export fn init_list_lit(reg: Registry) {
     let f = feature_new("list_lit") with {

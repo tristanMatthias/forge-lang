@@ -1,1 +1,1 @@
-fn deep_greet() -> string { "from nested dir" }
+export fn deep_greet() -> string { "from nested dir" }

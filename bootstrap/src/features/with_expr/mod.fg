@@ -1,4 +1,11 @@
 mod codegen
+use core.cg.{err_emit}
+use core.eval.{error_result}
+use core.registry.{feature_new, register}
+use core.resolver.{resolve_expr, resolve_field_init_list}
+use features.struct_decl.typeck.{check_field_inits}
+use features.with_expr.codegen.{emit_with}
+use typeck.{check_expr, tc_er}
 
 export fn init_with_expr(reg: Registry) {
     let f = feature_new("with") with {

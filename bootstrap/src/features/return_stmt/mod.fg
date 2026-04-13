@@ -3,6 +3,7 @@
 // reserved keyword that can't appear in `mod` declarations.
 
 mod parser
+use core.registry.{feature_new, register}
 
 fn kw_parse_return(p: Parser) -> Stmt? {
     p.parse_return_statement()

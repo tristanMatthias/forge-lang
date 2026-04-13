@@ -3,7 +3,7 @@
 use core.ast.{SelectArmList}
 use core.resolver.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt_list, declare_name, define_name}
 
-fn resolve_select_arms(r: Resolver, arms: SelectArmList) -> Resolver {
+export fn resolve_select_arms(r: Resolver, arms: SelectArmList) -> Resolver {
     match arms {
         .End -> r
         .Node(binding, channel, body, next) -> {
