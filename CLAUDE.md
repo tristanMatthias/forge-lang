@@ -60,14 +60,18 @@ Build the foundation, then build on it.
 2. **Check the Rust compiler** — `forge/packages/forgec-rust/features/`
    may already have a reference implementation with examples. Read it
    for semantics and edge cases before writing a single line of code.
-3. **Identify seed impact** — does this feature add new enum variants,
-   change container types, or add new keywords? If yes, you need a
-   two-phase bootstrap. Plan Phase A (types only) and Phase B (usage).
+3. **Identify seed impact** — does this feature add new enum variants
+   or new keywords? If yes, you need a two-phase bootstrap. Plan
+   Phase A (types only) and Phase B (usage). NOTE: adding FIELDS to
+   existing enum variants does NOT require two-phase bootstrap — enum
+   payloads are heap-allocated via `{i8 tag, ptr payload}`, so the
+   enum struct size is always 16 bytes regardless of field count.
 
 ### Phase 2: Two-Phase Bootstrap (if needed)
 
-Required when: adding enum variants, new AST types, new keywords, or
-changing any type that appears in containers (ExprList, StmtList, etc.).
+Required when: adding new enum variants (shifts tag numbers), new AST
+types, or new keywords. NOT required for adding fields to existing
+variants (heap-allocated payloads absorb the change).
 
 **Phase A — Types only:**
 1. Add new types/variants at the END of their enums. Never in the middle.
@@ -352,7 +356,7 @@ All type/variable tracking uses C-side storage (immune to Forge list corruption)
 
 ### Known Issues
 - **`ptr != null` produces `br i1 false`** when the variable's inferred type is `Unknown` (i64 alloca for pointer value). Fixed for standalone programs; some namespace call returns still affected. Root cause: `Type::Unknown` → `i64` alloca → pointer loaded as integer → comparison fails.
-- **Enum type sizes**: Self-hosted codegen creates `{i8, i64 x N}` for enums but Rust compiler uses different per-variant sizing. Enabling enum declaration parsing increases `ret_undef`. Don't parse enum declarations until sizes match.
+- **Enum layout**: Bootstrap enums use `{i8 tag, ptr payload}` (fixed 16 bytes). Payload is heap-allocated per-variant. Adding fields to a variant does NOT require two-phase bootstrap — only adding new VARIANTS (which shifts tag numbers) does.
 - **Duplicate codegen paths**: `emit_statement` exists twice (line ~907 feature path, line ~2161 inline path). Both must handle all statement types. The inline path is used by `emit_fn_body_from_source`.
 
 ## CLI Commands
@@ -644,7 +648,7 @@ ordering mismatches.
 **Fix:** check if the error is from the old seed vs the new source
 (struct layout mismatch). Use LLDB to find the exact crash point.
 
-### Adding new enum variants MUST go at the END
+### Adding new enum variants MUST go at the END (for now)
 **Symptom:** segfault or wrong dispatch after adding a variant.
 **Root cause:** inserting a variant in the MIDDLE of an enum shifts
 all subsequent tag numbers. The old seed's codegen uses the old tags
