@@ -338,11 +338,11 @@ type NameCtx = {
 }
 
 fn ctx_with_locals(ctx: NameCtx, locals: LocalScope) -> NameCtx {
-    NameCtx { tree: ctx.tree, aliases: ctx.aliases, current_module: ctx.current_module, locals, global_index: ctx.global_index }
+    ctx with { locals }
 }
 
 fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) -> NameCtx {
-    NameCtx { tree: ctx.tree, aliases, current_module, locals: ctx.locals, global_index: ctx.global_index }
+    ctx with { aliases, current_module }
 }
 
 fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
