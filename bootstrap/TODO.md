@@ -299,9 +299,23 @@ eprintln("[GLOBAL] `" + name + "` -> `" + from_global + "` (module: " + ctx.curr
 ```
 Then `./build/bs2 compile src/main.fg 2>&1 | grep "[GLOBAL]"` shows every hit.
 
-**The fix:** Add 187 `use` statements to 50 files, then delete step 6. Purely mechanical.
+**The fix:** Add 187 `use` statements to 50 files, then delete step 6.
 The architecture is sound — the module tree, use-alias resolution, and sibling lookup all
 work correctly. Only the global fallback needs removal.
+
+**CRITICAL GOTCHA discovered during first attempt:** The trace outputs CANONICAL paths
+(e.g. `core::ast::vtype_eq`) but `use` imports must use the path AS SEEN FROM the importing
+module. Most modules use absolute-from-root paths (`use core.ast.{...}`), but modules
+inside `core/` use RELATIVE sibling paths (`use token.{...}` from `core::scanner`).
+An automated script that blindly converts canonical paths to `use` imports will break
+existing working imports. Each file must be checked individually.
+
+**Approach:**
+1. Add the trace to step 6 (see above), rebuild seed, run self-compile
+2. For each `[GLOBAL]` hit, manually determine the correct `use` path
+3. Add `use` imports ONE FILE AT A TIME, `make build` after each
+4. Some functions need `export` added (e.g. `p_keyword_kind` in parse/mod.fg is private)
+5. After all 50 files are fixed, remove step 6 and the `global_index` infrastructure
 
 **Largest offenders** (by missing import count):
 - `codegen` (89) — uses `forge_llvm_*` externs + cross-feature helpers
