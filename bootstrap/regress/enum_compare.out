@@ -1,0 +1,6 @@
+direct: ok
+direct neq: ok
+field: ok
+field neq: ok
+fn: ok
+fn direct: ok

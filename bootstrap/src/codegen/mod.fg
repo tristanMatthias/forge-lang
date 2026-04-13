@@ -2228,11 +2228,15 @@ fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> Emi
         .Shr -> ok_emit(forge_llvm_build_ashr(ctx.builder, lhs, rhs, "shr"))
         .Eq -> {
             if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, false) }
+            let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""
+            if is_enum { return emit_enum_tag_cmp(ctx, lhs, rhs, left_result.ty, 32) }
             let cmp = forge_llvm_build_icmp(ctx.builder, 32, lhs, rhs, "eq")
             ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "eq_ext"))
         }
         .Ne -> {
             if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, true) }
+            let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""
+            if is_enum { return emit_enum_tag_cmp(ctx, lhs, rhs, left_result.ty, 33) }
             let cmp = forge_llvm_build_icmp(ctx.builder, 33, lhs, rhs, "ne")
             ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "ne_ext"))
         }
@@ -2257,6 +2261,21 @@ fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> Emi
             ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "sge_ext"))
         }
     }
+}
+
+// Compare two enum values by extracting and comparing their tag bytes.
+fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> EmitResult {
+    let enum_name = vtype_enum_name(ty)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
+    let lhs_ptr = to_ptr(ctx, lhs, "enum_l")
+    let rhs_ptr = to_ptr(ctx, rhs, "enum_r")
+    let i8_ty = forge_llvm_int8_type(ctx.lc)
+    let l_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, lhs_ptr, 0, "ltag_ptr")
+    let r_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, rhs_ptr, 0, "rtag_ptr")
+    let l_tag = forge_llvm_build_load(ctx.builder, i8_ty, l_gep, "ltag")
+    let r_tag = forge_llvm_build_load(ctx.builder, i8_ty, r_gep, "rtag")
+    let cmp = forge_llvm_build_icmp(ctx.builder, pred, l_tag, r_tag, "tag_cmp")
+    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "tag_cmp_ext"))
 }
 
 fn coerce_to_f64(ctx: Ctx, val: ptr, ty: ValueType) -> ptr {
