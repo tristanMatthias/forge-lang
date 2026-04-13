@@ -72,8 +72,7 @@ fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, va
 
             // Else: try next arm
             forge_llvm_position_at_end(ctx.builder, else_bb)
-            let next_r = emit_select_dispatch(ctx, env, next, idx, val, arm_idx + 1)
-            if next_r.had_error { return next_r }
+            let next_r = emit_select_dispatch(ctx, env, next, idx, val, arm_idx + 1)?
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 forge_llvm_build_br(ctx.builder, merge_bb)
             }

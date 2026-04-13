@@ -441,14 +441,12 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
 }
 
 export fn emit_indirect_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> EmitResult {
-    let r = emit_indirect_call_value(ctx, env, fn_i64, args)
-    if r.had_error { return r }
+    let r = emit_indirect_call_value(ctx, env, fn_i64, args)?
     ok_emit_typed(r.value, ret_ty)
 }
 
 export fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> EmitResult {
-    let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)
-    if r.had_error { return r }
+    let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)?
     ok_emit_typed(r.value, ret_ty)
 }
 
@@ -469,8 +467,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     if user_arg_count == 1 {
         match args {
             .Node(se, _) -> {
-                let a0 = emit_expr(ctx, env, se.node)
-                if a0.had_error { return a0 }
+                let a0 = emit_expr(ctx, env, se.node)?
                 return ok_emit(call_2(ctx, get_fn(ctx, "forge_closure_call_1"), fn_i64, a0.value, "ccall"))
             }
             _ -> { return err_emit("expected 1 arg") }
@@ -479,12 +476,10 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     if user_arg_count == 2 {
         match args {
             .Node(se0, rest) -> {
-                let a0 = emit_expr(ctx, env, se0.node)
-                if a0.had_error { return a0 }
+                let a0 = emit_expr(ctx, env, se0.node)?
                 match rest {
                     .Node(se1, _) -> {
-                        let a1 = emit_expr(ctx, env, se1.node)
-                        if a1.had_error { return a1 }
+                        let a1 = emit_expr(ctx, env, se1.node)?
                         return ok_emit(call_3(ctx, get_fn(ctx, "forge_closure_call_2"), fn_i64, a0.value, a1.value, "ccall"))
                     }
                     _ -> { return err_emit("expected 2 args") }
@@ -496,16 +491,13 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     if user_arg_count == 3 {
         match args {
             .Node(se0, rest0) -> {
-                let a0 = emit_expr(ctx, env, se0.node)
-                if a0.had_error { return a0 }
+                let a0 = emit_expr(ctx, env, se0.node)?
                 match rest0 {
                     .Node(se1, rest1) -> {
-                        let a1 = emit_expr(ctx, env, se1.node)
-                        if a1.had_error { return a1 }
+                        let a1 = emit_expr(ctx, env, se1.node)?
                         match rest1 {
                             .Node(se2, _) -> {
-                                let a2 = emit_expr(ctx, env, se2.node)
-                                if a2.had_error { return a2 }
+                                let a2 = emit_expr(ctx, env, se2.node)?
                                 return ok_emit(call_4(ctx, get_fn(ctx, "forge_closure_call_3"), fn_i64, a0.value, a1.value, a2.value, "ccall"))
                             }
                             _ -> { return err_emit("expected 3 args") }
@@ -524,8 +516,7 @@ fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, se.node)?
             forge_llvm_value_array_set(arr, idx, r.value)
             fill_lambda_args(ctx, env, arr, next, idx + 1)
         }

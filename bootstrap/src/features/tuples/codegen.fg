@@ -45,8 +45,7 @@ fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx
             EmitResult { value: to_i64(ctx, buf, "tuple_i64"), ty, had_error: false, error_message: "" }
         }
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, se.node)?
             tuple_store(ctx, buf, idx, r.value)
             let new_types = TypeList.Node(r.ty, types_acc)
             store_tuple_elements(ctx, env, next, buf, idx + 1, new_types)
@@ -62,8 +61,7 @@ fn reverse_type_list(list: TypeList, acc: TypeList) -> TypeList {
 }
 
 export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> EmitResult {
-    let r = emit_expr(ctx, env, obj)
-    if r.had_error { return r }
+    let r = emit_expr(ctx, env, obj)?
     let ptr = to_ptr(ctx, r.value, "tup_ptr")
     let loaded = tuple_load(ctx, ptr, idx, "tup_val")
     let elem_ty = vtype_tuple_at(r.ty, idx)

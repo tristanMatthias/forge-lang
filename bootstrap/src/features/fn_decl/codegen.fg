@@ -18,8 +18,7 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> StmtResult {
                 .Impl(_, methods) -> emit_function_bodies(ctx, methods)
                 .Module(_, body) -> emit_function_bodies(ctx, body)
                 _ -> ok_stmt(VarEnv.End)
-            }
-            if r.had_error { return r }
+            }?
             emit_function_bodies(ctx, next)
         }
     }
@@ -152,8 +151,7 @@ export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> Emit
             // Expression callee: evaluate it and call indirectly.
             // All callable values are closure arrays, so route through
             // the closure call path which unpacks [TAG, fn_ptr, caps...].
-            let callee_r = emit_expr(ctx, env, callee)
-            if callee_r.had_error { return callee_r }
+            let callee_r = emit_expr(ctx, env, callee)?
             let ret_ty = vtype_fn_ret(callee_r.ty)
             if vtype_is_closure(callee_r.ty) {
                 let num_caps = vtype_closure_captures(callee_r.ty)
@@ -174,10 +172,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     // Special-case `.length` and `.substring` on strings — these are
     // emitted via libc strlen / a custom substring helper rather than
     // dispatched as methods.
-    let r = emit_expr(ctx, env, obj)
-    if r.had_error {
-        return r
-    }
+    let r = emit_expr(ctx, env, obj)?
     if vtype_is_str(r.ty) {
         if method == "length" {
             let str_ptr = to_ptr(ctx, r.value, "len_arg")
@@ -384,10 +379,7 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
     match args {
         .End -> err_emit("string() expects 1 arg")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error {
-                return r
-            }
+            let r = emit_expr(ctx, env, se.node)?
             // If the value is already a str, pass it through.
             if vtype_is_str(r.ty) {
                 return r
@@ -413,10 +405,7 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
     match args {
         .End -> err_emit("int() expects 1 arg")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error {
-                return r
-            }
+            let r = emit_expr(ctx, env, se.node)?
             if !vtype_is_str(r.ty) {
                 // Already an int — pass through.
                 return r
@@ -436,8 +425,7 @@ export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitRes
     match args {
         .End -> err_emit("float() expects 1 arg")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, se.node)?
             if vtype_eq(r.ty, .Float) {
                 return r
             }
@@ -457,8 +445,7 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("panic() expects 1 argument")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, se.node)?
             // Print "panic: <message>" to stderr
             let prefix = forge_llvm_build_global_string_ptr(ctx.builder, "panic: ", ".panic_prefix")
             let prefix_i64 = to_i64(ctx, prefix, "prefix_i64")

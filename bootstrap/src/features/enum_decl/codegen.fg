@@ -46,8 +46,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
         // Allocate payload: num_fields * 8 bytes
         let pay_buf = cg_malloc(ctx, const_i64(ctx, num_fields * 8))
         forge_llvm_build_store(ctx.builder, pay_buf, payload_gep)
-        let fill = fill_enum_payload(ctx, env, pay_buf, args, 0)
-        if fill.had_error { return fill }
+        let fill = fill_enum_payload(ctx, env, pay_buf, args, 0)?
     }
     let as_i64 = to_i64(ctx, buf, "enum_i64")
     EmitResult { value: as_i64, ty: .Enum(resolved_name), had_error: false, error_message: "" }
@@ -62,8 +61,7 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, args: ExprList, id
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, se.node)?
             // Write field at offset idx * 8 in the payload buffer
             let base_i64 = forge_llvm_build_ptr_to_int(ctx.builder, payload_ptr, ctx.i64_type, "pay_base")
             let offset_val = const_i64(ctx, idx * 8)

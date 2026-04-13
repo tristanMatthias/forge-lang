@@ -7,8 +7,7 @@ use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.helpers.{is_null_literal}
 
 export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult {
-    let r = emit_expr(ctx, env, right)
-    if r.had_error { return r }
+    let r = emit_expr(ctx, env, right)?
 
     match op {
         .Neg -> {
@@ -28,12 +27,10 @@ export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult
 }
 
 export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> EmitResult {
-    let left_result = emit_expr(ctx, env, left)
-    if left_result.had_error { return left_result }
+    let left_result = emit_expr(ctx, env, left)?
     let lhs = left_result.value
 
-    let right_result = emit_expr(ctx, env, right)
-    if right_result.had_error { return right_result }
+    let right_result = emit_expr(ctx, env, right)?
     let rhs = right_result.value
 
     let null_cmp = is_null_literal(left) || is_null_literal(right)
@@ -182,8 +179,7 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
 }
 
 export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Expr) -> EmitResult {
-    let left_result = emit_expr(ctx, env, left)
-    if left_result.had_error { return left_result }
+    let left_result = emit_expr(ctx, env, left)?
 
     let l_bool = forge_llvm_build_icmp(ctx.builder, 33, left_result.value, const_i64(ctx, 0), "l_bool")
     let left_bb = forge_llvm_get_insert_block(ctx.builder)
@@ -198,8 +194,7 @@ export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Ex
     }
 
     forge_llvm_position_at_end(ctx.builder, rhs_bb)
-    let right_result = emit_expr(ctx, env, right)
-    if right_result.had_error { return right_result }
+    let right_result = emit_expr(ctx, env, right)?
     let r_bool = forge_llvm_build_icmp(ctx.builder, 33, right_result.value, const_i64(ctx, 0), "r_bool")
     let rhs_end_bb = forge_llvm_get_insert_block(ctx.builder)
     forge_llvm_build_br(ctx.builder, merge_bb)

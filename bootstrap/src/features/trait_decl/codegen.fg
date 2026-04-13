@@ -41,8 +41,7 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
         return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_closure_call_1"), fn_closure, concrete, "tcall"), ret_ty)
     }
     // 1-arg case
-    let first_arg = emit_first_arg(ctx, env, args)
-    if first_arg.had_error { return first_arg }
+    let first_arg = emit_first_arg(ctx, env, args)?
     ok_emit_typed(call_3(ctx, get_fn(ctx, "forge_closure_call_2"), fn_closure, concrete, first_arg.value, "tcall"), ret_ty)
 }
 

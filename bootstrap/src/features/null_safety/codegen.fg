@@ -91,30 +91,23 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     let r = emit_expr(ctx, env, inner)
     if r.had_error { return r }
 
-    // Result `?`: if the inner expression returns a Result enum,
-    // check the tag. Ok → extract the value. Err → return the
-    // whole Result from the enclosing function (error propagation).
+    // ── Mode 1: Result enum ──
+    // Check tag: Ok → extract payload value, Err → return Result.
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "Result" {
         let enum_ty = forge_llvm_get_type_by_name(ctx.lc, "Result")
         let enum_ptr = to_ptr(ctx, r.value, "try_res_ptr")
-
-        // Load the tag (field 0 of the {i64, ptr} enum layout).
         let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, enum_ty, enum_ptr, 0, "try_tag_ptr")
         let tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, tag_gep, "try_tag")
-
-        // Ok tag = forge_variant_hash("Ok"), Err tag = forge_variant_hash("Err").
         let ok_tag = const_i64(ctx, forge_variant_hash("Ok"))
         let is_ok = forge_llvm_build_icmp(ctx.builder, 32, tag, ok_tag, "try_is_ok")
         let ok_bb = new_bb(ctx, "try_ok")
         let err_bb = new_bb(ctx, "try_err")
         forge_llvm_build_cond_br(ctx.builder, is_ok, ok_bb, err_bb)
 
-        // Err path: return the Result as-is (propagates the error).
         forge_llvm_position_at_end(ctx.builder, err_bb)
         forge_llvm_build_ret(ctx.builder, r.value)
 
-        // Ok path: extract the payload value (field 0 of the payload).
         forge_llvm_position_at_end(ctx.builder, ok_bb)
         let pay_gep = forge_llvm_build_struct_gep2(ctx.builder, enum_ty, enum_ptr, 1, "try_pay_slot")
         let pay_ptr = forge_llvm_build_load(ctx.builder, forge_llvm_pointer_type(ctx.lc), pay_gep, "try_payload")
@@ -122,7 +115,36 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
         return ok_emit_typed(ok_val, .Int)
     }
 
-    // Nullable `?`: if value is null (0), return null from enclosing fn.
+    // ── Mode 2: Struct with `had_error` field ──
+    // Check field: if true, return the struct (propagate). Otherwise
+    // the expression evaluates to the struct itself.
+    let struct_name = vtype_struct_name(r.ty)
+    if struct_name != "" {
+        let lookup = struct_reg_lookup(ctx.structs, struct_name)
+        if lookup.found {
+            let err_idx = field_index_of(lookup.fields, "had_error")
+            if err_idx >= 0 {
+                let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
+                let obj_ptr = to_ptr(ctx, r.value, "try_ptr")
+                let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, err_idx, "try_err_ptr")
+                let err_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "try_had_error")
+                // icmp ne (not-equal to 0) = truthy = had error
+                let is_err = forge_llvm_build_icmp(ctx.builder, 33, err_val, const_i64(ctx, 0), "try_is_err")
+                let cont_bb = new_bb(ctx, "try_ok")
+                let ret_bb = new_bb(ctx, "try_err")
+                forge_llvm_build_cond_br(ctx.builder, is_err, ret_bb, cont_bb)
+
+                forge_llvm_position_at_end(ctx.builder, ret_bb)
+                forge_llvm_build_ret(ctx.builder, r.value)
+
+                forge_llvm_position_at_end(ctx.builder, cont_bb)
+                return EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
+            }
+        }
+    }
+
+    // ── Mode 3: Nullable ──
+    // If value is null (0), return null from enclosing fn.
     let is_null = forge_llvm_build_icmp(ctx.builder, 32, r.value, const_i64(ctx, 0), "try_null")
     let cont_bb = new_bb(ctx, "try_ok")
     let ret_bb = new_bb(ctx, "try_ret")

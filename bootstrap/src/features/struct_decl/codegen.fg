@@ -16,8 +16,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
         return err_emit("LLVM struct type `${name}` not declared")
     }
     let buf = malloc_struct_bytes(ctx, lookup.fields)
-    let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)
-    if fill.had_error { return fill }
+    let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
     let as_i64 = to_i64(ctx, buf, "struct_i64")
     EmitResult { value: as_i64, ty: .Struct(name), had_error: false, error_message: "" }
 }
@@ -33,8 +32,7 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
         .Node(field_name, sv, next) -> {
             let idx = field_index_of(fields, field_name)
             if idx < 0 { return err_emit("unknown field `${field_name}`") }
-            let r = emit_expr(ctx, env, sv.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, sv.node)?
             let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, alloca, idx, "fld_ptr")
             forge_llvm_build_store(ctx.builder, r.value, gep)
             fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
@@ -43,8 +41,7 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
 }
 
 export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> EmitResult {
-    let r = emit_expr(ctx, env, obj)
-    if r.had_error { return r }
+    let r = emit_expr(ctx, env, obj)?
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
         return err_emit("field assignment on non-struct value (ty=${vtype_display(r.ty)})")
@@ -56,8 +53,7 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
     let obj_ptr = to_ptr(ctx, r.value, "fa_ptr")
     let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj_ptr, idx, "fa_fld")
-    let v = emit_expr(ctx, env, value)
-    if v.had_error { return v }
+    let v = emit_expr(ctx, env, value)?
     forge_llvm_build_store(ctx.builder, v.value, gep)
     ok_emit(v.value)
 }
@@ -74,8 +70,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
         _ -> {}
     }
 
-    let r = emit_expr(ctx, env, obj)
-    if r.had_error { return r }
+    let r = emit_expr(ctx, env, obj)?
 
     // String/List/Map .length
     if vtype_is_str(r.ty) && field == "length" {

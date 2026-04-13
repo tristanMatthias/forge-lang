@@ -39,8 +39,7 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
     // Body — continue jumps to incr_bb, break jumps to exit_bb
     forge_llvm_position_at_end(ctx.builder, body_bb)
     let body_ctx = ctx_with_loops(ctx, .Frame(incr_bb, exit_bb, ctx.loops))
-    let body_result = emit_stmt(body_ctx, body_env, body)
-    if body_result.had_error { return body_result }
+    let body_result = emit_stmt(body_ctx, body_env, body)?
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_br(ctx.builder, incr_bb)
     }
@@ -101,8 +100,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     forge_llvm_build_store(ctx.builder, elem, elem_alloca)
 
     let body_ctx = ctx_with_loops(ctx, .Frame(incr_bb, exit_bb, ctx.loops))
-    let body_result = emit_stmt(body_ctx, body_env, body)
-    if body_result.had_error { return body_result }
+    let body_result = emit_stmt(body_ctx, body_env, body)?
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_br(ctx.builder, incr_bb)
     }

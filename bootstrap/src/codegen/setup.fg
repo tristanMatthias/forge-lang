@@ -738,8 +738,7 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
             match stmt {
                 .Function(_, _, _, _) -> emit_top_level(ctx, env, next)
                 .Module(_, body) -> {
-                    let r = emit_top_level(tl_ctx, env, body)
-                    if r.had_error { return r }
+                    let r = emit_top_level(tl_ctx, env, body)?
                     emit_top_level(ctx, r.env, next)
                 }
                 .Let(name, _, init) -> {

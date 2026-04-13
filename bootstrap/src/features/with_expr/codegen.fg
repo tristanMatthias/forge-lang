@@ -10,8 +10,7 @@ use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, struct_reg_lookup, const_
 use codegen.{emit_expr}
 
 export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> EmitResult {
-    let r = emit_expr(ctx, env, obj)
-    if r.had_error { return r }
+    let r = emit_expr(ctx, env, obj)?
 
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {

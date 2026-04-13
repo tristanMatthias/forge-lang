@@ -696,12 +696,10 @@ fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
 }
 
 fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResult {
-    let left_result = eval_expr(runtime, left)
-    if left_result.had_error { return left_result }
+    let left_result = eval_expr(runtime, left)?
 
     let left_value = left_result.value
-    let right_result = eval_expr(left_result.runtime, right)
-    if right_result.had_error { return right_result }
+    let right_result = eval_expr(left_result.runtime, right)?
 
     let right_value = right_result.value
     let rt = right_result.runtime
@@ -736,8 +734,7 @@ fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResu
 }
 
 fn eval_logical(runtime: Runtime, left: Expr, op: LogicOp, right: Expr) -> StepResult {
-    let left_result = eval_expr(runtime, left)
-    if left_result.had_error { return left_result }
+    let left_result = eval_expr(runtime, left)?
 
     let left_truthy = is_truthy(left_result.value)
     match op {

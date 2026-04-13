@@ -14,8 +14,7 @@ export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult
     match elements {
         .End -> EmitResult { value: arr, ty: .List(.Int), had_error: false, error_message: "" }
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, se.node)?
             call_2(ctx, push_fn, arr, r.value, "")
             push_list_elements(ctx, env, next, arr, push_fn, r.ty)
         }
@@ -26,8 +25,7 @@ fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, push_
     match elements {
         .End -> EmitResult { value: arr, ty: .List(elem_ty), had_error: false, error_message: "" }
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, se.node)?
             call_2(ctx, push_fn, arr, r.value, "")
             push_list_elements(ctx, env, next, arr, push_fn, elem_ty)
         }
@@ -39,16 +37,14 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
         .Node(se_init, rest) -> {
             match rest {
                 .Node(se_fn, _) -> {
-                    let init_r = emit_expr(ctx, env, se_init.node)
-                    if init_r.had_error { return init_r }
+                    let init_r = emit_expr(ctx, env, se_init.node)?
                     // Reduce fn takes (acc, elem) — acc type from init, elem from list
                     let fn_r = match se_fn.node {
                         .Lambda(params, body) -> {
                             emit_lambda_typed(ctx, env, params, body, TypeList.Node(init_r.ty, TypeList.Node(elem_ty, TypeList.End)))
                         }
                         _ -> emit_expr(ctx, env, se_fn.node)
-                    }
-                    if fn_r.had_error { return fn_r }
+                    }?
                     let result = call_3(ctx, get_fn(ctx, "forge_array_reduce"), list_val, init_r.value, fn_r.value, "reduce")
                     ok_emit(result)
                 }
@@ -81,23 +77,20 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
     }
     if method == "map" {
         let elem_ty = vtype_list_elem(list_ty)
-        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
-        if arg_r.had_error { return arg_r }
+        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
         let result = call_2(ctx, get_fn(ctx, "forge_array_map"), list_val, arg_r.value, "map")
         let ret_ty = vtype_fn_ret(arg_r.ty)
         return EmitResult { value: result, ty: .List(ret_ty), had_error: false, error_message: "" }
     }
     if method == "filter" {
         let elem_ty = vtype_list_elem(list_ty)
-        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
-        if arg_r.had_error { return arg_r }
+        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
         let result = call_2(ctx, get_fn(ctx, "forge_array_filter"), list_val, arg_r.value, "filter")
         return EmitResult { value: result, ty: .List(elem_ty), had_error: false, error_message: "" }
     }
     if method == "foreach" {
         let elem_ty = vtype_list_elem(list_ty)
-        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))
-        if arg_r.had_error { return arg_r }
+        let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
         call_2(ctx, get_fn(ctx, "forge_array_foreach"), list_val, arg_r.value, "")
         return ok_emit(const_i64(ctx, 0))
     }
@@ -113,10 +106,8 @@ fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> EmitResult
         .Node(se_idx, rest) -> {
             match rest {
                 .Node(se_val, _) -> {
-                    let idx_r = emit_expr(ctx, env, se_idx.node)
-                    if idx_r.had_error { return idx_r }
-                    let val_r = emit_expr(ctx, env, se_val.node)
-                    if val_r.had_error { return val_r }
+                    let idx_r = emit_expr(ctx, env, se_idx.node)?
+                    let val_r = emit_expr(ctx, env, se_val.node)?
                     call_3(ctx, get_fn(ctx, "forge_array_set"), list, idx_r.value, val_r.value, "")
                     ok_emit(list)
                 }

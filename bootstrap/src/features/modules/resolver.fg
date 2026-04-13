@@ -57,8 +57,7 @@ export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths
             if head.had_error {
                 return ModListResult { stmts: StmtList.End, loaded: head.loaded, had_error: true, error_message: head.error_message }
             }
-            let rest = resolve_module_files(next, dir, head.loaded)
-            if rest.had_error { return rest }
+            let rest = resolve_module_files(next, dir, head.loaded)?
             ModListResult {
                 stmts: StmtList.Node(sstmt(head.stmt, ss.line, ss.col), rest.stmts),
                 loaded: rest.loaded,
@@ -97,8 +96,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths) -> ModStmtR
             ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
         }
         .Annotated(annotations, inner) -> {
-            let r = resolve_module_stmt(inner, dir, loaded)
-            if r.had_error { return r }
+            let r = resolve_module_stmt(inner, dir, loaded)?
             ModStmtResult { stmt: Stmt.Annotated(annotations, r.stmt), loaded: r.loaded, had_error: false, error_message: "" }
         }
         _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }

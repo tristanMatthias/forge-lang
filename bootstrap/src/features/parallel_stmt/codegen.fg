@@ -17,8 +17,7 @@ fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     let push_fn = get_fn(ctx, "forge_array_push")
     let closures = call_0(ctx, arr_fn, "par_closures")
 
-    let r = collect_parallel_closures(ctx, env, stmts, closures, push_fn)
-    if r.had_error { return r }
+    let r = collect_parallel_closures(ctx, env, stmts, closures, push_fn)?
 
     // Run all in parallel
     call_1(ctx, get_fn(ctx, "forge_parallel_run"), closures, "")

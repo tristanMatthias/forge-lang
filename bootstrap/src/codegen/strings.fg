@@ -35,10 +35,8 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
         .Node(se_from, rest) -> {
             match rest {
                 .Node(se_to, _) -> {
-                    let from_r = emit_expr(ctx, env, se_from.node)
-                    if from_r.had_error { return from_r }
-                    let to_r = emit_expr(ctx, env, se_to.node)
-                    if to_r.had_error { return to_r }
+                    let from_r = emit_expr(ctx, env, se_from.node)?
+                    let to_r = emit_expr(ctx, env, se_to.node)?
                     let str_ptr = to_ptr(ctx, str_i64, "rep_self")
                     let from_ptr = to_ptr(ctx, from_r.value, "rep_from")
                     let to_ptr_v = to_ptr(ctx, to_r.value, "rep_to")
@@ -68,14 +66,8 @@ export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) ->
 }
 
 export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> EmitResult {
-    let start_r = emit_expr(ctx, env, start_arg)
-    if start_r.had_error {
-        return start_r
-    }
-    let end_r = emit_expr(ctx, env, end_arg)
-    if end_r.had_error {
-        return end_r
-    }
+    let start_r = emit_expr(ctx, env, start_arg)?
+    let end_r = emit_expr(ctx, env, end_arg)?
     let str_ptr = to_ptr(ctx, str_i64, "sub_src")
     let len = forge_llvm_build_sub(ctx.builder, end_r.value, start_r.value, "sub_len")
     let one = const_i64(ctx, 1)

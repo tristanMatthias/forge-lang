@@ -17,16 +17,14 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
     forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
 
     forge_llvm_position_at_end(ctx.builder, then_bb)
-    let then_result = emit_stmt(ctx, env, then_branch)
-    if then_result.had_error { return then_result }
+    let then_result = emit_stmt(ctx, env, then_branch)?
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_br(ctx.builder, merge_bb)
     }
 
     forge_llvm_position_at_end(ctx.builder, else_bb)
     if else_branch != null {
-        let else_result = emit_stmt(ctx, env, else_branch!)
-        if else_result.had_error { return else_result }
+        let else_result = emit_stmt(ctx, env, else_branch!)?
     }
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_br(ctx.builder, merge_bb)
@@ -37,8 +35,7 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
 }
 
 export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
-    let cond = emit_expr(ctx, env, condition)
-    if cond.had_error { return cond }
+    let cond = emit_expr(ctx, env, condition)?
     let cond_i1 = forge_llvm_build_icmp(ctx.builder, 33, cond.value, const_i64(ctx, 0), "ife_cond")
     let then_bb = new_bb(ctx, "ife_then")
     let else_bb = new_bb(ctx, "ife_else")
@@ -48,16 +45,14 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
     forge_llvm_build_cond_br(ctx.builder, cond_i1, then_bb, else_bb)
 
     forge_llvm_position_at_end(ctx.builder, then_bb)
-    let t = emit_expr(ctx, env, then_branch)
-    if t.had_error { return t }
+    let t = emit_expr(ctx, env, then_branch)?
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_store(ctx.builder, t.value, result_slot)
         forge_llvm_build_br(ctx.builder, merge_bb)
     }
 
     forge_llvm_position_at_end(ctx.builder, else_bb)
-    let e = emit_expr(ctx, env, else_branch)
-    if e.had_error { return e }
+    let e = emit_expr(ctx, env, else_branch)?
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         forge_llvm_build_store(ctx.builder, e.value, result_slot)
         forge_llvm_build_br(ctx.builder, merge_bb)

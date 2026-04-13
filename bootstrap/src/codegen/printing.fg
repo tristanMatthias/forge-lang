@@ -10,8 +10,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("eprintln() expects 1 arg")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)
-            if r.had_error { return r }
+            let r = emit_expr(ctx, env, se.node)?
             let str_val = if vtype_is_str(r.ty) {
                 r.value
             } else if vtype_eq(r.ty, .Float) {
@@ -54,10 +53,7 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
                     to_i64(ctx, str_ptr, "str_i64")
                 }
                 _ -> {
-                    let r = emit_expr(ctx, env, se.node)
-                    if r.had_error {
-                        return r
-                    }
+                    let r = emit_expr(ctx, env, se.node)?
                     if vtype_eq(r.ty, .Float) {
                         let sp = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "f2s")
                         to_i64(ctx, sp, "f2s_i64")

@@ -18,8 +18,7 @@ export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> StmtResult {
     let name_val = emit_string_const(ctx, name)
     call_1(ctx, get_fn(ctx, "forge_test_start_spec"), name_val, "")
-    let r = emit_spec_stmts(ctx, env, body)
-    if r.had_error { return r }
+    let r = emit_spec_stmts(ctx, env, body)?
     call_1(ctx, get_fn(ctx, "forge_test_end_spec"), name_val, "")
     ok_stmt(env)
 }
@@ -27,8 +26,7 @@ fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> StmtR
 fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> StmtResult {
     let name_val = emit_string_const(ctx, name)
     call_1(ctx, get_fn(ctx, "forge_test_start_given"), name_val, "")
-    let r = emit_spec_stmts(ctx, env, body)
-    if r.had_error { return r }
+    let r = emit_spec_stmts(ctx, env, body)?
     call_1(ctx, get_fn(ctx, "forge_test_end_given"), name_val, "")
     ok_stmt(r.env)
 }
@@ -50,8 +48,7 @@ fn emit_spec_stmts(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
         .End -> ok_stmt(env)
         .Node(ss, next) -> {
-            let r = emit_spec_single(ctx, env, ss.node)
-            if r.had_error { return r }
+            let r = emit_spec_single(ctx, env, ss.node)?
             emit_spec_stmts(ctx, r.env, next)
         }
     }
