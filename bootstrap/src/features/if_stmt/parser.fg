@@ -10,9 +10,9 @@ impl Parser {
         self.advance()
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let condition = self.parse_expression()
+        let condition_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        if condition == null { return null }
+        let condition = condition_opt?
 
         if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after if condition")
@@ -24,39 +24,39 @@ impl Parser {
         if self.check(Tk.KwElse) {
             self.advance()
             let else_branch = self.parse_statement()?
-            return Stmt.If(condition!, then_branch, else_branch)
+            return Stmt.If(condition, then_branch, else_branch)
         }
 
-        Stmt.If(condition!, then_branch, null)
+        Stmt.If(condition, then_branch, null)
     }
 
     fn parse_if_expression(self) -> Expr? {
         self.advance()
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let condition = self.parse_expression()
+        let condition_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        if condition == null { return null }
+        let condition = condition_opt?
         if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after if condition")
             return null
         }
         let then_branch = self.parse_block_expression()?
         if !self.check(Tk.KwElse) {
-            return Expr.IfExpr(condition!, then_branch, Expr.Number("0"))
+            return Expr.IfExpr(condition, then_branch, Expr.Number("0"))
         }
         self.advance()
         // Else can be either a block, another if-expression
         // (`else if`), or a single expression.
         if self.check(Tk.KwIf) {
             let else_branch = self.parse_if_expression()?
-            return Expr.IfExpr(condition!, then_branch, else_branch)
+            return Expr.IfExpr(condition, then_branch, else_branch)
         }
         if self.check(Tk.LeftBrace) {
             let else_branch = self.parse_block_expression()?
-            return Expr.IfExpr(condition!, then_branch, else_branch)
+            return Expr.IfExpr(condition, then_branch, else_branch)
         }
         let else_branch = self.parse_expression()?
-        Expr.IfExpr(condition!, then_branch, else_branch)
+        Expr.IfExpr(condition, then_branch, else_branch)
     }
 }

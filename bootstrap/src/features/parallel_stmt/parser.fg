@@ -10,11 +10,10 @@ impl Parser {
         if !self.consume(Tk.LeftBrace, "expected `{` after parallel") {
             return null
         }
-        let body = self.parse_statement_list(true)
-        if body == null { return null }
+        let body = self.parse_statement_list(true)?
         if !self.consume(Tk.RightBrace, "expected `}` to close parallel block") {
             return null
         }
-        Stmt.Parallel(body!)
+        Stmt.Parallel(body)
     }
 }

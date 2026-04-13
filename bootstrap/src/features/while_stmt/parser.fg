@@ -10,9 +10,9 @@ impl Parser {
         self.advance()
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let condition = self.parse_expression()
+        let condition_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        if condition == null { return null }
+        let condition = condition_opt?
 
         if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after while condition")
@@ -21,6 +21,6 @@ impl Parser {
 
         let body = self.parse_statement()?
 
-        Stmt.While(condition!, body)
+        Stmt.While(condition, body)
     }
 }

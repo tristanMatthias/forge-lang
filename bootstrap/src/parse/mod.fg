@@ -369,9 +369,8 @@ impl Parser {
         // Annotations: `@name` or `@name(args)` before a declaration.
         if self.check(Tk.At) {
             let annotations = self.parse_annotations()
-            let inner = self.parse_declaration()
-            if inner == null { return null }
-            return Stmt.Annotated(annotations, inner!)
+            let inner = self.parse_declaration()?
+            return Stmt.Annotated(annotations, inner)
         }
 
         // `export` wraps the inner declaration in an @export annotation
@@ -380,17 +379,17 @@ impl Parser {
         if self.check(Tk.KwExport) {
             self.advance()
             let export_handler_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
-            let inner = if export_handler_raw != null {
+            let inner_opt = if export_handler_raw != null {
                 let handler: fn(Parser) -> Stmt? = export_handler_raw!
                 handler(self)
             } else {
                 self.set_error("expected declaration after `export`")
                 null
             }
-            if inner == null { return null }
+            let inner = inner_opt?
             return Stmt.Annotated(
                 AnnotationList.Node("export", ExprList.End, AnnotationList.End),
-                inner!
+                inner
             )
         }
 
@@ -460,9 +459,8 @@ impl Parser {
             while col_idx < header_count {
                 if self.check(Tk.RightBrace) { break }
                 // Use parse_bitwise_xor which stops before `|`
-                let val = self.parse_bitwise_xor()
-                if val == null { return null }
-                vals = ExprList.Node(sexpr(val!, self.current_line, self.current_column), vals)
+                let val = self.parse_bitwise_xor()?
+                vals = ExprList.Node(sexpr(val, self.current_line, self.current_column), vals)
                 col_idx = col_idx + 1
                 if self.check(Tk.Pipe) {
                     self.advance()
@@ -994,9 +992,8 @@ impl Parser {
             if self.check(Tk.Template) {
                 let raw = self.current_lexeme
                 self.advance()
-                let template_expr = self.desugar_template(raw)
-                if template_expr == null { return null }
-                let args = ExprList.Node(sexpr(template_expr!, self.current_line, self.current_column), ExprList.End)
+                let template_expr = self.desugar_template(raw)?
+                let args = ExprList.Node(sexpr(template_expr, self.current_line, self.current_column), ExprList.End)
                 return Expr.Call(Expr.Ident(name), args)
             }
             return Expr.Ident(name)
@@ -1032,9 +1029,9 @@ impl Parser {
                 let body = self.parse_lambda_body()?
                 return Expr.Lambda(params, body)
             }
-            let expr = self.parse_expression()
+            let expr_opt = self.parse_expression()
             self.allow_dot_postfix = saved
-            if expr == null { return null }
+            let expr = expr_opt?
             // (a, b, ...) — comma after first: tuple or multi-param lambda
             if self.check(Tk.Comma) {
                 self.advance()
@@ -1286,11 +1283,11 @@ impl Parser {
         self.allow_dot_postfix = true
         let body = self.parse_statement_list(true)
         self.allow_dot_postfix = saved_dot
-        if body == null { return null }
+        let body_val = body?
         if !self.consume(Tk.RightBrace, "expected `}` after block expression") {
             return null
         }
-        Expr.Block(body!)
+        Expr.Block(body_val)
     }
 
     fn check(self, kind: Tk) -> bool {

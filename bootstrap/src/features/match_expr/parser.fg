@@ -15,16 +15,16 @@ impl Parser {
         self.advance()
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let subject = self.parse_expression()
+        let subject_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        if subject == null { return null }
+        let subject = subject_opt?
         // Match table: `match expr table { pattern | col | col; .A | v | v }`
         if self.check(Tk.Identifier) && self.current_lexeme == "table" {
             self.advance()  // consume `table`
             if !self.consume(Tk.LeftBrace, "expected `{` after match table") { return null }
             let arms = self.parse_match_table_arms()?
             if !self.consume(Tk.RightBrace, "expected `}` after match table") { return null }
-            return Stmt.Match(subject!, arms)
+            return Stmt.Match(subject, arms)
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after match subject") {
             return null
@@ -33,7 +33,7 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after match arms") {
             return null
         }
-        Stmt.Match(subject!, arms)
+        Stmt.Match(subject, arms)
     }
 
     // Parse match table: first row is headers, remaining rows are pattern | values.
@@ -84,9 +84,8 @@ impl Parser {
             if self.check(Tk.RightBrace) { break }
             // Use primary-only parsing for table cells to avoid
             // consuming | or the next row's pattern
-            let val = self.parse_primary()
-            if val == null { return null }
-            vals = ExprList.Node(sexpr(val!, self.current_line, self.current_column), vals)
+            let val = self.parse_primary()?
+            vals = ExprList.Node(sexpr(val, self.current_line, self.current_column), vals)
             i = i + 1
             if self.check(Tk.Pipe) { self.advance() }
         }
@@ -129,12 +128,12 @@ impl Parser {
             self.parse_expression()
         }
         self.allow_dot_postfix = saved
-        if body == null { return null }
+        let body_val = body?
         if self.check(Tk.Comma) {
             self.advance()
         }
         let rest = self.parse_match_arm_list()?
-        MatchArmList.Node(pattern, guard, sexpr(body!, self.current_line, self.current_column), rest)
+        MatchArmList.Node(pattern, guard, sexpr(body_val, self.current_line, self.current_column), rest)
     }
 
     fn parse_pattern(self) -> Pattern? {
@@ -235,16 +234,16 @@ impl Parser {
         self.advance()
         let saved_struct = self.allow_struct_lit
         self.allow_struct_lit = false
-        let subject = self.parse_expression()
+        let subject_opt = self.parse_expression()
         self.allow_struct_lit = saved_struct
-        if subject == null { return null }
+        let subject = subject_opt?
         // Match table expression
         if self.check(Tk.Identifier) && self.current_lexeme == "table" {
             self.advance()
             if !self.consume(Tk.LeftBrace, "expected `{` after match table") { return null }
             let arms = self.parse_match_table_arms()?
             if !self.consume(Tk.RightBrace, "expected `}` after match table") { return null }
-            return Expr.MatchExpr(subject!, arms)
+            return Expr.MatchExpr(subject, arms)
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after match subject") {
             return null
@@ -253,6 +252,6 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after match arms") {
             return null
         }
-        Expr.MatchExpr(subject!, arms)
+        Expr.MatchExpr(subject, arms)
     }
 }

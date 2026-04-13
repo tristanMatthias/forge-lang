@@ -67,11 +67,10 @@ impl Parser {
         if !self.consume(Tk.LeftBrace, "expected `{` after then name") {
             return null
         }
-        let condition = self.parse_expression()
-        if condition == null { return null }
+        let condition = self.parse_expression()?
         if !self.consume(Tk.RightBrace, "expected `}` to close then block") {
             return null
         }
-        Stmt.ThenBlock(name, condition!)
+        Stmt.ThenBlock(name, condition)
     }
 }

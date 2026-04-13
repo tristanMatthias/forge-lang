@@ -18,25 +18,25 @@ impl Parser {
 
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
-        let expr = self.parse_expression()
+        let expr_opt = self.parse_expression()
         self.allow_struct_lit = saved
-        if expr == null { return null }
+        let expr = expr_opt?
 
         // Range form: `for x in start..end { body }`
         if self.check(Tk.DotDot) {
             self.advance()
             let saved2 = self.allow_struct_lit
             self.allow_struct_lit = false
-            let end = self.parse_expression()
+            let end_opt = self.parse_expression()
             self.allow_struct_lit = saved2
-            if end == null { return null }
+            let end = end_opt?
 
             if !self.check(Tk.LeftBrace) {
                 self.report(DiagCode.ExpectedBlock, "expected `{` after for range")
                 return null
             }
             let body = self.parse_statement()?
-            return Stmt.For(name, expr!, end!, body)
+            return Stmt.For(name, expr, end, body)
         }
 
         // Collection form: `for x in list { body }`
@@ -45,6 +45,6 @@ impl Parser {
             return null
         }
         let body = self.parse_statement()?
-        Stmt.ForIn(name, expr!, body)
+        Stmt.ForIn(name, expr, body)
     }
 }
