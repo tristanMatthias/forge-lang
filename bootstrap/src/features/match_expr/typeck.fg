@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.ast.{Expr, Pattern, PatternList, MatchArmList, ParamList, VariantList, ValueType, vtype_enum_name, vtype_eq}
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, VariantList, ValueType, vtype_enum_name, vtype_eq}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit}
 
@@ -175,6 +175,25 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
                 _ -> tc
             }
             tc_check_match_arm_returns(after, fn_name, declared, next)
+        }
+    }
+}
+
+// ── When expression type checking ──
+// Each condition must be bool-ish; return type unified across arms.
+
+export fn check_when_expr(tc: TC, arms: WhenArmList) -> ExprResult {
+    check_when_arms(tc, arms, .Int)
+}
+
+fn check_when_arms(tc: TC, arms: WhenArmList, first_ty: ValueType) -> ExprResult {
+    match arms {
+        .End -> tc_er(tc, first_ty)
+        .Node(cond, body, next) -> {
+            let after_cond = if cond == null { tc } else { check_expr(tc, cond!.node).tc }
+            let b = check_expr(after_cond, body.node)
+            let use_ty = if vtype_eq(first_ty, .Int) { b.ty } else { first_ty }
+            check_when_arms(b.tc, next, use_ty)
         }
     }
 }

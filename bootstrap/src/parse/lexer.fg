@@ -349,24 +349,19 @@ impl Parser {
                 if self.is_at_end() { break }
                 let esc = self.peek_char()
                 self.advance_char()
-                if esc == "n" {
-                    content = content + "\n"
-                } else if esc == "t" {
-                    content = content + "\t"
-                } else if esc == "r" {
-                    content = content + "\r"
-                } else if esc == "\\" {
-                    content = content + "\\"
-                } else if esc == "\"" {
-                    content = content + "\""
-                } else if esc == "0" {
-                    content = content + "\0"
-                } else if esc == "x" {
-                    let hi = self.advance_char()
-                    let lo = self.advance_char()
-                    content = content + forge_char_from_hex(hi, lo)
-                } else {
-                    content = content + "\\" + esc
+                match esc {
+                    "n"  -> { content = content + "\n" }
+                    "t"  -> { content = content + "\t" }
+                    "r"  -> { content = content + "\r" }
+                    "\\" -> { content = content + "\\" }
+                    "\"" -> { content = content + "\"" }
+                    "0"  -> { content = content + "\0" }
+                    "x"  -> {
+                        let hi = self.advance_char()
+                        let lo = self.advance_char()
+                        content = content + forge_char_from_hex(hi, lo)
+                    }
+                    _    -> { content = content + "\\" + esc }
                 }
             } else {
                 content = content + ch

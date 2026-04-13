@@ -29,12 +29,10 @@ impl Parser {
         }
         let line = self.current_line
         let col = self.current_column
-        let stmt = if self.check(Tk.KwGiven) {
-            self.parse_given_block()
-        } else if self.check(Tk.KwThen) {
-            self.parse_then_block()
-        } else {
-            self.parse_declaration()
+        let stmt = match {
+            self.check(Tk.KwGiven) -> self.parse_given_block()
+            self.check(Tk.KwThen)  -> self.parse_then_block()
+            _                      -> self.parse_declaration()
         }
         if stmt == null { return StmtList.End }
         StmtList.Node(sstmt(stmt!, line, col), self.parse_spec_body())

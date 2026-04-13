@@ -297,6 +297,7 @@ export enum Expr {
     FloatLit(value: string)
     IsCheck(subject: Expr, variant_name: string)
     QualifiedIdent(path: string)
+    When(arms: WhenArmList)
 }
 
 export enum Stmt {
@@ -334,6 +335,12 @@ export enum Stmt {
     Parallel(body: StmtList)
     Module(name: string, body: StmtList)
     Use(module_path: string, names: ParamList)
+}
+
+// When arms: `cond -> body` or `else -> body` (cond is null for else)
+export enum WhenArmList {
+    End
+    Node(cond: SExpr?, body: SExpr, next: WhenArmList)
 }
 
 // Select arms: `binding <- channel -> body`
@@ -558,6 +565,17 @@ export fn render_expr(expr: Expr) -> string {
         .Slice(obj, start, end) -> "(slice ${render_expr(obj)} ${render_expr(start)}..${render_expr(end)})"
         .IsCheck(subject, vname) -> "(is ${render_expr(subject)} .${vname})"
         .QualifiedIdent(path) -> path
+        .When(arms) -> "(when ${render_when_arm_list(arms)})"
+    }
+}
+
+fn render_when_arm_list(arms: WhenArmList) -> string {
+    match arms {
+        .End -> ""
+        .Node(cond, body, next) -> {
+            let cond_str = if cond == null { "_" } else { render_expr(cond!.node) }
+            "${cond_str} -> ${render_expr(body.node)} ${render_when_arm_list(next)}"
+        }
     }
 }
 

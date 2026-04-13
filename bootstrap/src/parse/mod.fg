@@ -600,10 +600,12 @@ impl Parser {
 
         mut expr = left
         while self.check(Tk.Greater) || self.check(Tk.GreaterEqual) || self.check(Tk.Less) || self.check(Tk.LessEqual) {
-            let op = if self.check(Tk.Less) { BinOp.Lt }
-                else if self.check(Tk.LessEqual) { BinOp.Le }
-                else if self.check(Tk.Greater) { BinOp.Gt }
-                else { BinOp.Ge }
+            let op = match {
+                self.check(Tk.Less)         -> BinOp.Lt
+                self.check(Tk.LessEqual)    -> BinOp.Le
+                self.check(Tk.Greater)      -> BinOp.Gt
+                _                           -> BinOp.Ge
+            }
             self.advance()
             let right = self.parse_shift()?
             expr = Expr.Binary(expr, op, right)
@@ -643,9 +645,11 @@ impl Parser {
 
         mut expr = left
         while self.check(Tk.Star) || self.check(Tk.Slash) || self.check(Tk.Percent) {
-            let op = if self.check(Tk.Star) { BinOp.Mul }
-                else if self.check(Tk.Percent) { BinOp.Mod }
-                else { BinOp.Div }
+            let op = match {
+                self.check(Tk.Star)    -> BinOp.Mul
+                self.check(Tk.Percent) -> BinOp.Mod
+                _                      -> BinOp.Div
+            }
             self.advance()
             let right = self.parse_unary()?
             expr = Expr.Binary(expr, op, right)
@@ -656,9 +660,11 @@ impl Parser {
 
     fn parse_unary(self) -> Expr? {
         if self.check(Tk.Bang) || self.check(Tk.Minus) || self.check(Tk.KwNot) || self.check(Tk.Tilde) {
-            let op = if self.check(Tk.Minus) { UnOp.Neg }
-                else if self.check(Tk.Tilde) { UnOp.BitNot }
-                else { UnOp.Not }
+            let op = match {
+                self.check(Tk.Minus) -> UnOp.Neg
+                self.check(Tk.Tilde) -> UnOp.BitNot
+                _                    -> UnOp.Not
+            }
             self.advance()
             let right = self.parse_unary()?
             return Expr.Unary(op, right)

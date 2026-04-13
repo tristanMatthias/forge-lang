@@ -1,6 +1,6 @@
 // WHY: resolves names in match arms — binds pattern variables into scope.
 
-use core.ast.{Pattern, PatternList, MatchArmList}
+use core.ast.{Pattern, PatternList, MatchArmList, WhenArmList}
 use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params}
 
 export fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
@@ -37,4 +37,21 @@ fn declare_pattern_list(r: Resolver, pats: PatternList) -> Resolver {
         .End -> r
         .Node(p, next) -> declare_pattern_list(declare_pattern_bindings(r, p), next)
     }
+}
+
+export fn resolve_when_arms(r: Resolver, arms: WhenArmList) -> Resolver {
+    mut current = arms
+    mut res = r
+    while true {
+        if res.had_error { return res }
+        match current {
+            .End -> { return res }
+            .Node(cond, body, next) -> {
+                let after_cond = if cond == null { res } else { resolve_expr(res, cond!.node) }
+                res = resolve_expr(after_cond, body.node)
+                current = next
+            }
+        }
+    }
+    res
 }

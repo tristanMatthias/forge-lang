@@ -6,9 +6,9 @@ use codegen.types.{err_emit, err_stmt}
 use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr}
-use features.match_expr.codegen.{emit_match, emit_match_expr}
-use features.match_expr.resolver.{resolve_match_arms}
-use features.match_expr.typeck.{check_match_arms, check_match_expr_arms, tc_check_exhaustive}
+use features.match_expr.codegen.{emit_match, emit_match_expr, emit_when_expr}
+use features.match_expr.resolver.{resolve_match_arms, resolve_when_arms}
+use features.match_expr.typeck.{check_match_arms, check_match_expr_arms, tc_check_exhaustive, check_when_expr}
 use typeck.{check_expr, tc_er}
 
 export fn init_match_expr(reg: Registry) {
@@ -45,6 +45,27 @@ export fn init_match_expr(reg: Registry) {
         parse_stmt: (p: Parser) -> p.parse_match_statement(),
     }
     register(reg, f)
+
+    let fw = feature_new("match_when") with {
+        expr_tag: Expr.When(WhenArmList.End),
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr {
+            .When(arms) -> emit_when_expr(ctx, env, arms)
+            _ -> err_emit("expected When")
+        },
+        resolve_expr: (r: int, expr: Expr) -> match expr {
+            .When(arms) -> resolve_when_arms(r, arms)
+            _ -> r
+        },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
+            .When(arms) -> check_when_expr(tc, arms)
+            _ -> tc_er(tc, .Int)
+        },
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .When(_) -> error_result(rt, "subjectless match is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected When")
+        },
+    }
+    register(reg, fw)
 }
 
 fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {

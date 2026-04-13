@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
 use diagnostics.{DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, span_new, span_dummy}
 use resolve.{resolve_program}
 
@@ -479,6 +479,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Lambda(params, body) -> .Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
+        .When(arms) -> .When(rewrite_when_arms(ctx, arms))
         _ -> expr
     }
 }
@@ -529,6 +530,16 @@ fn rewrite_match_arms(ctx: NameCtx, arms: MatchArmList) -> MatchArmList {
             let arm_ctx = bind_pattern_ctx(ctx, pattern)
             let new_guard = if guard != null { sexpr(rewrite_expr(arm_ctx, guard!.node), guard!.line, guard!.col) } else { null }
             MatchArmList.Node(pattern, new_guard, sexpr(rewrite_expr(arm_ctx, body.node), body.line, body.col), rewrite_match_arms(ctx, next))
+        }
+    }
+}
+
+fn rewrite_when_arms(ctx: NameCtx, arms: WhenArmList) -> WhenArmList {
+    match arms {
+        .End -> WhenArmList.End
+        .Node(cond, body, next) -> {
+            let new_cond = if cond == null { null } else { sexpr(rewrite_expr(ctx, cond!.node), cond!.line, cond!.col) }
+            WhenArmList.Node(new_cond, sexpr(rewrite_expr(ctx, body.node), body.line, body.col), rewrite_when_arms(ctx, next))
         }
     }
 }

@@ -6,13 +6,20 @@
 //   do NOT read this file when:   the issue is expression precedence (parser.fg)
 //   related:                features/match_expr/codegen.fg, core.ast.{Pattern, MatchArmList}
 
-use core.ast.{Stmt, Expr, ExprList, Pattern, PatternList, MatchArmList, ParamList, SExpr, sexpr, StmtList, sstmt}
+use core.ast.{Stmt, Expr, ExprList, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, SExpr, sexpr, StmtList, sstmt}
 use parse.{Parser, reverse_expr_list, table_zip_entries}
 use core.ast.{Tk}
 
 impl Parser {
     fn parse_match_statement(self) -> Stmt? {
         self.advance()
+        // Subjectless match at statement level: wrap result in Stmt.Expr(Expr.When(...))
+        if self.check(Tk.LeftBrace) {
+            self.advance()
+            let arms = self.parse_when_arm_list()?
+            if !self.consume(Tk.RightBrace, "expected `}` after match arms") { return null }
+            return Stmt.Expr(Expr.When(arms))
+        }
         let saved = self.allow_struct_lit
         self.allow_struct_lit = false
         let subject_opt = self.parse_expression()
@@ -243,6 +250,13 @@ impl Parser {
 
     fn parse_match_expression(self) -> Expr? {
         self.advance()
+        // Subjectless match: `match { cond -> body ... _ -> fallback }`
+        if self.check(Tk.LeftBrace) {
+            self.advance()
+            let arms = self.parse_when_arm_list()?
+            if !self.consume(Tk.RightBrace, "expected `}` after match arms") { return null }
+            return Expr.When(arms)
+        }
         let saved_struct = self.allow_struct_lit
         self.allow_struct_lit = false
         let subject_opt = self.parse_expression()
@@ -264,5 +278,25 @@ impl Parser {
             return null
         }
         Expr.MatchExpr(subject, arms)
+    }
+
+    fn parse_when_arm_list(self) -> WhenArmList? {
+        if self.check(Tk.RightBrace) { return WhenArmList.End }
+        // `_` → else/wildcard arm (no condition)
+        let cond: SExpr? = if self.check(Tk.Identifier) && self.current_lexeme == "_" {
+            self.advance()
+            null
+        } else {
+            let c = self.parse_expression()?
+            sexpr(c, self.current_line, self.current_column)
+        }
+        if !self.consume(Tk.Arrow, "expected `->` in match arm") { return null }
+        let saved = self.allow_dot_postfix
+        self.allow_dot_postfix = false
+        let body_expr = self.parse_expression()?
+        self.allow_dot_postfix = saved
+        if self.check(Tk.Comma) { self.advance() }
+        let rest = self.parse_when_arm_list()?
+        WhenArmList.Node(cond, sexpr(body_expr, self.current_line, self.current_column), rest)
     }
 }
