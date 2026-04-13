@@ -2,7 +2,8 @@ mod parser
 mod codegen
 use core.ast.{vtype_display, vtype_eq}
 use core.cg.{err_emit, err_stmt}
-use core.eval.{error_result, eval_expr, execute_stmt, is_truthy, ok_result, value_null}
+use core.eval.{error_result, is_truthy, ok_result, value_null}
+use features.eval.{eval_expr, execute_stmt}
 use core.registry.{feature_new, register}
 use core.resolver.{resolve_expr, resolve_stmt}
 use features.if_stmt.codegen.{emit_if, emit_if_expr}

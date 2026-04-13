@@ -34,10 +34,10 @@ mod features
 mod typeck
 mod codegen
 
-use core.scanner.{scan_source, render_tokens}
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list}
-use core.eval.{eval_expression_source, execute_program_source, render_value}
+use core.eval.{render_value}
+use features.eval.{eval_expression_source, execute_program_source}
 use core.resolver.{resolve_program}
 use features.modules.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
@@ -48,7 +48,7 @@ use codegen.{compile_program}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")
-    eprintln("Usage: bootstrapc <tokens|expr|program|eval|check|compile|run> <file.fg>")
+    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run> <file.fg>")
     eprintln("       bootstrapc compile --stop-after=<parse|resolve|names|check> <file.fg>")
 }
 
@@ -75,16 +75,6 @@ fn main() {
     }
 
     let source = if is_flag { "" } else { read_file(path) }
-    if command == "tokens" {
-        let result = scan_source(source)
-        if result.had_error {
-            fail(result.error_message)
-        }
-
-        println(render_tokens(result))
-        return
-    }
-
     if command == "expr" {
         let result = parse_expression_source(source)
         if result.had_error || result.expr == null {

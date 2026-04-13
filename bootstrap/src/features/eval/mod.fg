@@ -1,0 +1,732 @@
+// WHY: tree-walk evaluator for eval/run debug commands.
+// Not part of the compiler pipeline — used for interactive expression evaluation.
+
+use parse.{parse_expression_source, parse_program_source}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, SExpr, SStmt}
+use core.registry.{Registry, build_registry, dispatch_stmt_eval, dispatch_expr_eval, forge_stmt_tag, forge_expr_tag}
+use core.eval.{Value, EvalResult, Runtime, StepResult, ok_result, error_result, value_null, is_truthy, render_value}
+
+extern fn forge_selfhost_string_to_float(s: string) -> int
+fn float(s: string) -> int { forge_selfhost_string_to_float(s) }
+
+export fn eval_expression_source(source: string) -> EvalResult {
+    let parsed = parse_expression_source(source)
+    if parsed.had_error || parsed.expr == null {
+        return EvalResult {
+            value: null,
+            had_error: true,
+            error_message: parsed.error_message,
+        }
+    }
+
+    finish_result(eval_expr(runtime_new(), parsed.expr!))
+}
+
+export fn execute_program_source(source: string) -> EvalResult {
+    let parsed = parse_program_source(source)
+    if parsed.had_error || parsed.stmts == null {
+        return EvalResult {
+            value: null,
+            had_error: true,
+            error_message: parsed.error_message,
+        }
+    }
+
+    finish_result(execute_stmt_list(runtime_new(), parsed.stmts!))
+}
+
+
+fn render_number(value: float) -> string {
+    let text = string(value)
+    if text.length >= 2 {
+        let suffix = text.substring(text.length - 2, text.length)
+        if suffix == ".0" {
+            return text.substring(0, text.length - 2)
+        }
+    }
+    text
+}
+
+fn finish_result(step: StepResult) -> EvalResult {
+    EvalResult {
+        value: step.value,
+        had_error: step.had_error,
+        error_message: step.error_message,
+    }
+}
+
+fn runtime_new() -> Runtime {
+    Runtime {
+        bindings: BindingList.End,
+        functions: FunctionList.End,
+        depth: 0,
+        features: build_registry(),
+    }
+}
+
+
+fn make_return(runtime: Runtime, value: Value) -> StepResult {
+    StepResult {
+        runtime,
+        value,
+        had_error: false,
+        is_return: true,
+        error_message: "",
+    }
+}
+
+
+fn value_number(text: string) -> Value {
+    Value {
+        kind: "number",
+        number_text: text,
+        text: "",
+        bool_value: false,
+    }
+}
+
+fn value_string(text: string) -> Value {
+    Value {
+        kind: "string",
+        number_text: "",
+        text,
+        bool_value: false,
+    }
+}
+
+fn value_bool(flag: bool) -> Value {
+    Value {
+        kind: "bool",
+        number_text: "",
+        text: "",
+        bool_value: flag,
+    }
+}
+
+
+fn enter_scope(runtime: Runtime) -> Runtime {
+    Runtime {
+        bindings: runtime.bindings,
+        functions: runtime.functions,
+        depth: runtime.depth + 1,
+        features: runtime.features,
+    }
+}
+
+fn exit_scope(runtime: Runtime) -> Runtime {
+    Runtime {
+        bindings: pop_scope_bindings(runtime.bindings, runtime.depth),
+        functions: runtime.functions,
+        depth: runtime.depth - 1,
+        features: runtime.features,
+    }
+}
+
+fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
+    match bindings {
+        .End -> BindingList.End
+        .Node(name, mutable_binding, binding_depth, value, next) -> {
+            if binding_depth == depth {
+                return pop_scope_bindings(next, depth)
+            }
+
+            BindingList.Node(name, mutable_binding, binding_depth, value, next)
+        }
+    }
+}
+
+fn define_binding(runtime: Runtime, name: string, mutable_binding: bool, value: Value) -> Runtime {
+    Runtime {
+        bindings: BindingList.Node(name, mutable_binding, runtime.depth, value, runtime.bindings),
+        functions: runtime.functions,
+        depth: runtime.depth,
+        features: runtime.features,
+    }
+}
+
+type LookupResult = {
+    value: Value,
+    found: bool,
+}
+
+type FunctionLookupResult = {
+    params: ParamList,
+    body: StmtList,
+    found: bool,
+}
+
+fn lookup_binding(bindings: BindingList, name: string) -> LookupResult {
+    match bindings {
+        .End -> LookupResult { value: value_null(), found: false }
+        .Node(binding_name, _, _, value, next) -> {
+            if binding_name == name {
+                return LookupResult { value, found: true }
+            }
+            lookup_binding(next, name)
+        }
+    }
+}
+
+fn lookup_function(functions: FunctionList, name: string) -> FunctionLookupResult {
+    match functions {
+        .End -> FunctionLookupResult { params: ParamList.End, body: StmtList.End, found: false }
+        .Node(fn_name, params, body, next) -> {
+            if fn_name == name {
+                return FunctionLookupResult { params, body, found: true }
+            }
+            lookup_function(next, name)
+        }
+    }
+}
+
+fn define_function(runtime: Runtime, name: string, params: ParamList, body: StmtList) -> Runtime {
+    Runtime {
+        bindings: runtime.bindings,
+        functions: FunctionList.Node(name, params, body, runtime.functions),
+        depth: runtime.depth,
+        features: runtime.features,
+    }
+}
+
+fn assign_binding(bindings: BindingList, name: string, value: Value) -> AssignBindingsResult {
+    match bindings {
+        .End -> {
+            return AssignBindingsResult {
+                bindings: BindingList.End,
+                found: false,
+                had_error: false,
+                error_message: "",
+            }
+        }
+        .Node(binding_name, mutable_binding, depth, current_value, next) -> {
+            if binding_name == name {
+                if !mutable_binding {
+                    return AssignBindingsResult {
+                        bindings,
+                        found: true,
+                        had_error: true,
+                        error_message: "eval error: cannot assign to immutable variable `" + name + "`",
+                    }
+                }
+
+                return AssignBindingsResult {
+                    bindings: BindingList.Node(binding_name, mutable_binding, depth, value, next),
+                    found: true,
+                    had_error: false,
+                    error_message: "",
+                }
+            }
+
+            let assigned = assign_binding(next, name, value)
+            if assigned.had_error {
+                return AssignBindingsResult {
+                    bindings,
+                    found: true,
+                    had_error: true,
+                    error_message: assigned.error_message,
+                }
+            }
+
+            if !assigned.found {
+                return AssignBindingsResult {
+                    bindings,
+                    found: false,
+                    had_error: false,
+                    error_message: "",
+                }
+            }
+
+            AssignBindingsResult {
+                bindings: BindingList.Node(binding_name, mutable_binding, depth, current_value, assigned.bindings),
+                found: true,
+                had_error: false,
+                error_message: "",
+            }
+        }
+    }
+}
+
+fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
+    match stmts {
+        .End -> ok_result(runtime, value_null())
+        .Node(ss, next) -> {
+            let current = execute_stmt(runtime, ss.node)
+            if current.had_error || current.is_return {
+                return current
+            }
+
+            match next {
+                .End -> current
+                _ -> execute_stmt_list(current.runtime, next)
+            }
+        }
+    }
+}
+
+export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Let(name, _, initializer) -> {
+            let init = eval_expr(runtime, initializer)
+            if init.had_error {
+                return init
+            }
+
+            let next_runtime = define_binding(init.runtime, name, false, init.value)
+            ok_result(next_runtime, value_null())
+        }
+        .Mut(name, _, initializer) -> {
+            let init = eval_expr(runtime, initializer)
+            if init.had_error {
+                return init
+            }
+
+            let next_runtime = define_binding(init.runtime, name, true, init.value)
+            ok_result(next_runtime, value_null())
+        }
+        .Expr(expr) -> eval_expr(runtime, expr)
+        .Block(body) -> {
+            let entered = enter_scope(runtime)
+            let body_result = execute_stmt_list(entered, body)
+            let exited = exit_scope(body_result.runtime)
+            if body_result.had_error {
+                return StepResult {
+                    runtime: exited,
+                    value: value_null(),
+                    had_error: true,
+                    is_return: false,
+                    error_message: body_result.error_message,
+                }
+            }
+
+            if body_result.is_return {
+                return make_return(exited, body_result.value)
+            }
+
+            ok_result(exited, body_result.value)
+        }
+        .Function(name, params, _, body) -> {
+            let next_runtime = define_function(runtime, name, params, body)
+            ok_result(next_runtime, value_null())
+        }
+        .Return(value) -> {
+            let val_result = eval_expr(runtime, value)
+            if val_result.had_error {
+                return val_result
+            }
+            make_return(val_result.runtime, val_result.value)
+        }
+        .ReturnEmpty -> {
+            make_return(runtime, value_null())
+        }
+        .TypeDecl(_, _) -> {
+            // Type declarations are erased at the eval layer — the
+            // tree-walk runtime is value-untyped, so a struct type
+            // has no runtime existence here. Codegen is the layer
+            // that cares.
+            ok_result(runtime, value_null())
+        }
+        .EnumDecl(_, _) -> ok_result(runtime, value_null())
+        .Impl(_, _) -> ok_result(runtime, value_null())
+        .NoOp -> ok_result(runtime, value_null())
+        .ExternFn(_, _, _) -> ok_result(runtime, value_null())
+        .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
+        .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
+        .TraitDecl(_, _) -> ok_result(runtime, value_null())
+        .Annotated(_, inner) -> execute_stmt(runtime, inner)
+        _ -> {
+            let tag = forge_stmt_tag(stmt)
+            let result = dispatch_stmt_eval(runtime.features, tag, runtime, stmt)
+            if result != null { return result! }
+            ok_result(runtime, value_null())
+        }
+    }
+}
+
+export fn execute_while(runtime: Runtime, condition: Expr, body: Stmt) -> StepResult {
+    let cond_result = eval_expr(runtime, condition)
+    if cond_result.had_error {
+        return cond_result
+    }
+
+    if !is_truthy(cond_result.value) {
+        return ok_result(cond_result.runtime, value_null())
+    }
+
+    let body_result = execute_stmt(cond_result.runtime, body)
+    if body_result.had_error || body_result.is_return {
+        return body_result
+    }
+
+    execute_while(body_result.runtime, condition, body)
+}
+
+export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .Number(text) -> ok_result(runtime, value_number(render_number(float(text))))
+        .FloatLit(text) -> ok_result(runtime, value_number(text))
+        .String(text) -> ok_result(runtime, value_string(unquote_string(text)))
+        .Bool(text) -> ok_result(runtime, value_bool(text == "true"))
+        .Null -> ok_result(runtime, value_null())
+        .Ident(name) -> {
+            let result = lookup_binding(runtime.bindings, name)
+            if result.found {
+                return ok_result(runtime, result.value)
+            }
+
+            let fn_result = lookup_function(runtime.functions, name)
+            if fn_result.found {
+                return ok_result(runtime, value_function(name))
+            }
+
+            if name == "println" || name == "string" {
+                return ok_result(runtime, value_builtin(name))
+            }
+
+            error_result(runtime, "undefined variable `" + name + "`")
+        }
+        .Assign(name, value_expr) -> {
+            let value_result = eval_expr(runtime, value_expr)
+            if value_result.had_error {
+                return value_result
+            }
+
+            let assigned = assign_binding(value_result.runtime.bindings, name, value_result.value)
+            if assigned.had_error {
+                return StepResult {
+                    runtime: value_result.runtime,
+                    value: value_null(),
+                    had_error: true,
+                    is_return: false,
+                    error_message: assigned.error_message,
+                }
+            }
+
+            if !assigned.found {
+                return error_result(value_result.runtime, "undefined variable `" + name + "`")
+            }
+
+            let next_runtime = Runtime {
+                bindings: assigned.bindings,
+                functions: value_result.runtime.functions,
+                depth: value_result.runtime.depth,
+                features: value_result.runtime.features,
+            }
+            ok_result(next_runtime, value_result.value)
+        }
+        .Grouping(inner) -> eval_expr(runtime, inner)
+        .Unary(op, right) -> eval_unary(runtime, op, right)
+        .Binary(left, op, right) -> eval_binary(runtime, left, op, right)
+        .Logical(left, op, right) -> eval_logical(runtime, left, op, right)
+        .Call(callee, args) -> eval_call(runtime, callee, args)
+        .QualifiedIdent(path) -> {
+            let fn_result = lookup_function(runtime.functions, path)
+            if fn_result.found {
+                return ok_result(runtime, value_function(path))
+            }
+            error_result(runtime, "undefined qualified name `" + path + "`")
+        }
+        _ -> {
+            let tag = forge_expr_tag(expr)
+            let result = dispatch_expr_eval(runtime.features, tag, runtime, expr)
+            if result != null { return result! }
+            error_result(runtime, "unsupported expression type in tree-walk evaluator")
+        }
+    }
+}
+
+type EvalArgsResult = {
+    runtime: Runtime,
+    values: ValueList,
+    had_error: bool,
+    error_message: string,
+}
+
+enum ValueList {
+    End
+    Node(value: Value, next: ValueList)
+}
+
+fn eval_arg_list(runtime: Runtime, args: ExprList) -> EvalArgsResult {
+    match args {
+        .End -> EvalArgsResult { runtime, values: ValueList.End, had_error: false, error_message: "" }
+        .Node(se, next) -> {
+            let result = eval_expr(runtime, se.node)
+            if result.had_error {
+                return EvalArgsResult { runtime: result.runtime, values: ValueList.End, had_error: true, error_message: result.error_message }
+            }
+            let arg_value = result.value
+            let rest = eval_arg_list(result.runtime, next)
+            if rest.had_error {
+                return rest
+            }
+            EvalArgsResult { runtime: rest.runtime, values: ValueList.Node(arg_value, rest.values), had_error: false, error_message: "" }
+        }
+    }
+}
+
+fn bind_params(runtime: Runtime, params: ParamList, args: ValueList) -> Runtime {
+    match params {
+        .End -> runtime
+        .Node(name, _, next_params) -> {
+            match args {
+                .End -> runtime
+                .Node(value, next_args) -> {
+                    let next_runtime = define_binding(runtime, name, false, value)
+                    bind_params(next_runtime, next_params, next_args)
+                }
+            }
+        }
+    }
+}
+
+fn count_params(params: ParamList) -> int {
+    match params {
+        .End -> 0
+        .Node(_, _, next) -> 1 + count_params(next)
+    }
+}
+
+fn count_values(values: ValueList) -> int {
+    match values {
+        .End -> 0
+        .Node(_, next) -> 1 + count_values(next)
+    }
+}
+
+fn eval_call(runtime: Runtime, callee: Expr, args: ExprList) -> StepResult {
+    let callee_result = eval_expr(runtime, callee)
+    if callee_result.had_error {
+        return callee_result
+    }
+
+    let callee_value = callee_result.value
+    let call_runtime = callee_result.runtime
+
+    let args_result = eval_arg_list(call_runtime, args)
+    if args_result.had_error {
+        return error_result(args_result.runtime, args_result.error_message)
+    }
+
+    if callee_value.kind == "builtin" {
+        return call_builtin(args_result.runtime, callee_value.text, args_result.values)
+    }
+
+    if callee_value.kind != "function" {
+        return error_result(args_result.runtime, "can only call functions")
+    }
+
+    let fn_name = callee_value.text
+    let fn_lookup = lookup_function(args_result.runtime.functions, fn_name)
+    if !fn_lookup.found {
+        return error_result(args_result.runtime, "undefined function `" + fn_name + "`")
+    }
+
+    let param_count = count_params(fn_lookup.params)
+    let arg_count = count_values(args_result.values)
+    if param_count != arg_count {
+        return error_result(args_result.runtime, "expected " + string(param_count) + " arguments but got " + string(arg_count))
+    }
+
+    let call_env = enter_scope(args_result.runtime)
+    let bound_env = bind_params(call_env, fn_lookup.params, args_result.values)
+    let body_result = execute_stmt_list(bound_env, fn_lookup.body)
+    let restored = exit_scope(body_result.runtime)
+
+    if body_result.had_error {
+        return StepResult {
+            runtime: restored,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: body_result.error_message,
+        }
+    }
+
+    ok_result(restored, body_result.value)
+}
+
+fn value_function(name: string) -> Value {
+    Value {
+        kind: "function",
+        number_text: "",
+        text: name,
+        bool_value: false,
+    }
+}
+
+fn value_builtin(name: string) -> Value {
+    Value {
+        kind: "builtin",
+        number_text: "",
+        text: name,
+        bool_value: false,
+    }
+}
+
+fn call_builtin(runtime: Runtime, name: string, args: ValueList) -> StepResult {
+    if name == "println" {
+        match args {
+            .End -> {
+                println("")
+                return ok_result(runtime, value_null())
+            }
+            .Node(value, _) -> {
+                println(render_value(value))
+                return ok_result(runtime, value_null())
+            }
+        }
+    }
+
+    if name == "string" {
+        match args {
+            .Node(value, _) -> {
+                return ok_result(runtime, value_string(render_value(value)))
+            }
+            _ -> { return error_result(runtime, "string() expects 1 argument") }
+        }
+    }
+
+    error_result(runtime, "unknown builtin `" + name + "`")
+}
+
+fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
+    let right_result = eval_expr(runtime, right)
+    if right_result.had_error {
+        return right_result
+    }
+
+    let value = right_result.value
+    match op {
+        .Neg -> {
+            let number_text = as_number_text(value)
+            if number_text == null {
+                return error_result(right_result.runtime, "operand must be a number")
+            }
+            ok_result(right_result.runtime, value_number(render_number(0.0 - float(number_text!))))
+        }
+        .Not -> ok_result(right_result.runtime, value_bool(!is_truthy(value)))
+    }
+}
+
+fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResult {
+    let left_result = eval_expr(runtime, left)
+    if left_result.had_error { return left_result }
+
+    let left_value = left_result.value
+    let right_result = eval_expr(left_result.runtime, right)
+    if right_result.had_error { return right_result }
+
+    let right_value = right_result.value
+    let rt = right_result.runtime
+
+    match op {
+        .Add -> eval_plus(rt, left_value, right_value)
+        .Eq -> ok_result(rt, value_bool(values_equal(left_value, right_value)))
+        .Ne -> ok_result(rt, value_bool(!values_equal(left_value, right_value)))
+        _ -> {
+            let left_text = as_number_text(left_value)
+            if left_text == null {
+                return error_result(rt, "operand must be a number")
+            }
+            let right_text = as_number_text(right_value)
+            if right_text == null {
+                return error_result(rt, "operand must be a number")
+            }
+            let l = float(left_text!)
+            let r = float(right_text!)
+            match op {
+                .Sub -> ok_result(rt, value_number(render_number(l - r)))
+                .Mul -> ok_result(rt, value_number(render_number(l * r)))
+                .Div -> ok_result(rt, value_number(render_number(l / r)))
+                .Lt -> ok_result(rt, value_bool(l < r))
+                .Le -> ok_result(rt, value_bool(l <= r))
+                .Gt -> ok_result(rt, value_bool(l > r))
+                .Ge -> ok_result(rt, value_bool(l >= r))
+                _ -> error_result(rt, "unsupported binary operator")
+            }
+        }
+    }
+}
+
+fn eval_logical(runtime: Runtime, left: Expr, op: LogicOp, right: Expr) -> StepResult {
+    let left_result = eval_expr(runtime, left)
+    if left_result.had_error { return left_result }
+
+    let left_truthy = is_truthy(left_result.value)
+    match op {
+        .Or -> {
+            if left_truthy { return left_result }
+            eval_expr(left_result.runtime, right)
+        }
+        .And -> {
+            if !left_truthy { return left_result }
+            eval_expr(left_result.runtime, right)
+        }
+    }
+}
+
+fn eval_plus(runtime: Runtime, left: Value, right: Value) -> StepResult {
+    let left_num_text = as_number_text(left)
+    if left_num_text != null {
+        let right_num_text = as_number_text(right)
+        if right_num_text == null {
+            return error_result(runtime, "operands to `+` must both be numbers or both be strings")
+        }
+        let left_num = float(left_num_text!)
+        let right_num = float(right_num_text!)
+        return ok_result(runtime, value_number(render_number(left_num + right_num)))
+    }
+
+    let left_text = as_string(left)
+    if left_text != null {
+        let right_text = as_string(right)
+        if right_text == null {
+            return error_result(runtime, "operands to `+` must both be numbers or both be strings")
+        }
+        return ok_result(runtime, value_string(left_text! + right_text!))
+    }
+
+    error_result(runtime, "operands to `+` must both be numbers or both be strings")
+}
+
+fn as_number_text(value: Value) -> string? {
+    if value.kind == "number" {
+        return value.number_text
+    }
+    null
+}
+
+fn as_string(value: Value) -> string? {
+    if value.kind == "string" {
+        return value.text
+    }
+    null
+}
+
+
+fn values_equal(left: Value, right: Value) -> bool {
+    if left.kind != right.kind {
+        return false
+    }
+
+    if left.kind == "number" {
+        return float(left.number_text) == float(right.number_text)
+    }
+
+    if left.kind == "string" {
+        return left.text == right.text
+    }
+
+    if left.kind == "bool" {
+        return left.bool_value == right.bool_value
+    }
+
+    true
+}
+
+fn unquote_string(text: string) -> string {
+    if text.length < 2 {
+        return text
+    }
+    text.substring(1, text.length - 1)
+}

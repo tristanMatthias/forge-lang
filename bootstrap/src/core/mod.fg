@@ -2,9 +2,7 @@
 // depends on (token, ast, scanner state, diagnostic, resolver, cg).
 // As the migration progresses, more modules join this list.
 
-mod token
 mod ast
-mod scanner
 mod resolver
 mod eval
 mod cg
