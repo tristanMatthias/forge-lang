@@ -46,6 +46,40 @@ Currently features register with `register_expr(reg, Expr.IsCheck(Expr.Null, "")
 constructing a throwaway value just to extract the tag byte. Parser + codegen change: when an
 enum variant with fields is referenced without calling it, emit its tag as a constant.
 
+### Result type + `?` for error propagation
+**type:** feature
+**priority:** high
+**source:** dogfooding audit (April 13, 2026)
+
+The `?` operator currently only works on nullable values (`T?`) — it checks `== null`
+and returns null from the enclosing function. This leaves 107 instances of
+`if r.had_error { return r }` boilerplate across the codegen because `EmitResult`
+and `StmtResult` use `had_error: bool`, not nullability.
+
+**The fix:** Add a `Result<T, E>` enum and extend `?` to work with it:
+
+```forge
+enum Result<T, E> { Ok(value: T), Err(error: E) }
+
+fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    let l = emit_expr(ctx, env, left)?   // returns Err early if error
+    let r = emit_expr(ctx, env, right)?
+    Ok(combine(l, r))
+}
+```
+
+This eliminates the `had_error` pattern entirely. Every function that currently returns
+`{ ..., had_error: bool, error_message: string }` returns `Result<T, string>` instead.
+
+**Impact:** Would eliminate ~107 error-check lines across codegen, making the compiler
+source dramatically cleaner. This is the single biggest source of visual noise.
+
+**Scope:**
+1. Add `Result` enum (or extend `?` to check a `had_error` field on any struct)
+2. Extend `?` codegen to handle Result: check tag, extract Ok value or return Err
+3. Refactor codegen return types from `EmitResult`/`StmtResult` to `Result<...>`
+4. Dogfood across all 107 sites
+
 ### Catch expressions
 **type:** feature
 **priority:** medium

@@ -2,13 +2,15 @@
 //
 // `a ?? b`   → short-circuit: if a != 0 then a else b
 // `a?.field` → if a == 0 then 0 else a.field
-// `a?`       → if a == 0 then return 0 from enclosing fn, else a
+// `a?`       → two modes:
+//              1. Result enum: check tag, extract Ok value or return Err
+//              2. Nullable: if a == 0, return 0 from enclosing fn
 //
 // In the bootstrap's everything-is-i64 model, null == 0. These
-// operators compile to simple i64 null-check branches.
+// operators compile to i64 null-check or enum-tag-check branches.
 
-use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, new_bb, const_i64, to_ptr}
+use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, new_bb, const_i64, to_ptr}
 use codegen.{emit_expr}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
@@ -89,17 +91,46 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     let r = emit_expr(ctx, env, inner)
     if r.had_error { return r }
 
-    // If value is null (0), return null from the enclosing function.
+    // Result `?`: if the inner expression returns a Result enum,
+    // check the tag. Ok → extract the value. Err → return the
+    // whole Result from the enclosing function (error propagation).
+    let enum_name = vtype_enum_name(r.ty)
+    if enum_name == "Result" {
+        let enum_ty = forge_llvm_get_type_by_name(ctx.lc, "Result")
+        let enum_ptr = to_ptr(ctx, r.value, "try_res_ptr")
+
+        // Load the tag (field 0 of the {i64, ptr} enum layout).
+        let tag_gep = forge_llvm_build_struct_gep2(ctx.builder, enum_ty, enum_ptr, 0, "try_tag_ptr")
+        let tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, tag_gep, "try_tag")
+
+        // Ok tag = forge_variant_hash("Ok"), Err tag = forge_variant_hash("Err").
+        let ok_tag = const_i64(ctx, forge_variant_hash("Ok"))
+        let is_ok = forge_llvm_build_icmp(ctx.builder, 32, tag, ok_tag, "try_is_ok")
+        let ok_bb = new_bb(ctx, "try_ok")
+        let err_bb = new_bb(ctx, "try_err")
+        forge_llvm_build_cond_br(ctx.builder, is_ok, ok_bb, err_bb)
+
+        // Err path: return the Result as-is (propagates the error).
+        forge_llvm_position_at_end(ctx.builder, err_bb)
+        forge_llvm_build_ret(ctx.builder, r.value)
+
+        // Ok path: extract the payload value (field 0 of the payload).
+        forge_llvm_position_at_end(ctx.builder, ok_bb)
+        let pay_gep = forge_llvm_build_struct_gep2(ctx.builder, enum_ty, enum_ptr, 1, "try_pay_slot")
+        let pay_ptr = forge_llvm_build_load(ctx.builder, forge_llvm_pointer_type(ctx.lc), pay_gep, "try_payload")
+        let ok_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, pay_ptr, "try_ok_val")
+        return ok_emit_typed(ok_val, .Int)
+    }
+
+    // Nullable `?`: if value is null (0), return null from enclosing fn.
     let is_null = forge_llvm_build_icmp(ctx.builder, 32, r.value, const_i64(ctx, 0), "try_null")
     let cont_bb = new_bb(ctx, "try_ok")
     let ret_bb = new_bb(ctx, "try_ret")
     forge_llvm_build_cond_br(ctx.builder, is_null, ret_bb, cont_bb)
 
-    // Null path: return 0 (null) from the current function.
     forge_llvm_position_at_end(ctx.builder, ret_bb)
     forge_llvm_build_ret(ctx.builder, const_i64(ctx, 0))
 
-    // Non-null path: continue with the value.
     forge_llvm_position_at_end(ctx.builder, cont_bb)
     EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
 }

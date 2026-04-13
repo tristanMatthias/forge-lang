@@ -599,6 +599,126 @@ FEATURES = [
             "for i in 0..count { process(i) }"
         ),
     },
+
+    # ─── DRY / Code Quality ─────────────────────────────────────────
+
+    {
+        "key": "dry_duplicate_blocks",
+        "name": "DRY: Duplicate Code Blocks",
+        "desc": (
+            "Find and extract duplicate or near-duplicate code blocks into shared "
+            "helper functions. Two blocks that differ only in a variable name or "
+            "error message should be one function with a parameter."
+        ),
+        "look_for": (
+            "Look for match arms, if-else branches, or function bodies that are "
+            "near-identical (same structure, different variable names). Key hotspot: "
+            "codegen/mod.fg `.Ident` vs `.QualifiedIdent` arms (~48 duplicated lines). "
+            "Also check for repeated multi-line patterns across features."
+        ),
+        "example": (
+            "// Before: two 25-line match arms that differ only in `name` vs `path`\n"
+            ".Ident(name) -> { let local = env_lookup(env, name); ... }\n"
+            ".QualifiedIdent(path) -> { let local = env_lookup(env, path); ... }\n"
+            "// After: one helper, two one-line arms\n"
+            "fn emit_name_lookup(ctx, env, name, label) -> EmitResult { ... }\n"
+            '.Ident(name) -> emit_name_lookup(ctx, env, name, "variable")\n'
+            '.QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "qualified name")'
+        ),
+    },
+    {
+        "key": "dry_use_helpers",
+        "name": "DRY: Use Existing Helpers",
+        "desc": (
+            "Replace manual struct construction with existing helper functions. "
+            "If `ok_emit_typed(value, ty)` exists, don't write "
+            "`EmitResult { value: v, ty: t, had_error: false, error_message: \"\" }` by hand."
+        ),
+        "look_for": (
+            "Grep for `had_error: false, error_message: \"\"` — every hit is a manual "
+            "construction that should use a helper. Check codegen/types.fg for the "
+            "available helpers: ok_emit, ok_emit_str, ok_emit_typed, err_emit, "
+            "ok_stmt, err_stmt, err_stmt_from_expr. "
+            "~36 manual EmitResult constructions exist; ~15 are straightforward replacements."
+        ),
+        "example": (
+            "// Before:\n"
+            "EmitResult { value: loaded, ty: local.ty, had_error: false, error_message: \"\" }\n"
+            "// After:\n"
+            "ok_emit_typed(loaded, local.ty)"
+        ),
+    },
+    {
+        "key": "dry_error_propagation",
+        "name": "DRY: Error Propagation Boilerplate",
+        "desc": (
+            "Identify and reduce repetitive `if r.had_error { return r }` / "
+            "`if r.had_error { return err_stmt_from_expr(r) }` chains. "
+            "NOTE: The `?` operator currently only works on nullable values (null check), "
+            "NOT on structs with had_error fields. So `?` cannot be used directly. "
+            "Instead, look for opportunities to: (a) chain operations to avoid intermediate "
+            "error checks, (b) extract common error-check-and-continue patterns into helpers, "
+            "(c) restructure to use early returns more cleanly."
+        ),
+        "look_for": (
+            "Grep for `if.*had_error.*return` — there are ~107 instances across codegen files. "
+            "Many follow the exact same pattern: emit_expr → check error → use value. "
+            "Look for cases where 3+ sequential emit+check pairs could be a helper like "
+            "`emit_two_exprs(ctx, env, left, right)` that returns both values or an error."
+        ),
+        "example": (
+            "// Before: 6 lines per operand\n"
+            "let l = emit_expr(ctx, env, left)\n"
+            "if l.had_error { return l }\n"
+            "let r = emit_expr(ctx, env, right)\n"
+            "if r.had_error { return r }\n"
+            "// After: helper handles both\n"
+            "let (lv, rv) = emit_pair(ctx, env, left, right)?\n"
+            "// Or at minimum, extract to:\n"
+            "let l = emit_or_bail(ctx, env, left)  // returns EmitResult, caller checks once"
+        ),
+    },
+    {
+        "key": "dry_magic_numbers",
+        "name": "DRY: Magic Numbers and Strings",
+        "desc": (
+            "Replace magic numbers and unexplained string constants with named constants "
+            "or at minimum add a comment explaining what they mean."
+        ),
+        "look_for": (
+            "Grep for bare numeric literals that aren't 0 or 1 — e.g., `-559038737` "
+            "(closure marker), `32` (LLVM icmp predicate for EQ), `33`/`34`/etc. "
+            "Also look for string literals used as type tags or dispatch keys."
+        ),
+        "example": (
+            "// Before:\n"
+            "call_2(ctx, push_fn, closure_arr, const_i64(ctx, -559038737), \"\")\n"
+            "// After:\n"
+            "let CLOSURE_MARKER = -559038737  // 0xDEADBEEF — sentinel to identify closure arrays\n"
+            "call_2(ctx, push_fn, closure_arr, const_i64(ctx, CLOSURE_MARKER), \"\")"
+        ),
+    },
+    {
+        "key": "dry_dead_code",
+        "name": "DRY: Dead Code and Unused Params",
+        "desc": (
+            "Find and remove dead code: functions never called, variables assigned "
+            "but never read, match arms that can't be reached, parameters that are "
+            "always passed the same value."
+        ),
+        "look_for": (
+            "For each function defined in the file, grep the codebase for callers. "
+            "If zero callers exist outside the definition, it's dead. Also look for "
+            "`let x = ...` where x is never used again, or `_ -> ` catch-all arms "
+            "after exhaustive matching."
+        ),
+        "example": (
+            "// Before:\n"
+            "fn unused_helper(ctx: Ctx) -> int { ... }  // nobody calls this\n"
+            "let temp = compute()  // temp never read\n"
+            "// After: delete both"
+        ),
+    },
 ]
 
 FEATURE_KEYS = [f["key"] for f in FEATURES]
