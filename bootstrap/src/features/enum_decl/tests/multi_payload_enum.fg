@@ -8,11 +8,11 @@ let ok = Result.Ok(42)
 let err = Result.Err(404, "not found")
 
 match ok {
-    .Ok(v) -> println(string(v))
+    .Ok(v) -> v |> string |> println
     .Err(code, msg) -> println("error: " + msg)
 }
 
 match err {
-    .Ok(v) -> println(string(v))
+    .Ok(v) -> v |> string |> println
     .Err(code, msg) -> println(string(code) + ": " + msg)
 }

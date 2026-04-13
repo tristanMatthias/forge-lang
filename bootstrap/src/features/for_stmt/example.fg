@@ -1,7 +1,7 @@
 fn main() -> int {
     // Basic for loop
     for i in 0..5 {
-        println(string(i))
+        i |> string |> println
     }
 
     // For loop with computed bounds
@@ -10,7 +10,7 @@ fn main() -> int {
     for j in 1..n + 1 {
         sum = sum + j
     }
-    println(string(sum))
+    sum |> string |> println
 
     0
 }

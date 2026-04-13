@@ -10,7 +10,7 @@ for i in 0..10 {
     sum = sum + i
 }
 // 0 + 1 + 2 + 4 + 6 = 13
-println(string(sum))
+sum |> string |> println
 
 // Nested for loops with break
 mut found = 0
@@ -25,4 +25,4 @@ for i in 0..5 {
         break
     }
 }
-println(string(found))
+found |> string |> println

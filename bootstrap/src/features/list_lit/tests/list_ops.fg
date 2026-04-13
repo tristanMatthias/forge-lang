@@ -1,27 +1,27 @@
 // List literals
 let nums = [10, 20, 30]
-println(string(nums.length))
-println(string(nums[0]))
-println(string(nums[1]))
-println(string(nums[2]))
+nums.length |> string |> println
+nums[0] |> string |> println
+nums[1] |> string |> println
+nums[2] |> string |> println
 
 // Push
 nums.push(40)
-println(string(nums.length))
-println(string(nums[3]))
+nums.length |> string |> println
+nums[3] |> string |> println
 
 // Pop
 let last = nums.pop()
-println(string(last))
-println(string(nums.length))
+last |> string |> println
+nums.length |> string |> println
 
 // Empty list
 let empty = []
-println(string(empty.length))
+empty.length |> string |> println
 
 // List in a loop
 mut sum = 0
 for i in 0..nums.length {
     sum = sum + nums[i]
 }
-println(string(sum))
+sum |> string |> println

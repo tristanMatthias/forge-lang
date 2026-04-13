@@ -1,7 +1,7 @@
 // Tuple literal and indexing
 let pair = (10, 20)
-println(string(pair.0))
-println(string(pair.1))
+pair.0 |> string |> println
+pair.1 |> string |> println
 
 // 3-element tuple
 let triple = (1, 2, 3)
@@ -9,10 +9,10 @@ println(string(triple.0 + triple.1 + triple.2))
 
 // Destructuring
 let (x, y) = (100, 200)
-println(string(x))
-println(string(y))
+x |> string |> println
+y |> string |> println
 
 // Tuple of mixed types
 let mixed = (42, "hello")
-println(string(mixed.0))
+mixed.0 |> string |> println
 println(mixed.1)

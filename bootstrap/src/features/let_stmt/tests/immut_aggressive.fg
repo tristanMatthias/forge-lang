@@ -17,7 +17,7 @@ for i in 0..10 {
     local = local + 1
     total = total + local
 }
-println(string(total))
+total |> string |> println
 
 // let in nested blocks — inner shadow doesn't affect outer
 let x = 100
@@ -25,17 +25,17 @@ let x = 100
     let x = 200
     {
         let x = 300
-        println(string(x))
+        x |> string |> println
     }
-    println(string(x))
+    x |> string |> println
 }
-println(string(x))
+x |> string |> println
 
 // mut struct fields (field assign is separate from variable immutability)
 type Counter = { value: int }
 let c = Counter { value: 0 }
 c.value = 42
-println(string(c.value))
+c.value |> string |> println
 
 // mut in match arms
 enum Action { Inc(n: int), Dec(n: int), Reset }
@@ -48,21 +48,21 @@ for a in actions {
         .Reset -> { acc = 0 }
     }
 }
-println(string(acc))
+acc |> string |> println
 
 // mut with closures
 mut sum = 0
 [1, 2, 3, 4, 5].foreach((x) -> {
     sum = sum + x
 })
-println(string(sum))
+sum |> string |> println
 
 // mut with with-expression (original unchanged)
 type Point = { x: int, y: int }
 let p = Point { x: 1, y: 2 }
 let p2 = p with { x: 99 }
-println(string(p.x))
-println(string(p2.x))
+p.x |> string |> println
+p2.x |> string |> println
 
 // mut with ?? and ?
 fn maybe(x: int) -> int? {
@@ -71,6 +71,6 @@ fn maybe(x: int) -> int? {
 }
 mut result = 0
 result = maybe(42) ?? -1
-println(string(result))
+result |> string |> println
 result = maybe(-5) ?? -1
-println(string(result))
+result |> string |> println

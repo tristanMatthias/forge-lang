@@ -1,7 +1,7 @@
 // Force unwrap operator (currently no-op in bootstrap)
 let x = 42
 let y = x!
-println(string(y))
+y |> string |> println
 
 // Force unwrap on a non-null value
 let s = "hello"
@@ -10,4 +10,4 @@ println(s2)
 
 // Chained force unwrap
 let z = 99!!!!
-println(string(z))
+z |> string |> println

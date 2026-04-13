@@ -2,11 +2,11 @@
 
 fn main() {
     let x = 42
-    println(string(x))
+    x |> string |> println
 
     mut y = 10
     y = y + 5
-    println(string(y))
+    y |> string |> println
 
     let name = "forge"
     println(name)

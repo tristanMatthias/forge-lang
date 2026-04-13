@@ -7,8 +7,8 @@ println(string(x))
     println(string(x))
     {
         let x = 30
-        println(string(x))
+        x |> string |> println
     }
-    println(string(x))
+    x |> string |> println
 }
-println(string(x))
+x |> string |> println

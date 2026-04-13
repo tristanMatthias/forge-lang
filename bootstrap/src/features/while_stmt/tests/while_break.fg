@@ -8,6 +8,6 @@ fn main() {
         sum = sum + i
         i = i + 1
     }
-    println(string(sum))
-    println(string(i))
+    sum |> string |> println
+    i |> string |> println
 }

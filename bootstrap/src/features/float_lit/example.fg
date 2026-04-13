@@ -3,25 +3,25 @@
 fn main() {
     // Float literals
     let x = 3.14
-    println(string(x))
+    x |> string |> println
 
     let y = 2.718
-    println(string(y))
+    y |> string |> println
 
     let z = 0.5
-    println(string(z))
+    z |> string |> println
 
     // float() conversion: string → float
     let a = float("9.81")
-    println(string(a))
+    a |> string |> println
 
     // float() conversion: int → float
     let b = float(100)
-    println(string(b))
+    b |> string |> println
 
     // Arithmetic
     let sum = 3.0 + 2.0
-    println(string(sum))
+    sum |> string |> println
     println(string(3.0 * 2.0))
     println(string(10.0 / 4.0))
     println(string(10.0 - 3.5))

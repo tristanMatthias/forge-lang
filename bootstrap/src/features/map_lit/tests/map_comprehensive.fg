@@ -1,6 +1,6 @@
 // Basic map operations
 let m = {"x": "10", "y": "20", "z": "30"}
-println(string(m.length))
+m.length |> string |> println
 println(m.get("x"))
 println(m.get("z"))
 
@@ -14,14 +14,14 @@ println(m.get("x"))
 
 // Empty map
 let e = {}
-println(string(e.length))
+e.length |> string |> println
 println(string(e.has("anything")))
 
 // keys returns a list
 let k = m.keys()
-println(string(k.length))
+k.length |> string |> println
 
 // Map with numeric values (stored as i64)
 let nums = {"a": 1, "b": 2, "c": 3}
 let sum = nums.get("a") + nums.get("b") + nums.get("c")
-println(string(sum))
+sum |> string |> println

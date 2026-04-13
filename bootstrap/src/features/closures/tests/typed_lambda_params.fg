@@ -3,7 +3,7 @@
 let csv = "10,20,30,40,50"
 let values = csv.split(",")
 let total = values.reduce(0, (acc, x) -> acc + int(x))
-println(string(total))
+total |> string |> println
 
 // Map on string list — x should be typed Str
 let upper_parts = "hello,world".split(",").map((x) -> x.upper())

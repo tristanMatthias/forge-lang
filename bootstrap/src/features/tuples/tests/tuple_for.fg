@@ -5,4 +5,4 @@ for i in 0..5 {
     sum = sum + pair.1
 }
 // 0 + 1 + 4 + 9 + 16 = 30
-println(string(sum))
+sum |> string |> println

@@ -16,7 +16,7 @@ enum Option<T> {
 }
 
 let x = identity(42)
-println(string(x))
+x |> string |> println
 
 let p = Pair { first: 10, second: 20 }
 println(string(p.first + p.second))
@@ -24,5 +24,5 @@ println(string(p.first + p.second))
 let opt = Option.Some(99)
 match opt {
     .None -> println(string(0))
-    .Some(v) -> println(string(v))
+    .Some(v) -> v |> string |> println
 }

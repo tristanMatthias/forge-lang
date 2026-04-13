@@ -6,6 +6,6 @@ type Point = {
 }
 
 let p = Point { x: 3, y: 4 }
-println(string(p.x))
-println(string(p.y))
+p.x |> string |> println
+p.y |> string |> println
 println(string(p.x + p.y))

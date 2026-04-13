@@ -2,8 +2,8 @@ type Point = { x: int, y: int }
 
 let p = Point { x: 10, y: 20 }
 let px = p?.x
-println(string(px))
+px |> string |> println
 
 let n: ptr = null
 let nx = n?.x
-println(string(nx))
+nx |> string |> println

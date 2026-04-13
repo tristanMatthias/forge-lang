@@ -12,21 +12,21 @@ fn divide(a: int, b: int) -> Result {
 let results = (divide(10, 2), divide(10, 0))
 
 match results.0 {
-    .Ok(v) -> println(string(v))
+    .Ok(v) -> v |> string |> println
     .Err(_) -> println("error")
 }
 match results.1 {
-    .Ok(v) -> println(string(v))
+    .Ok(v) -> v |> string |> println
     .Err(_) -> println("div by zero")
 }
 
 // Destructure should also preserve types
 let (r1, r2) = (divide(20, 4), divide(20, 0))
 match r1 {
-    .Ok(v) -> println(string(v))
+    .Ok(v) -> v |> string |> println
     .Err(_) -> println("error")
 }
 match r2 {
-    .Ok(v) -> println(string(v))
+    .Ok(v) -> v |> string |> println
     .Err(_) -> println("div by zero")
 }

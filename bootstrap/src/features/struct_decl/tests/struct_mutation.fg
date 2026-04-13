@@ -11,9 +11,9 @@ impl Point {
 
 fn main() {
     mut p = Point { x: 1, y: 2 }
-    println(string(p.x))
+    p.x |> string |> println
     p.move_right(10)
-    println(string(p.x))
+    p.x |> string |> println
     p.y = 99
-    println(string(p.y))
+    p.y |> string |> println
 }
