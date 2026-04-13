@@ -5,29 +5,17 @@ use core.registry.{feature_new, register}
 use resolve.{resolve_stmt_list}
 use features.parallel_stmt.codegen.{parallel_emit_stmt}
 
-fn kw_parse_parallel(p: Parser) -> Stmt? {
-    p.parse_parallel_statement()
-}
-
 export fn init_parallel_stmt(reg: Registry) {
     let f = feature_new("parallel") with {
         stmt_tag: Stmt.Parallel(StmtList.End),
         emit_stmt: parallel_emit_stmt,
-        resolve_stmt: parallel_resolve_stmt,
-        eval_stmt: parallel_eval_stmt,
+        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .Parallel(body) -> resolve_stmt_list(r, body), _ -> r },
+        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+            .Parallel(_) -> error_result(rt, "parallel is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected Parallel")
+        },
         decl_keyword: "kw_parallel",
-        parse_decl: kw_parse_parallel,
+        parse_decl: (p: Parser) -> p.parse_parallel_statement(),
     }
     register(reg, f)
-}
-
-fn parallel_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Parallel(body) -> resolve_stmt_list(r, body), _ -> r }
-}
-
-fn parallel_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .Parallel(_) -> error_result(rt, "parallel is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Parallel")
-    }
 }

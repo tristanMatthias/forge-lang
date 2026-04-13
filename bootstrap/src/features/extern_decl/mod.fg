@@ -1,14 +1,10 @@
 mod parser
 use core.registry.{feature_new, register}
 
-fn kw_parse_extern(p: Parser) -> Stmt? {
-    p.parse_extern_declaration()
-}
-
 export fn init_extern_decl(reg: Registry) {
     let f = feature_new("extern_decl") with {
         decl_keyword: "kw_extern",
-        parse_decl: kw_parse_extern,
+        parse_decl: (p: Parser) -> p.parse_extern_declaration(),
     }
     register(reg, f)
 }

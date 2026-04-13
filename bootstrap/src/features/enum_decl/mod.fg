@@ -2,14 +2,10 @@ mod parser
 mod codegen
 use core.registry.{feature_new, register}
 
-fn kw_parse_enum(p: Parser) -> Stmt? {
-    p.parse_enum_declaration()
-}
-
 export fn init_enum_decl(reg: Registry) {
     let f = feature_new("enum_decl") with {
         decl_keyword: "kw_enum",
-        parse_decl: kw_parse_enum,
+        parse_decl: (p: Parser) -> p.parse_enum_declaration(),
     }
     register(reg, f)
 }

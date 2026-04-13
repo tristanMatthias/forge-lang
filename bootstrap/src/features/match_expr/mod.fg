@@ -11,54 +11,40 @@ use features.match_expr.resolver.{resolve_match_arms}
 use features.match_expr.typeck.{check_match_arms, check_match_expr_arms, tc_check_exhaustive}
 use typeck.{check_expr, tc_er}
 
-fn kw_parse_match(p: Parser) -> Stmt? {
-    p.parse_match_statement()
-}
-
 export fn init_match_expr(reg: Registry) {
     let f = feature_new("match") with {
         expr_tag: Expr.MatchExpr(Expr.Null, MatchArmList.End),
         stmt_tag: Stmt.Match(Expr.Null, MatchArmList.End),
-        emit_expr: match_emit_expr,
-        emit_stmt: match_emit_stmt,
-        resolve_stmt: match_resolve_stmt,
-        resolve_expr: match_resolve_expr,
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms), _ -> err_emit("expected MatchExpr") },
+        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .Match(subject, arms) -> emit_match(ctx, env, subject, arms), _ -> err_stmt("expected Match") },
+        resolve_stmt: (r: int, stmt: Stmt) -> match stmt {
+            .Match(subject, arms) -> {
+                let after_subject = resolve_expr(r, subject)
+                resolve_match_arms(after_subject, arms)
+            }
+            _ -> r
+        },
+        resolve_expr: (r: int, expr: Expr) -> match expr {
+            .MatchExpr(subject, arms) -> {
+                let after_subject = resolve_expr(r, subject)
+                resolve_match_arms(after_subject, arms)
+            }
+            _ -> r
+        },
         check_stmt: match_check_stmt,
         check_expr: match_check_expr,
-        eval_stmt: match_eval_stmt,
-        eval_expr: match_eval_expr,
+        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+            .Match(_, _) -> error_result(rt, "match statements are not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected Match")
+        },
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .MatchExpr(_, _) -> error_result(rt, "match expressions are not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected MatchExpr")
+        },
         stmt_keyword: "kw_match",
-        parse_stmt: kw_parse_match,
+        parse_stmt: (p: Parser) -> p.parse_match_statement(),
     }
     register(reg, f)
-}
-
-fn match_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .MatchExpr(subject, arms) -> emit_match_expr(ctx, env, subject, arms), _ -> err_emit("expected MatchExpr") }
-}
-
-fn match_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
-    match stmt { .Match(subject, arms) -> emit_match(ctx, env, subject, arms), _ -> err_stmt("expected Match") }
-}
-
-fn match_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .Match(subject, arms) -> {
-            let after_subject = resolve_expr(r, subject)
-            resolve_match_arms(after_subject, arms)
-        }
-        _ -> r
-    }
-}
-
-fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .MatchExpr(subject, arms) -> {
-            let after_subject = resolve_expr(r, subject)
-            resolve_match_arms(after_subject, arms)
-        }
-        _ -> r
-    }
 }
 
 fn match_check_stmt(tc: TC, stmt: Stmt) -> TC {
@@ -80,19 +66,5 @@ fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
             check_match_expr_arms(checked, arms, .Int)
         }
         _ -> tc_er(tc, .Int)
-    }
-}
-
-fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .Match(_, _) -> error_result(rt, "match statements are not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Match")
-    }
-}
-
-fn match_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .MatchExpr(_, _) -> error_result(rt, "match expressions are not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected MatchExpr")
     }
 }

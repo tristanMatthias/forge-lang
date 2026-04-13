@@ -10,26 +10,21 @@ use typeck.{check_expr, tc_er}
 export fn init_with_expr(reg: Registry) {
     let f = feature_new("with") with {
         expr_tag: Expr.With(Expr.Null, FieldInitList.End),
-        emit_expr: with_emit,
-        resolve_expr: with_resolve_expr,
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .With(obj, overrides) -> emit_with(ctx, env, obj, overrides), _ -> err_emit("expected With") },
+        resolve_expr: (r: int, expr: Expr) -> match expr {
+            .With(obj, overrides) -> {
+                let after_obj = resolve_expr(r, obj)
+                resolve_field_init_list(after_obj, overrides)
+            }
+            _ -> r
+        },
         check_expr: with_check_expr,
-        eval_expr: with_eval_expr,
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .With(_, _) -> error_result(rt, "with expression is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected With")
+        },
     }
     register(reg, f)
-}
-
-fn with_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .With(obj, overrides) -> emit_with(ctx, env, obj, overrides), _ -> err_emit("expected With") }
-}
-
-fn with_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .With(obj, overrides) -> {
-            let after_obj = resolve_expr(r, obj)
-            resolve_field_init_list(after_obj, overrides)
-        }
-        _ -> r
-    }
 }
 
 fn with_check_expr(tc: TC, expr: Expr) -> ExprResult {
@@ -40,12 +35,5 @@ fn with_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(checked, o.ty)
         }
         _ -> tc_er(tc, .Int)
-    }
-}
-
-fn with_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .With(_, _) -> error_result(rt, "with expression is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected With")
     }
 }

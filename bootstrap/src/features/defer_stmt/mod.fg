@@ -8,50 +8,30 @@ use resolve.{resolve_expr}
 use features.defer_stmt.codegen.{defer_push}
 use typeck.{check_expr}
 
-fn kw_parse_defer(p: Parser) -> Stmt? {
-    p.parse_defer_statement()
-}
-
 export fn init_defer_stmt(reg: Registry) {
     let f = feature_new("defer") with {
         stmt_tag: .Defer(.Null),
-        emit_stmt: defer_emit_stmt,
-        resolve_stmt: defer_resolve_stmt,
-        check_stmt: defer_check_stmt,
-        eval_stmt: defer_eval_stmt,
+        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt {
+            .Defer(body) -> {
+                defer_push(sexpr_dummy(body))
+                ok_stmt(env)
+            }
+            _ -> err_stmt("expected Defer")
+        },
+        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .Defer(body) -> resolve_expr(r, body), _ -> r },
+        check_stmt: (tc: int, stmt: Stmt) -> match stmt {
+            .Defer(body) -> {
+                let r = check_expr(tc, body)
+                r.tc
+            }
+            _ -> tc
+        },
+        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+            .Defer(_) -> ok_result(rt, value_null())
+            _ -> error_result(rt, "expected Defer")
+        },
         stmt_keyword: "kw_defer",
-        parse_stmt: kw_parse_defer,
+        parse_stmt: (p: Parser) -> p.parse_defer_statement(),
     }
     register(reg, f)
-}
-
-fn defer_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Defer(body) -> resolve_expr(r, body), _ -> r }
-}
-
-fn defer_check_stmt(tc: TC, stmt: Stmt) -> TC {
-    match stmt {
-        .Defer(body) -> {
-            let r = check_expr(tc, body)
-            r.tc
-        }
-        _ -> tc
-    }
-}
-
-fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
-    match stmt {
-        .Defer(body) -> {
-            defer_push(sexpr_dummy(body))
-            ok_stmt(env)
-        }
-        _ -> err_stmt("expected Defer")
-    }
-}
-
-fn defer_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .Defer(_) -> ok_result(rt, value_null())
-        _ -> error_result(rt, "expected Defer")
-    }
 }

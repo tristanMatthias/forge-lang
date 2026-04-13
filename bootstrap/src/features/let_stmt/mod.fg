@@ -13,17 +13,28 @@ fn kw_parse_let(p: Parser) -> Stmt? {
     p.parse_let_statement()
 }
 
-fn kw_parse_mut(p: Parser) -> Stmt? {
-    p.parse_mut_statement()
-}
-
 export fn init_let_stmt(reg: Registry) {
     let f = feature_new("let_destructure") with {
         stmt_tag: Stmt.LetDestructure(ParamList.End, Expr.Null),
-        emit_stmt: let_destr_emit,
-        resolve_stmt: let_destr_resolve_stmt,
-        check_stmt: let_destr_check_stmt,
-        eval_stmt: let_destr_eval_stmt,
+        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .LetDestructure(names, init) -> emit_let_destructure(ctx, env, names, init), _ -> err_stmt("expected LetDestructure") },
+        resolve_stmt: (r: int, stmt: Stmt) -> match stmt {
+            .LetDestructure(names, initializer) -> {
+                let after_init = resolve_expr(r, initializer)
+                define_param_names(after_init, names)
+            }
+            _ -> r
+        },
+        check_stmt: (tc: int, stmt: Stmt) -> match stmt {
+            .LetDestructure(names, init) -> {
+                let r = check_expr(tc, init)
+                bind_destructure(r.tc, names, r.ty)
+            }
+            _ -> tc
+        },
+        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+            .LetDestructure(_, _) -> error_result(rt, "destructuring is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected LetDestructure")
+        },
     }
     register(reg, f)
 
@@ -41,38 +52,7 @@ export fn init_let_stmt(reg: Registry) {
 
     let f_mut = feature_new("mut") with {
         decl_keyword: "kw_mut",
-        parse_decl: kw_parse_mut,
+        parse_decl: (p: Parser) -> p.parse_mut_statement(),
     }
     register(reg, f_mut)
-}
-
-fn let_destr_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
-    match stmt { .LetDestructure(names, init) -> emit_let_destructure(ctx, env, names, init), _ -> err_stmt("expected LetDestructure") }
-}
-
-fn let_destr_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .LetDestructure(names, initializer) -> {
-            let after_init = resolve_expr(r, initializer)
-            define_param_names(after_init, names)
-        }
-        _ -> r
-    }
-}
-
-fn let_destr_check_stmt(tc: TC, stmt: Stmt) -> TC {
-    match stmt {
-        .LetDestructure(names, init) -> {
-            let r = check_expr(tc, init)
-            bind_destructure(r.tc, names, r.ty)
-        }
-        _ -> tc
-    }
-}
-
-fn let_destr_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .LetDestructure(_, _) -> error_result(rt, "destructuring is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected LetDestructure")
-    }
 }

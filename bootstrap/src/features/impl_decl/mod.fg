@@ -1,14 +1,10 @@
 mod parser
 use core.registry.{feature_new, register}
 
-fn kw_parse_impl(p: Parser) -> Stmt? {
-    p.parse_impl_declaration()
-}
-
 export fn init_impl_decl(reg: Registry) {
     let f = feature_new("impl_decl") with {
         decl_keyword: "kw_impl",
-        parse_decl: kw_parse_impl,
+        parse_decl: (p: Parser) -> p.parse_impl_declaration(),
     }
     register(reg, f)
 }

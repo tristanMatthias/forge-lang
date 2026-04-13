@@ -6,29 +6,17 @@ use core.registry.{feature_new, register}
 use features.select_stmt.codegen.{select_emit_stmt}
 use features.select_stmt.resolver.{resolve_select_arms}
 
-fn kw_parse_select(p: Parser) -> Stmt? {
-    p.parse_select_statement()
-}
-
 export fn init_select_stmt(reg: Registry) {
     let f = feature_new("select") with {
         stmt_tag: Stmt.Select(SelectArmList.End),
         emit_stmt: select_emit_stmt,
-        resolve_stmt: select_resolve_stmt,
-        eval_stmt: select_eval_stmt,
+        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r },
+        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+            .Select(_) -> error_result(rt, "select is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected Select")
+        },
         decl_keyword: "kw_select",
-        parse_decl: kw_parse_select,
+        parse_decl: (p: Parser) -> p.parse_select_statement(),
     }
     register(reg, f)
-}
-
-fn select_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r }
-}
-
-fn select_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .Select(_) -> error_result(rt, "select is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Select")
-    }
 }

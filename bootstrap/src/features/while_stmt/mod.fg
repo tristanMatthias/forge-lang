@@ -9,35 +9,26 @@ use resolve.{resolve_expr, resolve_stmt}
 use features.while_stmt.codegen.{emit_while}
 use typeck.{check_expr, check_stmt, tc_report}
 
-fn kw_parse_while(p: Parser) -> Stmt? {
-    p.parse_while_statement()
-}
-
 export fn init_while_stmt(reg: Registry) {
     let f = feature_new("while") with {
         stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
-        emit_stmt: while_emit_stmt,
-        resolve_stmt: while_resolve_stmt,
+        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .While(cond, body) -> emit_while(ctx, env, cond, body), _ -> err_stmt("expected While") },
+        resolve_stmt: (r: int, stmt: Stmt) -> match stmt {
+            .While(condition, body) -> {
+                let after_cond = resolve_expr(r, condition)
+                resolve_stmt(after_cond, body)
+            }
+            _ -> r
+        },
         check_stmt: while_check_stmt,
-        eval_stmt: while_eval_stmt,
+        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+            .While(condition, body) -> execute_while(rt, condition, body)
+            _ -> error_result(rt, "expected While")
+        },
         stmt_keyword: "kw_while",
-        parse_stmt: kw_parse_while,
+        parse_stmt: (p: Parser) -> p.parse_while_statement(),
     }
     register(reg, f)
-}
-
-fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
-    match stmt { .While(cond, body) -> emit_while(ctx, env, cond, body), _ -> err_stmt("expected While") }
-}
-
-fn while_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .While(condition, body) -> {
-            let after_cond = resolve_expr(r, condition)
-            resolve_stmt(after_cond, body)
-        }
-        _ -> r
-    }
 }
 
 fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {
@@ -50,12 +41,5 @@ fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {
             check_stmt(after_cond, body)
         }
         _ -> tc
-    }
-}
-
-fn while_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .While(condition, body) -> execute_while(rt, condition, body)
-        _ -> error_result(rt, "expected While")
     }
 }

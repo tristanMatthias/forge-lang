@@ -11,32 +11,16 @@ use typeck.{tc_er}
 export fn init_list_lit(reg: Registry) {
     let f = feature_new("list_lit") with {
         expr_tag: Expr.ListLit(ExprList.End),
-        emit_expr: list_emit,
-        resolve_expr: list_resolve_expr,
-        check_expr: list_check_expr,
-        eval_expr: list_eval_expr,
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .ListLit(elements) -> emit_list_lit(ctx, env, elements), _ -> err_emit("expected ListLit") },
+        resolve_expr: (r: int, expr: Expr) -> match expr { .ListLit(elements) -> resolve_expr_list(r, elements), _ -> r },
+        check_expr: (tc: int, expr: Expr) -> match expr {
+            .ListLit(elements) -> check_list_lit(tc, elements)
+            _ -> tc_er(tc, .Int)
+        },
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .ListLit(_) -> error_result(rt, "list literals are not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected ListLit")
+        },
     }
     register(reg, f)
-}
-
-fn list_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .ListLit(elements) -> emit_list_lit(ctx, env, elements), _ -> err_emit("expected ListLit") }
-}
-
-fn list_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr { .ListLit(elements) -> resolve_expr_list(r, elements), _ -> r }
-}
-
-fn list_check_expr(tc: TC, expr: Expr) -> ExprResult {
-    match expr {
-        .ListLit(elements) -> check_list_lit(tc, elements)
-        _ -> tc_er(tc, .Int)
-    }
-}
-
-fn list_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .ListLit(_) -> error_result(rt, "list literals are not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected ListLit")
-    }
 }

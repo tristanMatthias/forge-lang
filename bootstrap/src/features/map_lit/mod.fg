@@ -10,35 +10,19 @@ use typeck.{check_expr_list, tc_er}
 export fn init_map_lit(reg: Registry) {
     let f = feature_new("map_lit") with {
         expr_tag: Expr.MapLit(ExprList.End),
-        emit_expr: map_emit,
-        resolve_expr: map_resolve_expr,
-        check_expr: map_check_expr,
-        eval_expr: map_eval_expr,
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .MapLit(entries) -> emit_map_lit(ctx, env, entries), _ -> err_emit("expected MapLit") },
+        resolve_expr: (r: int, expr: Expr) -> match expr { .MapLit(entries) -> resolve_expr_list(r, entries), _ -> r },
+        check_expr: (tc: int, expr: Expr) -> match expr {
+            .MapLit(entries) -> {
+                let checked = check_expr_list(tc, entries)
+                tc_er(checked, .Map)
+            }
+            _ -> tc_er(tc, .Int)
+        },
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .MapLit(_) -> error_result(rt, "map literals are not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected MapLit")
+        },
     }
     register(reg, f)
-}
-
-fn map_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .MapLit(entries) -> emit_map_lit(ctx, env, entries), _ -> err_emit("expected MapLit") }
-}
-
-fn map_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr { .MapLit(entries) -> resolve_expr_list(r, entries), _ -> r }
-}
-
-fn map_check_expr(tc: TC, expr: Expr) -> ExprResult {
-    match expr {
-        .MapLit(entries) -> {
-            let checked = check_expr_list(tc, entries)
-            tc_er(checked, .Map)
-        }
-        _ -> tc_er(tc, .Int)
-    }
-}
-
-fn map_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .MapLit(_) -> error_result(rt, "map literals are not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected MapLit")
-    }
 }

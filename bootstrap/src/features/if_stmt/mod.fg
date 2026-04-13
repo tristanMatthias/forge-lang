@@ -9,34 +9,32 @@ use resolve.{resolve_expr, resolve_stmt}
 use features.if_stmt.codegen.{emit_if, emit_if_expr}
 use typeck.{check_expr, check_stmt, tc_er, tc_report}
 
-fn kw_parse_if(p: Parser) -> Stmt? {
-    p.parse_if_statement()
-}
-
 export fn init_if_stmt(reg: Registry) {
     let f = feature_new("if") with {
         expr_tag: Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null),
         stmt_tag: Stmt.If(Expr.Null, Stmt.NoOp, null),
-        emit_expr: if_emit_expr,
-        emit_stmt: if_emit_stmt,
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .IfExpr(c, t, e) -> emit_if_expr(ctx, env, c, t, e), _ -> err_emit("expected IfExpr") },
+        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .If(cond, then_b, else_b) -> emit_if(ctx, env, cond, then_b, else_b), _ -> err_stmt("expected If") },
         resolve_stmt: if_resolve_stmt,
-        resolve_expr: if_resolve_expr,
+        resolve_expr: (r: int, expr: Expr) -> match expr {
+            .IfExpr(c, t, e) -> {
+                let after_c = resolve_expr(r, c)
+                let after_t = resolve_expr(after_c, t)
+                resolve_expr(after_t, e)
+            }
+            _ -> r
+        },
         check_stmt: if_check_stmt,
         check_expr: if_check_expr,
         eval_stmt: if_eval_stmt,
-        eval_expr: if_eval_expr,
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .IfExpr(_, _, _) -> error_result(rt, "if expressions are not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected IfExpr")
+        },
         stmt_keyword: "kw_if",
-        parse_stmt: kw_parse_if,
+        parse_stmt: (p: Parser) -> p.parse_if_statement(),
     }
     register(reg, f)
-}
-
-fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .IfExpr(c, t, e) -> emit_if_expr(ctx, env, c, t, e), _ -> err_emit("expected IfExpr") }
-}
-
-fn if_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
-    match stmt { .If(cond, then_b, else_b) -> emit_if(ctx, env, cond, then_b, else_b), _ -> err_stmt("expected If") }
 }
 
 fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
@@ -48,17 +46,6 @@ fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
                 return resolve_stmt(after_then, else_branch!)
             }
             after_then
-        }
-        _ -> r
-    }
-}
-
-fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .IfExpr(c, t, e) -> {
-            let after_c = resolve_expr(r, c)
-            let after_t = resolve_expr(after_c, t)
-            resolve_expr(after_t, e)
         }
         _ -> r
     }
@@ -116,12 +103,5 @@ fn if_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
             ok_result(cond_result.runtime, value_null())
         }
         _ -> error_result(rt, "expected If")
-    }
-}
-
-fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .IfExpr(_, _, _) -> error_result(rt, "if expressions are not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected IfExpr")
     }
 }

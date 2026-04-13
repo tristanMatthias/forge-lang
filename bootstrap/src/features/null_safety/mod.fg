@@ -10,60 +10,48 @@ use typeck.{check_expr, tc_er}
 export fn init_null_safety(reg: Registry) {
     let f1 = feature_new("null_coalesce") with {
         expr_tag: Expr.NullCoalesce(Expr.Null, Expr.Null),
-        emit_expr: nc_emit,
-        resolve_expr: nc_resolve_expr,
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right), _ -> err_emit("expected NullCoalesce") },
+        resolve_expr: (r: int, expr: Expr) -> match expr {
+            .NullCoalesce(left, right) -> {
+                let after_left = resolve_expr(r, left)
+                resolve_expr(after_left, right)
+            }
+            _ -> r
+        },
         check_expr: nc_check_expr,
-        eval_expr: nc_eval_expr,
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .NullCoalesce(_, _) -> error_result(rt, "null coalesce is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected NullCoalesce")
+        },
     }
     register(reg, f1)
 
     let f2 = feature_new("optional_chain") with {
         expr_tag: Expr.OptionalChain(Expr.Null, ""),
-        emit_expr: oc_emit,
-        resolve_expr: oc_resolve_expr,
-        check_expr: oc_check_expr,
-        eval_expr: oc_eval_expr,
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field), _ -> err_emit("expected OptionalChain") },
+        resolve_expr: (r: int, expr: Expr) -> match expr { .OptionalChain(obj, _) -> resolve_expr(r, obj), _ -> r },
+        check_expr: (tc: int, expr: Expr) -> match expr {
+            .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
+            _ -> tc_er(tc, .Int)
+        },
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .OptionalChain(_, _) -> error_result(rt, "optional chain is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected OptionalChain")
+        },
     }
     register(reg, f2)
 
     let f3 = feature_new("try") with {
         expr_tag: Expr.Try(Expr.Null),
-        emit_expr: try_emit,
-        resolve_expr: try_resolve_expr,
-        check_expr: try_check_expr,
-        eval_expr: try_eval_expr,
+        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .Try(inner) -> emit_try(ctx, env, inner), _ -> err_emit("expected Try") },
+        resolve_expr: (r: int, expr: Expr) -> match expr { .Try(inner) -> resolve_expr(r, inner), _ -> r },
+        check_expr: (tc: int, expr: Expr) -> match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Int) },
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .Try(_) -> error_result(rt, "try operator is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected Try")
+        },
     }
     register(reg, f3)
-}
-
-fn nc_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right), _ -> err_emit("expected NullCoalesce") }
-}
-
-fn oc_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field), _ -> err_emit("expected OptionalChain") }
-}
-
-fn try_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
-    match expr { .Try(inner) -> emit_try(ctx, env, inner), _ -> err_emit("expected Try") }
-}
-
-fn nc_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .NullCoalesce(left, right) -> {
-            let after_left = resolve_expr(r, left)
-            resolve_expr(after_left, right)
-        }
-        _ -> r
-    }
-}
-
-fn oc_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr { .OptionalChain(obj, _) -> resolve_expr(r, obj), _ -> r }
-}
-
-fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr { .Try(inner) -> resolve_expr(r, inner), _ -> r }
 }
 
 fn nc_check_expr(tc: TC, expr: Expr) -> ExprResult {
@@ -74,37 +62,5 @@ fn nc_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(r.tc, r.ty)
         }
         _ -> tc_er(tc, .Int)
-    }
-}
-
-fn oc_check_expr(tc: TC, expr: Expr) -> ExprResult {
-    match expr {
-        .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
-        _ -> tc_er(tc, .Int)
-    }
-}
-
-fn try_check_expr(tc: TC, expr: Expr) -> ExprResult {
-    match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Int) }
-}
-
-fn nc_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .NullCoalesce(_, _) -> error_result(rt, "null coalesce is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected NullCoalesce")
-    }
-}
-
-fn oc_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .OptionalChain(_, _) -> error_result(rt, "optional chain is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected OptionalChain")
-    }
-}
-
-fn try_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .Try(_) -> error_result(rt, "try operator is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Try")
     }
 }
