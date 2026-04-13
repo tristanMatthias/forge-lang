@@ -60,18 +60,18 @@ Build the foundation, then build on it.
 2. **Check the Rust compiler** — `forge/packages/forgec-rust/features/`
    may already have a reference implementation with examples. Read it
    for semantics and edge cases before writing a single line of code.
-3. **Identify seed impact** — does this feature add new enum variants
-   or new keywords? If yes, you need a two-phase bootstrap. Plan
-   Phase A (types only) and Phase B (usage). NOTE: adding FIELDS to
-   existing enum variants does NOT require two-phase bootstrap — enum
-   payloads are heap-allocated via `{i8 tag, ptr payload}`, so the
-   enum struct size is always 16 bytes regardless of field count.
+3. **Identify seed impact** — does this feature add new keywords?
+   If yes, you may need a seed cycle. NOTE: enum changes (adding
+   variants, adding fields, reordering) do NOT require two-phase
+   bootstrap — tags are hash-based (stable across reordering) and
+   payloads are heap-allocated (stable across field changes).
 
 ### Phase 2: Two-Phase Bootstrap (if needed)
 
-Required when: adding new enum variants (shifts tag numbers), new AST
-types, or new keywords. NOT required for adding fields to existing
-variants (heap-allocated payloads absorb the change).
+Required when: adding new keywords that the seed's scanner doesn't
+recognize. NOT required for enum changes — tags are hash-based
+(adding/removing/reordering variants is safe) and payloads are
+heap-allocated (adding fields is safe).
 
 **Phase A — Types only:**
 1. Add new types/variants at the END of their enums. Never in the middle.
@@ -166,7 +166,7 @@ Once the feature works and tests pass:
 
 - **Skip tests** — "it works in the happy path" is not tested.
 - **Skip seed update** — the self-compile check exists for a reason.
-- **Add enum variants in the middle** — shifts all tags, breaks everything.
+- ~~**Add enum variants in the middle**~~ — FIXED: hash-based tags are stable across reordering.
 - **Add keywords without Phase A** — the seed scanner won't recognize them.
 - **Skip the resolver** — resolver errors crash at codegen time with
   unhelpful messages. Always handle new expressions in the resolver.
@@ -356,7 +356,7 @@ All type/variable tracking uses C-side storage (immune to Forge list corruption)
 
 ### Known Issues
 - **`ptr != null` produces `br i1 false`** when the variable's inferred type is `Unknown` (i64 alloca for pointer value). Fixed for standalone programs; some namespace call returns still affected. Root cause: `Type::Unknown` → `i64` alloca → pointer loaded as integer → comparison fails.
-- **Enum layout**: Bootstrap enums use `{i8 tag, ptr payload}` (fixed 16 bytes). Payload is heap-allocated per-variant. Adding fields to a variant does NOT require two-phase bootstrap — only adding new VARIANTS (which shifts tag numbers) does.
+- **Enum layout**: `{i64 tag, ptr payload}` (16 bytes). Tags are djb2 hashes of variant names (stable across reordering). Payloads are heap-allocated. No two-phase bootstrap needed for any enum change.
 - **Duplicate codegen paths**: `emit_statement` exists twice (line ~907 feature path, line ~2161 inline path). Both must handle all statement types. The inline path is used by `emit_fn_body_from_source`.
 
 ## CLI Commands
@@ -606,8 +606,9 @@ collisions are rare. The codegen detects duplicates and exits with
    retries. If that also fails, it restores the backup and shows
    diagnostics (which functions diverged, which are new, etc.).
    
-   **When auto-cycle CAN'T help:** Adding new enum variants to the
-   MIDDLE of an existing enum (shifts tags). Always add at the END.
+   **When auto-cycle CAN'T help:** Changing something fundamental
+   about the seed's own execution path (e.g. a new keyword the seed
+   scanner doesn't recognize). Enum changes are now safe.
    
    **Diagnostic tools:**
    - `bash scripts/diagnose.sh --seed-status` — show new/removed/changed functions
@@ -635,8 +636,10 @@ that clearly IS defined in the new source.
 **Root cause:** you changed a container type (ExprList, StmtList,
 MatchArmList, etc.) to hold a different inner type. The old seed's
 resolver destructures the old layout but gets the new data.
-**Fix:** two-phase bootstrap. Phase A: add new types WITHOUT changing
-containers, update seed. Phase B: change containers.
+**Fix (historical):** two-phase bootstrap. This specific issue is
+largely eliminated by hash-based tags and heap-allocated payloads, but
+container STRUCTURE changes (e.g. adding a new field to ExprList.Node)
+may still require a seed cycle.
 
 ### Build works for small files but fails on main.fg
 **Symptom:** `./build/bs2 compile /tmp/small.fg` works, but
@@ -648,10 +651,13 @@ ordering mismatches.
 **Fix:** check if the error is from the old seed vs the new source
 (struct layout mismatch). Use LLDB to find the exact crash point.
 
-### Adding new enum variants MUST go at the END (for now)
-**Symptom:** segfault or wrong dispatch after adding a variant.
-**Root cause:** inserting a variant in the MIDDLE of an enum shifts
-all subsequent tag numbers. The old seed's codegen uses the old tags
+### ~~Adding new enum variants MUST go at the END~~ (FIXED)
+**Status:** FIXED. Tags are now hash-based (djb2 of variant name).
+Adding, removing, or reordering variants is safe. No position dependence.
+
+**Previously:**
+**Root cause (historical):** inserting a variant in the MIDDLE shifted
+all subsequent tag numbers. The old seed's codegen used the old tags
 but the new source has different values.
 **Fix:** ALWAYS add new enum variants at the END. Never in the middle.
 Apply to Expr, Stmt, ValueType, and all other enums.

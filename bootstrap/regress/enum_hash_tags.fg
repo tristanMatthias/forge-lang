@@ -1,0 +1,53 @@
+/// expect: red
+/// expect: circle area: 75
+/// expect: found: 42
+/// expect: three true
+/// expect: cmp ok
+
+// Verify hash-based enum tags work — variant order doesn't matter.
+// Tags are derived from variant names, not declaration position.
+
+enum Color { Blue, Red, Green }
+
+fn color_name(c: Color) -> string {
+    match c {
+        .Red -> "red"
+        .Blue -> "blue"
+        .Green -> "green"
+    }
+}
+
+enum Shape {
+    Triangle(base: int, height: int)
+    Circle(radius: int)
+    Square(side: int)
+}
+
+fn area(s: Shape) -> int {
+    match s {
+        .Circle(r) -> r * r * 3
+        .Triangle(b, h) -> b * h / 2
+        .Square(s) -> s * s
+    }
+}
+
+// Enum with many variants to stress the hash table
+enum Token { A, B, C, D, E, F, G, H, I, J, K, L, M }
+
+fn token_check(t: Token) -> bool {
+    match t {
+        .C -> true
+        _ -> false
+    }
+}
+
+// Enum == comparison with hash tags
+enum Dir { Up, Down, Left, Right }
+
+fn main() {
+    println(color_name(Color.Red))
+    println("circle area: " + string(area(Shape.Circle(5))))
+    println("found: " + string(match Color.Red { .Red -> 42, _ -> 0 }))
+    if token_check(Token.C) { println("three true") } else { println("three false") }
+    if Dir.Up == Dir.Up && Dir.Left != Dir.Right { println("cmp ok") } else { println("cmp fail") }
+}
