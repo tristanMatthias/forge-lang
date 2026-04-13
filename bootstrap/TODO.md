@@ -370,6 +370,21 @@ imports, separate compilation can't know what to link.
 
 ## Bugs
 
+### Type checker doesn't catch return type mismatches in impl methods
+**type:** bug
+**priority:** high
+**source:** discovered April 12, 2026
+
+`peek_char` returned `Tk.Identifier` (a Tk enum value) instead of `""` (a string) for
+months without the type checker catching it. The function signature says `-> string` but
+the body returned a `Tk` enum. This caused 44M allocations and bump arena exhaustion
+when heap-allocated payloads were enabled.
+
+The type checker needs to verify that return expressions match the declared return type
+for ALL functions, including impl methods. Currently it only checks explicit `return`
+statements in function bodies with declared return types, not implicit returns or impl
+methods.
+
 ### Stmt.Defer stores Expr, not SExpr — loses source location
 **type:** bug
 **priority:** low
