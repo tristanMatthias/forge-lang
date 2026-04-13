@@ -1,6 +1,4 @@
-// WHY: aggregator for the stable infrastructure that every phase
-// depends on (token, ast, scanner state, diagnostic, resolver, cg).
-// As the migration progresses, more modules join this list.
+// Core types: AST definitions, LLVM externs, feature registry.
 
 mod ast
 mod llvm
