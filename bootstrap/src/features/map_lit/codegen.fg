@@ -16,7 +16,7 @@ export fn emit_map_lit(ctx: Ctx, env: VarEnv, entries: ExprList) -> EmitResult {
 
 fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr, set_fn: ptr) -> EmitResult {
     match entries {
-        .End -> EmitResult { value: map, ty: ValueType.Map, had_error: false, error_message: "" }
+        .End -> EmitResult { value: map, ty: .Map, had_error: false, error_message: "" }
         .Node(se_key, rest) -> {
             let key_r = emit_expr(ctx, env, se_key.node)
             if key_r.had_error { return key_r }

@@ -31,7 +31,7 @@ export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprL
 
 fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {
     match args {
-        .End -> ValueType.Int
+        .End -> .Int
         .Node(se, _) -> {
             match se.node {
                 .Lambda(params, body) -> {
@@ -44,7 +44,7 @@ fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType 
                     tc_exit(r.tc)
                     r.ty
                 }
-                _ -> ValueType.Int
+                _ -> .Int
             }
         }
     }

@@ -76,7 +76,7 @@ fn for_check_stmt(tc: TC, stmt: Stmt) -> TC {
             let s = check_expr(tc, start)
             let e = check_expr(s.tc, end)
             let inner = tc_enter(e.tc)
-            let bound = tc_bind(inner, variable, ValueType.Int)
+            let bound = tc_bind(inner, variable, .Int)
             let after = check_stmt(bound, body)
             tc_exit(after)
         }

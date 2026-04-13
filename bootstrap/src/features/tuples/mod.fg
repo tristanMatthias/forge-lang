@@ -49,7 +49,7 @@ fn tuple_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let pair = check_expr_list_types(tc, elements)
             tc_er(pair.tc, ValueType.Tuple(pair.types))
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 
@@ -59,7 +59,7 @@ fn tuple_idx_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let o = check_expr(tc, obj)
             tc_er(o.tc, vtype_tuple_at(o.ty, idx))
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 

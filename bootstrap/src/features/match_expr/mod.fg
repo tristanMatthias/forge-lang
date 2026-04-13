@@ -77,9 +77,9 @@ fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
         .MatchExpr(subject, arms) -> {
             let s = check_expr(tc, subject)
             let checked = tc_check_exhaustive(s.tc, s.ty, arms)
-            check_match_expr_arms(checked, arms, ValueType.Int)
+            check_match_expr_arms(checked, arms, .Int)
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 

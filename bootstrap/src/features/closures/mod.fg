@@ -42,7 +42,7 @@ fn lambda_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let after = tc_exit(b.tc)
             tc_er(after, ValueType.Fn(b.ty))
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 

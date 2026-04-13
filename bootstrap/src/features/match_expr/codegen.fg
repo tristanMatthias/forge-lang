@@ -43,7 +43,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                 call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
-            EmitResult { value: null_ptr_val(), ty: ValueType.Int, had_error: false, error_message: "" }
+            EmitResult { value: null_ptr_val(), ty: .Int, had_error: false, error_message: "" }
         }
         .Node(pattern, guard, body, next) -> {
             let arm_bb = new_bb(ctx, "march_arm")
@@ -412,7 +412,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             }
             forge_llvm_position_at_end(ctx.builder, merge_bb)
             let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, result_slot, "pmatch_val")
-            EmitResult { value: loaded, ty: ValueType.Int, had_error: false, error_message: "" }
+            EmitResult { value: loaded, ty: .Int, had_error: false, error_message: "" }
         }
         .Node(pattern, guard, body, next) -> {
             let body_bb = new_bb(ctx, "parm_body")

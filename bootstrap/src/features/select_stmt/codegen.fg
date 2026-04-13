@@ -63,8 +63,8 @@ fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, va
             forge_llvm_position_at_end(ctx.builder, then_bb)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, binding)
             forge_llvm_build_store(ctx.builder, val, alloca)
-            let body_env = env_extend(env, binding, alloca, ValueType.Int)
-            let body_r = emit_block_loop(ctx, body_env, body, const_i64(ctx, 0), ValueType.Int)
+            let body_env = env_extend(env, binding, alloca, .Int)
+            let body_r = emit_block_loop(ctx, body_env, body, const_i64(ctx, 0), .Int)
             if body_r.had_error { return err_stmt(body_r.error_message) }
             if forge_llvm_block_has_terminator(ctx.builder) == 0 {
                 forge_llvm_build_br(ctx.builder, merge_bb)

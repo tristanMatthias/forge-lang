@@ -73,19 +73,19 @@ fn nc_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let r = check_expr(l.tc, right)
             tc_er(r.tc, r.ty)
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 
 fn oc_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 
 fn try_check_expr(tc: TC, expr: Expr) -> ExprResult {
-    match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, ValueType.Int) }
+    match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Int) }
 }
 
 fn nc_eval_expr(rt: Runtime, expr: Expr) -> StepResult {

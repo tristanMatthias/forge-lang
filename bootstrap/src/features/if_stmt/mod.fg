@@ -68,7 +68,7 @@ fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .If(cond, then_branch, else_branch) -> {
             let c = check_expr(tc, cond)
-            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
+            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
             let after_then = check_stmt(after_cond, then_branch)
@@ -85,18 +85,18 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .IfExpr(cond, then_branch, else_branch) -> {
             let c = check_expr(tc, cond)
-            let after_cond = if !vtype_eq(c.ty, ValueType.Bool) && !vtype_eq(c.ty, ValueType.Int) {
+            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
             let t = check_expr(after_cond, then_branch)
             let e = check_expr(t.tc, else_branch)
-            if !vtype_eq(t.ty, e.ty) && !vtype_eq(t.ty, ValueType.Int) && !vtype_eq(e.ty, ValueType.Int) && !vtype_eq(t.ty, ValueType.Void) && !vtype_eq(e.ty, ValueType.Void) {
+            if !vtype_eq(t.ty, e.ty) && !vtype_eq(t.ty, .Int) && !vtype_eq(e.ty, .Int) && !vtype_eq(t.ty, .Void) && !vtype_eq(e.ty, .Void) {
                 let msg = "if-expression branches have different types: `${vtype_display(t.ty)}` vs `${vtype_display(e.ty)}`"
                 return tc_er(tc_report(e.tc, DiagCode.TypeMismatch, msg), t.ty)
             }
             tc_er(e.tc, t.ty)
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 

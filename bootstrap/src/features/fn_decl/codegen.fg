@@ -45,7 +45,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 
     defer_reset()
 
-    let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), ValueType.Int)
+    let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), .Int)
     if r.had_error { return err_stmt(r.error_message) }
     if forge_llvm_block_has_terminator(ctx.builder) == 0 {
         emit_defers(body_cg, env)
@@ -393,7 +393,7 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
                 return r
             }
             // Float → string via forge_float_to_string(i64_bits) → ptr
-            if vtype_eq(r.ty, ValueType.Float) {
+            if vtype_eq(r.ty, .Float) {
                 let str_ptr = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "f2s")
                 return ok_emit_str(to_i64(ctx, str_ptr, "f2s_i64"))
             }
@@ -438,16 +438,16 @@ export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitRes
         .Node(se, _) -> {
             let r = emit_expr(ctx, env, se.node)
             if r.had_error { return r }
-            if vtype_eq(r.ty, ValueType.Float) {
+            if vtype_eq(r.ty, .Float) {
                 return r
             }
             if vtype_is_str(r.ty) {
                 let str_ptr = to_ptr(ctx, r.value, "f_parse_arg")
-                return ok_emit_typed(call_1(ctx, get_fn(ctx, "forge_float_parse"), str_ptr, "f_bits"), ValueType.Float)
+                return ok_emit_typed(call_1(ctx, get_fn(ctx, "forge_float_parse"), str_ptr, "f_bits"), .Float)
             }
             // Int → float: use sitofp + bitcast
             let dbl = forge_llvm_build_si_to_fp(ctx.builder, r.value, forge_llvm_double_type(ctx.lc), "i2f")
-            ok_emit_typed(forge_llvm_build_bitcast(ctx.builder, dbl, ctx.i64_type, "f_bits"), ValueType.Float)
+            ok_emit_typed(forge_llvm_build_bitcast(ctx.builder, dbl, ctx.i64_type, "f_bits"), .Float)
         }
     }
 }

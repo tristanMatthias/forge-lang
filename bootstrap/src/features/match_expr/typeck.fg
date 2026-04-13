@@ -107,7 +107,7 @@ fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
         .End -> tc
         .Node(name, _, next) -> {
             if name == "_" { return tc_bind_pattern_params(tc, next) }
-            tc_bind_pattern_params(tc_bind(tc, name, ValueType.Int), next)
+            tc_bind_pattern_params(tc_bind(tc, name, .Int), next)
         }
     }
 }
@@ -148,7 +148,7 @@ export fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType)
                 .End -> b.ty
                 _ -> first_ty
             }
-            let use_ty = if vtype_eq(first_ty, ValueType.Int) { b.ty } else { first_ty }
+            let use_ty = if vtype_eq(first_ty, .Int) { b.ty } else { first_ty }
             check_match_expr_arms(after, next, use_ty)
         }
     }

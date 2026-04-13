@@ -30,9 +30,9 @@ fn map_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .MapLit(entries) -> {
             let checked = check_expr_list(tc, entries)
-            tc_er(checked, ValueType.Map)
+            tc_er(checked, .Map)
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 

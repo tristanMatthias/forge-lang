@@ -39,7 +39,7 @@ fn with_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let checked = check_field_inits(o.tc, overrides)
             tc_er(checked, o.ty)
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 

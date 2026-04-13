@@ -165,9 +165,9 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, par
         .Ident(name) -> {
             if is_param(params, name) { return false }
             let ty = capture_type_of(captures, name)
-            if vtype_eq(ty, ValueType.Float) { return true }
+            if vtype_eq(ty, .Float) { return true }
             let ety = env_type_of(ctx, env, name)
-            vtype_eq(ety, ValueType.Float)
+            vtype_eq(ety, .Float)
         }
         .FloatLit(_) -> true
         .Binary(left, _, right) -> {

@@ -10,11 +10,11 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     let o = check_expr(tc, obj)
     // String .length
     if vtype_eq(o.ty, ValueType.Str) && field == "length" {
-        return tc_er(o.tc, ValueType.Int)
+        return tc_er(o.tc, .Int)
     }
     // List .length
     if vtype_eq(o.ty, ValueType.List(ValueType.Int)) || vtype_eq(o.ty, ValueType.List(ValueType.Str)) {
-        if field == "length" { return tc_er(o.tc, ValueType.Int) }
+        if field == "length" { return tc_er(o.tc, .Int) }
     }
     // Struct field
     let struct_name = match o.ty {
@@ -25,13 +25,13 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
         let fields = struct_type_lookup(o.tc.structs, struct_name)
         if !tc_field_exists(fields, field) {
             let msg = "no field `${field}` on type `${struct_name}`"
-            return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), ValueType.Int)
+            return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), .Int)
         }
         let field_ty = field_type_in(o.tc, fields, field)
         return tc_er(o.tc, field_ty)
     }
     // Map .get is handled in method call
-    tc_er(o.tc, ValueType.Int)
+    tc_er(o.tc, .Int)
 }
 
 export fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
@@ -54,7 +54,7 @@ fn tc_field_exists(fields: FieldList, name: string) -> bool {
 
 fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
     match fields {
-        .End -> ValueType.Int
+        .End -> .Int
         .Node(fname, ftype, _) if fname == name -> translate_type(tc, ftype)
         .Node(_, _, next) -> field_type_in(tc, next, name)
     }

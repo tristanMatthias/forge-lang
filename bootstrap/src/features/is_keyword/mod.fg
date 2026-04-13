@@ -29,9 +29,9 @@ fn is_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .IsCheck(subject, _) -> {
             let s = check_expr(tc, subject)
-            tc_er(s.tc, ValueType.Bool)
+            tc_er(s.tc, .Bool)
         }
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 

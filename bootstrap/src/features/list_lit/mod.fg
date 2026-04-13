@@ -30,7 +30,7 @@ fn list_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
 fn list_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .ListLit(elements) -> check_list_lit(tc, elements)
-        _ -> tc_er(tc, ValueType.Int)
+        _ -> tc_er(tc, .Int)
     }
 }
 
