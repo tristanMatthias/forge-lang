@@ -48,7 +48,7 @@ fn variant_in_matched(name: string, matched: string) -> bool {
     if matched.contains("|${name}|") { return true }
     if matched.length >= name.length + 1 {
         if matched.substring(0, name.length + 1) == "${name}|" { return true }
-        if matched.substring(matched.length - name.length - 1, matched.length) == "|" + name { return true }
+        if matched.substring(matched.length - name.length - 1, matched.length) == "|${name}" { return true }
     }
     false
 }
