@@ -74,7 +74,7 @@ impl Parser {
     }
 
     fn parse_match_table_rows(self, headers: ExprList, value_count: int) -> MatchArmList? {
-        if self.check(Tk.RightBrace) || self.check(Tk.Eof) { return MatchArmList.End }
+        if self.current_kind in [Tk.RightBrace, Tk.Eof] { return MatchArmList.End }
         // Parse pattern — disable dot postfix to prevent .Variant from
         // becoming a field access on the previous expression
         let saved_dot = self.allow_dot_postfix

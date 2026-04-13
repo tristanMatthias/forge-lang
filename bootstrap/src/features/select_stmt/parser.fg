@@ -18,7 +18,7 @@ impl Parser {
     }
 
     fn parse_select_arm_list(self) -> SelectArmList {
-        if self.check(Tk.RightBrace) || self.check(Tk.Eof) {
+        if self.current_kind in [Tk.RightBrace, Tk.Eof] {
             return SelectArmList.End
         }
         // Parse: binding <- channel -> { body }

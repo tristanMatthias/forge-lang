@@ -517,7 +517,7 @@ impl Parser {
         let left = self.parse_and()?
 
         mut expr = left
-        while self.check(Tk.PipePipe) || self.check(Tk.KwOr) {
+        while self.current_kind in [Tk.PipePipe, Tk.KwOr] {
             self.advance()
             let right = self.parse_and()?
             expr = Expr.Logical(expr, LogicOp.Or, right)
@@ -530,7 +530,7 @@ impl Parser {
         let left = self.parse_equality()?
 
         mut expr = left
-        while self.check(Tk.AmpAmp) || self.check(Tk.KwAnd) {
+        while self.current_kind in [Tk.AmpAmp, Tk.KwAnd] {
             self.advance()
             let right = self.parse_equality()?
             expr = Expr.Logical(expr, LogicOp.And, right)
@@ -568,7 +568,7 @@ impl Parser {
         }
 
         mut expr = left
-        while self.check(Tk.EqualEqual) || self.check(Tk.BangEqual) {
+        while self.current_kind in [Tk.EqualEqual, Tk.BangEqual] {
             let op = if self.check(Tk.EqualEqual) { BinOp.Eq } else { BinOp.Ne }
             self.advance()
             let right = self.parse_bitwise_or()?
@@ -615,7 +615,7 @@ impl Parser {
         let left = self.parse_shift()?
 
         mut expr = left
-        while self.check(Tk.Greater) || self.check(Tk.GreaterEqual) || self.check(Tk.Less) || self.check(Tk.LessEqual) {
+        while self.current_kind in [Tk.Greater, Tk.GreaterEqual, Tk.Less, Tk.LessEqual] {
             let op = match {
                 self.check(Tk.Less)         -> BinOp.Lt
                 self.check(Tk.LessEqual)    -> BinOp.Le
@@ -633,7 +633,7 @@ impl Parser {
     fn parse_shift(self) -> Expr? {
         let left = self.parse_term()?
         mut expr = left
-        while self.check(Tk.Shl) || self.check(Tk.Shr) {
+        while self.current_kind in [Tk.Shl, Tk.Shr] {
             let op = if self.check(Tk.Shl) { BinOp.Shl } else { BinOp.Shr }
             self.advance()
             let right = self.parse_term()?
@@ -646,7 +646,7 @@ impl Parser {
         let left = self.parse_factor()?
 
         mut expr = left
-        while self.check(Tk.Plus) || self.check(Tk.Minus) {
+        while self.current_kind in [Tk.Plus, Tk.Minus] {
             let op = if self.check(Tk.Plus) { BinOp.Add } else { BinOp.Sub }
             self.advance()
             let right = self.parse_factor()?
@@ -660,7 +660,7 @@ impl Parser {
         let left = self.parse_unary()?
 
         mut expr = left
-        while self.check(Tk.Star) || self.check(Tk.Slash) || self.check(Tk.Percent) {
+        while self.current_kind in [Tk.Star, Tk.Slash, Tk.Percent] {
             let op = match {
                 self.check(Tk.Star)    -> BinOp.Mul
                 self.check(Tk.Percent) -> BinOp.Mod
@@ -675,7 +675,7 @@ impl Parser {
     }
 
     fn parse_unary(self) -> Expr? {
-        if self.check(Tk.Bang) || self.check(Tk.Minus) || self.check(Tk.KwNot) || self.check(Tk.Tilde) {
+        if self.current_kind in [Tk.Bang, Tk.Minus, Tk.KwNot, Tk.Tilde] {
             let op = match {
                 self.check(Tk.Minus) -> UnOp.Neg
                 self.check(Tk.Tilde) -> UnOp.BitNot
@@ -908,7 +908,7 @@ impl Parser {
             return self.desugar_template(raw)
         }
 
-        if self.check(Tk.KwTrue) || self.check(Tk.KwFalse) {
+        if self.current_kind in [Tk.KwTrue, Tk.KwFalse] {
             let value = self.current_lexeme
             self.advance()
             return Expr.Bool(value)
@@ -1331,7 +1331,7 @@ impl Parser {
     // parsing and find more errors.
     fn synchronize(self) {
         while !self.check(Tk.Eof) {
-            if self.check(Tk.KwFn) || self.check(Tk.KwLet) || self.check(Tk.KwConst) || self.check(Tk.KwMut) || self.check(Tk.KwType) || self.check(Tk.KwEnum) || self.check(Tk.KwImpl) || self.check(Tk.KwIf) || self.check(Tk.KwWhile) || self.check(Tk.KwFor) || self.check(Tk.KwMatch) || self.check(Tk.KwReturn) || self.check(Tk.KwExtern) || self.check(Tk.KwTrait) || self.check(Tk.KwDefer) || self.check(Tk.KwSpec) || self.check(Tk.KwGiven) || self.check(Tk.KwThen) || self.check(Tk.KwSelect) || self.check(Tk.RightBrace) {
+            if self.current_kind in [Tk.KwFn, Tk.KwLet, Tk.KwConst, Tk.KwMut, Tk.KwType, Tk.KwEnum, Tk.KwImpl, Tk.KwIf, Tk.KwWhile, Tk.KwFor, Tk.KwMatch, Tk.KwReturn, Tk.KwExtern, Tk.KwTrait, Tk.KwDefer, Tk.KwSpec, Tk.KwGiven, Tk.KwThen, Tk.KwSelect, Tk.RightBrace] {
                 return
             }
             self.advance()

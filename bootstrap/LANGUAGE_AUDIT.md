@@ -211,14 +211,14 @@ No partial credit. A feature is not done until the codebase actually uses it.
 |---|-----------------------------|-----------------|------------|--------------|-------|
 | 1 | Generics                    | [ ] Not started | High       | 🔥 Critical  | Unifies all 15+ linked-list types; unlocks Result<T>, List<T>, Map<K,V> |
 | 2 | Result<T> built-in          | [ ] Not started | Medium     | 🔥 Critical  | Depends on generics; eliminates had_error boilerplate everywhere |
-| 3 | `when` expression           | [ ] Not started | Low        | High         | Multi-condition branch without subject; fills if/else if gap |
+| 3 | `when` expression           | [x] Done        | Low        | High         | `match { cond -> body }` subjectless form; dogfooded in lexer, typeck, resolve |
 | 4 | OR patterns in match        | [x] Done        | Low        | High         | `.A or .B -> body`; dogfooded in codegen, eval, resolve, typeck |
 | 5 | Variadic functions          | [ ] Not started | Medium     | High         | Sugar for `params: [T]`; `setup.fg` is canonical use case |
 | 6 | String patterns in match    | [x] Done        | Low        | High         | `match s { "hello" -> ... }`; p_keyword_kind → 35-arm string match |
 | 7 | Spread operator             | [ ] Not started | Medium     | Medium       | `[...a, ...b]`; recursive list-concat helpers become one-liners |
 | 8 | Named / default arguments   | [ ] Not started | Medium     | Medium       | `fn f(x: int = 0)`; kills Parser flag-dance with `with {}` |
 | 9 | Pattern binding (`@`)       | [ ] Not started | Low        | Medium       | `e @ .BinOp(...)` — keep whole value AND destructure in one arm |
-|10 | `in` operator               | [ ] Not started | Low        | Medium       | `if x in [.A, .B]`; kills long `==` chains in parser conditions |
+|10 | `in` operator               | [x] Done        | Low        | Medium       | `x in [a, b, c]`; dogfooded in resolver, lexer, codegen, eval, parser |
 |11 | Compile-time `const`        | [ ] Not started | Medium     | Medium       | Named constants for magic numbers (16, 8, 112...); safer refactors |
 |12 | List comprehensions         | [ ] Not started | Medium     | Medium       | `[f(x) for x in list]`; recursive map/filter helpers → one-liners |
 |13 | Trait objects (dyn dispatch)| [ ] Not started | High       | Medium       | Replace hand-rolled registry dispatch with virtual trait calls |
