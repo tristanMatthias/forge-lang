@@ -3,10 +3,9 @@
 // rewrites Expr.Ident references to Expr.QualifiedIdent with their
 // fully-qualified canonical paths (e.g. "core::ast::render_expr").
 //
-// This pass runs AFTER module file resolution (resolve_module_files
-// in main.fg) and BEFORE the existing resolver (core/resolver.fg).
-// The existing resolver handles variable scoping; this pass handles
-// module-level name qualification.
+// After rewriting, calls resolve_program (sibling in resolve/) to
+// validate variable scopes. The two passes are unified under a
+// single `resolve_names` entry point.
 //
 //   read this file when:    working on module visibility, use imports,
 //                           or qualified name resolution
@@ -14,7 +13,8 @@
 //                                  type checking
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
-use diagnostics.{DiagCode, Span, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_new, span_dummy}
+use diagnostics.{DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, span_new, span_dummy}
+use resolve.{resolve_program}
 
 // ── Module tree ──
 //
@@ -388,17 +388,26 @@ export type NameResolveResult = {
 }
 
 export fn resolve_names(stmts: StmtList) -> NameResolveResult {
+    // Pass 1: Build module tree and qualify names
     let tree = build_module_tree(stmts, "", ModuleNode.End)
     let use_result = resolve_use_aliases(stmts, tree)
     let global_index = build_global_index(tree, ModuleItem.End)
     let ctx = NameCtx { tree, aliases: use_result.aliases, current_module: "", locals: LocalScope.End, global_index }
     let rewritten = rewrite_stmt_list(ctx, stmts)
-    let has_errors = bag_has_errors(use_result.bag)
+
+    // Pass 2: Validate variable scopes (was separate resolve_program call)
+    let resolved = resolve_program(rewritten)
+
+    // Merge diagnostics from both passes
+    let merged_bag = bag_merge(use_result.bag, resolved.bag)
+    let has_errors = bag_has_errors(merged_bag) || resolved.had_error
     NameResolveResult {
         stmts: rewritten,
         had_error: has_errors,
-        error_message: if has_errors { "module resolution errors" } else { "" },
-        bag: use_result.bag,
+        error_message: if has_errors {
+            if resolved.had_error { resolved.error_message } else { "module resolution errors" }
+        } else { "" },
+        bag: merged_bag,
     }
 }
 

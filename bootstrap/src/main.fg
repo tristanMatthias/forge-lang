@@ -39,8 +39,7 @@ use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list}
 use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
-use resolve.{resolve_program}
-use features.modules.names.{resolve_names}
+use resolve.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use typeck.{typecheck_program}
 use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, span_dummy}
@@ -127,13 +126,6 @@ fn main() {
             render_bag(source, path, named.bag)
         }
         if named.had_error { fail(named.error_message) }
-        let resolved = resolve_program(named.stmts)
-        if resolved.had_error {
-            if bag_has_errors(resolved.bag) {
-                render_bag(source, path, resolved.bag)
-            }
-            fail(resolved.error_message)
-        }
         // Type check
         let tc_result = typecheck_program(named.stmts)
         if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
@@ -207,13 +199,6 @@ fn main() {
         if stop_after == "names" {
             println("ok")
             return
-        }
-        let resolved = resolve_program(named.stmts)
-        if resolved.had_error {
-            if bag_has_errors(resolved.bag) {
-                render_bag(csource, cpath, resolved.bag)
-            }
-            fail(resolved.error_message)
         }
         // Type check (additive — reports but doesn't block compilation)
         let tc_result = typecheck_program(named.stmts)

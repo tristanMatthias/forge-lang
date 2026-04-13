@@ -3,6 +3,8 @@
 // a linked-list stack; functions are pre-declared so mutual
 // recursion works.
 
+mod names
+
 use core.ast.{Expr, ExprList, FieldInitList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, stmt_unwrap}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
 use core.registry.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, forge_stmt_tag, forge_expr_tag}

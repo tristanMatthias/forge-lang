@@ -1,19 +1,17 @@
 // WHY: module system feature — mod declarations, use imports, export
-// visibility, name resolution with qualified identifiers.
+// visibility.
 //
-// This feature has three passes that run before codegen:
-//   1. resolver.fg — reads module files, attaches parsed bodies to AST
-//   2. names.fg — builds module tree, resolves use aliases, rewrites
-//      Expr.Ident → Expr.QualifiedIdent with canonical paths
-//   3. codegen integration — Stmt.Module/Use handled as structural
-//      recursion in the core codegen passes (not feature-dispatched)
+// Two passes:
+//   1. resolver.fg — reads module files from disk, attaches parsed
+//      bodies to Stmt.Module AST nodes
+//   2. resolve/names.fg — builds module tree, resolves use aliases,
+//      rewrites Expr.Ident → Expr.QualifiedIdent (lives in resolve/)
 //
 // The parser (parser.fg) produces Stmt.Module and Stmt.Use nodes.
 // Export is handled in parse/mod.fg since it applies to all declarations.
 
 mod parser
 mod resolver
-mod names
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, register}
 use resolve.{resolve_stmt_list}
