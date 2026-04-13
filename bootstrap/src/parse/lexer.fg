@@ -486,3 +486,111 @@ impl Parser {
     }
 
 }
+
+// ── Numeric literal parsing ──
+
+export fn strip_underscores(s: string) -> string {
+    mut out = ""
+    mut i = 0
+    while i < s.length {
+        if s[i] != "_" {
+            out = out + s[i]
+        }
+        i = i + 1
+    }
+    out
+}
+
+
+export fn parse_int_literal(text: string) -> int {
+    let clean = strip_underscores(text)
+    if clean.length > 2 {
+        let prefix = clean.substring(0, 2)
+        if prefix == "0x" || prefix == "0X" {
+            return parse_hex(clean.substring(2, clean.length))
+        }
+        if prefix == "0b" || prefix == "0B" {
+            return parse_binary(clean.substring(2, clean.length))
+        }
+        if prefix == "0o" || prefix == "0O" {
+            return parse_octal(clean.substring(2, clean.length))
+        }
+    }
+    int(clean)
+}
+
+
+export fn hex_digit_value(ch: string) -> int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    if ch == "a" || ch == "A" { return 10 }
+    if ch == "b" || ch == "B" { return 11 }
+    if ch == "c" || ch == "C" { return 12 }
+    if ch == "d" || ch == "D" { return 13 }
+    if ch == "e" || ch == "E" { return 14 }
+    if ch == "f" || ch == "F" { return 15 }
+    0
+}
+
+
+export fn parse_hex(digits: string) -> int {
+    mut result = 0
+    mut i = 0
+    while i < digits.length {
+        result = result * 16 + hex_digit_value(digits[i])
+        i = i + 1
+    }
+    result
+}
+
+
+export fn parse_binary(digits: string) -> int {
+    mut result = 0
+    mut i = 0
+    while i < digits.length {
+        let ch = digits[i]
+        if ch == "1" {
+            result = result * 2 + 1
+        } else {
+            result = result * 2
+        }
+        i = i + 1
+    }
+    result
+}
+
+
+export fn parse_octal(digits: string) -> int {
+    mut result = 0
+    mut i = 0
+    while i < digits.length {
+        result = result * 8 + decimal_digit_value(digits[i])
+        i = i + 1
+    }
+    result
+}
+
+
+export fn decimal_digit_value(ch: string) -> int {
+    if ch == "0" { return 0 }
+    if ch == "1" { return 1 }
+    if ch == "2" { return 2 }
+    if ch == "3" { return 3 }
+    if ch == "4" { return 4 }
+    if ch == "5" { return 5 }
+    if ch == "6" { return 6 }
+    if ch == "7" { return 7 }
+    if ch == "8" { return 8 }
+    if ch == "9" { return 9 }
+    0
+}
+
+
