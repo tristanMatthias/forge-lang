@@ -69,7 +69,7 @@ fn main() {
     let path = forge_selfhost_get_arg_cstr(2)
     // Skip file existence check when arg 2 is a flag (e.g. --stop-after=X).
     // The compile command handles its own path validation in that case.
-    let is_flag = path.length > 2 && path.substring(0, 2) == "--"
+    let is_flag = path.starts_with("--")
     if !is_flag && !file_exists(path) {
         fail("error: file not found: " + path)
     }
@@ -148,7 +148,7 @@ fn main() {
         mut flag_idx = 2
         while flag_idx < cpath_idx {
             let arg = forge_selfhost_get_arg_cstr(flag_idx)
-            if arg.length > 13 && arg.substring(0, 13) == "--stop-after=" {
+            if arg.starts_with("--stop-after=") {
                 stop_after = arg.substring(13, arg.length)
             }
             if arg == "--debug-null" {

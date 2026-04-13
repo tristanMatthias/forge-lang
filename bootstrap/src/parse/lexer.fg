@@ -504,17 +504,14 @@ export fn strip_underscores(s: string) -> string {
 
 export fn parse_int_literal(text: string) -> int {
     let clean = strip_underscores(text)
-    if clean.length > 2 {
-        let prefix = clean.substring(0, 2)
-        if prefix == "0x" || prefix == "0X" {
-            return parse_hex(clean.substring(2, clean.length))
-        }
-        if prefix == "0b" || prefix == "0B" {
-            return parse_binary(clean.substring(2, clean.length))
-        }
-        if prefix == "0o" || prefix == "0O" {
-            return parse_octal(clean.substring(2, clean.length))
-        }
+    if clean.starts_with("0x") || clean.starts_with("0X") {
+        return parse_hex(clean.substring(2, clean.length))
+    }
+    if clean.starts_with("0b") || clean.starts_with("0B") {
+        return parse_binary(clean.substring(2, clean.length))
+    }
+    if clean.starts_with("0o") || clean.starts_with("0O") {
+        return parse_octal(clean.substring(2, clean.length))
     }
     int(clean)
 }
