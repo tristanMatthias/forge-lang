@@ -241,6 +241,47 @@ the @model package.
 
 ## Debt
 
+### Token kind enum (Tk) — replace string-based parser dispatch
+**type:** debt
+**priority:** high
+**source:** architecture review (April 12, 2026)
+
+Phase A DONE: `Tk` enum with 79 variants + `tk_keyword_str` bridge added to ast.fg.
+Seed updated. Phase B stashed as `git stash list` entry "Tk enum Phase B".
+
+Phase B BLOCKED: converting the parser to use `Tk` instead of strings causes bump arena
+exhaustion during self-compilation. Root cause: the bootstrap compiler's `==` operator on
+enum values stored in struct fields may compare i64 representations incorrectly when the
+tag is i8. The `check(kind: Tk)` function compares `self.current_kind == kind` where both
+are `Tk` enum values — this comparison may not work correctly for enums in struct fields.
+
+**To resume:** Fix enum comparison for struct fields first, then `git stash pop` the Phase B
+changes. The stash contains: all 394 `check("string")` → `check(Tk.X)` replacements across
+17 parser files, plus Parser struct field/signature changes.
+
+### Separate lexer from parser
+**type:** debt
+**priority:** high
+**source:** architecture review (April 12, 2026)
+
+The parser has a built-in lexer (~350 lines of `scan_*_token` functions). Every mature
+compiler has a separate lexer that produces a token stream. Benefits: testability, reuse
+(syntax highlighting, LSP), better error recovery, performance (lex once). Blocked on Tk
+enum migration (above) — build the new lexer with Tk from the start.
+
+### Unify name resolution passes
+**type:** debt
+**priority:** medium
+**source:** architecture review (April 12, 2026)
+
+Three passes where one would do:
+1. `resolve_module_files` — loads .fg files into AST
+2. `resolve_names` — qualifies names with module paths
+3. `resolve_program` — checks variable scoping
+
+Module loading must happen first (file I/O), but name qualification and scope checking
+can be combined into a single AST walk. Rust, Go, and Swift all do this in one pass.
+
 ### Remove vtype_is_* calls from codegen (Phase 1b)
 **type:** debt
 **priority:** medium
