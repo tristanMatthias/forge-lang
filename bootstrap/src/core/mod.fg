@@ -3,7 +3,6 @@
 // As the migration progresses, more modules join this list.
 
 mod ast
-mod resolver
 mod eval
 mod cg
 mod llvm

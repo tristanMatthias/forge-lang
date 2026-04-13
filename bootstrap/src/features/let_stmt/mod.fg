@@ -4,7 +4,7 @@ mod typeck
 use core.cg.{err_stmt}
 use core.eval.{error_result}
 use core.registry.{feature_new, register}
-use core.resolver.{define_param_names, resolve_expr}
+use resolve.{define_param_names, resolve_expr}
 use features.let_stmt.typeck.{bind_destructure}
 use features.tuples.codegen.{emit_let_destructure}
 use typeck.{check_expr}

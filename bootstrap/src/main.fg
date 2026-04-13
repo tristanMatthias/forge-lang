@@ -32,13 +32,14 @@ mod diagnostics
 mod parse
 mod features
 mod typeck
+mod resolve
 mod codegen
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list}
 use core.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
-use core.resolver.{resolve_program}
+use resolve.{resolve_program}
 use features.modules.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use typeck.{typecheck_program}

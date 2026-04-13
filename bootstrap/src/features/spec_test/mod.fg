@@ -2,7 +2,7 @@ mod parser
 mod codegen
 use core.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, register}
-use core.resolver.{resolve_expr, resolve_stmt_list}
+use resolve.{resolve_expr, resolve_stmt_list}
 use features.spec_test.codegen.{spec_emit_stmt}
 
 fn kw_parse_spec(p: Parser) -> Stmt? {

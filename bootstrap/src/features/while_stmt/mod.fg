@@ -5,7 +5,7 @@ use core.cg.{err_stmt}
 use core.eval.{error_result}
 use features.eval.{execute_while}
 use core.registry.{feature_new, register}
-use core.resolver.{resolve_expr, resolve_stmt}
+use resolve.{resolve_expr, resolve_stmt}
 use features.while_stmt.codegen.{emit_while}
 use typeck.{check_expr, check_stmt, tc_report}
 

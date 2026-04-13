@@ -4,7 +4,7 @@ use core.ast.{vtype_list_elem}
 use core.cg.{err_stmt}
 use core.eval.{error_result}
 use core.registry.{feature_new, register}
-use core.resolver.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
+use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
 use features.for_stmt.codegen.{emit_for, emit_for_in}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
 

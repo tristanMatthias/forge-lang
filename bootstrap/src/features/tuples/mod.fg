@@ -3,7 +3,7 @@ use core.ast.{vtype_tuple_at}
 use core.cg.{err_emit}
 use core.eval.{error_result}
 use core.registry.{feature_new, register}
-use core.resolver.{resolve_expr, resolve_expr_list}
+use resolve.{resolve_expr, resolve_expr_list}
 use features.tuples.codegen.{emit_tuple, emit_tuple_index}
 use typeck.{check_expr, check_expr_list_types, tc_er}
 

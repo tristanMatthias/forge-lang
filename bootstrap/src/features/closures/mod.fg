@@ -2,7 +2,7 @@ mod codegen
 use core.cg.{err_emit}
 use core.eval.{error_result}
 use core.registry.{feature_new, register}
-use core.resolver.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
+use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use features.closures.codegen.{emit_lambda}
 use typeck.{check_expr, tc_bind_params, tc_enter, tc_er, tc_exit}
 
