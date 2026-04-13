@@ -70,20 +70,12 @@ type AssignBindingsResult = {
 
 
 export fn render_value(value: Value) -> string {
-    if value.kind == "number" {
-        return value.number_text
+    match value.kind {
+        "number" -> value.number_text
+        "string" -> value.text
+        "bool" -> if value.bool_value { "true" } else { "false" }
+        _ -> "null"
     }
-
-    if value.kind == "string" {
-        return value.text
-    }
-
-    if value.kind == "bool" {
-        if value.bool_value { return "true" }
-        return "false"
-    }
-
-    "null"
 }
 
 export fn ok_result(runtime: Runtime, value: Value) -> StepResult {
@@ -116,15 +108,11 @@ export fn value_null() -> Value {
 }
 
 export fn is_truthy(value: Value) -> bool {
-    if value.kind == "bool" {
-        return value.bool_value
+    match value.kind {
+        "bool" -> value.bool_value
+        "null" -> false
+        _ -> true
     }
-
-    if value.kind == "null" {
-        return false
-    }
-
-    true
 }
 
 // WHY: tree-walk evaluator for eval/run debug commands.
@@ -781,23 +769,13 @@ fn as_string(value: Value) -> string? {
 
 
 fn values_equal(left: Value, right: Value) -> bool {
-    if left.kind != right.kind {
-        return false
+    if left.kind != right.kind { return false }
+    match left.kind {
+        "number" -> float(left.number_text) == float(right.number_text)
+        "string" -> left.text == right.text
+        "bool" -> left.bool_value == right.bool_value
+        _ -> true
     }
-
-    if left.kind == "number" {
-        return float(left.number_text) == float(right.number_text)
-    }
-
-    if left.kind == "string" {
-        return left.text == right.text
-    }
-
-    if left.kind == "bool" {
-        return left.bool_value == right.bool_value
-    }
-
-    true
 }
 
 fn unquote_string(text: string) -> string {

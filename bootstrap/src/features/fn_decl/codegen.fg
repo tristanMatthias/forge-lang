@@ -78,8 +78,7 @@ fn should_null_check(ty: string) -> bool {
     // Check types that are pointers at runtime: ptr, string, structs,
     // enums, lists, maps, and named types (which are usually structs/enums).
     // Skip: int, bool, float, fn (which are value types).
-    if ty == "ptr" { return true }
-    if ty == "string" { return true }
+    if ty in ["ptr", "string"] { return true }
     // If it starts with uppercase, it's likely a named struct/enum type.
     if ty.length > 0 {
         let first = ty.substring(0, 1)
