@@ -1938,7 +1938,7 @@ fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult
     ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "streq_ext"))
 }
 
-fn strip_quotes(s: string) -> string {
+export fn strip_quotes(s: string) -> string {
     let len = s.length
     if len < 2 {
         return s
@@ -2055,7 +2055,7 @@ fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult {
     }
 }
 
-fn is_null_literal(e: Expr) -> bool {
+export fn is_null_literal(e: Expr) -> bool {
     match e {
         .Null -> true
         _ -> false
