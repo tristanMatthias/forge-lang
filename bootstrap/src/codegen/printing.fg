@@ -14,7 +14,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             if r.had_error { return r }
             let str_val = if vtype_is_str(r.ty) {
                 r.value
-            } else if vtype_eq(r.ty, ValueType.Float) {
+            } else if vtype_eq(r.ty, .Float) {
                 let sp = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "ef2s")
                 to_i64(ctx, sp, "ef2s_i64")
             } else {
@@ -58,7 +58,7 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
                     if r.had_error {
                         return r
                     }
-                    if vtype_eq(r.ty, ValueType.Float) {
+                    if vtype_eq(r.ty, .Float) {
                         let sp = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "f2s")
                         to_i64(ctx, sp, "f2s_i64")
                     } else {

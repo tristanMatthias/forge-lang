@@ -10,7 +10,7 @@ export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult 
     // statement, if that statement is a `Stmt.Expr`. Anything
     // else (return, let, while, ...) yields i64 0. Each non-last
     // statement is executed for its side effects.
-    emit_block_loop(ctx, env, stmts, const_i64(ctx, 0), ValueType.Int)
+    emit_block_loop(ctx, env, stmts, const_i64(ctx, 0), .Int)
 }
 
 
@@ -46,7 +46,7 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
 
     forge_llvm_position_at_end(ctx.builder, then_bb)
     let zero = const_i64(ctx, 0)
-    let t = emit_stmt_as_value(ctx, env, then_branch, zero, ValueType.Int)
+    let t = emit_stmt_as_value(ctx, env, then_branch, zero, .Int)
     if t.had_error {
         return t
     }
@@ -57,7 +57,7 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
 
     forge_llvm_position_at_end(ctx.builder, else_bb)
     if else_branch != null {
-        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, ValueType.Int)
+        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Int)
         if e.had_error {
             return e
         }

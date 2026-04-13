@@ -153,7 +153,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .FloatLit(text) -> {
             let str_ptr = forge_llvm_build_global_string_ptr(ctx.builder, text, ".float_str")
             let bits = call_1(ctx, get_fn(ctx, "forge_float_parse"), str_ptr, "float_bits")
-            ok_emit_typed(bits, ValueType.Float)
+            ok_emit_typed(bits, .Float)
         }
         .Bool(text) -> {
             if text == "true" {
@@ -193,7 +193,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
                 call_2(ctx, push_fn, closure_arr, fn_i64, "")
                 let closure_i64 = to_i64(ctx, closure_arr, "fn_ref_i64")
                 let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
-                return ok_emit_typed(closure_i64, ValueType.Closure(0, ret_ty))
+                return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
             }
             err_emit("undefined variable `${name}`")
         }
@@ -218,7 +218,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
                 call_2(ctx, push_fn, closure_arr, fn_i64, "")
                 let closure_i64 = to_i64(ctx, closure_arr, "fn_ref_i64")
                 let ret_ty = fn_ret_lookup(ctx.fn_rets, path)
-                return ok_emit_typed(closure_i64, ValueType.Closure(0, ret_ty))
+                return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
             }
             err_emit("undefined qualified name `${path}`")
         }

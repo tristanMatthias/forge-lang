@@ -10,7 +10,7 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
         return r
     }
     // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
-    if vtype_eq(r.ty, ValueType.Ptr) {
+    if vtype_eq(r.ty, .Ptr) {
         let i_r = emit_expr(ctx, env, idx)
         if i_r.had_error { return i_r }
         let off = forge_llvm_build_add(ctx.builder, r.value, i_r.value, "ptr_off")
