@@ -4,7 +4,7 @@
 // buffer of i64 values. Tuple index t.0 loads from offset 0*8, etc.
 // Destructuring `let (x, y) = expr` loads each element into a local.
 //
-// Type tracking: tuple EmitResult carries a ValueType.Tuple(TypeList)
+// Type tracking: tuple EmitResult carries a .Tuple(TypeList)
 // so that tuple indexing can return the correct element type
 // (critical for match on enum tuple elements).
 
@@ -35,13 +35,13 @@ fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) {
 export fn emit_tuple(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
     let count = expr_list_length(elements)
     let buf = cg_malloc(ctx, const_i64(ctx, count * 8))
-    store_tuple_elements(ctx, env, elements, buf, 0, TypeList.End)
+    store_tuple_elements(ctx, env, elements, buf, 0, .End)
 }
 
 fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx: int, types_acc: TypeList) -> EmitResult {
     match elements {
         .End -> {
-            let ty = ValueType.Tuple(reverse_type_list(types_acc, TypeList.End))
+            let ty = .Tuple(reverse_type_list(types_acc, .End))
             EmitResult { value: to_i64(ctx, buf, "tuple_i64"), ty, had_error: false, error_message: "" }
         }
         .Node(se, next) -> {
@@ -57,7 +57,7 @@ fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx
 fn reverse_type_list(list: TypeList, acc: TypeList) -> TypeList {
     match list {
         .End -> acc
-        .Node(ty, next) -> reverse_type_list(next, TypeList.Node(ty, acc))
+        .Node(ty, next) -> reverse_type_list(next, .Node(ty, acc))
     }
 }
 

@@ -50,7 +50,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
         if fill.had_error { return fill }
     }
     let as_i64 = to_i64(ctx, buf, "enum_i64")
-    EmitResult { value: as_i64, ty: ValueType.Enum(resolved_name), had_error: false, error_message: "" }
+    EmitResult { value: as_i64, ty: .Enum(resolved_name), had_error: false, error_message: "" }
 }
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {

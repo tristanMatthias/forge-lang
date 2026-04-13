@@ -9,11 +9,11 @@ use diagnostics.{DiagCode}
 export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     let o = check_expr(tc, obj)
     // String .length
-    if vtype_eq(o.ty, ValueType.Str) && field == "length" {
+    if vtype_eq(o.ty, .Str) && field == "length" {
         return tc_er(o.tc, .Int)
     }
     // List .length
-    if vtype_eq(o.ty, ValueType.List(ValueType.Int)) || vtype_eq(o.ty, ValueType.List(ValueType.Str)) {
+    if vtype_eq(o.ty, .List(.Int)) || vtype_eq(o.ty, .List(.Str)) {
         if field == "length" { return tc_er(o.tc, .Int) }
     }
     // Struct field

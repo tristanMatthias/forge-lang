@@ -66,7 +66,7 @@ fn emit_spec_single(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             // Regular statements inside spec blocks — wrap in a StmtList
             // and emit via emit_block_loop, which handles all statement types.
             let wrapped = StmtList.Node(sstmt_dummy(stmt), StmtList.End)
-            let r = emit_block_loop(ctx, env, wrapped, const_i64(ctx, 0), ValueType.Int)
+            let r = emit_block_loop(ctx, env, wrapped, const_i64(ctx, 0), .Int)
             if r.had_error { return err_stmt(r.error_message) }
             ok_stmt(env)
         }

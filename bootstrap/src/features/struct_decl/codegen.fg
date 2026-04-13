@@ -19,7 +19,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)
     if fill.had_error { return fill }
     let as_i64 = to_i64(ctx, buf, "struct_i64")
-    EmitResult { value: as_i64, ty: ValueType.Struct(name), had_error: false, error_message: "" }
+    EmitResult { value: as_i64, ty: .Struct(name), had_error: false, error_message: "" }
 }
 
 fn malloc_struct_bytes(ctx: Ctx, fields: FieldList) -> ptr {

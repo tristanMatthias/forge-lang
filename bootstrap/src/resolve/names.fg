@@ -406,40 +406,40 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
 
 fn rewrite_stmt_list(ctx: NameCtx, stmts: StmtList) -> StmtList {
     match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> StmtList.Node(sstmt(rewrite_stmt(ctx, ss.node), ss.line, ss.col), rewrite_stmt_list(ctx, next))
+        .End -> .End
+        .Node(ss, next) -> .Node(sstmt(rewrite_stmt(ctx, ss.node), ss.line, ss.col), rewrite_stmt_list(ctx, next))
     }
 }
 
 fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, ty, init) -> Stmt.Let(name, ty, rewrite_expr(ctx, init))
-        .Mut(name, ty, init) -> Stmt.Mut(name, ty, rewrite_expr(ctx, init))
-        .Expr(e) -> Stmt.Expr(rewrite_expr(ctx, e))
-        .Return(e) -> Stmt.Return(rewrite_expr(ctx, e))
-        .Block(body) -> Stmt.Block(rewrite_stmt_list(ctx, body))
+        .Let(name, ty, init) -> .Let(name, ty, rewrite_expr(ctx, init))
+        .Mut(name, ty, init) -> .Mut(name, ty, rewrite_expr(ctx, init))
+        .Expr(e) -> .Expr(rewrite_expr(ctx, e))
+        .Return(e) -> .Return(rewrite_expr(ctx, e))
+        .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
         .If(cond, then_b, else_b) -> {
             let new_else = if else_b != null { rewrite_stmt(ctx, else_b!) } else { null }
             Stmt.If(rewrite_expr(ctx, cond), rewrite_stmt(ctx, then_b), new_else)
         }
-        .While(cond, body) -> Stmt.While(rewrite_expr(ctx, cond), rewrite_stmt(ctx, body))
-        .For(var, start, end, body) -> Stmt.For(var, rewrite_expr(ctx, start), rewrite_expr(ctx, end), rewrite_stmt(ctx, body))
-        .ForIn(var, coll, body) -> Stmt.ForIn(var, rewrite_expr(ctx, coll), rewrite_stmt(ctx, body))
+        .While(cond, body) -> .While(rewrite_expr(ctx, cond), rewrite_stmt(ctx, body))
+        .For(var, start, end, body) -> .For(var, rewrite_expr(ctx, start), rewrite_expr(ctx, end), rewrite_stmt(ctx, body))
+        .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr(ctx, coll), rewrite_stmt(ctx, body))
         .Function(name, params, ret_ty, body) -> {
             let is_impl_method = name.contains("__")
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method { "${ctx.current_module}::${name}" } else { name }
             Stmt.Function(qualified, params, ret_ty, rewrite_stmt_list(bind_params_ctx(ctx, params), body))
         }
-        .Match(subject, arms) -> Stmt.Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
+        .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
             let mod_path = if ctx.current_module == "" { name } else { "${ctx.current_module}::${name}" }
             let mod_uses = resolve_use_aliases(body, ctx.tree)
             Stmt.Module(name, rewrite_stmt_list(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
         }
-        .Impl(type_name, methods) -> Stmt.Impl(type_name, rewrite_stmt_list(ctx, methods))
-        .Annotated(annotations, inner) -> Stmt.Annotated(annotations, rewrite_stmt(ctx, inner))
-        .Defer(body) -> Stmt.Defer(rewrite_expr(ctx, body))
-        .LetDestructure(names, init) -> Stmt.LetDestructure(names, rewrite_expr(ctx, init))
+        .Impl(type_name, methods) -> .Impl(type_name, rewrite_stmt_list(ctx, methods))
+        .Annotated(annotations, inner) -> .Annotated(annotations, rewrite_stmt(ctx, inner))
+        .Defer(body) -> .Defer(rewrite_expr(ctx, body))
+        .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(ctx, init))
         _ -> stmt
     }
 }
@@ -450,15 +450,15 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
     if expr == null { return Expr.Null }
     match expr {
         .Ident(name) -> rewrite_ident(ctx, name, expr)
-        .Call(callee, args) -> Expr.Call(rewrite_expr(ctx, callee), rewrite_expr_list(ctx, args))
-        .Binary(l, op, r) -> Expr.Binary(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))
-        .Unary(op, r) -> Expr.Unary(op, rewrite_expr(ctx, r))
-        .Logical(l, op, r) -> Expr.Logical(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))
-        .Grouping(inner) -> Expr.Grouping(rewrite_expr(ctx, inner))
-        .Assign(name, val) -> Expr.Assign(name, rewrite_expr(ctx, val))
-        .Index(obj, idx) -> Expr.Index(rewrite_expr(ctx, obj), rewrite_expr(ctx, idx))
-        .Try(inner) -> Expr.Try(rewrite_expr(ctx, inner))
-        .Block(body) -> Expr.Block(rewrite_stmt_list(ctx, body))
+        .Call(callee, args) -> .Call(rewrite_expr(ctx, callee), rewrite_expr_list(ctx, args))
+        .Binary(l, op, r) -> .Binary(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))
+        .Unary(op, r) -> .Unary(op, rewrite_expr(ctx, r))
+        .Logical(l, op, r) -> .Logical(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))
+        .Grouping(inner) -> .Grouping(rewrite_expr(ctx, inner))
+        .Assign(name, val) -> .Assign(name, rewrite_expr(ctx, val))
+        .Index(obj, idx) -> .Index(rewrite_expr(ctx, obj), rewrite_expr(ctx, idx))
+        .Try(inner) -> .Try(rewrite_expr(ctx, inner))
+        .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
         _ -> rewrite_expr_compound(ctx, expr)
     }
 }
@@ -466,22 +466,22 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
 fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
     if expr == null { return Expr.Null }
     match expr {
-        .FieldAccess(obj, field) -> Expr.FieldAccess(rewrite_expr(ctx, obj), field)
-        .FieldAssign(obj, field, val) -> Expr.FieldAssign(rewrite_expr(ctx, obj), field, rewrite_expr(ctx, val))
-        .IfExpr(c, t, e) -> Expr.IfExpr(rewrite_expr(ctx, c), rewrite_expr(ctx, t), rewrite_expr(ctx, e))
-        .NullCoalesce(l, r) -> Expr.NullCoalesce(rewrite_expr(ctx, l), rewrite_expr(ctx, r))
-        .OptionalChain(obj, field) -> Expr.OptionalChain(rewrite_expr(ctx, obj), field)
-        .Tuple(elems) -> Expr.Tuple(rewrite_expr_list(ctx, elems))
-        .TupleIndex(obj, idx) -> Expr.TupleIndex(rewrite_expr(ctx, obj), idx)
-        .ListLit(elems) -> Expr.ListLit(rewrite_expr_list(ctx, elems))
-        .MapLit(entries) -> Expr.MapLit(rewrite_expr_list(ctx, entries))
-        .Slice(obj, s, e) -> Expr.Slice(rewrite_expr(ctx, obj), rewrite_expr(ctx, s), rewrite_expr(ctx, e))
-        .With(obj, overrides) -> Expr.With(rewrite_expr(ctx, obj), rewrite_field_inits(ctx, overrides))
-        .StructLit(name, inits) -> Expr.StructLit(name, rewrite_field_inits(ctx, inits))
-        .EnumCtor(type_name, variant, args) -> Expr.EnumCtor(type_name, variant, rewrite_expr_list(ctx, args))
-        .MatchExpr(subject, arms) -> Expr.MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
-        .Lambda(params, body) -> Expr.Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
-        .IsCheck(subject, variant) -> Expr.IsCheck(rewrite_expr(ctx, subject), variant)
+        .FieldAccess(obj, field) -> .FieldAccess(rewrite_expr(ctx, obj), field)
+        .FieldAssign(obj, field, val) -> .FieldAssign(rewrite_expr(ctx, obj), field, rewrite_expr(ctx, val))
+        .IfExpr(c, t, e) -> .IfExpr(rewrite_expr(ctx, c), rewrite_expr(ctx, t), rewrite_expr(ctx, e))
+        .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(ctx, l), rewrite_expr(ctx, r))
+        .OptionalChain(obj, field) -> .OptionalChain(rewrite_expr(ctx, obj), field)
+        .Tuple(elems) -> .Tuple(rewrite_expr_list(ctx, elems))
+        .TupleIndex(obj, idx) -> .TupleIndex(rewrite_expr(ctx, obj), idx)
+        .ListLit(elems) -> .ListLit(rewrite_expr_list(ctx, elems))
+        .MapLit(entries) -> .MapLit(rewrite_expr_list(ctx, entries))
+        .Slice(obj, s, e) -> .Slice(rewrite_expr(ctx, obj), rewrite_expr(ctx, s), rewrite_expr(ctx, e))
+        .With(obj, overrides) -> .With(rewrite_expr(ctx, obj), rewrite_field_inits(ctx, overrides))
+        .StructLit(name, inits) -> .StructLit(name, rewrite_field_inits(ctx, inits))
+        .EnumCtor(type_name, variant, args) -> .EnumCtor(type_name, variant, rewrite_expr_list(ctx, args))
+        .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
+        .Lambda(params, body) -> .Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
+        .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
         _ -> expr
     }
 }
@@ -513,7 +513,7 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
 
 fn rewrite_expr_list(ctx: NameCtx, exprs: ExprList) -> ExprList {
     match exprs {
-        .End -> ExprList.End
+        .End -> .End
         .Node(se, next) -> ExprList.Node(sexpr(rewrite_expr(ctx, se.node), se.line, se.col), rewrite_expr_list(ctx, next))
     }
 }

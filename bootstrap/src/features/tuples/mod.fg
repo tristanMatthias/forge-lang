@@ -47,7 +47,7 @@ fn tuple_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .Tuple(elements) -> {
             let pair = check_expr_list_types(tc, elements)
-            tc_er(pair.tc, ValueType.Tuple(pair.types))
+            tc_er(pair.tc, .Tuple(pair.types))
         }
         _ -> tc_er(tc, .Int)
     }

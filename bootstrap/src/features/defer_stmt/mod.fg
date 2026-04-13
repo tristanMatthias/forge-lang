@@ -14,7 +14,7 @@ fn kw_parse_defer(p: Parser) -> Stmt? {
 
 export fn init_defer_stmt(reg: Registry) {
     let f = feature_new("defer") with {
-        stmt_tag: Stmt.Defer(Expr.Null),
+        stmt_tag: .Defer(.Null),
         emit_stmt: defer_emit_stmt,
         resolve_stmt: defer_resolve_stmt,
         check_stmt: defer_check_stmt,

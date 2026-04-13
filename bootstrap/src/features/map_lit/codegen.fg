@@ -53,7 +53,7 @@ export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: stri
     }
     if method == "keys" {
         let keys = call_1(ctx, get_fn(ctx, "forge_map_keys_cstr"), map_ptr, "map_keys")
-        return ok_emit_typed(keys, ValueType.List(ValueType.Str))
+        return ok_emit_typed(keys, .List(.Str))
     }
     err_emit("map method `${method}` not implemented")
 }

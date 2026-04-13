@@ -5,28 +5,28 @@ use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check
 
 export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
     match elements {
-        .End -> tc_er(tc, ValueType.List(ValueType.Int))
+        .End -> tc_er(tc, .List(.Int))
         .Node(se, _) -> {
             let r = check_expr(tc, se.node)
             let checked = check_expr_list(r.tc, elements)
-            tc_er(checked, ValueType.List(r.ty))
+            tc_er(checked, .List(r.ty))
         }
     }
 }
 
 export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprList) -> ExprResult {
-    if method == "length" { return tc_er(tc, ValueType.Int) }
-    if method == "push" { return tc_er(tc, ValueType.Void) }
+    if method == "length" { return tc_er(tc, .Int) }
+    if method == "push" { return tc_er(tc, .Void) }
     if method == "pop" { return tc_er(tc, elem) }
     if method == "get" { return tc_er(tc, elem) }
     if method == "map" {
         let map_ret = tc_infer_lambda_ret(tc, args, elem)
-        return tc_er(tc, ValueType.List(map_ret))
+        return tc_er(tc, .List(map_ret))
     }
-    if method == "filter" { return tc_er(tc, ValueType.List(elem)) }
-    if method == "reduce" { return tc_er(tc, ValueType.Int) }
-    if method == "foreach" { return tc_er(tc, ValueType.Void) }
-    tc_er(tc, ValueType.Int)
+    if method == "filter" { return tc_er(tc, .List(elem)) }
+    if method == "reduce" { return tc_er(tc, .Int) }
+    if method == "foreach" { return tc_er(tc, .Void) }
+    tc_er(tc, .Int)
 }
 
 fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {

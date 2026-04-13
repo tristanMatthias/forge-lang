@@ -113,7 +113,7 @@ fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .StructLit(name, inits) -> {
             let checked = check_field_inits(tc, inits)
-            tc_er(checked, ValueType.Struct(name))
+            tc_er(checked, .Struct(name))
         }
         _ -> tc_er(tc, .Int)
     }
@@ -130,7 +130,7 @@ fn enum_ctor_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .EnumCtor(type_name, _, args) -> {
             let checked = check_expr_list(tc, args)
-            tc_er(checked, ValueType.Enum(type_name))
+            tc_er(checked, .Enum(type_name))
         }
         _ -> tc_er(tc, .Int)
     }

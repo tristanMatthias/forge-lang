@@ -450,7 +450,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
     match stmt {
         .Return(value) -> {
             let r = check_expr(tc, value)
-            if !vtype_eq(declared, r.ty) && !vtype_eq(r.ty, ValueType.Int) && !vtype_eq(r.ty, ValueType.Void) {
+            if !vtype_eq(declared, r.ty) && !vtype_eq(r.ty, .Int) && !vtype_eq(r.ty, .Void) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but return produces `${vtype_display(r.ty)}`"
                 return tc_report(r.tc, DiagCode.TypeMismatch, msg)
             }
@@ -490,16 +490,16 @@ export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
 
 export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
-        .Number(_) -> tc_er(tc, ValueType.Int)
-        .FloatLit(_) -> tc_er(tc, ValueType.Float)
-        .String(_) -> tc_er(tc, ValueType.Str)
-        .Bool(_) -> tc_er(tc, ValueType.Bool)
-        .Null -> tc_er(tc, ValueType.Void)
+        .Number(_) -> tc_er(tc, .Int)
+        .FloatLit(_) -> tc_er(tc, .Float)
+        .String(_) -> tc_er(tc, .Str)
+        .Bool(_) -> tc_er(tc, .Bool)
+        .Null -> tc_er(tc, .Void)
         .Ident(name) -> {
             let ty = type_lookup(tc.types, name)
             // If not found in locals, check function registry
-            if vtype_eq(ty, ValueType.Int) && fn_type_has(tc.fns, name) {
-                return tc_er(tc, ValueType.Fn(fn_type_lookup(tc.fns, name)))
+            if vtype_eq(ty, .Int) && fn_type_has(tc.fns, name) {
+                return tc_er(tc, .Fn(fn_type_lookup(tc.fns, name)))
             }
             tc_er(tc, ty)
         }
@@ -515,7 +515,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .Logical(left, _, right) -> {
             let l = check_expr(tc, left)
             let r = check_expr(l.tc, right)
-            tc_er(r.tc, ValueType.Bool)
+            tc_er(r.tc, .Bool)
         }
         .Grouping(inner) -> check_expr(tc, inner)
         .Call(callee, args) -> check_call(tc, callee, args)
@@ -523,8 +523,8 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let o = check_expr(tc, obj)
             let i = check_expr(o.tc, idx)
             // String indexing returns a string (single character)
-            if vtype_eq(o.ty, ValueType.Str) {
-                return tc_er(i.tc, ValueType.Str)
+            if vtype_eq(o.ty, .Str) {
+                return tc_er(i.tc, .Str)
             }
             let elem_ty = vtype_list_elem(o.ty)
             tc_er(i.tc, elem_ty)
@@ -548,7 +548,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let tag = forge_expr_tag(expr)
             let result = dispatch_expr_check(tc.features, tag, tc, expr)
             if result != null { return result! }
-            tc_er(tc, ValueType.Int)
+            tc_er(tc, .Int)
         }
     }
 }
@@ -559,18 +559,18 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
     match op {
         .Add -> {
             // String + anything = String
-            if vtype_eq(left, ValueType.Str) || vtype_eq(right, ValueType.Str) {
-                return tc_er(tc, ValueType.Str)
+            if vtype_eq(left, .Str) || vtype_eq(right, .Str) {
+                return tc_er(tc, .Str)
             }
-            tc_er(tc, ValueType.Int)
+            tc_er(tc, .Int)
         }
-        .Eq -> tc_er(tc, ValueType.Bool)
-        .Ne -> tc_er(tc, ValueType.Bool)
-        .Lt -> tc_er(tc, ValueType.Bool)
-        .Le -> tc_er(tc, ValueType.Bool)
-        .Gt -> tc_er(tc, ValueType.Bool)
-        .Ge -> tc_er(tc, ValueType.Bool)
-        _ -> tc_er(tc, ValueType.Int)  // Sub, Mul, Div, Rem, bitwise
+        .Eq -> tc_er(tc, .Bool)
+        .Ne -> tc_er(tc, .Bool)
+        .Lt -> tc_er(tc, .Bool)
+        .Le -> tc_er(tc, .Bool)
+        .Gt -> tc_er(tc, .Bool)
+        .Ge -> tc_er(tc, .Bool)
+        _ -> tc_er(tc, .Int)  // Sub, Mul, Div, Rem, bitwise
     }
 }
 
@@ -581,10 +581,10 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
         .Ident(name) -> {
             let checked = check_expr_list(tc, args)
             // Built-in functions
-            if name == "string" { return tc_er(checked, ValueType.Str) }
-            if name == "int" { return tc_er(checked, ValueType.Int) }
+            if name == "string" { return tc_er(checked, .Str) }
+            if name == "int" { return tc_er(checked, .Int) }
             if name == "println" || name == "eprintln" || name == "print" || name == "eprint" {
-                return tc_er(checked, ValueType.Void)
+                return tc_er(checked, .Void)
             }
             // User-defined function
             if fn_type_has(checked.fns, name) {
@@ -598,8 +598,8 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)
-            if vtype_eq(var_ty, ValueType.Int) {
-                return tc_er(checked, ValueType.Int) // unknown
+            if vtype_eq(var_ty, .Int) {
+                return tc_er(checked, .Int) // unknown
             }
             tc_er(checked, vtype_fn_ret(var_ty))
         }
@@ -614,7 +614,7 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                 }
                 return tc_er(checked, fn_type_lookup(checked.fns, path))
             }
-            tc_er(checked, ValueType.Int)
+            tc_er(checked, .Int)
         }
         .FieldAccess(obj, method) -> check_method_call(tc, obj, method, args)
         _ -> {
@@ -633,17 +633,17 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     let checked_args = check_expr_list(o.tc, args)
 
     // String methods
-    if vtype_eq(o.ty, ValueType.Str) {
-        if method == "length" { return tc_er(checked_args, ValueType.Int) }
+    if vtype_eq(o.ty, .Str) {
+        if method == "length" { return tc_er(checked_args, .Int) }
         if method == "substring" || method == "trim" || method == "upper" || method == "lower" || method == "replace" {
-            return tc_er(checked_args, ValueType.Str)
+            return tc_er(checked_args, .Str)
         }
         if method == "contains" || method == "starts_with" || method == "ends_with" {
-            return tc_er(checked_args, ValueType.Bool)
+            return tc_er(checked_args, .Bool)
         }
-        if method == "index_of" { return tc_er(checked_args, ValueType.Int) }
-        if method == "split" { return tc_er(checked_args, ValueType.List(ValueType.Str)) }
-        if method == "char_code" { return tc_er(checked_args, ValueType.Int) }
+        if method == "index_of" { return tc_er(checked_args, .Int) }
+        if method == "split" { return tc_er(checked_args, .List(ValueType.Str)) }
+        if method == "char_code" { return tc_er(checked_args, .Int) }
     }
 
     // List methods — dispatched to features/list_lit/typeck.fg
@@ -652,7 +652,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     }
 
     // Map methods — dispatched to features/map_lit/typeck.fg
-    if vtype_eq(o.ty, ValueType.Map) {
+    if vtype_eq(o.ty, .Map) {
         return check_map_method(checked_args, method)
     }
 
@@ -669,7 +669,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     }
 
     // Fallback
-    tc_er(checked_args, ValueType.Int)
+    tc_er(checked_args, .Int)
 }
 
 // ── Block expression type ──
@@ -683,7 +683,7 @@ fn check_block(tc: TC, stmts: StmtList) -> ExprResult {
 
 fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
     match stmts {
-        .End -> tc_er(tc, ValueType.Void)
+        .End -> tc_er(tc, .Void)
         .Node(ss, next) -> {
             match next {
                 .End -> {
@@ -692,7 +692,7 @@ fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
                         .Expr(e) -> check_expr(tc, e)
                         _ -> {
                             let checked = check_stmt(tc, ss.node)
-                            tc_er(checked, ValueType.Void)
+                            tc_er(checked, .Void)
                         }
                     }
                 }
