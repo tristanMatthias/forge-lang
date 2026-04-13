@@ -1,10 +1,11 @@
-// WHY: codegen for operators — binary, unary, logical, float, enum comparison.
+// WHY: codegen for operators — binary, unary, logical, float.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str}
 use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, ok_emit_str, err_emit, const_i64, const_i8, to_ptr, to_i64, to_f64, f64_to_i64, new_bb, get_fn, call_2}
 use codegen.{emit_expr}
 use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.helpers.{is_null_literal}
+use features.enum_decl.codegen.{emit_enum_tag_cmp}
 
 export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult {
     let r = emit_expr(ctx, env, right)?
@@ -118,18 +119,6 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
     }
 }
 
-export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> EmitResult {
-    let enum_name = vtype_enum_name(ty)
-    let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
-    let lhs_ptr = to_ptr(ctx, lhs, "enum_l")
-    let rhs_ptr = to_ptr(ctx, rhs, "enum_r")
-    let l_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, lhs_ptr, 0, "ltag_ptr")
-    let r_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, rhs_ptr, 0, "rtag_ptr")
-    let l_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, l_gep, "ltag")
-    let r_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, r_gep, "rtag")
-    let cmp = forge_llvm_build_icmp(ctx.builder, pred, l_tag, r_tag, "tag_cmp")
-    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "tag_cmp_ext"))
-}
 
 export fn coerce_to_f64(ctx: Ctx, val: ptr, ty: ValueType) -> ptr {
     if vtype_eq(ty, .Float) {

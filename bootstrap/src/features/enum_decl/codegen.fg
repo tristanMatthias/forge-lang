@@ -1,7 +1,8 @@
-// WHY: emits enum constructors (heap-allocated tagged unions).
+// WHY: emits enum constructors (heap-allocated tagged unions) and
+// enum value comparison (tag equality via struct GEP).
 
-use core.ast.{Expr, ExprList, FieldList, VariantList, VarEnv, variant_lookup, variant_max_payload, field_list_length, ValueType}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, const_i64, const_i8, to_i64, cg_malloc}
+use core.ast.{Expr, ExprList, FieldList, VariantList, VarEnv, variant_lookup, variant_max_payload, field_list_length, ValueType, vtype_enum_name}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, const_i64, const_i8, to_i64, to_ptr, cg_malloc}
 use codegen.{emit_expr}
 
 
@@ -71,4 +72,19 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, args: ExprList, id
             fill_enum_payload(ctx, env, payload_ptr, next, idx + 1)
         }
     }
+}
+
+// Compare two enum values by their tag field (equality/inequality).
+// Used by emit_binary for Eq/Ne on enum types.
+export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> EmitResult {
+    let enum_name = vtype_enum_name(ty)
+    let st_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
+    let lhs_ptr = to_ptr(ctx, lhs, "enum_l")
+    let rhs_ptr = to_ptr(ctx, rhs, "enum_r")
+    let l_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, lhs_ptr, 0, "ltag_ptr")
+    let r_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, rhs_ptr, 0, "rtag_ptr")
+    let l_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, l_gep, "ltag")
+    let r_tag = forge_llvm_build_load(ctx.builder, ctx.i64_type, r_gep, "rtag")
+    let cmp = forge_llvm_build_icmp(ctx.builder, pred, l_tag, r_tag, "tag_cmp")
+    ok_emit(forge_llvm_build_zext(ctx.builder, cmp, ctx.i64_type, "tag_cmp_ext"))
 }
