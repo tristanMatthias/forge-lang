@@ -308,9 +308,7 @@ fn scope_has(scope: LocalScope, name: string) -> bool {
 
 // Builtin functions that should never be qualified
 fn is_builtin_name(name: string) -> bool {
-    name == "println" || name == "eprintln" || name == "print" || name == "eprint" ||
-    name == "string" || name == "int" || name == "float" || name == "panic" ||
-    name == "exit" || name == "self"
+    name in ["println", "eprintln", "print", "eprint", "string", "int", "float", "panic", "exit", "self"]
 }
 
 
@@ -481,6 +479,7 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Lambda(params, body) -> .Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)
+        .InCheck(needle, items) -> .InCheck(rewrite_expr(ctx, needle), rewrite_expr_list(ctx, items))
         .When(arms) -> .When(rewrite_when_arms(ctx, arms))
         _ -> expr
     }

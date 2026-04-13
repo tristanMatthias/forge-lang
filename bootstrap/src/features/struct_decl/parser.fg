@@ -23,7 +23,7 @@ impl Parser {
             self.advance()
             if self.check(Tk.Identifier) {
                 let op = self.current_lexeme
-                if op == "without" || op == "only" {
+                if op in ["without", "only"] {
                     self.advance()
                     if !self.consume(Tk.LeftBrace, "expected `{` after type operator") { return null }
                     let op_fields = self.parse_ident_list()

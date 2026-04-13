@@ -551,6 +551,22 @@ impl Parser {
             return Expr.IsCheck(left, vname)
         }
 
+        if self.check(Tk.KwIn) {
+            self.advance()
+            if !self.consume(Tk.LeftBracket, "expected `[` after `in`") {
+                return null
+            }
+            let items = if self.check(Tk.RightBracket) {
+                ExprList.End
+            } else {
+                self.parse_arg_list_inner()?
+            }
+            if !self.consume(Tk.RightBracket, "expected `]` after `in [...]`") {
+                return null
+            }
+            return Expr.InCheck(left, items)
+        }
+
         mut expr = left
         while self.check(Tk.EqualEqual) || self.check(Tk.BangEqual) {
             let op = if self.check(Tk.EqualEqual) { BinOp.Eq } else { BinOp.Ne }

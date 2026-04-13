@@ -26,6 +26,7 @@ mod closures
 mod map_lit
 mod defer_stmt
 mod is_keyword
+mod in_operator
 mod spec_test
 mod select_stmt
 mod parallel_stmt
@@ -40,6 +41,7 @@ use features.for_stmt.{init_for_stmt}
 use features.if_stmt.{init_if_stmt}
 use features.impl_decl.{init_impl_decl}
 use features.is_keyword.{init_is_keyword}
+use features.in_operator.{init_in_operator}
 use features.let_stmt.{init_let_stmt}
 use features.list_lit.{init_list_lit}
 use features.map_lit.{init_map_lit}
@@ -67,6 +69,7 @@ export fn init_features(reg: Registry) {
     init_closures(reg)
     init_map_lit(reg)
     init_is_keyword(reg)
+    init_in_operator(reg)
     init_while_stmt(reg)
     init_for_stmt(reg)
     init_let_stmt(reg)

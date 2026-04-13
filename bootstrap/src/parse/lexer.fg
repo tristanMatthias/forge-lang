@@ -22,7 +22,7 @@ export fn p_is_hex_digit(ch: string) -> bool {
 }
 
 export fn p_is_binary_digit(ch: string) -> bool {
-    ch == "0" || ch == "1"
+    ch in ["0", "1"]
 }
 
 export fn p_is_octal_digit(ch: string) -> bool {
@@ -246,7 +246,7 @@ impl Parser {
     fn skip_whitespace_and_comments(self) {
         while !self.is_at_end() {
             let ch = self.peek_char()
-            if ch == " " || ch == "\r" || ch == "\t" || ch == "\n" {
+            if ch in [" ", "\r", "\t", "\n"] {
                 self.advance_char()
             } else if ch == "/" && self.peek_next_char() == "/" {
                 while !self.is_at_end() && self.peek_char() != "\n" {

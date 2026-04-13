@@ -296,6 +296,7 @@ export enum Expr {
     Slice(obj: Expr, start: Expr, end: Expr)
     FloatLit(value: string)
     IsCheck(subject: Expr, variant_name: string)
+    InCheck(needle: Expr, items: ExprList)
     QualifiedIdent(path: string)
     When(arms: WhenArmList)
 }
@@ -564,6 +565,7 @@ export fn render_expr(expr: Expr) -> string {
         .FloatLit(value) -> value
         .Slice(obj, start, end) -> "(slice ${render_expr(obj)} ${render_expr(start)}..${render_expr(end)})"
         .IsCheck(subject, vname) -> "(is ${render_expr(subject)} .${vname})"
+        .InCheck(needle, items) -> "(in ${render_expr(needle)} [${render_expr_list(items)}])"
         .QualifiedIdent(path) -> path
         .When(arms) -> "(when ${render_when_arm_list(arms)})"
     }

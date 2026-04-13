@@ -462,7 +462,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
                 return ok_result(runtime, value_function(name))
             }
 
-            if name == "println" || name == "string" {
+            if name in ["println", "string"] {
                 return ok_result(runtime, value_builtin(name))
             }
 

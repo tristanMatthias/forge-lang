@@ -1,0 +1,31 @@
+// WHY: codegen for `expr in [a, b, c]` — expands to `expr == a || expr == b || expr == c`.
+
+use codegen.{emit_expr}
+use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, const_i64}
+use codegen.strings.{emit_str_eq}
+use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_is_str}
+
+export fn emit_in_check(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) -> EmitResult {
+    let n = emit_expr(ctx, env, needle)?
+    let is_str = vtype_is_str(n.ty)
+    emit_in_items(ctx, env, n.value, is_str, items)
+}
+
+fn emit_in_items(ctx: Ctx, env: VarEnv, needle_val: ptr, is_str: bool, items: ExprList) -> EmitResult {
+    match items {
+        .End -> ok_emit(const_i64(ctx, 0))
+        .Node(item, next) -> {
+            let r = emit_expr(ctx, env, item.node)?
+            let cmp = if is_str || vtype_is_str(r.ty) {
+                let eq = emit_str_eq(ctx, needle_val, r.value, false)
+                if eq.had_error { return eq }
+                eq.value
+            } else {
+                let eq = forge_llvm_build_icmp(ctx.builder, 32, needle_val, r.value, "in_eq")
+                forge_llvm_build_zext(ctx.builder, eq, ctx.i64_type, "in_ext")
+            }
+            let rest = emit_in_items(ctx, env, needle_val, is_str, next)?
+            ok_emit(forge_llvm_build_or(ctx.builder, cmp, rest.value, "in_or"))
+        }
+    }
+}

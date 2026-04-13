@@ -395,7 +395,7 @@ export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
     let base = translate_param_type(ctx.structs, ctx.enums, ty)
     // If base type is Int (unknown), check if it's a trait name
     if !vtype_eq(base, ValueType.Int) { return base }
-    if ty == "" || ty == "int" || ty == "i64" { return base }
+    if ty in ["", "int", "i64"] { return base }
     if trait_decl_has(ctx.trait_decls, ty) {
         return ValueType.Trait(ty)
     }
