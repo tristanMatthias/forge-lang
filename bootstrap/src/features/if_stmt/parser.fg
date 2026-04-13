@@ -3,6 +3,7 @@
 use core.ast.{Stmt, Expr}
 use parse.{Parser}
 use diagnostics.{DiagCode}
+use core.ast.{Tk}
 
 impl Parser {
     fn parse_if_statement(self) -> Stmt? {
@@ -13,14 +14,14 @@ impl Parser {
         self.allow_struct_lit = saved
         if condition == null { return null }
 
-        if !self.check("left_brace") {
+        if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after if condition")
             return null
         }
 
         let then_branch = self.parse_statement()?
 
-        if self.check("kw_else") {
+        if self.check(Tk.KwElse) {
             self.advance()
             let else_branch = self.parse_statement()?
             return Stmt.If(condition!, then_branch, else_branch)
@@ -36,22 +37,22 @@ impl Parser {
         let condition = self.parse_expression()
         self.allow_struct_lit = saved
         if condition == null { return null }
-        if !self.check("left_brace") {
+        if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after if condition")
             return null
         }
         let then_branch = self.parse_block_expression()?
-        if !self.check("kw_else") {
+        if !self.check(Tk.KwElse) {
             return Expr.IfExpr(condition!, then_branch, Expr.Number("0"))
         }
         self.advance()
         // Else can be either a block, another if-expression
         // (`else if`), or a single expression.
-        if self.check("kw_if") {
+        if self.check(Tk.KwIf) {
             let else_branch = self.parse_if_expression()?
             return Expr.IfExpr(condition!, then_branch, else_branch)
         }
-        if self.check("left_brace") {
+        if self.check(Tk.LeftBrace) {
             let else_branch = self.parse_block_expression()?
             return Expr.IfExpr(condition!, then_branch, else_branch)
         }

@@ -2,29 +2,30 @@
 
 use core.ast.{Stmt, ParamList}
 use parse.{Parser}
+use core.ast.{Tk}
 
 impl Parser {
     fn parse_let_statement(self) -> Stmt? {
         self.advance()
         // Optional `mut` modifier — `let mut x = ...` is equivalent
         // to `mut x = ...` in our model.
-        let is_mut = self.check("kw_mut")
+        let is_mut = self.check(Tk.KwMut)
         if is_mut {
             self.advance()
         }
         // Destructuring: `let (x, y) = expr`
-        if self.check("left_paren") {
+        if self.check(Tk.LeftParen) {
             return self.parse_let_destructure()
         }
         let name = self.consume_identifier("expected variable name")?
-        let ty = if self.check("colon") {
+        let ty = if self.check(Tk.Colon) {
             self.advance()
             let t = self.consume_type("expected type after `:`")?
             t
         } else {
             ""
         }
-        if !self.consume("equal", "expected `=` after variable name") {
+        if !self.consume(Tk.Equal, "expected `=` after variable name") {
             return null
         }
         let initializer = self.parse_expression()?
@@ -37,14 +38,14 @@ impl Parser {
     fn parse_mut_statement(self) -> Stmt? {
         self.advance()
         let name = self.consume_identifier("expected variable name")?
-        let ty = if self.check("colon") {
+        let ty = if self.check(Tk.Colon) {
             self.advance()
             let t = self.consume_type("expected type after `:`")?
             t
         } else {
             ""
         }
-        if !self.consume("equal", "expected `=` after variable name") {
+        if !self.consume(Tk.Equal, "expected `=` after variable name") {
             return null
         }
         let initializer = self.parse_expression()?
@@ -54,10 +55,10 @@ impl Parser {
     fn parse_let_destructure(self) -> Stmt? {
         self.advance()  // consume `(`
         let names = self.parse_destructure_names()?
-        if !self.consume("right_paren", "expected `)` after destructure names") {
+        if !self.consume(Tk.RightParen, "expected `)` after destructure names") {
             return null
         }
-        if !self.consume("equal", "expected `=` after destructure pattern") {
+        if !self.consume(Tk.Equal, "expected `=` after destructure pattern") {
             return null
         }
         let initializer = self.parse_expression()?
@@ -65,11 +66,11 @@ impl Parser {
     }
 
     fn parse_destructure_names(self) -> ParamList? {
-        if self.check("right_paren") {
+        if self.check(Tk.RightParen) {
             return ParamList.End
         }
         let name = self.consume_identifier("expected variable name in destructure")?
-        if self.check("comma") {
+        if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_destructure_names()?
             return ParamList.Node(name, "i64", rest)

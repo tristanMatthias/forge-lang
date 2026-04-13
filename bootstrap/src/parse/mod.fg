@@ -4,7 +4,7 @@
 // equality → comparison → term → factor → unary → call → primary.
 // Feature-specific parsers extend Parser via cross-file impl blocks.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str}
 use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, diag_error, diag_with_help, span_new}
 
@@ -27,7 +27,7 @@ export type Parser = {
     mut current: int,
     mut line: int,
     mut column: int,
-    mut current_kind: string,
+    mut current_kind: Tk,
     mut current_lexeme: string,
     mut current_line: int,
     mut current_column: int,
@@ -235,43 +235,43 @@ fn parse_template_expr(source: string) -> Expr? {
     p.parse_expression()
 }
 
-export fn p_keyword_kind(text: string) -> string {
-    if text == "and" { return "kw_and" }
-    if text == "const" { return "kw_const" }
-    if text == "else" { return "kw_else" }
-    if text == "false" { return "kw_false" }
-    if text == "fn" { return "kw_fn" }
-    if text == "if" { return "kw_if" }
-    if text == "let" { return "kw_let" }
-    if text == "mut" { return "kw_mut" }
-    if text == "not" { return "kw_not" }
-    if text == "null" { return "kw_null" }
-    if text == "or" { return "kw_or" }
-    if text == "return" { return "kw_return" }
-    if text == "true" { return "kw_true" }
-    if text == "for" { return "kw_for" }
-    if text == "in" { return "kw_in" }
-    if text == "while" { return "kw_while" }
-    if text == "type" { return "kw_type" }
-    if text == "enum" { return "kw_enum" }
-    if text == "match" { return "kw_match" }
-    if text == "export" { return "kw_export" }
-    if text == "use" { return "kw_use" }
-    if text == "mod" { return "kw_mod" }
-    if text == "impl" { return "kw_impl" }
-    if text == "extern" { return "kw_extern" }
-    if text == "break" { return "kw_break" }
-    if text == "continue" { return "kw_continue" }
-    if text == "defer" { return "kw_defer" }
-    if text == "trait" { return "kw_trait" }
-    if text == "with" { return "kw_with" }
-    if text == "is" { return "kw_is" }
-    if text == "spec" { return "kw_spec" }
-    if text == "given" { return "kw_given" }
-    if text == "then" { return "kw_then" }
-    if text == "select" { return "kw_select" }
-    if text == "parallel" { return "kw_parallel" }
-    return "identifier"
+export fn p_keyword_kind(text: string) -> Tk {
+    if text == "and" { return Tk.KwAnd }
+    if text == "const" { return Tk.KwConst }
+    if text == "else" { return Tk.KwElse }
+    if text == "false" { return Tk.KwFalse }
+    if text == "fn" { return Tk.KwFn }
+    if text == "if" { return Tk.KwIf }
+    if text == "let" { return Tk.KwLet }
+    if text == "mut" { return Tk.KwMut }
+    if text == "not" { return Tk.KwNot }
+    if text == "null" { return Tk.KwNull }
+    if text == "or" { return Tk.KwOr }
+    if text == "return" { return Tk.KwReturn }
+    if text == "true" { return Tk.KwTrue }
+    if text == "for" { return Tk.KwFor }
+    if text == "in" { return Tk.KwIn }
+    if text == "while" { return Tk.KwWhile }
+    if text == "type" { return Tk.KwType }
+    if text == "enum" { return Tk.KwEnum }
+    if text == "match" { return Tk.KwMatch }
+    if text == "export" { return Tk.KwExport }
+    if text == "use" { return Tk.KwUse }
+    if text == "mod" { return Tk.KwMod }
+    if text == "impl" { return Tk.KwImpl }
+    if text == "extern" { return Tk.KwExtern }
+    if text == "break" { return Tk.KwBreak }
+    if text == "continue" { return Tk.KwContinue }
+    if text == "defer" { return Tk.KwDefer }
+    if text == "trait" { return Tk.KwTrait }
+    if text == "with" { return Tk.KwWith }
+    if text == "is" { return Tk.KwIs }
+    if text == "spec" { return Tk.KwSpec }
+    if text == "given" { return Tk.KwGiven }
+    if text == "then" { return Tk.KwThen }
+    if text == "select" { return Tk.KwSelect }
+    if text == "parallel" { return Tk.KwParallel }
+    Tk.Identifier
 }
 
 export fn parser_new(source: string) -> Parser {
@@ -281,7 +281,7 @@ export fn parser_new(source: string) -> Parser {
         current: 0,
         line: 1,
         column: 1,
-        current_kind: "",
+        current_kind: Tk.Eof,
         current_lexeme: "",
         current_line: 1,
         prev_line: 1,
@@ -310,7 +310,7 @@ impl Parser {
             }
         }
 
-        if !self.check("eof") {
+        if !self.check(Tk.Eof) {
             self.set_error("expected end of input")
             return ParseResult {
                 expr: null,
@@ -337,7 +337,7 @@ impl Parser {
             }
         }
 
-        if !self.check("eof") {
+        if !self.check(Tk.Eof) {
             self.set_error("expected end of input")
             return ProgramParseResult {
                 stmts: null,
@@ -356,15 +356,15 @@ impl Parser {
     }
 
     fn parse_statement_list(self, stop_at_right_brace: bool) -> StmtList? {
-        if stop_at_right_brace && self.check("right_brace") {
+        if stop_at_right_brace && self.check(Tk.RightBrace) {
             return StmtList.End
         }
 
-        if self.check("eof") {
+        if self.check(Tk.Eof) {
             return StmtList.End
         }
 
-        if !stop_at_right_brace && self.check("right_brace") {
+        if !stop_at_right_brace && self.check(Tk.RightBrace) {
             // Report but recover — skip the `}` and keep going
             self.report(DiagCode.MismatchedBrace, "unexpected `}`")
             self.advance()
@@ -388,7 +388,7 @@ impl Parser {
 
     fn parse_declaration(self) -> Stmt? {
         // Annotations: `@name` or `@name(args)` before a declaration.
-        if self.check("at") {
+        if self.check(Tk.At) {
             let annotations = self.parse_annotations()
             let inner = self.parse_declaration()
             if inner == null { return null }
@@ -398,9 +398,9 @@ impl Parser {
         // `export` wraps the inner declaration in an @export annotation
         // so the module system's name resolution pass can enforce visibility.
         // Only fn, type, enum, trait, and extern are exportable — no stacking.
-        if self.check("kw_export") {
+        if self.check(Tk.KwExport) {
             self.advance()
-            let export_handler_raw = lookup_decl_parser(self.features, self.current_kind)
+            let export_handler_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
             let inner = if export_handler_raw != null {
                 let handler: fn(Parser) -> Stmt? = export_handler_raw!
                 handler(self)
@@ -415,7 +415,7 @@ impl Parser {
             )
         }
 
-        let decl_raw = lookup_decl_parser(self.features, self.current_kind)
+        let decl_raw = lookup_decl_parser(self.features, tk_keyword_str(self.current_kind))
         if decl_raw != null {
             let handler: fn(Parser) -> Stmt? = decl_raw!
             return handler(self)
@@ -430,15 +430,15 @@ impl Parser {
 
     // Parse one or more annotations: @name or @name(arg1, arg2)
     fn parse_annotations(self) -> AnnotationList {
-        if !self.check("at") { return AnnotationList.End }
+        if !self.check(Tk.At) { return AnnotationList.End }
         self.advance()  // consume @
         let name = self.current_lexeme
         self.advance()  // consume name
         // Optional argument list
-        let args = if self.check("left_paren") {
+        let args = if self.check(Tk.LeftParen) {
             self.advance()  // consume (
             let a = self.parse_arg_list()
-            if self.check("right_paren") { self.advance() }
+            if self.check(Tk.RightParen) { self.advance() }
             if a == null { ExprList.End } else { a! }
         } else {
             ExprList.End
@@ -454,14 +454,14 @@ impl Parser {
         mut headers: ExprList = ExprList.End
         mut header_count = 0
         let header_line = self.current_line
-        while !self.check("right_brace") && !self.check("eof") && self.current_line == header_line {
-            if self.check("identifier") {
+        while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) && self.current_line == header_line {
+            if self.check(Tk.Identifier) {
                 let col = self.current_lexeme
                 self.advance()
                 let quoted_col = "\"" + col + "\""
                 headers = ExprList.Node(sexpr(Expr.String(quoted_col), self.current_line, self.current_column), headers)
                 header_count = header_count + 1
-                if self.check("pipe") {
+                if self.check(Tk.Pipe) {
                     self.advance()
                 }
             } else {
@@ -469,23 +469,23 @@ impl Parser {
             }
         }
         if header_count == 0 {
-            if !self.consume("right_brace", "expected `}` to close table") { return null }
+            if !self.consume(Tk.RightBrace, "expected `}` to close table") { return null }
             return Expr.ListLit(ExprList.End)
         }
         let header_names = reverse_expr_list(headers)
         // Parse data rows
         mut rows: ExprList = ExprList.End
-        while !self.check("right_brace") && !self.check("eof") {
+        while !self.check(Tk.RightBrace) && !self.check(Tk.Eof) {
             mut vals: ExprList = ExprList.End
             mut col_idx = 0
             while col_idx < header_count {
-                if self.check("right_brace") { break }
+                if self.check(Tk.RightBrace) { break }
                 // Use parse_bitwise_xor which stops before `|`
                 let val = self.parse_bitwise_xor()
                 if val == null { return null }
                 vals = ExprList.Node(sexpr(val!, self.current_line, self.current_column), vals)
                 col_idx = col_idx + 1
-                if self.check("pipe") {
+                if self.check(Tk.Pipe) {
                     self.advance()
                 }
             }
@@ -495,7 +495,7 @@ impl Parser {
                 rows = ExprList.Node(sexpr(row_map, self.current_line, self.current_column), rows)
             }
         }
-        if !self.consume("right_brace", "expected `}` to close table") {
+        if !self.consume(Tk.RightBrace, "expected `}` to close table") {
             return null
         }
         Expr.ListLit(reverse_expr_list(rows))
@@ -508,26 +508,26 @@ impl Parser {
     // They extend Parser via `impl Parser { ... }` blocks.
 
     fn parse_statement(self) -> Stmt? {
-        if self.check("left_brace") {
+        if self.check(Tk.LeftBrace) {
             self.advance()
             let body = self.parse_statement_list(true)?
-            if !self.consume("right_brace", "expected `}` after block") {
+            if !self.consume(Tk.RightBrace, "expected `}` after block") {
                 return null
             }
             return Stmt.Block(body)
         }
 
-        if self.check("kw_break") {
+        if self.check(Tk.KwBreak) {
             self.advance()
             return Stmt.Break
         }
 
-        if self.check("kw_continue") {
+        if self.check(Tk.KwContinue) {
             self.advance()
             return Stmt.Continue
         }
 
-        let stmt_raw = lookup_stmt_parser(self.features, self.current_kind)
+        let stmt_raw = lookup_stmt_parser(self.features, tk_keyword_str(self.current_kind))
         if stmt_raw != null {
             let handler: fn(Parser) -> Stmt? = stmt_raw!
             return handler(self)
@@ -544,7 +544,7 @@ impl Parser {
     fn parse_assignment(self) -> Expr? {
         let left = self.parse_pipe()?
 
-        if !self.check("equal") {
+        if !self.check(Tk.Equal) {
             return left
         }
 
@@ -565,7 +565,7 @@ impl Parser {
         let left = self.parse_null_coalesce()?
 
         mut expr = left
-        while self.check("pipe_gt") {
+        while self.check(Tk.PipeGt) {
             self.advance()
             let rhs = self.parse_or()?
             // Desugar: `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`
@@ -586,7 +586,7 @@ impl Parser {
         let left = self.parse_or()?
 
         mut expr = left
-        while self.check("question_question") {
+        while self.check(Tk.QuestionQuestion) {
             self.advance()
             let right = self.parse_or()?
             expr = Expr.NullCoalesce(expr, right)
@@ -599,7 +599,7 @@ impl Parser {
         let left = self.parse_and()?
 
         mut expr = left
-        while self.check("pipe_pipe") || self.check("kw_or") {
+        while self.check(Tk.PipePipe) || self.check(Tk.KwOr) {
             self.advance()
             let right = self.parse_and()?
             expr = Expr.Logical(expr, LogicOp.Or, right)
@@ -612,7 +612,7 @@ impl Parser {
         let left = self.parse_equality()?
 
         mut expr = left
-        while self.check("amp_amp") || self.check("kw_and") {
+        while self.check(Tk.AmpAmp) || self.check(Tk.KwAnd) {
             self.advance()
             let right = self.parse_equality()?
             expr = Expr.Logical(expr, LogicOp.And, right)
@@ -624,9 +624,9 @@ impl Parser {
     fn parse_equality(self) -> Expr? {
         let left = self.parse_bitwise_or()?
 
-        if self.check("kw_is") {
+        if self.check(Tk.KwIs) {
             self.advance()
-            if !self.consume("dot", "expected `.Variant` after `is`") {
+            if !self.consume(Tk.Dot, "expected `.Variant` after `is`") {
                 return null
             }
             let vname = self.consume_identifier("expected variant name after `is .`")?
@@ -634,8 +634,8 @@ impl Parser {
         }
 
         mut expr = left
-        while self.check("equal_equal") || self.check("bang_equal") {
-            let op = if self.check("equal_equal") { BinOp.Eq } else { BinOp.Ne }
+        while self.check(Tk.EqualEqual) || self.check(Tk.BangEqual) {
+            let op = if self.check(Tk.EqualEqual) { BinOp.Eq } else { BinOp.Ne }
             self.advance()
             let right = self.parse_bitwise_or()?
             expr = Expr.Binary(expr, op, right)
@@ -647,7 +647,7 @@ impl Parser {
     fn parse_bitwise_or(self) -> Expr? {
         let left = self.parse_bitwise_xor()?
         mut expr = left
-        while self.check("pipe") {
+        while self.check(Tk.Pipe) {
             self.advance()
             let right = self.parse_bitwise_xor()?
             expr = Expr.Binary(expr, BinOp.BitOr, right)
@@ -658,7 +658,7 @@ impl Parser {
     fn parse_bitwise_xor(self) -> Expr? {
         let left = self.parse_bitwise_and()?
         mut expr = left
-        while self.check("caret") {
+        while self.check(Tk.Caret) {
             self.advance()
             let right = self.parse_bitwise_and()?
             expr = Expr.Binary(expr, BinOp.BitXor, right)
@@ -669,7 +669,7 @@ impl Parser {
     fn parse_bitwise_and(self) -> Expr? {
         let left = self.parse_comparison()?
         mut expr = left
-        while self.check("amp") {
+        while self.check(Tk.Amp) {
             self.advance()
             let right = self.parse_comparison()?
             expr = Expr.Binary(expr, BinOp.BitAnd, right)
@@ -681,10 +681,10 @@ impl Parser {
         let left = self.parse_shift()?
 
         mut expr = left
-        while self.check("greater") || self.check("greater_equal") || self.check("less") || self.check("less_equal") {
-            let op = if self.check("less") { BinOp.Lt }
-                else if self.check("less_equal") { BinOp.Le }
-                else if self.check("greater") { BinOp.Gt }
+        while self.check(Tk.Greater) || self.check(Tk.GreaterEqual) || self.check(Tk.Less) || self.check(Tk.LessEqual) {
+            let op = if self.check(Tk.Less) { BinOp.Lt }
+                else if self.check(Tk.LessEqual) { BinOp.Le }
+                else if self.check(Tk.Greater) { BinOp.Gt }
                 else { BinOp.Ge }
             self.advance()
             let right = self.parse_shift()?
@@ -697,8 +697,8 @@ impl Parser {
     fn parse_shift(self) -> Expr? {
         let left = self.parse_term()?
         mut expr = left
-        while self.check("shl") || self.check("shr") {
-            let op = if self.check("shl") { BinOp.Shl } else { BinOp.Shr }
+        while self.check(Tk.Shl) || self.check(Tk.Shr) {
+            let op = if self.check(Tk.Shl) { BinOp.Shl } else { BinOp.Shr }
             self.advance()
             let right = self.parse_term()?
             expr = Expr.Binary(expr, op, right)
@@ -710,8 +710,8 @@ impl Parser {
         let left = self.parse_factor()?
 
         mut expr = left
-        while self.check("plus") || self.check("minus") {
-            let op = if self.check("plus") { BinOp.Add } else { BinOp.Sub }
+        while self.check(Tk.Plus) || self.check(Tk.Minus) {
+            let op = if self.check(Tk.Plus) { BinOp.Add } else { BinOp.Sub }
             self.advance()
             let right = self.parse_factor()?
             expr = Expr.Binary(expr, op, right)
@@ -724,9 +724,9 @@ impl Parser {
         let left = self.parse_unary()?
 
         mut expr = left
-        while self.check("star") || self.check("slash") || self.check("percent") {
-            let op = if self.check("star") { BinOp.Mul }
-                else if self.check("percent") { BinOp.Mod }
+        while self.check(Tk.Star) || self.check(Tk.Slash) || self.check(Tk.Percent) {
+            let op = if self.check(Tk.Star) { BinOp.Mul }
+                else if self.check(Tk.Percent) { BinOp.Mod }
                 else { BinOp.Div }
             self.advance()
             let right = self.parse_unary()?
@@ -737,9 +737,9 @@ impl Parser {
     }
 
     fn parse_unary(self) -> Expr? {
-        if self.check("bang") || self.check("minus") || self.check("kw_not") || self.check("tilde") {
-            let op = if self.check("minus") { UnOp.Neg }
-                else if self.check("tilde") { UnOp.BitNot }
+        if self.check(Tk.Bang) || self.check(Tk.Minus) || self.check(Tk.KwNot) || self.check(Tk.Tilde) {
+            let op = if self.check(Tk.Minus) { UnOp.Neg }
+                else if self.check(Tk.Tilde) { UnOp.BitNot }
                 else { UnOp.Not }
             self.advance()
             let right = self.parse_unary()?
@@ -748,13 +748,13 @@ impl Parser {
 
         mut expr = self.parse_call()?
         // `expr with { field: value, ... }` — functional struct update (chainable)
-        while self.check("kw_with") {
+        while self.check(Tk.KwWith) {
             self.advance()
-            if !self.consume("left_brace", "expected `{` after `with`") {
+            if !self.consume(Tk.LeftBrace, "expected `{` after `with`") {
                 return null
             }
             let overrides = self.parse_field_init_list()?
-            if !self.consume("right_brace", "expected `}` after with fields") {
+            if !self.consume(Tk.RightBrace, "expected `}` after with fields") {
                 return null
             }
             expr = Expr.With(expr, overrides)
@@ -802,45 +802,45 @@ impl Parser {
         mut result = expr
         // If [ appears on a DIFFERENT line than the previous token,
         // it's a new statement (list literal), not postfix indexing.
-        while (self.check("left_paren") && self.current_line == self.prev_line) || (self.check("dot") && self.dot_is_postfix(result)) || self.check("bang") || (self.check("left_bracket") && self.current_line == self.prev_line) || self.check("question_dot") || self.check("question") {
+        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result)) || self.check(Tk.Bang) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || self.check(Tk.Question) {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
-            while self.check("bang") {
+            while self.check(Tk.Bang) {
                 self.advance()
             }
             // Error propagation: `expr?` — if null, return null
             // from the enclosing function.
-            if self.check("question") {
+            if self.check(Tk.Question) {
                 self.advance()
                 result = Expr.Try(result)
                 continue
             }
             // Optional chaining: `expr?.field`
-            if self.check("question_dot") {
+            if self.check(Tk.QuestionDot) {
                 self.advance()
                 let field = self.consume_identifier("expected field name after `?.`")?
                 result = Expr.OptionalChain(result, field)
-            } else if self.check("left_bracket") {
+            } else if self.check(Tk.LeftBracket) {
                 self.advance()
                 let idx = self.parse_expression()?
                 // Slice: list[start..end]
-                if self.check("dot_dot") {
+                if self.check(Tk.DotDot) {
                     self.advance()
                     let end = self.parse_expression()?
-                    if !self.consume("right_bracket", "expected `]` after slice") {
+                    if !self.consume(Tk.RightBracket, "expected `]` after slice") {
                         return null
                     }
                     result = Expr.Slice(result, idx, end)
                     continue
                 }
-                if !self.consume("right_bracket", "expected `]` after index") {
+                if !self.consume(Tk.RightBracket, "expected `]` after index") {
                     return null
                 }
                 result = Expr.Index(result, idx)
-            } else if !self.check("left_paren") && !self.check("dot") {
+            } else if !self.check(Tk.LeftParen) && !self.check(Tk.Dot) {
                 return result
             } else {
-            if self.check("left_paren") {
+            if self.check(Tk.LeftParen) {
                 self.advance()
                 // Enable `it` sugar for method calls (obj.method(it * 2))
                 // but not for regular function calls (to prevent
@@ -853,14 +853,14 @@ impl Parser {
                 self.allow_it_sugar = is_method
                 let args = self.parse_arg_list()?
                 self.allow_it_sugar = saved_it
-                if !self.consume("right_paren", "expected `)` after arguments") {
+                if !self.consume(Tk.RightParen, "expected `)` after arguments") {
                     return null
                 }
                 result = Expr.Call(result, args)
             } else {
                 self.advance()
                 // Tuple index: `t.0`, `t.1` — number after dot
-                if self.check("number") {
+                if self.check(Tk.Number) {
                     let idx_text = self.current_lexeme
                     self.advance()
                     result = Expr.TupleIndex(result, int(idx_text))
@@ -881,10 +881,10 @@ impl Parser {
                     }
                     _ -> ""
                 }
-                if type_name != "" && self.check("left_paren") {
+                if type_name != "" && self.check(Tk.LeftParen) {
                     self.advance()
                     let args = self.parse_arg_list()?
-                    if !self.consume("right_paren", "expected `)` after arguments") {
+                    if !self.consume(Tk.RightParen, "expected `)` after arguments") {
                         return null
                     }
                     result = Expr.EnumCtor(type_name, field, args)
@@ -910,7 +910,7 @@ impl Parser {
     }
 
     fn parse_arg_list_inner(self) -> ExprList? {
-        if self.check("right_paren") {
+        if self.check(Tk.RightParen) {
             return ExprList.End
         }
 
@@ -934,7 +934,7 @@ impl Parser {
             raw_expr
         }
 
-        if self.check("comma") {
+        if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_arg_list_inner()?
             return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
@@ -944,52 +944,52 @@ impl Parser {
     }
 
     fn parse_primary(self) -> Expr? {
-        if self.check("number") {
+        if self.check(Tk.Number) {
             let value = self.current_lexeme
             self.advance()
             return Expr.Number(value)
         }
 
-        if self.check("float") {
+        if self.check(Tk.Float) {
             let value = self.current_lexeme
             self.advance()
             return Expr.FloatLit(value)
         }
 
-        if self.check("string") {
+        if self.check(Tk.String) {
             let value = self.current_lexeme
             self.advance()
             return Expr.String(value)
         }
 
-        if self.check("template") {
+        if self.check(Tk.Template) {
             let raw = self.current_lexeme
             self.advance()
             return self.desugar_template(raw)
         }
 
-        if self.check("kw_true") || self.check("kw_false") {
+        if self.check(Tk.KwTrue) || self.check(Tk.KwFalse) {
             let value = self.current_lexeme
             self.advance()
             return Expr.Bool(value)
         }
 
-        if self.check("kw_null") {
+        if self.check(Tk.KwNull) {
             self.advance()
             return Expr.Null
         }
 
         // Contextual enum variant: `.Variant` or `.Variant(args)`
         // Resolved at codegen time using the expected type from context.
-        if self.check("dot") {
+        if self.check(Tk.Dot) {
             self.advance()  // consume .
-            if self.check("identifier") {
+            if self.check(Tk.Identifier) {
                 let variant = self.current_lexeme
                 self.advance()  // consume variant name
-                if self.check("left_paren") {
+                if self.check(Tk.LeftParen) {
                     self.advance()
                     let args = self.parse_arg_list()?
-                    if !self.consume("right_paren", "expected `)` after variant args") {
+                    if !self.consume(Tk.RightParen, "expected `)` after variant args") {
                         return null
                     }
                     return Expr.EnumCtor("", variant, args)
@@ -998,25 +998,25 @@ impl Parser {
             }
         }
 
-        if self.check("identifier") {
+        if self.check(Tk.Identifier) {
             let name = self.current_lexeme
             self.advance()
             // Table literal: table { col1 | col2; val1 | val2 }
             // Must check BEFORE struct literal since both start with ident + {
-            if name == "table" && self.check("left_brace") {
+            if name == "table" && self.check(Tk.LeftBrace) {
                 return self.parse_table_literal()
             }
-            if self.allow_struct_lit && self.check("left_brace") {
+            if self.allow_struct_lit && self.check(Tk.LeftBrace) {
                 self.advance()
                 let inits = self.parse_field_init_list()?
-                if !self.consume("right_brace", "expected `}` after struct fields") {
+                if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
                     return null
                 }
                 return Expr.StructLit(name, inits)
             }
             // Tagged template: `tag`template with ${expr}`
             // Desugars to: tag(desugar_template(raw))
-            if self.check("template") {
+            if self.check(Tk.Template) {
                 let raw = self.current_lexeme
                 self.advance()
                 let template_expr = self.desugar_template(raw)
@@ -1027,16 +1027,16 @@ impl Parser {
             return Expr.Ident(name)
         }
 
-        if self.check("left_paren") {
+        if self.check(Tk.LeftParen) {
             self.advance()
             let saved = self.allow_dot_postfix
             self.allow_dot_postfix = true
             // Empty parens: () → could be empty tuple or zero-arg lambda
-            if self.check("right_paren") {
+            if self.check(Tk.RightParen) {
                 self.allow_dot_postfix = saved
                 self.advance()
                 // () -> expr  is a zero-arg lambda
-                if self.check("arrow") {
+                if self.check(Tk.Arrow) {
                     self.advance()
                     let body = self.parse_lambda_body()?
                     return Expr.Lambda(ParamList.End, body)
@@ -1045,13 +1045,13 @@ impl Parser {
             }
             // Typed lambda: (x: int, y: string) -> body
             // Detect by peeking: if current is identifier and next non-ws is ':'
-            if self.check("identifier") && self.peek_after_ident_is_colon() {
+            if self.check(Tk.Identifier) && self.peek_after_ident_is_colon() {
                 self.allow_dot_postfix = saved
                 let params = self.parse_param_list()?
-                if !self.consume("right_paren", "expected `)` after typed parameters") {
+                if !self.consume(Tk.RightParen, "expected `)` after typed parameters") {
                     return null
                 }
-                if !self.consume("arrow", "expected `->` after typed lambda parameters") {
+                if !self.consume(Tk.Arrow, "expected `->` after typed lambda parameters") {
                     return null
                 }
                 let body = self.parse_lambda_body()?
@@ -1061,14 +1061,14 @@ impl Parser {
             self.allow_dot_postfix = saved
             if expr == null { return null }
             // (a, b, ...) — comma after first: tuple or multi-param lambda
-            if self.check("comma") {
+            if self.check(Tk.Comma) {
                 self.advance()
                 let rest = self.parse_tuple_rest()?
-                if !self.consume("right_paren", "expected `)` after tuple") {
+                if !self.consume(Tk.RightParen, "expected `)` after tuple") {
                     return null
                 }
                 // (a, b) -> expr  is a lambda
-                if self.check("arrow") {
+                if self.check(Tk.Arrow) {
                     self.advance()
                     let params = exprs_to_params(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), rest))
                     let body = self.parse_lambda_body()?
@@ -1076,11 +1076,11 @@ impl Parser {
                 }
                 return Expr.Tuple(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), rest))
             }
-            if !self.consume("right_paren", "expected `)` after expression") {
+            if !self.consume(Tk.RightParen, "expected `)` after expression") {
                 return null
             }
             // (x) -> expr  is a single-param lambda
-            if self.check("arrow") {
+            if self.check(Tk.Arrow) {
                 self.advance()
                 let params = exprs_to_params(ExprList.Node(sexpr(expr!, self.current_line, self.current_column), ExprList.End))
                 let body = self.parse_lambda_body()?
@@ -1090,28 +1090,28 @@ impl Parser {
         }
 
         // List literal: [expr, expr, ...]
-        if self.check("left_bracket") {
+        if self.check(Tk.LeftBracket) {
             self.advance()
-            if self.check("right_bracket") {
+            if self.check(Tk.RightBracket) {
                 self.advance()
                 return Expr.ListLit(ExprList.End)
             }
             let elements = self.parse_list_elements()?
-            if !self.consume("right_bracket", "expected `]` after list") {
+            if !self.consume(Tk.RightBracket, "expected `]` after list") {
                 return null
             }
             return Expr.ListLit(elements)
         }
 
-        if self.check("kw_match") {
+        if self.check(Tk.KwMatch) {
             return self.parse_match_expression()
         }
 
-        if self.check("kw_if") {
+        if self.check(Tk.KwIf) {
             return self.parse_if_expression()
         }
 
-        if self.check("left_brace") {
+        if self.check(Tk.LeftBrace) {
             // Map literal: { "key": value, ... }
             // Disambiguate from block: if first token after { is a string,
             // and the token after that is a colon, it's a map.
@@ -1222,9 +1222,9 @@ impl Parser {
         let saved_lex = self.current_lexeme
 
         self.advance()  // consume {
-        let is_map = self.check("right_brace") || (self.check("string") && {
+        let is_map = self.check(Tk.RightBrace) || (self.check(Tk.String) && {
             self.advance()  // consume string
-            self.check("colon")
+            self.check(Tk.Colon)
         })
 
         // Restore position
@@ -1237,12 +1237,12 @@ impl Parser {
 
     fn parse_map_literal(self) -> Expr? {
         self.advance()  // consume {
-        if self.check("right_brace") {
+        if self.check(Tk.RightBrace) {
             self.advance()
             return Expr.MapLit(ExprList.End)
         }
         let entries = self.parse_map_entries()?
-        if !self.consume("right_brace", "expected `}` after map") {
+        if !self.consume(Tk.RightBrace, "expected `}` after map") {
             return null
         }
         Expr.MapLit(entries)
@@ -1251,13 +1251,13 @@ impl Parser {
     // Parse key:value pairs into a flat list: key1, val1, key2, val2, ...
     fn parse_map_entries(self) -> ExprList? {
         let key = self.parse_expression()?
-        if !self.consume("colon", "expected `:` after map key") {
+        if !self.consume(Tk.Colon, "expected `:` after map key") {
             return null
         }
         let value = self.parse_expression()?
-        if self.check("comma") {
+        if self.check(Tk.Comma) {
             self.advance()
-            if self.check("right_brace") {
+            if self.check(Tk.RightBrace) {
                 return ExprList.Node(sexpr(key, self.current_line, self.current_column), ExprList.Node(sexpr(value, self.current_line, self.current_column), ExprList.End))
             }
             let rest = self.parse_map_entries()?
@@ -1268,7 +1268,7 @@ impl Parser {
 
     fn parse_lambda_body(self) -> Expr? {
         // Lambda body: either a block { ... } or a single expression.
-        if self.check("left_brace") {
+        if self.check(Tk.LeftBrace) {
             return self.parse_block_expression()
         }
         self.parse_expression()
@@ -1276,9 +1276,9 @@ impl Parser {
 
     fn parse_list_elements(self) -> ExprList? {
         let expr = self.parse_expression()?
-        if self.check("comma") {
+        if self.check(Tk.Comma) {
             self.advance()
-            if self.check("right_bracket") {
+            if self.check(Tk.RightBracket) {
                 // Trailing comma: [1, 2,]
                 return ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End)
             }
@@ -1290,11 +1290,11 @@ impl Parser {
 
     fn parse_tuple_rest(self) -> ExprList? {
         // After the first comma in a tuple. Parse remaining elements.
-        if self.check("right_paren") {
+        if self.check(Tk.RightParen) {
             return ExprList.End
         }
         let expr = self.parse_expression()?
-        if self.check("comma") {
+        if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_tuple_rest()?
             return ExprList.Node(sexpr(expr, self.current_line, self.current_column), rest)
@@ -1312,13 +1312,13 @@ impl Parser {
         let body = self.parse_statement_list(true)
         self.allow_dot_postfix = saved_dot
         if body == null { return null }
-        if !self.consume("right_brace", "expected `}` after block expression") {
+        if !self.consume(Tk.RightBrace, "expected `}` after block expression") {
             return null
         }
         Expr.Block(body!)
     }
 
-    fn check(self, kind: string) -> bool {
+    fn check(self, kind: Tk) -> bool {
         self.current_kind == kind
     }
 
@@ -1342,7 +1342,7 @@ impl Parser {
         self.advance_token()
     }
 
-    fn consume(self, kind: string, message: string) -> bool {
+    fn consume(self, kind: Tk, message: string) -> bool {
         if self.check(kind) {
             self.advance()
             return true
@@ -1352,7 +1352,7 @@ impl Parser {
     }
 
     fn consume_identifier(self, message: string) -> string? {
-        if self.check("identifier") {
+        if self.check(Tk.Identifier) {
             let name = self.current_lexeme
             self.advance()
             return name
@@ -1367,16 +1367,16 @@ impl Parser {
     fn consume_type(self, message: string) -> string? {
         // fn(T, T) -> T  as a type
         // Returns "fn" for simple fn, "fn->RetType" for fn with return type
-        if self.check("kw_fn") {
+        if self.check(Tk.KwFn) {
             self.advance()
             // Parse fn type: fn, fn(A, B) -> C, fn -> C
             mut param_str = ""
-            if self.check("left_paren") {
+            if self.check(Tk.LeftParen) {
                 self.advance()
                 mut first = true
-                while !self.check("right_paren") && !self.check("eof") {
+                while !self.check(Tk.RightParen) && !self.check(Tk.Eof) {
                     if !first {
-                        if self.check("comma") { self.advance() }
+                        if self.check(Tk.Comma) { self.advance() }
                     }
                     first = false
                     let pty = self.consume_type("expected parameter type")?
@@ -1386,9 +1386,9 @@ impl Parser {
                         param_str = param_str + "," + pty
                     }
                 }
-                if self.check("right_paren") { self.advance() }
+                if self.check(Tk.RightParen) { self.advance() }
             }
-            if self.check("arrow") {
+            if self.check(Tk.Arrow) {
                 self.advance()
                 let ret = self.consume_type("expected return type after `->`")?
                 if param_str != "" {
@@ -1401,16 +1401,16 @@ impl Parser {
             }
             return "fn"
         }
-        if !self.check("identifier") {
+        if !self.check(Tk.Identifier) {
             self.set_error(message)
             return null
         }
         mut name = self.current_lexeme
         self.advance()
         // Consume dotted path: core.ast.BinOp -> "core.ast.BinOp"
-        while self.check("dot") {
+        while self.check(Tk.Dot) {
             self.advance()
-            if !self.check("identifier") {
+            if !self.check(Tk.Identifier) {
                 self.set_error("expected identifier after '.' in type path")
                 return null
             }
@@ -1418,10 +1418,10 @@ impl Parser {
             self.advance()
         }
         // Skip generic arguments: Type<A, B>
-        if self.check("less") {
+        if self.check(Tk.Less) {
             self.skip_angle_brackets()
         }
-        if self.check("question") {
+        if self.check(Tk.Question) {
             self.advance()
         }
         name
@@ -1434,10 +1434,10 @@ impl Parser {
     fn skip_angle_brackets(self) {
         self.advance()  // consume `<`
         mut depth = 1
-        while depth > 0 && !self.check("eof") {
-            if self.check("less") {
+        while depth > 0 && !self.check(Tk.Eof) {
+            if self.check(Tk.Less) {
                 depth = depth + 1
-            } else if self.check("greater") {
+            } else if self.check(Tk.Greater) {
                 depth = depth - 1
             }
             self.advance()
@@ -1453,160 +1453,160 @@ impl Parser {
         self.current_column = self.column
 
         if self.is_at_end() {
-            self.set_current("eof", "")
+            self.set_current(Tk.Eof, "")
             return
         }
 
         let ch = self.advance_char()
 
         if ch == "," {
-            self.set_current("comma", ",")
+            self.set_current(Tk.Comma, ",")
             return
         }
         if ch == "(" {
-            self.set_current("left_paren", "(")
+            self.set_current(Tk.LeftParen, "(")
             return
         }
         if ch == ")" {
-            self.set_current("right_paren", ")")
+            self.set_current(Tk.RightParen, ")")
             return
         }
         if ch == "{" {
-            self.set_current("left_brace", "{")
+            self.set_current(Tk.LeftBrace, "{")
             return
         }
         if ch == "}" {
-            self.set_current("right_brace", "}")
+            self.set_current(Tk.RightBrace, "}")
             return
         }
         if ch == "+" {
-            self.set_current("plus", "+")
+            self.set_current(Tk.Plus, "+")
             return
         }
         if ch == "-" {
             if self.match_next(">") {
-                self.set_current("arrow", "->")
+                self.set_current(Tk.Arrow, "->")
             } else {
-                self.set_current("minus", "-")
+                self.set_current(Tk.Minus, "-")
             }
             return
         }
         if ch == "*" {
-            self.set_current("star", "*")
+            self.set_current(Tk.Star, "*")
             return
         }
         if ch == "/" {
-            self.set_current("slash", "/")
+            self.set_current(Tk.Slash, "/")
             return
         }
         if ch == ":" {
-            self.set_current("colon", ":")
+            self.set_current(Tk.Colon, ":")
             return
         }
         if ch == "." {
             if self.match_next(".") {
-                self.set_current("dot_dot", "..")
+                self.set_current(Tk.DotDot, "..")
                 return
             }
-            self.set_current("dot", ".")
+            self.set_current(Tk.Dot, ".")
             return
         }
         if ch == "?" {
             if self.match_next("?") {
-                self.set_current("question_question", "??")
+                self.set_current(Tk.QuestionQuestion, "??")
             } else if self.match_next(".") {
-                self.set_current("question_dot", "?.")
+                self.set_current(Tk.QuestionDot, "?.")
             } else {
-                self.set_current("question", "?")
+                self.set_current(Tk.Question, "?")
             }
             return
         }
         if ch == "@" {
-            self.set_current("at", "@")
+            self.set_current(Tk.At, "@")
             return
         }
         if ch == "[" {
-            self.set_current("left_bracket", "[")
+            self.set_current(Tk.LeftBracket, "[")
             return
         }
         if ch == "]" {
-            self.set_current("right_bracket", "]")
+            self.set_current(Tk.RightBracket, "]")
             return
         }
 
         if ch == "&" {
             if self.match_next("&") {
-                self.set_current("amp_amp", "&&")
+                self.set_current(Tk.AmpAmp, "&&")
             } else {
-                self.set_current("amp", "&")
+                self.set_current(Tk.Amp, "&")
             }
             return
         }
 
         if ch == "|" {
             if self.match_next("|") {
-                self.set_current("pipe_pipe", "||")
+                self.set_current(Tk.PipePipe, "||")
                 return
             }
             if self.match_next(">") {
-                self.set_current("pipe_gt", "|>")
+                self.set_current(Tk.PipeGt, "|>")
                 return
             }
-            self.set_current("pipe", "|")
+            self.set_current(Tk.Pipe, "|")
             return
         }
 
         if ch == "^" {
-            self.set_current("caret", "^")
+            self.set_current(Tk.Caret, "^")
             return
         }
         if ch == "~" {
-            self.set_current("tilde", "~")
+            self.set_current(Tk.Tilde, "~")
             return
         }
         if ch == "%" {
-            self.set_current("percent", "%")
+            self.set_current(Tk.Percent, "%")
             return
         }
 
         if ch == "!" {
             if self.match_next("=") {
-                self.set_current("bang_equal", "!=")
+                self.set_current(Tk.BangEqual, "!=")
             } else {
-                self.set_current("bang", "!")
+                self.set_current(Tk.Bang, "!")
             }
             return
         }
 
         if ch == "=" {
             if self.match_next("=") {
-                self.set_current("equal_equal", "==")
+                self.set_current(Tk.EqualEqual, "==")
             } else {
-                self.set_current("equal", "=")
+                self.set_current(Tk.Equal, "=")
             }
             return
         }
 
         if ch == "<" {
             if self.match_next("<") {
-                self.set_current("shl", "<<")
+                self.set_current(Tk.Shl, "<<")
             } else if self.match_next("=") {
-                self.set_current("less_equal", "<=")
+                self.set_current(Tk.LessEqual, "<=")
             } else {
-                self.set_current("less", "<")
+                self.set_current(Tk.Less, "<")
             }
             return
         }
 
         if ch == ">" {
             if self.match_next(">") {
-                self.set_current("shr", ">>")
+                self.set_current(Tk.Shr, ">>")
                 return
             }
             if self.match_next("=") {
-                self.set_current("greater_equal", ">=")
+                self.set_current(Tk.GreaterEqual, ">=")
             } else {
-                self.set_current("greater", ">")
+                self.set_current(Tk.Greater, ">")
             }
             return
         }
@@ -1632,7 +1632,7 @@ impl Parser {
         }
 
         self.set_error("unexpected character `" + ch + "`")
-        self.set_current("error", ch)
+        self.set_current(Tk.Error, ch)
     }
 
     fn scan_string_token(self) {
@@ -1716,17 +1716,17 @@ impl Parser {
 
         if self.is_at_end() {
             self.report(DiagCode.UnterminatedString, "unterminated string")
-            self.set_current("error", "")
+            self.set_current(Tk.Error, "")
             return
         }
 
         self.advance_char()
         if has_interpolation {
             // Strip leading quote, emit as template for desugaring
-            self.set_current("template", content.substring(1, content.length))
+            self.set_current(Tk.Template, content.substring(1, content.length))
         } else {
             content = content + "\""
-            self.set_current("string", content)
+            self.set_current(Tk.String, content)
         }
     }
 
@@ -1741,11 +1741,11 @@ impl Parser {
         }
         if self.is_at_end() {
             self.report(DiagCode.UnterminatedTemplate, "unterminated template string")
-            self.set_current("error", "")
+            self.set_current(Tk.Error, "")
             return
         }
         self.advance_char()
-        self.set_current("template", content)
+        self.set_current(Tk.Template, content)
     }
 
     fn scan_number_token(self) {
@@ -1758,7 +1758,7 @@ impl Parser {
                 while p_is_hex_digit(self.peek_char()) || self.peek_char() == "_" {
                     self.advance_char()
                 }
-                self.set_current("number", self.source.substring(self.start, self.current))
+                self.set_current(Tk.Number, self.source.substring(self.start, self.current))
                 return
             }
             if prefix == "b" || prefix == "B" {
@@ -1766,7 +1766,7 @@ impl Parser {
                 while p_is_binary_digit(self.peek_char()) || self.peek_char() == "_" {
                     self.advance_char()
                 }
-                self.set_current("number", self.source.substring(self.start, self.current))
+                self.set_current(Tk.Number, self.source.substring(self.start, self.current))
                 return
             }
             if prefix == "o" || prefix == "O" {
@@ -1774,7 +1774,7 @@ impl Parser {
                 while p_is_octal_digit(self.peek_char()) || self.peek_char() == "_" {
                     self.advance_char()
                 }
-                self.set_current("number", self.source.substring(self.start, self.current))
+                self.set_current(Tk.Number, self.source.substring(self.start, self.current))
                 return
             }
         }
@@ -1788,7 +1788,7 @@ impl Parser {
             while p_is_digit(self.peek_char()) || self.peek_char() == "_" {
                 self.advance_char()
             }
-            self.set_current("float", self.source.substring(self.start, self.current))
+            self.set_current(Tk.Float, self.source.substring(self.start, self.current))
             return
         }
 
@@ -1797,13 +1797,13 @@ impl Parser {
         if next == "d" && !p_is_alpha_numeric(self.peek_next_char()) {
             self.advance_char()
             let num_str = self.source.substring(self.start, self.current - 1)
-            self.set_current("number", string(int(num_str) * 86400000))
+            self.set_current(Tk.Number, string(int(num_str) * 86400000))
             return
         }
         if next == "h" && !p_is_alpha_numeric(self.peek_next_char()) {
             self.advance_char()
             let num_str = self.source.substring(self.start, self.current - 1)
-            self.set_current("number", string(int(num_str) * 3600000))
+            self.set_current(Tk.Number, string(int(num_str) * 3600000))
             return
         }
         if next == "m" {
@@ -1811,23 +1811,23 @@ impl Parser {
                 self.advance_char()
                 self.advance_char()
                 let num_str = self.source.substring(self.start, self.current - 2)
-                self.set_current("number", string(int(num_str)))
+                self.set_current(Tk.Number, string(int(num_str)))
                 return
             }
             if !p_is_alpha_numeric(self.peek_next_char()) {
                 self.advance_char()
                 let num_str = self.source.substring(self.start, self.current - 1)
-                self.set_current("number", string(int(num_str) * 60000))
+                self.set_current(Tk.Number, string(int(num_str) * 60000))
                 return
             }
         }
         if next == "s" && !p_is_alpha_numeric(self.peek_next_char()) {
             self.advance_char()
             let num_str = self.source.substring(self.start, self.current - 1)
-            self.set_current("number", string(int(num_str) * 1000))
+            self.set_current(Tk.Number, string(int(num_str) * 1000))
             return
         }
-        self.set_current("number", self.source.substring(self.start, self.current))
+        self.set_current(Tk.Number, self.source.substring(self.start, self.current))
     }
 
     fn scan_identifier_token(self) {
@@ -1839,7 +1839,7 @@ impl Parser {
         self.set_current(p_keyword_kind(text), text)
     }
 
-    fn set_current(self, kind: string, lexeme: string) {
+    fn set_current(self, kind: Tk, lexeme: string) {
         self.current_kind = kind
         self.current_lexeme = lexeme
     }
@@ -1865,14 +1865,14 @@ impl Parser {
 
     fn peek_char(self) -> string {
         if self.current >= self.source.length {
-            return ""
+            return Tk.Identifier
         }
         self.source[self.current]
     }
 
     fn peek_next_char(self) -> string {
         if self.current + 1 >= self.source.length {
-            return ""
+            return Tk.Identifier
         }
         self.source[self.current + 1]
     }
@@ -1921,8 +1921,8 @@ impl Parser {
     // looks like the start of a new statement. This lets us resume
     // parsing and find more errors.
     fn synchronize(self) {
-        while !self.check("eof") {
-            if self.check("kw_fn") || self.check("kw_let") || self.check("kw_const") || self.check("kw_mut") || self.check("kw_type") || self.check("kw_enum") || self.check("kw_impl") || self.check("kw_if") || self.check("kw_while") || self.check("kw_for") || self.check("kw_match") || self.check("kw_return") || self.check("kw_extern") || self.check("kw_trait") || self.check("kw_defer") || self.check("kw_spec") || self.check("kw_given") || self.check("kw_then") || self.check("kw_select") || self.check("right_brace") {
+        while !self.check(Tk.Eof) {
+            if self.check(Tk.KwFn) || self.check(Tk.KwLet) || self.check(Tk.KwConst) || self.check(Tk.KwMut) || self.check(Tk.KwType) || self.check(Tk.KwEnum) || self.check(Tk.KwImpl) || self.check(Tk.KwIf) || self.check(Tk.KwWhile) || self.check(Tk.KwFor) || self.check(Tk.KwMatch) || self.check(Tk.KwReturn) || self.check(Tk.KwExtern) || self.check(Tk.KwTrait) || self.check(Tk.KwDefer) || self.check(Tk.KwSpec) || self.check(Tk.KwGiven) || self.check(Tk.KwThen) || self.check(Tk.KwSelect) || self.check(Tk.RightBrace) {
                 return
             }
             self.advance()

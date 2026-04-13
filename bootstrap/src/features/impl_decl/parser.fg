@@ -3,36 +3,37 @@
 
 use core.ast.{Stmt, StmtList, ParamList, SStmt, sstmt}
 use parse.{Parser}
+use core.ast.{Tk}
 
 impl Parser {
     fn parse_impl_declaration(self) -> Stmt? {
         self.advance()
         // Optional generic parameters on impl: `impl<T> ...`
-        if self.check("less") {
+        if self.check(Tk.Less) {
             self.skip_angle_brackets()
         }
         let type_name = self.consume_identifier("expected type name after `impl`")?
         // Skip generic args on the type name: `impl Foo<T> { ... }`
-        if self.check("less") {
+        if self.check(Tk.Less) {
             self.skip_angle_brackets()
         }
         // Handle `impl Trait for Type { ... }` — the trait name is
         // discarded for now; methods are still desugared to
         // `Type__method`. Full trait dispatch comes later.
         mut target_name = type_name
-        if self.check("kw_for") {
+        if self.check(Tk.KwFor) {
             self.advance()
             let for_type = self.consume_identifier("expected type name after `for`")?
-            if self.check("less") {
+            if self.check(Tk.Less) {
                 self.skip_angle_brackets()
             }
             target_name = for_type
         }
-        if !self.consume("left_brace", "expected `{` after impl type name") {
+        if !self.consume(Tk.LeftBrace, "expected `{` after impl type name") {
             return null
         }
         let methods = self.parse_impl_methods(target_name)?
-        if !self.consume("right_brace", "expected `}` after impl block") {
+        if !self.consume(Tk.RightBrace, "expected `}` after impl block") {
             return null
         }
         // Encode trait info in the type_name: "Trait:Type" for trait impls,
@@ -46,10 +47,10 @@ impl Parser {
     }
 
     fn parse_impl_methods(self, type_name: string) -> StmtList? {
-        if self.check("right_brace") {
+        if self.check(Tk.RightBrace) {
             return StmtList.End
         }
-        if !self.check("kw_fn") {
+        if !self.check(Tk.KwFn) {
             self.set_error("expected `fn` inside impl block")
             return null
         }
@@ -61,28 +62,28 @@ impl Parser {
     fn parse_method_declaration(self, type_name: string) -> Stmt? {
         self.advance()
         let name = self.consume_identifier("expected method name")?
-        if !self.consume("left_paren", "expected `(` after method name") {
+        if !self.consume(Tk.LeftParen, "expected `(` after method name") {
             return null
         }
         // The first parameter is conventionally `self` (implicitly
         // typed as the impl's owner type). Skip it if present and
         // synthesize a properly-typed self param ourselves.
         let params = self.parse_method_param_list(type_name)?
-        if !self.consume("right_paren", "expected `)` after parameters") {
+        if !self.consume(Tk.RightParen, "expected `)` after parameters") {
             return null
         }
-        let ret_ty = if self.check("arrow") {
+        let ret_ty = if self.check(Tk.Arrow) {
             self.advance()
             let r = self.consume_type("expected return type after `->`")?
             r
         } else {
             ""
         }
-        if !self.consume("left_brace", "expected `{` after method parameters") {
+        if !self.consume(Tk.LeftBrace, "expected `{` after method parameters") {
             return null
         }
         let body = self.parse_statement_list(true)?
-        if !self.consume("right_brace", "expected `}` after method body") {
+        if !self.consume(Tk.RightBrace, "expected `}` after method body") {
             return null
         }
         // Desugar to a top-level function named `Type__method`.
@@ -91,19 +92,19 @@ impl Parser {
     }
 
     fn parse_method_param_list(self, type_name: string) -> ParamList? {
-        if self.check("right_paren") {
+        if self.check(Tk.RightParen) {
             return ParamList.End
         }
         // Detect leading `self` and prepend it as a typed parameter.
-        if self.check("identifier") && self.current_lexeme == "self" {
+        if self.check(Tk.Identifier) && self.current_lexeme == "self" {
             self.advance()
             // Optional `: Type` after self — discarded.
-            if self.check("colon") {
+            if self.check(Tk.Colon) {
                 self.advance()
                 let _ty = self.consume_type("expected type after `:`")?
             }
             // self is followed by either `,` (more params) or `)`.
-            if self.check("comma") {
+            if self.check(Tk.Comma) {
                 self.advance()
                 let rest = self.parse_param_list()?
                 return ParamList.Node("self", type_name, rest)

@@ -5,6 +5,7 @@
 
 use core.token.{Token, token_new, token_render, token_render_struct}
 use parse.{p_keyword_kind}
+use core.ast.{tk_keyword_str, Tk}
 
 export type ScanResult = {
     rendered: string,
@@ -435,6 +436,9 @@ impl Scanner {
         }
 
         let text = self.current_lexeme()
-        self.make_token_with_lexeme(p_keyword_kind(text), text)
+        let kind = p_keyword_kind(text)
+        let kind_str = tk_keyword_str(kind)
+        let token_kind = if kind_str == "" { "identifier" } else { kind_str }
+        self.make_token_with_lexeme(token_kind, text)
     }
 }

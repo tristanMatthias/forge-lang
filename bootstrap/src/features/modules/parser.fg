@@ -3,6 +3,7 @@
 
 use core.ast.{Stmt, StmtList, ParamList}
 use parse.{Parser}
+use core.ast.{Tk}
 
 impl Parser {
     // Parse `mod name` — produces an unresolved Stmt.Module with an
@@ -18,17 +19,17 @@ impl Parser {
     fn parse_use_declaration(self) -> Stmt? {
         self.advance()  // consume `use`
         mut path = self.consume_identifier("expected module path after `use`")?
-        while self.check("dot") {
+        while self.check(Tk.Dot) {
             self.advance()
-            if self.check("left_brace") { break }
+            if self.check(Tk.LeftBrace) { break }
             let segment = self.consume_identifier("expected path segment")?
             path = path + "." + segment
         }
-        if !self.consume("left_brace", "expected `{` in use declaration") {
+        if !self.consume(Tk.LeftBrace, "expected `{` in use declaration") {
             return null
         }
         let names = self.parse_use_name_list()?
-        if !self.consume("right_brace", "expected `}` in use declaration") {
+        if !self.consume(Tk.RightBrace, "expected `}` in use declaration") {
             return null
         }
         Stmt.Use(path, names)
@@ -36,13 +37,13 @@ impl Parser {
 
     // Parse comma-separated identifier list inside `use path.{...}`.
     fn parse_use_name_list(self) -> ParamList? {
-        if self.check("right_brace") {
+        if self.check(Tk.RightBrace) {
             return ParamList.End
         }
         // Store column position in ty field for diagnostic spans
         let col = string(self.current_column)
         let name = self.consume_identifier("expected import name")?
-        if self.check("comma") {
+        if self.check(Tk.Comma) {
             self.advance()
         }
         let rest = self.parse_use_name_list()?

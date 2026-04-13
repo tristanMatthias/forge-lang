@@ -3,6 +3,7 @@
 use core.ast.{Stmt}
 use parse.{Parser}
 use diagnostics.{DiagCode}
+use core.ast.{Tk}
 
 impl Parser {
     fn parse_while_statement(self) -> Stmt? {
@@ -13,7 +14,7 @@ impl Parser {
         self.allow_struct_lit = saved
         if condition == null { return null }
 
-        if !self.check("left_brace") {
+        if !self.check(Tk.LeftBrace) {
             self.report(DiagCode.ExpectedBlock, "expected `{` after while condition")
             return null
         }
