@@ -168,7 +168,7 @@ impl Parser {
                 return Pattern.LitInt(0 - val)
             }
             if self.check(Tk.Float) {
-                let val = "-" + self.current_lexeme
+                let val = "-${self.current_lexeme}"
                 self.advance()
                 return Pattern.LitFloat(val)
             }

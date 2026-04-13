@@ -116,7 +116,7 @@ fn resolve_report(r: Resolver, code: DiagCode, message: string) -> Resolver {
     let diag = diag_error(code, message, span_dummy())
     r with {
         had_error: true,
-        error_message: if r.error_message.length == 0 { "resolve error: " + message } else { r.error_message },
+        error_message: if r.error_message.length == 0 { "resolve error: ${message}" } else { r.error_message },
         bag: bag_report(r.bag, diag),
     }
 }

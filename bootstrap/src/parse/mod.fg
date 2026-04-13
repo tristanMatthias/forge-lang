@@ -1150,7 +1150,7 @@ impl Parser {
                 } else {
                     let sub_result = parse_template_expr(sub_source)
                     if sub_result == null {
-                        self.set_error("invalid expression in template: " + sub_source)
+                        self.set_error("invalid expression in template: ${sub_source}")
                         return null
                     }
                     sub_result!
@@ -1366,7 +1366,7 @@ impl Parser {
                 if param_str != "" {
                     return "fn(${param_str})->${ret}"
                 }
-                return "fn->" + ret
+                return "fn->${ret}"
             }
             if param_str != "" {
                 return "fn(${param_str})"

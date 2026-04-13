@@ -105,7 +105,7 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
     let sym = severity_symbol(diag.severity)
     let sev = severity_str(diag.severity)
     let header = severity_color(diag.severity, `${sev}[${code_str}]`)
-    eprintln(`  ${sym} ${header}${color_bold(": " + diag.message)}`)
+    eprintln(`  ${sym} ${header}${color_bold(": ${diag.message}")}`)
 
     if line > 0 && col > 0 {
         // Box top: ╭─[file.fg:2:5]

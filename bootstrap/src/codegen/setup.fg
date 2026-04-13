@@ -476,7 +476,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     forge_llvm_context_dispose(ctx.lc)
 
     if write_result != 0 {
-        return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to " + output_path }
+        return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to ${output_path}" }
     }
 
     CodegenResult { had_error: false, error_message: "" }
@@ -673,7 +673,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
                     let arity = param_list_length(params)
                     let existing = forge_llvm_get_named_function(m, name)
                     if existing != null {
-                        eprintln("FATAL: duplicate function `" + name + "` — rename to avoid collision")
+                        eprintln("FATAL: duplicate function `${name}` — rename to avoid collision")
                         exit(1)
                     }
                     let param_arr = forge_llvm_type_array_new(arity)
@@ -772,7 +772,7 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
 fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLevelResult {
     let g = toplevel_lookup(ctx.top_level_vars, name)
     if !g.found {
-        return TopLevelResult { ctx, env, had_error: true, error_message: "codegen error: global `" + name + "` not declared" }
+        return TopLevelResult { ctx, env, had_error: true, error_message: "codegen error: global `${name}` not declared" }
     }
     let r = emit_expr(ctx, env, init)
     if r.had_error {

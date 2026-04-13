@@ -110,7 +110,7 @@ export fn ok_emit_typed(value: ptr, ty: ValueType) -> EmitResult {
 }
 
 export fn err_emit(message: string) -> EmitResult {
-    EmitResult { value: null_ptr_val(), ty: .Int, had_error: true, error_message: "codegen error: " + message }
+    EmitResult { value: null_ptr_val(), ty: .Int, had_error: true, error_message: "codegen error: ${message}" }
 }
 
 export type StmtResult = {

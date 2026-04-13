@@ -189,7 +189,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         // String methods backed by C runtime
         if method == "contains" || method == "starts_with" || method == "ends_with" || method == "index_of" {
             let arg_r = emit_single_arg(ctx, env, args)?
-            let fn_name = "forge_str_" + method
+            let fn_name = "forge_str_${method}"
             let str_ptr = to_ptr(ctx, r.value, "str_self")
             let arg_ptr = to_ptr(ctx, arg_r.value, "str_arg")
             return ok_emit(call_2(ctx, get_fn(ctx, fn_name), str_ptr, arg_ptr, method))

@@ -221,17 +221,9 @@ export fn bag_merge(a: DiagnosticBag, b: DiagnosticBag) -> DiagnosticBag {
 
 fn merge_lists(bag: DiagnosticBag, list: DiagnosticList, extra_errors: int, extra_warnings: int) -> DiagnosticBag {
     match list {
-        .End -> DiagnosticBag {
-            diagnostics: bag.diagnostics,
-            error_count: bag.error_count + extra_errors,
-            warning_count: bag.warning_count + extra_warnings,
-        }
+        .End -> bag with { error_count: bag.error_count + extra_errors, warning_count: bag.warning_count + extra_warnings }
         .Node(diag, next) -> {
-            let updated = DiagnosticBag {
-                diagnostics: DiagnosticList.Node(diag, bag.diagnostics),
-                error_count: bag.error_count,
-                warning_count: bag.warning_count,
-            }
+            let updated = bag with { diagnostics: DiagnosticList.Node(diag, bag.diagnostics) }
             merge_lists(updated, next, extra_errors, extra_warnings)
         }
     }

@@ -71,7 +71,7 @@ fn main() {
     // The compile command handles its own path validation in that case.
     let is_flag = path.starts_with("--")
     if !is_flag && !file_exists(path) {
-        fail("error: file not found: " + path)
+        fail("error: file not found: ${path}")
     }
 
     let source = if is_flag { "" } else { read_file(path) }
@@ -161,7 +161,7 @@ fn main() {
             fail("error: compile requires a file path argument")
         }
         if !file_exists(cpath) {
-            fail("error: file not found: " + cpath)
+            fail("error: file not found: ${cpath}")
         }
         let csource = read_file(cpath)
 

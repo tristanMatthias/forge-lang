@@ -102,7 +102,7 @@ export fn error_result(runtime: Runtime, message: string) -> StepResult {
         value: value_null(),
         had_error: true,
         is_return: false,
-        error_message: "eval error: " + message,
+        error_message: "eval error: ${message}",
     }
 }
 
@@ -229,21 +229,11 @@ fn value_bool(flag: bool) -> Value {
 
 
 fn enter_scope(runtime: Runtime) -> Runtime {
-    Runtime {
-        bindings: runtime.bindings,
-        functions: runtime.functions,
-        depth: runtime.depth + 1,
-        features: runtime.features,
-    }
+    runtime with { depth: runtime.depth + 1 }
 }
 
 fn exit_scope(runtime: Runtime) -> Runtime {
-    Runtime {
-        bindings: pop_scope_bindings(runtime.bindings, runtime.depth),
-        functions: runtime.functions,
-        depth: runtime.depth - 1,
-        features: runtime.features,
-    }
+    runtime with { bindings: pop_scope_bindings(runtime.bindings, runtime.depth), depth: runtime.depth - 1 }
 }
 
 fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
@@ -256,12 +246,7 @@ fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
 }
 
 fn define_binding(runtime: Runtime, name: string, mutable_binding: bool, value: Value) -> Runtime {
-    Runtime {
-        bindings: BindingList.Node(name, mutable_binding, runtime.depth, value, runtime.bindings),
-        functions: runtime.functions,
-        depth: runtime.depth,
-        features: runtime.features,
-    }
+    runtime with { bindings: BindingList.Node(name, mutable_binding, runtime.depth, value, runtime.bindings) }
 }
 
 type LookupResult = {
