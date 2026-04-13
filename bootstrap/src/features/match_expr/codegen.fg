@@ -193,8 +193,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                         if lookup.found {
                             let iv = variant_lookup(lookup.variants, inner_vname)
                             if iv.found {
-                                let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, idx + 1, "inner_val")
-                                let inner_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "inner_i64")
+                                let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, "inner_i64")
                                 let inner_ptr = to_ptr(ctx, inner_val, "inner_enum_ptr")
                                 let inner_struct_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
                                 let inner_tag_gep = forge_llvm_build_struct_gep2(ctx.builder, inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
@@ -218,8 +217,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                         if lookup.found {
                             let iv = variant_lookup(lookup.variants, inner_vname)
                             if iv.found {
-                                let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, idx + 1, "inner_val")
-                                let inner_val = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "inner_i64")
+                                let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, "inner_i64")
                                 let inner_ptr = to_ptr(ctx, inner_val, "inner_enum_ptr")
                                 let inner_struct_ty = forge_llvm_get_type_by_name(ctx.lc, enum_name)
                                 let inner_tag_gep = forge_llvm_build_struct_gep2(ctx.builder, inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
@@ -238,6 +236,17 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
             emit_nested_tag_check_list(ctx, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1, next_bb)
         }
     }
+}
+
+// Load payload field at index `idx` from an enum value.
+// Enum layout: {i8 tag, ptr payload}. Payload is an array of i64 values.
+fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, label: string) -> ptr {
+    let pay_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, 1, "pay_slot")
+    let pay_ptr = forge_llvm_build_load(ctx.builder, forge_llvm_pointer_type(ctx.lc), pay_gep, "payload")
+    let pay_i64 = forge_llvm_build_ptr_to_int(ctx.builder, pay_ptr, ctx.i64_type, "pay_base")
+    let addr = forge_llvm_build_add(ctx.builder, pay_i64, const_i64(ctx, idx * 8), "fld_addr")
+    let fld_ptr = forge_llvm_build_int_to_ptr(ctx.builder, addr, forge_llvm_pointer_type(ctx.lc), "fld_ptr")
+    forge_llvm_build_load(ctx.builder, ctx.i64_type, fld_ptr, label)
 }
 
 fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList) -> VarEnv {
@@ -264,8 +273,7 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
             if name == "_" {
                 return bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
             }
-            let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, idx + 1, "pbind_ptr")
-            let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, name)
+            let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, name)
             let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
             forge_llvm_build_store(ctx.builder, loaded, alloca)
             let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
@@ -281,8 +289,7 @@ fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: 
     match pats {
         .End -> env
         .Node(pat, next) -> {
-            let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, subj_ptr, idx + 1, "npat_ptr")
-            let loaded = forge_llvm_build_load(ctx.builder, ctx.i64_type, gep, "npat_val")
+            let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, "npat_val")
             let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
             let new_env = bind_single_sub_pattern(ctx, env, pat, loaded, field_ty)
             bind_nested_patterns(ctx, new_env, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1)

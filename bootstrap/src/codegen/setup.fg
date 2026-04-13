@@ -541,13 +541,14 @@ fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg 
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .EnumDecl(name, variants) -> {
-                    let max_fields = variant_max_payload(variants)
-                    let total_fields = max_fields + 1
-                    let field_arr = forge_llvm_type_array_new(total_fields)
+                    // Enum layout: {i8 tag, ptr payload}
+                    // Payload is heap-allocated per-variant. Nullary variants have null payload.
+                    // This fixed layout means adding fields to a variant never changes the enum's struct size.
+                    let field_arr = forge_llvm_type_array_new(2)
                     forge_llvm_type_array_set(field_arr, 0, forge_llvm_int8_type(ctx))
-                    fill_i64_param_array_offset(field_arr, i64t, 1, max_fields)
+                    forge_llvm_type_array_set(field_arr, 1, forge_llvm_pointer_type(ctx))
                     let st = forge_llvm_struct_create_named(ctx, name)
-                    forge_llvm_struct_set_body(st, field_arr, total_fields, 0)
+                    forge_llvm_struct_set_body(st, field_arr, 2, 0)
                     forge_llvm_type_array_free(field_arr)
                     EnumReg.Node(name, variants, reg)
                 }

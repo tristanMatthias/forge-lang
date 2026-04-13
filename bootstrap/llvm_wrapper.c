@@ -67,6 +67,10 @@ LLVMTypeRef forge_llvm_pointer_type(LLVMContextRef ctx) {
     return LLVMPointerTypeInContext(ctx, 0);
 }
 
+LLVMValueRef forge_llvm_const_null(LLVMTypeRef ty) {
+    return LLVMConstNull(ty);
+}
+
 LLVMTypeRef forge_llvm_function_type(LLVMTypeRef ret, LLVMTypeRef* params, int param_count, int is_vararg) {
     return LLVMFunctionType(ret, params, (unsigned)param_count, is_vararg);
 }

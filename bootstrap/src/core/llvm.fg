@@ -19,6 +19,7 @@ extern fn forge_llvm_int8_type(ctx: ptr) -> ptr
 extern fn forge_llvm_int32_type(ctx: ptr) -> ptr
 extern fn forge_llvm_int64_type(ctx: ptr) -> ptr
 extern fn forge_llvm_pointer_type(ctx: ptr) -> ptr
+extern fn forge_llvm_const_null(ty: ptr) -> ptr
 extern fn forge_llvm_void_type(ctx: ptr) -> ptr
 extern fn forge_llvm_function_type(ret: ptr, params: ptr, count: int, is_var: int) -> ptr
 extern fn forge_llvm_struct_create_named(ctx: ptr, name: string) -> ptr
