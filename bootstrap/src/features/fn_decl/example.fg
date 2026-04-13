@@ -5,7 +5,7 @@ fn add(a: int, b: int) -> int {
 }
 
 fn greet(name: string) -> string {
-    "hello " + name
+    "hello ${name}"
 }
 
 fn main() {

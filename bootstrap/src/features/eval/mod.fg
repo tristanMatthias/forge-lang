@@ -277,12 +277,7 @@ fn lookup_function(functions: FunctionList, name: string) -> FunctionLookupResul
 }
 
 fn define_function(runtime: Runtime, name: string, params: ParamList, body: StmtList) -> Runtime {
-    Runtime {
-        bindings: runtime.bindings,
-        functions: FunctionList.Node(name, params, body, runtime.functions),
-        depth: runtime.depth,
-        features: runtime.features,
-    }
+    runtime with { functions: FunctionList.Node(name, params, body, runtime.functions) }
 }
 
 fn assign_binding(bindings: BindingList, name: string, value: Value) -> AssignBindingsResult {
@@ -502,12 +497,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
                 return error_result(value_result.runtime, "undefined variable `${name}`")
             }
 
-            let next_runtime = Runtime {
-                bindings: assigned.bindings,
-                functions: value_result.runtime.functions,
-                depth: value_result.runtime.depth,
-                features: value_result.runtime.features,
-            }
+            let next_runtime = value_result.runtime with { bindings: assigned.bindings }
             ok_result(next_runtime, value_result.value)
         }
         .Grouping(inner) -> eval_expr(runtime, inner)

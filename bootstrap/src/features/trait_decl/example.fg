@@ -14,7 +14,7 @@ type Cat = { name: string }
 
 impl Printable for Cat {
     fn display(self) -> string {
-        "meow from " + self.name
+        "meow from ${self.name}"
     }
 }
 
