@@ -63,7 +63,7 @@ export enum TraitDeclReg {
 
 export fn trait_decl_lookup(reg: TraitDeclReg, name: string) -> TraitMethodNames {
     match reg {
-        .End -> TraitMethodNames.End
+        .End -> .End
         .Node(n, methods, _) if n == name -> methods
         .Node(_, _, next) -> trait_decl_lookup(next, name)
     }
@@ -98,11 +98,11 @@ export type EmitResult = {
 }
 
 export fn ok_emit(value: ptr) -> EmitResult {
-    EmitResult { value, ty: ValueType.Int, had_error: false, error_message: "" }
+    EmitResult { value, ty: .Int, had_error: false, error_message: "" }
 }
 
 export fn ok_emit_str(value: ptr) -> EmitResult {
-    EmitResult { value, ty: ValueType.Str, had_error: false, error_message: "" }
+    EmitResult { value, ty: .Str, had_error: false, error_message: "" }
 }
 
 export fn ok_emit_typed(value: ptr, ty: ValueType) -> EmitResult {
@@ -110,7 +110,7 @@ export fn ok_emit_typed(value: ptr, ty: ValueType) -> EmitResult {
 }
 
 export fn err_emit(message: string) -> EmitResult {
-    EmitResult { value: null_ptr_val(), ty: ValueType.Int, had_error: true, error_message: "codegen error: " + message }
+    EmitResult { value: null_ptr_val(), ty: .Int, had_error: true, error_message: "codegen error: " + message }
 }
 
 export type StmtResult = {
@@ -124,11 +124,11 @@ export fn ok_stmt(env: VarEnv) -> StmtResult {
 }
 
 export fn err_stmt(message: string) -> StmtResult {
-    StmtResult { env: VarEnv.End, had_error: true, error_message: message }
+    StmtResult { env: .End, had_error: true, error_message: message }
 }
 
 export fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
-    StmtResult { env: VarEnv.End, had_error: true, error_message: r.error_message }
+    StmtResult { env: .End, had_error: true, error_message: r.error_message }
 }
 
 // ── Pure leaf helpers ──
@@ -141,7 +141,7 @@ export fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
 
 export fn advance_field_list(fields: FieldList) -> FieldList {
     match fields {
-        .End -> FieldList.End
+        .End -> .End
         .Node(_, _, next) -> next
     }
 }
@@ -182,7 +182,7 @@ export enum FnParamTypes {
 
 export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
     match reg {
-        .End -> ParamTypeList.End
+        .End -> .End
         .Node(n, params, _) if n == name -> params
         .Node(_, _, next) -> fn_param_lookup(next, name)
     }
@@ -228,7 +228,7 @@ export type StructLookup = {
 
 export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
     match reg {
-        .End -> StructLookup { found: false, fields: FieldList.End }
+        .End -> StructLookup { found: false, fields: .End }
         .Node(n, fields, _) if n == name -> StructLookup { found: true, fields }
         .Node(_, _, next) -> struct_reg_lookup(next, name)
     }
@@ -246,7 +246,7 @@ export type EnumLookup = {
 
 export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
     match reg {
-        .End -> EnumLookup { found: false, variants: VariantList.End }
+        .End -> EnumLookup { found: false, variants: .End }
         .Node(n, variants, _) if n == name -> EnumLookup { found: true, variants }
         .Node(_, _, next) -> enum_reg_lookup(next, name)
     }
@@ -268,7 +268,7 @@ export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
 
 export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
     match reg {
-        .End -> ValueType.Int
+        .End -> .Int
         .Node(n, ty, _) if n == name -> ty
         .Node(_, _, next) -> fn_ret_lookup(next, name)
     }
@@ -284,7 +284,7 @@ export fn toplevel_lookup(reg: TopLevelVars, name: string) -> TopLevelLookup {
     match reg {
         .End -> {
             let n: ptr = null
-            TopLevelLookup { found: false, llvm_global: n, ty: ValueType.Int }
+            TopLevelLookup { found: false, llvm_global: n, ty: .Int }
         }
         .Node(n, g, ty, _) if n == name -> TopLevelLookup { found: true, llvm_global: g, ty }
         .Node(_, _, _, next) -> toplevel_lookup(next, name)
