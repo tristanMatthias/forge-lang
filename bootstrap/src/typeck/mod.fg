@@ -159,29 +159,6 @@ fn trait_has(reg: TraitRegistry, name: string) -> bool {
     }
 }
 
-fn method_list_has(list: TraitMethodList, name: string) -> bool {
-    match list {
-        .End -> false
-        .Node(n, next) -> {
-            if n == name { return true }
-            method_list_has(next, name)
-        }
-    }
-}
-
-// Collect REQUIRED method names (ExternFn = signature only, no default body).
-// Function entries are default methods — not required to be overridden.
-fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
-    match stmts {
-        .End -> TraitMethodList.End
-        .Node(ss, next) -> {
-            match ss.node {
-                .ExternFn(name, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
-                _ -> collect_method_names_from_stmts(next)
-            }
-        }
-    }
-}
 
 type TC = {
     types: TypeEntry,
@@ -411,54 +388,6 @@ fn check_stmt(tc: TC, stmt: Stmt) -> TC {
 }
 
 // Check that `impl Trait for Type` provides all required methods.
-fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) -> TC {
-    // Split "Trait:Type" — if no colon, it's a plain impl (no trait)
-    let colon_idx = impl_name.index_of(":")
-    if colon_idx < 0 { return tc }
-
-    let trait_name = impl_name.substring(0, colon_idx)
-    let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
-
-    if !trait_has(tc.traits, trait_name) {
-        return tc_report(tc, DiagCode.TypeMismatch, "unknown trait `" + trait_name + "`")
-    }
-
-    let required = trait_lookup(tc.traits, trait_name)
-    check_required_methods(tc, trait_name, type_name, required, methods)
-}
-
-fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: TraitMethodList, impl_methods: StmtList) -> TC {
-    match required {
-        .End -> tc
-        .Node(name, next) -> {
-            // Check if the impl provides a method with this name.
-            // The method is mangled as Type__name in the impl's StmtList.
-            let mangled = type_name + "__" + name
-            if !impl_has_method(impl_methods, mangled) {
-                let after = tc_report(tc, DiagCode.TypeMismatch, "trait `" + trait_name + "` requires method `" + name + "` but `" + type_name + "` does not implement it")
-                check_required_methods(after, trait_name, type_name, next, impl_methods)
-            } else {
-                check_required_methods(tc, trait_name, type_name, next, impl_methods)
-            }
-        }
-    }
-}
-
-fn impl_has_method(methods: StmtList, name: string) -> bool {
-    match methods {
-        .End -> false
-        .Node(ss, next) -> {
-            match ss.node {
-                .Function(fn_name, _, _, _) -> {
-                    if fn_name == name { return true }
-                    impl_has_method(next, name)
-                }
-                _ -> impl_has_method(next, name)
-            }
-        }
-    }
-}
-
 fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, body: StmtList) -> TC {
     let checked = check_stmts(tc, body)
     // Skip return type checking for functions without a declared
@@ -571,19 +500,6 @@ fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     }
 }
 
-fn bind_destructure(tc: TC, names: ParamList, tuple_ty: ValueType) -> TC {
-    bind_destructure_idx(tc, names, tuple_ty, 0)
-}
-
-fn bind_destructure_idx(tc: TC, names: ParamList, tuple_ty: ValueType, idx: int) -> TC {
-    match names {
-        .End -> tc
-        .Node(name, _, next) -> {
-            let elem_ty = vtype_tuple_at(tuple_ty, idx)
-            bind_destructure_idx(tc_bind(tc, name, elem_ty), next, tuple_ty, idx + 1)
-        }
-    }
-}
 
 
 // ── Expression checking ──
@@ -791,35 +707,6 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
 
 // ── Field access type inference ──
 
-fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
-    let o = check_expr(tc, obj)
-    // String .length
-    if vtype_eq(o.ty, ValueType.Str) && field == "length" {
-        return tc_er(o.tc, ValueType.Int)
-    }
-    // List .length
-    if vtype_eq(o.ty, ValueType.List(ValueType.Int)) || vtype_eq(o.ty, ValueType.List(ValueType.Str)) {
-        if field == "length" { return tc_er(o.tc, ValueType.Int) }
-    }
-    // Struct field
-    let struct_name = match o.ty {
-        .Struct(n) -> n
-        _ -> ""
-    }
-    if struct_name.length > 0 {
-        let fields = struct_type_lookup(o.tc.structs, struct_name)
-        if !tc_field_exists(fields, field) {
-            let msg = "no field `" + field + "` on type `" + struct_name + "`"
-            return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), ValueType.Int)
-        }
-        let field_ty = field_type_in(o.tc, fields, field)
-        return tc_er(o.tc, field_ty)
-    }
-    // Map .get is handled in method call
-    tc_er(o.tc, ValueType.Int)
-}
-
-
 // Infer the return type of a lambda argument (e.g. for .map)
 fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType {
     match args {
@@ -842,28 +729,6 @@ fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType 
         }
     }
 }
-
-fn tc_field_exists(fields: FieldList, name: string) -> bool {
-    match fields {
-        .End -> false
-        .Node(fname, _, next) -> {
-            if fname == name { return true }
-            tc_field_exists(next, name)
-        }
-    }
-}
-
-fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
-    match fields {
-        .End -> ValueType.Int
-        .Node(fname, ftype, next) -> {
-            if fname == name { return translate_type(tc, ftype) }
-            field_type_in(tc, next, name)
-        }
-    }
-}
-
-// ── List literal type ──
 
 // ── Block expression type ──
 
@@ -927,12 +792,3 @@ fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
     }
 }
 
-fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
-    match inits {
-        .End -> tc
-        .Node(_, sv, next) -> {
-            let r = check_expr(tc, sv.node)
-            check_field_inits(r.tc, next)
-        }
-    }
-}

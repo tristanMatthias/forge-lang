@@ -1,0 +1,18 @@
+// WHY: type checking for tuple destructuring in let bindings.
+
+use core.ast.{ParamList, ValueType, vtype_tuple_at}
+use typeck.{TC, tc_bind}
+
+fn bind_destructure(tc: TC, names: ParamList, tuple_ty: ValueType) -> TC {
+    bind_destructure_idx(tc, names, tuple_ty, 0)
+}
+
+fn bind_destructure_idx(tc: TC, names: ParamList, tuple_ty: ValueType, idx: int) -> TC {
+    match names {
+        .End -> tc
+        .Node(name, _, next) -> {
+            let elem_ty = vtype_tuple_at(tuple_ty, idx)
+            bind_destructure_idx(tc_bind(tc, name, elem_ty), next, tuple_ty, idx + 1)
+        }
+    }
+}

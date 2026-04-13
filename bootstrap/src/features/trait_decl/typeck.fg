@@ -1,0 +1,72 @@
+// WHY: trait conformance checking — verifies impl blocks provide all required methods.
+
+use core.ast.{Stmt, StmtList, SStmt}
+use diagnostics.{DiagCode}
+use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, trait_lookup, trait_has}
+
+fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) -> TC {
+    let colon_idx = impl_name.index_of(":")
+    if colon_idx < 0 { return tc }
+
+    let trait_name = impl_name.substring(0, colon_idx)
+    let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
+
+    if !trait_has(tc.traits, trait_name) {
+        return tc_report(tc, DiagCode.TypeMismatch, "unknown trait `" + trait_name + "`")
+    }
+
+    let required = trait_lookup(tc.traits, trait_name)
+    check_required_methods(tc, trait_name, type_name, required, methods)
+}
+
+fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: TraitMethodList, impl_methods: StmtList) -> TC {
+    match required {
+        .End -> tc
+        .Node(name, next) -> {
+            let mangled = type_name + "__" + name
+            if !impl_has_method(impl_methods, mangled) {
+                let after = tc_report(tc, DiagCode.TypeMismatch, "trait `" + trait_name + "` requires method `" + name + "` but `" + type_name + "` does not implement it")
+                check_required_methods(after, trait_name, type_name, next, impl_methods)
+            } else {
+                check_required_methods(tc, trait_name, type_name, next, impl_methods)
+            }
+        }
+    }
+}
+
+fn impl_has_method(methods: StmtList, name: string) -> bool {
+    match methods {
+        .End -> false
+        .Node(ss, next) -> {
+            match ss.node {
+                .Function(fn_name, _, _, _) -> {
+                    if fn_name == name { return true }
+                    impl_has_method(next, name)
+                }
+                _ -> impl_has_method(next, name)
+            }
+        }
+    }
+}
+
+fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
+    match stmts {
+        .End -> TraitMethodList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .ExternFn(name, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
+                _ -> collect_method_names_from_stmts(next)
+            }
+        }
+    }
+}
+
+fn method_list_has(list: TraitMethodList, name: string) -> bool {
+    match list {
+        .End -> false
+        .Node(n, next) -> {
+            if n == name { return true }
+            method_list_has(next, name)
+        }
+    }
+}

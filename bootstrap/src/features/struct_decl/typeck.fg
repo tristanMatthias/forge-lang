@@ -1,0 +1,65 @@
+// WHY: type checking for struct field access, field initialization, and field existence.
+// Also handles .length on strings and lists (property access is routed here).
+// Shared by struct_decl, with_expr, and null_safety features.
+
+use core.ast.{Expr, ExprList, FieldList, FieldInitList, ValueType, SExpr, vtype_eq}
+use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, struct_type_has, translate_type}
+use diagnostics.{DiagCode}
+
+fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
+    let o = check_expr(tc, obj)
+    // String .length
+    if vtype_eq(o.ty, ValueType.Str) && field == "length" {
+        return tc_er(o.tc, ValueType.Int)
+    }
+    // List .length
+    if vtype_eq(o.ty, ValueType.List(ValueType.Int)) || vtype_eq(o.ty, ValueType.List(ValueType.Str)) {
+        if field == "length" { return tc_er(o.tc, ValueType.Int) }
+    }
+    // Struct field
+    let struct_name = match o.ty {
+        .Struct(n) -> n
+        _ -> ""
+    }
+    if struct_name.length > 0 {
+        let fields = struct_type_lookup(o.tc.structs, struct_name)
+        if !tc_field_exists(fields, field) {
+            let msg = "no field `" + field + "` on type `" + struct_name + "`"
+            return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), ValueType.Int)
+        }
+        let field_ty = field_type_in(o.tc, fields, field)
+        return tc_er(o.tc, field_ty)
+    }
+    // Map .get is handled in method call
+    tc_er(o.tc, ValueType.Int)
+}
+
+fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
+    match inits {
+        .End -> tc
+        .Node(_, value, next) -> {
+            let r = check_expr(tc, value.node)
+            check_field_inits(r.tc, next)
+        }
+    }
+}
+
+fn tc_field_exists(fields: FieldList, name: string) -> bool {
+    match fields {
+        .End -> false
+        .Node(fname, _, next) -> {
+            if fname == name { return true }
+            tc_field_exists(next, name)
+        }
+    }
+}
+
+fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
+    match fields {
+        .End -> ValueType.Int
+        .Node(fname, ftype, next) -> {
+            if fname == name { return translate_type(tc, ftype) }
+            field_type_in(tc, next, name)
+        }
+    }
+}
