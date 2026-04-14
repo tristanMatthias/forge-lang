@@ -106,13 +106,13 @@ fn merge_type_args(a: TypeArgList, b: TypeArgList) -> TypeArgList {
 // After merging, finalize: compute mangled names and validate resolution.
 fn finalize_insts(insts: InstList, regs: GenRegs, bag: DiagnosticBag) -> CollectState {
     match insts {
-        .End -> CollectState { insts: InstList.End, bag }
+        .End -> CollectState { insts: InstList.End, bag, line: 0, col: 0 }
         .Node(name, _, ta, next) -> {
             let tp = lookup_type_params(name, regs)
             let new_bag = check_resolved(tp, ta, name, 0, 0, bag)
             let mangled = mangle_name_ordered(name, tp, ta)
             let rest = finalize_insts(next, regs, new_bag)
-            CollectState { insts: InstList.Node(name, mangled, ta, rest.insts), bag: rest.bag }
+            CollectState { insts: InstList.Node(name, mangled, ta, rest.insts), bag: rest.bag, line: 0, col: 0 }
         }
     }
 }
@@ -318,12 +318,12 @@ fn has_generics(regs: GenRegs) -> bool {
 
 // ── Pass 2: Collect instantiation sites + validate ──
 
-type CollectState = { insts: InstList, bag: DiagnosticBag }
+type CollectState = { insts: InstList, bag: DiagnosticBag, line: int, col: int }
 
 fn collect_inst_stmts(stmts: StmtList, regs: GenRegs, st: CollectState) -> CollectState {
     match stmts {
         .End -> st
-        .Node(ss, next) -> collect_inst_stmts(next, regs, collect_inst_stmt(ss.node, regs, st))
+        .Node(ss, next) -> collect_inst_stmts(next, regs, collect_inst_stmt(ss.node, regs, st with { line: ss.line, col: ss.col }))
     }
 }
 
@@ -340,9 +340,9 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
             if tp is .Node { return st }
             // Scope merging to this function: collect body's instantiations
             // independently so enum ctors merge within the function, not globally.
-            let fn_state = collect_inst_stmts(body, regs, CollectState { insts: InstList.End, bag: st.bag })
+            let fn_state = collect_inst_stmts(body, regs, CollectState { insts: InstList.End, bag: st.bag, line: st.line, col: st.col })
             // Add the function-scoped entries to the parent
-            CollectState { insts: append_insts(fn_state.insts, st.insts), bag: fn_state.bag }
+            CollectState { insts: append_insts(fn_state.insts, st.insts), bag: fn_state.bag, line: st.line, col: st.col }
         }
         .If(cond, then_b, else_b) -> {
             let a = collect_inst_stmt(then_b, regs, collect_inst_expr(cond, regs, st))
@@ -419,7 +419,7 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
 }
 
 fn collect_inst_exprs(exprs: ExprList, regs: GenRegs, st: CollectState) -> CollectState {
-    match exprs { .End -> st, .Node(se, next) -> collect_inst_exprs(next, regs, collect_inst_expr(se.node, regs, st)) }
+    match exprs { .End -> st, .Node(se, next) -> collect_inst_exprs(next, regs, collect_inst_expr(se.node, regs, st with { line: se.line, col: se.col })) }
 }
 
 fn collect_inst_arms(arms: MatchArmList, regs: GenRegs, st: CollectState) -> CollectState {
@@ -444,7 +444,7 @@ fn add_resolved_inst(name: string, tp: TypeParamList, ta: TypeArgList, st: Colle
         let new_insts = if inst_has(st.insts, mangled) { st.insts } else { InstList.Node(name, mangled, ta, st.insts) }
         st with { insts: new_insts }
     } else {
-        st with { bag: check_resolved(tp, ta, name, 0, 0, st.bag) }
+        st with { bag: check_resolved(tp, ta, name, st.line, st.col, st.bag) }
     }
 }
 
@@ -731,7 +731,7 @@ export fn monomorphize(stmts: StmtList) -> MonoResult {
     if !has_generics(regs) { return MonoResult { stmts, bag: bag_new() } }
 
     // Pass 2: collect partial type args (enums merge across constructors)
-    let collected = collect_inst_stmts(stmts, regs, CollectState { insts: InstList.End, bag: bag_new() })
+    let collected = collect_inst_stmts(stmts, regs, CollectState { insts: InstList.End, bag: bag_new(), line: 0, col: 0 })
     if bag_has_errors(collected.bag) {
         return MonoResult { stmts, bag: collected.bag }
     }
