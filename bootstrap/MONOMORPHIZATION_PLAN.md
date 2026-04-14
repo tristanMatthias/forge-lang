@@ -39,25 +39,17 @@ the emitting function, not as cryptic errors later.
 ### 5. Enum payloads use flat i64 buffers
 **type:** architecture debt
 **priority:** high
+**status:** Phase A done (type declarations), Phase B blocked
 
-Enum payloads are heap-allocated as `malloc(field_count * 8)` — a flat
-array of 8-byte slots. Stores use raw memory writes (`inttoptr` pointer
-arithmetic), loads use `load_i64`. This means:
+Phase A: Per-variant payload struct types are declared in LLVM
+(`%Enum__Variant = type { field_types... }`). Done.
 
-- Bool/float enum fields are cast to i64 before storing (wrong — undoes
-  the real type work)
-- No type safety for payload field access
-- Layout wastes memory (i1 field takes 8 bytes)
-
-**Proper fix:** Each variant gets a typed LLVM struct:
-```
-%Option.Some = type { ptr }       // Some(value: string)
-%Result.Ok = type { i64 }         // Ok(value: int)  
-%Result.Err = type { ptr }        // Err(error: string)
-```
-
-Stores use `ctx.store_field(val, gep, field_ty)`. Loads use
-`ctx.load_typed(field_ty, gep, name)`. No pointer arithmetic.
+Phase B (blocked): Using typed GEP instead of pointer arithmetic for
+payload read/write. Blocked by variant name disambiguation — when two
+enums have the same variant name (e.g., `LoopStack.Frame` and
+`DeferStack.Frame`), contextual resolution `.Frame(...)` picks the
+wrong enum, leading to GEP with wrong field count. Requires passing
+the resolved enum name through `emit_enum_ctor` to `fill_enum_payload_typed`.
 
 ### 6. Result slots use alloca i64
 **type:** architecture debt
@@ -71,22 +63,15 @@ known until after the first branch is emitted.
 - Use phi nodes (standard SSA, no alloca needed)
 - Emit the first branch, determine type, create typed alloca
 
-### 7. Global variables use i64
-**type:** architecture debt
-**priority:** low
+### 7. ~~Global variables use i64~~ DONE
+**status:** done (commit 2a3d6585)
 
-`declare_globals` uses `forge_llvm_add_global(m, i64t, name)` for all
-globals regardless of their declared type.
+Globals now use `llvm_type_for_full` with their declared ValueType.
 
-**Proper fix:** Use `llvm_type_for_full` with the global's ValueType.
-
-### 8. Unused C-side functions
-**type:** cleanup
-**priority:** low
-
-- `forge_llvm_is_void_value` — declared but unused (void handled at call level)
-- `forge_llvm_cast_to_type` — exposed as extern but only used C-internally
-- Old free functions `to_f64`, `f64_to_i64` — replaced by Ctx methods
+### 8. ~~Unused C-side functions~~ MOSTLY DONE
+**status:** `to_f64` free function replaced with `ctx.to_f64()`.
+`forge_llvm_is_void_value` still declared but unused (harmless).
+`forge_llvm_cast_to_type` is used from Forge (not C-internal only).
 
 ### 9. Types are strings in the AST
 **type:** architecture (see TODO.md #2)
