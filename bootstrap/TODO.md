@@ -579,6 +579,17 @@ Should point at `pair`, not `let`. Fix: thread expression positions through
 `check_expr` / `check_call`, or update `tc.current_line/col` when entering
 each expression.
 
+### Match pattern bindings not resolved inside closure bodies
+**type:** bug
+**priority:** high
+**source:** discovered April 14, 2026
+
+`(e) -> match e { .Num(v) -> Expr.Num(v * 3), _ -> e }` — the pattern-bound
+variable `v` is not resolved inside the closure body. Codegen error:
+"undefined variable `v`". Named functions with the same match work fine.
+This blocks higher-order AST mapper patterns where transform closures need
+to pattern match.
+
 ### Match expression type unification
 **type:** bug
 **priority:** low

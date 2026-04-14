@@ -295,17 +295,22 @@ inlined back into `collect_inst_expr`.
 it, remove the helpers. If not, keep them — they're not harmful, just verbose.
 
 ### 8. `substitute_*` and `rewrite_*` are 90% duplicated
-**priority:** low
+**priority:** low — blocked on closure bug
 **file:** `features/generics/mono.fg`
 
 `substitute_stmt`/`substitute_expr` and `rewrite_stmt`/`rewrite_expr` walk
 every AST variant with identical structure, differing only in leaf operations.
 ~200 lines of pure duplication.
 
-**Fix:** Requires higher-order functions or a visitor pattern. The bootstrap
-doesn't support passing functions as generic transformers yet. Once closures
-work reliably as feature handlers, extract a generic `map_stmt(stmt, expr_fn)`
-that both passes use. Until then, this is accepted duplication.
+**Fix:** Extract `map_expr(expr, transform_fn)` mapper. Higher-order functions
+work (tested: recursive mapper with named transform functions passes). BUT
+the transform functions need context (TypeArgList or GenRegs), which requires
+closures. **Closures with match pattern bindings are broken** — match arms
+inside a closure body can't resolve pattern-bound variables. This blocks the
+HO mapper approach.
+
+**Unblock:** Fix closure codegen to resolve match pattern bindings in closure
+bodies. Then extract the shared mapper.
 
 ### 9. ParamList type strings not rewritten
 **priority:** medium
