@@ -34,11 +34,13 @@ mod features
 mod typeck
 mod resolve
 mod codegen
+mod desugar
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list}
 use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
+use desugar.{desugar_program}
 use resolve.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use typeck.{typecheck_program}
@@ -181,10 +183,15 @@ fn main() {
             println("ok")
             return
         }
+        // Desugar pass: rewrite syntactic sugar to simpler AST forms.
+        // Runs BEFORE resolving so resolver/typechecker/codegen never
+        // see the sugared forms. New desugar-only features need NO
+        // codegen, resolver, typechecker, or eval changes.
+        let desugared = desugar_program(parsed.stmts!)
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
         let entry_dir = modules_dirname(cpath)
-        let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+        let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
         if mod_resolved.had_error {
             let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
             render_bag(csource, cpath, mod_bag)

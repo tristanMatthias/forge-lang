@@ -1,0 +1,177 @@
+// WHY: AST-to-AST rewrite pass that runs BETWEEN parsing and resolving.
+//
+// The desugar pass lets you define new language features as REWRITES to
+// existing features. The resolver, typechecker, and codegen never see
+// the sugared form — they only see the desugared AST.
+//
+// To add a new desugar-only feature:
+//   1. Add a new AST variant (or reuse Call/Ident patterns)
+//   2. Add parsing for the new syntax
+//   3. Add ONE match arm in desugar_expr or desugar_stmt
+//   4. Add tests
+//   NO codegen, NO resolver, NO typechecker, NO eval, NO feature registration.
+
+use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern}
+
+// ── Public API ──
+
+export fn desugar_program(stmts: StmtList) -> StmtList {
+    desugar_stmt_list(stmts)
+}
+
+// ── Statement desugaring ──
+
+fn desugar_stmt_list(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            let new_stmt = desugar_stmt(ss.node)
+            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), desugar_stmt_list(next))
+        }
+    }
+}
+
+fn desugar_stmt(stmt: Stmt) -> Stmt {
+    match stmt {
+        .Expr(e) -> .Expr(desugar_expr(e))
+        .Let(name, ty, init) -> .Let(name, ty, desugar_expr(init))
+        .Mut(name, ty, init) -> .Mut(name, ty, desugar_expr(init))
+        .Return(e) -> .Return(desugar_expr(e))
+        .Block(body) -> .Block(desugar_stmt_list(body))
+        .If(cond, then_b, else_b) -> {
+            if else_b != null {
+                .If(desugar_expr(cond), desugar_stmt(then_b), desugar_stmt(else_b!))
+            } else {
+                .If(desugar_expr(cond), desugar_stmt(then_b), null)
+            }
+        }
+        .While(cond, body) -> .While(desugar_expr(cond), desugar_stmt(body))
+        .For(v, start, end, body) -> .For(v, desugar_expr(start), desugar_expr(end), desugar_stmt(body))
+        .ForIn(v, coll, body) -> .ForIn(v, desugar_expr(coll), desugar_stmt(body))
+        .Match(subj, arms) -> .Match(desugar_expr(subj), desugar_match_arms(arms))
+        .Function(name, params, ret_ty, body) -> .Function(name, params, ret_ty, desugar_stmt_list(body))
+        .Defer(body) -> .Defer(desugar_expr(body))
+        .Module(name, body) -> .Module(name, desugar_stmt_list(body))
+        .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner))
+        _ -> stmt
+    }
+}
+
+// ── Expression desugaring ──
+// This is where the MAGIC happens. Each match arm can rewrite
+// one expression form into another. The result is recursively
+// desugared, so rewrites can compose.
+
+fn desugar_expr(expr: Expr) -> Expr {
+    // First: apply rewrite rules to this node
+    let rewritten = rewrite_expr(expr)
+    // Then: recursively desugar sub-expressions
+    walk_expr(rewritten)
+}
+
+// REWRITE RULES — add new desugaring here.
+// Each rule matches a specific Expr pattern and returns
+// a simpler equivalent. Return the original expr if no rule matches.
+fn rewrite_expr(expr: Expr) -> Expr {
+    match expr {
+        .Call(callee, args) -> rewrite_call(expr, callee, args)
+        _ -> expr
+    }
+}
+
+fn rewrite_call(original: Expr, callee: Expr, args: ExprList) -> Expr {
+    let name = match callee { .Ident(n) -> n, _ -> "" }
+    match name {
+        "assert" -> desugar_assert(args)
+        _ -> original
+    }
+}
+
+// ── Assert desugaring ──
+fn desugar_assert(args: ExprList) -> Expr {
+    match args {
+        .Node(cond_se, rest) -> {
+            let cond = cond_se.node
+            let msg = match rest {
+                .Node(msg_se, _) -> msg_se.node
+                _ -> Expr.String("\"assertion failed\"")
+            }
+            // if !cond { panic(msg) }
+            Expr.IfExpr(
+                Expr.Unary(UnOp.Not, cond),
+                Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(msg), ExprList.End)),
+                Expr.Null
+            )
+        }
+        _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"assert: no condition\"")), ExprList.End))
+    }
+}
+
+// ── Generic expression walker ──
+// Recursively desugar all sub-expressions. This handles the boilerplate
+// so rewrite rules only need to handle their specific pattern.
+
+fn walk_expr(expr: Expr) -> Expr {
+    match expr {
+        .Binary(l, op, r) -> .Binary(desugar_expr(l), op, desugar_expr(r))
+        .Unary(op, r) -> .Unary(op, desugar_expr(r))
+        .Logical(l, op, r) -> .Logical(desugar_expr(l), op, desugar_expr(r))
+        .Call(callee, args) -> .Call(desugar_expr(callee), desugar_expr_list(args))
+        .Grouping(inner) -> .Grouping(desugar_expr(inner))
+        .Assign(name, val) -> .Assign(name, desugar_expr(val))
+        .Index(obj, idx) -> .Index(desugar_expr(obj), desugar_expr(idx))
+        .FieldAccess(obj, field) -> .FieldAccess(desugar_expr(obj), field)
+        .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr(obj), field, desugar_expr(val))
+        .IfExpr(c, t, e) -> .IfExpr(desugar_expr(c), desugar_expr(t), desugar_expr(e))
+        .Block(body) -> .Block(desugar_stmt_list(body))
+        .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(l), desugar_expr(r))
+        .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(obj), field)
+        .Try(inner) -> .Try(desugar_expr(inner))
+        .Tuple(elems) -> .Tuple(desugar_expr_list(elems))
+        .TupleIndex(obj, idx) -> .TupleIndex(desugar_expr(obj), idx)
+        .ListLit(elems) -> .ListLit(desugar_expr_list(elems))
+        .MapLit(entries) -> .MapLit(desugar_expr_list(entries))
+        .Slice(obj, s, e) -> .Slice(desugar_expr(obj), desugar_expr(s), desugar_expr(e))
+        .With(obj, overrides) -> .With(desugar_expr(obj), desugar_field_inits(overrides))
+        .Lambda(params, body) -> .Lambda(params, desugar_expr(body))
+        .MatchExpr(subj, arms) -> .MatchExpr(desugar_expr(subj), desugar_match_arms(arms))
+        .When(arms) -> .When(desugar_when_arms(arms))
+        .InCheck(needle, items) -> .InCheck(desugar_expr(needle), desugar_expr_list(items))
+        .IsCheck(subj, variant) -> .IsCheck(desugar_expr(subj), variant)
+        _ -> expr
+    }
+}
+
+fn desugar_expr_list(list: ExprList) -> ExprList {
+    match list {
+        .End -> ExprList.End
+        .Node(se, next) -> ExprList.Node(sexpr(desugar_expr(se.node), se.line, se.col), desugar_expr_list(next))
+    }
+}
+
+fn desugar_match_arms(arms: MatchArmList) -> MatchArmList {
+    match arms {
+        .End -> MatchArmList.End
+        .Node(pattern, guard, body, next) -> {
+            let new_guard = if guard != null { sexpr(desugar_expr(guard!.node), guard!.line, guard!.col) } else { null }
+            MatchArmList.Node(pattern, new_guard, sexpr(desugar_expr(body.node), body.line, body.col), desugar_match_arms(next))
+        }
+    }
+}
+
+fn desugar_when_arms(arms: WhenArmList) -> WhenArmList {
+    match arms {
+        .End -> WhenArmList.End
+        .Node(cond, body, next) -> {
+            let new_cond = if cond != null { sexpr(desugar_expr(cond!.node), cond!.line, cond!.col) } else { null }
+            WhenArmList.Node(new_cond, sexpr(desugar_expr(body.node), body.line, body.col), desugar_when_arms(next))
+        }
+    }
+}
+
+fn desugar_field_inits(inits: FieldInitList) -> FieldInitList {
+    match inits {
+        .End -> FieldInitList.End
+        .Node(name, val, next) -> FieldInitList.Node(name, desugar_expr(val), desugar_field_inits(next))
+    }
+}

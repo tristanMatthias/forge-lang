@@ -1,0 +1,33 @@
+/// expect: pass_basic
+/// expect: pass_expr
+/// expect: pass_message
+/// expect: pass_variable
+/// expect: pass_in_function
+
+fn check(x: int) -> bool {
+    assert(x > 0, "x must be positive")
+    true
+}
+
+fn main() {
+    // Basic true assertion
+    assert(true)
+    println("pass_basic")
+
+    // Expression assertion
+    assert(1 + 1 == 2)
+    println("pass_expr")
+
+    // Custom message (not triggered)
+    assert(10 > 5, "ten should be greater than five")
+    println("pass_message")
+
+    // Variable assertion
+    let x = 42
+    assert(x > 0)
+    println("pass_variable")
+
+    // Assert inside a function
+    check(10)
+    println("pass_in_function")
+}
