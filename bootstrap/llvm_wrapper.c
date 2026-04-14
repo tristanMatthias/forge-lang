@@ -272,12 +272,18 @@ LLVMValueRef forge_llvm_build_sext(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeR
     return LLVMBuildSExt(b, val, dest_ty, name);
 }
 
+// Validate name: if it looks like a corrupted pointer (high bytes), use a deterministic fallback.
+static const char* safe_name(const char* name, const char* fallback) {
+    if (!name || (unsigned char)name[0] > 127) return fallback;
+    return name;
+}
+
 LLVMValueRef forge_llvm_build_ptr_to_int(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
-    return LLVMBuildPtrToInt(b, val, dest_ty, name);
+    return LLVMBuildPtrToInt(b, val, dest_ty, safe_name(name, "p2i"));
 }
 
 LLVMValueRef forge_llvm_build_int_to_ptr(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
-    return LLVMBuildIntToPtr(b, val, dest_ty, name);
+    return LLVMBuildIntToPtr(b, val, dest_ty, safe_name(name, "i2p"));
 }
 
 LLVMValueRef forge_llvm_build_si_to_fp(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {
