@@ -214,14 +214,14 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> EmitR
         let loaded = ctx.load_typed(g.ty, g.llvm_global, name)
         return ok_emit_typed(loaded, g.ty)
     }
-    let fn_val = forge_llvm_get_named_function(ctx.module, name)
+    let fn_val = ctx.get_fn(name)
     if fn_val != null {
-        let fn_i64 = ctx.ptr_to_int(fn_val, ctx.i64_type, "fn_ref")
+        let fn_i64 = ctx.to_i64(fn_val, "fn_ref")
         let closure_arr = call_0(ctx, get_fn(ctx, "forge_array_new"), "fn_wrap")
         let push_fn = get_fn(ctx, "forge_array_push")
         call_2(ctx, push_fn, closure_arr, const_i64(ctx, closure_marker()), "")
         call_2(ctx, push_fn, closure_arr, fn_i64, "")
-        let closure_i64 = to_i64(ctx, closure_arr, "fn_ref_i64")
+        let closure_i64 = ctx.to_i64(closure_arr, "fn_ref_i64")
         let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
         return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
     }

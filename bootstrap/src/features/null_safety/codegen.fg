@@ -17,7 +17,8 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     if l.had_error { return l }
 
     // Short-circuit: if left != 0/null (non-null), skip right.
-    let is_null = if forge_llvm_is_ptr_value(l.value) != 0 {
+    let l_ptr = forge_llvm_is_ptr_value(l.value) != 0
+    let is_null = if l_ptr {
         ctx.eq(l.value, ctx.zero_for(ValueType.Str), "nc_null")
     } else {
         ctx.eq(l.value, ctx.i64(0), "nc_null")
@@ -118,7 +119,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
 
         ctx.position(ok_bb)
         let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_pay_slot")
-        let pay_ptr = ctx.load(forge_llvm_pointer_type(ctx.lc), pay_gep, "try_payload")
+        let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "try_payload")
         let ok_val = ctx.load_i64(pay_ptr, "try_ok_val")
         return ok_emit_typed(ok_val, .Int)
     }

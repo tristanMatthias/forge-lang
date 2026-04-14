@@ -64,7 +64,7 @@ export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNa
         .End -> {}
         .Node(method_name, _, next) -> {
             let mangled = "${concrete_name}__${method_name}"
-            let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
+            let fn_val = ctx.get_fn(mangled)
             let push_fn = ctx.get_fn("forge_array_push")
             // Wrap in closure array: [TAG, fn_ptr]
             let closure = call_0(ctx, ctx.get_fn("forge_array_new"), "vclosure")
