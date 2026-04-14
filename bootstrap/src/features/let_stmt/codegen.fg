@@ -25,13 +25,13 @@ export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: stri
         let concrete_name = resolve_concrete_name(r.ty)
         if concrete_name != "" {
             let obj_i64 = box_for_trait(ctx, r.value, trait_name, concrete_name)
-            let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
-            forge_llvm_build_store(ctx.builder, obj_i64, alloca)
+            let alloca = ctx.alloca_i64(name)
+            ctx.store(obj_i64, alloca)
             return ok_stmt(env_extend(env, name, alloca, var_ty))
         }
     }
-    let alloca = forge_llvm_build_alloca(ctx.builder, ctx.i64_type, name)
-    forge_llvm_build_store(ctx.builder, r.value, alloca)
+    let alloca = ctx.alloca_i64(name)
+    ctx.store(r.value, alloca)
     ok_stmt(env_extend(env, name, alloca, var_ty))
 }
 

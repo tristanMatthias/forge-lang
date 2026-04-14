@@ -9,10 +9,10 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
     // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
     if vtype_eq(r.ty, .Ptr) {
         let i_r = emit_expr(ctx, env, idx)?
-        let off = forge_llvm_build_add(ctx.builder, r.value, i_r.value, "ptr_off")
+        let off = ctx.build_add(r.value, i_r.value, "ptr_off")
         let off_ptr = to_ptr(ctx, off, "ptr_idx")
-        let byte = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), off_ptr, "ptr_byte")
-        return ok_emit(forge_llvm_build_zext(ctx.builder, byte, ctx.i64_type, "ptr_byte_ext"))
+        let byte = ctx.load(forge_llvm_int8_type(ctx.lc), off_ptr, "ptr_byte")
+        return ok_emit(ctx.zext(byte, ctx.i64_type, "ptr_byte_ext"))
     }
     // List indexing: list[i] → forge_array_get(list, i)
     if vtype_is_list(r.ty) {
@@ -27,17 +27,17 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
     // Allocate a 2-byte buffer (1 char + nul), copy the byte at
     // src+i, set buf[1]=0. Returns a fresh str.
     let src_int = r.value
-    let off_int = forge_llvm_build_add(ctx.builder, src_int, i_r.value, "idx_off_int")
+    let off_int = ctx.build_add(src_int, i_r.value, "idx_off_int")
     let off_ptr = to_ptr(ctx, off_int, "idx_off")
-    let byte = forge_llvm_build_load(ctx.builder, forge_llvm_int8_type(ctx.lc), off_ptr, "idx_byte")
+    let byte = ctx.load(forge_llvm_int8_type(ctx.lc), off_ptr, "idx_byte")
     let buf = cg_malloc(ctx, const_i64(ctx, 2))
-    forge_llvm_build_store(ctx.builder, byte, buf)
+    ctx.store(byte, buf)
     // buf[1] = 0
     let buf_int = to_i64(ctx, buf, "idx_buf_int")
     let one = const_i64(ctx, 1)
-    let nul_int = forge_llvm_build_add(ctx.builder, buf_int, one, "idx_nul_int")
+    let nul_int = ctx.build_add(buf_int, one, "idx_nul_int")
     let nul_ptr = to_ptr(ctx, nul_int, "idx_nul")
-    forge_llvm_build_store(ctx.builder, const_i8(ctx, 0), nul_ptr)
+    ctx.store(const_i8(ctx, 0), nul_ptr)
     let result_i64 = to_i64(ctx, buf, "idx_result")
     ok_emit_str(result_i64)
 }

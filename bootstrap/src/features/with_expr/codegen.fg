@@ -37,11 +37,11 @@ export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) 
 
 fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, count: int, idx: int) {
     if idx >= count { return }
-    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
-    let src_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, src, idx, "with_cp_src")
-    let val = forge_llvm_build_load(ctx.builder, ctx.i64_type, src_gep, "with_cp_val")
-    let dst_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, dst, idx, "with_cp_dst")
-    forge_llvm_build_store(ctx.builder, val, dst_gep)
+    let st_ty = ctx.get_type(struct_name)
+    let src_gep = ctx.gep(st_ty, src, idx, "with_cp_src")
+    let val = ctx.load_i64(src_gep, "with_cp_val")
+    let dst_gep = ctx.gep(st_ty, dst, idx, "with_cp_dst")
+    ctx.store(val, dst_gep)
     copy_struct_fields(ctx, src, dst, struct_name, count, idx + 1)
 }
 
@@ -53,9 +53,9 @@ fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields:
             if idx >= 0 {
                 let r = emit_expr(ctx, env, sv.node)
                 if !r.had_error {
-                    let st_ty = forge_llvm_get_type_by_name(ctx.lc, struct_name)
-                    let gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, dst, idx, "with_ovr")
-                    forge_llvm_build_store(ctx.builder, r.value, gep)
+                    let st_ty = ctx.get_type(struct_name)
+                    let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
+                    ctx.store(r.value, gep)
                 }
             }
             apply_overrides(ctx, env, dst, struct_name, fields, next)

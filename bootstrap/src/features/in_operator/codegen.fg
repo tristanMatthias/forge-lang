@@ -16,7 +16,7 @@ fn emit_in_items(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) -> EmitRe
         .Node(item, next) -> {
             let cmp = emit_binary(ctx, env, needle, BinOp.Eq, item.node)?
             let rest = emit_in_items(ctx, env, needle, next)?
-            ok_emit(forge_llvm_build_or(ctx.builder, cmp.value, rest.value, "in_or"))
+            ok_emit(ctx.build_or(cmp.value, rest.value, "in_or"))
         }
     }
 }
