@@ -231,10 +231,10 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
 fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList) -> TypeList {
     match params {
         .End -> TypeList.End
-        .Node(name, type_ann, _, next) -> {
+        .Node(name, type_ann, resolved, next) -> {
             // Priority: explicit annotation > float inference > default Int
             let ty = if type_ann != "" && type_ann != "i64" {
-                ctx.translate_type(type_ann)
+                resolved
             } else if param_used_with_float(name, body, ctx, env, captures, params) {
                 ValueType.Float
             } else {
@@ -258,10 +258,11 @@ export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> E
 // Compile a lambda with explicit parameter types.
 // Used by .map/.filter/.reduce to pass the list's element type
 // so that int(x) / x.length / etc. work correctly inside the lambda.
-export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr, param_types: TypeList) -> EmitResult {
+export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: Expr, param_types: TypeList) -> EmitResult {
     let id = LAMBDA_COUNTER
     LAMBDA_COUNTER = LAMBDA_COUNTER + 1
     let name = "__lambda_${string(id)}"
+    let params = ctx.resolve_params(raw_params)
 
     // Detect captured variables from the enclosing scope
     let captures = find_captures(body, params, env, CaptureList.End)
@@ -517,14 +518,14 @@ fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -
 fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int, types: TypeList) -> VarEnv {
     match params {
         .End -> env
-        .Node(name, type_ann, _, next) -> {
+        .Node(name, type_ann, resolved, next) -> {
             let param_val = ctx.get_param(fn_val, idx)
-            // Priority: external TypeList > param annotation > default Int
+            // Priority: external TypeList > param annotation > resolved
             let ty = match types {
                 .Node(t, _) -> t
                 .End -> {
                     if type_ann != "" && type_ann != "i64" {
-                        ctx.translate_type(type_ann)
+                        resolved
                     } else {
                         ValueType.Int
                     }

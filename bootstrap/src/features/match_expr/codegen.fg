@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
-use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, advance_field_list}
+use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list}
 
 // ── Match as expression ──
 
@@ -155,7 +155,8 @@ fn emit_nested_tag_checks(ctx: Ctx, pattern: Pattern, st_ty: ptr, subj_ptr: ptr,
         .NestedVariant(vname, sub_pats) -> {
             let v = variant_lookup(variants, vname)
             if !v.found { return }
-            emit_nested_tag_check_list(ctx, st_ty, subj_ptr, sub_pats, v.fields, 0, next_bb)
+            let fields = ctx.resolve_fields(v.fields)
+            emit_nested_tag_check_list(ctx, st_ty, subj_ptr, sub_pats, fields, 0, next_bb)
         }
         _ -> {}
     }
@@ -167,8 +168,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
         .Node(pat, next) -> {
             match pat {
                 .Variant(inner_vname, _) -> {
-                    let field_type_name = field_type_at(fields, 0)
-                    let inner_ty = ctx.translate_type(field_type_name)
+                    let inner_ty = field_resolved_at(fields, 0)
                     let enum_name = vtype_enum_name(inner_ty)
                     if enum_name != "" {
                         let lookup = ctx.lookup_enum(enum_name)
@@ -190,8 +190,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                     }
                 }
                 .NestedVariant(inner_vname, _) -> {
-                    let field_type_name = field_type_at(fields, 0)
-                    let inner_ty = ctx.translate_type(field_type_name)
+                    let inner_ty = field_resolved_at(fields, 0)
                     let enum_name = vtype_enum_name(inner_ty)
                     if enum_name != "" {
                         let lookup = ctx.lookup_enum(enum_name)
@@ -232,12 +231,14 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
         .Variant(vname, bindings) -> {
             let v = variant_lookup(variants, vname)
             if !v.found { return env }
-            bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, bindings, v.fields, 0)
+            let fields = ctx.resolve_fields(v.fields)
+            bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, bindings, fields, 0)
         }
         .NestedVariant(vname, sub_pats) -> {
             let v = variant_lookup(variants, vname)
             if !v.found { return env }
-            bind_nested_patterns(ctx, env, st_ty, subj_ptr, sub_pats, v.fields, 0)
+            let fields = ctx.resolve_fields(v.fields)
+            bind_nested_patterns(ctx, env, st_ty, subj_ptr, sub_pats, fields, 0)
         }
         .Or(_, _) -> env  // OR patterns don't bind variables
         _ -> env  // Literal patterns don't bind variables
@@ -250,7 +251,7 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
         .Node(name, _, _, next_b) if name == "_" ->
             bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
         .Node(name, _, _, next_b) -> {
-            let field_ty = ctx.translate_type(field_type_at(fields, 0))
+            let field_ty = field_resolved_at(fields, 0)
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, name)
             let extended = ctx.bind(env, name, loaded, field_ty)
             bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
@@ -264,7 +265,7 @@ fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: 
     match pats {
         .End -> env
         .Node(pat, next) -> {
-            let field_ty = ctx.translate_type(field_type_at(fields, 0))
+            let field_ty = field_resolved_at(fields, 0)
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, "npat_val")
             let new_env = bind_single_sub_pattern(ctx, env, pat, loaded, field_ty)
             bind_nested_patterns(ctx, new_env, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1)

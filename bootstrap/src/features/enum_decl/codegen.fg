@@ -50,7 +50,8 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     } else {
         let pay_buf = ctx.malloc(ctx.i64(num_fields * 8))
         ctx.store(pay_buf, payload_gep)
-        let fill = fill_enum_payload(ctx, env, pay_buf, v.fields, args, 0)?
+        let resolved_fields = ctx.resolve_fields(v.fields)
+        let fill = fill_enum_payload(ctx, env, pay_buf, resolved_fields, args, 0)?
     }
     let as_i64 = ctx.to_i64(buf, "enum_i64")
     ok_emit_typed(as_i64, .Enum(resolved_name))
@@ -67,7 +68,7 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             let fld_ty = match fields {
-                .Node(_, ty, _, _) -> ctx.translate_type(ty)
+                .Node(_, _, resolved, _) -> resolved
                 _ -> ValueType.Int
             }
             ctx.store_slot(payload_ptr, idx, r.value, fld_ty)
@@ -85,7 +86,7 @@ fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr,
             let r = ctx.emit(env, se.node)?
             let fld_gep = ctx.gep(pay_ty, payload_ptr, idx, "pay_fld")
             let fld_ty = match fields {
-                .Node(_, ty, _, _) -> ctx.translate_type(ty)
+                .Node(_, _, resolved, _) -> resolved
                 _ -> ValueType.Int
             }
             ctx.store_field(r.value, fld_gep, fld_ty)

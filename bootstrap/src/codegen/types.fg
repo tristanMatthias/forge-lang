@@ -889,6 +889,15 @@ impl Ctx {
         }
     }
 
+    // Resolve all type annotations in a FieldList from strings to ValueType.
+    fn resolve_fields(self, fields: FieldList) -> FieldList {
+        match fields {
+            .End -> .End
+            .Node(name, ty, _, next) ->
+                .Node(name, ty, translate_type_ctx(self, ty), self.resolve_fields(next))
+        }
+    }
+
     // Translate a type annotation string to ValueType.
     fn translate_type(self, ty: string) -> ValueType {
         translate_param_type(self.structs, self.enums, ty)

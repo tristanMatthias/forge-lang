@@ -68,18 +68,27 @@ Globals now use `llvm_type_for_full` with their declared ValueType.
 `forge_llvm_is_void_value` still declared but unused (harmless).
 `forge_llvm_cast_to_type` is used from Forge (not C-internal only).
 
-### 9. ~~Types are strings in the AST~~ IN PROGRESS
-**status:** Phase B in progress
+### 9. ~~Types are strings in the AST~~ DONE
+**status:** done
 
-ParamList.Node and FieldList.Node now carry a `resolved: ValueType`
-field alongside the original `ty: string`. Declaration passes in
-setup.fg populate `resolved` via `resolve_field_list`/`resolve_param_list`.
-`fill_struct_field_types` and `fill_typed_param_array` read from
-`resolved` instead of re-parsing strings.
+ParamList.Node and FieldList.Node carry a `resolved: ValueType` field
+alongside the original `ty: string`. All codegen consumers now read
+`resolved` instead of re-parsing type strings at emit time:
 
-Remaining: switch feature codegen to read `resolved` instead of calling
-`ctx.translate_type(ty_string)`. Then remove `ty: string` field and
-`translate_param_type`.
+- `bind_params_inline` reads `resolved` directly (fn_decl)
+- `fill_enum_payload` / `fill_enum_payload_typed` read `resolved` (enum_decl)
+- `bind_pattern_payload_loop` / `bind_nested_patterns` use `field_resolved_at` (match_expr)
+- `infer_param_types` / `bind_lambda_params_typed` read `resolved` (closures)
+- `fill_struct_field_types` / `fill_typed_param_array` read `resolved` (setup)
+
+`ctx.resolve_params()` and `ctx.resolve_fields()` resolve type strings
+to ValueType with trait awareness. Called once at function/lambda entry
+and enum construction — not re-parsed per use.
+
+The `ty: string` field and `translate_param_type` are retained for
+backward compatibility (Stmt.Let/Mut/Function still carry string
+annotations, and the resolver/typechecker use strings). Removing
+them is a future cleanup once Stmt variants also carry ValueType.
 
 ### 10. ~~Comparison results are i64, not i1~~ DONE
 **status:** done (commit f41a2186)
