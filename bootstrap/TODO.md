@@ -559,6 +559,26 @@ methods.
 which sets line:0, col:0. If a defer body has a compile error, the error points to line 0.
 Fix: change `Stmt.Defer(body: Expr)` to `Stmt.Defer(body: SExpr)`. Requires two-phase bootstrap.
 
+### Typeck diagnostic spans point to statement, not expression
+**type:** bug
+**priority:** medium
+**source:** discovered April 14, 2026
+
+`check_call` in `typeck/mod.fg` reports errors like F0201 (wrong arg count)
+using `tc.current_line/current_col` which is set from the enclosing statement's
+`SStmt` position, not the call expression's position. This causes the error
+caret to point at the `let` keyword instead of the function name:
+
+```
+  2 │ let x = pair(42)
+    · ┬
+    · ╰── `pair` expects 2 arguments
+```
+
+Should point at `pair`, not `let`. Fix: thread expression positions through
+`check_expr` / `check_call`, or update `tc.current_line/col` when entering
+each expression.
+
 ### Match expression type unification
 **type:** bug
 **priority:** low

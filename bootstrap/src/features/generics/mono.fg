@@ -145,20 +145,6 @@ fn is_generic_decl(stmt: Stmt) -> bool {
     }
 }
 
-fn mangle_name(base: string, ta: TypeArgList) -> string { "${base}__${mangle_args(ta)}" }
-
-// Mangle type args in their natural (insertion) order.
-fn mangle_args(ta: TypeArgList) -> string {
-    match ta {
-        .End -> ""
-        .Node(_, ty, next) -> {
-            let rest = mangle_args(next)
-            if rest == "" { ty } else { "${ty}__${rest}" }
-        }
-    }
-}
-
-// Mangle type args in declaration order (follows TypeParamList order).
 fn mangle_name_ordered(base: string, tp: TypeParamList, ta: TypeArgList) -> string {
     "${base}__${mangle_ordered(tp, ta)}"
 }
