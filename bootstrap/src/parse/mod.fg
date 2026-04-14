@@ -3,6 +3,11 @@
 // in the call chain: assignment → pipe → null_coalesce → or → and →
 // equality → comparison → term → factor → unary → call → primary.
 // Feature-specific parsers extend Parser via cross-file impl blocks.
+//
+// NEVER add feature-specific parsing to this file. New syntax belongs
+// in features/<name>/parser.fg as an impl Parser block. This file is
+// infrastructure only: the expression precedence chain, statement
+// dispatch, and token consumption helpers.
 
 mod lexer
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str}

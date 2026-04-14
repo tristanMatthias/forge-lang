@@ -297,6 +297,7 @@ export enum Expr {
     FloatLit(value: string)
     IsCheck(subject: Expr, variant_name: string)
     InCheck(needle: Expr, items: ExprList)
+    ListComp(body: Expr, variable: string, collection: Expr, filter: Expr?)
     QualifiedIdent(path: string)
     When(arms: WhenArmList)
 }

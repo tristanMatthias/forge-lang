@@ -199,6 +199,7 @@ fn desugar_min_max(args: ExprList, is_min: bool) -> Expr {
     }
 }
 
+
 // ── Generic expression walker ──
 // Recursively desugar all sub-expressions. This handles the boilerplate
 // so rewrite rules only need to handle their specific pattern.
