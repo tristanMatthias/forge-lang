@@ -44,12 +44,13 @@ the emitting function, not as cryptic errors later.
 Phase A: Per-variant payload struct types are declared in LLVM
 (`%Enum__Variant = type { field_types... }`). Done.
 
-Phase B (blocked): Using typed GEP instead of pointer arithmetic for
-payload read/write. Blocked by variant name disambiguation — when two
-enums have the same variant name (e.g., `LoopStack.Frame` and
-`DeferStack.Frame`), contextual resolution `.Frame(...)` picks the
-wrong enum, leading to GEP with wrong field count. Requires passing
-the resolved enum name through `emit_enum_ctor` to `fill_enum_payload_typed`.
+Phase B (blocked): Using typed GEP instead of pointer arithmetic.
+The arity-aware resolution is now fixed (commit 11ae5063), but the
+typed GEP write path is incompatible with the flat-buffer read path.
+Both must change simultaneously: `fill_enum_payload_typed` for writes
+AND `load_payload_field` for reads. The read path needs the variant
+name + field types threaded through 4+ call sites in match codegen.
+The `fill_enum_payload_typed` function is written and ready.
 
 ### 6. Result slots use alloca i64
 **type:** architecture debt
