@@ -66,11 +66,6 @@ fn inst_mangled(insts: InstList, name: string) -> string {
     }
 }
 
-fn add_inst_if_new(name: string, type_args: TypeArgList, insts: InstList) -> InstList {
-    let mangled = mangle_name(name, type_args)
-    if inst_has(insts, mangled) { insts } else { InstList.Node(name, mangled, type_args, insts) }
-}
-
 // Merge partial type args into a compatible existing entry for the same generic name.
 // Two entries are compatible if no param maps to two different concrete types.
 // If incompatible (e.g. T=int vs T=string), creates a separate entry.
@@ -105,14 +100,6 @@ fn merge_type_args(a: TypeArgList, b: TypeArgList) -> TypeArgList {
             } else { a }
             merge_type_args(merged, next)
         }
-    }
-}
-
-fn inst_lookup_ta(insts: InstList, name: string) -> TypeArgList {
-    match insts {
-        .End -> TypeArgList.End
-        .Node(n, _, ta, _) if n == name -> ta
-        .Node(_, _, _, next) -> inst_lookup_ta(next, name)
     }
 }
 
@@ -387,12 +374,8 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
             let s = collect_inst_exprs(args, regs, st)
             match callee {
                 .Ident(name) -> match generic_fn_lookup(regs.fns, name) {
-                    .Node(_, tp, _, _, _, _) -> {
-                        let ta = explicit_to_type_args(tp, type_names)
-                        let mangled = mangle_name_ordered(name, tp, ta)
-                        let new_insts = if inst_has(s.insts, mangled) { s.insts } else { InstList.Node(name, mangled, ta, s.insts) }
-                        s with { insts: new_insts }
-                    }
+                    .Node(_, tp, _, _, _, _) ->
+                        add_resolved_inst(name, tp, explicit_to_type_args(tp, type_names), s)
                     .End -> s
                 }
                 _ -> collect_inst_expr(callee, regs, s)
@@ -454,8 +437,8 @@ fn collect_inst_field_inits(inits: FieldInitList, regs: GenRegs, st: CollectStat
 }
 
 // Merge partial inference — full resolution is checked later in finalize_insts.
-fn try_add_fn_inst(name: string, tp: TypeParamList, params: ParamList, args: ExprList, st: CollectState) -> CollectState {
-    let ta = infer_from_params(tp, params, args, TypeArgList.End)
+// Add a fully-resolved instantiation, or emit F0400 for unresolved params.
+fn add_resolved_inst(name: string, tp: TypeParamList, ta: TypeArgList, st: CollectState) -> CollectState {
     if all_resolved(tp, ta) {
         let mangled = mangle_name_ordered(name, tp, ta)
         let new_insts = if inst_has(st.insts, mangled) { st.insts } else { InstList.Node(name, mangled, ta, st.insts) }
@@ -465,9 +448,12 @@ fn try_add_fn_inst(name: string, tp: TypeParamList, params: ParamList, args: Exp
     }
 }
 
+fn try_add_fn_inst(name: string, tp: TypeParamList, params: ParamList, args: ExprList, st: CollectState) -> CollectState {
+    add_resolved_inst(name, tp, infer_from_params(tp, params, args, TypeArgList.End), st)
+}
+
 fn try_add_enum_inst(tn: string, variant: string, args: ExprList, regs: GenRegs, st: CollectState) -> CollectState {
     match generic_enum_lookup(regs.enums, tn) {
-        // Enums: merge partial info across constructors (Ok infers T, Err infers E)
         .Node(_, tp, variants, _) ->
             st with { insts: merge_partial(tn, resolve_enum_type_args(tp, variants, variant, args), st.insts) }
         .End -> st
@@ -476,16 +462,7 @@ fn try_add_enum_inst(tn: string, variant: string, args: ExprList, regs: GenRegs,
 
 fn try_add_struct_inst(name: string, inits: FieldInitList, regs: GenRegs, st: CollectState) -> CollectState {
     match generic_struct_lookup(regs.structs, name) {
-        .Node(_, tp, fields, _) -> {
-            let ta = infer_from_field_inits(tp, fields, inits, TypeArgList.End)
-            if all_resolved(tp, ta) {
-                let mangled = mangle_name_ordered(name, tp, ta)
-                let new_insts = if inst_has(st.insts, mangled) { st.insts } else { InstList.Node(name, mangled, ta, st.insts) }
-                st with { insts: new_insts }
-            } else {
-                st with { bag: check_resolved(tp, ta, name, 0, 0, st.bag) }
-            }
-        }
+        .Node(_, tp, fields, _) -> add_resolved_inst(name, tp, infer_from_field_inits(tp, fields, inits, TypeArgList.End), st)
         .End -> st
     }
 }
