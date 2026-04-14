@@ -12,7 +12,7 @@ export fn emit_in_check(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) ->
 
 fn emit_in_items(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) -> EmitResult {
     match items {
-        .End -> ok_emit(const_i64(ctx, 0))
+        .End -> ok_emit(ctx.i64(0))
         .Node(item, next) -> {
             let cmp = emit_binary(ctx, env, needle, BinOp.Eq, item.node)?
             let rest = emit_in_items(ctx, env, needle, next)?

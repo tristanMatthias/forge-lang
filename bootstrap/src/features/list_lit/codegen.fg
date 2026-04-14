@@ -8,13 +8,13 @@ use features.closures.codegen.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.helpers.{emit_single_arg}
 
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
-    let arr_fn = get_fn(ctx, "forge_array_new")
-    let push_fn = get_fn(ctx, "forge_array_push")
+    let arr_fn = ctx.get_fn("forge_array_new")
+    let push_fn = ctx.get_fn("forge_array_push")
     let arr = call_0(ctx, arr_fn, "list")
     match elements {
         .End -> ok_emit_typed(arr, .List(.Int))
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             call_2(ctx, push_fn, arr, r.value, "")
             push_list_elements(ctx, env, next, arr, push_fn, r.ty)
         }
@@ -25,7 +25,7 @@ fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, push_
     match elements {
         .End -> ok_emit_typed(arr, .List(elem_ty))
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             call_2(ctx, push_fn, arr, r.value, "")
             push_list_elements(ctx, env, next, arr, push_fn, elem_ty)
         }
@@ -37,15 +37,15 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
         .Node(se_init, rest) -> {
             match rest {
                 .Node(se_fn, _) -> {
-                    let init_r = emit_expr(ctx, env, se_init.node)?
+                    let init_r = ctx.emit(env, se_init.node)?
                     // Reduce fn takes (acc, elem) — acc type from init, elem from list
                     let fn_r = match se_fn.node {
                         .Lambda(params, body) -> {
                             emit_lambda_typed(ctx, env, params, body, TypeList.Node(init_r.ty, TypeList.Node(elem_ty, TypeList.End)))
                         }
-                        _ -> emit_expr(ctx, env, se_fn.node)
+                        _ -> ctx.emit(env, se_fn.node)
                     }?
-                    let result = call_3(ctx, get_fn(ctx, "forge_array_reduce"), list_val, init_r.value, fn_r.value, "reduce")
+                    let result = call_3(ctx, ctx.get_fn("forge_array_reduce"), list_val, init_r.value, fn_r.value, "reduce")
                     ok_emit(result)
                 }
                 _ -> err_emit("reduce expects 2 arguments: initial value and function")
@@ -57,35 +57,35 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
 
 export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: ValueType, method: string, args: ExprList) -> EmitResult {
     match method {
-        "length" or "len" -> return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), list_val, "list_len"))
+        "length" or "len" -> return ok_emit(call_1(ctx, ctx.get_fn("forge_array_len"), list_val, "list_len"))
         "push" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            call_2(ctx, get_fn(ctx, "forge_array_push"), list_val, arg_r.value, "")
+            call_2(ctx, ctx.get_fn("forge_array_push"), list_val, arg_r.value, "")
             return ok_emit(list_val)
         }
-        "pop" -> return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_pop"), list_val, "list_pop"))
+        "pop" -> return ok_emit(call_1(ctx, ctx.get_fn("forge_array_pop"), list_val, "list_pop"))
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             let elem_ty = vtype_list_elem(list_ty)
-            return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_array_get"), list_val, arg_r.value, "list_get"), elem_ty)
+            return ok_emit_typed(call_2(ctx, ctx.get_fn("forge_array_get"), list_val, arg_r.value, "list_get"), elem_ty)
         }
         "set" -> return emit_list_set(ctx, env, list_val, args)
         "map" -> {
             let elem_ty = vtype_list_elem(list_ty)
             let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
-            let result = call_2(ctx, get_fn(ctx, "forge_array_map"), list_val, arg_r.value, "map")
+            let result = call_2(ctx, ctx.get_fn("forge_array_map"), list_val, arg_r.value, "map")
             return ok_emit_typed(result, .List(vtype_fn_ret(arg_r.ty)))
         }
         "filter" -> {
             let elem_ty = vtype_list_elem(list_ty)
             let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
-            return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_array_filter"), list_val, arg_r.value, "filter"), .List(elem_ty))
+            return ok_emit_typed(call_2(ctx, ctx.get_fn("forge_array_filter"), list_val, arg_r.value, "filter"), .List(elem_ty))
         }
         "foreach" -> {
             let elem_ty = vtype_list_elem(list_ty)
             let arg_r = emit_typed_lambda_arg(ctx, env, args, TypeList.Node(elem_ty, TypeList.End))?
-            call_2(ctx, get_fn(ctx, "forge_array_foreach"), list_val, arg_r.value, "")
-            return ok_emit(const_i64(ctx, 0))
+            call_2(ctx, ctx.get_fn("forge_array_foreach"), list_val, arg_r.value, "")
+            return ok_emit(ctx.i64(0))
         }
         "reduce" -> {
             let elem_ty = vtype_list_elem(list_ty)
@@ -100,9 +100,9 @@ fn emit_list_set(ctx: Ctx, env: VarEnv, list: ptr, args: ExprList) -> EmitResult
         .Node(se_idx, rest) -> {
             match rest {
                 .Node(se_val, _) -> {
-                    let idx_r = emit_expr(ctx, env, se_idx.node)?
-                    let val_r = emit_expr(ctx, env, se_val.node)?
-                    call_3(ctx, get_fn(ctx, "forge_array_set"), list, idx_r.value, val_r.value, "")
+                    let idx_r = ctx.emit(env, se_idx.node)?
+                    let val_r = ctx.emit(env, se_val.node)?
+                    call_3(ctx, ctx.get_fn("forge_array_set"), list, idx_r.value, val_r.value, "")
                     ok_emit(list)
                 }
                 _ -> err_emit("list.set expects 2 arguments: index and value")

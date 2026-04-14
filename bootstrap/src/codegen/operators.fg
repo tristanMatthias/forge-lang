@@ -8,7 +8,7 @@ use codegen.helpers.{is_null_literal}
 use features.enum_decl.codegen.{emit_enum_tag_cmp}
 
 export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult {
-    let r = emit_expr(ctx, env, right)?
+    let r = ctx.emit(env, right)?
 
     match op {
         .Neg -> {
@@ -17,20 +17,20 @@ export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult
                 let neg = forge_llvm_build_fneg(ctx.builder, fval, "fneg")
                 return ok_emit_typed(f64_to_i64(ctx, neg, "fneg_bits"), .Float)
             }
-            ok_emit(ctx.build_sub(const_i64(ctx, 0), r.value, "neg"))
+            ok_emit(ctx.build_sub(ctx.i64(0), r.value, "neg"))
         }
         .Not -> {
-            ok_emit(ctx.icmp_eq(r.value, const_i64(ctx, 0), "not_cmp"))
+            ok_emit(ctx.icmp_eq(r.value, ctx.i64(0), "not_cmp"))
         }
         .BitNot -> ok_emit(forge_llvm_build_not(ctx.builder, r.value, "bnot"))
     }
 }
 
 export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> EmitResult {
-    let left_result = emit_expr(ctx, env, left)?
+    let left_result = ctx.emit(env, left)?
     let lhs = left_result.value
 
-    let right_result = emit_expr(ctx, env, right)?
+    let right_result = ctx.emit(env, right)?
     let rhs = right_result.value
 
     let null_cmp = is_null_literal(left) || is_null_literal(right)
@@ -56,22 +56,22 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
         .Mul -> ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul"))
         .Div -> {
             // Runtime division-by-zero check (branchless — C function checks internally).
-            let zero = const_i64(ctx, 0)
+            let zero = ctx.i64(0)
             let is_zero = ctx.icmp_eq(rhs, zero, "div_zero_chk")
             let dz_file = ctx.global_str(ctx.source_file, "dz_file")
-            let dz_flen = const_i64(ctx, ctx.source_file.length)
-            let dz_line = const_i64(ctx, ctx.source_line)
-            call_4(ctx, get_fn(ctx, "forge_div_by_zero_trap"), is_zero, dz_file, dz_flen, dz_line, "")
+            let dz_flen = ctx.i64(ctx.source_file.length)
+            let dz_line = ctx.i64(ctx.source_line)
+            call_4(ctx, ctx.get_fn("forge_div_by_zero_trap"), is_zero, dz_file, dz_flen, dz_line, "")
             ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div"))
         }
         .Mod -> {
             // Runtime division-by-zero check (branchless — C function checks internally).
-            let zero = const_i64(ctx, 0)
+            let zero = ctx.i64(0)
             let is_zero = ctx.icmp_eq(rhs, zero, "mod_zero_chk")
             let mz_file = ctx.global_str(ctx.source_file, "mz_file")
-            let mz_flen = const_i64(ctx, ctx.source_file.length)
-            let mz_line = const_i64(ctx, ctx.source_line)
-            call_4(ctx, get_fn(ctx, "forge_div_by_zero_trap"), is_zero, mz_file, mz_flen, mz_line, "")
+            let mz_flen = ctx.i64(ctx.source_file.length)
+            let mz_line = ctx.i64(ctx.source_line)
+            call_4(ctx, ctx.get_fn("forge_div_by_zero_trap"), is_zero, mz_file, mz_flen, mz_line, "")
             ok_emit(forge_llvm_build_srem(ctx.builder, lhs, rhs, "mod"))
         }
         .BitAnd -> ok_emit(forge_llvm_build_and(ctx.builder, lhs, rhs, "band"))
@@ -163,13 +163,13 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
 }
 
 export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Expr) -> EmitResult {
-    let left_result = emit_expr(ctx, env, left)?
+    let left_result = ctx.emit(env, left)?
 
-    let l_bool = ctx.icmp(33, left_result.value, const_i64(ctx, 0), "l_bool")
+    let l_bool = ctx.icmp(33, left_result.value, ctx.i64(0), "l_bool")
     let left_bb = forge_llvm_get_insert_block(ctx.builder)
 
-    let rhs_bb = new_bb(ctx, "sc_rhs")
-    let merge_bb = new_bb(ctx, "sc_merge")
+    let rhs_bb = ctx.bb("sc_rhs")
+    let merge_bb = ctx.bb("sc_merge")
 
     // &&: skip rhs if false. ||: skip rhs if true.
     match op {
@@ -178,8 +178,8 @@ export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Ex
     }
 
     ctx.position(rhs_bb)
-    let right_result = emit_expr(ctx, env, right)?
-    let r_bool = ctx.icmp(33, right_result.value, const_i64(ctx, 0), "r_bool")
+    let right_result = ctx.emit(env, right)?
+    let r_bool = ctx.icmp(33, right_result.value, ctx.i64(0), "r_bool")
     let rhs_end_bb = forge_llvm_get_insert_block(ctx.builder)
     ctx.br(merge_bb)
 

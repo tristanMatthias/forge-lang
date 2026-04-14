@@ -225,3 +225,12 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> EmitR
     }
     err_emit("undefined ${label} `${name}`")
 }
+
+// ── Ctx emit methods ──
+// Make expression/statement emission flow through Ctx.
+
+impl Ctx {
+    fn emit(self, env: VarEnv, expr: Expr) -> EmitResult {
+        emit_expr(self, env, expr)
+    }
+}

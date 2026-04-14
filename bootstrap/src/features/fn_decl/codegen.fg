@@ -44,7 +44,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 
     defer_reset()
 
-    let r = emit_block_loop(body_cg, env, body, const_i64(ctx, 0), .Int)
+    let r = emit_block_loop(body_cg, env, body, ctx.i64(0), .Int)
     if r.had_error { return err_stmt(r.error_message) }
     if !ctx.has_terminator() {
         emit_defers(body_cg, env)
@@ -105,7 +105,7 @@ fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: VarEn
 
     // Load the parameter value (stored as i64 in the alloca).
     let val = ctx.load_i64(lookup.alloca, "${param_name}_val")
-    let zero = const_i64(ctx, 0)
+    let zero = ctx.i64(0)
     // icmp eq i64 %val, 0 → i1
     let is_null_i1 = ctx.icmp(32, val, zero, "${param_name}_null")
     // zext i1 to i64 for the C function
@@ -114,10 +114,10 @@ fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: VarEn
     // Build the call to forge_null_arg_check(fn_name, fn_len, param_name, param_len, is_null).
     // No branching — the C function does the check internally.
     let fn_str = ctx.global_str(fn_name, "dbg_fn")
-    let fn_len = const_i64(ctx, fn_name.length)
+    let fn_len = ctx.i64(fn_name.length)
     let p_str = ctx.global_str(param_name, "dbg_param")
-    let p_len = const_i64(ctx, param_name.length)
-    let check_fn = get_fn(ctx, "forge_null_arg_check")
+    let p_len = ctx.i64(param_name.length)
+    let check_fn = ctx.get_fn("forge_null_arg_check")
     let ft = forge_llvm_fn_type_of(check_fn)
     let args = forge_llvm_value_array_new(5)
     forge_llvm_value_array_set(args, 0, fn_str)
@@ -150,7 +150,7 @@ export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> Emit
             // Expression callee: evaluate it and call indirectly.
             // All callable values are closure arrays, so route through
             // the closure call path which unpacks [TAG, fn_ptr, caps...].
-            let callee_r = emit_expr(ctx, env, callee)?
+            let callee_r = ctx.emit(env, callee)?
             let ret_ty = vtype_fn_ret(callee_r.ty)
             if vtype_is_closure(callee_r.ty) {
                 let num_caps = vtype_closure_captures(callee_r.ty)
@@ -171,43 +171,43 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     // Special-case `.length` and `.substring` on strings — these are
     // emitted via libc strlen / a custom substring helper rather than
     // dispatched as methods.
-    let r = emit_expr(ctx, env, obj)?
+    let r = ctx.emit(env, obj)?
     if vtype_is_str(r.ty) {
         match method {
             "length" -> {
-                let str_ptr = to_ptr(ctx, r.value, "len_arg")
-                return ok_emit(call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call"))
+                let str_ptr = ctx.to_ptr(r.value, "len_arg")
+                return ok_emit(call_1(ctx, ctx.get_fn("strlen"), str_ptr, "strlen_call"))
             }
             "substring" -> return emit_substring(ctx, env, r.value, args)
             "contains" or "starts_with" or "ends_with" or "index_of" -> {
                 let arg_r = emit_single_arg(ctx, env, args)?
-                let str_ptr = to_ptr(ctx, r.value, "str_self")
-                let arg_ptr = to_ptr(ctx, arg_r.value, "str_arg")
-                return ok_emit(call_2(ctx, get_fn(ctx, "forge_str_${method}"), str_ptr, arg_ptr, method))
+                let str_ptr = ctx.to_ptr(r.value, "str_self")
+                let arg_ptr = ctx.to_ptr(arg_r.value, "str_arg")
+                return ok_emit(call_2(ctx, ctx.get_fn("forge_str_${method}"), str_ptr, arg_ptr, method))
             }
             "replace" -> return emit_str_replace(ctx, env, r.value, args)
             "trim" -> {
-                let str_ptr = to_ptr(ctx, r.value, "str_self")
-                return ok_emit_str(to_i64(ctx, call_1(ctx, get_fn(ctx, "forge_str_trim"), str_ptr, "trimmed"), "trim_i64"))
+                let str_ptr = ctx.to_ptr(r.value, "str_self")
+                return ok_emit_str(ctx.to_i64(call_1(ctx, ctx.get_fn("forge_str_trim"), str_ptr, "trimmed"), "trim_i64"))
             }
             "to_upper" or "upper" -> {
-                let str_ptr = to_ptr(ctx, r.value, "str_self")
-                return ok_emit_str(to_i64(ctx, call_1(ctx, get_fn(ctx, "forge_str_to_upper"), str_ptr, "upper"), "upper_i64"))
+                let str_ptr = ctx.to_ptr(r.value, "str_self")
+                return ok_emit_str(ctx.to_i64(call_1(ctx, ctx.get_fn("forge_str_to_upper"), str_ptr, "upper"), "upper_i64"))
             }
             "to_lower" or "lower" -> {
-                let str_ptr = to_ptr(ctx, r.value, "str_self")
-                return ok_emit_str(to_i64(ctx, call_1(ctx, get_fn(ctx, "forge_str_to_lower"), str_ptr, "lower"), "lower_i64"))
+                let str_ptr = ctx.to_ptr(r.value, "str_self")
+                return ok_emit_str(ctx.to_i64(call_1(ctx, ctx.get_fn("forge_str_to_lower"), str_ptr, "lower"), "lower_i64"))
             }
             "split" -> {
                 let arg_r = emit_single_arg(ctx, env, args)?
-                let str_ptr = to_ptr(ctx, r.value, "str_self")
-                let sep_ptr = to_ptr(ctx, arg_r.value, "sep_arg")
-                let result = call_2(ctx, get_fn(ctx, "forge_str_split"), str_ptr, sep_ptr, "split_result")
+                let str_ptr = ctx.to_ptr(r.value, "str_self")
+                let sep_ptr = ctx.to_ptr(arg_r.value, "sep_arg")
+                let result = call_2(ctx, ctx.get_fn("forge_str_split"), str_ptr, sep_ptr, "split_result")
                 return ok_emit_typed(result, .List(.Str))
             }
             "char_code" -> {
                 // str.char_code() → int (first byte as integer)
-                let str_ptr = to_ptr(ctx, r.value, "str_self")
+                let str_ptr = ctx.to_ptr(r.value, "str_self")
                 let byte_val = ctx.load(forge_llvm_int8_type(ctx.lc), str_ptr, "char_byte")
                 let as_i64 = ctx.zext(byte_val, ctx.i64_type, "char_code")
                 return ok_emit(as_i64)
@@ -221,7 +221,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     }
     // Map methods — dispatched to features/map_lit/codegen.fg
     if vtype_is_map(r.ty) {
-        let map_ptr = to_ptr(ctx, r.value, "map_ptr")
+        let map_ptr = ctx.to_ptr(r.value, "map_ptr")
         return emit_map_method_call(ctx, env, map_ptr, method, args)
     }
     // Trait dispatch
@@ -252,7 +252,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
                 if vtype_is_fn(field_ty) {
                     // Load the field value (fn pointer) and call indirectly
                     let st_ty = ctx.get_type(type_name)
-                    let obj_ptr = to_ptr(ctx, r.value, "fn_field_obj")
+                    let obj_ptr = ctx.to_ptr(r.value, "fn_field_obj")
                     let gep = ctx.gep(st_ty, obj_ptr, field_index_of(s_lookup.fields, method), "fn_field_ptr")
                     let fn_i64 = ctx.load_i64(gep, "fn_field_val")
                     return emit_indirect_call_value(ctx, env, fn_i64, args)
@@ -262,16 +262,16 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         return err_emit("undefined method `${owner}.${method}`")
     }
     // Runtime null-pointer dereference check on method receiver (branchless).
-    let mzero = const_i64(ctx, 0)
+    let mzero = ctx.i64(0)
     let m_null = ctx.icmp_eq(r.value, mzero, "null_meth_chk")
     let m_fld_str = ctx.global_str(method, "meth_name")
-    let m_fld_len = const_i64(ctx, method.length)
+    let m_fld_len = ctx.i64(method.length)
     let m_ty_str = ctx.global_str(owner, "mowner_name")
-    let m_ty_len = const_i64(ctx, owner.length)
+    let m_ty_len = ctx.i64(owner.length)
     let m_file_str = ctx.global_str(ctx.source_file, "msrc_file")
-    let m_file_len = const_i64(ctx, ctx.source_file.length)
-    let m_src_line = const_i64(ctx, ctx.source_line)
-    let m_trap_fn = get_fn(ctx, "forge_null_deref_trap")
+    let m_file_len = ctx.i64(ctx.source_file.length)
+    let m_src_line = ctx.i64(ctx.source_line)
+    let m_trap_fn = ctx.get_fn("forge_null_deref_trap")
     let m_trap_ft = forge_llvm_fn_type_of(m_trap_fn)
     let m_trap_args = forge_llvm_value_array_new(8)
     forge_llvm_value_array_set(m_trap_args, 0, m_fld_str)
@@ -309,7 +309,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
 export fn emit_first_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("expected argument")
-        .Node(se, _) -> emit_expr(ctx, env, se.node)
+        .Node(se, _) -> ctx.emit(env, se.node)
     }
 }
 
@@ -373,21 +373,21 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
     match args {
         .End -> err_emit("string() expects 1 arg")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             // If the value is already a str, pass it through.
             if vtype_is_str(r.ty) {
                 return r
             }
             // Float → string via forge_float_to_string(i64_bits) → ptr
             if vtype_eq(r.ty, .Float) {
-                let str_ptr = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "f2s")
-                return ok_emit_str(to_i64(ctx, str_ptr, "f2s_i64"))
+                let str_ptr = call_1(ctx, ctx.get_fn("forge_float_to_string"), r.value, "f2s")
+                return ok_emit_str(ctx.to_i64(str_ptr, "f2s_i64"))
             }
             // Int → string via snprintf into a 32-byte malloc'd buffer.
-            let buf = cg_malloc(ctx, const_i64(ctx, 32))
+            let buf = ctx.malloc(ctx.i64(32))
             let fmt = ctx.global_str("%lld", ".i2s_fmt")
-            call_4(ctx, get_fn(ctx, "snprintf"), buf, const_i64(ctx, 32), fmt, r.value, "")
-            let result_i64 = to_i64(ctx, buf, "i2s_result")
+            call_4(ctx, ctx.get_fn("snprintf"), buf, ctx.i64(32), fmt, r.value, "")
+            let result_i64 = ctx.to_i64(buf, "i2s_result")
             ok_emit_str(result_i64)
         }
     }
@@ -399,13 +399,13 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
     match args {
         .End -> err_emit("int() expects 1 arg")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             if !vtype_is_str(r.ty) {
                 // Already an int — pass through.
                 return r
             }
-            let str_ptr = to_ptr(ctx, r.value, "atoi_arg")
-            let result32 = call_1(ctx, get_fn(ctx, "atoi"), str_ptr, "atoi_call")
+            let str_ptr = ctx.to_ptr(r.value, "atoi_arg")
+            let result32 = call_1(ctx, ctx.get_fn("atoi"), str_ptr, "atoi_call")
             // Sign-extend i32 → i64.
             ok_emit(forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "atoi_ext"))
         }
@@ -419,13 +419,13 @@ export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitRes
     match args {
         .End -> err_emit("float() expects 1 arg")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             if vtype_eq(r.ty, .Float) {
                 return r
             }
             if vtype_is_str(r.ty) {
-                let str_ptr = to_ptr(ctx, r.value, "f_parse_arg")
-                return ok_emit_typed(call_1(ctx, get_fn(ctx, "forge_float_parse"), str_ptr, "f_bits"), .Float)
+                let str_ptr = ctx.to_ptr(r.value, "f_parse_arg")
+                return ok_emit_typed(call_1(ctx, ctx.get_fn("forge_float_parse"), str_ptr, "f_bits"), .Float)
             }
             // Int → float: use sitofp + bitcast
             let dbl = forge_llvm_build_si_to_fp(ctx.builder, r.value, forge_llvm_double_type(ctx.lc), "i2f")
@@ -439,13 +439,13 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("panic() expects 1 argument")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             // Print "panic: <message>" to stderr
             let prefix = ctx.global_str("panic: ", ".panic_prefix")
-            let prefix_i64 = to_i64(ctx, prefix, "prefix_i64")
+            let prefix_i64 = ctx.to_i64(prefix, "prefix_i64")
             let msg = emit_concat(ctx, prefix_i64, r.value)
-            let msg_ptr = to_ptr(ctx, msg.value, "panic_msg")
-            let eprint_fn = get_fn(ctx, "forge_eprintln")
+            let msg_ptr = ctx.to_ptr(msg.value, "panic_msg")
+            let eprint_fn = ctx.get_fn("forge_eprintln")
             let arr = forge_llvm_value_array_new(1)
             forge_llvm_value_array_set(arr, 0, msg_ptr)
             let void_type = forge_llvm_void_type(ctx.lc)
@@ -456,9 +456,9 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             forge_llvm_build_call(ctx.builder, fn_type, eprint_fn, arr, 1, "")
             forge_llvm_value_array_free(arr)
             // exit(1)
-            call_1(ctx, get_fn(ctx, "exit"), const_i64(ctx, 1), "")
+            call_1(ctx, ctx.get_fn("exit"), ctx.i64(1), "")
             // Unreachable — but return a value for the type system
-            ok_emit(const_i64(ctx, 0))
+            ok_emit(ctx.i64(0))
         }
     }
 }

@@ -32,9 +32,9 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     }
     // Enum layout: {i8 tag, ptr payload}
     // Allocate outer struct (always 16 bytes)
-    let buf = cg_malloc(ctx, const_i64(ctx, 16))
+    let buf = ctx.malloc(ctx.i64(16))
     let tag_gep = ctx.gep(st_ty, buf, 0, "tag_ptr")
-    ctx.store(const_i64(ctx, v.tag), tag_gep)
+    ctx.store(ctx.i64(v.tag), tag_gep)
 
     // Allocate payload if variant has fields
     let num_fields = field_list_length(v.fields)
@@ -45,27 +45,27 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
         ctx.store(null_val, payload_gep)
     } else {
         // Allocate payload: num_fields * 8 bytes
-        let pay_buf = cg_malloc(ctx, const_i64(ctx, num_fields * 8))
+        let pay_buf = ctx.malloc(ctx.i64(num_fields * 8))
         ctx.store(pay_buf, payload_gep)
         let fill = fill_enum_payload(ctx, env, pay_buf, args, 0)?
     }
-    let as_i64 = to_i64(ctx, buf, "enum_i64")
+    let as_i64 = ctx.to_i64(buf, "enum_i64")
     ok_emit_typed(as_i64, .Enum(resolved_name))
 }
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
     // Fixed size: {i8 tag, ptr payload} = 16 bytes always
-    cg_malloc(ctx, const_i64(ctx, 16))
+    ctx.malloc(ctx.i64(16))
 }
 
 fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, args: ExprList, idx: int) -> EmitResult {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             // Write field at offset idx * 8 in the payload buffer
             let base_i64 = ctx.ptr_to_int(payload_ptr, ctx.i64_type, "pay_base")
-            let offset_val = const_i64(ctx, idx * 8)
+            let offset_val = ctx.i64(idx * 8)
             let addr = ctx.build_add(base_i64, offset_val, "pay_addr")
             let field_ptr = ctx.int_to_ptr(addr, forge_llvm_pointer_type(ctx.lc), "fld_ptr")
             ctx.store(r.value, field_ptr)
@@ -79,8 +79,8 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, args: ExprList, id
 export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> EmitResult {
     let enum_name = vtype_enum_name(ty)
     let st_ty = ctx.get_type(enum_name)
-    let lhs_ptr = to_ptr(ctx, lhs, "enum_l")
-    let rhs_ptr = to_ptr(ctx, rhs, "enum_r")
+    let lhs_ptr = ctx.to_ptr(lhs, "enum_l")
+    let rhs_ptr = ctx.to_ptr(rhs, "enum_r")
     let l_gep = ctx.gep(st_ty, lhs_ptr, 0, "ltag_ptr")
     let r_gep = ctx.gep(st_ty, rhs_ptr, 0, "rtag_ptr")
     let l_tag = ctx.load_i64(l_gep, "ltag")

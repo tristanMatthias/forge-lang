@@ -6,28 +6,28 @@ use codegen.{emit_expr}
 use codegen.helpers.{strip_quotes}
 
 export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
-    let lhs_ptr = to_ptr(ctx, lhs_i64, "concat_l")
-    let rhs_ptr = to_ptr(ctx, rhs_i64, "concat_r")
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "concat_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "concat_r")
 
-    let strlen_fn = get_fn(ctx, "strlen")
+    let strlen_fn = ctx.get_fn("strlen")
     let lhs_len = call_1(ctx, strlen_fn, lhs_ptr, "lhs_len")
     let rhs_len = call_1(ctx, strlen_fn, rhs_ptr, "rhs_len")
 
     let total = ctx.build_add(lhs_len, rhs_len, "concat_total")
-    let one = const_i64(ctx, 1)
+    let one = ctx.i64(1)
     let alloc_size = ctx.build_add(total, one, "concat_size")
-    let buf = cg_malloc(ctx, alloc_size)
+    let buf = ctx.malloc(alloc_size)
 
-    let memcpy_fn = get_fn(ctx, "memcpy")
+    let memcpy_fn = ctx.get_fn("memcpy")
     call_3(ctx, memcpy_fn, buf, lhs_ptr, lhs_len, "")
 
-    let buf_int = to_i64(ctx, buf, "buf_int")
+    let buf_int = ctx.to_i64(buf, "buf_int")
     let dst2_int = ctx.build_add(buf_int, lhs_len, "dst2_int")
-    let dst2 = to_ptr(ctx, dst2_int, "dst2")
+    let dst2 = ctx.to_ptr(dst2_int, "dst2")
     let rhs_len_plus_1 = ctx.build_add(rhs_len, one, "rhs_len_p1")
     call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
 
-    ok_emit_str(to_i64(ctx, buf, "concat_i64"))
+    ok_emit_str(ctx.to_i64(buf, "concat_i64"))
 }
 
 export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
@@ -35,13 +35,13 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
         .Node(se_from, rest) -> {
             match rest {
                 .Node(se_to, _) -> {
-                    let from_r = emit_expr(ctx, env, se_from.node)?
-                    let to_r = emit_expr(ctx, env, se_to.node)?
-                    let str_ptr = to_ptr(ctx, str_i64, "rep_self")
-                    let from_ptr = to_ptr(ctx, from_r.value, "rep_from")
-                    let to_ptr_v = to_ptr(ctx, to_r.value, "rep_to")
-                    let result = call_3(ctx, get_fn(ctx, "forge_str_replace"), str_ptr, from_ptr, to_ptr_v, "replaced")
-                    ok_emit_str(to_i64(ctx, result, "rep_i64"))
+                    let from_r = ctx.emit(env, se_from.node)?
+                    let to_r = ctx.emit(env, se_to.node)?
+                    let str_ptr = ctx.to_ptr(str_i64, "rep_self")
+                    let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
+                    let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
+                    let result = call_3(ctx, ctx.get_fn("forge_str_replace"), str_ptr, from_ptr, to_ptr_v, "replaced")
+                    ok_emit_str(ctx.to_i64(result, "rep_i64"))
                 }
                 _ -> err_emit("replace expects 2 arguments")
             }
@@ -66,25 +66,25 @@ export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) ->
 }
 
 export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> EmitResult {
-    let start_r = emit_expr(ctx, env, start_arg)?
-    let end_r = emit_expr(ctx, env, end_arg)?
-    let str_ptr = to_ptr(ctx, str_i64, "sub_src")
+    let start_r = ctx.emit(env, start_arg)?
+    let end_r = ctx.emit(env, end_arg)?
+    let str_ptr = ctx.to_ptr(str_i64, "sub_src")
     let len = ctx.build_sub(end_r.value, start_r.value, "sub_len")
-    let one = const_i64(ctx, 1)
+    let one = ctx.i64(1)
     let alloc_size = ctx.build_add(len, one, "sub_alloc")
     // malloc(alloc_size)
-    let buf = cg_malloc(ctx, alloc_size)
+    let buf = ctx.malloc(alloc_size)
     // memcpy(buf, src + start, len)
-    let src_int = to_i64(ctx, str_ptr, "sub_src_int")
+    let src_int = ctx.to_i64(str_ptr, "sub_src_int")
     let off_int = ctx.build_add(src_int, start_r.value, "sub_off_int")
-    let off_ptr = to_ptr(ctx, off_int, "sub_off")
-    call_3(ctx, get_fn(ctx, "memcpy"), buf, off_ptr, len, "")
+    let off_ptr = ctx.to_ptr(off_int, "sub_off")
+    call_3(ctx, ctx.get_fn("memcpy"), buf, off_ptr, len, "")
     // Null-terminate at buf[len].
-    let buf_int2 = to_i64(ctx, buf, "sub_buf_int")
+    let buf_int2 = ctx.to_i64(buf, "sub_buf_int")
     let nul_int = ctx.build_add(buf_int2, len, "sub_nul_int")
-    let nul_ptr = to_ptr(ctx, nul_int, "sub_nul")
-    ctx.store(const_i8(ctx, 0), nul_ptr)
-    let result_i64 = to_i64(ctx, buf, "sub_result")
+    let nul_ptr = ctx.to_ptr(nul_int, "sub_nul")
+    ctx.store(ctx.i8(0), nul_ptr)
+    let result_i64 = ctx.to_i64(buf, "sub_result")
     ok_emit_str(result_i64)
 }
 
@@ -96,22 +96,22 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitR
     // operands via zero-extend, which would turn a negative
     // strcmp result into a huge positive i64 and break signed
     // comparison.
-    let lhs_ptr = to_ptr(ctx, lhs_i64, "scmp_l")
-    let rhs_ptr = to_ptr(ctx, rhs_i64, "scmp_r")
-    let result32 = call_2(ctx, get_fn(ctx, "strcmp"), lhs_ptr, rhs_ptr, "strcmp_call")
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "scmp_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "scmp_r")
+    let result32 = call_2(ctx, ctx.get_fn("strcmp"), lhs_ptr, rhs_ptr, "strcmp_call")
     let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
-    let zero64 = const_i64(ctx, 0)
+    let zero64 = ctx.i64(0)
     let cmp = ctx.icmp(pred, result64, zero64, "scmp_cmp")
     ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"))
 }
 
 export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult {
-    let lhs_ptr = to_ptr(ctx, lhs_i64, "streq_l")
-    let rhs_ptr = to_ptr(ctx, rhs_i64, "streq_r")
-    let result32 = call_2(ctx, get_fn(ctx, "strcmp"), lhs_ptr, rhs_ptr, "strcmp_call")
+    let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
+    let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
+    let result32 = call_2(ctx, ctx.get_fn("strcmp"), lhs_ptr, rhs_ptr, "strcmp_call")
     // Sign-extend strcmp's i32 to i64 so the icmp operands match.
     let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
-    let zero64 = const_i64(ctx, 0)
+    let zero64 = ctx.i64(0)
     let pred = if invert { 33 } else { 32 }
     let cmp = ctx.icmp(pred, result64, zero64, "streq_cmp")
     ok_emit(ctx.zext(cmp, ctx.i64_type, "streq_ext"))

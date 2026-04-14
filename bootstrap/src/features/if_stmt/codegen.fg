@@ -5,14 +5,14 @@ use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, ok_emit_typed, err_stmt
 use codegen.{emit_expr, emit_stmt}
 
 export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> StmtResult {
-    let cond = emit_expr(ctx, env, condition)
+    let cond = ctx.emit(env, condition)
     if cond.had_error {
         return err_stmt_from_expr(cond)
     }
-    let cond_i1 = ctx.icmp(33, cond.value, const_i64(ctx, 0), "if_cond")
-    let then_bb = new_bb(ctx, "then")
-    let else_bb = new_bb(ctx, "else")
-    let merge_bb = new_bb(ctx, "ifcont")
+    let cond_i1 = ctx.icmp(33, cond.value, ctx.i64(0), "if_cond")
+    let then_bb = ctx.bb("then")
+    let else_bb = ctx.bb("else")
+    let merge_bb = ctx.bb("ifcont")
     ctx.cond_br(cond_i1, then_bb, else_bb)
 
     ctx.position(then_bb)
@@ -30,21 +30,21 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
 }
 
 export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
-    let cond = emit_expr(ctx, env, condition)?
-    let cond_i1 = ctx.icmp(33, cond.value, const_i64(ctx, 0), "ife_cond")
-    let then_bb = new_bb(ctx, "ife_then")
-    let else_bb = new_bb(ctx, "ife_else")
-    let merge_bb = new_bb(ctx, "ife_end")
+    let cond = ctx.emit(env, condition)?
+    let cond_i1 = ctx.icmp(33, cond.value, ctx.i64(0), "ife_cond")
+    let then_bb = ctx.bb("ife_then")
+    let else_bb = ctx.bb("ife_else")
+    let merge_bb = ctx.bb("ife_end")
     let result_slot = ctx.alloca_i64("ife_result")
-    ctx.store(const_i64(ctx, 0), result_slot)
+    ctx.store(ctx.i64(0), result_slot)
     ctx.cond_br(cond_i1, then_bb, else_bb)
 
     ctx.position(then_bb)
-    let t = emit_expr(ctx, env, then_branch)?
+    let t = ctx.emit(env, then_branch)?
     ctx.store_br_if_open(t.value, result_slot, merge_bb)
 
     ctx.position(else_bb)
-    let e = emit_expr(ctx, env, else_branch)?
+    let e = ctx.emit(env, else_branch)?
     ctx.store_br_if_open(e.value, result_slot, merge_bb)
 
     ctx.position(merge_bb)

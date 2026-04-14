@@ -17,13 +17,13 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     }
     let buf = malloc_struct_bytes(ctx, lookup.fields)
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
-    let as_i64 = to_i64(ctx, buf, "struct_i64")
+    let as_i64 = ctx.to_i64(buf, "struct_i64")
     ok_emit_typed(as_i64, .Struct(name))
 }
 
 fn malloc_struct_bytes(ctx: Ctx, fields: FieldList) -> ptr {
     let count = field_list_length(fields)
-    cg_malloc(ctx, const_i64(ctx, count * 8))
+    ctx.malloc(ctx.i64(count * 8))
 }
 
 fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> EmitResult {
@@ -32,7 +32,7 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
         .Node(field_name, sv, next) -> {
             let idx = field_index_of(fields, field_name)
             if idx < 0 { return err_emit("unknown field `${field_name}`") }
-            let r = emit_expr(ctx, env, sv.node)?
+            let r = ctx.emit(env, sv.node)?
             let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
             ctx.store(r.value, gep)
             fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
@@ -41,7 +41,7 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
 }
 
 export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> EmitResult {
-    let r = emit_expr(ctx, env, obj)?
+    let r = ctx.emit(env, obj)?
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
         return err_emit("field assignment on non-struct value (ty=${vtype_display(r.ty)})")
@@ -51,9 +51,9 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
     let st_ty = ctx.get_type(struct_name)
-    let obj_ptr = to_ptr(ctx, r.value, "fa_ptr")
+    let obj_ptr = ctx.to_ptr(r.value, "fa_ptr")
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
-    let v = emit_expr(ctx, env, value)?
+    let v = ctx.emit(env, value)?
     ctx.store(v.value, gep)
     ok_emit(v.value)
 }
@@ -70,18 +70,18 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
         _ -> {}
     }
 
-    let r = emit_expr(ctx, env, obj)?
+    let r = ctx.emit(env, obj)?
 
     // String/List/Map .length
     if vtype_is_str(r.ty) && field == "length" {
-        let str_ptr = to_ptr(ctx, r.value, "len_arg")
-        return ok_emit(call_1(ctx, get_fn(ctx, "strlen"), str_ptr, "strlen_call"))
+        let str_ptr = ctx.to_ptr(r.value, "len_arg")
+        return ok_emit(call_1(ctx, ctx.get_fn("strlen"), str_ptr, "strlen_call"))
     }
     if vtype_is_list(r.ty) && field == "length" {
-        return ok_emit(call_1(ctx, get_fn(ctx, "forge_array_len"), r.value, "list_len"))
+        return ok_emit(call_1(ctx, ctx.get_fn("forge_array_len"), r.value, "list_len"))
     }
     if vtype_is_map(r.ty) && field == "length" {
-        return ok_emit(call_1(ctx, get_fn(ctx, "forge_map_len_cstr"), r.value, "map_len"))
+        return ok_emit(call_1(ctx, ctx.get_fn("forge_map_len_cstr"), r.value, "map_len"))
     }
 
     let struct_name = vtype_struct_name(r.ty)
@@ -93,19 +93,19 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
     let st_ty = ctx.get_type(struct_name)
-    let obj_ptr = to_ptr(ctx, r.value, "obj_ptr")
+    let obj_ptr = ctx.to_ptr(r.value, "obj_ptr")
 
     // Null deref check
-    let zero = const_i64(ctx, 0)
+    let zero = ctx.i64(0)
     let is_null = ctx.icmp_eq(r.value, zero, "null_fld_chk")
     let fld_str = ctx.global_str(field, "fld_name")
-    let fld_len = const_i64(ctx, field.length)
+    let fld_len = ctx.i64(field.length)
     let ty_str = ctx.global_str(struct_name, "sty_name")
-    let ty_len = const_i64(ctx, struct_name.length)
+    let ty_len = ctx.i64(struct_name.length)
     let file_str = ctx.global_str(ctx.source_file, "src_file")
-    let file_len = const_i64(ctx, ctx.source_file.length)
-    let src_line = const_i64(ctx, ctx.source_line)
-    let trap_fn = get_fn(ctx, "forge_null_deref_trap")
+    let file_len = ctx.i64(ctx.source_file.length)
+    let src_line = ctx.i64(ctx.source_line)
+    let trap_fn = ctx.get_fn("forge_null_deref_trap")
     let trap_ft = forge_llvm_fn_type_of(trap_fn)
     let trap_args = forge_llvm_value_array_new(8)
     forge_llvm_value_array_set(trap_args, 0, fld_str)

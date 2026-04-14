@@ -10,22 +10,22 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("eprintln() expects 1 arg")
         .Node(se, _) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             let str_val = match {
                 vtype_is_str(r.ty) -> r.value
                 vtype_eq(r.ty, .Float) -> {
-                    let sp = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "ef2s")
-                    to_i64(ctx, sp, "ef2s_i64")
+                    let sp = call_1(ctx, ctx.get_fn("forge_float_to_string"), r.value, "ef2s")
+                    ctx.to_i64(sp, "ef2s_i64")
                 }
                 _ -> {
-                    let buf = cg_malloc(ctx, const_i64(ctx, 32))
+                    let buf = ctx.malloc(ctx.i64(32))
                     let fmt = ctx.global_str("%lld", ".eprint_fmt")
-                    call_4(ctx, get_fn(ctx, "snprintf"), buf, const_i64(ctx, 32), fmt, r.value, "")
-                    to_i64(ctx, buf, "eprint_str")
+                    call_4(ctx, ctx.get_fn("snprintf"), buf, ctx.i64(32), fmt, r.value, "")
+                    ctx.to_i64(buf, "eprint_str")
                 }
             }
-            let str_ptr = to_ptr(ctx, str_val, "eprint_arg")
-            let eprint_fn = get_fn(ctx, "forge_eprintln")
+            let str_ptr = ctx.to_ptr(str_val, "eprint_arg")
+            let eprint_fn = ctx.get_fn("forge_eprintln")
             let arr = forge_llvm_value_array_new(1)
             forge_llvm_value_array_set(arr, 0, str_ptr)
             let void_type = forge_llvm_void_type(ctx.lc)
@@ -35,7 +35,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             forge_llvm_type_array_free(pa)
             forge_llvm_build_call(ctx.builder, fn_type, eprint_fn, arr, 1, "")
             forge_llvm_value_array_free(arr)
-            ok_emit(const_i64(ctx, 0))
+            ok_emit(ctx.i64(0))
         }
     }
 }
@@ -51,13 +51,13 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
                 .String(text) -> {
                     let inner = strip_quotes(text)
                     let str_ptr = ctx.global_str(inner, ".str")
-                    to_i64(ctx, str_ptr, "str_i64")
+                    ctx.to_i64(str_ptr, "str_i64")
                 }
                 _ -> {
-                    let r = emit_expr(ctx, env, se.node)?
+                    let r = ctx.emit(env, se.node)?
                     if vtype_eq(r.ty, .Float) {
-                        let sp = call_1(ctx, get_fn(ctx, "forge_float_to_string"), r.value, "f2s")
-                        to_i64(ctx, sp, "f2s_i64")
+                        let sp = call_1(ctx, ctx.get_fn("forge_float_to_string"), r.value, "f2s")
+                        ctx.to_i64(sp, "f2s_i64")
                     } else {
                         r.value
                     }
@@ -68,8 +68,8 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             return err_emit("println expects 1 argument")
         }
     }
-    let str_ptr2 = to_ptr(ctx, str_i64, "str_ptr")
-    call_1(ctx, get_fn(ctx, "puts"), str_ptr2, "")
-    ok_emit(const_i64(ctx, 0))
+    let str_ptr2 = ctx.to_ptr(str_i64, "str_ptr")
+    call_1(ctx, ctx.get_fn("puts"), str_ptr2, "")
+    ok_emit(ctx.i64(0))
 }
 

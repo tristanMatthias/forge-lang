@@ -314,17 +314,17 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     // Even non-capturing ones get [TAG, fn_ptr] so the C-side
     // forge_closure_call_* trampolines can safely inspect them.
     // Only named function references (let f = my_fn) are bare pointers.
-    let arr_fn = get_fn(ctx, "forge_array_new")
-    let push_fn = get_fn(ctx, "forge_array_push")
+    let arr_fn = ctx.get_fn("forge_array_new")
+    let push_fn = ctx.get_fn("forge_array_push")
     let closure_arr = call_0(ctx, arr_fn, "closure")
-    let tag = const_i64(ctx, closure_marker())
+    let tag = ctx.i64(closure_marker())
     call_2(ctx, push_fn, closure_arr, tag, "")
     let fn_ptr_i64 = ctx.ptr_to_int(fn_val, ctx.i64_type, "lambda_ptr")
     call_2(ctx, push_fn, closure_arr, fn_ptr_i64, "")
     if num_captures > 0 {
         push_captured_values(ctx, captures, closure_arr, push_fn)
     }
-    let closure_i64 = to_i64(ctx, closure_arr, "closure_i64")
+    let closure_i64 = ctx.to_i64(closure_arr, "closure_i64")
     ok_emit_typed(closure_i64, ValueType.Closure(num_captures, result.ty))
 }
 
@@ -362,7 +362,7 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_typ
         .Node(se, _) -> {
             match se.node {
                 .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, param_types)
-                _ -> emit_expr(ctx, env, se.node)
+                _ -> ctx.emit(env, se.node)
             }
         }
     }
@@ -405,9 +405,9 @@ export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, nam
 fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, num_captures: int) -> EmitResult {
     // Closure array layout: [TAG, fn_ptr, cap1, cap2, ...]
     // TAG is at index 0, fn_ptr at index 1, captures start at index 2.
-    let closure_ptr = to_ptr(ctx, closure_val, "closure_ptr")
+    let closure_ptr = ctx.to_ptr(closure_val, "closure_ptr")
     // Load fn_ptr from closure array[1] (index 0 is the TAG)
-    let get_fn_call = call_2(ctx, get_fn(ctx, "forge_array_get"), closure_ptr, const_i64(ctx, 1), "closure_fn")
+    let get_fn_call = call_2(ctx, ctx.get_fn("forge_array_get"), closure_ptr, ctx.i64(1), "closure_fn")
     let fn_ptr = ctx.int_to_ptr(get_fn_call, ctx.ptr_type, "fn_ptr")
 
     let user_arg_count = expr_list_length(args)
@@ -435,7 +435,7 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
 fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int, i: int) {
     if i >= count { return }
     // Captures start at array index 2 (after TAG and fn_ptr)
-    let cap_val = call_2(ctx, get_fn(ctx, "forge_array_get"), closure_val, const_i64(ctx, i + 2), "cap")
+    let cap_val = call_2(ctx, ctx.get_fn("forge_array_get"), closure_val, ctx.i64(i + 2), "cap")
     forge_llvm_value_array_set(val_arr, start_idx + i, cap_val)
     fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
 }
@@ -462,13 +462,13 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     // args (user + captures).
     let user_arg_count = expr_list_length(args)
     if user_arg_count == 0 {
-        return ok_emit(call_1(ctx, get_fn(ctx, "forge_closure_call_0"), fn_i64, "ccall"))
+        return ok_emit(call_1(ctx, ctx.get_fn("forge_closure_call_0"), fn_i64, "ccall"))
     }
     if user_arg_count == 1 {
         match args {
             .Node(se, _) -> {
-                let a0 = emit_expr(ctx, env, se.node)?
-                return ok_emit(call_2(ctx, get_fn(ctx, "forge_closure_call_1"), fn_i64, a0.value, "ccall"))
+                let a0 = ctx.emit(env, se.node)?
+                return ok_emit(call_2(ctx, ctx.get_fn("forge_closure_call_1"), fn_i64, a0.value, "ccall"))
             }
             _ -> { return err_emit("expected 1 arg") }
         }
@@ -476,11 +476,11 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     if user_arg_count == 2 {
         match args {
             .Node(se0, rest) -> {
-                let a0 = emit_expr(ctx, env, se0.node)?
+                let a0 = ctx.emit(env, se0.node)?
                 match rest {
                     .Node(se1, _) -> {
-                        let a1 = emit_expr(ctx, env, se1.node)?
-                        return ok_emit(call_3(ctx, get_fn(ctx, "forge_closure_call_2"), fn_i64, a0.value, a1.value, "ccall"))
+                        let a1 = ctx.emit(env, se1.node)?
+                        return ok_emit(call_3(ctx, ctx.get_fn("forge_closure_call_2"), fn_i64, a0.value, a1.value, "ccall"))
                     }
                     _ -> { return err_emit("expected 2 args") }
                 }
@@ -491,14 +491,14 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     if user_arg_count == 3 {
         match args {
             .Node(se0, rest0) -> {
-                let a0 = emit_expr(ctx, env, se0.node)?
+                let a0 = ctx.emit(env, se0.node)?
                 match rest0 {
                     .Node(se1, rest1) -> {
-                        let a1 = emit_expr(ctx, env, se1.node)?
+                        let a1 = ctx.emit(env, se1.node)?
                         match rest1 {
                             .Node(se2, _) -> {
-                                let a2 = emit_expr(ctx, env, se2.node)?
-                                return ok_emit(call_4(ctx, get_fn(ctx, "forge_closure_call_3"), fn_i64, a0.value, a1.value, a2.value, "ccall"))
+                                let a2 = ctx.emit(env, se2.node)?
+                                return ok_emit(call_4(ctx, ctx.get_fn("forge_closure_call_3"), fn_i64, a0.value, a1.value, a2.value, "ccall"))
                             }
                             _ -> { return err_emit("expected 3 args") }
                         }
@@ -516,7 +516,7 @@ fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             forge_llvm_value_array_set(arr, idx, r.value)
             fill_lambda_args(ctx, env, arr, next, idx + 1)
         }

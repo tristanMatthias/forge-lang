@@ -13,14 +13,14 @@ export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 
 fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     // Build array of closures from each statement
-    let arr_fn = get_fn(ctx, "forge_array_new")
-    let push_fn = get_fn(ctx, "forge_array_push")
+    let arr_fn = ctx.get_fn("forge_array_new")
+    let push_fn = ctx.get_fn("forge_array_push")
     let closures = call_0(ctx, arr_fn, "par_closures")
 
     let r = collect_parallel_closures(ctx, env, stmts, closures, push_fn)?
 
     // Run all in parallel
-    call_1(ctx, get_fn(ctx, "forge_parallel_run"), closures, "")
+    call_1(ctx, ctx.get_fn("forge_parallel_run"), closures, "")
     ok_stmt(env)
 }
 
@@ -32,7 +32,7 @@ fn collect_parallel_closures(ctx: Ctx, env: VarEnv, stmts: StmtList, arr: ptr, p
             // Emit the expression and push the result as a closure.
             match ss.node {
                 .Expr(expr) -> {
-                    let r = emit_expr(ctx, env, expr)
+                    let r = ctx.emit(env, expr)
                     if r.had_error { return err_stmt(r.error_message) }
                     call_2(ctx, push_fn, arr, r.value, "")
                     collect_parallel_closures(ctx, env, next, arr, push_fn)

@@ -561,7 +561,7 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLe
     if !g.found {
         return TopLevelResult { ctx, env, had_error: true, error_message: "codegen error: global `${name}` not declared" }
     }
-    let r = emit_expr(ctx, env, init)
+    let r = ctx.emit(env, init)
     if r.had_error {
         return TopLevelResult { ctx, env, had_error: true, error_message: r.error_message }
     }

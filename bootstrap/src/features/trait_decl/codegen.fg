@@ -24,9 +24,9 @@ export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string
 
 
 export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> EmitResult {
-    let obj_ptr = to_ptr(ctx, obj_val, "tobj_ptr")
-    let concrete = call_1(ctx, get_fn(ctx, "forge_trait_object_value"), obj_ptr, "concrete")
-    let vtable = call_1(ctx, get_fn(ctx, "forge_trait_object_vtable"), obj_ptr, "vtable")
+    let obj_ptr = ctx.to_ptr(obj_val, "tobj_ptr")
+    let concrete = call_1(ctx, ctx.get_fn("forge_trait_object_value"), obj_ptr, "concrete")
+    let vtable = call_1(ctx, ctx.get_fn("forge_trait_object_vtable"), obj_ptr, "vtable")
     let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
     let idx = trait_method_idx(methods, method, 0)
     if idx < 0 {
@@ -35,14 +35,14 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
     // Determine return type from trait declaration
     let ret_ty_str = trait_method_ret_ty(methods, method)
     let ret_ty = translate_type_ctx(ctx, ret_ty_str)
-    let fn_closure = call_2(ctx, get_fn(ctx, "forge_array_get"), vtable, const_i64(ctx, idx), "vmethod")
+    let fn_closure = call_2(ctx, ctx.get_fn("forge_array_get"), vtable, ctx.i64(idx), "vmethod")
     let user_count = expr_list_length(args)
     if user_count == 0 {
-        return ok_emit_typed(call_2(ctx, get_fn(ctx, "forge_closure_call_1"), fn_closure, concrete, "tcall"), ret_ty)
+        return ok_emit_typed(call_2(ctx, ctx.get_fn("forge_closure_call_1"), fn_closure, concrete, "tcall"), ret_ty)
     }
     // 1-arg case
     let first_arg = emit_first_arg(ctx, env, args)?
-    ok_emit_typed(call_3(ctx, get_fn(ctx, "forge_closure_call_2"), fn_closure, concrete, first_arg.value, "tcall"), ret_ty)
+    ok_emit_typed(call_3(ctx, ctx.get_fn("forge_closure_call_2"), fn_closure, concrete, first_arg.value, "tcall"), ret_ty)
 }
 
 
@@ -57,11 +57,11 @@ export fn resolve_concrete_type_name(ty: ValueType) -> string {
 
 export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name: string) -> ptr {
     let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
-    let arr_fn = get_fn(ctx, "forge_array_new")
+    let arr_fn = ctx.get_fn("forge_array_new")
     let vtable = call_0(ctx, arr_fn, "vtable")
     push_vtable_entries_call(ctx, vtable, methods, concrete_name)
-    let obj_val = call_2(ctx, get_fn(ctx, "forge_trait_object_new"), value, vtable, "tobj")
-    to_i64(ctx, obj_val, "tobj_i64")
+    let obj_val = call_2(ctx, ctx.get_fn("forge_trait_object_new"), value, vtable, "tobj")
+    ctx.to_i64(obj_val, "tobj_i64")
 }
 
 
@@ -71,14 +71,14 @@ export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNa
         .Node(method_name, _, next) -> {
             let mangled = "${concrete_name}__${method_name}"
             let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
-            let push_fn = get_fn(ctx, "forge_array_push")
+            let push_fn = ctx.get_fn("forge_array_push")
             // Wrap in closure array: [TAG, fn_ptr]
-            let closure = call_0(ctx, get_fn(ctx, "forge_array_new"), "vclosure")
-            let tag = const_i64(ctx, closure_marker())
+            let closure = call_0(ctx, ctx.get_fn("forge_array_new"), "vclosure")
+            let tag = ctx.i64(closure_marker())
             call_2(ctx, push_fn, closure, tag, "")
             let fn_i64 = ctx.ptr_to_int(fn_val, ctx.i64_type, "vfn_ptr")
             call_2(ctx, push_fn, closure, fn_i64, "")
-            let closure_i64 = to_i64(ctx, closure, "vcl_i64")
+            let closure_i64 = ctx.to_i64(closure, "vcl_i64")
             call_2(ctx, push_fn, vtable, closure_i64, "")
             push_vtable_entries_call(ctx, vtable, next, concrete_name)
         }

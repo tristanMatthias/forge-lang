@@ -7,10 +7,10 @@ use codegen.{emit_expr, emit_stmt}
 
 export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> StmtResult {
     // Evaluate start and end once, store in allocas
-    let start_r = emit_expr(ctx, env, start)
+    let start_r = ctx.emit(env, start)
     if start_r.had_error { return err_stmt_from_expr(start_r) }
 
-    let end_r = emit_expr(ctx, env, end)
+    let end_r = ctx.emit(env, end)
     if end_r.had_error { return err_stmt_from_expr(end_r) }
 
     let counter = ctx.alloca_i64(variable)
@@ -22,10 +22,10 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
     let body_env = env_extend(env, variable, counter, .Int)
 
     // Basic blocks: condition, body, increment, exit
-    let cond_bb = new_bb(ctx, "for.cond")
-    let body_bb = new_bb(ctx, "for.body")
-    let incr_bb = new_bb(ctx, "for.incr")
-    let exit_bb = new_bb(ctx, "for.exit")
+    let cond_bb = ctx.bb("for.cond")
+    let body_bb = ctx.bb("for.body")
+    let incr_bb = ctx.bb("for.incr")
+    let exit_bb = ctx.bb("for.exit")
     ctx.br(cond_bb)
 
     // Condition: counter < end
@@ -45,7 +45,7 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
     // Increment: counter = counter + 1
     ctx.position(incr_bb)
     let old = ctx.load_i64(counter, variable)
-    let one = const_i64(ctx, 1)
+    let one = ctx.i64(1)
     let next = ctx.build_add(old, one, "for_next")
     ctx.store(next, counter)
     ctx.br(cond_bb)
@@ -62,27 +62,27 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
 //       body
 //   }
 export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr, body: Stmt) -> StmtResult {
-    let coll_r = emit_expr(ctx, env, collection)
+    let coll_r = ctx.emit(env, collection)
     if coll_r.had_error { return err_stmt_from_expr(coll_r) }
 
     // Get length
-    let len_val = call_1(ctx, get_fn(ctx, "forge_array_len"), coll_r.value, "forin_len")
+    let len_val = call_1(ctx, ctx.get_fn("forge_array_len"), coll_r.value, "forin_len")
     let len_alloca = ctx.alloca_i64("forin_len")
     ctx.store(len_val, len_alloca)
 
     // Counter alloca
     let counter = ctx.alloca_i64("forin_i")
-    ctx.store(const_i64(ctx, 0), counter)
+    ctx.store(ctx.i64(0), counter)
 
     // Element alloca — bind with the list's element type
     let elem_alloca = ctx.alloca_i64(variable)
     let body_env = env_extend(env, variable, elem_alloca, vtype_list_elem(coll_r.ty))
 
     // Basic blocks
-    let cond_bb = new_bb(ctx, "forin.cond")
-    let body_bb = new_bb(ctx, "forin.body")
-    let incr_bb = new_bb(ctx, "forin.incr")
-    let exit_bb = new_bb(ctx, "forin.exit")
+    let cond_bb = ctx.bb("forin.cond")
+    let body_bb = ctx.bb("forin.body")
+    let incr_bb = ctx.bb("forin.incr")
+    let exit_bb = ctx.bb("forin.exit")
     ctx.br(cond_bb)
 
     // Condition: counter < len
@@ -94,7 +94,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
 
     // Body: load element, then execute body
     ctx.position(body_bb)
-    let elem = call_2(ctx, get_fn(ctx, "forge_array_get"), coll_r.value, cur, "forin_elem")
+    let elem = call_2(ctx, ctx.get_fn("forge_array_get"), coll_r.value, cur, "forin_elem")
     ctx.store(elem, elem_alloca)
 
     let body_ctx = ctx_with_loops(ctx, .Frame(incr_bb, exit_bb, ctx.loops))
@@ -104,7 +104,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     // Increment
     ctx.position(incr_bb)
     let old = ctx.load_i64(counter, "forin_i_old")
-    let next = ctx.build_add(old, const_i64(ctx, 1), "forin_next")
+    let next = ctx.build_add(old, ctx.i64(1), "forin_next")
     ctx.store(next, counter)
     ctx.br(cond_bb)
 

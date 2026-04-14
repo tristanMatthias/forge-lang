@@ -8,7 +8,7 @@ use codegen.{emit_expr}
 // ── Match as expression ──
 
 export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> EmitResult {
-    let r = emit_expr(ctx, env, subject)?
+    let r = ctx.emit(env, subject)?
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {
         // Non-enum match: treat as guard-based if-else chain.
@@ -18,11 +18,11 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
     let lookup = enum_reg_lookup(ctx.enums, enum_name)
     if !lookup.found { return err_emit("unknown enum `${enum_name}`") }
     let st_ty = ctx.get_type(enum_name)
-    let subj_ptr = to_ptr(ctx, r.value, "match_subj")
+    let subj_ptr = ctx.to_ptr(r.value, "match_subj")
     let tag_val = ctx.enum_tag(r.value, enum_name)
     let result_slot = ctx.alloca_i64("match_result")
-    ctx.store(const_i64(ctx, 0), result_slot)
-    let merge_bb = new_bb(ctx, "match_end")
+    ctx.store(ctx.i64(0), result_slot)
+    let merge_bb = ctx.bb("match_end")
     let arm_result = emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)?
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "match_val")
@@ -36,15 +36,15 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                 let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
                 let tag_i64 = tag_val
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
-                let mu_line = const_i64(ctx, ctx.source_line)
-                call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
+                let mu_line = ctx.i64(ctx.source_line)
+                call_4(ctx, ctx.get_fn("forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ok_emit(null_ptr_val())
         }
         .Node(pattern, guard, body, next) -> {
-            let arm_bb = new_bb(ctx, "march_arm")
-            let next_bb = new_bb(ctx, "march_next")
+            let arm_bb = ctx.bb("march_arm")
+            let next_bb = ctx.bb("march_next")
             emit_pattern_tag_branch(ctx, pattern, tag_val, variants, arm_bb, next_bb)
             ctx.position(arm_bb)
             // For nested patterns, check inner variant tags before binding
@@ -52,13 +52,13 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
             // Guard: if present, check condition; if false, skip to next arm
             if guard != null {
-                let guard_r = emit_expr(ctx, arm_env, guard!.node)?
-                let guard_bool = ctx.icmp(33, guard_r.value, const_i64(ctx, 0), "guard")
-                let guard_pass_bb = new_bb(ctx, "guard_pass")
+                let guard_r = ctx.emit(arm_env, guard!.node)?
+                let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "guard")
+                let guard_pass_bb = ctx.bb("guard_pass")
                 ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
                 ctx.position(guard_pass_bb)
             }
-            let body_result = emit_expr(ctx, arm_env, body.node)?
+            let body_result = ctx.emit(arm_env, body.node)?
             ctx.store_br_if_open(body_result.value, result_slot, merge_bb)
             ctx.position(next_bb)
             let rest = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)?
@@ -73,7 +73,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
 // ── Match as statement ──
 
 export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> StmtResult {
-    let r = emit_expr(ctx, env, subject)
+    let r = ctx.emit(env, subject)
     if r.had_error { return err_stmt_from_expr(r) }
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {
@@ -83,9 +83,9 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
     let lookup = enum_reg_lookup(ctx.enums, enum_name)
     if !lookup.found { return err_stmt("codegen error: unknown enum `${enum_name}`") }
     let st_ty = ctx.get_type(enum_name)
-    let subj_ptr = to_ptr(ctx, r.value, "match_subj")
+    let subj_ptr = ctx.to_ptr(r.value, "match_subj")
     let tag_val = ctx.enum_tag(r.value, enum_name)
-    let merge_bb = new_bb(ctx, "match_end")
+    let merge_bb = ctx.bb("match_end")
     let arm_result = emit_match_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)?
     ctx.position(merge_bb)
     ok_stmt(env)
@@ -98,28 +98,28 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
                 let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
                 let tag_i64 = tag_val
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
-                let mu_line = const_i64(ctx, ctx.source_line)
-                call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
+                let mu_line = ctx.i64(ctx.source_line)
+                call_4(ctx, ctx.get_fn("forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ok_stmt(env)
         }
         .Node(pattern, guard, body, next) -> {
-            let arm_bb = new_bb(ctx, "match_arm")
-            let next_bb = new_bb(ctx, "match_next")
+            let arm_bb = ctx.bb("match_arm")
+            let next_bb = ctx.bb("match_next")
             emit_pattern_tag_branch(ctx, pattern, tag_val, variants, arm_bb, next_bb)
             ctx.position(arm_bb)
             emit_nested_tag_checks(ctx, pattern, st_ty, subj_ptr, variants, next_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
             if guard != null {
-                let guard_r = emit_expr(ctx, arm_env, guard!.node)
+                let guard_r = ctx.emit(arm_env, guard!.node)
                 if guard_r.had_error { return err_stmt(guard_r.error_message) }
-                let guard_bool = ctx.icmp(33, guard_r.value, const_i64(ctx, 0), "guard")
-                let guard_pass_bb = new_bb(ctx, "guard_pass")
+                let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "guard")
+                let guard_pass_bb = ctx.bb("guard_pass")
                 ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
                 ctx.position(guard_pass_bb)
             }
-            let body_result = emit_expr(ctx, arm_env, body.node)
+            let body_result = ctx.emit(arm_env, body.node)
             if body_result.had_error { return err_stmt(body_result.error_message) }
             ctx.br_if_open(merge_bb)
             ctx.position(next_bb)
@@ -143,7 +143,7 @@ fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: V
     match pattern {
         .Or(left, right) -> {
             // Try left alternative; if it fails, try right.
-            let mid_bb = new_bb(ctx, "or_mid")
+            let mid_bb = ctx.bb("or_mid")
             emit_pattern_tag_branch(ctx, left, tag_val, variants, arm_bb, mid_bb)
             ctx.position(mid_bb)
             emit_pattern_tag_branch(ctx, right, tag_val, variants, arm_bb, next_bb)
@@ -158,7 +158,7 @@ fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: V
             if !v.found {
                 return ctx.br(next_bb)
             }
-            let cmp = ctx.icmp(32, tag_val, const_i64(ctx, v.tag), "tag_eq")
+            let cmp = ctx.icmp(32, tag_val, ctx.i64(v.tag), "tag_eq")
             ctx.cond_br(cmp, arm_bb, next_bb)
         }
     }
@@ -192,13 +192,13 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                             let iv = variant_lookup(lookup.variants, inner_vname)
                             if iv.found {
                                 let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, "inner_i64")
-                                let inner_ptr = to_ptr(ctx, inner_val, "inner_enum_ptr")
+                                let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
                                 let inner_struct_ty = ctx.get_type(enum_name)
                                 let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
                                 let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
-                                let want = const_i64(ctx, iv.tag)
+                                let want = ctx.i64(iv.tag)
                                 let cmp = ctx.icmp(32, inner_tag, want, "inner_tag_eq")
-                                let pass_bb = new_bb(ctx, "inner_pass")
+                                let pass_bb = ctx.bb("inner_pass")
                                 ctx.cond_br(cmp, pass_bb, next_bb)
                                 ctx.position(pass_bb)
                             }
@@ -216,13 +216,13 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                             let iv = variant_lookup(lookup.variants, inner_vname)
                             if iv.found {
                                 let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, "inner_i64")
-                                let inner_ptr = to_ptr(ctx, inner_val, "inner_enum_ptr")
+                                let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
                                 let inner_struct_ty = ctx.get_type(enum_name)
                                 let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
                                 let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
-                                let want = const_i64(ctx, iv.tag)
+                                let want = ctx.i64(iv.tag)
                                 let cmp = ctx.icmp(32, inner_tag, want, "inner_tag_eq")
-                                let pass_bb = new_bb(ctx, "inner_pass")
+                                let pass_bb = ctx.bb("inner_pass")
                                 ctx.cond_br(cmp, pass_bb, next_bb)
                                 ctx.position(pass_bb)
                             }
@@ -242,7 +242,7 @@ fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, label: stri
     let pay_gep = ctx.gep(st_ty, subj_ptr, 1, "pay_slot")
     let pay_ptr = ctx.load(forge_llvm_pointer_type(ctx.lc), pay_gep, "payload")
     let pay_i64 = ctx.ptr_to_int(pay_ptr, ctx.i64_type, "pay_base")
-    let addr = ctx.build_add(pay_i64, const_i64(ctx, idx * 8), "fld_addr")
+    let addr = ctx.build_add(pay_i64, ctx.i64(idx * 8), "fld_addr")
     let fld_ptr = ctx.int_to_ptr(addr, forge_llvm_pointer_type(ctx.lc), "fld_ptr")
     ctx.load_i64(fld_ptr, label)
 }
@@ -309,7 +309,7 @@ fn bind_single_sub_pattern(ctx: Ctx, env: VarEnv, pat: Pattern, value: ptr, ty: 
             }
             let lookup = enum_reg_lookup(ctx.enums, enum_name)
             if !lookup.found { return env }
-            let inner_ptr = to_ptr(ctx, value, "inner_ptr")
+            let inner_ptr = ctx.to_ptr(value, "inner_ptr")
             let inner_ty = ctx.get_type(enum_name)
             let v = variant_lookup(lookup.variants, vname)
             if !v.found { return env }
@@ -320,7 +320,7 @@ fn bind_single_sub_pattern(ctx: Ctx, env: VarEnv, pat: Pattern, value: ptr, ty: 
             if enum_name == "" { return env }
             let lookup = enum_reg_lookup(ctx.enums, enum_name)
             if !lookup.found { return env }
-            let inner_ptr = to_ptr(ctx, value, "inner_ptr")
+            let inner_ptr = ctx.to_ptr(value, "inner_ptr")
             let inner_ty = ctx.get_type(enum_name)
             let v = variant_lookup(lookup.variants, vname)
             if !v.found { return env }
@@ -350,8 +350,8 @@ fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: 
 
 fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList) -> EmitResult {
     let result_slot = ctx.alloca_i64("pmatch_result")
-    ctx.store(const_i64(ctx, 0), result_slot)
-    let merge_bb = new_bb(ctx, "pmatch_end")
+    ctx.store(ctx.i64(0), result_slot)
+    let merge_bb = ctx.bb("pmatch_end")
     emit_primitive_arms_expr(ctx, env, subj, arms, merge_bb, result_slot)
 }
 
@@ -359,24 +359,24 @@ fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Matc
 fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
     match pattern {
         .LitInt(val) -> {
-            ctx.icmp(32, subj.value, const_i64(ctx, val), "lit_eq")
+            ctx.icmp(32, subj.value, ctx.i64(val), "lit_eq")
         }
         .LitBool(val) -> {
-            let cmp_val = if val { const_i64(ctx, 1) } else { const_i64(ctx, 0) }
+            let cmp_val = if val { ctx.i64(1) } else { ctx.i64(0) }
             ctx.icmp(32, subj.value, cmp_val, "lit_eq")
         }
         .LitString(val) -> {
-            let subj_ptr = to_ptr(ctx, subj.value, "lit_str_ptr")
+            let subj_ptr = ctx.to_ptr(subj.value, "lit_str_ptr")
             let lit_ptr = ctx.global_str(val, ".lit_str")
-            let cmp_result = call_2(ctx, get_fn(ctx, "strcmp"), subj_ptr, lit_ptr, "strcmp_r")
+            let cmp_result = call_2(ctx, ctx.get_fn("strcmp"), subj_ptr, lit_ptr, "strcmp_r")
             // Sign-extend i32 strcmp result to i64 for type-safe icmp (LLVM 21 requires matching types)
             let cmp_ext = forge_llvm_build_sext(ctx.builder, cmp_result, ctx.i64_type, "strcmp_sext")
-            ctx.icmp(32, cmp_ext, const_i64(ctx, 0), "str_eq")
+            ctx.icmp(32, cmp_ext, ctx.i64(0), "str_eq")
         }
         .LitFloat(val) -> {
             // Parse the float literal string → i64 bits, then compare as f64
             let lit_str = ctx.global_str(val, ".flit_str")
-            let lit_bits = call_1(ctx, get_fn(ctx, "forge_float_parse"), lit_str, "flit_bits")
+            let lit_bits = call_1(ctx, ctx.get_fn("forge_float_parse"), lit_str, "flit_bits")
             let subj_f64 = to_f64(ctx, subj.value, "subj_f64")
             let lit_f64 = forge_llvm_build_bitcast(ctx.builder, lit_bits, forge_llvm_double_type(ctx.lc), "lit_f64")
             // OEQ = 1 (ordered equal)
@@ -390,7 +390,7 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
         }
         _ -> {
             // Wildcard / Variant — should not reach here
-            const_i64(ctx, 1)
+            ctx.i64(1)
         }
     }
 }
@@ -412,8 +412,8 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             if !ctx.has_terminator() {
                 let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
-                let mu_line = const_i64(ctx, ctx.source_line)
-                call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, const_i64(ctx, -1), mu_file, mu_line, "")
+                let mu_line = ctx.i64(ctx.source_line)
+                call_4(ctx, ctx.get_fn("forge_match_unreachable"), fn_name_str, ctx.i64(-1), mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ctx.position(merge_bb)
@@ -421,27 +421,27 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             ok_emit(loaded)
         }
         .Node(pattern, guard, body, next) -> {
-            let body_bb = new_bb(ctx, "parm_body")
-            let next_bb = new_bb(ctx, "parm_next")
+            let body_bb = ctx.bb("parm_body")
+            let next_bb = ctx.bb("parm_next")
 
             if is_literal_pattern(pattern) {
                 // Literal pattern: compare subject against the literal
                 let cmp = emit_literal_cmp(ctx, subj, pattern)
                 if guard != null {
                     // Literal + guard: both must be true
-                    let lit_pass_bb = new_bb(ctx, "lit_guard")
+                    let lit_pass_bb = ctx.bb("lit_guard")
                     ctx.cond_br(cmp, lit_pass_bb, next_bb)
                     ctx.position(lit_pass_bb)
-                    let guard_r = emit_expr(ctx, env, guard!.node)?
-                    let guard_bool = ctx.icmp(33, guard_r.value, const_i64(ctx, 0), "pguard")
+                    let guard_r = ctx.emit(env, guard!.node)?
+                    let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "pguard")
                     ctx.cond_br(guard_bool, body_bb, next_bb)
                 } else {
                     ctx.cond_br(cmp, body_bb, next_bb)
                 }
             } else if guard != null {
                 // Guarded wildcard: if guard { body } else { next arm }
-                let guard_r = emit_expr(ctx, env, guard!.node)?
-                let guard_bool = ctx.icmp(33, guard_r.value, const_i64(ctx, 0), "pguard")
+                let guard_r = ctx.emit(env, guard!.node)?
+                let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "pguard")
                 ctx.cond_br(guard_bool, body_bb, next_bb)
             } else {
                 // Unguarded wildcard: always matches (catch-all)
@@ -449,7 +449,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             }
 
             ctx.position(body_bb)
-            let body_r = emit_expr(ctx, env, body.node)?
+            let body_r = ctx.emit(env, body.node)?
             ctx.store_br_if_open(body_r.value, result_slot, merge_bb)
 
             ctx.position(next_bb)
@@ -462,7 +462,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
 }
 
 fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList) -> StmtResult {
-    let merge_bb = new_bb(ctx, "pmatch_end")
+    let merge_bb = ctx.bb("pmatch_end")
     emit_primitive_arms_stmt(ctx, env, subj, arms, merge_bb)
 }
 
@@ -472,41 +472,41 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             if !ctx.has_terminator() {
                 let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
-                let mu_line = const_i64(ctx, ctx.source_line)
-                call_4(ctx, get_fn(ctx, "forge_match_unreachable"), fn_name_str, const_i64(ctx, -1), mu_file, mu_line, "")
+                let mu_line = ctx.i64(ctx.source_line)
+                call_4(ctx, ctx.get_fn("forge_match_unreachable"), fn_name_str, ctx.i64(-1), mu_file, mu_line, "")
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ctx.position(merge_bb)
             ok_stmt(env)
         }
         .Node(pattern, guard, body, next) -> {
-            let body_bb = new_bb(ctx, "parm_body")
-            let next_bb = new_bb(ctx, "parm_next")
+            let body_bb = ctx.bb("parm_body")
+            let next_bb = ctx.bb("parm_next")
 
             if is_literal_pattern(pattern) {
                 let cmp = emit_literal_cmp(ctx, subj, pattern)
                 if guard != null {
-                    let lit_pass_bb = new_bb(ctx, "lit_guard")
+                    let lit_pass_bb = ctx.bb("lit_guard")
                     ctx.cond_br(cmp, lit_pass_bb, next_bb)
                     ctx.position(lit_pass_bb)
-                    let guard_r = emit_expr(ctx, env, guard!.node)
+                    let guard_r = ctx.emit(env, guard!.node)
                     if guard_r.had_error { return err_stmt_from_expr(guard_r) }
-                    let guard_bool = ctx.icmp(33, guard_r.value, const_i64(ctx, 0), "pguard")
+                    let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "pguard")
                     ctx.cond_br(guard_bool, body_bb, next_bb)
                 } else {
                     ctx.cond_br(cmp, body_bb, next_bb)
                 }
             } else if guard != null {
-                let guard_r = emit_expr(ctx, env, guard!.node)
+                let guard_r = ctx.emit(env, guard!.node)
                 if guard_r.had_error { return err_stmt_from_expr(guard_r) }
-                let guard_bool = ctx.icmp(33, guard_r.value, const_i64(ctx, 0), "pguard")
+                let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "pguard")
                 ctx.cond_br(guard_bool, body_bb, next_bb)
             } else {
                 ctx.br(body_bb)
             }
 
             ctx.position(body_bb)
-            let body_r = emit_expr(ctx, env, body.node)
+            let body_r = ctx.emit(env, body.node)
             if body_r.had_error { return err_stmt_from_expr(body_r) }
             ctx.br_if_open(merge_bb)
 
@@ -521,9 +521,9 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
 // Result stored in alloca, loaded at merge_bb.
 
 export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: WhenArmList) -> EmitResult {
-    let merge_bb = new_bb(ctx, "when_end")
+    let merge_bb = ctx.bb("when_end")
     let result_slot = ctx.alloca_i64("when_result")
-    ctx.store(const_i64(ctx, 0), result_slot)
+    ctx.store(ctx.i64(0), result_slot)
     let ty = emit_when_arms(ctx, env, arms, merge_bb, result_slot)
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "when_val")
@@ -536,21 +536,21 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
         .Node(cond, body, next) -> {
             if cond == null {
                 // Else arm — emit body directly, store, branch to merge
-                let r = emit_expr(ctx, env, body.node)
+                let r = ctx.emit(env, body.node)
                 if !r.had_error {
                     ctx.store(r.value, result_slot)
                 }
                 ctx.br_if_open(merge_bb)
                 r.ty
             } else {
-                let cond_r = emit_expr(ctx, env, cond!.node)
-                let cond_i1 = ctx.icmp(33, cond_r.value, const_i64(ctx, 0), "when_cond")
-                let arm_bb = new_bb(ctx, "when_arm")
-                let next_bb = new_bb(ctx, "when_next")
+                let cond_r = ctx.emit(env, cond!.node)
+                let cond_i1 = ctx.icmp(33, cond_r.value, ctx.i64(0), "when_cond")
+                let arm_bb = ctx.bb("when_arm")
+                let next_bb = ctx.bb("when_next")
                 ctx.cond_br(cond_i1, arm_bb, next_bb)
                 // Arm body
                 ctx.position(arm_bb)
-                let r = emit_expr(ctx, env, body.node)
+                let r = ctx.emit(env, body.node)
                 if !r.had_error {
                     ctx.store(r.value, result_slot)
                 }

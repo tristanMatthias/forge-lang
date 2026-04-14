@@ -17,25 +17,25 @@ export fn spec_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 
 fn emit_spec_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> StmtResult {
     let name_val = emit_string_const(ctx, name)
-    call_1(ctx, get_fn(ctx, "forge_test_start_spec"), name_val, "")
+    call_1(ctx, ctx.get_fn("forge_test_start_spec"), name_val, "")
     let r = emit_spec_stmts(ctx, env, body)?
-    call_1(ctx, get_fn(ctx, "forge_test_end_spec"), name_val, "")
+    call_1(ctx, ctx.get_fn("forge_test_end_spec"), name_val, "")
     ok_stmt(env)
 }
 
 fn emit_given_block(ctx: Ctx, env: VarEnv, name: string, body: StmtList) -> StmtResult {
     let name_val = emit_string_const(ctx, name)
-    call_1(ctx, get_fn(ctx, "forge_test_start_given"), name_val, "")
+    call_1(ctx, ctx.get_fn("forge_test_start_given"), name_val, "")
     let r = emit_spec_stmts(ctx, env, body)?
-    call_1(ctx, get_fn(ctx, "forge_test_end_given"), name_val, "")
+    call_1(ctx, ctx.get_fn("forge_test_end_given"), name_val, "")
     ok_stmt(r.env)
 }
 
 fn emit_then_block(ctx: Ctx, env: VarEnv, name: string, cond: Expr) -> StmtResult {
-    let r = emit_expr(ctx, env, cond)
+    let r = ctx.emit(env, cond)
     if r.had_error { return err_stmt(r.error_message) }
     let name_val = emit_string_const(ctx, name)
-    call_2(ctx, get_fn(ctx, "forge_test_run_then"), name_val, r.value, "")
+    call_2(ctx, ctx.get_fn("forge_test_run_then"), name_val, r.value, "")
     ok_stmt(env)
 }
 
@@ -63,7 +63,7 @@ fn emit_spec_single(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             // Regular statements inside spec blocks — wrap in a StmtList
             // and emit via emit_block_loop, which handles all statement types.
             let wrapped = StmtList.Node(sstmt_dummy(stmt), StmtList.End)
-            let r = emit_block_loop(ctx, env, wrapped, const_i64(ctx, 0), .Int)
+            let r = emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Int)
             if r.had_error { return err_stmt(r.error_message) }
             ok_stmt(env)
         }

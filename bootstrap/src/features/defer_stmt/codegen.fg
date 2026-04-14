@@ -27,7 +27,7 @@ fn emit_defer_stack(ctx: Ctx, env: VarEnv, stack: DeferStack) {
     match stack {
         .End -> {}
         .Frame(body, next) -> {
-            emit_expr(ctx, env, body.node)
+            ctx.emit(env, body.node)
             emit_defer_stack(ctx, env, next)
         }
     }

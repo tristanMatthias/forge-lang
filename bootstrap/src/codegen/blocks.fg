@@ -10,13 +10,13 @@ export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult 
     // statement, if that statement is a `Stmt.Expr`. Anything
     // else (return, let, while, ...) yields i64 0. Each non-last
     // statement is executed for its side effects.
-    emit_block_loop(ctx, env, stmts, const_i64(ctx, 0), .Int)
+    emit_block_loop(ctx, env, stmts, ctx.i64(0), .Int)
 }
 
 
 export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> EmitResult {
     match stmt {
-        .Expr(e) -> emit_expr(ctx, env, e)
+        .Expr(e) -> ctx.emit(env, e)
         .Block(body) -> emit_block_expr(ctx, env, body)
         .Match(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
         .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
@@ -32,20 +32,20 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
 
 
 export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
-    let cond = emit_expr(ctx, env, condition)
+    let cond = ctx.emit(env, condition)
     if cond.had_error {
         return cond
     }
-    let cond_i1 = ctx.icmp(33, cond.value, const_i64(ctx, 0), "sif_cond")
-    let then_bb = new_bb(ctx, "sif_then")
-    let else_bb = new_bb(ctx, "sif_else")
-    let merge_bb = new_bb(ctx, "sif_end")
+    let cond_i1 = ctx.icmp(33, cond.value, ctx.i64(0), "sif_cond")
+    let then_bb = ctx.bb("sif_then")
+    let else_bb = ctx.bb("sif_else")
+    let merge_bb = ctx.bb("sif_end")
     let result_slot = ctx.alloca_i64("sif_result")
-    ctx.store(const_i64(ctx, 0), result_slot)
+    ctx.store(ctx.i64(0), result_slot)
     ctx.cond_br(cond_i1, then_bb, else_bb)
 
     ctx.position(then_bb)
-    let zero = const_i64(ctx, 0)
+    let zero = ctx.i64(0)
     let t = emit_stmt_as_value(ctx, env, then_branch, zero, .Int)
     if t.had_error {
         return t

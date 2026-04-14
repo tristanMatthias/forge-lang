@@ -14,20 +14,20 @@ use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_v
 use codegen.{emit_expr}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
-    let l = emit_expr(ctx, env, left)
+    let l = ctx.emit(env, left)
     if l.had_error { return l }
 
     // Short-circuit: if left != 0 (non-null), skip right.
-    let is_null = ctx.icmp(32, l.value, const_i64(ctx, 0), "nc_null")
-    let then_bb = new_bb(ctx, "nc_rhs")
-    let merge_bb = new_bb(ctx, "nc_end")
+    let is_null = ctx.icmp(32, l.value, ctx.i64(0), "nc_null")
+    let then_bb = ctx.bb("nc_rhs")
+    let merge_bb = ctx.bb("nc_end")
     let result_slot = ctx.alloca_i64("nc_result")
     ctx.store(l.value, result_slot)
     ctx.cond_br(is_null, then_bb, merge_bb)
 
     // Right-hand side: only evaluated when left is null.
     ctx.position(then_bb)
-    let r = emit_expr(ctx, env, right)
+    let r = ctx.emit(env, right)
     if r.had_error { return r }
     ctx.store(r.value, result_slot)
     ctx.br(merge_bb)
@@ -42,15 +42,15 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
 }
 
 export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitResult {
-    let r = emit_expr(ctx, env, obj)
+    let r = ctx.emit(env, obj)
     if r.had_error { return r }
 
     // If the object is null (i64 0), produce null without accessing.
-    let is_null = ctx.icmp(32, r.value, const_i64(ctx, 0), "oc_null")
-    let access_bb = new_bb(ctx, "oc_access")
-    let merge_bb = new_bb(ctx, "oc_end")
+    let is_null = ctx.icmp(32, r.value, ctx.i64(0), "oc_null")
+    let access_bb = ctx.bb("oc_access")
+    let merge_bb = ctx.bb("oc_end")
     let result_slot = ctx.alloca_i64("oc_result")
-    ctx.store(const_i64(ctx, 0), result_slot)
+    ctx.store(ctx.i64(0), result_slot)
     ctx.cond_br(is_null, merge_bb, access_bb)
 
     // Access the field (only reached when obj is non-null).
@@ -75,7 +75,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
         return err_emit("unknown field `${field}` on struct `${struct_name}` in optional chain")
     }
     let st_ty = ctx.get_type(struct_name)
-    let obj_ptr = to_ptr(ctx, r.value, "oc_ptr")
+    let obj_ptr = ctx.to_ptr(r.value, "oc_ptr")
     let gep = ctx.gep(st_ty, obj_ptr, idx, "oc_fld")
     let loaded_field = ctx.load_i64(gep, field)
     ctx.store(loaded_field, result_slot)
@@ -88,7 +88,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
 }
 
 export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
-    let r = emit_expr(ctx, env, inner)
+    let r = ctx.emit(env, inner)
     if r.had_error { return r }
 
     // ── Mode 1: Result enum ──
@@ -96,13 +96,13 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "Result" {
         let enum_ty = ctx.get_type("Result")
-        let enum_ptr = to_ptr(ctx, r.value, "try_res_ptr")
+        let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
         let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "try_tag_ptr")
         let tag = ctx.load_i64(tag_gep, "try_tag")
-        let ok_tag = const_i64(ctx, forge_variant_hash("Ok"))
+        let ok_tag = ctx.i64(forge_variant_hash("Ok"))
         let is_ok = ctx.icmp(32, tag, ok_tag, "try_is_ok")
-        let ok_bb = new_bb(ctx, "try_ok")
-        let err_bb = new_bb(ctx, "try_err")
+        let ok_bb = ctx.bb("try_ok")
+        let err_bb = ctx.bb("try_err")
         ctx.cond_br(is_ok, ok_bb, err_bb)
 
         ctx.position(err_bb)
@@ -125,13 +125,13 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
             let err_idx = field_index_of(lookup.fields, "had_error")
             if err_idx >= 0 {
                 let st_ty = ctx.get_type(struct_name)
-                let obj_ptr = to_ptr(ctx, r.value, "try_ptr")
+                let obj_ptr = ctx.to_ptr(r.value, "try_ptr")
                 let gep = ctx.gep(st_ty, obj_ptr, err_idx, "try_err_ptr")
                 let err_val = ctx.load_i64(gep, "try_had_error")
                 // icmp ne (not-equal to 0) = truthy = had error
-                let is_err = ctx.icmp(33, err_val, const_i64(ctx, 0), "try_is_err")
-                let cont_bb = new_bb(ctx, "try_ok")
-                let ret_bb = new_bb(ctx, "try_err")
+                let is_err = ctx.icmp(33, err_val, ctx.i64(0), "try_is_err")
+                let cont_bb = ctx.bb("try_ok")
+                let ret_bb = ctx.bb("try_err")
                 ctx.cond_br(is_err, ret_bb, cont_bb)
 
                 ctx.position(ret_bb)
@@ -145,13 +145,13 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
 
     // ── Mode 3: Nullable ──
     // If value is null (0), return null from enclosing fn.
-    let is_null = ctx.icmp(32, r.value, const_i64(ctx, 0), "try_null")
-    let cont_bb = new_bb(ctx, "try_ok")
-    let ret_bb = new_bb(ctx, "try_ret")
+    let is_null = ctx.icmp(32, r.value, ctx.i64(0), "try_null")
+    let cont_bb = ctx.bb("try_ok")
+    let ret_bb = ctx.bb("try_ret")
     ctx.cond_br(is_null, ret_bb, cont_bb)
 
     ctx.position(ret_bb)
-    ctx.build_ret(const_i64(ctx, 0))
+    ctx.build_ret(ctx.i64(0))
 
     ctx.position(cont_bb)
     EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }

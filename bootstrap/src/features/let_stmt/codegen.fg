@@ -9,7 +9,7 @@ use features.trait_decl.codegen.{box_for_trait}
 
 
 export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: string, initializer: Expr) -> StmtResult {
-    let r = emit_expr(ctx, env, initializer)
+    let r = ctx.emit(env, initializer)
     if r.had_error {
         return err_stmt_from_expr(r)
     }

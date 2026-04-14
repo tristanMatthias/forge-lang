@@ -4,7 +4,7 @@ use codegen.{emit_expr}
 use core.ast.{variant_lookup, vtype_display, vtype_enum_name}
 use codegen.types.{const_i64, enum_reg_lookup, err_emit, ok_emit}
 export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> EmitResult {
-    let r = emit_expr(ctx, env, subject)?
+    let r = ctx.emit(env, subject)?
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {
         return err_emit("`is` requires an enum value, got `${vtype_display(r.ty)}`")
@@ -18,5 +18,5 @@ export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> 
         return err_emit("unknown variant `${vname}` in enum `${enum_name}`")
     }
     let tag = ctx.enum_tag(r.value, enum_name)
-    ok_emit(ctx.icmp_eq(tag, const_i64(ctx, v.tag), "is_eq"))
+    ok_emit(ctx.icmp_eq(tag, ctx.i64(v.tag), "is_eq"))
 }

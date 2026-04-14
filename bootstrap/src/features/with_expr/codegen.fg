@@ -10,7 +10,7 @@ use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, struct_reg
 use codegen.{emit_expr}
 
 export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> EmitResult {
-    let r = emit_expr(ctx, env, obj)?
+    let r = ctx.emit(env, obj)?
 
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
@@ -23,8 +23,8 @@ export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) 
 
     // Count fields and allocate new struct
     let field_count = field_list_length(lookup.fields)
-    let new_buf = cg_malloc(ctx, const_i64(ctx, field_count * 8))
-    let src_ptr = to_ptr(ctx, r.value, "with_src")
+    let new_buf = ctx.malloc(ctx.i64(field_count * 8))
+    let src_ptr = ctx.to_ptr(r.value, "with_src")
 
     // Copy all fields from original
     copy_struct_fields(ctx, src_ptr, new_buf, struct_name, field_count, 0)
@@ -32,7 +32,7 @@ export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) 
     // Override specified fields
     apply_overrides(ctx, env, new_buf, struct_name, lookup.fields, overrides)
 
-    ok_emit_typed(to_i64(ctx, new_buf, "with_result"), r.ty)
+    ok_emit_typed(ctx.to_i64(new_buf, "with_result"), r.ty)
 }
 
 fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, count: int, idx: int) {
@@ -51,7 +51,7 @@ fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields:
         .Node(name, sv, next) -> {
             let idx = field_index_of(fields, name)
             if idx >= 0 {
-                let r = emit_expr(ctx, env, sv.node)
+                let r = ctx.emit(env, sv.node)
                 if !r.had_error {
                     let st_ty = ctx.get_type(struct_name)
                     let gep = ctx.gep(st_ty, dst, idx, "with_ovr")

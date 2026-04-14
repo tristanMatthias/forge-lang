@@ -16,7 +16,7 @@ use codegen.{emit_expr}
 
 fn tuple_load(ctx: Ctx, base: ptr, idx: int, name: string) -> ptr {
     let base_int = ctx.ptr_to_int(base, ctx.i64_type, "tup_base")
-    let offset = const_i64(ctx, idx * 8)
+    let offset = ctx.i64(idx * 8)
     let addr = ctx.build_add(base_int, offset, "tup_addr")
     let slot_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "tup_slot")
     ctx.load_i64(slot_ptr, name)
@@ -24,7 +24,7 @@ fn tuple_load(ctx: Ctx, base: ptr, idx: int, name: string) -> ptr {
 
 fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) {
     let base_int = ctx.ptr_to_int(base, ctx.i64_type, "ts_base")
-    let offset = const_i64(ctx, idx * 8)
+    let offset = ctx.i64(idx * 8)
     let addr = ctx.build_add(base_int, offset, "ts_addr")
     let slot_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "ts_slot")
     ctx.store(value, slot_ptr)
@@ -34,7 +34,7 @@ fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) {
 
 export fn emit_tuple(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
     let count = expr_list_length(elements)
-    let buf = cg_malloc(ctx, const_i64(ctx, count * 8))
+    let buf = ctx.malloc(ctx.i64(count * 8))
     store_tuple_elements(ctx, env, elements, buf, 0, .End)
 }
 
@@ -42,10 +42,10 @@ fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx
     match elements {
         .End -> {
             let ty = .Tuple(reverse_type_list(types_acc, .End))
-            ok_emit_typed(to_i64(ctx, buf, "tuple_i64"), ty)
+            ok_emit_typed(ctx.to_i64(buf, "tuple_i64"), ty)
         }
         .Node(se, next) -> {
-            let r = emit_expr(ctx, env, se.node)?
+            let r = ctx.emit(env, se.node)?
             tuple_store(ctx, buf, idx, r.value)
             let new_types = TypeList.Node(r.ty, types_acc)
             store_tuple_elements(ctx, env, next, buf, idx + 1, new_types)
@@ -61,17 +61,17 @@ fn reverse_type_list(list: TypeList, acc: TypeList) -> TypeList {
 }
 
 export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> EmitResult {
-    let r = emit_expr(ctx, env, obj)?
-    let ptr = to_ptr(ctx, r.value, "tup_ptr")
+    let r = ctx.emit(env, obj)?
+    let ptr = ctx.to_ptr(r.value, "tup_ptr")
     let loaded = tuple_load(ctx, ptr, idx, "tup_val")
     let elem_ty = vtype_tuple_at(r.ty, idx)
     ok_emit_typed(loaded, elem_ty)
 }
 
 export fn emit_let_destructure(ctx: Ctx, env: VarEnv, names: ParamList, initializer: Expr) -> StmtResult {
-    let r = emit_expr(ctx, env, initializer)
+    let r = ctx.emit(env, initializer)
     if r.had_error { return err_stmt_from_expr(r) }
-    let ptr = to_ptr(ctx, r.value, "destruct_ptr")
+    let ptr = ctx.to_ptr(r.value, "destruct_ptr")
     destructure_names(ctx, env, names, ptr, r.ty, 0)
 }
 
