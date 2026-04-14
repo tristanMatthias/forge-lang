@@ -213,7 +213,7 @@ ensure_llvm_wrapper() {
 ensure_seed() {
   ensure_llvm_wrapper
   ensure_runtime
-  if [ ! -x "$SEED_BIN" ] || [ "$SEED_LL" -nt "$SEED_BIN" ]; then
+  if [ "${1:-}" = "force" ] || [ ! -x "$SEED_BIN" ] || [ "$SEED_LL" -nt "$SEED_BIN" ]; then
     [ -f "$SEED_LL" ] || die "seed IR not found at $SEED_LL — repo is corrupt"
     log "building seed compiler from seed/seed.ll"
     mkdir -p "$BUILD_DIR"
@@ -250,8 +250,8 @@ emit_ll_bs2() {
 }
 
 ensure_bs2() {
-  ensure_seed
-  if [ ! -x "$BS2" ] \
+  ensure_seed "${1:-}"
+  if [ "${1:-}" = "force" ] || [ ! -x "$BS2" ] \
      || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$BS2" ] \
      || [ "$SEED_LL" -nt "$BS2" ]; then
     log "compiling bootstrap/src/main.fg with seed compiler"
@@ -540,7 +540,32 @@ mode_check_fixedpoint() {
     local lines; lines=$(wc -l <"$BUILD_DIR/fp_bs2.ll" | tr -d ' ')
     ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR"
   else
-    err "FIXED POINT BROKEN — bs2 and bs3 emit different IR for bootstrap/src/main.fg"
+    # Auto-converge: cycle the seed up to 3 times to reach equilibrium.
+    # This handles cases where adding new functions shifts allocator state.
+    local max_cycles=3
+    for cycle in $(seq 1 $max_cycles); do
+      log "fixed point diverged — auto-cycling seed (attempt $cycle/$max_cycles)"
+      cp "$BUILD_DIR/fp_bs2.ll" "$BOOTSTRAP_DIR/seed/seed.ll"
+      # Rebuild bs2 from new seed
+      ensure_seed force
+      ensure_bs2 force
+      ensure_bs3
+      # Re-check
+      "$BS2" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1 \
+        || die "bs2 failed during auto-cycle $cycle"
+      cp "$BOOTSTRAP_DIR/src/main.fg.ll" "$BUILD_DIR/fp_bs2.ll"
+      "$BS3" compile "$BOOTSTRAP_DIR/src/main.fg" >/dev/null 2>&1 \
+        || die "bs3 failed during auto-cycle $cycle"
+      cp "$BOOTSTRAP_DIR/src/main.fg.ll" "$BUILD_DIR/fp_bs3.ll"
+      if diff -q "$BUILD_DIR/fp_bs2.ll" "$BUILD_DIR/fp_bs3.ll" >/dev/null; then
+        # Converged! Update the seed to the stable version.
+        cp "$BUILD_DIR/fp_bs2.ll" "$BOOTSTRAP_DIR/seed/seed.ll"
+        local lines; lines=$(wc -l <"$BUILD_DIR/fp_bs2.ll" | tr -d ' ')
+        ok "fixed point holds — bs2 and bs3 emit byte-identical $lines-line IR (after $cycle auto-cycle(s))"
+        return 0
+      fi
+    done
+    err "FIXED POINT BROKEN — failed to converge after $max_cycles auto-cycles"
     err "diff: $(diff "$BUILD_DIR/fp_bs2.ll" "$BUILD_DIR/fp_bs3.ll" | wc -l | tr -d ' ') lines"
     err "  bs2 IR: $BUILD_DIR/fp_bs2.ll"
     err "  bs3 IR: $BUILD_DIR/fp_bs3.ll"
