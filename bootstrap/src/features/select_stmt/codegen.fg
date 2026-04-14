@@ -12,7 +12,7 @@ export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 }
 
 fn emit_select(ctx: Ctx, env: VarEnv, arms: SelectArmList) -> StmtResult {
-    let channels = ctx.call("forge_array_new", [])
+    let channels = ctx.array_new()
     let count = push_channels(ctx, env, arms, channels, 0)
 
     let result = ctx.call("forge_select", [channels, ctx.i64(count)])
@@ -28,7 +28,7 @@ fn push_channels(ctx: Ctx, env: VarEnv, arms: SelectArmList, arr: ptr, count: in
         .Node(_, channel, _, next) -> {
             let r = ctx.emit(env, channel)
             if r.had_error { return count }
-            ctx.call("forge_array_push", [arr, ctx.to_i64(r.value, "ch_i64")])
+            ctx.array_push(arr, ctx.to_i64(r.value, "ch_i64"))
             push_channels(ctx, env, next, arr, count + 1)
         }
     }

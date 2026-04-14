@@ -13,7 +13,7 @@
 // is just the function pointer with a null environment.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
-use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, ctx_with_fn, err_emit, fn_ret_lookup, null_ptr_val, ok_emit, ok_emit_typed, toplevel_lookup, translate_param_type}
+use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, ctx_with_fn, err_emit, fn_ret_lookup, null_ptr_val, ok_emit, ok_emit_typed, toplevel_lookup}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 
@@ -234,7 +234,7 @@ fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captu
         .Node(name, type_ann, next) -> {
             // Priority: explicit annotation > float inference > default Int
             let ty = if type_ann != "" && type_ann != "i64" {
-                translate_param_type(ctx.structs, ctx.enums, type_ann)
+                ctx.translate_type(type_ann)
             } else if param_used_with_float(name, body, ctx, env, captures, params) {
                 ValueType.Float
             } else {
@@ -314,10 +314,10 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     // Even non-capturing ones get [TAG, fn_ptr] so the C-side
     // forge_closure_call_* trampolines can safely inspect them.
     // Only named function references (let f = my_fn) are bare pointers.
-    let closure_arr = ctx.call("forge_array_new", [])
+    let closure_arr = ctx.array_new()
     let fn_ptr_i64 = ctx.ptr_to_int(fn_val, "lambda_ptr")
-    ctx.call("forge_array_push", [closure_arr, ctx.i64(closure_marker())])
-    ctx.call("forge_array_push", [closure_arr, fn_ptr_i64])
+    ctx.array_push(closure_arr, ctx.i64(closure_marker()))
+    ctx.array_push(closure_arr, fn_ptr_i64)
     if num_captures > 0 {
         push_captured_values(ctx, captures, closure_arr)
     }
@@ -340,7 +340,7 @@ fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr) {
         .End -> {}
         .Node(_, alloca, _, next) -> {
             let val = ctx.load_i64(alloca, "cap_val")
-            ctx.call("forge_array_push", [arr, val])
+            ctx.array_push(arr, val)
             push_captured_values(ctx, next, arr)
         }
     }
@@ -401,7 +401,7 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
     // TAG is at index 0, fn_ptr at index 1, captures start at index 2.
     let closure_ptr = ctx.to_ptr(closure_val, "closure_ptr")
     // Load fn_ptr from closure array[1] (index 0 is the TAG)
-    let get_fn_call = ctx.call("forge_array_get", [closure_ptr, ctx.i64(1)])
+    let get_fn_call = ctx.array_get(closure_ptr, ctx.i64(1))
     let fn_ptr = ctx.int_to_ptr(get_fn_call, "fn_ptr")
 
     let user_arg_count = expr_list_length(args)
@@ -428,7 +428,7 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
 fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int, i: int) {
     if i >= count { return }
     // Captures start at array index 2 (after TAG and fn_ptr)
-    let cap_val = ctx.call("forge_array_get", [closure_val, ctx.i64(i + 2)])
+    let cap_val = ctx.array_get(closure_val, ctx.i64(i + 2))
     ctx.value_array_set(val_arr, start_idx + i, cap_val)
     fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
 }
@@ -526,7 +526,7 @@ fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: pt
                 .Node(t, _) -> t
                 .End -> {
                     if type_ann != "" && type_ann != "i64" {
-                        translate_param_type(ctx.structs, ctx.enums, type_ann)
+                        ctx.translate_type(type_ann)
                     } else {
                         ValueType.Int
                     }

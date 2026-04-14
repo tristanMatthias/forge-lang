@@ -1,8 +1,8 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, field_type_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, translate_param_type, ctx_with_fn, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
+use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, ctx_with_fn, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 
@@ -236,7 +236,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         if type_name != "" {
             let s_lookup = struct_reg_lookup(ctx.structs, type_name)
             if s_lookup.found {
-                let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(s_lookup.fields, method))
+                let field_ty = ctx.resolve_field_type(s_lookup.fields, method)
                 if vtype_is_fn(field_ty) {
                     // Load the field value (fn pointer) and call indirectly
                     let st_ty = ctx.get_type(type_name)

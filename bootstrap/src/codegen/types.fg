@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, env_extend}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend}
 use core.registry.{Registry}
 
 // ── Codegen context ──
@@ -854,5 +854,50 @@ impl Ctx {
         let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
         let fld_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "${name}_ptr")
         forge_llvm_build_load(self.builder, self.i64_type, fld_gep, name)
+    }
+
+    // Load a typed struct field by index — returns value with correct LLVM type.
+    fn field_typed(self, val: ptr, type_name: string, idx: int, ty: ValueType, name: string) -> ptr {
+        let obj = self.to_ptr(val, "fld_obj")
+        let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
+        let fld_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "${name}_ptr")
+        forge_llvm_build_load(self.builder, self.type_for(ty), fld_gep, name)
+    }
+
+    // Store into a struct field by index with type-safe casting.
+    fn set_field(self, obj: ptr, type_name: string, idx: int, val: ptr, field_ty: ValueType) {
+        let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
+        let fld_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "fld_ptr")
+        forge_llvm_build_store(self.builder, self.cast_to(val, field_ty), fld_gep)
+    }
+
+    // Emit match-unreachable trap + unreachable instruction.
+    // Called at the end of exhaustive match arms.
+    fn match_trap(self, tag_val: ptr) {
+        if self.has_terminator() { return }
+        self.call("forge_match_unreachable", [
+            self.global_str(self.current_fn_name, ".match_fn"), tag_val,
+            self.global_str(self.source_file, "mu_file"), self.i64(self.source_line)
+        ])
+        self.unreachable()
+    }
+
+    // ── Array helpers ──
+    // Wrap the most common forge_array_* patterns for lists.
+    fn array_new(self) -> ptr { self.call("forge_array_new", []) }
+    fn array_push(self, arr: ptr, val: ptr) { self.call("forge_array_push", [arr, val]) }
+    fn array_get(self, arr: ptr, idx: ptr) -> ptr { self.call("forge_array_get", [arr, idx]) }
+    fn array_len(self, arr: ptr) -> ptr { self.call("forge_array_len", [arr]) }
+
+    // ── Type translation ──
+
+    // Translate a type annotation string to ValueType.
+    fn translate_type(self, ty: string) -> ValueType {
+        translate_param_type(self.structs, self.enums, ty)
+    }
+
+    // Translate a struct field's type annotation to ValueType.
+    fn resolve_field_type(self, fields: FieldList, name: string) -> ValueType {
+        translate_param_type(self.structs, self.enums, field_type_of(fields, name))
     }
 }

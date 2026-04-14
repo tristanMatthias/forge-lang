@@ -1,8 +1,8 @@
 // WHY: emits enum constructors (heap-allocated tagged unions) and
 // enum value comparison (tag equality via struct GEP).
 
-use core.ast.{Expr, ExprList, FieldList, VariantList, VarEnv, variant_lookup, variant_max_payload, field_list_length, field_type_of, expr_list_length, ValueType, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, enum_reg_find_by_variant_arity, translate_param_type}
+use core.ast.{Expr, ExprList, FieldList, VariantList, VarEnv, variant_lookup, variant_max_payload, field_list_length, expr_list_length, ValueType, vtype_enum_name}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 
 export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
     // Contextual resolution: `.Variant` with empty type_name.
@@ -67,7 +67,7 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             let fld_ty = match fields {
-                .Node(_, ty, _) -> translate_param_type(ctx.structs, ctx.enums, ty)
+                .Node(_, ty, _) -> ctx.translate_type(ty)
                 _ -> ValueType.Int
             }
             ctx.store_slot(payload_ptr, idx, r.value, fld_ty)
@@ -85,7 +85,7 @@ fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr,
             let r = ctx.emit(env, se.node)?
             let fld_gep = ctx.gep(pay_ty, payload_ptr, idx, "pay_fld")
             let fld_ty = match fields {
-                .Node(_, ty, _) -> translate_param_type(ctx.structs, ctx.enums, ty)
+                .Node(_, ty, _) -> ctx.translate_type(ty)
                 _ -> ValueType.Int
             }
             ctx.store_field(r.value, fld_gep, fld_ty)

@@ -9,8 +9,8 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, fn_ret_lookup}
+use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, fn_ret_lookup}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
     let l = ctx.emit(env, left)
@@ -91,7 +91,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
 
     ctx.position(merge_bb)
     let final_val = ctx.load_i64(result_slot, "oc_val")
-    let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
+    let field_ty = ctx.resolve_field_type(lookup.fields, field)
     ok_emit_typed(final_val, field_ty)
 }
 

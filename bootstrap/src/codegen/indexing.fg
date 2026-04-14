@@ -16,7 +16,7 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
     // List indexing: list[i] → forge_array_get(list, i)
     if vtype_is_list(r.ty) {
         let i_r = ctx.emit(env, idx)?
-        let elem = ctx.call("forge_array_get", [r.value, i_r.value])
+        let elem = ctx.array_get(r.value, i_r.value)
         return ok_emit_typed(elem, vtype_list_elem(r.ty))
     }
     if !vtype_is_str(r.ty) {

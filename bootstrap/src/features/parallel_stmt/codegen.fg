@@ -9,7 +9,7 @@ export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 }
 
 fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
-    let closures = ctx.call("forge_array_new", [])
+    let closures = ctx.array_new()
     let r = collect_parallel_closures(ctx, env, stmts, closures)?
     ctx.call("forge_parallel_run", [closures])
     ok_stmt(env)
@@ -23,7 +23,7 @@ fn collect_parallel_closures(ctx: Ctx, env: VarEnv, stmts: StmtList, arr: ptr) -
                 .Expr(expr) -> {
                     let r = ctx.emit(env, expr)
                     if r.had_error { return err_stmt(r.error_message) }
-                    ctx.call("forge_array_push", [arr, r.value])
+                    ctx.array_push(arr, r.value)
                     collect_parallel_closures(ctx, env, next, arr)
                 }
                 _ -> collect_parallel_closures(ctx, env, next, arr)

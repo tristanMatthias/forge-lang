@@ -7,12 +7,12 @@ use features.closures.codegen.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.helpers.{emit_single_arg}
 
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
-    let arr = ctx.call("forge_array_new", [])
+    let arr = ctx.array_new()
     match elements {
         .End -> ok_emit_typed(arr, .List(.Int))
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
-            ctx.call("forge_array_push", [arr, r.value])
+            ctx.array_push(arr, r.value)
             push_list_elements(ctx, env, next, arr, r.ty)
         }
     }
@@ -23,7 +23,7 @@ fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, elem_
         .End -> ok_emit_typed(arr, .List(elem_ty))
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
-            ctx.call("forge_array_push", [arr, r.value])
+            ctx.array_push(arr, r.value)
             push_list_elements(ctx, env, next, arr, elem_ty)
         }
     }
@@ -54,17 +54,17 @@ export fn emit_list_reduce_typed(ctx: Ctx, env: VarEnv, list_val: ptr, args: Exp
 
 export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: ValueType, method: string, args: ExprList) -> EmitResult {
     match method {
-        "length" or "len" -> return ok_emit(ctx.call("forge_array_len", [list_val]))
+        "length" or "len" -> return ok_emit(ctx.array_len(list_val))
         "push" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            ctx.call("forge_array_push", [list_val, arg_r.value])
+            ctx.array_push(list_val, arg_r.value)
             return ok_emit(list_val)
         }
         "pop" -> return ok_emit(ctx.call("forge_array_pop", [list_val]))
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             let elem_ty = vtype_list_elem(list_ty)
-            return ok_emit_typed(ctx.call("forge_array_get", [list_val, arg_r.value]), elem_ty)
+            return ok_emit_typed(ctx.array_get(list_val, arg_r.value), elem_ty)
         }
         "set" -> return emit_list_set(ctx, env, list_val, args)
         "map" -> {

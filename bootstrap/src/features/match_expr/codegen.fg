@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
-use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list}
+use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, enum_reg_lookup, field_type_at, advance_field_list}
 
 // ── Match as expression ──
 
@@ -30,14 +30,7 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
 fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
     match arms {
         .End -> {
-            if !ctx.has_terminator() {
-                let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
-                let tag_i64 = tag_val
-                let mu_file = ctx.global_str(ctx.source_file, "mu_file")
-                let mu_line = ctx.i64(ctx.source_line)
-                ctx.call("forge_match_unreachable", [fn_name_str, tag_i64, mu_file, mu_line])
-                ctx.unreachable()
-            }
+            ctx.match_trap(tag_val)
             ok_emit(null_ptr_val())
         }
         .Node(pattern, guard, body, next) -> {
@@ -92,14 +85,7 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
 fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> StmtResult {
     match arms {
         .End -> {
-            if !ctx.has_terminator() {
-                let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
-                let tag_i64 = tag_val
-                let mu_file = ctx.global_str(ctx.source_file, "mu_file")
-                let mu_line = ctx.i64(ctx.source_line)
-                ctx.call("forge_match_unreachable", [fn_name_str, tag_i64, mu_file, mu_line])
-                ctx.unreachable()
-            }
+            ctx.match_trap(tag_val)
             ok_stmt(env)
         }
         .Node(pattern, guard, body, next) -> {
@@ -182,7 +168,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
             match pat {
                 .Variant(inner_vname, _) -> {
                     let field_type_name = field_type_at(fields, 0)
-                    let inner_ty = translate_param_type(ctx.structs, ctx.enums, field_type_name)
+                    let inner_ty = ctx.translate_type(field_type_name)
                     let enum_name = vtype_enum_name(inner_ty)
                     if enum_name != "" {
                         let lookup = enum_reg_lookup(ctx.enums, enum_name)
@@ -205,7 +191,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                 }
                 .NestedVariant(inner_vname, _) -> {
                     let field_type_name = field_type_at(fields, 0)
-                    let inner_ty = translate_param_type(ctx.structs, ctx.enums, field_type_name)
+                    let inner_ty = ctx.translate_type(field_type_name)
                     let enum_name = vtype_enum_name(inner_ty)
                     if enum_name != "" {
                         let lookup = enum_reg_lookup(ctx.enums, enum_name)
@@ -264,7 +250,7 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
         .Node(name, _, next_b) if name == "_" ->
             bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
         .Node(name, _, next_b) -> {
-            let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
+            let field_ty = ctx.translate_type(field_type_at(fields, 0))
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, name)
             let extended = ctx.bind(env, name, loaded, field_ty)
             bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
@@ -278,7 +264,7 @@ fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: 
     match pats {
         .End -> env
         .Node(pat, next) -> {
-            let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
+            let field_ty = ctx.translate_type(field_type_at(fields, 0))
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, "npat_val")
             let new_env = bind_single_sub_pattern(ctx, env, pat, loaded, field_ty)
             bind_nested_patterns(ctx, new_env, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1)
@@ -394,16 +380,9 @@ fn is_literal_pattern(pattern: Pattern) -> bool {
 fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
     match arms {
         .End -> {
-            if !ctx.has_terminator() {
-                let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
-                let mu_file = ctx.global_str(ctx.source_file, "mu_file")
-                let mu_line = ctx.i64(ctx.source_line)
-                ctx.call("forge_match_unreachable", [fn_name_str, ctx.i64(-1), mu_file, mu_line])
-                ctx.unreachable()
-            }
+            ctx.match_trap(ctx.i64(-1))
             ctx.position(merge_bb)
-            let loaded = ctx.load_i64(result_slot, "pmatch_val")
-            ok_emit(loaded)
+            ok_emit(ctx.load_i64(result_slot, "pmatch_val"))
         }
         .Node(pattern, guard, body, next) -> {
             let body_bb = ctx.bb("parm_body")
@@ -454,13 +433,7 @@ fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Matc
 fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList, merge_bb: ptr) -> StmtResult {
     match arms {
         .End -> {
-            if !ctx.has_terminator() {
-                let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
-                let mu_file = ctx.global_str(ctx.source_file, "mu_file")
-                let mu_line = ctx.i64(ctx.source_line)
-                ctx.call("forge_match_unreachable", [fn_name_str, ctx.i64(-1), mu_file, mu_line])
-                ctx.unreachable()
-            }
+            ctx.match_trap(ctx.i64(-1))
             ctx.position(merge_bb)
             ok_stmt(env)
         }

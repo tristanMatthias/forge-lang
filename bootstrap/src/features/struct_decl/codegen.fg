@@ -1,7 +1,7 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_type_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, SExpr}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, enum_reg_lookup, translate_param_type}
+use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, SExpr}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, enum_reg_lookup}
 use codegen.{emit_expr, emit_enum_ctor}
 use features.enum_decl.codegen.{emit_enum_ctor}
 
@@ -32,8 +32,8 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
             let idx = field_index_of(fields, field_name)
             if idx < 0 { return err_emit("unknown field `${field_name}`") }
             let r = ctx.emit(env, sv.node)?
+            let fld_ty = ctx.resolve_field_type(fields, field_name)
             let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
-            let fld_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(fields, field_name))
             ctx.store_field(r.value, gep, fld_ty)
             fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
         }
@@ -54,7 +54,7 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     let obj_ptr = ctx.to_ptr(r.value, "fa_ptr")
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
     let v = ctx.emit(env, value)?
-    let fld_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
+    let fld_ty = ctx.resolve_field_type(lookup.fields, field)
     ctx.store_field(v.value, gep, fld_ty)
     ok_emit(v.value)
 }
@@ -79,7 +79,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
         return ok_emit(ctx.call("strlen", [str_ptr]))
     }
     if vtype_is_list(r.ty) && field == "length" {
-        return ok_emit(ctx.call("forge_array_len", [r.value]))
+        return ok_emit(ctx.array_len(r.value))
     }
     if vtype_is_map(r.ty) && field == "length" {
         return ok_emit(ctx.call("forge_map_len_cstr", [r.value]))
@@ -98,8 +98,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
 
     ctx.null_check(r.value, field, struct_name)
 
-    let gep = ctx.gep(st_ty, obj_ptr, idx, "fld_ptr")
-    let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
-    let loaded = ctx.load_typed(field_ty, gep, field)
+    let field_ty = ctx.resolve_field_type(lookup.fields, field)
+    let loaded = ctx.field_typed(r.value, struct_name, idx, field_ty, field)
     ok_emit_typed(loaded, field_ty)
 }

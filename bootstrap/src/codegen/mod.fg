@@ -217,9 +217,9 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> EmitR
     let fn_val = ctx.get_fn(name)
     if fn_val != null {
         let fn_i64 = ctx.to_i64(fn_val, "fn_ref")
-        let closure_arr = ctx.call("forge_array_new", [])
-        ctx.call("forge_array_push", [closure_arr, ctx.i64(closure_marker())])
-        ctx.call("forge_array_push", [closure_arr, fn_i64])
+        let closure_arr = ctx.array_new()
+        ctx.array_push(closure_arr, ctx.i64(closure_marker()))
+        ctx.array_push(closure_arr, fn_i64)
         let closure_i64 = ctx.to_i64(closure_arr, "fn_ref_i64")
         let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
         return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
