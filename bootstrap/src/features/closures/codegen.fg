@@ -13,7 +13,7 @@
 // is just the function pointer with a null environment.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
-use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, ctx_with_fn, err_emit, fn_ret_lookup, null_ptr_val, ok_emit, ok_emit_typed, toplevel_lookup}
+use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, err_emit, null_ptr_val, ok_emit, ok_emit_typed, toplevel_lookup}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 
@@ -289,7 +289,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     let env_with_params = bind_lambda_params_typed(ctx, env, params, fn_val, 0, effective_types)
     let body_env = bind_captures_as_params(ctx, env_with_params, captures, fn_val, num_declared)
 
-    let body_ctx = ctx_with_fn(ctx, fn_val, name)
+    let body_ctx = ctx.with_fn(fn_val, name)
     // Save/restore defer stack so lambda's `return` doesn't emit
     // the outer function's defers.
     let saved_defers = DEFER_STACK
@@ -302,7 +302,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     }
 
     if !ctx.has_terminator() {
-        let lambda_ret = fn_ret_lookup(body_ctx.fn_rets, body_ctx.current_fn_name)
+        let lambda_ret = body_ctx.current_fn_ret()
         ctx.ret(result.value, lambda_ret)
     }
 

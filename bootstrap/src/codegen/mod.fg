@@ -12,7 +12,7 @@ mod indexing
 mod helpers
 
 use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, field_type_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, ctx_with_defers, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, field_type_at, fn_param_lookup, fn_ret_lookup, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, struct_reg_lookup, toplevel_lookup, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, ctx_with_defers, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, field_type_at, fn_param_lookup, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, struct_reg_lookup, toplevel_lookup, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
 use features.defer_stmt.codegen.{emit_defers}
@@ -89,13 +89,13 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
                 return err_stmt_from_expr(r)
             }
             emit_defers(ctx, env)
-            let fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
+            let fn_ret = ctx.current_fn_ret()
             ctx.ret(r.value, fn_ret)
             ok_stmt(env)
         }
         .ReturnEmpty -> {
             emit_defers(ctx, env)
-            let fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
+            let fn_ret = ctx.current_fn_ret()
             ctx.ret_void(fn_ret)
             ok_stmt(env)
         }
@@ -221,7 +221,7 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> EmitR
         ctx.array_push(closure_arr, ctx.i64(closure_marker()))
         ctx.array_push(closure_arr, fn_i64)
         let closure_i64 = ctx.to_i64(closure_arr, "fn_ref_i64")
-        let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
+        let ret_ty = ctx.fn_ret(name)
         return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
     }
     err_emit("undefined ${label} `${name}`")

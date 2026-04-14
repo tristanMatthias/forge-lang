@@ -10,7 +10,7 @@
 // operators compile to i64 null-check or enum-tag-check branches.
 
 use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, fn_ret_lookup}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
     let l = ctx.emit(env, left)
@@ -114,7 +114,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
         ctx.cond_br(is_ok, ok_bb, err_bb)
 
         ctx.position(err_bb)
-        let try_fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
+        let try_fn_ret = ctx.current_fn_ret()
         ctx.ret(r.value, try_fn_ret)
 
         ctx.position(ok_bb)
@@ -144,7 +144,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
                 ctx.cond_br(is_err, ret_bb, cont_bb)
 
                 ctx.position(ret_bb)
-                let s_fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
+                let s_fn_ret = ctx.current_fn_ret()
                 ctx.ret(r.value, s_fn_ret)
 
                 ctx.position(cont_bb)
@@ -165,7 +165,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     ctx.cond_br(is_null, ret_bb, cont_bb)
 
     ctx.position(ret_bb)
-    let fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
+    let fn_ret = ctx.current_fn_ret()
     ctx.ret_void(fn_ret)
 
     ctx.position(cont_bb)

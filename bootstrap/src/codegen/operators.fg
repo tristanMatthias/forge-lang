@@ -72,11 +72,11 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
         }
         .Mul -> ok_emit(ctx.mul(lhs, rhs, "mul"))
         .Div -> {
-            ctx.call("forge_div_by_zero_trap", [ctx.icmp_eq(rhs, ctx.i64(0), "div_zero"), ctx.global_str(ctx.source_file, "dz_file"), ctx.i64(ctx.source_file.length), ctx.i64(ctx.source_line)])
+            ctx.div_zero_trap(rhs)
             ok_emit(ctx.sdiv(lhs, rhs, "div"))
         }
         .Mod -> {
-            ctx.call("forge_div_by_zero_trap", [ctx.icmp_eq(rhs, ctx.i64(0), "mod_zero"), ctx.global_str(ctx.source_file, "mz_file"), ctx.i64(ctx.source_file.length), ctx.i64(ctx.source_line)])
+            ctx.div_zero_trap(rhs)
             ok_emit(ctx.srem(lhs, rhs, "mod"))
         }
         .BitAnd -> ok_emit(ctx.bit_and(lhs, rhs, "band"))
@@ -98,19 +98,19 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
         }
         .Lt -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 40) }
-            ok_emit_typed(ctx.zext(ctx.slt(lhs, rhs, "slt"), ctx.i64_type, "slt_ext"), .Bool)
+            ctx.icmp_bool(40, lhs, rhs, "slt")
         }
         .Le -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 41) }
-            ok_emit_typed(ctx.zext(ctx.icmp(41, lhs, rhs, "sle"), ctx.i64_type, "sle_ext"), .Bool)
+            ctx.icmp_bool(41, lhs, rhs, "sle")
         }
         .Gt -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 38) }
-            ok_emit_typed(ctx.zext(ctx.icmp(38, lhs, rhs, "sgt"), ctx.i64_type, "sgt_ext"), .Bool)
+            ctx.icmp_bool(38, lhs, rhs, "sgt")
         }
         .Ge -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 39) }
-            ok_emit_typed(ctx.zext(ctx.icmp(39, lhs, rhs, "sge"), ctx.i64_type, "sge_ext"), .Bool)
+            ctx.icmp_bool(39, lhs, rhs, "sge")
         }
     }
 }
@@ -130,12 +130,12 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
         .Div -> ok_emit_typed(ctx.cast_to(ctx.fdiv(fl, fr, "fdiv"), .Float), .Float)
         .Mod -> ok_emit_typed(ctx.cast_to(ctx.frem(fl, fr, "frem"), .Float), .Float)
         // fcmp ordered predicates: OEQ=1, OGT=2, OGE=3, OLT=4, OLE=5, ONE=6
-        .Eq -> ok_emit_typed(ctx.zext(ctx.fcmp(1, fl, fr, "feq"), ctx.i64_type, "feq_ext"), .Bool)
-        .Ne -> ok_emit_typed(ctx.zext(ctx.fcmp(6, fl, fr, "fne"), ctx.i64_type, "fne_ext"), .Bool)
-        .Lt -> ok_emit_typed(ctx.zext(ctx.fcmp(4, fl, fr, "flt"), ctx.i64_type, "flt_ext"), .Bool)
-        .Le -> ok_emit_typed(ctx.zext(ctx.fcmp(5, fl, fr, "fle"), ctx.i64_type, "fle_ext"), .Bool)
-        .Gt -> ok_emit_typed(ctx.zext(ctx.fcmp(2, fl, fr, "fgt"), ctx.i64_type, "fgt_ext"), .Bool)
-        .Ge -> ok_emit_typed(ctx.zext(ctx.fcmp(3, fl, fr, "fge"), ctx.i64_type, "fge_ext"), .Bool)
+        .Eq -> ctx.fcmp_bool(1, fl, fr, "feq")
+        .Ne -> ctx.fcmp_bool(6, fl, fr, "fne")
+        .Lt -> ctx.fcmp_bool(4, fl, fr, "flt")
+        .Le -> ctx.fcmp_bool(5, fl, fr, "fle")
+        .Gt -> ctx.fcmp_bool(2, fl, fr, "fgt")
+        .Ge -> ctx.fcmp_bool(3, fl, fr, "fge")
         _ -> ok_emit(ctx.add(lhs, rhs, "add"))
     }
 }

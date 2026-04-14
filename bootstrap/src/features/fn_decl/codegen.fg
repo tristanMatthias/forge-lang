@@ -2,7 +2,7 @@
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, ctx_with_fn, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val}
+use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, struct_reg_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 
@@ -31,7 +31,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     let entry = ctx.bb_in(fn_val, "entry")
     ctx.position(entry)
 
-    let body_cg = ctx_with_fn(ctx, fn_val, name)
+    let body_cg = ctx.with_fn(fn_val, name)
 
     let empty_env: VarEnv = VarEnv.End
     let env = bind_params_inline(body_cg, fn_val, params, 0, empty_env)
@@ -44,7 +44,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     defer_reset()
 
     // Use the function's return type for the default block value.
-    let ret_ty = fn_ret_lookup(body_cg.fn_rets, name)
+    let ret_ty = body_cg.fn_ret(name)
     let r = emit_block_loop(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)
     if r.had_error { return err_stmt(r.error_message) }
     if !ctx.has_terminator() {
@@ -263,7 +263,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     }
     let result = ctx.call_raw(fn_val, arg_arr, arg_count)
     ctx.value_array_free(arg_arr)
-    let ret_ty = fn_ret_lookup(ctx.fn_rets, mangled)
+    let ret_ty = ctx.fn_ret(mangled)
     ok_emit_typed(result, ret_ty)
 }
 
@@ -317,7 +317,7 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
     }
     let result = ctx.call_raw(fn_val, arg_arr, arg_count)
     ctx.value_array_free(arg_arr)
-    let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
+    let ret_ty = ctx.fn_ret(name)
     ok_emit_typed(result, ret_ty)
 }
 

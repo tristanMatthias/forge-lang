@@ -2,7 +2,7 @@
 // break/continue support via the scoped loop stack in Ctx.
 
 use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem}
-use codegen.types.{Ctx, LoopStack, StmtResult, ctx_with_loops, err_stmt_from_expr, ok_stmt}
+use codegen.types.{Ctx, LoopStack, StmtResult, err_stmt_from_expr, ok_stmt}
 use codegen.{emit_expr, emit_stmt}
 
 export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> StmtResult {
@@ -38,7 +38,7 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
 
     // Body — continue jumps to incr_bb, break jumps to exit_bb
     ctx.position(body_bb)
-    let body_ctx = ctx_with_loops(ctx, .Frame(incr_bb, exit_bb, ctx.loops))
+    let body_ctx = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))
     let body_result = emit_stmt(body_ctx, body_env, body)?
     ctx.br_if_open(incr_bb)
 
@@ -97,7 +97,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     let elem = ctx.array_get(coll_r.value, cur)
     ctx.store(elem, elem_alloca)
 
-    let body_ctx = ctx_with_loops(ctx, .Frame(incr_bb, exit_bb, ctx.loops))
+    let body_ctx = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))
     let body_result = emit_stmt(body_ctx, body_env, body)?
     ctx.br_if_open(incr_bb)
 

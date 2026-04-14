@@ -485,18 +485,7 @@ export fn vtype_is_ptr_type(vt: ValueType) -> bool {
     }
 }
 
-// ── Ctx copy helpers ──
-//
-// Functional struct update via `with`. Adding a new field to Ctx
-// requires ZERO changes here.
-
-export fn ctx_with_fn(ctx: Ctx, fn_val: ptr, fn_name: string) -> Ctx {
-    ctx with { current_fn: fn_val, current_fn_name: fn_name }
-}
-
-export fn ctx_with_loops(ctx: Ctx, loops: LoopStack) -> Ctx {
-    ctx with { loops }
-}
+// ── Legacy free function (still used by setup.fg) ──
 
 export fn ctx_with_top_level(ctx: Ctx, top_level_vars: TopLevelVars) -> Ctx {
     ctx with { top_level_vars }
@@ -899,5 +888,47 @@ impl Ctx {
     // Translate a struct field's type annotation to ValueType.
     fn resolve_field_type(self, fields: FieldList, name: string) -> ValueType {
         translate_param_type(self.structs, self.enums, field_type_of(fields, name))
+    }
+
+    // ── Registry lookups ──
+
+    // Look up the return type of a named function.
+    fn fn_ret(self, name: string) -> ValueType { fn_ret_lookup(self.fn_rets, name) }
+
+    // Return type of the current function being emitted.
+    fn current_fn_ret(self) -> ValueType { fn_ret_lookup(self.fn_rets, self.current_fn_name) }
+
+    // ── Context builders ──
+
+    fn with_fn(self, fn_val: ptr, fn_name: string) -> Ctx {
+        self with { current_fn: fn_val, current_fn_name: fn_name }
+    }
+
+    fn with_loops(self, loops: LoopStack) -> Ctx {
+        self with { loops }
+    }
+
+    // ── Comparison → Bool helpers ──
+    // icmp/fcmp + zext to i64 + wrap in ok_emit_typed(.Bool) — the
+    // universal pattern for comparison operators returning Bool.
+
+    fn icmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> EmitResult {
+        let cmp = forge_llvm_build_icmp(self.builder, pred, a, b, name)
+        ok_emit_typed(forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
+    }
+
+    fn fcmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> EmitResult {
+        let cmp = forge_llvm_build_fcmp(self.builder, pred, a, b, name)
+        ok_emit_typed(forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
+    }
+
+    // ── Traps ──
+
+    fn div_zero_trap(self, rhs: ptr) {
+        self.call("forge_div_by_zero_trap", [
+            self.icmp_eq(rhs, self.i64(0), "dz_chk"),
+            self.global_str(self.source_file, "dz_file"),
+            self.i64(self.source_file.length), self.i64(self.source_line)
+        ])
     }
 }

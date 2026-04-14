@@ -2,7 +2,7 @@
 // support via the scoped loop stack in Ctx.
 
 use core.ast.{Expr, Stmt, VarEnv}
-use codegen.types.{Ctx, LoopStack, StmtResult, ctx_with_loops, err_stmt_from_expr, ok_stmt}
+use codegen.types.{Ctx, LoopStack, StmtResult, err_stmt_from_expr, ok_stmt}
 use codegen.{emit_expr, emit_stmt}
 
 export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
@@ -20,7 +20,7 @@ export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Stmt
     // Scoped loop stack: create a new Ctx with this loop's
     // frame pushed. The body sees it; the outer cg is unchanged.
     ctx.position(body_bb)
-    let body_cg = ctx_with_loops(ctx, .Frame(cond_bb, exit_bb, ctx.loops))
+    let body_cg = ctx.with_loops(.Frame(cond_bb, exit_bb, ctx.loops))
     let body_result = emit_stmt(body_cg, env, body)?
     ctx.br_if_open(cond_bb)
 
