@@ -375,7 +375,7 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
             // Parse the float literal string → i64 bits, then compare as f64
             let lit_str = ctx.global_str(val, ".flit_str")
             let lit_bits = ctx.call("forge_float_parse", [lit_str])
-            let subj_f64 = to_f64(ctx, subj.value, "subj_f64")
+            let subj_f64 = ctx.to_f64(subj.value, "subj_f64")
             let lit_f64 = forge_llvm_build_bitcast(ctx.builder, lit_bits, forge_llvm_double_type(ctx.lc), "lit_f64")
             // OEQ = 1 (ordered equal)
             forge_llvm_build_fcmp(ctx.builder, 1, subj_f64, lit_f64, "flit_eq")

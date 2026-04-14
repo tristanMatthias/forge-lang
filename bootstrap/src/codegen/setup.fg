@@ -192,9 +192,9 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     // mutable globals.
     let dt = forge_llvm_double_type(lc)
     let structs = declare_structs(lc, i64t, i1t, dt, pt, stmts, StructReg.End)
-    let enums = declare_enums(lc, i64t, stmts, EnumReg.End)
+    let enums = declare_enums(lc, i64t, i1t, dt, pt, stmts, structs, EnumReg.End)
     let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
-    let top_level_vars = declare_globals(m, lc, i64t, structs, enums, stmts, TopLevelVars.End)
+    let top_level_vars = declare_globals(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, TopLevelVars.End)
     let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, FnRetTypes.End)
     let fn_params = collect_fn_params(stmts, FnParamTypes.End)
 
@@ -318,52 +318,75 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
     }
 }
 
-fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
+fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .Let(name, ty, _) -> {
-                    let g = forge_llvm_add_global(m, i64t, name)
-                    forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
-                    TopLevelVars.Node(name, g, translate_param_type(structs, enums, ty), reg)
+                    let vt = translate_param_type(structs, enums, ty)
+                    let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
+                    let g = forge_llvm_add_global(m, llvm_ty, name)
+                    forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
+                    TopLevelVars.Node(name, g, vt, reg)
                 }
                 .Mut(name, ty, _) -> {
-                    let g = forge_llvm_add_global(m, i64t, name)
-                    forge_llvm_set_initializer(g, forge_llvm_const_int(i64t, 0, 0))
-                    TopLevelVars.Node(name, g, translate_param_type(structs, enums, ty), reg)
+                    let vt = translate_param_type(structs, enums, ty)
+                    let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
+                    let g = forge_llvm_add_global(m, llvm_ty, name)
+                    forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
+                    TopLevelVars.Node(name, g, vt, reg)
                 }
-                .Module(_, body) -> declare_globals(m, ctx, i64t, structs, enums, body, reg)
+                .Module(_, body) -> declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }
-            declare_globals(m, ctx, i64t, structs, enums, next, updated)
+            declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, next, updated)
         }
     }
 }
 
-fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg {
+// Declare per-variant payload struct types: %EnumName.VariantName = type { field_types... }
+fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: VariantList, structs: StructReg) {
+    match variants {
+        .End -> {}
+        .Node(vname, fields, next) -> {
+            let count = field_list_length(fields)
+            if count > 0 {
+                let payload_name = "${enum_name}__${vname}"
+                let arr = forge_llvm_type_array_new(count)
+                fill_struct_field_types(arr, i64t, i1t, dt, pt, fields, structs, 0)
+                let st = forge_llvm_struct_create_named(lc, payload_name)
+                forge_llvm_struct_set_body(st, arr, count, 0)
+                forge_llvm_type_array_free(arr)
+            }
+            declare_variant_payloads(lc, i64t, i1t, dt, pt, enum_name, next, structs)
+        }
+    }
+}
+
+fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, structs: StructReg, reg: EnumReg) -> EnumReg {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .EnumDecl(name, variants) -> {
-                    // Enum layout: {i8 tag, ptr payload}
-                    // Payload is heap-allocated per-variant. Nullary variants have null payload.
-                    // This fixed layout means adding fields to a variant never changes the enum's struct size.
+                    // Enum outer layout: {i64 tag, ptr payload}
                     let field_arr = forge_llvm_type_array_new(2)
                     forge_llvm_type_array_set(field_arr, 0, i64t)
                     forge_llvm_type_array_set(field_arr, 1, forge_llvm_pointer_type(ctx))
                     let st = forge_llvm_struct_create_named(ctx, name)
                     forge_llvm_struct_set_body(st, field_arr, 2, 0)
                     forge_llvm_type_array_free(field_arr)
+                    // Per-variant typed payload structs
+                    declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs)
                     EnumReg.Node(name, variants, reg)
                 }
-                .Module(_, body) -> declare_enums(ctx, i64t, body, reg)
+                .Module(_, body) -> declare_enums(ctx, i64t, i1t, dt, pt, body, structs, reg)
                 _ -> reg
             }
-            declare_enums(ctx, i64t, next, updated)
+            declare_enums(ctx, i64t, i1t, dt, pt, next, structs, updated)
         }
     }
 }
