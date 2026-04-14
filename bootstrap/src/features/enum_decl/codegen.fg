@@ -50,7 +50,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     } else {
         let pay_buf = ctx.malloc(ctx.i64(num_fields * 8))
         ctx.store(pay_buf, payload_gep)
-        let fill = fill_enum_payload(ctx, env, pay_buf, args, 0)?
+        let fill = fill_enum_payload(ctx, env, pay_buf, v.fields, args, 0)?
     }
     let as_i64 = ctx.to_i64(buf, "enum_i64")
     ok_emit_typed(as_i64, .Enum(resolved_name))
@@ -61,18 +61,22 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
     ctx.malloc(ctx.i64(16))
 }
 
-fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, args: ExprList, idx: int) -> EmitResult {
+fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> EmitResult {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
-            // Write field at offset idx * 8 in the payload buffer
             let base_i64 = ctx.ptr_to_int(payload_ptr, ctx.i64_type, "pay_base")
-            let offset_val = ctx.i64(idx * 8)
-            let addr = ctx.add(base_i64, offset_val, "pay_addr")
+            let addr = ctx.add(base_i64, ctx.i64(idx * 8), "pay_addr")
             let field_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "fld_ptr")
-            ctx.store(r.value, field_ptr)
-            fill_enum_payload(ctx, env, payload_ptr, next, idx + 1)
+            // Store with the correct type for the field.
+            let fld_ty = match fields {
+                .Node(_, ty, _) -> translate_param_type(ctx.structs, ctx.enums, ty)
+                _ -> ValueType.Int
+            }
+            ctx.store_field(r.value, field_ptr, fld_ty)
+            let next_fields = match fields { .Node(_, _, rest) -> rest, _ -> FieldList.End }
+            fill_enum_payload(ctx, env, payload_ptr, next_fields, next, idx + 1)
         }
     }
 }

@@ -189,7 +189,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                         if lookup.found {
                             let iv = variant_lookup(lookup.variants, inner_vname)
                             if iv.found {
-                                let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, "inner_i64")
+                                let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, inner_ty, "inner_i64")
                                 let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
                                 let inner_struct_ty = ctx.get_type(enum_name)
                                 let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
@@ -204,7 +204,6 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                     }
                 }
                 .NestedVariant(inner_vname, _) -> {
-                    // Same tag check for deeper nesting
                     let field_type_name = field_type_at(fields, 0)
                     let inner_ty = translate_param_type(ctx.structs, ctx.enums, field_type_name)
                     let enum_name = vtype_enum_name(inner_ty)
@@ -213,7 +212,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                         if lookup.found {
                             let iv = variant_lookup(lookup.variants, inner_vname)
                             if iv.found {
-                                let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, "inner_i64")
+                                let inner_val = load_payload_field(ctx, st_ty, subj_ptr, idx, inner_ty, "inner_i64")
                                 let inner_ptr = ctx.to_ptr(inner_val, "inner_enum_ptr")
                                 let inner_struct_ty = ctx.get_type(enum_name)
                                 let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
@@ -234,15 +233,14 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
     }
 }
 
-// Load payload field at index `idx` from an enum value.
-// Enum layout: {i8 tag, ptr payload}. Payload is an array of i64 values.
-fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, label: string) -> ptr {
+// Load payload field at index `idx` from an enum value with the correct type.
+fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, field_ty: ValueType, label: string) -> ptr {
     let pay_gep = ctx.gep(st_ty, subj_ptr, 1, "pay_slot")
     let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "payload")
     let pay_i64 = ctx.ptr_to_int(pay_ptr, ctx.i64_type, "pay_base")
-    let addr = ctx.build_add(pay_i64, ctx.i64(idx * 8), "fld_addr")
+    let addr = ctx.add(pay_i64, ctx.i64(idx * 8), "fld_addr")
     let fld_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "fld_ptr")
-    ctx.load_i64(fld_ptr, label)
+    ctx.load_typed(field_ty, fld_ptr, label)
 }
 
 fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList) -> VarEnv {
@@ -269,10 +267,10 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
         .Node(name, _, next_b) if name == "_" ->
             bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
         .Node(name, _, next_b) -> {
-            let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, name)
-            let alloca = ctx.alloca_i64(name)
-            ctx.store(loaded, alloca)
             let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
+            let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, name)
+            let alloca = ctx.alloca_typed(field_ty, name)
+            ctx.store(loaded, alloca)
             let extended = env_extend(env, name, alloca, field_ty)
             bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
         }
@@ -285,8 +283,8 @@ fn bind_nested_patterns(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, pats: 
     match pats {
         .End -> env
         .Node(pat, next) -> {
-            let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, "npat_val")
             let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
+            let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, "npat_val")
             let new_env = bind_single_sub_pattern(ctx, env, pat, loaded, field_ty)
             bind_nested_patterns(ctx, new_env, st_ty, subj_ptr, next, advance_field_list(fields), idx + 1)
         }
