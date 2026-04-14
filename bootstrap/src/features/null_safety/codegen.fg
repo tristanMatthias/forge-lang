@@ -10,25 +10,29 @@
 // operators compile to i64 null-check or enum-tag-check branches.
 
 use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, fn_ret_lookup, vtype_is_ptr_type}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
     let l = ctx.emit(env, left)
     if l.had_error { return l }
 
-    // Short-circuit: if left != 0 (non-null), skip right.
-    let is_null = ctx.eq(l.value, ctx.i64(0), "nc_null")
+    // Short-circuit: if left != 0/null (non-null), skip right.
+    let is_null = if forge_llvm_is_ptr_value(l.value) != 0 {
+        ctx.eq(l.value, forge_llvm_const_null(ctx.ptr_type), "nc_null")
+    } else {
+        ctx.eq(l.value, ctx.i64(0), "nc_null")
+    }
     let then_bb = ctx.bb("nc_rhs")
     let merge_bb = ctx.bb("nc_end")
     let result_slot = ctx.alloca_i64("nc_result")
-    ctx.store(l.value, result_slot)
+    ctx.store(ctx.to_i64(l.value, "nc_lhs"), result_slot)
     ctx.cond_br(is_null, then_bb, merge_bb)
 
     // Right-hand side: only evaluated when left is null.
     ctx.position(then_bb)
     let r = ctx.emit(env, right)
     if r.had_error { return r }
-    ctx.store(r.value, result_slot)
+    ctx.store(ctx.to_i64(r.value, "nc_rhs"), result_slot)
     ctx.br(merge_bb)
 
     ctx.position(merge_bb)
@@ -44,8 +48,12 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     let r = ctx.emit(env, obj)
     if r.had_error { return r }
 
-    // If the object is null (i64 0), produce null without accessing.
-    let is_null = ctx.eq(r.value, ctx.i64(0), "oc_null")
+    // If the object is null, produce null without accessing.
+    let is_null = if forge_llvm_is_ptr_value(r.value) != 0 {
+        ctx.eq(r.value, forge_llvm_const_null(ctx.ptr_type), "oc_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "oc_null")
+    }
     let access_bb = ctx.bb("oc_access")
     let merge_bb = ctx.bb("oc_end")
     let result_slot = ctx.alloca_i64("oc_result")
@@ -105,7 +113,9 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
         ctx.cond_br(is_ok, ok_bb, err_bb)
 
         ctx.position(err_bb)
-        ctx.build_ret(r.value)
+        let try_fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
+        let try_ret_val = if vtype_is_ptr_type(try_fn_ret) { ctx.to_ptr(r.value, "try_ret") } else { ctx.to_i64(r.value, "try_ret") }
+        ctx.build_ret(try_ret_val)
 
         ctx.position(ok_bb)
         let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_pay_slot")
@@ -134,7 +144,9 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
                 ctx.cond_br(is_err, ret_bb, cont_bb)
 
                 ctx.position(ret_bb)
-                ctx.build_ret(r.value)
+                let s_fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
+                let s_ret_val = if vtype_is_ptr_type(s_fn_ret) { ctx.to_ptr(r.value, "try_ret") } else { ctx.to_i64(r.value, "try_ret") }
+                ctx.build_ret(s_ret_val)
 
                 ctx.position(cont_bb)
                 return EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
@@ -143,14 +155,19 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     }
 
     // ── Mode 3: Nullable ──
-    // If value is null (0), return null from enclosing fn.
-    let is_null = ctx.eq(r.value, ctx.i64(0), "try_null")
+    // If value is null/0, return null from enclosing fn.
+    let is_null = if forge_llvm_is_ptr_value(r.value) != 0 {
+        ctx.eq(r.value, forge_llvm_const_null(ctx.ptr_type), "try_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "try_null")
+    }
     let cont_bb = ctx.bb("try_ok")
     let ret_bb = ctx.bb("try_ret")
     ctx.cond_br(is_null, ret_bb, cont_bb)
 
     ctx.position(ret_bb)
-    ctx.build_ret(ctx.i64(0))
+    let fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
+    ctx.build_ret(ctx.zero_for(fn_ret))
 
     ctx.position(cont_bb)
     EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }

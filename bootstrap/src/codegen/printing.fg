@@ -10,20 +10,18 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
         .End -> err_emit("eprintln() expects 1 arg")
         .Node(se, _) -> {
             let r = ctx.emit(env, se.node)?
-            let str_val = match {
-                vtype_is_str(r.ty) -> r.value
+            let str_ptr = match {
+                vtype_is_str(r.ty) -> ctx.to_ptr(r.value, "eprint_arg")
                 vtype_eq(r.ty, .Float) -> {
-                    let sp = ctx.call("forge_float_to_string", [r.value])
-                    ctx.to_i64(sp, "ef2s_i64")
+                    ctx.call("forge_float_to_string", [r.value])
                 }
                 _ -> {
                     let buf = ctx.malloc(ctx.i64(32))
                     let fmt = ctx.global_str("%lld", ".eprint_fmt")
                     ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
-                    ctx.to_i64(buf, "eprint_str")
+                    buf
                 }
             }
-            let str_ptr = ctx.to_ptr(str_val, "eprint_arg")
             let eprint_fn = ctx.get_fn("forge_eprintln")
             let arr = forge_llvm_value_array_new(1)
             forge_llvm_value_array_set(arr, 0, str_ptr)
@@ -44,21 +42,19 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // destructure straight to the inner string text in a single
     // match — going through any extra binding clobbers the payload
     // (host miscompilation, see TECH_DEBT.md #11).
-    let str_i64 = match args {
+    let print_ptr = match args {
         .Node(se, _) -> {
             match se.node {
                 .String(text) -> {
                     let inner = strip_quotes(text)
-                    let str_ptr = ctx.global_str(inner, ".str")
-                    ctx.to_i64(str_ptr, "str_i64")
+                    ctx.global_str(inner, ".str")
                 }
                 _ -> {
                     let r = ctx.emit(env, se.node)?
                     if vtype_eq(r.ty, .Float) {
-                        let sp = ctx.call("forge_float_to_string", [r.value])
-                        ctx.to_i64(sp, "f2s_i64")
+                        ctx.call("forge_float_to_string", [r.value])
                     } else {
-                        r.value
+                        ctx.to_ptr(r.value, "print_arg")
                     }
                 }
             }
@@ -67,8 +63,7 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             return err_emit("println expects 1 argument")
         }
     }
-    let str_ptr2 = ctx.to_ptr(str_i64, "str_ptr")
-    ctx.call("puts", [str_ptr2])
+    ctx.call("puts", [print_ptr])
     ok_emit(ctx.i64(0))
 }
 

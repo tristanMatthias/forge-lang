@@ -1,7 +1,210 @@
-# Bootstrap TODO
+# Compiler TODO
 
 Consolidated from ASSESSMENT.md, FEATURE_PARITY.md, FEATURE_TYPE_SYSTEM.md,
 PLAN.md, PLUGGABLE_FEATURES.md, POST_MORTEM.md, TECH_DEBT.md on April 12, 2026.
+
+---
+
+## Critical — Compiler Maturity
+
+These are the issues that prevent this from being a proper, production-quality
+compiler. They must be addressed before any new language features. A language
+engineer reviewing this codebase would flag every one of these.
+
+### 1. Everything-is-i64 value model
+**type:** architecture
+**priority:** critical
+**status:** planned
+
+Every value — int, bool, float, string, struct, enum, ptr — is represented
+as i64 in LLVM IR. Strings and structs are pointers cast via ptrtoint.
+Floats are bitcast. Booleans are 0/1 in i64. Every function signature is
+`(i64, i64, ...) -> i64`. Every alloca is `alloca i64`.
+
+This means:
+- LLVM can't optimize type-specific operations
+- The IR is full of ptrtoint/inttoptr casts that obscure intent
+- The compiler can't catch type errors at the IR level
+- Generics are meaningless (everything is already the same type)
+- No foundation for real memory layout (sized types, alignment)
+
+**Fix:** Add `llvm_type_for(ctx, ty: ValueType) -> ptr` that maps ValueType
+to correct LLVM types (i64, i1, double, ptr, void). Use it in function
+signatures, allocas, loads/stores. Remove ptrtoint/inttoptr casts.
+See GENERICS_PLAN.md for details.
+
+### 2. Types are strings in the AST
+**type:** architecture
+**priority:** critical
+**status:** not started
+
+Parameter types, field types, and return types are stored as raw strings
+throughout the AST: `ty: string` containing text like `"i64"`, `"str"`,
+`"MyStruct?"`, `"List(int)"`. This forces downstream passes to do string
+parsing to understand types.
+
+Examples of string-parsing hacks this causes:
+- `translate_param_type` checks `ty.starts_with("List(")` and manually
+  extracts the inner type from the string
+- Nullable types detected by `ty.ends_with("?")`
+- `consume_type()` in the parser builds type strings by concatenation
+
+A real compiler has a `Type` AST node:
+```forge
+enum Type {
+    Named(name: string)
+    Nullable(inner: Type)
+    Generic(name: string, args: TypeArgList)
+    Fn(params: TypeArgList, ret: Type)
+    List(elem: Type)
+    Tuple(elements: TypeArgList)
+    Inferred  // type to be inferred
+}
+```
+
+**Impact:** Touches ParamList, FieldList, Function, ExternFn, Let, Mut —
+every AST node that carries a type annotation. ~50+ sites.
+
+**Why critical:** Without structured types, generics can't represent
+`List<T>`, the type checker can't do real unification, and every new type
+feature requires more string parsing.
+
+### 3. Type checker is advisory only
+**type:** architecture
+**priority:** critical
+**status:** not started
+
+The type checker emits warnings but never rejects a program. Ill-typed
+code compiles and runs (or crashes at runtime). This means:
+- Type errors are silent — users discover them as segfaults
+- The type checker can't be trusted, so codegen does its own type dispatch
+- There's no foundation for type-directed codegen (the codegen can't assume
+  types are correct because they were never enforced)
+
+**Fix:** Make type errors block compilation. Start with the highest-value
+checks: return type mismatches, argument type mismatches, undefined
+variable access. Graduate from warnings to errors incrementally — each
+check that's promoted must not break existing valid code.
+
+### 4. No intermediate representation
+**type:** architecture
+**priority:** critical
+**status:** not started
+
+The compiler goes directly from AST to LLVM IR. Every real compiler has
+at least one IR between parsing and codegen:
+- Rust: AST → HIR → MIR → LLVM IR
+- Go: AST → SSA → machine code
+- Swift: AST → SIL → LLVM IR
+- C: AST → IR → machine code (in most implementations)
+
+Why it matters:
+- Optimizations that are easy on an IR are hard on an AST (constant folding,
+  dead code elimination, inlining decisions)
+- The AST is designed for parsing fidelity, not for analysis
+- Monomorphization, closure capture analysis, and borrow checking all
+  need a lowered representation where control flow is explicit
+- The codegen is doing too many jobs: type resolution, name mangling,
+  closure conversion, AND LLVM emission
+
+**Fix:** Introduce a typed IR between type checking and codegen. The IR
+has explicit types on every value, explicit control flow (no implicit
+fallthrough), and no syntactic sugar. The codegen becomes a simple
+translation from IR to LLVM. This is the biggest single change and
+should be done AFTER items 1-3.
+
+### 5. Generic type params are discarded
+**type:** architecture
+**priority:** critical
+**status:** planned (see GENERICS_PLAN.md)
+
+`skip_angle_brackets()` consumes `<T, U>` and throws it away. The parser
+successfully handles generic syntax but the type information is lost.
+Generics "work" only because everything is i64 — they have no semantic
+meaning.
+
+**Fix:** Keep type params in the AST (TypeParamList on Function, TypeDecl,
+EnumDecl). Implement monomorphization as a post-type-check pass that
+generates concrete specializations. See GENERICS_PLAN.md.
+
+### 6. No ownership or lifetime model
+**type:** architecture
+**priority:** critical
+**status:** not started
+
+All heap allocations use a monotonic bump allocator (512MB arena, never
+frees). There is no concept of ownership, borrowing, or lifetimes.
+Every struct/enum allocation leaks.
+
+For a compiler binary this is acceptable (one-shot process, OS reclaims).
+For user programs compiled by this compiler, it's not — programs that
+run for more than a few seconds will exhaust memory.
+
+**Fix (long-term roadmap):**
+1. Reference counting (simplest, covers 90% of cases)
+2. Ownership tracking (move semantics, prevents double-free)
+3. Lifetime analysis (borrow checker, prevents use-after-free)
+4. Eventually: optional manual allocation for performance-critical code
+
+### 7. No const evaluation
+**type:** architecture
+**priority:** high
+**status:** not started
+
+Expressions like `1 + 2`, `"hello" + " world"`, `true && false` are
+emitted as runtime LLVM instructions instead of being folded to constants
+at compile time. This produces unnecessarily verbose IR and prevents
+compile-time assertions, const generics, and array size expressions.
+
+**Fix:** Add a const-eval pass that evaluates pure expressions at compile
+time. Start with literals and arithmetic, extend to const functions later.
+
+### 8. No proper error recovery in parser
+**type:** architecture
+**priority:** high
+**status:** not started
+
+The parser stops at the first error (returns null, sets `had_error`).
+A real compiler reports multiple errors per compilation, recovering at
+statement boundaries to continue parsing after an error.
+
+**Fix:** Implement synchronization — when an error is hit, skip tokens
+until a statement boundary (`;`, `}`, `fn`, `let`, etc.) and resume
+parsing. Collect all errors into the DiagnosticBag and report them all.
+
+### 9. Codegen duplicates type dispatch logic
+**type:** architecture
+**priority:** high
+**status:** not started
+
+The codegen has 27 `vtype_is_*` calls that re-derive type information
+the type checker already computed. Operations like `+` check at codegen
+time whether operands are strings, floats, or ints — but this should be
+resolved by the type checker. The codegen should receive typed AST nodes
+and emit the correct operation without re-checking.
+
+This is a symptom of #3 (advisory type checker) and #4 (no IR). When
+types are enforced and an IR exists, codegen becomes a straightforward
+translation.
+
+### 10. Implicit returns are not type-checked
+**type:** bug
+**priority:** critical
+**status:** not started
+
+Functions with a declared return type only have explicit `return` statements
+checked. The implicit return (last expression in a block) is not verified:
+```forge
+fn foo() -> string {
+    42  // returns int, declared string — no error
+}
+```
+This caused a real bug: `peek_char` returned `Tk.Identifier` (enum) instead
+of `""` (string) for months, causing 44M allocations and arena exhaustion.
+
+**Fix:** Check the type of the last expression in every function body
+against the declared return type. This is part of #3 but important enough
+to call out separately.
 
 ---
 

@@ -26,7 +26,7 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     let rhs_len_plus_1 = ctx.build_add(rhs_len, one, "rhs_len_p1")
     call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
 
-    ok_emit_str(ctx.to_i64(buf, "concat_i64"))
+    ok_emit_str(buf)
 }
 
 export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
@@ -40,7 +40,7 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
                     let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
                     let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
                     let result = ctx.call("forge_str_replace", [str_ptr, from_ptr, to_ptr_v])
-                    ok_emit_str(ctx.to_i64(result, "rep_i64"))
+                    ok_emit_str(result)
                 }
                 _ -> err_emit("replace expects 2 arguments")
             }
@@ -83,8 +83,7 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     let nul_int = ctx.build_add(buf_int2, len, "sub_nul_int")
     let nul_ptr = ctx.to_ptr(nul_int, "sub_nul")
     ctx.store(ctx.i8(0), nul_ptr)
-    let result_i64 = ctx.to_i64(buf, "sub_result")
-    ok_emit_str(result_i64)
+    ok_emit_str(buf)
 }
 
 export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitResult {

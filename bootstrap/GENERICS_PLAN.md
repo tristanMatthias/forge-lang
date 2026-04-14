@@ -1,47 +1,34 @@
-# Generics Implementation Plan
+# Generics Implementation Plan — Monomorphization
 
-## Key Insight
+## Design Philosophy
 
-The bootstrap compiler uses an everything-is-i64 value model. Strings,
-structs, enums, lists — all pointers stored as i64. This means generics
-are **type erasure only**. No monomorphization, no code duplication, zero
-runtime cost. `List<int>` and `List<string>` compile to the same LLVM IR.
+This is a proper compiler. Generics use **monomorphization**: each unique
+instantiation of a generic function or type produces a separate specialized
+copy with concrete types substituted. This is the same approach as Rust,
+and it's the right foundation for a compiler that will eventually have
+real type representations (not just i64 for everything).
 
-The Rust compiler's monomorphization approach is unnecessary here.
-Generics are purely a type checker concern.
+Today, monomorphized copies produce identical IR (everything is i64).
+That's fine — the infrastructure is correct, and when real types arrive,
+it works without redesign.
 
-## What Generics Unlock
+## Pipeline
 
-1. Unify 13+ linked list enums → `List<T>`
-2. `Result<T, E>` → eliminate 98 `had_error` checks
-3. Generic `Map<K, V>` → clean registry/dispatch systems
-4. Desugar hook registry → features register their own desugar rules
-5. `fn map<T, U>(list: List<T>, f: fn(T) -> U) -> List<U>`
-
-## Current State
-
-- Parser ALREADY skips `<T>` via `skip_angle_brackets()` — parsing works
-- `features/generics/example.fg` ALREADY passes (identity, Pair, Option)
-- Everything compiles because types are erased to i64
-- What's MISSING: the type checker discards type params instead of tracking them
-
-## Design: Type Erasure Generics
-
-### Phase 1: Keep Type Params in the AST
-
-Currently `skip_angle_brackets()` consumes `<T, U>` and throws it away.
-Change: store type params on the AST nodes.
-
-**AST changes in `core/ast.fg`:**
-```forge
-// Current:
-Function(name: string, params: ParamList, ret_ty: string, body: StmtList)
-
-// New:
-Function(name: string, type_params: TypeParamList, params: ParamList, ret_ty: string, body: StmtList)
+```
+Source → Parse → Resolve → Type Check → Monomorphize → Codegen
+                                            ↑ NEW PASS
 ```
 
-New types:
+Monomorphization is a **post-type-check, pre-codegen AST transform**.
+The type checker infers concrete type arguments at each call site.
+The monomorphizer clones generic declarations with those concrete types
+substituted, rewrites call sites, and removes the generic originals.
+Codegen never sees generics — it only sees fully concrete code.
+
+## Phase 1: Keep Type Params in the AST
+
+### New types in `core/ast.fg`
+
 ```forge
 export enum TypeParamList {
     End
@@ -49,93 +36,195 @@ export enum TypeParamList {
 }
 ```
 
-This is a BREAKING CHANGE to the Function variant. Requires two-phase
-bootstrap (Phase A: add TypeParamList type, Phase B: add field to Function).
+### Modified Stmt variants
 
-Actually — since enum changes are safe (hash-based tags, heap payloads),
-adding a field to Function SHOULD be safe without two-phase. But test
-carefully.
-
-### Phase 2: Parser Keeps Type Params
-
-In `features/generics/parser.fg`, change `skip_angle_brackets()` to
-`parse_type_params() -> TypeParamList`. Returns the parsed type params
-instead of discarding them.
-
-The function/type/enum declaration parsers pass the type params through
-to the AST node.
-
-### Phase 3: Type Checker Tracks Generic Types
-
-In `typeck/mod.fg`, when checking a generic function call like
-`identity(42)`, the type checker:
-
-1. Looks up `identity` → sees it has type param `T`
-2. Infers `T = int` from the argument type
-3. Substitutes `T → int` in the return type → returns `int`
-
-For generic types like `List<int>`:
-1. `ValueType` gets a new variant: `.Generic(name: string, args: TypeList)`
-2. `List<int>` = `ValueType.Generic("List", [.Int])`
-3. `List<string>` = `ValueType.Generic("List", [.Str])`
-
-These are DISTINCT types for the checker but IDENTICAL at runtime (both i64).
-
-### Phase 4: Codegen — Nothing Changes
-
-The codegen doesn't care about type params. Everything is i64.
-`List<int>.Node(1, .End)` compiles to the same IR as `ExprList.Node(1, .End)`.
-
-The type params are erased after type checking.
-
-### Phase 5: Unify Linked Lists
-
-Once generics work, replace the 13 linked list enums:
 ```forge
-// Before: 13 separate enums
-enum ExprList { End, Node(expr: SExpr, next: ExprList) }
-enum StmtList { End, Node(stmt: SStmt, next: StmtList) }
-enum ParamList { End, Node(name: string, ty: string, next: ParamList) }
-// ... 10 more
+// Before:
+Function(name: string, params: ParamList, ret_ty: string, body: StmtList)
+TypeDecl(name: string, fields: FieldList)
+EnumDecl(name: string, variants: VariantList)
 
-// After: one generic
+// After:
+Function(name: string, type_params: TypeParamList, params: ParamList, ret_ty: string, body: StmtList)
+TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
+EnumDecl(name: string, type_params: TypeParamList, variants: VariantList)
+```
+
+All ~30 construction/destructuring sites updated.
+
+### Parser changes
+
+`skip_angle_brackets()` → `parse_type_params() -> TypeParamList`.
+Returns parsed type params instead of discarding them. The old
+`skip_angle_brackets` is kept for type annotation positions where
+we just need to skip past `<...>` in `consume_type()`.
+
+## Phase 2: Resolver Scopes Type Param Names
+
+When the resolver enters a generic declaration like `fn identity<T>(x: T)`,
+it adds `T` to the current scope. This ensures:
+- `T` in parameter types and return type resolves correctly
+- `T` used inside the body doesn't trigger "undefined variable"
+- Nested generics shadow correctly
+
+Implementation: in `resolve/mod.fg`, when processing a Function/TypeDecl/
+EnumDecl with non-empty type_params, push each type param name into scope.
+
+## Phase 3: Type Checker — Infer Type Arguments
+
+When the type checker encounters a call to a generic function:
+
+```forge
+fn identity<T>(x: T) -> T { x }
+let n = identity(42)
+```
+
+1. Look up `identity` → sees type_params `[T]`
+2. Match argument types against parameter types:
+   - arg 0 is `int`, param 0 type is `T` → infer `T = int`
+3. Substitute into return type: `T` → `int`
+4. Record the instantiation: `identity<int>` at this call site
+
+For explicit type args (`identity<int>(42)`), skip inference and use
+the provided types directly.
+
+### Type inference algorithm
+
+Simple unification — walk parameter types and argument types in parallel:
+- If param type is a type variable (matches a type_param name), bind it
+- If param type is concrete, check it matches the argument type
+- If param type is generic (e.g. `List<T>`), recurse into type args
+
+This handles:
+```forge
+fn first<A, B>(p: Pair<A, B>) -> A { p.first }
+// Call: first(Pair { first: 42, second: "hello" })
+// Infers: A = int, B = string
+```
+
+### What we store
+
+The type checker produces a map of call site → substitution.
+Concretely, each call to a generic function is annotated (or rewritten)
+with its resolved type arguments.
+
+## Phase 4: Monomorphization Pass
+
+New pass: `src/mono/mod.fg`
+
+Input: type-checked AST with recorded instantiations.
+Output: AST with no generics — all generic declarations replaced by
+concrete specializations, all call sites rewritten.
+
+### Algorithm
+
+1. **Collect**: scan AST for all instantiation sites. Build a set of
+   unique instantiations: `{(identity, [int]), (identity, [string]),
+   (Pair, [int, string]), ...}`
+
+2. **Generate**: for each unique instantiation:
+   - Clone the generic declaration's AST
+   - Substitute type params → concrete types in all type annotations
+   - Mangle the name: `identity` + `<int>` → `identity__int`
+   - For types: `Pair` + `<int, string>` → `Pair__int_string`
+
+3. **Rewrite**: replace all call sites:
+   - `identity(42)` → `identity__int(42)`
+   - `Pair { first: 10, second: "hi" }` → `Pair__int_string { ... }`
+   - `Option.Some(99)` → `Option__int.Some(99)`
+
+4. **Remove**: drop the original generic declarations from the AST.
+
+### Name mangling
+
+```
+fn identity<T>     + T=int        → identity__int
+fn identity<T>     + T=string     → identity__string
+type Pair<A, B>    + A=int, B=int → Pair__int__int
+enum Option<T>     + T=string     → Option__string
+```
+
+Mangled names use `__` separator (already used for impl methods).
+
+### Handling generic types and enums
+
+When we monomorphize `enum Option<T>` with `T=int`:
+```forge
+// Original:
+enum Option<T> { None, Some(value: T) }
+
+// Generated:
+enum Option__int { None, Some(value: int) }
+```
+
+The struct/enum registries, field type lookups, and variant lookups
+all work on the mangled name. No special handling needed — they're
+just regular types with funny names.
+
+### Recursive/self-referential generics
+
+```forge
+enum List<T> {
+    End
+    Node(value: T, next: List<T>)
+}
+```
+
+Monomorphized with T=int:
+```forge
+enum List__int {
+    End
+    Node(value: int, next: List__int)
+}
+```
+
+The monomorphizer must recognize `List<T>` in the field type and
+substitute it to `List__int`. This is a recursive substitution
+but terminates because we only substitute type params, not
+arbitrary types.
+
+## Phase 5: Codegen — Nothing Changes
+
+Codegen sees only concrete, non-generic code. No changes needed.
+
+## Phase 6: Unify Linked Lists (Future)
+
+Once generics work:
+```forge
 enum List<T> { End, Node(value: T, next: List<T>) }
-
-// Usage:
 type ExprList = List<SExpr>
 type StmtList = List<SStmt>
 ```
 
-This is a MASSIVE refactor (touches every file) but is purely mechanical.
-Do it AFTER generics are working and tested.
+Each type alias triggers monomorphization: `List__SExpr`, `List__SStmt`.
+The 13 hand-written linked list enums become one generic + type aliases.
 
 ## Implementation Order
 
-1. Add `TypeParamList` enum to `core/ast.fg`
-2. Add `type_params` field to `Function` (and TypeDecl, EnumDecl)
-3. Change parser to keep type params instead of skipping
-4. Update resolver to scope type param names
-5. Add `ValueType.Generic(name, args)` to the type system
-6. Update type checker to infer and track type args
-7. Test: generic functions, generic types, generic enums
-8. Dogfood: unify linked list enums (Phase 5 — separate session)
+1. Add TypeParamList to ast.fg, update Function/TypeDecl/EnumDecl
+2. Change parser: skip_angle_brackets → parse_type_params
+3. Update all ~30 destructuring sites (mechanical)
+4. Resolver: scope type param names
+5. Type checker: infer type args at generic call sites
+6. Monomorphization pass: clone, substitute, rewrite, remove
+7. Test: existing generics example still passes
+8. Test: multi-instantiation (same generic with different types)
+9. Test: generic types and enums
+10. Test: nested/recursive generics
 
 ## Risks
 
-- Adding fields to Function/TypeDecl/EnumDecl changes payload layout.
-  Hash-based tags are stable but payload field counts matter. Test the
-  bootstrap chain carefully after each change.
-- The type checker is currently loose (many warnings, not blocking).
-  Generic type checking needs to be ADDITIVE (report more info) not
-  RESTRICTIVE (block compilation) to avoid breaking existing code.
-- The 13-enum unification (Phase 5) is the biggest mechanical change
-  in the project's history. Do it in a SEPARATE session with full
-  test coverage.
+- Adding fields to Function/TypeDecl/EnumDecl is safe (hash-based tags,
+  heap payloads) but requires updating ~30 pattern match sites.
+- The type checker is currently loose. Generic type inference must be
+  ADDITIVE — report more info, don't block compilation. Existing code
+  that doesn't use generics must not be affected.
+- Monomorphization increases code size (one copy per instantiation).
+  For the compiler itself this is negligible.
 
 ## What NOT To Do
 
-- No monomorphization. Everything is i64.
-- No trait bounds checking (yet). Just parse and store them.
-- No generic impls (yet). Start with generic functions and types.
-- Don't try to unify the linked lists in the SAME session as adding
-  generics. Get generics working first, then unify.
+- No type erasure. Build it right for the future.
+- No trait bounds CHECKING (yet). Parse and store them, don't enforce.
+- Don't try to unify the 13 linked lists in the SAME session as adding
+  generics. Get generics working first.

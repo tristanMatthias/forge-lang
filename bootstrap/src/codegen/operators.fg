@@ -27,10 +27,21 @@ export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult
 
 export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> EmitResult {
     let left_result = ctx.emit(env, left)?
-    let lhs = left_result.value
+    mut lhs = left_result.value
 
     let right_result = ctx.emit(env, right)?
-    let rhs = right_result.value
+    mut rhs = right_result.value
+
+    // Normalize types for comparison: if one operand is ptr and the
+    // other is i64 (e.g. null == 0), cast to match.
+    let l_is_ptr = forge_llvm_is_ptr_value(lhs) != 0
+    let r_is_ptr = forge_llvm_is_ptr_value(rhs) != 0
+    if l_is_ptr && !r_is_ptr {
+        rhs = ctx.int_to_ptr(rhs, "rhs_ptr")
+    }
+    if r_is_ptr && !l_is_ptr {
+        lhs = ctx.int_to_ptr(lhs, "lhs_ptr")
+    }
 
     let null_cmp = is_null_literal(left) || is_null_literal(right)
     let is_str = vtype_is_str(left_result.ty) || vtype_is_str(right_result.ty)
@@ -45,11 +56,22 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
     match op {
         .Add -> {
             if is_str { return emit_concat(ctx, lhs, rhs) }
-            if is_ptr { return ok_emit_typed(ctx.build_add(lhs, rhs, "ptr_add"), .Ptr) }
+            if is_ptr {
+                // Pointer arithmetic requires i64 operands, then cast back to ptr.
+                let l_i64 = ctx.to_i64(lhs, "padd_l")
+                let r_i64 = ctx.to_i64(rhs, "padd_r")
+                let sum = ctx.build_add(l_i64, r_i64, "ptr_add")
+                return ok_emit_typed(ctx.int_to_ptr(sum, "ptr_sum"), .Ptr)
+            }
             ok_emit(ctx.build_add(lhs, rhs, "add"))
         }
         .Sub -> {
-            if is_ptr { return ok_emit_typed(ctx.build_sub(lhs, rhs, "ptr_sub"), .Ptr) }
+            if is_ptr {
+                let l_i64 = ctx.to_i64(lhs, "psub_l")
+                let r_i64 = ctx.to_i64(rhs, "psub_r")
+                let diff = ctx.build_sub(l_i64, r_i64, "ptr_sub")
+                return ok_emit_typed(ctx.int_to_ptr(diff, "ptr_diff"), .Ptr)
+            }
             ok_emit(ctx.build_sub(lhs, rhs, "sub"))
         }
         .Mul -> ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul"))

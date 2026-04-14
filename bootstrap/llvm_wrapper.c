@@ -345,7 +345,15 @@ LLVMValueRef forge_llvm_build_global_string_ptr(LLVMBuilderRef b, const char* s,
 // ── Calls ──
 
 LLVMValueRef forge_llvm_build_call(LLVMBuilderRef b, LLVMTypeRef fn_type, LLVMValueRef fn_val, LLVMValueRef* args, int count, const char* name) {
-    return LLVMBuildCall2(b, fn_type, fn_val, args, (unsigned)count, name);
+    LLVMTypeRef ret_type = LLVMGetReturnType(fn_type);
+    int is_void = (LLVMGetTypeKind(ret_type) == LLVMVoidTypeKind);
+    const char* call_name = is_void ? "" : (name ? name : "");
+    LLVMValueRef result = LLVMBuildCall2(b, fn_type, fn_val, args, (unsigned)count, call_name);
+    if (is_void) {
+        LLVMContextRef ctx = LLVMGetModuleContext(LLVMGetGlobalParent(fn_val));
+        return LLVMConstInt(LLVMInt64TypeInContext(ctx), 0, 0);
+    }
+    return result;
 }
 
 // ── Control flow ──
@@ -394,5 +402,82 @@ int forge_llvm_verify_module_print(LLVMModuleRef m) {
     char* error = NULL;
     int result = LLVMVerifyModule(m, LLVMPrintMessageAction, &error);
     if (error) LLVMDisposeMessage(error);
+    return result;
+}
+
+// ── Type introspection ──
+
+// Returns 1 if the LLVM value's type is a pointer type, 0 otherwise.
+// Used by the codegen to avoid redundant ptrtoint/inttoptr casts.
+int forge_llvm_is_ptr_value(LLVMValueRef val) {
+    return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMPointerTypeKind ? 1 : 0;
+}
+
+// Returns the LLVM type of a value (LLVMTypeOf wrapper).
+LLVMTypeRef forge_llvm_typeof(LLVMValueRef val) {
+    return LLVMTypeOf(val);
+}
+
+// Returns 1 if the LLVM value has void type, 0 otherwise.
+int forge_llvm_is_void_value(LLVMValueRef val) {
+    if (!val) return 1;
+    return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMVoidTypeKind ? 1 : 0;
+}
+
+// Cast a value to match an expected type (ptr↔i64).
+// If val is ptr but expected is i64: ptrtoint
+// If val is i64 but expected is ptr: inttoptr
+// Otherwise: return val unchanged
+LLVMValueRef forge_llvm_cast_to_type(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef expected) {
+    LLVMTypeRef actual = LLVMTypeOf(val);
+    if (actual == expected) return val;
+    LLVMTypeKind ak = LLVMGetTypeKind(actual);
+    LLVMTypeKind ek = LLVMGetTypeKind(expected);
+    if (ak == LLVMPointerTypeKind && ek == LLVMIntegerTypeKind) {
+        return LLVMBuildPtrToInt(b, val, expected, "arg_cast");
+    }
+    if (ak == LLVMIntegerTypeKind && ek == LLVMPointerTypeKind) {
+        return LLVMBuildIntToPtr(b, val, expected, "arg_cast");
+    }
+    return val;
+}
+
+// Build a call with automatic argument type coercion.
+// For each argument, if the value type doesn't match the function's
+// expected parameter type, insert a cast (ptr↔i64).
+LLVMValueRef forge_llvm_build_call_coerce(LLVMBuilderRef b,
+    LLVMTypeRef fn_type, LLVMValueRef fn_val,
+    LLVMValueRef* args, int64_t count, const char* name) {
+    unsigned param_count = LLVMCountParamTypes(fn_type);
+    LLVMTypeRef* param_types = NULL;
+    if (param_count > 0) {
+        param_types = (LLVMTypeRef*)malloc(param_count * sizeof(LLVMTypeRef));
+        LLVMGetParamTypes(fn_type, param_types);
+    }
+    for (int i = 0; i < count && i < (int)param_count; i++) {
+        args[i] = forge_llvm_cast_to_type(b, args[i], param_types[i]);
+    }
+    if (param_types) free(param_types);
+    // Void-returning calls must not have a name (LLVM requirement).
+    LLVMTypeRef ret_type = LLVMGetReturnType(fn_type);
+    int is_void = (LLVMGetTypeKind(ret_type) == LLVMVoidTypeKind);
+    const char* call_name = is_void ? "" : (name ? name : "");
+    LLVMValueRef result = LLVMBuildCall2(b, fn_type, fn_val, args, (unsigned)count, call_name);
+    // Void values cannot be stored, returned, or used in the value pipeline.
+    // Replace with i64 0 so callers don't need to handle void specially.
+    if (is_void) {
+        LLVMContextRef ctx = LLVMGetModuleContext(LLVMGetGlobalParent(fn_val));
+        return LLVMConstInt(LLVMInt64TypeInContext(ctx), 0, 0);
+    }
+    // If the return type is a smaller integer (i32, i8), sign-extend to i64
+    // so the value pipeline doesn't encounter mixed integer widths.
+    if (LLVMGetTypeKind(ret_type) == LLVMIntegerTypeKind) {
+        unsigned width = LLVMGetIntTypeWidth(ret_type);
+        if (width < 64) {
+            LLVMContextRef ctx = LLVMGetModuleContext(LLVMGetGlobalParent(fn_val));
+            LLVMTypeRef i64_type = LLVMInt64TypeInContext(ctx);
+            return LLVMBuildSExt(b, result, i64_type, "widen");
+        }
+    }
     return result;
 }

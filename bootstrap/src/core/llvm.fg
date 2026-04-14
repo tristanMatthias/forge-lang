@@ -110,6 +110,15 @@ extern fn forge_llvm_add_incoming(phi: ptr, value: ptr, block: ptr)
 // ── Builder — introspection ──
 extern fn forge_llvm_get_insert_block(b: ptr) -> ptr
 
+// ── Type introspection ──
+extern fn forge_llvm_is_ptr_value(val: ptr) -> int
+extern fn forge_llvm_typeof(val: ptr) -> ptr
+extern fn forge_llvm_cast_to_type(b: ptr, val: ptr, expected: ptr) -> ptr
+extern fn forge_llvm_is_void_value(val: ptr) -> int
+
+// ── Type-coercing call ──
+extern fn forge_llvm_build_call_coerce(b: ptr, fn_type: ptr, fn_val: ptr, args: ptr, count: int, name: string) -> ptr
+
 // ── Module output ──
 extern fn forge_llvm_print_module_to_file(m: ptr, path: string) -> int
 extern fn forge_llvm_verify_module_print(m: ptr) -> int
