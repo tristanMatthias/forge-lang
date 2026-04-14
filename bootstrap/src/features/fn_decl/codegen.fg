@@ -24,7 +24,7 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> StmtResult {
 }
 
 export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: StmtList) -> StmtResult {
-    let fn_val = forge_llvm_get_named_function(ctx.module, name)
+    let fn_val = ctx.get_fn(name)
     if fn_val == null {
         return err_stmt("codegen error: function `${name}` was not declared in pass 1")
     }
@@ -231,7 +231,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         return err_emit("method call on non-struct/enum value (ty=${vtype_display(r.ty)})")
     }
     let mangled = "${owner}__${method}"
-    let fn_val = forge_llvm_get_named_function(ctx.module, mangled)
+    let fn_val = ctx.get_fn(mangled)
     if fn_val == null {
         // Not a method — check if it's a struct field with fn type.
         // e.g. handler.action(25) where action: fn(int) -> int
@@ -263,9 +263,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         forge_llvm_value_array_free(arg_arr)
         return fill
     }
-    // Use the function's actual declared type with automatic arg coercion.
-    let fn_type = forge_llvm_fn_type_of(fn_val)
-    let result = forge_llvm_build_call_coerce(ctx.builder, fn_type, fn_val, arg_arr, arg_count, "methcall")
+    let result = ctx.call_raw(fn_val, arg_arr, arg_count)
     forge_llvm_value_array_free(arg_arr)
     let ret_ty = fn_ret_lookup(ctx.fn_rets, mangled)
     ok_emit_typed(result, ret_ty)
@@ -297,7 +295,7 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
     if name == "panic" {
         return emit_panic(ctx, env, args)
     }
-    let fn_val = forge_llvm_get_named_function(ctx.module, name)
+    let fn_val = ctx.get_fn(name)
     if fn_val == null {
         // Not a named function — might be a lambda stored in a variable.
         let local = env_lookup(env, name)
@@ -319,9 +317,7 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
         forge_llvm_value_array_free(arg_arr)
         return fill
     }
-    // Use the function's actual declared type with automatic arg coercion.
-    let fn_type = forge_llvm_fn_type_of(fn_val)
-    let result = forge_llvm_build_call_coerce(ctx.builder, fn_type, fn_val, arg_arr, arg_count, "calltmp")
+    let result = ctx.call_raw(fn_val, arg_arr, arg_count)
     forge_llvm_value_array_free(arg_arr)
     let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
     ok_emit_typed(result, ret_ty)
@@ -366,7 +362,7 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
             let str_ptr = ctx.to_ptr(r.value, "atoi_arg")
             let result32 = ctx.call("atoi", [str_ptr])
             // Sign-extend i32 → i64.
-            ok_emit(forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "atoi_ext"))
+            ok_emit(ctx.sext(result32, ctx.i64_type, "atoi_ext"))
         }
     }
 }
@@ -400,17 +396,7 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             // Print "panic: <message>" to stderr
             let prefix = ctx.global_str("panic: ", ".panic_prefix")
             let msg = emit_concat(ctx, prefix, r.value)
-            let msg_ptr = ctx.to_ptr(msg.value, "panic_msg")
-            let eprint_fn = ctx.get_fn("forge_eprintln")
-            let arr = forge_llvm_value_array_new(1)
-            forge_llvm_value_array_set(arr, 0, msg_ptr)
-            let void_type = forge_llvm_void_type(ctx.lc)
-            let pa = forge_llvm_type_array_new(1)
-            forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
-            let fn_type = forge_llvm_function_type(void_type, pa, 1, 0)
-            forge_llvm_type_array_free(pa)
-            forge_llvm_build_call(ctx.builder, fn_type, eprint_fn, arr, 1, "")
-            forge_llvm_value_array_free(arr)
+            ctx.call("forge_eprintln", [ctx.to_ptr(msg.value, "panic_msg")])
             // exit(1)
             ctx.call("exit", [ctx.i64(1)])
             // Unreachable — but return a value for the type system

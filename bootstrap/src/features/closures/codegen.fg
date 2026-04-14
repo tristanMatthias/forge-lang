@@ -274,7 +274,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     forge_llvm_type_array_free(param_arr)
     let fn_val = forge_llvm_add_function(ctx.module, name, fn_type)
 
-    let saved_bb = forge_llvm_get_insert_block(ctx.builder)
+    let saved_bb = ctx.current_bb()
 
     let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
     ctx.position(entry)
