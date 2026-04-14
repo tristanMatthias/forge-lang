@@ -878,7 +878,16 @@ impl Ctx {
     fn array_get(self, arr: ptr, idx: ptr) -> ptr { self.call("forge_array_get", [arr, idx]) }
     fn array_len(self, arr: ptr) -> ptr { self.call("forge_array_len", [arr]) }
 
-    // ── Type translation ──
+    // ── Type resolution ──
+
+    // Resolve all type annotations in a ParamList from strings to ValueType.
+    fn resolve_params(self, params: ParamList) -> ParamList {
+        match params {
+            .End -> .End
+            .Node(name, ty, _, next) ->
+                .Node(name, ty, translate_type_ctx(self, ty), self.resolve_params(next))
+        }
+    }
 
     // Translate a type annotation string to ValueType.
     fn translate_type(self, ty: string) -> ValueType {

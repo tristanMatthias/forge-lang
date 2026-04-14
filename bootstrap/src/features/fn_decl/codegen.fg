@@ -2,7 +2,7 @@
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, param_type_at, trait_decl_has, null_ptr_val}
+use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, param_type_at, trait_decl_has, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 
@@ -33,8 +33,9 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 
     let body_cg = ctx.with_fn(fn_val, name)
 
+    let resolved_params = body_cg.resolve_params(params)
     let empty_env: VarEnv = VarEnv.End
-    let env = bind_params_inline(body_cg, fn_val, params, 0, empty_env)
+    let env = bind_params_inline(body_cg, fn_val, resolved_params, 0, empty_env)
 
     // Emit null checks for all ptr/struct/enum parameters when debug mode is on.
     if body_cg.debug_null_checks {
@@ -60,10 +61,9 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: ParamList, idx: int, env: VarEnv) -> VarEnv {
     match params {
         .End -> env
-        .Node(name, ty, _, next) -> {
+        .Node(name, _, resolved, next) -> {
             let arg = ctx.get_param(fn_val, idx)
-            let internal_ty = translate_type_ctx(ctx, ty)
-            bind_params_inline(ctx, fn_val, next, idx + 1, ctx.bind(env, name, arg, internal_ty))
+            bind_params_inline(ctx, fn_val, next, idx + 1, ctx.bind(env, name, arg, resolved))
         }
     }
 }
