@@ -68,13 +68,18 @@ Globals now use `llvm_type_for_full` with their declared ValueType.
 `forge_llvm_is_void_value` still declared but unused (harmless).
 `forge_llvm_cast_to_type` is used from Forge (not C-internal only).
 
-### 9. Types are strings in the AST
-**type:** architecture (see TODO.md #2)
-**priority:** critical
+### 9. ~~Types are strings in the AST~~ IN PROGRESS
+**status:** Phase B in progress
 
-Types stored as `ty: string` throughout ParamList, FieldList, Function.
-`translate_param_type` parses strings like `"List(int)"` with starts_with.
-Blocks proper generics, type inference, and compile-time type checking.
+ParamList.Node and FieldList.Node now carry a `resolved: ValueType`
+field alongside the original `ty: string`. Declaration passes in
+setup.fg populate `resolved` via `resolve_field_list`/`resolve_param_list`.
+`fill_struct_field_types` and `fill_typed_param_array` read from
+`resolved` instead of re-parsing strings.
+
+Remaining: switch feature codegen to read `resolved` instead of calling
+`ctx.translate_type(ty_string)`. Then remove `ty: string` field and
+`translate_param_type`.
 
 ### 10. ~~Comparison results are i64, not i1~~ DONE
 **status:** done (commit f41a2186)

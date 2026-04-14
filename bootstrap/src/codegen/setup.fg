@@ -272,13 +272,30 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     CodegenResult { had_error: false, error_message: "" }
 }
 
-fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: FieldList, structs: StructReg, idx: int) {
+// Rebuild a FieldList with `resolved` populated from `translate_param_type`.
+fn resolve_field_list(fields: FieldList, structs: StructReg, enums: EnumReg) -> FieldList {
+    match fields {
+        .End -> .End
+        .Node(name, ty, _, next) ->
+            .Node(name, ty, translate_param_type(structs, enums, ty), resolve_field_list(next, structs, enums))
+    }
+}
+
+// Rebuild a ParamList with `resolved` populated from `translate_param_type`.
+fn resolve_param_list(params: ParamList, structs: StructReg, enums: EnumReg) -> ParamList {
+    match params {
+        .End -> .End
+        .Node(name, ty, _, next) ->
+            .Node(name, ty, translate_param_type(structs, enums, ty), resolve_param_list(next, structs, enums))
+    }
+}
+
+fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
-        .Node(_, ty, next) -> {
-            let vt = translate_param_type(structs, EnumReg.End, ty)
-            forge_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, vt))
-            fill_struct_field_types(arr, i64t, i1t, dt, pt, next, structs, idx + 1)
+        .Node(_, _, resolved, next) -> {
+            forge_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, resolved))
+            fill_struct_field_types(arr, i64t, i1t, dt, pt, next, idx + 1)
         }
     }
 }
@@ -290,10 +307,11 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .TypeDecl(name, fields) -> {
-                    let resolved_fields = resolve_type_operator(fields, reg)
+                    let op_fields = resolve_type_operator(fields, reg)
+                    let resolved_fields = resolve_field_list(op_fields, reg, EnumReg.End)
                     let count = field_list_length(resolved_fields)
                     let field_arr = forge_llvm_type_array_new(count)
-                    fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, reg, 0)
+                    fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, 0)
                     let st = forge_llvm_struct_create_named(ctx, name)
                     forge_llvm_struct_set_body(st, field_arr, count, 0)
                     forge_llvm_type_array_free(field_arr)
@@ -336,20 +354,21 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
 }
 
 // Declare per-variant payload struct types: %EnumName.VariantName = type { field_types... }
-fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: VariantList, structs: StructReg) {
+fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: VariantList, structs: StructReg, enums: EnumReg) {
     match variants {
         .End -> {}
         .Node(vname, fields, next) -> {
             let count = field_list_length(fields)
             if count > 0 {
                 let payload_name = "${enum_name}__${vname}"
+                let resolved_fields = resolve_field_list(fields, structs, enums)
                 let arr = forge_llvm_type_array_new(count)
-                fill_struct_field_types(arr, i64t, i1t, dt, pt, fields, structs, 0)
+                fill_struct_field_types(arr, i64t, i1t, dt, pt, resolved_fields, 0)
                 let st = forge_llvm_struct_create_named(lc, payload_name)
                 forge_llvm_struct_set_body(st, arr, count, 0)
                 forge_llvm_type_array_free(arr)
             }
-            declare_variant_payloads(lc, i64t, i1t, dt, pt, enum_name, next, structs)
+            declare_variant_payloads(lc, i64t, i1t, dt, pt, enum_name, next, structs, enums)
         }
     }
 }
@@ -369,7 +388,7 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
                     forge_llvm_struct_set_body(st, field_arr, 2, 0)
                     forge_llvm_type_array_free(field_arr)
                     // Per-variant typed payload structs
-                    declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs)
+                    declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs, reg)
                     EnumReg.Node(name, variants, reg)
                 }
                 .Module(_, body) -> declare_enums(ctx, i64t, i1t, dt, pt, body, structs, reg)
@@ -409,9 +428,9 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
 
 fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
     match fields {
-        .Node(name, base_name, rest) if name == "__base" -> {
+        .Node(name, base_name, _, rest) if name == "__base" -> {
             match rest {
-                .Node(op_name, op, excluded_fields) -> {
+                .Node(op_name, op, _, excluded_fields) -> {
                     let base_lookup = struct_reg_lookup(reg, base_name)
                     if !base_lookup.found { return FieldList.End }
                     if op == "without" {
@@ -432,24 +451,24 @@ fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
 fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
     match base {
         .End -> .End
-        .Node(name, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
-        .Node(name, ty, next) -> .Node(name, ty, filter_fields_without(next, excluded))
+        .Node(name, _, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
+        .Node(name, ty, r, next) -> .Node(name, ty, r, filter_fields_without(next, excluded))
     }
 }
 
 fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
     match base {
         .End -> .End
-        .Node(name, ty, next) if field_list_has(included, name) -> .Node(name, ty, filter_fields_only(next, included))
-        .Node(_, _, next) -> filter_fields_only(next, included)
+        .Node(name, ty, r, next) if field_list_has(included, name) -> .Node(name, ty, r, filter_fields_only(next, included))
+        .Node(_, _, _, next) -> filter_fields_only(next, included)
     }
 }
 
 fn field_list_has(list: FieldList, target: string) -> bool {
     match list {
         .End -> false
-        .Node(name, _, _) if name == target -> true
-        .Node(_, _, next) -> field_list_has(next, target)
+        .Node(name, _, _, _) if name == target -> true
+        .Node(_, _, _, next) -> field_list_has(next, target)
     }
 }
 
@@ -462,13 +481,12 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 }
 
 // Fill a type array with the correct LLVM types for each parameter.
-fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, params: ParamList, idx: int) {
+fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, params: ParamList, idx: int) {
     match params {
         .End -> {}
-        .Node(_, ty, next) -> {
-            let vt = translate_param_type(structs, enums, ty)
-            forge_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, vt))
-            fill_typed_param_array(arr, i64t, i1t, dt, pt, structs, enums, next, idx + 1)
+        .Node(_, _, resolved, next) -> {
+            forge_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, resolved))
+            fill_typed_param_array(arr, i64t, i1t, dt, pt, next, idx + 1)
         }
     }
 }
@@ -493,14 +511,15 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
             let updated = match stmt {
                 .Function(name, params, ret_ty, body) -> {
                     // Names are already qualified by the name resolution pass
-                    let arity = param_list_length(params)
+                    let resolved_params = resolve_param_list(params, structs, enums)
+                    let arity = param_list_length(resolved_params)
                     let existing = forge_llvm_get_named_function(m, name)
                     if existing != null {
                         eprintln("FATAL: duplicate function `${name}` — rename to avoid collision")
                         exit(1)
                     }
                     let param_arr = forge_llvm_type_array_new(arity)
-                    fill_typed_param_array(param_arr, i64t, i1t, dt, pt, structs, enums, params, 0)
+                    fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
                     let ret_vt = decl_fn_ret_type(structs, enums, ret_ty, body)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
@@ -509,9 +528,10 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
                 .ExternFn(name, params, ret_ty) -> {
-                    let arity = param_list_length(params)
+                    let resolved_params = resolve_param_list(params, structs, enums)
+                    let arity = param_list_length(resolved_params)
                     let param_arr = forge_llvm_type_array_new(arity)
-                    fill_typed_param_array(param_arr, i64t, i1t, dt, pt, structs, enums, params, 0)
+                    fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
                     let ret_vt = translate_param_type(structs, enums, ret_ty)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
@@ -531,7 +551,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
 fn params_to_type_list(params: ParamList) -> ParamTypeList {
     match params {
         .End -> .End
-        .Node(_, ty, next) -> .Node(ty, params_to_type_list(next))
+        .Node(_, ty, _, next) -> .Node(ty, params_to_type_list(next))
     }
 }
 

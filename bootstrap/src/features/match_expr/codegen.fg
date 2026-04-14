@@ -247,9 +247,9 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
 fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: FieldList, idx: int) -> VarEnv {
     match bindings {
         .End -> env
-        .Node(name, _, next_b) if name == "_" ->
+        .Node(name, _, _, next_b) if name == "_" ->
             bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
-        .Node(name, _, next_b) -> {
+        .Node(name, _, _, next_b) -> {
             let field_ty = ctx.translate_type(field_type_at(fields, 0))
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, name)
             let extended = ctx.bind(env, name, loaded, field_ty)
@@ -311,8 +311,8 @@ fn bind_single_sub_pattern(ctx: Ctx, env: VarEnv, pat: Pattern, value: ptr, ty: 
 fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: ValueType) -> VarEnv {
     match bindings {
         .End -> env
-        .Node(name, _, _) if name == "_" -> env
-        .Node(name, _, _) -> ctx.bind(env, name, value, ty)
+        .Node(name, _, _, _) if name == "_" -> env
+        .Node(name, _, _, _) -> ctx.bind(env, name, value, ty)
     }
 }
 

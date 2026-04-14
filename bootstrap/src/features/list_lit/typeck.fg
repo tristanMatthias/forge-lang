@@ -34,7 +34,7 @@ fn tc_infer_lambda_ret(tc: TC, args: ExprList, elem_ty: ValueType) -> ValueType 
                     let inner = tc_enter(tc)
                     let with_params = match params {
                         .End -> inner
-                        .Node(pname, _, _) -> tc_bind(inner, pname, elem_ty)
+                        .Node(pname, _, _, _) -> tc_bind(inner, pname, elem_ty)
                     }
                     let r = check_expr(with_params, body)
                     tc_exit(r.tc)

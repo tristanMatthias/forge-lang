@@ -10,7 +10,7 @@ export fn bind_destructure(tc: TC, names: ParamList, tuple_ty: ValueType) -> TC 
 fn bind_destructure_idx(tc: TC, names: ParamList, tuple_ty: ValueType, idx: int) -> TC {
     match names {
         .End -> tc
-        .Node(name, _, next) -> {
+        .Node(name, _, _, next) -> {
             let elem_ty = vtype_tuple_at(tuple_ty, idx)
             bind_destructure_idx(tc_bind(tc, name, elem_ty), next, tuple_ty, idx + 1)
         }

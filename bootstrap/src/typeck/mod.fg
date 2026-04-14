@@ -477,7 +477,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
 export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
-        .Node(name, ty_str, next) -> {
+        .Node(name, ty_str, _, next) -> {
             let ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { ValueType.Int }
             tc_bind_params(tc_bind(tc, name, ty), next)
         }

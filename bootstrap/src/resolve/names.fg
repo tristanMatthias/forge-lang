@@ -238,7 +238,7 @@ type UseResult = {
 fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, result: UseResult, sp: Span) -> UseResult {
     match names {
         .End -> result
-        .Node(name, col_str, next) -> {
+        .Node(name, col_str, _, next) -> {
             // Build a span pointing at this specific import name.
             // start/end encode the highlight length; line/col encode position.
             let name_col = int(col_str)
@@ -335,7 +335,7 @@ fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) ->
 fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
     match params {
         .End -> ctx
-        .Node(name, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, false, true, 0, ctx.locals)), next)
+        .Node(name, _, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, false, true, 0, ctx.locals)), next)
         _ -> ctx
     }
 }

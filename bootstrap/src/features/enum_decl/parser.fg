@@ -74,8 +74,8 @@ impl Parser {
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_field_list_until_paren()?
-            return FieldList.Node(name, ty, rest)
+            return FieldList.Node(name, ty, ValueType.Int, rest)
         }
-        FieldList.Node(name, ty, FieldList.End)
+        FieldList.Node(name, ty, ValueType.Int, FieldList.End)
     }
 }

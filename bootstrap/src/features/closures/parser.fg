@@ -61,7 +61,7 @@ export fn stmt_list_contains_it(list: StmtList) -> bool {
 
 // Wrap an expression in an implicit `(it) -> { expr }` lambda.
 export fn wrap_in_it_lambda(expr: Expr) -> Expr {
-    Expr.Lambda(ParamList.Node("it", "", ParamList.End), expr)
+    Expr.Lambda(ParamList.Node("it", "", ValueType.Int, ParamList.End), expr)
 }
 
 impl Parser {

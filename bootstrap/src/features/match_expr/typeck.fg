@@ -115,7 +115,7 @@ fn tc_bind_pattern_list(tc: TC, pats: PatternList) -> TC {
 fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
-        .Node(name, _, next) -> {
+        .Node(name, _, _, next) -> {
             if name == "_" { return tc_bind_pattern_params(tc, next) }
             tc_bind_pattern_params(tc_bind(tc, name, .Int), next)
         }

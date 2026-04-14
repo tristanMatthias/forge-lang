@@ -34,8 +34,8 @@ fn capture_list_len(list: CaptureList) -> int {
 fn is_param(params: ParamList, name: string) -> bool {
     match params {
         .End -> false
-        .Node(pname, _, _) if pname == name -> true
-        .Node(_, _, next) -> is_param(next, name)
+        .Node(pname, _, _, _) if pname == name -> true
+        .Node(_, _, _, next) -> is_param(next, name)
     }
 }
 
@@ -231,7 +231,7 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
 fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList) -> TypeList {
     match params {
         .End -> TypeList.End
-        .Node(name, type_ann, next) -> {
+        .Node(name, type_ann, _, next) -> {
             // Priority: explicit annotation > float inference > default Int
             let ty = if type_ann != "" && type_ann != "i64" {
                 ctx.translate_type(type_ann)
@@ -517,7 +517,7 @@ fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -
 fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int, types: TypeList) -> VarEnv {
     match params {
         .End -> env
-        .Node(name, type_ann, next) -> {
+        .Node(name, type_ann, _, next) -> {
             let param_val = ctx.get_param(fn_val, idx)
             // Priority: external TypeList > param annotation > default Int
             let ty = match types {

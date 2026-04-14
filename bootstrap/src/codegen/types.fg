@@ -147,15 +147,24 @@ export fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
 export fn advance_field_list(fields: FieldList) -> FieldList {
     match fields {
         .End -> .End
-        .Node(_, _, next) -> next
+        .Node(_, _, _, next) -> next
+    }
+}
+
+// Get the resolved ValueType of the Nth field (0-indexed).
+export fn field_resolved_at(fields: FieldList, idx: int) -> ValueType {
+    match fields {
+        .End -> .Int
+        .Node(_, _, vt, _) if idx <= 0 -> vt
+        .Node(_, _, _, next) -> field_resolved_at(next, idx - 1)
     }
 }
 
 export fn field_type_at(fields: FieldList, idx: int) -> string {
     match fields {
         .End -> "i64"
-        .Node(_, ty, _) if idx <= 0 -> ty
-        .Node(_, _, next) -> field_type_at(next, idx - 1)
+        .Node(_, ty, _, _) if idx <= 0 -> ty
+        .Node(_, _, _, next) -> field_type_at(next, idx - 1)
     }
 }
 
