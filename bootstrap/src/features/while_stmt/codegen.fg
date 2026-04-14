@@ -22,9 +22,7 @@ export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Stmt
     ctx.position(body_bb)
     let body_cg = ctx_with_loops(ctx, .Frame(cond_bb, exit_bb, ctx.loops))
     let body_result = emit_stmt(body_cg, env, body)?
-    if !ctx.has_terminator() {
-        ctx.br(cond_bb)
-    }
+    ctx.br_if_open(cond_bb)
 
     ctx.position(exit_bb)
     ok_stmt(env)

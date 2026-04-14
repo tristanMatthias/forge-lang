@@ -17,17 +17,13 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
 
     ctx.position(then_bb)
     let then_result = emit_stmt(ctx, env, then_branch)?
-    if !ctx.has_terminator() {
-        ctx.br(merge_bb)
-    }
+    ctx.br_if_open(merge_bb)
 
     ctx.position(else_bb)
     if else_branch != null {
         let else_result = emit_stmt(ctx, env, else_branch!)?
     }
-    if !ctx.has_terminator() {
-        ctx.br(merge_bb)
-    }
+    ctx.br_if_open(merge_bb)
 
     ctx.position(merge_bb)
     ok_stmt(env)
@@ -45,17 +41,11 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
 
     ctx.position(then_bb)
     let t = emit_expr(ctx, env, then_branch)?
-    if !ctx.has_terminator() {
-        ctx.store(t.value, result_slot)
-        ctx.br(merge_bb)
-    }
+    ctx.store_br_if_open(t.value, result_slot, merge_bb)
 
     ctx.position(else_bb)
     let e = emit_expr(ctx, env, else_branch)?
-    if !ctx.has_terminator() {
-        ctx.store(e.value, result_slot)
-        ctx.br(merge_bb)
-    }
+    ctx.store_br_if_open(e.value, result_slot, merge_bb)
 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "ife_val")

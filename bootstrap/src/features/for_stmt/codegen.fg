@@ -40,9 +40,7 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
     ctx.position(body_bb)
     let body_ctx = ctx_with_loops(ctx, .Frame(incr_bb, exit_bb, ctx.loops))
     let body_result = emit_stmt(body_ctx, body_env, body)?
-    if !ctx.has_terminator() {
-        ctx.br(incr_bb)
-    }
+    ctx.br_if_open(incr_bb)
 
     // Increment: counter = counter + 1
     ctx.position(incr_bb)
@@ -101,9 +99,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
 
     let body_ctx = ctx_with_loops(ctx, .Frame(incr_bb, exit_bb, ctx.loops))
     let body_result = emit_stmt(body_ctx, body_env, body)?
-    if !ctx.has_terminator() {
-        ctx.br(incr_bb)
-    }
+    ctx.br_if_open(incr_bb)
 
     // Increment
     ctx.position(incr_bb)

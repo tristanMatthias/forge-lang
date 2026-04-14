@@ -66,16 +66,12 @@ fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, va
             let body_env = env_extend(env, binding, alloca, .Int)
             let body_r = emit_block_loop(ctx, body_env, body, const_i64(ctx, 0), .Int)
             if body_r.had_error { return err_stmt(body_r.error_message) }
-            if !ctx.has_terminator() {
-                ctx.br(merge_bb)
-            }
+            ctx.br_if_open(merge_bb)
 
             // Else: try next arm
             ctx.position(else_bb)
             let next_r = emit_select_dispatch(ctx, env, next, idx, val, arm_idx + 1)?
-            if !ctx.has_terminator() {
-                ctx.br(merge_bb)
-            }
+            ctx.br_if_open(merge_bb)
 
             ctx.position(merge_bb)
             ok_stmt(env)

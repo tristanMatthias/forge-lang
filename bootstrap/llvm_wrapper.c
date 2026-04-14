@@ -272,10 +272,13 @@ LLVMValueRef forge_llvm_build_sext(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeR
     return LLVMBuildSExt(b, val, dest_ty, name);
 }
 
-// Validate name: if it looks like a corrupted pointer (high bytes), use a deterministic fallback.
+// Validate name: if it doesn't start with a letter or underscore, it's a
+// corrupted pointer value being used as a name. Use a deterministic fallback.
 static const char* safe_name(const char* name, const char* fallback) {
-    if (!name || (unsigned char)name[0] > 127) return fallback;
-    return name;
+    if (!name) return fallback;
+    char c = name[0];
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '.') return name;
+    return fallback;
 }
 
 LLVMValueRef forge_llvm_build_ptr_to_int(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef dest_ty, const char* name) {

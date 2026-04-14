@@ -60,10 +60,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                 ctx.position(guard_pass_bb)
             }
             let body_result = emit_expr(ctx, arm_env, body.node)?
-            if !ctx.has_terminator() {
-                ctx.store(body_result.value, result_slot)
-                ctx.br(merge_bb)
-            }
+            ctx.store_br_if_open(body_result.value, result_slot, merge_bb)
             ctx.position(next_bb)
             let rest = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)?
             if !vtype_eq(rest.ty, .Int) && !vtype_eq(body_result.ty, rest.ty) {
@@ -126,9 +123,7 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
             }
             let body_result = emit_expr(ctx, arm_env, body.node)
             if body_result.had_error { return err_stmt(body_result.error_message) }
-            if !ctx.has_terminator() {
-                ctx.br(merge_bb)
-            }
+            ctx.br_if_open(merge_bb)
             ctx.position(next_bb)
             emit_match_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb)
         }
@@ -457,10 +452,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
 
             ctx.position(body_bb)
             let body_r = emit_expr(ctx, env, body.node)?
-            if !ctx.has_terminator() {
-                ctx.store(body_r.value, result_slot)
-                ctx.br(merge_bb)
-            }
+            ctx.store_br_if_open(body_r.value, result_slot, merge_bb)
 
             ctx.position(next_bb)
             let rest = emit_primitive_arms_expr(ctx, env, subj, next, merge_bb, result_slot)?
@@ -518,9 +510,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             ctx.position(body_bb)
             let body_r = emit_expr(ctx, env, body.node)
             if body_r.had_error { return err_stmt_from_expr(body_r) }
-            if !ctx.has_terminator() {
-                ctx.br(merge_bb)
-            }
+            ctx.br_if_open(merge_bb)
 
             ctx.position(next_bb)
             emit_primitive_arms_stmt(ctx, env, subj, next, merge_bb)
@@ -552,9 +542,7 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
                 if !r.had_error {
                     ctx.store(r.value, result_slot)
                 }
-                if !ctx.has_terminator() {
-                    ctx.br(merge_bb)
-                }
+                ctx.br_if_open(merge_bb)
                 r.ty
             } else {
                 let cond_r = emit_expr(ctx, env, cond!.node)
@@ -568,9 +556,7 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
                 if !r.had_error {
                     ctx.store(r.value, result_slot)
                 }
-                if !ctx.has_terminator() {
-                    ctx.br(merge_bb)
-                }
+                ctx.br_if_open(merge_bb)
                 // Check next arm
                 ctx.position(next_bb)
                 let rest_ty = emit_when_arms(ctx, env, next, merge_bb, result_slot)

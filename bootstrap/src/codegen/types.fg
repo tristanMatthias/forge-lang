@@ -584,6 +584,14 @@ impl Ctx {
         }
     }
 
+    // Store a value and branch — the most common expr-result pattern
+    fn store_br_if_open(self, val: ptr, slot: ptr, bb: ptr) {
+        if forge_llvm_block_has_terminator(self.builder) == 0 {
+            forge_llvm_build_store(self.builder, val, slot)
+            forge_llvm_build_br(self.builder, bb)
+        }
+    }
+
     // Create a string constant and convert to i64
     fn string_val(self, text: string) -> ptr {
         let str_ptr = forge_llvm_build_global_string_ptr(self.builder, text, ".str")

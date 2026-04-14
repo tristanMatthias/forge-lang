@@ -50,10 +50,7 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
     if t.had_error {
         return t
     }
-    if !ctx.has_terminator() {
-        ctx.store(t.value, result_slot)
-        ctx.br(merge_bb)
-    }
+    ctx.store_br_if_open(t.value, result_slot, merge_bb)
 
     ctx.position(else_bb)
     if else_branch != null {
@@ -61,10 +58,7 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
         if e.had_error {
             return e
         }
-        if !ctx.has_terminator() {
-            ctx.store(e.value, result_slot)
-            ctx.br(merge_bb)
-        }
+        ctx.store_br_if_open(e.value, result_slot, merge_bb)
     } else {
         ctx.br(merge_bb)
     }
