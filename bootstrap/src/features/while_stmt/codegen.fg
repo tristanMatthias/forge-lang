@@ -14,7 +14,7 @@ export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Stmt
     ctx.position(cond_bb)
     let cond = ctx.emit(env, condition)
     if cond.had_error { return err_stmt_from_expr(cond) }
-    let cond_i1 = ctx.icmp(33, cond.value, ctx.i64(0), "while_cond")
+    let cond_i1 = ctx.truthy(cond.value, "while_cond")
     ctx.cond_br(cond_i1, body_bb, exit_bb)
 
     // Scoped loop stack: create a new Ctx with this loop's

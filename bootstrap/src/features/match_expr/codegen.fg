@@ -53,7 +53,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             // Guard: if present, check condition; if false, skip to next arm
             if guard != null {
                 let guard_r = ctx.emit(arm_env, guard!.node)?
-                let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "guard")
+                let guard_bool = ctx.truthy(guard_r.value, "guard")
                 let guard_pass_bb = ctx.bb("guard_pass")
                 ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
                 ctx.position(guard_pass_bb)
@@ -114,7 +114,7 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
             if guard != null {
                 let guard_r = ctx.emit(arm_env, guard!.node)
                 if guard_r.had_error { return err_stmt(guard_r.error_message) }
-                let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "guard")
+                let guard_bool = ctx.truthy(guard_r.value, "guard")
                 let guard_pass_bb = ctx.bb("guard_pass")
                 ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
                 ctx.position(guard_pass_bb)
@@ -158,7 +158,7 @@ fn emit_pattern_tag_branch(ctx: Ctx, pattern: Pattern, tag_val: ptr, variants: V
             if !v.found {
                 return ctx.br(next_bb)
             }
-            let cmp = ctx.icmp(32, tag_val, ctx.i64(v.tag), "tag_eq")
+            let cmp = ctx.eq(tag_val, ctx.i64(v.tag), "tag_eq")
             ctx.cond_br(cmp, arm_bb, next_bb)
         }
     }
@@ -197,7 +197,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                                 let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
                                 let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
                                 let want = ctx.i64(iv.tag)
-                                let cmp = ctx.icmp(32, inner_tag, want, "inner_tag_eq")
+                                let cmp = ctx.eq(inner_tag, want, "inner_tag_eq")
                                 let pass_bb = ctx.bb("inner_pass")
                                 ctx.cond_br(cmp, pass_bb, next_bb)
                                 ctx.position(pass_bb)
@@ -221,7 +221,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
                                 let inner_tag_gep = ctx.gep(inner_struct_ty, inner_ptr, 0, "inner_tag_ptr")
                                 let inner_tag = ctx.load_i64(inner_tag_gep, "inner_tag")
                                 let want = ctx.i64(iv.tag)
-                                let cmp = ctx.icmp(32, inner_tag, want, "inner_tag_eq")
+                                let cmp = ctx.eq(inner_tag, want, "inner_tag_eq")
                                 let pass_bb = ctx.bb("inner_pass")
                                 ctx.cond_br(cmp, pass_bb, next_bb)
                                 ctx.position(pass_bb)
@@ -359,11 +359,11 @@ fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Matc
 fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
     match pattern {
         .LitInt(val) -> {
-            ctx.icmp(32, subj.value, ctx.i64(val), "lit_eq")
+            ctx.eq(subj.value, ctx.i64(val), "lit_eq")
         }
         .LitBool(val) -> {
             let cmp_val = if val { ctx.i64(1) } else { ctx.i64(0) }
-            ctx.icmp(32, subj.value, cmp_val, "lit_eq")
+            ctx.eq(subj.value, cmp_val, "lit_eq")
         }
         .LitString(val) -> {
             let subj_ptr = ctx.to_ptr(subj.value, "lit_str_ptr")
@@ -371,7 +371,7 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
             let cmp_result = ctx.call("strcmp", [subj_ptr, lit_ptr])
             // Sign-extend i32 strcmp result to i64 for type-safe icmp (LLVM 21 requires matching types)
             let cmp_ext = forge_llvm_build_sext(ctx.builder, cmp_result, ctx.i64_type, "strcmp_sext")
-            ctx.icmp(32, cmp_ext, ctx.i64(0), "str_eq")
+            ctx.eq(cmp_ext, ctx.i64(0), "str_eq")
         }
         .LitFloat(val) -> {
             // Parse the float literal string → i64 bits, then compare as f64
@@ -433,7 +433,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                     ctx.cond_br(cmp, lit_pass_bb, next_bb)
                     ctx.position(lit_pass_bb)
                     let guard_r = ctx.emit(env, guard!.node)?
-                    let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "pguard")
+                    let guard_bool = ctx.truthy(guard_r.value, "pguard")
                     ctx.cond_br(guard_bool, body_bb, next_bb)
                 } else {
                     ctx.cond_br(cmp, body_bb, next_bb)
@@ -441,7 +441,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             } else if guard != null {
                 // Guarded wildcard: if guard { body } else { next arm }
                 let guard_r = ctx.emit(env, guard!.node)?
-                let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "pguard")
+                let guard_bool = ctx.truthy(guard_r.value, "pguard")
                 ctx.cond_br(guard_bool, body_bb, next_bb)
             } else {
                 // Unguarded wildcard: always matches (catch-all)
@@ -491,7 +491,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                     ctx.position(lit_pass_bb)
                     let guard_r = ctx.emit(env, guard!.node)
                     if guard_r.had_error { return err_stmt_from_expr(guard_r) }
-                    let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "pguard")
+                    let guard_bool = ctx.truthy(guard_r.value, "pguard")
                     ctx.cond_br(guard_bool, body_bb, next_bb)
                 } else {
                     ctx.cond_br(cmp, body_bb, next_bb)
@@ -499,7 +499,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
             } else if guard != null {
                 let guard_r = ctx.emit(env, guard!.node)
                 if guard_r.had_error { return err_stmt_from_expr(guard_r) }
-                let guard_bool = ctx.icmp(33, guard_r.value, ctx.i64(0), "pguard")
+                let guard_bool = ctx.truthy(guard_r.value, "pguard")
                 ctx.cond_br(guard_bool, body_bb, next_bb)
             } else {
                 ctx.br(body_bb)
@@ -544,7 +544,7 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
                 r.ty
             } else {
                 let cond_r = ctx.emit(env, cond!.node)
-                let cond_i1 = ctx.icmp(33, cond_r.value, ctx.i64(0), "when_cond")
+                let cond_i1 = ctx.truthy(cond_r.value, "when_cond")
                 let arm_bb = ctx.bb("when_arm")
                 let next_bb = ctx.bb("when_next")
                 ctx.cond_br(cond_i1, arm_bb, next_bb)

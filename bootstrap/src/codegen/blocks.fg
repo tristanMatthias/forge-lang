@@ -36,7 +36,7 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
     if cond.had_error {
         return cond
     }
-    let cond_i1 = ctx.icmp(33, cond.value, ctx.i64(0), "sif_cond")
+    let cond_i1 = ctx.truthy(cond.value, "sif_cond")
     let then_bb = ctx.bb("sif_then")
     let else_bb = ctx.bb("sif_else")
     let merge_bb = ctx.bb("sif_end")

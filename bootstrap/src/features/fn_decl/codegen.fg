@@ -107,7 +107,7 @@ fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: VarEn
     let val = ctx.load_i64(lookup.alloca, "${param_name}_val")
     let zero = ctx.i64(0)
     // icmp eq i64 %val, 0 → i1
-    let is_null_i1 = ctx.icmp(32, val, zero, "${param_name}_null")
+    let is_null_i1 = ctx.eq(val, zero, "${param_name}_null")
     // zext i1 to i64 for the C function
     let is_null = ctx.zext(is_null_i1, ctx.i64_type, "${param_name}_nz")
 

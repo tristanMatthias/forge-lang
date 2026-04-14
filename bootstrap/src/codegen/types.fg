@@ -616,7 +616,28 @@ impl Ctx {
 
     // ── Level 2: common patterns (2-3 lines → 1) ──
 
-    // Compare + zext to i64 in one call (the most common pattern in codegen)
+    // Named comparison predicates (i1 results — for branch conditions)
+    fn eq(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_icmp(self.builder, 32, a, b, name) }
+    fn ne(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_icmp(self.builder, 33, a, b, name) }
+    fn slt(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_icmp(self.builder, 40, a, b, name) }
+
+    // Is this value truthy (non-zero)? The most common branch condition.
+    fn truthy(self, val: ptr, name: string) -> ptr {
+        forge_llvm_build_icmp(self.builder, 33, val, forge_llvm_const_int(self.i64_type, 0, 0), name)
+    }
+
+    // Branch on truthiness: create then/else BBs, position at then, return else_bb.
+    // The universal "if" primitive — replaces 5 lines everywhere.
+    fn if_true(self, val: ptr, prefix: string) -> ptr {
+        let cond = forge_llvm_build_icmp(self.builder, 33, val, forge_llvm_const_int(self.i64_type, 0, 0), "${prefix}_cond")
+        let then_bb = forge_llvm_append_basic_block(self.lc, self.current_fn, "${prefix}_then")
+        let else_bb = forge_llvm_append_basic_block(self.lc, self.current_fn, "${prefix}_else")
+        forge_llvm_build_cond_br(self.builder, cond, then_bb, else_bb)
+        forge_llvm_position_at_end(self.builder, then_bb)
+        else_bb
+    }
+
+    // Compare + zext to i64 in one call (for value use, not branching)
     fn icmp_eq(self, a: ptr, b: ptr, name: string) -> ptr {
         let cmp = forge_llvm_build_icmp(self.builder, 32, a, b, name)
         forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext")

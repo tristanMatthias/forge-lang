@@ -33,7 +33,7 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
     let cur = ctx.load_i64(counter, variable)
     let lim = ctx.load_i64(end_alloca, "for_end_val")
     // icmp predicate 40 = SLT (signed less than)
-    let cond_i1 = ctx.icmp(40, cur, lim, "for_cmp")
+    let cond_i1 = ctx.slt(cur, lim, "for_cmp")
     ctx.cond_br(cond_i1, body_bb, exit_bb)
 
     // Body — continue jumps to incr_bb, break jumps to exit_bb
@@ -89,7 +89,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     ctx.position(cond_bb)
     let cur = ctx.load_i64(counter, "forin_i_val")
     let lim = ctx.load_i64(len_alloca, "forin_len_val")
-    let cond_i1 = ctx.icmp(40, cur, lim, "forin_cmp")
+    let cond_i1 = ctx.slt(cur, lim, "forin_cmp")
     ctx.cond_br(cond_i1, body_bb, exit_bb)
 
     // Body: load element, then execute body

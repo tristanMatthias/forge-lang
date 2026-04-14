@@ -18,7 +18,7 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     if l.had_error { return l }
 
     // Short-circuit: if left != 0 (non-null), skip right.
-    let is_null = ctx.icmp(32, l.value, ctx.i64(0), "nc_null")
+    let is_null = ctx.eq(l.value, ctx.i64(0), "nc_null")
     let then_bb = ctx.bb("nc_rhs")
     let merge_bb = ctx.bb("nc_end")
     let result_slot = ctx.alloca_i64("nc_result")
@@ -46,7 +46,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     if r.had_error { return r }
 
     // If the object is null (i64 0), produce null without accessing.
-    let is_null = ctx.icmp(32, r.value, ctx.i64(0), "oc_null")
+    let is_null = ctx.eq(r.value, ctx.i64(0), "oc_null")
     let access_bb = ctx.bb("oc_access")
     let merge_bb = ctx.bb("oc_end")
     let result_slot = ctx.alloca_i64("oc_result")
@@ -100,7 +100,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
         let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "try_tag_ptr")
         let tag = ctx.load_i64(tag_gep, "try_tag")
         let ok_tag = ctx.i64(forge_variant_hash("Ok"))
-        let is_ok = ctx.icmp(32, tag, ok_tag, "try_is_ok")
+        let is_ok = ctx.eq(tag, ok_tag, "try_is_ok")
         let ok_bb = ctx.bb("try_ok")
         let err_bb = ctx.bb("try_err")
         ctx.cond_br(is_ok, ok_bb, err_bb)
@@ -129,7 +129,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
                 let gep = ctx.gep(st_ty, obj_ptr, err_idx, "try_err_ptr")
                 let err_val = ctx.load_i64(gep, "try_had_error")
                 // icmp ne (not-equal to 0) = truthy = had error
-                let is_err = ctx.icmp(33, err_val, ctx.i64(0), "try_is_err")
+                let is_err = ctx.truthy(err_val, "try_is_err")
                 let cont_bb = ctx.bb("try_ok")
                 let ret_bb = ctx.bb("try_err")
                 ctx.cond_br(is_err, ret_bb, cont_bb)
@@ -145,7 +145,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
 
     // ── Mode 3: Nullable ──
     // If value is null (0), return null from enclosing fn.
-    let is_null = ctx.icmp(32, r.value, ctx.i64(0), "try_null")
+    let is_null = ctx.eq(r.value, ctx.i64(0), "try_null")
     let cont_bb = ctx.bb("try_ok")
     let ret_bb = ctx.bb("try_ret")
     ctx.cond_br(is_null, ret_bb, cont_bb)
