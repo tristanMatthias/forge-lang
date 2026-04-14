@@ -33,7 +33,8 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
             if idx < 0 { return err_emit("unknown field `${field_name}`") }
             let r = ctx.emit(env, sv.node)?
             let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
-            ctx.store(r.value, gep)
+            let fld_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(fields, field_name))
+            ctx.store(ctx.cast_to(r.value, fld_ty), gep)
             fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
         }
     }
@@ -53,7 +54,8 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     let obj_ptr = ctx.to_ptr(r.value, "fa_ptr")
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
     let v = ctx.emit(env, value)?
-    ctx.store(v.value, gep)
+    let fld_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
+    ctx.store(ctx.cast_to(v.value, fld_ty), gep)
     ok_emit(v.value)
 }
 

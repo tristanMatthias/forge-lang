@@ -418,13 +418,10 @@ export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
 // string, ptr, struct, enum, list, map, fn, closure, trait → ptr
 
 export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType) -> ptr {
-    // Bool → i1 and Float → double are correct but blocked by a seed
-    // cycle issue (parse error after seed update). Using i64 for now.
-    // To enable: change .Bool -> i1t, .Float -> dt
     match vt {
         .Int -> i64t
-        .Bool -> i64t
-        .Float -> i64t
+        .Bool -> i1t
+        .Float -> dt
         .Str -> pt
         .Ptr -> pt
         .Struct(_) -> pt
@@ -705,7 +702,7 @@ impl Ctx {
     // ── Level 1: raw LLVM (eliminate ctx.builder repetition) ──
 
     fn position(self, bb: ptr) { forge_llvm_position_at_end(self.builder, bb) }
-    fn store(self, val: ptr, dest: ptr) { forge_llvm_build_store(self.builder, val, dest) }
+    fn store(self, val: ptr, dest: ptr) { forge_llvm_build_store_cast(self.builder, val, dest) }
     fn load(self, ty: ptr, src: ptr, name: string) -> ptr { forge_llvm_build_load(self.builder, ty, src, name) }
     fn load_i64(self, src: ptr, name: string) -> ptr { forge_llvm_build_load(self.builder, self.i64_type, src, name) }
     fn alloca(self, ty: ptr, name: string) -> ptr { forge_llvm_build_alloca(self.builder, ty, name) }

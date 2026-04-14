@@ -181,6 +181,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_llvm_typeof", pt, [pt])
     decl(m, "forge_llvm_cast_to_type", pt, [pt, pt, pt])
     decl(m, "forge_llvm_is_void_value", i32t, [pt])
+    decl(m, "forge_llvm_build_store_cast", vt, [pt, pt, pt])
     decl(m, "forge_llvm_type_kind", i64t, [pt])
     decl(m, "forge_llvm_int_type_width", i64t, [pt])
     decl(m, "forge_llvm_build_call_coerce", pt, [pt, pt, pt, pt, i64t, pt])
