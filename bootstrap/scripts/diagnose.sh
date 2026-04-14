@@ -50,6 +50,15 @@ warn() { printf "${C_YELLOW}[warn]${C_RESET} %s\n" "$*" >&2; }
 err()  { printf "${C_RED}[err]${C_RESET}  %s\n" "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
+# Check if any .fg source file is newer than a target binary.
+# Returns 0 (true) if rebuild is needed, 1 (false) if up to date.
+source_newer_than() {
+  local target="$1"
+  [ ! -x "$target" ] && return 0
+  # Find any .fg file newer than target — exits as soon as one is found.
+  [ -n "$(find "$BOOTSTRAP_DIR/src" -name '*.fg' -newer "$target" -print -quit 2>/dev/null)" ]
+}
+
 print_help() {
   cat <<'EOF'
 bootstrap/scripts/diagnose.sh — single entry point for bootstrap dev tooling
@@ -251,8 +260,7 @@ emit_ll_bs2() {
 
 ensure_bs2() {
   ensure_seed "${1:-}"
-  if [ "${1:-}" = "force" ] || [ ! -x "$BS2" ] \
-     || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$BS2" ] \
+  if [ "${1:-}" = "force" ] || source_newer_than "$BS2" \
      || [ "$SEED_LL" -nt "$BS2" ]; then
     log "compiling bootstrap/src/main.fg with seed compiler"
     if "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
@@ -303,8 +311,7 @@ link_ll_O0() {
 # Build bs2 at -O0 for debuggability (lldb + breakpoints).
 ensure_bs2_O0() {
   ensure_seed
-  if [ ! -x "$BS2_O0" ] \
-     || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$BS2_O0" ] \
+  if source_newer_than "$BS2_O0" \
      || [ "$SEED_LL" -nt "$BS2_O0" ]; then
     log "compiling bootstrap/src/main.fg with seed compiler (for -O0 build)"
     if ! "$SEED_BIN" compile "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_O0.codegen.log" 2>&1; then
@@ -319,8 +326,7 @@ ensure_bs2_O0() {
 
 ensure_bs2_debug() {
   ensure_seed
-  if [ ! -x "$BS2_DEBUG" ] \
-     || [ "$BOOTSTRAP_DIR/src/main.fg" -nt "$BS2_DEBUG" ] \
+  if source_newer_than "$BS2_DEBUG" \
      || [ "$SEED_LL" -nt "$BS2_DEBUG" ]; then
     log "compiling bootstrap/src/main.fg with seed compiler (--debug-null)"
     if ! "$SEED_BIN" compile --debug-null "$BOOTSTRAP_DIR/src/main.fg" >"$BUILD_DIR/bs2_debug.codegen.log" 2>&1; then
