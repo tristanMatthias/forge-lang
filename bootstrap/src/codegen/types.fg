@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length}
 use core.registry.{Registry}
 
 // ── Codegen context ──
@@ -264,6 +264,22 @@ export fn enum_reg_find_by_variant(reg: EnumReg, variant: string) -> string {
         .End -> ""
         .Node(name, variants, _) if variant_lookup(variants, variant).found -> name
         .Node(_, _, next) -> enum_reg_find_by_variant(next, variant)
+    }
+}
+
+// Find variant by name AND field count — prevents ambiguity when
+// multiple enums have the same variant name with different arities.
+export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: int) -> string {
+    match reg {
+        .End -> ""
+        .Node(name, variants, next) -> {
+            let v = variant_lookup(variants, variant)
+            if v.found && field_list_length(v.fields) == arity {
+                name
+            } else {
+                enum_reg_find_by_variant_arity(next, variant, arity)
+            }
+        }
     }
 }
 
