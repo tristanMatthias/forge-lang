@@ -174,10 +174,14 @@ EOF
 # ─────────────────────────────────────────────────────────────────────
 
 ensure_runtime() {
-  if [ ! -f "$RUNTIME_O" ] || [ "$RUNTIME_C" -nt "$RUNTIME_O" ]; then
+  local cur_hash; cur_hash=$(md5sum "$RUNTIME_C" 2>/dev/null || md5 -q "$RUNTIME_C" 2>/dev/null)
+  local hash_file="$BUILD_DIR/.runtime_hash"
+  local old_hash; old_hash=$(cat "$hash_file" 2>/dev/null)
+  if [ ! -f "$RUNTIME_O" ] || [ "$cur_hash" != "$old_hash" ]; then
     mkdir -p "$BUILD_DIR"
     log "compiling runtime → $RUNTIME_O"
     cc -c -O0 -g -o "$RUNTIME_O" "$RUNTIME_C" || die "runtime build failed"
+    echo "$cur_hash" > "$hash_file"
   fi
 }
 
@@ -192,11 +196,15 @@ ensure_runtime_asan() {
 
 ensure_llvm_wrapper() {
   local wrapper_src="$BOOTSTRAP_DIR/llvm_wrapper.c"
-  if [ ! -f "$LLVM_WRAPPER_O" ] || [ "$wrapper_src" -nt "$LLVM_WRAPPER_O" ]; then
+  local wrapper_hash="$BUILD_DIR/.llvm_wrapper_hash"
+  local cur_hash; cur_hash=$(md5sum "$wrapper_src" 2>/dev/null || md5 -q "$wrapper_src" 2>/dev/null)
+  local old_hash; old_hash=$(cat "$wrapper_hash" 2>/dev/null)
+  if [ ! -f "$LLVM_WRAPPER_O" ] || [ "$cur_hash" != "$old_hash" ]; then
     log "compiling LLVM wrapper → $LLVM_WRAPPER_O"
     mkdir -p "$BUILD_DIR"
     cc -c -O2 -I"$LLVM_PREFIX/include" -o "$LLVM_WRAPPER_O" "$wrapper_src" \
       || die "LLVM wrapper build failed"
+    echo "$cur_hash" > "$wrapper_hash"
   fi
 }
 
