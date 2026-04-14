@@ -84,6 +84,10 @@ fn rewrite_call(original: Expr, callee: Expr, args: ExprList) -> Expr {
     match name {
         "assert" -> desugar_assert(args)
         "dbg" -> desugar_dbg(args)
+        "todo" -> desugar_todo(args)
+        "unreachable" -> desugar_unreachable(args)
+        "min" -> desugar_min_max(args, true)
+        "max" -> desugar_min_max(args, false)
         _ -> original
     }
 }
@@ -138,6 +142,60 @@ fn desugar_dbg(args: ExprList) -> Expr {
             ))
         }
         _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"dbg: no argument\"")), ExprList.End))
+    }
+}
+
+// ── todo() / unreachable() desugaring ──
+// todo()             → panic("not yet implemented")
+// todo("reason")     → panic("not yet implemented: reason")
+// unreachable()      → panic("unreachable code reached")
+// unreachable("why") → panic("unreachable: why")
+fn desugar_todo(args: ExprList) -> Expr {
+    let msg = match args {
+        .Node(se, _) -> Expr.Binary(Expr.String("\"not yet implemented: \""), BinOp.Add, se.node)
+        _ -> Expr.String("\"not yet implemented\"")
+    }
+    Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(msg), ExprList.End))
+}
+
+fn desugar_unreachable(args: ExprList) -> Expr {
+    let msg = match args {
+        .Node(se, _) -> Expr.Binary(Expr.String("\"unreachable: \""), BinOp.Add, se.node)
+        _ -> Expr.String("\"unreachable code reached\"")
+    }
+    Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(msg), ExprList.End))
+}
+
+// ── min() / max() desugaring ──
+// min(a, b) → { let __a = a; let __b = b; if __a < __b { __a } else { __b } }
+// max(a, b) → { let __a = a; let __b = b; if __a > __b { __a } else { __b } }
+fn desugar_min_max(args: ExprList, is_min: bool) -> Expr {
+    match args {
+        .Node(a_se, rest) -> {
+            match rest {
+                .Node(b_se, _) -> {
+                    let op = if is_min { BinOp.Lt } else { BinOp.Gt }
+                    Expr.Block(StmtList.Node(
+                        sstmt(Stmt.Let("__a", "", a_se.node), 0, 0),
+                        StmtList.Node(
+                            sstmt(Stmt.Let("__b", "", b_se.node), 0, 0),
+                            StmtList.Node(
+                                sstmt(Stmt.Expr(
+                                    Expr.IfExpr(
+                                        Expr.Binary(Expr.Ident("__a"), op, Expr.Ident("__b")),
+                                        Expr.Ident("__a"),
+                                        Expr.Ident("__b")
+                                    )
+                                ), 0, 0),
+                                StmtList.End
+                            )
+                        )
+                    ))
+                }
+                _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"min/max requires 2 arguments\"")), ExprList.End))
+            }
+        }
+        _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"min/max requires 2 arguments\"")), ExprList.End))
     }
 }
 
