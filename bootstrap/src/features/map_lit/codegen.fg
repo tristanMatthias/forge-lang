@@ -2,17 +2,15 @@
 // Maps are backed by the C-runtime forge_map_*_cstr functions.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, call_0, call_3}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit}
 use codegen.helpers.{emit_single_arg}
 
 export fn emit_map_lit(ctx: Ctx, env: VarEnv, entries: ExprList) -> EmitResult {
-    let new_fn = ctx.get_fn("forge_map_new_cstr")
-    let set_fn = ctx.get_fn("forge_map_set_cstr")
-    let map = call_0(ctx, new_fn, "map")
-    insert_map_entries(ctx, env, entries, map, set_fn)
+    let map = ctx.call("forge_map_new_cstr", [])
+    insert_map_entries(ctx, env, entries, map)
 }
 
-fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr, set_fn: ptr) -> EmitResult {
+fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr) -> EmitResult {
     match entries {
         .End -> ok_emit_typed(map, .Map)
         .Node(se_key, rest) -> {
@@ -21,9 +19,8 @@ fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr, set_fn
                 .End -> err_emit("map literal has key without value")
                 .Node(se_val, remaining) -> {
                     let val_r = ctx.emit(env, se_val.node)?
-                    let key_ptr = ctx.to_ptr(key_r.value, "map_key")
-                    call_3(ctx, set_fn, map, key_ptr, val_r.value, "")
-                    insert_map_entries(ctx, env, remaining, map, set_fn)
+                    ctx.call("forge_map_set_cstr", [map, ctx.to_ptr(key_r.value, "map_key"), val_r.value])
+                    insert_map_entries(ctx, env, remaining, map)
                 }
             }
         }

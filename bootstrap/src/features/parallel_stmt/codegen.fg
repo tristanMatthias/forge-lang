@@ -1,8 +1,6 @@
 // WHY: codegen for `parallel { fn1(); fn2(); fn3() }`.
-// Each expression in the block is treated as a callable. All are
-// spawned in parallel threads via forge_parallel_run.
 
-use codegen.types.{err_stmt, ok_stmt, call_0, call_2}
+use codegen.types.{err_stmt, ok_stmt}
 export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
         .Parallel(body) -> emit_parallel(ctx, env, body)
@@ -11,35 +9,24 @@ export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 }
 
 fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
-    // Build array of closures from each statement
-    let arr_fn = ctx.get_fn("forge_array_new")
-    let push_fn = ctx.get_fn("forge_array_push")
-    let closures = call_0(ctx, arr_fn, "par_closures")
-
-    let r = collect_parallel_closures(ctx, env, stmts, closures, push_fn)?
-
-    // Run all in parallel
+    let closures = ctx.call("forge_array_new", [])
+    let r = collect_parallel_closures(ctx, env, stmts, closures)?
     ctx.call("forge_parallel_run", [closures])
     ok_stmt(env)
 }
 
-fn collect_parallel_closures(ctx: Ctx, env: VarEnv, stmts: StmtList, arr: ptr, push_fn: ptr) -> StmtResult {
+fn collect_parallel_closures(ctx: Ctx, env: VarEnv, stmts: StmtList, arr: ptr) -> StmtResult {
     match stmts {
         .End -> ok_stmt(env)
         .Node(ss, next) -> {
-            // Each statement should be an Expr that evaluates to a callable.
-            // Emit the expression and push the result as a closure.
             match ss.node {
                 .Expr(expr) -> {
                     let r = ctx.emit(env, expr)
                     if r.had_error { return err_stmt(r.error_message) }
-                    call_2(ctx, push_fn, arr, r.value, "")
-                    collect_parallel_closures(ctx, env, next, arr, push_fn)
+                    ctx.call("forge_array_push", [arr, r.value])
+                    collect_parallel_closures(ctx, env, next, arr)
                 }
-                _ -> {
-                    // Non-expression statements: skip with warning
-                    collect_parallel_closures(ctx, env, next, arr, push_fn)
-                }
+                _ -> collect_parallel_closures(ctx, env, next, arr)
             }
         }
     }

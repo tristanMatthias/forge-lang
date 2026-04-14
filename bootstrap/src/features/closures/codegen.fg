@@ -13,7 +13,7 @@
 // is just the function pointer with a null environment.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, env_extend, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
-use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, ctx_with_fn, err_emit, fn_ret_lookup, null_ptr_val, ok_emit, ok_emit_typed, toplevel_lookup, translate_param_type, call_0, call_2}
+use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, ctx_with_fn, err_emit, fn_ret_lookup, null_ptr_val, ok_emit, ok_emit_typed, toplevel_lookup, translate_param_type}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 
@@ -315,15 +315,12 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr
     // Even non-capturing ones get [TAG, fn_ptr] so the C-side
     // forge_closure_call_* trampolines can safely inspect them.
     // Only named function references (let f = my_fn) are bare pointers.
-    let arr_fn = ctx.get_fn("forge_array_new")
-    let push_fn = ctx.get_fn("forge_array_push")
-    let closure_arr = call_0(ctx, arr_fn, "closure")
-    let tag = ctx.i64(closure_marker())
-    call_2(ctx, push_fn, closure_arr, tag, "")
+    let closure_arr = ctx.call("forge_array_new", [])
     let fn_ptr_i64 = ctx.ptr_to_int(fn_val, ctx.i64_type, "lambda_ptr")
-    call_2(ctx, push_fn, closure_arr, fn_ptr_i64, "")
+    ctx.call("forge_array_push", [closure_arr, ctx.i64(closure_marker())])
+    ctx.call("forge_array_push", [closure_arr, fn_ptr_i64])
     if num_captures > 0 {
-        push_captured_values(ctx, captures, closure_arr, push_fn)
+        push_captured_values(ctx, captures, closure_arr)
     }
     let closure_i64 = ctx.to_i64(closure_arr, "closure_i64")
     ok_emit_typed(closure_i64, ValueType.Closure(num_captures, result.ty))
@@ -342,13 +339,13 @@ fn bind_captures_as_params(ctx: Ctx, env: VarEnv, captures: CaptureList, fn_val:
     }
 }
 
-fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr, push_fn: ptr) {
+fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr) {
     match captures {
         .End -> {}
         .Node(_, alloca, _, next) -> {
             let val = ctx.load_i64(alloca, "cap_val")
-            call_2(ctx, push_fn, arr, val, "")
-            push_captured_values(ctx, next, arr, push_fn)
+            ctx.call("forge_array_push", [arr, val])
+            push_captured_values(ctx, next, arr)
         }
     }
 }

@@ -3,7 +3,7 @@
 // until one has data, then dispatches to the matching arm.
 
 use core.ast.{env_extend}
-use codegen.types.{err_stmt, ok_stmt, call_0, call_1, call_2}
+use codegen.types.{err_stmt, ok_stmt}
 use codegen.blocks.{emit_block_loop}
 export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
     match stmt {
@@ -13,35 +13,24 @@ export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 }
 
 fn emit_select(ctx: Ctx, env: VarEnv, arms: SelectArmList) -> StmtResult {
-    // Step 1: Build array of channel pointers
-    let arr_fn = ctx.get_fn("forge_array_new")
-    let push_fn = ctx.get_fn("forge_array_push")
-    let channels = call_0(ctx, arr_fn, "sel_channels")
-    let count = push_channels(ctx, env, arms, channels, push_fn, 0)
+    let channels = ctx.call("forge_array_new", [])
+    let count = push_channels(ctx, env, arms, channels, 0)
 
-    // Step 2: Call forge_select to block until one fires
-    let sel_fn = ctx.get_fn("forge_select")
-    let result = call_2(ctx, sel_fn, channels, ctx.i64(count), "sel_result")
+    let result = ctx.call("forge_select", [channels, ctx.i64(count)])
+    let idx = ctx.call("forge_select_index", [result])
+    let val = ctx.call("forge_select_value", [result])
 
-    // Step 3: Extract index and value
-    let idx_fn = ctx.get_fn("forge_select_index")
-    let val_fn = ctx.get_fn("forge_select_value")
-    let idx = call_1(ctx, idx_fn, result, "sel_idx")
-    let val = call_1(ctx, val_fn, result, "sel_val")
-
-    // Step 4: Dispatch to matching arm using if-else chain
     emit_select_dispatch(ctx, env, arms, idx, val, 0)
 }
 
-fn push_channels(ctx: Ctx, env: VarEnv, arms: SelectArmList, arr: ptr, push_fn: ptr, count: int) -> int {
+fn push_channels(ctx: Ctx, env: VarEnv, arms: SelectArmList, arr: ptr, count: int) -> int {
     match arms {
         .End -> count
         .Node(_, channel, _, next) -> {
             let r = ctx.emit(env, channel)
             if r.had_error { return count }
-            let ch_i64 = ctx.to_i64(r.value, "ch_i64")
-            call_2(ctx, push_fn, arr, ch_i64, "")
-            push_channels(ctx, env, next, arr, push_fn, count + 1)
+            ctx.call("forge_array_push", [arr, ctx.to_i64(r.value, "ch_i64")])
+            push_channels(ctx, env, next, arr, count + 1)
         }
     }
 }
@@ -50,15 +39,12 @@ fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, va
     match arms {
         .End -> ok_stmt(env)
         .Node(binding, _, body, next) -> {
-            // if idx == arm_idx { let binding = val; body }
             let cmp = ctx.eq(idx, ctx.i64(arm_idx), "sel_cmp")
             let then_bb = ctx.bb("sel_then")
             let else_bb = ctx.bb("sel_else")
             let merge_bb = ctx.bb("sel_merge")
-
             ctx.cond_br(cmp, then_bb, else_bb)
 
-            // Then: bind value and run body
             ctx.position(then_bb)
             let alloca = ctx.alloca_i64(binding)
             ctx.store(val, alloca)
@@ -67,7 +53,6 @@ fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, va
             if body_r.had_error { return err_stmt(body_r.error_message) }
             ctx.br_if_open(merge_bb)
 
-            // Else: try next arm
             ctx.position(else_bb)
             let next_r = emit_select_dispatch(ctx, env, next, idx, val, arm_idx + 1)?
             ctx.br_if_open(merge_bb)

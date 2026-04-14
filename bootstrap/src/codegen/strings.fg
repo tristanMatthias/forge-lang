@@ -1,30 +1,25 @@
 // WHY: codegen for string operations — concat, comparison, replace, substring.
 
 use core.ast.{Expr, ExprList, VarEnv}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_str, err_emit, call_1, call_3}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_str, err_emit}
 use codegen.helpers.{strip_quotes}
 
 export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "concat_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "concat_r")
 
-    let strlen_fn = ctx.get_fn("strlen")
-    let lhs_len = call_1(ctx, strlen_fn, lhs_ptr, "lhs_len")
-    let rhs_len = call_1(ctx, strlen_fn, rhs_ptr, "rhs_len")
+    let lhs_len = ctx.call("strlen", [lhs_ptr])
+    let rhs_len = ctx.call("strlen", [rhs_ptr])
 
-    let total = ctx.build_add(lhs_len, rhs_len, "concat_total")
-    let one = ctx.i64(1)
-    let alloc_size = ctx.build_add(total, one, "concat_size")
+    let total = ctx.add(lhs_len, rhs_len, "concat_total")
+    let alloc_size = ctx.add(total, ctx.i64(1), "concat_size")
     let buf = ctx.malloc(alloc_size)
 
-    let memcpy_fn = ctx.get_fn("memcpy")
-    call_3(ctx, memcpy_fn, buf, lhs_ptr, lhs_len, "")
+    ctx.call("memcpy", [buf, lhs_ptr, lhs_len])
 
     let buf_int = ctx.to_i64(buf, "buf_int")
-    let dst2_int = ctx.build_add(buf_int, lhs_len, "dst2_int")
-    let dst2 = ctx.to_ptr(dst2_int, "dst2")
-    let rhs_len_plus_1 = ctx.build_add(rhs_len, one, "rhs_len_p1")
-    call_3(ctx, memcpy_fn, dst2, rhs_ptr, rhs_len_plus_1, "")
+    let dst2 = ctx.to_ptr(ctx.add(buf_int, lhs_len, "dst2_int"), "dst2")
+    ctx.call("memcpy", [dst2, rhs_ptr, ctx.add(rhs_len, ctx.i64(1), "rhs_len_p1")])
 
     ok_emit_str(buf)
 }

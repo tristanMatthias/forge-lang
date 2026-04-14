@@ -2,31 +2,29 @@
 // Lists are backed by the C-runtime forge_array_* functions.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList, vtype_list_elem, vtype_fn_ret, vtype_is_fn}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, call_0, call_2}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit}
 use features.closures.codegen.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.helpers.{emit_single_arg}
 
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
-    let arr_fn = ctx.get_fn("forge_array_new")
-    let push_fn = ctx.get_fn("forge_array_push")
-    let arr = call_0(ctx, arr_fn, "list")
+    let arr = ctx.call("forge_array_new", [])
     match elements {
         .End -> ok_emit_typed(arr, .List(.Int))
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
-            call_2(ctx, push_fn, arr, r.value, "")
-            push_list_elements(ctx, env, next, arr, push_fn, r.ty)
+            ctx.call("forge_array_push", [arr, r.value])
+            push_list_elements(ctx, env, next, arr, r.ty)
         }
     }
 }
 
-fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, push_fn: ptr, elem_ty: ValueType) -> EmitResult {
+fn push_list_elements(ctx: Ctx, env: VarEnv, elements: ExprList, arr: ptr, elem_ty: ValueType) -> EmitResult {
     match elements {
         .End -> ok_emit_typed(arr, .List(elem_ty))
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
-            call_2(ctx, push_fn, arr, r.value, "")
-            push_list_elements(ctx, env, next, arr, push_fn, elem_ty)
+            ctx.call("forge_array_push", [arr, r.value])
+            push_list_elements(ctx, env, next, arr, elem_ty)
         }
     }
 }

@@ -1,7 +1,7 @@
 // WHY: codegen for trait dynamic dispatch.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_display, vtype_struct_name, vtype_enum_name, expr_list_length}
-use codegen.types.{closure_marker, Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, translate_type_ctx, trait_decl_lookup, call_0, call_2}
+use codegen.types.{closure_marker, Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, translate_type_ctx, trait_decl_lookup}
 use features.fn_decl.codegen.{emit_first_arg}
 
 export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
@@ -52,8 +52,7 @@ export fn resolve_concrete_type_name(ty: ValueType) -> string {
 
 export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name: string) -> ptr {
     let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
-    let arr_fn = ctx.get_fn("forge_array_new")
-    let vtable = call_0(ctx, arr_fn, "vtable")
+    let vtable = ctx.call("forge_array_new", [])
     push_vtable_entries_call(ctx, vtable, methods, concrete_name)
     let obj_val = ctx.call("forge_trait_object_new", [value, vtable])
     ctx.to_i64(obj_val, "tobj_i64")
@@ -65,15 +64,11 @@ export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNa
         .Node(method_name, _, next) -> {
             let mangled = "${concrete_name}__${method_name}"
             let fn_val = ctx.get_fn(mangled)
-            let push_fn = ctx.get_fn("forge_array_push")
-            // Wrap in closure array: [TAG, fn_ptr]
-            let closure = call_0(ctx, ctx.get_fn("forge_array_new"), "vclosure")
-            let tag = ctx.i64(closure_marker())
-            call_2(ctx, push_fn, closure, tag, "")
             let fn_i64 = ctx.ptr_to_int(fn_val, ctx.i64_type, "vfn_ptr")
-            call_2(ctx, push_fn, closure, fn_i64, "")
-            let closure_i64 = ctx.to_i64(closure, "vcl_i64")
-            call_2(ctx, push_fn, vtable, closure_i64, "")
+            let closure = ctx.call("forge_array_new", [])
+            ctx.call("forge_array_push", [closure, ctx.i64(closure_marker())])
+            ctx.call("forge_array_push", [closure, fn_i64])
+            ctx.call("forge_array_push", [vtable, ctx.to_i64(closure, "vcl_i64")])
             push_vtable_entries_call(ctx, vtable, next, concrete_name)
         }
     }
