@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` declarations and the
 // supporting field grammars (declaration + literal init).
 
-use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr}
+use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -10,9 +10,10 @@ impl Parser {
         self.advance()
         let name = self.consume_identifier("expected type name")?
         // Optional generic parameters: type Foo<T, U> = { ... }
-        // Erased in the bootstrap — everything is i64.
-        if self.check(Tk.Less) {
-            self.skip_angle_brackets()
+        let tp = if self.check(Tk.Less) {
+            self.parse_type_params()
+        } else {
+            TypeParamList.End
         }
         if !self.consume(Tk.Equal, "expected `=` after type name") {
             return null
@@ -30,12 +31,12 @@ impl Parser {
                     if !self.consume(Tk.RightBrace, "expected `}` after type operator fields") { return null }
                     // Encode derivation: __base=Base, __op=without, then excluded field names
                     let derived = FieldList.Node("__base", base, ValueType.Int, FieldList.Node("__op", op, ValueType.Int, op_fields))
-                    return Stmt.TypeDecl(name, derived)
+                    return Stmt.TypeDecl(name, tp, derived)
                 }
             }
             // Not a type operator — could be `type X = BaseType` (alias)
             // For now, emit as TypeDecl with empty fields
-            return Stmt.TypeDecl(name, FieldList.End)
+            return Stmt.TypeDecl(name, tp, FieldList.End)
         }
         if self.check(Tk.LeftBrace) {
             self.advance()
@@ -43,9 +44,9 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` after fields") {
                 return null
             }
-            return Stmt.TypeDecl(name, fields)
+            return Stmt.TypeDecl(name, tp, fields)
         }
-        Stmt.TypeDecl(name, FieldList.End)
+        Stmt.TypeDecl(name, tp, FieldList.End)
     }
 
     // Parse a list of identifiers separated by commas: {a, b, c}

@@ -1,0 +1,34 @@
+// Test: generic Result<T, E> with ? operator and real type inference.
+/// expect: 42
+/// expect: propagated: division by zero
+
+enum Result<T, E> {
+    Ok(value: T),
+    Err(error: E),
+}
+
+fn divide(a: int, b: int) -> Result {
+    if b == 0 { return Result.Err("division by zero") }
+    Result.Ok(a / b)
+}
+
+fn compute_ok() -> Result {
+    let x = divide(84, 2)?
+    Result.Ok(x)
+}
+
+fn compute_fail() -> Result {
+    let x = divide(10, 0)?
+    Result.Ok(x + 999)
+}
+
+fn main() {
+    match compute_ok() {
+        .Ok(v) -> println(string(v))
+        .Err(e) -> println("error: ${e}")
+    }
+    match compute_fail() {
+        .Ok(v) -> println(string(v))
+        .Err(e) -> println("propagated: ${e}")
+    }
+}

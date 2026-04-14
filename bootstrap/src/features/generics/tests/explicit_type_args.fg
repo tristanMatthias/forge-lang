@@ -1,0 +1,29 @@
+// Test: explicit type arguments at call sites.
+/// expect: 42
+/// expect: hello
+/// expect: 1
+/// expect: 10
+/// expect: 1
+
+fn identity<T>(x: T) -> T { x }
+fn first<A, B>(a: A, b: B) -> A { a }
+
+// Basic explicit type args
+let n = identity<int>(42)
+println(string(n))
+
+let s = identity<string>("hello")
+println(s)
+
+// Comparisons must still work
+let a = 3
+let b = 5
+println(string(a < b))
+
+// Multiple type params
+let f = first<int, string>(10, "ignored")
+println(string(f))
+
+// Generic call as operand in arithmetic
+let sum = identity<int>(1) + 0
+println(string(sum))

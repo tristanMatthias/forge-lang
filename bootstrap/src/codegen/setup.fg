@@ -306,7 +306,7 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .TypeDecl(name, fields) -> {
+                .TypeDecl(name, _, fields) -> {
                     let op_fields = resolve_type_operator(fields, reg)
                     let resolved_fields = resolve_field_list(op_fields, reg, EnumReg.End)
                     let count = field_list_length(resolved_fields)
@@ -379,7 +379,7 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .EnumDecl(name, variants) -> {
+                .EnumDecl(name, _, variants) -> {
                     // Enum outer layout: {i64 tag, ptr payload}
                     let field_arr = forge_llvm_type_array_new(2)
                     forge_llvm_type_array_set(field_arr, 0, i64t)
@@ -419,7 +419,7 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
         .Node(ss, next) -> {
             match stmt_unwrap(ss.node) {
                 .ExternFn(name, _, ret_ty) -> .Node(name, ret_ty, collect_trait_fn_names(next))
-                .Function(name, _, ret_ty, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
+                .Function(name, _, _, ret_ty, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
         }
@@ -509,7 +509,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Function(name, params, ret_ty, body) -> {
+                .Function(name, _, params, ret_ty, body) -> {
                     // Names are already qualified by the name resolution pass
                     let resolved_params = resolve_param_list(params, structs, enums)
                     let arity = param_list_length(resolved_params)
@@ -561,7 +561,7 @@ fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Function(name, params, _, _) -> {
+                .Function(name, _, params, _, _) -> {
                     .Node(name, params_to_type_list(params), reg)
                 }
                 .Impl(_, methods) -> collect_fn_params(methods, reg)
@@ -580,7 +580,7 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
             let tl_ctx = ctx with { source_line: ss.line }
             let stmt = stmt_unwrap(ss.node)
             match stmt {
-                .Function(_, _, _, _) -> emit_top_level(ctx, env, next)
+                .Function(_, _, _, _, _) -> emit_top_level(ctx, env, next)
                 .Module(_, body) -> {
                     let r = emit_top_level(tl_ctx, env, body)?
                     emit_top_level(ctx, r.env, next)

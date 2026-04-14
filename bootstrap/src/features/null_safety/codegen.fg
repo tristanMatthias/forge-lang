@@ -96,11 +96,11 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     let r = ctx.emit(env, inner)
     if r.had_error { return r }
 
-    // ── Mode 1: Result enum ──
+    // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
     // Check tag: Ok → extract payload value, Err → return Result.
     let enum_name = vtype_enum_name(r.ty)
-    if enum_name == "Result" {
-        let enum_ty = ctx.get_type("Result")
+    if enum_name == "Result" || enum_name.starts_with("Result__") {
+        let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
         let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "try_tag_ptr")
         let tag = ctx.load_i64(tag_gep, "try_tag")

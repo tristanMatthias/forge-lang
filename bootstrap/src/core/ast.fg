@@ -5,10 +5,11 @@
 // ── Spanned wrappers ──
 // Phase A: types + helpers added, containers NOT yet changed.
 // Phase B (after seed update): containers use SExpr/SStmt.
-export type SExpr = { node: Expr, line: int, col: int }
+export type SExpr = { node: Expr, line: int, col: int, ty: ValueType }
 export type SStmt = { node: Stmt, line: int, col: int }
-export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col } }
-export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0 } }
+export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Int } }
+export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0, ty: ValueType.Int } }
+export fn sexpr_typed(e: Expr, line: int, col: int, ty: ValueType) -> SExpr { SExpr { node: e, line, col, ty } }
 export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col } }
 export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0 } }
 
@@ -74,6 +75,39 @@ export enum Pattern {
 export enum MatchArmList {
     End
     Node(pattern: Pattern, guard: SExpr?, body: SExpr, next: MatchArmList)
+}
+
+// ── Type parameter list ──
+// Used on generic declarations: fn foo<T, U: Display>(...).
+// `bounds` is "" for unconstrained, or a trait name for bounded params.
+export enum TypeParamList {
+    End
+    Node(name: string, bounds: string, next: TypeParamList)
+}
+
+export fn type_param_has(params: TypeParamList, name: string) -> bool {
+    match params {
+        .End -> false
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> type_param_has(next, name)
+    }
+}
+
+export fn render_type_param_list(params: TypeParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, bounds, next) -> {
+            let b = if bounds == "" { name } else { "${name}: ${bounds}" }
+            let rest = render_type_param_list(next)
+            if rest == "" { b } else { "${b}, ${rest}" }
+        }
+    }
+}
+
+// Explicit type arguments at call sites: identity::<int, string>(x)
+export enum TypeNameList {
+    End
+    Node(name: string, next: TypeNameList)
 }
 
 // ── Value types ──
@@ -273,6 +307,8 @@ export enum Expr {
     Binary(left: Expr, op: BinOp, right: Expr)
     Logical(left: Expr, op: LogicOp, right: Expr)
     Call(callee: Expr, args: ExprList)
+    // Call with explicit type arguments: f::<int, string>(x, y)
+    GenericCall(callee: Expr, type_args: TypeNameList, args: ExprList)
     StructLit(name: string, inits: FieldInitList)
     FieldAccess(obj: Expr, field: string)
     EnumCtor(type_name: string, variant: string, args: ExprList)
@@ -313,11 +349,11 @@ export enum Stmt {
     // (e.g. "i64", "str", "Stmt", "i64?"). Codegen translates this
     // into its internal value-type tag and uses it to set the
     // result type of `call(fn)` so chained calls preserve typing.
-    Function(name: string, params: ParamList, ret_ty: string, body: StmtList)
+    Function(name: string, type_params: TypeParamList, params: ParamList, ret_ty: string, body: StmtList)
     Return(value: Expr)
     ReturnEmpty
-    TypeDecl(name: string, fields: FieldList)
-    EnumDecl(name: string, variants: VariantList)
+    TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
+    EnumDecl(name: string, type_params: TypeParamList, variants: VariantList)
     Match(subject: Expr, arms: MatchArmList)
     Impl(type_name: string, methods: StmtList)
     NoOp
@@ -553,6 +589,7 @@ export fn render_expr(expr: Expr) -> string {
         .Binary(left, op, right) -> "(${binop_str(op)} ${render_expr(left)} ${render_expr(right)})"
         .Logical(left, op, right) -> "(${logicop_str(op)} ${render_expr(left)} ${render_expr(right)})"
         .Call(callee, args) -> "(call ${render_expr(callee)} ${render_expr_list(args)})"
+        .GenericCall(callee, type_args, args) -> "(call ${render_expr(callee)}::<${render_type_name_list(type_args)}> ${render_expr_list(args)})"
         .StructLit(name, inits) -> "(struct ${name} ${render_field_init_list(inits)})"
         .FieldAccess(obj, field) -> "(field ${render_expr(obj)} ${field})"
         .EnumCtor(type_name, variant, args) -> "(ctor ${type_name}.${variant} ${render_expr_list(args)})"
@@ -625,6 +662,16 @@ fn render_field_list_tail(fields: FieldList) -> string {
     }
 }
 
+export fn render_type_name_list(names: TypeNameList) -> string {
+    match names {
+        .End -> ""
+        .Node(name, next) -> {
+            let rest = render_type_name_list(next)
+            if rest == "" { name } else { "${name}, ${rest}" }
+        }
+    }
+}
+
 export fn render_expr_list(exprs: ExprList) -> string {
     match exprs {
         .End -> "()"
@@ -677,11 +724,23 @@ export fn render_stmt(stmt: Stmt) -> string {
         .While(condition, body) -> "(while ${render_expr(condition)} ${render_stmt(body)})"
         .For(variable, start, end, body) -> "(for ${variable} ${render_expr(start)}..${render_expr(end)} ${render_stmt(body)})"
         .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr(collection)} ${render_stmt(body)})"
-        .Function(name, params, ret_ty, body) -> "(fn ${name} ${render_param_list(params)} -> ${ret_ty} ${render_stmt_list(body)})"
+        .Function(name, tp, params, ret_ty, body) -> {
+            let tp_str = render_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${ret_ty} ${render_stmt_list(body)})"
+        }
         .Return(value) -> "(return ${render_expr(value)})"
         .ReturnEmpty -> "(return)"
-        .TypeDecl(name, fields) -> "(type ${name} ${render_field_list(fields)})"
-        .EnumDecl(name, variants) -> "(enum ${name} ${render_variant_list(variants)})"
+        .TypeDecl(name, tp, fields) -> {
+            let tp_str = render_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "(type ${name}${tp_part} ${render_field_list(fields)})"
+        }
+        .EnumDecl(name, tp, variants) -> {
+            let tp_str = render_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "(enum ${name}${tp_part} ${render_variant_list(variants)})"
+        }
         .Match(subject, arms) -> "(match ${render_expr(subject)} ${render_match_arm_list(arms)})"
         .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(methods)})"
         .NoOp -> "(noop)"

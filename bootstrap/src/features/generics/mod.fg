@@ -1,5 +1,9 @@
 // WHY: generic type parameters (`<T>`) on functions, types, and enums.
-// In the bootstrap's everything-is-i64 model, generics are erased at
-// parse time. The parsing lives in the declaration parsers (fn_decl,
-// struct_decl, enum_decl, impl_decl) via skip_angle_brackets().
-// This module exists for feature directory completeness.
+// Parsing lives in parser.fg (extends Parser with parse_type_params).
+// Declaration parsers (fn_decl, struct_decl, enum_decl) call
+// parse_type_params when they see `<` after the declaration name.
+// The monomorphization pass (mono.fg) consumes TypeParamList to generate
+// concrete specializations before codegen.
+
+mod parser
+mod mono

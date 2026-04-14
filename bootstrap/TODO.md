@@ -81,19 +81,22 @@ fallthrough), and no syntactic sugar. The codegen becomes a simple
 translation from IR to LLVM. This is the biggest single change and
 should be done AFTER items 1-3.
 
-### 5. Generic type params are discarded
+### ~~5. Generic type params are discarded~~ DONE
 **type:** architecture
 **priority:** critical
-**status:** planned (see GENERICS_PLAN.md)
+**status:** done (April 14, 2026)
 
-`skip_angle_brackets()` consumes `<T, U>` and throws it away. The parser
-successfully handles generic syntax but the type information is lost.
-Generics "work" only because everything is i64 — they have no semantic
-meaning.
+TypeParamList added to Function, TypeDecl, EnumDecl variants. Parser keeps
+type params via `parse_type_params()` in `features/generics/parser.fg`.
+Resolver scopes type param names. Type checker infers type args at call sites.
+Monomorphization pass in `features/generics/mono.fg` generates concrete
+specializations with mangled names (e.g., `identity__int`) and rewrites call
+sites. 246 tests pass including 4 generics-specific tests.
 
-**Fix:** Keep type params in the AST (TypeParamList on Function, TypeDecl,
-EnumDecl). Implement monomorphization as a post-type-check pass that
-generates concrete specializations. See GENERICS_PLAN.md.
+**Remaining:** type inference is basic (infers from ParamList.resolved which
+defaults to ValueType.Int). Real type-aware inference requires the type
+checker to propagate argument types through generic call sites. Dogfooding
+(replacing 30+ linked-list types with generic List<T>) is a separate step.
 
 ### 6. No ownership or lifetime model
 **type:** architecture
@@ -564,6 +567,46 @@ Fix: change `Stmt.Defer(body: Expr)` to `Stmt.Defer(body: SExpr)`. Requires two-
 `check_match_expr_arms` uses the first arm's type as the result type (`src/typeck/mod.fg:994`).
 Real unification should check that all arms produce the same type and report mismatches.
 Currently silently picks the first arm type even when arms disagree.
+
+### Diagnostic renderer crashes on out-of-range line numbers
+**type:** bug
+**priority:** high
+**source:** discovered April 14, 2026 during generics implementation
+
+`render_diagnostic` in `diagnostics/render.fg` crashes when a diagnostic's line
+number exceeds the source file's actual line count. This happens when the type
+checker produces warnings from multi-module compilation — the line number is a
+global offset across all modules, but the renderer only has the entry file's source.
+
+The crash is a null pointer dereference in `extract_line` → `substring` when the
+source line is empty (not found). A guard was added (`if src_line.length == 0 { return }`)
+but the proper fix is to pass per-module source text to the diagnostic renderer
+or translate global line numbers to module-relative ones.
+
+This blocked adding `features/generics/mono.fg` to the build until the seed was
+updated with the guard fix. Any future large module addition may hit the same issue.
+
+### `consume_type` does not handle tuple return types
+**type:** bug
+**priority:** low
+**source:** discovered April 14, 2026
+
+`consume_type` in `parse/mod.fg` cannot parse `(A, B)` as a type (e.g., in
+`fn foo<A, B>(a: A, b: B) -> (A, B)`). It encounters `(` and reports
+"expected return type after `->`". Tuple types in return position require the
+parser to handle `(` as a type start. This is only a limitation for explicit
+tuple return type annotations — returning tuples without annotations works fine.
+
+### ~~Generic type inference defaults unresolved type params to `int`~~ DONE
+**status:** fixed (April 14, 2026)
+
+Expression-based type inference implemented in `features/generics/mono.fg`.
+`infer_expr_type` examines argument AST nodes (literals → their type,
+variables/calls → "int" fallback). Enum constructors merge partial inference
+across variants (`Result.Ok(42)` → T=int, `Result.Err("hello")` → E=string
+→ merged to `Result__int__string`). Unresolved type params emit F0400 error
+via the diagnostic system. Mangling follows declaration order via
+`mangle_name_ordered`.
 
 ### Name resolution uses globals instead of NameCtx parameter passing
 **type:** bug

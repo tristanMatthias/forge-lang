@@ -3,7 +3,7 @@
 // The trait declaration itself is a no-op at codegen — the methods
 // are implemented by `impl Trait for Type { ... }` blocks.
 
-use core.ast.{Stmt, StmtList, ParamList, SStmt, sstmt}
+use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -67,7 +67,7 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` after default method body") {
                 return null
             }
-            return Stmt.Function(name, params, ret_ty, body)
+            return Stmt.Function(name, TypeParamList.End, params, ret_ty, body)
         }
         Stmt.ExternFn(name, params, ret_ty)
     }

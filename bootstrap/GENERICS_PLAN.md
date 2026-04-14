@@ -201,30 +201,142 @@ The 13 hand-written linked list enums become one generic + type aliases.
 
 ## Implementation Order
 
-1. Add TypeParamList to ast.fg, update Function/TypeDecl/EnumDecl
-2. Change parser: skip_angle_brackets → parse_type_params
-3. Update all ~30 destructuring sites (mechanical)
-4. Resolver: scope type param names
-5. Type checker: infer type args at generic call sites
-6. Monomorphization pass: clone, substitute, rewrite, remove
-7. Test: existing generics example still passes
-8. Test: multi-instantiation (same generic with different types)
-9. Test: generic types and enums
-10. Test: nested/recursive generics
+1. [x] Add TypeParamList to ast.fg, update Function/TypeDecl/EnumDecl
+2. [x] Change parser: skip_angle_brackets → parse_type_params (in features/generics/parser.fg)
+3. [x] Update all ~40 destructuring sites (mechanical)
+4. [x] Resolver: scope type param names
+5. [x] Type checker: infer type args at generic call sites (TypeBindings, FnTypeEntry extended)
+6. [x] Monomorphization pass: clone, substitute, rewrite, remove (features/generics/mono.fg)
+7. [x] Test: existing generics example still passes (42, 30, 99)
+8. [x] Test: multi-instantiation (same generic with different types)
+9. [x] Test: generic types and enums (Wrapper<T>, Option<T>)
+10. [ ] Test: nested/recursive generics (List<T> — needs generic enum monomorphization)
 
-## Risks
+## Remaining Work
 
-- Adding fields to Function/TypeDecl/EnumDecl is safe (hash-based tags,
-  heap payloads) but requires updating ~30 pattern match sites.
-- The type checker is currently loose. Generic type inference must be
-  ADDITIVE — report more info, don't block compilation. Existing code
-  that doesn't use generics must not be affected.
-- Monomorphization increases code size (one copy per instantiation).
-  For the compiler itself this is negligible.
+These are real problems — not style nits. Each must be fixed before
+generics can be considered production-quality.
 
-## What NOT To Do
+### ~~1. `infer_expr_type` only handles literals~~ DONE
+**status:** fixed (April 14, 2026)
 
-- No type erasure. Build it right for the future.
-- No trait bounds CHECKING (yet). Parse and store them, don't enforce.
-- Don't try to unify the 13 linked lists in the SAME session as adding
-  generics. Get generics working first.
+Added `ty: ValueType` field to `SExpr` (core/ast.fg). Typeck populates it
+via a Pass 3 annotation walk (`annotate_stmts/annotate_expr/annotate_sexpr`
+in typeck/mod.fg). `TypeCheckResult` now returns the annotated `StmtList`.
+Mono pass reads `arg.ty` from SExpr instead of re-inferring. Deleted all
+inference logic (TypeEnv, FnRetReg, infer_expr_type, normalize_type_str).
+The typeck is the single source of truth for expression types.
+
+### ~~2. No explicit type arguments at call sites~~ DONE
+**status:** fixed (April 14, 2026)
+
+Added `Expr.GenericCall(callee, type_args, args)` variant and `TypeNameList`
+type. Parser uses speculative parsing with backtracking (`save_state`/
+`restore_state` on `Parser`) in `parse_comparison` to disambiguate
+`f<int>(x)` (generic call) from `f < int` (comparison). Backtracking is
+general-purpose infrastructure in `parse/mod.fg`, not generics-specific.
+Mono pass reads explicit type args via `explicit_to_type_args` and
+uses them directly instead of inferring.
+
+### 3. `Option.None` can't be used standalone
+**priority:** high
+**file:** `features/generics/mono.fg`
+
+Bare variant access `Option.None` has no args to infer from → F0400 error.
+Rust solves this with return-type-directed inference: `fn foo() -> Option<int>`
+tells the compiler that `None` in this function is `Option__int.None`.
+
+**Fix:** When a function has a return type that names a generic enum/struct,
+resolve the type args from that annotation and apply them to all unresolved
+uses of that generic within the function body. This requires:
+1. Parse the return type string for generic args (e.g. `"Result<int, string>"`)
+2. Or: after collecting all ctor sites in a function, check the return type
+   annotation and use it to fill remaining unresolved params.
+
+### 4. Enum merging is global, not scoped
+**priority:** high
+**file:** `features/generics/mono.fg`
+
+All `Result.Ok(...)` and `Result.Err(...)` across the entire program merge
+into one `Result__T__E`. If `fn a()` uses `Result<int, string>` and `fn b()`
+uses `Result<float, int>`, the merge produces a single wrong instantiation.
+
+**Fix:** Scope merging to the enclosing function. Each function body's
+constructor calls merge independently. Two functions using Result with
+different types produce two separate instantiations.
+
+### 5. `rewrite_type_name` / `inst_mangled` returns first match
+**priority:** high
+**file:** `features/generics/mono.fg`
+
+`inst_mangled(insts, "Wrapper")` returns the first InstList entry named
+"Wrapper". If both `Wrapper__int` and `Wrapper__string` exist, `fn foo() -> Wrapper`
+gets the wrong one.
+
+**Fix:** This is the same problem as #4 — once merging is scoped, each
+function's return type annotation maps to a specific instantiation. The
+rewrite pass should re-infer at each site (as it already does for
+`rewrite_struct_lit`) rather than looking up by bare name.
+
+### 6. F0400 diagnostics have no source location
+**priority:** medium
+**file:** `features/generics/mono.fg`
+
+`check_resolved` passes `line: 0, col: 0`. The error renders without a
+source snippet — just the message and help text.
+
+**Fix:** Thread SExpr line/col from the call site expression through the
+collection pass into `check_resolved`. The `CollectState` or the
+`try_add_*` helpers need the line/col from the expression being processed.
+
+### 7. Old seed resolver workarounds
+**priority:** low
+**file:** `features/generics/mono.fg`
+
+Functions like `try_add_fn_inst`, `try_add_enum_inst`, `try_add_struct_inst`
+exist because the old seed's resolver crashes on `let x = f(...)` inside
+nested match arms. Once the seed is updated past this bug, these can be
+inlined back into `collect_inst_expr`.
+
+**Fix:** After the next seed update, try inlining. If the new seed handles
+it, remove the helpers. If not, keep them — they're not harmful, just verbose.
+
+### 8. `substitute_*` and `rewrite_*` are 90% duplicated
+**priority:** low
+**file:** `features/generics/mono.fg`
+
+`substitute_stmt`/`substitute_expr` and `rewrite_stmt`/`rewrite_expr` walk
+every AST variant with identical structure, differing only in leaf operations.
+~200 lines of pure duplication.
+
+**Fix:** Requires higher-order functions or a visitor pattern. The bootstrap
+doesn't support passing functions as generic transformers yet. Once closures
+work reliably as feature handlers, extract a generic `map_stmt(stmt, expr_fn)`
+that both passes use. Until then, this is accepted duplication.
+
+### 9. ParamList type strings not rewritten
+**priority:** medium
+**file:** `features/generics/mono.fg`
+
+`fn foo(x: Wrapper)` — the param type string `"Wrapper"` is not rewritten to
+`"Wrapper__int"` by the mono pass. Only `ret_ty` and `Let`/`Mut` type strings
+are rewritten via `rewrite_type_name`.
+
+**Fix:** Add `rewrite_type_name` calls to ParamList nodes in `rewrite_stmt`'s
+`.Function` arm and anywhere params are threaded through. Also rewrite
+`ExternFn` param types.
+
+### 10. Nested/recursive generics not tested
+**priority:** medium
+
+`enum List<T> { End, Node(value: T, next: List<T>) }` — the `next` field
+type is `"List<T>"` which contains a generic reference. The mono pass's
+`substitute_fields` would turn `"List<T>"` into... `"List<T>"` (unchanged,
+since `type_arg_lookup` looks for exact match on `"List<T>"` which isn't
+a type param name).
+
+**Fix:** `substitute_fields` (and `type_arg_lookup`) need to handle compound
+type strings like `"List<T>"` — parse the `<...>` suffix, substitute type
+params inside it, and reconstruct: `"List<T>"` + `T=int` → `"List__int"`.
+This also requires the mono pass to transitively monomorphize referenced
+generic types.

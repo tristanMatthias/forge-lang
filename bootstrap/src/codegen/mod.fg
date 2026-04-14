@@ -108,7 +108,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
             }
             ok_stmt(env)
         }
-        .TypeDecl(_, _) or .EnumDecl(_, _) or .Impl(_, _) or .ExternFn(_, _, _)
+        .TypeDecl(_, _, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _)
         or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) -> ok_stmt(env)
         .Annotated(_, inner) -> emit_stmt(ctx, env, inner)
         .Break -> {

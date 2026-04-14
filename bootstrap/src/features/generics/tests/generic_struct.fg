@@ -1,0 +1,13 @@
+// Test: generic type declaration with type parameters.
+/// expect: 42
+/// expect: hello
+
+type Wrapper<T> = {
+    value: T,
+}
+
+let w1 = Wrapper { value: 42 }
+println(string(w1.value))
+
+let w2 = Wrapper { value: "hello" }
+println(w2.value)

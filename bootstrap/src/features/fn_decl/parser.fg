@@ -1,7 +1,7 @@
 // WHY: parses top-level `fn` declarations and the parameter list
 // they introduce.
 
-use core.ast.{Stmt, ParamList}
+use core.ast.{Stmt, ParamList, TypeParamList}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -10,9 +10,10 @@ impl Parser {
         self.advance()
         let name = self.consume_identifier("expected function name")?
         // Optional generic parameters: fn name<T, U>(...)
-        // Erased in the bootstrap — everything is i64.
-        if self.check(Tk.Less) {
-            self.skip_angle_brackets()
+        let tp = if self.check(Tk.Less) {
+            self.parse_type_params()
+        } else {
+            TypeParamList.End
         }
         if !self.consume(Tk.LeftParen, "expected `(` after function name") {
             return null
@@ -29,11 +30,8 @@ impl Parser {
         // registry so chained calls preserve typing.
         let ret_ty = if self.check(Tk.Arrow) {
             self.advance()
-            let r = self.consume_type("expected return type after `->`")?
-            r
-        } else {
-            ""
-        }
+            self.consume_type("expected return type after `->`")?
+        } else { "" }
 
         if !self.consume(Tk.LeftBrace, "expected `{` after function parameters") {
             return null
@@ -45,7 +43,7 @@ impl Parser {
             return null
         }
 
-        Stmt.Function(name, params, ret_ty, body)
+        Stmt.Function(name, tp, params, ret_ty, body)
     }
 
     fn parse_param_list(self) -> ParamList? {

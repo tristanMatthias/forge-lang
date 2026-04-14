@@ -5,7 +5,7 @@
 
 mod names
 
-use core.ast.{Expr, ExprList, FieldInitList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, stmt_unwrap}
+use core.ast.{Expr, ExprList, FieldInitList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeParamList, stmt_unwrap}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_with_help, span_dummy}
 use core.registry.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, forge_stmt_tag, forge_expr_tag}
 
@@ -65,7 +65,7 @@ fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
             .End -> { return res }
             .Node(ss, next) -> {
                 res = match stmt_unwrap(ss.node) {
-                    .Function(name, _, _, _) -> declare_function(res, name)
+                    .Function(name, _, _, _, _) -> declare_function(res, name)
                     .ExternFn(name, _, _) -> declare_function(res, name)
                     .Impl(type_name, methods) -> collect_method_names(res, type_name, methods)
                     .Module(_, body) -> collect_function_names(res, body)
@@ -86,7 +86,7 @@ fn collect_method_names(r: Resolver, type_name: string, methods: StmtList) -> Re
             .End -> { return res }
             .Node(ss, next) -> {
                 res = match stmt_unwrap(ss.node) {
-                    .Function(name, _, _, _) -> declare_function(res, name)
+                    .Function(name, _, _, _, _) -> declare_function(res, name)
                     _ -> res
                 }
                 current = next
@@ -164,6 +164,20 @@ export fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
     }
 }
 
+// Push type param names (T, U, ...) into scope as defined variables.
+// This prevents "undefined variable" errors when T appears in param
+// types, return types, or the function body.
+fn define_type_params(r: Resolver, params: TypeParamList) -> Resolver {
+    match params {
+        .End -> r
+        .Node(name, _, next) -> {
+            let after = declare_name(r, name)
+            let defined = define_name(after, name)
+            define_type_params(defined, next)
+        }
+    }
+}
+
 fn mark_defined(entries: ScopeEntry, name: string, depth: int) -> ScopeEntry {
     match entries {
         .End -> ScopeEntry.End
@@ -237,16 +251,17 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after = resolve_stmt_list(entered, body)
             exit_resolve_scope(after)
         }
-        .Function(name, params, _, body) -> {
+        .Function(name, tp, params, _, body) -> {
             let with_fn = declare_function(r, name)
             let entered = enter_resolve_scope(with_fn)
-            let with_params = declare_params(entered, params)
+            let with_tp = define_type_params(entered, tp)
+            let with_params = declare_params(with_tp, params)
             let after_body = resolve_stmt_list(with_params, body)
             exit_resolve_scope(after_body)
         }
         .Return(value) -> resolve_expr(r, value)
         .ReturnEmpty or .NoOp or .Break or .Continue -> r
-        .TypeDecl(_, _) or .EnumDecl(_, _) or .TraitDecl(_, _) or .Use(_, _) -> r
+        .TypeDecl(_, _, _) or .EnumDecl(_, _, _) or .TraitDecl(_, _) or .Use(_, _) -> r
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
         .ExternFn(name, _, _) -> declare_function(r, name)
         .Annotated(_, inner) -> resolve_stmt(r, inner)

@@ -5,7 +5,7 @@
 // produces zero false positives on self-compilation, we flip it
 // to gating and start simplifying codegen.
 
-use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, param_list_length, stmt_unwrap, vtype_display, vtype_eq, vtype_fn_ret, vtype_list_elem, vtype_tuple_at}
+use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_fn_ret, vtype_list_elem, vtype_tuple_at}
 use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_with_help, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
@@ -70,6 +70,7 @@ fn tc_fn_arity(fns: FnTypeEntry, name: string) -> int {
         .Node(_, _, _, next) -> tc_fn_arity(next, name)
     }
 }
+
 
 fn tc_count_args(list: ExprList) -> int {
     match list {
@@ -267,6 +268,7 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
 // ── Entry point ──
 
 export type TypeCheckResult = {
+    stmts: StmtList,
     had_error: bool,
     bag: DiagnosticBag,
 }
@@ -275,9 +277,11 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
     let tc0 = tc_new()
     // Pass 1: collect declarations (types, enums, functions)
     let tc1 = collect_decls(tc0, stmts)
-    // Pass 2: check all statement bodies — DISABLED for debugging
+    // Pass 2: check all statement bodies
     let tc2 = check_stmts(tc1, stmts)
-    TypeCheckResult { had_error: bag_has_errors(tc2.bag), bag: tc2.bag }
+    // Pass 3: annotate AST — stamp resolved types onto SExpr nodes
+    let annotated = annotate_stmts(tc2, stmts)
+    TypeCheckResult { stmts: annotated, had_error: bag_has_errors(tc2.bag), bag: tc2.bag }
 }
 
 // ── Pass 1: Declaration collection ──
@@ -287,13 +291,13 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
         .End -> tc
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .TypeDecl(name, fields) -> tc with {
+                .TypeDecl(name, _, fields) -> tc with {
                     structs: StructTypeReg.Node(name, fields, tc.structs)
                 }
-                .EnumDecl(name, variants) -> tc with {
+                .EnumDecl(name, _, variants) -> tc with {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
                 }
-                .Function(name, params, ret_ty, _) -> tc with {
+                .Function(name, _, params, ret_ty, _) -> tc with {
                     fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns)
                 }
                 .ExternFn(name, params, ret_ty) -> tc with {
@@ -350,7 +354,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let checked = check_stmts(inner, body)
             tc_exit(checked)
         }
-        .Function(name, params, ret_ty, body) -> {
+        .Function(name, _, params, ret_ty, body) -> {
             let inner = tc_enter(tc) with { current_fn: name }
             let with_params = tc_bind_params(inner, params)
             let checked = tc_check_fn_body(with_params, name, ret_ty, body)
@@ -517,6 +521,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         .Grouping(inner) -> check_expr(tc, inner)
         .Call(callee, args) -> check_call(tc, callee, args)
+        .GenericCall(callee, _, args) -> check_call(tc, callee, args)
         .Index(obj, idx) -> {
             let o = check_expr(tc, obj)
             let i = check_expr(o.tc, idx)
@@ -726,6 +731,131 @@ export fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
             let r = check_expr(tc, se.node)
             let rest = check_expr_list_types(r.tc, next)
             ExprListResult { tc: rest.tc, types: TypeList.Node(r.ty, rest.types) }
+        }
+    }
+}
+
+// ── Pass 3: Type annotation ──
+// Walks the AST and stamps resolved ValueTypes onto SExpr.ty fields.
+// Uses the TC state populated by Pass 1+2 (all bindings are in scope).
+
+fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> .End
+        .Node(ss, next) -> {
+            let new_stmt = annotate_stmt(tc, ss.node)
+            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(tc, next))
+        }
+    }
+}
+
+fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
+    match stmt {
+        .Let(name, ty, init) -> .Let(name, ty, annotate_expr(tc, init))
+        .Mut(name, ty, init) -> .Mut(name, ty, annotate_expr(tc, init))
+        .Expr(e) -> .Expr(annotate_expr(tc, e))
+        .Return(val) -> .Return(annotate_expr(tc, val))
+        .Block(body) -> .Block(annotate_stmts(tc, body))
+        .If(cond, then_b, else_b) -> {
+            if else_b != null {
+                .If(annotate_expr(tc, cond), annotate_stmt(tc, then_b), annotate_stmt(tc, else_b!))
+            } else {
+                .If(annotate_expr(tc, cond), annotate_stmt(tc, then_b), null)
+            }
+        }
+        .While(cond, body) -> .While(annotate_expr(tc, cond), annotate_stmt(tc, body))
+        .For(v, start, end, body) -> .For(v, annotate_expr(tc, start), annotate_expr(tc, end), annotate_stmt(tc, body))
+        .ForIn(v, coll, body) -> .ForIn(v, annotate_expr(tc, coll), annotate_stmt(tc, body))
+        .Function(name, tp, params, ret_ty, body) -> .Function(name, tp, params, ret_ty, annotate_stmts(tc, body))
+        .Match(subj, arms) -> .Match(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
+        .Module(name, body) -> .Module(name, annotate_stmts(tc, body))
+        .Annotated(annots, inner) -> .Annotated(annots, annotate_stmt(tc, inner))
+        .Impl(name, methods) -> .Impl(name, annotate_stmts(tc, methods))
+        .Defer(body) -> .Defer(annotate_expr(tc, body))
+        .LetDestructure(names, init) -> .LetDestructure(names, annotate_expr(tc, init))
+        .ThenBlock(name, cond) -> .ThenBlock(name, annotate_expr(tc, cond))
+        .Parallel(body) -> .Parallel(annotate_stmts(tc, body))
+        _ -> stmt  // ReturnEmpty, NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, TraitDecl, Use, SpecBlock, GivenBlock, Select
+    }
+}
+
+// Recursively annotate SExpr-containing sub-structures within an Expr.
+fn annotate_expr(tc: TC, expr: Expr) -> Expr {
+    match expr {
+        .Call(callee, args) -> .Call(annotate_expr(tc, callee), annotate_expr_list(tc, args))
+        .GenericCall(callee, ta, args) -> .GenericCall(annotate_expr(tc, callee), ta, annotate_expr_list(tc, args))
+        .EnumCtor(tn, v, args) -> .EnumCtor(tn, v, annotate_expr_list(tc, args))
+        .StructLit(name, inits) -> .StructLit(name, annotate_field_inits(tc, inits))
+        .MatchExpr(subj, arms) -> .MatchExpr(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
+        .ListLit(elems) -> .ListLit(annotate_expr_list(tc, elems))
+        .Tuple(elems) -> .Tuple(annotate_expr_list(tc, elems))
+        .MapLit(entries) -> .MapLit(annotate_expr_list(tc, entries))
+        .With(obj, inits) -> .With(annotate_expr(tc, obj), annotate_field_inits(tc, inits))
+        .Block(body) -> .Block(annotate_stmts(tc, body))
+        .Binary(l, op, r) -> .Binary(annotate_expr(tc, l), op, annotate_expr(tc, r))
+        .Logical(l, op, r) -> .Logical(annotate_expr(tc, l), op, annotate_expr(tc, r))
+        .Unary(op, e) -> .Unary(op, annotate_expr(tc, e))
+        .Grouping(e) -> .Grouping(annotate_expr(tc, e))
+        .IfExpr(c, t, e) -> .IfExpr(annotate_expr(tc, c), annotate_expr(tc, t), annotate_expr(tc, e))
+        .Index(obj, idx) -> .Index(annotate_expr(tc, obj), annotate_expr(tc, idx))
+        .FieldAccess(obj, f) -> .FieldAccess(annotate_expr(tc, obj), f)
+        .Assign(name, val) -> .Assign(name, annotate_expr(tc, val))
+        .FieldAssign(obj, f, val) -> .FieldAssign(annotate_expr(tc, obj), f, annotate_expr(tc, val))
+        .Lambda(params, body) -> .Lambda(params, annotate_expr(tc, body))
+        .NullCoalesce(l, r) -> .NullCoalesce(annotate_expr(tc, l), annotate_expr(tc, r))
+        .Try(e) -> .Try(annotate_expr(tc, e))
+        .Slice(obj, start, end) -> .Slice(annotate_expr(tc, obj), annotate_expr(tc, start), annotate_expr(tc, end))
+        .IsCheck(subj, vname) -> .IsCheck(annotate_expr(tc, subj), vname)
+        .InCheck(needle, items) -> .InCheck(annotate_expr(tc, needle), annotate_expr_list(tc, items))
+        .ListComp(body, var, coll, filter) -> {
+            if filter != null {
+                .ListComp(annotate_expr(tc, body), var, annotate_expr(tc, coll), annotate_expr(tc, filter!))
+            } else {
+                .ListComp(annotate_expr(tc, body), var, annotate_expr(tc, coll), null)
+            }
+        }
+        .OptionalChain(obj, f) -> .OptionalChain(annotate_expr(tc, obj), f)
+        .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr(tc, obj), idx)
+        .When(arms) -> .When(annotate_when_arms(tc, arms))
+        _ -> expr  // Leaf expressions: Number, String, Bool, Null, Ident, FloatLit, QualifiedIdent
+    }
+}
+
+fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
+    let r = check_expr(tc, se.node)
+    sexpr_typed(se.node, se.line, se.col, r.ty)
+}
+
+fn annotate_expr_list(tc: TC, exprs: ExprList) -> ExprList {
+    match exprs {
+        .End -> .End
+        .Node(se, next) -> ExprList.Node(annotate_sexpr(tc, se), annotate_expr_list(tc, next))
+    }
+}
+
+fn annotate_match_arms(tc: TC, arms: MatchArmList) -> MatchArmList {
+    match arms {
+        .End -> .End
+        .Node(pat, guard, body, next) -> {
+            let new_guard = if guard != null { annotate_sexpr(tc, guard!) } else { null }
+            MatchArmList.Node(pat, new_guard, annotate_sexpr(tc, body), annotate_match_arms(tc, next))
+        }
+    }
+}
+
+fn annotate_field_inits(tc: TC, inits: FieldInitList) -> FieldInitList {
+    match inits {
+        .End -> .End
+        .Node(name, val, next) -> FieldInitList.Node(name, annotate_sexpr(tc, val), annotate_field_inits(tc, next))
+    }
+}
+
+fn annotate_when_arms(tc: TC, arms: WhenArmList) -> WhenArmList {
+    match arms {
+        .End -> .End
+        .Node(cond, body, next) -> {
+            let new_cond = if cond != null { annotate_sexpr(tc, cond!) } else { null }
+            WhenArmList.Node(new_cond, annotate_sexpr(tc, body), annotate_when_arms(tc, next))
         }
     }
 }

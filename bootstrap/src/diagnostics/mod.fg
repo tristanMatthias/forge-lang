@@ -102,6 +102,8 @@ export enum DiagCode {
     RuntimeMatchFallthrough
     RuntimeStackOverflow
     RuntimeNullArg
+    // Generics / monomorphization (F04xx)
+    CannotInferTypeParam
     // Warnings (F08xx)
     NonExhaustiveMatch
 }
@@ -131,6 +133,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ModuleNotFound      -> ErrorDef { code: "F0300", help: "create the module file or remove the `mod` declaration" }
         .ImportNotFound      -> ErrorDef { code: "F0301", help: "check the spelling or add `export` to the function in the target module" }
         .ImportPrivate       -> ErrorDef { code: "F0302", help: "add `export` before the declaration to make it importable" }
+        .CannotInferTypeParam -> ErrorDef { code: "F0400", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
         .InternalError       -> ErrorDef { code: "F0999", help: "" }
         .RuntimeNullDeref    -> ErrorDef { code: "F1000", help: "" }
         .RuntimeDivByZero    -> ErrorDef { code: "F1001", help: "" }

@@ -1,7 +1,7 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.ast.{Stmt, StmtList, ParamList, SStmt, sstmt}
+use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -88,7 +88,7 @@ impl Parser {
         }
         // Desugar to a top-level function named `Type__method`.
         let mangled = "${type_name}__${name}"
-        Stmt.Function(mangled, params, ret_ty, body)
+        Stmt.Function(mangled, TypeParamList.End, params, ret_ty, body)
     }
 
     fn parse_method_param_list(self, type_name: string) -> ParamList? {

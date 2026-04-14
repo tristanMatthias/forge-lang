@@ -117,6 +117,12 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
 
         // Source line — highlight the error span in the severity color
         let src_line = extract_line(source, line)
+        // Guard: if source line not found (global line number from
+        // multi-module compilation), skip the source display.
+        if src_line.length == 0 {
+            eprintln("")
+            return
+        }
         let span_len = diag.span.end - diag.span.start
         let hi_len = if span_len > 0 { span_len } else { 1 }
         let hi_start = col - 1

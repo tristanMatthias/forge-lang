@@ -1,4 +1,4 @@
-// Generic function — type parameter erased to i64
+// Generic function — type parameter inferred from argument
 fn identity<T>(x: T) -> T {
     x
 }

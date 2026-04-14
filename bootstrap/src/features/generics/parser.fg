@@ -1,0 +1,91 @@
+// WHY: parsing for generic type parameters and explicit type arguments.
+// parse_type_params: called from fn_decl/struct_decl/enum_decl for `<T, U>` declarations.
+// try_parse_generic_call: called from the postfix loop for `f<int, string>(x)` calls.
+
+use core.ast.{TypeParamList, TypeNameList, Expr, ExprList, Tk}
+use parse.{Parser}
+
+impl Parser {
+    // Parse type parameters in declarations: `<T>`, `<A, B>`, `<T: Display>`.
+    fn parse_type_params(self) -> TypeParamList {
+        self.advance()  // consume `<`
+        let result = self.parse_type_param_entries()
+        if !self.consume(Tk.Greater, "expected `>` after type parameters") {
+            return TypeParamList.End
+        }
+        result
+    }
+
+    fn parse_type_param_entries(self) -> TypeParamList {
+        if self.check(Tk.Greater) { return TypeParamList.End }
+        if !self.check(Tk.Identifier) {
+            self.set_error("expected type parameter name")
+            return TypeParamList.End
+        }
+        let name = self.current_lexeme
+        self.advance()
+        let bounds = if self.check(Tk.Colon) {
+            self.advance()
+            if !self.check(Tk.Identifier) {
+                self.set_error("expected trait bound after `:`")
+                return TypeParamList.End
+            }
+            let b = self.current_lexeme
+            self.advance()
+            b
+        } else { "" }
+        if self.check(Tk.Comma) {
+            self.advance()
+            return TypeParamList.Node(name, bounds, self.parse_type_param_entries())
+        }
+        TypeParamList.Node(name, bounds, TypeParamList.End)
+    }
+
+    // Speculatively try to parse `<type, type, ...>(args)` as a generic call.
+    // Returns the GenericCall expr if successful, null if not a generic call
+    // (parser state is restored on failure).
+    fn try_parse_generic_call(self, callee: Expr) -> Expr? {
+        let saved = self.save_state()
+
+        self.advance()  // consume `<`
+        let type_args = self.parse_type_name_list()
+
+        if !self.check(Tk.Greater) {
+            self.restore_state(saved)
+            return null
+        }
+        self.advance()  // consume `>`
+
+        if !self.check(Tk.LeftParen) {
+            self.restore_state(saved)
+            return null
+        }
+        self.advance()  // consume `(`
+
+        let args = self.parse_arg_list()
+        if args == null {
+            self.restore_state(saved)
+            return null
+        }
+        if !self.consume(Tk.RightParen, "expected `)` after arguments") {
+            self.restore_state(saved)
+            return null
+        }
+
+        Expr.GenericCall(callee, type_args, args!)
+    }
+
+    fn parse_type_name_list(self) -> TypeNameList {
+        if self.check(Tk.Greater) { return TypeNameList.End }
+        if !self.check(Tk.Identifier) && !self.check(Tk.KwFn) {
+            return TypeNameList.End
+        }
+        let name = self.current_lexeme
+        self.advance()
+        if self.check(Tk.Comma) {
+            self.advance()
+            return TypeNameList.Node(name, self.parse_type_name_list())
+        }
+        TypeNameList.Node(name, TypeNameList.End)
+    }
+}

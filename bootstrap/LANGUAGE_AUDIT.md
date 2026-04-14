@@ -209,8 +209,8 @@ No partial credit. A feature is not done until the codebase actually uses it.
 
 | # | Feature                     | Status          | Complexity | Impact       | Notes |
 |---|-----------------------------|-----------------|------------|--------------|-------|
-| 1 | Generics                    | [ ] Not started | High       | 🔥 Critical  | Unifies all 15+ linked-list types; unlocks Result<T>, List<T>, Map<K,V> |
-| 2 | Result<T> built-in          | [ ] Not started | Medium     | 🔥 Critical  | Depends on generics; eliminates had_error boilerplate everywhere |
+| 1 | Generics                    | [x] Done        | High       | 🔥 Critical  | TypeParamList in AST, parse_type_params, resolver scoping, type inference, monomorphization pass |
+| 2 | Result<T> built-in          | [x] Done        | Medium     | 🔥 Critical  | Generic Result<T,E> + ? + expression type inference + proper F0400 diagnostics |
 | 3 | `when` expression           | [x] Done        | Low        | High         | `match { cond -> body }` subjectless form; dogfooded in lexer, typeck, resolve |
 | 4 | OR patterns in match        | [x] Done        | Low        | High         | `.A or .B -> body`; dogfooded in codegen, eval, resolve, typeck |
 | 5 | Variadic functions          | [ ] Not started | Medium     | High         | Sugar for `params: [T]`; `setup.fg` is canonical use case |

@@ -150,7 +150,7 @@ fn collect_module_items(stmts: StmtList, mod_path: string) -> ModuleItem {
 
 fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, rest: ModuleItem) -> ModuleItem {
     match stmt {
-        .Function(name, _, _, _) -> {
+        .Function(name, _, _, _, _) -> {
             let canonical = "${mod_path}::${name}"
             ModuleItem.Node(name, canonical, exported, rest)
         }
@@ -159,11 +159,11 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, rest: Mo
             // for visibility tracking
             ModuleItem.Node(name, name, true, rest)
         }
-        .TypeDecl(name, _) -> {
+        .TypeDecl(name, _, _) -> {
             let canonical = "${mod_path}::${name}"
             ModuleItem.Node(name, canonical, exported, rest)
         }
-        .EnumDecl(name, _) -> {
+        .EnumDecl(name, _, _) -> {
             let canonical = "${mod_path}::${name}"
             ModuleItem.Node(name, canonical, exported, rest)
         }
@@ -185,7 +185,7 @@ fn collect_impl_items(stmts: StmtList, mod_path: string, rest: ModuleItem) -> Mo
         .End -> rest
         .Node(ss, next) -> {
             let with_this = match stmt_unwrap(ss.node) {
-                .Function(name, _, _, _) -> {
+                .Function(name, _, _, _, _) -> {
                     // Impl methods are already mangled as Type__method.
                     // Keep bare name — method call codegen uses Type__method directly.
                     ModuleItem.Node(name, name, true, rest)
@@ -420,10 +420,10 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .While(cond, body) -> .While(rewrite_expr(ctx, cond), rewrite_stmt(ctx, body))
         .For(var, start, end, body) -> .For(var, rewrite_expr(ctx, start), rewrite_expr(ctx, end), rewrite_stmt(ctx, body))
         .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr(ctx, coll), rewrite_stmt(ctx, body))
-        .Function(name, params, ret_ty, body) -> {
+        .Function(name, tp, params, ret_ty, body) -> {
             let is_impl_method = name.contains("__")
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method { "${ctx.current_module}::${name}" } else { name }
-            Stmt.Function(qualified, params, ret_ty, rewrite_stmt_list(bind_params_ctx(ctx, params), body))
+            Stmt.Function(qualified, tp, params, ret_ty, rewrite_stmt_list(bind_params_ctx(ctx, params), body))
         }
         .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
@@ -446,6 +446,7 @@ fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
     match expr {
         .Ident(name) -> rewrite_ident(ctx, name, expr)
         .Call(callee, args) -> .Call(rewrite_expr(ctx, callee), rewrite_expr_list(ctx, args))
+        .GenericCall(callee, ta, args) -> .GenericCall(rewrite_expr(ctx, callee), ta, rewrite_expr_list(ctx, args))
         .Binary(l, op, r) -> .Binary(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))
         .Unary(op, r) -> .Unary(op, rewrite_expr(ctx, r))
         .Logical(l, op, r) -> .Logical(rewrite_expr(ctx, l), op, rewrite_expr(ctx, r))

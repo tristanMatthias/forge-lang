@@ -1,0 +1,14 @@
+// Test: generic function with multiple type parameters.
+/// expect: hello
+/// expect: 42
+
+fn first<A, B>(a: A, b: B) -> A {
+    a
+}
+
+fn second<A, B>(a: A, b: B) -> B {
+    b
+}
+
+println(first("hello", 42))
+println(string(second("hello", 42)))
