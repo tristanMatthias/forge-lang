@@ -65,7 +65,6 @@ export fn parse_program_source(source: string) -> ProgramParseResult {
     parser.parse_file_program()
 }
 
-
 export fn reverse_expr_list(list: ExprList) -> ExprList {
     reverse_expr_list_acc(list, ExprList.End)
 }
@@ -124,7 +123,6 @@ fn exprs_to_params(exprs: ExprList) -> ParamList {
         }
     }
 }
-
 
 fn p_starts_with_upper(name: string) -> bool {
     if name.length < 1 {
@@ -349,7 +347,6 @@ impl Parser {
 
     // Parse parallel block: parallel { stmt1; stmt2 }
     // Each statement runs in its own thread, all joined at block end.
-
 
     // Parse one or more annotations: @name or @name(arg1, arg2)
     fn parse_annotations(self) -> AnnotationList {
@@ -1163,7 +1160,6 @@ impl Parser {
         result
     }
 
-
     fn parse_tuple_rest(self) -> ExprList? {
         // After the first comma in a tuple. Parse remaining elements.
         if self.check(Tk.RightParen) {
@@ -1328,7 +1324,6 @@ impl Parser {
             self.advance()
         }
     }
-
 
     fn set_error(self, message: string) {
         self.report(DiagCode.SyntaxError, message)

@@ -11,7 +11,7 @@
 //   4. Add tests
 //   NO codegen, NO resolver, NO typechecker, NO eval, NO feature registration.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern}
+use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp}
 
 // ── Public API ──
 
@@ -83,6 +83,7 @@ fn rewrite_call(original: Expr, callee: Expr, args: ExprList) -> Expr {
     let name = match callee { .Ident(n) -> n, _ -> "" }
     match name {
         "assert" -> desugar_assert(args)
+        "dbg" -> desugar_dbg(args)
         _ -> original
     }
 }
@@ -104,6 +105,39 @@ fn desugar_assert(args: ExprList) -> Expr {
             )
         }
         _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"assert: no condition\"")), ExprList.End))
+    }
+}
+
+// ── dbg() desugaring ──
+// dbg(expr) → { let __dbg = expr; println("[dbg] " + string(__dbg)); __dbg }
+// Prints the value to stderr and returns it — useful for inline debugging.
+fn desugar_dbg(args: ExprList) -> Expr {
+    match args {
+        .Node(val_se, _) -> {
+            let val = val_se.node
+            // { let __dbg = val; println("[dbg] " + string(__dbg)); __dbg }
+            let print_arg = Expr.Binary(
+                Expr.String("\"[dbg] \""),
+                BinOp.Add,
+                Expr.Call(Expr.Ident("string"), ExprList.Node(sexpr_dummy(Expr.Ident("__dbg")), ExprList.End))
+            )
+            Expr.Block(StmtList.Node(
+                sstmt(Stmt.Let("__dbg", "", val), 0, 0),
+                StmtList.Node(
+                    sstmt(Stmt.Expr(
+                        Expr.Call(Expr.Ident("println"), ExprList.Node(
+                            sexpr_dummy(print_arg),
+                            ExprList.End
+                        ))
+                    ), 0, 0),
+                    StmtList.Node(
+                        sstmt(Stmt.Expr(Expr.Ident("__dbg")), 0, 0),
+                        StmtList.End
+                    )
+                )
+            ))
+        }
+        _ -> Expr.Call(Expr.Ident("panic"), ExprList.Node(sexpr_dummy(Expr.String("\"dbg: no argument\"")), ExprList.End))
     }
 }
 

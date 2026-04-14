@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_length, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, env_extend}
-use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, cg_malloc, const_i64, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, get_fn, ok_emit, ok_stmt, struct_reg_lookup, toplevel_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, ok_emit, ok_stmt, struct_reg_lookup, toplevel_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelResult}
 use codegen.helpers.{stmts_last_expr, fill_i64_param_array}
@@ -270,7 +270,6 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     CodegenResult { had_error: false, error_message: "" }
 }
 
-
 fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> StructReg {
     match stmts {
         .End -> reg
@@ -296,7 +295,6 @@ fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> Stru
     }
 }
 
-
 fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
     match stmts {
         .End -> reg
@@ -320,7 +318,6 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumR
         }
     }
 }
-
 
 fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg {
     match stmts {
@@ -348,7 +345,6 @@ fn declare_enums(ctx: ptr, i64t: ptr, stmts: StmtList, reg: EnumReg) -> EnumReg 
     }
 }
 
-
 fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
     match stmts {
         .End -> reg
@@ -363,7 +359,6 @@ fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
     }
 }
 
-
 fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
     match stmts {
         .End -> .End
@@ -376,7 +371,6 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
         }
     }
 }
-
 
 fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
     match fields {
@@ -400,7 +394,6 @@ fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
     }
 }
 
-
 fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
     match base {
         .End -> .End
@@ -408,7 +401,6 @@ fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
         .Node(name, ty, next) -> .Node(name, ty, filter_fields_without(next, excluded))
     }
 }
-
 
 fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
     match base {
@@ -418,7 +410,6 @@ fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
     }
 }
 
-
 fn field_list_has(list: FieldList, target: string) -> bool {
     match list {
         .End -> false
@@ -427,7 +418,6 @@ fn field_list_has(list: FieldList, target: string) -> bool {
     }
 }
 
-
 fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
     if count <= 0 {
         return
@@ -435,7 +425,6 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
     forge_llvm_type_array_set(arr, base, i64t)
     fill_i64_param_array_offset(arr, i64t, base + 1, count - 1)
 }
-
 
 fn decl_fn_ret_type(structs: StructReg, enums: EnumReg, ret_ty: string, body: StmtList) -> ValueType {
     let base = translate_param_type(structs, enums, ret_ty)
@@ -448,7 +437,6 @@ fn decl_fn_ret_type(structs: StructReg, enums: EnumReg, ret_ty: string, body: St
         _ -> base
     }
 }
-
 
 fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
     match stmts {
@@ -489,14 +477,12 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, structs: StructReg, enums: Enu
     }
 }
 
-
 fn params_to_type_list(params: ParamList) -> ParamTypeList {
     match params {
         .End -> .End
         .Node(_, ty, next) -> .Node(ty, params_to_type_list(next))
     }
 }
-
 
 fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
     match stmts {
@@ -515,7 +501,6 @@ fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
         }
     }
 }
-
 
 fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     match stmts {
@@ -555,7 +540,6 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     }
 }
 
-
 fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLevelResult {
     let g = toplevel_lookup(ctx.top_level_vars, name)
     if !g.found {
@@ -570,5 +554,4 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLe
     let updated_cg = ctx_with_top_level(ctx, updated_top)
     TopLevelResult { ctx: updated_cg, env, had_error: false, error_message: "" }
 }
-
 

@@ -133,8 +133,6 @@ impl Parser {
         self.set_current(Tk.Error, ch)
     }
 
-
-
     fn scan_template_token(self) {
         mut content = ""
         while !self.is_at_end() && self.peek_char() != "`" {
@@ -403,7 +401,6 @@ export fn strip_underscores(s: string) -> string {
     out
 }
 
-
 export fn parse_int_literal(text: string) -> int {
     let clean = strip_underscores(text)
     if clean.starts_with("0x") || clean.starts_with("0X") {
@@ -417,7 +414,6 @@ export fn parse_int_literal(text: string) -> int {
     }
     int(clean)
 }
-
 
 export fn hex_digit_value(ch: string) -> int {
     match ch {
@@ -441,7 +437,6 @@ export fn hex_digit_value(ch: string) -> int {
     }
 }
 
-
 export fn parse_hex(digits: string) -> int {
     mut result = 0
     mut i = 0
@@ -451,7 +446,6 @@ export fn parse_hex(digits: string) -> int {
     }
     result
 }
-
 
 export fn parse_binary(digits: string) -> int {
     mut result = 0
@@ -468,7 +462,6 @@ export fn parse_binary(digits: string) -> int {
     result
 }
 
-
 export fn parse_octal(digits: string) -> int {
     mut result = 0
     mut i = 0
@@ -478,7 +471,6 @@ export fn parse_octal(digits: string) -> int {
     }
     result
 }
-
 
 export fn decimal_digit_value(ch: string) -> int {
     match ch {
@@ -495,5 +487,4 @@ export fn decimal_digit_value(ch: string) -> int {
         _ -> 0
     }
 }
-
 

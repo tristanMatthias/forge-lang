@@ -1,8 +1,7 @@
 // WHY: codegen for trait dynamic dispatch.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_display, vtype_struct_name, vtype_enum_name, expr_list_length}
-use codegen.types.{closure_marker, Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, const_i64, to_ptr, to_i64, get_fn, call_0, call_1, call_2, call_3, cg_malloc, new_bb, translate_type_ctx, trait_decl_lookup}
-use codegen.{emit_expr}
+use codegen.types.{closure_marker, Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, translate_type_ctx, trait_decl_lookup, call_0, call_2}
 use features.fn_decl.codegen.{emit_first_arg}
 
 export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
@@ -13,7 +12,6 @@ export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) ->
     }
 }
 
-
 export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string {
     match methods {
         .End -> ""
@@ -21,7 +19,6 @@ export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string
         .Node(_, _, next) -> trait_method_ret_ty(next, name)
     }
 }
-
 
 export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> EmitResult {
     let obj_ptr = ctx.to_ptr(obj_val, "tobj_ptr")
@@ -45,7 +42,6 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
     ok_emit_typed(ctx.call("forge_closure_call_2", [fn_closure, concrete, first_arg.value]), ret_ty)
 }
 
-
 export fn resolve_concrete_type_name(ty: ValueType) -> string {
     let s = vtype_struct_name(ty)
     if s != "" { return s }
@@ -53,7 +49,6 @@ export fn resolve_concrete_type_name(ty: ValueType) -> string {
     if e != "" { return e }
     ""
 }
-
 
 export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name: string) -> ptr {
     let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
@@ -63,7 +58,6 @@ export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name:
     let obj_val = ctx.call("forge_trait_object_new", [value, vtable])
     ctx.to_i64(obj_val, "tobj_i64")
 }
-
 
 export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
     match methods {
@@ -84,5 +78,4 @@ export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNa
         }
     }
 }
-
 

@@ -4,7 +4,6 @@
 
 use core.ast.{Expr, VarEnv, SExpr}
 use codegen.types.{Ctx, DeferStack}
-use codegen.{emit_expr}
 
 // Global defer stack — reset at function entry, pushed by defer,
 // emitted before return.

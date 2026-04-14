@@ -1,8 +1,7 @@
 // WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
 
 use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_display, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem}
-use codegen.types.{Ctx, EmitResult, call_2, call_3, cg_malloc, const_i64, const_i8, err_emit, get_fn, ok_emit, ok_emit_str, ok_emit_typed, to_i64, to_ptr}
-use codegen.{emit_expr}
+use codegen.types.{Ctx, EmitResult, err_emit, ok_emit, ok_emit_str, ok_emit_typed}
 
 export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
     let r = ctx.emit(env, obj)?
@@ -42,7 +41,6 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
     ok_emit_str(result_i64)
 }
 
-
 export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitResult {
     let obj_r = ctx.emit(env, obj)?
     let start_r = ctx.emit(env, start)?
@@ -50,5 +48,4 @@ export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -
     let result = ctx.call("forge_array_slice", [obj_r.value, start_r.value, end_r.value])
     ok_emit_typed(result, obj_r.ty)
 }
-
 

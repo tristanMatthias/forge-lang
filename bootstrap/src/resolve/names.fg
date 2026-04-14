@@ -311,7 +311,6 @@ fn is_builtin_name(name: string) -> bool {
     name in ["println", "eprintln", "print", "eprint", "string", "int", "float", "panic", "exit", "self"]
 }
 
-
 // ── Name resolution context ──
 
 type NameCtx = {
@@ -357,7 +356,6 @@ fn bind_pattern_list(ctx: NameCtx, pats: PatternList) -> NameCtx {
         _ -> ctx
     }
 }
-
 
 fn merge_aliases(base: AliasEntry, extra: AliasEntry) -> AliasEntry {
     match extra {

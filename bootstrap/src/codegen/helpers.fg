@@ -2,7 +2,6 @@
 
 use core.ast.{Expr, ExprList, StmtList, VarEnv, ValueType, SStmt, stmt_unwrap}
 use codegen.types.{Ctx, EmitResult, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, trait_decl_has}
-use codegen.{emit_expr}
 use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
 
 export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
@@ -12,7 +11,6 @@ export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     }
 }
 
-
 export fn strip_quotes(s: string) -> string {
     let len = s.length
     if len < 2 {
@@ -20,7 +18,6 @@ export fn strip_quotes(s: string) -> string {
     }
     s.substring(1, len - 1)
 }
-
 
 export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
     match args {
@@ -35,7 +32,6 @@ export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: i
         }
     }
 }
-
 
 export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: ParamTypeList, idx: int) -> EmitResult {
     match args {
@@ -66,9 +62,7 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
     }
 }
 
-
 export fn is_null_literal(e: Expr) -> bool { e is .Null }
-
 
 export fn stmts_last_expr(stmts: StmtList) -> Expr {
     match stmts {
@@ -89,7 +83,6 @@ export fn stmts_last_expr(stmts: StmtList) -> Expr {
     }
 }
 
-
 export fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
     if idx >= count {
         return
@@ -97,5 +90,4 @@ export fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
     forge_llvm_type_array_set(arr, idx, i64t)
     fill_i64_param_array(arr, i64t, idx + 1, count)
 }
-
 

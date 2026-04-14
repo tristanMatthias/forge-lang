@@ -1,8 +1,7 @@
 // WHY: codegen for operators — binary, unary, logical, float.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, ok_emit_str, err_emit, const_i64, const_i8, to_ptr, to_i64, to_f64, f64_to_i64, new_bb, get_fn, call_2}
-use codegen.{emit_expr}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, ok_emit_str, err_emit, to_f64, f64_to_i64}
 use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.helpers.{is_null_literal}
 use features.enum_decl.codegen.{emit_enum_tag_cmp}
@@ -113,7 +112,6 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
         }
     }
 }
-
 
 export fn coerce_to_f64(ctx: Ctx, val: ptr, ty: ValueType) -> ptr {
     if vtype_eq(ty, .Float) {

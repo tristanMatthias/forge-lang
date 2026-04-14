@@ -2,8 +2,7 @@
 // Lists are backed by the C-runtime forge_array_* functions.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, TypeList, vtype_list_elem, vtype_fn_ret, vtype_is_fn}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, get_fn, call_0, call_1, call_2, call_3, const_i64}
-use codegen.{emit_expr}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, call_0, call_2}
 use features.closures.codegen.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.helpers.{emit_single_arg}
 

@@ -1,8 +1,7 @@
 // WHY: codegen for `expr in [a, b, c]` — expands to `expr == a || expr == b || expr == c`.
 // Uses emit_binary(Eq) for each comparison so enum tags, strings, etc. are handled correctly.
 
-use codegen.{emit_expr}
-use codegen.types.{Ctx, EmitResult, ok_emit, err_emit, const_i64}
+use codegen.types.{Ctx, EmitResult, ok_emit, err_emit}
 use codegen.operators.{emit_binary}
 use core.ast.{Expr, ExprList, BinOp, VarEnv, ValueType, vtype_is_str}
 

@@ -9,8 +9,7 @@
 // (critical for match on enum tuple elements).
 
 use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, TypeList, vtype_tuple_at}
-use codegen.types.{Ctx, EmitResult, StmtResult, ok_emit, ok_emit_typed, err_emit, ok_stmt, err_stmt_from_expr, const_i64, to_ptr, to_i64, cg_malloc}
-use codegen.{emit_expr}
+use codegen.types.{Ctx, EmitResult, StmtResult, ok_emit, ok_emit_typed, err_emit, ok_stmt, err_stmt_from_expr}
 
 // ── Pointer arithmetic helpers ──
 

@@ -68,7 +68,6 @@ type AssignBindingsResult = {
     error_message: string,
 }
 
-
 export fn render_value(value: Value) -> string {
     match value.kind {
         "number" -> value.number_text
@@ -120,7 +119,6 @@ export fn is_truthy(value: Value) -> bool {
 
 use features.eval.{Value, EvalResult, Runtime, StepResult, ok_result, error_result, value_null, is_truthy, render_value}
 
-
 export fn eval_expression_source(source: string) -> EvalResult {
     let parsed = parse_expression_source(source)
     if parsed.had_error || parsed.expr == null {
@@ -146,7 +144,6 @@ export fn execute_program_source(source: string) -> EvalResult {
 
     finish_result(execute_stmt_list(runtime_new(), parsed.stmts!))
 }
-
 
 fn render_number(value: float) -> string {
     let text = string(value)
@@ -176,7 +173,6 @@ fn runtime_new() -> Runtime {
     }
 }
 
-
 fn make_return(runtime: Runtime, value: Value) -> StepResult {
     StepResult {
         runtime,
@@ -186,7 +182,6 @@ fn make_return(runtime: Runtime, value: Value) -> StepResult {
         error_message: "",
     }
 }
-
 
 fn value_number(text: string) -> Value {
     Value {
@@ -214,7 +209,6 @@ fn value_bool(flag: bool) -> Value {
         bool_value: flag,
     }
 }
-
 
 fn enter_scope(runtime: Runtime) -> Runtime {
     runtime with { depth: runtime.depth + 1 }
@@ -766,7 +760,6 @@ fn as_string(value: Value) -> string? {
     }
     null
 }
-
 
 fn values_equal(left: Value, right: Value) -> bool {
     if left.kind != right.kind { return false }

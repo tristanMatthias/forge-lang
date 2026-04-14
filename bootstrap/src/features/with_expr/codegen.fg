@@ -6,8 +6,7 @@
 // then overwrite the specified fields with new values.
 
 use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, vtype_struct_name, vtype_display, SExpr}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, struct_reg_lookup, const_i64, to_ptr, to_i64, cg_malloc}
-use codegen.{emit_expr}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, struct_reg_lookup}
 
 export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> EmitResult {
     let r = ctx.emit(env, obj)?

@@ -259,7 +259,6 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
-
 export fn declare_params(r: Resolver, params: ParamList) -> Resolver {
     mut current = params
     mut res = r

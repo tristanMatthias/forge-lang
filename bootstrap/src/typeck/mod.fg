@@ -143,7 +143,6 @@ export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     }
 }
 
-
 type TC = {
     types: TypeEntry,
     fns: FnTypeEntry,
@@ -475,7 +474,6 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
     }
 }
 
-
 export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
@@ -485,8 +483,6 @@ export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
         }
     }
 }
-
-
 
 // ── Expression checking ──
 
@@ -705,7 +701,6 @@ fn check_block_stmts(tc: TC, stmts: StmtList) -> ExprResult {
         }
     }
 }
-
 
 // ── Helpers ──
 

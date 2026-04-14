@@ -2,9 +2,7 @@
 // enum value comparison (tag equality via struct GEP).
 
 use core.ast.{Expr, ExprList, FieldList, VariantList, VarEnv, variant_lookup, variant_max_payload, field_list_length, ValueType, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, const_i64, const_i8, to_i64, to_ptr, cg_malloc}
-use codegen.{emit_expr}
-
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant}
 
 export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
     // Contextual resolution: `.Variant` with empty type_name.

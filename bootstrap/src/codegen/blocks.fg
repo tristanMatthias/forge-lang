@@ -1,7 +1,7 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
 use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitResult, StmtResult, const_i64, err_emit, ok_emit_typed, new_bb, ok_emit, err_stmt_from_expr, ok_stmt}
+use codegen.types.{Ctx, EmitResult, StmtResult, err_emit, ok_emit_typed, ok_emit, err_stmt_from_expr, ok_stmt}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.codegen.{emit_match_expr}
 
@@ -12,7 +12,6 @@ export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult 
     // statement is executed for its side effects.
     emit_block_loop(ctx, env, stmts, ctx.i64(0), .Int)
 }
-
 
 export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> EmitResult {
     match stmt {
@@ -29,7 +28,6 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
         }
     }
 }
-
 
 export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
     let cond = ctx.emit(env, condition)
@@ -68,7 +66,6 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
     ok_emit_typed(loaded, t.ty)
 }
 
-
 export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> EmitResult {
     match stmts {
         .End -> ok_emit_typed(last_val, last_ty)
@@ -87,5 +84,4 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
         }
     }
 }
-
 

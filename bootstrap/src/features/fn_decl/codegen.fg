@@ -2,10 +2,9 @@
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_extend, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, field_type_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, translate_param_type, ctx_with_fn, const_i64, to_ptr, to_i64, get_fn, call_1, call_2, call_3, call_4, new_bb, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val, cg_malloc}
+use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, translate_param_type, ctx_with_fn, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val, call_2}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
-
 
 export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> StmtResult {
     match stmts {
@@ -129,10 +128,8 @@ fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: VarEn
     forge_llvm_value_array_free(args)
 }
 
-
 // ── Call dispatch (moved from codegen/mod.fg) ──
 
-use codegen.{emit_expr}
 use codegen.strings.{emit_concat, emit_substring, emit_str_replace}
 use codegen.printing.{emit_println, emit_eprintln}
 use features.list_lit.codegen.{emit_list_method_call}
@@ -165,7 +162,6 @@ export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> Emit
         }
     }
 }
-
 
 export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: ExprList) -> EmitResult {
     // Special-case `.length` and `.substring` on strings — these are
@@ -283,14 +279,12 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     ok_emit_typed(result, ret_ty)
 }
 
-
 export fn emit_first_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
         .End -> err_emit("expected argument")
         .Node(se, _) -> ctx.emit(env, se.node)
     }
 }
-
 
 export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitResult {
     if name == "println" {
@@ -345,7 +339,6 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
     ok_emit_typed(result, ret_ty)
 }
 
-
 export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // string(i64) → str via snprintf into a 32-byte malloc'd buffer.
     match args {
@@ -371,7 +364,6 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
     }
 }
 
-
 export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // int(str) → i64 via libc atoi.
     match args {
@@ -389,7 +381,6 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
         }
     }
 }
-
 
 export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     // float(str) → f64 bits via forge_float_parse.
@@ -411,7 +402,6 @@ export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitRes
         }
     }
 }
-
 
 export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
@@ -440,5 +430,4 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
         }
     }
 }
-
 

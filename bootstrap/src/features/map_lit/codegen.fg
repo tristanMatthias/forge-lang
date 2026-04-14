@@ -2,9 +2,7 @@
 // Maps are backed by the C-runtime forge_map_*_cstr functions.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, get_fn, call_0, call_1, call_2, call_3, to_ptr, to_i64}
-use codegen.{emit_expr}
-use codegen.{emit_expr}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, call_0, call_3}
 use codegen.helpers.{emit_single_arg}
 
 export fn emit_map_lit(ctx: Ctx, env: VarEnv, entries: ExprList) -> EmitResult {
