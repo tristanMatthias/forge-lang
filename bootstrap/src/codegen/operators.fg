@@ -18,7 +18,7 @@ export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult
             }
             ok_emit(ctx.sub(ctx.i64(0), r.value, "neg"))
         }
-        .Not -> ok_emit(ctx.icmp_eq(r.value, ctx.i64(0), "not_cmp"))
+        .Not -> ok_emit_typed(ctx.icmp_eq(r.value, ctx.i64(0), "not_cmp"), .Bool)
         .BitNot -> ok_emit(ctx.bit_not(r.value, "bnot"))
     }
 }
@@ -88,33 +88,29 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
             if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, false) }
             let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""
             if is_enum { return emit_enum_tag_cmp(ctx, lhs, rhs, left_result.ty, 32) }
-            ok_emit(ctx.icmp_eq(lhs, rhs, "eq"))
+            ok_emit_typed(ctx.icmp_eq(lhs, rhs, "eq"), .Bool)
         }
         .Ne -> {
             if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, true) }
             let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""
             if is_enum { return emit_enum_tag_cmp(ctx, lhs, rhs, left_result.ty, 33) }
-            ok_emit(ctx.icmp_ne(lhs, rhs, "ne"))
+            ok_emit_typed(ctx.icmp_ne(lhs, rhs, "ne"), .Bool)
         }
         .Lt -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 40) }
-            let cmp = ctx.slt(lhs, rhs, "slt")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "slt_ext"))
+            ok_emit_typed(ctx.zext(ctx.slt(lhs, rhs, "slt"), ctx.i64_type, "slt_ext"), .Bool)
         }
         .Le -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 41) }
-            let cmp = ctx.icmp(41, lhs, rhs, "sle")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "sle_ext"))
+            ok_emit_typed(ctx.zext(ctx.icmp(41, lhs, rhs, "sle"), ctx.i64_type, "sle_ext"), .Bool)
         }
         .Gt -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 38) }
-            let cmp = ctx.icmp(38, lhs, rhs, "sgt")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "sgt_ext"))
+            ok_emit_typed(ctx.zext(ctx.icmp(38, lhs, rhs, "sgt"), ctx.i64_type, "sgt_ext"), .Bool)
         }
         .Ge -> {
             if is_str { return emit_str_cmp(ctx, lhs, rhs, 39) }
-            let cmp = ctx.icmp(39, lhs, rhs, "sge")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "sge_ext"))
+            ok_emit_typed(ctx.zext(ctx.icmp(39, lhs, rhs, "sge"), ctx.i64_type, "sge_ext"), .Bool)
         }
     }
 }
@@ -134,12 +130,12 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
         .Div -> ok_emit_typed(ctx.cast_to(ctx.fdiv(fl, fr, "fdiv"), .Float), .Float)
         .Mod -> ok_emit_typed(ctx.cast_to(ctx.frem(fl, fr, "frem"), .Float), .Float)
         // fcmp ordered predicates: OEQ=1, OGT=2, OGE=3, OLT=4, OLE=5, ONE=6
-        .Eq -> ok_emit(ctx.zext(ctx.fcmp(1, fl, fr, "feq"), ctx.i64_type, "feq_ext"))
-        .Ne -> ok_emit(ctx.zext(ctx.fcmp(6, fl, fr, "fne"), ctx.i64_type, "fne_ext"))
-        .Lt -> ok_emit(ctx.zext(ctx.fcmp(4, fl, fr, "flt"), ctx.i64_type, "flt_ext"))
-        .Le -> ok_emit(ctx.zext(ctx.fcmp(5, fl, fr, "fle"), ctx.i64_type, "fle_ext"))
-        .Gt -> ok_emit(ctx.zext(ctx.fcmp(2, fl, fr, "fgt"), ctx.i64_type, "fgt_ext"))
-        .Ge -> ok_emit(ctx.zext(ctx.fcmp(3, fl, fr, "fge"), ctx.i64_type, "fge_ext"))
+        .Eq -> ok_emit_typed(ctx.zext(ctx.fcmp(1, fl, fr, "feq"), ctx.i64_type, "feq_ext"), .Bool)
+        .Ne -> ok_emit_typed(ctx.zext(ctx.fcmp(6, fl, fr, "fne"), ctx.i64_type, "fne_ext"), .Bool)
+        .Lt -> ok_emit_typed(ctx.zext(ctx.fcmp(4, fl, fr, "flt"), ctx.i64_type, "flt_ext"), .Bool)
+        .Le -> ok_emit_typed(ctx.zext(ctx.fcmp(5, fl, fr, "fle"), ctx.i64_type, "fle_ext"), .Bool)
+        .Gt -> ok_emit_typed(ctx.zext(ctx.fcmp(2, fl, fr, "fgt"), ctx.i64_type, "fgt_ext"), .Bool)
+        .Ge -> ok_emit_typed(ctx.zext(ctx.fcmp(3, fl, fr, "fge"), ctx.i64_type, "fge_ext"), .Bool)
         _ -> ok_emit(ctx.add(lhs, rhs, "add"))
     }
 }
@@ -173,6 +169,6 @@ export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Ex
     ctx.add_incoming(phi, sc_val, left_bb)
     ctx.add_incoming(phi, r_bool, rhs_end_bb)
 
-    ok_emit(ctx.zext(phi, ctx.i64_type, "sc_ext"))
+    ok_emit_typed(ctx.zext(phi, ctx.i64_type, "sc_ext"), .Bool)
 }
 

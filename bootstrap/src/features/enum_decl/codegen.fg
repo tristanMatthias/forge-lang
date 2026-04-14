@@ -111,5 +111,5 @@ export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: i
     let l_tag = ctx.load_i64(l_gep, "ltag")
     let r_tag = ctx.load_i64(r_gep, "rtag")
     let cmp = ctx.icmp(pred, l_tag, r_tag, "tag_cmp")
-    ok_emit(ctx.zext(cmp, ctx.i64_type, "tag_cmp_ext"))
+    ok_emit_typed(ctx.zext(cmp, ctx.i64_type, "tag_cmp_ext"), .Bool)
 }

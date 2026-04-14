@@ -1,7 +1,7 @@
 // WHY: codegen for `expr is .Variant` — checks enum tag at runtime.
 
 use core.ast.{variant_lookup, vtype_display, vtype_enum_name}
-use codegen.types.{enum_reg_lookup, err_emit, ok_emit}
+use codegen.types.{enum_reg_lookup, err_emit, ok_emit_typed}
 export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> EmitResult {
     let r = ctx.emit(env, subject)?
     let enum_name = vtype_enum_name(r.ty)
@@ -17,5 +17,5 @@ export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> 
         return err_emit("unknown variant `${vname}` in enum `${enum_name}`")
     }
     let tag = ctx.enum_tag(r.value, enum_name)
-    ok_emit(ctx.icmp_eq(tag, ctx.i64(v.tag), "is_eq"))
+    ok_emit_typed(ctx.icmp_eq(tag, ctx.i64(v.tag), "is_eq"), .Bool)
 }

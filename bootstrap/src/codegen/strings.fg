@@ -100,18 +100,15 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitR
     let result64 = ctx.sext(result32, ctx.i64_type, "strcmp_sext")
     let zero64 = ctx.i64(0)
     let cmp = ctx.icmp(pred, result64, zero64, "scmp_cmp")
-    ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"))
+    ok_emit_typed(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
 }
 
 export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
-    let result32 = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
-    // Sign-extend strcmp's i32 to i64 so the icmp operands match.
-    let result64 = ctx.sext(result32, ctx.i64_type, "strcmp_sext")
-    let zero64 = ctx.i64(0)
+    let result = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
     let pred = if invert { 33 } else { 32 }
-    let cmp = ctx.icmp(pred, result64, zero64, "streq_cmp")
-    ok_emit(ctx.zext(cmp, ctx.i64_type, "streq_ext"))
+    let cmp = ctx.icmp(pred, result, ctx.i64(0), "streq_cmp")
+    ok_emit_typed(ctx.zext(cmp, ctx.i64_type, "streq_ext"), .Bool)
 }
 
