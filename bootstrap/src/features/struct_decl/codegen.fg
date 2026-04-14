@@ -97,7 +97,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     ctx.null_check(r.value, field, struct_name)
 
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fld_ptr")
-    let loaded = ctx.load_i64(gep, field)
     let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
+    let loaded = ctx.load_typed(field_ty, gep, field)
     ok_emit_typed(loaded, field_ty)
 }

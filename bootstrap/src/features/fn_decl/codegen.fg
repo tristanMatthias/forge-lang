@@ -2,7 +2,7 @@
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_extend, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, field_type_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, translate_param_type, ctx_with_fn, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val, call_2, vtype_is_ptr_type}
+use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, translate_param_type, ctx_with_fn, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val, call_2}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 
@@ -49,13 +49,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     if r.had_error { return err_stmt(r.error_message) }
     if !ctx.has_terminator() {
         emit_defers(body_cg, env)
-        // Cast the return value to match the function's declared return type.
-        let ret_val = if vtype_is_ptr_type(ret_ty) {
-            ctx.to_ptr(r.value, "ret_val")
-        } else {
-            ctx.to_i64(r.value, "ret_val")
-        }
-        ctx.build_ret(ret_val)
+        ctx.ret(r.value, ret_ty)
     }
     ok_stmt(VarEnv.End)
 }
@@ -371,8 +365,10 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
         .End -> err_emit("int() expects 1 arg")
         .Node(se, _) -> {
             let r = ctx.emit(env, se.node)?
+            if vtype_eq(r.ty, .Float) {
+                return ok_emit(ctx.fptosi(r.value, "f2i"))
+            }
             if !vtype_is_str(r.ty) {
-                // Already an int — pass through.
                 return r
             }
             let str_ptr = ctx.to_ptr(r.value, "atoi_arg")
@@ -395,11 +391,11 @@ export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitRes
             }
             if vtype_is_str(r.ty) {
                 let str_ptr = ctx.to_ptr(r.value, "f_parse_arg")
-                return ok_emit_typed(ctx.call("forge_float_parse", [str_ptr]), .Float)
+                let bits = ctx.call("forge_float_parse", [str_ptr])
+                return ok_emit_typed(ctx.cast_to(bits, .Float), .Float)
             }
-            // Int → float: use sitofp + bitcast
-            let dbl = forge_llvm_build_si_to_fp(ctx.builder, r.value, forge_llvm_double_type(ctx.lc), "i2f")
-            ok_emit_typed(forge_llvm_build_bitcast(ctx.builder, dbl, ctx.i64_type, "f_bits"), .Float)
+            // Int → float: sitofp then cast to current float representation
+            ok_emit_typed(ctx.cast_to(ctx.sitofp(r.value, "i2f"), .Float), .Float)
         }
     }
 }

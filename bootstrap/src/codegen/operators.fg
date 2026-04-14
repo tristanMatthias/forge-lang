@@ -136,22 +136,19 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
 }
 
 export fn coerce_to_f64(ctx: Ctx, val: ptr, ty: ValueType) -> ptr {
-    if vtype_eq(ty, .Float) {
-        return to_f64(ctx, val, "f64")
-    }
-    // Int → float: sitofp
-    forge_llvm_build_si_to_fp(ctx.builder, val, forge_llvm_double_type(ctx.lc), "i2f")
+    if vtype_eq(ty, .Float) { return ctx.to_f64(val, "coerce_f64") }
+    ctx.sitofp(val, "coerce_f64")
 }
 
 export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueType, rty: ValueType) -> EmitResult {
     let fl = coerce_to_f64(ctx, lhs, lty)
     let fr = coerce_to_f64(ctx, rhs, rty)
     match op {
-        .Add -> ok_emit_typed(f64_to_i64(ctx, forge_llvm_build_fadd(ctx.builder, fl, fr, "fadd"), "f_bits"), .Float)
-        .Sub -> ok_emit_typed(f64_to_i64(ctx, forge_llvm_build_fsub(ctx.builder, fl, fr, "fsub"), "f_bits"), .Float)
-        .Mul -> ok_emit_typed(f64_to_i64(ctx, forge_llvm_build_fmul(ctx.builder, fl, fr, "fmul"), "f_bits"), .Float)
-        .Div -> ok_emit_typed(f64_to_i64(ctx, forge_llvm_build_fdiv(ctx.builder, fl, fr, "fdiv"), "f_bits"), .Float)
-        .Mod -> ok_emit_typed(f64_to_i64(ctx, forge_llvm_build_frem(ctx.builder, fl, fr, "frem"), "f_bits"), .Float)
+        .Add -> ok_emit_typed(ctx.cast_to(forge_llvm_build_fadd(ctx.builder, fl, fr, "fadd"), .Float), .Float)
+        .Sub -> ok_emit_typed(ctx.cast_to(forge_llvm_build_fsub(ctx.builder, fl, fr, "fsub"), .Float), .Float)
+        .Mul -> ok_emit_typed(ctx.cast_to(forge_llvm_build_fmul(ctx.builder, fl, fr, "fmul"), .Float), .Float)
+        .Div -> ok_emit_typed(ctx.cast_to(forge_llvm_build_fdiv(ctx.builder, fl, fr, "fdiv"), .Float), .Float)
+        .Mod -> ok_emit_typed(ctx.cast_to(forge_llvm_build_frem(ctx.builder, fl, fr, "frem"), .Float), .Float)
         // fcmp ordered predicates: OEQ=1, OGT=2, OGE=3, OLT=4, OLE=5, ONE=6
         .Eq -> {
             let cmp = forge_llvm_build_fcmp(ctx.builder, 1, fl, fr, "feq")

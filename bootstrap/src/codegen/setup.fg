@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_length, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, env_extend}
-use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, llvm_type_for, ok_emit, ok_stmt, struct_reg_lookup, toplevel_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, toplevel_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelResult}
 use codegen.helpers.{stmts_last_expr, fill_i64_param_array}
@@ -181,16 +181,19 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_llvm_typeof", pt, [pt])
     decl(m, "forge_llvm_cast_to_type", pt, [pt, pt, pt])
     decl(m, "forge_llvm_is_void_value", i32t, [pt])
+    decl(m, "forge_llvm_type_kind", i64t, [pt])
+    decl(m, "forge_llvm_int_type_width", i64t, [pt])
     decl(m, "forge_llvm_build_call_coerce", pt, [pt, pt, pt, pt, i64t, pt])
 
     // Build the per-compile registries by walking the AST once.
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
-    let structs = declare_structs(lc, i64t, stmts, StructReg.End)
+    let dt = forge_llvm_double_type(lc)
+    let structs = declare_structs(lc, i64t, i1t, dt, pt, stmts, StructReg.End)
     let enums = declare_enums(lc, i64t, stmts, EnumReg.End)
     let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
     let top_level_vars = declare_globals(m, lc, i64t, structs, enums, stmts, TopLevelVars.End)
-    let fn_rets = declare_functions(m, lc, i64t, pt, structs, enums, stmts, FnRetTypes.End)
+    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, FnRetTypes.End)
     let fn_params = collect_fn_params(stmts, FnParamTypes.End)
 
     // Synthesize a wrapper function for the top-level non-function
@@ -217,6 +220,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         i64_type: i64t,
         i1_type: i1t,
         ptr_type: pt,
+        double_type: forge_llvm_double_type(lc),
         structs,
         enums,
         fn_rets,
@@ -277,27 +281,37 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     CodegenResult { had_error: false, error_message: "" }
 }
 
-fn declare_structs(ctx: ptr, i64t: ptr, stmts: StmtList, reg: StructReg) -> StructReg {
+fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: FieldList, structs: StructReg, idx: int) {
+    match fields {
+        .End -> {}
+        .Node(_, ty, next) -> {
+            let vt = translate_param_type(structs, EnumReg.End, ty)
+            forge_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, vt))
+            fill_struct_field_types(arr, i64t, i1t, dt, pt, next, structs, idx + 1)
+        }
+    }
+}
+
+fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, reg: StructReg) -> StructReg {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .TypeDecl(name, fields) -> {
-                    // Check for type operator: __base sentinel
                     let resolved_fields = resolve_type_operator(fields, reg)
                     let count = field_list_length(resolved_fields)
                     let field_arr = forge_llvm_type_array_new(count)
-                    fill_i64_param_array(field_arr, i64t, 0, count)
+                    fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, reg, 0)
                     let st = forge_llvm_struct_create_named(ctx, name)
                     forge_llvm_struct_set_body(st, field_arr, count, 0)
                     forge_llvm_type_array_free(field_arr)
                     StructReg.Node(name, resolved_fields, reg)
                 }
-                .Module(_, body) -> declare_structs(ctx, i64t, body, reg)
+                .Module(_, body) -> declare_structs(ctx, i64t, i1t, dt, pt, body, reg)
                 _ -> reg
             }
-            declare_structs(ctx, i64t, next, updated)
+            declare_structs(ctx, i64t, i1t, dt, pt, next, updated)
         }
     }
 }
@@ -434,13 +448,13 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 }
 
 // Fill a type array with the correct LLVM types for each parameter.
-fn fill_typed_param_array(arr: ptr, i64t: ptr, pt: ptr, structs: StructReg, enums: EnumReg, params: ParamList, idx: int) {
+fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, params: ParamList, idx: int) {
     match params {
         .End -> {}
         .Node(_, ty, next) -> {
             let vt = translate_param_type(structs, enums, ty)
-            forge_llvm_type_array_set(arr, idx, llvm_type_for(i64t, pt, vt))
-            fill_typed_param_array(arr, i64t, pt, structs, enums, next, idx + 1)
+            forge_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, vt))
+            fill_typed_param_array(arr, i64t, i1t, dt, pt, structs, enums, next, idx + 1)
         }
     }
 }
@@ -457,7 +471,7 @@ fn decl_fn_ret_type(structs: StructReg, enums: EnumReg, ret_ty: string, body: St
     }
 }
 
-fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
+fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
@@ -472,9 +486,9 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, pt: ptr, structs: StructReg, e
                         exit(1)
                     }
                     let param_arr = forge_llvm_type_array_new(arity)
-                    fill_typed_param_array(param_arr, i64t, pt, structs, enums, params, 0)
+                    fill_typed_param_array(param_arr, i64t, i1t, dt, pt, structs, enums, params, 0)
                     let ret_vt = decl_fn_ret_type(structs, enums, ret_ty, body)
-                    let ret_llvm = llvm_type_for(i64t, pt, ret_vt)
+                    let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
@@ -483,19 +497,19 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, pt: ptr, structs: StructReg, e
                 .ExternFn(name, params, ret_ty) -> {
                     let arity = param_list_length(params)
                     let param_arr = forge_llvm_type_array_new(arity)
-                    fill_typed_param_array(param_arr, i64t, pt, structs, enums, params, 0)
+                    fill_typed_param_array(param_arr, i64t, i1t, dt, pt, structs, enums, params, 0)
                     let ret_vt = translate_param_type(structs, enums, ret_ty)
-                    let ret_llvm = llvm_type_for(i64t, pt, ret_vt)
+                    let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
-                .Impl(_, methods) -> declare_functions(m, ctx, i64t, pt, structs, enums, methods, reg)
-                .Module(_, body) -> declare_functions(m, ctx, i64t, pt, structs, enums, body, reg)
+                .Impl(_, methods) -> declare_functions(m, ctx, i64t, i1t, dt, pt, structs, enums, methods, reg)
+                .Module(_, body) -> declare_functions(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }
-            declare_functions(m, ctx, i64t, pt, structs, enums, next, updated)
+            declare_functions(m, ctx, i64t, i1t, dt, pt, structs, enums, next, updated)
         }
     }
 }

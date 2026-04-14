@@ -12,7 +12,7 @@ mod indexing
 mod helpers
 
 use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, field_type_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, call_0, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, const_i64, const_i8, ctx_with_defers, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, f64_to_i64, field_type_at, fn_param_lookup, fn_ret_lookup, get_fn, loops_top, new_bb, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, struct_reg_lookup, to_f64, to_i64, to_ptr, toplevel_lookup, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx, vtype_is_ptr_type}
+use codegen.types.{closure_marker, Ctx, DeferStack, EmitResult, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, call_0, call_1, call_2, call_3, call_4, call_named_1, cg_malloc, const_i64, const_i8, ctx_with_defers, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, f64_to_i64, field_type_at, fn_param_lookup, fn_ret_lookup, get_fn, loops_top, new_bb, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, struct_reg_lookup, to_f64, to_i64, to_ptr, toplevel_lookup, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
 use features.defer_stmt.codegen.{emit_defers}
@@ -89,20 +89,14 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
                 return err_stmt_from_expr(r)
             }
             emit_defers(ctx, env)
-            // Cast return value to match function's declared return type.
             let fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
-            let ret_val = if vtype_is_ptr_type(fn_ret) {
-                ctx.to_ptr(r.value, "ret_cast")
-            } else {
-                ctx.to_i64(r.value, "ret_cast")
-            }
-            ctx.build_ret(ret_val)
+            ctx.ret(r.value, fn_ret)
             ok_stmt(env)
         }
         .ReturnEmpty -> {
             emit_defers(ctx, env)
             let fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
-            ctx.build_ret(ctx.zero_for(fn_ret))
+            ctx.ret_void(fn_ret)
             ok_stmt(env)
         }
         .Let(name, ty, initializer) -> emit_var_decl(ctx, env, name, ty, initializer)
@@ -155,7 +149,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .FloatLit(text) -> {
             let str_ptr = ctx.global_str(text, ".float_str")
             let bits = call_1(ctx, get_fn(ctx, "forge_float_parse"), str_ptr, "float_bits")
-            ok_emit_typed(bits, .Float)
+            ok_emit_typed(ctx.cast_to(bits, .Float), .Float)
         }
         .Bool(text) -> {
             if text == "true" {

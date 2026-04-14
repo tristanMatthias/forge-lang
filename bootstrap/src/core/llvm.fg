@@ -115,6 +115,8 @@ extern fn forge_llvm_is_ptr_value(val: ptr) -> int
 extern fn forge_llvm_typeof(val: ptr) -> ptr
 extern fn forge_llvm_cast_to_type(b: ptr, val: ptr, expected: ptr) -> ptr
 extern fn forge_llvm_is_void_value(val: ptr) -> int
+extern fn forge_llvm_type_kind(ty: ptr) -> int
+extern fn forge_llvm_int_type_width(ty: ptr) -> int
 
 // ── Type-coercing call ──
 extern fn forge_llvm_build_call_coerce(b: ptr, fn_type: ptr, fn_val: ptr, args: ptr, count: int, name: string) -> ptr

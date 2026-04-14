@@ -424,22 +424,64 @@ int forge_llvm_is_void_value(LLVMValueRef val) {
     return LLVMGetTypeKind(LLVMTypeOf(val)) == LLVMVoidTypeKind ? 1 : 0;
 }
 
-// Cast a value to match an expected type (ptr↔i64).
-// If val is ptr but expected is i64: ptrtoint
-// If val is i64 but expected is ptr: inttoptr
-// Otherwise: return val unchanged
+// Cast a value to match an expected type. Handles all combinations:
+//   ptr ↔ integer: ptrtoint / inttoptr
+//   integer ↔ integer (different widths): zext / trunc
+//   double ↔ i64: bitcast (bit reinterpretation)
+//   smaller int → double: sitofp
+//   double → smaller int: fptosi
+// Returns val unchanged if types already match.
 LLVMValueRef forge_llvm_cast_to_type(LLVMBuilderRef b, LLVMValueRef val, LLVMTypeRef expected) {
     LLVMTypeRef actual = LLVMTypeOf(val);
     if (actual == expected) return val;
     LLVMTypeKind ak = LLVMGetTypeKind(actual);
     LLVMTypeKind ek = LLVMGetTypeKind(expected);
-    if (ak == LLVMPointerTypeKind && ek == LLVMIntegerTypeKind) {
-        return LLVMBuildPtrToInt(b, val, expected, "arg_cast");
+
+    // ptr → integer
+    if (ak == LLVMPointerTypeKind && ek == LLVMIntegerTypeKind)
+        return LLVMBuildPtrToInt(b, val, expected, "cast");
+    // integer → ptr
+    if (ak == LLVMIntegerTypeKind && ek == LLVMPointerTypeKind)
+        return LLVMBuildIntToPtr(b, val, expected, "cast");
+    // integer → integer (i1↔i64, i32↔i64, etc.)
+    if (ak == LLVMIntegerTypeKind && ek == LLVMIntegerTypeKind) {
+        unsigned aw = LLVMGetIntTypeWidth(actual);
+        unsigned ew = LLVMGetIntTypeWidth(expected);
+        if (aw < ew) return LLVMBuildZExt(b, val, expected, "cast");
+        if (aw > ew) return LLVMBuildTrunc(b, val, expected, "cast");
+        return val;
     }
-    if (ak == LLVMIntegerTypeKind && ek == LLVMPointerTypeKind) {
-        return LLVMBuildIntToPtr(b, val, expected, "arg_cast");
+    // double ↔ i64: bitcast (preserves bits)
+    if (ak == LLVMDoubleTypeKind && ek == LLVMIntegerTypeKind) {
+        unsigned ew = LLVMGetIntTypeWidth(expected);
+        if (ew == 64) return LLVMBuildBitCast(b, val, expected, "cast");
+        return LLVMBuildFPToSI(b, val, expected, "cast");
+    }
+    if (ak == LLVMIntegerTypeKind && ek == LLVMDoubleTypeKind) {
+        unsigned aw = LLVMGetIntTypeWidth(actual);
+        if (aw == 64) return LLVMBuildBitCast(b, val, expected, "cast");
+        return LLVMBuildSIToFP(b, val, expected, "cast");
+    }
+    // ptr ↔ double: chain through i64
+    if (ak == LLVMPointerTypeKind && ek == LLVMDoubleTypeKind) {
+        LLVMContextRef ctx = LLVMGetTypeContext(expected);
+        LLVMValueRef i = LLVMBuildPtrToInt(b, val, LLVMInt64TypeInContext(ctx), "cast");
+        return LLVMBuildBitCast(b, i, expected, "cast");
+    }
+    if (ak == LLVMDoubleTypeKind && ek == LLVMPointerTypeKind) {
+        LLVMContextRef ctx = LLVMGetTypeContext(actual);
+        LLVMValueRef i = LLVMBuildBitCast(b, val, LLVMInt64TypeInContext(ctx), "cast");
+        return LLVMBuildIntToPtr(b, i, expected, "cast");
     }
     return val;
+}
+
+// Type introspection helpers for the Forge codegen.
+int64_t forge_llvm_type_kind(LLVMTypeRef ty) {
+    return (int64_t)LLVMGetTypeKind(ty);
+}
+int64_t forge_llvm_int_type_width(LLVMTypeRef ty) {
+    return (int64_t)LLVMGetIntTypeWidth(ty);
 }
 
 // Build a call with automatic argument type coercion.
@@ -469,13 +511,14 @@ LLVMValueRef forge_llvm_build_call_coerce(LLVMBuilderRef b,
         LLVMContextRef ctx = LLVMGetModuleContext(LLVMGetGlobalParent(fn_val));
         return LLVMConstInt(LLVMInt64TypeInContext(ctx), 0, 0);
     }
-    // If the return type is a smaller integer (i32, i8), sign-extend to i64
-    // so the value pipeline doesn't encounter mixed integer widths.
+    // If the return type is a smaller integer (i32, i8, i1), widen to i64.
+    // i1 uses zext (bool is unsigned), others use sext (C int is signed).
     if (LLVMGetTypeKind(ret_type) == LLVMIntegerTypeKind) {
         unsigned width = LLVMGetIntTypeWidth(ret_type);
         if (width < 64) {
             LLVMContextRef ctx = LLVMGetModuleContext(LLVMGetGlobalParent(fn_val));
             LLVMTypeRef i64_type = LLVMInt64TypeInContext(ctx);
+            if (width == 1) return LLVMBuildZExt(b, result, i64_type, "widen");
             return LLVMBuildSExt(b, result, i64_type, "widen");
         }
     }

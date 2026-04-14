@@ -10,7 +10,7 @@
 // operators compile to i64 null-check or enum-tag-check branches.
 
 use core.ast.{Expr, VarEnv, env_lookup, field_index_of, field_type_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, fn_ret_lookup, vtype_is_ptr_type}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, translate_param_type, fn_ret_lookup}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
     let l = ctx.emit(env, left)
@@ -114,8 +114,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
 
         ctx.position(err_bb)
         let try_fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
-        let try_ret_val = if vtype_is_ptr_type(try_fn_ret) { ctx.to_ptr(r.value, "try_ret") } else { ctx.to_i64(r.value, "try_ret") }
-        ctx.build_ret(try_ret_val)
+        ctx.ret(r.value, try_fn_ret)
 
         ctx.position(ok_bb)
         let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_pay_slot")
@@ -145,8 +144,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
 
                 ctx.position(ret_bb)
                 let s_fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
-                let s_ret_val = if vtype_is_ptr_type(s_fn_ret) { ctx.to_ptr(r.value, "try_ret") } else { ctx.to_i64(r.value, "try_ret") }
-                ctx.build_ret(s_ret_val)
+                ctx.ret(r.value, s_fn_ret)
 
                 ctx.position(cont_bb)
                 return EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
@@ -167,7 +165,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
 
     ctx.position(ret_bb)
     let fn_ret = fn_ret_lookup(ctx.fn_rets, ctx.current_fn_name)
-    ctx.build_ret(ctx.zero_for(fn_ret))
+    ctx.ret_void(fn_ret)
 
     ctx.position(cont_bb)
     EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
