@@ -17,7 +17,7 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
     // List indexing: list[i] → forge_array_get(list, i)
     if vtype_is_list(r.ty) {
         let i_r = ctx.emit(env, idx)?
-        let elem = call_2(ctx, ctx.get_fn("forge_array_get"), r.value, i_r.value, "list_idx")
+        let elem = ctx.call("forge_array_get", [r.value, i_r.value])
         return ok_emit_typed(elem, vtype_list_elem(r.ty))
     }
     if !vtype_is_str(r.ty) {
@@ -47,7 +47,7 @@ export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -
     let obj_r = ctx.emit(env, obj)?
     let start_r = ctx.emit(env, start)?
     let end_r = ctx.emit(env, end)?
-    let result = call_3(ctx, ctx.get_fn("forge_array_slice"), obj_r.value, start_r.value, end_r.value, "slice")
+    let result = ctx.call("forge_array_slice", [obj_r.value, start_r.value, end_r.value])
     ok_emit_typed(result, obj_r.ty)
 }
 

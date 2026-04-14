@@ -61,7 +61,7 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
             let dz_file = ctx.global_str(ctx.source_file, "dz_file")
             let dz_flen = ctx.i64(ctx.source_file.length)
             let dz_line = ctx.i64(ctx.source_line)
-            call_4(ctx, ctx.get_fn("forge_div_by_zero_trap"), is_zero, dz_file, dz_flen, dz_line, "")
+            ctx.call("forge_div_by_zero_trap", [is_zero, dz_file, dz_flen, dz_line])
             ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div"))
         }
         .Mod -> {
@@ -71,7 +71,7 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
             let mz_file = ctx.global_str(ctx.source_file, "mz_file")
             let mz_flen = ctx.i64(ctx.source_file.length)
             let mz_line = ctx.i64(ctx.source_line)
-            call_4(ctx, ctx.get_fn("forge_div_by_zero_trap"), is_zero, mz_file, mz_flen, mz_line, "")
+            ctx.call("forge_div_by_zero_trap", [is_zero, mz_file, mz_flen, mz_line])
             ok_emit(forge_llvm_build_srem(ctx.builder, lhs, rhs, "mod"))
         }
         .BitAnd -> ok_emit(forge_llvm_build_and(ctx.builder, lhs, rhs, "band"))

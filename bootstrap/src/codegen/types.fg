@@ -551,6 +551,46 @@ impl Ctx {
     fn get_fn(self, name: string) -> ptr { forge_llvm_get_named_function(self.module, name) }
     fn malloc(self, size: ptr) -> ptr { call_named_1(self, "forge_bump_alloc", size, "buf") }
 
+    // Call any C function by name with a list of args.
+    fn call(self, name: string, args: [ptr]) -> ptr {
+        let fn_val = forge_llvm_get_named_function(self.module, name)
+        let ft = forge_llvm_fn_type_of(fn_val)
+        let count = args.length
+        let arr = forge_llvm_value_array_new(count)
+        for i in 0..count {
+            forge_llvm_value_array_set(arr, i, args[i])
+        }
+        let result = forge_llvm_build_call(self.builder, ft, fn_val, arr, count, "")
+        forge_llvm_value_array_free(arr)
+        result
+    }
+
+    // Emit a null-deref trap (branchless — C function checks internally).
+    fn null_check(self, val: ptr, field_name: string, type_name: string) {
+        let is_null_i1 = self.icmp(32, val, forge_llvm_const_int(self.i64_type, 0, 0), "null_chk")
+        let is_null = self.zext(is_null_i1, self.i64_type, "null_ext")
+        let f = self.global_str(field_name, "fld_name")
+        let fl = self.i64(field_name.length)
+        let t = self.global_str(type_name, "sty_name")
+        let tl = self.i64(type_name.length)
+        let sf = self.global_str(self.source_file, "src_file")
+        let sfl = self.i64(self.source_file.length)
+        let sl = self.i64(self.source_line)
+        let fn_val = forge_llvm_get_named_function(self.module, "forge_null_deref_trap")
+        let ft = forge_llvm_fn_type_of(fn_val)
+        let a = forge_llvm_value_array_new(8)
+        forge_llvm_value_array_set(a, 0, f)
+        forge_llvm_value_array_set(a, 1, fl)
+        forge_llvm_value_array_set(a, 2, t)
+        forge_llvm_value_array_set(a, 3, tl)
+        forge_llvm_value_array_set(a, 4, is_null)
+        forge_llvm_value_array_set(a, 5, sf)
+        forge_llvm_value_array_set(a, 6, sfl)
+        forge_llvm_value_array_set(a, 7, sl)
+        forge_llvm_build_call(self.builder, ft, fn_val, a, 8, "")
+        forge_llvm_value_array_free(a)
+    }
+
     // ── Level 1: raw LLVM (eliminate ctx.builder repetition) ──
 
     fn position(self, bb: ptr) { forge_llvm_position_at_end(self.builder, bb) }

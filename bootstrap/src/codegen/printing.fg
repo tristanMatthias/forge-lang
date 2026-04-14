@@ -14,13 +14,13 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             let str_val = match {
                 vtype_is_str(r.ty) -> r.value
                 vtype_eq(r.ty, .Float) -> {
-                    let sp = call_1(ctx, ctx.get_fn("forge_float_to_string"), r.value, "ef2s")
+                    let sp = ctx.call("forge_float_to_string", [r.value])
                     ctx.to_i64(sp, "ef2s_i64")
                 }
                 _ -> {
                     let buf = ctx.malloc(ctx.i64(32))
                     let fmt = ctx.global_str("%lld", ".eprint_fmt")
-                    call_4(ctx, ctx.get_fn("snprintf"), buf, ctx.i64(32), fmt, r.value, "")
+                    ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
                     ctx.to_i64(buf, "eprint_str")
                 }
             }
@@ -56,7 +56,7 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
                 _ -> {
                     let r = ctx.emit(env, se.node)?
                     if vtype_eq(r.ty, .Float) {
-                        let sp = call_1(ctx, ctx.get_fn("forge_float_to_string"), r.value, "f2s")
+                        let sp = ctx.call("forge_float_to_string", [r.value])
                         ctx.to_i64(sp, "f2s_i64")
                     } else {
                         r.value
@@ -69,7 +69,7 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
         }
     }
     let str_ptr2 = ctx.to_ptr(str_i64, "str_ptr")
-    call_1(ctx, ctx.get_fn("puts"), str_ptr2, "")
+    ctx.call("puts", [str_ptr2])
     ok_emit(ctx.i64(0))
 }
 

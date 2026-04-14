@@ -40,7 +40,7 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
                     let str_ptr = ctx.to_ptr(str_i64, "rep_self")
                     let from_ptr = ctx.to_ptr(from_r.value, "rep_from")
                     let to_ptr_v = ctx.to_ptr(to_r.value, "rep_to")
-                    let result = call_3(ctx, ctx.get_fn("forge_str_replace"), str_ptr, from_ptr, to_ptr_v, "replaced")
+                    let result = ctx.call("forge_str_replace", [str_ptr, from_ptr, to_ptr_v])
                     ok_emit_str(ctx.to_i64(result, "rep_i64"))
                 }
                 _ -> err_emit("replace expects 2 arguments")
@@ -78,7 +78,7 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     let src_int = ctx.to_i64(str_ptr, "sub_src_int")
     let off_int = ctx.build_add(src_int, start_r.value, "sub_off_int")
     let off_ptr = ctx.to_ptr(off_int, "sub_off")
-    call_3(ctx, ctx.get_fn("memcpy"), buf, off_ptr, len, "")
+    ctx.call("memcpy", [buf, off_ptr, len])
     // Null-terminate at buf[len].
     let buf_int2 = ctx.to_i64(buf, "sub_buf_int")
     let nul_int = ctx.build_add(buf_int2, len, "sub_nul_int")
@@ -98,7 +98,7 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitR
     // comparison.
     let lhs_ptr = ctx.to_ptr(lhs_i64, "scmp_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "scmp_r")
-    let result32 = call_2(ctx, ctx.get_fn("strcmp"), lhs_ptr, rhs_ptr, "strcmp_call")
+    let result32 = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
     let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
     let zero64 = ctx.i64(0)
     let cmp = ctx.icmp(pred, result64, zero64, "scmp_cmp")
@@ -108,7 +108,7 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitR
 export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
-    let result32 = call_2(ctx, ctx.get_fn("strcmp"), lhs_ptr, rhs_ptr, "strcmp_call")
+    let result32 = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
     // Sign-extend strcmp's i32 to i64 so the icmp operands match.
     let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
     let zero64 = ctx.i64(0)

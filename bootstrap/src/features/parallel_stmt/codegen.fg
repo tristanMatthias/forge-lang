@@ -20,7 +20,7 @@ fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
     let r = collect_parallel_closures(ctx, env, stmts, closures, push_fn)?
 
     // Run all in parallel
-    call_1(ctx, ctx.get_fn("forge_parallel_run"), closures, "")
+    ctx.call("forge_parallel_run", [closures])
     ok_stmt(env)
 }
 

@@ -37,7 +37,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                 let tag_i64 = tag_val
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
                 let mu_line = ctx.i64(ctx.source_line)
-                call_4(ctx, ctx.get_fn("forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
+                ctx.call("forge_match_unreachable", [fn_name_str, tag_i64, mu_file, mu_line])
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ok_emit(null_ptr_val())
@@ -99,7 +99,7 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
                 let tag_i64 = tag_val
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
                 let mu_line = ctx.i64(ctx.source_line)
-                call_4(ctx, ctx.get_fn("forge_match_unreachable"), fn_name_str, tag_i64, mu_file, mu_line, "")
+                ctx.call("forge_match_unreachable", [fn_name_str, tag_i64, mu_file, mu_line])
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ok_stmt(env)
@@ -368,7 +368,7 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
         .LitString(val) -> {
             let subj_ptr = ctx.to_ptr(subj.value, "lit_str_ptr")
             let lit_ptr = ctx.global_str(val, ".lit_str")
-            let cmp_result = call_2(ctx, ctx.get_fn("strcmp"), subj_ptr, lit_ptr, "strcmp_r")
+            let cmp_result = ctx.call("strcmp", [subj_ptr, lit_ptr])
             // Sign-extend i32 strcmp result to i64 for type-safe icmp (LLVM 21 requires matching types)
             let cmp_ext = forge_llvm_build_sext(ctx.builder, cmp_result, ctx.i64_type, "strcmp_sext")
             ctx.icmp(32, cmp_ext, ctx.i64(0), "str_eq")
@@ -376,7 +376,7 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
         .LitFloat(val) -> {
             // Parse the float literal string → i64 bits, then compare as f64
             let lit_str = ctx.global_str(val, ".flit_str")
-            let lit_bits = call_1(ctx, ctx.get_fn("forge_float_parse"), lit_str, "flit_bits")
+            let lit_bits = ctx.call("forge_float_parse", [lit_str])
             let subj_f64 = to_f64(ctx, subj.value, "subj_f64")
             let lit_f64 = forge_llvm_build_bitcast(ctx.builder, lit_bits, forge_llvm_double_type(ctx.lc), "lit_f64")
             // OEQ = 1 (ordered equal)
@@ -413,7 +413,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                 let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
                 let mu_line = ctx.i64(ctx.source_line)
-                call_4(ctx, ctx.get_fn("forge_match_unreachable"), fn_name_str, ctx.i64(-1), mu_file, mu_line, "")
+                ctx.call("forge_match_unreachable", [fn_name_str, ctx.i64(-1), mu_file, mu_line])
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ctx.position(merge_bb)
@@ -473,7 +473,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                 let fn_name_str = ctx.global_str(ctx.current_fn_name, ".match_fn")
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
                 let mu_line = ctx.i64(ctx.source_line)
-                call_4(ctx, ctx.get_fn("forge_match_unreachable"), fn_name_str, ctx.i64(-1), mu_file, mu_line, "")
+                ctx.call("forge_match_unreachable", [fn_name_str, ctx.i64(-1), mu_file, mu_line])
                 forge_llvm_build_unreachable(ctx.builder)
             }
             ctx.position(merge_bb)

@@ -25,8 +25,8 @@ export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string
 
 export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> EmitResult {
     let obj_ptr = ctx.to_ptr(obj_val, "tobj_ptr")
-    let concrete = call_1(ctx, ctx.get_fn("forge_trait_object_value"), obj_ptr, "concrete")
-    let vtable = call_1(ctx, ctx.get_fn("forge_trait_object_vtable"), obj_ptr, "vtable")
+    let concrete = ctx.call("forge_trait_object_value", [obj_ptr])
+    let vtable = ctx.call("forge_trait_object_vtable", [obj_ptr])
     let methods = trait_decl_lookup(ctx.trait_decls, trait_name)
     let idx = trait_method_idx(methods, method, 0)
     if idx < 0 {
@@ -35,14 +35,14 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
     // Determine return type from trait declaration
     let ret_ty_str = trait_method_ret_ty(methods, method)
     let ret_ty = translate_type_ctx(ctx, ret_ty_str)
-    let fn_closure = call_2(ctx, ctx.get_fn("forge_array_get"), vtable, ctx.i64(idx), "vmethod")
+    let fn_closure = ctx.call("forge_array_get", [vtable, ctx.i64(idx)])
     let user_count = expr_list_length(args)
     if user_count == 0 {
-        return ok_emit_typed(call_2(ctx, ctx.get_fn("forge_closure_call_1"), fn_closure, concrete, "tcall"), ret_ty)
+        return ok_emit_typed(ctx.call("forge_closure_call_1", [fn_closure, concrete]), ret_ty)
     }
     // 1-arg case
     let first_arg = emit_first_arg(ctx, env, args)?
-    ok_emit_typed(call_3(ctx, ctx.get_fn("forge_closure_call_2"), fn_closure, concrete, first_arg.value, "tcall"), ret_ty)
+    ok_emit_typed(ctx.call("forge_closure_call_2", [fn_closure, concrete, first_arg.value]), ret_ty)
 }
 
 
@@ -60,7 +60,7 @@ export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name:
     let arr_fn = ctx.get_fn("forge_array_new")
     let vtable = call_0(ctx, arr_fn, "vtable")
     push_vtable_entries_call(ctx, vtable, methods, concrete_name)
-    let obj_val = call_2(ctx, ctx.get_fn("forge_trait_object_new"), value, vtable, "tobj")
+    let obj_val = ctx.call("forge_trait_object_new", [value, vtable])
     ctx.to_i64(obj_val, "tobj_i64")
 }
 

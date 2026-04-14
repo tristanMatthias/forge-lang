@@ -66,7 +66,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     if coll_r.had_error { return err_stmt_from_expr(coll_r) }
 
     // Get length
-    let len_val = call_1(ctx, ctx.get_fn("forge_array_len"), coll_r.value, "forin_len")
+    let len_val = ctx.call("forge_array_len", [coll_r.value])
     let len_alloca = ctx.alloca_i64("forin_len")
     ctx.store(len_val, len_alloca)
 
@@ -94,7 +94,7 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
 
     // Body: load element, then execute body
     ctx.position(body_bb)
-    let elem = call_2(ctx, ctx.get_fn("forge_array_get"), coll_r.value, cur, "forin_elem")
+    let elem = ctx.call("forge_array_get", [coll_r.value, cur])
     ctx.store(elem, elem_alloca)
 
     let body_ctx = ctx_with_loops(ctx, .Frame(incr_bb, exit_bb, ctx.loops))

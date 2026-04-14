@@ -176,7 +176,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         match method {
             "length" -> {
                 let str_ptr = ctx.to_ptr(r.value, "len_arg")
-                return ok_emit(call_1(ctx, ctx.get_fn("strlen"), str_ptr, "strlen_call"))
+                return ok_emit(ctx.call("strlen", [str_ptr]))
             }
             "substring" -> return emit_substring(ctx, env, r.value, args)
             "contains" or "starts_with" or "ends_with" or "index_of" -> {
@@ -188,21 +188,21 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
             "replace" -> return emit_str_replace(ctx, env, r.value, args)
             "trim" -> {
                 let str_ptr = ctx.to_ptr(r.value, "str_self")
-                return ok_emit_str(ctx.to_i64(call_1(ctx, ctx.get_fn("forge_str_trim"), str_ptr, "trimmed"), "trim_i64"))
+                return ok_emit_str(ctx.to_i64(ctx.call("forge_str_trim", [str_ptr]), "trim_i64"))
             }
             "to_upper" or "upper" -> {
                 let str_ptr = ctx.to_ptr(r.value, "str_self")
-                return ok_emit_str(ctx.to_i64(call_1(ctx, ctx.get_fn("forge_str_to_upper"), str_ptr, "upper"), "upper_i64"))
+                return ok_emit_str(ctx.to_i64(ctx.call("forge_str_to_upper", [str_ptr]), "upper_i64"))
             }
             "to_lower" or "lower" -> {
                 let str_ptr = ctx.to_ptr(r.value, "str_self")
-                return ok_emit_str(ctx.to_i64(call_1(ctx, ctx.get_fn("forge_str_to_lower"), str_ptr, "lower"), "lower_i64"))
+                return ok_emit_str(ctx.to_i64(ctx.call("forge_str_to_lower", [str_ptr]), "lower_i64"))
             }
             "split" -> {
                 let arg_r = emit_single_arg(ctx, env, args)?
                 let str_ptr = ctx.to_ptr(r.value, "str_self")
                 let sep_ptr = ctx.to_ptr(arg_r.value, "sep_arg")
-                let result = call_2(ctx, ctx.get_fn("forge_str_split"), str_ptr, sep_ptr, "split_result")
+                let result = ctx.call("forge_str_split", [str_ptr, sep_ptr])
                 return ok_emit_typed(result, .List(.Str))
             }
             "char_code" -> {
@@ -261,29 +261,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         }
         return err_emit("undefined method `${owner}.${method}`")
     }
-    // Runtime null-pointer dereference check on method receiver (branchless).
-    let mzero = ctx.i64(0)
-    let m_null = ctx.icmp_eq(r.value, mzero, "null_meth_chk")
-    let m_fld_str = ctx.global_str(method, "meth_name")
-    let m_fld_len = ctx.i64(method.length)
-    let m_ty_str = ctx.global_str(owner, "mowner_name")
-    let m_ty_len = ctx.i64(owner.length)
-    let m_file_str = ctx.global_str(ctx.source_file, "msrc_file")
-    let m_file_len = ctx.i64(ctx.source_file.length)
-    let m_src_line = ctx.i64(ctx.source_line)
-    let m_trap_fn = ctx.get_fn("forge_null_deref_trap")
-    let m_trap_ft = forge_llvm_fn_type_of(m_trap_fn)
-    let m_trap_args = forge_llvm_value_array_new(8)
-    forge_llvm_value_array_set(m_trap_args, 0, m_fld_str)
-    forge_llvm_value_array_set(m_trap_args, 1, m_fld_len)
-    forge_llvm_value_array_set(m_trap_args, 2, m_ty_str)
-    forge_llvm_value_array_set(m_trap_args, 3, m_ty_len)
-    forge_llvm_value_array_set(m_trap_args, 4, m_null)
-    forge_llvm_value_array_set(m_trap_args, 5, m_file_str)
-    forge_llvm_value_array_set(m_trap_args, 6, m_file_len)
-    forge_llvm_value_array_set(m_trap_args, 7, m_src_line)
-    forge_llvm_build_call(ctx.builder, m_trap_ft, m_trap_fn, m_trap_args, 8, "")
-    forge_llvm_value_array_free(m_trap_args)
+    ctx.null_check(r.value, method, owner)
 
     // Build arg array with self prepended.
     let extra_count = expr_list_length(args)
@@ -380,13 +358,13 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
             }
             // Float → string via forge_float_to_string(i64_bits) → ptr
             if vtype_eq(r.ty, .Float) {
-                let str_ptr = call_1(ctx, ctx.get_fn("forge_float_to_string"), r.value, "f2s")
+                let str_ptr = ctx.call("forge_float_to_string", [r.value])
                 return ok_emit_str(ctx.to_i64(str_ptr, "f2s_i64"))
             }
             // Int → string via snprintf into a 32-byte malloc'd buffer.
             let buf = ctx.malloc(ctx.i64(32))
             let fmt = ctx.global_str("%lld", ".i2s_fmt")
-            call_4(ctx, ctx.get_fn("snprintf"), buf, ctx.i64(32), fmt, r.value, "")
+            ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
             let result_i64 = ctx.to_i64(buf, "i2s_result")
             ok_emit_str(result_i64)
         }
@@ -405,7 +383,7 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
                 return r
             }
             let str_ptr = ctx.to_ptr(r.value, "atoi_arg")
-            let result32 = call_1(ctx, ctx.get_fn("atoi"), str_ptr, "atoi_call")
+            let result32 = ctx.call("atoi", [str_ptr])
             // Sign-extend i32 → i64.
             ok_emit(forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "atoi_ext"))
         }
@@ -425,7 +403,7 @@ export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitRes
             }
             if vtype_is_str(r.ty) {
                 let str_ptr = ctx.to_ptr(r.value, "f_parse_arg")
-                return ok_emit_typed(call_1(ctx, ctx.get_fn("forge_float_parse"), str_ptr, "f_bits"), .Float)
+                return ok_emit_typed(ctx.call("forge_float_parse", [str_ptr]), .Float)
             }
             // Int → float: use sitofp + bitcast
             let dbl = forge_llvm_build_si_to_fp(ctx.builder, r.value, forge_llvm_double_type(ctx.lc), "i2f")
@@ -456,7 +434,7 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
             forge_llvm_build_call(ctx.builder, fn_type, eprint_fn, arr, 1, "")
             forge_llvm_value_array_free(arr)
             // exit(1)
-            call_1(ctx, ctx.get_fn("exit"), ctx.i64(1), "")
+            ctx.call("exit", [ctx.i64(1)])
             // Unreachable — but return a value for the type system
             ok_emit(ctx.i64(0))
         }

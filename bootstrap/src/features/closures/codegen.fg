@@ -407,7 +407,7 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
     // TAG is at index 0, fn_ptr at index 1, captures start at index 2.
     let closure_ptr = ctx.to_ptr(closure_val, "closure_ptr")
     // Load fn_ptr from closure array[1] (index 0 is the TAG)
-    let get_fn_call = call_2(ctx, ctx.get_fn("forge_array_get"), closure_ptr, ctx.i64(1), "closure_fn")
+    let get_fn_call = ctx.call("forge_array_get", [closure_ptr, ctx.i64(1)])
     let fn_ptr = ctx.int_to_ptr(get_fn_call, ctx.ptr_type, "fn_ptr")
 
     let user_arg_count = expr_list_length(args)
@@ -435,7 +435,7 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
 fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: int, count: int, i: int) {
     if i >= count { return }
     // Captures start at array index 2 (after TAG and fn_ptr)
-    let cap_val = call_2(ctx, ctx.get_fn("forge_array_get"), closure_val, ctx.i64(i + 2), "cap")
+    let cap_val = ctx.call("forge_array_get", [closure_val, ctx.i64(i + 2)])
     forge_llvm_value_array_set(val_arr, start_idx + i, cap_val)
     fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
 }
@@ -462,13 +462,13 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     // args (user + captures).
     let user_arg_count = expr_list_length(args)
     if user_arg_count == 0 {
-        return ok_emit(call_1(ctx, ctx.get_fn("forge_closure_call_0"), fn_i64, "ccall"))
+        return ok_emit(ctx.call("forge_closure_call_0", [fn_i64]))
     }
     if user_arg_count == 1 {
         match args {
             .Node(se, _) -> {
                 let a0 = ctx.emit(env, se.node)?
-                return ok_emit(call_2(ctx, ctx.get_fn("forge_closure_call_1"), fn_i64, a0.value, "ccall"))
+                return ok_emit(ctx.call("forge_closure_call_1", [fn_i64, a0.value]))
             }
             _ -> { return err_emit("expected 1 arg") }
         }
@@ -480,7 +480,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
                 match rest {
                     .Node(se1, _) -> {
                         let a1 = ctx.emit(env, se1.node)?
-                        return ok_emit(call_3(ctx, ctx.get_fn("forge_closure_call_2"), fn_i64, a0.value, a1.value, "ccall"))
+                        return ok_emit(ctx.call("forge_closure_call_2", [fn_i64, a0.value, a1.value]))
                     }
                     _ -> { return err_emit("expected 2 args") }
                 }
@@ -498,7 +498,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
                         match rest1 {
                             .Node(se2, _) -> {
                                 let a2 = ctx.emit(env, se2.node)?
-                                return ok_emit(call_4(ctx, ctx.get_fn("forge_closure_call_3"), fn_i64, a0.value, a1.value, a2.value, "ccall"))
+                                return ok_emit(ctx.call("forge_closure_call_3", [fn_i64, a0.value, a1.value, a2.value]))
                             }
                             _ -> { return err_emit("expected 3 args") }
                         }

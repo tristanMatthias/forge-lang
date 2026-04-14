@@ -75,13 +75,13 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     // String/List/Map .length
     if vtype_is_str(r.ty) && field == "length" {
         let str_ptr = ctx.to_ptr(r.value, "len_arg")
-        return ok_emit(call_1(ctx, ctx.get_fn("strlen"), str_ptr, "strlen_call"))
+        return ok_emit(ctx.call("strlen", [str_ptr]))
     }
     if vtype_is_list(r.ty) && field == "length" {
-        return ok_emit(call_1(ctx, ctx.get_fn("forge_array_len"), r.value, "list_len"))
+        return ok_emit(ctx.call("forge_array_len", [r.value]))
     }
     if vtype_is_map(r.ty) && field == "length" {
-        return ok_emit(call_1(ctx, ctx.get_fn("forge_map_len_cstr"), r.value, "map_len"))
+        return ok_emit(ctx.call("forge_map_len_cstr", [r.value]))
     }
 
     let struct_name = vtype_struct_name(r.ty)
@@ -95,29 +95,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     let st_ty = ctx.get_type(struct_name)
     let obj_ptr = ctx.to_ptr(r.value, "obj_ptr")
 
-    // Null deref check
-    let zero = ctx.i64(0)
-    let is_null = ctx.icmp_eq(r.value, zero, "null_fld_chk")
-    let fld_str = ctx.global_str(field, "fld_name")
-    let fld_len = ctx.i64(field.length)
-    let ty_str = ctx.global_str(struct_name, "sty_name")
-    let ty_len = ctx.i64(struct_name.length)
-    let file_str = ctx.global_str(ctx.source_file, "src_file")
-    let file_len = ctx.i64(ctx.source_file.length)
-    let src_line = ctx.i64(ctx.source_line)
-    let trap_fn = ctx.get_fn("forge_null_deref_trap")
-    let trap_ft = forge_llvm_fn_type_of(trap_fn)
-    let trap_args = forge_llvm_value_array_new(8)
-    forge_llvm_value_array_set(trap_args, 0, fld_str)
-    forge_llvm_value_array_set(trap_args, 1, fld_len)
-    forge_llvm_value_array_set(trap_args, 2, ty_str)
-    forge_llvm_value_array_set(trap_args, 3, ty_len)
-    forge_llvm_value_array_set(trap_args, 4, is_null)
-    forge_llvm_value_array_set(trap_args, 5, file_str)
-    forge_llvm_value_array_set(trap_args, 6, file_len)
-    forge_llvm_value_array_set(trap_args, 7, src_line)
-    forge_llvm_build_call(ctx.builder, trap_ft, trap_fn, trap_args, 8, "")
-    forge_llvm_value_array_free(trap_args)
+    ctx.null_check(r.value, field, struct_name)
 
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fld_ptr")
     let loaded = ctx.load_i64(gep, field)

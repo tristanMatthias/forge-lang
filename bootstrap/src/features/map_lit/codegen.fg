@@ -36,15 +36,15 @@ export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: stri
     match method {
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(call_2(ctx, ctx.get_fn("forge_map_get_cstr"), map_ptr, ctx.to_ptr(arg_r.value, "map_key"), "map_get"))
+            return ok_emit(ctx.call("forge_map_get_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]))
         }
         "has" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(call_2(ctx, ctx.get_fn("forge_map_has_cstr"), map_ptr, ctx.to_ptr(arg_r.value, "map_key"), "map_has"))
+            return ok_emit(ctx.call("forge_map_has_cstr", [map_ptr, ctx.to_ptr(arg_r.value, "map_key")]))
         }
         "set" -> return emit_map_set(ctx, env, map_ptr, args)
-        "len" or "length" -> return ok_emit(call_1(ctx, ctx.get_fn("forge_map_len_cstr"), map_ptr, "map_len"))
-        "keys" -> return ok_emit_typed(call_1(ctx, ctx.get_fn("forge_map_keys_cstr"), map_ptr, "map_keys"), .List(.Str))
+        "len" or "length" -> return ok_emit(ctx.call("forge_map_len_cstr", [map_ptr]))
+        "keys" -> return ok_emit_typed(ctx.call("forge_map_keys_cstr", [map_ptr]), .List(.Str))
         _ -> err_emit("map method `${method}` not implemented")
     }
 }
@@ -57,7 +57,7 @@ fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
                     let key_r = ctx.emit(env, se_key.node)?
                     let val_r = ctx.emit(env, se_val.node)?
                     let key_ptr = ctx.to_ptr(key_r.value, "set_key")
-                    call_3(ctx, ctx.get_fn("forge_map_set_cstr"), map, key_ptr, val_r.value, "")
+                    ctx.call("forge_map_set_cstr", [map, key_ptr, val_r.value])
                     ok_emit(map)
                 }
                 _ -> err_emit("map.set expects 2 arguments: key and value")
