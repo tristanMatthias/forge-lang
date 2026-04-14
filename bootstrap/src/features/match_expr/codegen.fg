@@ -19,8 +19,7 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
     if !lookup.found { return err_emit("unknown enum `${enum_name}`") }
     let st_ty = ctx.get_type(enum_name)
     let subj_ptr = to_ptr(ctx, r.value, "match_subj")
-    let tag_gep = ctx.gep(st_ty, subj_ptr, 0, "tag_ptr")
-    let tag_val = ctx.load_i64(tag_gep, "tag")
+    let tag_val = ctx.enum_tag(r.value, enum_name)
     let result_slot = ctx.alloca_i64("match_result")
     ctx.store(const_i64(ctx, 0), result_slot)
     let merge_bb = new_bb(ctx, "match_end")
@@ -85,8 +84,7 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
     if !lookup.found { return err_stmt("codegen error: unknown enum `${enum_name}`") }
     let st_ty = ctx.get_type(enum_name)
     let subj_ptr = to_ptr(ctx, r.value, "match_subj")
-    let tag_gep = ctx.gep(st_ty, subj_ptr, 0, "tag_ptr")
-    let tag_val = ctx.load_i64(tag_gep, "tag")
+    let tag_val = ctx.enum_tag(r.value, enum_name)
     let merge_bb = new_bb(ctx, "match_end")
     let arm_result = emit_match_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)?
     ctx.position(merge_bb)

@@ -600,12 +600,12 @@ impl Ctx {
 
     // ── Level 3: semantic operations (4-6 lines → 1) ──
 
-    // Load the tag (i8) from an enum value
+    // Load the tag (i64 hash) from an enum value
     fn enum_tag(self, val: ptr, type_name: string) -> ptr {
         let obj = forge_llvm_build_int_to_ptr(self.builder, val, self.ptr_type, "tag_obj")
         let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
         let tag_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, 0, "tag_ptr")
-        forge_llvm_build_load(self.builder, forge_llvm_int8_type(self.lc), tag_gep, "tag")
+        forge_llvm_build_load(self.builder, self.i64_type, tag_gep, "tag")
     }
 
     // Load the payload pointer from an enum value

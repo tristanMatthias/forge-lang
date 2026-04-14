@@ -97,8 +97,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
 
     // Null deref check
     let zero = const_i64(ctx, 0)
-    let is_null_i1 = ctx.icmp(32, r.value, zero, "null_fld_chk")
-    let is_null = ctx.zext(is_null_i1, ctx.i64_type, "null_fld_ext")
+    let is_null = ctx.icmp_eq(r.value, zero, "null_fld_chk")
     let fld_str = ctx.global_str(field, "fld_name")
     let fld_len = const_i64(ctx, field.length)
     let ty_str = ctx.global_str(struct_name, "sty_name")

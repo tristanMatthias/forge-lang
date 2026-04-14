@@ -263,8 +263,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     }
     // Runtime null-pointer dereference check on method receiver (branchless).
     let mzero = const_i64(ctx, 0)
-    let m_null_i1 = ctx.icmp(32, r.value, mzero, "null_meth_chk")
-    let m_null = ctx.zext(m_null_i1, ctx.i64_type, "null_meth_ext")
+    let m_null = ctx.icmp_eq(r.value, mzero, "null_meth_chk")
     let m_fld_str = ctx.global_str(method, "meth_name")
     let m_fld_len = const_i64(ctx, method.length)
     let m_ty_str = ctx.global_str(owner, "mowner_name")
