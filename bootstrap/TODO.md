@@ -11,63 +11,31 @@ These are the issues that prevent this from being a proper, production-quality
 compiler. They must be addressed before any new language features. A language
 engineer reviewing this codebase would flag every one of these.
 
-### 1. Everything-is-i64 value model
-**type:** architecture
-**priority:** critical
-**status:** planned
+### ~~1. Everything-is-i64 value model~~ DONE
+**status:** done (MONOMORPHIZATION_PLAN.md)
 
-Every value — int, bool, float, string, struct, enum, ptr — is represented
-as i64 in LLVM IR. Strings and structs are pointers cast via ptrtoint.
-Floats are bitcast. Booleans are 0/1 in i64. Every function signature is
-`(i64, i64, ...) -> i64`. Every alloca is `alloca i64`.
+Function signatures use real LLVM types (ptr, i64, i1, double). Typed
+allocas, loads, stores. Bool is i1, float is double. `forge_llvm_cast_to_type`
+handles all conversions. See MONOMORPHIZATION_PLAN.md for full status.
 
-This means:
-- LLVM can't optimize type-specific operations
-- The IR is full of ptrtoint/inttoptr casts that obscure intent
-- The compiler can't catch type errors at the IR level
-- Generics are meaningless (everything is already the same type)
-- No foundation for real memory layout (sized types, alignment)
+**Remaining debt:** ptrtoint/inttoptr still used for enum payloads and
+tuple access (flat i64 buffers). Per-variant GEP would eliminate these
+but is blocked by an LLVM 20 -O2 miscompilation bug on ARM64.
 
-**Fix:** Add `llvm_type_for(ctx, ty: ValueType) -> ptr` that maps ValueType
-to correct LLVM types (i64, i1, double, ptr, void). Use it in function
-signatures, allocas, loads/stores. Remove ptrtoint/inttoptr casts.
-See GENERICS_PLAN.md for details.
+### ~~2. Types are strings in the AST~~ DONE
+**status:** done (MONOMORPHIZATION_PLAN.md #9)
 
-### 2. Types are strings in the AST
-**type:** architecture
-**priority:** critical
-**status:** not started
+ParamList.Node and FieldList.Node carry `resolved: ValueType` alongside
+the original `ty: string`. All codegen reads `resolved` instead of
+re-parsing type strings. Declaration passes populate `resolved` via
+`resolve_field_list`/`resolve_param_list`. Feature codegen uses
+`ctx.resolve_params()`/`ctx.resolve_fields()` at function/lambda entry.
 
-Parameter types, field types, and return types are stored as raw strings
-throughout the AST: `ty: string` containing text like `"i64"`, `"str"`,
-`"MyStruct?"`, `"List(int)"`. This forces downstream passes to do string
-parsing to understand types.
-
-Examples of string-parsing hacks this causes:
-- `translate_param_type` checks `ty.starts_with("List(")` and manually
-  extracts the inner type from the string
-- Nullable types detected by `ty.ends_with("?")`
-- `consume_type()` in the parser builds type strings by concatenation
-
-A real compiler has a `Type` AST node:
-```forge
-enum Type {
-    Named(name: string)
-    Nullable(inner: Type)
-    Generic(name: string, args: TypeArgList)
-    Fn(params: TypeArgList, ret: Type)
-    List(elem: Type)
-    Tuple(elements: TypeArgList)
-    Inferred  // type to be inferred
-}
-```
-
-**Impact:** Touches ParamList, FieldList, Function, ExternFn, Let, Mut —
-every AST node that carries a type annotation. ~50+ sites.
-
-**Why critical:** Without structured types, generics can't represent
-`List<T>`, the type checker can't do real unification, and every new type
-feature requires more string parsing.
+**Remaining debt:** `ty: string` field retained for backward compat
+(Stmt.Let/Mut/Function still carry string annotations, resolver and
+typechecker use strings). `translate_param_type` still exists for the
+declaration passes and let_stmt/trait_decl. Full removal requires
+changing Stmt variants to carry ValueType — a future cleanup.
 
 ### 3. Type checker is advisory only
 **type:** architecture
@@ -685,3 +653,50 @@ worked around a Rust host bug. eval is rarely used (only for the `eval` command)
 
 ExprList, StmtList, ParamList, VarEnv are linked lists. Could migrate to `forge_array_*`
 runtime. The recursive enums work fine for AST sizes and are idiomatic for immutable scope stacks.
+
+### Remove `ty: string` from ParamList/FieldList
+**source:** MONOMORPHIZATION_PLAN.md #9 remaining debt
+
+ParamList.Node and FieldList.Node still carry both `ty: string` and
+`resolved: ValueType`. The string field is only read by:
+- setup.fg's `resolve_field_list`/`resolve_param_list` (to populate `resolved`)
+- `should_null_check` in fn_decl (string pattern checks)
+- `render_param_list`/`render_field_list` in ast.fg (debug printing)
+- `params_to_type_list` in setup.fg (builds FnParamTypes registry)
+
+To remove: change Stmt.Let/Mut/Function/ExternFn to carry ValueType
+instead of string, update parser to resolve types at parse time (or add
+a post-parse resolution pass), then delete the string field entirely.
+
+### Remove ParamTypeList / FnParamTypes string registry
+**source:** codegen cleanup (April 14, 2026)
+
+`FnParamTypes` maps function names to `ParamTypeList` (per-param type
+strings). Only used in `fill_arg_array_boxing` for trait auto-boxing
+decisions. Now that ParamList carries `resolved: ValueType`, this
+could read directly from the function's ParamList instead of a
+separate string registry. Would eliminate the `collect_fn_params`
+pass, `ParamTypeList` enum, `FnParamTypes` enum, and `param_type_at`.
+
+### LLVM 20 -O2 miscompilation on ARM64
+**source:** build system (April 14, 2026)
+
+The seed occasionally triggers an LLVM 20 -O2 miscompilation on ARM64.
+Symptoms: seed crashes at -O2, -O0 fallback produces wrong code
+("undefined variable" errors). Workaround: regenerate the seed from a
+working bs2 build (the new IR pattern avoids the bug). The build system
+auto-detects and warns about this.
+
+`LLC_PREFIX` in diagnose.sh is pinned to LLVM 20.1.5 for this reason.
+Upgrading to LLVM 21 may fix it but introduces other -O2 issues (wrong
+register for parameters on ARM64).
+
+### mod.fg re-exports all AST symbols
+**source:** codegen cleanup (April 14, 2026)
+
+`codegen/mod.fg` imports ~40 AST symbols and ~20 codegen.types symbols
+that it doesn't use directly — they're re-exported for feature codegen
+files that import through the module system. This makes mod.fg's import
+list enormous and impossible to clean up without breaking downstream
+files. A proper fix requires the module system to support transitive
+exports or `pub use` re-exports.
