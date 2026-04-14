@@ -76,14 +76,11 @@ Types stored as `ty: string` throughout ParamList, FieldList, Function.
 `translate_param_type` parses strings like `"List(int)"` with starts_with.
 Blocks proper generics, type inference, and compile-time type checking.
 
-### 10. Comparison results are i64, not i1
-**type:** architecture debt
-**priority:** medium
+### 10. ~~Comparison results are i64, not i1~~ DONE
+**status:** done (commit f41a2186)
 
-`icmp_eq`/`icmp_ne` produce i1 then immediately `zext` to i64. This means
-bool variables store i64 values (0 or 1) in i1 allocas — the smart store
-handles it via trunc, but it's an unnecessary round-trip.
-
-**Proper fix:** Comparisons return i1 with type `.Bool`. The value
-pipeline handles i1 natively. Only convert to i64 when needed for
-arithmetic.
+All comparisons (==, !=, <, <=, >, >=), float comparisons, string
+comparisons, enum tag comparisons, `is` checks, and logical operators
+now return EmitResult with `.Bool` type. Variables assigned from
+comparisons get i1 allocas. Values are still i64 (zext'd) for
+compatibility with result slots and C function calls.
