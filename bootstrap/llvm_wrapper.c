@@ -476,25 +476,12 @@ LLVMValueRef forge_llvm_cast_to_type(LLVMBuilderRef b, LLVMValueRef val, LLVMTyp
     return val;
 }
 
-// Smart store: cast value to match the destination's expected type.
-// Works for both alloca destinations and struct field GEPs.
-// Prevents type mismatches when storing i64 into i1/double/ptr slots.
+// Type-safe store for alloca destinations: casts the value to match
+// the alloca's allocated type. For non-alloca destinations (GEPs),
+// performs a raw store — the caller MUST use store_field with an
+// explicit type for struct field stores.
 void forge_llvm_build_store_cast(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef dest) {
-    // Try alloca first
     LLVMTypeRef dest_ty = LLVMGetAllocatedType(dest);
-    if (!dest_ty) {
-        // For GEP results, get the GEP's result element type.
-        // The dest pointer's element type tells us what to store.
-        // In opaque pointer mode, we can infer from the GEP source type.
-        LLVMTypeRef dest_ptr_ty = LLVMTypeOf(dest);
-        if (LLVMGetTypeKind(dest_ptr_ty) == LLVMPointerTypeKind) {
-            // Can't determine element type from opaque ptr.
-            // Fall back: just check if val type matches what the store expects.
-            // If val is larger than needed, the store will write extra bytes.
-            // The safest approach: always use the regular store and let
-            // forge_llvm_cast_to_type handle it at the CALLER level.
-        }
-    }
     if (dest_ty) {
         val = forge_llvm_cast_to_type(b, val, dest_ty);
     }

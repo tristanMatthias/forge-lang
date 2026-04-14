@@ -702,7 +702,18 @@ impl Ctx {
     // ── Level 1: raw LLVM (eliminate ctx.builder repetition) ──
 
     fn position(self, bb: ptr) { forge_llvm_position_at_end(self.builder, bb) }
+    // Type-safe store: always casts the value to match the destination's
+    // allocated type. For allocas, reads the type from LLVM. For GEP
+    // destinations (struct fields), the alloca type check falls back to
+    // a raw store — use store_field for struct fields instead.
     fn store(self, val: ptr, dest: ptr) { forge_llvm_build_store_cast(self.builder, val, dest) }
+
+    // Store into a struct field GEP with explicit type casting.
+    // This is the ONLY safe way to store into struct fields — the
+    // destination type can't be inferred from opaque pointers.
+    fn store_field(self, val: ptr, gep: ptr, field_ty: ValueType) {
+        forge_llvm_build_store(self.builder, self.cast_to(val, field_ty), gep)
+    }
     fn load(self, ty: ptr, src: ptr, name: string) -> ptr { forge_llvm_build_load(self.builder, ty, src, name) }
     fn load_i64(self, src: ptr, name: string) -> ptr { forge_llvm_build_load(self.builder, self.i64_type, src, name) }
     fn alloca(self, ty: ptr, name: string) -> ptr { forge_llvm_build_alloca(self.builder, ty, name) }

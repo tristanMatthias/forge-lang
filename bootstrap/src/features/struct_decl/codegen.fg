@@ -34,7 +34,7 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
             let r = ctx.emit(env, sv.node)?
             let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
             let fld_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(fields, field_name))
-            ctx.store(ctx.cast_to(r.value, fld_ty), gep)
+            ctx.store_field(r.value, gep, fld_ty)
             fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
         }
     }
@@ -55,7 +55,7 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
     let v = ctx.emit(env, value)?
     let fld_ty = translate_param_type(ctx.structs, ctx.enums, field_type_of(lookup.fields, field))
-    ctx.store(ctx.cast_to(v.value, fld_ty), gep)
+    ctx.store_field(v.value, gep, fld_ty)
     ok_emit(v.value)
 }
 
