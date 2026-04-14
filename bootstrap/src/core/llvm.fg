@@ -125,3 +125,4 @@ extern fn forge_llvm_build_call_coerce(b: ptr, fn_type: ptr, fn_val: ptr, args: 
 // ── Module output ──
 extern fn forge_llvm_print_module_to_file(m: ptr, path: string) -> int
 extern fn forge_llvm_verify_module_print(m: ptr) -> int
+extern fn forge_llvm_verify_function(fn_val: ptr) -> int

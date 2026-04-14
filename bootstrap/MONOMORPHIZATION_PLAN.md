@@ -1,71 +1,109 @@
- 1. Bool and float still use i64
+# Type System Maturity Plan
 
-  What: llvm_type_for maps Bool → i64 and Float → i64 instead of i1 and double.
-  Why deferred: float uses different ABI registers (d0-d7 vs x0-x7 on aarch64). Changing during bootstrap would cause calling convention mismatch between the seed-compiled bs2 and the new function signatures. Requires a dedicated seed cycle.
-  Proper fix: Map Bool → i1, Float → double. Handle float↔i64 bitcast at function boundaries. This is a separate, clean change.
+Tracks remaining work to eliminate i64 hacks and build a proper type foundation.
 
-  2. Result slots still use alloca i64
+---
 
-  What: If/match/when/block expressions use alloca_i64 for result slots, then store_br_if_open casts ptr values to i64 before storing.
-  Why: The result type isn't known until after the first branch is emitted. Creating a typed alloca requires restructuring the if/match codegen to emit the first branch, determine the type, THEN create the alloca.
-  Proper fix: Emit phi nodes instead of alloca+store for SSA values. Or restructure to create the alloca after determining the branch type.
+## Done
 
-  3. forge_llvm_build_call_coerce auto-widens i32→i64
+### 1. Real LLVM types for function signatures
+**status:** done (commit c46f91a1)
 
-  What: When a C function returns i32 (like atoi, strcmp), the coercing call wrapper sign-extends to i64 automatically.
-  Why: The value pipeline assumes integer values are i64. Mixing i32 and i64 causes LLVM type mismatches in comparisons and arithmetic.
-  Proper fix: Track the actual integer width in EmitResult (or in ValueType — add .I32). Emit width-appropriate comparisons and arithmetic. This requires pervasive changes to the operator codegen.
+Function params and returns use real types: ptr for strings/structs/enums,
+i64 for int. Typed allocas, typed loads, auto-coercing calls, void safety.
 
-  4. forge_llvm_build_call_coerce returns i64 0 for void calls
+### 2. Bool → i1, Float → double
+**status:** done (commit c8b5bf50)
 
-  What: Void function calls return i64 0 instead of void, so the value can flow through the pipeline without crashing.
-  Why: The codegen treats every expression as producing a value. Void calls produce LLVM void values that can't be stored/returned/compared.
-  Proper fix: Track voidness in EmitResult (add .Void type or a has_value: bool field). Block expressions that end in void calls should use their default value, not the void result. This requires changes to emit_stmt_as_value and block expression codegen.
+Bool params/returns/allocas use i1. Float uses double. Struct fields
+use real types. forge_llvm_cast_to_type handles all type combinations.
 
-  5. store_br_if_open unconditionally casts to i64
+### 3. Type-safe store API
+**status:** done (commit 70caa9fb)
 
-  What: Every store through store_br_if_open does to_i64(val), which is a no-op for i64 but emits a ptrtoint for ptr values.
-  Why: Result slots are i64 allocas (see #2). Storing ptr values requires casting.
-  Proper fix: Make result slots typed (see #2), then store_br_if_open doesn't need to cast.
+ctx.store() auto-casts for alloca destinations. ctx.store_field() requires
+explicit field type for struct field GEPs. Prevents the class of bug where
+storing i64 into i1 corrupts adjacent struct fields.
 
-  6. Operator type normalization casts both operands
+### 4. Per-function LLVM verification
+**status:** done (commit pending)
 
-  What: In emit_binary, when one operand is ptr and the other i64, the i64 is cast to ptr via inttoptr. This produces icmp eq ptr %x, inttoptr (i64 0 to ptr) instead of the cleaner icmp eq ptr %x, null.
-  Why: Quick fix to make mixed-type comparisons work.
-  Proper fix: Detect null literals specifically and emit null constant. For non-null cases, cast to the more specific type (ptr → i64 for arithmetic, keep ptr for comparisons).
+forge_llvm_verify_function runs after every function body. Module-level
+verification is now mandatory (was advisory). Type mismatches caught at
+the emitting function, not as cryptic errors later.
 
-  7. Struct/enum field loads still use i64
+---
 
-  What: Ctx.field() loads struct fields as i64 regardless of the field's actual type.
-  Why: Struct field type tracking would require looking up the field's ValueType from the StructReg, then using llvm_type_for. The infrastructure exists but isn't wired.
-  Proper fix: Change Ctx.field() to accept a ValueType for the field and load with the correct type.
+## Remaining
 
-  8. Global variables still use i64 allocas
+### 5. Enum payloads use flat i64 buffers
+**type:** architecture debt
+**priority:** high
 
-  What: declare_globals uses forge_llvm_add_global(m, i64t, name) for all globals.
-  Why: Overlooked — not part of the function-focused change.
-  Proper fix: Use llvm_type_for for global variable types, same as function parameters.
+Enum payloads are heap-allocated as `malloc(field_count * 8)` — a flat
+array of 8-byte slots. Stores use raw memory writes (`inttoptr` pointer
+arithmetic), loads use `load_i64`. This means:
 
-  9. forge_llvm_is_void_value declared but not needed
+- Bool/float enum fields are cast to i64 before storing (wrong — undoes
+  the real type work)
+- No type safety for payload field access
+- Layout wastes memory (i1 field takes 8 bytes)
 
-  What: Added forge_llvm_is_void_value to C wrapper and extern declarations but it's no longer used (void is handled at call level now).
-  Why: Was added during debugging, then the fix moved to the C level.
-  Proper fix: Remove the unused function.
+**Proper fix:** Each variant gets a typed LLVM struct:
+```
+%Option.Some = type { ptr }       // Some(value: string)
+%Result.Ok = type { i64 }         // Ok(value: int)  
+%Result.Err = type { ptr }        // Err(error: string)
+```
 
-  10. forge_llvm_cast_to_type declared but only used inside coerce
+Stores use `ctx.store_field(val, gep, field_ty)`. Loads use
+`ctx.load_typed(field_ty, gep, name)`. No pointer arithmetic.
 
-  What: Exposed as an extern but only called from forge_llvm_build_call_coerce inside llvm_wrapper.c itself.
-  Why: Originally planned for Forge-side use, ended up C-internal.
-  Proper fix: Make it static in the C file and remove the extern declaration.
+### 6. Result slots use alloca i64
+**type:** architecture debt
+**priority:** medium
 
-  11. Closure codegen doesn't infer its own return type properly
+If/match/when/block expressions use `alloca i64` for result slots, then
+cast values before storing via `store_br_if_open`. The result type isn't
+known until after the first branch is emitted.
 
-  What: Lambda return type comes from fn_ret_lookup using the mangled lambda name. If the lambda isn't registered (anonymous), this falls back to .Int.
-  Why: Existing issue, not introduced by this change.
-  Proper fix: Infer lambda return type from the body expression's type rather than looking up a registered name.
+**Proper fix:** Either:
+- Use phi nodes (standard SSA, no alloca needed)
+- Emit the first branch, determine type, create typed alloca
 
-  12. Types are still strings in the AST
+### 7. Global variables use i64
+**type:** architecture debt
+**priority:** low
 
-  What: The entire type system still uses ty: string in ParamList, FieldList, etc. The translate_param_type function parses strings like "List(int)" with starts_with.
-  Why: This is a separate, larger architectural change (TODO item #2).
-  Proper fix: Introduce a Type AST node, as described in TODO.md.
+`declare_globals` uses `forge_llvm_add_global(m, i64t, name)` for all
+globals regardless of their declared type.
+
+**Proper fix:** Use `llvm_type_for_full` with the global's ValueType.
+
+### 8. Unused C-side functions
+**type:** cleanup
+**priority:** low
+
+- `forge_llvm_is_void_value` — declared but unused (void handled at call level)
+- `forge_llvm_cast_to_type` — exposed as extern but only used C-internally
+- Old free functions `to_f64`, `f64_to_i64` — replaced by Ctx methods
+
+### 9. Types are strings in the AST
+**type:** architecture (see TODO.md #2)
+**priority:** critical
+
+Types stored as `ty: string` throughout ParamList, FieldList, Function.
+`translate_param_type` parses strings like `"List(int)"` with starts_with.
+Blocks proper generics, type inference, and compile-time type checking.
+
+### 10. Comparison results are i64, not i1
+**type:** architecture debt
+**priority:** medium
+
+`icmp_eq`/`icmp_ne` produce i1 then immediately `zext` to i64. This means
+bool variables store i64 values (0 or 1) in i1 allocas — the smart store
+handles it via trunc, but it's an unnecessary round-trip.
+
+**Proper fix:** Comparisons return i1 with type `.Bool`. The value
+pipeline handles i1 natively. Only convert to i64 when needed for
+arithmetic.

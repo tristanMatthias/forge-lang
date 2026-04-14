@@ -405,6 +405,17 @@ int forge_llvm_verify_module_print(LLVMModuleRef m) {
     return result;
 }
 
+// Verify a single function. Returns 0 if valid, 1 if invalid.
+// Prints the error to stderr with the function name for easy debugging.
+int forge_llvm_verify_function(LLVMValueRef fn_val) {
+    int result = LLVMVerifyFunction(fn_val, LLVMPrintMessageAction);
+    if (result) {
+        const char* name = LLVMGetValueName(fn_val);
+        fprintf(stderr, "FATAL: LLVM verification failed for function `%s`\n", name ? name : "<unknown>");
+    }
+    return result;
+}
+
 // ── Type introspection ──
 
 // Returns 1 if the LLVM value's type is a pointer type, 0 otherwise.

@@ -51,6 +51,9 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
         emit_defers(body_cg, env)
         ctx.ret(r.value, ret_ty)
     }
+    // Per-function LLVM verification: logs type errors to stderr.
+    // Non-fatal to avoid blocking compilation during incremental fixes.
+    forge_llvm_verify_function(fn_val)
     ok_stmt(VarEnv.End)
 }
 
