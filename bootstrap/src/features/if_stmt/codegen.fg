@@ -26,18 +26,22 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
 export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> EmitResult {
     let cond = ctx.emit(env, condition)?
     let merge_bb = ctx.bb("ife_end")
-    let result_slot = ctx.alloca_i64("ife_result")
-    ctx.store(ctx.i64(0), result_slot)
     let else_bb = ctx.if_true(cond.value, "ife")
 
     let t = ctx.emit(env, then_branch)?
-    ctx.store_br_if_open(t.value, result_slot, merge_bb)
+    let t_val = ctx.cast_to(t.value, t.ty)
+    let then_end = ctx.current_bb()
+    ctx.br_if_open(merge_bb)
 
     ctx.position(else_bb)
     let e = ctx.emit(env, else_branch)?
-    ctx.store_br_if_open(e.value, result_slot, merge_bb)
+    let e_val = ctx.cast_to(e.value, t.ty)
+    let else_end = ctx.current_bb()
+    ctx.br_if_open(merge_bb)
 
     ctx.position(merge_bb)
-    let loaded = ctx.load_i64(result_slot, "ife_val")
-    ok_emit_typed(loaded, t.ty)
+    let phi = ctx.phi_for(t.ty, "ife_val")
+    ctx.add_incoming(phi, t_val, then_end)
+    ctx.add_incoming(phi, e_val, else_end)
+    ok_emit_typed(phi, t.ty)
 }

@@ -38,7 +38,6 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
     let then_bb = ctx.bb("sif_then")
     let else_bb = ctx.bb("sif_else")
     let merge_bb = ctx.bb("sif_end")
-    // Result slot type will be determined after first branch — use i64 default.
     let result_slot = ctx.alloca_i64("sif_result")
     ctx.store(ctx.i64(0), result_slot)
     ctx.cond_br(cond_i1, then_bb, else_bb)

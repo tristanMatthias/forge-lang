@@ -48,15 +48,15 @@ Per-variant LLVM struct types are declared but not yet used for GEP
 (future optimization — would eliminate pointer arithmetic).
 The `fill_enum_payload_typed` function is written and ready.
 
-### 6. Result slots use alloca i64
-**type:** optimization
-**priority:** low (correctness is fine — `forge_llvm_build_store_cast` handles type casting)
+### 6. ~~Result slots use alloca i64~~ PARTIALLY DONE
+**status:** partially done
 
-If/match/when/block expressions use `alloca i64` for result slots.
-`store_br_if_open` casts values via `to_i64` before storing. Loads
-use `load_i64`. The IR has extra casts but is valid — LLVM optimizes
-them away. Converting to phi nodes is a structural refactor that
-complicates early-return handling and provides minimal benefit.
+`emit_if_expr` now uses phi nodes with typed values instead of
+alloca i64 + cast. Match/when/block-as-value still use alloca i64
+because their recursive arm emission can include early returns
+(the arm has a terminator), which makes phi incoming edges invalid.
+The alloca approach handles this naturally via `store_br_if_open`.
+LLVM's mem2reg pass converts these to phis anyway.
 
 ### 7. ~~Global variables use i64~~ DONE
 **status:** done (commit 2a3d6585)

@@ -38,9 +38,6 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "nc_val")
-    // Merge type: prefer the more specific type. If left is a bare
-    // null (type Int), use the right side's type. Otherwise use
-    // the left's type (the non-null value determines the type).
     let merged_ty = if vtype_eq(l.ty, ValueType.Int) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
     ok_emit_typed(loaded, merged_ty)
 }

@@ -691,6 +691,7 @@ impl Ctx {
 
     // ── PHI nodes ──
     fn phi_i1(self, name: string) -> ptr { forge_llvm_build_phi(self.builder, self.i1_type, name) }
+    fn phi_for(self, ty: ValueType, name: string) -> ptr { forge_llvm_build_phi(self.builder, self.type_for(ty), name) }
     fn add_incoming(self, phi: ptr, val: ptr, bb: ptr) { forge_llvm_add_incoming(phi, val, bb) }
 
     // ── Constants ──
