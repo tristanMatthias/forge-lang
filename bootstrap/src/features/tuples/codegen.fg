@@ -11,23 +11,8 @@
 use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, TypeList, vtype_tuple_at}
 use codegen.types.{Ctx, EmitResult, StmtResult, ok_emit, ok_emit_typed, err_emit, ok_stmt, err_stmt_from_expr}
 
-// ── Pointer arithmetic helpers ──
-
-fn tuple_load(ctx: Ctx, base: ptr, idx: int, name: string) -> ptr {
-    let base_int = ctx.ptr_to_int(base, ctx.i64_type, "tup_base")
-    let offset = ctx.i64(idx * 8)
-    let addr = ctx.build_add(base_int, offset, "tup_addr")
-    let slot_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "tup_slot")
-    ctx.load_i64(slot_ptr, name)
-}
-
-fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) {
-    let base_int = ctx.ptr_to_int(base, ctx.i64_type, "ts_base")
-    let offset = ctx.i64(idx * 8)
-    let addr = ctx.build_add(base_int, offset, "ts_addr")
-    let slot_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "ts_slot")
-    ctx.store(value, slot_ptr)
-}
+fn tuple_load(ctx: Ctx, base: ptr, idx: int, name: string) -> ptr { ctx.load_slot(base, idx, name) }
+fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) { ctx.store_slot(base, idx, value, .Int) }
 
 // ── Emit functions ──
 

@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_extend, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, field_type_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, field_type_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
 use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, translate_param_type, ctx_with_fn, struct_reg_lookup, fn_ret_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
@@ -28,7 +28,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     if fn_val == null {
         return err_stmt("codegen error: function `${name}` was not declared in pass 1")
     }
-    let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
+    let entry = ctx.bb_in(fn_val, "entry")
     ctx.position(entry)
 
     let body_cg = ctx_with_fn(ctx, fn_val, name)
@@ -53,7 +53,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     }
     // Per-function LLVM verification: logs type errors to stderr.
     // Non-fatal to avoid blocking compilation during incremental fixes.
-    forge_llvm_verify_function(fn_val)
+    ctx.verify_fn(fn_val)
     ok_stmt(VarEnv.End)
 }
 
@@ -61,11 +61,9 @@ fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: ParamList, idx: int, env: V
     match params {
         .End -> env
         .Node(name, ty, next) -> {
-            let arg = forge_llvm_get_param(fn_val, idx)
+            let arg = ctx.get_param(fn_val, idx)
             let internal_ty = translate_type_ctx(ctx, ty)
-            let alloca = ctx.alloca_typed(internal_ty, name)
-            ctx.store(arg, alloca)
-            bind_params_inline(ctx, fn_val, next, idx + 1, env_extend(env, name, alloca, internal_ty))
+            bind_params_inline(ctx, fn_val, next, idx + 1, ctx.bind(env, name, arg, internal_ty))
         }
     }
 }
@@ -130,7 +128,7 @@ use features.list_lit.codegen.{emit_list_method_call}
 use features.map_lit.codegen.{emit_map_method_call}
 use features.trait_decl.codegen.{emit_trait_dispatch}
 use codegen.blocks.{emit_block_loop}
-use codegen.helpers.{emit_single_arg, fill_arg_array, fill_arg_array_boxing, fill_i64_param_array, strip_quotes}
+use codegen.helpers.{emit_single_arg, fill_arg_array, fill_arg_array_boxing, strip_quotes}
 
 export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
     match callee {
@@ -256,15 +254,15 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     // Build arg array with self prepended.
     let extra_count = expr_list_length(args)
     let arg_count = extra_count + 1
-    let arg_arr = forge_llvm_value_array_new(arg_count)
-    forge_llvm_value_array_set(arg_arr, 0, r.value)
+    let arg_arr = ctx.value_array(arg_count)
+    ctx.value_array_set(arg_arr, 0, r.value)
     let fill = fill_arg_array(ctx, env, arg_arr, args, 1)
     if fill.had_error {
-        forge_llvm_value_array_free(arg_arr)
+        ctx.value_array_free(arg_arr)
         return fill
     }
     let result = ctx.call_raw(fn_val, arg_arr, arg_count)
-    forge_llvm_value_array_free(arg_arr)
+    ctx.value_array_free(arg_arr)
     let ret_ty = fn_ret_lookup(ctx.fn_rets, mangled)
     ok_emit_typed(result, ret_ty)
 }
@@ -310,15 +308,15 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
     }
 
     let arg_count = expr_list_length(args)
-    let arg_arr = forge_llvm_value_array_new(arg_count)
+    let arg_arr = ctx.value_array(arg_count)
     let ptypes = fn_param_lookup(ctx.fn_params, name)
     let fill = fill_arg_array_boxing(ctx, env, arg_arr, args, ptypes, 0)
     if fill.had_error {
-        forge_llvm_value_array_free(arg_arr)
+        ctx.value_array_free(arg_arr)
         return fill
     }
     let result = ctx.call_raw(fn_val, arg_arr, arg_count)
-    forge_llvm_value_array_free(arg_arr)
+    ctx.value_array_free(arg_arr)
     let ret_ty = fn_ret_lookup(ctx.fn_rets, name)
     ok_emit_typed(result, ret_ty)
 }

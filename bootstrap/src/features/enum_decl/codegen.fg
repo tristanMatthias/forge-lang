@@ -66,15 +66,11 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
-            let base_i64 = ctx.ptr_to_int(payload_ptr, ctx.i64_type, "pay_base")
-            let addr = ctx.add(base_i64, ctx.i64(idx * 8), "pay_addr")
-            let field_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "fld_ptr")
-            // Store with the correct type for the field.
             let fld_ty = match fields {
                 .Node(_, ty, _) -> translate_param_type(ctx.structs, ctx.enums, ty)
                 _ -> ValueType.Int
             }
-            ctx.store_field(r.value, field_ptr, fld_ty)
+            ctx.store_slot(payload_ptr, idx, r.value, fld_ty)
             let next_fields = match fields { .Node(_, _, rest) -> rest, _ -> FieldList.End }
             fill_enum_payload(ctx, env, payload_ptr, next_fields, next, idx + 1)
         }

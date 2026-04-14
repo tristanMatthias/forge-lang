@@ -27,7 +27,7 @@ export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: i
             if r.had_error {
                 return r
             }
-            forge_llvm_value_array_set(arr, idx, r.value)
+            ctx.value_array_set(arr, idx, r.value)
             fill_arg_array(ctx, env, arr, next, idx + 1)
         }
     }
@@ -56,7 +56,7 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
             } else {
                 r.value
             }
-            forge_llvm_value_array_set(arr, idx, value)
+            ctx.value_array_set(arr, idx, value)
             fill_arg_array_boxing(ctx, env, arr, next, ptypes, idx + 1)
         }
     }
@@ -83,11 +83,4 @@ export fn stmts_last_expr(stmts: StmtList) -> Expr {
     }
 }
 
-export fn fill_i64_param_array(arr: ptr, i64t: ptr, idx: int, count: int) {
-    if idx >= count {
-        return
-    }
-    forge_llvm_type_array_set(arr, idx, i64t)
-    fill_i64_param_array(arr, i64t, idx + 1, count)
-}
 

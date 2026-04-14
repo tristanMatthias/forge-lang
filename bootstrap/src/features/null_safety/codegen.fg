@@ -17,7 +17,7 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     if l.had_error { return l }
 
     // Short-circuit: if left != 0/null (non-null), skip right.
-    let l_ptr = forge_llvm_is_ptr_value(l.value) != 0
+    let l_ptr = ctx.is_ptr_value(l.value)
     let is_null = if l_ptr {
         ctx.eq(l.value, ctx.zero_for(ValueType.Str), "nc_null")
     } else {
@@ -50,7 +50,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     if r.had_error { return r }
 
     // If the object is null, produce null without accessing.
-    let is_null = if forge_llvm_is_ptr_value(r.value) != 0 {
+    let is_null = if ctx.is_ptr_value(r.value) {
         ctx.eq(r.value, ctx.zero_for(ValueType.Str), "oc_null")
     } else {
         ctx.eq(r.value, ctx.i64(0), "oc_null")
@@ -155,7 +155,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
 
     // ── Mode 3: Nullable ──
     // If value is null/0, return null from enclosing fn.
-    let is_null = if forge_llvm_is_ptr_value(r.value) != 0 {
+    let is_null = if ctx.is_ptr_value(r.value) {
         ctx.eq(r.value, ctx.zero_for(ValueType.Str), "try_null")
     } else {
         ctx.eq(r.value, ctx.i64(0), "try_null")

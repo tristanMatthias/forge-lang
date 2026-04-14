@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, env_extend}
 use core.registry.{Registry}
 
 // ── Codegen context ──
@@ -502,116 +502,6 @@ export fn ctx_with_top_level(ctx: Ctx, top_level_vars: TopLevelVars) -> Ctx {
     ctx with { top_level_vars }
 }
 
-// ── Cg helpers ──
-//
-// Fluent wrappers that compress the LLVM builder boilerplate.
-// Each eliminates ~5-8 lines of type-array/value-array ceremony.
-// Pure Forge functions calling the C externs from core/llvm.fg.
-
-// Look up a module-level function by name.
-export fn get_fn(ctx: Ctx, name: string) -> ptr {
-    forge_llvm_get_named_function(ctx.module, name)
-}
-
-// Call a 0-arg function by value. Infers the function type from
-// the LLVM function value itself (no manual type-array needed).
-export fn call_0(ctx: Ctx, fn_val: ptr, name: string) -> ptr {
-    let ft = forge_llvm_fn_type_of(fn_val)
-    let arr = forge_llvm_value_array_new(0)
-    let result = forge_llvm_build_call_coerce(ctx.builder, ft, fn_val, arr, 0, name)
-    forge_llvm_value_array_free(arr)
-    result
-}
-
-// Call a 1-arg function by value.
-export fn call_1(ctx: Ctx, fn_val: ptr, a0: ptr, name: string) -> ptr {
-    let ft = forge_llvm_fn_type_of(fn_val)
-    let arr = forge_llvm_value_array_new(1)
-    forge_llvm_value_array_set(arr, 0, a0)
-    let result = forge_llvm_build_call_coerce(ctx.builder, ft, fn_val, arr, 1, name)
-    forge_llvm_value_array_free(arr)
-    result
-}
-
-// Call a 2-arg function by value.
-export fn call_2(ctx: Ctx, fn_val: ptr, a0: ptr, a1: ptr, name: string) -> ptr {
-    let ft = forge_llvm_fn_type_of(fn_val)
-    let arr = forge_llvm_value_array_new(2)
-    forge_llvm_value_array_set(arr, 0, a0)
-    forge_llvm_value_array_set(arr, 1, a1)
-    let result = forge_llvm_build_call_coerce(ctx.builder, ft, fn_val, arr, 2, name)
-    forge_llvm_value_array_free(arr)
-    result
-}
-
-// Call a 3-arg function by value.
-export fn call_3(ctx: Ctx, fn_val: ptr, a0: ptr, a1: ptr, a2: ptr, name: string) -> ptr {
-    let ft = forge_llvm_fn_type_of(fn_val)
-    let arr = forge_llvm_value_array_new(3)
-    forge_llvm_value_array_set(arr, 0, a0)
-    forge_llvm_value_array_set(arr, 1, a1)
-    forge_llvm_value_array_set(arr, 2, a2)
-    let result = forge_llvm_build_call_coerce(ctx.builder, ft, fn_val, arr, 3, name)
-    forge_llvm_value_array_free(arr)
-    result
-}
-
-// Call a 4-arg function by value (snprintf).
-export fn call_4(ctx: Ctx, fn_val: ptr, a0: ptr, a1: ptr, a2: ptr, a3: ptr, name: string) -> ptr {
-    let ft = forge_llvm_fn_type_of(fn_val)
-    let arr = forge_llvm_value_array_new(4)
-    forge_llvm_value_array_set(arr, 0, a0)
-    forge_llvm_value_array_set(arr, 1, a1)
-    forge_llvm_value_array_set(arr, 2, a2)
-    forge_llvm_value_array_set(arr, 3, a3)
-    let result = forge_llvm_build_call_coerce(ctx.builder, ft, fn_val, arr, 4, name)
-    forge_llvm_value_array_free(arr)
-    result
-}
-
-// Convenience: look up a function by name and call it with 1 arg.
-export fn call_named_1(ctx: Ctx, name: string, a0: ptr, result_name: string) -> ptr {
-    call_1(ctx, get_fn(ctx, name), a0, result_name)
-}
-
-// Allocate memory for structs, enums, with-expressions.
-// Uses bump allocator (no free, no reuse, no corruption).
-// malloc is still declared for array/map code that needs realloc.
-export fn cg_malloc(ctx: Ctx, size: ptr) -> ptr {
-    call_named_1(ctx, "forge_bump_alloc", size, "buf")
-}
-
-// Allocate a new basic block and position the builder at its end.
-export fn new_bb(ctx: Ctx, name: string) -> ptr {
-    forge_llvm_append_basic_block(ctx.lc, ctx.current_fn, name)
-}
-
-// Shorthand for common constants.
-export fn const_i64(ctx: Ctx, value: int) -> ptr {
-    forge_llvm_const_int(ctx.i64_type, value, 0)
-}
-
-export fn const_i8(ctx: Ctx, value: int) -> ptr {
-    forge_llvm_const_int(forge_llvm_int8_type(ctx.lc), value, 0)
-}
-
-// i64 ↔ ptr conversions (the bootstrap's value model).
-export fn to_ptr(ctx: Ctx, val: ptr, name: string) -> ptr {
-    forge_llvm_build_int_to_ptr(ctx.builder, val, ctx.ptr_type, name)
-}
-
-export fn to_i64(ctx: Ctx, val: ptr, name: string) -> ptr {
-    forge_llvm_build_ptr_to_int(ctx.builder, val, ctx.i64_type, name)
-}
-
-// i64 ↔ f64 conversions (float values stored as bitcast i64).
-export fn to_f64(ctx: Ctx, val: ptr, name: string) -> ptr {
-    forge_llvm_build_bitcast(ctx.builder, val, forge_llvm_double_type(ctx.lc), name)
-}
-
-export fn f64_to_i64(ctx: Ctx, val: ptr, name: string) -> ptr {
-    forge_llvm_build_bitcast(ctx.builder, val, ctx.i64_type, name)
-}
 
 // ── Ctx builder DSL ──
 // Three levels: raw LLVM wrappers, common patterns, semantic operations.
@@ -621,10 +511,48 @@ impl Ctx {
     // ── Level 0: lift free functions to methods ──
 
     fn bb(self, name: string) -> ptr { forge_llvm_append_basic_block(self.lc, self.current_fn, name) }
+    fn bb_in(self, fn_val: ptr, name: string) -> ptr { forge_llvm_append_basic_block(self.lc, fn_val, name) }
     fn i64(self, value: int) -> ptr { forge_llvm_const_int(self.i64_type, value, 0) }
     fn i8(self, value: int) -> ptr { forge_llvm_const_int(forge_llvm_int8_type(self.lc), value, 0) }
     fn get_fn(self, name: string) -> ptr { forge_llvm_get_named_function(self.module, name) }
-    fn malloc(self, size: ptr) -> ptr { call_named_1(self, "forge_bump_alloc", size, "buf") }
+    fn malloc(self, size: ptr) -> ptr { self.call("forge_bump_alloc", [size]) }
+
+    // ── Value / type array management ──
+    // These wrap the raw C array API so feature code never touches it.
+    fn value_array(self, count: int) -> ptr { forge_llvm_value_array_new(count) }
+    fn value_array_set(self, arr: ptr, idx: int, val: ptr) { forge_llvm_value_array_set(arr, idx, val) }
+    fn value_array_free(self, arr: ptr) { forge_llvm_value_array_free(arr) }
+    fn type_array(self, count: int) -> ptr { forge_llvm_type_array_new(count) }
+    fn type_array_set(self, arr: ptr, idx: int, ty: ptr) { forge_llvm_type_array_set(arr, idx, ty) }
+    fn type_array_free(self, arr: ptr) { forge_llvm_type_array_free(arr) }
+
+    // Create a type array pre-filled with i64 types (the common case for lambdas/closures).
+    fn i64_type_array(self, count: int) -> ptr {
+        let arr = forge_llvm_type_array_new(count)
+        self.fill_i64_types(arr, 0, count)
+        arr
+    }
+
+    fn fill_i64_types(self, arr: ptr, idx: int, count: int) {
+        if idx >= count { return }
+        forge_llvm_type_array_set(arr, idx, self.i64_type)
+        self.fill_i64_types(arr, idx + 1, count)
+    }
+
+    // ── Function creation ──
+    fn fn_type(self, ret: ptr, params: ptr, count: int) -> ptr { forge_llvm_function_type(ret, params, count, 0) }
+    fn add_function(self, name: string, ty: ptr) -> ptr { forge_llvm_add_function(self.module, name, ty) }
+    fn get_param(self, fn_val: ptr, idx: int) -> ptr { forge_llvm_get_param(fn_val, idx) }
+    fn verify_fn(self, fn_val: ptr) { forge_llvm_verify_function(fn_val) }
+
+    // Query: is this LLVM value a pointer type?
+    fn is_ptr_value(self, val: ptr) -> bool { forge_llvm_is_ptr_value(val) != 0 }
+
+    // Build a direct call with an explicit function type (for indirect calls
+    // where the callee is a raw pointer, not a named function).
+    fn build_call(self, fn_ty: ptr, callee: ptr, args: ptr, count: int, name: string) -> ptr {
+        forge_llvm_build_call(self.builder, fn_ty, callee, args, count, name)
+    }
 
     // ── Type-aware operations ──
     // These use forge_llvm_cast_to_type which handles ALL type
@@ -794,10 +722,49 @@ impl Ctx {
     fn int_to_ptr(self, val: ptr, name: string) -> ptr { forge_llvm_build_int_to_ptr(self.builder, val, self.ptr_type, name) }
     fn ptr_to_int(self, val: ptr, name: string) -> ptr { forge_llvm_build_ptr_to_int(self.builder, val, self.i64_type, name) }
 
-    // Deprecated — use add/sub/bit_or instead.
-    fn build_add(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_add(self.builder, a, b, name) }
-    fn build_sub(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_sub(self.builder, a, b, name) }
-    fn build_or(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_or(self.builder, a, b, name) }
+    // ── Pointer arithmetic ──
+    // ptr_add: base_ptr + byte_offset → ptr. The workhorse of tuple/payload access.
+    fn ptr_add(self, base: ptr, offset: ptr, name: string) -> ptr {
+        let base_int = forge_llvm_build_ptr_to_int(self.builder, base, self.i64_type, "${name}_base")
+        let addr = forge_llvm_build_add(self.builder, base_int, offset, "${name}_addr")
+        forge_llvm_build_int_to_ptr(self.builder, addr, self.ptr_type, name)
+    }
+
+    // Load an i64 at base + idx*8 (tuple/payload element access).
+    fn load_slot(self, base: ptr, idx: int, name: string) -> ptr {
+        let slot = self.ptr_add(base, self.i64(idx * 8), "${name}_slot")
+        forge_llvm_build_load(self.builder, self.i64_type, slot, name)
+    }
+
+    // Load with type at base + idx*8 (typed payload field access).
+    fn load_slot_typed(self, base: ptr, idx: int, ty: ValueType, name: string) -> ptr {
+        let slot = self.ptr_add(base, self.i64(idx * 8), "${name}_slot")
+        forge_llvm_build_load(self.builder, self.type_for(ty), slot, name)
+    }
+
+    // Store value at base + idx*8 with explicit type (tuple/payload field store).
+    fn store_slot(self, base: ptr, idx: int, val: ptr, field_ty: ValueType) {
+        let slot = self.ptr_add(base, self.i64(idx * 8), "slot")
+        forge_llvm_build_store(self.builder, self.cast_to(val, field_ty), slot)
+    }
+
+    // ── Variable binding ──
+    // Allocate, store, and extend the environment in one call.
+    // The most common 3-line pattern in codegen: alloca + store + env_extend.
+    fn bind(self, env: VarEnv, name: string, value: ptr, ty: ValueType) -> VarEnv {
+        let alloca = forge_llvm_build_alloca(self.builder, self.type_for(ty), name)
+        forge_llvm_build_store_cast(self.builder, value, alloca)
+        env_extend(env, name, alloca, ty)
+    }
+
+    // ── Module lifecycle ──
+    fn verify_module(self) { forge_llvm_verify_module_print(self.module) }
+    fn write_ir(self, path: string) -> int { forge_llvm_print_module_to_file(self.module, path) }
+    fn dispose(self) {
+        forge_llvm_dispose_builder(self.builder)
+        forge_llvm_module_dispose(self.module)
+        forge_llvm_context_dispose(self.lc)
+    }
 
     // ── Level 2: common patterns (2-3 lines → 1) ──
 

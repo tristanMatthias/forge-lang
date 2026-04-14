@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, VariantList, VarEnv, env_extend, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
-use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list, to_f64}
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
+use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, enum_reg_lookup, translate_param_type, field_type_at, advance_field_list}
 
 // ── Match as expression ──
 
@@ -237,10 +237,7 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
 fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, field_ty: ValueType, label: string) -> ptr {
     let pay_gep = ctx.gep(st_ty, subj_ptr, 1, "pay_slot")
     let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "payload")
-    let pay_i64 = ctx.ptr_to_int(pay_ptr, ctx.i64_type, "pay_base")
-    let addr = ctx.add(pay_i64, ctx.i64(idx * 8), "fld_addr")
-    let fld_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "fld_ptr")
-    ctx.load_typed(field_ty, fld_ptr, label)
+    ctx.load_slot_typed(pay_ptr, idx, field_ty, label)
 }
 
 fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, subj_ptr: ptr, variants: VariantList) -> VarEnv {
@@ -269,9 +266,7 @@ fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, b
         .Node(name, _, next_b) -> {
             let field_ty = translate_param_type(ctx.structs, ctx.enums, field_type_at(fields, 0))
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, name)
-            let alloca = ctx.alloca_typed(field_ty, name)
-            ctx.store(loaded, alloca)
-            let extended = env_extend(env, name, alloca, field_ty)
+            let extended = ctx.bind(env, name, loaded, field_ty)
             bind_pattern_payload_loop(ctx, extended, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
         }
     }
@@ -331,11 +326,7 @@ fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: 
     match bindings {
         .End -> env
         .Node(name, _, _) if name == "_" -> env
-        .Node(name, _, _) -> {
-            let alloca = ctx.alloca_i64(name)
-            ctx.store(value, alloca)
-            env_extend(env, name, alloca, ty)
-        }
+        .Node(name, _, _) -> ctx.bind(env, name, value, ty)
     }
 }
 
@@ -380,7 +371,7 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
             // OR two i1 comparison results — both sub-patterns are literals
             let l = emit_literal_cmp(ctx, subj, left)
             let r = emit_literal_cmp(ctx, subj, right)
-            ctx.build_or(l, r, "or_cmp")
+            ctx.bit_or(l, r, "or_cmp")
         }
         _ -> {
             // Wildcard / Variant — should not reach here

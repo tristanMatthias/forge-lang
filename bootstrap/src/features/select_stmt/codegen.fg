@@ -2,7 +2,6 @@
 // Builds an array of channel pointers, calls forge_select to block
 // until one has data, then dispatches to the matching arm.
 
-use core.ast.{env_extend}
 use codegen.types.{err_stmt, ok_stmt}
 use codegen.blocks.{emit_block_loop}
 export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
@@ -46,9 +45,7 @@ fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, va
             ctx.cond_br(cmp, then_bb, else_bb)
 
             ctx.position(then_bb)
-            let alloca = ctx.alloca_i64(binding)
-            ctx.store(val, alloca)
-            let body_env = env_extend(env, binding, alloca, .Int)
+            let body_env = ctx.bind(env, binding, val, .Int)
             let body_r = emit_block_loop(ctx, body_env, body, ctx.i64(0), .Int)
             if body_r.had_error { return err_stmt(body_r.error_message) }
             ctx.br_if_open(merge_bb)

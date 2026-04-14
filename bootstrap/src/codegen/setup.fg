@@ -4,7 +4,7 @@ use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, V
 use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, toplevel_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelResult}
-use codegen.helpers.{stmts_last_expr, fill_i64_param_array}
+use codegen.helpers.{stmts_last_expr}
 use features.fn_decl.codegen.{emit_function_bodies}
 
 // Declare an extern function from a list of parameter types.
@@ -241,40 +241,29 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     // every non-function top-level statement into main.
     let body_result = emit_function_bodies(ctx, stmts)
     if body_result.had_error {
-        forge_llvm_dispose_builder(builder)
-        forge_llvm_module_dispose(m)
-        forge_llvm_context_dispose(ctx.lc)
+        ctx.dispose()
         return CodegenResult { had_error: true, error_message: body_result.error_message }
     }
 
     // After emitting any function bodies, the builder may be sitting
     // in a function-body block. Reposition it back at main's entry
     // before emitting top-level statements.
-    forge_llvm_position_at_end(builder, entry)
+    ctx.position(entry)
     let initial: VarEnv = VarEnv.End
     let result = emit_top_level(ctx, initial, stmts)
     if result.had_error {
-        forge_llvm_dispose_builder(builder)
-        forge_llvm_module_dispose(m)
-        forge_llvm_context_dispose(ctx.lc)
+        ctx.dispose()
         return CodegenResult { had_error: true, error_message: result.error_message }
     }
 
     // Default return 0 if the program didn't end in an explicit return
-    if forge_llvm_block_has_terminator(builder) == 0 {
-        forge_llvm_build_ret(builder, forge_llvm_const_int(i64t, 0, 0))
+    if !ctx.has_terminator() {
+        ctx.ret(ctx.i64(0), .Int)
     }
 
-    // Module-level verification — advisory for now. Enum payload
-    // codegen produces type mismatches (stores i64 into raw ptr slots)
-    // that need typed enum payloads to fix properly. See MONOMORPHIZATION_PLAN.md #5.
-    forge_llvm_verify_module_print(m)
-
-    let write_result = forge_llvm_print_module_to_file(m, output_path)
-
-    forge_llvm_dispose_builder(builder)
-    forge_llvm_module_dispose(m)
-    forge_llvm_context_dispose(ctx.lc)
+    ctx.verify_module()
+    let write_result = ctx.write_ir(output_path)
+    ctx.dispose()
 
     if write_result != 0 {
         return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to ${output_path}" }

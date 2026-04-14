@@ -63,19 +63,19 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     let start_r = ctx.emit(env, start_arg)?
     let end_r = ctx.emit(env, end_arg)?
     let str_ptr = ctx.to_ptr(str_i64, "sub_src")
-    let len = ctx.build_sub(end_r.value, start_r.value, "sub_len")
+    let len = ctx.sub(end_r.value, start_r.value, "sub_len")
     let one = ctx.i64(1)
-    let alloc_size = ctx.build_add(len, one, "sub_alloc")
+    let alloc_size = ctx.add(len, one, "sub_alloc")
     // malloc(alloc_size)
     let buf = ctx.malloc(alloc_size)
     // memcpy(buf, src + start, len)
     let src_int = ctx.to_i64(str_ptr, "sub_src_int")
-    let off_int = ctx.build_add(src_int, start_r.value, "sub_off_int")
+    let off_int = ctx.add(src_int, start_r.value, "sub_off_int")
     let off_ptr = ctx.to_ptr(off_int, "sub_off")
     ctx.call("memcpy", [buf, off_ptr, len])
     // Null-terminate at buf[len].
     let buf_int2 = ctx.to_i64(buf, "sub_buf_int")
-    let nul_int = ctx.build_add(buf_int2, len, "sub_nul_int")
+    let nul_int = ctx.add(buf_int2, len, "sub_nul_int")
     let nul_ptr = ctx.to_ptr(nul_int, "sub_nul")
     ctx.store(ctx.i8(0), nul_ptr)
     ok_emit_str(buf)
