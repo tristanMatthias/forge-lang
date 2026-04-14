@@ -565,6 +565,32 @@ impl Ctx {
         result
     }
 
+    // Call a function value (not by name — for local fn variables).
+    fn call_fn(self, fn_val: ptr, args: [ptr]) -> ptr {
+        let ft = forge_llvm_fn_type_of(fn_val)
+        let count = args.length
+        let arr = forge_llvm_value_array_new(count)
+        for i in 0..count {
+            forge_llvm_value_array_set(arr, i, args[i])
+        }
+        let result = forge_llvm_build_call(self.builder, ft, fn_val, arr, count, "")
+        forge_llvm_value_array_free(arr)
+        result
+    }
+
+    // Same but with a named result.
+    fn call_fn_named(self, fn_val: ptr, args: [ptr], name: string) -> ptr {
+        let ft = forge_llvm_fn_type_of(fn_val)
+        let count = args.length
+        let arr = forge_llvm_value_array_new(count)
+        for i in 0..count {
+            forge_llvm_value_array_set(arr, i, args[i])
+        }
+        let result = forge_llvm_build_call(self.builder, ft, fn_val, arr, count, name)
+        forge_llvm_value_array_free(arr)
+        result
+    }
+
     // Emit a null-deref trap (branchless — C function checks internally).
     fn null_check(self, val: ptr, field_name: string, type_name: string) {
         let is_null_i1 = self.icmp(32, val, forge_llvm_const_int(self.i64_type, 0, 0), "null_chk")
