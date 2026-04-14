@@ -238,45 +238,38 @@ general-purpose infrastructure in `parse/mod.fg`, not generics-specific.
 Mono pass reads explicit type args via `explicit_to_type_args` and
 uses them directly instead of inferring.
 
-### 3. `Option.None` can't be used standalone
-**priority:** high
-**file:** `features/generics/mono.fg`
+### ~~3. `Option.None` can't be used standalone~~ MOSTLY DONE
+**status:** fixed via merging (April 14, 2026)
 
-Bare variant access `Option.None` has no args to infer from → F0400 error.
-Rust solves this with return-type-directed inference: `fn foo() -> Option<int>`
-tells the compiler that `None` in this function is `Option__int.None`.
+Bare variant access `Option.None` works when another ctor site in the program
+provides type args (e.g. `Option.Some(42)` infers T=int, merged into the
+same instantiation that `Option.None` uses). Standalone `Option.None` with
+no other ctor site correctly emits F0400 error.
 
-**Fix:** When a function has a return type that names a generic enum/struct,
-resolve the type args from that annotation and apply them to all unresolved
-uses of that generic within the function body. This requires:
-1. Parse the return type string for generic args (e.g. `"Result<int, string>"`)
-2. Or: after collecting all ctor sites in a function, check the return type
-   annotation and use it to fill remaining unresolved params.
+Return-type-directed inference (inferring from `fn foo() -> Option<int>`) is
+NOT implemented — the return type annotation is a bare string `"Option"` with
+no generic args. This would require parsing `Option<int>` in type annotation
+positions, which is blocked on #2 (consume_type handling for generic args).
+For now, users must have at least one ctor with args, or use explicit type
+args at the ctor site.
 
-### 4. Enum merging is global, not scoped
-**priority:** high
-**file:** `features/generics/mono.fg`
+### ~~4. Enum merging is global, not scoped~~ DONE
+**status:** fixed (April 14, 2026)
 
-All `Result.Ok(...)` and `Result.Err(...)` across the entire program merge
-into one `Result__T__E`. If `fn a()` uses `Result<int, string>` and `fn b()`
-uses `Result<float, int>`, the merge produces a single wrong instantiation.
+Collection pass now scopes enum merging to function bodies. When entering
+a `Stmt.Function`, instantiations are collected into a fresh `InstList`,
+then appended (deduplicated) to the parent. Compatibility check
+(`type_args_compatible`) prevents conflicting bindings from merging —
+incompatible entries create separate instantiations.
 
-**Fix:** Scope merging to the enclosing function. Each function body's
-constructor calls merge independently. Two functions using Result with
-different types produce two separate instantiations.
+### ~~5. `rewrite_type_name` / `inst_mangled` returns first match~~ DONE
+**status:** fixed (April 14, 2026)
 
-### 5. `rewrite_type_name` / `inst_mangled` returns first match
-**priority:** high
-**file:** `features/generics/mono.fg`
-
-`inst_mangled(insts, "Wrapper")` returns the first InstList entry named
-"Wrapper". If both `Wrapper__int` and `Wrapper__string` exist, `fn foo() -> Wrapper`
-gets the wrong one.
-
-**Fix:** This is the same problem as #4 — once merging is scoped, each
-function's return type annotation maps to a specific instantiation. The
-rewrite pass should re-infer at each site (as it already does for
-`rewrite_struct_lit`) rather than looking up by bare name.
+`rewrite_enum_ctor` now uses `inst_mangled_compatible` which finds the
+entry whose type args are compatible with the site's partial inference,
+not just the first entry with the same name. `mangle_enum_at_site`
+computes the partial inference at each ctor site and matches against
+the compatible instantiation.
 
 ### 6. F0400 diagnostics have no source location
 **priority:** medium

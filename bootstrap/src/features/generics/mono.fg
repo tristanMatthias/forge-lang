@@ -44,6 +44,20 @@ fn inst_has(insts: InstList, mangled: string) -> bool {
     match insts { .End -> false, .Node(_, m, _, _) if m == mangled -> true, .Node(_, _, _, next) -> inst_has(next, mangled) }
 }
 
+fn append_insts(prefix: InstList, rest: InstList) -> InstList {
+    match prefix {
+        .End -> rest
+        .Node(n, m, ta, next) -> {
+            // Deduplicate: only add if this mangled name isn't already in rest
+            if m != "" && inst_has(rest, m) {
+                append_insts(next, rest)
+            } else {
+                InstList.Node(n, m, ta, append_insts(next, rest))
+            }
+        }
+    }
+}
+
 fn inst_mangled(insts: InstList, name: string) -> string {
     match insts {
         .End -> name
@@ -57,16 +71,28 @@ fn add_inst_if_new(name: string, type_args: TypeArgList, insts: InstList) -> Ins
     if inst_has(insts, mangled) { insts } else { InstList.Node(name, mangled, type_args, insts) }
 }
 
-// Merge partial type args into existing entries for the same generic name.
-// Compatible = no param maps to two different concrete types.
+// Merge partial type args into a compatible existing entry for the same generic name.
+// Two entries are compatible if no param maps to two different concrete types.
+// If incompatible (e.g. T=int vs T=string), creates a separate entry.
 fn merge_partial(name: string, partial_ta: TypeArgList, insts: InstList) -> InstList {
     match insts {
         .End -> InstList.Node(name, "", partial_ta, InstList.End)
-        .Node(n, _, existing_ta, next) if n == name -> {
+        .Node(n, _, existing_ta, next) if n == name && type_args_compatible(existing_ta, partial_ta) -> {
             let merged = merge_type_args(existing_ta, partial_ta)
             InstList.Node(name, "", merged, next)
         }
         .Node(n, m, ta, next) -> InstList.Node(n, m, ta, merge_partial(name, partial_ta, next))
+    }
+}
+
+fn type_args_compatible(a: TypeArgList, b: TypeArgList) -> bool {
+    match b {
+        .End -> true
+        .Node(name, ty, next) -> {
+            let a_ty = type_arg_lookup(a, name)
+            if a_ty != name && a_ty != ty { return false }
+            type_args_compatible(a, next)
+        }
     }
 }
 
@@ -325,7 +351,11 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .Module(_, body) -> collect_inst_stmts(body, regs, st)
         .Function(_, tp, _, _, body) -> {
             if tp is .Node { return st }
-            collect_inst_stmts(body, regs, st)
+            // Scope merging to this function: collect body's instantiations
+            // independently so enum ctors merge within the function, not globally.
+            let fn_state = collect_inst_stmts(body, regs, CollectState { insts: InstList.End, bag: st.bag })
+            // Add the function-scoped entries to the parent
+            CollectState { insts: append_insts(fn_state.insts, st.insts), bag: fn_state.bag }
         }
         .If(cond, then_b, else_b) -> {
             let a = collect_inst_stmt(then_b, regs, collect_inst_expr(cond, regs, st))
@@ -372,12 +402,14 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
             try_add_enum_inst(tn, variant, args, regs, collect_inst_exprs(args, regs, st))
         .StructLit(name, inits) ->
             try_add_struct_inst(name, inits, regs, collect_inst_field_inits(inits, regs, st))
-        .FieldAccess(obj, _) -> match obj {
+        .FieldAccess(obj, variant_name) -> match obj {
             .Ident(ename) -> match generic_enum_lookup(regs.enums, ename) {
                 // Bare variant access (e.g. Option.None) — no args to infer from.
-                // This is only valid if all type params can be inferred from other
-                // sites. We skip validation here; it happens at other ctor sites.
-                .Node(_, _, _, _) -> st
+                // Valid only if another ctor site already provided type args via merging.
+                // We don't error here — finalize_insts will catch missing instantiations.
+                // But we DO add a merge-partial with empty args so finalize knows this
+                // enum was referenced.
+                .Node(_, _, _, _) -> st with { insts: merge_partial(ename, TypeArgList.End, st.insts) }
                 .End -> collect_inst_expr(obj, regs, st)
             }
             _ -> collect_inst_expr(obj, regs, st)
@@ -682,11 +714,25 @@ fn rewrite_field_inits(inits: FieldInitList, regs: GenRegs, insts: InstList) -> 
     match inits { .End -> .End, .Node(n, val, next) -> FieldInitList.Node(n, sexpr(rewrite_expr(val.node, regs, insts), val.line, val.col), rewrite_field_inits(next, regs, insts)) }
 }
 
+fn mangle_enum_at_site(tn: string, variant: string, tp: TypeParamList, variants: VariantList, args: ExprList, insts: InstList) -> string {
+    inst_mangled_compatible(insts, tn, resolve_enum_type_args(tp, variants, variant, args))
+}
+
 fn rewrite_enum_ctor(tn: string, variant: string, args: ExprList, regs: GenRegs, insts: InstList) -> Expr {
     let new_args = rewrite_expr_list(args, regs, insts)
     match generic_enum_lookup(regs.enums, tn) {
-        .Node(_, _, _, _) -> .EnumCtor(inst_mangled(insts, tn), variant, new_args)
+        .Node(_, tp, variants, _) ->
+            .EnumCtor(mangle_enum_at_site(tn, variant, tp, variants, args, insts), variant, new_args)
         .End -> .EnumCtor(tn, variant, new_args)
+    }
+}
+
+// Find the InstList entry for `name` whose type args are compatible with `partial`.
+fn inst_mangled_compatible(insts: InstList, name: string, partial: TypeArgList) -> string {
+    match insts {
+        .End -> name
+        .Node(n, mangled, ta, _) if n == name && type_args_compatible(ta, partial) -> mangled
+        .Node(_, _, _, next) -> inst_mangled_compatible(next, name, partial)
     }
 }
 

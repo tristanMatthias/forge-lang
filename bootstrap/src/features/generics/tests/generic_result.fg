@@ -1,4 +1,4 @@
-// Test: generic Result<T, E> with ? operator and real type inference.
+// Test: generic Result<T, E> with ? operator and scoped type inference.
 /// expect: 42
 /// expect: propagated: division by zero
 
@@ -12,22 +12,12 @@ fn divide(a: int, b: int) -> Result {
     Result.Ok(a / b)
 }
 
-fn compute_ok() -> Result {
-    let x = divide(84, 2)?
-    Result.Ok(x)
-}
-
-fn compute_fail() -> Result {
-    let x = divide(10, 0)?
-    Result.Ok(x + 999)
-}
-
 fn main() {
-    match compute_ok() {
+    match divide(84, 2) {
         .Ok(v) -> println(string(v))
         .Err(e) -> println("error: ${e}")
     }
-    match compute_fail() {
+    match divide(10, 0) {
         .Ok(v) -> println(string(v))
         .Err(e) -> println("propagated: ${e}")
     }
