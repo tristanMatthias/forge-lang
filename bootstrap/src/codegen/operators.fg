@@ -12,16 +12,14 @@ export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult
     match op {
         .Neg -> {
             if vtype_eq(r.ty, .Float) {
-                let fval = to_f64(ctx, r.value, "fneg_in")
-                let neg = forge_llvm_build_fneg(ctx.builder, fval, "fneg")
-                return ok_emit_typed(f64_to_i64(ctx, neg, "fneg_bits"), .Float)
+                let fval = ctx.to_f64(r.value, "fneg_in")
+                let neg = ctx.fneg(fval, "fneg")
+                return ok_emit_typed(ctx.cast_to(neg, .Float), .Float)
             }
-            ok_emit(ctx.build_sub(ctx.i64(0), r.value, "neg"))
+            ok_emit(ctx.sub(ctx.i64(0), r.value, "neg"))
         }
-        .Not -> {
-            ok_emit(ctx.icmp_eq(r.value, ctx.i64(0), "not_cmp"))
-        }
-        .BitNot -> ok_emit(forge_llvm_build_not(ctx.builder, r.value, "bnot"))
+        .Not -> ok_emit(ctx.icmp_eq(r.value, ctx.i64(0), "not_cmp"))
+        .BitNot -> ok_emit(ctx.bit_not(r.value, "bnot"))
     }
 }
 
@@ -60,46 +58,32 @@ export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr)
                 // Pointer arithmetic requires i64 operands, then cast back to ptr.
                 let l_i64 = ctx.to_i64(lhs, "padd_l")
                 let r_i64 = ctx.to_i64(rhs, "padd_r")
-                let sum = ctx.build_add(l_i64, r_i64, "ptr_add")
-                return ok_emit_typed(ctx.int_to_ptr(sum, "ptr_sum"), .Ptr)
+                return ok_emit_typed(ctx.int_to_ptr(ctx.add(l_i64, r_i64, "ptr_add"), "ptr_sum"), .Ptr)
             }
-            ok_emit(ctx.build_add(lhs, rhs, "add"))
+            ok_emit(ctx.add(lhs, rhs, "add"))
         }
         .Sub -> {
             if is_ptr {
                 let l_i64 = ctx.to_i64(lhs, "psub_l")
                 let r_i64 = ctx.to_i64(rhs, "psub_r")
-                let diff = ctx.build_sub(l_i64, r_i64, "ptr_sub")
-                return ok_emit_typed(ctx.int_to_ptr(diff, "ptr_diff"), .Ptr)
+                return ok_emit_typed(ctx.int_to_ptr(ctx.sub(l_i64, r_i64, "ptr_sub"), "ptr_diff"), .Ptr)
             }
-            ok_emit(ctx.build_sub(lhs, rhs, "sub"))
+            ok_emit(ctx.sub(lhs, rhs, "sub"))
         }
-        .Mul -> ok_emit(forge_llvm_build_mul(ctx.builder, lhs, rhs, "mul"))
+        .Mul -> ok_emit(ctx.mul(lhs, rhs, "mul"))
         .Div -> {
-            // Runtime division-by-zero check (branchless — C function checks internally).
-            let zero = ctx.i64(0)
-            let is_zero = ctx.icmp_eq(rhs, zero, "div_zero_chk")
-            let dz_file = ctx.global_str(ctx.source_file, "dz_file")
-            let dz_flen = ctx.i64(ctx.source_file.length)
-            let dz_line = ctx.i64(ctx.source_line)
-            ctx.call("forge_div_by_zero_trap", [is_zero, dz_file, dz_flen, dz_line])
-            ok_emit(forge_llvm_build_sdiv(ctx.builder, lhs, rhs, "div"))
+            ctx.call("forge_div_by_zero_trap", [ctx.icmp_eq(rhs, ctx.i64(0), "div_zero"), ctx.global_str(ctx.source_file, "dz_file"), ctx.i64(ctx.source_file.length), ctx.i64(ctx.source_line)])
+            ok_emit(ctx.sdiv(lhs, rhs, "div"))
         }
         .Mod -> {
-            // Runtime division-by-zero check (branchless — C function checks internally).
-            let zero = ctx.i64(0)
-            let is_zero = ctx.icmp_eq(rhs, zero, "mod_zero_chk")
-            let mz_file = ctx.global_str(ctx.source_file, "mz_file")
-            let mz_flen = ctx.i64(ctx.source_file.length)
-            let mz_line = ctx.i64(ctx.source_line)
-            ctx.call("forge_div_by_zero_trap", [is_zero, mz_file, mz_flen, mz_line])
-            ok_emit(forge_llvm_build_srem(ctx.builder, lhs, rhs, "mod"))
+            ctx.call("forge_div_by_zero_trap", [ctx.icmp_eq(rhs, ctx.i64(0), "mod_zero"), ctx.global_str(ctx.source_file, "mz_file"), ctx.i64(ctx.source_file.length), ctx.i64(ctx.source_line)])
+            ok_emit(ctx.srem(lhs, rhs, "mod"))
         }
-        .BitAnd -> ok_emit(forge_llvm_build_and(ctx.builder, lhs, rhs, "band"))
-        .BitOr -> ok_emit(ctx.build_or(lhs, rhs, "bor"))
-        .BitXor -> ok_emit(forge_llvm_build_xor(ctx.builder, lhs, rhs, "bxor"))
-        .Shl -> ok_emit(forge_llvm_build_shl(ctx.builder, lhs, rhs, "shl"))
-        .Shr -> ok_emit(forge_llvm_build_ashr(ctx.builder, lhs, rhs, "shr"))
+        .BitAnd -> ok_emit(ctx.bit_and(lhs, rhs, "band"))
+        .BitOr -> ok_emit(ctx.bit_or(lhs, rhs, "bor"))
+        .BitXor -> ok_emit(ctx.bit_xor(lhs, rhs, "bxor"))
+        .Shl -> ok_emit(ctx.shl(lhs, rhs, "shl"))
+        .Shr -> ok_emit(ctx.shr(lhs, rhs, "shr"))
         .Eq -> {
             if !null_cmp && is_str { return emit_str_eq(ctx, lhs, rhs, false) }
             let is_enum = vtype_enum_name(left_result.ty) != "" && vtype_enum_name(right_result.ty) != ""
@@ -144,38 +128,19 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
     let fl = coerce_to_f64(ctx, lhs, lty)
     let fr = coerce_to_f64(ctx, rhs, rty)
     match op {
-        .Add -> ok_emit_typed(ctx.cast_to(forge_llvm_build_fadd(ctx.builder, fl, fr, "fadd"), .Float), .Float)
-        .Sub -> ok_emit_typed(ctx.cast_to(forge_llvm_build_fsub(ctx.builder, fl, fr, "fsub"), .Float), .Float)
-        .Mul -> ok_emit_typed(ctx.cast_to(forge_llvm_build_fmul(ctx.builder, fl, fr, "fmul"), .Float), .Float)
-        .Div -> ok_emit_typed(ctx.cast_to(forge_llvm_build_fdiv(ctx.builder, fl, fr, "fdiv"), .Float), .Float)
-        .Mod -> ok_emit_typed(ctx.cast_to(forge_llvm_build_frem(ctx.builder, fl, fr, "frem"), .Float), .Float)
+        .Add -> ok_emit_typed(ctx.cast_to(ctx.fadd(fl, fr, "fadd"), .Float), .Float)
+        .Sub -> ok_emit_typed(ctx.cast_to(ctx.fsub(fl, fr, "fsub"), .Float), .Float)
+        .Mul -> ok_emit_typed(ctx.cast_to(ctx.fmul(fl, fr, "fmul"), .Float), .Float)
+        .Div -> ok_emit_typed(ctx.cast_to(ctx.fdiv(fl, fr, "fdiv"), .Float), .Float)
+        .Mod -> ok_emit_typed(ctx.cast_to(ctx.frem(fl, fr, "frem"), .Float), .Float)
         // fcmp ordered predicates: OEQ=1, OGT=2, OGE=3, OLT=4, OLE=5, ONE=6
-        .Eq -> {
-            let cmp = forge_llvm_build_fcmp(ctx.builder, 1, fl, fr, "feq")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "feq_ext"))
-        }
-        .Ne -> {
-            let cmp = forge_llvm_build_fcmp(ctx.builder, 6, fl, fr, "fne")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "fne_ext"))
-        }
-        .Lt -> {
-            let cmp = forge_llvm_build_fcmp(ctx.builder, 4, fl, fr, "flt")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "flt_ext"))
-        }
-        .Le -> {
-            let cmp = forge_llvm_build_fcmp(ctx.builder, 5, fl, fr, "fle")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "fle_ext"))
-        }
-        .Gt -> {
-            let cmp = forge_llvm_build_fcmp(ctx.builder, 2, fl, fr, "fgt")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "fgt_ext"))
-        }
-        .Ge -> {
-            let cmp = forge_llvm_build_fcmp(ctx.builder, 3, fl, fr, "fge")
-            ok_emit(ctx.zext(cmp, ctx.i64_type, "fge_ext"))
-        }
-        // Bitwise ops don't make sense for floats — fall through to int
-        _ -> ok_emit(ctx.build_add(lhs, rhs, "add"))
+        .Eq -> ok_emit(ctx.zext(ctx.fcmp(1, fl, fr, "feq"), ctx.i64_type, "feq_ext"))
+        .Ne -> ok_emit(ctx.zext(ctx.fcmp(6, fl, fr, "fne"), ctx.i64_type, "fne_ext"))
+        .Lt -> ok_emit(ctx.zext(ctx.fcmp(4, fl, fr, "flt"), ctx.i64_type, "flt_ext"))
+        .Le -> ok_emit(ctx.zext(ctx.fcmp(5, fl, fr, "fle"), ctx.i64_type, "fle_ext"))
+        .Gt -> ok_emit(ctx.zext(ctx.fcmp(2, fl, fr, "fgt"), ctx.i64_type, "fgt_ext"))
+        .Ge -> ok_emit(ctx.zext(ctx.fcmp(3, fl, fr, "fge"), ctx.i64_type, "fge_ext"))
+        _ -> ok_emit(ctx.add(lhs, rhs, "add"))
     }
 }
 
@@ -183,12 +148,11 @@ export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Ex
     let left_result = ctx.emit(env, left)?
 
     let l_bool = ctx.truthy(left_result.value, "l_bool")
-    let left_bb = forge_llvm_get_insert_block(ctx.builder)
+    let left_bb = ctx.current_bb()
 
     let rhs_bb = ctx.bb("sc_rhs")
     let merge_bb = ctx.bb("sc_merge")
 
-    // &&: skip rhs if false. ||: skip rhs if true.
     match op {
         .And -> ctx.cond_br(l_bool, rhs_bb, merge_bb)
         .Or -> ctx.cond_br(l_bool, merge_bb, rhs_bb)
@@ -197,18 +161,17 @@ export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Ex
     ctx.position(rhs_bb)
     let right_result = ctx.emit(env, right)?
     let r_bool = ctx.truthy(right_result.value, "r_bool")
-    let rhs_end_bb = forge_llvm_get_insert_block(ctx.builder)
+    let rhs_end_bb = ctx.current_bb()
     ctx.br(merge_bb)
 
     ctx.position(merge_bb)
-    let phi = forge_llvm_build_phi(ctx.builder, forge_llvm_int1_type(ctx.lc), "sc_phi")
-
+    let phi = ctx.phi_i1("sc_phi")
     let sc_val = match op {
-        .And -> forge_llvm_const_int(forge_llvm_int1_type(ctx.lc), 0, 0)
-        .Or -> forge_llvm_const_int(forge_llvm_int1_type(ctx.lc), 1, 0)
+        .And -> ctx.const_i1(0)
+        .Or -> ctx.const_i1(1)
     }
-    forge_llvm_add_incoming(phi, sc_val, left_bb)
-    forge_llvm_add_incoming(phi, r_bool, rhs_end_bb)
+    ctx.add_incoming(phi, sc_val, left_bb)
+    ctx.add_incoming(phi, r_bool, rhs_end_bb)
 
     ok_emit(ctx.zext(phi, ctx.i64_type, "sc_ext"))
 }

@@ -8,9 +8,9 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
     // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
     if vtype_eq(r.ty, .Ptr) {
         let i_r = ctx.emit(env, idx)?
-        let off = ctx.build_add(ctx.to_i64(r.value, "ptr_base"), i_r.value, "ptr_off")
+        let off = ctx.add(ctx.to_i64(r.value, "ptr_base"), i_r.value, "ptr_off")
         let off_ptr = ctx.to_ptr(off, "ptr_idx")
-        let byte = ctx.load(forge_llvm_int8_type(ctx.lc), off_ptr, "ptr_byte")
+        let byte = ctx.load_i8(off_ptr, "ptr_byte")
         return ok_emit(ctx.zext(byte, ctx.i64_type, "ptr_byte_ext"))
     }
     // List indexing: list[i] → forge_array_get(list, i)
@@ -26,15 +26,15 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
     // Allocate a 2-byte buffer (1 char + nul), copy the byte at
     // src+i, set buf[1]=0. Returns a fresh str.
     let src_int = ctx.to_i64(r.value, "idx_src")
-    let off_int = ctx.build_add(src_int, i_r.value, "idx_off_int")
+    let off_int = ctx.add(src_int, i_r.value, "idx_off_int")
     let off_ptr = ctx.to_ptr(off_int, "idx_off")
-    let byte = ctx.load(forge_llvm_int8_type(ctx.lc), off_ptr, "idx_byte")
+    let byte = ctx.load_i8(off_ptr, "idx_byte")
     let buf = ctx.malloc(ctx.i64(2))
     ctx.store(byte, buf)
     // buf[1] = 0
     let buf_int = ctx.to_i64(buf, "idx_buf_int")
     let one = ctx.i64(1)
-    let nul_int = ctx.build_add(buf_int, one, "idx_nul_int")
+    let nul_int = ctx.add(buf_int, one, "idx_nul_int")
     let nul_ptr = ctx.to_ptr(nul_int, "idx_nul")
     ctx.store(ctx.i8(0), nul_ptr)
     ok_emit_str(buf)

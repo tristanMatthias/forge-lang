@@ -36,7 +36,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
                 let mu_line = ctx.i64(ctx.source_line)
                 ctx.call("forge_match_unreachable", [fn_name_str, tag_i64, mu_file, mu_line])
-                forge_llvm_build_unreachable(ctx.builder)
+                ctx.unreachable()
             }
             ok_emit(null_ptr_val())
         }
@@ -98,7 +98,7 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
                 let mu_line = ctx.i64(ctx.source_line)
                 ctx.call("forge_match_unreachable", [fn_name_str, tag_i64, mu_file, mu_line])
-                forge_llvm_build_unreachable(ctx.builder)
+                ctx.unreachable()
             }
             ok_stmt(env)
         }
@@ -238,10 +238,10 @@ fn emit_nested_tag_check_list(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, pats: Pattern
 // Enum layout: {i8 tag, ptr payload}. Payload is an array of i64 values.
 fn load_payload_field(ctx: Ctx, st_ty: ptr, subj_ptr: ptr, idx: int, label: string) -> ptr {
     let pay_gep = ctx.gep(st_ty, subj_ptr, 1, "pay_slot")
-    let pay_ptr = ctx.load(forge_llvm_pointer_type(ctx.lc), pay_gep, "payload")
+    let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "payload")
     let pay_i64 = ctx.ptr_to_int(pay_ptr, ctx.i64_type, "pay_base")
     let addr = ctx.build_add(pay_i64, ctx.i64(idx * 8), "fld_addr")
-    let fld_ptr = ctx.int_to_ptr(addr, forge_llvm_pointer_type(ctx.lc), "fld_ptr")
+    let fld_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "fld_ptr")
     ctx.load_i64(fld_ptr, label)
 }
 
@@ -412,7 +412,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
                 let mu_line = ctx.i64(ctx.source_line)
                 ctx.call("forge_match_unreachable", [fn_name_str, ctx.i64(-1), mu_file, mu_line])
-                forge_llvm_build_unreachable(ctx.builder)
+                ctx.unreachable()
             }
             ctx.position(merge_bb)
             let loaded = ctx.load_i64(result_slot, "pmatch_val")
@@ -472,7 +472,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                 let mu_file = ctx.global_str(ctx.source_file, "mu_file")
                 let mu_line = ctx.i64(ctx.source_line)
                 ctx.call("forge_match_unreachable", [fn_name_str, ctx.i64(-1), mu_file, mu_line])
-                forge_llvm_build_unreachable(ctx.builder)
+                ctx.unreachable()
             }
             ctx.position(merge_bb)
             ok_stmt(env)

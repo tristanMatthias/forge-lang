@@ -115,22 +115,11 @@ fn emit_one_null_check(ctx: Ctx, fn_name: string, param_name: string, env: VarEn
     // zext i1 to i64 for the C function
     let is_null = ctx.zext(is_null_i1, ctx.i64_type, "${param_name}_nz")
 
-    // Build the call to forge_null_arg_check(fn_name, fn_len, param_name, param_len, is_null).
-    // No branching — the C function does the check internally.
-    let fn_str = ctx.global_str(fn_name, "dbg_fn")
-    let fn_len = ctx.i64(fn_name.length)
-    let p_str = ctx.global_str(param_name, "dbg_param")
-    let p_len = ctx.i64(param_name.length)
-    let check_fn = ctx.get_fn("forge_null_arg_check")
-    let ft = forge_llvm_fn_type_of(check_fn)
-    let args = forge_llvm_value_array_new(5)
-    forge_llvm_value_array_set(args, 0, fn_str)
-    forge_llvm_value_array_set(args, 1, fn_len)
-    forge_llvm_value_array_set(args, 2, p_str)
-    forge_llvm_value_array_set(args, 3, p_len)
-    forge_llvm_value_array_set(args, 4, is_null)
-    forge_llvm_build_call(ctx.builder, ft, check_fn, args, 5, "")
-    forge_llvm_value_array_free(args)
+    ctx.call("forge_null_arg_check", [
+        ctx.global_str(fn_name, "dbg_fn"), ctx.i64(fn_name.length),
+        ctx.global_str(param_name, "dbg_param"), ctx.i64(param_name.length),
+        is_null
+    ])
 }
 
 // ── Call dispatch (moved from codegen/mod.fg) ──
@@ -209,7 +198,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
             "char_code" -> {
                 // str.char_code() → int (first byte as integer)
                 let str_ptr = ctx.to_ptr(r.value, "str_self")
-                let byte_val = ctx.load(forge_llvm_int8_type(ctx.lc), str_ptr, "char_byte")
+                let byte_val = ctx.load_i8(str_ptr, "char_byte")
                 let as_i64 = ctx.zext(byte_val, ctx.i64_type, "char_code")
                 return ok_emit(as_i64)
             }

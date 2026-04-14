@@ -97,7 +97,7 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitR
     let lhs_ptr = ctx.to_ptr(lhs_i64, "scmp_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "scmp_r")
     let result32 = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
-    let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
+    let result64 = ctx.sext(result32, ctx.i64_type, "strcmp_sext")
     let zero64 = ctx.i64(0)
     let cmp = ctx.icmp(pred, result64, zero64, "scmp_cmp")
     ok_emit(ctx.zext(cmp, ctx.i64_type, "scmp_ext"))
@@ -108,7 +108,7 @@ export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Emi
     let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
     let result32 = ctx.call("strcmp", [lhs_ptr, rhs_ptr])
     // Sign-extend strcmp's i32 to i64 so the icmp operands match.
-    let result64 = forge_llvm_build_sext(ctx.builder, result32, ctx.i64_type, "strcmp_sext")
+    let result64 = ctx.sext(result32, ctx.i64_type, "strcmp_sext")
     let zero64 = ctx.i64(0)
     let pred = if invert { 33 } else { 32 }
     let cmp = ctx.icmp(pred, result64, zero64, "streq_cmp")

@@ -714,24 +714,66 @@ impl Ctx {
     fn store_field(self, val: ptr, gep: ptr, field_ty: ValueType) {
         forge_llvm_build_store(self.builder, self.cast_to(val, field_ty), gep)
     }
+    // ── Memory ──
     fn load(self, ty: ptr, src: ptr, name: string) -> ptr { forge_llvm_build_load(self.builder, ty, src, name) }
     fn load_i64(self, src: ptr, name: string) -> ptr { forge_llvm_build_load(self.builder, self.i64_type, src, name) }
+    fn load_i8(self, src: ptr, name: string) -> ptr { forge_llvm_build_load(self.builder, forge_llvm_int8_type(self.lc), src, name) }
     fn alloca(self, ty: ptr, name: string) -> ptr { forge_llvm_build_alloca(self.builder, ty, name) }
     fn alloca_i64(self, name: string) -> ptr { forge_llvm_build_alloca(self.builder, self.i64_type, name) }
-    fn br(self, bb: ptr) { forge_llvm_build_br(self.builder, bb) }
-    fn cond_br(self, cond: ptr, then_bb: ptr, else_bb: ptr) { forge_llvm_build_cond_br(self.builder, cond, then_bb, else_bb) }
-    fn icmp(self, pred: int, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_icmp(self.builder, pred, a, b, name) }
-    fn zext(self, val: ptr, ty: ptr, name: string) -> ptr { forge_llvm_build_zext(self.builder, val, ty, name) }
     fn gep(self, ty: ptr, base: ptr, idx: int, name: string) -> ptr { forge_llvm_build_struct_gep2(self.builder, ty, base, idx, name) }
     fn global_str(self, text: string, name: string) -> ptr { forge_llvm_build_global_string_ptr(self.builder, text, name) }
-    fn build_add(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_add(self.builder, a, b, name) }
-    fn build_sub(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_sub(self.builder, a, b, name) }
-    fn build_or(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_or(self.builder, a, b, name) }
+
+    // ── Control flow ──
+    fn br(self, bb: ptr) { forge_llvm_build_br(self.builder, bb) }
+    fn cond_br(self, cond: ptr, then_bb: ptr, else_bb: ptr) { forge_llvm_build_cond_br(self.builder, cond, then_bb, else_bb) }
     fn build_ret(self, val: ptr) { forge_llvm_build_ret(self.builder, val) }
+    fn unreachable(self) { forge_llvm_build_unreachable(self.builder) }
     fn has_terminator(self) -> bool { forge_llvm_block_has_terminator(self.builder) != 0 }
+    fn current_bb(self) -> ptr { forge_llvm_get_insert_block(self.builder) }
+
+    // ── Integer arithmetic ──
+    fn add(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_add(self.builder, a, b, name) }
+    fn sub(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_sub(self.builder, a, b, name) }
+    fn mul(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_mul(self.builder, a, b, name) }
+    fn sdiv(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_sdiv(self.builder, a, b, name) }
+    fn srem(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_srem(self.builder, a, b, name) }
+    fn bit_and(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_and(self.builder, a, b, name) }
+    fn bit_or(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_or(self.builder, a, b, name) }
+    fn bit_xor(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_xor(self.builder, a, b, name) }
+    fn shl(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_shl(self.builder, a, b, name) }
+    fn shr(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_ashr(self.builder, a, b, name) }
+    fn bit_not(self, val: ptr, name: string) -> ptr { forge_llvm_build_not(self.builder, val, name) }
+
+    // ── Comparisons ──
+    fn icmp(self, pred: int, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_icmp(self.builder, pred, a, b, name) }
+    fn fcmp(self, pred: int, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_fcmp(self.builder, pred, a, b, name) }
+    fn zext(self, val: ptr, ty: ptr, name: string) -> ptr { forge_llvm_build_zext(self.builder, val, ty, name) }
+    fn sext(self, val: ptr, ty: ptr, name: string) -> ptr { forge_llvm_build_sext(self.builder, val, ty, name) }
+
+    // ── Float arithmetic ──
+    fn fadd(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_fadd(self.builder, a, b, name) }
+    fn fsub(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_fsub(self.builder, a, b, name) }
+    fn fmul(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_fmul(self.builder, a, b, name) }
+    fn fdiv(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_fdiv(self.builder, a, b, name) }
+    fn frem(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_frem(self.builder, a, b, name) }
+    fn fneg(self, val: ptr, name: string) -> ptr { forge_llvm_build_fneg(self.builder, val, name) }
+
+    // ── PHI nodes ──
+    fn phi_i1(self, name: string) -> ptr { forge_llvm_build_phi(self.builder, self.i1_type, name) }
+    fn add_incoming(self, phi: ptr, val: ptr, bb: ptr) { forge_llvm_add_incoming(phi, val, bb) }
+
+    // ── Constants ──
+    fn const_i1(self, val: int) -> ptr { forge_llvm_const_int(self.i1_type, val, 0) }
+
+    // ── Lookups ──
     fn get_type(self, name: string) -> ptr { forge_llvm_get_type_by_name(self.lc, name) }
     fn int_to_ptr(self, val: ptr, name: string) -> ptr { forge_llvm_build_int_to_ptr(self.builder, val, self.ptr_type, name) }
     fn ptr_to_int(self, val: ptr, name: string) -> ptr { forge_llvm_build_ptr_to_int(self.builder, val, self.i64_type, name) }
+
+    // Deprecated — use add/sub/bit_or instead.
+    fn build_add(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_add(self.builder, a, b, name) }
+    fn build_sub(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_sub(self.builder, a, b, name) }
+    fn build_or(self, a: ptr, b: ptr, name: string) -> ptr { forge_llvm_build_or(self.builder, a, b, name) }
 
     // ── Level 2: common patterns (2-3 lines → 1) ──
 

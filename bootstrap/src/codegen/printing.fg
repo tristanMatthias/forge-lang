@@ -22,16 +22,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
                     buf
                 }
             }
-            let eprint_fn = ctx.get_fn("forge_eprintln")
-            let arr = forge_llvm_value_array_new(1)
-            forge_llvm_value_array_set(arr, 0, str_ptr)
-            let void_type = forge_llvm_void_type(ctx.lc)
-            let pa = forge_llvm_type_array_new(1)
-            forge_llvm_type_array_set(pa, 0, ctx.ptr_type)
-            let fn_type = forge_llvm_function_type(void_type, pa, 1, 0)
-            forge_llvm_type_array_free(pa)
-            forge_llvm_build_call(ctx.builder, fn_type, eprint_fn, arr, 1, "")
-            forge_llvm_value_array_free(arr)
+            ctx.call("forge_eprintln", [str_ptr])
             ok_emit(ctx.i64(0))
         }
     }

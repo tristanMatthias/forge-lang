@@ -39,7 +39,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     let payload_gep = ctx.gep(st_ty, buf, 1, "pay_ptr")
     if num_fields == 0 {
         // Nullary variant — null payload
-        let null_val = forge_llvm_const_null(forge_llvm_pointer_type(ctx.lc))
+        let null_val = ctx.zero_for(ValueType.Ptr)
         ctx.store(null_val, payload_gep)
     } else {
         // Allocate payload: num_fields * 8 bytes
@@ -64,8 +64,8 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, args: ExprList, id
             // Write field at offset idx * 8 in the payload buffer
             let base_i64 = ctx.ptr_to_int(payload_ptr, ctx.i64_type, "pay_base")
             let offset_val = ctx.i64(idx * 8)
-            let addr = ctx.build_add(base_i64, offset_val, "pay_addr")
-            let field_ptr = ctx.int_to_ptr(addr, forge_llvm_pointer_type(ctx.lc), "fld_ptr")
+            let addr = ctx.add(base_i64, offset_val, "pay_addr")
+            let field_ptr = ctx.int_to_ptr(addr, ctx.ptr_type, "fld_ptr")
             ctx.store(r.value, field_ptr)
             fill_enum_payload(ctx, env, payload_ptr, next, idx + 1)
         }
