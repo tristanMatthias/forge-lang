@@ -6,7 +6,7 @@
 // then overwrite the specified fields with new values.
 
 use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, vtype_struct_name, vtype_display, SExpr}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, struct_reg_lookup}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit}
 
 export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> EmitResult {
     let r = ctx.emit(env, obj)?
@@ -15,7 +15,7 @@ export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) 
     if struct_name == "" {
         return err_emit("`with` requires a struct value (got ty=${vtype_display(r.ty)})")
     }
-    let lookup = struct_reg_lookup(ctx.structs, struct_name)
+    let lookup = ctx.lookup_struct(struct_name)
     if !lookup.found {
         return err_emit("unknown struct `${struct_name}` in with expression")
     }

@@ -1,12 +1,12 @@
 // WHY: emits struct literal construction and field-filling.
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, SExpr}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup, enum_reg_lookup}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
 use codegen.{emit_expr, emit_enum_ctor}
 use features.enum_decl.codegen.{emit_enum_ctor}
 
 export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitList) -> EmitResult {
-    let lookup = struct_reg_lookup(ctx.structs, name)
+    let lookup = ctx.lookup_struct(name)
     if !lookup.found {
         return err_emit("undefined struct type `${name}`")
     }
@@ -46,7 +46,7 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     if struct_name == "" {
         return err_emit("field assignment on non-struct value (ty=${vtype_display(r.ty)})")
     }
-    let lookup = struct_reg_lookup(ctx.structs, struct_name)
+    let lookup = ctx.lookup_struct(struct_name)
     if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }
@@ -63,7 +63,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     // Bare `EnumName.Variant` (zero-arg enum constructor)
     match obj {
         .Ident(head) -> {
-            let enum_l = enum_reg_lookup(ctx.enums, head)
+            let enum_l = ctx.lookup_enum(head)
             if enum_l.found {
                 return emit_enum_ctor(ctx, env, head, field, ExprList.End)
             }
@@ -89,7 +89,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
     if struct_name == "" {
         return err_emit("field access on non-struct value (ty=${vtype_display(r.ty)}, field=${field})")
     }
-    let lookup = struct_reg_lookup(ctx.structs, struct_name)
+    let lookup = ctx.lookup_struct(struct_name)
     if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
     let idx = field_index_of(lookup.fields, field)
     if idx < 0 { return err_emit("unknown field `${field}` on struct `${struct_name}`") }

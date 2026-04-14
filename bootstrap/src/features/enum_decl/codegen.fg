@@ -2,7 +2,7 @@
 // enum value comparison (tag equality via struct GEP).
 
 use core.ast.{Expr, ExprList, FieldList, VariantList, VarEnv, variant_lookup, variant_max_payload, field_list_length, expr_list_length, ValueType, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_lookup, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 
 export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
     // Contextual resolution: `.Variant` with empty type_name.
@@ -24,7 +24,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     } else {
         type_name
     }
-    let enum_l = enum_reg_lookup(ctx.enums, resolved_name)
+    let enum_l = ctx.lookup_enum(resolved_name)
     if !enum_l.found {
         return err_emit("undefined enum type `${resolved_name}`")
     }

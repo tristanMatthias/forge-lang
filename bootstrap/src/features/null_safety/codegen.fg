@@ -10,7 +10,7 @@
 // operators compile to i64 null-check or enum-tag-check branches.
 
 use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, struct_reg_lookup}
+use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
     let l = ctx.emit(env, left)
@@ -74,7 +74,7 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
         let loaded = ctx.load_i64(result_slot, "oc_val")
         return ok_emit_typed(loaded, r.ty)
     }
-    let lookup = struct_reg_lookup(ctx.structs, struct_name)
+    let lookup = ctx.lookup_struct(struct_name)
     if !lookup.found {
         return err_emit("unknown struct `${struct_name}` in optional chain")
     }
@@ -129,7 +129,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     // the expression evaluates to the struct itself.
     let struct_name = vtype_struct_name(r.ty)
     if struct_name != "" {
-        let lookup = struct_reg_lookup(ctx.structs, struct_name)
+        let lookup = ctx.lookup_struct(struct_name)
         if lookup.found {
             let err_idx = field_index_of(lookup.fields, "had_error")
             if err_idx >= 0 {

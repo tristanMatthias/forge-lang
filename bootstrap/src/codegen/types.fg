@@ -217,9 +217,6 @@ export enum DeferStack {
     Frame(body: SExpr, next: DeferStack)
 }
 
-export fn ctx_with_defers(ctx: Ctx, defers: DeferStack) -> Ctx {
-    ctx with { defers }
-}
 
 export enum StructReg {
     End
@@ -484,13 +481,6 @@ export fn vtype_is_ptr_type(vt: ValueType) -> bool {
         _ -> true
     }
 }
-
-// ── Legacy free function (still used by setup.fg) ──
-
-export fn ctx_with_top_level(ctx: Ctx, top_level_vars: TopLevelVars) -> Ctx {
-    ctx with { top_level_vars }
-}
-
 
 // ── Ctx builder DSL ──
 // Three levels: raw LLVM wrappers, common patterns, semantic operations.
@@ -930,5 +920,32 @@ impl Ctx {
             self.global_str(self.source_file, "dz_file"),
             self.i64(self.source_file.length), self.i64(self.source_line)
         ])
+    }
+
+    // ── Registry lookups ──
+
+    fn lookup_struct(self, name: string) -> StructLookup { struct_reg_lookup(self.structs, name) }
+    fn lookup_enum(self, name: string) -> EnumLookup { enum_reg_lookup(self.enums, name) }
+    fn lookup_toplevel(self, name: string) -> TopLevelLookup { toplevel_lookup(self.top_level_vars, name) }
+    fn lookup_fn_params(self, name: string) -> ParamTypeList { fn_param_lookup(self.fn_params, name) }
+
+    // ── Closure support ──
+
+    // Build a closure array: [TAG, fn_ptr, captures...]
+    fn closure_array(self, fn_ptr: ptr) -> ptr {
+        let arr = self.array_new()
+        self.array_push(arr, self.i64(closure_marker()))
+        self.array_push(arr, fn_ptr)
+        arr
+    }
+
+    // ── Context builders (continued) ──
+
+    fn with_top_level(self, top_level_vars: TopLevelVars) -> Ctx {
+        self with { top_level_vars }
+    }
+
+    fn with_defers(self, defers: DeferStack) -> Ctx {
+        self with { defers }
     }
 }

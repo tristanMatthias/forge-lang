@@ -2,7 +2,7 @@
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, struct_reg_lookup, fn_param_lookup, param_type_at, trait_decl_has, toplevel_lookup, null_ptr_val}
+use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, translate_type_ctx, param_type_at, trait_decl_has, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 
@@ -234,7 +234,7 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         // Not a method — check if it's a struct field with fn type.
         // e.g. handler.action(25) where action: fn(int) -> int
         if type_name != "" {
-            let s_lookup = struct_reg_lookup(ctx.structs, type_name)
+            let s_lookup = ctx.lookup_struct(type_name)
             if s_lookup.found {
                 let field_ty = ctx.resolve_field_type(s_lookup.fields, method)
                 if vtype_is_fn(field_ty) {
@@ -300,7 +300,7 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
         if local.found && vtype_is_fn(local.ty) {
             return emit_indirect_call(ctx, env, local.alloca, name, args)
         }
-        let g = toplevel_lookup(ctx.top_level_vars, name)
+        let g = ctx.lookup_toplevel(name)
         if g.found && vtype_is_fn(g.ty) {
             return emit_indirect_call_from_global(ctx, env, g.llvm_global, name, args, g.ty)
         }
@@ -309,7 +309,7 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
 
     let arg_count = expr_list_length(args)
     let arg_arr = ctx.value_array(arg_count)
-    let ptypes = fn_param_lookup(ctx.fn_params, name)
+    let ptypes = ctx.lookup_fn_params(name)
     let fill = fill_arg_array_boxing(ctx, env, arg_arr, args, ptypes, 0)
     if fill.had_error {
         ctx.value_array_free(arg_arr)

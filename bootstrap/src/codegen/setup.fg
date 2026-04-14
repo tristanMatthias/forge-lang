@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_length, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, env_extend}
-use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, ctx_with_top_level, enum_reg_lookup, err_emit, err_stmt, err_stmt_from_expr, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, toplevel_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, err_stmt_from_expr, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelResult}
 use codegen.helpers.{stmts_last_expr}
@@ -592,7 +592,7 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
 }
 
 fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLevelResult {
-    let g = toplevel_lookup(ctx.top_level_vars, name)
+    let g = ctx.lookup_toplevel(name)
     if !g.found {
         return TopLevelResult { ctx, env, had_error: true, error_message: "codegen error: global `${name}` not declared" }
     }
@@ -602,7 +602,7 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLe
     }
     ctx.store(r.value, g.llvm_global)
     let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
-    let updated_cg = ctx_with_top_level(ctx, updated_top)
+    let updated_cg = ctx.with_top_level(updated_top)
     TopLevelResult { ctx: updated_cg, env, had_error: false, error_message: "" }
 }
 
