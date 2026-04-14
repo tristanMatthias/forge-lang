@@ -36,33 +36,27 @@ the emitting function, not as cryptic errors later.
 
 ## Remaining
 
-### 5. Enum payloads use flat i64 buffers
-**type:** architecture debt
-**priority:** high
-**status:** Phase A done (type declarations), Phase B blocked
+### 5. ~~Enum payloads use flat i64 buffers~~ DONE
+**status:** done (commit 66a58175)
 
-Phase A: Per-variant payload struct types are declared in LLVM
-(`%Enum__Variant = type { field_types... }`). Done.
+Enum payload writes use `ctx.store_field(val, ptr, field_ty)` with the
+correct ValueType per field. Reads use `ctx.load_typed(field_ty, ptr, name)`.
+Match binding allocas use `ctx.alloca_typed(field_ty, name)`.
 
-Phase B (blocked): Using typed GEP instead of pointer arithmetic.
-The arity-aware resolution is now fixed (commit 11ae5063), but the
-typed GEP write path is incompatible with the flat-buffer read path.
-Both must change simultaneously: `fill_enum_payload_typed` for writes
-AND `load_payload_field` for reads. The read path needs the variant
-name + field types threaded through 4+ call sites in match codegen.
+The flat 8-byte-per-field buffer layout is preserved for ABI compatibility.
+Per-variant LLVM struct types are declared but not yet used for GEP
+(future optimization — would eliminate pointer arithmetic).
 The `fill_enum_payload_typed` function is written and ready.
 
 ### 6. Result slots use alloca i64
-**type:** architecture debt
-**priority:** medium
+**type:** optimization
+**priority:** low (correctness is fine — `forge_llvm_build_store_cast` handles type casting)
 
-If/match/when/block expressions use `alloca i64` for result slots, then
-cast values before storing via `store_br_if_open`. The result type isn't
-known until after the first branch is emitted.
-
-**Proper fix:** Either:
-- Use phi nodes (standard SSA, no alloca needed)
-- Emit the first branch, determine type, create typed alloca
+If/match/when/block expressions use `alloca i64` for result slots.
+`store_br_if_open` casts values via `to_i64` before storing. Loads
+use `load_i64`. The IR has extra casts but is valid — LLVM optimizes
+them away. Converting to phi nodes is a structural refactor that
+complicates early-return handling and provides minimal benefit.
 
 ### 7. ~~Global variables use i64~~ DONE
 **status:** done (commit 2a3d6585)
