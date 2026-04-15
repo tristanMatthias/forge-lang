@@ -275,6 +275,14 @@ fn rewrite_type_name(ty: string, regs: GenRegs, insts: InstList) -> string {
     }
 }
 
+fn rewrite_param_types(params: ParamList, regs: GenRegs, insts: InstList) -> ParamList {
+    match params {
+        .End -> .End
+        .Node(name, ty, resolved, next) ->
+            ParamList.Node(name, rewrite_type_name(ty, regs, insts), resolved, rewrite_param_types(next, regs, insts))
+    }
+}
+
 // ── Pass 1: Collect generic declarations ──
 
 fn collect_generics(stmts: StmtList, regs: GenRegs) -> GenRegs {
@@ -591,7 +599,8 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: InstList) -> Stmt {
         .While(cond, body) -> .While(rewrite_expr(cond, regs, insts), rewrite_stmt(body, regs, insts))
         .For(v, s, e, body) -> .For(v, rewrite_expr(s, regs, insts), rewrite_expr(e, regs, insts), rewrite_stmt(body, regs, insts))
         .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr(coll, regs, insts), rewrite_stmt(body, regs, insts))
-        .Function(name, tp, params, ret_ty, body) -> .Function(name, tp, params, rewrite_type_name(ret_ty, regs, insts), rewrite_stmts(body, regs, insts))
+        .Function(name, tp, params, ret_ty, body) -> .Function(name, tp, rewrite_param_types(params, regs, insts), rewrite_type_name(ret_ty, regs, insts), rewrite_stmts(body, regs, insts))
+        .ExternFn(name, params, ret_ty) -> .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_type_name(ret_ty, regs, insts))
         .Match(subj, arms) -> .Match(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
         .Module(name, body) -> .Module(name, rewrite_stmts(body, regs, insts))
         .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt(inner, regs, insts))

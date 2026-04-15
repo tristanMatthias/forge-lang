@@ -309,32 +309,26 @@ closures. **Closures with match pattern bindings are broken** — match arms
 inside a closure body can't resolve pattern-bound variables. This blocks the
 HO mapper approach.
 
-**Unblock:** Fix closure codegen to resolve match pattern bindings in closure
-bodies. Then extract the shared mapper.
+**Unblock:** ~~Fix closure codegen~~ DONE (April 14, 2026). Closures with
+match pattern bindings now work. However, the savings (~100 lines) don't
+justify the added complexity (HO callbacks, different leaf behaviors per
+pass). The two passes serve different purposes at different scales
+(substitute: small cloned subtrees, rewrite: entire program). Accepted
+duplication — will revisit if a third AST transform pass is needed.
 
-### 9. ParamList type strings not rewritten
-**priority:** medium
-**file:** `features/generics/mono.fg`
+### ~~9. ParamList type strings not rewritten~~ DONE
+**status:** fixed (April 14, 2026)
 
-`fn foo(x: Wrapper)` — the param type string `"Wrapper"` is not rewritten to
-`"Wrapper__int"` by the mono pass. Only `ret_ty` and `Let`/`Mut` type strings
-are rewritten via `rewrite_type_name`.
+Added `rewrite_param_types` that walks ParamList and applies
+`rewrite_type_name` to each node's `ty` string. Applied in `.Function`
+and `.ExternFn` arms of `rewrite_stmt`.
 
-**Fix:** Add `rewrite_type_name` calls to ParamList nodes in `rewrite_stmt`'s
-`.Function` arm and anywhere params are threaded through. Also rewrite
-`ExternFn` param types.
+### ~~10. Nested/recursive generics not tested~~ DONE
+**status:** works (April 14, 2026)
 
-### 10. Nested/recursive generics not tested
-**priority:** medium
-
-`enum List<T> { End, Node(value: T, next: List<T>) }` — the `next` field
-type is `"List<T>"` which contains a generic reference. The mono pass's
-`substitute_fields` would turn `"List<T>"` into... `"List<T>"` (unchanged,
-since `type_arg_lookup` looks for exact match on `"List<T>"` which isn't
-a type param name).
-
-**Fix:** `substitute_fields` (and `type_arg_lookup`) need to handle compound
-type strings like `"List<T>"` — parse the `<...>` suffix, substitute type
-params inside it, and reconstruct: `"List<T>"` + `T=int` → `"List__int"`.
-This also requires the mono pass to transitively monomorphize referenced
-generic types.
+`enum List<T> { End, Node(value: T, next: List<T>) }` works out of the box.
+The self-referential `next: List<T>` field type string stays unchanged during
+substitution, which is correct because all enums have the same layout
+`{i64, ptr}`. The `List.Node(1, List.Node(2, ...))` calls correctly infer
+`T=int` and the monomorphized `List__int` enum is generated.
+Test: `tests/recursive_generic.fg`.
