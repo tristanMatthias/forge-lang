@@ -118,7 +118,9 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
         let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_pay_slot")
         let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "try_payload")
         let ok_val = ctx.load_i64(pay_ptr, "try_ok_val")
-        return ok_emit_typed(ok_val, .Int)
+        // Resolve the Ok variant's payload type from the enum registry.
+        let ok_ty = ctx.resolve_ok_type(enum_name)
+        return ok_emit_typed(ok_val, ok_ty)
     }
 
     // ── Mode 2: Struct with `had_error` field ──

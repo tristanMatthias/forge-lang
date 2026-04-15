@@ -83,6 +83,10 @@ export fn null_ptr_val() -> ptr {
     n
 }
 
+// ── Result type + emit/stmt helpers ──
+
+export enum Result<T, E> { Ok(value: T), Err(error: E) }
+
 // ── EmitResult / StmtResult ──
 //
 // Every emit_* function returns one of these. EmitResult carries a
@@ -90,6 +94,9 @@ export fn null_ptr_val() -> ptr {
 // later code whether to dispatch through string operations or
 // integer operations. StmtResult is the same shape minus the value:
 // statements emit for side effects only.
+//
+// These are being migrated to Result<T, string>. During transition,
+// both old (struct with had_error) and new (Result enum) patterns coexist.
 
 export type EmitResult = {
     value: ptr,
@@ -955,6 +962,15 @@ impl Ctx {
     fn lookup_struct(self, name: string) -> StructLookup { struct_reg_lookup(self.structs, name) }
     fn lookup_enum(self, name: string) -> EnumLookup { enum_reg_lookup(self.enums, name) }
     fn lookup_toplevel(self, name: string) -> TopLevelLookup { toplevel_lookup(self.top_level_vars, name) }
+
+    // Resolve the Ok variant's payload type for Result enums.
+    fn resolve_ok_type(self, enum_name: string) -> ValueType {
+        let lookup = self.lookup_enum(enum_name)
+        if !lookup.found { return ValueType.Int }
+        let ok = variant_lookup(lookup.variants, "Ok")
+        if !ok.found { return ValueType.Int }
+        field_resolved_at(ok.fields, 0)
+    }
     fn lookup_fn_params(self, name: string) -> ParamTypeList { fn_param_lookup(self.fn_params, name) }
 
     // ── Closure support ──

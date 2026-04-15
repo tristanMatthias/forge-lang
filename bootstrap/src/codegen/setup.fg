@@ -273,6 +273,14 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
 }
 
 // Rebuild a FieldList with `resolved` populated from `translate_param_type`.
+fn resolve_variant_fields(variants: VariantList, structs: StructReg, enums: EnumReg) -> VariantList {
+    match variants {
+        .End -> .End
+        .Node(name, fields, next) ->
+            VariantList.Node(name, resolve_field_list(fields, structs, enums), resolve_variant_fields(next, structs, enums))
+    }
+}
+
 fn resolve_field_list(fields: FieldList, structs: StructReg, enums: EnumReg) -> FieldList {
     match fields {
         .End -> .End
@@ -389,7 +397,8 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
                     forge_llvm_type_array_free(field_arr)
                     // Per-variant typed payload structs
                     declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs, reg)
-                    EnumReg.Node(name, variants, reg)
+                    let resolved_variants = resolve_variant_fields(variants, structs, reg)
+                    EnumReg.Node(name, resolved_variants, reg)
                 }
                 .Module(_, body) -> declare_enums(ctx, i64t, i1t, dt, pt, body, structs, reg)
                 _ -> reg
