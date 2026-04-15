@@ -579,16 +579,19 @@ Should point at `pair`, not `let`. Fix: thread expression positions through
 `check_expr` / `check_call`, or update `tc.current_line/col` when entering
 each expression.
 
-### Match pattern bindings not resolved inside closure bodies
-**type:** bug
-**priority:** high
-**source:** discovered April 14, 2026
+### ~~Enum match pattern bindings fail in inline lambda arguments~~ DONE
+**status:** fixed (April 14, 2026)
 
-`(e) -> match e { .Num(v) -> Expr.Num(v * 3), _ -> e }` — the pattern-bound
-variable `v` is not resolved inside the closure body. Codegen error:
-"undefined variable `v`". Named functions with the same match work fine.
-This blocks higher-order AST mapper patterns where transform closures need
-to pattern match.
+Two root causes found and fixed:
+1. Lambda params defaulted to `int` when no type annotation was given.
+   Match codegen dispatched to primitive match (literal patterns) instead
+   of enum match (variant destructuring). Fix: `fill_arg_array_boxing`
+   detects Lambda args and passes the callee's expected param types from
+   the function type string (e.g. `fn(Box)->int` → param type `Box`).
+2. `find_captures` in closures/codegen.fg had `_ -> captures` catch-all
+   that skipped 15+ Expr variants (MatchExpr, EnumCtor, NullCoalesce, etc).
+   Captured variables inside these expressions were silently missed.
+   Fix: added explicit arms for all sub-expression-containing variants.
 
 ### Match expression type unification
 **type:** bug

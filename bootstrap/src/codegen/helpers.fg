@@ -1,8 +1,9 @@
 // WHY: shared codegen utilities used across features.
 
-use core.ast.{Expr, ExprList, StmtList, VarEnv, ValueType, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, trait_decl_has}
+use core.ast.{Expr, ExprList, StmtList, ParamList, VarEnv, ValueType, TypeList, SStmt, stmt_unwrap}
+use codegen.types.{Ctx, EmitResult, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, trait_decl_has, parse_type_list_str}
 use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
+use features.closures.codegen.{emit_lambda_typed}
 
 export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     match args {
@@ -37,7 +38,16 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
-            let r = ctx.emit(env, se.node)
+            // When a Lambda arg is passed to a function expecting a typed fn param,
+            // compile the lambda with the expected param types so enum matching works.
+            let r = match se.node {
+                .Lambda(params, body) -> {
+                    let fn_type_str = param_type_at(ptypes, idx)
+                    let lambda_types = parse_fn_param_types(ctx, fn_type_str)
+                    emit_lambda_typed(ctx, env, params, body, lambda_types)
+                }
+                _ -> ctx.emit(env, se.node)
+            }
             if r.had_error {
                 return r
             }
@@ -60,6 +70,18 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
             fill_arg_array_boxing(ctx, env, arr, next, ptypes, idx + 1)
         }
     }
+}
+
+// Extract param types from a function type string like "fn(Box)->int" → [Enum("Box")].
+fn parse_fn_param_types(ctx: Ctx, fn_type_str: string) -> TypeList {
+    if !fn_type_str.starts_with("fn(") { return TypeList.End }
+    // Find the closing paren
+    let after_fn = fn_type_str.substring(3, fn_type_str.length)
+    let close = after_fn.index_of(")")
+    if close < 0 { return TypeList.End }
+    let params_str = after_fn.substring(0, close)
+    if params_str == "" { return TypeList.End }
+    parse_type_list_str(ctx.structs, ctx.enums, params_str)
 }
 
 export fn is_null_literal(e: Expr) -> bool { e is .Null }

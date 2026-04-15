@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
 use codegen.types.{Ctx, DeferStack, EmitResult, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
@@ -81,7 +81,58 @@ fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureLi
             let c1 = find_captures(obj, params, env, captures)
             find_captures(idx, params, env, c1)
         }
+        .MatchExpr(subj, arms) -> {
+            let c1 = find_captures(subj, params, env, captures)
+            find_captures_arms(arms, params, env, c1)
+        }
+        .EnumCtor(_, _, args) -> find_captures_list(args, params, env, captures)
+        .StructLit(_, inits) -> find_captures_field_inits(inits, params, env, captures)
+        .FieldAccess(obj, _) -> find_captures(obj, params, env, captures)
+        .FieldAssign(obj, _, val) -> {
+            let c1 = find_captures(obj, params, env, captures)
+            find_captures(val, params, env, c1)
+        }
+        .NullCoalesce(l, r) -> {
+            let c1 = find_captures(l, params, env, captures)
+            find_captures(r, params, env, c1)
+        }
+        .Try(inner) -> find_captures(inner, params, env, captures)
+        .ListLit(elems) -> find_captures_list(elems, params, env, captures)
+        .Tuple(elems) -> find_captures_list(elems, params, env, captures)
+        .MapLit(entries) -> find_captures_list(entries, params, env, captures)
+        .With(obj, _) -> find_captures(obj, params, env, captures)
+        .Slice(obj, s, e) -> {
+            let c1 = find_captures(obj, params, env, captures)
+            let c2 = find_captures(s, params, env, c1)
+            find_captures(e, params, env, c2)
+        }
+        .IsCheck(subj, _) -> find_captures(subj, params, env, captures)
+        .InCheck(needle, items) -> {
+            let c1 = find_captures(needle, params, env, captures)
+            find_captures_list(items, params, env, c1)
+        }
         _ -> captures
+    }
+}
+
+fn find_captures_arms(arms: MatchArmList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+    match arms {
+        .End -> captures
+        .Node(_, guard, body, next) -> {
+            let c1 = if guard != null { find_captures(guard!.node, params, env, captures) } else { captures }
+            let c2 = find_captures(body.node, params, env, c1)
+            find_captures_arms(next, params, env, c2)
+        }
+    }
+}
+
+fn find_captures_field_inits(inits: FieldInitList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+    match inits {
+        .End -> captures
+        .Node(_, val, next) -> {
+            let c1 = find_captures(val.node, params, env, captures)
+            find_captures_field_inits(next, params, env, c1)
+        }
     }
 }
 

@@ -346,7 +346,7 @@ fn find_close_paren(s: string, start: int) -> int {
     i
 }
 
-fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> TypeList {
+export fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> TypeList {
     if s == "" { return TypeList.End }
     // Find next comma at depth 0
     mut depth = 0
