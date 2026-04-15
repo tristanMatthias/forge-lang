@@ -103,6 +103,17 @@ fn merge_type_args(a: TypeArgList, b: TypeArgList) -> TypeArgList {
     }
 }
 
+// Pre-finalization: merge compatible partial entries with the same generic name
+// across function scopes. E.g. ok_emit's {T=EmitValue} + err_emit's {E=string}
+// → {T=EmitValue, E=string}. This is needed for generic Result<T, E> where
+// Ok and Err constructors live in different helper functions.
+fn merge_across_scopes(insts: InstList) -> InstList {
+    match insts {
+        .End -> .End
+        .Node(name, _, ta, next) -> merge_partial(name, ta, merge_across_scopes(next))
+    }
+}
+
 // After merging, finalize: compute mangled names and validate resolution.
 fn finalize_insts(insts: InstList, regs: GenRegs, bag: DiagnosticBag) -> CollectState {
     match insts {
@@ -731,8 +742,9 @@ export fn monomorphize(stmts: StmtList) -> MonoResult {
         return MonoResult { stmts, bag: collected.bag }
     }
 
-    // Finalize: compute mangled names and validate all type params resolved
-    let finalized = finalize_insts(collected.insts, regs, collected.bag)
+    // Merge partial entries across function scopes before finalizing.
+    let merged = merge_across_scopes(collected.insts)
+    let finalized = finalize_insts(merged, regs, collected.bag)
     if bag_has_errors(finalized.bag) {
         return MonoResult { stmts, bag: finalized.bag }
     }
