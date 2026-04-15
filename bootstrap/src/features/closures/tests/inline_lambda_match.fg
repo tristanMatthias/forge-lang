@@ -1,0 +1,34 @@
+// Test: inline lambda as function argument with enum match pattern destructuring.
+// Previously failed: lambda params defaulted to int, match dispatched as primitive.
+/// expect: 42
+/// expect: 18
+
+enum Box { Val(n: int) }
+
+fn apply(b: Box, f: fn(Box) -> int) -> int { f(b) }
+
+enum Expr { Num(value: int), Add(left: Expr, right: Expr) }
+
+fn map_expr(expr: Expr, f: fn(Expr) -> Expr) -> Expr {
+    let mapped = match expr {
+        .Num(_) -> expr
+        .Add(l, r) -> Expr.Add(map_expr(l, f), map_expr(r, f))
+    }
+    f(mapped)
+}
+
+fn eval(expr: Expr) -> int {
+    match expr { .Num(v) -> v, .Add(l, r) -> eval(l) + eval(r) }
+}
+
+fn main() {
+    // Inline lambda with enum pattern destructuring
+    let r = apply(Box.Val(21), (b: Box) -> match b { .Val(n) -> n * 2, _ -> 0 })
+    println(string(r))
+
+    // Recursive HO mapper with closure capturing context
+    let factor = 3
+    let tree = Expr.Add(Expr.Num(1), Expr.Add(Expr.Num(2), Expr.Num(3)))
+    let scaled = map_expr(tree, (e: Expr) -> match e { .Num(v) -> Expr.Num(v * factor), _ -> e })
+    println(string(eval(scaled)))
+}

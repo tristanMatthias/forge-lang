@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
 use codegen.types.{Ctx, DeferStack, EmitResult, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
@@ -111,7 +111,19 @@ fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureLi
             let c1 = find_captures(needle, params, env, captures)
             find_captures_list(items, params, env, c1)
         }
-        _ -> captures
+        .OptionalChain(obj, _) -> find_captures(obj, params, env, captures)
+        .TupleIndex(obj, _) -> find_captures(obj, params, env, captures)
+        .ListComp(body, _, coll, filter) -> {
+            let c1 = find_captures(body, params, env, captures)
+            let c2 = find_captures(coll, params, env, c1)
+            if filter != null { find_captures(filter!, params, env, c2) } else { c2 }
+        }
+        .When(arms) -> find_captures_when_arms(arms, params, env, captures)
+        .GenericCall(callee, _, args) -> {
+            let c1 = find_captures(callee, params, env, captures)
+            find_captures_list(args, params, env, c1)
+        }
+        _ -> captures  // Number, String, Bool, FloatLit, Null, QualifiedIdent — leaf nodes
     }
 }
 
@@ -136,6 +148,17 @@ fn find_captures_field_inits(inits: FieldInitList, params: ParamList, env: VarEn
     }
 }
 
+fn find_captures_when_arms(arms: WhenArmList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
+    match arms {
+        .End -> captures
+        .Node(cond, body, next) -> {
+            let c1 = if cond != null { find_captures(cond!.node, params, env, captures) } else { captures }
+            let c2 = find_captures(body.node, params, env, c1)
+            find_captures_when_arms(next, params, env, c2)
+        }
+    }
+}
+
 fn find_captures_list(exprs: ExprList, params: ParamList, env: VarEnv, captures: CaptureList) -> CaptureList {
     match exprs {
         .End -> captures
@@ -150,6 +173,32 @@ fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures:
     match stmt {
         .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
         .Expr(e) -> find_captures(e, params, env, captures)
+        .Return(e) -> find_captures(e, params, env, captures)
+        .Let(_, _, init) -> find_captures(init, params, env, captures)
+        .Mut(_, _, init) -> find_captures(init, params, env, captures)
+        .If(cond, then_b, else_b) -> {
+            let c1 = find_captures(cond, params, env, captures)
+            let c2 = find_captures_stmt_body(then_b, params, env, c1)
+            if else_b != null { find_captures_stmt_body(else_b!, params, env, c2) } else { c2 }
+        }
+        .While(cond, body) -> {
+            let c1 = find_captures(cond, params, env, captures)
+            find_captures_stmt_body(body, params, env, c1)
+        }
+        .For(_, start, end, body) -> {
+            let c1 = find_captures(start, params, env, captures)
+            let c2 = find_captures(end, params, env, c1)
+            find_captures_stmt_body(body, params, env, c2)
+        }
+        .ForIn(_, coll, body) -> {
+            let c1 = find_captures(coll, params, env, captures)
+            find_captures_stmt_body(body, params, env, c1)
+        }
+        .Match(subj, arms) -> {
+            let c1 = find_captures(subj, params, env, captures)
+            find_captures_arms(arms, params, env, c1)
+        }
+        .Defer(body) -> find_captures(body, params, env, captures)
         _ -> captures
     }
 }
@@ -163,9 +212,10 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
                 .Return(e) -> find_captures(e, params, env, captures)
                 .Let(_, _, init) -> find_captures(init, params, env, captures)
                 .Mut(_, _, init) -> find_captures(init, params, env, captures)
-                .If(cond, then_branch, _) -> {
+                .If(cond, then_branch, else_branch) -> {
                     let cc = find_captures(cond, params, env, captures)
-                    find_captures_stmt_body(then_branch, params, env, cc)
+                    let cc2 = find_captures_stmt_body(then_branch, params, env, cc)
+                    if else_branch != null { find_captures_stmt_body(else_branch!, params, env, cc2) } else { cc2 }
                 }
                 .While(cond, body) -> {
                     let cc = find_captures(cond, params, env, captures)
@@ -176,8 +226,16 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
                     let cc2 = find_captures(end, params, env, cc)
                     find_captures_stmt_body(body, params, env, cc2)
                 }
+                .ForIn(_, coll, body) -> {
+                    let cc = find_captures(coll, params, env, captures)
+                    find_captures_stmt_body(body, params, env, cc)
+                }
                 .Block(inner_stmts) -> find_captures_stmts(inner_stmts, params, env, captures)
-                .Match(subject, _) -> find_captures(subject, params, env, captures)
+                .Match(subject, arms) -> {
+                    let cc = find_captures(subject, params, env, captures)
+                    find_captures_arms(arms, params, env, cc)
+                }
+                .Defer(body) -> find_captures(body, params, env, captures)
                 _ -> captures
             }
             find_captures_stmts(next, params, env, c1)

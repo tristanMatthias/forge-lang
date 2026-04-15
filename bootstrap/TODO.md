@@ -466,6 +466,40 @@ qualification). Module file loading (`features/modules/resolver.fg`) remains sep
 since it does file I/O. Deeper merge (single AST walk) deferred — current approach
 is clean and works.
 
+### Audit all `_ ->` catch-alls in recursive AST walkers
+**type:** debt
+**priority:** high
+**source:** discovered April 14, 2026
+
+Multiple `_ -> captures/false/env/tc` catch-all arms silently skip Expr/Stmt
+variants in recursive walkers. This caused two closure bugs (missed captures in
+MatchExpr/EnumCtor/15+ variants, missed else branch in If). The pattern:
+
+```forge
+fn walk_expr(expr: Expr, ...) -> ... {
+    match expr {
+        .Binary(l, _, r) -> ...
+        .Call(callee, args) -> ...
+        _ -> default_value   // <-- silently skips all other variants
+    }
+}
+```
+
+Every new Expr/Stmt variant added to the language is silently ignored by all
+walkers that use `_ ->`. This is the root cause of find_captures missing
+captures inside MatchExpr, EnumCtor, FieldAccess, NullCoalesce, etc.
+
+**Fix:** Either:
+1. Handle all variants explicitly (as done for find_captures in this fix)
+2. Implement non-exhaustive match warnings (TODO #200) that flag `_ ->` on
+   enum types where some variants have sub-expressions
+3. Extract a shared `walk_expr` visitor that all AST walkers use
+
+**Affected files:**
+- `closures/codegen.fg`: `find_captures`, `has_float_ident`, `param_used_with_float`
+- `typeck/mod.fg`: `check_expr`, `check_stmt` (existing `_ ->` catch-alls)
+- `features/generics/mono.fg`: `collect_inst_expr`, `substitute_expr`, `rewrite_expr`
+
 ### Remove vtype_is_* calls from codegen (Phase 1b)
 **type:** debt
 **priority:** medium
