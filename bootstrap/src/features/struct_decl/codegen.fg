@@ -87,7 +87,7 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
 
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
-        return err_emit("field access on non-struct value (ty=${vtype_display(r.ty)}, field=${field})")
+        return err_emit("field access on non-struct value (ty=${vtype_display(r.ty)}, field=${field}, line=${string(ctx.source_line)})")
     }
     let lookup = ctx.lookup_struct(struct_name)
     if !lookup.found { return err_emit("unknown struct `${struct_name}`") }
