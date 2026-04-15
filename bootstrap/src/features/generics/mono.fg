@@ -69,14 +69,41 @@ fn inst_mangled(insts: InstList, name: string) -> string {
 // Merge partial type args into a compatible existing entry for the same generic name.
 // Two entries are compatible if no param maps to two different concrete types.
 // If incompatible (e.g. T=int vs T=string), creates a separate entry.
+// Merge a partial type arg entry into compatible entries in the InstList.
+// The partial is merged into EVERY compatible entry that needs its info,
+// and only appended as a new entry if no compatible entry existed at all.
 fn merge_partial(name: string, partial_ta: TypeArgList, insts: InstList) -> InstList {
+    if !has_compatible_entry(name, partial_ta, insts) {
+        // No compatible entry exists — append as new
+        return append_inst(name, partial_ta, insts)
+    }
+    // Merge into every compatible entry that needs new info
+    merge_into_all(name, partial_ta, insts)
+}
+
+fn has_compatible_entry(name: string, partial_ta: TypeArgList, insts: InstList) -> bool {
     match insts {
-        .End -> InstList.Node(name, "", partial_ta, InstList.End)
-        .Node(n, _, existing_ta, next) if n == name && type_args_compatible(existing_ta, partial_ta) && adds_new_info(existing_ta, partial_ta) -> {
+        .End -> false
+        .Node(n, _, ta, _) if n == name && type_args_compatible(ta, partial_ta) -> true
+        .Node(_, _, _, next) -> has_compatible_entry(name, partial_ta, next)
+    }
+}
+
+fn merge_into_all(name: string, partial_ta: TypeArgList, insts: InstList) -> InstList {
+    match insts {
+        .End -> .End
+        .Node(n, m, existing_ta, next) if n == name && type_args_compatible(existing_ta, partial_ta) && adds_new_info(existing_ta, partial_ta) -> {
             let merged = merge_type_args(existing_ta, partial_ta)
-            InstList.Node(name, "", merged, next)
+            InstList.Node(name, "", merged, merge_into_all(name, partial_ta, next))
         }
-        .Node(n, m, ta, next) -> InstList.Node(n, m, ta, merge_partial(name, partial_ta, next))
+        .Node(n, m, ta, next) -> InstList.Node(n, m, ta, merge_into_all(name, partial_ta, next))
+    }
+}
+
+fn append_inst(name: string, ta: TypeArgList, insts: InstList) -> InstList {
+    match insts {
+        .End -> InstList.Node(name, "", ta, InstList.End)
+        .Node(n, m, t, next) -> InstList.Node(n, m, t, append_inst(name, ta, next))
     }
 }
 
