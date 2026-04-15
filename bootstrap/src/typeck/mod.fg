@@ -739,12 +739,30 @@ export fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
 // Walks the AST and stamps resolved ValueTypes onto SExpr.ty fields.
 // Uses the TC state populated by Pass 1+2 (all bindings are in scope).
 
+fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
+    tc_bind_params(tc_enter(tc), params)
+}
+
 fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
     match stmts {
         .End -> .End
         .Node(ss, next) -> {
             let new_stmt = annotate_stmt(tc, ss.node)
-            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(tc, next))
+            // Update tc with Let/Mut bindings so later statements see correct types
+            let updated_tc = match ss.node {
+                .Let(name, ty_str, init) -> {
+                    let r = check_expr(tc, init)
+                    let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
+                    tc_bind(tc, name, declared_ty)
+                }
+                .Mut(name, ty_str, init) -> {
+                    let r = check_expr(tc, init)
+                    let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
+                    tc_bind(tc, name, declared_ty)
+                }
+                _ -> tc
+            }
+            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(updated_tc, next))
         }
     }
 }
@@ -766,7 +784,8 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
         .While(cond, body) -> .While(annotate_expr(tc, cond), annotate_stmt(tc, body))
         .For(v, start, end, body) -> .For(v, annotate_expr(tc, start), annotate_expr(tc, end), annotate_stmt(tc, body))
         .ForIn(v, coll, body) -> .ForIn(v, annotate_expr(tc, coll), annotate_stmt(tc, body))
-        .Function(name, tp, params, ret_ty, body) -> .Function(name, tp, params, ret_ty, annotate_stmts(tc, body))
+        .Function(name, tp, params, ret_ty, body) ->
+            .Function(name, tp, params, ret_ty, annotate_stmts(annotate_enter_fn(tc, params), body))
         .Match(subj, arms) -> .Match(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
         .Module(name, body) -> .Module(name, annotate_stmts(tc, body))
         .Annotated(annots, inner) -> .Annotated(annots, annotate_stmt(tc, inner))
