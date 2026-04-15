@@ -315,13 +315,78 @@ fn resolve_enum_type_args(tp: TypeParamList, variants: VariantList, variant: str
 }
 
 fn rewrite_type_name(ty: string, regs: GenRegs, insts: InstList) -> string {
+    // First try exact match (non-generic types like "Option").
     match generic_enum_lookup(regs.enums, ty) {
-        .Node(_, _, _, _) -> inst_mangled(insts, ty)
+        .Node(_, _, _, _) -> return inst_mangled(insts, ty)
         .End -> match generic_struct_lookup(regs.structs, ty) {
-            .Node(_, _, _, _) -> inst_mangled(insts, ty)
-            .End -> ty
+            .Node(_, _, _, _) -> return inst_mangled(insts, ty)
+            .End -> {}
         }
     }
+    // Handle explicit type args in annotation: "Result<EmitValue, string>"
+    // Extract base name and mangle using the annotation's type args.
+    let angle = find_char(ty, "<")
+    if angle >= 0 {
+        let base = ty.substring(0, angle)
+        match generic_enum_lookup(regs.enums, base) {
+            .Node(_, tp, _, _) -> return mangle_annotation(base, tp, ty.substring(angle + 1, ty.length - 1), regs, insts)
+            .End -> match generic_struct_lookup(regs.structs, base) {
+                .Node(_, tp, _, _) -> return mangle_annotation(base, tp, ty.substring(angle + 1, ty.length - 1), regs, insts)
+                .End -> {}
+            }
+        }
+    }
+    ty
+}
+
+// Mangle a generic type annotation like "Result<EmitValue, string>" into "Result__EmitValue__string".
+// args_str is the comma-separated type args (e.g. "EmitValue, string").
+fn mangle_annotation(base: string, tp: TypeParamList, args_str: string, regs: GenRegs, insts: InstList) -> string {
+    let ta = split_annotation_args(tp, args_str, regs, insts)
+    mangle_name_ordered(base, tp, ta)
+}
+
+// Split "EmitValue, string" into TypeArgList matching type params.
+fn split_annotation_args(tp: TypeParamList, args_str: string, regs: GenRegs, insts: InstList) -> TypeArgList {
+    match tp {
+        .End -> TypeArgList.End
+        .Node(param_name, next_tp) -> {
+            let split = top_level_split_idx(args_str)
+            if split < 0 {
+                // Last or only arg
+                let arg = args_str.trim()
+                TypeArgList.Node(param_name, rewrite_type_name(arg, regs, insts), split_annotation_args(next_tp, "", regs, insts))
+            } else {
+                let head = args_str.substring(0, split).trim()
+                let tail = args_str.substring(split + 1, args_str.length)
+                TypeArgList.Node(param_name, rewrite_type_name(head, regs, insts), split_annotation_args(next_tp, tail, regs, insts))
+            }
+        }
+    }
+}
+
+fn find_char(s: string, ch: string) -> int {
+    mut i = 0
+    while i < s.length {
+        if s.substring(i, i + 1) == ch { return i }
+        i = i + 1
+    }
+    -1
+}
+
+// Find the index of the first top-level comma in a type arg string.
+// Respects nesting: "Map<string, int>, string" → index of comma after ">".
+fn top_level_split_idx(s: string) -> int {
+    mut depth = 0
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "<" || ch == "(" { depth = depth + 1 }
+        if ch == ">" || ch == ")" { depth = depth - 1 }
+        if ch == "," && depth == 0 { return i }
+        i = i + 1
+    }
+    -1
 }
 
 fn rewrite_param_types(params: ParamList, regs: GenRegs, insts: InstList) -> ParamList {
