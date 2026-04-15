@@ -500,6 +500,27 @@ captures inside MatchExpr, EnumCtor, FieldAccess, NullCoalesce, etc.
 - `typeck/mod.fg`: `check_expr`, `check_stmt` (existing `_ ->` catch-alls)
 - `features/generics/mono.fg`: `collect_inst_expr`, `substitute_expr`, `rewrite_expr`
 
+### `has_float_ident` and `param_used_with_float` skip most Expr/Stmt variants
+**type:** bug
+**priority:** medium
+**source:** discovered April 14, 2026
+
+Same class of bug as the `find_captures` catch-all issue. Both functions use
+`_ -> false` that skips MatchExpr, EnumCtor, Index, FieldAccess, NullCoalesce,
+Try, ListLit, etc. If a float literal or float-typed variable appears inside
+a match arm, enum ctor arg, or index expression inside a lambda body, the
+float inference fails and the param gets `Int` type instead of `Float`.
+
+`param_used_with_float_stmts` only handles Expr/Return/Let/Mut — skips If,
+While, For, ForIn, Match, Block, Defer.
+
+**Impact:** Lambda params used with float values inside complex expressions
+are inferred as Int. Float arithmetic inside such lambdas produces wrong
+results (sitofp instead of bitcast).
+
+**Fix:** Add explicit arms for all sub-expression-containing variants,
+matching the pattern used in the `find_captures` fix.
+
 ### Remove vtype_is_* calls from codegen (Phase 1b)
 **type:** debt
 **priority:** medium
