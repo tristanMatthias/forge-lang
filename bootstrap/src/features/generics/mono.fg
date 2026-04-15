@@ -738,8 +738,20 @@ export fn monomorphize(stmts: StmtList) -> MonoResult {
     }
 
     let specializations = generate_specializations(finalized.insts, regs)
-    let rewritten = rewrite_stmts(stmts, regs, finalized.insts)
-    MonoResult { stmts: prepend_stmts(specializations, rewritten), bag: finalized.bag }
+
+    // Transitive monomorphization: specializations may contain nested generic calls
+    // (e.g. double_identity__int calls identity). Collect + finalize + generate those too.
+    let trans = collect_inst_stmts(specializations, regs, CollectState { insts: InstList.End, bag: finalized.bag, line: 0, col: 0 })
+    let trans_final = finalize_insts(trans.insts, regs, trans.bag)
+    let trans_specs = generate_specializations(trans_final.insts, regs)
+
+    // Merge all instantiation entries for the rewrite pass
+    let all_insts = append_insts(trans_final.insts, finalized.insts)
+
+    let rewritten = rewrite_stmts(stmts, regs, all_insts)
+    let rewritten_specs = rewrite_stmts(specializations, regs, all_insts)
+    let rewritten_trans = rewrite_stmts(trans_specs, regs, all_insts)
+    MonoResult { stmts: prepend_stmts(rewritten_trans, prepend_stmts(rewritten_specs, rewritten)), bag: trans_final.bag }
 }
 
 fn prepend_stmts(prefix: StmtList, rest: StmtList) -> StmtList {
