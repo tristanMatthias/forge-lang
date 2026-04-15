@@ -396,6 +396,7 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .ForIn(_, coll, body) -> collect_inst_stmt(body, regs, collect_inst_expr(coll, regs, st))
         .Match(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(subj, regs, st))
         .Annotated(_, inner) -> collect_inst_stmt(inner, regs, st)
+        .Impl(_, methods) -> collect_inst_stmts(methods, regs, st)
         _ -> st
     }
 }
