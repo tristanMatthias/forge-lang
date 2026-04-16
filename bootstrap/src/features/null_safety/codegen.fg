@@ -99,6 +99,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
     // Check tag: Ok → extract payload value, Err → return Result.
     let enum_name = vtype_enum_name(r.ty)
+    if enum_name != "" { eprintln("[emit_try] enum=${enum_name} line=${string(ctx.source_line)}") }
     if enum_name == "Result" || enum_name.starts_with("Result__") {
         let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")

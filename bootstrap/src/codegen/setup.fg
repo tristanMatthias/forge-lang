@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_length, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, env_extend}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_length, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
 use codegen.types.{Ctx, CodegenResult, DeferStack, EmitResult, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, err_stmt_from_expr, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelResult}
@@ -530,6 +530,9 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
                     let ret_vt = decl_fn_ret_type(structs, enums, ret_ty, body)
+                    if name.starts_with("Ctx__emit") || name == "emit_var_decl" {
+                        eprintln("[decl_fn] name=${name} ret_ty=${ret_ty} ret_vt_enum=${vtype_enum_name(ret_vt)}")
+                    }
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
