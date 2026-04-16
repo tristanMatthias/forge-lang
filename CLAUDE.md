@@ -673,6 +673,102 @@ resolver. Use short prefixes: `se` for SExpr, `ss` for SStmt,
 forge_dump_stmt). Never add eprintln traces that require a full
 seed rebuild to test. Each seed cycle is 3 minutes of dead time.
 
+## Silent Failure Modes — THE BUG CLASS THAT ATE A WEEK
+
+These are categories of bug where **the build succeeds, tests may even
+pass, but memory is silently corrupted at runtime**. The common thread:
+two types erase to the same LLVM representation (usually `ptr`), so
+nothing in the pipeline — typeck, monomorphizer, LLVM verifier — can
+tell them apart. When you hit a crash that "makes no sense," match it
+against this list BEFORE staring at IR for hours.
+
+### Pattern: "`return r` with wrong type the type checker missed"
+**Symptom:** function crashes in a caller's struct field access with
+garbage pointer values. A GEP reads bytes that look like offsets/values
+from a different struct.
+**Root cause:** inside a function declared `-> Result<A, string>`, code
+does `return r` where `r: A` (the inner value, extracted by `?`). Both
+are `ptr` at LLVM; type checker doesn't verify return-site types against
+declared return type.
+**Example seen:** `emit_int_to_string` returned an `EmitValue` where a
+`Result<EmitValue, string>` was required. Callers read the EmitValue's
+`.value` field as if it were the Result's `.tag` → chaos.
+**Detection:** `FORGE_TRACK_STORES=1` — the store-origin tracker dumps
+every write to the corrupt address with the producing function name.
+**Prevention:** when refactoring between T and Result<T, E>, manually
+audit every `return` in the converted file. Grep for `return r` and
+verify the type. The type checker is NOT your safety net here.
+
+### Pattern: "parser silently dropped generic args"
+**Symptom:** monomorphizer picks the wrong instantiation, or generic
+type args vanish from AST annotations.
+**Root cause:** `skip_angle_brackets` (or similar) consumed `<...>`
+without parsing the inside. Generic args end up empty strings.
+**Detection:** grep the post-parse AST render for `Result` without
+`<>`. Compare declared function signatures to what the AST shows.
+**Prevention:** after touching the parser, always render a small
+generic-heavy test and read the output. Never trust the parser's
+silence.
+
+### Pattern: "monomorphizer 'first match wins' ambiguity"
+**Symptom:** one generic function gets the wrong type args — e.g. a
+function declared `-> Result<VarEnv, string>` ends up wired to the
+`Result<EmitValue, string>` codegen path.
+**Root cause:** `inst_mangled` returns the first registered
+instantiation when multiple exist for the same base type.
+**Detection:** use `scope_insts_for_ret` to pin instantiations by
+function return type.
+**Prevention:** whenever a generic appears with multiple distinct
+type-arg sets in the same module, verify the monomorphizer isn't
+collapsing them.
+
+### Pattern: "works at -O0, crashes at -O2"
+**Symptom:** the exact same LLVM IR runs clean under `llc -O0` but
+segfaults under `-O2`.
+**Root cause:** alignment mismatch. `align 4` on an i64 store, or an
+i1 struct field at a byte boundary LLVM then coalesces with neighbors.
+**Detection:** always test both opt levels. Check IR for `align 4` on
+i64 operations.
+**Prevention:** never use `bool` as a struct field — use `int`.
+`llvm_wrapper.c` forces `align 8` on all builds/stores.
+
+### Pattern: "make build silently contaminated the seed"
+**Symptom:** bs2 crashes compiling trivial files, but seed compiles
+fine. After investigation: seed.ll is NOT the clean committed version.
+**Root cause:** the Makefile's auto-cycle overwrote `seed/seed.ll` with
+bs2's IR after a self-compile failure, destroying the reproduction.
+**Detection:** `git diff seed/seed.ll` — if it changed and you didn't
+run `make update-seed`, auto-cycle ran.
+**Prevention:** default to `NO_AUTOCYCLE=1` (already set in Makefile).
+If you disabled it for a test, re-enable before moving on.
+
+### Debugging protocol for "it crashes and I don't know why"
+
+Do these in order. Do NOT skip steps.
+
+1. **LLDB first** — get the exact crash PC and register values.
+2. **Check seed integrity** — `git diff seed/seed.ll`. If dirty: restore.
+3. **Check -O0 vs -O2** — if they differ, alignment bug.
+4. **`FORGE_TRACK_STORES=1`** — if memory corruption is suspected,
+   this tells you the producing function for every write to the
+   corrupt address. Finds return-type mismatches in minutes.
+5. **`FORGE_REDZONES=1` / `FORGE_PAGE_ALLOC=1`** — catch
+   cross-allocation writes.
+6. **Only then** read IR.
+
+### Hard rule for type refactors that touch `ptr`-erased values
+
+**When refactoring types that erase to `ptr` (structs, enums, Results,
+closures): the type checker is NOT your safety net.** It doesn't verify
+return-site types match declared return types. Two types with the same
+LLVM layout are indistinguishable once codegen runs.
+
+When doing this kind of refactor:
+1. Grep every `return` in converted files. Verify each one's type.
+2. Build with `FORGE_TRACK_STORES=1` and run tests at least once.
+3. If any test crashes in a weird place: enable redzones + store
+   tracking and bisect. Don't guess.
+
 ## ABSOLUTE RULES (from user, non-negotiable)
 
 1. **NEVER say "that's a bigger change" as a reason to skip work.** Do the work. If it needs 200 lines, write 200 lines. If it needs restructuring, restructure. No deferring.
