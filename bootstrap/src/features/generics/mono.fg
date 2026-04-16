@@ -692,6 +692,41 @@ fn substitute_match_arms(arms: MatchArmList, ta: TypeArgList) -> MatchArmList {
     }
 }
 
+// Scope the instantiation list for a function body based on its return type.
+// When a function returns Result<EmitValue, string>, all Result enum ctors
+// in its body must map to Result__EmitValue__string — not whichever Result
+// instantiation happens to appear first in the global list.
+fn scope_insts_for_ret(ret_ty: string, regs: GenRegs, insts: InstList) -> InstList {
+    let angle = find_char(ret_ty, "<")
+    if angle < 0 { return insts }
+    let base = ret_ty.substring(0, angle)
+    let args_str = ret_ty.substring(angle + 1, ret_ty.length - 1)
+    let tp = match generic_enum_lookup(regs.enums, base) {
+        .Node(_, tp, _, _) -> tp
+        .End -> match generic_struct_lookup(regs.structs, base) {
+            .Node(_, tp, _, _) -> tp
+            .End -> return insts
+        }
+    }
+    let ta = split_annotation_args(tp, args_str, regs, insts)
+    let mangled = mangle_name_ordered(base, tp, ta)
+    let filtered = remove_insts_for(base, insts)
+    InstList.Node(base, mangled, ta, filtered)
+}
+
+fn remove_insts_for(name: string, insts: InstList) -> InstList {
+    match insts {
+        .End -> .End
+        .Node(n, _, _, next) if n == name -> remove_insts_for(name, next)
+        .Node(n, m, t, next) -> InstList.Node(n, m, t, remove_insts_for(name, next))
+    }
+}
+
+fn rewrite_function(name: string, tp: TypeParamList, params: ParamList, ret_ty: string, body: StmtList, regs: GenRegs, insts: InstList) -> Stmt {
+    let scoped = scope_insts_for_ret(ret_ty, regs, insts)
+    Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_type_name(ret_ty, regs, insts), rewrite_stmts(body, regs, scoped))
+}
+
 // ── Pass 4: Rewrite call sites and remove generic declarations ──
 
 fn rewrite_stmts(stmts: StmtList, regs: GenRegs, insts: InstList) -> StmtList {
@@ -718,7 +753,7 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: InstList) -> Stmt {
         .While(cond, body) -> .While(rewrite_expr(cond, regs, insts), rewrite_stmt(body, regs, insts))
         .For(v, s, e, body) -> .For(v, rewrite_expr(s, regs, insts), rewrite_expr(e, regs, insts), rewrite_stmt(body, regs, insts))
         .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr(coll, regs, insts), rewrite_stmt(body, regs, insts))
-        .Function(name, tp, params, ret_ty, body) -> .Function(name, tp, rewrite_param_types(params, regs, insts), rewrite_type_name(ret_ty, regs, insts), rewrite_stmts(body, regs, insts))
+        .Function(name, tp, params, ret_ty, body) -> rewrite_function(name, tp, params, ret_ty, body, regs, insts)
         .ExternFn(name, params, ret_ty) -> .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_type_name(ret_ty, regs, insts))
         .Match(subj, arms) -> .Match(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
         .Module(name, body) -> .Module(name, rewrite_stmts(body, regs, insts))

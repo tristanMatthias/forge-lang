@@ -1,0 +1,6 @@
+// WHY: defines Result<T, E> enum for error propagation with ? operator.
+
+export enum Result<T, E> {
+    Ok(value: T),
+    Err(error: E),
+}
