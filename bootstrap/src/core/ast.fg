@@ -63,7 +63,7 @@ export enum Pattern {
     Variant(name: string, bindings: ParamList)
     LitString(value: string)
     LitInt(value: int)
-    LitBool(value: bool)
+    LitBool(value: int)
     LitFloat(value: string)
     NestedVariant(name: string, sub_patterns: PatternList)
     Or(left: Pattern, right: Pattern)
@@ -420,7 +420,7 @@ export enum VarEnv {
 }
 
 export type VarLookup = {
-    found: bool,
+    found: int,
     alloca: ptr,
     ty: ValueType,
 }
@@ -447,7 +447,7 @@ export enum FnEnv {
 }
 
 export type FnLookup = {
-    found: bool,
+    found: int,
     fn_val: ptr,
     arity: int,
 }
@@ -518,7 +518,7 @@ export fn variant_list_length(variants: VariantList) -> int {
 // Find a variant by name in a VariantList. Returns the matching
 // FieldList plus its zero-based tag index, or (false, ...).
 export type VariantLookup = {
-    found: bool,
+    found: int,
     fields: FieldList,
     tag: int,
 }

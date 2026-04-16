@@ -24,7 +24,7 @@ use resolve.{resolve_program}
 
 enum ModuleItem {
     End
-    Node(short_name: string, canonical: string, exported: bool, next: ModuleItem)
+    Node(short_name: string, canonical: string, exported: int, next: ModuleItem)
 }
 
 enum ModuleNode {
@@ -148,7 +148,7 @@ fn collect_module_items(stmts: StmtList, mod_path: string) -> ModuleItem {
     }
 }
 
-fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: bool, rest: ModuleItem) -> ModuleItem {
+fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: ModuleItem) -> ModuleItem {
     match stmt {
         .Function(name, _, _, _, _) -> {
             let canonical = "${mod_path}::${name}"
@@ -295,7 +295,7 @@ fn dots_to_colons(path: string) -> string {
 
 enum LocalScope {
     End
-    Node(name: string, mutable: bool, defined: bool, depth: int, next: LocalScope)
+    Node(name: string, mutable: int, defined: int, depth: int, next: LocalScope)
 }
 
 fn scope_has(scope: LocalScope, name: string) -> bool {
@@ -368,7 +368,7 @@ fn merge_aliases(base: AliasEntry, extra: AliasEntry) -> AliasEntry {
 
 export type NameResolveResult = {
     stmts: StmtList,
-    had_error: bool,
+    had_error: int,
     error_message: string,
     bag: DiagnosticBag,
 }

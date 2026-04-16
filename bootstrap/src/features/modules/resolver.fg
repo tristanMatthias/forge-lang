@@ -37,14 +37,14 @@ fn loaded_has(paths: LoadedPaths, path: string) -> bool {
 export type ModListResult = {
     stmts: StmtList,
     loaded: LoadedPaths,
-    had_error: bool,
+    had_error: int,
     error_message: string,
 }
 
 type ModStmtResult = {
     stmt: Stmt,
     loaded: LoadedPaths,
-    had_error: bool,
+    had_error: int,
     error_message: string,
 }
 

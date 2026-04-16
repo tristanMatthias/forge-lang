@@ -46,7 +46,7 @@ export type Ctx = {
     defers: DeferStack,
     features: Registry,
     trait_decls: TraitDeclReg,
-    debug_null_checks: bool,
+    debug_null_checks: int,
     source_file: string,
     source_line: int,
 }
@@ -101,7 +101,7 @@ export enum Result<T, E> { Ok(value: T), Err(error: E) }
 export type EmitResult = {
     value: ptr,
     ty: ValueType,
-    had_error: bool,
+    had_error: int,
     error_message: string,
 }
 
@@ -127,7 +127,7 @@ export fn closure_marker() -> int { -559038737 }
 
 export type StmtResult = {
     env: VarEnv,
-    had_error: bool,
+    had_error: int,
     error_message: string,
 }
 
@@ -240,7 +240,7 @@ export enum StructReg {
 }
 
 export type StructLookup = {
-    found: bool,
+    found: int,
     fields: FieldList,
 }
 
@@ -258,7 +258,7 @@ export enum EnumReg {
 }
 
 export type EnumLookup = {
-    found: bool,
+    found: int,
     variants: VariantList,
 }
 
@@ -309,7 +309,7 @@ export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
 }
 
 export type TopLevelLookup = {
-    found: bool,
+    found: int,
     llvm_global: ptr,
     ty: ValueType,
 }
@@ -326,7 +326,7 @@ export fn toplevel_lookup(reg: TopLevelVars, name: string) -> TopLevelLookup {
 }
 
 export type LoopFrame = {
-    found: bool,
+    found: int,
     cond_bb: ptr,
     exit_bb: ptr,
 }

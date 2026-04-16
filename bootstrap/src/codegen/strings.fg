@@ -98,7 +98,7 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitR
     ok_emit_typed(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
 }
 
-export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> EmitResult {
+export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: int) -> EmitResult {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
     let result = ctx.call("strcmp", [lhs_ptr, rhs_ptr])

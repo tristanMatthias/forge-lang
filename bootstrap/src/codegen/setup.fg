@@ -30,7 +30,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
     forge_llvm_add_function(m, name, fn_type)
 }
 
-export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, source_file: string) -> CodegenResult {
+export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: int, source_file: string) -> CodegenResult {
     let lc = forge_llvm_context_create()
     let m = forge_llvm_module_create("bootstrap", lc)
     let builder = forge_llvm_create_builder(lc)

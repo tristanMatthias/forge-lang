@@ -18,13 +18,13 @@ use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report,
 
 export type ParseResult = {
     expr: Expr?,
-    had_error: bool,
+    had_error: int,
     error_message: string,
 }
 
 export type ProgramParseResult = {
     stmts: StmtList?,
-    had_error: bool,
+    had_error: int,
     error_message: string,
     bag: DiagnosticBag,
 }
@@ -40,7 +40,7 @@ export type ParserState = {
     current_line: int,
     current_column: int,
     current_start: int,
-    had_error: bool,
+    had_error: int,
     error_message: string,
     bag: DiagnosticBag,
 }
@@ -56,21 +56,21 @@ export type Parser = {
     mut current_line: int,
     mut current_column: int,
     mut prev_line: int,
-    mut had_error: bool,
+    mut had_error: int,
     mut error_message: string,
     // When false, `Ident { ... }` is parsed as Ident followed by a
     // separate block (used inside `if`/`while` conditions to avoid
     // grabbing the loop body brace as a struct literal). When true,
     // `Ident { ... }` becomes a struct literal expression.
-    mut allow_struct_lit: bool,
+    mut allow_struct_lit: int,
     // When false, parse_call's loop won't consume `.` as a postfix.
     // Disabled inside match-arm bodies so the next sibling pattern
     // (e.g. `.Variant(x)`) isn't gobbled into the previous body.
-    mut allow_dot_postfix: bool,
+    mut allow_dot_postfix: int,
     // When true, expressions containing `it` in arg lists are wrapped
     // in implicit lambdas. Set by method call parsing (.map, etc.),
     // NOT by regular function calls (prevents double-wrapping).
-    mut allow_it_sugar: bool,
+    mut allow_it_sugar: int,
     mut current_start: int,   // byte offset where current token started
     mut bag: DiagnosticBag,
     features: Registry,
@@ -307,7 +307,7 @@ impl Parser {
         }
     }
 
-    fn parse_statement_list(self, stop_at_right_brace: bool) -> StmtList? {
+    fn parse_statement_list(self, stop_at_right_brace: int) -> StmtList? {
         if stop_at_right_brace && self.check(Tk.RightBrace) {
             return StmtList.End
         }

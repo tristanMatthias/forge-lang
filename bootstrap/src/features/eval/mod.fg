@@ -27,18 +27,18 @@ export type Value = {
     kind: string,
     number_text: string,
     text: string,
-    bool_value: bool,
+    bool_value: int,
 }
 
 export type EvalResult = {
     value: Value?,
-    had_error: bool,
+    had_error: int,
     error_message: string,
 }
 
 enum BindingList {
     End
-    Node(name: string, mutable_binding: bool, depth: int, value: Value, next: BindingList)
+    Node(name: string, mutable_binding: int, depth: int, value: Value, next: BindingList)
 }
 
 enum FunctionList {
@@ -56,15 +56,15 @@ export type Runtime = {
 export type StepResult = {
     runtime: Runtime,
     value: Value,
-    had_error: bool,
-    is_return: bool,
+    had_error: int,
+    is_return: int,
     error_message: string,
 }
 
 type AssignBindingsResult = {
     bindings: BindingList,
-    found: bool,
-    had_error: bool,
+    found: int,
+    had_error: int,
     error_message: string,
 }
 
@@ -201,7 +201,7 @@ fn value_string(text: string) -> Value {
     }
 }
 
-fn value_bool(flag: bool) -> Value {
+fn value_bool(flag: int) -> Value {
     Value {
         kind: "bool",
         number_text: "",
@@ -227,19 +227,19 @@ fn pop_scope_bindings(bindings: BindingList, depth: int) -> BindingList {
     }
 }
 
-fn define_binding(runtime: Runtime, name: string, mutable_binding: bool, value: Value) -> Runtime {
+fn define_binding(runtime: Runtime, name: string, mutable_binding: int, value: Value) -> Runtime {
     runtime with { bindings: BindingList.Node(name, mutable_binding, runtime.depth, value, runtime.bindings) }
 }
 
 type LookupResult = {
     value: Value,
-    found: bool,
+    found: int,
 }
 
 type FunctionLookupResult = {
     params: ParamList,
     body: StmtList,
-    found: bool,
+    found: int,
 }
 
 fn lookup_binding(bindings: BindingList, name: string) -> LookupResult {
@@ -498,7 +498,7 @@ export fn eval_expr(runtime: Runtime, expr: Expr) -> StepResult {
 type EvalArgsResult = {
     runtime: Runtime,
     values: ValueList,
-    had_error: bool,
+    had_error: int,
     error_message: string,
 }
 

@@ -10,14 +10,14 @@ use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, d
 use core.registry.{Registry, build_registry, dispatch_stmt_resolve, dispatch_expr_resolve, forge_stmt_tag, forge_expr_tag}
 
 export type ResolveResult = {
-    had_error: bool,
+    had_error: int,
     error_message: string,
     bag: DiagnosticBag,
 }
 
 enum ScopeEntry {
     End
-    Node(name: string, defined: bool, mutable: bool, depth: int, next: ScopeEntry)
+    Node(name: string, defined: int, mutable: int, depth: int, next: ScopeEntry)
 }
 
 enum FnEntry {
@@ -29,7 +29,7 @@ type Resolver = {
     scopes: ScopeEntry,
     functions: FnEntry,
     depth: int,
-    had_error: bool,
+    had_error: int,
     error_message: string,
     bag: DiagnosticBag,
     features: Registry,
@@ -145,7 +145,7 @@ fn declare_name_mutable(r: Resolver, name: string) -> Resolver {
     declare_name_mut(r, name, true)
 }
 
-fn declare_name_mut(r: Resolver, name: string, is_mut: bool) -> Resolver {
+fn declare_name_mut(r: Resolver, name: string, is_mut: int) -> Resolver {
     r with { scopes: ScopeEntry.Node(name, false, is_mut, r.depth, r.scopes) }
 }
 
@@ -193,9 +193,9 @@ fn declare_function(r: Resolver, name: string) -> Resolver {
 }
 
 type NameLookup = {
-    found: bool,
-    defined: bool,
-    mutable: bool,
+    found: int,
+    defined: int,
+    mutable: int,
 }
 
 fn lookup_name(entries: ScopeEntry, name: string) -> NameLookup {

@@ -169,7 +169,7 @@ fn desugar_unreachable(args: ExprList) -> Expr {
 // ── min() / max() desugaring ──
 // min(a, b) → { let __a = a; let __b = b; if __a < __b { __a } else { __b } }
 // max(a, b) → { let __a = a; let __b = b; if __a > __b { __a } else { __b } }
-fn desugar_min_max(args: ExprList, is_min: bool) -> Expr {
+fn desugar_min_max(args: ExprList, is_min: int) -> Expr {
     match args {
         .Node(a_se, rest) -> {
             match rest {

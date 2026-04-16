@@ -286,7 +286,7 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
 
 export type TypeCheckResult = {
     stmts: StmtList,
-    had_error: bool,
+    had_error: int,
     bag: DiagnosticBag,
 }
 
