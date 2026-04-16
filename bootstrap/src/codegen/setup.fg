@@ -1,9 +1,9 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_length, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
-use codegen.types.{Ctx, CodegenResult, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{Ctx, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
-use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelResult}
+use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelOk}
 use codegen.helpers.{stmts_last_expr}
 use features.fn_decl.codegen.{emit_function_bodies}
 
@@ -30,7 +30,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
     forge_llvm_add_function(m, name, fn_type)
 }
 
-export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, source_file: string) -> CodegenResult {
+export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, source_file: string) -> Result<int, string> {
     let lc = forge_llvm_context_create()
     let m = forge_llvm_module_create("bootstrap", lc)
     let builder = forge_llvm_create_builder(lc)
@@ -243,7 +243,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         .Ok(_) -> {}
         .Err(e) -> {
             ctx.dispose()
-            return CodegenResult { had_error: true, error_message: e }
+            return Result.Err(e)
         }
     }
 
@@ -256,7 +256,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         .Ok(_) -> {}
         .Err(e) -> {
             ctx.dispose()
-            return CodegenResult { had_error: true, error_message: e }
+            return Result.Err(e)
         }
     }
 
@@ -270,10 +270,10 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     ctx.dispose()
 
     if write_result != 0 {
-        return CodegenResult { had_error: true, error_message: "codegen error: failed to write IR to ${output_path}" }
+        return Result.Err("codegen error: failed to write IR to ${output_path}")
     }
 
-    CodegenResult { had_error: false, error_message: "" }
+    Result.Ok(0)
 }
 
 // Rebuild a FieldList with `resolved` populated from `translate_param_type`.
@@ -602,17 +602,11 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     emit_top_level(ctx, new_env, next)
                 }
                 .Let(name, _, init) -> {
-                    let result = emit_top_level_init(tl_ctx, env, name, init)
-                    if result.had_error {
-                        return err_stmt(result.error_message)
-                    }
+                    let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }
                 .Mut(name, _, init) -> {
-                    let result = emit_top_level_init(tl_ctx, env, name, init)
-                    if result.had_error {
-                        return err_stmt(result.error_message)
-                    }
+                    let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }
                 _ -> {
@@ -624,18 +618,14 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
     }
 }
 
-fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> TopLevelResult {
+fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> Result<TopLevelOk, string> {
     let g = ctx.lookup_toplevel(name)
     if !g.found {
-        return TopLevelResult { ctx, env, had_error: true, error_message: "codegen error: global `${name}` not declared" }
+        return Result.Err("codegen error: global `${name}` not declared")
     }
-    mut r = EmitValue { value: ctx.i64(0), ty: .Int }
-    match ctx.emit(env, init) {
-        .Ok(v) -> { r = v }
-        .Err(e) -> { return TopLevelResult { ctx, env, had_error: true, error_message: e } }
-    }
+    let r = ctx.emit(env, init)?
     ctx.store(r.value, g.llvm_global)
     let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
     let updated_cg = ctx.with_top_level(updated_top)
-    TopLevelResult { ctx: updated_cg, env, had_error: false, error_message: "" }
+    Result.Ok(TopLevelOk { ctx: updated_cg, env })
 }

@@ -47,16 +47,9 @@ use parse.lexer.{parse_int_literal}
 
 // ── Public API ──
 
-export type CodegenResult = {
-    had_error: int,
-    error_message: string,
-}
-
-type TopLevelResult = {
+export type TopLevelOk = {
     ctx: Ctx,
     env: VarEnv,
-    had_error: int,
-    error_message: string,
 }
 
 // ── Statement emission ──
