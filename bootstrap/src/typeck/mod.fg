@@ -228,6 +228,17 @@ fn tc_parse_type_list_str(tc: TC, s: string) -> TypeList {
     TypeList.Node(translate_type(tc, s), TypeList.End)
 }
 
+// Extract the base name from a generic type annotation.
+// "Result<EmitValue, string>" → "Result", "int" → "int"
+fn tc_base_type_name(ty: string) -> string {
+    mut i = 0
+    while i < ty.length {
+        if ty.substring(i, i + 1) == "<" { return ty.substring(0, i) }
+        i = i + 1
+    }
+    ty
+}
+
 export fn translate_type(tc: TC, ty: string) -> ValueType {
     match ty {
         "str" or "string" -> return ValueType.Str
@@ -262,6 +273,12 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
     if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty) }
     if struct_type_has(tc.structs, ty) { return ValueType.Struct(ty) }
     if trait_has(tc.traits, ty) { return ValueType.Trait(ty) }
+    // Handle generic type annotations: "Result<EmitValue, string>" → look up base "Result"
+    let base = tc_base_type_name(ty)
+    if base != ty {
+        if enum_type_has(tc.enums, base) { return ValueType.Enum(base) }
+        if struct_type_has(tc.structs, base) { return ValueType.Struct(base) }
+    }
     ValueType.Int
 }
 
@@ -401,8 +418,10 @@ fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, body: StmtList) ->
 // functions whose last statement isn't an expression.
 fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
     let body_ty = tc_body_tail_type(tc, stmts)
+    // Skip when either side is Int (fallback/unreliable) or Void (no value).
+    if vtype_eq(declared, .Int) { return tc }
     match body_ty {
-        .Void or .Int -> tc   // Void: not an expr; Int: fallback type, unreliable
+        .Void or .Int -> tc
         _ -> {
             if !vtype_eq(declared, body_ty) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but body produces `${vtype_display(body_ty)}`"

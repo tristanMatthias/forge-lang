@@ -347,10 +347,14 @@ fn mangle_annotation(base: string, tp: TypeParamList, args_str: string, regs: Ge
 }
 
 // Split "EmitValue, string" into TypeArgList matching type params.
+fn tp_first(tp: TypeParamList) -> string {
+    match tp { .End -> "(end)", .Node(n, _) -> n }
+}
+
 fn split_annotation_args(tp: TypeParamList, args_str: string, regs: GenRegs, insts: InstList) -> TypeArgList {
     match tp {
         .End -> TypeArgList.End
-        .Node(param_name, next_tp) -> {
+        .Node(param_name, _, next_tp) -> {
             let split = top_level_split_idx(args_str)
             if split < 0 {
                 // Last or only arg

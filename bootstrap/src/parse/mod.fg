@@ -1336,9 +1336,9 @@ impl Parser {
             name = "${name}.${self.current_lexeme}"
             self.advance()
         }
-        // Skip generic arguments: Type<A, B>
+        // Preserve generic arguments: Result<EmitValue, string> -> "Result<EmitValue, string>"
         if self.check(Tk.Less) {
-            self.skip_angle_brackets()
+            name = "${name}${self.collect_angle_brackets()}"
         }
         if self.check(Tk.Question) {
             self.advance()
@@ -1388,6 +1388,28 @@ impl Parser {
             }
             self.advance()
         }
+    }
+
+    // Collect angle-bracket content as a string: <EmitValue, string> -> "<EmitValue, string>"
+    fn collect_angle_brackets(self) -> string {
+        self.advance()  // consume `<`
+        mut result = "<"
+        mut depth = 1
+        while depth > 0 && !self.check(Tk.Eof) {
+            if self.check(Tk.Less) {
+                depth = depth + 1
+                result = "${result}<"
+            } else if self.check(Tk.Greater) {
+                depth = depth - 1
+                result = "${result}>"
+            } else if self.check(Tk.Comma) {
+                result = "${result}, "
+            } else {
+                result = "${result}${self.current_lexeme}"
+            }
+            self.advance()
+        }
+        result
     }
 
     fn set_error(self, message: string) {
