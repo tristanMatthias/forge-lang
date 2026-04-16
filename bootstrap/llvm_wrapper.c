@@ -496,7 +496,8 @@ void forge_llvm_build_store_cast(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRe
     if (dest_ty) {
         val = forge_llvm_cast_to_type(b, val, dest_ty);
     }
-    LLVMBuildStore(b, val, dest);
+    LLVMValueRef store = LLVMBuildStore(b, val, dest);
+    LLVMSetAlignment(store, 8);
 }
 
 // Type introspection helpers for the Forge codegen.
