@@ -12,8 +12,8 @@ mod indexing
 mod helpers
 
 use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, field_type_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, DeferStack, EmitResult, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, err_stmt_from_expr, field_type_at, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
-use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag}
+use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList,  StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, field_type_at, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
+use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag, has_expr_emit, has_stmt_emit}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
 use features.defer_stmt.codegen.{emit_defers}
 use features.fn_decl.codegen.{emit_function_bodies}
@@ -29,6 +29,7 @@ use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp, emit_str_replace, e
 use codegen.printing.{emit_println, emit_eprintln}
 use features.trait_decl.codegen.{emit_trait_dispatch, box_for_trait, resolve_concrete_type_name, push_vtable_entries_call}
 use features.fn_decl.codegen.{emit_call, emit_call_named, emit_method_call}
+use features.error_propagation.{Result}
 use parse.lexer.{parse_int_literal}
 
 //
@@ -60,34 +61,25 @@ type TopLevelResult = {
 
 // ── Statement emission ──
 
-export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
+export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
         .End -> ok_stmt(env)
         .Node(ss, next) -> {
             let line_ctx = ctx with { source_line: ss.line }
-            let result = emit_stmt(line_ctx, env, ss.node)
-            if result.had_error {
-                return result
-            }
-            emit_stmt_list(ctx, result.env, next)
+            let result_env = emit_stmt(line_ctx, env, ss.node)?
+            emit_stmt_list(ctx, result_env, next)
         }
     }
 }
 
-export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
     match stmt {
         .Expr(expr) -> {
-            let r = emit_expr(ctx, env, expr)
-            if r.had_error {
-                return err_stmt_from_expr(r)
-            }
+            emit_expr(ctx, env, expr)?
             ok_stmt(env)
         }
         .Return(value) -> {
-            let r = emit_expr(ctx, env, value)
-            if r.had_error {
-                return err_stmt_from_expr(r)
-            }
+            let r = emit_expr(ctx, env, value)?
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
             ctx.ret(r.value, fn_ret)
@@ -102,10 +94,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         .Let(name, ty, initializer) -> emit_var_decl(ctx, env, name, ty, initializer)
         .Mut(name, ty, initializer) -> emit_var_decl(ctx, env, name, ty, initializer)
         .Block(body) -> {
-            let inner = emit_stmt_list(ctx, env, body)
-            if inner.had_error {
-                return inner
-            }
+            emit_stmt_list(ctx, env, body)?
             ok_stmt(env)
         }
         .TypeDecl(_, _, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _)
@@ -129,9 +118,8 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
         }
         _ -> {
             let tag = forge_stmt_tag(stmt)
-            let result = dispatch_stmt_emit(ctx.features, tag, ctx, env, stmt)
-            if result != null {
-                return result!
+            if has_stmt_emit(ctx.features, tag) {
+                return dispatch_stmt_emit(ctx.features, tag, ctx, env, stmt)
             }
             err_stmt("codegen error: unsupported statement type (tag=${string(tag)})")
         }
@@ -140,7 +128,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
 
 // ── Expression emission ──
 
-export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
+export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Number(text) -> {
             let value = parse_int_literal(text)
@@ -170,10 +158,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .Ident(name) -> emit_name_lookup(ctx, env, name, "variable")
         .QualifiedIdent(path) -> emit_name_lookup(ctx, env, path, "name")
         .Assign(name, value) -> {
-            let r = emit_expr(ctx, env, value)
-            if r.had_error {
-                return r
-            }
+            let r = emit_expr(ctx, env, value)?
             let local = env_lookup(env, name)
             if local.found {
                 ctx.store(r.value, local.alloca)
@@ -192,9 +177,8 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
         .Slice(obj, start, end) -> emit_slice(ctx, env, obj, start, end)
         _ -> {
             let tag = forge_expr_tag(expr)
-            let result = dispatch_expr_emit(ctx.features, tag, ctx, env, expr)
-            if result != null {
-                return result!
+            if has_expr_emit(ctx.features, tag) {
+                return dispatch_expr_emit(ctx.features, tag, ctx, env, expr)
             }
             err_emit("unsupported expression type (tag=${string(tag)})")
         }
@@ -203,7 +187,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult {
 
 // Shared implementation for .Ident and .QualifiedIdent emission.
 // Checks local vars, top-level globals, then named LLVM functions.
-fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> EmitResult {
+fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> Result<EmitValue, string> {
     let local = env_lookup(env, name)
     if local.found {
         let loaded = ctx.load_typed(local.ty, local.alloca, name)
@@ -229,7 +213,7 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> EmitR
 // Make expression/statement emission flow through Ctx.
 
 impl Ctx {
-    fn emit(self, env: VarEnv, expr: Expr) -> EmitResult {
+    fn emit(self, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
         emit_expr(self, env, expr)
     }
 }

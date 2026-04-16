@@ -6,9 +6,9 @@
 // then overwrite the specified fields with new values.
 
 use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, vtype_struct_name, vtype_display, SExpr}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit}
 
-export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> EmitResult {
+export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
 
     let struct_name = vtype_struct_name(r.ty)
@@ -54,11 +54,13 @@ fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields:
         .Node(name, sv, next) -> {
             let idx = field_index_of(fields, name)
             if idx >= 0 {
-                let r = ctx.emit(env, sv.node)
-                if !r.had_error {
-                    let st_ty = ctx.get_type(struct_name)
-                    let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
-                    ctx.store(r.value, gep)
+                match ctx.emit(env, sv.node) {
+                    .Ok(r) -> {
+                        let st_ty = ctx.get_type(struct_name)
+                        let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
+                        ctx.store(r.value, gep)
+                    }
+                    .Err(_) -> {}
                 }
             }
             apply_overrides(ctx, env, dst, struct_name, fields, next)

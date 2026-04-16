@@ -12,7 +12,7 @@ use typeck.{check_expr, check_stmt, tc_report}
 export fn init_while_stmt(reg: Registry) {
     let f = feature_new("while") with {
         stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
-        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .While(cond, body) -> emit_while(ctx, env, cond, body), _ -> err_stmt("expected While") },
+        emit_stmt: while_emit_stmt,
         resolve_stmt: (r: int, stmt: Stmt) -> match stmt {
             .While(condition, body) -> {
                 let after_cond = resolve_expr(r, condition)
@@ -29,6 +29,13 @@ export fn init_while_stmt(reg: Registry) {
         parse_stmt: (p: Parser) -> p.parse_while_statement(),
     }
     register(reg, f)
+}
+
+fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+    match stmt {
+        .While(condition, body) -> emit_while(ctx, env, condition, body)
+        _ -> err_stmt("expected While")
+    }
 }
 
 fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {

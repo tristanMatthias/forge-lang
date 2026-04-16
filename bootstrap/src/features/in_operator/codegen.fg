@@ -1,15 +1,15 @@
 // WHY: codegen for `expr in [a, b, c]` — expands to `expr == a || expr == b || expr == c`.
 // Uses emit_binary(Eq) for each comparison so enum tags, strings, etc. are handled correctly.
 
-use codegen.types.{Ctx, EmitResult, ok_emit, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.operators.{emit_binary}
 use core.ast.{Expr, ExprList, BinOp, VarEnv, ValueType, vtype_is_str}
 
-export fn emit_in_check(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) -> EmitResult {
+export fn emit_in_check(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) -> Result<EmitValue, string> {
     emit_in_items(ctx, env, needle, items)
 }
 
-fn emit_in_items(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) -> EmitResult {
+fn emit_in_items(ctx: Ctx, env: VarEnv, needle: Expr, items: ExprList) -> Result<EmitValue, string> {
     match items {
         .End -> ok_emit(ctx.i64(0))
         .Node(item, next) -> {

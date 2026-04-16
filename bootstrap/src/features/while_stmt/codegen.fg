@@ -2,19 +2,18 @@
 // support via the scoped loop stack in Ctx.
 
 use core.ast.{Expr, Stmt, VarEnv}
-use codegen.types.{Ctx, LoopStack, StmtResult, err_stmt_from_expr, ok_stmt}
+use codegen.types.{Ctx, LoopStack,  ok_stmt, emit_value_ptr}
 use codegen.{emit_expr, emit_stmt}
 
-export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> StmtResult {
+export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Result<VarEnv, string> {
     let cond_bb = ctx.bb("while.cond")
     let body_bb = ctx.bb("while.body")
     let exit_bb = ctx.bb("while.exit")
     ctx.br(cond_bb)
 
     ctx.position(cond_bb)
-    let cond = ctx.emit(env, condition)
-    if cond.had_error { return err_stmt_from_expr(cond) }
-    let cond_i1 = ctx.truthy(cond.value, "while_cond")
+    let cond = ctx.emit(env, condition)?
+    let cond_i1 = ctx.truthy(emit_value_ptr(cond), "while_cond")
     ctx.cond_br(cond_i1, body_bb, exit_bb)
 
     // Scoped loop stack: create a new Ctx with this loop's

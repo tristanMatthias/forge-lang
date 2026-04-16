@@ -1,7 +1,7 @@
 // WHY: codegen for trait dynamic dispatch.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_display, vtype_struct_name, vtype_enum_name, expr_list_length}
-use codegen.types.{Ctx, EmitResult, TraitMethodNames, ok_emit_typed, err_emit, translate_type_ctx, trait_decl_lookup}
+use codegen.types.{Ctx, EmitValue, TraitMethodNames, ok_emit_typed, err_emit, translate_type_ctx, trait_decl_lookup}
 use features.fn_decl.codegen.{emit_first_arg}
 
 export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
@@ -20,7 +20,7 @@ export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string
     }
 }
 
-export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> EmitResult {
+export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: string, method: string, args: ExprList) -> Result<EmitValue, string> {
     let obj_ptr = ctx.to_ptr(obj_val, "tobj_ptr")
     let concrete = ctx.call("forge_trait_object_value", [obj_ptr])
     let vtable = ctx.call("forge_trait_object_vtable", [obj_ptr])

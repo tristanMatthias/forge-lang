@@ -1,10 +1,10 @@
 // WHY: codegen for string operations — concat, comparison, replace, substring.
 
 use core.ast.{Expr, ExprList, VarEnv}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_str, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_str, err_emit}
 use codegen.helpers.{strip_quotes}
 
-export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
+export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue, string> {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "concat_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "concat_r")
 
@@ -24,7 +24,7 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> EmitResult {
     ok_emit_str(buf)
 }
 
-export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
+export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .Node(se_from, rest) -> {
             match rest {
@@ -44,7 +44,7 @@ export fn emit_str_replace(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) 
     }
 }
 
-export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> EmitResult {
+export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
     // Expect exactly two integer args: start and end (exclusive).
     // Destructure exactly once — repeated `match args` corrupts
     // the inner payloads (host-compiler issue).
@@ -59,7 +59,7 @@ export fn emit_substring(ctx: Ctx, env: VarEnv, str_i64: ptr, args: ExprList) ->
     }
 }
 
-export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> EmitResult {
+export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: Expr, end_arg: Expr) -> Result<EmitValue, string> {
     let start_r = ctx.emit(env, start_arg)?
     let end_r = ctx.emit(env, end_arg)?
     let str_ptr = ctx.to_ptr(str_i64, "sub_src")
@@ -81,7 +81,7 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     ok_emit_str(buf)
 }
 
-export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitResult {
+export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> Result<EmitValue, string> {
     // Lower string ordering ops (<, <=, >, >=) to a libc strcmp
     // call followed by a signed comparison of the result against
     // 0. We sign-extend strcmp's i32 result into i64 ourselves
@@ -98,7 +98,7 @@ export fn emit_str_cmp(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, pred: int) -> EmitR
     ok_emit_typed(ctx.zext(cmp, ctx.i64_type, "scmp_ext"), .Bool)
 }
 
-export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: int) -> EmitResult {
+export fn emit_str_eq(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr, invert: bool) -> Result<EmitValue, string> {
     let lhs_ptr = ctx.to_ptr(lhs_i64, "streq_l")
     let rhs_ptr = ctx.to_ptr(rhs_i64, "streq_r")
     let result = ctx.call("strcmp", [lhs_ptr, rhs_ptr])

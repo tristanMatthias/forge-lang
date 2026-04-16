@@ -1,11 +1,11 @@
 // WHY: emits struct literal construction and field-filling.
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, SExpr}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
 use codegen.{emit_expr, emit_enum_ctor}
 use features.enum_decl.codegen.{emit_enum_ctor}
 
-export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitList) -> EmitResult {
+export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitList) -> Result<EmitValue, string> {
     let lookup = ctx.lookup_struct(name)
     if !lookup.found {
         return err_emit("undefined struct type `${name}`")
@@ -25,7 +25,7 @@ fn malloc_struct_bytes(ctx: Ctx, fields: FieldList) -> ptr {
     ctx.malloc(ctx.i64(count * 8))
 }
 
-fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> EmitResult {
+fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> Result<EmitValue, string> {
     match inits {
         .End -> ok_emit(null_ptr_val())
         .Node(field_name, sv, next) -> {
@@ -40,7 +40,7 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
     }
 }
 
-export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> EmitResult {
+export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, value: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
@@ -59,7 +59,7 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     ok_emit(v.value)
 }
 
-export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitResult {
+export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
     // Bare `EnumName.Variant` (zero-arg enum constructor)
     match obj {
         .Ident(head) -> {

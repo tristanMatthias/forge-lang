@@ -10,11 +10,10 @@
 // operators compile to i64 null-check or enum-tag-check branches.
 
 use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
 
-export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> EmitResult {
-    let l = ctx.emit(env, left)
-    if l.had_error { return l }
+export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> Result<EmitValue, string> {
+    let l = ctx.emit(env, left)?
 
     // Short-circuit: if left != 0/null (non-null), skip right.
     let l_ptr = ctx.is_ptr_value(l.value)
@@ -31,8 +30,7 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
 
     // Right-hand side: only evaluated when left is null.
     ctx.position(then_bb)
-    let r = ctx.emit(env, right)
-    if r.had_error { return r }
+    let r = ctx.emit(env, right)?
     ctx.store(ctx.to_i64(r.value, "nc_rhs"), result_slot)
     ctx.br(merge_bb)
 
@@ -42,9 +40,8 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
     ok_emit_typed(loaded, merged_ty)
 }
 
-export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> EmitResult {
-    let r = ctx.emit(env, obj)
-    if r.had_error { return r }
+export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, obj)?
 
     // If the object is null, produce null without accessing.
     let is_null = if ctx.is_ptr_value(r.value) {
@@ -92,13 +89,16 @@ export fn emit_optional_chain(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -
     ok_emit_typed(final_val, field_ty)
 }
 
-export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
-    let r = ctx.emit(env, inner)
-    if r.had_error { return r }
+export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, string> {
+    // This is the compiler's implementation of the source-level `?`
+    // operator, but codegen failures from the inner expression should
+    // still propagate normally.
+    let r = ctx.emit(env, inner)?
 
     // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
     // Check tag: Ok → extract payload value, Err → return Result.
     let enum_name = vtype_enum_name(r.ty)
+    if enum_name != "" { eprintln("[emit_try] enum=${enum_name} line=${string(ctx.source_line)}") }
     if enum_name == "Result" || enum_name.starts_with("Result__") {
         let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
@@ -147,7 +147,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
                 ctx.ret(r.value, s_fn_ret)
 
                 ctx.position(cont_bb)
-                return EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
+                return ok_emit_typed(r.value, r.ty)
             }
         }
     }
@@ -168,5 +168,5 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> EmitResult {
     ctx.ret_void(fn_ret)
 
     ctx.position(cont_bb)
-    EmitResult { value: r.value, ty: r.ty, had_error: false, error_message: "" }
+    ok_emit_typed(r.value, r.ty)
 }

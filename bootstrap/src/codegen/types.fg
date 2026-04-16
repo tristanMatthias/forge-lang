@@ -14,6 +14,7 @@
 
 use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend}
 use core.registry.{Registry}
+use features.error_propagation.{Result}
 
 // ── Codegen context ──
 //
@@ -83,65 +84,68 @@ export fn null_ptr_val() -> ptr {
     n
 }
 
-// ── Result type + emit/stmt helpers ──
+// ── Result helpers ──
 
-export enum Result<T, E> { Ok(value: T), Err(error: E) }
-
-// ── EmitResult / StmtResult ──
+// ── Emit types ──
 //
-// Every emit_* function returns one of these. EmitResult carries a
-// value (LLVM ValueRef as ptr) plus a ValueType `ty` that tells
-// later code whether to dispatch through string operations or
-// integer operations. StmtResult is the same shape minus the value:
-// statements emit for side effects only.
-//
-// These are being migrated to Result<T, string>. During transition,
-// both old (struct with had_error) and new (Result enum) patterns coexist.
+// Expression emitters return Result<EmitValue, string>.
+// Statement emitters return Result<VarEnv, string>.
+// Use ? to propagate errors: `let r = ctx.emit(env, expr)?`
 
-export type EmitResult = {
-    value: ptr,
-    ty: ValueType,
-    had_error: int,
-    error_message: string,
+export type EmitValue = { value: ptr, ty: ValueType }
+
+export fn emit_value_ptr(v: EmitValue) -> ptr {
+    v.value
 }
 
-export fn ok_emit(value: ptr) -> EmitResult {
-    EmitResult { value, ty: .Int, had_error: false, error_message: "" }
+export fn emit_value_ty(v: EmitValue) -> ValueType {
+    v.ty
 }
 
-export fn ok_emit_str(value: ptr) -> EmitResult {
-    EmitResult { value, ty: .Str, had_error: false, error_message: "" }
+extern fn forge_tag_as_result(ptr: ptr) -> ptr
+
+export fn ok_emit(value: ptr) -> Result<EmitValue, string> {
+    if false { return Result.Err("") }
+    let r = Result.Ok(EmitValue { value, ty: .Int })
+    forge_tag_as_result(r)
+    r
 }
 
-export fn ok_emit_typed(value: ptr, ty: ValueType) -> EmitResult {
-    EmitResult { value, ty, had_error: false, error_message: "" }
+export fn ok_emit_str(value: ptr) -> Result<EmitValue, string> {
+    if false { return Result.Err("") }
+    let r = Result.Ok(EmitValue { value, ty: .Str })
+    forge_tag_as_result(r)
+    r
+}
+export fn ok_emit_typed(value: ptr, ty: ValueType) -> Result<EmitValue, string> {
+    if false { return Result.Err("") }
+    let r = Result.Ok(EmitValue { value, ty })
+    forge_tag_as_result(r)
+    r
+}
+export fn err_emit(message: string) -> Result<EmitValue, string> {
+    if false { return Result.Ok(EmitValue { value: null_ptr_val(), ty: .Int }) }
+    let r = Result.Err("codegen error: ${message}")
+    forge_tag_as_result(r)
+    r
 }
 
-export fn err_emit(message: string) -> EmitResult {
-    EmitResult { value: null_ptr_val(), ty: .Int, had_error: true, error_message: "codegen error: ${message}" }
+export fn ok_stmt(env: VarEnv) -> Result<VarEnv, string> {
+    if false { return Result.Err("") }
+    let r = Result.Ok(env)
+    forge_tag_as_result(r)
+    r
+}
+export fn err_stmt(message: string) -> Result<VarEnv, string> {
+    if false { return Result.Ok(VarEnv.End) }
+    let r = Result.Err(message)
+    forge_tag_as_result(r)
+    r
 }
 
 // 0xDEADBEEF as signed i64 — sentinel tag in closure arrays to
 // distinguish closure values from plain function pointers.
 export fn closure_marker() -> int { -559038737 }
-
-export type StmtResult = {
-    env: VarEnv,
-    had_error: int,
-    error_message: string,
-}
-
-export fn ok_stmt(env: VarEnv) -> StmtResult {
-    StmtResult { env, had_error: false, error_message: "" }
-}
-
-export fn err_stmt(message: string) -> StmtResult {
-    StmtResult { env: .End, had_error: true, error_message: message }
-}
-
-export fn err_stmt_from_expr(r: EmitResult) -> StmtResult {
-    StmtResult { env: .End, had_error: true, error_message: r.error_message }
-}
 
 // ── Pure leaf helpers ──
 //
@@ -376,13 +380,17 @@ fn base_type_name(ty: string) -> string {
     ty
 }
 
+// Mangle a generic type annotation like "Result<EmitValue, string>" into
+// the monomorphizer's mangled form "Result__EmitValue__string".
 fn mangle_generic_type(ty: string) -> string {
     let base = base_type_name(ty)
     if base == ty { return ty }
+    // Extract args between outermost < >
     let args_start = base.length + 1
     let args_end = ty.length - 1
     if args_start >= args_end { return ty }
     let args_str = ty.substring(args_start, args_end)
+    // Split on top-level commas and join with __
     mut result = base
     mut depth = 0
     mut seg_start = 0
@@ -999,12 +1007,12 @@ impl Ctx {
     // icmp/fcmp + zext to i64 + wrap in ok_emit_typed(.Bool) — the
     // universal pattern for comparison operators returning Bool.
 
-    fn icmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> EmitResult {
+    fn icmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> Result<EmitValue, string> {
         let cmp = forge_llvm_build_icmp(self.builder, pred, a, b, name)
         ok_emit_typed(forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
     }
 
-    fn fcmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> EmitResult {
+    fn fcmp_bool(self, pred: int, a: ptr, b: ptr, name: string) -> Result<EmitValue, string> {
         let cmp = forge_llvm_build_fcmp(self.builder, pred, a, b, name)
         ok_emit_typed(forge_llvm_build_zext(self.builder, cmp, self.i64_type, "${name}_ext"), .Bool)
     }

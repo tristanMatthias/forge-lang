@@ -1,11 +1,11 @@
 // WHY: shared codegen utilities used across features.
 
 use core.ast.{Expr, ExprList, StmtList, ParamList, VarEnv, ValueType, TypeList, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, trait_decl_has, parse_type_list_str}
+use codegen.types.{Ctx, EmitValue, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, trait_decl_has, parse_type_list_str}
 use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
 use features.closures.codegen.{emit_lambda_typed}
 
-export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("expected 1 argument, got 0")
         .Node(se, _) -> ctx.emit(env, se.node)
@@ -20,36 +20,33 @@ export fn strip_quotes(s: string) -> string {
     s.substring(1, len - 1)
 }
 
-export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
+export fn fill_arg_array(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
-            let r = ctx.emit(env, se.node)
-            if r.had_error {
-                return r
-            }
+            let r = ctx.emit(env, se.node)?
             ctx.value_array_set(arr, idx, r.value)
             fill_arg_array(ctx, env, arr, next, idx + 1)
         }
     }
 }
 
-export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: ParamTypeList, idx: int) -> EmitResult {
+export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, ptypes: ParamTypeList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
             // When a Lambda arg is passed to a function expecting a typed fn param,
             // compile the lambda with the expected param types so enum matching works.
-            let r = match se.node {
+            mut r = EmitValue { value: ctx.i64(0), ty: .Int }
+            match se.node {
                 .Lambda(params, body) -> {
                     let fn_type_str = param_type_at(ptypes, idx)
                     let lambda_types = parse_fn_param_types(ctx, fn_type_str)
-                    emit_lambda_typed(ctx, env, params, body, lambda_types)
+                    r = emit_lambda_typed(ctx, env, params, body, lambda_types)?
                 }
-                _ -> ctx.emit(env, se.node)
-            }
-            if r.had_error {
-                return r
+                _ -> {
+                    r = ctx.emit(env, se.node)?
+                }
             }
             let ptype_str = param_type_at(ptypes, idx)
             // Check if the parameter type is a trait and the argument is concrete
@@ -104,5 +101,4 @@ export fn stmts_last_expr(stmts: StmtList) -> Expr {
         }
     }
 }
-
 

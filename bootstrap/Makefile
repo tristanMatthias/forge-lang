@@ -18,7 +18,7 @@
 .DEFAULT_GOAL := build
 .PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs
 
-DIAG := bash scripts/diagnose.sh
+DIAG := NO_AUTOCYCLE=1 bash scripts/diagnose.sh
 
 help:
 	@echo "Bootstrap compiler — common targets:"

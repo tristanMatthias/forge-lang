@@ -2,7 +2,7 @@
 
 use core.ast.{variant_lookup, vtype_display, vtype_enum_name}
 use codegen.types.{err_emit, ok_emit_typed}
-export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> EmitResult {
+export fn emit_is_check(ctx: Ctx, env: VarEnv, subject: Expr, vname: string) -> Result<EmitValue, string> {
     let r = ctx.emit(env, subject)?
     let enum_name = vtype_enum_name(r.ty)
     if enum_name == "" {

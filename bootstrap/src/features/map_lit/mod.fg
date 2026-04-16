@@ -11,7 +11,7 @@ use typeck.{check_expr_list, tc_er}
 export fn init_map_lit(reg: Registry) {
     let f = feature_new("map_lit") with {
         expr_tag: Expr.MapLit(ExprList.End),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .MapLit(entries) -> emit_map_lit(ctx, env, entries), _ -> err_emit("expected MapLit") },
+        emit_expr: map_lit_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr { .MapLit(entries) -> resolve_expr_list(r, entries), _ -> r },
         check_expr: (tc: int, expr: Expr) -> match expr {
             .MapLit(entries) -> {
@@ -26,4 +26,11 @@ export fn init_map_lit(reg: Registry) {
         },
     }
     register(reg, f)
+}
+
+fn map_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .MapLit(entries) -> emit_map_lit(ctx, env, entries)
+        _ -> err_emit("expected MapLit")
+    }
 }

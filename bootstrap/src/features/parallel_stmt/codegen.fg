@@ -1,28 +1,27 @@
 // WHY: codegen for `parallel { fn1(); fn2(); fn3() }`.
 
 use codegen.types.{err_stmt, ok_stmt}
-export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult {
+export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
     match stmt {
         .Parallel(body) -> emit_parallel(ctx, env, body)
         _ -> err_stmt("parallel_emit_stmt: expected Parallel")
     }
 }
 
-fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> StmtResult {
+fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, string> {
     let closures = ctx.array_new()
     let r = collect_parallel_closures(ctx, env, stmts, closures)?
     ctx.call("forge_parallel_run", [closures])
     ok_stmt(env)
 }
 
-fn collect_parallel_closures(ctx: Ctx, env: VarEnv, stmts: StmtList, arr: ptr) -> StmtResult {
+fn collect_parallel_closures(ctx: Ctx, env: VarEnv, stmts: StmtList, arr: ptr) -> Result<VarEnv, string> {
     match stmts {
         .End -> ok_stmt(env)
         .Node(ss, next) -> {
             match ss.node {
                 .Expr(expr) -> {
-                    let r = ctx.emit(env, expr)
-                    if r.had_error { return err_stmt(r.error_message) }
+                    let r = ctx.emit(env, expr)?
                     ctx.array_push(arr, r.value)
                     collect_parallel_closures(ctx, env, next, arr)
                 }

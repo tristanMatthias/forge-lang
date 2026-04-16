@@ -10,7 +10,7 @@ use typeck.{check_expr, tc_bind_params, tc_enter, tc_er, tc_exit}
 export fn init_closures(reg: Registry) {
     let f = feature_new("lambda") with {
         expr_tag: Expr.Lambda(ParamList.End, Expr.Null),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .Lambda(params, body) -> emit_lambda(ctx, env, params, body), _ -> err_emit("expected Lambda") },
+        emit_expr: lambda_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr {
             .Lambda(params, body) -> {
                 let entered = enter_resolve_scope(r)
@@ -36,4 +36,11 @@ export fn init_closures(reg: Registry) {
         },
     }
     register(reg, f)
+}
+
+fn lambda_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Lambda(params, body) -> emit_lambda(ctx, env, params, body)
+        _ -> err_emit("expected Lambda")
+    }
 }

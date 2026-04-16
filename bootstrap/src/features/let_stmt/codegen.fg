@@ -3,14 +3,11 @@
 // a trait object with a vtable for dynamic dispatch.
 
 use core.ast.{Expr, ValueType, VarEnv, vtype_trait_name, vtype_struct_name, vtype_enum_name}
-use codegen.types.{Ctx, StmtResult, ok_stmt, err_stmt_from_expr, translate_type_ctx}
+use codegen.types.{Ctx,  ok_stmt, translate_type_ctx}
 use features.trait_decl.codegen.{box_for_trait}
 
-export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: string, initializer: Expr) -> StmtResult {
-    let r = ctx.emit(env, initializer)
-    if r.had_error {
-        return err_stmt_from_expr(r)
-    }
+export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: string, initializer: Expr) -> Result<VarEnv, string> {
+    let r = ctx.emit(env, initializer)?
     // Use the type annotation when present, otherwise infer from initializer.
     let var_ty = if ty_annotation != "" {
         translate_type_ctx(ctx, ty_annotation)

@@ -1,9 +1,9 @@
 // WHY: codegen for indexing (obj[idx]) and slicing (obj[start..end]).
 
 use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_display, vtype_eq, vtype_is_list, vtype_is_str, vtype_list_elem}
-use codegen.types.{Ctx, EmitResult, err_emit, ok_emit, ok_emit_str, ok_emit_typed}
+use codegen.types.{Ctx, EmitValue, err_emit, ok_emit, ok_emit_str, ok_emit_typed}
 
-export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult {
+export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     // Ptr indexing: ptr[i] → load byte at (ptr + i), returns int (0-255)
     if vtype_eq(r.ty, .Ptr) {
@@ -40,7 +40,7 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> EmitResult 
     ok_emit_str(buf)
 }
 
-export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> EmitResult {
+export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -> Result<EmitValue, string> {
     let obj_r = ctx.emit(env, obj)?
     let start_r = ctx.emit(env, start)?
     let end_r = ctx.emit(env, end)?

@@ -328,10 +328,52 @@ LLVMValueRef forge_llvm_build_load(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRe
     return load;
 }
 
+// Emit a CALL to forge_track_store_i64/ptr that logs and performs the store.
+// Falls back to raw store if the tracking function isn't available.
+static LLVMValueRef tracked_store_or_raw(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef ptr_val) {
+    if (!getenv("FORGE_TRACK_STORES")) {
+        LLVMValueRef store = LLVMBuildStore(b, val, ptr_val);
+        LLVMSetAlignment(store, 8);
+        return store;
+    }
+    LLVMBasicBlockRef bb = LLVMGetInsertBlock(b);
+    LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+    LLVMModuleRef mod = LLVMGetGlobalParent(fn);
+    LLVMContextRef lc = LLVMGetModuleContext(mod);
+    LLVMTypeRef i64t = LLVMInt64TypeInContext(lc);
+    LLVMTypeRef pt = LLVMPointerTypeInContext(lc, 0);
+    LLVMTypeRef val_ty = LLVMTypeOf(val);
+    LLVMTypeKind kind = LLVMGetTypeKind(val_ty);
+    const char* fn_name;
+    LLVMTypeRef arg1_ty;
+    if (kind == LLVMPointerTypeKind) {
+        fn_name = "forge_track_store_ptr";
+        arg1_ty = pt;
+    } else if (kind == LLVMIntegerTypeKind && LLVMGetIntTypeWidth(val_ty) == 64) {
+        fn_name = "forge_track_store_i64";
+        arg1_ty = i64t;
+    } else {
+        // Types we don't track (i1, f64, etc.) — raw store
+        LLVMValueRef store = LLVMBuildStore(b, val, ptr_val);
+        LLVMSetAlignment(store, 8);
+        return store;
+    }
+    LLVMValueRef tracker = LLVMGetNamedFunction(mod, fn_name);
+    if (!tracker) {
+        LLVMTypeRef params[] = { pt, arg1_ty };
+        LLVMTypeRef ft = LLVMFunctionType(LLVMVoidTypeInContext(lc), params, 2, 0);
+        tracker = LLVMAddFunction(mod, fn_name, ft);
+    }
+    LLVMTypeRef params[] = { pt, arg1_ty };
+    LLVMTypeRef ft = LLVMFunctionType(LLVMVoidTypeInContext(lc), params, 2, 0);
+    LLVMValueRef args[] = { ptr_val, val };
+    LLVMBuildCall2(b, ft, tracker, args, 2, "");
+    return NULL;
+}
+
 LLVMValueRef forge_llvm_build_store(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRef ptr_val) {
-    LLVMValueRef store = LLVMBuildStore(b, val, ptr_val);
-    LLVMSetAlignment(store, 8);
-    return store;
+    LLVMValueRef r = tracked_store_or_raw(b, val, ptr_val);
+    return r;
 }
 
 LLVMValueRef forge_llvm_build_struct_gep2(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRef ptr_val, int idx, const char* name) {
@@ -496,8 +538,7 @@ void forge_llvm_build_store_cast(LLVMBuilderRef b, LLVMValueRef val, LLVMValueRe
     if (dest_ty) {
         val = forge_llvm_cast_to_type(b, val, dest_ty);
     }
-    LLVMValueRef store = LLVMBuildStore(b, val, dest);
-    LLVMSetAlignment(store, 8);
+    tracked_store_or_raw(b, val, dest);
 }
 
 // Type introspection helpers for the Forge codegen.

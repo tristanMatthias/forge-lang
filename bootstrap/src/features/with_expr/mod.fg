@@ -10,7 +10,7 @@ use typeck.{check_expr, tc_er}
 export fn init_with_expr(reg: Registry) {
     let f = feature_new("with") with {
         expr_tag: Expr.With(Expr.Null, FieldInitList.End),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .With(obj, overrides) -> emit_with(ctx, env, obj, overrides), _ -> err_emit("expected With") },
+        emit_expr: with_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr {
             .With(obj, overrides) -> {
                 let after_obj = resolve_expr(r, obj)
@@ -25,6 +25,13 @@ export fn init_with_expr(reg: Registry) {
         },
     }
     register(reg, f)
+}
+
+fn with_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .With(obj, overrides) -> emit_with(ctx, env, obj, overrides)
+        _ -> err_emit("expected With")
+    }
 }
 
 fn with_check_expr(tc: TC, expr: Expr) -> ExprResult {

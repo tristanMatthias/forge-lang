@@ -9,7 +9,7 @@ use typeck.{check_expr, tc_er}
 export fn init_is_keyword(reg: Registry) {
     let f = feature_new("is") with {
         expr_tag: Expr.IsCheck(Expr.Null, ""),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .IsCheck(subject, vname) -> emit_is_check(ctx, env, subject, vname), _ -> err_emit("expected IsCheck") },
+        emit_expr: is_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr { .IsCheck(subject, _) -> resolve_expr(r, subject), _ -> r },
         check_expr: (tc: int, expr: Expr) -> match expr {
             .IsCheck(subject, _) -> {
@@ -24,4 +24,11 @@ export fn init_is_keyword(reg: Registry) {
         },
     }
     register(reg, f)
+}
+
+fn is_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .IsCheck(subject, variant_name) -> emit_is_check(ctx, env, subject, variant_name)
+        _ -> err_emit("expected IsCheck")
+    }
 }

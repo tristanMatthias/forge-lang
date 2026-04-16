@@ -12,7 +12,7 @@ use typeck.{tc_er}
 export fn init_list_lit(reg: Registry) {
     let f = feature_new("list_lit") with {
         expr_tag: Expr.ListLit(ExprList.End),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .ListLit(elements) -> emit_list_lit(ctx, env, elements), _ -> err_emit("expected ListLit") },
+        emit_expr: list_lit_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr { .ListLit(elements) -> resolve_expr_list(r, elements), _ -> r },
         check_expr: (tc: int, expr: Expr) -> match expr {
             .ListLit(elements) -> check_list_lit(tc, elements)
@@ -24,4 +24,11 @@ export fn init_list_lit(reg: Registry) {
         },
     }
     register(reg, f)
+}
+
+fn list_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .ListLit(elements) -> emit_list_lit(ctx, env, elements)
+        _ -> err_emit("expected ListLit")
+    }
 }

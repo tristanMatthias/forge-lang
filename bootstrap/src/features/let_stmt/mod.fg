@@ -16,7 +16,7 @@ fn kw_parse_let(p: Parser) -> Stmt? {
 export fn init_let_stmt(reg: Registry) {
     let f = feature_new("let_destructure") with {
         stmt_tag: Stmt.LetDestructure(ParamList.End, Expr.Null),
-        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .LetDestructure(names, init) -> emit_let_destructure(ctx, env, names, init), _ -> err_stmt("expected LetDestructure") },
+        emit_stmt: let_destructure_emit_stmt,
         resolve_stmt: (r: int, stmt: Stmt) -> match stmt {
             .LetDestructure(names, initializer) -> {
                 let after_init = resolve_expr(r, initializer)
@@ -55,4 +55,11 @@ export fn init_let_stmt(reg: Registry) {
         parse_decl: (p: Parser) -> p.parse_mut_statement(),
     }
     register(reg, f_mut)
+}
+
+fn let_destructure_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+    match stmt {
+        .LetDestructure(names, initializer) -> emit_let_destructure(ctx, env, names, initializer)
+        _ -> err_stmt("expected LetDestructure")
+    }
 }

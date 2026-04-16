@@ -1,12 +1,12 @@
 // WHY: codegen for operators — binary, unary, logical, float.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, ok_emit_str, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, ok_emit_str, err_emit}
 use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.helpers.{is_null_literal}
 use features.enum_decl.codegen.{emit_enum_tag_cmp}
 
-export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult {
+export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> Result<EmitValue, string> {
     let r = ctx.emit(env, right)?
 
     match op {
@@ -23,7 +23,7 @@ export fn emit_unary(ctx: Ctx, env: VarEnv, op: UnOp, right: Expr) -> EmitResult
     }
 }
 
-export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> EmitResult {
+export fn emit_binary(ctx: Ctx, env: VarEnv, left: Expr, op: BinOp, right: Expr) -> Result<EmitValue, string> {
     let left_result = ctx.emit(env, left)?
     mut lhs = left_result.value
 
@@ -120,7 +120,7 @@ export fn coerce_to_f64(ctx: Ctx, val: ptr, ty: ValueType) -> ptr {
     ctx.sitofp(val, "coerce_f64")
 }
 
-export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueType, rty: ValueType) -> EmitResult {
+export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueType, rty: ValueType) -> Result<EmitValue, string> {
     let fl = coerce_to_f64(ctx, lhs, lty)
     let fr = coerce_to_f64(ctx, rhs, rty)
     match op {
@@ -140,7 +140,7 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
     }
 }
 
-export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Expr) -> EmitResult {
+export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Expr) -> Result<EmitValue, string> {
     let left_result = ctx.emit(env, left)?
 
     let l_bool = ctx.truthy(left_result.value, "l_bool")

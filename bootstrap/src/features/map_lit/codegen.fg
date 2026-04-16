@@ -2,15 +2,15 @@
 // Maps are backed by the C-runtime forge_map_*_cstr functions.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit}
 use codegen.helpers.{emit_single_arg}
 
-export fn emit_map_lit(ctx: Ctx, env: VarEnv, entries: ExprList) -> EmitResult {
+export fn emit_map_lit(ctx: Ctx, env: VarEnv, entries: ExprList) -> Result<EmitValue, string> {
     let map = ctx.call("forge_map_new_cstr", [])
     insert_map_entries(ctx, env, entries, map)
 }
 
-fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr) -> EmitResult {
+fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr) -> Result<EmitValue, string> {
     match entries {
         .End -> ok_emit_typed(map, .Map)
         .Node(se_key, rest) -> {
@@ -27,7 +27,7 @@ fn insert_map_entries(ctx: Ctx, env: VarEnv, entries: ExprList, map: ptr) -> Emi
     }
 }
 
-export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: string, args: ExprList) -> EmitResult {
+export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: string, args: ExprList) -> Result<EmitValue, string> {
     match method {
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
@@ -44,7 +44,7 @@ export fn emit_map_method_call(ctx: Ctx, env: VarEnv, map_ptr: ptr, method: stri
     }
 }
 
-fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> EmitResult {
+fn emit_map_set(ctx: Ctx, env: VarEnv, map: ptr, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .Node(se_key, rest) -> {
             match rest {

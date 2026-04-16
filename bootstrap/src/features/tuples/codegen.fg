@@ -9,20 +9,20 @@
 // (critical for match on enum tuple elements).
 
 use core.ast.{Expr, ExprList, ParamList, VarEnv, env_extend, expr_list_length, ValueType, TypeList, vtype_tuple_at}
-use codegen.types.{Ctx, EmitResult, StmtResult, ok_emit, ok_emit_typed, err_emit, ok_stmt, err_stmt_from_expr}
+use codegen.types.{Ctx, EmitValue,  ok_emit, ok_emit_typed, err_emit, ok_stmt}
 
 fn tuple_load(ctx: Ctx, base: ptr, idx: int, name: string) -> ptr { ctx.load_slot(base, idx, name) }
 fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) { ctx.store_slot(base, idx, value, .Int) }
 
 // ── Emit functions ──
 
-export fn emit_tuple(ctx: Ctx, env: VarEnv, elements: ExprList) -> EmitResult {
+export fn emit_tuple(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<EmitValue, string> {
     let count = expr_list_length(elements)
     let buf = ctx.malloc(ctx.i64(count * 8))
     store_tuple_elements(ctx, env, elements, buf, 0, .End)
 }
 
-fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx: int, types_acc: TypeList) -> EmitResult {
+fn store_tuple_elements(ctx: Ctx, env: VarEnv, elements: ExprList, buf: ptr, idx: int, types_acc: TypeList) -> Result<EmitValue, string> {
     match elements {
         .End -> {
             let ty = .Tuple(reverse_type_list(types_acc, .End))
@@ -44,7 +44,7 @@ fn reverse_type_list(list: TypeList, acc: TypeList) -> TypeList {
     }
 }
 
-export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> EmitResult {
+export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     let ptr = ctx.to_ptr(r.value, "tup_ptr")
     let loaded = tuple_load(ctx, ptr, idx, "tup_val")
@@ -52,14 +52,13 @@ export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> EmitRe
     ok_emit_typed(loaded, elem_ty)
 }
 
-export fn emit_let_destructure(ctx: Ctx, env: VarEnv, names: ParamList, initializer: Expr) -> StmtResult {
-    let r = ctx.emit(env, initializer)
-    if r.had_error { return err_stmt_from_expr(r) }
+export fn emit_let_destructure(ctx: Ctx, env: VarEnv, names: ParamList, initializer: Expr) -> Result<VarEnv, string> {
+    let r = ctx.emit(env, initializer)?
     let ptr = ctx.to_ptr(r.value, "destruct_ptr")
     destructure_names(ctx, env, names, ptr, r.ty, 0)
 }
 
-fn destructure_names(ctx: Ctx, env: VarEnv, names: ParamList, base: ptr, tuple_ty: ValueType, idx: int) -> StmtResult {
+fn destructure_names(ctx: Ctx, env: VarEnv, names: ParamList, base: ptr, tuple_ty: ValueType, idx: int) -> Result<VarEnv, string> {
     match names {
         .End -> ok_stmt(env)
         .Node(name, _, _, next) -> {

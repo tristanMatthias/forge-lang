@@ -2,28 +2,27 @@
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, EmitResult, ParamTypeList, StmtResult, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, param_type_at, trait_decl_has, null_ptr_val}
+use codegen.types.{Ctx, EmitValue, ParamTypeList,  ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, param_type_at, trait_decl_has, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 
-export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> StmtResult {
+export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
         .End -> ok_stmt(VarEnv.End)
         .Node(ss, next) -> {
-            let r = match stmt_unwrap(ss.node) {
-                // Function names are already qualified by the name
-                // resolution pass — use them as-is for LLVM lookup.
+            let inner = match stmt_unwrap(ss.node) {
                 .Function(name, _, params, _, body) -> emit_function_body(ctx, name, params, body)
                 .Impl(_, methods) -> emit_function_bodies(ctx, methods)
                 .Module(_, body) -> emit_function_bodies(ctx, body)
                 _ -> ok_stmt(VarEnv.End)
-            }?
+            }
+            inner?
             emit_function_bodies(ctx, next)
         }
     }
 }
 
-export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: StmtList) -> StmtResult {
+export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: StmtList) -> Result<VarEnv, string> {
     let fn_val = ctx.get_fn(name)
     if fn_val == null {
         return err_stmt("codegen error: function `${name}` was not declared in pass 1")
@@ -46,14 +45,11 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 
     // Use the function's return type for the default block value.
     let ret_ty = body_cg.fn_ret(name)
-    let r = emit_block_loop(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)
-    if r.had_error { return err_stmt(r.error_message) }
+    let r = emit_block_loop(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
     if !ctx.has_terminator() {
         emit_defers(body_cg, env)
         ctx.ret(r.value, ret_ty)
     }
-    // Per-function LLVM verification: logs type errors to stderr.
-    // Non-fatal to avoid blocking compilation during incremental fixes.
     ctx.verify_fn(fn_val)
     ok_stmt(VarEnv.End)
 }
@@ -130,7 +126,7 @@ use features.trait_decl.codegen.{emit_trait_dispatch}
 use codegen.blocks.{emit_block_loop}
 use codegen.helpers.{emit_single_arg, fill_arg_array, fill_arg_array_boxing, strip_quotes}
 
-export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> EmitResult {
+export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> Result<EmitValue, string> {
     match callee {
         .Ident(name) -> emit_call_named(ctx, env, name, args)
         .QualifiedIdent(path) -> emit_call_named(ctx, env, path, args)
@@ -155,7 +151,7 @@ export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> Emit
     }
 }
 
-export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: ExprList) -> EmitResult {
+export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: ExprList) -> Result<EmitValue, string> {
     // Special-case `.length` and `.substring` on strings — these are
     // emitted via libc strlen / a custom substring helper rather than
     // dispatched as methods.
@@ -256,10 +252,12 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     let arg_count = extra_count + 1
     let arg_arr = ctx.value_array(arg_count)
     ctx.value_array_set(arg_arr, 0, r.value)
-    let fill = fill_arg_array(ctx, env, arg_arr, args, 1)
-    if fill.had_error {
-        ctx.value_array_free(arg_arr)
-        return fill
+    match fill_arg_array(ctx, env, arg_arr, args, 1) {
+        .Ok(_) -> {}
+        .Err(e) -> {
+            ctx.value_array_free(arg_arr)
+            return err_emit(e)
+        }
     }
     let result = ctx.call_raw(fn_val, arg_arr, arg_count)
     ctx.value_array_free(arg_arr)
@@ -267,14 +265,14 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     ok_emit_typed(result, ret_ty)
 }
 
-export fn emit_first_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_first_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("expected argument")
         .Node(se, _) -> ctx.emit(env, se.node)
     }
 }
 
-export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> EmitResult {
+export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> Result<EmitValue, string> {
     if name == "println" {
         return emit_println(ctx, env, args)
     }
@@ -310,10 +308,12 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
     let arg_count = expr_list_length(args)
     let arg_arr = ctx.value_array(arg_count)
     let ptypes = ctx.lookup_fn_params(name)
-    let fill = fill_arg_array_boxing(ctx, env, arg_arr, args, ptypes, 0)
-    if fill.had_error {
-        ctx.value_array_free(arg_arr)
-        return fill
+    match fill_arg_array_boxing(ctx, env, arg_arr, args, ptypes, 0) {
+        .Ok(_) -> {}
+        .Err(e) -> {
+            ctx.value_array_free(arg_arr)
+            return err_emit(e)
+        }
     }
     let result = ctx.call_raw(fn_val, arg_arr, arg_count)
     ctx.value_array_free(arg_arr)
@@ -321,7 +321,7 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
     ok_emit_typed(result, ret_ty)
 }
 
-export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     // string(i64) → str via snprintf into a 32-byte malloc'd buffer.
     match args {
         .End -> err_emit("string() expects 1 arg")
@@ -329,7 +329,7 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
             let r = ctx.emit(env, se.node)?
             // If the value is already a str, pass it through.
             if vtype_is_str(r.ty) {
-                return r
+                return ok_emit_str(r.value)
             }
             // Float → string via forge_float_to_string(i64_bits) → ptr
             if vtype_eq(r.ty, .Float) {
@@ -345,7 +345,7 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
     }
 }
 
-export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     // int(str) → i64 via libc atoi.
     match args {
         .End -> err_emit("int() expects 1 arg")
@@ -355,7 +355,7 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
                 return ok_emit(ctx.fptosi(r.value, "f2i"))
             }
             if !vtype_is_str(r.ty) {
-                return r
+                return ok_emit_typed(r.value, r.ty)
             }
             let str_ptr = ctx.to_ptr(r.value, "atoi_arg")
             let result32 = ctx.call("atoi", [str_ptr])
@@ -365,7 +365,7 @@ export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResul
     }
 }
 
-export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     // float(str) → f64 bits via forge_float_parse.
     // float(int) → f64 bits via int-to-double cast + bitcast.
     match args {
@@ -373,7 +373,7 @@ export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitRes
         .Node(se, _) -> {
             let r = ctx.emit(env, se.node)?
             if vtype_eq(r.ty, .Float) {
-                return r
+                return ok_emit_typed(r.value, .Float)
             }
             if vtype_is_str(r.ty) {
                 let str_ptr = ctx.to_ptr(r.value, "f_parse_arg")
@@ -386,14 +386,14 @@ export fn emit_string_to_float(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitRes
     }
 }
 
-export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("panic() expects 1 argument")
         .Node(se, _) -> {
             let r = ctx.emit(env, se.node)?
             // Print "panic: <message>" to stderr
             let prefix = ctx.global_str("panic: ", ".panic_prefix")
-            let msg = emit_concat(ctx, prefix, r.value)
+            let msg = emit_concat(ctx, prefix, r.value)?
             ctx.call("forge_eprintln", [ctx.to_ptr(msg.value, "panic_msg")])
             // exit(1)
             ctx.call("exit", [ctx.i64(1)])
@@ -402,4 +402,3 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
         }
     }
 }
-

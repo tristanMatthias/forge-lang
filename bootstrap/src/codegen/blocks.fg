@@ -1,11 +1,11 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
 use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitResult, StmtResult, err_emit, ok_emit_typed, ok_emit, err_stmt_from_expr, ok_stmt}
+use codegen.types.{Ctx, EmitValue,  err_emit, ok_emit_typed, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.codegen.{emit_match_expr}
 
-export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult {
+export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<EmitValue, string> {
     // A block expression's value is the value of the LAST
     // statement, if that statement is a `Stmt.Expr`. Anything
     // else (return, let, while, ...) yields i64 0. Each non-last
@@ -13,28 +13,22 @@ export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> EmitResult 
     emit_block_loop(ctx, env, stmts, ctx.i64(0), .Int)
 }
 
-export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> EmitResult {
+export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmt {
         .Expr(e) -> ctx.emit(env, e)
         .Block(body) -> emit_block_expr(ctx, env, body)
         .Match(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
         .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
         _ -> {
-            let s = emit_stmt(ctx, env, stmt)
-            if s.had_error {
-                return err_emit(s.error_message)
-            }
+            emit_stmt(ctx, env, stmt)?
             ok_emit_typed(last_val, last_ty)
         }
     }
 }
 
-export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> EmitResult {
-    let cond = ctx.emit(env, condition)
-    if cond.had_error {
-        return cond
-    }
-    let cond_i1 = ctx.truthy(cond.value, "sif_cond")
+export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<EmitValue, string> {
+    let cond = ctx.emit(env, condition)?
+    let cond_i1 = ctx.truthy(emit_value_ptr(cond), "sif_cond")
     let then_bb = ctx.bb("sif_then")
     let else_bb = ctx.bb("sif_else")
     let merge_bb = ctx.bb("sif_end")
@@ -44,29 +38,23 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
 
     ctx.position(then_bb)
     let zero = ctx.i64(0)
-    let t = emit_stmt_as_value(ctx, env, then_branch, zero, .Int)
-    if t.had_error {
-        return t
-    }
-    ctx.store_br_if_open(t.value, result_slot, merge_bb)
+    let t = emit_stmt_as_value(ctx, env, then_branch, zero, .Int)?
+    ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
 
     ctx.position(else_bb)
     if else_branch != null {
-        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Int)
-        if e.had_error {
-            return e
-        }
-        ctx.store_br_if_open(e.value, result_slot, merge_bb)
+        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Int)?
+        ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
     } else {
         ctx.br(merge_bb)
     }
 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "sif_val")
-    ok_emit_typed(loaded, t.ty)
+    ok_emit_typed(loaded, emit_value_ty(t))
 }
 
-export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> EmitResult {
+export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
     match stmts {
         .End -> ok_emit_typed(last_val, last_ty)
         .Node(ss, next) -> {
@@ -74,14 +62,10 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
             match next {
                 .End -> emit_stmt_as_value(line_ctx, env, ss.node, last_val, last_ty)
                 _ -> {
-                    let s = emit_stmt(line_ctx, env, ss.node)
-                    if s.had_error {
-                        return err_emit(s.error_message)
-                    }
-                    emit_block_loop(ctx, s.env, next, last_val, last_ty)
+                    let new_env = emit_stmt(line_ctx, env, ss.node)?
+                    emit_block_loop(ctx, new_env, next, last_val, last_ty)
                 }
             }
         }
     }
 }
-

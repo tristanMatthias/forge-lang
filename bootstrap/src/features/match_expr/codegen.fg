@@ -1,37 +1,61 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, SExpr}
-use codegen.types.{Ctx, EmitResult, StmtResult, ok_stmt, err_stmt, err_stmt_from_expr, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list}
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str}
+use codegen.types.{Ctx, EmitValue,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty}
+
+fn ok_match_ty(ty: ValueType) -> Result<ValueType, string> {
+    if false { return Result.Err("") }
+    Result.Ok(ty)
+}
+
+fn err_match_ty(message: string) -> Result<ValueType, string> {
+    if false { return Result.Ok(.Int) }
+    Result.Err(message)
+}
+
+fn forward_emit_err(message: string) -> Result<EmitValue, string> {
+    if false { return Result.Ok(EmitValue { value: null_ptr_val(), ty: .Int }) }
+    Result.Err(message)
+}
+
+fn forward_stmt_err(message: string) -> Result<VarEnv, string> {
+    if false { return Result.Ok(VarEnv.End) }
+    Result.Err(message)
+}
 
 // ── Match as expression ──
 
-export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> EmitResult {
-    let r = ctx.emit(env, subject)?
-    let enum_name = vtype_enum_name(r.ty)
-    if enum_name == "" {
-        // Non-enum match: treat as guard-based if-else chain.
-        // Each arm must be a wildcard with an optional guard.
-        return emit_primitive_match_expr(ctx, env, r, arms)
+export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> Result<EmitValue, string> {
+    match ctx.emit(env, subject) {
+        .Err(msg) -> forward_emit_err(msg)
+        .Ok(r) -> {
+            let enum_name = vtype_enum_name(emit_value_ty(r))
+            if enum_name == "" {
+                // Non-enum match: treat as guard-based if-else chain.
+                // Each arm must be a wildcard with an optional guard.
+                return emit_primitive_match_expr(ctx, env, r, arms)
+            }
+            let lookup = ctx.lookup_enum(enum_name)
+            if !lookup.found { return err_emit("unknown enum `${enum_name}`") }
+            let st_ty = ctx.get_type(enum_name)
+            let subj_ptr = ctx.to_ptr(emit_value_ptr(r), "match_subj")
+            let tag_val = ctx.enum_tag(emit_value_ptr(r), enum_name)
+            let result_slot = ctx.alloca_i64("match_result")
+            ctx.store(ctx.i64(0), result_slot)
+            let merge_bb = ctx.bb("match_end")
+            let result_ty = emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)?
+            ctx.position(merge_bb)
+            let loaded = ctx.load_i64(result_slot, "match_val")
+            ok_emit_typed(loaded, result_ty)
+        }
     }
-    let lookup = ctx.lookup_enum(enum_name)
-    if !lookup.found { return err_emit("unknown enum `${enum_name}`") }
-    let st_ty = ctx.get_type(enum_name)
-    let subj_ptr = ctx.to_ptr(r.value, "match_subj")
-    let tag_val = ctx.enum_tag(r.value, enum_name)
-    let result_slot = ctx.alloca_i64("match_result")
-    ctx.store(ctx.i64(0), result_slot)
-    let merge_bb = ctx.bb("match_end")
-    let arm_result = emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb, result_slot)?
-    ctx.position(merge_bb)
-    let loaded = ctx.load_i64(result_slot, "match_val")
-    ok_emit_typed(loaded, arm_result.ty)
 }
 
-fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
+fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     match arms {
         .End -> {
             ctx.match_trap(tag_val)
-            ok_emit(null_ptr_val())
+            ok_match_ty(.Int)
         }
         .Node(pattern, guard, body, next) -> {
             let arm_bb = ctx.bb("march_arm")
@@ -43,46 +67,58 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
             // Guard: if present, check condition; if false, skip to next arm
             if guard != null {
-                let guard_r = ctx.emit(arm_env, guard!.node)?
-                let guard_bool = ctx.truthy(guard_r.value, "guard")
-                let guard_pass_bb = ctx.bb("guard_pass")
-                ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
-                ctx.position(guard_pass_bb)
+                match ctx.emit(arm_env, guard!.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(guard_r) -> {
+                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
+                        let guard_pass_bb = ctx.bb("guard_pass")
+                        ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
+                        ctx.position(guard_pass_bb)
+                    }
+                }
             }
-            let body_result = ctx.emit(arm_env, body.node)?
-            ctx.store_br_if_open(body_result.value, result_slot, merge_bb)
-            ctx.position(next_bb)
-            let rest = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)?
-            if !vtype_eq(rest.ty, .Int) && !vtype_eq(body_result.ty, rest.ty) {
-                eprintln("warning: match arms have different types: `${vtype_display(body_result.ty)}` vs `${vtype_display(rest.ty)}`")
+            match ctx.emit(arm_env, body.node) {
+                .Err(msg) -> err_match_ty(msg)
+                .Ok(body_result) -> {
+                    ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                    ctx.position(next_bb)
+                    let rest_ty = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)?
+                    let body_ty = emit_value_ty(body_result)
+                    if !vtype_eq(rest_ty, .Int) && !vtype_eq(body_ty, rest_ty) {
+                        eprintln("warning: match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
+                    }
+                    ok_match_ty(body_ty)
+                }
             }
-            ok_emit_typed(body_result.value, body_result.ty)
         }
     }
 }
 
 // ── Match as statement ──
 
-export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> StmtResult {
-    let r = ctx.emit(env, subject)
-    if r.had_error { return err_stmt_from_expr(r) }
-    let enum_name = vtype_enum_name(r.ty)
-    if enum_name == "" {
-        // Non-enum match: treat as guard-based if-else chain.
-        return emit_primitive_match_stmt(ctx, env, r, arms)
+export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> Result<VarEnv, string> {
+    match ctx.emit(env, subject) {
+        .Err(msg) -> forward_stmt_err(msg)
+        .Ok(r) -> {
+            let enum_name = vtype_enum_name(emit_value_ty(r))
+            if enum_name == "" {
+                // Non-enum match: treat as guard-based if-else chain.
+                return emit_primitive_match_stmt(ctx, env, r, arms)
+            }
+            let lookup = ctx.lookup_enum(enum_name)
+            if !lookup.found { return err_stmt("codegen error: unknown enum `${enum_name}`") }
+            let st_ty = ctx.get_type(enum_name)
+            let subj_ptr = ctx.to_ptr(emit_value_ptr(r), "match_subj")
+            let tag_val = ctx.enum_tag(emit_value_ptr(r), enum_name)
+            let merge_bb = ctx.bb("match_end")
+            let arm_result = emit_match_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)?
+            ctx.position(merge_bb)
+            ok_stmt(env)
+        }
     }
-    let lookup = ctx.lookup_enum(enum_name)
-    if !lookup.found { return err_stmt("codegen error: unknown enum `${enum_name}`") }
-    let st_ty = ctx.get_type(enum_name)
-    let subj_ptr = ctx.to_ptr(r.value, "match_subj")
-    let tag_val = ctx.enum_tag(r.value, enum_name)
-    let merge_bb = ctx.bb("match_end")
-    let arm_result = emit_match_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)?
-    ctx.position(merge_bb)
-    ok_stmt(env)
 }
 
-fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> StmtResult {
+fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> Result<VarEnv, string> {
     match arms {
         .End -> {
             ctx.match_trap(tag_val)
@@ -96,18 +132,25 @@ fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_p
             emit_nested_tag_checks(ctx, pattern, st_ty, subj_ptr, variants, next_bb)
             let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
             if guard != null {
-                let guard_r = ctx.emit(arm_env, guard!.node)
-                if guard_r.had_error { return err_stmt(guard_r.error_message) }
-                let guard_bool = ctx.truthy(guard_r.value, "guard")
-                let guard_pass_bb = ctx.bb("guard_pass")
-                ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
-                ctx.position(guard_pass_bb)
+                match ctx.emit(arm_env, guard!.node) {
+                    .Err(msg) -> return forward_stmt_err(msg)
+                    .Ok(guard_r) -> {
+                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
+                        let guard_pass_bb = ctx.bb("guard_pass")
+                        ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
+                        ctx.position(guard_pass_bb)
+                    }
+                }
             }
-            let body_result = ctx.emit(arm_env, body.node)
-            if body_result.had_error { return err_stmt(body_result.error_message) }
-            ctx.br_if_open(merge_bb)
-            ctx.position(next_bb)
-            emit_match_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb)
+            match ctx.emit(arm_env, body.node) {
+                .Err(msg) -> forward_stmt_err(msg)
+                .Ok(body_r) -> {
+                    let _body_ty = emit_value_ty(body_r)
+                    ctx.br_if_open(merge_bb)
+                    ctx.position(next_bb)
+                    emit_match_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb)
+                }
+            }
         }
     }
 }
@@ -322,25 +365,27 @@ fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: 
 // guard-based if-else chain. Only wildcard patterns are allowed.
 // The subject value is available in the guard via the original variable.
 
-fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList) -> EmitResult {
+fn emit_primitive_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<EmitValue, string> {
     let result_slot = ctx.alloca_i64("pmatch_result")
     ctx.store(ctx.i64(0), result_slot)
     let merge_bb = ctx.bb("pmatch_end")
-    emit_primitive_arms_expr(ctx, env, subj, arms, merge_bb, result_slot)
+    let result_ty = emit_primitive_arms_expr(ctx, env, subj, arms, merge_bb, result_slot)?
+    ctx.position(merge_bb)
+    ok_emit_typed(ctx.load_i64(result_slot, "pmatch_val"), result_ty)
 }
 
 // Generate a boolean comparison for a literal pattern against the subject.
-fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
+fn emit_literal_cmp(ctx: Ctx, subj: EmitValue, pattern: Pattern) -> ptr {
     match pattern {
         .LitInt(val) -> {
-            ctx.eq(subj.value, ctx.i64(val), "lit_eq")
+            ctx.eq(emit_value_ptr(subj), ctx.i64(val), "lit_eq")
         }
         .LitBool(val) -> {
             let cmp_val = if val { ctx.i64(1) } else { ctx.i64(0) }
-            ctx.eq(subj.value, cmp_val, "lit_eq")
+            ctx.eq(emit_value_ptr(subj), cmp_val, "lit_eq")
         }
         .LitString(val) -> {
-            let subj_ptr = ctx.to_ptr(subj.value, "lit_str_ptr")
+            let subj_ptr = ctx.to_ptr(emit_value_ptr(subj), "lit_str_ptr")
             let lit_ptr = ctx.global_str(val, ".lit_str")
             let cmp_result = ctx.call("strcmp", [subj_ptr, lit_ptr])
             // Sign-extend i32 strcmp result to i64 for type-safe icmp (LLVM 21 requires matching types)
@@ -350,7 +395,7 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitResult, pattern: Pattern) -> ptr {
         .LitFloat(val) -> {
             let lit_str = ctx.global_str(val, ".flit_str")
             let lit_bits = ctx.call("forge_float_parse", [lit_str])
-            let subj_f64 = ctx.to_f64(subj.value, "subj_f64")
+            let subj_f64 = ctx.to_f64(emit_value_ptr(subj), "subj_f64")
             let lit_f64 = ctx.to_f64(lit_bits, "lit_f64")
             ctx.fcmp(1, subj_f64, lit_f64, "flit_eq")
         }
@@ -378,12 +423,12 @@ fn is_literal_pattern(pattern: Pattern) -> bool {
     }
 }
 
-fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList, merge_bb: ptr, result_slot: ptr) -> EmitResult {
+fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     match arms {
         .End -> {
             ctx.match_trap(ctx.i64(-1))
             ctx.position(merge_bb)
-            ok_emit(ctx.load_i64(result_slot, "pmatch_val"))
+            ok_match_ty(.Int)
         }
         .Node(pattern, guard, body, next) -> {
             let body_bb = ctx.bb("parm_body")
@@ -397,41 +442,55 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                     let lit_pass_bb = ctx.bb("lit_guard")
                     ctx.cond_br(cmp, lit_pass_bb, next_bb)
                     ctx.position(lit_pass_bb)
-                    let guard_r = ctx.emit(env, guard!.node)?
-                    let guard_bool = ctx.truthy(guard_r.value, "pguard")
-                    ctx.cond_br(guard_bool, body_bb, next_bb)
+                    match ctx.emit(env, guard!.node) {
+                        .Err(msg) -> return err_match_ty(msg)
+                        .Ok(guard_r) -> {
+                            let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
+                            ctx.cond_br(guard_bool, body_bb, next_bb)
+                        }
+                    }
                 } else {
                     ctx.cond_br(cmp, body_bb, next_bb)
                 }
             } else if guard != null {
                 // Guarded wildcard: if guard { body } else { next arm }
-                let guard_r = ctx.emit(env, guard!.node)?
-                let guard_bool = ctx.truthy(guard_r.value, "pguard")
-                ctx.cond_br(guard_bool, body_bb, next_bb)
+                match ctx.emit(env, guard!.node) {
+                    .Err(msg) -> return err_match_ty(msg)
+                    .Ok(guard_r) -> {
+                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
+                        ctx.cond_br(guard_bool, body_bb, next_bb)
+                    }
+                }
             } else {
                 // Unguarded wildcard: always matches (catch-all)
                 ctx.br(body_bb)
             }
 
             ctx.position(body_bb)
-            let body_r = ctx.emit(env, body.node)?
-            ctx.store_br_if_open(body_r.value, result_slot, merge_bb)
+            match ctx.emit(env, body.node) {
+                .Err(msg) -> err_match_ty(msg)
+                .Ok(body_r) -> {
+                    ctx.store_br_if_open(emit_value_ptr(body_r), result_slot, merge_bb)
 
-            ctx.position(next_bb)
-            let rest = emit_primitive_arms_expr(ctx, env, subj, next, merge_bb, result_slot)?
-            // Return the merged loaded value from result_slot (via rest),
-            // but carry the type from this arm's body.
-            ok_emit_typed(rest.value, body_r.ty)
+                    ctx.position(next_bb)
+                    let rest_ty = emit_primitive_arms_expr(ctx, env, subj, next, merge_bb, result_slot)?
+                    let body_ty = emit_value_ty(body_r)
+                    if !vtype_eq(rest_ty, .Int) && !vtype_eq(body_ty, rest_ty) {
+                        eprintln("warning: match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
+                    }
+                    ok_match_ty(body_ty)
+                }
+            }
         }
     }
 }
 
-fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList) -> StmtResult {
+fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<VarEnv, string> {
     let merge_bb = ctx.bb("pmatch_end")
     emit_primitive_arms_stmt(ctx, env, subj, arms, merge_bb)
 }
 
-fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: MatchArmList, merge_bb: ptr) -> StmtResult {
+fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList, merge_bb: ptr) -> Result<VarEnv, string> {
     match arms {
         .End -> {
             ctx.match_trap(ctx.i64(-1))
@@ -448,29 +507,39 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
                     let lit_pass_bb = ctx.bb("lit_guard")
                     ctx.cond_br(cmp, lit_pass_bb, next_bb)
                     ctx.position(lit_pass_bb)
-                    let guard_r = ctx.emit(env, guard!.node)
-                    if guard_r.had_error { return err_stmt_from_expr(guard_r) }
-                    let guard_bool = ctx.truthy(guard_r.value, "pguard")
-                    ctx.cond_br(guard_bool, body_bb, next_bb)
+                    match ctx.emit(env, guard!.node) {
+                        .Err(msg) -> return forward_stmt_err(msg)
+                        .Ok(guard_r) -> {
+                            let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
+                            ctx.cond_br(guard_bool, body_bb, next_bb)
+                        }
+                    }
                 } else {
                     ctx.cond_br(cmp, body_bb, next_bb)
                 }
             } else if guard != null {
-                let guard_r = ctx.emit(env, guard!.node)
-                if guard_r.had_error { return err_stmt_from_expr(guard_r) }
-                let guard_bool = ctx.truthy(guard_r.value, "pguard")
-                ctx.cond_br(guard_bool, body_bb, next_bb)
+                match ctx.emit(env, guard!.node) {
+                    .Err(msg) -> return forward_stmt_err(msg)
+                    .Ok(guard_r) -> {
+                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
+                        ctx.cond_br(guard_bool, body_bb, next_bb)
+                    }
+                }
             } else {
                 ctx.br(body_bb)
             }
 
             ctx.position(body_bb)
-            let body_r = ctx.emit(env, body.node)
-            if body_r.had_error { return err_stmt_from_expr(body_r) }
-            ctx.br_if_open(merge_bb)
+            match ctx.emit(env, body.node) {
+                .Err(msg) -> forward_stmt_err(msg)
+                .Ok(body_r) -> {
+                    let _body_ty = emit_value_ty(body_r)
+                    ctx.br_if_open(merge_bb)
 
-            ctx.position(next_bb)
-            emit_primitive_arms_stmt(ctx, env, subj, next, merge_bb)
+                    ctx.position(next_bb)
+                    emit_primitive_arms_stmt(ctx, env, subj, next, merge_bb)
+                }
+            }
         }
     }
 }
@@ -479,7 +548,7 @@ fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitResult, arms: Match
 // Emits: check cond1 → arm1_bb | check2_bb; check cond2 → arm2_bb | ...
 // Result stored in alloca, loaded at merge_bb.
 
-export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: WhenArmList) -> EmitResult {
+export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: WhenArmList) -> Result<EmitValue, string> {
     let merge_bb = ctx.bb("when_end")
     let result_slot = ctx.alloca_i64("when_result")
     ctx.store(ctx.i64(0), result_slot)
@@ -495,29 +564,41 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
         .Node(cond, body, next) -> {
             if cond == null {
                 // Else arm — emit body directly, store, branch to merge
-                let r = ctx.emit(env, body.node)
-                if !r.had_error {
-                    ctx.store(r.value, result_slot)
+                mut arm_ty = .Int
+                match ctx.emit(env, body.node) {
+                    .Ok(r) -> {
+                        ctx.store(emit_value_ptr(r), result_slot)
+                        arm_ty = emit_value_ty(r)
+                    }
+                    .Err(_) -> {}
                 }
                 ctx.br_if_open(merge_bb)
-                r.ty
+                arm_ty
             } else {
-                let cond_r = ctx.emit(env, cond!.node)
-                let cond_i1 = ctx.truthy(cond_r.value, "when_cond")
+                mut cond_r = EmitValue { value: ctx.i64(0), ty: .Int }
+                match ctx.emit(env, cond!.node) {
+                    .Ok(r) -> { cond_r = r }
+                    .Err(_) -> {}
+                }
+                let cond_i1 = ctx.truthy(emit_value_ptr(cond_r), "when_cond")
                 let arm_bb = ctx.bb("when_arm")
                 let next_bb = ctx.bb("when_next")
                 ctx.cond_br(cond_i1, arm_bb, next_bb)
                 // Arm body
                 ctx.position(arm_bb)
-                let r = ctx.emit(env, body.node)
-                if !r.had_error {
-                    ctx.store(r.value, result_slot)
+                mut arm_ty = .Int
+                match ctx.emit(env, body.node) {
+                    .Ok(r) -> {
+                        ctx.store(emit_value_ptr(r), result_slot)
+                        arm_ty = emit_value_ty(r)
+                    }
+                    .Err(_) -> {}
                 }
                 ctx.br_if_open(merge_bb)
                 // Check next arm
                 ctx.position(next_bb)
                 let rest_ty = emit_when_arms(ctx, env, next, merge_bb, result_slot)
-                if vtype_eq(r.ty, .Int) { rest_ty } else { r.ty }
+                if vtype_eq(arm_ty, .Int) { rest_ty } else { arm_ty }
             }
         }
     }

@@ -13,7 +13,7 @@
 // is just the function pointer with a null environment.
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
-use codegen.types.{Ctx, DeferStack, EmitResult, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
+use codegen.types.{Ctx, DeferStack, EmitValue, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 
@@ -360,14 +360,14 @@ fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captu
 export mut LAMBDA_COUNTER = 0
 
 // Compile a lambda with default parameter types (all Int).
-export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> EmitResult {
+export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> Result<EmitValue, string> {
     emit_lambda_typed(ctx, env, params, body, TypeList.End)
 }
 
 // Compile a lambda with explicit parameter types.
 // Used by .map/.filter/.reduce to pass the list's element type
 // so that int(x) / x.length / etc. work correctly inside the lambda.
-export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: Expr, param_types: TypeList) -> EmitResult {
+export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: Expr, param_types: TypeList) -> Result<EmitValue, string> {
     let id = LAMBDA_COUNTER
     LAMBDA_COUNTER = LAMBDA_COUNTER + 1
     let name = "__lambda_${string(id)}"
@@ -404,12 +404,16 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
     // the outer function's defers.
     let saved_defers = DEFER_STACK
     defer_reset()
-    let result = emit_expr(body_ctx, body_env, body)
-    DEFER_STACK = saved_defers  // restore outer function's defers
-    if result.had_error {
-        ctx.position(saved_bb)
-        return result
+    mut result = EmitValue { value: ctx.i64(0), ty: .Int }
+    match emit_expr(body_ctx, body_env, body) {
+        .Ok(v) -> { result = v }
+        .Err(e) -> {
+            DEFER_STACK = saved_defers
+            ctx.position(saved_bb)
+            return err_emit(e)
+        }
     }
+    DEFER_STACK = saved_defers  // restore outer function's defers
 
     if !ctx.has_terminator() {
         let lambda_ret = body_ctx.current_fn_ret()
@@ -458,7 +462,7 @@ fn push_captured_values(ctx: Ctx, captures: CaptureList, arr: ptr) {
 // expression is a Lambda, compile it with explicit param types so
 // that type-dependent operations (int(x), x.length, x.upper())
 // work correctly inside the lambda body.
-export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_types: TypeList) -> EmitResult {
+export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_types: TypeList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("expected 1 argument, got 0")
         .Node(se, _) -> {
@@ -472,7 +476,7 @@ export fn emit_typed_lambda_arg(ctx: Ctx, env: VarEnv, args: ExprList, param_typ
 
 // Call a function pointer stored in a local variable.
 // Load the pointer, cast to fn ptr, build indirect call.
-export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, args: ExprList) -> EmitResult {
+export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, args: ExprList) -> Result<EmitValue, string> {
     let fn_i64 = ctx.load_i64(alloca, name)
     let local = env_lookup(env, name)
     let ret_ty = vtype_fn_ret(local.ty)
@@ -489,7 +493,7 @@ export fn emit_indirect_call(ctx: Ctx, env: VarEnv, alloca: ptr, name: string, a
     emit_indirect_call_typed(ctx, env, fn_i64, args, ret_ty)
 }
 
-export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, name: string, args: ExprList, ty: ValueType) -> EmitResult {
+export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, name: string, args: ExprList, ty: ValueType) -> Result<EmitValue, string> {
     let fn_i64 = ctx.load_i64(global, name)
     let ret_ty = vtype_fn_ret(ty)
     if vtype_is_closure(ty) {
@@ -504,7 +508,7 @@ export fn emit_indirect_call_from_global(ctx: Ctx, env: VarEnv, global: ptr, nam
 // Call a closure with captures. The closure value is a ForgeArray:
 // [0] = fn_ptr, [1..N] = captured values.
 // We unpack fn_ptr, evaluate user args, append captures, and call.
-fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, num_captures: int) -> EmitResult {
+fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, num_captures: int) -> Result<EmitValue, string> {
     // Closure array layout: [TAG, fn_ptr, cap1, cap2, ...]
     // TAG is at index 0, fn_ptr at index 1, captures start at index 2.
     let closure_ptr = ctx.to_ptr(closure_val, "closure_ptr")
@@ -520,10 +524,12 @@ fn emit_closure_call(ctx: Ctx, env: VarEnv, closure_val: ptr, args: ExprList, nu
     ctx.type_array_free(param_arr)
 
     let val_arr = ctx.value_array(total_args)
-    let fill = fill_lambda_args(ctx, env, val_arr, args, 0)
-    if fill.had_error {
-        ctx.value_array_free(val_arr)
-        return fill
+    match fill_lambda_args(ctx, env, val_arr, args, 0) {
+        .Ok(_) -> {}
+        .Err(e) -> {
+            ctx.value_array_free(val_arr)
+            return err_emit(e)
+        }
     }
     // Fill captures from closure array (start at index 2)
     fill_closure_captures(ctx, val_arr, closure_ptr, user_arg_count, num_captures, 0)
@@ -541,17 +547,17 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
     fill_closure_captures(ctx, val_arr, closure_val, start_idx, count, i + 1)
 }
 
-export fn emit_indirect_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> EmitResult {
+export fn emit_indirect_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_indirect_call_value(ctx, env, fn_i64, args)?
     ok_emit_typed(r.value, ret_ty)
 }
 
-export fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> EmitResult {
+export fn emit_closure_call_typed(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)?
     ok_emit_typed(r.value, ret_ty)
 }
 
-export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> EmitResult {
+export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: ExprList) -> Result<EmitValue, string> {
     // Indirect call for values with unknown closure status at compile time.
     // This happens when a fn returns a closure but the return type says
     // Fn/FnTyped (the type system can't distinguish bare ptrs from
@@ -613,7 +619,7 @@ export fn emit_indirect_call_value(ctx: Ctx, env: VarEnv, fn_i64: ptr, args: Exp
     err_emit("indirect calls with ${string(user_arg_count)} args not yet supported")
 }
 
-fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> EmitResult {
+fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {

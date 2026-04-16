@@ -34,8 +34,8 @@ export type Feature = {
     stmt_keyword: string,
     parse_decl: fn(Parser) -> Stmt?,
     parse_stmt: fn(Parser) -> Stmt?,
-    emit_expr: fn(Ctx, VarEnv, Expr) -> EmitResult,
-    emit_stmt: fn(Ctx, VarEnv, Stmt) -> StmtResult,
+    emit_expr: int,
+    emit_stmt: int,
     resolve_expr: fn(Resolver, Expr) -> Resolver,
     resolve_stmt: fn(Resolver, Stmt) -> Resolver,
     check_expr: fn(TC, Expr) -> ExprResult,
@@ -46,8 +46,8 @@ export type Feature = {
 
 // ── No-op handlers ──
 
-fn noop_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult { err_emit("no expr handler") }
-fn noop_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult { err_stmt("no stmt handler") }
+fn noop_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
+fn noop_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> { err_stmt("no stmt handler") }
 fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
 fn noop_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver { r }
 fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Int) }
@@ -135,15 +135,21 @@ export fn register(reg: Registry, f: Feature) {
 
 // ── Dispatch ──
 
-export fn dispatch_expr_emit(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> EmitResult? {
-    if forge_intmap_has(reg.expr_emitters, tag) == 0 { return null }
-    let handler: fn(Ctx, VarEnv, Expr) -> EmitResult = forge_intmap_get(reg.expr_emitters, tag)
+export fn has_expr_emit(reg: Registry, tag: int) -> bool {
+    forge_intmap_has(reg.expr_emitters, tag) != 0
+}
+
+export fn dispatch_expr_emit(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    let handler: fn(Ctx, VarEnv, Expr) -> Result<EmitValue, string> = forge_intmap_get(reg.expr_emitters, tag)
     handler(ctx, env, expr)
 }
 
-export fn dispatch_stmt_emit(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> StmtResult? {
-    if forge_intmap_has(reg.stmt_emitters, tag) == 0 { return null }
-    let handler: fn(Ctx, VarEnv, Stmt) -> StmtResult = forge_intmap_get(reg.stmt_emitters, tag)
+export fn has_stmt_emit(reg: Registry, tag: int) -> bool {
+    forge_intmap_has(reg.stmt_emitters, tag) != 0
+}
+
+export fn dispatch_stmt_emit(reg: Registry, tag: int, ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+    let handler: fn(Ctx, VarEnv, Stmt) -> Result<VarEnv, string> = forge_intmap_get(reg.stmt_emitters, tag)
     handler(ctx, env, stmt)
 }
 

@@ -10,7 +10,7 @@ use typeck.{check_expr, tc_er}
 export fn init_null_safety(reg: Registry) {
     let f1 = feature_new("null_coalesce") with {
         expr_tag: Expr.NullCoalesce(Expr.Null, Expr.Null),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right), _ -> err_emit("expected NullCoalesce") },
+        emit_expr: null_coalesce_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr {
             .NullCoalesce(left, right) -> {
                 let after_left = resolve_expr(r, left)
@@ -28,7 +28,7 @@ export fn init_null_safety(reg: Registry) {
 
     let f2 = feature_new("optional_chain") with {
         expr_tag: Expr.OptionalChain(Expr.Null, ""),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field), _ -> err_emit("expected OptionalChain") },
+        emit_expr: optional_chain_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr { .OptionalChain(obj, _) -> resolve_expr(r, obj), _ -> r },
         check_expr: (tc: int, expr: Expr) -> match expr {
             .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
@@ -43,7 +43,7 @@ export fn init_null_safety(reg: Registry) {
 
     let f3 = feature_new("try") with {
         expr_tag: Expr.Try(Expr.Null),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .Try(inner) -> emit_try(ctx, env, inner), _ -> err_emit("expected Try") },
+        emit_expr: try_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr { .Try(inner) -> resolve_expr(r, inner), _ -> r },
         check_expr: (tc: int, expr: Expr) -> match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Int) },
         eval_expr: (rt: int, expr: Expr) -> match expr {
@@ -62,5 +62,26 @@ fn nc_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(r.tc, r.ty)
         }
         _ -> tc_er(tc, .Int)
+    }
+}
+
+fn null_coalesce_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .NullCoalesce(left, right) -> emit_null_coalesce(ctx, env, left, right)
+        _ -> err_emit("expected NullCoalesce")
+    }
+}
+
+fn optional_chain_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .OptionalChain(obj, field) -> emit_optional_chain(ctx, env, obj, field)
+        _ -> err_emit("expected OptionalChain")
+    }
+}
+
+fn try_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Try(inner) -> emit_try(ctx, env, inner)
+        _ -> err_emit("expected Try")
     }
 }

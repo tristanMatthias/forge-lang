@@ -1,11 +1,11 @@
 // WHY: codegen for println/eprintln builtins.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_is_str, vtype_eq}
-use codegen.types.{Ctx, EmitResult, ok_emit, err_emit}
+use codegen.types.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.strings.{emit_concat}
 use codegen.helpers.{strip_quotes}
 
-export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     match args {
         .End -> err_emit("eprintln() expects 1 arg")
         .Node(se, _) -> {
@@ -28,7 +28,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
     }
 }
 
-export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> EmitResult {
+export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     // Special-case the most common shape: `println("literal")`. We
     // destructure straight to the inner string text in a single
     // match — going through any extra binding clobbers the payload

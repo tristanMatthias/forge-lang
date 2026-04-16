@@ -11,7 +11,7 @@ use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
 export fn init_for_stmt(reg: Registry) {
     let f1 = feature_new("for") with {
         stmt_tag: Stmt.For("", Expr.Null, Expr.Null, Stmt.NoOp),
-        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .For(var, start, end, body) -> emit_for(ctx, env, var, start, end, body), _ -> err_stmt("expected For") },
+        emit_stmt: for_emit_stmt,
         resolve_stmt: for_resolve_stmt,
         check_stmt: for_check_stmt,
         stmt_keyword: "kw_for",
@@ -21,7 +21,7 @@ export fn init_for_stmt(reg: Registry) {
 
     let f2 = feature_new("for_in") with {
         stmt_tag: Stmt.ForIn("", Expr.Null, Stmt.NoOp),
-        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .ForIn(var, coll, body) -> emit_for_in(ctx, env, var, coll, body), _ -> err_stmt("expected ForIn") },
+        emit_stmt: for_in_emit_stmt,
         resolve_stmt: for_in_resolve_stmt,
         check_stmt: for_in_check_stmt,
         eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
@@ -30,6 +30,20 @@ export fn init_for_stmt(reg: Registry) {
         },
     }
     register(reg, f2)
+}
+
+fn for_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+    match stmt {
+        .For(variable, start, end, body) -> emit_for(ctx, env, variable, start, end, body)
+        _ -> err_stmt("expected For")
+    }
+}
+
+fn for_in_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+    match stmt {
+        .ForIn(variable, collection, body) -> emit_for_in(ctx, env, variable, collection, body)
+        _ -> err_stmt("expected ForIn")
+    }
 }
 
 fn for_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {

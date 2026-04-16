@@ -61,6 +61,26 @@ export type StepResult = {
     error_message: string,
 }
 
+export fn step_runtime(step: StepResult) -> Runtime {
+    step.runtime
+}
+
+export fn step_value(step: StepResult) -> Value {
+    step.value
+}
+
+export fn step_had_error(step: StepResult) -> bool {
+    step.had_error
+}
+
+export fn step_is_return(step: StepResult) -> bool {
+    step.is_return
+}
+
+export fn step_error_message(step: StepResult) -> string {
+    step.error_message
+}
+
 type AssignBindingsResult = {
     bindings: BindingList,
     found: int,

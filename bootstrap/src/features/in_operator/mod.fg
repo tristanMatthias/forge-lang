@@ -9,10 +9,7 @@ use typeck.{check_expr, check_expr_list, tc_er}
 export fn init_in_operator(reg: Registry) {
     let f = feature_new("in") with {
         expr_tag: Expr.InCheck(Expr.Null, ExprList.End),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr {
-            .InCheck(needle, items) -> emit_in_check(ctx, env, needle, items)
-            _ -> err_emit("expected InCheck")
-        },
+        emit_expr: in_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr {
             .InCheck(needle, items) -> {
                 let r2 = resolve_expr(r, needle)
@@ -34,4 +31,11 @@ export fn init_in_operator(reg: Registry) {
         },
     }
     register(reg, f)
+}
+
+fn in_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .InCheck(needle, items) -> emit_in_check(ctx, env, needle, items)
+        _ -> err_emit("expected InCheck")
+    }
 }

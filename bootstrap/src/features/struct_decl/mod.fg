@@ -13,7 +13,7 @@ use typeck.{check_expr, check_expr_list, tc_er}
 export fn init_struct_decl(reg: Registry) {
     let f1 = feature_new("struct_lit") with {
         expr_tag: Expr.StructLit("", FieldInitList.End),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .StructLit(name, inits) -> emit_struct_lit(ctx, env, name, inits), _ -> err_emit("expected StructLit") },
+        emit_expr: struct_lit_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr { .StructLit(_, inits) -> resolve_field_init_list(r, inits), _ -> r },
         check_expr: (tc: int, expr: Expr) -> match expr {
             .StructLit(name, inits) -> {
@@ -31,7 +31,7 @@ export fn init_struct_decl(reg: Registry) {
 
     let f2 = feature_new("field_access") with {
         expr_tag: Expr.FieldAccess(Expr.Null, ""),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .FieldAccess(obj, field) -> emit_field_access(ctx, env, obj, field), _ -> err_emit("expected FieldAccess") },
+        emit_expr: field_access_emit_expr,
         resolve_expr: field_access_resolve_expr,
         check_expr: (tc: int, expr: Expr) -> match expr {
             .FieldAccess(obj, field) -> check_field_access(tc, obj, field)
@@ -46,7 +46,7 @@ export fn init_struct_decl(reg: Registry) {
 
     let f3 = feature_new("enum_ctor") with {
         expr_tag: Expr.EnumCtor("", "", ExprList.End),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .EnumCtor(tn, v, args) -> emit_enum_ctor(ctx, env, tn, v, args), _ -> err_emit("expected EnumCtor") },
+        emit_expr: enum_ctor_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr { .EnumCtor(_, _, args) -> resolve_expr_list(r, args), _ -> r },
         check_expr: (tc: int, expr: Expr) -> match expr {
             .EnumCtor(type_name, _, args) -> {
@@ -64,7 +64,7 @@ export fn init_struct_decl(reg: Registry) {
 
     let f4 = feature_new("field_assign") with {
         expr_tag: Expr.FieldAssign(Expr.Null, "", Expr.Null),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value), _ -> err_emit("expected FieldAssign") },
+        emit_expr: field_assign_emit_expr,
         resolve_expr: (r: int, expr: Expr) -> match expr {
             .FieldAssign(obj, _, value) -> {
                 let after_obj = resolve_expr(r, obj)
@@ -85,6 +85,34 @@ export fn init_struct_decl(reg: Registry) {
         parse_decl: (p: Parser) -> p.parse_type_declaration(),
     }
     register(reg, f5)
+}
+
+fn struct_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .StructLit(name, inits) -> emit_struct_lit(ctx, env, name, inits)
+        _ -> err_emit("expected StructLit")
+    }
+}
+
+fn field_access_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .FieldAccess(obj, field) -> emit_field_access(ctx, env, obj, field)
+        _ -> err_emit("expected FieldAccess")
+    }
+}
+
+fn enum_ctor_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, args)
+        _ -> err_emit("expected EnumCtor")
+    }
+}
+
+fn field_assign_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, obj, field, value)
+        _ -> err_emit("expected FieldAssign")
+    }
 }
 
 fn field_access_resolve_expr(r: Resolver, expr: Expr) -> Resolver {

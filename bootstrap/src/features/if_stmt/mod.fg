@@ -2,7 +2,7 @@ mod parser
 mod codegen
 use core.ast.{vtype_display, vtype_eq}
 use codegen.types.{err_emit, err_stmt}
-use features.eval.{error_result, is_truthy, ok_result, value_null}
+use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
 use features.eval.{eval_expr, execute_stmt}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr, resolve_stmt}
@@ -13,8 +13,8 @@ export fn init_if_stmt(reg: Registry) {
     let f = feature_new("if") with {
         expr_tag: Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null),
         stmt_tag: Stmt.If(Expr.Null, Stmt.NoOp, null),
-        emit_expr: (ctx: int, env, expr: Expr) -> match expr { .IfExpr(c, t, e) -> emit_if_expr(ctx, env, c, t, e), _ -> err_emit("expected IfExpr") },
-        emit_stmt: (ctx: int, env, stmt: Stmt) -> match stmt { .If(cond, then_b, else_b) -> emit_if(ctx, env, cond, then_b, else_b), _ -> err_stmt("expected If") },
+        emit_expr: if_emit_expr,
+        emit_stmt: if_emit_stmt,
         resolve_stmt: if_resolve_stmt,
         resolve_expr: (r: int, expr: Expr) -> match expr {
             .IfExpr(c, t, e) -> {
@@ -35,6 +35,20 @@ export fn init_if_stmt(reg: Registry) {
         parse_stmt: (p: Parser) -> p.parse_if_statement(),
     }
     register(reg, f)
+}
+
+fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .IfExpr(condition, then_branch, else_branch) -> emit_if_expr(ctx, env, condition, then_branch, else_branch)
+        _ -> err_emit("expected IfExpr")
+    }
+}
+
+fn if_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+    match stmt {
+        .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
+        _ -> err_stmt("expected If")
+    }
 }
 
 fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
@@ -91,16 +105,16 @@ fn if_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .If(condition, then_branch, else_branch) -> {
             let cond_result = eval_expr(rt, condition)
-            if cond_result.had_error {
+            if step_had_error(cond_result) {
                 return cond_result
             }
-            if is_truthy(cond_result.value) {
-                return execute_stmt(cond_result.runtime, then_branch)
+            if is_truthy(step_value(cond_result)) {
+                return execute_stmt(step_runtime(cond_result), then_branch)
             }
             if else_branch != null {
-                return execute_stmt(cond_result.runtime, else_branch!)
+                return execute_stmt(step_runtime(cond_result), else_branch!)
             }
-            ok_result(cond_result.runtime, value_null())
+            ok_result(step_runtime(cond_result), value_null())
         }
         _ -> error_result(rt, "expected If")
     }

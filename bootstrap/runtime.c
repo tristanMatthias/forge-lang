@@ -19,6 +19,7 @@
 #include <execinfo.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <sys/mman.h>
 #if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
 #define _XOPEN_SOURCE
 #include <ucontext.h>
@@ -46,8 +47,11 @@ static void forge_runtime_errorf(const char* fmt, ...);
 // realloc — those use the system allocator.
 
 #define BUMP_ARENA_SIZE (512 * 1024 * 1024)  // 512MB
+#define RESULT_ARENA_SIZE (256 * 1024 * 1024) // 256MB
 static char *bump_arena = NULL;
 static size_t bump_offset = 0;
+static char *result_arena = NULL;
+static size_t result_offset = 0;
 
 static void bump_init(void) {
     if (!bump_arena) {
@@ -57,17 +61,249 @@ static void bump_init(void) {
             exit(1);
         }
     }
+    if (!result_arena) {
+        result_arena = (char *)malloc(RESULT_ARENA_SIZE);
+        if (!result_arena) {
+            forge_runtime_error("could not allocate result arena");
+            exit(1);
+        }
+    }
+}
+
+// Dedicated allocator for Result enum allocations.
+// Called only from ok_emit/ok_stmt/err_emit/err_stmt.
+// Pointers returned here are in a distinct address range, so we can
+// detect at validation time if a non-Result pointer is being treated
+// as a Result (= bug).
+void *forge_result_alloc(size_t size) {
+    bump_init();
+    size = (size + 7) & ~7;
+    if (result_offset + size > RESULT_ARENA_SIZE) {
+        forge_runtime_errorf("result arena exhausted");
+        exit(1);
+    }
+    void *ptr = &result_arena[result_offset];
+    result_offset += size;
+    return ptr;
+}
+
+// Set of known Result pointers. Each ok_emit*/ok_stmt*/err_emit*/err_stmt*
+// adds its returned pointer here via forge_tag_as_result.
+#define MAX_RESULT_TAGS (4 * 1024 * 1024)
+static void** result_tags = NULL;
+static size_t result_tags_count = 0;
+
+void* forge_tag_as_result(void* ptr) {
+    // No-op unless FORGE_TRACK_RESULTS is set. Tagging every Result
+    // construction adds non-trivial overhead; the set is only useful
+    // for debugging Result-pointer type confusion.
+    static int enabled = -1;
+    if (enabled == -1) enabled = getenv("FORGE_TRACK_RESULTS") ? 1 : 0;
+    if (!enabled) return ptr;
+    if (!result_tags) result_tags = (void**)malloc(MAX_RESULT_TAGS * sizeof(void*));
+    if (result_tags_count < MAX_RESULT_TAGS) {
+        result_tags[result_tags_count++] = ptr;
+    }
+    return ptr;
+}
+
+int forge_is_result_ptr(void *ptr) {
+    if (!ptr || !result_tags) return 0;
+    // Linear scan — can optimize later with hash if slow
+    for (size_t i = 0; i < result_tags_count; i++) {
+        if (result_tags[i] == ptr) return 1;
+    }
+    return 0;
+}
+
+// ── Allocation tracking with redzones ──
+//
+// Every bump allocation is surrounded by 16-byte redzones filled with a
+// magic sentinel. On demand (via forge_check_redzones), we scan all
+// allocations and report any redzone corruption — this tells us exactly
+// which allocation was written past, catching cross-allocation writes
+// that ASAN can't see (because the whole arena is one malloc).
+
+#define REDZONE_SIZE 16
+#define REDZONE_MAGIC 0xAABBCCDDEEFF1122ULL
+
+typedef struct {
+    size_t offset;      // offset in bump arena where payload starts
+    size_t size;        // size of payload
+    void* retaddr;      // caller's return address
+} AllocRecord;
+
+#define MAX_ALLOCS (8 * 1024 * 1024)
+static AllocRecord* alloc_records = NULL;
+static size_t alloc_count = 0;
+static int redzone_enabled = 0;
+
+static void write_redzone(char* addr, size_t size) {
+    for (size_t i = 0; i < size; i += 8) {
+        *(uint64_t*)(addr + i) = REDZONE_MAGIC;
+    }
+}
+
+// Validate all redzones. Returns 1 if OK, 0 if corruption found.
+// On corruption, prints which allocation was corrupted and by what.
+int forge_check_redzones(const char* where) {
+    if (!redzone_enabled) return 1;
+    for (size_t i = 0; i < alloc_count; i++) {
+        AllocRecord* rec = &alloc_records[i];
+        // Check trailing redzone (after payload)
+        char* trailer = bump_arena + rec->offset + rec->size;
+        for (size_t j = 0; j < REDZONE_SIZE; j += 8) {
+            uint64_t val = *(uint64_t*)(trailer + j);
+            if (val != REDZONE_MAGIC) {
+                fprintf(stderr, "[REDZONE CORRUPT @ %s] alloc #%zu at offset 0x%zx size=%zu (retaddr=%p)\n",
+                    where, i, rec->offset, rec->size, rec->retaddr);
+                fprintf(stderr, "  trailer[%zu] = 0x%llx (expected 0x%llx)\n",
+                    j, (unsigned long long)val, (unsigned long long)REDZONE_MAGIC);
+                // Find matching symbol for retaddr
+                Dl_info info;
+                if (dladdr(rec->retaddr, &info) && info.dli_sname) {
+                    fprintf(stderr, "  allocator: %s+0x%lx\n",
+                        info.dli_sname, (long)((char*)rec->retaddr - (char*)info.dli_saddr));
+                }
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+void forge_enable_redzones(void) {
+    if (!redzone_enabled) {
+        alloc_records = (AllocRecord*)malloc(MAX_ALLOCS * sizeof(AllocRecord));
+        redzone_enabled = 1;
+        fprintf(stderr, "[REDZONE] enabled\n");
+    }
+}
+
+// Debug mode: put each allocation in its own mmap'd page so ASAN catches
+// any cross-allocation write. Slow but catches ALL memory corruption.
+static int page_mode = 0;
+static void** page_allocs = NULL;
+static size_t page_alloc_count = 0;
+
+__attribute__((constructor))
+static void auto_enable_page_mode(void) {
+    if (getenv("FORGE_PAGE_ALLOC")) {
+        page_mode = 1;
+        page_allocs = (void**)malloc(MAX_ALLOCS * sizeof(void*));
+        fprintf(stderr, "[PAGE_ALLOC] enabled — each bump alloc is a separate malloc\n");
+    }
+}
+
+// SIGSEGV handler: print backtrace and the faulting address
+static void protect_segv_handler(int sig, siginfo_t* info, void* ucontext) {
+    void* fault_addr = info->si_addr;
+    char msg[256];
+    int len = snprintf(msg, sizeof(msg), "\n[PROTECTED WRITE] at %p\n", fault_addr);
+    write(STDERR_FILENO, msg, len);
+    // Print backtrace
+    void* frames[32];
+    int n = backtrace(frames, 32);
+    backtrace_symbols_fd(frames, n, STDERR_FILENO);
+    _exit(1);
+}
+
+__attribute__((constructor))
+static void install_segv_handler(void) {
+    if (getenv("FORGE_PROTECT_RESULTS")) {
+        struct sigaction sa;
+        sa.sa_sigaction = protect_segv_handler;
+        sa.sa_flags = SA_SIGINFO;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGSEGV, &sa, NULL);
+        sigaction(SIGBUS, &sa, NULL);
+        fprintf(stderr, "[PROTECT] SIGSEGV handler installed\n");
+    }
+}
+
+// Called by the Forge source to protect a Result from further writes.
+// Only the Result's 16 bytes are protected. Returns the pointer unchanged.
+static int protect_enabled = 0;
+
+__attribute__((constructor))
+static void auto_enable_protect(void) {
+    if (getenv("FORGE_PROTECT_RESULTS")) {
+        protect_enabled = 1;
+    }
+}
+
+// Track all protected addresses so we can diagnose mismatches
+#define MAX_PROTECTED 1000000
+static uintptr_t protected_addrs[MAX_PROTECTED];
+static size_t protected_count = 0;
+
+int forge_is_protected(void* ptr) {
+    uintptr_t addr = (uintptr_t)ptr;
+    for (size_t i = 0; i < protected_count; i++) {
+        if (protected_addrs[i] == addr) return 1;
+    }
+    return 0;
+}
+
+void* forge_protect_result(void* ptr) {
+    if (!protect_enabled) return ptr;
+    long pagesize = sysconf(_SC_PAGESIZE);
+    uintptr_t addr = (uintptr_t)ptr;
+    uintptr_t page_start = addr & ~(pagesize - 1);
+    if (mprotect((void*)page_start, pagesize, PROT_READ) != 0) {
+        perror("mprotect failed");
+        return ptr;
+    }
+    if (protected_count < MAX_PROTECTED) {
+        protected_addrs[protected_count++] = addr;
+    }
+    return ptr;
+}
+
+__attribute__((constructor))
+static void auto_enable_redzones(void) {
+    if (getenv("FORGE_REDZONES")) {
+        forge_enable_redzones();
+    }
 }
 
 void *forge_bump_alloc(size_t size) {
     bump_init();
-    size = (size + 7) & ~7;  // align to 8 bytes
-    if (bump_offset + size > BUMP_ARENA_SIZE) {
+    size = (size + 7) & ~7;
+    if (page_mode) {
+        long pagesize = sysconf(_SC_PAGESIZE);
+        void* page = mmap(NULL, pagesize, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (page == MAP_FAILED) {
+            perror("mmap");
+            exit(1);
+        }
+        if (page_alloc_count < MAX_ALLOCS) {
+            page_allocs[page_alloc_count++] = page;
+        }
+        // Also track in alloc_records for validation lookup
+        if (redzone_enabled && alloc_count < MAX_ALLOCS) {
+            alloc_records[alloc_count].offset = (size_t)page;
+            alloc_records[alloc_count].size = size;
+            alloc_records[alloc_count].retaddr = __builtin_return_address(0);
+            alloc_count++;
+        }
+        return page;
+    }
+    size_t total = size + (redzone_enabled ? REDZONE_SIZE : 0);
+    if (bump_offset + total > BUMP_ARENA_SIZE) {
         forge_runtime_errorf("bump arena exhausted (%zu bytes used)", bump_offset);
         exit(1);
     }
     void *ptr = &bump_arena[bump_offset];
-    bump_offset += size;
+    if (redzone_enabled && alloc_count < MAX_ALLOCS) {
+        alloc_records[alloc_count].offset = bump_offset;
+        alloc_records[alloc_count].size = size;
+        alloc_records[alloc_count].retaddr = __builtin_return_address(0);
+        alloc_count++;
+        write_redzone(bump_arena + bump_offset + size, REDZONE_SIZE);
+    }
+    bump_offset += total;
     return ptr;
 }
 
@@ -1711,6 +1947,60 @@ void forge_null_arg_check(const char *fn_name, int64_t fn_len,
     forge_null_arg_trap(fn_name, fn_len, param_name, param_len);
 }
 
+// ── Store origin tracking ──
+//
+// Every store in generated IR goes through forge_track_store_i64 or
+// forge_track_store_ptr. Each store is logged with (target, value, caller).
+// On validation failure, we dump all recent stores to the failing address.
+
+#define STORE_LOG_SIZE 131072
+typedef struct {
+    void* target;
+    int64_t value;
+    void* caller_pc;
+} StoreRecord;
+static StoreRecord store_log[STORE_LOG_SIZE];
+static size_t store_log_idx = 0;
+
+void forge_track_store_i64(void* target, int64_t value) {
+    store_log[store_log_idx].target = target;
+    store_log[store_log_idx].value = value;
+    store_log[store_log_idx].caller_pc = __builtin_return_address(0);
+    store_log_idx = (store_log_idx + 1) % STORE_LOG_SIZE;
+    *(int64_t*)target = value;
+}
+
+void forge_track_store_ptr(void* target, void* value) {
+    store_log[store_log_idx].target = target;
+    store_log[store_log_idx].value = (int64_t)value;
+    store_log[store_log_idx].caller_pc = __builtin_return_address(0);
+    store_log_idx = (store_log_idx + 1) % STORE_LOG_SIZE;
+    *(void**)target = value;
+}
+
+void forge_dump_stores_to(void* target) {
+    fprintf(stderr, "[STORE LOG] all stores to %p:\n", target);
+    int found = 0;
+    // Walk from oldest to newest
+    for (size_t i = 0; i < STORE_LOG_SIZE; i++) {
+        size_t idx = (store_log_idx + i) % STORE_LOG_SIZE;
+        if (store_log[idx].target == target) {
+            Dl_info info;
+            const char* name = "?";
+            long off = 0;
+            if (dladdr(store_log[idx].caller_pc, &info) && info.dli_sname) {
+                name = info.dli_sname;
+                off = (char*)store_log[idx].caller_pc - (char*)info.dli_saddr;
+            }
+            fprintf(stderr, "  #%zu: value=0x%llx (%lld) from %s+%ld\n",
+                (size_t)found, (unsigned long long)store_log[idx].value,
+                (long long)store_log[idx].value, name, off);
+            found++;
+        }
+    }
+    fprintf(stderr, "  (%d total stores to this address)\n", found);
+}
+
 // ── Match fallthrough trap ──
 //
 // Called when a match expression falls through all arms without finding
@@ -1718,10 +2008,15 @@ void forge_null_arg_check(const char *fn_name, int64_t fn_len,
 // the data is corrupt. Prints the function name and tag value so the
 // developer knows exactly where and why.
 void forge_match_unreachable(const char *fn_name, int64_t tag, const char *file, int64_t line) {
-    forge_runtime_errorf("non-exhaustive match in function `%s` — unmatched tag %lld", fn_name, (long long)tag);
+    forge_runtime_errorf("non-exhaustive match in function `%s` — unmatched tag %lld (0x%llx)", fn_name, (long long)tag, (unsigned long long)tag);
     if (file && file[0]) {
         fprintf(stderr, "  --> %s:%lld\n", file, (long long)line);
     }
+    if (tag > 0x100000000LL) {
+        fprintf(stderr, "  tag looks like ptr, *tag = [0x%llx, 0x%llx]\n",
+            (unsigned long long)((int64_t*)tag)[0], (unsigned long long)((int64_t*)tag)[1]);
+    }
+    forge_check_redzones("match_unreachable");
     fprintf(stderr, "This means an enum value has a corrupt or unexpected tag byte.\n");
     fprintf(stderr, "Common causes:\n");
     fprintf(stderr, "  - Bump allocator returned uninitialized memory\n");
@@ -1782,4 +2077,92 @@ int64_t forge_variant_hash(const char* name) {
 
     }
     return (int64_t)hash;
+}
+
+// Validate that a pointer looks like a Result enum (tag is Ok or Err).
+// Returns the pointer unchanged if valid, crashes with diagnostics if not.
+int64_t forge_validate_result_ptr(void* ptr, const char* caller) {
+    if (!ptr) {
+        fprintf(stderr, "[FATAL] %s: null Result ptr\n", caller);
+        exit(99);
+    }
+    int is_tagged = forge_is_result_ptr(ptr);
+    int64_t tag = *(int64_t*)ptr;
+    if (tag != 5862623 && tag != 193456014) {
+        fprintf(stderr, "[FATAL] %s: bad Result tag %lld (0x%llx) at %p (tagged_as_result=%d)\n",
+            caller, (long long)tag, (unsigned long long)tag, ptr, is_tagged);
+        if (!is_tagged) {
+            fprintf(stderr, "  ==> POINTER IS NOT A RESULT. Something returned a non-Result pointer where a Result was expected.\n");
+            fprintf(stderr, "  Total tagged Result pointers: %zu\n", result_tags_count);
+            fprintf(stderr, "  Memory around bad ptr:\n");
+            for (int off = -32; off <= 32; off += 8) {
+                int64_t val = *(int64_t*)((char*)ptr + off);
+                fprintf(stderr, "    [bad%+d] = 0x%llx\n", off, (unsigned long long)val);
+            }
+            fprintf(stderr, "  Nearby tagged Results:\n");
+            int shown = 0;
+            for (size_t i = result_tags_count; i > 0 && shown < 10; i--) {
+                void* t = result_tags[i-1];
+                if ((char*)t > (char*)ptr - 256 && (char*)t < (char*)ptr + 256) {
+                    fprintf(stderr, "    Result@%p (offset from bad: %+ld) tag=0x%llx\n",
+                        t, (long)((char*)t - (char*)ptr), (unsigned long long)*(int64_t*)t);
+                    shown++;
+                }
+            }
+        }
+        forge_dump_stores_to(ptr);
+        if (redzone_enabled) {
+            for (size_t i = 0; i < alloc_count; i++) {
+                // In page mode, offset holds the pointer. In normal mode, it's offset.
+                size_t key = page_mode ? (size_t)ptr : (size_t)((char*)ptr - bump_arena);
+                if (alloc_records[i].offset == key) {
+                    fprintf(stderr, "[ALLOC INFO] ptr is alloc #%zu, size=%zu, retaddr=%p\n",
+                        i, alloc_records[i].size, alloc_records[i].retaddr);
+                    Dl_info info;
+                    if (dladdr(alloc_records[i].retaddr, &info) && info.dli_sname) {
+                        fprintf(stderr, "  allocated by: %s\n", info.dli_sname);
+                    }
+                    break;
+                }
+            }
+        }
+        // Don't exit — let ASAN catch any subsequent bad access
+        if (!getenv("FORGE_CONTINUE_ON_BAD_RESULT")) exit(99);
+        return 0;
+    }
+    return 1;
+}
+
+// Watch a specific arena offset for corruption
+static void* watched_ptr = NULL;
+void forge_watch_result(void* ptr) {
+    watched_ptr = ptr;
+    fprintf(stderr, "[WATCH] set on %p, tag=%lld\n", ptr, (long long)*(int64_t*)ptr);
+}
+void forge_check_watched() {
+    if (watched_ptr && *(int64_t*)watched_ptr != 5862623 && *(int64_t*)watched_ptr != 193456014) {
+        fprintf(stderr, "[WATCH] CORRUPTED at %p! tag=%lld (0x%llx)\n", 
+            watched_ptr, (long long)*(int64_t*)watched_ptr, (unsigned long long)*(int64_t*)watched_ptr);
+        exit(99);
+    }
+}
+
+// Trace the specific arena offset that gets corrupted
+#define WATCH_OFFSET 0x36bf8
+static int watch_triggered = 0;
+void* forge_bump_alloc_traced(size_t size) {
+    bump_init();
+    size = (size + 7) & ~7;
+    if (bump_offset + size > BUMP_ARENA_SIZE) {
+        forge_runtime_errorf("bump arena exhausted (%zu bytes used)", bump_offset);
+        exit(1);
+    }
+    void *ptr = &bump_arena[bump_offset];
+    // Check if this allocation COVERS the watched offset
+    if (!watch_triggered && bump_offset <= WATCH_OFFSET && bump_offset + size > WATCH_OFFSET) {
+        watch_triggered = 1;
+        fprintf(stderr, "[ALLOC] offset 0x%zx covers WATCH at 0x%x (size=%zu)\n", bump_offset, WATCH_OFFSET, size);
+    }
+    bump_offset += size;
+    return ptr;
 }

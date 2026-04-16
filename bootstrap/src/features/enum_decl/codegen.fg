@@ -2,9 +2,9 @@
 // enum value comparison (tag equality via struct GEP).
 
 use core.ast.{Expr, ExprList, FieldList, VariantList, VarEnv, variant_lookup, variant_max_payload, field_list_length, expr_list_length, ValueType, vtype_enum_name}
-use codegen.types.{Ctx, EmitResult, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
 
-export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> EmitResult {
+export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: string, args: ExprList) -> Result<EmitValue, string> {
     // Contextual resolution: `.Variant` with empty type_name.
     // Use arity-aware lookup to disambiguate variants with the same
     // name but different field counts (e.g. LoopStack.Frame vs DeferStack.Frame).
@@ -62,7 +62,7 @@ export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
     ctx.malloc(ctx.i64(16))
 }
 
-fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> EmitResult {
+fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
@@ -79,7 +79,7 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
 }
 
 // Type-safe payload fill: uses GEP into the per-variant struct type.
-fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> EmitResult {
+fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {
     match args {
         .End -> ok_emit(null_ptr_val())
         .Node(se, next) -> {
@@ -98,7 +98,7 @@ fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr,
 
 // Compare two enum values by their tag field (equality/inequality).
 // Used by emit_binary for Eq/Ne on enum types.
-export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> EmitResult {
+export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> Result<EmitValue, string> {
     let enum_name = vtype_enum_name(ty)
     let st_ty = ctx.get_type(enum_name)
     let lhs_ptr = ctx.to_ptr(lhs, "enum_l")
