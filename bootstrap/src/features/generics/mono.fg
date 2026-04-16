@@ -841,7 +841,12 @@ fn rewrite_field_inits(inits: FieldInitList, regs: GenRegs, insts: InstList) -> 
 }
 
 fn mangle_enum_at_site(tn: string, variant: string, tp: TypeParamList, variants: VariantList, args: ExprList, insts: InstList) -> string {
-    inst_mangled_compatible(insts, tn, resolve_enum_type_args(tp, variants, variant, args))
+    let partial = resolve_enum_type_args(tp, variants, variant, args)
+    let result = inst_mangled_compatible(insts, tn, partial)
+    // If compatible match failed (returned raw name), fall back to any entry
+    // for this generic. Better to use a potentially wrong instantiation than
+    // leave the name unmangled (which causes "undefined enum type" errors).
+    if result == tn { inst_mangled(insts, tn) } else { result }
 }
 
 fn rewrite_enum_ctor(tn: string, variant: string, args: ExprList, regs: GenRegs, insts: InstList) -> Expr {
