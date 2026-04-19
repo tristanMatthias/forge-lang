@@ -135,6 +135,7 @@ export enum ValueType {
     Float,
     FnTyped(params: TypeList, ret: ValueType),
     Trait(name: string),
+    Union(types: TypeList),
 }
 
 // TypeExpr — structured type annotation replacing string-based types.
@@ -211,6 +212,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Trait(n1) -> match b { .Trait(n2) -> n1 == n2, _ -> false }
         .Tuple(_) -> match b { .Tuple(_) -> true, _ -> false }
         .Closure(_, _) -> match b { .Closure(_, _) -> true, _ -> false }
+        .Union(_) -> match b { .Union(_) -> true, _ -> false }
         _ -> false
     }
 }
@@ -267,11 +269,74 @@ export fn vtype_display(t: ValueType) -> string {
         .Float -> "float"
         .FnTyped(params, ret) -> "fn(${render_type_list(params)}) -> ${vtype_display(ret)}"
         .Trait(n) -> "dyn ${n}"
+        .Union(types) -> render_union_display(types)
+    }
+}
+
+fn render_union_display(tl: TypeList) -> string {
+    match tl {
+        .End -> ""
+        .Node(ty, next) -> {
+            let rest = render_union_display(next)
+            if rest == "" {
+                vtype_display(ty)
+            } else {
+                vtype_display(ty) + " | " + rest
+            }
+        }
     }
 }
 
 export fn vtype_trait_name(t: ValueType) -> string {
     match t { .Trait(n) -> n, _ -> "" }
+}
+
+export fn vtype_is_union(t: ValueType) -> bool { t is .Union }
+
+export fn vtype_union_types(t: ValueType) -> TypeList {
+    match t { .Union(tl) -> tl, _ -> TypeList.End }
+}
+
+// Check if a ValueType is a member of a union's TypeList
+export fn union_contains(tl: TypeList, t: ValueType) -> bool {
+    match tl {
+        .End -> false
+        .Node(ty, next) -> if vtype_eq(ty, t) { true } else { union_contains(next, t) }
+    }
+}
+
+// Build a TypeList from two types, flattening nested unions
+export fn union_type_list_merge(a: ValueType, b: ValueType) -> TypeList {
+    let left = match a {
+        .Union(tl) -> tl
+        _ -> TypeList.Node(a, TypeList.End)
+    }
+    let right = match b {
+        .Union(tl) -> tl
+        _ -> TypeList.Node(b, TypeList.End)
+    }
+    type_list_concat(left, right)
+}
+
+fn type_list_concat(a: TypeList, b: TypeList) -> TypeList {
+    match a {
+        .End -> b
+        .Node(ty, next) -> TypeList.Node(ty, type_list_concat(next, b))
+    }
+}
+
+export fn type_list_len(tl: TypeList) -> int {
+    match tl {
+        .End -> 0
+        .Node(_, next) -> 1 + type_list_len(next)
+    }
+}
+
+export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
+    match tl {
+        .End -> ValueType.Int
+        .Node(ty, next) -> if idx == 0 { ty } else { type_list_at(next, idx - 1) }
+    }
 }
 
 export fn render_type_list(tl: TypeList) -> string {

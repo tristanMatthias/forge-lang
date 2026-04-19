@@ -193,19 +193,38 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
 }
 
 fn render_list(source: string, filename: string, list: DiagnosticList) {
-    // Render the FIRST 10 diagnostics (newest are at head, so we
-    // just take from the front without reversing — avoids deep
-    // recursion on lists with hundreds of entries).
-    render_first_n(source, filename, list, 0, 10)
+    // Errors first (always all shown), then warnings (capped at 10).
+    // Two passes to ensure errors are always visible even when buried
+    // in hundreds of warnings.
+    render_by_severity(source, filename, list, 1)
+    render_by_severity_capped(source, filename, list, 0, 0, 10)
 }
 
-fn render_first_n(source: string, filename: string, list: DiagnosticList, count: int, max: int) {
+// Render all diagnostics matching target severity (1 = error)
+fn render_by_severity(source: string, filename: string, list: DiagnosticList, target: int) {
+    match list {
+        .End -> {}
+        .Node(diag, next) -> {
+            let is_match = if target == 1 { diag.severity is .Error } else { diag.severity is .Warning }
+            if is_match { render_diagnostic(source, filename, diag) }
+            render_by_severity(source, filename, next, target)
+        }
+    }
+}
+
+// Render non-error diagnostics up to max count
+fn render_by_severity_capped(source: string, filename: string, list: DiagnosticList, is_error: int, count: int, max: int) {
     if count >= max { return }
     match list {
         .End -> {}
         .Node(diag, next) -> {
-            render_diagnostic(source, filename, diag)
-            render_first_n(source, filename, next, count + 1, max)
+            if diag.severity is .Error {
+                // Skip errors (already rendered)
+                render_by_severity_capped(source, filename, next, is_error, count, max)
+            } else {
+                render_diagnostic(source, filename, diag)
+                render_by_severity_capped(source, filename, next, is_error, count + 1, max)
+            }
         }
     }
 }

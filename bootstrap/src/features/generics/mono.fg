@@ -228,6 +228,7 @@ fn vtype_to_string(ty: ValueType) -> string {
         .FnTyped(_, _) -> "fn"
         .Tuple(_) -> "tuple"
         .Trait(n) -> n
+        .Union(_) -> "union"
     }
 }
 
