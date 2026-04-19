@@ -527,6 +527,11 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
         .ListLit(elems) -> collect_inst_exprs(elems, regs, st)
         .Tuple(elems) -> collect_inst_exprs(elems, regs, st)
         .MapLit(entries) -> collect_inst_exprs(entries, regs, st)
+        .ListComp(body, _, coll, filter) -> {
+            let s1 = collect_inst_expr(body, regs, st)
+            let s2 = collect_inst_expr(coll, regs, s1)
+            if filter != null { collect_inst_expr(filter!, regs, s2) } else { s2 }
+        }
         _ -> st
     }
 }
@@ -675,6 +680,13 @@ fn substitute_expr(expr: Expr, ta: TypeArgList) -> Expr {
         .NullCoalesce(l, r) -> .NullCoalesce(substitute_expr(l, ta), substitute_expr(r, ta))
         .Try(e) -> .Try(substitute_expr(e, ta))
         .With(obj, inits) -> .With(substitute_expr(obj, ta), inits)
+        .ListComp(body, v, coll, filter) -> {
+            if filter != null {
+                .ListComp(substitute_expr(body, ta), v, substitute_expr(coll, ta), substitute_expr(filter!, ta))
+            } else {
+                .ListComp(substitute_expr(body, ta), v, substitute_expr(coll, ta), null)
+            }
+        }
         _ -> expr
     }
 }
@@ -815,6 +827,13 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: InstList) -> Expr {
         .NullCoalesce(l, r) -> .NullCoalesce(rewrite_expr(l, regs, insts), rewrite_expr(r, regs, insts))
         .Try(e) -> .Try(rewrite_expr(e, regs, insts))
         .With(obj, overrides) -> .With(rewrite_expr(obj, regs, insts), overrides)
+        .ListComp(body, v, coll, filter) -> {
+            if filter != null {
+                .ListComp(rewrite_expr(body, regs, insts), v, rewrite_expr(coll, regs, insts), rewrite_expr(filter!, regs, insts))
+            } else {
+                .ListComp(rewrite_expr(body, regs, insts), v, rewrite_expr(coll, regs, insts), null)
+            }
+        }
         _ -> expr
     }
 }

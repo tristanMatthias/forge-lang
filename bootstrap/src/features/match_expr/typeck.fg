@@ -150,8 +150,7 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList)
     let span_len = 6 + enum_name.length
     let sp = span_new(0, span_len, tc.current_line, tc.current_col)
     let msg = "non-exhaustive match on `${enum_name}` — missing: ${missing}"
-    let diag = diag_warning(DiagCode.NonExhaustiveMatch, msg, sp)
-    tc with { bag: bag_report(tc.bag, diag) }
+    tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
 }
 
 // ── Pattern variable binding ──

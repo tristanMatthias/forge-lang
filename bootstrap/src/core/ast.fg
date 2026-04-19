@@ -640,6 +640,7 @@ export fn render_expr(expr: Expr) -> string {
         .InCheck(needle, items) -> "(in ${render_expr(needle)} [${render_expr_list(items)}])"
         .QualifiedIdent(path) -> path
         .When(arms) -> "(when ${render_when_arm_list(arms)})"
+        .ListComp(body, variable, collection, _) -> "(list-comp ${render_expr(body)} for ${variable} in ${render_expr(collection)})"
     }
 }
 

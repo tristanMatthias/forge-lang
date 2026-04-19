@@ -686,6 +686,7 @@ fn eval_unary(runtime: Runtime, op: UnOp, right: Expr) -> StepResult {
             ok_result(right_result.runtime, value_number(render_number(0.0 - float(number_text!))))
         }
         .Not -> ok_result(right_result.runtime, value_bool(!is_truthy(value)))
+        .BitNot -> error_result(right_result.runtime, "bitwise NOT not supported by tree-walk evaluator")
     }
 }
 
