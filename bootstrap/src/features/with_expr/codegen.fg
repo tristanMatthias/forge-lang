@@ -7,6 +7,7 @@
 
 use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, vtype_struct_name, vtype_display, SExpr}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
 export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
@@ -58,7 +59,15 @@ fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields:
                     .Ok(r) -> {
                         let st_ty = ctx.get_type(struct_name)
                         let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
-                        ctx.store(r.value, gep)
+                        let fld_ty = ctx.resolve_field_type(fields, name)
+                        if needs_union_wrap(r.ty, fld_ty) {
+                            match emit_union_wrap(ctx, r.value, r.ty, fld_ty) {
+                                .Ok(wrapped) -> ctx.store(wrapped.value, gep)
+                                .Err(_) -> ctx.store(r.value, gep)
+                            }
+                        } else {
+                            ctx.store(r.value, gep)
+                        }
                     }
                     .Err(_) -> {}
                 }
