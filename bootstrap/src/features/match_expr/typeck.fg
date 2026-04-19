@@ -142,15 +142,37 @@ export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList)
     if enum_name == "" { return tc }
     let variants = enum_type_variants(tc.enums, enum_name)
     match variants { .End -> return tc, _ -> {} }
-    if arms_has_wildcard(arms) { return tc }
     let matched = arms_matched_variants(arms)
     let missing = find_missing_variants(variants, matched)
     if missing == "" { return tc }
     if tc.current_line == 0 { return tc }
-    let span_len = 6 + enum_name.length
-    let sp = span_new(0, span_len, tc.current_line, tc.current_col)
+    // Spec Axis 8.7: wildcard hiding >2 variants = warning (not error)
+    if arms_has_wildcard(arms) {
+        let hidden_count = count_missing(variants, matched)
+        if hidden_count > 2 {
+            let sp = span_new(0, 6 + enum_name.length, tc.current_line, tc.current_col)
+            let msg = "wildcard arm hides ${string(hidden_count)} variants of `${enum_name}`: ${missing}"
+            let diag = diag_warning(DiagCode.NonExhaustiveMatch, msg, sp)
+            return tc with { bag: bag_report(tc.bag, diag) }
+        }
+        return tc
+    }
+    // No wildcard and missing variants = error (spec Axis 8.4)
     let msg = "non-exhaustive match on `${enum_name}` — missing: ${missing}"
     tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
+}
+
+fn count_missing(variants: VariantList, matched: string) -> int {
+    match variants {
+        .End -> 0
+        .Node(name, _, next) -> {
+            if variant_in_matched(name, matched) {
+                count_missing(next, matched)
+            } else {
+                1 + count_missing(next, matched)
+            }
+        }
+    }
 }
 
 // ── Pattern variable binding ──
