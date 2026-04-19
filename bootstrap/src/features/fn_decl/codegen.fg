@@ -5,6 +5,7 @@ use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_
 use codegen.types.{Ctx, EmitValue, ParamTypeList,  ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, param_type_at, trait_decl_has, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
 export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
@@ -48,7 +49,13 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     let r = emit_block_loop(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
     if !ctx.has_terminator() {
         emit_defers(body_cg, env)
-        ctx.ret(r.value, ret_ty)
+        // Union wrapping: if function returns a union, wrap the implicit return value
+        if needs_union_wrap(r.ty, ret_ty) {
+            let wrapped = emit_union_wrap(body_cg, r.value, r.ty, ret_ty)?
+            ctx.ret(wrapped.value, ret_ty)
+        } else {
+            ctx.ret(r.value, ret_ty)
+        }
     }
     ctx.verify_fn(fn_val)
     ok_stmt(VarEnv.End)

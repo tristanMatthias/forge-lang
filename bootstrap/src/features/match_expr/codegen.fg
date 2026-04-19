@@ -36,8 +36,11 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
             }
             let enum_name = vtype_enum_name(emit_value_ty(r))
             if enum_name == "" {
+                // Check for type patterns on non-union types — these are invalid
+                if arms_have_type_pattern(arms) {
+                    return forward_emit_err("type patterns like `int(n)` are only valid on union types, but subject has type `${vtype_display(emit_value_ty(r))}`")
+                }
                 // Non-enum match: treat as guard-based if-else chain.
-                // Each arm must be a wildcard with an optional guard.
                 return emit_primitive_match_expr(ctx, env, r, arms)
             }
             let lookup = ctx.lookup_enum(enum_name)
@@ -128,6 +131,18 @@ fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, subj_val: pt
     }
 }
 
+fn arms_have_type_pattern(arms: MatchArmList) -> bool {
+    match arms {
+        .End -> false
+        .Node(pattern, _, _, next) -> {
+            match pattern {
+                .TypePattern(_, _) -> true
+                _ -> arms_have_type_pattern(next)
+            }
+        }
+    }
+}
+
 fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     match arms {
         .End -> {
@@ -184,7 +199,9 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
             }
             let enum_name = vtype_enum_name(emit_value_ty(r))
             if enum_name == "" {
-                // Non-enum match: treat as guard-based if-else chain.
+                if arms_have_type_pattern(arms) {
+                    return forward_stmt_err("type patterns like `int(n)` are only valid on union types, but subject has type `${vtype_display(emit_value_ty(r))}`")
+                }
                 return emit_primitive_match_stmt(ctx, env, r, arms)
             }
             let lookup = ctx.lookup_enum(enum_name)

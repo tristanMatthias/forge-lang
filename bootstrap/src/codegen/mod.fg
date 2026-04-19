@@ -16,6 +16,7 @@ use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag, has_expr_emit, has_stmt_emit}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
 use features.defer_stmt.codegen.{emit_defers}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use features.fn_decl.codegen.{emit_function_bodies}
 use features.let_stmt.codegen.{emit_var_decl}
 use features.list_lit.codegen.{emit_list_reduce_typed, emit_list_method_call}
@@ -75,7 +76,13 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
             let r = emit_expr(ctx, env, value)?
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
-            ctx.ret(r.value, fn_ret)
+            // Union wrapping: if function returns a union, wrap the concrete value
+            if needs_union_wrap(r.ty, fn_ret) {
+                let wrapped = emit_union_wrap(ctx, r.value, r.ty, fn_ret)?
+                ctx.ret(wrapped.value, fn_ret)
+            } else {
+                ctx.ret(r.value, fn_ret)
+            }
             ok_stmt(env)
         }
         .ReturnEmpty -> {
@@ -154,6 +161,12 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
             let r = emit_expr(ctx, env, value)?
             let local = env_lookup(env, name)
             if local.found {
+                // Union wrapping: reassigning to a union-typed variable
+                if needs_union_wrap(r.ty, local.ty) {
+                    let wrapped = emit_union_wrap(ctx, r.value, r.ty, local.ty)?
+                    ctx.store(wrapped.value, local.alloca)
+                    return ok_emit_typed(wrapped.value, local.ty)
+                }
                 ctx.store(r.value, local.alloca)
                 return ok_emit_typed(r.value, local.ty)
             }

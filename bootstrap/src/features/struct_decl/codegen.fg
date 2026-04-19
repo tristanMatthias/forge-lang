@@ -4,6 +4,7 @@ use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, 
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
 use codegen.{emit_expr, emit_enum_ctor}
 use features.enum_decl.codegen.{emit_enum_ctor}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
 export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitList) -> Result<EmitValue, string> {
     let lookup = ctx.lookup_struct(name)
@@ -34,7 +35,13 @@ fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: Fie
             let r = ctx.emit(env, sv.node)?
             let fld_ty = ctx.resolve_field_type(fields, field_name)
             let gep = ctx.gep(st_ty, alloca, idx, "fld_ptr")
-            ctx.store_field(r.value, gep, fld_ty)
+            // Union wrapping: if field type is union and value is a concrete member
+            if needs_union_wrap(r.ty, fld_ty) {
+                let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
+                ctx.store_field(wrapped.value, gep, fld_ty)
+            } else {
+                ctx.store_field(r.value, gep, fld_ty)
+            }
             fill_struct_fields(ctx, env, st_ty, alloca, next, fields)
         }
     }
@@ -55,8 +62,14 @@ export fn emit_field_assign(ctx: Ctx, env: VarEnv, obj: Expr, field: string, val
     let gep = ctx.gep(st_ty, obj_ptr, idx, "fa_fld")
     let v = ctx.emit(env, value)?
     let fld_ty = ctx.resolve_field_type(lookup.fields, field)
-    ctx.store_field(v.value, gep, fld_ty)
-    ok_emit(v.value)
+    if needs_union_wrap(v.ty, fld_ty) {
+        let wrapped = emit_union_wrap(ctx, v.value, v.ty, fld_ty)?
+        ctx.store_field(wrapped.value, gep, fld_ty)
+        ok_emit(wrapped.value)
+    } else {
+        ctx.store_field(v.value, gep, fld_ty)
+        ok_emit(v.value)
+    }
 }
 
 export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> Result<EmitValue, string> {

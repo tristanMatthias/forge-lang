@@ -1,0 +1,6 @@
+42
+hello
+implicit: world
+mut int: 10
+mut string: reassigned
+struct field: 99
