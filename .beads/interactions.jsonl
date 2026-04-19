@@ -14,3 +14,4 @@
 {"id":"int-4a9e4b07","kind":"field_change","created_at":"2026-04-19T02:31:15.734632Z","actor":"Tristan Mathias","issue_id":"forge-crafting-intepreters-l0z","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-c890910a","kind":"field_change","created_at":"2026-04-19T04:52:02.438243Z","actor":"Tristan Mathias","issue_id":"forge-crafting-intepreters-2xy","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-882d306b","kind":"field_change","created_at":"2026-04-19T17:47:40.395985Z","actor":"Tristan Mathias","issue_id":"forge-crafting-intepreters-e5v","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
+{"id":"int-721f45db","kind":"field_change","created_at":"2026-04-19T18:34:26.921781Z","actor":"Tristan Mathias","issue_id":"forge-crafting-intepreters-cim","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
