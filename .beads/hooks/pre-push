@@ -3,7 +3,18 @@
 # This section is managed by beads. Do not remove these markers.
 if command -v bd >/dev/null 2>&1; then
   export BD_GIT_HOOK=1
-  _bd_timeout=${BEADS_HOOK_TIMEOUT:-300}
+  _bd_timeout=${BEADS_HOOK_TIMEOUT:-15}
+
+  # Kill stale beads processes holding the dolt lock to prevent hook hangs.
+  _bd_lockdir="$(git rev-parse --show-toplevel 2>/dev/null)/.beads/embeddeddolt"
+  if [ -d "$_bd_lockdir" ] && command -v lsof >/dev/null 2>&1; then
+    _bd_stale=$(lsof +D "$_bd_lockdir" 2>/dev/null | awk 'NR>1 {print $2}' | sort -u)
+    if [ -n "$_bd_stale" ]; then
+      echo "$_bd_stale" | xargs kill -9 2>/dev/null
+      sleep 0.2
+    fi
+  fi
+
   if command -v timeout >/dev/null 2>&1; then
     timeout "$_bd_timeout" bd hooks run pre-push "$@"
     _bd_exit=$?
