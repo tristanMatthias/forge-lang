@@ -1,5 +1,7 @@
-defer
+C
+A
 good
-errdefer
-defer
+C
+B
+A
 null

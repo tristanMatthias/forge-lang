@@ -1,46 +1,47 @@
 // WHY: codegen for `defer` and `errdefer` statements (spec Axis 12.7).
-// defer runs at every scope exit in LIFO order.
-// errdefer runs only on error exits (? propagation).
+// Both use a single unified stack so they interleave in LIFO declaration
+// order. defer = Frame (always runs), errdefer = ErrFrame (error only).
 
 use core.ast.{Expr, VarEnv, SExpr}
 use codegen.types.{Ctx, DeferStack}
 
-// Global defer stack — reset at function entry, pushed by defer,
-// emitted before return.
+// Single unified stack — reset at function entry, pushed by defer/errdefer.
 export mut DEFER_STACK: DeferStack = .End
-export mut ERRDEFER_STACK: DeferStack = .End
 
 export fn defer_push(body: SExpr) {
     DEFER_STACK = .Frame(body, DEFER_STACK)
 }
 
 export fn errdefer_push(body: SExpr) {
-    ERRDEFER_STACK = .Frame(body, ERRDEFER_STACK)
+    DEFER_STACK = .ErrFrame(body, DEFER_STACK)
 }
 
 export fn defer_reset() {
     DEFER_STACK = .End
-    ERRDEFER_STACK = .End
 }
 
-// Emit all deferred expressions in LIFO order before a normal return.
+// Emit defers for a normal return — skip ErrFrame entries.
 export fn emit_defers(ctx: Ctx, env: VarEnv) {
-    emit_defer_stack(ctx, env, DEFER_STACK)
+    emit_stack_filtered(ctx, env, DEFER_STACK, false)
 }
 
-// Emit both errdefer AND defer in LIFO order before an error return.
-// Per spec Axis 12.7: errdefer runs on error path, defer runs always.
+// Emit defers for an error return — run ALL entries (Frame + ErrFrame).
 export fn emit_defers_on_error(ctx: Ctx, env: VarEnv) {
-    emit_defer_stack(ctx, env, ERRDEFER_STACK)
-    emit_defer_stack(ctx, env, DEFER_STACK)
+    emit_stack_filtered(ctx, env, DEFER_STACK, true)
 }
 
-fn emit_defer_stack(ctx: Ctx, env: VarEnv, stack: DeferStack) {
+fn emit_stack_filtered(ctx: Ctx, env: VarEnv, stack: DeferStack, is_error: int) {
     match stack {
         .End -> {}
         .Frame(body, next) -> {
+            // defer always runs
             ctx.emit(env, body.node)
-            emit_defer_stack(ctx, env, next)
+            emit_stack_filtered(ctx, env, next, is_error)
+        }
+        .ErrFrame(body, next) -> {
+            // errdefer only runs on error path
+            if is_error { ctx.emit(env, body.node) }
+            emit_stack_filtered(ctx, env, next, is_error)
         }
     }
 }

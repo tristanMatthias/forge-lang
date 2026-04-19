@@ -1,4 +1,4 @@
-// errdefer: error-only cleanup (spec Axis 12.7)
+// errdefer: error-only cleanup with LIFO interleaving (spec Axis 12.7, 9.11)
 
 fn maybe_null(name: string) -> string? {
     if name == "bad" { return null }
@@ -6,22 +6,26 @@ fn maybe_null(name: string) -> string? {
 }
 
 fn test_success() -> string? {
-    defer { println("defer") }
-    errdefer { println("errdefer") }
+    defer { println("A") }
+    errdefer { println("B") }
+    defer { println("C") }
     let x = maybe_null("good")?
     x
 }
 
 fn test_error() -> string? {
-    defer { println("defer") }
-    errdefer { println("errdefer") }
+    defer { println("A") }
+    errdefer { println("B") }
+    defer { println("C") }
     let x = maybe_null("bad")?
     x
 }
 
 fn main() {
+    // Success: C, A (errdefer B skipped)
     let r1 = test_success()
     if r1 != null { println(r1!) }
+    // Error: C, B, A (all in LIFO order)
     let r2 = test_error()
     if r2 == null { println("null") }
 }

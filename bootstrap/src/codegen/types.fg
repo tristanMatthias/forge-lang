@@ -235,6 +235,7 @@ export enum LoopStack {
 export enum DeferStack {
     End
     Frame(body: SExpr, next: DeferStack)
+    ErrFrame(body: SExpr, next: DeferStack)
 }
 
 

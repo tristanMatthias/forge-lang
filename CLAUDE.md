@@ -276,6 +276,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 12. Be honest about scope. Never say "one more fix." Give real estimates based on data, not optimism.
 13. Do large refactors when necessary. Don't avoid the right fix because it's big.
 14. ALWAYS fix hacks and workarounds before ending a session. No hack survives a commit. If a proper fix requires a seed cycle, do the seed cycle.
+15. NEVER skip a feature because it's "complex" or "a bigger lift." You discovered the defer/errdefer interleaving is wrong — fix it NOW, don't file a ticket and move on. The ticket IS the work. Do it.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
