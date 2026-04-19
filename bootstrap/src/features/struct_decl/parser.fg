@@ -1,5 +1,5 @@
-// WHY: parses `type Foo = { ... }` declarations and the
-// supporting field grammars (declaration + literal init).
+// WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
+// and the supporting field grammars (declaration + literal init).
 
 use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList}
 use parse.{Parser}
@@ -47,6 +47,24 @@ impl Parser {
             return Stmt.TypeDecl(name, tp, fields)
         }
         Stmt.TypeDecl(name, tp, FieldList.End)
+    }
+
+    // shape Name = { field: Type, ... }
+    // Structural type — all fields public, width subtyping (spec Axis 3.1-3.7).
+    fn parse_shape_declaration(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected shape name")?
+        if !self.consume(Tk.Equal, "expected `=` after shape name") {
+            return null
+        }
+        if !self.consume(Tk.LeftBrace, "expected `{` after `=` in shape declaration") {
+            return null
+        }
+        let fields = self.parse_field_list()?
+        if !self.consume(Tk.RightBrace, "expected `}` after shape fields") {
+            return null
+        }
+        Stmt.ShapeDecl(name, fields)
     }
 
     // Parse a list of identifiers separated by commas: {a, b, c}

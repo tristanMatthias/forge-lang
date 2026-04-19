@@ -1,0 +1,25 @@
+// Shape declarations: structural types with width subtyping (spec Axis 3).
+
+shape HasName = { name: string }
+shape HasEmail = { email: string }
+
+type User = { name: string, email: string, age: int }
+type Product = { name: string, price: int }
+
+fn greet(thing: HasName) -> string {
+    "hello " + thing.name
+}
+
+fn main() {
+    // A User satisfies HasName (has name field)
+    let user = User { name: "alice", email: "a@test.com", age: 30 }
+    println(greet(user))
+
+    // A Product also satisfies HasName
+    let product = Product { name: "widget", price: 10 }
+    println(greet(product))
+
+    // Shape can be constructed directly
+    let named = HasName { name: "world" }
+    println(greet(named))
+}

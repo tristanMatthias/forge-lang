@@ -330,6 +330,9 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let resolved = tc_resolve_type_operator(fields, tc.structs)
                     tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
                 }
+                .ShapeDecl(name, fields) -> tc with {
+                    structs: StructTypeReg.Node(name, fields, tc.structs)
+                }
                 .EnumDecl(name, _, variants) -> tc with {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
                 }

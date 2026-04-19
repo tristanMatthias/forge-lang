@@ -221,6 +221,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "given"    -> Tk.KwGiven
         "then"     -> Tk.KwThen
         "select"   -> Tk.KwSelect
+        "shape"    -> Tk.KwShape
         "parallel" -> Tk.KwParallel
         _          -> Tk.Identifier
     }

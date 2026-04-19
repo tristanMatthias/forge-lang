@@ -39,7 +39,7 @@ fn classify(s: Shape) -> string {
 }
 
 // is with struct fields
-type Tagged = { shape: Shape, label: string }
+type Tagged = { form: Shape, label: string }
 
 fn main() {
     // Basic
@@ -74,8 +74,8 @@ fn main() {
     }
 
     // With struct
-    let tagged = Tagged { shape: Shape.Square(4), label: "box" }
-    if tagged.shape is .Square {
+    let tagged = Tagged { form: Shape.Square(4), label: "box" }
+    if tagged.form is .Square {
         println(tagged.label)
     }
 }

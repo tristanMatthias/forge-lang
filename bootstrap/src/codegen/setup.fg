@@ -329,6 +329,17 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
                     forge_llvm_type_array_free(field_arr)
                     StructReg.Node(name, resolved_fields, reg)
                 }
+                .ShapeDecl(name, fields) -> {
+                    // Shapes compile to same LLVM layout as structs (spec Axis 3)
+                    let resolved_fields = resolve_field_list(fields, reg, EnumReg.End)
+                    let count = field_list_length(resolved_fields)
+                    let field_arr = forge_llvm_type_array_new(count)
+                    fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, 0)
+                    let st = forge_llvm_struct_create_named(ctx, name)
+                    forge_llvm_struct_set_body(st, field_arr, count, 0)
+                    forge_llvm_type_array_free(field_arr)
+                    StructReg.Node(name, resolved_fields, reg)
+                }
                 .Module(_, body) -> declare_structs(ctx, i64t, i1t, dt, pt, body, reg)
                 _ -> reg
             }

@@ -356,6 +356,7 @@ export enum Stmt {
     Return(value: Expr)
     ReturnEmpty
     TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
+    ShapeDecl(name: string, fields: FieldList)
     EnumDecl(name: string, type_params: TypeParamList, variants: VariantList)
     Match(subject: Expr, arms: MatchArmList)
     Impl(type_name: string, methods: StmtList)
@@ -764,6 +765,7 @@ export fn render_stmt(stmt: Stmt) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "(type ${name}${tp_part} ${render_field_list(fields)})"
         }
+        .ShapeDecl(name, fields) -> "(shape ${name} ${render_field_list(fields)})"
         .EnumDecl(name, tp, variants) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
@@ -938,6 +940,7 @@ export enum Tk {
     KwParallel
     KwReturn
     KwSelect
+    KwShape
     KwSpec
     KwThen
     KwTrait
@@ -982,6 +985,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwParallel -> "kw_parallel"
         .KwReturn -> "kw_return"
         .KwSelect -> "kw_select"
+        .KwShape -> "kw_shape"
         .KwSpec -> "kw_spec"
         .KwThen -> "kw_then"
         .KwTrait -> "kw_trait"

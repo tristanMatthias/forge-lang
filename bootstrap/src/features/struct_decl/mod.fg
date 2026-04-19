@@ -80,6 +80,12 @@ export fn init_struct_decl(reg: Registry) {
         parse_decl: (p: Parser) -> p.parse_type_declaration(),
     }
     register(reg, f5)
+
+    let f6 = feature_new("shape_decl") with {
+        decl_keyword: "kw_shape",
+        parse_decl: (p: Parser) -> p.parse_shape_declaration(),
+    }
+    register(reg, f6)
 }
 
 fn struct_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
