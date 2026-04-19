@@ -172,6 +172,11 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
             }
             let g = ctx.lookup_toplevel(name)
             if g.found {
+                if needs_union_wrap(r.ty, g.ty) {
+                    let wrapped = emit_union_wrap(ctx, r.value, r.ty, g.ty)?
+                    ctx.store(wrapped.value, g.llvm_global)
+                    return ok_emit_typed(wrapped.value, g.ty)
+                }
                 ctx.store(r.value, g.llvm_global)
                 return ok_emit_typed(r.value, g.ty)
             }

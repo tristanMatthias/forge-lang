@@ -3,6 +3,7 @@
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
 use codegen.types.{Ctx, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelOk}
 use codegen.helpers.{stmts_last_expr}
 use features.fn_decl.codegen.{emit_function_bodies}
@@ -620,7 +621,12 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> Resul
         return Result.Err("codegen error: global `${name}` not declared")
     }
     let r = ctx.emit(env, init)?
-    ctx.store(r.value, g.llvm_global)
+    if needs_union_wrap(r.ty, g.ty) {
+        let wrapped = emit_union_wrap(ctx, r.value, r.ty, g.ty)?
+        ctx.store(wrapped.value, g.llvm_global)
+    } else {
+        ctx.store(r.value, g.llvm_global)
+    }
     let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
     let updated_cg = ctx.with_top_level(updated_top)
     Result.Ok(TopLevelOk { ctx: updated_cg, env })
