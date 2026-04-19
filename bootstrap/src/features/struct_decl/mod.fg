@@ -65,13 +65,8 @@ export fn init_struct_decl(reg: Registry) {
     let f4 = feature_new("field_assign") with {
         expr_tag: Expr.FieldAssign(Expr.Null, "", Expr.Null),
         emit_expr: field_assign_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr {
-            .FieldAssign(obj, _, value) -> {
-                let after_obj = resolve_expr(r, obj)
-                resolve_expr(after_obj, value)
-            }
-            _ -> r
-        },
+        // FieldAssign resolution is handled directly in resolve/mod.fg (deep immutability check)
+        resolve_expr: (r: int, expr: Expr) -> r,
         check_expr: field_assign_check_expr,
         eval_expr: (rt: int, expr: Expr) -> match expr {
             .FieldAssign(_, _, _) -> error_result(rt, "field assignment is not supported by the tree-walk evaluator")

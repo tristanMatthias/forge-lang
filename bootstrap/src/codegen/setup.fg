@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_length, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
 use codegen.types.{Ctx, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelOk}
@@ -461,29 +461,7 @@ fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
     }
 }
 
-fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
-    match base {
-        .End -> .End
-        .Node(name, _, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
-        .Node(name, ty, r, next) -> .Node(name, ty, r, filter_fields_without(next, excluded))
-    }
-}
-
-fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
-    match base {
-        .End -> .End
-        .Node(name, ty, r, next) if field_list_has(included, name) -> .Node(name, ty, r, filter_fields_only(next, included))
-        .Node(_, _, _, next) -> filter_fields_only(next, included)
-    }
-}
-
-fn field_list_has(list: FieldList, target: string) -> bool {
-    match list {
-        .End -> false
-        .Node(name, _, _, _) if name == target -> true
-        .Node(_, _, _, next) -> field_list_has(next, target)
-    }
-}
+// field_list_has, filter_fields_without, filter_fields_only now in core/ast.fg
 
 fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
     if count <= 0 {

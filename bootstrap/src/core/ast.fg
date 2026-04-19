@@ -491,6 +491,30 @@ export fn field_list_length(fields: FieldList) -> int {
     }
 }
 
+export fn field_list_has(list: FieldList, target: string) -> bool {
+    match list {
+        .End -> false
+        .Node(n, _, _, _) if n == target -> true
+        .Node(_, _, _, next) -> field_list_has(next, target)
+    }
+}
+
+export fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
+    match base {
+        .End -> FieldList.End
+        .Node(name, _, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
+        .Node(name, ty, r, next) -> FieldList.Node(name, ty, r, filter_fields_without(next, excluded))
+    }
+}
+
+export fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
+    match base {
+        .End -> FieldList.End
+        .Node(name, ty, r, next) if field_list_has(included, name) -> FieldList.Node(name, ty, r, filter_fields_only(next, included))
+        .Node(_, _, _, next) -> filter_fields_only(next, included)
+    }
+}
+
 export fn field_init_length(inits: FieldInitList) -> int {
     match inits {
         .End -> 0
