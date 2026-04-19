@@ -69,6 +69,14 @@ fn tc_fn_arity(fns: FnTypeEntry, name: string) -> int {
     }
 }
 
+fn tc_fn_params(fns: FnTypeEntry, name: string) -> ParamList {
+    match fns {
+        .End -> ParamList.End
+        .Node(n, params, _, _) if n == name -> params
+        .Node(_, _, _, next) -> tc_fn_params(next, name)
+    }
+}
+
 
 fn tc_count_args(list: ExprList) -> int {
     match list {
@@ -142,10 +150,25 @@ export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     }
 }
 
+// Shape name set — tracks which struct names are shapes (structural types).
+enum ShapeSet {
+    End
+    Node(name: string, next: ShapeSet)
+}
+
+fn is_shape(set: ShapeSet, name: string) -> bool {
+    match set {
+        .End -> false
+        .Node(n, _) if n == name -> true
+        .Node(_, next) -> is_shape(next, name)
+    }
+}
+
 type TC = {
     types: TypeEntry,
     fns: FnTypeEntry,
     structs: StructTypeReg,
+    shapes: ShapeSet,
     enums: EnumTypeReg,
     depth: int,
     bag: DiagnosticBag,
@@ -166,6 +189,7 @@ fn tc_new() -> TC {
         types: TypeEntry.End,
         fns: FnTypeEntry.End,
         structs: StructTypeReg.End,
+        shapes: ShapeSet.End,
         enums: EnumTypeReg.End,
         depth: 0,
         bag: bag_new(),
@@ -331,7 +355,8 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
                 }
                 .ShapeDecl(name, fields) -> tc with {
-                    structs: StructTypeReg.Node(name, fields, tc.structs)
+                    structs: StructTypeReg.Node(name, fields, tc.structs),
+                    shapes: ShapeSet.Node(name, tc.shapes),
                 }
                 .EnumDecl(name, _, variants) -> tc with {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
@@ -597,6 +622,54 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
+// ── Shape structural compatibility ──
+// Verify that all fields of a shape exist in the argument type.
+// Called when a function parameter is a shape and the argument is a struct.
+
+fn tc_check_shape_args(tc: TC, params: ParamList, args: ExprList) -> TC {
+    match params {
+        .End -> tc
+        .Node(_, param_ty_str, _, next_params) -> match args {
+            .End -> tc
+            .Node(arg_se, next_args) -> {
+                let arg_ty = check_expr(tc, arg_se.node).ty
+                let checked = tc_check_shape_compat(tc, param_ty_str, arg_ty)
+                tc_check_shape_args(checked, next_params, next_args)
+            }
+        }
+    }
+}
+
+fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC {
+    // Only check when parameter type is a shape
+    if !is_shape(tc.shapes, param_ty_str) { return tc }
+    // Get the shape's required fields
+    let shape_fields = struct_type_lookup(tc.structs, param_ty_str)
+    // Get the argument's actual fields
+    let arg_name = match arg_ty {
+        .Struct(n) -> n
+        _ -> ""
+    }
+    if arg_name == "" { return tc }
+    let arg_fields = struct_type_lookup(tc.structs, arg_name)
+    // Check each shape field exists in the arg type
+    tc_check_fields_present(tc, param_ty_str, arg_name, shape_fields, arg_fields)
+}
+
+fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, required: FieldList, available: FieldList) -> TC {
+    match required {
+        .End -> tc
+        .Node(field_name, _, _, next) -> {
+            if !field_list_has(available, field_name) {
+                let msg = "type `${arg_name}` does not satisfy shape `${shape_name}` — missing field `${field_name}`"
+                tc_check_fields_present(tc_report(tc, DiagCode.TypeMismatch, msg), shape_name, arg_name, next, available)
+            } else {
+                tc_check_fields_present(tc, shape_name, arg_name, next, available)
+            }
+        }
+    }
+}
+
 // ── Binary operator type rules ──
 
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
@@ -639,7 +712,9 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                     let msg = "`${name}` expects ${string(expected)} argument${if expected != 1 { "s" } else { ""}}, got ${string(actual)}"
                     return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, name))
                 }
-                return tc_er(checked, fn_type_lookup(checked.fns, name))
+                // Check shape structural compatibility for each argument
+                let shape_checked = tc_check_shape_args(checked, tc_fn_params(checked.fns, name), args)
+                return tc_er(shape_checked, fn_type_lookup(shape_checked.fns, name))
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)
