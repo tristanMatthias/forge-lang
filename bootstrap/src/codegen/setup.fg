@@ -193,6 +193,13 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     let dt = forge_llvm_double_type(lc)
     let structs = declare_structs(lc, i64t, i1t, dt, pt, stmts, StructReg.End)
     let enums = declare_enums(lc, i64t, i1t, dt, pt, stmts, structs, EnumReg.End)
+    // Union type layout: {i64 tag, ptr payload} — same as enums
+    let union_arr = forge_llvm_type_array_new(2)
+    forge_llvm_type_array_set(union_arr, 0, i64t)
+    forge_llvm_type_array_set(union_arr, 1, pt)
+    let union_st = forge_llvm_struct_create_named(lc, "__union")
+    forge_llvm_struct_set_body(union_st, union_arr, 2, 0)
+    forge_llvm_type_array_free(union_arr)
     let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
     let top_level_vars = declare_globals(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, TopLevelVars.End)
     let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, FnRetTypes.End)

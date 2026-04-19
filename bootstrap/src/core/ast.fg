@@ -58,6 +58,7 @@ export enum PatternList {
 //   _                   → wildcard
 //   "string" / 42 / true / false → literal match
 //   .Variant(.Inner(x)) → nested destructure (NestedVariant)
+//   int(n) / string(s)  → union type pattern (binds the unwrapped value)
 export enum Pattern {
     Wildcard
     Variant(name: string, bindings: ParamList)
@@ -67,6 +68,7 @@ export enum Pattern {
     LitFloat(value: string)
     NestedVariant(name: string, sub_patterns: PatternList)
     Or(left: Pattern, right: Pattern)
+    TypePattern(type_name: string, binding: string)
 }
 
 // Arms of a match expression/statement, terminated by `End`.
@@ -947,6 +949,7 @@ export fn render_pattern(p: Pattern) -> string {
         .Wildcard -> "_"
         .Variant(name, bindings) -> ".${name}${render_param_list(bindings)}"
         .Or(left, right) -> "${render_pattern(left)} or ${render_pattern(right)}"
+        .TypePattern(type_name, binding) -> "${type_name}(${binding})"
         _ -> "?"
     }
 }

@@ -200,7 +200,20 @@ impl Parser {
             self.advance()
             return Pattern.LitBool(false)
         }
-        if !self.consume(Tk.Dot, "expected `.`, `_`, or literal to start pattern") {
+        // Union type pattern: int(n), string(s), MyStruct(v)
+        // Recognized when an identifier is followed by '(' — distinguishes from
+        // enum variant patterns which start with '.'.
+        if self.check(Tk.Identifier) && self.peek_after_ident_is_paren() {
+            let type_name = self.current_lexeme
+            self.advance()  // past type name identifier
+            if !self.consume(Tk.LeftParen, "expected `(` in type pattern") { return null }
+            let binding = self.consume_identifier("expected binding name in type pattern")?
+            if !self.consume(Tk.RightParen, "expected `)` after type pattern binding") {
+                return null
+            }
+            return Pattern.TypePattern(type_name, binding)
+        }
+        if !self.consume(Tk.Dot, "expected `.`, `_`, literal, or type pattern to start pattern") {
             return null
         }
         let name = self.consume_identifier("expected variant name in pattern")?

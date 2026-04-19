@@ -1304,6 +1304,19 @@ impl Parser {
         false
     }
 
+    fn peek_after_ident_is_paren(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == "("
+            }
+            i = i + 1
+        }
+        false
+    }
+
     fn advance(self) {
         self.prev_line = self.current_line
         self.advance_token()

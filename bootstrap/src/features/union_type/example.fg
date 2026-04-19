@@ -1,0 +1,39 @@
+/// expect: hello
+/// expect: 42
+/// expect: int value: 10
+/// expect: string value: world
+/// expect: matched wildcard
+
+fn show(val: int | string) -> string {
+    match val {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+fn describe(val: int | string) -> string {
+    match val {
+        int(n) -> "int value: " + string(n)
+        string(s) -> "string value: " + s
+    }
+}
+
+fn with_wildcard(val: int | string) -> string {
+    match val {
+        int(n) -> "got int: " + string(n)
+        _ -> "matched wildcard"
+    }
+}
+
+fn main() {
+    // Basic union parameter passing and matching
+    println(show("hello"))
+    println(show(42))
+
+    // Detailed description
+    println(describe(10))
+    println(describe("world"))
+
+    // Wildcard in union match
+    println(with_wildcard("anything"))
+}

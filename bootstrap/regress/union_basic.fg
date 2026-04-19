@@ -1,0 +1,49 @@
+/// expect: hello
+/// expect: 42
+/// expect: int value: 10
+/// expect: string value: world
+/// expect: matched wildcard
+/// expect: let int: 99
+/// expect: let string: hi
+
+fn show(val: int | string) -> string {
+    match val {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+fn describe(val: int | string) -> string {
+    match val {
+        int(n) -> "int value: " + string(n)
+        string(s) -> "string value: " + s
+    }
+}
+
+fn with_wildcard(val: int | string) -> string {
+    match val {
+        int(n) -> "got int: " + string(n)
+        _ -> "matched wildcard"
+    }
+}
+
+fn main() {
+    println(show("hello"))
+    println(show(42))
+    println(describe(10))
+    println(describe("world"))
+    println(with_wildcard("anything"))
+
+    // Let with union type annotation
+    let x: int | string = 99
+    match x {
+        int(n) -> println("let int: " + string(n))
+        string(s) -> println("let string: " + s)
+    }
+
+    let y: int | string = "hi"
+    match y {
+        int(n) -> println("let int: " + string(n))
+        string(s) -> println("let string: " + s)
+    }
+}

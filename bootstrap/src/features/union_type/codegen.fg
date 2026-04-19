@@ -1,0 +1,63 @@
+// WHY: emits union type wrapping (value → {tag, payload}) and unwrapping
+// (tag check + payload extraction). Union types use the same discriminated
+// layout as enums: {i64 tag, ptr payload}. Tags are djb2 hashes of the
+// type name (e.g. "int", "string", "MyStruct").
+
+use core.ast.{TypeList, ValueType, vtype_display, vtype_eq, type_list_len, type_list_at, union_contains}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit}
+use features.error_propagation.{Result}
+
+// Wrap a value into a union-typed discriminated struct {i64 tag, ptr payload}.
+// The tag is the djb2 hash of the value's type name.
+export fn emit_union_wrap(ctx: Ctx, val: ptr, val_ty: ValueType, union_ty: ValueType) -> Result<EmitValue, string> {
+    let type_name = vtype_display(val_ty)
+    let tag = forge_variant_hash(type_name)
+    let st_ty = ctx.get_type("__union")
+    // Allocate outer struct (16 bytes: i64 tag + ptr payload)
+    let buf = ctx.malloc(ctx.i64(16))
+    let tag_gep = ctx.gep(st_ty, buf, 0, "union_tag_ptr")
+    ctx.store(ctx.i64(tag), tag_gep)
+    // Store payload: value as i64 in a heap slot
+    let pay_buf = ctx.malloc(ctx.i64(8))
+    ctx.store_slot(pay_buf, 0, val, val_ty)
+    let pay_gep = ctx.gep(st_ty, buf, 1, "union_pay_ptr")
+    ctx.store(pay_buf, pay_gep)
+    let as_i64 = ctx.to_i64(buf, "union_i64")
+    ok_emit_typed(as_i64, union_ty)
+}
+
+// Extract the tag from a union value
+export fn emit_union_tag(ctx: Ctx, val: ptr) -> ptr {
+    let obj = ctx.to_ptr(val, "union_obj")
+    let st_ty = ctx.get_type("__union")
+    let tag_gep = ctx.gep(st_ty, obj, 0, "union_tag_ptr")
+    ctx.load_i64(tag_gep, "union_tag")
+}
+
+// Extract the payload pointer from a union value
+export fn emit_union_payload(ctx: Ctx, val: ptr) -> ptr {
+    let obj = ctx.to_ptr(val, "union_pay_obj")
+    let st_ty = ctx.get_type("__union")
+    let pay_gep = ctx.gep(st_ty, obj, 1, "union_pay_ptr")
+    ctx.load_typed(ValueType.Ptr, pay_gep, "union_payload")
+}
+
+// Load the actual value from a union payload given the expected type
+export fn emit_union_extract(ctx: Ctx, val: ptr, expected_ty: ValueType) -> EmitValue {
+    let pay = emit_union_payload(ctx, val)
+    let loaded = ctx.load_slot_typed(pay, 0, expected_ty, "union_val")
+    EmitValue { value: loaded, ty: expected_ty }
+}
+
+// Check if a value needs union wrapping: the value type is a concrete type
+// and the target is a union containing that type.
+export fn needs_union_wrap(val_ty: ValueType, target_ty: ValueType) -> bool {
+    match target_ty {
+        .Union(types) -> {
+            // Already a union — no wrapping needed
+            if val_ty is .Union { return false }
+            union_contains(types, val_ty)
+        }
+        _ -> false
+    }
+}

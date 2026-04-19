@@ -349,6 +349,7 @@ fn bind_pattern_ctx(ctx: NameCtx, pattern: Pattern) -> NameCtx {
         .Wildcard -> ctx
         .Variant(_, bindings) -> bind_params_ctx(ctx, bindings)
         .NestedVariant(_, sub_pats) -> bind_pattern_list(ctx, sub_pats)
+        .TypePattern(_, binding) -> ctx_with_locals(ctx, LocalScope.Node(binding, false, true, 0, ctx.locals))
         _ -> ctx  // LitString, LitInt, LitBool, LitFloat — no bindings
     }
 }

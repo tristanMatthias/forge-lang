@@ -1,7 +1,7 @@
 // WHY: resolves names in match arms — binds pattern variables into scope.
 
 use core.ast.{Pattern, PatternList, MatchArmList, WhenArmList}
-use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params}
+use resolve.{Resolver, enter_resolve_scope, exit_resolve_scope, resolve_expr, declare_params, declare_name, define_name}
 
 export fn resolve_match_arms(r: Resolver, arms: MatchArmList) -> Resolver {
     mut current = arms
@@ -28,6 +28,7 @@ fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
         .Wildcard -> r
         .Variant(_, bindings) -> declare_params(r, bindings)
         .NestedVariant(_, sub_pats) -> declare_pattern_list(r, sub_pats)
+        .TypePattern(_, binding) -> define_name(declare_name(r, binding), binding)
         _ -> r  // Literal patterns don't bind variables
     }
 }

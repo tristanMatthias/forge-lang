@@ -5,6 +5,7 @@
 use core.ast.{Expr, ValueType, VarEnv, vtype_trait_name, vtype_struct_name, vtype_enum_name}
 use codegen.types.{Ctx,  ok_stmt, translate_type_ctx}
 use features.trait_decl.codegen.{box_for_trait}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
 export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: string, initializer: Expr) -> Result<VarEnv, string> {
     let r = ctx.emit(env, initializer)?
@@ -22,6 +23,11 @@ export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: stri
             let obj_i64 = box_for_trait(ctx, r.value, trait_name, concrete_name)
             return ok_stmt(ctx.bind(env, name, obj_i64, var_ty))
         }
+    }
+    // Union wrapping: `let x: int | string = 42` → wrap into discriminated union
+    if needs_union_wrap(r.ty, var_ty) {
+        let wrapped = emit_union_wrap(ctx, r.value, r.ty, var_ty)?
+        return ok_stmt(ctx.bind(env, name, wrapped.value, var_ty))
     }
     ok_stmt(ctx.bind(env, name, r.value, var_ty))
 }

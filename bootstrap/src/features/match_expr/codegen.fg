@@ -1,7 +1,8 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
-use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str}
-use codegen.types.{Ctx, EmitValue,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty}
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, vtype_is_union, vtype_union_types, type_list_len, type_list_at}
+use codegen.types.{Ctx, EmitValue,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, translate_type_ctx}
+use features.union_type.codegen.{emit_union_tag, emit_union_extract}
 
 fn ok_match_ty(ty: ValueType) -> Result<ValueType, string> {
     if false { return Result.Err("") }
@@ -29,6 +30,10 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
     match ctx.emit(env, subject) {
         .Err(msg) -> forward_emit_err(msg)
         .Ok(r) -> {
+            // Union type match: tag-based dispatch on union values
+            if vtype_is_union(emit_value_ty(r)) {
+                return emit_union_match_expr(ctx, env, r, arms)
+            }
             let enum_name = vtype_enum_name(emit_value_ty(r))
             if enum_name == "" {
                 // Non-enum match: treat as guard-based if-else chain.
@@ -47,6 +52,78 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
             ctx.position(merge_bb)
             let loaded = ctx.load_i64(result_slot, "match_val")
             ok_emit_typed(loaded, result_ty)
+        }
+    }
+}
+
+// ── Union match expression ──
+
+fn emit_union_match_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<EmitValue, string> {
+    let tag_val = emit_union_tag(ctx, emit_value_ptr(subj))
+    let result_slot = ctx.alloca_i64("union_match_result")
+    ctx.store(ctx.i64(0), result_slot)
+    let merge_bb = ctx.bb("union_match_end")
+    let union_types = vtype_union_types(emit_value_ty(subj))
+    let result_ty = emit_union_match_arms(ctx, env, arms, emit_value_ptr(subj), tag_val, union_types, merge_bb, result_slot)?
+    ctx.position(merge_bb)
+    let loaded = ctx.load_i64(result_slot, "union_match_val")
+    ok_emit_typed(loaded, result_ty)
+}
+
+fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, subj_val: ptr, tag_val: ptr, union_types: TypeList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
+    match arms {
+        .End -> {
+            ctx.match_trap(tag_val)
+            ok_match_ty(.Int)
+        }
+        .Node(pattern, guard, body, next) -> {
+            match pattern {
+                .TypePattern(type_name, binding) -> {
+                    let arm_bb = ctx.bb("union_arm")
+                    let next_bb = ctx.bb("union_next")
+                    // Compare tag against hash of type name
+                    let expected_tag = ctx.i64(forge_variant_hash(type_name))
+                    let cmp = ctx.eq(tag_val, expected_tag, "union_tag_eq")
+                    ctx.cond_br(cmp, arm_bb, next_bb)
+                    ctx.position(arm_bb)
+                    // Extract payload and bind to variable
+                    let member_ty = translate_type_ctx(ctx, type_name)
+                    let extracted = emit_union_extract(ctx, subj_val, member_ty)
+                    let arm_env = ctx.bind(env, binding, extracted.value, member_ty)
+                    // Guard
+                    if guard != null {
+                        match ctx.emit(arm_env, guard!.node) {
+                            .Err(msg) -> return err_match_ty(msg)
+                            .Ok(guard_r) -> {
+                                let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
+                                let guard_pass_bb = ctx.bb("guard_pass")
+                                ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
+                                ctx.position(guard_pass_bb)
+                            }
+                        }
+                    }
+                    match ctx.emit(arm_env, body.node) {
+                        .Err(msg) -> err_match_ty(msg)
+                        .Ok(body_result) -> {
+                            ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                            ctx.position(next_bb)
+                            let rest_ty = emit_union_match_arms(ctx, env, next, subj_val, tag_val, union_types, merge_bb, result_slot)?
+                            ok_match_ty(emit_value_ty(body_result))
+                        }
+                    }
+                }
+                .Wildcard -> {
+                    // Wildcard matches everything — emit body directly, no branch needed
+                    match ctx.emit(env, body.node) {
+                        .Err(msg) -> err_match_ty(msg)
+                        .Ok(body_result) -> {
+                            ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                            ok_match_ty(emit_value_ty(body_result))
+                        }
+                    }
+                }
+                _ -> err_match_ty("union match requires type patterns like `int(n)` or `string(s)`, or `_` wildcard")
+            }
         }
     }
 }
@@ -100,6 +177,11 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
     match ctx.emit(env, subject) {
         .Err(msg) -> forward_stmt_err(msg)
         .Ok(r) -> {
+            // Union type match
+            if vtype_is_union(emit_value_ty(r)) {
+                let ur = emit_union_match_expr(ctx, env, r, arms)?
+                return ok_stmt(env)
+            }
             let enum_name = vtype_enum_name(emit_value_ty(r))
             if enum_name == "" {
                 // Non-enum match: treat as guard-based if-else chain.

@@ -33,6 +33,7 @@ mod select_stmt
 mod parallel_stmt
 mod modules
 mod eval
+mod union_type
 use features.closures.{init_closures}
 use features.defer_stmt.{init_defer_stmt}
 use features.enum_decl.{init_enum_decl}

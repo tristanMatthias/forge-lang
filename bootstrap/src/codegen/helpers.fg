@@ -1,9 +1,10 @@
 // WHY: shared codegen utilities used across features.
 
 use core.ast.{Expr, ExprList, StmtList, ParamList, VarEnv, ValueType, TypeList, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitValue, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, trait_decl_has, parse_type_list_str}
+use codegen.types.{Ctx, EmitValue, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, trait_decl_has, parse_type_list_str, translate_type_ctx}
 use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
 use features.closures.codegen.{emit_lambda_typed}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
 export fn emit_single_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
     match args {
@@ -50,7 +51,7 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
             }
             let ptype_str = param_type_at(ptypes, idx)
             // Check if the parameter type is a trait and the argument is concrete
-            let value = if ptype_str != "" && trait_decl_has(ctx.trait_decls, ptype_str) {
+            mut value = if ptype_str != "" && trait_decl_has(ctx.trait_decls, ptype_str) {
                 let concrete_name = resolve_concrete_type_name(r.ty)
                 if concrete_name != "" && !trait_decl_has(ctx.trait_decls, concrete_name) {
                     // The argument is a concrete type but the parameter expects a trait.
@@ -62,6 +63,14 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
                 }
             } else {
                 r.value
+            }
+            // Union wrapping: concrete arg → union-typed param
+            if ptype_str != "" {
+                let param_ty = translate_type_ctx(ctx, ptype_str)
+                if needs_union_wrap(r.ty, param_ty) {
+                    let wrapped = emit_union_wrap(ctx, value, r.ty, param_ty)?
+                    value = wrapped.value
+                }
             }
             ctx.value_array_set(arr, idx, value)
             fill_arg_array_boxing(ctx, env, arr, next, ptypes, idx + 1)
