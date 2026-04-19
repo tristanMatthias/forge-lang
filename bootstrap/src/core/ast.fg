@@ -214,7 +214,31 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Trait(n1) -> match b { .Trait(n2) -> n1 == n2, _ -> false }
         .Tuple(_) -> match b { .Tuple(_) -> true, _ -> false }
         .Closure(_, _) -> match b { .Closure(_, _) -> true, _ -> false }
-        .Union(_) -> match b { .Union(_) -> true, _ -> false }
+        .Union(types_a) -> match b {
+            .Union(types_b) -> type_lists_eq(types_a, types_b)
+            _ -> false
+        }
+        _ -> false
+    }
+}
+
+fn type_lists_eq(a: TypeList, b: TypeList) -> bool {
+    match a {
+        .End -> b is .End
+        .Node(ty_a, next_a) -> match b {
+            .End -> false
+            .Node(ty_b, next_b) -> vtype_eq(ty_a, ty_b) && type_lists_eq(next_a, next_b)
+        }
+    }
+}
+
+// Check if a value of type `src` can be assigned to a target of type `dst`.
+// This is broader than vtype_eq: a concrete type is assignable to a union
+// that contains it.
+export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
+    if vtype_eq(src, dst) { return true }
+    match dst {
+        .Union(types) -> union_contains(types, src)
         _ -> false
     }
 }
@@ -339,6 +363,22 @@ export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
         .End -> ValueType.Int
         .Node(ty, next) -> if idx == 0 { ty } else { type_list_at(next, idx - 1) }
     }
+}
+
+// Find top-level | in a type string (not inside <>, (), or []).
+// Returns index of first top-level |, or -1 if none.
+// Used by both typeck and codegen to parse "A|B" union type strings.
+export fn find_type_pipe(s: string) -> int {
+    mut depth = 0
+    mut i = 0
+    while i < s.length {
+        let ch = s.substring(i, i + 1)
+        if ch == "(" || ch == "<" || ch == "[" { depth = depth + 1 }
+        if ch == ")" || ch == ">" || ch == "]" { depth = depth - 1 }
+        if ch == "|" && depth == 0 { return i }
+        i = i + 1
+    }
+    -1
 }
 
 export fn render_type_list(tl: TypeList) -> string {

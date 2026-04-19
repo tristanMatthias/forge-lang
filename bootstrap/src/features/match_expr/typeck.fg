@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq}
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, TypeList, WhenArmList, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, translate_type}
 
@@ -139,6 +139,10 @@ fn find_missing_variants(variants: VariantList, matched: string) -> string {
 }
 
 export fn tc_check_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList) -> TC {
+    // Union exhaustiveness: check all member types are covered
+    if vtype_is_union(subject_ty) {
+        return tc_check_union_exhaustive(tc, subject_ty, arms)
+    }
     let enum_name = vtype_enum_name(subject_ty)
     if enum_name == "" { return tc }
     let variants = enum_type_variants(tc.enums, enum_name)
@@ -171,6 +175,59 @@ fn count_missing(variants: VariantList, matched: string) -> int {
                 count_missing(next, matched)
             } else {
                 1 + count_missing(next, matched)
+            }
+        }
+    }
+}
+
+// ── Union exhaustiveness ──
+
+fn tc_check_union_exhaustive(tc: TC, subject_ty: ValueType, arms: MatchArmList) -> TC {
+    let types = vtype_union_types(subject_ty)
+    let matched = arms_matched_variants(arms)
+    let missing = find_missing_union_members(types, matched)
+    if missing == "" { return tc }
+    if tc.current_line == 0 { return tc }
+    if arms_has_wildcard(arms) {
+        let hidden_count = count_missing_union_members(types, matched)
+        if hidden_count > 2 {
+            let type_str = vtype_display(subject_ty)
+            let sp = span_new(0, 6 + type_str.length, tc.current_line, tc.current_col)
+            let msg = "wildcard arm hides ${string(hidden_count)} members of `${type_str}`: ${missing}"
+            let diag = diag_warning(DiagCode.NonExhaustiveMatch, msg, sp)
+            return tc with { bag: bag_report(tc.bag, diag) }
+        }
+        return tc
+    }
+    let type_str = vtype_display(subject_ty)
+    let msg = "non-exhaustive match on `${type_str}` — missing: ${missing}"
+    tc_report(tc, DiagCode.NonExhaustiveMatch, msg)
+}
+
+fn find_missing_union_members(types: TypeList, matched: string) -> string {
+    match types {
+        .End -> ""
+        .Node(ty, next) -> {
+            let name = vtype_display(ty)
+            let rest = find_missing_union_members(next, matched)
+            if variant_in_matched(name, matched) {
+                rest
+            } else {
+                if rest == "" { name } else { "${name}, ${rest}" }
+            }
+        }
+    }
+}
+
+fn count_missing_union_members(types: TypeList, matched: string) -> int {
+    match types {
+        .End -> 0
+        .Node(ty, next) -> {
+            let name = vtype_display(ty)
+            if variant_in_matched(name, matched) {
+                count_missing_union_members(next, matched)
+            } else {
+                1 + count_missing_union_members(next, matched)
             }
         }
     }

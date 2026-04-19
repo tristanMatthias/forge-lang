@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend, union_type_list_merge}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
 use features.error_propagation.{Result}
 
@@ -358,20 +358,6 @@ fn find_close_paren(s: string, start: int) -> int {
     i
 }
 
-// Find top-level | in a type string (not inside <>, (), or []).
-fn cg_find_pipe(s: string) -> int {
-    mut depth = 0
-    mut i = 0
-    while i < s.length {
-        let ch = s.substring(i, i + 1)
-        if ch == "(" || ch == "<" || ch == "[" { depth = depth + 1 }
-        if ch == ")" || ch == ">" || ch == "]" { depth = depth - 1 }
-        if ch == "|" && depth == 0 { return i }
-        i = i + 1
-    }
-    -1
-}
-
 fn base_type_name(ty: string) -> string {
     mut depth_paren = 0
     mut depth_angle = 0
@@ -451,7 +437,7 @@ export fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> 
 
 export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -> ValueType {
     // Union types: "A|B|C" → ValueType.Union(TypeList)
-    let pipe_idx = cg_find_pipe(ty)
+    let pipe_idx = find_type_pipe(ty)
     if pipe_idx >= 0 {
         let left_str = ty.substring(0, pipe_idx)
         let right_str = ty.substring(pipe_idx + 1, ty.length)

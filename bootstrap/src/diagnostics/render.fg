@@ -196,34 +196,30 @@ fn render_list(source: string, filename: string, list: DiagnosticList) {
     // Errors first (always all shown), then warnings (capped at 10).
     // Two passes to ensure errors are always visible even when buried
     // in hundreds of warnings.
-    render_by_severity(source, filename, list, 1)
-    render_by_severity_capped(source, filename, list, 0, 0, 10)
+    render_errors(source, filename, list)
+    render_warnings(source, filename, list, 0, 10)
 }
 
-// Render all diagnostics matching target severity (1 = error)
-fn render_by_severity(source: string, filename: string, list: DiagnosticList, target: int) {
+fn render_errors(source: string, filename: string, list: DiagnosticList) {
     match list {
         .End -> {}
         .Node(diag, next) -> {
-            let is_match = if target == 1 { diag.severity is .Error } else { diag.severity is .Warning }
-            if is_match { render_diagnostic(source, filename, diag) }
-            render_by_severity(source, filename, next, target)
+            if diag.severity is .Error { render_diagnostic(source, filename, diag) }
+            render_errors(source, filename, next)
         }
     }
 }
 
-// Render non-error diagnostics up to max count
-fn render_by_severity_capped(source: string, filename: string, list: DiagnosticList, is_error: int, count: int, max: int) {
+fn render_warnings(source: string, filename: string, list: DiagnosticList, count: int, max: int) {
     if count >= max { return }
     match list {
         .End -> {}
         .Node(diag, next) -> {
             if diag.severity is .Error {
-                // Skip errors (already rendered)
-                render_by_severity_capped(source, filename, next, is_error, count, max)
+                render_warnings(source, filename, next, count, max)
             } else {
                 render_diagnostic(source, filename, diag)
-                render_by_severity_capped(source, filename, next, is_error, count + 1, max)
+                render_warnings(source, filename, next, count + 1, max)
             }
         }
     }

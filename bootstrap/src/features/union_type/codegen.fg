@@ -3,7 +3,7 @@
 // layout as enums: {i64 tag, ptr payload}. Tags are djb2 hashes of the
 // type name (e.g. "int", "string", "MyStruct").
 
-use core.ast.{TypeList, ValueType, vtype_display, vtype_eq, type_list_len, type_list_at, union_contains}
+use core.ast.{ValueType, vtype_display, vtype_eq, union_contains}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit}
 use features.error_propagation.{Result}
 
