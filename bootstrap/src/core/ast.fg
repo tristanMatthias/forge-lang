@@ -137,6 +137,63 @@ export enum ValueType {
     Trait(name: string),
 }
 
+// TypeExpr — structured type annotation replacing string-based types.
+export enum TypeExpr {
+    Named(name: string)
+    Infer
+    Union(left: TypeExpr, right: TypeExpr)
+    Optional(inner: TypeExpr)
+    FnType(params: TypeExprList, ret: TypeExpr)
+    ListType(elem: TypeExpr)
+    Generic(base: string, args: TypeExprList)
+}
+
+export enum TypeExprList {
+    End
+    Node(ty: TypeExpr, next: TypeExprList)
+}
+
+export fn render_type_expr(te: TypeExpr) -> string {
+    match te {
+        .Named(name) -> name
+        .Infer -> ""
+        .Union(left, right) -> render_type_expr(left) + "|" + render_type_expr(right)
+        .Optional(inner) -> render_type_expr(inner)
+        .FnType(params, ret) -> render_fn_te(params, ret)
+        .ListType(elem) -> "List(" + render_type_expr(elem) + ")"
+        .Generic(base, args) -> base + "<" + render_tel(args) + ">"
+    }
+}
+
+fn render_fn_te(params: TypeExprList, ret: TypeExpr) -> string {
+    let ps = render_tel(params)
+    let rs = render_type_expr(ret)
+    if ps == "" && rs == "" { return "fn" }
+    if ps == "" { return "fn->" + rs }
+    if rs == "" { return "fn(" + ps + ")" }
+    "fn(" + ps + ")->" + rs
+}
+
+fn render_tel(list: TypeExprList) -> string {
+    match list {
+        .End -> ""
+        .Node(ty, next) -> {
+            let s = render_type_expr(ty)
+            match next {
+                .End -> s
+                _ -> s + "," + render_tel(next)
+            }
+        }
+    }
+}
+
+export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprList {
+    match list {
+        .End -> TypeExprList.Node(ty, TypeExprList.End)
+        .Node(head, next) -> TypeExprList.Node(head, type_expr_list_append(next, ty))
+    }
+}
+
 export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
     match a {
         .Int -> b is .Int

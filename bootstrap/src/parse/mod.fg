@@ -10,7 +10,7 @@
 // dispatch, and token consumption helpers.
 
 mod lexer
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, render_type_expr, type_expr_list_append}
 use parse.lexer.{p_is_alpha, p_is_alpha_numeric, p_is_digit}
 use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.parser.{expr_contains_it, wrap_in_it_lambda}
@@ -1331,51 +1331,45 @@ impl Parser {
     // Consume a type reference: identifier optionally followed by
     // generic arguments `<A, B>` and/or nullable `?`.
     // Both generics and nullable are erased — we return the base name.
-    fn consume_type(self, message: string) -> string? {
-        // fn(T, T) -> T  as a type
-        // Returns "fn" for simple fn, "fn->RetType" for fn with return type
+    // Parse a structured type expression. Returns TypeExpr AST node.
+    fn parse_type_expr(self, message: string) -> TypeExpr? {
+        let base = self.parse_type_atom(message)?
+        // Union: A | B | C — lowest precedence in type position
+        if self.check(Tk.Pipe) {
+            mut result = base
+            while self.check(Tk.Pipe) {
+                self.advance()
+                let rhs = self.parse_type_atom("expected type after `|`")?
+                result = TypeExpr.Union(result, rhs)
+            }
+            return result
+        }
+        base
+    }
+
+    // Parse a single type atom (everything except union |).
+    fn parse_type_atom(self, message: string) -> TypeExpr? {
+        // fn(T, T) -> T
         if self.check(Tk.KwFn) {
             self.advance()
-            // Parse fn type: fn, fn(A, B) -> C, fn -> C
-            mut param_str = ""
+            mut params = TypeExprList.End
             if self.check(Tk.LeftParen) {
                 self.advance()
-                mut first = true
-                while !self.check(Tk.RightParen) && !self.check(Tk.Eof) {
-                    if !first {
-                        if self.check(Tk.Comma) { self.advance() }
-                    }
-                    first = false
-                    let pty = self.consume_type("expected parameter type")?
-                    if param_str == "" {
-                        param_str = pty
-                    } else {
-                        param_str = "${param_str},${pty}"
-                    }
-                }
+                params = self.parse_type_expr_list()?
                 if self.check(Tk.RightParen) { self.advance() }
             }
-            if self.check(Tk.Arrow) {
+            let ret = if self.check(Tk.Arrow) {
                 self.advance()
-                let ret = self.consume_type("expected return type after `->`")?
-                if param_str != "" {
-                    return "fn(${param_str})->${ret}"
-                }
-                return "fn->${ret}"
-            }
-            if param_str != "" {
-                return "fn(${param_str})"
-            }
-            return "fn"
+                self.parse_type_expr("expected return type after `->`")?
+            } else { TypeExpr.Infer }
+            return TypeExpr.FnType(params, ret)
         }
         // [T] → List type
         if self.check(Tk.LeftBracket) {
             self.advance()
-            let inner = self.consume_type("expected element type in `[T]`")?
-            if !self.consume(Tk.RightBracket, "expected `]` after list type") {
-                return null
-            }
-            return "List(${inner})"
+            let inner = self.parse_type_expr("expected element type in `[T]`")?
+            if !self.consume(Tk.RightBracket, "expected `]` after list type") { return null }
+            return TypeExpr.ListType(inner)
         }
         if !self.check(Tk.Identifier) {
             self.set_error(message)
@@ -1383,24 +1377,62 @@ impl Parser {
         }
         mut name = self.current_lexeme
         self.advance()
-        // Consume dotted path: core.ast.BinOp -> "core.ast.BinOp"
+        // Dotted path: core.ast.BinOp
         while self.check(Tk.Dot) {
             self.advance()
             if !self.check(Tk.Identifier) {
                 self.set_error("expected identifier after '.' in type path")
                 return null
             }
-            name = "${name}.${self.current_lexeme}"
+            name = name + "." + self.current_lexeme
             self.advance()
         }
-        // Preserve generic arguments: Result<EmitValue, string> -> "Result<EmitValue, string>"
+        // Generic arguments: Result<T, E>
         if self.check(Tk.Less) {
-            name = "${name}${self.collect_angle_brackets()}"
+            let args = self.parse_generic_type_args()?
+            let te = TypeExpr.Generic(name, args)
+            if self.check(Tk.Question) {
+                self.advance()
+                return TypeExpr.Optional(te)
+            }
+            return te
         }
+        let te = TypeExpr.Named(name)
         if self.check(Tk.Question) {
             self.advance()
+            return TypeExpr.Optional(te)
         }
-        name
+        te
+    }
+
+    fn parse_type_expr_list(self) -> TypeExprList? {
+        if self.check(Tk.RightParen) || self.check(Tk.Eof) { return TypeExprList.End }
+        let ty = self.parse_type_expr("expected type")?
+        if self.check(Tk.Comma) { self.advance() }
+        let rest = self.parse_type_expr_list()?
+        TypeExprList.Node(ty, rest)
+    }
+
+    fn parse_generic_type_args(self) -> TypeExprList? {
+        self.advance()
+        mut args = TypeExprList.End
+        mut first = true
+        while !self.check(Tk.Greater) && !self.check(Tk.Eof) {
+            if !first {
+                if self.check(Tk.Comma) { self.advance() }
+            }
+            first = false
+            let ty = self.parse_type_expr("expected generic type argument")?
+            args = type_expr_list_append(args, ty)
+        }
+        if self.check(Tk.Greater) { self.advance() }
+        args
+    }
+
+    // Bridge: consume_type returns string for backward compat.
+    fn consume_type(self, message: string) -> string? {
+        let te = self.parse_type_expr(message)?
+        render_type_expr(te)
     }
 
     // ── Speculative parsing (backtracking) ──
