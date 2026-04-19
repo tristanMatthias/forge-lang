@@ -1,9 +1,69 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, VariantList, ValueType, vtype_display, vtype_enum_name, vtype_eq}
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report}
+
+// ── Divergence detection ──
+// An arm that diverges (return/break/continue) never produces a value
+// for the enclosing expression context and should not participate in
+// match arm type unification.
+
+fn stmts_diverges(stmts: StmtList) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> {
+            match next {
+                .End -> stmt_diverges(stmt_unwrap(ss.node))
+                _ -> stmts_diverges(next)
+            }
+        }
+    }
+}
+
+fn stmt_diverges(stmt: Stmt) -> bool {
+    match stmt {
+        .Return(_) -> true
+        .ReturnEmpty -> true
+        .Break -> true
+        .Continue -> true
+        .Block(body) -> stmts_diverges(body)
+        .Expr(e) -> expr_diverges(e)
+        .If(_, then_b, else_b) -> {
+            if else_b == null { return false }
+            stmt_diverges(then_b) && stmt_diverges(else_b!)
+        }
+        _ -> false
+    }
+}
+
+fn expr_diverges(body: Expr) -> bool {
+    match body {
+        .Block(stmts) -> stmts_diverges(stmts)
+        _ -> false
+    }
+}
+
+// ── Arm type skip logic ──
+// An arm's inferred type should be skipped in type unification when:
+// - The arm diverges (return/break/continue at the end)
+// - The arm's type is Void (side-effecting expression, no value produced)
+// - The arm's type is Int (the type checker's fallback for unresolved expressions)
+// - The arm's type is an unresolved named type (empty name from inference gaps)
+// Int is the fallback because the type checker defaults unknown expressions to Int.
+// Comparing Int against a concrete type is meaningless — Int just means "unknown."
+
+fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
+    if expr_diverges(body) { return true }
+    if vtype_eq(ty, .Void) { return true }
+    if vtype_eq(ty, .Int) { return true }
+    match ty {
+        .Struct(name) -> name == ""
+        .Enum(name) -> name == ""
+        _ -> false
+    }
+}
 
 // ── Exhaustiveness checking ──
 
@@ -157,7 +217,10 @@ export fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType)
             } else { with_bindings }
             let b = check_expr(with_guard, body.node)
             let after = tc_exit(b.tc)
-            let checked_after = if !vtype_eq(first_ty, b.ty) {
+            if arm_type_skip(body.node, b.ty) {
+                return check_match_expr_arms(after, next, first_ty)
+            }
+            let checked_after = if !arm_type_skip(body.node, first_ty) && !vtype_eq(first_ty, b.ty) {
                 let msg = "match expression arms have different types: `${vtype_display(first_ty)}` vs `${vtype_display(b.ty)}`"
                 tc_report(after, DiagCode.TypeMismatch, msg)
             } else { after }
@@ -177,6 +240,10 @@ export fn check_match_expr_infer(tc: TC, arms: MatchArmList) -> ExprResult {
             } else { with_bindings }
             let b = check_expr(with_guard, body.node)
             let after = tc_exit(b.tc)
+            // If the first arm doesn't produce a usable type, infer from next arm
+            if arm_type_skip(body.node, b.ty) {
+                return check_match_expr_infer(after, next)
+            }
             check_match_expr_arms(after, next, b.ty)
         }
     }
@@ -217,7 +284,10 @@ fn check_when_arms(tc: TC, arms: WhenArmList, first_ty: ValueType) -> ExprResult
         .Node(cond, body, next) -> {
             let after_cond = if cond == null { tc } else { check_expr(tc, cond!.node).tc }
             let b = check_expr(after_cond, body.node)
-            let checked_tc = if !vtype_eq(first_ty, b.ty) {
+            if arm_type_skip(body.node, b.ty) {
+                return check_when_arms(b.tc, next, first_ty)
+            }
+            let checked_tc = if !arm_type_skip(body.node, first_ty) && !vtype_eq(first_ty, b.ty) {
                 let msg = "match expression arms have different types: `${vtype_display(first_ty)}` vs `${vtype_display(b.ty)}`"
                 tc_report(b.tc, DiagCode.TypeMismatch, msg)
             } else { b.tc }

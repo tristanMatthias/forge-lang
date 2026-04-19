@@ -19,3 +19,6 @@
 .ralph/progress.json
 .ralph/status.json
 .ralph/docs/
+
+# Beads / Dolt files (added by bd init)
+.beads-credential-key

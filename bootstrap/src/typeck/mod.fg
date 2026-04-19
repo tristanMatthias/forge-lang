@@ -1,9 +1,7 @@
 // WHY: type checker — walks the AST after name resolution and
 // computes a ValueType for every expression. Reports type errors
-// via DiagnosticBag. Currently ADDITIVE ONLY — runs alongside
-// codegen, doesn't gate it, doesn't modify the AST. Once it
-// produces zero false positives on self-compilation, we flip it
-// to gating and start simplifying codegen.
+// via DiagnosticBag. GATES compilation — type errors stop the
+// compile pipeline before codegen runs. Per spec Axis 20.
 
 use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_fn_ret, vtype_list_elem, vtype_tuple_at}
 use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_with_help, span_dummy, span_new}
@@ -303,13 +301,60 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
 
 // ── Pass 1: Declaration collection ──
 
+// Resolve type operator fields (without/only) against the struct registry.
+fn tc_resolve_type_operator(fields: FieldList, reg: StructTypeReg) -> FieldList {
+    match fields {
+        .Node(marker, base_name, _, rest) if marker == "__base" -> {
+            match rest {
+                .Node(_, op, _, excluded) -> {
+                    let base_fields = struct_type_lookup(reg, base_name)
+                    if op == "without" {
+                        return tc_filter_without(base_fields, excluded)
+                    }
+                    if op == "only" {
+                        return tc_filter_only(base_fields, excluded)
+                    }
+                    base_fields
+                }
+                _ -> fields
+            }
+        }
+        _ -> fields
+    }
+}
+
+fn tc_field_list_has(list: FieldList, name: string) -> bool {
+    match list {
+        .End -> false
+        .Node(n, _, _, _) if n == name -> true
+        .Node(_, _, _, next) -> tc_field_list_has(next, name)
+    }
+}
+
+fn tc_filter_without(base: FieldList, excluded: FieldList) -> FieldList {
+    match base {
+        .End -> FieldList.End
+        .Node(name, _, _, next) if tc_field_list_has(excluded, name) -> tc_filter_without(next, excluded)
+        .Node(name, ty, r, next) -> FieldList.Node(name, ty, r, tc_filter_without(next, excluded))
+    }
+}
+
+fn tc_filter_only(base: FieldList, included: FieldList) -> FieldList {
+    match base {
+        .End -> FieldList.End
+        .Node(name, ty, r, next) if tc_field_list_has(included, name) -> FieldList.Node(name, ty, r, tc_filter_only(next, included))
+        .Node(_, _, _, next) -> tc_filter_only(next, included)
+    }
+}
+
 fn collect_decls(tc: TC, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .TypeDecl(name, _, fields) -> tc with {
-                    structs: StructTypeReg.Node(name, fields, tc.structs)
+                .TypeDecl(name, _, fields) -> {
+                    let resolved = tc_resolve_type_operator(fields, tc.structs)
+                    tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
                 }
                 .EnumDecl(name, _, variants) -> tc with {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)

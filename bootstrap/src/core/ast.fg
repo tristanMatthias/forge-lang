@@ -149,8 +149,11 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Struct(n1) -> match b { .Struct(n2) -> n1 == n2, _ -> false }
         .Enum(n1) -> match b { .Enum(n2) -> n1 == n2, _ -> false }
         .Float -> b is .Float
+        .Map -> b is .Map
         .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
         .Trait(n1) -> match b { .Trait(n2) -> n1 == n2, _ -> false }
+        .Tuple(_) -> match b { .Tuple(_) -> true, _ -> false }
+        .Closure(_, _) -> match b { .Closure(_, _) -> true, _ -> false }
         _ -> false
     }
 }

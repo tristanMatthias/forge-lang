@@ -209,11 +209,12 @@ fn main() {
             println("ok")
             return
         }
-        // Type check (additive — reports but doesn't block compilation)
+        // Type check — gates compilation on errors
         let tc_result = typecheck_program(named.stmts)
-        if bag_has_errors(tc_result.bag) {
+        if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
             render_bag(csource, cpath, tc_result.bag)
         }
+        if bag_has_errors(tc_result.bag) { fail("type check failed") }
         if stop_after == "check" {
             println("ok")
             return
