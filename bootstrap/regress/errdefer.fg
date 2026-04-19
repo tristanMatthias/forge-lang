@@ -1,0 +1,27 @@
+// errdefer: error-only cleanup (spec Axis 12.7)
+
+fn maybe_null(name: string) -> string? {
+    if name == "bad" { return null }
+    name
+}
+
+fn test_success() -> string? {
+    defer { println("defer") }
+    errdefer { println("errdefer") }
+    let x = maybe_null("good")?
+    x
+}
+
+fn test_error() -> string? {
+    defer { println("defer") }
+    errdefer { println("errdefer") }
+    let x = maybe_null("bad")?
+    x
+}
+
+fn main() {
+    let r1 = test_success()
+    if r1 != null { println(r1!) }
+    let r2 = test_error()
+    if r2 == null { println("null") }
+}

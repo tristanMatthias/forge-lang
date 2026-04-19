@@ -11,6 +11,7 @@
 
 use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
+use features.defer_stmt.codegen.{emit_defers_on_error}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> Result<EmitValue, string> {
     let l = ctx.emit(env, left)?
@@ -111,6 +112,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
         ctx.cond_br(is_ok, ok_bb, err_bb)
 
         ctx.position(err_bb)
+        emit_defers_on_error(ctx, env)
         let try_fn_ret = ctx.current_fn_ret()
         ctx.ret(r.value, try_fn_ret)
 
@@ -143,6 +145,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
                 ctx.cond_br(is_err, ret_bb, cont_bb)
 
                 ctx.position(ret_bb)
+                emit_defers_on_error(ctx, env)
                 let s_fn_ret = ctx.current_fn_ret()
                 ctx.ret(r.value, s_fn_ret)
 
@@ -164,6 +167,7 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
     ctx.cond_br(is_null, ret_bb, cont_bb)
 
     ctx.position(ret_bb)
+    emit_defers_on_error(ctx, env)
     let fn_ret = ctx.current_fn_ret()
     ctx.ret_void(fn_ret)
 

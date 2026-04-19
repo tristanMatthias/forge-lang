@@ -191,6 +191,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "catch"    -> Tk.KwCatch
         "const"    -> Tk.KwConst
         "else"     -> Tk.KwElse
+        "errdefer" -> Tk.KwErrdefer
         "false"    -> Tk.KwFalse
         "fn"       -> Tk.KwFn
         "if"       -> Tk.KwIf

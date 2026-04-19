@@ -5,7 +5,7 @@ use codegen.types.{err_stmt, ok_stmt}
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr}
-use features.defer_stmt.codegen.{defer_push}
+use features.defer_stmt.codegen.{defer_push, errdefer_push}
 use typeck.{check_expr}
 
 export fn init_defer_stmt(reg: Registry) {
@@ -28,6 +28,36 @@ export fn init_defer_stmt(reg: Registry) {
         parse_stmt: (p: Parser) -> p.parse_defer_statement(),
     }
     register(reg, f)
+
+    let f2 = feature_new("errdefer") with {
+        stmt_tag: .Errdefer(.Null),
+        emit_stmt: errdefer_emit_stmt,
+        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .Errdefer(body) -> resolve_expr(r, body), _ -> r },
+        check_stmt: (tc: int, stmt: Stmt) -> match stmt {
+            .Errdefer(body) -> {
+                let r = check_expr(tc, body)
+                r.tc
+            }
+            _ -> tc
+        },
+        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+            .Errdefer(_) -> ok_result(rt, value_null())
+            _ -> error_result(rt, "expected Errdefer")
+        },
+        stmt_keyword: "kw_errdefer",
+        parse_stmt: (p: Parser) -> p.parse_errdefer_statement(),
+    }
+    register(reg, f2)
+}
+
+fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+    match stmt {
+        .Errdefer(body) -> {
+            errdefer_push(sexpr_dummy(body))
+            ok_stmt(env)
+        }
+        _ -> err_stmt("expected Errdefer")
+    }
 }
 
 fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {

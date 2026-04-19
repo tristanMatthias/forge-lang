@@ -368,6 +368,7 @@ export enum Stmt {
     TraitDecl(name: string, methods: StmtList)
     LetDestructure(names: ParamList, initializer: Expr)
     Defer(body: Expr)
+    Errdefer(body: Expr)
     Annotated(annotations: AnnotationList, inner: Stmt)
     SpecBlock(name: string, body: StmtList)
     GivenBlock(name: string, body: StmtList)
@@ -782,6 +783,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(methods)})"
         .LetDestructure(names, initializer) -> "(let-destruct ${render_param_list(names)} ${render_expr(initializer)})"
         .Defer(body) -> "(defer ${render_expr(body)})"
+        .Errdefer(body) -> "(errdefer ${render_expr(body)})"
         .Annotated(annotations, inner) -> "(@annotated ${render_annotation_list(annotations)} ${render_stmt(inner)})"
         .SpecBlock(name, _) -> "(spec ${name} ...)"
         .GivenBlock(name, _) -> "(given ${name} ...)"
@@ -922,6 +924,7 @@ export enum Tk {
     KwContinue
     KwDefer
     KwElse
+    KwErrdefer
     KwEnum
     KwExport
     KwExtern
@@ -968,6 +971,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwContinue -> "kw_continue"
         .KwDefer -> "kw_defer"
         .KwElse -> "kw_else"
+        .KwErrdefer -> "kw_errdefer"
         .KwEnum -> "kw_enum"
         .KwExport -> "kw_export"
         .KwExtern -> "kw_extern"

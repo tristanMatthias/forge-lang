@@ -1,6 +1,6 @@
-// WHY: codegen for `defer` statements. Deferred expressions execute
-// when the enclosing function returns, in reverse order (LIFO).
-// Uses a global stack since the Ctx isn't threaded through emit_stmt.
+// WHY: codegen for `defer` and `errdefer` statements (spec Axis 12.7).
+// defer runs at every scope exit in LIFO order.
+// errdefer runs only on error exits (? propagation).
 
 use core.ast.{Expr, VarEnv, SExpr}
 use codegen.types.{Ctx, DeferStack}
@@ -8,17 +8,30 @@ use codegen.types.{Ctx, DeferStack}
 // Global defer stack — reset at function entry, pushed by defer,
 // emitted before return.
 export mut DEFER_STACK: DeferStack = .End
+export mut ERRDEFER_STACK: DeferStack = .End
 
 export fn defer_push(body: SExpr) {
     DEFER_STACK = .Frame(body, DEFER_STACK)
 }
 
-export fn defer_reset() {
-    DEFER_STACK = .End
+export fn errdefer_push(body: SExpr) {
+    ERRDEFER_STACK = .Frame(body, ERRDEFER_STACK)
 }
 
-// Emit all deferred expressions in LIFO order before a return.
+export fn defer_reset() {
+    DEFER_STACK = .End
+    ERRDEFER_STACK = .End
+}
+
+// Emit all deferred expressions in LIFO order before a normal return.
 export fn emit_defers(ctx: Ctx, env: VarEnv) {
+    emit_defer_stack(ctx, env, DEFER_STACK)
+}
+
+// Emit both errdefer AND defer in LIFO order before an error return.
+// Per spec Axis 12.7: errdefer runs on error path, defer runs always.
+export fn emit_defers_on_error(ctx: Ctx, env: VarEnv) {
+    emit_defer_stack(ctx, env, ERRDEFER_STACK)
     emit_defer_stack(ctx, env, DEFER_STACK)
 }
 
