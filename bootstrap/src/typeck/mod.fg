@@ -659,14 +659,28 @@ fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC 
 fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, required: FieldList, available: FieldList) -> TC {
     match required {
         .End -> tc
-        .Node(field_name, _, _, next) -> {
+        .Node(field_name, field_ty, _, next) -> {
             if !field_list_has(available, field_name) {
                 let msg = "type `${arg_name}` does not satisfy shape `${shape_name}` — missing field `${field_name}`"
                 tc_check_fields_present(tc_report(tc, DiagCode.TypeMismatch, msg), shape_name, arg_name, next, available)
             } else {
-                tc_check_fields_present(tc, shape_name, arg_name, next, available)
+                // Also check field type matches (by type annotation string)
+                let arg_field_ty = field_type_lookup(available, field_name)
+                let after = if field_ty.length > 0 && arg_field_ty.length > 0 && field_ty != arg_field_ty {
+                    let msg = "field `${field_name}` has type `${arg_field_ty}` in `${arg_name}` but shape `${shape_name}` requires `${field_ty}`"
+                    tc_report(tc, DiagCode.TypeMismatch, msg)
+                } else { tc }
+                tc_check_fields_present(after, shape_name, arg_name, next, available)
             }
         }
+    }
+}
+
+fn field_type_lookup(fields: FieldList, name: string) -> string {
+    match fields {
+        .End -> ""
+        .Node(n, ty, _, _) if n == name -> ty
+        .Node(_, _, _, next) -> field_type_lookup(next, name)
     }
 }
 

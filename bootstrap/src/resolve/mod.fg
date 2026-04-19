@@ -375,7 +375,7 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             let rb = resolve_expr(ra, value)
             // Deep immutability (spec Axis 11.5): reject field mutation on let bindings
             let root = fa_root(obj)
-            if root.length > 0 && root != "self" && !starts_with_upper(root) {
+            if root.length > 0 && root != "self" {
                 let lu = lookup_name(rb.scopes, root)
                 if lu.found && !lu.mutable {
                     return resolve_report(rb, DiagCode.ImmutableAssign, "cannot mutate field `${field}` on immutable variable `${root}` (use `mut` or `with` for updates)")
