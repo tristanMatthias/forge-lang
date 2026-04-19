@@ -10,6 +10,9 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitVal
         .End -> err_emit("eprintln() expects 1 arg")
         .Node(se, _) -> {
             let r = ctx.emit(env, se.node)?
+            if r.ty is .Union {
+                return err_emit("cannot print union type directly — use `match` to extract the value first")
+            }
             let str_ptr = match {
                 vtype_is_str(r.ty) -> ctx.to_ptr(r.value, "eprint_arg")
                 vtype_eq(r.ty, .Float) -> {
@@ -42,6 +45,9 @@ export fn emit_println(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValu
                 }
                 _ -> {
                     let r = ctx.emit(env, se.node)?
+                    if r.ty is .Union {
+                        return err_emit("cannot print union type directly — use `match` to extract the value first")
+                    }
                     if vtype_eq(r.ty, .Float) {
                         ctx.call("forge_float_to_string", [r.value])
                     } else {

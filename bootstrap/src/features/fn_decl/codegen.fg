@@ -338,6 +338,10 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
             if vtype_is_str(r.ty) {
                 return ok_emit_str(r.value)
             }
+            // Union values can't be directly converted — match first.
+            if r.ty is .Union {
+                return err_emit("cannot convert union type to string directly — use `match` to extract the value first")
+            }
             // Float → string via forge_float_to_string(i64_bits) → ptr
             if vtype_eq(r.ty, .Float) {
                 let str_ptr = ctx.call("forge_float_to_string", [r.value])
