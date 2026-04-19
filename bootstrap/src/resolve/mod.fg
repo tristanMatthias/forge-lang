@@ -290,6 +290,14 @@ export fn declare_params(r: Resolver, params: ParamList) -> Resolver {
     res
 }
 
+fn fa_root(expr: Expr) -> string {
+    match expr {
+        .Ident(nm) -> nm
+        .FieldAccess(inner, _) -> fa_root(inner)
+        _ -> ""
+    }
+}
+
 export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     if r.had_error {
         return r
@@ -362,6 +370,19 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             resolve_expr(b, end)
         }
         .QualifiedIdent(_) -> r
+        .FieldAssign(obj, field, value) -> {
+            let ra = resolve_expr(r, obj)
+            let rb = resolve_expr(ra, value)
+            // Deep immutability (spec Axis 11.5): reject field mutation on let bindings
+            let root = fa_root(obj)
+            if root.length > 0 && root != "self" && !starts_with_upper(root) {
+                let lu = lookup_name(rb.scopes, root)
+                if lu.found && !lu.mutable {
+                    return resolve_report(rb, DiagCode.ImmutableAssign, "cannot mutate field `${field}` on immutable variable `${root}` (use `mut` or `with` for updates)")
+                }
+            }
+            rb
+        }
         _ -> {
             let tag = forge_expr_tag(expr)
             let result = dispatch_expr_resolve(r.features, tag, r, expr)

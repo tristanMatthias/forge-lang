@@ -31,9 +31,9 @@ let x = 100
 }
 x |> string |> println
 
-// mut struct fields (field assign is separate from variable immutability)
+// deep immutability: use mut for mutable structs (spec Axis 11.5)
 type Counter = { value: int }
-let c = Counter { value: 0 }
+mut c = Counter { value: 0 }
 c.value = 42
 c.value |> string |> println
 

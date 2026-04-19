@@ -14,9 +14,10 @@ for i in 0..5 {
 }
 sum |> string |> println
 
-// Struct field assign is allowed (separate from variable immutability)
+// Deep immutability: let bindings cannot have fields mutated (spec Axis 11.5)
+// Use mut for mutable structs
 type Point = { x: int, y: int }
-let p = Point { x: 1, y: 2 }
+mut p = Point { x: 1, y: 2 }
 p.x = 99
 p.x |> string |> println
 
