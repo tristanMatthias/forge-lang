@@ -517,17 +517,52 @@ impl Parser {
         mut expr = left
         while self.check(Tk.PipeGt) {
             self.advance()
+            // Enable `it` sugar in pipe RHS — `xs |> filter(it > 2)` (spec 28.7+28.8)
+            let saved_it = self.allow_it_sugar
+            self.allow_it_sugar = true
             let rhs = self.parse_or()?
+            self.allow_it_sugar = saved_it
+            let se = sexpr(expr, self.current_line, self.current_column)
             // Desugar: `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`
+            // If any arg is `_`, replace it with the piped value (spec Axis 28.7)
             expr = match rhs {
-                .Call(callee, args) -> Expr.Call(callee, ExprList.Node(sexpr(expr, self.current_line, self.current_column), args))
-                _ -> Expr.Call(rhs, ExprList.Node(sexpr(expr, self.current_line, self.current_column), ExprList.End))
+                .Call(callee, args) -> {
+                    if pipe_args_has_placeholder(args) {
+                        Expr.Call(callee, pipe_replace_placeholder(args, se))
+                    } else {
+                        Expr.Call(callee, ExprList.Node(se, args))
+                    }
+                }
+                _ -> Expr.Call(rhs, ExprList.Node(se, ExprList.End))
             }
         }
 
         expr
     }
 
+}
+
+fn pipe_args_has_placeholder(args: ExprList) -> bool {
+    match args {
+        .End -> false
+        .Node(se, next) -> match se.node {
+            .Ident(n) -> n == "_"
+            _ -> pipe_args_has_placeholder(next)
+        }
+    }
+}
+
+fn pipe_replace_placeholder(args: ExprList, replacement: SExpr) -> ExprList {
+    match args {
+        .End -> ExprList.End
+        .Node(se, next) -> match se.node {
+            .Ident(n) if n == "_" -> ExprList.Node(replacement, pipe_replace_placeholder(next, replacement))
+            _ -> ExprList.Node(se, pipe_replace_placeholder(next, replacement))
+        }
+    }
+}
+
+impl Parser {
     fn parse_null_coalesce(self) -> Expr? {
         let left = self.parse_or()?
 
@@ -838,7 +873,8 @@ impl Parser {
                     .FieldAccess(_, _) -> true
                     _ -> false
                 }
-                self.allow_it_sugar = is_method
+                // Enable it sugar for method calls OR if already enabled (e.g. pipe RHS)
+                self.allow_it_sugar = is_method || saved_it
                 let args = self.parse_arg_list()?
                 self.allow_it_sugar = saved_it
                 if !self.consume(Tk.RightParen, "expected `)` after arguments") {
