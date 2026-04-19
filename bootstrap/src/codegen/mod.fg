@@ -134,9 +134,9 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
         }
         .Bool(text) -> {
             if text == "true" {
-                return ok_emit(ctx.i64(1))
+                return ok_emit_typed(ctx.i64(1), .Bool)
             }
-            ok_emit(ctx.i64(0))
+            ok_emit_typed(ctx.i64(0), .Bool)
         }
         .Null -> ok_emit(ctx.i64(0))
         .String(text) -> {

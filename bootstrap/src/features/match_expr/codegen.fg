@@ -463,8 +463,16 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitValue, pattern: Pattern) -> ptr {
             ctx.eq(emit_value_ptr(subj), ctx.i64(val), "lit_eq")
         }
         .LitBool(val) -> {
-            let cmp_val = if val { ctx.i64(1) } else { ctx.i64(0) }
-            ctx.eq(emit_value_ptr(subj), cmp_val, "lit_eq")
+            // Bool subjects may be i1 (typed) or i64 (legacy). Use truthy
+            // to normalize to i1, then compare against the literal.
+            let subj_bool = ctx.truthy(emit_value_ptr(subj), "bool_subj")
+            if val {
+                // match true: check if subject is truthy
+                subj_bool
+            } else {
+                // match false: check if subject is falsy (xor with 1)
+                forge_llvm_build_xor(ctx.builder, subj_bool, forge_llvm_const_int(ctx.i1_type, 1, 0), "bool_neg")
+            }
         }
         .LitString(val) -> {
             let subj_ptr = ctx.to_ptr(emit_value_ptr(subj), "lit_str_ptr")
