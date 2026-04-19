@@ -2,8 +2,8 @@ mod codegen
 use codegen.types.{err_emit}
 use features.eval.{error_result}
 use core.registry.{feature_new, register}
-use resolve.{resolve_expr}
-use features.null_safety.codegen.{emit_null_coalesce, emit_optional_chain, emit_try}
+use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
+use features.null_safety.codegen.{emit_null_coalesce, emit_optional_chain, emit_try, emit_catch}
 use features.struct_decl.typeck.{check_field_access}
 use typeck.{check_expr, tc_er}
 
@@ -52,6 +52,44 @@ export fn init_null_safety(reg: Registry) {
         },
     }
     register(reg, f3)
+
+    let f4 = feature_new("catch") with {
+        expr_tag: Expr.Catch(Expr.Null, "", Expr.Null),
+        emit_expr: catch_emit_expr,
+        resolve_expr: (r: int, expr: Expr) -> match expr {
+            .Catch(inner, binding, body) -> {
+                let ri = resolve_expr(r, inner)
+                // Declare binding in a new scope for the catch body
+                let scoped = if binding.length > 0 {
+                    let entered = enter_resolve_scope(ri)
+                    define_name(declare_name(entered, binding), binding)
+                } else { ri }
+                let rb = resolve_expr(scoped, body)
+                if binding.length > 0 { exit_resolve_scope(rb) } else { rb }
+            }
+            _ -> r
+        },
+        check_expr: (tc: int, expr: Expr) -> match expr {
+            .Catch(inner, _, body) -> {
+                let i = check_expr(tc, inner)
+                let b = check_expr(i.tc, body)
+                tc_er(b.tc, b.ty)
+            }
+            _ -> tc_er(tc, .Int)
+        },
+        eval_expr: (rt: int, expr: Expr) -> match expr {
+            .Catch(_, _, _) -> error_result(rt, "catch is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected Catch")
+        },
+    }
+    register(reg, f4)
+}
+
+fn catch_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Catch(inner, binding, body) -> emit_catch(ctx, env, inner, binding, body)
+        _ -> err_emit("expected Catch")
+    }
 }
 
 fn nc_check_expr(tc: TC, expr: Expr) -> ExprResult {

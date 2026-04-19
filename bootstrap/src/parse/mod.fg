@@ -188,6 +188,7 @@ fn parse_template_expr(source: string) -> Expr? {
 export fn p_keyword_kind(text: string) -> Tk {
     match text {
         "and"      -> Tk.KwAnd
+        "catch"    -> Tk.KwCatch
         "const"    -> Tk.KwConst
         "else"     -> Tk.KwElse
         "false"    -> Tk.KwFalse
@@ -817,7 +818,7 @@ impl Parser {
         mut result = expr
         // If [ appears on a DIFFERENT line than the previous token,
         // it's a new statement (list literal), not postfix indexing.
-        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result)) || (self.check(Tk.Bang) && self.allow_dot_postfix) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix) || (self.check(Tk.Less) && is_callable(result)) {
+        while (self.check(Tk.LeftParen) && self.current_line == self.prev_line) || (self.check(Tk.Dot) && self.dot_is_postfix(result)) || (self.check(Tk.Bang) && self.allow_dot_postfix) || (self.check(Tk.LeftBracket) && self.current_line == self.prev_line) || self.check(Tk.QuestionDot) || (self.check(Tk.Question) && self.allow_dot_postfix) || (self.check(Tk.Less) && is_callable(result)) || self.check(Tk.KwCatch) {
             // Force-unwrap `expr!` is a no-op pass-through since we
             // don't track nullability in the value tag.
             while self.check(Tk.Bang) {
@@ -828,6 +829,24 @@ impl Parser {
             if self.check(Tk.Question) {
                 self.advance()
                 result = Expr.Try(result)
+                continue
+            }
+            // Catch: `expr catch { body }` or `expr catch (e) { body }` (spec Axis 12.5-12.6)
+            if self.check(Tk.KwCatch) {
+                self.advance()
+                mut binding = ""
+                if self.check(Tk.LeftParen) {
+                    self.advance()
+                    binding = self.consume_identifier("expected error binding name after `catch (`")?
+                    if !self.consume(Tk.RightParen, "expected `)` after catch binding") { return null }
+                }
+                if !self.consume(Tk.LeftBrace, "expected `{` after catch") { return null }
+                let saved_dot = self.allow_dot_postfix
+                self.allow_dot_postfix = true
+                let body_stmts = self.parse_statement_list(true)?
+                self.allow_dot_postfix = saved_dot
+                if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return null }
+                result = Expr.Catch(result, binding, Expr.Block(body_stmts))
                 continue
             }
             // Optional chaining: `expr?.field`

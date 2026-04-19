@@ -963,6 +963,7 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
                 .ListComp(annotate_expr(tc, body), var, annotate_expr(tc, coll), null)
             }
         }
+        .Catch(inner, b, body) -> .Catch(annotate_expr(tc, inner), b, annotate_expr(tc, body))
         .OptionalChain(obj, f) -> .OptionalChain(annotate_expr(tc, obj), f)
         .TupleIndex(obj, idx) -> .TupleIndex(annotate_expr(tc, obj), idx)
         .When(arms) -> .When(annotate_when_arms(tc, arms))

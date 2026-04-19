@@ -337,6 +337,7 @@ export enum Expr {
     ListComp(body: Expr, variable: string, collection: Expr, filter: Expr?)
     QualifiedIdent(path: string)
     When(arms: WhenArmList)
+    Catch(inner: Expr, binding: string, body: Expr)
 }
 
 export enum Stmt {
@@ -642,6 +643,7 @@ export fn render_expr(expr: Expr) -> string {
         .QualifiedIdent(path) -> path
         .When(arms) -> "(when ${render_when_arm_list(arms)})"
         .ListComp(body, variable, collection, _) -> "(list-comp ${render_expr(body)} for ${variable} in ${render_expr(collection)})"
+        .Catch(inner, binding, body) -> "(catch ${render_expr(inner)} (${binding}) ${render_expr(body)})"
     }
 }
 
@@ -915,6 +917,7 @@ export enum Tk {
     // Keywords
     KwAnd
     KwBreak
+    KwCatch
     KwConst
     KwContinue
     KwDefer
@@ -960,6 +963,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
     match tk {
         .KwAnd -> "kw_and"
         .KwBreak -> "kw_break"
+        .KwCatch -> "kw_catch"
         .KwConst -> "kw_const"
         .KwContinue -> "kw_continue"
         .KwDefer -> "kw_defer"

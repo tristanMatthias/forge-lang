@@ -170,3 +170,74 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
     ctx.position(cont_bb)
     ok_emit_typed(r.value, r.ty)
 }
+
+export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: Expr) -> Result<EmitValue, string> {
+    let r = ctx.emit(env, inner)?
+
+    // Result enum: check tag, Ok → extract value, Err → evaluate catch body
+    let enum_name = vtype_enum_name(r.ty)
+    if enum_name == "Result" || enum_name.starts_with("Result__") {
+        let enum_ty = ctx.get_type(enum_name)
+        let enum_ptr = ctx.to_ptr(r.value, "catch_res_ptr")
+        let tag_gep = ctx.gep(enum_ty, enum_ptr, 0, "catch_tag_ptr")
+        let tag = ctx.load_i64(tag_gep, "catch_tag")
+        let ok_tag = ctx.i64(forge_variant_hash("Ok"))
+        let is_ok = ctx.eq(tag, ok_tag, "catch_is_ok")
+        let ok_bb = ctx.bb("catch_ok")
+        let err_bb = ctx.bb("catch_err")
+        let merge_bb = ctx.bb("catch_merge")
+        let result_slot = ctx.alloca_i64("catch_result")
+        ctx.cond_br(is_ok, ok_bb, err_bb)
+
+        // Ok path: extract payload
+        ctx.position(ok_bb)
+        let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "catch_pay_slot")
+        let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "catch_payload")
+        let ok_val = ctx.load_i64(pay_ptr, "catch_ok_val")
+        ctx.store(ok_val, result_slot)
+        ctx.br(merge_bb)
+
+        // Err path: evaluate catch body, optionally binding the error
+        ctx.position(err_bb)
+        let err_env = if binding.length > 0 {
+            // Extract error payload and bind it
+            let err_pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "catch_err_pay_slot")
+            let err_pay_ptr = ctx.load(ctx.ptr_type, err_pay_gep, "catch_err_payload")
+            let err_val = ctx.load_i64(err_pay_ptr, "catch_err_val")
+            ctx.bind(env, binding, err_val, .Int)
+        } else { env }
+        let catch_r = ctx.emit(err_env, body)?
+        ctx.store(ctx.to_i64(catch_r.value, "catch_body_val"), result_slot)
+        ctx.br_if_open(merge_bb)
+
+        ctx.position(merge_bb)
+        let merged = ctx.load_i64(result_slot, "catch_merged")
+        return ok_emit_typed(merged, ctx.resolve_ok_type(enum_name))
+    }
+
+    // Nullable: if null, evaluate catch body
+    let is_null = if ctx.is_ptr_value(r.value) {
+        ctx.eq(r.value, ctx.zero_for(ValueType.Str), "catch_null")
+    } else {
+        ctx.eq(r.value, ctx.i64(0), "catch_null")
+    }
+    let ok_bb = ctx.bb("catch_ok")
+    let null_bb = ctx.bb("catch_null_body")
+    let merge_bb = ctx.bb("catch_merge")
+    let result_slot = ctx.alloca_i64("catch_result")
+    ctx.store(ctx.to_i64(r.value, "catch_lhs"), result_slot)
+    ctx.cond_br(is_null, null_bb, ok_bb)
+
+    ctx.position(null_bb)
+    let null_env = if binding.length > 0 { ctx.bind(env, binding, ctx.i64(0), .Int) } else { env }
+    let catch_r = ctx.emit(null_env, body)?
+    ctx.store(ctx.to_i64(catch_r.value, "catch_null_val"), result_slot)
+    ctx.br_if_open(merge_bb)
+
+    ctx.position(ok_bb)
+    ctx.br(merge_bb)
+
+    ctx.position(merge_bb)
+    let merged = ctx.load_i64(result_slot, "catch_merged")
+    ok_emit_typed(merged, r.ty)
+}

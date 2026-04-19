@@ -1,0 +1,24 @@
+// catch blocks: inline error handling (spec Axis 12.5-12.6)
+enum Result<T, E> { Ok(value: T), Err(error: E) }
+
+fn parse_int(s: string) -> Result<int, string> {
+    if s == "42" { return Result.Ok(42) }
+    Result.Err("not a number")
+}
+
+fn main() {
+    // catch without binding — default value
+    let port = parse_int("bad") catch { 8080 }
+    println(string(port))
+
+    // catch with binding — inspect error
+    let val = parse_int("bad") catch (e) {
+        println(e)
+        0
+    }
+    println(string(val))
+
+    // catch on success — body not evaluated
+    let good = parse_int("42") catch { 9999 }
+    println(string(good))
+}
