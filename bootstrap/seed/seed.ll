@@ -1,5 +1,5 @@
-; seed built from commit 23a3e3eb at 2026-04-20T20:42:33Z
-; source hash: 9034e5f19105badddb95e8c056819d5242b37b8b15f951c1074ada3850ac2882
+; seed built from commit 707f4817 at 2026-04-20T20:45:49Z
+; source hash: 8666f09e27e692ca6475272a2f64a95976efbc75fc3d2d7a4df22c31a3660d7e
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -103676,7 +103676,7 @@ if_then43:                                        ; preds = %sc_merge
   %cl81 = load i64, ptr %cl8, align 8
   %cc82 = load i64, ptr %cc11, align 8
   %cast83 = inttoptr i64 %cast79 to ptr
-  %32 = call ptr @"typeck::tc_report_at"(ptr %tc77, ptr %cast83, ptr %msg80, i64 %cl81, i64 %cc82)
+  %32 = call ptr @"typeck::tc_report_at"(ptr %tc77, ptr %cast83, ptr %msg80, i64 %cl81, i64 %cc82, i64 5)
   %ok_ty84 = load ptr, ptr %ok_ty, align 8
   %33 = call ptr @"typeck::tc_er"(ptr %32, ptr %ok_ty84)
   ret ptr %33
@@ -133083,16 +133083,17 @@ entry:
   call void @forge_null_deref_trap(ptr @fld_name.12387, i64 11, ptr @sty_name.12388, i64 2, i64 %null_ext8, ptr @src_file.12389, i64 88, i64 319)
   %current_col_ptr = getelementptr inbounds nuw %TC, ptr %tc5, i32 0, i32 12
   %current_col = load i64, ptr %current_col_ptr, align 8
-  %3 = call ptr @"typeck::tc_report_at"(ptr %tc1, ptr %code2, ptr %msg3, i64 %current_line, i64 %current_col)
+  %3 = call ptr @"typeck::tc_report_at"(ptr %tc1, ptr %code2, ptr %msg3, i64 %current_line, i64 %current_col, i64 0)
   ret ptr %3
 }
 
-define ptr @"typeck::tc_report_at"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4) {
+define ptr @"typeck::tc_report_at"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4, i64 %5) {
 entry:
   %sp = alloca ptr, align 8
   %ife_result30 = alloca i64, align 8
   %message = alloca ptr, align 8
   %ife_result = alloca i64, align 8
+  %len = alloca i64, align 8
   %col = alloca i64, align 8
   %line = alloca i64, align 8
   %msg = alloca ptr, align 8
@@ -133103,6 +133104,7 @@ entry:
   store ptr %2, ptr %msg, align 8
   store i64 %3, ptr %line, align 8
   store i64 %4, ptr %col, align 8
+  store i64 %5, ptr %len, align 8
   %tc1 = load ptr, ptr %tc, align 8
   %cast = ptrtoint ptr %tc1 to i64
   %null_chk = icmp eq i64 %cast, 0
@@ -133110,8 +133112,8 @@ entry:
   call void @forge_null_deref_trap(ptr @fld_name.12390, i64 10, ptr @sty_name.12391, i64 2, i64 %null_ext, ptr @src_file.12392, i64 88, i64 323)
   %current_fn_ptr = getelementptr inbounds nuw %TC, ptr %tc1, i32 0, i32 10
   %current_fn = load ptr, ptr %current_fn_ptr, align 8
-  %5 = call i64 @strlen(ptr %current_fn)
-  %sgt = icmp sgt i64 %5, 0
+  %6 = call i64 @strlen(ptr %current_fn)
+  %sgt = icmp sgt i64 %6, 0
   %sgt_ext = zext i1 %sgt to i64
   %ife_cond = icmp ne i64 %sgt_ext, 0
   br i1 %ife_cond, label %ife_then, label %ife_else
@@ -133128,17 +133130,17 @@ ife_end:                                          ; preds = %ife_else, %ife_then
 
 ife_then:                                         ; preds = %entry
   %msg2 = load ptr, ptr %msg, align 8
-  %6 = call i64 @strlen(ptr %msg2)
-  %7 = call i64 @strlen(ptr @.str.12393)
-  %concat_total = add i64 %6, %7
+  %7 = call i64 @strlen(ptr %msg2)
+  %8 = call i64 @strlen(ptr @.str.12393)
+  %concat_total = add i64 %7, %8
   %concat_size = add i64 %concat_total, 1
-  %8 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %9 = call ptr @memcpy(ptr %8, ptr %msg2, i64 %6)
-  %cast3 = ptrtoint ptr %8 to i64
-  %dst2_int = add i64 %cast3, %6
+  %9 = call ptr @forge_bump_alloc(i64 %concat_size)
+  %10 = call ptr @memcpy(ptr %9, ptr %msg2, i64 %7)
+  %cast3 = ptrtoint ptr %9 to i64
+  %dst2_int = add i64 %cast3, %7
   %cast4 = inttoptr i64 %dst2_int to ptr
-  %rhs_len_p1 = add i64 %7, 1
-  %10 = call ptr @memcpy(ptr %cast4, ptr @.str.12393, i64 %rhs_len_p1)
+  %rhs_len_p1 = add i64 %8, 1
+  %11 = call ptr @memcpy(ptr %cast4, ptr @.str.12393, i64 %rhs_len_p1)
   %tc5 = load ptr, ptr %tc, align 8
   %cast6 = ptrtoint ptr %tc5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
@@ -133146,29 +133148,29 @@ ife_then:                                         ; preds = %entry
   call void @forge_null_deref_trap(ptr @fld_name.12394, i64 10, ptr @sty_name.12395, i64 2, i64 %null_ext8, ptr @src_file.12396, i64 88, i64 324)
   %current_fn_ptr9 = getelementptr inbounds nuw %TC, ptr %tc5, i32 0, i32 10
   %current_fn10 = load ptr, ptr %current_fn_ptr9, align 8
-  %11 = call i64 @strlen(ptr %8)
-  %12 = call i64 @strlen(ptr %current_fn10)
-  %concat_total11 = add i64 %11, %12
+  %12 = call i64 @strlen(ptr %9)
+  %13 = call i64 @strlen(ptr %current_fn10)
+  %concat_total11 = add i64 %12, %13
   %concat_size12 = add i64 %concat_total11, 1
-  %13 = call ptr @forge_bump_alloc(i64 %concat_size12)
-  %14 = call ptr @memcpy(ptr %13, ptr %8, i64 %11)
-  %cast13 = ptrtoint ptr %13 to i64
-  %dst2_int14 = add i64 %cast13, %11
+  %14 = call ptr @forge_bump_alloc(i64 %concat_size12)
+  %15 = call ptr @memcpy(ptr %14, ptr %9, i64 %12)
+  %cast13 = ptrtoint ptr %14 to i64
+  %dst2_int14 = add i64 %cast13, %12
   %cast15 = inttoptr i64 %dst2_int14 to ptr
-  %rhs_len_p116 = add i64 %12, 1
-  %15 = call ptr @memcpy(ptr %cast15, ptr %current_fn10, i64 %rhs_len_p116)
-  %16 = call i64 @strlen(ptr %13)
-  %17 = call i64 @strlen(ptr @.str.12397)
-  %concat_total17 = add i64 %16, %17
+  %rhs_len_p116 = add i64 %13, 1
+  %16 = call ptr @memcpy(ptr %cast15, ptr %current_fn10, i64 %rhs_len_p116)
+  %17 = call i64 @strlen(ptr %14)
+  %18 = call i64 @strlen(ptr @.str.12397)
+  %concat_total17 = add i64 %17, %18
   %concat_size18 = add i64 %concat_total17, 1
-  %18 = call ptr @forge_bump_alloc(i64 %concat_size18)
-  %19 = call ptr @memcpy(ptr %18, ptr %13, i64 %16)
-  %cast19 = ptrtoint ptr %18 to i64
-  %dst2_int20 = add i64 %cast19, %16
+  %19 = call ptr @forge_bump_alloc(i64 %concat_size18)
+  %20 = call ptr @memcpy(ptr %19, ptr %14, i64 %17)
+  %cast19 = ptrtoint ptr %19 to i64
+  %dst2_int20 = add i64 %cast19, %17
   %cast21 = inttoptr i64 %dst2_int20 to ptr
-  %rhs_len_p122 = add i64 %17, 1
-  %20 = call ptr @memcpy(ptr %cast21, ptr @.str.12397, i64 %rhs_len_p122)
-  %cast23 = ptrtoint ptr %18 to i64
+  %rhs_len_p122 = add i64 %18, 1
+  %21 = call ptr @memcpy(ptr %cast21, ptr @.str.12397, i64 %rhs_len_p122)
+  %cast23 = ptrtoint ptr %19 to i64
   store i64 %cast23, ptr %ife_result, align 8
   br label %ife_end
 
@@ -133179,101 +133181,102 @@ ife_else:                                         ; preds = %entry
   br label %ife_end
 
 ife_end31:                                        ; preds = %ife_else34, %ife_then33
-  %ife_val39 = load i64, ptr %ife_result30, align 8
-  %cast40 = inttoptr i64 %ife_val39 to ptr
-  store ptr %cast40, ptr %sp, align 8
-  %tc41 = load ptr, ptr %tc, align 8
-  %21 = call ptr @forge_bump_alloc(i64 120)
-  %with_cp_src = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 0
+  %ife_val40 = load i64, ptr %ife_result30, align 8
+  %cast41 = inttoptr i64 %ife_val40 to ptr
+  store ptr %cast41, ptr %sp, align 8
+  %tc42 = load ptr, ptr %tc, align 8
+  %22 = call ptr @forge_bump_alloc(i64 120)
+  %with_cp_src = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 0
   %with_cp_val = load i64, ptr %with_cp_src, align 8
-  %with_cp_dst = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 0
+  %with_cp_dst = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 0
   store i64 %with_cp_val, ptr %with_cp_dst, align 8
-  %with_cp_src42 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 1
-  %with_cp_val43 = load i64, ptr %with_cp_src42, align 8
-  %with_cp_dst44 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 1
-  store i64 %with_cp_val43, ptr %with_cp_dst44, align 8
-  %with_cp_src45 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 2
-  %with_cp_val46 = load i64, ptr %with_cp_src45, align 8
-  %with_cp_dst47 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 2
-  store i64 %with_cp_val46, ptr %with_cp_dst47, align 8
-  %with_cp_src48 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 3
-  %with_cp_val49 = load i64, ptr %with_cp_src48, align 8
-  %with_cp_dst50 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 3
-  store i64 %with_cp_val49, ptr %with_cp_dst50, align 8
-  %with_cp_src51 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 4
-  %with_cp_val52 = load i64, ptr %with_cp_src51, align 8
-  %with_cp_dst53 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 4
-  store i64 %with_cp_val52, ptr %with_cp_dst53, align 8
-  %with_cp_src54 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 5
-  %with_cp_val55 = load i64, ptr %with_cp_src54, align 8
-  %with_cp_dst56 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 5
-  store i64 %with_cp_val55, ptr %with_cp_dst56, align 8
-  %with_cp_src57 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 6
-  %with_cp_val58 = load i64, ptr %with_cp_src57, align 8
-  %with_cp_dst59 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 6
-  store i64 %with_cp_val58, ptr %with_cp_dst59, align 8
-  %with_cp_src60 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 7
-  %with_cp_val61 = load i64, ptr %with_cp_src60, align 8
-  %with_cp_dst62 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 7
-  store i64 %with_cp_val61, ptr %with_cp_dst62, align 8
-  %with_cp_src63 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 8
-  %with_cp_val64 = load i64, ptr %with_cp_src63, align 8
-  %with_cp_dst65 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 8
-  store i64 %with_cp_val64, ptr %with_cp_dst65, align 8
-  %with_cp_src66 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 9
-  %with_cp_val67 = load ptr, ptr %with_cp_src66, align 8
-  %with_cp_dst68 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 9
-  store ptr %with_cp_val67, ptr %with_cp_dst68, align 8
-  %with_cp_src69 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 10
-  %with_cp_val70 = load ptr, ptr %with_cp_src69, align 8
-  %with_cp_dst71 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 10
-  store ptr %with_cp_val70, ptr %with_cp_dst71, align 8
-  %with_cp_src72 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 11
-  %with_cp_val73 = load i64, ptr %with_cp_src72, align 8
-  %with_cp_dst74 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 11
-  store i64 %with_cp_val73, ptr %with_cp_dst74, align 8
-  %with_cp_src75 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 12
-  %with_cp_val76 = load i64, ptr %with_cp_src75, align 8
-  %with_cp_dst77 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 12
-  store i64 %with_cp_val76, ptr %with_cp_dst77, align 8
-  %with_cp_src78 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 13
-  %with_cp_val79 = load i64, ptr %with_cp_src78, align 8
-  %with_cp_dst80 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 13
-  store i64 %with_cp_val79, ptr %with_cp_dst80, align 8
-  %with_cp_src81 = getelementptr inbounds nuw %TC, ptr %tc41, i32 0, i32 14
-  %with_cp_val82 = load ptr, ptr %with_cp_src81, align 8
-  %with_cp_dst83 = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 14
-  store ptr %with_cp_val82, ptr %with_cp_dst83, align 8
-  %tc84 = load ptr, ptr %tc, align 8
-  %cast85 = ptrtoint ptr %tc84 to i64
-  %null_chk86 = icmp eq i64 %cast85, 0
-  %null_ext87 = zext i1 %null_chk86 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.12398, i64 3, ptr @sty_name.12399, i64 2, i64 %null_ext87, ptr @src_file.12400, i64 88, i64 327)
-  %bag_ptr = getelementptr inbounds nuw %TC, ptr %tc84, i32 0, i32 9
+  %with_cp_src43 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 1
+  %with_cp_val44 = load i64, ptr %with_cp_src43, align 8
+  %with_cp_dst45 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 1
+  store i64 %with_cp_val44, ptr %with_cp_dst45, align 8
+  %with_cp_src46 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 2
+  %with_cp_val47 = load i64, ptr %with_cp_src46, align 8
+  %with_cp_dst48 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 2
+  store i64 %with_cp_val47, ptr %with_cp_dst48, align 8
+  %with_cp_src49 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 3
+  %with_cp_val50 = load i64, ptr %with_cp_src49, align 8
+  %with_cp_dst51 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 3
+  store i64 %with_cp_val50, ptr %with_cp_dst51, align 8
+  %with_cp_src52 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 4
+  %with_cp_val53 = load i64, ptr %with_cp_src52, align 8
+  %with_cp_dst54 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 4
+  store i64 %with_cp_val53, ptr %with_cp_dst54, align 8
+  %with_cp_src55 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 5
+  %with_cp_val56 = load i64, ptr %with_cp_src55, align 8
+  %with_cp_dst57 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 5
+  store i64 %with_cp_val56, ptr %with_cp_dst57, align 8
+  %with_cp_src58 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 6
+  %with_cp_val59 = load i64, ptr %with_cp_src58, align 8
+  %with_cp_dst60 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 6
+  store i64 %with_cp_val59, ptr %with_cp_dst60, align 8
+  %with_cp_src61 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 7
+  %with_cp_val62 = load i64, ptr %with_cp_src61, align 8
+  %with_cp_dst63 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 7
+  store i64 %with_cp_val62, ptr %with_cp_dst63, align 8
+  %with_cp_src64 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 8
+  %with_cp_val65 = load i64, ptr %with_cp_src64, align 8
+  %with_cp_dst66 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 8
+  store i64 %with_cp_val65, ptr %with_cp_dst66, align 8
+  %with_cp_src67 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 9
+  %with_cp_val68 = load ptr, ptr %with_cp_src67, align 8
+  %with_cp_dst69 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 9
+  store ptr %with_cp_val68, ptr %with_cp_dst69, align 8
+  %with_cp_src70 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 10
+  %with_cp_val71 = load ptr, ptr %with_cp_src70, align 8
+  %with_cp_dst72 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 10
+  store ptr %with_cp_val71, ptr %with_cp_dst72, align 8
+  %with_cp_src73 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 11
+  %with_cp_val74 = load i64, ptr %with_cp_src73, align 8
+  %with_cp_dst75 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 11
+  store i64 %with_cp_val74, ptr %with_cp_dst75, align 8
+  %with_cp_src76 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 12
+  %with_cp_val77 = load i64, ptr %with_cp_src76, align 8
+  %with_cp_dst78 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 12
+  store i64 %with_cp_val77, ptr %with_cp_dst78, align 8
+  %with_cp_src79 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 13
+  %with_cp_val80 = load i64, ptr %with_cp_src79, align 8
+  %with_cp_dst81 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 13
+  store i64 %with_cp_val80, ptr %with_cp_dst81, align 8
+  %with_cp_src82 = getelementptr inbounds nuw %TC, ptr %tc42, i32 0, i32 14
+  %with_cp_val83 = load ptr, ptr %with_cp_src82, align 8
+  %with_cp_dst84 = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 14
+  store ptr %with_cp_val83, ptr %with_cp_dst84, align 8
+  %tc85 = load ptr, ptr %tc, align 8
+  %cast86 = ptrtoint ptr %tc85 to i64
+  %null_chk87 = icmp eq i64 %cast86, 0
+  %null_ext88 = zext i1 %null_chk87 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.12398, i64 3, ptr @sty_name.12399, i64 2, i64 %null_ext88, ptr @src_file.12400, i64 88, i64 327)
+  %bag_ptr = getelementptr inbounds nuw %TC, ptr %tc85, i32 0, i32 9
   %bag = load ptr, ptr %bag_ptr, align 8
-  %code88 = load ptr, ptr %code, align 8
-  %message89 = load ptr, ptr %message, align 8
-  %sp90 = load ptr, ptr %sp, align 8
-  %22 = call ptr @"diagnostics::diag_error"(ptr %code88, ptr %message89, ptr %sp90)
-  %23 = call ptr @"diagnostics::bag_report"(ptr %bag, ptr %22)
-  %with_ovr = getelementptr inbounds nuw %TC, ptr %21, i32 0, i32 9
-  store ptr %23, ptr %with_ovr, align 8
-  %cast91 = ptrtoint ptr %21 to i64
-  %cast92 = inttoptr i64 %cast91 to ptr
-  ret ptr %cast92
+  %code89 = load ptr, ptr %code, align 8
+  %message90 = load ptr, ptr %message, align 8
+  %sp91 = load ptr, ptr %sp, align 8
+  %23 = call ptr @"diagnostics::diag_error"(ptr %code89, ptr %message90, ptr %sp91)
+  %24 = call ptr @"diagnostics::bag_report"(ptr %bag, ptr %23)
+  %with_ovr = getelementptr inbounds nuw %TC, ptr %22, i32 0, i32 9
+  store ptr %24, ptr %with_ovr, align 8
+  %cast92 = ptrtoint ptr %22 to i64
+  %cast93 = inttoptr i64 %cast92 to ptr
+  ret ptr %cast93
 
 ife_then33:                                       ; preds = %ife_end
-  %line35 = load i64, ptr %line, align 8
-  %col36 = load i64, ptr %col, align 8
-  %24 = call ptr @"diagnostics::span_new"(i64 0, i64 0, i64 %line35, i64 %col36)
-  %cast37 = ptrtoint ptr %24 to i64
-  store i64 %cast37, ptr %ife_result30, align 8
+  %len35 = load i64, ptr %len, align 8
+  %line36 = load i64, ptr %line, align 8
+  %col37 = load i64, ptr %col, align 8
+  %25 = call ptr @"diagnostics::span_new"(i64 0, i64 %len35, i64 %line36, i64 %col37)
+  %cast38 = ptrtoint ptr %25 to i64
+  store i64 %cast38, ptr %ife_result30, align 8
   br label %ife_end31
 
 ife_else34:                                       ; preds = %ife_end
-  %25 = call ptr @"diagnostics::span_dummy"()
-  %cast38 = ptrtoint ptr %25 to i64
-  store i64 %cast38, ptr %ife_result30, align 8
+  %26 = call ptr @"diagnostics::span_dummy"()
+  %cast39 = ptrtoint ptr %26 to i64
+  store i64 %cast39, ptr %ife_result30, align 8
   br label %ife_end31
 }
 
