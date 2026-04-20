@@ -16,8 +16,8 @@ use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArm
 use codegen.types.{Ctx, DeferStack, EmitValue, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
-use codegen.types.{RC_CLEANUP, rc_cleanup_reset, rc_cleanup_save, rc_cleanup_restore}
-use codegen.{RC_RELEASABLE, rc_set_releasable, rc_releasable_save, rc_releasable_restore}
+use codegen.types.{rc_cleanup_reset, rc_cleanup_save, rc_cleanup_restore}
+use codegen.{rc_set_releasable, rc_releasable_save, rc_releasable_restore}
 use codegen.escape.{analyze_releasable, analyze_releasable_expr}
 
 // ── Capture detection ──

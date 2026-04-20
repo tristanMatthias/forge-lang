@@ -284,15 +284,15 @@ export enum DeferStack {
 // and should NOT be released.
 export enum RcCleanupStack {
     End
-    Node(name: string, alloca: ptr, moved_flag: ptr, next: RcCleanupStack)
+    Node(name: string, alloca: ptr, next: RcCleanupStack)
 }
 
 export mut RC_CLEANUP: RcCleanupStack = .End
 
 export fn rc_cleanup_reset() { RC_CLEANUP = .End }
 
-export fn rc_cleanup_push(name: string, alloca: ptr, moved_flag: ptr) {
-    RC_CLEANUP = RcCleanupStack.Node(name, alloca, moved_flag, RC_CLEANUP)
+export fn rc_cleanup_push(name: string, alloca: ptr) {
+    RC_CLEANUP = RcCleanupStack.Node(name, alloca, RC_CLEANUP)
 }
 
 // Save/restore for nested function compilation
@@ -922,9 +922,7 @@ impl Ctx {
         let alloca = forge_llvm_build_alloca(self.builder, self.type_for(ty), name)
         forge_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) {
-            let mf = forge_llvm_build_alloca(self.builder, self.i1_type, "mv")
-            forge_llvm_build_store(self.builder, forge_llvm_const_int(self.i1_type, 0, 0), mf)
-            rc_cleanup_push(name, alloca, mf)
+            rc_cleanup_push(name, alloca)
         }
         env_extend(env, name, alloca, ty)
     }
