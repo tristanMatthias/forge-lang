@@ -425,11 +425,20 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         .Let(name, ty_str, init) -> {
             let r = check_expr(tc, init)
             let declared_ty = if ty_str.length > 0 { translate_type(r.tc, ty_str) } else { r.ty }
+            // Newtype: reject raw assignment without constructor
+            if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Int) {
+                let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
+                return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+            }
             tc_bind(r.tc, name, declared_ty)
         }
         .Mut(name, ty_str, init) -> {
             let r = check_expr(tc, init)
             let declared_ty = if ty_str.length > 0 { translate_type(r.tc, ty_str) } else { r.ty }
+            if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Int) {
+                let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
+                return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+            }
             tc_bind(r.tc, name, declared_ty)
         }
         .Expr(e) -> {
@@ -677,7 +686,7 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprL
             .Node(arg_se, next_args) -> {
                 let param_ty = translate_type(tc, param_ty_str)
                 let arg_ty = check_expr(tc, arg_se.node).ty
-                // Only check when parameter is a newtype
+                // Newtype parameter check: must be same newtype or the inner type
                 if param_ty is .Newtype {
                     if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Int) {
                         let msg = "`${fn_name}` parameter `${param_name}` expects `${vtype_display(param_ty)}`, got `${vtype_display(arg_ty)}`"
@@ -687,6 +696,26 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprL
                 tc_check_newtype_args(tc, fn_name, next_params, next_args)
             }
         }
+    }
+}
+
+// Check newtype constructor argument matches the inner type
+fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, args: ExprList) -> TC {
+    match ret_ty {
+        .Newtype(_, inner_ty) -> {
+            match args {
+                .Node(arg_se, _) -> {
+                    let arg_ty = check_expr(tc, arg_se.node).ty
+                    if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Int && inner_ty is .Int) {
+                        let msg = "`${name}()` expects `${vtype_display(inner_ty)}`, got `${vtype_display(arg_ty)}`"
+                        return tc_report(tc, DiagCode.TypeMismatch, msg)
+                    }
+                    tc
+                }
+                _ -> tc
+            }
+        }
+        _ -> tc
     }
 }
 
@@ -780,7 +809,10 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                 let shape_checked = tc_check_shape_args(checked, tc_fn_params(checked.fns, name), args)
                 // Check newtype argument compatibility
                 let newtype_checked = tc_check_newtype_args(shape_checked, name, tc_fn_params(shape_checked.fns, name), args)
-                return tc_er(newtype_checked, fn_type_lookup(newtype_checked.fns, name))
+                // Newtype constructor: check arg matches inner type
+                let ret_ty = fn_type_lookup(newtype_checked.fns, name)
+                let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, ret_ty, args)
+                return tc_er(ctor_checked, ret_ty)
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)
