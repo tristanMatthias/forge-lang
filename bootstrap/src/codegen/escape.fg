@@ -42,6 +42,14 @@ export fn analyze_releasable(body: StmtList) -> ReleasableSet {
     remove_escaped(body, owned)
 }
 
+// Analyze a single expression body (for lambdas).
+export fn analyze_releasable_expr(body: Expr) -> ReleasableSet {
+    match body {
+        .Block(stmts) -> analyze_releasable(stmts)
+        _ -> ReleasableSet.End
+    }
+}
+
 // Only collect bindings whose initializer creates a new RC object.
 fn collect_owned_bindings(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
     match stmts {
@@ -116,6 +124,10 @@ fn remove_escaped_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
             remove_escaped_stmt(body, s2)
         }
         .ForIn(_, coll, body) -> remove_escaped_stmt(body, remove_escaped_expr(coll, set))
+        .Match(subj, _) -> remove_escaped_expr(subj, set)
+        .Defer(body) -> remove_escaped_expr(body, set)
+        .Errdefer(body) -> remove_escaped_expr(body, set)
+        .Annotated(_, inner) -> remove_escaped_stmt(inner, set)
         _ -> set
     }
 }
@@ -151,6 +163,20 @@ fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
         .Lambda(_, body) -> remove_escaped_expr(body, set)
         .Block(body) -> remove_escaped(body, set)
         .IfExpr(cond, t, e) -> remove_escaped_expr(e, remove_escaped_expr(t, remove_escaped_expr(cond, set)))
+        .MatchExpr(subj, _) -> remove_escaped_expr(subj, set)
+        .Tuple(elems) -> remove_escaped_args(elems, set)
+        .TupleIndex(obj, _) -> remove_escaped_expr(obj, set)
+        .MapLit(entries) -> remove_escaped_args(entries, set)
+        .Slice(obj, start, end) -> remove_escaped_expr(end, remove_escaped_expr(start, remove_escaped_expr(obj, set)))
+        .Try(inner) -> remove_escaped_expr(inner, set)
+        .Catch(inner, _, body, _, _) -> remove_escaped_expr(body, remove_escaped_expr(inner, set))
+        .NullCoalesce(left, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
+        .OptionalChain(obj, _) -> remove_escaped_expr(obj, set)
+        .IsCheck(subj, _) -> remove_escaped_expr(subj, set)
+        .InCheck(needle, items) -> remove_escaped_args(items, remove_escaped_expr(needle, set))
+        .EnumCtor(_, _, args) -> remove_escaped_args(args, set)
+        .When(_) -> set  // when arms don't contain ident escapes at this level
+        // Leaf expressions (Number, String, Bool, Float, Null, QualifiedIdent) — no idents to escape
         _ -> set
     }
 }

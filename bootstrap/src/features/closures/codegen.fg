@@ -18,6 +18,7 @@ use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
 use codegen.types.{RC_CLEANUP, rc_cleanup_reset, rc_cleanup_save, rc_cleanup_restore}
 use codegen.{RC_RELEASABLE, rc_set_releasable, rc_releasable_save, rc_releasable_restore}
+use codegen.escape.{analyze_releasable, analyze_releasable_expr}
 
 // ── Capture detection ──
 
@@ -413,6 +414,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
     let saved_rel = rc_releasable_save()
     defer_reset()
     rc_cleanup_reset()
+    rc_set_releasable(analyze_releasable_expr(body))
     mut result = EmitValue { value: ctx.i64(0), ty: .Int }
     match emit_expr(body_ctx, body_env, body) {
         .Ok(v) -> { result = v }

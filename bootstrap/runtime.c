@@ -356,11 +356,10 @@ void* forge_rc_alloc(int64_t payload_size) {
 
 // Check if a pointer is within the bump arena (RC-managed).
 static inline int is_rc_managed(void* ptr) {
-    bump_init();  // ensure arena is initialized
+    if (!bump_arena) return 0;
     uintptr_t addr = (uintptr_t)ptr;
     uintptr_t arena_start = (uintptr_t)bump_arena;
-    uintptr_t arena_end = arena_start + BUMP_ARENA_SIZE;
-    return addr >= arena_start + RC_HEADER_SIZE && addr < arena_end;
+    return addr >= arena_start + RC_HEADER_SIZE && addr < arena_start + BUMP_ARENA_SIZE;
 }
 
 // Increment reference count.
@@ -388,12 +387,6 @@ void forge_rc_release(void* ptr) {
     if (rc_trace) {
         fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, hdr->refcount);
     }
-}
-
-// Debug: get current refcount.
-int64_t forge_rc_refcount(void* ptr) {
-    if (!ptr) return 0;
-    return (int64_t)rc_header(ptr)->refcount;
 }
 
 // ─── Central error reporting ──────────────────────────────────────

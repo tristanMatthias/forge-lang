@@ -299,24 +299,6 @@ export fn rc_cleanup_push(name: string, alloca: ptr, moved_flag: ptr) {
 export fn rc_cleanup_save() -> RcCleanupStack { RC_CLEANUP }
 export fn rc_cleanup_restore(saved: RcCleanupStack) { RC_CLEANUP = saved }
 
-// Mark a named local as moved (ownership transferred).
-export fn rc_mark_moved(ctx: Ctx, name: string) {
-    rc_mark_moved_stack(ctx, name, RC_CLEANUP)
-}
-
-fn rc_mark_moved_stack(ctx: Ctx, name: string, stack: RcCleanupStack) {
-    match stack {
-        .End -> {}
-        .Node(n, _, moved_flag, next) -> {
-            if n == name {
-                forge_llvm_build_store(ctx.builder, forge_llvm_const_int(ctx.i1_type, 1, 0), moved_flag)
-            } else {
-                rc_mark_moved_stack(ctx, name, next)
-            }
-        }
-    }
-}
-
 export enum StructReg {
     End
     Node(name: string, fields: FieldList, next: StructReg)
