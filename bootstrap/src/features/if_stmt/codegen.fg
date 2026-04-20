@@ -35,6 +35,7 @@ fn is_union_safe_type(ty: ValueType) -> bool {
         .Struct(_) -> true
         .Enum(_) -> true
         .Union(_) -> true
+        .Newtype(_, _) -> true
         _ -> false
     }
 }

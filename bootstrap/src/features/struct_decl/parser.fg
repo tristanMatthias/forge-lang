@@ -50,8 +50,9 @@ impl Parser {
                         return Stmt.TypeDecl(name, tp, derived)
                     }
                 }
-                // Plain alias: type X = OtherType
-                return Stmt.TypeDecl(name, tp, FieldList.End)
+                // Newtype wrapper: type UserId = string — nominal distinction
+                let fields = FieldList.Node("__newtype", rendered, ValueType.Int, FieldList.End)
+                return Stmt.TypeDecl(name, tp, fields)
             }
         }
         Stmt.TypeDecl(name, tp, FieldList.End)

@@ -229,6 +229,7 @@ fn vtype_to_string(ty: ValueType) -> string {
         .Tuple(_) -> "tuple"
         .Trait(n) -> n
         .Union(types) -> render_union_mangled(types)
+        .Newtype(n, _) -> n
     }
 }
 

@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe}
+use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, union_alias_type, newtype_inner_type, struct_type_lookup}
 use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_with_help, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
@@ -305,7 +305,14 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
         return ValueType.Fn(ValueType.Int)
     }
     if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty) }
-    if struct_type_has(tc.structs, ty) { return ValueType.Struct(ty) }
+    if struct_type_has(tc.structs, ty) {
+        let fields = struct_type_lookup(tc.structs, ty)
+        let ua = union_alias_type(fields)
+        if ua != "" { return translate_type(tc, ua) }
+        let nt = newtype_inner_type(fields)
+        if nt != "" { return ValueType.Newtype(ty, translate_type(tc, nt)) }
+        return ValueType.Struct(ty)
+    }
     if trait_has(tc.traits, ty) { return ValueType.Trait(ty) }
     // Handle generic type annotations: "Result<EmitValue, string>" → look up base "Result"
     let base = tc_base_type_name(ty)
@@ -364,7 +371,16 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
             let updated = match stmt_unwrap(ss.node) {
                 .TypeDecl(name, _, fields) -> {
                     let resolved = tc_resolve_type_operator(fields, tc.structs)
-                    tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
+                    let with_struct = tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
+                    // Register newtype constructor as a function: Name(inner) -> Name
+                    let nt = newtype_inner_type(fields)
+                    if nt != "" {
+                        let inner_ty = translate_type(with_struct, nt)
+                        let ctor_params = ParamList.Node("value", nt, inner_ty, ParamList.End)
+                        with_struct with { fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty), with_struct.fns) }
+                    } else {
+                        with_struct
+                    }
                 }
                 .ShapeDecl(name, fields) -> tc with {
                     structs: StructTypeReg.Node(name, fields, tc.structs),
@@ -652,6 +668,28 @@ fn tc_check_shape_args(tc: TC, params: ParamList, args: ExprList) -> TC {
     }
 }
 
+// Check that newtype arguments match — UserId != OrderId even if both wrap string
+fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprList) -> TC {
+    match params {
+        .End -> tc
+        .Node(param_name, param_ty_str, _, next_params) -> match args {
+            .End -> tc
+            .Node(arg_se, next_args) -> {
+                let param_ty = translate_type(tc, param_ty_str)
+                let arg_ty = check_expr(tc, arg_se.node).ty
+                // Only check when parameter is a newtype
+                if param_ty is .Newtype {
+                    if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Int) {
+                        let msg = "`${fn_name}` parameter `${param_name}` expects `${vtype_display(param_ty)}`, got `${vtype_display(arg_ty)}`"
+                        return tc_check_newtype_args(tc_report(tc, DiagCode.TypeMismatch, msg), fn_name, next_params, next_args)
+                    }
+                }
+                tc_check_newtype_args(tc, fn_name, next_params, next_args)
+            }
+        }
+    }
+}
+
 fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC {
     // Only check when parameter type is a shape
     if !is_shape(tc.shapes, param_ty_str) { return tc }
@@ -740,7 +778,9 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                 }
                 // Check shape structural compatibility for each argument
                 let shape_checked = tc_check_shape_args(checked, tc_fn_params(checked.fns, name), args)
-                return tc_er(shape_checked, fn_type_lookup(shape_checked.fns, name))
+                // Check newtype argument compatibility
+                let newtype_checked = tc_check_newtype_args(shape_checked, name, tc_fn_params(shape_checked.fns, name), args)
+                return tc_er(newtype_checked, fn_type_lookup(newtype_checked.fns, name))
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)

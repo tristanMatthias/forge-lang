@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend, union_alias_type}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend, union_alias_type, newtype_inner_type}
 use codegen.types.{Ctx, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
@@ -331,6 +331,12 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
                     // but don't create an LLVM struct type (uses __union type)
                     let ua = union_alias_type(fields)
                     if ua != "" {
+                        return declare_structs(ctx, i64t, i1t, dt, pt, next, StructReg.Node(name, fields, reg))
+                    }
+                    // Newtype wrappers: type UserId = string — register in struct reg
+                    // but don't create an LLVM struct type (zero-cost, same bytes)
+                    let nt = newtype_inner_type(fields)
+                    if nt != "" {
                         return declare_structs(ctx, i64t, i1t, dt, pt, next, StructReg.Node(name, fields, reg))
                     }
                     let op_fields = resolve_type_operator(fields, reg)

@@ -138,6 +138,7 @@ export enum ValueType {
     FnTyped(params: TypeList, ret: ValueType),
     Trait(name: string),
     Union(types: TypeList),
+    Newtype(name: string, inner: ValueType),
 }
 
 // TypeExpr — structured type annotation replacing string-based types.
@@ -218,6 +219,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
             .Union(types_b) -> type_lists_eq(types_a, types_b)
             _ -> false
         }
+        .Newtype(n1, _) -> match b { .Newtype(n2, _) -> n1 == n2, _ -> false }
         _ -> false
     }
 }
@@ -296,6 +298,7 @@ export fn vtype_display(t: ValueType) -> string {
         .FnTyped(params, ret) -> "fn(${render_type_list(params)}) -> ${vtype_display(ret)}"
         .Trait(n) -> "dyn ${n}"
         .Union(types) -> render_union_display(types)
+        .Newtype(name, _) -> name
     }
 }
 
@@ -318,6 +321,16 @@ export fn vtype_trait_name(t: ValueType) -> string {
 }
 
 export fn vtype_is_union(t: ValueType) -> bool { t is .Union }
+
+export fn vtype_is_newtype(t: ValueType) -> bool { t is .Newtype }
+
+export fn vtype_newtype_inner(t: ValueType) -> ValueType {
+    match t { .Newtype(_, inner) -> inner, _ -> ValueType.Int }
+}
+
+export fn vtype_newtype_name(t: ValueType) -> string {
+    match t { .Newtype(n, _) -> n, _ -> "" }
+}
 
 export fn vtype_union_types(t: ValueType) -> TypeList {
     match t { .Union(tl) -> tl, _ -> TypeList.End }
@@ -372,6 +385,15 @@ export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
 export fn union_alias_type(fields: FieldList) -> string {
     match fields {
         .Node(name, ty, _, _) if name == "__union" -> ty
+        _ -> ""
+    }
+}
+
+// Check if a FieldList represents a newtype wrapper (marker field "__newtype")
+// Returns the wrapped type string or "" if not a newtype.
+export fn newtype_inner_type(fields: FieldList) -> string {
+    match fields {
+        .Node(name, ty, _, _) if name == "__newtype" -> ty
         _ -> ""
     }
 }

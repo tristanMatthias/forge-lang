@@ -1,7 +1,7 @@
 // WHY: emits function bodies and binds parameters into the body scope.
 // Also emits null-argument checks when debug_null_checks is enabled on Ctx.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_lookup, ValueType, SStmt, stmt_unwrap, expr_list_length, field_index_of, newtype_inner_type, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_is_newtype, vtype_newtype_inner, vtype_newtype_name, vtype_list_elem, vtype_struct_name, vtype_trait_name}
 use codegen.types.{Ctx, EmitValue, ParamTypeList,  ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, param_type_at, trait_decl_has, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
@@ -220,6 +220,15 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
     if tn != "" {
         return emit_trait_dispatch(ctx, env, r.value, tn, method, args)
     }
+    // Newtype .raw() → zero-cost access to inner value
+    if vtype_is_newtype(r.ty) {
+        if method == "raw" {
+            return ok_emit_typed(r.value, vtype_newtype_inner(r.ty))
+        }
+        // Forward other methods to the inner type's methods
+        let nt_name = vtype_newtype_name(r.ty)
+        return err_emit("newtype `${nt_name}` has no method `${method}` (use .raw() to access the inner value)")
+    }
     // Otherwise: dispatch by type tag → `Type__method(obj, args)`.
     let type_name = vtype_struct_name(r.ty)
     let enum_name = vtype_enum_name(r.ty)
@@ -297,6 +306,14 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
     }
     if name == "panic" {
         return emit_panic(ctx, env, args)
+    }
+    // Newtype construction: UserId(value) → zero-cost, just retype the value
+    let nt_lookup = ctx.lookup_struct(name)
+    if nt_lookup.found {
+        let nt_inner = newtype_inner_type(nt_lookup.fields)
+        if nt_inner != "" {
+            return emit_newtype_ctor(ctx, env, name, nt_inner, args)
+        }
     }
     let fn_val = ctx.get_fn(name)
     if fn_val == null {
@@ -410,6 +427,20 @@ export fn emit_panic(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue,
             ctx.call("exit", [ctx.i64(1)])
             // Unreachable — but return a value for the type system
             ok_emit(ctx.i64(0))
+        }
+    }
+}
+
+// ── Newtype construction ──
+// UserId(value) → zero-cost, just retype the value to the newtype
+fn emit_newtype_ctor(ctx: Ctx, env: VarEnv, name: string, inner_ty_str: string, args: ExprList) -> Result<EmitValue, string> {
+    match args {
+        .End -> err_emit("${name}() expects 1 argument")
+        .Node(se, _) -> {
+            let r = ctx.emit(env, se.node)?
+            let inner_ty = ctx.translate_type(inner_ty_str)
+            // Zero-cost: the value IS the newtype at runtime
+            ok_emit_typed(r.value, .Newtype(name, inner_ty))
         }
     }
 }
