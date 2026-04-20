@@ -353,9 +353,19 @@ void* forge_rc_alloc(int64_t payload_size) {
     return user_ptr;
 }
 
+// Check if a pointer is within the bump arena (RC-managed).
+static inline int is_rc_managed(void* ptr) {
+    bump_init();  // ensure arena is initialized
+    uintptr_t addr = (uintptr_t)ptr;
+    uintptr_t arena_start = (uintptr_t)bump_arena;
+    uintptr_t arena_end = arena_start + BUMP_ARENA_SIZE;
+    return addr >= arena_start + RC_HEADER_SIZE && addr < arena_end;
+}
+
 // Increment reference count.
 void forge_rc_retain(void* ptr) {
     if (!ptr) return;
+    if (!is_rc_managed(ptr)) return;
     RcHeader* hdr = rc_header(ptr);
     hdr->refcount++;
     if (rc_trace) {
@@ -368,12 +378,14 @@ void forge_rc_retain(void* ptr) {
 // and deallocate at refcount 0.
 void forge_rc_release(void* ptr) {
     if (!ptr) return;
+    // Only release RC-managed objects (in bump arena).
+    // String literals and other non-RC pointers are ignored.
+    if (!is_rc_managed(ptr)) return;
     RcHeader* hdr = rc_header(ptr);
     hdr->refcount--;
     if (rc_trace) {
         fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, hdr->refcount);
     }
-    // TODO: when allocator supports free, deallocate at refcount == 0
 }
 
 // Debug: get current refcount.

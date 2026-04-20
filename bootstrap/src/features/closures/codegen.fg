@@ -16,6 +16,8 @@ use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArm
 use codegen.types.{Ctx, DeferStack, EmitValue, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
 use codegen.{emit_expr}
 use features.defer_stmt.codegen.{DEFER_STACK, defer_reset}
+use codegen.types.{RC_CLEANUP, rc_cleanup_reset, rc_cleanup_save, rc_cleanup_restore}
+use codegen.{RC_RELEASABLE, rc_set_releasable, rc_releasable_save, rc_releasable_restore}
 
 // ── Capture detection ──
 
@@ -407,17 +409,24 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
     // Save/restore defer stack so lambda's `return` doesn't emit
     // the outer function's defers.
     let saved_defers = DEFER_STACK
+    let saved_rc = rc_cleanup_save()
+    let saved_rel = rc_releasable_save()
     defer_reset()
+    rc_cleanup_reset()
     mut result = EmitValue { value: ctx.i64(0), ty: .Int }
     match emit_expr(body_ctx, body_env, body) {
         .Ok(v) -> { result = v }
         .Err(e) -> {
             DEFER_STACK = saved_defers
+            rc_cleanup_restore(saved_rc)
+            rc_releasable_restore(saved_rel)
             ctx.position(saved_bb)
             return err_emit(e)
         }
     }
-    DEFER_STACK = saved_defers  // restore outer function's defers
+    DEFER_STACK = saved_defers
+    rc_cleanup_restore(saved_rc)
+    rc_releasable_restore(saved_rel)
 
     if !ctx.has_terminator() {
         let lambda_ret = body_ctx.current_fn_ret()

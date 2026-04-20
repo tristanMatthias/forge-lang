@@ -7,9 +7,9 @@ use codegen.types.{Ctx, EmitValue, ParamTypeList,  ok_emit, ok_emit_str, ok_emit
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
-use codegen.{emit_rc_cleanup, rc_set_escapes}
-use codegen.types.{rc_cleanup_reset}
-use codegen.escape.{analyze_escapes}
+use codegen.{emit_rc_cleanup, rc_set_releasable, rc_releasable_save, rc_releasable_restore}
+use codegen.types.{rc_cleanup_reset, rc_cleanup_save, rc_cleanup_restore}
+use codegen.escape.{analyze_releasable}
 
 export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
@@ -47,8 +47,11 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     }
 
     defer_reset()
+    // Save outer function's RC state, set up for this function
+    let saved_rc = rc_cleanup_save()
+    let saved_rel = rc_releasable_save()
     rc_cleanup_reset()
-    rc_set_escapes(analyze_escapes(body))
+    rc_set_releasable(analyze_releasable(body))
 
     // Use the function's return type for the default block value.
     let ret_ty = body_cg.fn_ret(name)
@@ -64,6 +67,9 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
         }
     }
     ctx.verify_fn(fn_val)
+    // Restore outer function's RC state
+    rc_cleanup_restore(saved_rc)
+    rc_releasable_restore(saved_rel)
     ok_stmt(VarEnv.End)
 }
 

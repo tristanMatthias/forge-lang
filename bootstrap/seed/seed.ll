@@ -1,5 +1,5 @@
-; seed built from commit 3b287ffc at 2026-04-20T22:20:07Z
-; source hash: dc3208177fe19c8d162cae4499167ee61c7d2d1ac25754831e48fe90ed43243d
+; seed built from commit afa9d927 at 2026-04-20T22:43:41Z
+; source hash: 222bb534f4b6fc6153e4733337911c67fdfe71580a6193b01aec7f4f518c680e
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -63,7 +63,7 @@ source_filename = "bootstrap"
 %StructLookup = type { i64, i64 }
 %TopLevelLookup = type { i64, ptr, i64 }
 %GenericFnReg = type { i64, ptr }
-%EscapeSet = type { i64, ptr }
+%ReleasableSet = type { i64, ptr }
 %GenericEnumReg = type { i64, ptr }
 %GenericStructReg = type { i64, ptr }
 %TypeArgList = type { i64, ptr }
@@ -128,7 +128,7 @@ source_filename = "bootstrap"
 @LAMBDA_COUNTER = global i64 0
 @DEFER_STACK = global ptr null
 @RC_CLEANUP = global ptr null
-@RC_ESCAPES = global ptr null
+@RC_RELEASABLE = global ptr null
 @.match_fn = private unnamed_addr constant [26 x i8] c"core::ast::type_param_has\00", align 1
 @mu_file = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
 @.str = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
@@ -15823,701 +15823,705 @@ source_filename = "bootstrap"
 @mu_file.15700 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
 @.match_fn.15701 = private unnamed_addr constant [34 x i8] c"codegen::helpers::stmts_last_expr\00", align 1
 @mu_file.15702 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15703 = private unnamed_addr constant [28 x i8] c"codegen::escape::escape_has\00", align 1
+@.match_fn.15703 = private unnamed_addr constant [32 x i8] c"codegen::escape::releasable_has\00", align 1
 @mu_file.15704 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15705 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.15706 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
-@src_file.15707 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15708 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.15709 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
-@src_file.15710 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15711 = private unnamed_addr constant [31 x i8] c"codegen::escape::analyze_stmts\00", align 1
-@mu_file.15712 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15713 = private unnamed_addr constant [31 x i8] c"codegen::escape::analyze_stmts\00", align 1
-@mu_file.15714 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15715 = private unnamed_addr constant [35 x i8] c"codegen::escape::analyze_last_stmt\00", align 1
-@mu_file.15716 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15717 = private unnamed_addr constant [30 x i8] c"codegen::escape::analyze_stmt\00", align 1
-@mu_file.15718 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15719 = private unnamed_addr constant [41 x i8] c"codegen::escape::collect_escaping_idents\00", align 1
+@.match_fn.15705 = private unnamed_addr constant [35 x i8] c"codegen::escape::releasable_remove\00", align 1
+@mu_file.15706 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15707 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.15708 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
+@src_file.15709 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15710 = private unnamed_addr constant [34 x i8] c"codegen::escape::collect_bindings\00", align 1
+@mu_file.15711 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15712 = private unnamed_addr constant [34 x i8] c"codegen::escape::collect_bindings\00", align 1
+@mu_file.15713 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15714 = private unnamed_addr constant [39 x i8] c"codegen::escape::collect_bindings_stmt\00", align 1
+@mu_file.15715 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15716 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.15717 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
+@src_file.15718 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15719 = private unnamed_addr constant [32 x i8] c"codegen::escape::remove_escaped\00", align 1
 @mu_file.15720 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15721 = private unnamed_addr constant [38 x i8] c"codegen::escape::analyze_expr_escapes\00", align 1
+@.match_fn.15721 = private unnamed_addr constant [37 x i8] c"codegen::escape::remove_escaped_stmt\00", align 1
 @mu_file.15722 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15723 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.15724 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.15725 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15726 = private unnamed_addr constant [39 x i8] c"codegen::escape::collect_escaping_args\00", align 1
-@mu_file.15727 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15728 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.15729 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.15730 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15731 = private unnamed_addr constant [46 x i8] c"codegen::escape::collect_escaping_field_inits\00", align 1
-@mu_file.15732 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15733 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.15734 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
-@src_file.15735 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15736 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.15737 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
-@src_file.15738 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15739 = private unnamed_addr constant [24 x i8] c"codegen::emit_stmt_list\00", align 1
-@mu_file.15740 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15741 = private unnamed_addr constant [5 x i8] c"load\00", align 1
-@sty_name.15742 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15743 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15744 = private unnamed_addr constant [8 x i8] c"i1_type\00", align 1
-@sty_name.15745 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15746 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15747 = private unnamed_addr constant [9 x i8] c"rc_moved\00", align 1
-@fld_name.15748 = private unnamed_addr constant [3 x i8] c"bb\00", align 1
+@.match_fn.15723 = private unnamed_addr constant [37 x i8] c"codegen::escape::remove_escaped_expr\00", align 1
+@mu_file.15724 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15725 = private unnamed_addr constant [37 x i8] c"codegen::escape::remove_escaped_expr\00", align 1
+@mu_file.15726 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15727 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.15728 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.15729 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15730 = private unnamed_addr constant [37 x i8] c"codegen::escape::remove_escaped_args\00", align 1
+@mu_file.15731 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15732 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.15733 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.15734 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15735 = private unnamed_addr constant [44 x i8] c"codegen::escape::remove_escaped_field_inits\00", align 1
+@mu_file.15736 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15737 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.15738 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
+@src_file.15739 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15740 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.15741 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
+@src_file.15742 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15743 = private unnamed_addr constant [24 x i8] c"codegen::emit_stmt_list\00", align 1
+@mu_file.15744 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15745 = private unnamed_addr constant [5 x i8] c"load\00", align 1
+@sty_name.15746 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15747 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15748 = private unnamed_addr constant [8 x i8] c"i1_type\00", align 1
 @sty_name.15749 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.15750 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15751 = private unnamed_addr constant [11 x i8] c"rc_release\00", align 1
+@.str.15751 = private unnamed_addr constant [9 x i8] c"rc_moved\00", align 1
 @fld_name.15752 = private unnamed_addr constant [3 x i8] c"bb\00", align 1
 @sty_name.15753 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.15754 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15755 = private unnamed_addr constant [8 x i8] c"rc_skip\00", align 1
-@fld_name.15756 = private unnamed_addr constant [8 x i8] c"cond_br\00", align 1
+@.str.15755 = private unnamed_addr constant [11 x i8] c"rc_release\00", align 1
+@fld_name.15756 = private unnamed_addr constant [3 x i8] c"bb\00", align 1
 @sty_name.15757 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.15758 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15759 = private unnamed_addr constant [9 x i8] c"position\00", align 1
-@sty_name.15760 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15761 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15762 = private unnamed_addr constant [5 x i8] c"load\00", align 1
-@sty_name.15763 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15764 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15765 = private unnamed_addr constant [9 x i8] c"ptr_type\00", align 1
-@sty_name.15766 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15767 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15768 = private unnamed_addr constant [9 x i8] c"rc_local\00", align 1
-@fld_name.15769 = private unnamed_addr constant [11 x i8] c"rc_release\00", align 1
+@.str.15759 = private unnamed_addr constant [8 x i8] c"rc_skip\00", align 1
+@fld_name.15760 = private unnamed_addr constant [8 x i8] c"cond_br\00", align 1
+@sty_name.15761 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15762 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15763 = private unnamed_addr constant [9 x i8] c"position\00", align 1
+@sty_name.15764 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15765 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15766 = private unnamed_addr constant [5 x i8] c"load\00", align 1
+@sty_name.15767 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15768 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15769 = private unnamed_addr constant [9 x i8] c"ptr_type\00", align 1
 @sty_name.15770 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.15771 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15772 = private unnamed_addr constant [3 x i8] c"br\00", align 1
-@sty_name.15773 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15774 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15775 = private unnamed_addr constant [9 x i8] c"position\00", align 1
-@sty_name.15776 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15777 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15778 = private unnamed_addr constant [23 x i8] c"codegen::emit_rc_stack\00", align 1
-@mu_file.15779 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.15780 = private unnamed_addr constant [24 x i8] c"codegen::rc_mark_return\00", align 1
-@mu_file.15781 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15782 = private unnamed_addr constant [15 x i8] c"current_fn_ret\00", align 1
-@sty_name.15783 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15784 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15785 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15786 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15787 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15788 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15789 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15790 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15791 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15792 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15793 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15794 = private unnamed_addr constant [4 x i8] c"ret\00", align 1
-@sty_name.15795 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15796 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15797 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15798 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15799 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15800 = private unnamed_addr constant [4 x i8] c"ret\00", align 1
-@sty_name.15801 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15802 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15803 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15804 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15805 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15806 = private unnamed_addr constant [15 x i8] c"current_fn_ret\00", align 1
-@sty_name.15807 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15808 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15809 = private unnamed_addr constant [9 x i8] c"ret_void\00", align 1
-@sty_name.15810 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15811 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15812 = private unnamed_addr constant [6 x i8] c"loops\00", align 1
-@sty_name.15813 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15814 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15815 = private unnamed_addr constant [6 x i8] c"found\00", align 1
-@sty_name.15816 = private unnamed_addr constant [10 x i8] c"LoopFrame\00", align 1
-@src_file.15817 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15818 = private unnamed_addr constant [34 x i8] c"codegen error: break outside loop\00", align 1
-@fld_name.15819 = private unnamed_addr constant [3 x i8] c"br\00", align 1
-@sty_name.15820 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@.str.15772 = private unnamed_addr constant [9 x i8] c"rc_local\00", align 1
+@fld_name.15773 = private unnamed_addr constant [11 x i8] c"rc_release\00", align 1
+@sty_name.15774 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15775 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15776 = private unnamed_addr constant [3 x i8] c"br\00", align 1
+@sty_name.15777 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15778 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15779 = private unnamed_addr constant [9 x i8] c"position\00", align 1
+@sty_name.15780 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15781 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15782 = private unnamed_addr constant [23 x i8] c"codegen::emit_rc_stack\00", align 1
+@mu_file.15783 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.15784 = private unnamed_addr constant [24 x i8] c"codegen::rc_mark_return\00", align 1
+@mu_file.15785 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15786 = private unnamed_addr constant [15 x i8] c"current_fn_ret\00", align 1
+@sty_name.15787 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15788 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15789 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15790 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15791 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15792 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15793 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15794 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15795 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15796 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15797 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15798 = private unnamed_addr constant [4 x i8] c"ret\00", align 1
+@sty_name.15799 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15800 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15801 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15802 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15803 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15804 = private unnamed_addr constant [4 x i8] c"ret\00", align 1
+@sty_name.15805 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15806 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15807 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15808 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15809 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15810 = private unnamed_addr constant [15 x i8] c"current_fn_ret\00", align 1
+@sty_name.15811 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15812 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15813 = private unnamed_addr constant [9 x i8] c"ret_void\00", align 1
+@sty_name.15814 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15815 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15816 = private unnamed_addr constant [6 x i8] c"loops\00", align 1
+@sty_name.15817 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15818 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15819 = private unnamed_addr constant [6 x i8] c"found\00", align 1
+@sty_name.15820 = private unnamed_addr constant [10 x i8] c"LoopFrame\00", align 1
 @src_file.15821 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15822 = private unnamed_addr constant [8 x i8] c"exit_bb\00", align 1
-@sty_name.15823 = private unnamed_addr constant [10 x i8] c"LoopFrame\00", align 1
-@src_file.15824 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15825 = private unnamed_addr constant [6 x i8] c"loops\00", align 1
-@sty_name.15826 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15827 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15828 = private unnamed_addr constant [6 x i8] c"found\00", align 1
-@sty_name.15829 = private unnamed_addr constant [10 x i8] c"LoopFrame\00", align 1
-@src_file.15830 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15831 = private unnamed_addr constant [37 x i8] c"codegen error: continue outside loop\00", align 1
-@fld_name.15832 = private unnamed_addr constant [3 x i8] c"br\00", align 1
-@sty_name.15833 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@.str.15822 = private unnamed_addr constant [34 x i8] c"codegen error: break outside loop\00", align 1
+@fld_name.15823 = private unnamed_addr constant [3 x i8] c"br\00", align 1
+@sty_name.15824 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15825 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15826 = private unnamed_addr constant [8 x i8] c"exit_bb\00", align 1
+@sty_name.15827 = private unnamed_addr constant [10 x i8] c"LoopFrame\00", align 1
+@src_file.15828 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15829 = private unnamed_addr constant [6 x i8] c"loops\00", align 1
+@sty_name.15830 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15831 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15832 = private unnamed_addr constant [6 x i8] c"found\00", align 1
+@sty_name.15833 = private unnamed_addr constant [10 x i8] c"LoopFrame\00", align 1
 @src_file.15834 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15835 = private unnamed_addr constant [8 x i8] c"cond_bb\00", align 1
-@sty_name.15836 = private unnamed_addr constant [10 x i8] c"LoopFrame\00", align 1
-@src_file.15837 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15838 = private unnamed_addr constant [9 x i8] c"features\00", align 1
-@sty_name.15839 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15840 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15841 = private unnamed_addr constant [9 x i8] c"features\00", align 1
-@sty_name.15842 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15843 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15844 = private unnamed_addr constant [48 x i8] c"codegen error: unsupported statement type (tag=\00", align 1
-@.i2s_fmt.15845 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.15846 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.match_fn.15847 = private unnamed_addr constant [19 x i8] c"codegen::emit_stmt\00", align 1
-@mu_file.15848 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15849 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
-@sty_name.15850 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15851 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15852 = private unnamed_addr constant [11 x i8] c"global_str\00", align 1
-@sty_name.15853 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15854 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15855 = private unnamed_addr constant [11 x i8] c".float_str\00", align 1
-@fld_name.15856 = private unnamed_addr constant [5 x i8] c"call\00", align 1
+@.str.15835 = private unnamed_addr constant [37 x i8] c"codegen error: continue outside loop\00", align 1
+@fld_name.15836 = private unnamed_addr constant [3 x i8] c"br\00", align 1
+@sty_name.15837 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15838 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15839 = private unnamed_addr constant [8 x i8] c"cond_bb\00", align 1
+@sty_name.15840 = private unnamed_addr constant [10 x i8] c"LoopFrame\00", align 1
+@src_file.15841 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15842 = private unnamed_addr constant [9 x i8] c"features\00", align 1
+@sty_name.15843 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15844 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15845 = private unnamed_addr constant [9 x i8] c"features\00", align 1
+@sty_name.15846 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15847 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.15848 = private unnamed_addr constant [48 x i8] c"codegen error: unsupported statement type (tag=\00", align 1
+@.i2s_fmt.15849 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.15850 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.match_fn.15851 = private unnamed_addr constant [19 x i8] c"codegen::emit_stmt\00", align 1
+@mu_file.15852 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15853 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
+@sty_name.15854 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15855 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15856 = private unnamed_addr constant [11 x i8] c"global_str\00", align 1
 @sty_name.15857 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.15858 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15859 = private unnamed_addr constant [18 x i8] c"forge_float_parse\00", align 1
-@fld_name.15860 = private unnamed_addr constant [8 x i8] c"cast_to\00", align 1
+@.str.15859 = private unnamed_addr constant [11 x i8] c".float_str\00", align 1
+@fld_name.15860 = private unnamed_addr constant [5 x i8] c"call\00", align 1
 @sty_name.15861 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.15862 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15863 = private unnamed_addr constant [5 x i8] c"true\00", align 1
-@fld_name.15864 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
+@.str.15863 = private unnamed_addr constant [18 x i8] c"forge_float_parse\00", align 1
+@fld_name.15864 = private unnamed_addr constant [8 x i8] c"cast_to\00", align 1
 @sty_name.15865 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.15866 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15867 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
-@sty_name.15868 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15869 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15870 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
-@sty_name.15871 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15872 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15873 = private unnamed_addr constant [11 x i8] c"global_str\00", align 1
-@sty_name.15874 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15875 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15876 = private unnamed_addr constant [5 x i8] c".str\00", align 1
-@.str.15877 = private unnamed_addr constant [9 x i8] c"variable\00", align 1
-@.str.15878 = private unnamed_addr constant [5 x i8] c"name\00", align 1
-@fld_name.15879 = private unnamed_addr constant [6 x i8] c"found\00", align 1
-@sty_name.15880 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15881 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15882 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15883 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15884 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15885 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15886 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15887 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15888 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15889 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15890 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15891 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15892 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15893 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15894 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15895 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15896 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15897 = private unnamed_addr constant [6 x i8] c"store\00", align 1
-@sty_name.15898 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15899 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15900 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15901 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15902 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15903 = private unnamed_addr constant [7 x i8] c"alloca\00", align 1
-@sty_name.15904 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15905 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15906 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15907 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15908 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15909 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15910 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15911 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15912 = private unnamed_addr constant [6 x i8] c"store\00", align 1
-@sty_name.15913 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15914 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15915 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15916 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15917 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15918 = private unnamed_addr constant [7 x i8] c"alloca\00", align 1
-@sty_name.15919 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15920 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15921 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15922 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15923 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15924 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15925 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15926 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15927 = private unnamed_addr constant [16 x i8] c"lookup_toplevel\00", align 1
-@sty_name.15928 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15929 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15930 = private unnamed_addr constant [6 x i8] c"found\00", align 1
-@sty_name.15931 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.15932 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15933 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15934 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15935 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15936 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15937 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.15938 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15939 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15940 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15941 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15942 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15943 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15944 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15945 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15946 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.15947 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15948 = private unnamed_addr constant [6 x i8] c"store\00", align 1
-@sty_name.15949 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15950 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15951 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15952 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15953 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15954 = private unnamed_addr constant [12 x i8] c"llvm_global\00", align 1
-@sty_name.15955 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.15956 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15957 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15958 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15959 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15960 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15961 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.15962 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15963 = private unnamed_addr constant [6 x i8] c"store\00", align 1
-@sty_name.15964 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15965 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15966 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15967 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15968 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15969 = private unnamed_addr constant [12 x i8] c"llvm_global\00", align 1
-@sty_name.15970 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.15971 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15972 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.15973 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
-@src_file.15974 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15975 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15976 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.15977 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15978 = private unnamed_addr constant [35 x i8] c"assignment to undefined variable `\00", align 1
-@.str.15979 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@fld_name.15980 = private unnamed_addr constant [9 x i8] c"features\00", align 1
-@sty_name.15981 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15982 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15983 = private unnamed_addr constant [9 x i8] c"features\00", align 1
-@sty_name.15984 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15985 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.15986 = private unnamed_addr constant [34 x i8] c"unsupported expression type (tag=\00", align 1
-@.i2s_fmt.15987 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
-@.str.15988 = private unnamed_addr constant [2 x i8] c")\00", align 1
-@.match_fn.15989 = private unnamed_addr constant [19 x i8] c"codegen::emit_expr\00", align 1
-@mu_file.15990 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15991 = private unnamed_addr constant [6 x i8] c"found\00", align 1
-@sty_name.15992 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15993 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15994 = private unnamed_addr constant [11 x i8] c"load_typed\00", align 1
-@sty_name.15995 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.15996 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.15997 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.15998 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.15999 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16000 = private unnamed_addr constant [7 x i8] c"alloca\00", align 1
-@sty_name.16001 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.16002 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16003 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.16004 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
-@src_file.16005 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16006 = private unnamed_addr constant [16 x i8] c"lookup_toplevel\00", align 1
-@sty_name.16007 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.16008 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16009 = private unnamed_addr constant [6 x i8] c"found\00", align 1
-@sty_name.16010 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.16011 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16012 = private unnamed_addr constant [11 x i8] c"load_typed\00", align 1
-@sty_name.16013 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.16014 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16015 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.16016 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.16017 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16018 = private unnamed_addr constant [12 x i8] c"llvm_global\00", align 1
-@sty_name.16019 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.16020 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16021 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
-@sty_name.16022 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
-@src_file.16023 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16024 = private unnamed_addr constant [7 x i8] c"get_fn\00", align 1
-@sty_name.16025 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.16026 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16027 = private unnamed_addr constant [7 x i8] c"to_i64\00", align 1
-@sty_name.16028 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.16029 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16030 = private unnamed_addr constant [7 x i8] c"fn_ref\00", align 1
-@fld_name.16031 = private unnamed_addr constant [14 x i8] c"closure_array\00", align 1
+@.str.15867 = private unnamed_addr constant [5 x i8] c"true\00", align 1
+@fld_name.15868 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
+@sty_name.15869 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15870 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15871 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
+@sty_name.15872 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15873 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15874 = private unnamed_addr constant [4 x i8] c"i64\00", align 1
+@sty_name.15875 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15876 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15877 = private unnamed_addr constant [11 x i8] c"global_str\00", align 1
+@sty_name.15878 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15879 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.15880 = private unnamed_addr constant [5 x i8] c".str\00", align 1
+@.str.15881 = private unnamed_addr constant [9 x i8] c"variable\00", align 1
+@.str.15882 = private unnamed_addr constant [5 x i8] c"name\00", align 1
+@fld_name.15883 = private unnamed_addr constant [6 x i8] c"found\00", align 1
+@sty_name.15884 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.15885 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15886 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15887 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15888 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15889 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15890 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.15891 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15892 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15893 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15894 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15895 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15896 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15897 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15898 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15899 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.15900 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15901 = private unnamed_addr constant [6 x i8] c"store\00", align 1
+@sty_name.15902 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15903 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15904 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15905 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15906 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15907 = private unnamed_addr constant [7 x i8] c"alloca\00", align 1
+@sty_name.15908 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.15909 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15910 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15911 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15912 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15913 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15914 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.15915 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15916 = private unnamed_addr constant [6 x i8] c"store\00", align 1
+@sty_name.15917 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15918 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15919 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15920 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15921 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15922 = private unnamed_addr constant [7 x i8] c"alloca\00", align 1
+@sty_name.15923 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.15924 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15925 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15926 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15927 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15928 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15929 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.15930 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15931 = private unnamed_addr constant [16 x i8] c"lookup_toplevel\00", align 1
+@sty_name.15932 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15933 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15934 = private unnamed_addr constant [6 x i8] c"found\00", align 1
+@sty_name.15935 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.15936 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15937 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15938 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15939 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15940 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15941 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.15942 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15943 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15944 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15945 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15946 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15947 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15948 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15949 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15950 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.15951 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15952 = private unnamed_addr constant [6 x i8] c"store\00", align 1
+@sty_name.15953 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15954 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15955 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15956 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15957 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15958 = private unnamed_addr constant [12 x i8] c"llvm_global\00", align 1
+@sty_name.15959 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.15960 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15961 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15962 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15963 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15964 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15965 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.15966 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15967 = private unnamed_addr constant [6 x i8] c"store\00", align 1
+@sty_name.15968 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15969 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15970 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15971 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15972 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15973 = private unnamed_addr constant [12 x i8] c"llvm_global\00", align 1
+@sty_name.15974 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.15975 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15976 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.15977 = private unnamed_addr constant [10 x i8] c"EmitValue\00", align 1
+@src_file.15978 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15979 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.15980 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.15981 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.15982 = private unnamed_addr constant [35 x i8] c"assignment to undefined variable `\00", align 1
+@.str.15983 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@fld_name.15984 = private unnamed_addr constant [9 x i8] c"features\00", align 1
+@sty_name.15985 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15986 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15987 = private unnamed_addr constant [9 x i8] c"features\00", align 1
+@sty_name.15988 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.15989 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.15990 = private unnamed_addr constant [34 x i8] c"unsupported expression type (tag=\00", align 1
+@.i2s_fmt.15991 = private unnamed_addr constant [5 x i8] c"%lld\00", align 1
+@.str.15992 = private unnamed_addr constant [2 x i8] c")\00", align 1
+@.match_fn.15993 = private unnamed_addr constant [19 x i8] c"codegen::emit_expr\00", align 1
+@mu_file.15994 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15995 = private unnamed_addr constant [6 x i8] c"found\00", align 1
+@sty_name.15996 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.15997 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.15998 = private unnamed_addr constant [11 x i8] c"load_typed\00", align 1
+@sty_name.15999 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.16000 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16001 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.16002 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.16003 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16004 = private unnamed_addr constant [7 x i8] c"alloca\00", align 1
+@sty_name.16005 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.16006 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16007 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.16008 = private unnamed_addr constant [10 x i8] c"VarLookup\00", align 1
+@src_file.16009 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16010 = private unnamed_addr constant [16 x i8] c"lookup_toplevel\00", align 1
+@sty_name.16011 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.16012 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16013 = private unnamed_addr constant [6 x i8] c"found\00", align 1
+@sty_name.16014 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.16015 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16016 = private unnamed_addr constant [11 x i8] c"load_typed\00", align 1
+@sty_name.16017 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.16018 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16019 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.16020 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.16021 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16022 = private unnamed_addr constant [12 x i8] c"llvm_global\00", align 1
+@sty_name.16023 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.16024 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16025 = private unnamed_addr constant [3 x i8] c"ty\00", align 1
+@sty_name.16026 = private unnamed_addr constant [15 x i8] c"TopLevelLookup\00", align 1
+@src_file.16027 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16028 = private unnamed_addr constant [7 x i8] c"get_fn\00", align 1
+@sty_name.16029 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.16030 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16031 = private unnamed_addr constant [7 x i8] c"to_i64\00", align 1
 @sty_name.16032 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.16033 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16034 = private unnamed_addr constant [7 x i8] c"to_i64\00", align 1
-@sty_name.16035 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
-@src_file.16036 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16037 = private unnamed_addr constant [11 x i8] c"fn_ref_i64\00", align 1
-@fld_name.16038 = private unnamed_addr constant [7 x i8] c"fn_ret\00", align 1
+@.str.16034 = private unnamed_addr constant [7 x i8] c"fn_ref\00", align 1
+@fld_name.16035 = private unnamed_addr constant [14 x i8] c"closure_array\00", align 1
+@sty_name.16036 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.16037 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16038 = private unnamed_addr constant [7 x i8] c"to_i64\00", align 1
 @sty_name.16039 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
 @src_file.16040 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16041 = private unnamed_addr constant [11 x i8] c"undefined \00", align 1
-@.str.16042 = private unnamed_addr constant [3 x i8] c" `\00", align 1
-@.str.16043 = private unnamed_addr constant [2 x i8] c"`\00", align 1
-@fld_name.16044 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16045 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
-@src_file.16046 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16047 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.16048 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
-@src_file.16049 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16050 = private unnamed_addr constant [4 x i8] c"col\00", align 1
-@sty_name.16051 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
-@src_file.16052 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16053 = private unnamed_addr constant [27 x i8] c"desugar::desugar_stmt_list\00", align 1
-@mu_file.16054 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16055 = private unnamed_addr constant [22 x i8] c"desugar::desugar_stmt\00", align 1
-@mu_file.16056 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16057 = private unnamed_addr constant [22 x i8] c"desugar::rewrite_expr\00", align 1
+@.str.16041 = private unnamed_addr constant [11 x i8] c"fn_ref_i64\00", align 1
+@fld_name.16042 = private unnamed_addr constant [7 x i8] c"fn_ret\00", align 1
+@sty_name.16043 = private unnamed_addr constant [4 x i8] c"Ctx\00", align 1
+@src_file.16044 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16045 = private unnamed_addr constant [11 x i8] c"undefined \00", align 1
+@.str.16046 = private unnamed_addr constant [3 x i8] c" `\00", align 1
+@.str.16047 = private unnamed_addr constant [2 x i8] c"`\00", align 1
+@fld_name.16048 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16049 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
+@src_file.16050 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16051 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.16052 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
+@src_file.16053 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16054 = private unnamed_addr constant [4 x i8] c"col\00", align 1
+@sty_name.16055 = private unnamed_addr constant [6 x i8] c"SStmt\00", align 1
+@src_file.16056 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16057 = private unnamed_addr constant [27 x i8] c"desugar::desugar_stmt_list\00", align 1
 @mu_file.16058 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16059 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.match_fn.16060 = private unnamed_addr constant [22 x i8] c"desugar::rewrite_call\00", align 1
-@mu_file.16061 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.lit_str.16062 = private unnamed_addr constant [7 x i8] c"assert\00", align 1
-@.lit_str.16063 = private unnamed_addr constant [4 x i8] c"dbg\00", align 1
-@.lit_str.16064 = private unnamed_addr constant [5 x i8] c"todo\00", align 1
-@.lit_str.16065 = private unnamed_addr constant [12 x i8] c"unreachable\00", align 1
-@.lit_str.16066 = private unnamed_addr constant [4 x i8] c"min\00", align 1
-@.lit_str.16067 = private unnamed_addr constant [4 x i8] c"max\00", align 1
-@.match_fn.16068 = private unnamed_addr constant [22 x i8] c"desugar::rewrite_call\00", align 1
-@mu_file.16069 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16070 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16071 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16072 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16073 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16074 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16075 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16076 = private unnamed_addr constant [19 x i8] c"\22assertion failed\22\00", align 1
-@.match_fn.16077 = private unnamed_addr constant [24 x i8] c"desugar::desugar_assert\00", align 1
-@mu_file.16078 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16079 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
-@.str.16080 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
-@.str.16081 = private unnamed_addr constant [23 x i8] c"\22assert: no condition\22\00", align 1
-@.match_fn.16082 = private unnamed_addr constant [24 x i8] c"desugar::desugar_assert\00", align 1
-@mu_file.16083 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16084 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16085 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16086 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16087 = private unnamed_addr constant [9 x i8] c"\22[dbg] \22\00", align 1
-@.str.16088 = private unnamed_addr constant [7 x i8] c"string\00", align 1
-@.str.16089 = private unnamed_addr constant [6 x i8] c"__dbg\00", align 1
-@.str.16090 = private unnamed_addr constant [6 x i8] c"__dbg\00", align 1
-@.str.16091 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.16092 = private unnamed_addr constant [8 x i8] c"println\00", align 1
+@.match_fn.16059 = private unnamed_addr constant [22 x i8] c"desugar::desugar_stmt\00", align 1
+@mu_file.16060 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16061 = private unnamed_addr constant [22 x i8] c"desugar::rewrite_expr\00", align 1
+@mu_file.16062 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16063 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.match_fn.16064 = private unnamed_addr constant [22 x i8] c"desugar::rewrite_call\00", align 1
+@mu_file.16065 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.lit_str.16066 = private unnamed_addr constant [7 x i8] c"assert\00", align 1
+@.lit_str.16067 = private unnamed_addr constant [4 x i8] c"dbg\00", align 1
+@.lit_str.16068 = private unnamed_addr constant [5 x i8] c"todo\00", align 1
+@.lit_str.16069 = private unnamed_addr constant [12 x i8] c"unreachable\00", align 1
+@.lit_str.16070 = private unnamed_addr constant [4 x i8] c"min\00", align 1
+@.lit_str.16071 = private unnamed_addr constant [4 x i8] c"max\00", align 1
+@.match_fn.16072 = private unnamed_addr constant [22 x i8] c"desugar::rewrite_call\00", align 1
+@mu_file.16073 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16074 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16075 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16076 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16077 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16078 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16079 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16080 = private unnamed_addr constant [19 x i8] c"\22assertion failed\22\00", align 1
+@.match_fn.16081 = private unnamed_addr constant [24 x i8] c"desugar::desugar_assert\00", align 1
+@mu_file.16082 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16083 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
+@.str.16084 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
+@.str.16085 = private unnamed_addr constant [23 x i8] c"\22assert: no condition\22\00", align 1
+@.match_fn.16086 = private unnamed_addr constant [24 x i8] c"desugar::desugar_assert\00", align 1
+@mu_file.16087 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16088 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16089 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16090 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16091 = private unnamed_addr constant [9 x i8] c"\22[dbg] \22\00", align 1
+@.str.16092 = private unnamed_addr constant [7 x i8] c"string\00", align 1
 @.str.16093 = private unnamed_addr constant [6 x i8] c"__dbg\00", align 1
-@.str.16094 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
-@.str.16095 = private unnamed_addr constant [19 x i8] c"\22dbg: no argument\22\00", align 1
-@.match_fn.16096 = private unnamed_addr constant [21 x i8] c"desugar::desugar_dbg\00", align 1
-@mu_file.16097 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16098 = private unnamed_addr constant [24 x i8] c"\22not yet implemented: \22\00", align 1
-@fld_name.16099 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16100 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16101 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16102 = private unnamed_addr constant [22 x i8] c"\22not yet implemented\22\00", align 1
-@.match_fn.16103 = private unnamed_addr constant [22 x i8] c"desugar::desugar_todo\00", align 1
-@mu_file.16104 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16105 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
-@.str.16106 = private unnamed_addr constant [16 x i8] c"\22unreachable: \22\00", align 1
-@fld_name.16107 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16108 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16109 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16110 = private unnamed_addr constant [27 x i8] c"\22unreachable code reached\22\00", align 1
-@.match_fn.16111 = private unnamed_addr constant [29 x i8] c"desugar::desugar_unreachable\00", align 1
-@mu_file.16112 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16113 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
-@.str.16114 = private unnamed_addr constant [4 x i8] c"__a\00", align 1
-@.str.16115 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.16116 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16117 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16118 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16119 = private unnamed_addr constant [4 x i8] c"__b\00", align 1
-@.str.16120 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@fld_name.16121 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16122 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16123 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16124 = private unnamed_addr constant [4 x i8] c"__a\00", align 1
-@.str.16125 = private unnamed_addr constant [4 x i8] c"__b\00", align 1
-@.str.16126 = private unnamed_addr constant [4 x i8] c"__a\00", align 1
-@.str.16127 = private unnamed_addr constant [4 x i8] c"__b\00", align 1
-@.str.16128 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
-@.str.16129 = private unnamed_addr constant [31 x i8] c"\22min/max requires 2 arguments\22\00", align 1
-@.match_fn.16130 = private unnamed_addr constant [25 x i8] c"desugar::desugar_min_max\00", align 1
-@mu_file.16131 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16094 = private unnamed_addr constant [6 x i8] c"__dbg\00", align 1
+@.str.16095 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.16096 = private unnamed_addr constant [8 x i8] c"println\00", align 1
+@.str.16097 = private unnamed_addr constant [6 x i8] c"__dbg\00", align 1
+@.str.16098 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
+@.str.16099 = private unnamed_addr constant [19 x i8] c"\22dbg: no argument\22\00", align 1
+@.match_fn.16100 = private unnamed_addr constant [21 x i8] c"desugar::desugar_dbg\00", align 1
+@mu_file.16101 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16102 = private unnamed_addr constant [24 x i8] c"\22not yet implemented: \22\00", align 1
+@fld_name.16103 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16104 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16105 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16106 = private unnamed_addr constant [22 x i8] c"\22not yet implemented\22\00", align 1
+@.match_fn.16107 = private unnamed_addr constant [22 x i8] c"desugar::desugar_todo\00", align 1
+@mu_file.16108 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16109 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
+@.str.16110 = private unnamed_addr constant [16 x i8] c"\22unreachable: \22\00", align 1
+@fld_name.16111 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16112 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16113 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16114 = private unnamed_addr constant [27 x i8] c"\22unreachable code reached\22\00", align 1
+@.match_fn.16115 = private unnamed_addr constant [29 x i8] c"desugar::desugar_unreachable\00", align 1
+@mu_file.16116 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16117 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
+@.str.16118 = private unnamed_addr constant [4 x i8] c"__a\00", align 1
+@.str.16119 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.16120 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16121 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16122 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16123 = private unnamed_addr constant [4 x i8] c"__b\00", align 1
+@.str.16124 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@fld_name.16125 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16126 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16127 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16128 = private unnamed_addr constant [4 x i8] c"__a\00", align 1
+@.str.16129 = private unnamed_addr constant [4 x i8] c"__b\00", align 1
+@.str.16130 = private unnamed_addr constant [4 x i8] c"__a\00", align 1
+@.str.16131 = private unnamed_addr constant [4 x i8] c"__b\00", align 1
 @.str.16132 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
 @.str.16133 = private unnamed_addr constant [31 x i8] c"\22min/max requires 2 arguments\22\00", align 1
 @.match_fn.16134 = private unnamed_addr constant [25 x i8] c"desugar::desugar_min_max\00", align 1
 @mu_file.16135 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16136 = private unnamed_addr constant [19 x i8] c"desugar::walk_expr\00", align 1
-@mu_file.16137 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16138 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16139 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16140 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16141 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.16142 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16143 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16144 = private unnamed_addr constant [4 x i8] c"col\00", align 1
-@sty_name.16145 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16146 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16147 = private unnamed_addr constant [27 x i8] c"desugar::desugar_expr_list\00", align 1
-@mu_file.16148 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16149 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16150 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16151 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16152 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.16153 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16154 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16155 = private unnamed_addr constant [4 x i8] c"col\00", align 1
-@sty_name.16156 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16157 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16158 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16159 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16160 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16161 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.16162 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16163 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16164 = private unnamed_addr constant [4 x i8] c"col\00", align 1
-@sty_name.16165 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16166 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16167 = private unnamed_addr constant [28 x i8] c"desugar::desugar_match_arms\00", align 1
-@mu_file.16168 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16169 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16170 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16171 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16172 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.16173 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16174 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16175 = private unnamed_addr constant [4 x i8] c"col\00", align 1
-@sty_name.16176 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16177 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16178 = private unnamed_addr constant [5 x i8] c"node\00", align 1
-@sty_name.16179 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16180 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16181 = private unnamed_addr constant [5 x i8] c"line\00", align 1
-@sty_name.16182 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16183 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16184 = private unnamed_addr constant [4 x i8] c"col\00", align 1
-@sty_name.16185 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
-@src_file.16186 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16187 = private unnamed_addr constant [27 x i8] c"desugar::desugar_when_arms\00", align 1
-@mu_file.16188 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16189 = private unnamed_addr constant [29 x i8] c"desugar::desugar_field_inits\00", align 1
-@mu_file.16190 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16191 = private unnamed_addr constant [23 x i8] c"forge-bootstrap v0.1.0\00", align 1
-@.str.16192 = private unnamed_addr constant [66 x i8] c"Usage: bootstrapc <expr|program|eval|check|compile|run> <file.fg>\00", align 1
-@.str.16193 = private unnamed_addr constant [77 x i8] c"       bootstrapc compile --stop-after=<parse|resolve|names|check> <file.fg>\00", align 1
-@.str.16194 = private unnamed_addr constant [3 x i8] c"--\00", align 1
-@.str.16195 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
-@.str.16196 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.lit_str.16197 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@fld_name.16198 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16199 = private unnamed_addr constant [12 x i8] c"ParseResult\00", align 1
-@src_file.16200 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16201 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@sty_name.16202 = private unnamed_addr constant [12 x i8] c"ParseResult\00", align 1
-@src_file.16203 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16204 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16205 = private unnamed_addr constant [12 x i8] c"ParseResult\00", align 1
-@src_file.16206 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16207 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
-@sty_name.16208 = private unnamed_addr constant [12 x i8] c"ParseResult\00", align 1
-@src_file.16209 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.lit_str.16210 = private unnamed_addr constant [8 x i8] c"program\00", align 1
-@fld_name.16211 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16212 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@.str.16136 = private unnamed_addr constant [6 x i8] c"panic\00", align 1
+@.str.16137 = private unnamed_addr constant [31 x i8] c"\22min/max requires 2 arguments\22\00", align 1
+@.match_fn.16138 = private unnamed_addr constant [25 x i8] c"desugar::desugar_min_max\00", align 1
+@mu_file.16139 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16140 = private unnamed_addr constant [19 x i8] c"desugar::walk_expr\00", align 1
+@mu_file.16141 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16142 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16143 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16144 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16145 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.16146 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16147 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16148 = private unnamed_addr constant [4 x i8] c"col\00", align 1
+@sty_name.16149 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16150 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16151 = private unnamed_addr constant [27 x i8] c"desugar::desugar_expr_list\00", align 1
+@mu_file.16152 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16153 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16154 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16155 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16156 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.16157 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16158 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16159 = private unnamed_addr constant [4 x i8] c"col\00", align 1
+@sty_name.16160 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16161 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16162 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16163 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16164 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16165 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.16166 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16167 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16168 = private unnamed_addr constant [4 x i8] c"col\00", align 1
+@sty_name.16169 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16170 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16171 = private unnamed_addr constant [28 x i8] c"desugar::desugar_match_arms\00", align 1
+@mu_file.16172 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16173 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16174 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16175 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16176 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.16177 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16178 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16179 = private unnamed_addr constant [4 x i8] c"col\00", align 1
+@sty_name.16180 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16181 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16182 = private unnamed_addr constant [5 x i8] c"node\00", align 1
+@sty_name.16183 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16184 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16185 = private unnamed_addr constant [5 x i8] c"line\00", align 1
+@sty_name.16186 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16187 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16188 = private unnamed_addr constant [4 x i8] c"col\00", align 1
+@sty_name.16189 = private unnamed_addr constant [6 x i8] c"SExpr\00", align 1
+@src_file.16190 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16191 = private unnamed_addr constant [27 x i8] c"desugar::desugar_when_arms\00", align 1
+@mu_file.16192 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16193 = private unnamed_addr constant [29 x i8] c"desugar::desugar_field_inits\00", align 1
+@mu_file.16194 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16195 = private unnamed_addr constant [23 x i8] c"forge-bootstrap v0.1.0\00", align 1
+@.str.16196 = private unnamed_addr constant [66 x i8] c"Usage: bootstrapc <expr|program|eval|check|compile|run> <file.fg>\00", align 1
+@.str.16197 = private unnamed_addr constant [77 x i8] c"       bootstrapc compile --stop-after=<parse|resolve|names|check> <file.fg>\00", align 1
+@.str.16198 = private unnamed_addr constant [3 x i8] c"--\00", align 1
+@.str.16199 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@.str.16200 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.lit_str.16201 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@fld_name.16202 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16203 = private unnamed_addr constant [12 x i8] c"ParseResult\00", align 1
+@src_file.16204 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16205 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@sty_name.16206 = private unnamed_addr constant [12 x i8] c"ParseResult\00", align 1
+@src_file.16207 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16208 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16209 = private unnamed_addr constant [12 x i8] c"ParseResult\00", align 1
+@src_file.16210 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16211 = private unnamed_addr constant [5 x i8] c"expr\00", align 1
+@sty_name.16212 = private unnamed_addr constant [12 x i8] c"ParseResult\00", align 1
 @src_file.16213 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16214 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16215 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16216 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16217 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16218 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16219 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16220 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16221 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16222 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.lit_str.16223 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
-@fld_name.16224 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16225 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
+@.lit_str.16214 = private unnamed_addr constant [8 x i8] c"program\00", align 1
+@fld_name.16215 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16216 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16217 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16218 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16219 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16220 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16221 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16222 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16223 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16224 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16225 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
 @src_file.16226 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16227 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.16228 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
-@src_file.16229 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16230 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16231 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
-@src_file.16232 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16233 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.16234 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
-@src_file.16235 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.lit_str.16236 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@fld_name.16237 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16238 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@.lit_str.16227 = private unnamed_addr constant [5 x i8] c"eval\00", align 1
+@fld_name.16228 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16229 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
+@src_file.16230 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16231 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.16232 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
+@src_file.16233 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16234 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16235 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
+@src_file.16236 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16237 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.16238 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
 @src_file.16239 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16240 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16241 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16242 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16243 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16244 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16245 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16246 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16247 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16248 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16249 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16250 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16251 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16252 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16253 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16254 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16255 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16256 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
-@src_file.16257 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16258 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16259 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
-@src_file.16260 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16261 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16262 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
-@src_file.16263 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16264 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16265 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
-@src_file.16266 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16267 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16268 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16269 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16270 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16271 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16272 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16273 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16274 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16275 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16276 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16277 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16278 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16279 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16280 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16281 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16282 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16283 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16284 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16285 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16286 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16287 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16288 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16289 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16290 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16291 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16292 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16293 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16294 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@.lit_str.16295 = private unnamed_addr constant [4 x i8] c"run\00", align 1
-@fld_name.16296 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16297 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
-@src_file.16298 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16299 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.16300 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
-@src_file.16301 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16302 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16303 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
-@src_file.16304 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16305 = private unnamed_addr constant [6 x i8] c"value\00", align 1
-@sty_name.16306 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
-@src_file.16307 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16308 = private unnamed_addr constant [5 x i8] c"main\00", align 1
-@mu_file.16309 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16310 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
-@.str.16311 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
-@.str.16312 = private unnamed_addr constant [14 x i8] c"--stop-after=\00", align 1
-@.str.16313 = private unnamed_addr constant [13 x i8] c"--debug-null\00", align 1
-@.str.16314 = private unnamed_addr constant [45 x i8] c"error: compile requires a file path argument\00", align 1
-@.str.16315 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
-@fld_name.16316 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16317 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16318 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16319 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16320 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16321 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16322 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16323 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16324 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16325 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16326 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16327 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16328 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16329 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16330 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16331 = private unnamed_addr constant [6 x i8] c"parse\00", align 1
-@.str.16332 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@fld_name.16333 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16334 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
-@src_file.16335 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16336 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16337 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
-@src_file.16338 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16339 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16340 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
-@src_file.16341 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16342 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16343 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
-@src_file.16344 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16345 = private unnamed_addr constant [8 x i8] c"resolve\00", align 1
-@.str.16346 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@fld_name.16347 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16348 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
-@src_file.16349 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16350 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16351 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16352 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16353 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16354 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16355 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16356 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
-@sty_name.16357 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16358 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16359 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
-@sty_name.16360 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16361 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16362 = private unnamed_addr constant [6 x i8] c"names\00", align 1
-@.str.16363 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@fld_name.16364 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16365 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
-@src_file.16366 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16367 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16368 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16369 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16370 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16371 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16372 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16373 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16374 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16375 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16376 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16377 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16378 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16379 = private unnamed_addr constant [18 x i8] c"type check failed\00", align 1
-@.str.16380 = private unnamed_addr constant [6 x i8] c"check\00", align 1
-@.str.16381 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
-@fld_name.16382 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16383 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
-@src_file.16384 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16385 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16386 = private unnamed_addr constant [11 x i8] c"MonoResult\00", align 1
-@src_file.16387 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@fld_name.16388 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
-@sty_name.16389 = private unnamed_addr constant [11 x i8] c"MonoResult\00", align 1
-@src_file.16390 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.str.16391 = private unnamed_addr constant [24 x i8] c"monomorphization failed\00", align 1
-@.str.16392 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
-@fld_name.16393 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
-@sty_name.16394 = private unnamed_addr constant [11 x i8] c"MonoResult\00", align 1
-@src_file.16395 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
-@.match_fn.16396 = private unnamed_addr constant [5 x i8] c"main\00", align 1
-@mu_file.16397 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.lit_str.16240 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@fld_name.16241 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16242 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16243 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16244 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16245 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16246 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16247 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16248 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16249 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16250 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16251 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16252 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16253 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16254 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16255 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16256 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16257 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16258 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16259 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16260 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
+@src_file.16261 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16262 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16263 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
+@src_file.16264 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16265 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16266 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
+@src_file.16267 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16268 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16269 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
+@src_file.16270 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16271 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16272 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16273 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16274 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16275 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16276 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16277 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16278 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16279 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16280 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16281 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16282 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16283 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16284 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16285 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16286 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16287 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16288 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16289 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16290 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16291 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16292 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16293 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16294 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16295 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16296 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16297 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16298 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@.lit_str.16299 = private unnamed_addr constant [4 x i8] c"run\00", align 1
+@fld_name.16300 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16301 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
+@src_file.16302 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16303 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.16304 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
+@src_file.16305 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16306 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16307 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
+@src_file.16308 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16309 = private unnamed_addr constant [6 x i8] c"value\00", align 1
+@sty_name.16310 = private unnamed_addr constant [11 x i8] c"EvalResult\00", align 1
+@src_file.16311 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16312 = private unnamed_addr constant [5 x i8] c"main\00", align 1
+@mu_file.16313 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16314 = private unnamed_addr constant [8 x i8] c"compile\00", align 1
+@.str.16315 = private unnamed_addr constant [1 x i8] zeroinitializer, align 1
+@.str.16316 = private unnamed_addr constant [14 x i8] c"--stop-after=\00", align 1
+@.str.16317 = private unnamed_addr constant [13 x i8] c"--debug-null\00", align 1
+@.str.16318 = private unnamed_addr constant [45 x i8] c"error: compile requires a file path argument\00", align 1
+@.str.16319 = private unnamed_addr constant [24 x i8] c"error: file not found: \00", align 1
+@fld_name.16320 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16321 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16322 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16323 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16324 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16325 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16326 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16327 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16328 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16329 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16330 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16331 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16332 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16333 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16334 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16335 = private unnamed_addr constant [6 x i8] c"parse\00", align 1
+@.str.16336 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@fld_name.16337 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16338 = private unnamed_addr constant [19 x i8] c"ProgramParseResult\00", align 1
+@src_file.16339 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16340 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16341 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
+@src_file.16342 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16343 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16344 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
+@src_file.16345 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16346 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16347 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
+@src_file.16348 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16349 = private unnamed_addr constant [8 x i8] c"resolve\00", align 1
+@.str.16350 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@fld_name.16351 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16352 = private unnamed_addr constant [14 x i8] c"ModListResult\00", align 1
+@src_file.16353 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16354 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16355 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16356 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16357 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16358 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16359 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16360 = private unnamed_addr constant [10 x i8] c"had_error\00", align 1
+@sty_name.16361 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16362 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16363 = private unnamed_addr constant [14 x i8] c"error_message\00", align 1
+@sty_name.16364 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16365 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16366 = private unnamed_addr constant [6 x i8] c"names\00", align 1
+@.str.16367 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@fld_name.16368 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16369 = private unnamed_addr constant [18 x i8] c"NameResolveResult\00", align 1
+@src_file.16370 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16371 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16372 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16373 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16374 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16375 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16376 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16377 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16378 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16379 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16380 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16381 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16382 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16383 = private unnamed_addr constant [18 x i8] c"type check failed\00", align 1
+@.str.16384 = private unnamed_addr constant [6 x i8] c"check\00", align 1
+@.str.16385 = private unnamed_addr constant [3 x i8] c"ok\00", align 1
+@fld_name.16386 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16387 = private unnamed_addr constant [16 x i8] c"TypeCheckResult\00", align 1
+@src_file.16388 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16389 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16390 = private unnamed_addr constant [11 x i8] c"MonoResult\00", align 1
+@src_file.16391 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@fld_name.16392 = private unnamed_addr constant [4 x i8] c"bag\00", align 1
+@sty_name.16393 = private unnamed_addr constant [11 x i8] c"MonoResult\00", align 1
+@src_file.16394 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.str.16395 = private unnamed_addr constant [24 x i8] c"monomorphization failed\00", align 1
+@.str.16396 = private unnamed_addr constant [4 x i8] c".ll\00", align 1
+@fld_name.16397 = private unnamed_addr constant [6 x i8] c"stmts\00", align 1
+@sty_name.16398 = private unnamed_addr constant [11 x i8] c"MonoResult\00", align 1
+@src_file.16399 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
+@.match_fn.16400 = private unnamed_addr constant [5 x i8] c"main\00", align 1
+@mu_file.16401 = private unnamed_addr constant [89 x i8] c"/Users/tristan/projects/tristanMatthias/forge-crafting-intepreters/bootstrap/src/main.fg\00", align 1
 
 declare i32 @puts(ptr)
 
@@ -75600,6 +75604,8 @@ entry:
   %wrapped = alloca ptr, align 8
   %r = alloca ptr, align 8
   %ret_ty = alloca ptr, align 8
+  %saved_rel = alloca ptr, align 8
+  %saved_rc = alloca ptr, align 8
   %env = alloca ptr, align 8
   %empty_env = alloca ptr, align 8
   %resolved_params = alloca ptr, align 8
@@ -75717,18 +75723,22 @@ if_else:                                          ; preds = %entry
 
 ifcont45:                                         ; preds = %if_else48, %if_then47
   %22 = call i64 @"features::defer_stmt::codegen::defer_reset"()
-  %23 = call i64 @"codegen::types::rc_cleanup_reset"()
+  %23 = call ptr @"codegen::types::rc_cleanup_save"()
+  store ptr %23, ptr %saved_rc, align 8
+  %24 = call ptr @"codegen::rc_releasable_save"()
+  store ptr %24, ptr %saved_rel, align 8
+  %25 = call i64 @"codegen::types::rc_cleanup_reset"()
   %body53 = load ptr, ptr %body, align 8
-  %24 = call ptr @"codegen::escape::analyze_escapes"(ptr %body53)
-  %25 = call i64 @"codegen::rc_set_escapes"(ptr %24)
+  %26 = call ptr @"codegen::escape::analyze_releasable"(ptr %body53)
+  %27 = call i64 @"codegen::rc_set_releasable"(ptr %26)
   %body_cg54 = load ptr, ptr %body_cg, align 8
   %cast55 = ptrtoint ptr %body_cg54 to i64
   %null_chk56 = icmp eq i64 %cast55, 0
   %null_ext57 = zext i1 %null_chk56 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6604, i64 6, ptr @sty_name.6605, i64 3, i64 %null_ext57, ptr @src_file.6606, i64 88, i64 55)
+  call void @forge_null_deref_trap(ptr @fld_name.6604, i64 6, ptr @sty_name.6605, i64 3, i64 %null_ext57, ptr @src_file.6606, i64 88, i64 58)
   %name58 = load ptr, ptr %name, align 8
-  %26 = call ptr @Ctx__fn_ret(ptr %body_cg54, ptr %name58)
-  store ptr %26, ptr %ret_ty, align 8
+  %28 = call ptr @Ctx__fn_ret(ptr %body_cg54, ptr %name58)
+  store ptr %28, ptr %ret_ty, align 8
   %body_cg59 = load ptr, ptr %body_cg, align 8
   %env60 = load ptr, ptr %env, align 8
   %body61 = load ptr, ptr %body, align 8
@@ -75736,12 +75746,12 @@ ifcont45:                                         ; preds = %if_else48, %if_then
   %cast63 = ptrtoint ptr %body_cg62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6607, i64 8, ptr @sty_name.6608, i64 3, i64 %null_ext65, ptr @src_file.6609, i64 88, i64 56)
+  call void @forge_null_deref_trap(ptr @fld_name.6607, i64 8, ptr @sty_name.6608, i64 3, i64 %null_ext65, ptr @src_file.6609, i64 88, i64 59)
   %ret_ty66 = load ptr, ptr %ret_ty, align 8
-  %27 = call ptr @Ctx__zero_for(ptr %body_cg62, ptr %ret_ty66)
+  %29 = call ptr @Ctx__zero_for(ptr %body_cg62, ptr %ret_ty66)
   %ret_ty67 = load ptr, ptr %ret_ty, align 8
-  %28 = call ptr @"codegen::blocks::emit_block_loop"(ptr %body_cg59, ptr %env60, ptr %body61, ptr %27, ptr %ret_ty67)
-  %try_tag_ptr = getelementptr inbounds nuw %Result__EmitValue__string, ptr %28, i32 0, i32 0
+  %30 = call ptr @"codegen::blocks::emit_block_loop"(ptr %body_cg59, ptr %env60, ptr %body61, ptr %29, ptr %ret_ty67)
+  %try_tag_ptr = getelementptr inbounds nuw %Result__EmitValue__string, ptr %30, i32 0, i32 0
   %try_tag = load i64, ptr %try_tag_ptr, align 8
   %try_is_ok = icmp eq i64 %try_tag, 5862623
   br i1 %try_is_ok, label %try_ok, label %try_err
@@ -75751,14 +75761,14 @@ if_then47:                                        ; preds = %ifcont
   %name50 = load ptr, ptr %name, align 8
   %params51 = load ptr, ptr %params, align 8
   %env52 = load ptr, ptr %env, align 8
-  %29 = call i64 @"features::fn_decl::codegen::emit_null_checks"(ptr %body_cg49, ptr %name50, ptr %params51, ptr %env52)
+  %31 = call i64 @"features::fn_decl::codegen::emit_null_checks"(ptr %body_cg49, ptr %name50, ptr %params51, ptr %env52)
   br label %ifcont45
 
 if_else48:                                        ; preds = %ifcont
   br label %ifcont45
 
 try_ok:                                           ; preds = %ifcont45
-  %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %28, i32 0, i32 1
+  %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %30, i32 0, i32 1
   %try_payload = load ptr, ptr %try_pay_slot, align 8
   %try_ok_val = load i64, ptr %try_payload, align 8
   %cast68 = inttoptr i64 %try_ok_val to ptr
@@ -75767,49 +75777,53 @@ try_ok:                                           ; preds = %ifcont45
   %cast70 = ptrtoint ptr %ctx69 to i64
   %null_chk71 = icmp eq i64 %cast70, 0
   %null_ext72 = zext i1 %null_chk71 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6610, i64 14, ptr @sty_name.6611, i64 3, i64 %null_ext72, ptr @src_file.6612, i64 88, i64 57)
-  %30 = call i1 @Ctx__has_terminator(ptr %ctx69)
-  %widen = zext i1 %30 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.6610, i64 14, ptr @sty_name.6611, i64 3, i64 %null_ext72, ptr @src_file.6612, i64 88, i64 60)
+  %32 = call i1 @Ctx__has_terminator(ptr %ctx69)
+  %widen = zext i1 %32 to i64
   %not_cmp = icmp eq i64 %widen, 0
   %not_cmp_ext = zext i1 %not_cmp to i64
   %if_cond74 = icmp ne i64 %not_cmp_ext, 0
   br i1 %if_cond74, label %if_then75, label %if_else76
 
 try_err:                                          ; preds = %ifcont45
-  ret ptr %28
+  ret ptr %30
 
 ifcont73:                                         ; preds = %if_else76, %ifcont85
   %ctx132 = load ptr, ptr %ctx, align 8
   %cast133 = ptrtoint ptr %ctx132 to i64
   %null_chk134 = icmp eq i64 %cast133, 0
   %null_ext135 = zext i1 %null_chk134 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6634, i64 9, ptr @sty_name.6635, i64 3, i64 %null_ext135, ptr @src_file.6636, i64 88, i64 67)
+  call void @forge_null_deref_trap(ptr @fld_name.6634, i64 9, ptr @sty_name.6635, i64 3, i64 %null_ext135, ptr @src_file.6636, i64 88, i64 70)
   %fn_val136 = load ptr, ptr %fn_val, align 8
-  %31 = call i64 @Ctx__verify_fn(ptr %ctx132, ptr %fn_val136)
-  %32 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr137 = getelementptr inbounds nuw %VarEnv, ptr %32, i32 0, i32 0
-  store i64 193455868, ptr %tag_ptr137, align 8
-  %pay_ptr138 = getelementptr inbounds nuw %VarEnv, ptr %32, i32 0, i32 1
-  store ptr null, ptr %pay_ptr138, align 8
-  %cast139 = ptrtoint ptr %32 to i64
-  %cast140 = inttoptr i64 %cast139 to ptr
-  %33 = call ptr @"codegen::types::ok_stmt"(ptr %cast140)
-  ret ptr %33
+  %33 = call i64 @Ctx__verify_fn(ptr %ctx132, ptr %fn_val136)
+  %saved_rc137 = load ptr, ptr %saved_rc, align 8
+  %34 = call i64 @"codegen::types::rc_cleanup_restore"(ptr %saved_rc137)
+  %saved_rel138 = load ptr, ptr %saved_rel, align 8
+  %35 = call i64 @"codegen::rc_releasable_restore"(ptr %saved_rel138)
+  %36 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr139 = getelementptr inbounds nuw %VarEnv, ptr %36, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr139, align 8
+  %pay_ptr140 = getelementptr inbounds nuw %VarEnv, ptr %36, i32 0, i32 1
+  store ptr null, ptr %pay_ptr140, align 8
+  %cast141 = ptrtoint ptr %36 to i64
+  %cast142 = inttoptr i64 %cast141 to ptr
+  %37 = call ptr @"codegen::types::ok_stmt"(ptr %cast142)
+  ret ptr %37
 
 if_then75:                                        ; preds = %try_ok
   %body_cg77 = load ptr, ptr %body_cg, align 8
   %env78 = load ptr, ptr %env, align 8
-  %34 = call i64 @"features::defer_stmt::codegen::emit_defers"(ptr %body_cg77, ptr %env78)
+  %38 = call i64 @"features::defer_stmt::codegen::emit_defers"(ptr %body_cg77, ptr %env78)
   %r79 = load ptr, ptr %r, align 8
   %cast80 = ptrtoint ptr %r79 to i64
   %null_chk81 = icmp eq i64 %cast80, 0
   %null_ext82 = zext i1 %null_chk81 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6613, i64 2, ptr @sty_name.6614, i64 9, i64 %null_ext82, ptr @src_file.6615, i64 88, i64 60)
+  call void @forge_null_deref_trap(ptr @fld_name.6613, i64 2, ptr @sty_name.6614, i64 9, i64 %null_ext82, ptr @src_file.6615, i64 88, i64 63)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %r79, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %ret_ty83 = load ptr, ptr %ret_ty, align 8
-  %35 = call i1 @"features::union_type::codegen::needs_union_wrap"(ptr %ty, ptr %ret_ty83)
-  %widen84 = zext i1 %35 to i64
+  %39 = call i1 @"features::union_type::codegen::needs_union_wrap"(ptr %ty, ptr %ret_ty83)
+  %widen84 = zext i1 %39 to i64
   %if_cond86 = icmp ne i64 %widen84, 0
   br i1 %if_cond86, label %if_then87, label %if_else88
 
@@ -75825,19 +75839,19 @@ if_then87:                                        ; preds = %if_then75
   %cast91 = ptrtoint ptr %r90 to i64
   %null_chk92 = icmp eq i64 %cast91, 0
   %null_ext93 = zext i1 %null_chk92 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6616, i64 5, ptr @sty_name.6617, i64 9, i64 %null_ext93, ptr @src_file.6618, i64 88, i64 61)
+  call void @forge_null_deref_trap(ptr @fld_name.6616, i64 5, ptr @sty_name.6617, i64 9, i64 %null_ext93, ptr @src_file.6618, i64 88, i64 64)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r90, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %r94 = load ptr, ptr %r, align 8
   %cast95 = ptrtoint ptr %r94 to i64
   %null_chk96 = icmp eq i64 %cast95, 0
   %null_ext97 = zext i1 %null_chk96 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6619, i64 2, ptr @sty_name.6620, i64 9, i64 %null_ext97, ptr @src_file.6621, i64 88, i64 61)
+  call void @forge_null_deref_trap(ptr @fld_name.6619, i64 2, ptr @sty_name.6620, i64 9, i64 %null_ext97, ptr @src_file.6621, i64 88, i64 64)
   %ty_ptr98 = getelementptr inbounds nuw %EmitValue, ptr %r94, i32 0, i32 1
   %ty99 = load ptr, ptr %ty_ptr98, align 8
   %ret_ty100 = load ptr, ptr %ret_ty, align 8
-  %36 = call ptr @"features::union_type::codegen::emit_union_wrap"(ptr %body_cg89, ptr %value, ptr %ty99, ptr %ret_ty100)
-  %try_tag_ptr101 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %36, i32 0, i32 0
+  %40 = call ptr @"features::union_type::codegen::emit_union_wrap"(ptr %body_cg89, ptr %value, ptr %ty99, ptr %ret_ty100)
+  %try_tag_ptr101 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %40, i32 0, i32 0
   %try_tag102 = load i64, ptr %try_tag_ptr101, align 8
   %try_is_ok103 = icmp eq i64 %try_tag102, 5862623
   br i1 %try_is_ok103, label %try_ok104, label %try_err105
@@ -75847,20 +75861,20 @@ if_else88:                                        ; preds = %if_then75
   %cast122 = ptrtoint ptr %ctx121 to i64
   %null_chk123 = icmp eq i64 %cast122, 0
   %null_ext124 = zext i1 %null_chk123 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6628, i64 3, ptr @sty_name.6629, i64 3, i64 %null_ext124, ptr @src_file.6630, i64 88, i64 64)
+  call void @forge_null_deref_trap(ptr @fld_name.6628, i64 3, ptr @sty_name.6629, i64 3, i64 %null_ext124, ptr @src_file.6630, i64 88, i64 67)
   %r125 = load ptr, ptr %r, align 8
   %cast126 = ptrtoint ptr %r125 to i64
   %null_chk127 = icmp eq i64 %cast126, 0
   %null_ext128 = zext i1 %null_chk127 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6631, i64 5, ptr @sty_name.6632, i64 9, i64 %null_ext128, ptr @src_file.6633, i64 88, i64 64)
+  call void @forge_null_deref_trap(ptr @fld_name.6631, i64 5, ptr @sty_name.6632, i64 9, i64 %null_ext128, ptr @src_file.6633, i64 88, i64 67)
   %value_ptr129 = getelementptr inbounds nuw %EmitValue, ptr %r125, i32 0, i32 0
   %value130 = load ptr, ptr %value_ptr129, align 8
   %ret_ty131 = load ptr, ptr %ret_ty, align 8
-  %37 = call i64 @Ctx__ret(ptr %ctx121, ptr %value130, ptr %ret_ty131)
+  %41 = call i64 @Ctx__ret(ptr %ctx121, ptr %value130, ptr %ret_ty131)
   br label %ifcont85
 
 try_ok104:                                        ; preds = %if_then87
-  %try_pay_slot106 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %36, i32 0, i32 1
+  %try_pay_slot106 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %40, i32 0, i32 1
   %try_payload107 = load ptr, ptr %try_pay_slot106, align 8
   %try_ok_val108 = load i64, ptr %try_payload107, align 8
   %cast109 = inttoptr i64 %try_ok_val108 to ptr
@@ -75869,20 +75883,20 @@ try_ok104:                                        ; preds = %if_then87
   %cast111 = ptrtoint ptr %ctx110 to i64
   %null_chk112 = icmp eq i64 %cast111, 0
   %null_ext113 = zext i1 %null_chk112 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6622, i64 3, ptr @sty_name.6623, i64 3, i64 %null_ext113, ptr @src_file.6624, i64 88, i64 62)
+  call void @forge_null_deref_trap(ptr @fld_name.6622, i64 3, ptr @sty_name.6623, i64 3, i64 %null_ext113, ptr @src_file.6624, i64 88, i64 65)
   %wrapped114 = load ptr, ptr %wrapped, align 8
   %cast115 = ptrtoint ptr %wrapped114 to i64
   %null_chk116 = icmp eq i64 %cast115, 0
   %null_ext117 = zext i1 %null_chk116 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6625, i64 5, ptr @sty_name.6626, i64 9, i64 %null_ext117, ptr @src_file.6627, i64 88, i64 62)
+  call void @forge_null_deref_trap(ptr @fld_name.6625, i64 5, ptr @sty_name.6626, i64 9, i64 %null_ext117, ptr @src_file.6627, i64 88, i64 65)
   %value_ptr118 = getelementptr inbounds nuw %EmitValue, ptr %wrapped114, i32 0, i32 0
   %value119 = load ptr, ptr %value_ptr118, align 8
   %ret_ty120 = load ptr, ptr %ret_ty, align 8
-  %38 = call i64 @Ctx__ret(ptr %ctx110, ptr %value119, ptr %ret_ty120)
+  %42 = call i64 @Ctx__ret(ptr %ctx110, ptr %value119, ptr %ret_ty120)
   br label %ifcont85
 
 try_err105:                                       ; preds = %if_then87
-  ret ptr %36
+  ret ptr %40
 }
 
 define ptr @"features::fn_decl::codegen::bind_params_inline"(ptr %0, ptr %1, ptr %2, i64 %3, ptr %4) {
@@ -75950,7 +75964,7 @@ march_arm3:                                       ; preds = %march_next
   %cast14 = ptrtoint ptr %ctx13 to i64
   %null_chk = icmp eq i64 %cast14, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6637, i64 9, ptr @sty_name.6638, i64 3, i64 %null_ext, ptr @src_file.6639, i64 88, i64 76)
+  call void @forge_null_deref_trap(ptr @fld_name.6637, i64 9, ptr @sty_name.6638, i64 3, i64 %null_ext, ptr @src_file.6639, i64 88, i64 82)
   %fn_val15 = load ptr, ptr %fn_val, align 8
   %idx16 = load i64, ptr %idx, align 8
   %5 = call ptr @Ctx__get_param(ptr %ctx13, ptr %fn_val15, i64 %idx16)
@@ -75964,7 +75978,7 @@ march_arm3:                                       ; preds = %march_next
   %cast22 = ptrtoint ptr %ctx21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6640, i64 4, ptr @sty_name.6641, i64 3, i64 %null_ext24, ptr @src_file.6642, i64 88, i64 77)
+  call void @forge_null_deref_trap(ptr @fld_name.6640, i64 4, ptr @sty_name.6641, i64 3, i64 %null_ext24, ptr @src_file.6642, i64 88, i64 83)
   %env25 = load ptr, ptr %env, align 8
   %name26 = load ptr, ptr %name6, align 8
   %arg27 = load ptr, ptr %arg, align 8
@@ -75976,7 +75990,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.6643, i64 %tag, ptr @mu_file.6644, i64 72)
+  call void @forge_match_unreachable(ptr @.match_fn.6643, i64 %tag, ptr @mu_file.6644, i64 78)
   unreachable
 }
 
@@ -76129,7 +76143,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.6649, i64 %tag, ptr @mu_file.6650, i64 104)
+  call void @forge_match_unreachable(ptr @.match_fn.6649, i64 %tag, ptr @mu_file.6650, i64 110)
   unreachable
 
 ifcont:                                           ; preds = %if_else, %if_then
@@ -76176,7 +76190,7 @@ entry:
   %cast = ptrtoint ptr %lookup3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6651, i64 5, ptr @sty_name.6652, i64 9, i64 %null_ext, ptr @src_file.6653, i64 88, i64 118)
+  call void @forge_null_deref_trap(ptr @fld_name.6651, i64 5, ptr @sty_name.6652, i64 9, i64 %null_ext, ptr @src_file.6653, i64 88, i64 124)
   %found_ptr = getelementptr inbounds nuw %VarLookup, ptr %lookup3, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %not_cmp = icmp eq i64 %found, 0
@@ -76189,12 +76203,12 @@ ifcont:                                           ; preds = %if_else
   %cast5 = ptrtoint ptr %ctx4 to i64
   %null_chk6 = icmp eq i64 %cast5, 0
   %null_ext7 = zext i1 %null_chk6 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6654, i64 8, ptr @sty_name.6655, i64 3, i64 %null_ext7, ptr @src_file.6656, i64 88, i64 121)
+  call void @forge_null_deref_trap(ptr @fld_name.6654, i64 8, ptr @sty_name.6655, i64 3, i64 %null_ext7, ptr @src_file.6656, i64 88, i64 127)
   %lookup8 = load ptr, ptr %lookup, align 8
   %cast9 = ptrtoint ptr %lookup8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6657, i64 6, ptr @sty_name.6658, i64 9, i64 %null_ext11, ptr @src_file.6659, i64 88, i64 121)
+  call void @forge_null_deref_trap(ptr @fld_name.6657, i64 6, ptr @sty_name.6658, i64 9, i64 %null_ext11, ptr @src_file.6659, i64 88, i64 127)
   %alloca_ptr = getelementptr inbounds nuw %VarLookup, ptr %lookup8, i32 0, i32 1
   %alloca = load ptr, ptr %alloca_ptr, align 8
   %param_name12 = load ptr, ptr %param_name, align 8
@@ -76215,14 +76229,14 @@ ifcont:                                           ; preds = %if_else
   %cast16 = ptrtoint ptr %ctx15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6661, i64 3, ptr @sty_name.6662, i64 3, i64 %null_ext18, ptr @src_file.6663, i64 88, i64 122)
+  call void @forge_null_deref_trap(ptr @fld_name.6661, i64 3, ptr @sty_name.6662, i64 3, i64 %null_ext18, ptr @src_file.6663, i64 88, i64 128)
   %11 = call ptr @Ctx__i64(ptr %ctx15, i64 0)
   store ptr %11, ptr %zero, align 8
   %ctx19 = load ptr, ptr %ctx, align 8
   %cast20 = ptrtoint ptr %ctx19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6664, i64 2, ptr @sty_name.6665, i64 3, i64 %null_ext22, ptr @src_file.6666, i64 88, i64 124)
+  call void @forge_null_deref_trap(ptr @fld_name.6664, i64 2, ptr @sty_name.6665, i64 3, i64 %null_ext22, ptr @src_file.6666, i64 88, i64 130)
   %val23 = load ptr, ptr %val, align 8
   %zero24 = load ptr, ptr %zero, align 8
   %param_name25 = load ptr, ptr %param_name, align 8
@@ -76243,13 +76257,13 @@ ifcont:                                           ; preds = %if_else
   %cast33 = ptrtoint ptr %ctx32 to i64
   %null_chk34 = icmp eq i64 %cast33, 0
   %null_ext35 = zext i1 %null_chk34 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6668, i64 4, ptr @sty_name.6669, i64 3, i64 %null_ext35, ptr @src_file.6670, i64 88, i64 126)
+  call void @forge_null_deref_trap(ptr @fld_name.6668, i64 4, ptr @sty_name.6669, i64 3, i64 %null_ext35, ptr @src_file.6670, i64 88, i64 132)
   %is_null_i136 = load ptr, ptr %is_null_i1, align 8
   %ctx37 = load ptr, ptr %ctx, align 8
   %cast38 = ptrtoint ptr %ctx37 to i64
   %null_chk39 = icmp eq i64 %cast38, 0
   %null_ext40 = zext i1 %null_chk39 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6671, i64 8, ptr @sty_name.6672, i64 3, i64 %null_ext40, ptr @src_file.6673, i64 88, i64 126)
+  call void @forge_null_deref_trap(ptr @fld_name.6671, i64 8, ptr @sty_name.6672, i64 3, i64 %null_ext40, ptr @src_file.6673, i64 88, i64 132)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx37, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %param_name41 = load ptr, ptr %param_name, align 8
@@ -76270,13 +76284,13 @@ ifcont:                                           ; preds = %if_else
   %cast49 = ptrtoint ptr %ctx48 to i64
   %null_chk50 = icmp eq i64 %cast49, 0
   %null_ext51 = zext i1 %null_chk50 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6675, i64 4, ptr @sty_name.6676, i64 3, i64 %null_ext51, ptr @src_file.6677, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.6675, i64 4, ptr @sty_name.6676, i64 3, i64 %null_ext51, ptr @src_file.6677, i64 88, i64 134)
   %24 = call ptr @forge_array_new()
   %ctx52 = load ptr, ptr %ctx, align 8
   %cast53 = ptrtoint ptr %ctx52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6679, i64 10, ptr @sty_name.6680, i64 3, i64 %null_ext55, ptr @src_file.6681, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.6679, i64 10, ptr @sty_name.6680, i64 3, i64 %null_ext55, ptr @src_file.6681, i64 88, i64 134)
   %fn_name56 = load ptr, ptr %fn_name, align 8
   %25 = call ptr @Ctx__global_str(ptr %ctx52, ptr %fn_name56, ptr @.str.6682)
   %cast57 = ptrtoint ptr %25 to i64
@@ -76285,7 +76299,7 @@ ifcont:                                           ; preds = %if_else
   %cast59 = ptrtoint ptr %ctx58 to i64
   %null_chk60 = icmp eq i64 %cast59, 0
   %null_ext61 = zext i1 %null_chk60 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6683, i64 3, ptr @sty_name.6684, i64 3, i64 %null_ext61, ptr @src_file.6685, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.6683, i64 3, ptr @sty_name.6684, i64 3, i64 %null_ext61, ptr @src_file.6685, i64 88, i64 134)
   %fn_name62 = load ptr, ptr %fn_name, align 8
   %26 = call i64 @strlen(ptr %fn_name62)
   %27 = call ptr @Ctx__i64(ptr %ctx58, i64 %26)
@@ -76295,7 +76309,7 @@ ifcont:                                           ; preds = %if_else
   %cast65 = ptrtoint ptr %ctx64 to i64
   %null_chk66 = icmp eq i64 %cast65, 0
   %null_ext67 = zext i1 %null_chk66 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6686, i64 10, ptr @sty_name.6687, i64 3, i64 %null_ext67, ptr @src_file.6688, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.6686, i64 10, ptr @sty_name.6687, i64 3, i64 %null_ext67, ptr @src_file.6688, i64 88, i64 134)
   %param_name68 = load ptr, ptr %param_name, align 8
   %28 = call ptr @Ctx__global_str(ptr %ctx64, ptr %param_name68, ptr @.str.6689)
   %cast69 = ptrtoint ptr %28 to i64
@@ -76304,7 +76318,7 @@ ifcont:                                           ; preds = %if_else
   %cast71 = ptrtoint ptr %ctx70 to i64
   %null_chk72 = icmp eq i64 %cast71, 0
   %null_ext73 = zext i1 %null_chk72 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6690, i64 3, ptr @sty_name.6691, i64 3, i64 %null_ext73, ptr @src_file.6692, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.6690, i64 3, ptr @sty_name.6691, i64 3, i64 %null_ext73, ptr @src_file.6692, i64 88, i64 134)
   %param_name74 = load ptr, ptr %param_name, align 8
   %29 = call i64 @strlen(ptr %param_name74)
   %30 = call ptr @Ctx__i64(ptr %ctx70, i64 %29)
@@ -76429,7 +76443,7 @@ march_arm33:                                      ; preds = %march_next19
   %cast36 = ptrtoint ptr %ctx35 to i64
   %null_chk = icmp eq i64 %cast36, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6693, i64 4, ptr @sty_name.6694, i64 3, i64 %null_ext, ptr @src_file.6695, i64 88, i64 158)
+  call void @forge_null_deref_trap(ptr @fld_name.6693, i64 4, ptr @sty_name.6694, i64 3, i64 %null_ext, ptr @src_file.6695, i64 88, i64 164)
   %env37 = load ptr, ptr %env, align 8
   %callee38 = load ptr, ptr %callee, align 8
   %7 = call ptr @Ctx__emit(ptr %ctx35, ptr %env37, ptr %callee38)
@@ -76439,7 +76453,7 @@ march_arm33:                                      ; preds = %march_next19
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next34:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6711, i64 %tag, ptr @mu_file.6712, i64 146)
+  call void @forge_match_unreachable(ptr @.match_fn.6711, i64 %tag, ptr @mu_file.6712, i64 152)
   unreachable
 
 try_ok:                                           ; preds = %march_arm33
@@ -76452,7 +76466,7 @@ try_ok:                                           ; preds = %march_arm33
   %cast41 = ptrtoint ptr %callee_r40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6696, i64 2, ptr @sty_name.6697, i64 9, i64 %null_ext43, ptr @src_file.6698, i64 88, i64 159)
+  call void @forge_null_deref_trap(ptr @fld_name.6696, i64 2, ptr @sty_name.6697, i64 9, i64 %null_ext43, ptr @src_file.6698, i64 88, i64 165)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %callee_r40, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %8 = call ptr @"core::ast::vtype_fn_ret"(ptr %ty)
@@ -76461,7 +76475,7 @@ try_ok:                                           ; preds = %march_arm33
   %cast45 = ptrtoint ptr %callee_r44 to i64
   %null_chk46 = icmp eq i64 %cast45, 0
   %null_ext47 = zext i1 %null_chk46 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6699, i64 2, ptr @sty_name.6700, i64 9, i64 %null_ext47, ptr @src_file.6701, i64 88, i64 160)
+  call void @forge_null_deref_trap(ptr @fld_name.6699, i64 2, ptr @sty_name.6700, i64 9, i64 %null_ext47, ptr @src_file.6701, i64 88, i64 166)
   %ty_ptr48 = getelementptr inbounds nuw %EmitValue, ptr %callee_r44, i32 0, i32 1
   %ty49 = load ptr, ptr %ty_ptr48, align 8
   %9 = call i1 @"core::ast::vtype_is_closure"(ptr %ty49)
@@ -76479,7 +76493,7 @@ ifcont:                                           ; preds = %if_else, %ifcont57
   %cast73 = ptrtoint ptr %callee_r72 to i64
   %null_chk74 = icmp eq i64 %cast73, 0
   %null_ext75 = zext i1 %null_chk74 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6708, i64 5, ptr @sty_name.6709, i64 9, i64 %null_ext75, ptr @src_file.6710, i64 88, i64 169)
+  call void @forge_null_deref_trap(ptr @fld_name.6708, i64 5, ptr @sty_name.6709, i64 9, i64 %null_ext75, ptr @src_file.6710, i64 88, i64 175)
   %value_ptr76 = getelementptr inbounds nuw %EmitValue, ptr %callee_r72, i32 0, i32 0
   %value77 = load ptr, ptr %value_ptr76, align 8
   %args78 = load ptr, ptr %args, align 8
@@ -76494,7 +76508,7 @@ if_then:                                          ; preds = %try_ok
   %cast51 = ptrtoint ptr %callee_r50 to i64
   %null_chk52 = icmp eq i64 %cast51, 0
   %null_ext53 = zext i1 %null_chk52 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6702, i64 2, ptr @sty_name.6703, i64 9, i64 %null_ext53, ptr @src_file.6704, i64 88, i64 161)
+  call void @forge_null_deref_trap(ptr @fld_name.6702, i64 2, ptr @sty_name.6703, i64 9, i64 %null_ext53, ptr @src_file.6704, i64 88, i64 167)
   %ty_ptr54 = getelementptr inbounds nuw %EmitValue, ptr %callee_r50, i32 0, i32 1
   %ty55 = load ptr, ptr %ty_ptr54, align 8
   %11 = call i64 @"core::ast::vtype_closure_captures"(ptr %ty55)
@@ -76518,7 +76532,7 @@ if_then59:                                        ; preds = %if_then
   %cast64 = ptrtoint ptr %callee_r63 to i64
   %null_chk65 = icmp eq i64 %cast64, 0
   %null_ext66 = zext i1 %null_chk65 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6705, i64 5, ptr @sty_name.6706, i64 9, i64 %null_ext66, ptr @src_file.6707, i64 88, i64 163)
+  call void @forge_null_deref_trap(ptr @fld_name.6705, i64 5, ptr @sty_name.6706, i64 9, i64 %null_ext66, ptr @src_file.6707, i64 88, i64 169)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %callee_r63, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %args67 = load ptr, ptr %args, align 8
@@ -76583,7 +76597,7 @@ entry:
   %cast = ptrtoint ptr %ctx1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6713, i64 4, ptr @sty_name.6714, i64 3, i64 %null_ext, ptr @src_file.6715, i64 88, i64 178)
+  call void @forge_null_deref_trap(ptr @fld_name.6713, i64 4, ptr @sty_name.6714, i64 3, i64 %null_ext, ptr @src_file.6715, i64 88, i64 184)
   %env2 = load ptr, ptr %env, align 8
   %obj3 = load ptr, ptr %obj, align 8
   %5 = call ptr @Ctx__emit(ptr %ctx1, ptr %env2, ptr %obj3)
@@ -76602,7 +76616,7 @@ try_ok:                                           ; preds = %entry
   %cast6 = ptrtoint ptr %r5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6716, i64 2, ptr @sty_name.6717, i64 9, i64 %null_ext8, ptr @src_file.6718, i64 88, i64 179)
+  call void @forge_null_deref_trap(ptr @fld_name.6716, i64 2, ptr @sty_name.6717, i64 9, i64 %null_ext8, ptr @src_file.6718, i64 88, i64 185)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %r5, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %6 = call i1 @"core::ast::vtype_is_str"(ptr %ty)
@@ -76618,7 +76632,7 @@ ifcont:                                           ; preds = %if_else, %pmatch_en
   %cast275 = ptrtoint ptr %r274 to i64
   %null_chk276 = icmp eq i64 %cast275, 0
   %null_ext277 = zext i1 %null_chk276 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6841, i64 2, ptr @sty_name.6842, i64 9, i64 %null_ext277, ptr @src_file.6843, i64 88, i64 231)
+  call void @forge_null_deref_trap(ptr @fld_name.6841, i64 2, ptr @sty_name.6842, i64 9, i64 %null_ext277, ptr @src_file.6843, i64 88, i64 237)
   %ty_ptr278 = getelementptr inbounds nuw %EmitValue, ptr %r274, i32 0, i32 1
   %ty279 = load ptr, ptr %ty_ptr278, align 8
   %7 = call i1 @"core::ast::vtype_is_list"(ptr %ty279)
@@ -76644,12 +76658,12 @@ parm_body:                                        ; preds = %if_then
   %cast12 = ptrtoint ptr %ctx11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6720, i64 6, ptr @sty_name.6721, i64 3, i64 %null_ext14, ptr @src_file.6722, i64 88, i64 183)
+  call void @forge_null_deref_trap(ptr @fld_name.6720, i64 6, ptr @sty_name.6721, i64 3, i64 %null_ext14, ptr @src_file.6722, i64 88, i64 189)
   %r15 = load ptr, ptr %r, align 8
   %cast16 = ptrtoint ptr %r15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6723, i64 5, ptr @sty_name.6724, i64 9, i64 %null_ext18, ptr @src_file.6725, i64 88, i64 183)
+  call void @forge_null_deref_trap(ptr @fld_name.6723, i64 5, ptr @sty_name.6724, i64 9, i64 %null_ext18, ptr @src_file.6725, i64 88, i64 189)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r15, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %9 = call ptr @Ctx__to_ptr(ptr %ctx11, ptr %value, ptr @.str.6726)
@@ -76658,7 +76672,7 @@ parm_body:                                        ; preds = %if_then
   %cast20 = ptrtoint ptr %ctx19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6727, i64 4, ptr @sty_name.6728, i64 3, i64 %null_ext22, ptr @src_file.6729, i64 88, i64 184)
+  call void @forge_null_deref_trap(ptr @fld_name.6727, i64 4, ptr @sty_name.6728, i64 3, i64 %null_ext22, ptr @src_file.6729, i64 88, i64 190)
   %10 = call ptr @forge_array_new()
   %str_ptr23 = load ptr, ptr %str_ptr, align 8
   %cast24 = ptrtoint ptr %str_ptr23 to i64
@@ -76680,7 +76694,7 @@ parm_body25:                                      ; preds = %parm_next
   %cast32 = ptrtoint ptr %r31 to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6732, i64 5, ptr @sty_name.6733, i64 9, i64 %null_ext34, ptr @src_file.6734, i64 88, i64 187)
+  call void @forge_null_deref_trap(ptr @fld_name.6732, i64 5, ptr @sty_name.6733, i64 9, i64 %null_ext34, ptr @src_file.6734, i64 88, i64 193)
   %value_ptr35 = getelementptr inbounds nuw %EmitValue, ptr %r31, i32 0, i32 0
   %value36 = load ptr, ptr %value_ptr35, align 8
   %args37 = load ptr, ptr %args, align 8
@@ -76731,12 +76745,12 @@ try_ok56:                                         ; preds = %parm_body38
   %cast63 = ptrtoint ptr %ctx62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6739, i64 6, ptr @sty_name.6740, i64 3, i64 %null_ext65, ptr @src_file.6741, i64 88, i64 190)
+  call void @forge_null_deref_trap(ptr @fld_name.6739, i64 6, ptr @sty_name.6740, i64 3, i64 %null_ext65, ptr @src_file.6741, i64 88, i64 196)
   %r66 = load ptr, ptr %r, align 8
   %cast67 = ptrtoint ptr %r66 to i64
   %null_chk68 = icmp eq i64 %cast67, 0
   %null_ext69 = zext i1 %null_chk68 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6742, i64 5, ptr @sty_name.6743, i64 9, i64 %null_ext69, ptr @src_file.6744, i64 88, i64 190)
+  call void @forge_null_deref_trap(ptr @fld_name.6742, i64 5, ptr @sty_name.6743, i64 9, i64 %null_ext69, ptr @src_file.6744, i64 88, i64 196)
   %value_ptr70 = getelementptr inbounds nuw %EmitValue, ptr %r66, i32 0, i32 0
   %value71 = load ptr, ptr %value_ptr70, align 8
   %21 = call ptr @Ctx__to_ptr(ptr %ctx62, ptr %value71, ptr @.str.6745)
@@ -76745,12 +76759,12 @@ try_ok56:                                         ; preds = %parm_body38
   %cast74 = ptrtoint ptr %ctx73 to i64
   %null_chk75 = icmp eq i64 %cast74, 0
   %null_ext76 = zext i1 %null_chk75 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6746, i64 6, ptr @sty_name.6747, i64 3, i64 %null_ext76, ptr @src_file.6748, i64 88, i64 191)
+  call void @forge_null_deref_trap(ptr @fld_name.6746, i64 6, ptr @sty_name.6747, i64 3, i64 %null_ext76, ptr @src_file.6748, i64 88, i64 197)
   %arg_r77 = load ptr, ptr %arg_r, align 8
   %cast78 = ptrtoint ptr %arg_r77 to i64
   %null_chk79 = icmp eq i64 %cast78, 0
   %null_ext80 = zext i1 %null_chk79 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6749, i64 5, ptr @sty_name.6750, i64 9, i64 %null_ext80, ptr @src_file.6751, i64 88, i64 191)
+  call void @forge_null_deref_trap(ptr @fld_name.6749, i64 5, ptr @sty_name.6750, i64 9, i64 %null_ext80, ptr @src_file.6751, i64 88, i64 197)
   %value_ptr81 = getelementptr inbounds nuw %EmitValue, ptr %arg_r77, i32 0, i32 0
   %value82 = load ptr, ptr %value_ptr81, align 8
   %22 = call ptr @Ctx__to_ptr(ptr %ctx73, ptr %value82, ptr @.str.6752)
@@ -76759,7 +76773,7 @@ try_ok56:                                         ; preds = %parm_body38
   %cast84 = ptrtoint ptr %ctx83 to i64
   %null_chk85 = icmp eq i64 %cast84, 0
   %null_ext86 = zext i1 %null_chk85 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6753, i64 4, ptr @sty_name.6754, i64 3, i64 %null_ext86, ptr @src_file.6755, i64 88, i64 192)
+  call void @forge_null_deref_trap(ptr @fld_name.6753, i64 4, ptr @sty_name.6754, i64 3, i64 %null_ext86, ptr @src_file.6755, i64 88, i64 198)
   %method87 = load ptr, ptr %method, align 8
   %23 = call i64 @strlen(ptr @.str.6756)
   %24 = call i64 @strlen(ptr %method87)
@@ -76793,7 +76807,7 @@ parm_body94:                                      ; preds = %parm_next39
   %cast101 = ptrtoint ptr %r100 to i64
   %null_chk102 = icmp eq i64 %cast101, 0
   %null_ext103 = zext i1 %null_chk102 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6758, i64 5, ptr @sty_name.6759, i64 9, i64 %null_ext103, ptr @src_file.6760, i64 88, i64 195)
+  call void @forge_null_deref_trap(ptr @fld_name.6758, i64 5, ptr @sty_name.6759, i64 9, i64 %null_ext103, ptr @src_file.6760, i64 88, i64 201)
   %value_ptr104 = getelementptr inbounds nuw %EmitValue, ptr %r100, i32 0, i32 0
   %value105 = load ptr, ptr %value_ptr104, align 8
   %args106 = load ptr, ptr %args, align 8
@@ -76811,12 +76825,12 @@ parm_body107:                                     ; preds = %parm_next95
   %cast112 = ptrtoint ptr %ctx111 to i64
   %null_chk113 = icmp eq i64 %cast112, 0
   %null_ext114 = zext i1 %null_chk113 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6762, i64 6, ptr @sty_name.6763, i64 3, i64 %null_ext114, ptr @src_file.6764, i64 88, i64 197)
+  call void @forge_null_deref_trap(ptr @fld_name.6762, i64 6, ptr @sty_name.6763, i64 3, i64 %null_ext114, ptr @src_file.6764, i64 88, i64 203)
   %r115 = load ptr, ptr %r, align 8
   %cast116 = ptrtoint ptr %r115 to i64
   %null_chk117 = icmp eq i64 %cast116, 0
   %null_ext118 = zext i1 %null_chk117 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6765, i64 5, ptr @sty_name.6766, i64 9, i64 %null_ext118, ptr @src_file.6767, i64 88, i64 197)
+  call void @forge_null_deref_trap(ptr @fld_name.6765, i64 5, ptr @sty_name.6766, i64 9, i64 %null_ext118, ptr @src_file.6767, i64 88, i64 203)
   %value_ptr119 = getelementptr inbounds nuw %EmitValue, ptr %r115, i32 0, i32 0
   %value120 = load ptr, ptr %value_ptr119, align 8
   %33 = call ptr @Ctx__to_ptr(ptr %ctx111, ptr %value120, ptr @.str.6768)
@@ -76825,7 +76839,7 @@ parm_body107:                                     ; preds = %parm_next95
   %cast123 = ptrtoint ptr %ctx122 to i64
   %null_chk124 = icmp eq i64 %cast123, 0
   %null_ext125 = zext i1 %null_chk124 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6769, i64 4, ptr @sty_name.6770, i64 3, i64 %null_ext125, ptr @src_file.6771, i64 88, i64 198)
+  call void @forge_null_deref_trap(ptr @fld_name.6769, i64 4, ptr @sty_name.6770, i64 3, i64 %null_ext125, ptr @src_file.6771, i64 88, i64 204)
   %34 = call ptr @forge_array_new()
   %str_ptr126 = load ptr, ptr %str_ptr121, align 8
   %cast127 = ptrtoint ptr %str_ptr126 to i64
@@ -76849,12 +76863,12 @@ parm_body128:                                     ; preds = %parm_next108
   %cast136 = ptrtoint ptr %ctx135 to i64
   %null_chk137 = icmp eq i64 %cast136, 0
   %null_ext138 = zext i1 %null_chk137 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6775, i64 6, ptr @sty_name.6776, i64 3, i64 %null_ext138, ptr @src_file.6777, i64 88, i64 202)
+  call void @forge_null_deref_trap(ptr @fld_name.6775, i64 6, ptr @sty_name.6776, i64 3, i64 %null_ext138, ptr @src_file.6777, i64 88, i64 208)
   %r139 = load ptr, ptr %r, align 8
   %cast140 = ptrtoint ptr %r139 to i64
   %null_chk141 = icmp eq i64 %cast140, 0
   %null_ext142 = zext i1 %null_chk141 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6778, i64 5, ptr @sty_name.6779, i64 9, i64 %null_ext142, ptr @src_file.6780, i64 88, i64 202)
+  call void @forge_null_deref_trap(ptr @fld_name.6778, i64 5, ptr @sty_name.6779, i64 9, i64 %null_ext142, ptr @src_file.6780, i64 88, i64 208)
   %value_ptr143 = getelementptr inbounds nuw %EmitValue, ptr %r139, i32 0, i32 0
   %value144 = load ptr, ptr %value_ptr143, align 8
   %39 = call ptr @Ctx__to_ptr(ptr %ctx135, ptr %value144, ptr @.str.6781)
@@ -76863,7 +76877,7 @@ parm_body128:                                     ; preds = %parm_next108
   %cast147 = ptrtoint ptr %ctx146 to i64
   %null_chk148 = icmp eq i64 %cast147, 0
   %null_ext149 = zext i1 %null_chk148 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6782, i64 4, ptr @sty_name.6783, i64 3, i64 %null_ext149, ptr @src_file.6784, i64 88, i64 203)
+  call void @forge_null_deref_trap(ptr @fld_name.6782, i64 4, ptr @sty_name.6783, i64 3, i64 %null_ext149, ptr @src_file.6784, i64 88, i64 209)
   %40 = call ptr @forge_array_new()
   %str_ptr150 = load ptr, ptr %str_ptr145, align 8
   %cast151 = ptrtoint ptr %str_ptr150 to i64
@@ -76887,12 +76901,12 @@ parm_body152:                                     ; preds = %parm_next129
   %cast160 = ptrtoint ptr %ctx159 to i64
   %null_chk161 = icmp eq i64 %cast160, 0
   %null_ext162 = zext i1 %null_chk161 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6788, i64 6, ptr @sty_name.6789, i64 3, i64 %null_ext162, ptr @src_file.6790, i64 88, i64 207)
+  call void @forge_null_deref_trap(ptr @fld_name.6788, i64 6, ptr @sty_name.6789, i64 3, i64 %null_ext162, ptr @src_file.6790, i64 88, i64 213)
   %r163 = load ptr, ptr %r, align 8
   %cast164 = ptrtoint ptr %r163 to i64
   %null_chk165 = icmp eq i64 %cast164, 0
   %null_ext166 = zext i1 %null_chk165 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6791, i64 5, ptr @sty_name.6792, i64 9, i64 %null_ext166, ptr @src_file.6793, i64 88, i64 207)
+  call void @forge_null_deref_trap(ptr @fld_name.6791, i64 5, ptr @sty_name.6792, i64 9, i64 %null_ext166, ptr @src_file.6793, i64 88, i64 213)
   %value_ptr167 = getelementptr inbounds nuw %EmitValue, ptr %r163, i32 0, i32 0
   %value168 = load ptr, ptr %value_ptr167, align 8
   %45 = call ptr @Ctx__to_ptr(ptr %ctx159, ptr %value168, ptr @.str.6794)
@@ -76901,7 +76915,7 @@ parm_body152:                                     ; preds = %parm_next129
   %cast171 = ptrtoint ptr %ctx170 to i64
   %null_chk172 = icmp eq i64 %cast171, 0
   %null_ext173 = zext i1 %null_chk172 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6795, i64 4, ptr @sty_name.6796, i64 3, i64 %null_ext173, ptr @src_file.6797, i64 88, i64 208)
+  call void @forge_null_deref_trap(ptr @fld_name.6795, i64 4, ptr @sty_name.6796, i64 3, i64 %null_ext173, ptr @src_file.6797, i64 88, i64 214)
   %46 = call ptr @forge_array_new()
   %str_ptr174 = load ptr, ptr %str_ptr169, align 8
   %cast175 = ptrtoint ptr %str_ptr174 to i64
@@ -76942,12 +76956,12 @@ try_ok186:                                        ; preds = %parm_body176
   %cast194 = ptrtoint ptr %ctx193 to i64
   %null_chk195 = icmp eq i64 %cast194, 0
   %null_ext196 = zext i1 %null_chk195 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6800, i64 6, ptr @sty_name.6801, i64 3, i64 %null_ext196, ptr @src_file.6802, i64 88, i64 213)
+  call void @forge_null_deref_trap(ptr @fld_name.6800, i64 6, ptr @sty_name.6801, i64 3, i64 %null_ext196, ptr @src_file.6802, i64 88, i64 219)
   %r197 = load ptr, ptr %r, align 8
   %cast198 = ptrtoint ptr %r197 to i64
   %null_chk199 = icmp eq i64 %cast198, 0
   %null_ext200 = zext i1 %null_chk199 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6803, i64 5, ptr @sty_name.6804, i64 9, i64 %null_ext200, ptr @src_file.6805, i64 88, i64 213)
+  call void @forge_null_deref_trap(ptr @fld_name.6803, i64 5, ptr @sty_name.6804, i64 9, i64 %null_ext200, ptr @src_file.6805, i64 88, i64 219)
   %value_ptr201 = getelementptr inbounds nuw %EmitValue, ptr %r197, i32 0, i32 0
   %value202 = load ptr, ptr %value_ptr201, align 8
   %52 = call ptr @Ctx__to_ptr(ptr %ctx193, ptr %value202, ptr @.str.6806)
@@ -76956,12 +76970,12 @@ try_ok186:                                        ; preds = %parm_body176
   %cast205 = ptrtoint ptr %ctx204 to i64
   %null_chk206 = icmp eq i64 %cast205, 0
   %null_ext207 = zext i1 %null_chk206 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6807, i64 6, ptr @sty_name.6808, i64 3, i64 %null_ext207, ptr @src_file.6809, i64 88, i64 214)
+  call void @forge_null_deref_trap(ptr @fld_name.6807, i64 6, ptr @sty_name.6808, i64 3, i64 %null_ext207, ptr @src_file.6809, i64 88, i64 220)
   %arg_r208 = load ptr, ptr %arg_r191, align 8
   %cast209 = ptrtoint ptr %arg_r208 to i64
   %null_chk210 = icmp eq i64 %cast209, 0
   %null_ext211 = zext i1 %null_chk210 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6810, i64 5, ptr @sty_name.6811, i64 9, i64 %null_ext211, ptr @src_file.6812, i64 88, i64 214)
+  call void @forge_null_deref_trap(ptr @fld_name.6810, i64 5, ptr @sty_name.6811, i64 9, i64 %null_ext211, ptr @src_file.6812, i64 88, i64 220)
   %value_ptr212 = getelementptr inbounds nuw %EmitValue, ptr %arg_r208, i32 0, i32 0
   %value213 = load ptr, ptr %value_ptr212, align 8
   %53 = call ptr @Ctx__to_ptr(ptr %ctx204, ptr %value213, ptr @.str.6813)
@@ -76970,7 +76984,7 @@ try_ok186:                                        ; preds = %parm_body176
   %cast215 = ptrtoint ptr %ctx214 to i64
   %null_chk216 = icmp eq i64 %cast215, 0
   %null_ext217 = zext i1 %null_chk216 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6814, i64 4, ptr @sty_name.6815, i64 3, i64 %null_ext217, ptr @src_file.6816, i64 88, i64 215)
+  call void @forge_null_deref_trap(ptr @fld_name.6814, i64 4, ptr @sty_name.6815, i64 3, i64 %null_ext217, ptr @src_file.6816, i64 88, i64 221)
   %54 = call ptr @forge_array_new()
   %str_ptr218 = load ptr, ptr %str_ptr203, align 8
   %cast219 = ptrtoint ptr %str_ptr218 to i64
@@ -77011,12 +77025,12 @@ parm_body229:                                     ; preds = %parm_next177
   %cast234 = ptrtoint ptr %ctx233 to i64
   %null_chk235 = icmp eq i64 %cast234, 0
   %null_ext236 = zext i1 %null_chk235 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6819, i64 6, ptr @sty_name.6820, i64 3, i64 %null_ext236, ptr @src_file.6821, i64 88, i64 222)
+  call void @forge_null_deref_trap(ptr @fld_name.6819, i64 6, ptr @sty_name.6820, i64 3, i64 %null_ext236, ptr @src_file.6821, i64 88, i64 228)
   %r237 = load ptr, ptr %r, align 8
   %cast238 = ptrtoint ptr %r237 to i64
   %null_chk239 = icmp eq i64 %cast238, 0
   %null_ext240 = zext i1 %null_chk239 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6822, i64 5, ptr @sty_name.6823, i64 9, i64 %null_ext240, ptr @src_file.6824, i64 88, i64 222)
+  call void @forge_null_deref_trap(ptr @fld_name.6822, i64 5, ptr @sty_name.6823, i64 9, i64 %null_ext240, ptr @src_file.6824, i64 88, i64 228)
   %value_ptr241 = getelementptr inbounds nuw %EmitValue, ptr %r237, i32 0, i32 0
   %value242 = load ptr, ptr %value_ptr241, align 8
   %60 = call ptr @Ctx__to_ptr(ptr %ctx233, ptr %value242, ptr @.str.6825)
@@ -77025,7 +77039,7 @@ parm_body229:                                     ; preds = %parm_next177
   %cast245 = ptrtoint ptr %ctx244 to i64
   %null_chk246 = icmp eq i64 %cast245, 0
   %null_ext247 = zext i1 %null_chk246 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6826, i64 7, ptr @sty_name.6827, i64 3, i64 %null_ext247, ptr @src_file.6828, i64 88, i64 223)
+  call void @forge_null_deref_trap(ptr @fld_name.6826, i64 7, ptr @sty_name.6827, i64 3, i64 %null_ext247, ptr @src_file.6828, i64 88, i64 229)
   %str_ptr248 = load ptr, ptr %str_ptr243, align 8
   %61 = call ptr @Ctx__load_i8(ptr %ctx244, ptr %str_ptr248, ptr @.str.6829)
   store ptr %61, ptr %byte_val, align 8
@@ -77033,13 +77047,13 @@ parm_body229:                                     ; preds = %parm_next177
   %cast250 = ptrtoint ptr %ctx249 to i64
   %null_chk251 = icmp eq i64 %cast250, 0
   %null_ext252 = zext i1 %null_chk251 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6830, i64 4, ptr @sty_name.6831, i64 3, i64 %null_ext252, ptr @src_file.6832, i64 88, i64 224)
+  call void @forge_null_deref_trap(ptr @fld_name.6830, i64 4, ptr @sty_name.6831, i64 3, i64 %null_ext252, ptr @src_file.6832, i64 88, i64 230)
   %byte_val253 = load ptr, ptr %byte_val, align 8
   %ctx254 = load ptr, ptr %ctx, align 8
   %cast255 = ptrtoint ptr %ctx254 to i64
   %null_chk256 = icmp eq i64 %cast255, 0
   %null_ext257 = zext i1 %null_chk256 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6833, i64 8, ptr @sty_name.6834, i64 3, i64 %null_ext257, ptr @src_file.6835, i64 88, i64 224)
+  call void @forge_null_deref_trap(ptr @fld_name.6833, i64 8, ptr @sty_name.6834, i64 3, i64 %null_ext257, ptr @src_file.6835, i64 88, i64 230)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx254, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %62 = call ptr @Ctx__zext(ptr %ctx249, ptr %byte_val253, ptr %i64_type, ptr @.str.6836)
@@ -77079,7 +77093,7 @@ parm_body259:                                     ; preds = %parm_next230
   ret ptr %74
 
 parm_next260:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6839, i64 -1, ptr @mu_file.6840, i64 180)
+  call void @forge_match_unreachable(ptr @.match_fn.6839, i64 -1, ptr @mu_file.6840, i64 186)
   unreachable
 
 ifcont281:                                        ; preds = %if_else284
@@ -77087,7 +77101,7 @@ ifcont281:                                        ; preds = %if_else284
   %cast302 = ptrtoint ptr %r301 to i64
   %null_chk303 = icmp eq i64 %cast302, 0
   %null_ext304 = zext i1 %null_chk303 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6850, i64 2, ptr @sty_name.6851, i64 9, i64 %null_ext304, ptr @src_file.6852, i64 88, i64 235)
+  call void @forge_null_deref_trap(ptr @fld_name.6850, i64 2, ptr @sty_name.6851, i64 9, i64 %null_ext304, ptr @src_file.6852, i64 88, i64 241)
   %ty_ptr305 = getelementptr inbounds nuw %EmitValue, ptr %r301, i32 0, i32 1
   %ty306 = load ptr, ptr %ty_ptr305, align 8
   %75 = call i1 @"core::ast::vtype_is_map"(ptr %ty306)
@@ -77102,14 +77116,14 @@ if_then283:                                       ; preds = %ifcont
   %cast288 = ptrtoint ptr %r287 to i64
   %null_chk289 = icmp eq i64 %cast288, 0
   %null_ext290 = zext i1 %null_chk289 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6844, i64 5, ptr @sty_name.6845, i64 9, i64 %null_ext290, ptr @src_file.6846, i64 88, i64 232)
+  call void @forge_null_deref_trap(ptr @fld_name.6844, i64 5, ptr @sty_name.6845, i64 9, i64 %null_ext290, ptr @src_file.6846, i64 88, i64 238)
   %value_ptr291 = getelementptr inbounds nuw %EmitValue, ptr %r287, i32 0, i32 0
   %value292 = load ptr, ptr %value_ptr291, align 8
   %r293 = load ptr, ptr %r, align 8
   %cast294 = ptrtoint ptr %r293 to i64
   %null_chk295 = icmp eq i64 %cast294, 0
   %null_ext296 = zext i1 %null_chk295 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6847, i64 2, ptr @sty_name.6848, i64 9, i64 %null_ext296, ptr @src_file.6849, i64 88, i64 232)
+  call void @forge_null_deref_trap(ptr @fld_name.6847, i64 2, ptr @sty_name.6848, i64 9, i64 %null_ext296, ptr @src_file.6849, i64 88, i64 238)
   %ty_ptr297 = getelementptr inbounds nuw %EmitValue, ptr %r293, i32 0, i32 1
   %ty298 = load ptr, ptr %ty_ptr297, align 8
   %method299 = load ptr, ptr %method, align 8
@@ -77125,7 +77139,7 @@ ifcont308:                                        ; preds = %if_else311
   %cast328 = ptrtoint ptr %r327 to i64
   %null_chk329 = icmp eq i64 %cast328, 0
   %null_ext330 = zext i1 %null_chk329 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6860, i64 2, ptr @sty_name.6861, i64 9, i64 %null_ext330, ptr @src_file.6862, i64 88, i64 240)
+  call void @forge_null_deref_trap(ptr @fld_name.6860, i64 2, ptr @sty_name.6861, i64 9, i64 %null_ext330, ptr @src_file.6862, i64 88, i64 246)
   %ty_ptr331 = getelementptr inbounds nuw %EmitValue, ptr %r327, i32 0, i32 1
   %ty332 = load ptr, ptr %ty_ptr331, align 8
   %77 = call ptr @"core::ast::vtype_trait_name"(ptr %ty332)
@@ -77143,12 +77157,12 @@ if_then310:                                       ; preds = %ifcont281
   %cast313 = ptrtoint ptr %ctx312 to i64
   %null_chk314 = icmp eq i64 %cast313, 0
   %null_ext315 = zext i1 %null_chk314 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6853, i64 6, ptr @sty_name.6854, i64 3, i64 %null_ext315, ptr @src_file.6855, i64 88, i64 236)
+  call void @forge_null_deref_trap(ptr @fld_name.6853, i64 6, ptr @sty_name.6854, i64 3, i64 %null_ext315, ptr @src_file.6855, i64 88, i64 242)
   %r316 = load ptr, ptr %r, align 8
   %cast317 = ptrtoint ptr %r316 to i64
   %null_chk318 = icmp eq i64 %cast317, 0
   %null_ext319 = zext i1 %null_chk318 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6856, i64 5, ptr @sty_name.6857, i64 9, i64 %null_ext319, ptr @src_file.6858, i64 88, i64 236)
+  call void @forge_null_deref_trap(ptr @fld_name.6856, i64 5, ptr @sty_name.6857, i64 9, i64 %null_ext319, ptr @src_file.6858, i64 88, i64 242)
   %value_ptr320 = getelementptr inbounds nuw %EmitValue, ptr %r316, i32 0, i32 0
   %value321 = load ptr, ptr %value_ptr320, align 8
   %79 = call ptr @Ctx__to_ptr(ptr %ctx312, ptr %value321, ptr @.str.6859)
@@ -77169,7 +77183,7 @@ ifcont335:                                        ; preds = %if_else338
   %cast351 = ptrtoint ptr %r350 to i64
   %null_chk352 = icmp eq i64 %cast351, 0
   %null_ext353 = zext i1 %null_chk352 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6867, i64 2, ptr @sty_name.6868, i64 9, i64 %null_ext353, ptr @src_file.6869, i64 88, i64 245)
+  call void @forge_null_deref_trap(ptr @fld_name.6867, i64 2, ptr @sty_name.6868, i64 9, i64 %null_ext353, ptr @src_file.6869, i64 88, i64 251)
   %ty_ptr354 = getelementptr inbounds nuw %EmitValue, ptr %r350, i32 0, i32 1
   %ty355 = load ptr, ptr %ty_ptr354, align 8
   %81 = call i1 @"core::ast::vtype_is_newtype"(ptr %ty355)
@@ -77184,7 +77198,7 @@ if_then337:                                       ; preds = %ifcont308
   %cast342 = ptrtoint ptr %r341 to i64
   %null_chk343 = icmp eq i64 %cast342, 0
   %null_ext344 = zext i1 %null_chk343 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6864, i64 5, ptr @sty_name.6865, i64 9, i64 %null_ext344, ptr @src_file.6866, i64 88, i64 242)
+  call void @forge_null_deref_trap(ptr @fld_name.6864, i64 5, ptr @sty_name.6865, i64 9, i64 %null_ext344, ptr @src_file.6866, i64 88, i64 248)
   %value_ptr345 = getelementptr inbounds nuw %EmitValue, ptr %r341, i32 0, i32 0
   %value346 = load ptr, ptr %value_ptr345, align 8
   %tn347 = load ptr, ptr %tn, align 8
@@ -77201,7 +77215,7 @@ ifcont357:                                        ; preds = %if_else360
   %cast414 = ptrtoint ptr %r413 to i64
   %null_chk415 = icmp eq i64 %cast414, 0
   %null_ext416 = zext i1 %null_chk415 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6883, i64 2, ptr @sty_name.6884, i64 9, i64 %null_ext416, ptr @src_file.6885, i64 88, i64 254)
+  call void @forge_null_deref_trap(ptr @fld_name.6883, i64 2, ptr @sty_name.6884, i64 9, i64 %null_ext416, ptr @src_file.6885, i64 88, i64 260)
   %ty_ptr417 = getelementptr inbounds nuw %EmitValue, ptr %r413, i32 0, i32 1
   %ty418 = load ptr, ptr %ty_ptr417, align 8
   %83 = call ptr @"core::ast::vtype_struct_name"(ptr %ty418)
@@ -77210,7 +77224,7 @@ ifcont357:                                        ; preds = %if_else360
   %cast420 = ptrtoint ptr %r419 to i64
   %null_chk421 = icmp eq i64 %cast420, 0
   %null_ext422 = zext i1 %null_chk421 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6886, i64 2, ptr @sty_name.6887, i64 9, i64 %null_ext422, ptr @src_file.6888, i64 88, i64 255)
+  call void @forge_null_deref_trap(ptr @fld_name.6886, i64 2, ptr @sty_name.6887, i64 9, i64 %null_ext422, ptr @src_file.6888, i64 88, i64 261)
   %ty_ptr423 = getelementptr inbounds nuw %EmitValue, ptr %r419, i32 0, i32 1
   %ty424 = load ptr, ptr %ty_ptr423, align 8
   %84 = call ptr @"core::ast::vtype_enum_name"(ptr %ty424)
@@ -77240,7 +77254,7 @@ ifcont365:                                        ; preds = %if_else368
   %cast382 = ptrtoint ptr %r381 to i64
   %null_chk383 = icmp eq i64 %cast382, 0
   %null_ext384 = zext i1 %null_chk383 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6877, i64 2, ptr @sty_name.6878, i64 9, i64 %null_ext384, ptr @src_file.6879, i64 88, i64 250)
+  call void @forge_null_deref_trap(ptr @fld_name.6877, i64 2, ptr @sty_name.6878, i64 9, i64 %null_ext384, ptr @src_file.6879, i64 88, i64 256)
   %ty_ptr385 = getelementptr inbounds nuw %EmitValue, ptr %r381, i32 0, i32 1
   %ty386 = load ptr, ptr %ty_ptr385, align 8
   %87 = call ptr @"core::ast::vtype_newtype_name"(ptr %ty386)
@@ -77299,14 +77313,14 @@ if_then367:                                       ; preds = %if_then359
   %cast370 = ptrtoint ptr %r369 to i64
   %null_chk371 = icmp eq i64 %cast370, 0
   %null_ext372 = zext i1 %null_chk371 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6871, i64 5, ptr @sty_name.6872, i64 9, i64 %null_ext372, ptr @src_file.6873, i64 88, i64 247)
+  call void @forge_null_deref_trap(ptr @fld_name.6871, i64 5, ptr @sty_name.6872, i64 9, i64 %null_ext372, ptr @src_file.6873, i64 88, i64 253)
   %value_ptr373 = getelementptr inbounds nuw %EmitValue, ptr %r369, i32 0, i32 0
   %value374 = load ptr, ptr %value_ptr373, align 8
   %r375 = load ptr, ptr %r, align 8
   %cast376 = ptrtoint ptr %r375 to i64
   %null_chk377 = icmp eq i64 %cast376, 0
   %null_ext378 = zext i1 %null_chk377 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6874, i64 2, ptr @sty_name.6875, i64 9, i64 %null_ext378, ptr @src_file.6876, i64 88, i64 247)
+  call void @forge_null_deref_trap(ptr @fld_name.6874, i64 2, ptr @sty_name.6875, i64 9, i64 %null_ext378, ptr @src_file.6876, i64 88, i64 253)
   %ty_ptr379 = getelementptr inbounds nuw %EmitValue, ptr %r375, i32 0, i32 1
   %ty380 = load ptr, ptr %ty_ptr379, align 8
   %109 = call ptr @"core::ast::vtype_newtype_inner"(ptr %ty380)
@@ -77370,7 +77384,7 @@ ifcont438:                                        ; preds = %if_else441
   %cast475 = ptrtoint ptr %ctx474 to i64
   %null_chk476 = icmp eq i64 %cast475, 0
   %null_ext477 = zext i1 %null_chk476 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6897, i64 6, ptr @sty_name.6898, i64 3, i64 %null_ext477, ptr @src_file.6899, i64 88, i64 265)
+  call void @forge_null_deref_trap(ptr @fld_name.6897, i64 6, ptr @sty_name.6898, i64 3, i64 %null_ext477, ptr @src_file.6899, i64 88, i64 271)
   %mangled478 = load ptr, ptr %mangled, align 8
   %122 = call ptr @Ctx__get_fn(ptr %ctx474, ptr %mangled478)
   store ptr %122, ptr %fn_val, align 8
@@ -77385,7 +77399,7 @@ if_then440:                                       ; preds = %ife_end
   %cast443 = ptrtoint ptr %r442 to i64
   %null_chk444 = icmp eq i64 %cast443, 0
   %null_ext445 = zext i1 %null_chk444 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6892, i64 2, ptr @sty_name.6893, i64 9, i64 %null_ext445, ptr @src_file.6894, i64 88, i64 262)
+  call void @forge_null_deref_trap(ptr @fld_name.6892, i64 2, ptr @sty_name.6893, i64 9, i64 %null_ext445, ptr @src_file.6894, i64 88, i64 268)
   %ty_ptr446 = getelementptr inbounds nuw %EmitValue, ptr %r442, i32 0, i32 1
   %ty447 = load ptr, ptr %ty_ptr446, align 8
   %123 = call ptr @"core::ast::vtype_display"(ptr %ty447)
@@ -77422,12 +77436,12 @@ ifcont480:                                        ; preds = %if_else483
   %cast584 = ptrtoint ptr %ctx583 to i64
   %null_chk585 = icmp eq i64 %cast584, 0
   %null_ext586 = zext i1 %null_chk585 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6937, i64 10, ptr @sty_name.6938, i64 3, i64 %null_ext586, ptr @src_file.6939, i64 88, i64 285)
+  call void @forge_null_deref_trap(ptr @fld_name.6937, i64 10, ptr @sty_name.6938, i64 3, i64 %null_ext586, ptr @src_file.6939, i64 88, i64 291)
   %r587 = load ptr, ptr %r, align 8
   %cast588 = ptrtoint ptr %r587 to i64
   %null_chk589 = icmp eq i64 %cast588, 0
   %null_ext590 = zext i1 %null_chk589 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6940, i64 5, ptr @sty_name.6941, i64 9, i64 %null_ext590, ptr @src_file.6942, i64 88, i64 285)
+  call void @forge_null_deref_trap(ptr @fld_name.6940, i64 5, ptr @sty_name.6941, i64 9, i64 %null_ext590, ptr @src_file.6942, i64 88, i64 291)
   %value_ptr591 = getelementptr inbounds nuw %EmitValue, ptr %r587, i32 0, i32 0
   %value592 = load ptr, ptr %value_ptr591, align 8
   %method593 = load ptr, ptr %method, align 8
@@ -77443,7 +77457,7 @@ ifcont480:                                        ; preds = %if_else483
   %cast598 = ptrtoint ptr %ctx597 to i64
   %null_chk599 = icmp eq i64 %cast598, 0
   %null_ext600 = zext i1 %null_chk599 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6943, i64 11, ptr @sty_name.6944, i64 3, i64 %null_ext600, ptr @src_file.6945, i64 88, i64 290)
+  call void @forge_null_deref_trap(ptr @fld_name.6943, i64 11, ptr @sty_name.6944, i64 3, i64 %null_ext600, ptr @src_file.6945, i64 88, i64 296)
   %arg_count601 = load i64, ptr %arg_count, align 8
   %137 = call ptr @Ctx__value_array(ptr %ctx597, i64 %arg_count601)
   store ptr %137, ptr %arg_arr, align 8
@@ -77451,13 +77465,13 @@ ifcont480:                                        ; preds = %if_else483
   %cast603 = ptrtoint ptr %ctx602 to i64
   %null_chk604 = icmp eq i64 %cast603, 0
   %null_ext605 = zext i1 %null_chk604 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6946, i64 15, ptr @sty_name.6947, i64 3, i64 %null_ext605, ptr @src_file.6948, i64 88, i64 291)
+  call void @forge_null_deref_trap(ptr @fld_name.6946, i64 15, ptr @sty_name.6947, i64 3, i64 %null_ext605, ptr @src_file.6948, i64 88, i64 297)
   %arg_arr606 = load ptr, ptr %arg_arr, align 8
   %r607 = load ptr, ptr %r, align 8
   %cast608 = ptrtoint ptr %r607 to i64
   %null_chk609 = icmp eq i64 %cast608, 0
   %null_ext610 = zext i1 %null_chk609 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6949, i64 5, ptr @sty_name.6950, i64 9, i64 %null_ext610, ptr @src_file.6951, i64 88, i64 291)
+  call void @forge_null_deref_trap(ptr @fld_name.6949, i64 5, ptr @sty_name.6950, i64 9, i64 %null_ext610, ptr @src_file.6951, i64 88, i64 297)
   %value_ptr611 = getelementptr inbounds nuw %EmitValue, ptr %r607, i32 0, i32 0
   %value612 = load ptr, ptr %value_ptr611, align 8
   %138 = call i64 @Ctx__value_array_set(ptr %ctx602, ptr %arg_arr606, i64 0, ptr %value612)
@@ -77538,7 +77552,7 @@ if_then490:                                       ; preds = %if_then482
   %cast493 = ptrtoint ptr %ctx492 to i64
   %null_chk494 = icmp eq i64 %cast493, 0
   %null_ext495 = zext i1 %null_chk494 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6901, i64 13, ptr @sty_name.6902, i64 3, i64 %null_ext495, ptr @src_file.6903, i64 88, i64 270)
+  call void @forge_null_deref_trap(ptr @fld_name.6901, i64 13, ptr @sty_name.6902, i64 3, i64 %null_ext495, ptr @src_file.6903, i64 88, i64 276)
   %type_name496 = load ptr, ptr %type_name, align 8
   %162 = call ptr @Ctx__lookup_struct(ptr %ctx492, ptr %type_name496)
   store ptr %162, ptr %s_lookup, align 8
@@ -77546,7 +77560,7 @@ if_then490:                                       ; preds = %if_then482
   %cast498 = ptrtoint ptr %s_lookup497 to i64
   %null_chk499 = icmp eq i64 %cast498, 0
   %null_ext500 = zext i1 %null_chk499 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6904, i64 5, ptr @sty_name.6905, i64 12, i64 %null_ext500, ptr @src_file.6906, i64 88, i64 271)
+  call void @forge_null_deref_trap(ptr @fld_name.6904, i64 5, ptr @sty_name.6905, i64 12, i64 %null_ext500, ptr @src_file.6906, i64 88, i64 277)
   %found_ptr = getelementptr inbounds nuw %StructLookup, ptr %s_lookup497, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %if_cond502 = icmp ne i64 %found, 0
@@ -77563,12 +77577,12 @@ if_then503:                                       ; preds = %if_then490
   %cast506 = ptrtoint ptr %ctx505 to i64
   %null_chk507 = icmp eq i64 %cast506, 0
   %null_ext508 = zext i1 %null_chk507 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6907, i64 18, ptr @sty_name.6908, i64 3, i64 %null_ext508, ptr @src_file.6909, i64 88, i64 272)
+  call void @forge_null_deref_trap(ptr @fld_name.6907, i64 18, ptr @sty_name.6908, i64 3, i64 %null_ext508, ptr @src_file.6909, i64 88, i64 278)
   %s_lookup509 = load ptr, ptr %s_lookup, align 8
   %cast510 = ptrtoint ptr %s_lookup509 to i64
   %null_chk511 = icmp eq i64 %cast510, 0
   %null_ext512 = zext i1 %null_chk511 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6910, i64 6, ptr @sty_name.6911, i64 12, i64 %null_ext512, ptr @src_file.6912, i64 88, i64 272)
+  call void @forge_null_deref_trap(ptr @fld_name.6910, i64 6, ptr @sty_name.6911, i64 12, i64 %null_ext512, ptr @src_file.6912, i64 88, i64 278)
   %fields_ptr = getelementptr inbounds nuw %StructLookup, ptr %s_lookup509, i32 0, i32 1
   %fields = load ptr, ptr %fields_ptr, align 8
   %method513 = load ptr, ptr %method, align 8
@@ -77591,7 +77605,7 @@ if_then518:                                       ; preds = %if_then503
   %cast521 = ptrtoint ptr %ctx520 to i64
   %null_chk522 = icmp eq i64 %cast521, 0
   %null_ext523 = zext i1 %null_chk522 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6913, i64 8, ptr @sty_name.6914, i64 3, i64 %null_ext523, ptr @src_file.6915, i64 88, i64 275)
+  call void @forge_null_deref_trap(ptr @fld_name.6913, i64 8, ptr @sty_name.6914, i64 3, i64 %null_ext523, ptr @src_file.6915, i64 88, i64 281)
   %type_name524 = load ptr, ptr %type_name, align 8
   %165 = call ptr @Ctx__get_type(ptr %ctx520, ptr %type_name524)
   store ptr %165, ptr %st_ty, align 8
@@ -77599,12 +77613,12 @@ if_then518:                                       ; preds = %if_then503
   %cast526 = ptrtoint ptr %ctx525 to i64
   %null_chk527 = icmp eq i64 %cast526, 0
   %null_ext528 = zext i1 %null_chk527 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6916, i64 6, ptr @sty_name.6917, i64 3, i64 %null_ext528, ptr @src_file.6918, i64 88, i64 276)
+  call void @forge_null_deref_trap(ptr @fld_name.6916, i64 6, ptr @sty_name.6917, i64 3, i64 %null_ext528, ptr @src_file.6918, i64 88, i64 282)
   %r529 = load ptr, ptr %r, align 8
   %cast530 = ptrtoint ptr %r529 to i64
   %null_chk531 = icmp eq i64 %cast530, 0
   %null_ext532 = zext i1 %null_chk531 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6919, i64 5, ptr @sty_name.6920, i64 9, i64 %null_ext532, ptr @src_file.6921, i64 88, i64 276)
+  call void @forge_null_deref_trap(ptr @fld_name.6919, i64 5, ptr @sty_name.6920, i64 9, i64 %null_ext532, ptr @src_file.6921, i64 88, i64 282)
   %value_ptr533 = getelementptr inbounds nuw %EmitValue, ptr %r529, i32 0, i32 0
   %value534 = load ptr, ptr %value_ptr533, align 8
   %166 = call ptr @Ctx__to_ptr(ptr %ctx525, ptr %value534, ptr @.str.6922)
@@ -77613,14 +77627,14 @@ if_then518:                                       ; preds = %if_then503
   %cast536 = ptrtoint ptr %ctx535 to i64
   %null_chk537 = icmp eq i64 %cast536, 0
   %null_ext538 = zext i1 %null_chk537 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6923, i64 3, ptr @sty_name.6924, i64 3, i64 %null_ext538, ptr @src_file.6925, i64 88, i64 277)
+  call void @forge_null_deref_trap(ptr @fld_name.6923, i64 3, ptr @sty_name.6924, i64 3, i64 %null_ext538, ptr @src_file.6925, i64 88, i64 283)
   %st_ty539 = load ptr, ptr %st_ty, align 8
   %obj_ptr540 = load ptr, ptr %obj_ptr, align 8
   %s_lookup541 = load ptr, ptr %s_lookup, align 8
   %cast542 = ptrtoint ptr %s_lookup541 to i64
   %null_chk543 = icmp eq i64 %cast542, 0
   %null_ext544 = zext i1 %null_chk543 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6926, i64 6, ptr @sty_name.6927, i64 12, i64 %null_ext544, ptr @src_file.6928, i64 88, i64 277)
+  call void @forge_null_deref_trap(ptr @fld_name.6926, i64 6, ptr @sty_name.6927, i64 12, i64 %null_ext544, ptr @src_file.6928, i64 88, i64 283)
   %fields_ptr545 = getelementptr inbounds nuw %StructLookup, ptr %s_lookup541, i32 0, i32 1
   %fields546 = load ptr, ptr %fields_ptr545, align 8
   %method547 = load ptr, ptr %method, align 8
@@ -77631,7 +77645,7 @@ if_then518:                                       ; preds = %if_then503
   %cast549 = ptrtoint ptr %ctx548 to i64
   %null_chk550 = icmp eq i64 %cast549, 0
   %null_ext551 = zext i1 %null_chk550 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6930, i64 8, ptr @sty_name.6931, i64 3, i64 %null_ext551, ptr @src_file.6932, i64 88, i64 278)
+  call void @forge_null_deref_trap(ptr @fld_name.6930, i64 8, ptr @sty_name.6931, i64 3, i64 %null_ext551, ptr @src_file.6932, i64 88, i64 284)
   %gep552 = load ptr, ptr %gep, align 8
   %169 = call ptr @Ctx__load_i64(ptr %ctx548, ptr %gep552, ptr @.str.6933)
   store ptr %169, ptr %fn_i64, align 8
@@ -77650,7 +77664,7 @@ match_end:                                        ; preds = %match_arm
   %cast629 = ptrtoint ptr %ctx628 to i64
   %null_chk630 = icmp eq i64 %cast629, 0
   %null_ext631 = zext i1 %null_chk630 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6957, i64 8, ptr @sty_name.6958, i64 3, i64 %null_ext631, ptr @src_file.6959, i64 88, i64 300)
+  call void @forge_null_deref_trap(ptr @fld_name.6957, i64 8, ptr @sty_name.6958, i64 3, i64 %null_ext631, ptr @src_file.6959, i64 88, i64 306)
   %fn_val632 = load ptr, ptr %fn_val, align 8
   %arg_arr633 = load ptr, ptr %arg_arr, align 8
   %arg_count634 = load i64, ptr %arg_count, align 8
@@ -77660,14 +77674,14 @@ match_end:                                        ; preds = %match_arm
   %cast637 = ptrtoint ptr %ctx636 to i64
   %null_chk638 = icmp eq i64 %cast637, 0
   %null_ext639 = zext i1 %null_chk638 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6960, i64 16, ptr @sty_name.6961, i64 3, i64 %null_ext639, ptr @src_file.6962, i64 88, i64 301)
+  call void @forge_null_deref_trap(ptr @fld_name.6960, i64 16, ptr @sty_name.6961, i64 3, i64 %null_ext639, ptr @src_file.6962, i64 88, i64 307)
   %arg_arr640 = load ptr, ptr %arg_arr, align 8
   %172 = call i64 @Ctx__value_array_free(ptr %ctx636, ptr %arg_arr640)
   %ctx641 = load ptr, ptr %ctx, align 8
   %cast642 = ptrtoint ptr %ctx641 to i64
   %null_chk643 = icmp eq i64 %cast642, 0
   %null_ext644 = zext i1 %null_chk643 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6963, i64 6, ptr @sty_name.6964, i64 3, i64 %null_ext644, ptr @src_file.6965, i64 88, i64 302)
+  call void @forge_null_deref_trap(ptr @fld_name.6963, i64 6, ptr @sty_name.6964, i64 3, i64 %null_ext644, ptr @src_file.6965, i64 88, i64 308)
   %mangled645 = load ptr, ptr %mangled, align 8
   %173 = call ptr @Ctx__fn_ret(ptr %ctx641, ptr %mangled645)
   store ptr %173, ptr %ret_ty, align 8
@@ -77696,7 +77710,7 @@ match_arm618:                                     ; preds = %match_next
   %cast623 = ptrtoint ptr %ctx622 to i64
   %null_chk624 = icmp eq i64 %cast623, 0
   %null_ext625 = zext i1 %null_chk624 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6952, i64 16, ptr @sty_name.6953, i64 3, i64 %null_ext625, ptr @src_file.6954, i64 88, i64 296)
+  call void @forge_null_deref_trap(ptr @fld_name.6952, i64 16, ptr @sty_name.6953, i64 3, i64 %null_ext625, ptr @src_file.6954, i64 88, i64 302)
   %arg_arr626 = load ptr, ptr %arg_arr, align 8
   %176 = call i64 @Ctx__value_array_free(ptr %ctx622, ptr %arg_arr626)
   %e627 = load ptr, ptr %e621, align 8
@@ -77704,7 +77718,7 @@ match_arm618:                                     ; preds = %match_next
   ret ptr %177
 
 match_next619:                                    ; preds = %match_next
-  call void @forge_match_unreachable(ptr @.match_fn.6955, i64 %tag, ptr @mu_file.6956, i64 292)
+  call void @forge_match_unreachable(ptr @.match_fn.6955, i64 %tag, ptr @mu_file.6956, i64 298)
   unreachable
 }
 
@@ -77752,13 +77766,13 @@ march_arm2:                                       ; preds = %march_next
   %cast7 = ptrtoint ptr %ctx6 to i64
   %null_chk = icmp eq i64 %cast7, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6967, i64 4, ptr @sty_name.6968, i64 3, i64 %null_ext, ptr @src_file.6969, i64 88, i64 307)
+  call void @forge_null_deref_trap(ptr @fld_name.6967, i64 4, ptr @sty_name.6968, i64 3, i64 %null_ext, ptr @src_file.6969, i64 88, i64 313)
   %env8 = load ptr, ptr %env, align 8
   %se9 = load ptr, ptr %se5, align 8
   %cast10 = ptrtoint ptr %se9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6970, i64 4, ptr @sty_name.6971, i64 5, i64 %null_ext12, ptr @src_file.6972, i64 88, i64 307)
+  call void @forge_null_deref_trap(ptr @fld_name.6970, i64 4, ptr @sty_name.6971, i64 5, i64 %null_ext12, ptr @src_file.6972, i64 88, i64 313)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %4 = call ptr @Ctx__emit(ptr %ctx6, ptr %env8, ptr %node)
@@ -77767,7 +77781,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.6973, i64 %tag, ptr @mu_file.6974, i64 307)
+  call void @forge_match_unreachable(ptr @.match_fn.6973, i64 %tag, ptr @mu_file.6974, i64 313)
   unreachable
 }
 
@@ -77899,7 +77913,7 @@ ifcont53:                                         ; preds = %if_else56
   %cast = ptrtoint ptr %ctx60 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6981, i64 8, ptr @sty_name.6982, i64 3, i64 %null_ext, ptr @src_file.6983, i64 88, i64 333)
+  call void @forge_null_deref_trap(ptr @fld_name.6981, i64 8, ptr @sty_name.6982, i64 3, i64 %null_ext, ptr @src_file.6983, i64 88, i64 339)
   %newtypes_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx60, i32 0, i32 18
   %newtypes = load ptr, ptr %newtypes_ptr, align 8
   %name61 = load ptr, ptr %name, align 8
@@ -77928,7 +77942,7 @@ ifcont66:                                         ; preds = %if_else69
   %cast76 = ptrtoint ptr %ctx75 to i64
   %null_chk77 = icmp eq i64 %cast76, 0
   %null_ext78 = zext i1 %null_chk77 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6985, i64 6, ptr @sty_name.6986, i64 3, i64 %null_ext78, ptr @src_file.6987, i64 88, i64 337)
+  call void @forge_null_deref_trap(ptr @fld_name.6985, i64 6, ptr @sty_name.6986, i64 3, i64 %null_ext78, ptr @src_file.6987, i64 88, i64 343)
   %name79 = load ptr, ptr %name, align 8
   %18 = call ptr @Ctx__get_fn(ptr %ctx75, ptr %name79)
   store ptr %18, ptr %fn_val, align 8
@@ -77958,7 +77972,7 @@ ifcont81:                                         ; preds = %if_else84
   %cast161 = ptrtoint ptr %ctx160 to i64
   %null_chk162 = icmp eq i64 %cast161, 0
   %null_ext163 = zext i1 %null_chk162 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7014, i64 11, ptr @sty_name.7015, i64 3, i64 %null_ext163, ptr @src_file.7016, i64 88, i64 352)
+  call void @forge_null_deref_trap(ptr @fld_name.7014, i64 11, ptr @sty_name.7015, i64 3, i64 %null_ext163, ptr @src_file.7016, i64 88, i64 358)
   %arg_count164 = load i64, ptr %arg_count, align 8
   %21 = call ptr @Ctx__value_array(ptr %ctx160, i64 %arg_count164)
   store ptr %21, ptr %arg_arr, align 8
@@ -77966,7 +77980,7 @@ ifcont81:                                         ; preds = %if_else84
   %cast166 = ptrtoint ptr %ctx165 to i64
   %null_chk167 = icmp eq i64 %cast166, 0
   %null_ext168 = zext i1 %null_chk167 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7017, i64 16, ptr @sty_name.7018, i64 3, i64 %null_ext168, ptr @src_file.7019, i64 88, i64 353)
+  call void @forge_null_deref_trap(ptr @fld_name.7017, i64 16, ptr @sty_name.7018, i64 3, i64 %null_ext168, ptr @src_file.7019, i64 88, i64 359)
   %name169 = load ptr, ptr %name, align 8
   %22 = call ptr @Ctx__lookup_fn_params(ptr %ctx165, ptr %name169)
   store ptr %22, ptr %ptypes, align 8
@@ -77990,7 +78004,7 @@ if_then83:                                        ; preds = %ifcont66
   %cast88 = ptrtoint ptr %local87 to i64
   %null_chk89 = icmp eq i64 %cast88, 0
   %null_ext90 = zext i1 %null_chk89 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6988, i64 5, ptr @sty_name.6989, i64 9, i64 %null_ext90, ptr @src_file.6990, i64 88, i64 341)
+  call void @forge_null_deref_trap(ptr @fld_name.6988, i64 5, ptr @sty_name.6989, i64 9, i64 %null_ext90, ptr @src_file.6990, i64 88, i64 347)
   %found_ptr = getelementptr inbounds nuw %VarLookup, ptr %local87, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %l_bool = icmp ne i64 %found, 0
@@ -78004,7 +78018,7 @@ sc_rhs:                                           ; preds = %if_then83
   %cast92 = ptrtoint ptr %local91 to i64
   %null_chk93 = icmp eq i64 %cast92, 0
   %null_ext94 = zext i1 %null_chk93 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6991, i64 2, ptr @sty_name.6992, i64 9, i64 %null_ext94, ptr @src_file.6993, i64 88, i64 341)
+  call void @forge_null_deref_trap(ptr @fld_name.6991, i64 2, ptr @sty_name.6992, i64 9, i64 %null_ext94, ptr @src_file.6993, i64 88, i64 347)
   %ty_ptr = getelementptr inbounds nuw %VarLookup, ptr %local91, i32 0, i32 2
   %ty = load ptr, ptr %ty_ptr, align 8
   %25 = call i1 @"core::ast::vtype_is_fn"(ptr %ty)
@@ -78023,7 +78037,7 @@ ifcont96:                                         ; preds = %if_else99
   %cast109 = ptrtoint ptr %ctx108 to i64
   %null_chk110 = icmp eq i64 %cast109, 0
   %null_ext111 = zext i1 %null_chk110 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6997, i64 15, ptr @sty_name.6998, i64 3, i64 %null_ext111, ptr @src_file.6999, i64 88, i64 344)
+  call void @forge_null_deref_trap(ptr @fld_name.6997, i64 15, ptr @sty_name.6998, i64 3, i64 %null_ext111, ptr @src_file.6999, i64 88, i64 350)
   %name112 = load ptr, ptr %name, align 8
   %26 = call ptr @Ctx__lookup_toplevel(ptr %ctx108, ptr %name112)
   store ptr %26, ptr %g, align 8
@@ -78031,7 +78045,7 @@ ifcont96:                                         ; preds = %if_else99
   %cast114 = ptrtoint ptr %g113 to i64
   %null_chk115 = icmp eq i64 %cast114, 0
   %null_ext116 = zext i1 %null_chk115 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7000, i64 5, ptr @sty_name.7001, i64 14, i64 %null_ext116, ptr @src_file.7002, i64 88, i64 345)
+  call void @forge_null_deref_trap(ptr @fld_name.7000, i64 5, ptr @sty_name.7001, i64 14, i64 %null_ext116, ptr @src_file.7002, i64 88, i64 351)
   %found_ptr117 = getelementptr inbounds nuw %TopLevelLookup, ptr %g113, i32 0, i32 0
   %found118 = load i64, ptr %found_ptr117, align 8
   %l_bool119 = icmp ne i64 %found118, 0
@@ -78044,7 +78058,7 @@ if_then98:                                        ; preds = %sc_merge
   %cast103 = ptrtoint ptr %local102 to i64
   %null_chk104 = icmp eq i64 %cast103, 0
   %null_ext105 = zext i1 %null_chk104 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.6994, i64 6, ptr @sty_name.6995, i64 9, i64 %null_ext105, ptr @src_file.6996, i64 88, i64 342)
+  call void @forge_null_deref_trap(ptr @fld_name.6994, i64 6, ptr @sty_name.6995, i64 9, i64 %null_ext105, ptr @src_file.6996, i64 88, i64 348)
   %alloca_ptr = getelementptr inbounds nuw %VarLookup, ptr %local102, i32 0, i32 1
   %alloca = load ptr, ptr %alloca_ptr, align 8
   %name106 = load ptr, ptr %name, align 8
@@ -78060,7 +78074,7 @@ sc_rhs120:                                        ; preds = %ifcont96
   %cast123 = ptrtoint ptr %g122 to i64
   %null_chk124 = icmp eq i64 %cast123, 0
   %null_ext125 = zext i1 %null_chk124 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7003, i64 2, ptr @sty_name.7004, i64 14, i64 %null_ext125, ptr @src_file.7005, i64 88, i64 345)
+  call void @forge_null_deref_trap(ptr @fld_name.7003, i64 2, ptr @sty_name.7004, i64 14, i64 %null_ext125, ptr @src_file.7005, i64 88, i64 351)
   %ty_ptr126 = getelementptr inbounds nuw %TopLevelLookup, ptr %g122, i32 0, i32 2
   %ty127 = load ptr, ptr %ty_ptr126, align 8
   %28 = call i1 @"core::ast::vtype_is_fn"(ptr %ty127)
@@ -78108,7 +78122,7 @@ if_then134:                                       ; preds = %sc_merge121
   %cast139 = ptrtoint ptr %g138 to i64
   %null_chk140 = icmp eq i64 %cast139, 0
   %null_ext141 = zext i1 %null_chk140 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7006, i64 11, ptr @sty_name.7007, i64 14, i64 %null_ext141, ptr @src_file.7008, i64 88, i64 346)
+  call void @forge_null_deref_trap(ptr @fld_name.7006, i64 11, ptr @sty_name.7007, i64 14, i64 %null_ext141, ptr @src_file.7008, i64 88, i64 352)
   %llvm_global_ptr = getelementptr inbounds nuw %TopLevelLookup, ptr %g138, i32 0, i32 1
   %llvm_global = load ptr, ptr %llvm_global_ptr, align 8
   %name142 = load ptr, ptr %name, align 8
@@ -78117,7 +78131,7 @@ if_then134:                                       ; preds = %sc_merge121
   %cast145 = ptrtoint ptr %g144 to i64
   %null_chk146 = icmp eq i64 %cast145, 0
   %null_ext147 = zext i1 %null_chk146 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7009, i64 2, ptr @sty_name.7010, i64 14, i64 %null_ext147, ptr @src_file.7011, i64 88, i64 346)
+  call void @forge_null_deref_trap(ptr @fld_name.7009, i64 2, ptr @sty_name.7010, i64 14, i64 %null_ext147, ptr @src_file.7011, i64 88, i64 352)
   %ty_ptr148 = getelementptr inbounds nuw %TopLevelLookup, ptr %g144, i32 0, i32 2
   %ty149 = load ptr, ptr %ty_ptr148, align 8
   %40 = call ptr @"features::closures::codegen::emit_indirect_call_from_global"(ptr %ctx136, ptr %env137, ptr %llvm_global, ptr %name142, ptr %args143, ptr %ty149)
@@ -78131,7 +78145,7 @@ match_end:                                        ; preds = %match_arm
   %cast186 = ptrtoint ptr %ctx185 to i64
   %null_chk187 = icmp eq i64 %cast186, 0
   %null_ext188 = zext i1 %null_chk187 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7025, i64 8, ptr @sty_name.7026, i64 3, i64 %null_ext188, ptr @src_file.7027, i64 88, i64 362)
+  call void @forge_null_deref_trap(ptr @fld_name.7025, i64 8, ptr @sty_name.7026, i64 3, i64 %null_ext188, ptr @src_file.7027, i64 88, i64 368)
   %fn_val189 = load ptr, ptr %fn_val, align 8
   %arg_arr190 = load ptr, ptr %arg_arr, align 8
   %arg_count191 = load i64, ptr %arg_count, align 8
@@ -78141,14 +78155,14 @@ match_end:                                        ; preds = %match_arm
   %cast193 = ptrtoint ptr %ctx192 to i64
   %null_chk194 = icmp eq i64 %cast193, 0
   %null_ext195 = zext i1 %null_chk194 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7028, i64 16, ptr @sty_name.7029, i64 3, i64 %null_ext195, ptr @src_file.7030, i64 88, i64 363)
+  call void @forge_null_deref_trap(ptr @fld_name.7028, i64 16, ptr @sty_name.7029, i64 3, i64 %null_ext195, ptr @src_file.7030, i64 88, i64 369)
   %arg_arr196 = load ptr, ptr %arg_arr, align 8
   %42 = call i64 @Ctx__value_array_free(ptr %ctx192, ptr %arg_arr196)
   %ctx197 = load ptr, ptr %ctx, align 8
   %cast198 = ptrtoint ptr %ctx197 to i64
   %null_chk199 = icmp eq i64 %cast198, 0
   %null_ext200 = zext i1 %null_chk199 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7031, i64 6, ptr @sty_name.7032, i64 3, i64 %null_ext200, ptr @src_file.7033, i64 88, i64 364)
+  call void @forge_null_deref_trap(ptr @fld_name.7031, i64 6, ptr @sty_name.7032, i64 3, i64 %null_ext200, ptr @src_file.7033, i64 88, i64 370)
   %name201 = load ptr, ptr %name, align 8
   %43 = call ptr @Ctx__fn_ret(ptr %ctx197, ptr %name201)
   store ptr %43, ptr %ret_ty, align 8
@@ -78177,7 +78191,7 @@ match_arm175:                                     ; preds = %match_next
   %cast180 = ptrtoint ptr %ctx179 to i64
   %null_chk181 = icmp eq i64 %cast180, 0
   %null_ext182 = zext i1 %null_chk181 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7020, i64 16, ptr @sty_name.7021, i64 3, i64 %null_ext182, ptr @src_file.7022, i64 88, i64 358)
+  call void @forge_null_deref_trap(ptr @fld_name.7020, i64 16, ptr @sty_name.7021, i64 3, i64 %null_ext182, ptr @src_file.7022, i64 88, i64 364)
   %arg_arr183 = load ptr, ptr %arg_arr, align 8
   %46 = call i64 @Ctx__value_array_free(ptr %ctx179, ptr %arg_arr183)
   %e184 = load ptr, ptr %e178, align 8
@@ -78185,7 +78199,7 @@ match_arm175:                                     ; preds = %match_next
   ret ptr %47
 
 match_next176:                                    ; preds = %match_next
-  call void @forge_match_unreachable(ptr @.match_fn.7023, i64 %tag, ptr @mu_file.7024, i64 354)
+  call void @forge_match_unreachable(ptr @.match_fn.7023, i64 %tag, ptr @mu_file.7024, i64 360)
   unreachable
 }
 
@@ -78238,13 +78252,13 @@ march_arm2:                                       ; preds = %march_next
   %cast7 = ptrtoint ptr %ctx6 to i64
   %null_chk = icmp eq i64 %cast7, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7035, i64 4, ptr @sty_name.7036, i64 3, i64 %null_ext, ptr @src_file.7037, i64 88, i64 374)
+  call void @forge_null_deref_trap(ptr @fld_name.7035, i64 4, ptr @sty_name.7036, i64 3, i64 %null_ext, ptr @src_file.7037, i64 88, i64 380)
   %env8 = load ptr, ptr %env, align 8
   %se9 = load ptr, ptr %se5, align 8
   %cast10 = ptrtoint ptr %se9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7038, i64 4, ptr @sty_name.7039, i64 5, i64 %null_ext12, ptr @src_file.7040, i64 88, i64 374)
+  call void @forge_null_deref_trap(ptr @fld_name.7038, i64 4, ptr @sty_name.7039, i64 5, i64 %null_ext12, ptr @src_file.7040, i64 88, i64 380)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %4 = call ptr @Ctx__emit(ptr %ctx6, ptr %env8, ptr %node)
@@ -78254,7 +78268,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7094, i64 %tag, ptr @mu_file.7095, i64 370)
+  call void @forge_match_unreachable(ptr @.match_fn.7094, i64 %tag, ptr @mu_file.7095, i64 376)
   unreachable
 
 try_ok:                                           ; preds = %march_arm2
@@ -78267,7 +78281,7 @@ try_ok:                                           ; preds = %march_arm2
   %cast15 = ptrtoint ptr %r14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7041, i64 2, ptr @sty_name.7042, i64 9, i64 %null_ext17, ptr @src_file.7043, i64 88, i64 376)
+  call void @forge_null_deref_trap(ptr @fld_name.7041, i64 2, ptr @sty_name.7042, i64 9, i64 %null_ext17, ptr @src_file.7043, i64 88, i64 382)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %r14, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %5 = call i1 @"core::ast::vtype_is_str"(ptr %ty)
@@ -78283,7 +78297,7 @@ ifcont:                                           ; preds = %if_else
   %cast23 = ptrtoint ptr %r22 to i64
   %null_chk24 = icmp eq i64 %cast23, 0
   %null_ext25 = zext i1 %null_chk24 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7047, i64 2, ptr @sty_name.7048, i64 9, i64 %null_ext25, ptr @src_file.7049, i64 88, i64 380)
+  call void @forge_null_deref_trap(ptr @fld_name.7047, i64 2, ptr @sty_name.7048, i64 9, i64 %null_ext25, ptr @src_file.7049, i64 88, i64 386)
   %ty_ptr26 = getelementptr inbounds nuw %EmitValue, ptr %r22, i32 0, i32 1
   %ty27 = load ptr, ptr %ty_ptr26, align 8
   %6 = call i1 @"core::ast::vtype_is_newtype"(ptr %ty27)
@@ -78296,7 +78310,7 @@ if_then:                                          ; preds = %try_ok
   %cast19 = ptrtoint ptr %r18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7044, i64 5, ptr @sty_name.7045, i64 9, i64 %null_ext21, ptr @src_file.7046, i64 88, i64 377)
+  call void @forge_null_deref_trap(ptr @fld_name.7044, i64 5, ptr @sty_name.7045, i64 9, i64 %null_ext21, ptr @src_file.7046, i64 88, i64 383)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r18, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %7 = call ptr @"codegen::types::ok_emit_str"(ptr %value)
@@ -78310,7 +78324,7 @@ ifcont29:                                         ; preds = %if_else32
   %cast60 = ptrtoint ptr %r59 to i64
   %null_chk61 = icmp eq i64 %cast60, 0
   %null_ext62 = zext i1 %null_chk61 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7059, i64 2, ptr @sty_name.7060, i64 9, i64 %null_ext62, ptr @src_file.7061, i64 88, i64 387)
+  call void @forge_null_deref_trap(ptr @fld_name.7059, i64 2, ptr @sty_name.7060, i64 9, i64 %null_ext62, ptr @src_file.7061, i64 88, i64 393)
   %ty_ptr63 = getelementptr inbounds nuw %EmitValue, ptr %r59, i32 0, i32 1
   %ty64 = load ptr, ptr %ty_ptr63, align 8
   %tag_ptr65 = getelementptr inbounds nuw %ValueType, ptr %ty64, i32 0, i32 0
@@ -78325,7 +78339,7 @@ if_then31:                                        ; preds = %ifcont
   %cast34 = ptrtoint ptr %r33 to i64
   %null_chk35 = icmp eq i64 %cast34, 0
   %null_ext36 = zext i1 %null_chk35 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7050, i64 2, ptr @sty_name.7051, i64 9, i64 %null_ext36, ptr @src_file.7052, i64 88, i64 381)
+  call void @forge_null_deref_trap(ptr @fld_name.7050, i64 2, ptr @sty_name.7051, i64 9, i64 %null_ext36, ptr @src_file.7052, i64 88, i64 387)
   %ty_ptr37 = getelementptr inbounds nuw %EmitValue, ptr %r33, i32 0, i32 1
   %ty38 = load ptr, ptr %ty_ptr37, align 8
   %8 = call ptr @"core::ast::vtype_newtype_inner"(ptr %ty38)
@@ -78345,7 +78359,7 @@ ifcont41:                                         ; preds = %if_else44
   %cast53 = ptrtoint ptr %r52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7056, i64 5, ptr @sty_name.7057, i64 9, i64 %null_ext55, ptr @src_file.7058, i64 88, i64 384)
+  call void @forge_null_deref_trap(ptr @fld_name.7056, i64 5, ptr @sty_name.7057, i64 9, i64 %null_ext55, ptr @src_file.7058, i64 88, i64 390)
   %value_ptr56 = getelementptr inbounds nuw %EmitValue, ptr %r52, i32 0, i32 0
   %value57 = load ptr, ptr %value_ptr56, align 8
   %inner58 = load ptr, ptr %inner, align 8
@@ -78357,7 +78371,7 @@ if_then43:                                        ; preds = %if_then31
   %cast46 = ptrtoint ptr %r45 to i64
   %null_chk47 = icmp eq i64 %cast46, 0
   %null_ext48 = zext i1 %null_chk47 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7053, i64 5, ptr @sty_name.7054, i64 9, i64 %null_ext48, ptr @src_file.7055, i64 88, i64 382)
+  call void @forge_null_deref_trap(ptr @fld_name.7053, i64 5, ptr @sty_name.7054, i64 9, i64 %null_ext48, ptr @src_file.7055, i64 88, i64 388)
   %value_ptr49 = getelementptr inbounds nuw %EmitValue, ptr %r45, i32 0, i32 0
   %value50 = load ptr, ptr %value_ptr49, align 8
   %11 = call ptr @"codegen::types::ok_emit_str"(ptr %value50)
@@ -78371,7 +78385,7 @@ ifcont67:                                         ; preds = %if_else70
   %cast72 = ptrtoint ptr %r71 to i64
   %null_chk73 = icmp eq i64 %cast72, 0
   %null_ext74 = zext i1 %null_chk73 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7063, i64 2, ptr @sty_name.7064, i64 9, i64 %null_ext74, ptr @src_file.7065, i64 88, i64 391)
+  call void @forge_null_deref_trap(ptr @fld_name.7063, i64 2, ptr @sty_name.7064, i64 9, i64 %null_ext74, ptr @src_file.7065, i64 88, i64 397)
   %ty_ptr75 = getelementptr inbounds nuw %EmitValue, ptr %r71, i32 0, i32 1
   %ty76 = load ptr, ptr %ty_ptr75, align 8
   %12 = call ptr @forge_rc_alloc(i64 16)
@@ -78398,12 +78412,12 @@ ifcont81:                                         ; preds = %if_else84
   %cast98 = ptrtoint ptr %ctx97 to i64
   %null_chk99 = icmp eq i64 %cast98, 0
   %null_ext100 = zext i1 %null_chk99 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7073, i64 6, ptr @sty_name.7074, i64 3, i64 %null_ext100, ptr @src_file.7075, i64 88, i64 396)
+  call void @forge_null_deref_trap(ptr @fld_name.7073, i64 6, ptr @sty_name.7074, i64 3, i64 %null_ext100, ptr @src_file.7075, i64 88, i64 402)
   %ctx101 = load ptr, ptr %ctx, align 8
   %cast102 = ptrtoint ptr %ctx101 to i64
   %null_chk103 = icmp eq i64 %cast102, 0
   %null_ext104 = zext i1 %null_chk103 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7076, i64 3, ptr @sty_name.7077, i64 3, i64 %null_ext104, ptr @src_file.7078, i64 88, i64 396)
+  call void @forge_null_deref_trap(ptr @fld_name.7076, i64 3, ptr @sty_name.7077, i64 3, i64 %null_ext104, ptr @src_file.7078, i64 88, i64 402)
   %15 = call ptr @Ctx__i64(ptr %ctx101, i64 32)
   %16 = call ptr @Ctx__malloc(ptr %ctx97, ptr %15)
   store ptr %16, ptr %buf, align 8
@@ -78411,14 +78425,14 @@ ifcont81:                                         ; preds = %if_else84
   %cast106 = ptrtoint ptr %ctx105 to i64
   %null_chk107 = icmp eq i64 %cast106, 0
   %null_ext108 = zext i1 %null_chk107 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7079, i64 10, ptr @sty_name.7080, i64 3, i64 %null_ext108, ptr @src_file.7081, i64 88, i64 397)
+  call void @forge_null_deref_trap(ptr @fld_name.7079, i64 10, ptr @sty_name.7080, i64 3, i64 %null_ext108, ptr @src_file.7081, i64 88, i64 403)
   %17 = call ptr @Ctx__global_str(ptr %ctx105, ptr @.str.7082, ptr @.str.7083)
   store ptr %17, ptr %fmt, align 8
   %ctx109 = load ptr, ptr %ctx, align 8
   %cast110 = ptrtoint ptr %ctx109 to i64
   %null_chk111 = icmp eq i64 %cast110, 0
   %null_ext112 = zext i1 %null_chk111 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7084, i64 4, ptr @sty_name.7085, i64 3, i64 %null_ext112, ptr @src_file.7086, i64 88, i64 398)
+  call void @forge_null_deref_trap(ptr @fld_name.7084, i64 4, ptr @sty_name.7085, i64 3, i64 %null_ext112, ptr @src_file.7086, i64 88, i64 404)
   %18 = call ptr @forge_array_new()
   %buf113 = load ptr, ptr %buf, align 8
   %cast114 = ptrtoint ptr %buf113 to i64
@@ -78427,7 +78441,7 @@ ifcont81:                                         ; preds = %if_else84
   %cast116 = ptrtoint ptr %ctx115 to i64
   %null_chk117 = icmp eq i64 %cast116, 0
   %null_ext118 = zext i1 %null_chk117 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7088, i64 3, ptr @sty_name.7089, i64 3, i64 %null_ext118, ptr @src_file.7090, i64 88, i64 398)
+  call void @forge_null_deref_trap(ptr @fld_name.7088, i64 3, ptr @sty_name.7089, i64 3, i64 %null_ext118, ptr @src_file.7090, i64 88, i64 404)
   %19 = call ptr @Ctx__i64(ptr %ctx115, i64 32)
   %cast119 = ptrtoint ptr %19 to i64
   call void @forge_array_push(ptr %18, i64 %cast119)
@@ -78438,7 +78452,7 @@ ifcont81:                                         ; preds = %if_else84
   %cast123 = ptrtoint ptr %r122 to i64
   %null_chk124 = icmp eq i64 %cast123, 0
   %null_ext125 = zext i1 %null_chk124 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7091, i64 5, ptr @sty_name.7092, i64 9, i64 %null_ext125, ptr @src_file.7093, i64 88, i64 398)
+  call void @forge_null_deref_trap(ptr @fld_name.7091, i64 5, ptr @sty_name.7092, i64 9, i64 %null_ext125, ptr @src_file.7093, i64 88, i64 404)
   %value_ptr126 = getelementptr inbounds nuw %EmitValue, ptr %r122, i32 0, i32 0
   %value127 = load ptr, ptr %value_ptr126, align 8
   %cast128 = ptrtoint ptr %value127 to i64
@@ -78455,13 +78469,13 @@ if_then83:                                        ; preds = %ifcont67
   %cast86 = ptrtoint ptr %ctx85 to i64
   %null_chk87 = icmp eq i64 %cast86, 0
   %null_ext88 = zext i1 %null_chk87 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7066, i64 4, ptr @sty_name.7067, i64 3, i64 %null_ext88, ptr @src_file.7068, i64 88, i64 392)
+  call void @forge_null_deref_trap(ptr @fld_name.7066, i64 4, ptr @sty_name.7067, i64 3, i64 %null_ext88, ptr @src_file.7068, i64 88, i64 398)
   %22 = call ptr @forge_array_new()
   %r89 = load ptr, ptr %r, align 8
   %cast90 = ptrtoint ptr %r89 to i64
   %null_chk91 = icmp eq i64 %cast90, 0
   %null_ext92 = zext i1 %null_chk91 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7070, i64 5, ptr @sty_name.7071, i64 9, i64 %null_ext92, ptr @src_file.7072, i64 88, i64 392)
+  call void @forge_null_deref_trap(ptr @fld_name.7070, i64 5, ptr @sty_name.7071, i64 9, i64 %null_ext92, ptr @src_file.7072, i64 88, i64 398)
   %value_ptr93 = getelementptr inbounds nuw %EmitValue, ptr %r89, i32 0, i32 0
   %value94 = load ptr, ptr %value_ptr93, align 8
   %cast95 = ptrtoint ptr %value94 to i64
@@ -78505,12 +78519,12 @@ ifcont:                                           ; preds = %if_else
   %cast9 = ptrtoint ptr %ctx8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7100, i64 6, ptr @sty_name.7101, i64 3, i64 %null_ext11, ptr @src_file.7102, i64 88, i64 409)
+  call void @forge_null_deref_trap(ptr @fld_name.7100, i64 6, ptr @sty_name.7101, i64 3, i64 %null_ext11, ptr @src_file.7102, i64 88, i64 415)
   %ctx12 = load ptr, ptr %ctx, align 8
   %cast13 = ptrtoint ptr %ctx12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7103, i64 3, ptr @sty_name.7104, i64 3, i64 %null_ext15, ptr @src_file.7105, i64 88, i64 409)
+  call void @forge_null_deref_trap(ptr @fld_name.7103, i64 3, ptr @sty_name.7104, i64 3, i64 %null_ext15, ptr @src_file.7105, i64 88, i64 415)
   %5 = call ptr @Ctx__i64(ptr %ctx12, i64 32)
   %6 = call ptr @Ctx__malloc(ptr %ctx8, ptr %5)
   store ptr %6, ptr %buf, align 8
@@ -78518,14 +78532,14 @@ ifcont:                                           ; preds = %if_else
   %cast17 = ptrtoint ptr %ctx16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7106, i64 10, ptr @sty_name.7107, i64 3, i64 %null_ext19, ptr @src_file.7108, i64 88, i64 410)
+  call void @forge_null_deref_trap(ptr @fld_name.7106, i64 10, ptr @sty_name.7107, i64 3, i64 %null_ext19, ptr @src_file.7108, i64 88, i64 416)
   %7 = call ptr @Ctx__global_str(ptr %ctx16, ptr @.str.7109, ptr @.str.7110)
   store ptr %7, ptr %fmt, align 8
   %ctx20 = load ptr, ptr %ctx, align 8
   %cast21 = ptrtoint ptr %ctx20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7111, i64 4, ptr @sty_name.7112, i64 3, i64 %null_ext23, ptr @src_file.7113, i64 88, i64 411)
+  call void @forge_null_deref_trap(ptr @fld_name.7111, i64 4, ptr @sty_name.7112, i64 3, i64 %null_ext23, ptr @src_file.7113, i64 88, i64 417)
   %8 = call ptr @forge_array_new()
   %buf24 = load ptr, ptr %buf, align 8
   %cast25 = ptrtoint ptr %buf24 to i64
@@ -78534,7 +78548,7 @@ ifcont:                                           ; preds = %if_else
   %cast27 = ptrtoint ptr %ctx26 to i64
   %null_chk28 = icmp eq i64 %cast27, 0
   %null_ext29 = zext i1 %null_chk28 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7115, i64 3, ptr @sty_name.7116, i64 3, i64 %null_ext29, ptr @src_file.7117, i64 88, i64 411)
+  call void @forge_null_deref_trap(ptr @fld_name.7115, i64 3, ptr @sty_name.7116, i64 3, i64 %null_ext29, ptr @src_file.7117, i64 88, i64 417)
   %9 = call ptr @Ctx__i64(ptr %ctx26, i64 32)
   %cast30 = ptrtoint ptr %9 to i64
   call void @forge_array_push(ptr %8, i64 %cast30)
@@ -78554,7 +78568,7 @@ if_then:                                          ; preds = %entry
   %cast4 = ptrtoint ptr %ctx3 to i64
   %null_chk = icmp eq i64 %cast4, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7096, i64 4, ptr @sty_name.7097, i64 3, i64 %null_ext, ptr @src_file.7098, i64 88, i64 406)
+  call void @forge_null_deref_trap(ptr @fld_name.7096, i64 4, ptr @sty_name.7097, i64 3, i64 %null_ext, ptr @src_file.7098, i64 88, i64 412)
   %12 = call ptr @forge_array_new()
   %val5 = load ptr, ptr %val, align 8
   %cast6 = ptrtoint ptr %val5 to i64
@@ -78616,13 +78630,13 @@ march_arm2:                                       ; preds = %march_next
   %cast7 = ptrtoint ptr %ctx6 to i64
   %null_chk = icmp eq i64 %cast7, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7119, i64 4, ptr @sty_name.7120, i64 3, i64 %null_ext, ptr @src_file.7121, i64 88, i64 421)
+  call void @forge_null_deref_trap(ptr @fld_name.7119, i64 4, ptr @sty_name.7120, i64 3, i64 %null_ext, ptr @src_file.7121, i64 88, i64 427)
   %env8 = load ptr, ptr %env, align 8
   %se9 = load ptr, ptr %se5, align 8
   %cast10 = ptrtoint ptr %se9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7122, i64 4, ptr @sty_name.7123, i64 5, i64 %null_ext12, ptr @src_file.7124, i64 88, i64 421)
+  call void @forge_null_deref_trap(ptr @fld_name.7122, i64 4, ptr @sty_name.7123, i64 5, i64 %null_ext12, ptr @src_file.7124, i64 88, i64 427)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %4 = call ptr @Ctx__emit(ptr %ctx6, ptr %env8, ptr %node)
@@ -78632,7 +78646,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7162, i64 %tag, ptr @mu_file.7163, i64 417)
+  call void @forge_match_unreachable(ptr @.match_fn.7162, i64 %tag, ptr @mu_file.7163, i64 423)
   unreachable
 
 try_ok:                                           ; preds = %march_arm2
@@ -78645,7 +78659,7 @@ try_ok:                                           ; preds = %march_arm2
   %cast15 = ptrtoint ptr %r14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7125, i64 2, ptr @sty_name.7126, i64 9, i64 %null_ext17, ptr @src_file.7127, i64 88, i64 422)
+  call void @forge_null_deref_trap(ptr @fld_name.7125, i64 2, ptr @sty_name.7126, i64 9, i64 %null_ext17, ptr @src_file.7127, i64 88, i64 428)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %r14, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %5 = call ptr @forge_rc_alloc(i64 16)
@@ -78668,7 +78682,7 @@ ifcont:                                           ; preds = %if_else
   %cast30 = ptrtoint ptr %r29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7135, i64 2, ptr @sty_name.7136, i64 9, i64 %null_ext32, ptr @src_file.7137, i64 88, i64 425)
+  call void @forge_null_deref_trap(ptr @fld_name.7135, i64 2, ptr @sty_name.7136, i64 9, i64 %null_ext32, ptr @src_file.7137, i64 88, i64 431)
   %ty_ptr33 = getelementptr inbounds nuw %EmitValue, ptr %r29, i32 0, i32 1
   %ty34 = load ptr, ptr %ty_ptr33, align 8
   %7 = call i1 @"core::ast::vtype_is_str"(ptr %ty34)
@@ -78683,12 +78697,12 @@ if_then:                                          ; preds = %try_ok
   %cast22 = ptrtoint ptr %ctx21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7128, i64 6, ptr @sty_name.7129, i64 3, i64 %null_ext24, ptr @src_file.7130, i64 88, i64 423)
+  call void @forge_null_deref_trap(ptr @fld_name.7128, i64 6, ptr @sty_name.7129, i64 3, i64 %null_ext24, ptr @src_file.7130, i64 88, i64 429)
   %r25 = load ptr, ptr %r, align 8
   %cast26 = ptrtoint ptr %r25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7131, i64 5, ptr @sty_name.7132, i64 9, i64 %null_ext28, ptr @src_file.7133, i64 88, i64 423)
+  call void @forge_null_deref_trap(ptr @fld_name.7131, i64 5, ptr @sty_name.7132, i64 9, i64 %null_ext28, ptr @src_file.7133, i64 88, i64 429)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r25, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %8 = call ptr @Ctx__fptosi(ptr %ctx21, ptr %value, ptr @.str.7134)
@@ -78703,12 +78717,12 @@ ifcont36:                                         ; preds = %if_else39
   %cast53 = ptrtoint ptr %ctx52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7144, i64 6, ptr @sty_name.7145, i64 3, i64 %null_ext55, ptr @src_file.7146, i64 88, i64 428)
+  call void @forge_null_deref_trap(ptr @fld_name.7144, i64 6, ptr @sty_name.7145, i64 3, i64 %null_ext55, ptr @src_file.7146, i64 88, i64 434)
   %r56 = load ptr, ptr %r, align 8
   %cast57 = ptrtoint ptr %r56 to i64
   %null_chk58 = icmp eq i64 %cast57, 0
   %null_ext59 = zext i1 %null_chk58 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7147, i64 5, ptr @sty_name.7148, i64 9, i64 %null_ext59, ptr @src_file.7149, i64 88, i64 428)
+  call void @forge_null_deref_trap(ptr @fld_name.7147, i64 5, ptr @sty_name.7148, i64 9, i64 %null_ext59, ptr @src_file.7149, i64 88, i64 434)
   %value_ptr60 = getelementptr inbounds nuw %EmitValue, ptr %r56, i32 0, i32 0
   %value61 = load ptr, ptr %value_ptr60, align 8
   %10 = call ptr @Ctx__to_ptr(ptr %ctx52, ptr %value61, ptr @.str.7150)
@@ -78717,7 +78731,7 @@ ifcont36:                                         ; preds = %if_else39
   %cast63 = ptrtoint ptr %ctx62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7151, i64 4, ptr @sty_name.7152, i64 3, i64 %null_ext65, ptr @src_file.7153, i64 88, i64 429)
+  call void @forge_null_deref_trap(ptr @fld_name.7151, i64 4, ptr @sty_name.7152, i64 3, i64 %null_ext65, ptr @src_file.7153, i64 88, i64 435)
   %11 = call ptr @forge_array_new()
   %str_ptr66 = load ptr, ptr %str_ptr, align 8
   %cast67 = ptrtoint ptr %str_ptr66 to i64
@@ -78728,13 +78742,13 @@ ifcont36:                                         ; preds = %if_else39
   %cast69 = ptrtoint ptr %ctx68 to i64
   %null_chk70 = icmp eq i64 %cast69, 0
   %null_ext71 = zext i1 %null_chk70 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7155, i64 4, ptr @sty_name.7156, i64 3, i64 %null_ext71, ptr @src_file.7157, i64 88, i64 431)
+  call void @forge_null_deref_trap(ptr @fld_name.7155, i64 4, ptr @sty_name.7156, i64 3, i64 %null_ext71, ptr @src_file.7157, i64 88, i64 437)
   %result3272 = load ptr, ptr %result32, align 8
   %ctx73 = load ptr, ptr %ctx, align 8
   %cast74 = ptrtoint ptr %ctx73 to i64
   %null_chk75 = icmp eq i64 %cast74, 0
   %null_ext76 = zext i1 %null_chk75 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7158, i64 8, ptr @sty_name.7159, i64 3, i64 %null_ext76, ptr @src_file.7160, i64 88, i64 431)
+  call void @forge_null_deref_trap(ptr @fld_name.7158, i64 8, ptr @sty_name.7159, i64 3, i64 %null_ext76, ptr @src_file.7160, i64 88, i64 437)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx73, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %13 = call ptr @Ctx__sext(ptr %ctx68, ptr %result3272, ptr %i64_type, ptr @.str.7161)
@@ -78748,14 +78762,14 @@ if_then38:                                        ; preds = %ifcont
   %cast41 = ptrtoint ptr %r40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7138, i64 5, ptr @sty_name.7139, i64 9, i64 %null_ext43, ptr @src_file.7140, i64 88, i64 426)
+  call void @forge_null_deref_trap(ptr @fld_name.7138, i64 5, ptr @sty_name.7139, i64 9, i64 %null_ext43, ptr @src_file.7140, i64 88, i64 432)
   %value_ptr44 = getelementptr inbounds nuw %EmitValue, ptr %r40, i32 0, i32 0
   %value45 = load ptr, ptr %value_ptr44, align 8
   %r46 = load ptr, ptr %r, align 8
   %cast47 = ptrtoint ptr %r46 to i64
   %null_chk48 = icmp eq i64 %cast47, 0
   %null_ext49 = zext i1 %null_chk48 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7141, i64 2, ptr @sty_name.7142, i64 9, i64 %null_ext49, ptr @src_file.7143, i64 88, i64 426)
+  call void @forge_null_deref_trap(ptr @fld_name.7141, i64 2, ptr @sty_name.7142, i64 9, i64 %null_ext49, ptr @src_file.7143, i64 88, i64 432)
   %ty_ptr50 = getelementptr inbounds nuw %EmitValue, ptr %r46, i32 0, i32 1
   %ty51 = load ptr, ptr %ty_ptr50, align 8
   %15 = call ptr @"codegen::types::ok_emit_typed"(ptr %value45, ptr %ty51)
@@ -78812,13 +78826,13 @@ march_arm2:                                       ; preds = %march_next
   %cast7 = ptrtoint ptr %ctx6 to i64
   %null_chk = icmp eq i64 %cast7, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7165, i64 4, ptr @sty_name.7166, i64 3, i64 %null_ext, ptr @src_file.7167, i64 88, i64 443)
+  call void @forge_null_deref_trap(ptr @fld_name.7165, i64 4, ptr @sty_name.7166, i64 3, i64 %null_ext, ptr @src_file.7167, i64 88, i64 449)
   %env8 = load ptr, ptr %env, align 8
   %se9 = load ptr, ptr %se5, align 8
   %cast10 = ptrtoint ptr %se9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7168, i64 4, ptr @sty_name.7169, i64 5, i64 %null_ext12, ptr @src_file.7170, i64 88, i64 443)
+  call void @forge_null_deref_trap(ptr @fld_name.7168, i64 4, ptr @sty_name.7169, i64 5, i64 %null_ext12, ptr @src_file.7170, i64 88, i64 449)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %4 = call ptr @Ctx__emit(ptr %ctx6, ptr %env8, ptr %node)
@@ -78828,7 +78842,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7204, i64 %tag, ptr @mu_file.7205, i64 439)
+  call void @forge_match_unreachable(ptr @.match_fn.7204, i64 %tag, ptr @mu_file.7205, i64 445)
   unreachable
 
 try_ok:                                           ; preds = %march_arm2
@@ -78841,7 +78855,7 @@ try_ok:                                           ; preds = %march_arm2
   %cast15 = ptrtoint ptr %r14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7171, i64 2, ptr @sty_name.7172, i64 9, i64 %null_ext17, ptr @src_file.7173, i64 88, i64 444)
+  call void @forge_null_deref_trap(ptr @fld_name.7171, i64 2, ptr @sty_name.7172, i64 9, i64 %null_ext17, ptr @src_file.7173, i64 88, i64 450)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %r14, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %5 = call ptr @forge_rc_alloc(i64 16)
@@ -78864,7 +78878,7 @@ ifcont:                                           ; preds = %if_else
   %cast30 = ptrtoint ptr %r29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7177, i64 2, ptr @sty_name.7178, i64 9, i64 %null_ext32, ptr @src_file.7179, i64 88, i64 447)
+  call void @forge_null_deref_trap(ptr @fld_name.7177, i64 2, ptr @sty_name.7178, i64 9, i64 %null_ext32, ptr @src_file.7179, i64 88, i64 453)
   %ty_ptr33 = getelementptr inbounds nuw %EmitValue, ptr %r29, i32 0, i32 1
   %ty34 = load ptr, ptr %ty_ptr33, align 8
   %7 = call i1 @"core::ast::vtype_is_str"(ptr %ty34)
@@ -78877,7 +78891,7 @@ if_then:                                          ; preds = %try_ok
   %cast22 = ptrtoint ptr %r21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7174, i64 5, ptr @sty_name.7175, i64 9, i64 %null_ext24, ptr @src_file.7176, i64 88, i64 445)
+  call void @forge_null_deref_trap(ptr @fld_name.7174, i64 5, ptr @sty_name.7175, i64 9, i64 %null_ext24, ptr @src_file.7176, i64 88, i64 451)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r21, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %8 = call ptr @forge_rc_alloc(i64 16)
@@ -78898,17 +78912,17 @@ ifcont36:                                         ; preds = %if_else39
   %cast70 = ptrtoint ptr %ctx69 to i64
   %null_chk71 = icmp eq i64 %cast70, 0
   %null_ext72 = zext i1 %null_chk71 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7194, i64 7, ptr @sty_name.7195, i64 3, i64 %null_ext72, ptr @src_file.7196, i64 88, i64 453)
+  call void @forge_null_deref_trap(ptr @fld_name.7194, i64 7, ptr @sty_name.7195, i64 3, i64 %null_ext72, ptr @src_file.7196, i64 88, i64 459)
   %ctx73 = load ptr, ptr %ctx, align 8
   %cast74 = ptrtoint ptr %ctx73 to i64
   %null_chk75 = icmp eq i64 %cast74, 0
   %null_ext76 = zext i1 %null_chk75 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7197, i64 6, ptr @sty_name.7198, i64 3, i64 %null_ext76, ptr @src_file.7199, i64 88, i64 453)
+  call void @forge_null_deref_trap(ptr @fld_name.7197, i64 6, ptr @sty_name.7198, i64 3, i64 %null_ext76, ptr @src_file.7199, i64 88, i64 459)
   %r77 = load ptr, ptr %r, align 8
   %cast78 = ptrtoint ptr %r77 to i64
   %null_chk79 = icmp eq i64 %cast78, 0
   %null_ext80 = zext i1 %null_chk79 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7200, i64 5, ptr @sty_name.7201, i64 9, i64 %null_ext80, ptr @src_file.7202, i64 88, i64 453)
+  call void @forge_null_deref_trap(ptr @fld_name.7200, i64 5, ptr @sty_name.7201, i64 9, i64 %null_ext80, ptr @src_file.7202, i64 88, i64 459)
   %value_ptr81 = getelementptr inbounds nuw %EmitValue, ptr %r77, i32 0, i32 0
   %value82 = load ptr, ptr %value_ptr81, align 8
   %10 = call ptr @Ctx__sitofp(ptr %ctx73, ptr %value82, ptr @.str.7203)
@@ -78937,12 +78951,12 @@ if_then38:                                        ; preds = %ifcont
   %cast41 = ptrtoint ptr %ctx40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7180, i64 6, ptr @sty_name.7181, i64 3, i64 %null_ext43, ptr @src_file.7182, i64 88, i64 448)
+  call void @forge_null_deref_trap(ptr @fld_name.7180, i64 6, ptr @sty_name.7181, i64 3, i64 %null_ext43, ptr @src_file.7182, i64 88, i64 454)
   %r44 = load ptr, ptr %r, align 8
   %cast45 = ptrtoint ptr %r44 to i64
   %null_chk46 = icmp eq i64 %cast45, 0
   %null_ext47 = zext i1 %null_chk46 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7183, i64 5, ptr @sty_name.7184, i64 9, i64 %null_ext47, ptr @src_file.7185, i64 88, i64 448)
+  call void @forge_null_deref_trap(ptr @fld_name.7183, i64 5, ptr @sty_name.7184, i64 9, i64 %null_ext47, ptr @src_file.7185, i64 88, i64 454)
   %value_ptr48 = getelementptr inbounds nuw %EmitValue, ptr %r44, i32 0, i32 0
   %value49 = load ptr, ptr %value_ptr48, align 8
   %15 = call ptr @Ctx__to_ptr(ptr %ctx40, ptr %value49, ptr @.str.7186)
@@ -78951,7 +78965,7 @@ if_then38:                                        ; preds = %ifcont
   %cast51 = ptrtoint ptr %ctx50 to i64
   %null_chk52 = icmp eq i64 %cast51, 0
   %null_ext53 = zext i1 %null_chk52 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7187, i64 4, ptr @sty_name.7188, i64 3, i64 %null_ext53, ptr @src_file.7189, i64 88, i64 449)
+  call void @forge_null_deref_trap(ptr @fld_name.7187, i64 4, ptr @sty_name.7188, i64 3, i64 %null_ext53, ptr @src_file.7189, i64 88, i64 455)
   %16 = call ptr @forge_array_new()
   %str_ptr54 = load ptr, ptr %str_ptr, align 8
   %cast55 = ptrtoint ptr %str_ptr54 to i64
@@ -78962,7 +78976,7 @@ if_then38:                                        ; preds = %ifcont
   %cast57 = ptrtoint ptr %ctx56 to i64
   %null_chk58 = icmp eq i64 %cast57, 0
   %null_ext59 = zext i1 %null_chk58 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7191, i64 7, ptr @sty_name.7192, i64 3, i64 %null_ext59, ptr @src_file.7193, i64 88, i64 450)
+  call void @forge_null_deref_trap(ptr @fld_name.7191, i64 7, ptr @sty_name.7192, i64 3, i64 %null_ext59, ptr @src_file.7193, i64 88, i64 456)
   %bits60 = load ptr, ptr %bits, align 8
   %18 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr61 = getelementptr inbounds nuw %Tk, ptr %18, i32 0, i32 0
@@ -79033,13 +79047,13 @@ march_arm2:                                       ; preds = %march_next
   %cast7 = ptrtoint ptr %ctx6 to i64
   %null_chk = icmp eq i64 %cast7, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7207, i64 4, ptr @sty_name.7208, i64 3, i64 %null_ext, ptr @src_file.7209, i64 88, i64 463)
+  call void @forge_null_deref_trap(ptr @fld_name.7207, i64 4, ptr @sty_name.7208, i64 3, i64 %null_ext, ptr @src_file.7209, i64 88, i64 469)
   %env8 = load ptr, ptr %env, align 8
   %se9 = load ptr, ptr %se5, align 8
   %cast10 = ptrtoint ptr %se9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7210, i64 4, ptr @sty_name.7211, i64 5, i64 %null_ext12, ptr @src_file.7212, i64 88, i64 463)
+  call void @forge_null_deref_trap(ptr @fld_name.7210, i64 4, ptr @sty_name.7211, i64 5, i64 %null_ext12, ptr @src_file.7212, i64 88, i64 469)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %4 = call ptr @Ctx__emit(ptr %ctx6, ptr %env8, ptr %node)
@@ -79049,7 +79063,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7242, i64 %tag, ptr @mu_file.7243, i64 459)
+  call void @forge_match_unreachable(ptr @.match_fn.7242, i64 %tag, ptr @mu_file.7243, i64 465)
   unreachable
 
 try_ok:                                           ; preds = %march_arm2
@@ -79062,7 +79076,7 @@ try_ok:                                           ; preds = %march_arm2
   %cast15 = ptrtoint ptr %ctx14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7213, i64 10, ptr @sty_name.7214, i64 3, i64 %null_ext17, ptr @src_file.7215, i64 88, i64 465)
+  call void @forge_null_deref_trap(ptr @fld_name.7213, i64 10, ptr @sty_name.7214, i64 3, i64 %null_ext17, ptr @src_file.7215, i64 88, i64 471)
   %5 = call ptr @Ctx__global_str(ptr %ctx14, ptr @.str.7216, ptr @.str.7217)
   store ptr %5, ptr %prefix, align 8
   %ctx18 = load ptr, ptr %ctx, align 8
@@ -79071,7 +79085,7 @@ try_ok:                                           ; preds = %march_arm2
   %cast21 = ptrtoint ptr %r20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7218, i64 5, ptr @sty_name.7219, i64 9, i64 %null_ext23, ptr @src_file.7220, i64 88, i64 466)
+  call void @forge_null_deref_trap(ptr @fld_name.7218, i64 5, ptr @sty_name.7219, i64 9, i64 %null_ext23, ptr @src_file.7220, i64 88, i64 472)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r20, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %6 = call ptr @"codegen::strings::emit_concat"(ptr %ctx18, ptr %prefix19, ptr %value)
@@ -79093,18 +79107,18 @@ try_ok27:                                         ; preds = %try_ok
   %cast34 = ptrtoint ptr %ctx33 to i64
   %null_chk35 = icmp eq i64 %cast34, 0
   %null_ext36 = zext i1 %null_chk35 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7221, i64 4, ptr @sty_name.7222, i64 3, i64 %null_ext36, ptr @src_file.7223, i64 88, i64 467)
+  call void @forge_null_deref_trap(ptr @fld_name.7221, i64 4, ptr @sty_name.7222, i64 3, i64 %null_ext36, ptr @src_file.7223, i64 88, i64 473)
   %7 = call ptr @forge_array_new()
   %ctx37 = load ptr, ptr %ctx, align 8
   %cast38 = ptrtoint ptr %ctx37 to i64
   %null_chk39 = icmp eq i64 %cast38, 0
   %null_ext40 = zext i1 %null_chk39 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7225, i64 6, ptr @sty_name.7226, i64 3, i64 %null_ext40, ptr @src_file.7227, i64 88, i64 467)
+  call void @forge_null_deref_trap(ptr @fld_name.7225, i64 6, ptr @sty_name.7226, i64 3, i64 %null_ext40, ptr @src_file.7227, i64 88, i64 473)
   %msg41 = load ptr, ptr %msg, align 8
   %cast42 = ptrtoint ptr %msg41 to i64
   %null_chk43 = icmp eq i64 %cast42, 0
   %null_ext44 = zext i1 %null_chk43 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7228, i64 5, ptr @sty_name.7229, i64 9, i64 %null_ext44, ptr @src_file.7230, i64 88, i64 467)
+  call void @forge_null_deref_trap(ptr @fld_name.7228, i64 5, ptr @sty_name.7229, i64 9, i64 %null_ext44, ptr @src_file.7230, i64 88, i64 473)
   %value_ptr45 = getelementptr inbounds nuw %EmitValue, ptr %msg41, i32 0, i32 0
   %value46 = load ptr, ptr %value_ptr45, align 8
   %8 = call ptr @Ctx__to_ptr(ptr %ctx37, ptr %value46, ptr @.str.7231)
@@ -79115,13 +79129,13 @@ try_ok27:                                         ; preds = %try_ok
   %cast49 = ptrtoint ptr %ctx48 to i64
   %null_chk50 = icmp eq i64 %cast49, 0
   %null_ext51 = zext i1 %null_chk50 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7232, i64 4, ptr @sty_name.7233, i64 3, i64 %null_ext51, ptr @src_file.7234, i64 88, i64 469)
+  call void @forge_null_deref_trap(ptr @fld_name.7232, i64 4, ptr @sty_name.7233, i64 3, i64 %null_ext51, ptr @src_file.7234, i64 88, i64 475)
   %10 = call ptr @forge_array_new()
   %ctx52 = load ptr, ptr %ctx, align 8
   %cast53 = ptrtoint ptr %ctx52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7236, i64 3, ptr @sty_name.7237, i64 3, i64 %null_ext55, ptr @src_file.7238, i64 88, i64 469)
+  call void @forge_null_deref_trap(ptr @fld_name.7236, i64 3, ptr @sty_name.7237, i64 3, i64 %null_ext55, ptr @src_file.7238, i64 88, i64 475)
   %11 = call ptr @Ctx__i64(ptr %ctx52, i64 1)
   %cast56 = ptrtoint ptr %11 to i64
   call void @forge_array_push(ptr %10, i64 %cast56)
@@ -79130,7 +79144,7 @@ try_ok27:                                         ; preds = %try_ok
   %cast58 = ptrtoint ptr %ctx57 to i64
   %null_chk59 = icmp eq i64 %cast58, 0
   %null_ext60 = zext i1 %null_chk59 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7239, i64 3, ptr @sty_name.7240, i64 3, i64 %null_ext60, ptr @src_file.7241, i64 88, i64 471)
+  call void @forge_null_deref_trap(ptr @fld_name.7239, i64 3, ptr @sty_name.7240, i64 3, i64 %null_ext60, ptr @src_file.7241, i64 88, i64 477)
   %13 = call ptr @Ctx__i64(ptr %ctx57, i64 0)
   %14 = call ptr @"codegen::types::ok_emit"(ptr %13)
   %cast61 = ptrtoint ptr %14 to i64
@@ -79203,13 +79217,13 @@ march_arm5:                                       ; preds = %march_next
   %cast10 = ptrtoint ptr %ctx9 to i64
   %null_chk = icmp eq i64 %cast10, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7245, i64 4, ptr @sty_name.7246, i64 3, i64 %null_ext, ptr @src_file.7247, i64 88, i64 483)
+  call void @forge_null_deref_trap(ptr @fld_name.7245, i64 4, ptr @sty_name.7246, i64 3, i64 %null_ext, ptr @src_file.7247, i64 88, i64 489)
   %env11 = load ptr, ptr %env, align 8
   %se12 = load ptr, ptr %se8, align 8
   %cast13 = ptrtoint ptr %se12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7248, i64 4, ptr @sty_name.7249, i64 5, i64 %null_ext15, ptr @src_file.7250, i64 88, i64 483)
+  call void @forge_null_deref_trap(ptr @fld_name.7248, i64 4, ptr @sty_name.7249, i64 5, i64 %null_ext15, ptr @src_file.7250, i64 88, i64 489)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se12, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %11 = call ptr @Ctx__emit(ptr %ctx9, ptr %env11, ptr %node)
@@ -79219,7 +79233,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7257, i64 %tag, ptr @mu_file.7258, i64 479)
+  call void @forge_match_unreachable(ptr @.match_fn.7257, i64 %tag, ptr @mu_file.7258, i64 485)
   unreachable
 
 try_ok:                                           ; preds = %march_arm5
@@ -79232,7 +79246,7 @@ try_ok:                                           ; preds = %march_arm5
   %cast18 = ptrtoint ptr %ctx17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7251, i64 14, ptr @sty_name.7252, i64 3, i64 %null_ext20, ptr @src_file.7253, i64 88, i64 484)
+  call void @forge_null_deref_trap(ptr @fld_name.7251, i64 14, ptr @sty_name.7252, i64 3, i64 %null_ext20, ptr @src_file.7253, i64 88, i64 490)
   %inner_ty_str21 = load ptr, ptr %inner_ty_str, align 8
   %12 = call ptr @Ctx__translate_type(ptr %ctx17, ptr %inner_ty_str21)
   store ptr %12, ptr %inner_ty, align 8
@@ -79240,7 +79254,7 @@ try_ok:                                           ; preds = %march_arm5
   %cast23 = ptrtoint ptr %r22 to i64
   %null_chk24 = icmp eq i64 %cast23, 0
   %null_ext25 = zext i1 %null_chk24 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.7254, i64 5, ptr @sty_name.7255, i64 9, i64 %null_ext25, ptr @src_file.7256, i64 88, i64 486)
+  call void @forge_null_deref_trap(ptr @fld_name.7254, i64 5, ptr @sty_name.7255, i64 9, i64 %null_ext25, ptr @src_file.7256, i64 88, i64 492)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r22, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %13 = call ptr @forge_rc_alloc(i64 16)
@@ -87539,9 +87553,9 @@ match_end:                                        ; preds = %march_arm11, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -87621,9 +87635,9 @@ match_end:                                        ; preds = %march_arm11, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -87703,9 +87717,9 @@ match_end:                                        ; preds = %march_arm11, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -88312,9 +88326,9 @@ match_end:                                        ; preds = %march_arm49, %guard
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -88942,9 +88956,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %1 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -91495,9 +91509,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -94637,9 +94651,9 @@ match_end:                                        ; preds = %match_end24, %march
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -94916,9 +94930,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -95021,9 +95035,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -95125,9 +95139,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -95216,9 +95230,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -95316,9 +95330,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -97123,9 +97137,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -97496,9 +97510,9 @@ match_end:                                        ; preds = %march_arm15, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -97702,9 +97716,9 @@ match_end:                                        ; preds = %ifcont, %march_arm
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -100287,9 +100301,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -100396,9 +100410,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -100571,9 +100585,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -106618,9 +106632,9 @@ entry:
   %elements10 = load ptr, ptr %elements, align 8
   %buf11 = load ptr, ptr %buf, align 8
   %6 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %EscapeSet, ptr %6, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %6, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %6, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %6, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast12 = ptrtoint ptr %6 to i64
   %cast13 = inttoptr i64 %cast12 to ptr
@@ -106669,9 +106683,9 @@ march_arm:                                        ; preds = %entry
   store ptr %7, ptr %pay_ptr, align 8
   %types_acc3 = load ptr, ptr %types_acc, align 8
   %8 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr4 = getelementptr inbounds nuw %EscapeSet, ptr %8, i32 0, i32 0
+  %tag_ptr4 = getelementptr inbounds nuw %ReleasableSet, ptr %8, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr4, align 8
-  %pay_ptr5 = getelementptr inbounds nuw %EscapeSet, ptr %8, i32 0, i32 1
+  %pay_ptr5 = getelementptr inbounds nuw %ReleasableSet, ptr %8, i32 0, i32 1
   store ptr null, ptr %pay_ptr5, align 8
   %cast = ptrtoint ptr %8 to i64
   %cast6 = inttoptr i64 %cast to ptr
@@ -106844,9 +106858,9 @@ march_arm3:                                       ; preds = %march_next
   store ptr %next, ptr %next9, align 8
   %next10 = load ptr, ptr %next9, align 8
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr11 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr11 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr11, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   %3 = call ptr @forge_rc_alloc(i64 16)
   store ptr %3, ptr %pay_ptr, align 8
   %ty12 = load ptr, ptr %ty6, align 8
@@ -110690,7 +110704,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10318, i64 %tag, ptr @mu_file.10319, i64 28)
+  call void @forge_match_unreachable(ptr @.match_fn.10318, i64 %tag, ptr @mu_file.10319, i64 30)
   unreachable
 }
 
@@ -110764,7 +110778,7 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.10320, i64 %tag, ptr @mu_file.10321, i64 35)
+  call void @forge_match_unreachable(ptr @.match_fn.10320, i64 %tag, ptr @mu_file.10321, i64 37)
   unreachable
 }
 
@@ -110838,7 +110852,7 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.10322, i64 %tag, ptr @mu_file.10323, i64 43)
+  call void @forge_match_unreachable(ptr @.match_fn.10322, i64 %tag, ptr @mu_file.10323, i64 45)
   unreachable
 }
 
@@ -110972,7 +110986,7 @@ ifcont9:                                          ; preds = %if_else12
   %cast = ptrtoint ptr %lookup16 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10324, i64 5, ptr @sty_name.10325, i64 9, i64 %null_ext, ptr @src_file.10326, i64 88, i64 57)
+  call void @forge_null_deref_trap(ptr @fld_name.10324, i64 5, ptr @sty_name.10325, i64 9, i64 %null_ext, ptr @src_file.10326, i64 88, i64 59)
   %found_ptr = getelementptr inbounds nuw %VarLookup, ptr %lookup16, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %not_cmp = icmp eq i64 %found, 0
@@ -111003,7 +111017,7 @@ ifcont17:                                         ; preds = %if_else20
   %cast25 = ptrtoint ptr %lookup24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10327, i64 6, ptr @sty_name.10328, i64 9, i64 %null_ext27, ptr @src_file.10329, i64 88, i64 58)
+  call void @forge_null_deref_trap(ptr @fld_name.10327, i64 6, ptr @sty_name.10328, i64 9, i64 %null_ext27, ptr @src_file.10329, i64 88, i64 60)
   %alloca_ptr = getelementptr inbounds nuw %VarLookup, ptr %lookup24, i32 0, i32 1
   %alloca = load ptr, ptr %alloca_ptr, align 8
   %slot_base28 = ptrtoint ptr %8 to i64
@@ -111014,7 +111028,7 @@ ifcont17:                                         ; preds = %if_else20
   %cast32 = ptrtoint ptr %lookup31 to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10330, i64 2, ptr @sty_name.10331, i64 9, i64 %null_ext34, ptr @src_file.10332, i64 88, i64 58)
+  call void @forge_null_deref_trap(ptr @fld_name.10330, i64 2, ptr @sty_name.10331, i64 9, i64 %null_ext34, ptr @src_file.10332, i64 88, i64 60)
   %ty_ptr = getelementptr inbounds nuw %VarLookup, ptr %lookup31, i32 0, i32 2
   %ty = load ptr, ptr %ty_ptr, align 8
   %slot_base35 = ptrtoint ptr %8 to i64
@@ -111879,7 +111893,7 @@ march_arm567:                                     ; preds = %march_next541
   br label %match_end
 
 march_next568:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10333, i64 %tag, ptr @mu_file.10334, i64 51)
+  call void @forge_match_unreachable(ptr @.match_fn.10333, i64 %tag, ptr @mu_file.10334, i64 53)
   unreachable
 }
 
@@ -111951,7 +111965,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10341, i64 %tag, ptr @mu_file.10342, i64 149)
+  call void @forge_match_unreachable(ptr @.match_fn.10341, i64 %tag, ptr @mu_file.10342, i64 151)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -111962,7 +111976,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast24 = ptrtoint ptr %body23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10338, i64 4, ptr @sty_name.10339, i64 5, i64 %null_ext26, ptr @src_file.10340, i64 88, i64 154)
+  call void @forge_null_deref_trap(ptr @fld_name.10338, i64 4, ptr @sty_name.10339, i64 5, i64 %null_ext26, ptr @src_file.10340, i64 88, i64 156)
   %node_ptr27 = getelementptr inbounds nuw %SExpr, ptr %body23, i32 0, i32 0
   %node28 = load ptr, ptr %node_ptr27, align 8
   %params29 = load ptr, ptr %params, align 8
@@ -111984,7 +111998,7 @@ ife_then:                                         ; preds = %march_arm3
   %cast15 = ptrtoint ptr %guard14 to i64
   %null_chk = icmp eq i64 %cast15, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10335, i64 4, ptr @sty_name.10336, i64 5, i64 %null_ext, ptr @src_file.10337, i64 88, i64 153)
+  call void @forge_null_deref_trap(ptr @fld_name.10335, i64 4, ptr @sty_name.10336, i64 5, i64 %null_ext, ptr @src_file.10337, i64 88, i64 155)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %guard14, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %params16 = load ptr, ptr %params, align 8
@@ -112057,7 +112071,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %val10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10343, i64 4, ptr @sty_name.10344, i64 5, i64 %null_ext, ptr @src_file.10345, i64 88, i64 165)
+  call void @forge_null_deref_trap(ptr @fld_name.10343, i64 4, ptr @sty_name.10344, i64 5, i64 %null_ext, ptr @src_file.10345, i64 88, i64 167)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %val10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %params12 = load ptr, ptr %params, align 8
@@ -112075,7 +112089,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10346, i64 %tag, ptr @mu_file.10347, i64 161)
+  call void @forge_match_unreachable(ptr @.match_fn.10346, i64 %tag, ptr @mu_file.10347, i64 163)
   unreachable
 }
 
@@ -112147,7 +112161,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10354, i64 %tag, ptr @mu_file.10355, i64 172)
+  call void @forge_match_unreachable(ptr @.match_fn.10354, i64 %tag, ptr @mu_file.10355, i64 174)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -112158,7 +112172,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast24 = ptrtoint ptr %body23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10351, i64 4, ptr @sty_name.10352, i64 5, i64 %null_ext26, ptr @src_file.10353, i64 88, i64 177)
+  call void @forge_null_deref_trap(ptr @fld_name.10351, i64 4, ptr @sty_name.10352, i64 5, i64 %null_ext26, ptr @src_file.10353, i64 88, i64 179)
   %node_ptr27 = getelementptr inbounds nuw %SExpr, ptr %body23, i32 0, i32 0
   %node28 = load ptr, ptr %node_ptr27, align 8
   %params29 = load ptr, ptr %params, align 8
@@ -112180,7 +112194,7 @@ ife_then:                                         ; preds = %march_arm3
   %cast15 = ptrtoint ptr %cond14 to i64
   %null_chk = icmp eq i64 %cast15, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10348, i64 4, ptr @sty_name.10349, i64 5, i64 %null_ext, ptr @src_file.10350, i64 88, i64 176)
+  call void @forge_null_deref_trap(ptr @fld_name.10348, i64 4, ptr @sty_name.10349, i64 5, i64 %null_ext, ptr @src_file.10350, i64 88, i64 178)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %cond14, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %params16 = load ptr, ptr %params, align 8
@@ -112253,7 +112267,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %se10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10356, i64 4, ptr @sty_name.10357, i64 5, i64 %null_ext, ptr @src_file.10358, i64 88, i64 188)
+  call void @forge_null_deref_trap(ptr @fld_name.10356, i64 4, ptr @sty_name.10357, i64 5, i64 %null_ext, ptr @src_file.10358, i64 88, i64 190)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %params12 = load ptr, ptr %params, align 8
@@ -112271,7 +112285,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10359, i64 %tag, ptr @mu_file.10360, i64 184)
+  call void @forge_match_unreachable(ptr @.match_fn.10359, i64 %tag, ptr @mu_file.10360, i64 186)
   unreachable
 }
 
@@ -112671,7 +112685,7 @@ march_arm198:                                     ; preds = %march_next184
   br label %match_end
 
 march_next199:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10361, i64 %tag, ptr @mu_file.10362, i64 195)
+  call void @forge_match_unreachable(ptr @.match_fn.10361, i64 %tag, ptr @mu_file.10362, i64 197)
   unreachable
 }
 
@@ -112757,7 +112771,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10363, i64 4, ptr @sty_name.10364, i64 5, i64 %null_ext, ptr @src_file.10365, i64 88, i64 238)
+  call void @forge_null_deref_trap(ptr @fld_name.10363, i64 4, ptr @sty_name.10364, i64 5, i64 %null_ext, ptr @src_file.10365, i64 88, i64 240)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %tag_ptr12 = getelementptr inbounds nuw %Stmt, ptr %node, i32 0, i32 0
@@ -112767,7 +112781,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10368, i64 %tag, ptr @mu_file.10369, i64 234)
+  call void @forge_match_unreachable(ptr @.match_fn.10368, i64 %tag, ptr @mu_file.10369, i64 236)
   unreachable
 
 match_end15:                                      ; preds = %march_arm218, %march_arm203, %march_arm184, %march_arm173, %march_arm150, %march_arm119, %march_arm96, %sif_end, %march_arm53, %march_arm42, %march_arm27, %march_arm16
@@ -113130,7 +113144,7 @@ march_arm218:                                     ; preds = %march_next204
   br label %match_end15
 
 march_next219:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10366, i64 %tag13, ptr @mu_file.10367, i64 238)
+  call void @forge_match_unreachable(ptr @.match_fn.10366, i64 %tag13, ptr @mu_file.10367, i64 240)
   unreachable
 }
 
@@ -113152,7 +113166,7 @@ entry:
   %cast = ptrtoint ptr %lookup3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10370, i64 5, ptr @sty_name.10371, i64 9, i64 %null_ext, ptr @src_file.10372, i64 88, i64 290)
+  call void @forge_null_deref_trap(ptr @fld_name.10370, i64 5, ptr @sty_name.10371, i64 9, i64 %null_ext, ptr @src_file.10372, i64 88, i64 292)
   %found_ptr = getelementptr inbounds nuw %VarLookup, ptr %lookup3, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %if_cond = icmp ne i64 %found, 0
@@ -113163,7 +113177,7 @@ ifcont:                                           ; preds = %if_else
   %cast9 = ptrtoint ptr %ctx8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10376, i64 15, ptr @sty_name.10377, i64 3, i64 %null_ext11, ptr @src_file.10378, i64 88, i64 291)
+  call void @forge_null_deref_trap(ptr @fld_name.10376, i64 15, ptr @sty_name.10377, i64 3, i64 %null_ext11, ptr @src_file.10378, i64 88, i64 293)
   %name12 = load ptr, ptr %name, align 8
   %4 = call ptr @Ctx__lookup_toplevel(ptr %ctx8, ptr %name12)
   store ptr %4, ptr %g, align 8
@@ -113171,7 +113185,7 @@ ifcont:                                           ; preds = %if_else
   %cast14 = ptrtoint ptr %g13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10379, i64 5, ptr @sty_name.10380, i64 14, i64 %null_ext16, ptr @src_file.10381, i64 88, i64 292)
+  call void @forge_null_deref_trap(ptr @fld_name.10379, i64 5, ptr @sty_name.10380, i64 14, i64 %null_ext16, ptr @src_file.10381, i64 88, i64 294)
   %found_ptr17 = getelementptr inbounds nuw %TopLevelLookup, ptr %g13, i32 0, i32 0
   %found18 = load i64, ptr %found_ptr17, align 8
   %if_cond20 = icmp ne i64 %found18, 0
@@ -113182,7 +113196,7 @@ if_then:                                          ; preds = %entry
   %cast5 = ptrtoint ptr %lookup4 to i64
   %null_chk6 = icmp eq i64 %cast5, 0
   %null_ext7 = zext i1 %null_chk6 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10373, i64 2, ptr @sty_name.10374, i64 9, i64 %null_ext7, ptr @src_file.10375, i64 88, i64 290)
+  call void @forge_null_deref_trap(ptr @fld_name.10373, i64 2, ptr @sty_name.10374, i64 9, i64 %null_ext7, ptr @src_file.10375, i64 88, i64 292)
   %ty_ptr = getelementptr inbounds nuw %VarLookup, ptr %lookup4, i32 0, i32 2
   %ty = load ptr, ptr %ty_ptr, align 8
   ret ptr %ty
@@ -113205,7 +113219,7 @@ if_then21:                                        ; preds = %ifcont
   %cast24 = ptrtoint ptr %g23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10382, i64 2, ptr @sty_name.10383, i64 14, i64 %null_ext26, ptr @src_file.10384, i64 88, i64 292)
+  call void @forge_null_deref_trap(ptr @fld_name.10382, i64 2, ptr @sty_name.10383, i64 14, i64 %null_ext26, ptr @src_file.10384, i64 88, i64 294)
   %ty_ptr27 = getelementptr inbounds nuw %TopLevelLookup, ptr %g23, i32 0, i32 2
   %ty28 = load ptr, ptr %ty_ptr27, align 8
   ret ptr %ty28
@@ -113300,7 +113314,7 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.10385, i64 %tag, ptr @mu_file.10386, i64 297)
+  call void @forge_match_unreachable(ptr @.match_fn.10385, i64 %tag, ptr @mu_file.10386, i64 299)
   unreachable
 }
 
@@ -113506,7 +113520,7 @@ march_arm76:                                      ; preds = %march_next61
   br label %match_end
 
 march_next77:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10387, i64 %tag, ptr @mu_file.10388, i64 306)
+  call void @forge_match_unreachable(ptr @.match_fn.10387, i64 %tag, ptr @mu_file.10388, i64 308)
   unreachable
 }
 
@@ -113615,7 +113629,7 @@ march_arm19:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next20:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10389, i64 %tag8, ptr @mu_file.10390, i64 331)
+  call void @forge_match_unreachable(ptr @.match_fn.10389, i64 %tag8, ptr @mu_file.10390, i64 333)
   unreachable
 
 match_end25:                                      ; preds = %march_arm41, %march_arm26
@@ -113650,7 +113664,7 @@ march_arm41:                                      ; preds = %march_next27
   br label %match_end25
 
 march_next42:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10391, i64 %tag23, ptr @mu_file.10392, i64 332)
+  call void @forge_match_unreachable(ptr @.match_fn.10391, i64 %tag23, ptr @mu_file.10392, i64 334)
   unreachable
 
 sc_rhs:                                           ; preds = %match_end25
@@ -113927,7 +113941,7 @@ march_arm204:                                     ; preds = %march_next160
   br label %match_end
 
 march_next205:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10393, i64 %tag, ptr @mu_file.10394, i64 328)
+  call void @forge_match_unreachable(ptr @.match_fn.10393, i64 %tag, ptr @mu_file.10394, i64 330)
   unreachable
 }
 
@@ -113988,7 +114002,7 @@ march_arm2:                                       ; preds = %march_next
   %cast = ptrtoint ptr %se10 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10395, i64 4, ptr @sty_name.10396, i64 5, i64 %null_ext, ptr @src_file.10397, i64 88, i64 357)
+  call void @forge_null_deref_trap(ptr @fld_name.10395, i64 4, ptr @sty_name.10396, i64 5, i64 %null_ext, ptr @src_file.10397, i64 88, i64 359)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %ctx11 = load ptr, ptr %ctx, align 8
@@ -114001,7 +114015,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10398, i64 %tag, ptr @mu_file.10399, i64 353)
+  call void @forge_match_unreachable(ptr @.match_fn.10398, i64 %tag, ptr @mu_file.10399, i64 355)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm2
@@ -114085,7 +114099,7 @@ march_arm2:                                       ; preds = %march_next
   %cast = ptrtoint ptr %ss9 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10400, i64 4, ptr @sty_name.10401, i64 5, i64 %null_ext, ptr @src_file.10402, i64 88, i64 367)
+  call void @forge_null_deref_trap(ptr @fld_name.10400, i64 4, ptr @sty_name.10401, i64 5, i64 %null_ext, ptr @src_file.10402, i64 88, i64 369)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss9, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %tag_ptr10 = getelementptr inbounds nuw %Stmt, ptr %node, i32 0, i32 0
@@ -114095,7 +114109,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10405, i64 %tag, ptr @mu_file.10406, i64 363)
+  call void @forge_match_unreachable(ptr @.match_fn.10405, i64 %tag, ptr @mu_file.10406, i64 365)
   unreachable
 
 match_end13:                                      ; preds = %march_arm73, %march_arm56, %march_arm43, %march_arm26, %march_arm14
@@ -114201,7 +114215,7 @@ march_arm73:                                      ; preds = %march_next57
   br label %match_end13
 
 march_next74:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10403, i64 %tag11, ptr @mu_file.10404, i64 367)
+  call void @forge_match_unreachable(ptr @.match_fn.10403, i64 %tag11, ptr @mu_file.10404, i64 369)
   unreachable
 
 ifcont:                                           ; preds = %if_else
@@ -114307,7 +114321,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10409, i64 %tag, ptr @mu_file.10410, i64 381)
+  call void @forge_match_unreachable(ptr @.match_fn.10409, i64 %tag, ptr @mu_file.10410, i64 383)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm3
@@ -114432,6 +114446,8 @@ entry:
   %e112 = alloca ptr, align 8
   %v105 = alloca ptr, align 8
   %result = alloca ptr, align 8
+  %saved_rel = alloca ptr, align 8
+  %saved_rc = alloca ptr, align 8
   %saved_defers = alloca ptr, align 8
   %body_ctx = alloca ptr, align 8
   %body_env = alloca ptr, align 8
@@ -114485,7 +114501,7 @@ entry:
   %cast5 = ptrtoint ptr %ctx4 to i64
   %null_chk = icmp eq i64 %cast5, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10413, i64 14, ptr @sty_name.10414, i64 3, i64 %null_ext, ptr @src_file.10415, i64 88, i64 416)
+  call void @forge_null_deref_trap(ptr @fld_name.10413, i64 14, ptr @sty_name.10414, i64 3, i64 %null_ext, ptr @src_file.10415, i64 88, i64 418)
   %raw_params6 = load ptr, ptr %raw_params, align 8
   %12 = call ptr @Ctx__resolve_params(ptr %ctx4, ptr %raw_params6)
   store ptr %12, ptr %params, align 8
@@ -114513,7 +114529,7 @@ entry:
   %cast17 = ptrtoint ptr %ctx16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10416, i64 14, ptr @sty_name.10417, i64 3, i64 %null_ext19, ptr @src_file.10418, i64 88, i64 423)
+  call void @forge_null_deref_trap(ptr @fld_name.10416, i64 14, ptr @sty_name.10417, i64 3, i64 %null_ext19, ptr @src_file.10418, i64 88, i64 425)
   %arity20 = load i64, ptr %arity, align 8
   %17 = call ptr @Ctx__i64_type_array(ptr %ctx16, i64 %arity20)
   store ptr %17, ptr %param_arr, align 8
@@ -114521,12 +114537,12 @@ entry:
   %cast22 = ptrtoint ptr %ctx21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10419, i64 7, ptr @sty_name.10420, i64 3, i64 %null_ext24, ptr @src_file.10421, i64 88, i64 424)
+  call void @forge_null_deref_trap(ptr @fld_name.10419, i64 7, ptr @sty_name.10420, i64 3, i64 %null_ext24, ptr @src_file.10421, i64 88, i64 426)
   %ctx25 = load ptr, ptr %ctx, align 8
   %cast26 = ptrtoint ptr %ctx25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10422, i64 8, ptr @sty_name.10423, i64 3, i64 %null_ext28, ptr @src_file.10424, i64 88, i64 424)
+  call void @forge_null_deref_trap(ptr @fld_name.10422, i64 8, ptr @sty_name.10423, i64 3, i64 %null_ext28, ptr @src_file.10424, i64 88, i64 426)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx25, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %param_arr29 = load ptr, ptr %param_arr, align 8
@@ -114537,14 +114553,14 @@ entry:
   %cast32 = ptrtoint ptr %ctx31 to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10425, i64 15, ptr @sty_name.10426, i64 3, i64 %null_ext34, ptr @src_file.10427, i64 88, i64 425)
+  call void @forge_null_deref_trap(ptr @fld_name.10425, i64 15, ptr @sty_name.10426, i64 3, i64 %null_ext34, ptr @src_file.10427, i64 88, i64 427)
   %param_arr35 = load ptr, ptr %param_arr, align 8
   %19 = call i64 @Ctx__type_array_free(ptr %ctx31, ptr %param_arr35)
   %ctx36 = load ptr, ptr %ctx, align 8
   %cast37 = ptrtoint ptr %ctx36 to i64
   %null_chk38 = icmp eq i64 %cast37, 0
   %null_ext39 = zext i1 %null_chk38 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10428, i64 12, ptr @sty_name.10429, i64 3, i64 %null_ext39, ptr @src_file.10430, i64 88, i64 426)
+  call void @forge_null_deref_trap(ptr @fld_name.10428, i64 12, ptr @sty_name.10429, i64 3, i64 %null_ext39, ptr @src_file.10430, i64 88, i64 428)
   %name40 = load ptr, ptr %name, align 8
   %fn_type41 = load ptr, ptr %fn_type, align 8
   %20 = call ptr @Ctx__add_function(ptr %ctx36, ptr %name40, ptr %fn_type41)
@@ -114553,14 +114569,14 @@ entry:
   %cast43 = ptrtoint ptr %ctx42 to i64
   %null_chk44 = icmp eq i64 %cast43, 0
   %null_ext45 = zext i1 %null_chk44 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10431, i64 10, ptr @sty_name.10432, i64 3, i64 %null_ext45, ptr @src_file.10433, i64 88, i64 428)
+  call void @forge_null_deref_trap(ptr @fld_name.10431, i64 10, ptr @sty_name.10432, i64 3, i64 %null_ext45, ptr @src_file.10433, i64 88, i64 430)
   %21 = call ptr @Ctx__current_bb(ptr %ctx42)
   store ptr %21, ptr %saved_bb, align 8
   %ctx46 = load ptr, ptr %ctx, align 8
   %cast47 = ptrtoint ptr %ctx46 to i64
   %null_chk48 = icmp eq i64 %cast47, 0
   %null_ext49 = zext i1 %null_chk48 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10434, i64 5, ptr @sty_name.10435, i64 3, i64 %null_ext49, ptr @src_file.10436, i64 88, i64 430)
+  call void @forge_null_deref_trap(ptr @fld_name.10434, i64 5, ptr @sty_name.10435, i64 3, i64 %null_ext49, ptr @src_file.10436, i64 88, i64 432)
   %fn_val50 = load ptr, ptr %fn_val, align 8
   %22 = call ptr @Ctx__bb_in(ptr %ctx46, ptr %fn_val50, ptr @.str.10437)
   store ptr %22, ptr %entry51, align 8
@@ -114568,7 +114584,7 @@ entry:
   %cast53 = ptrtoint ptr %ctx52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10438, i64 8, ptr @sty_name.10439, i64 3, i64 %null_ext55, ptr @src_file.10440, i64 88, i64 431)
+  call void @forge_null_deref_trap(ptr @fld_name.10438, i64 8, ptr @sty_name.10439, i64 3, i64 %null_ext55, ptr @src_file.10440, i64 88, i64 433)
   %entry56 = load ptr, ptr %entry51, align 8
   %23 = call i64 @Ctx__position(ptr %ctx52, ptr %entry56)
   %params57 = load ptr, ptr %params, align 8
@@ -114603,40 +114619,45 @@ match_end:                                        ; preds = %march_arm66, %march
   %cast82 = ptrtoint ptr %ctx81 to i64
   %null_chk83 = icmp eq i64 %cast82, 0
   %null_ext84 = zext i1 %null_chk83 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10443, i64 7, ptr @sty_name.10444, i64 3, i64 %null_ext84, ptr @src_file.10445, i64 88, i64 444)
+  call void @forge_null_deref_trap(ptr @fld_name.10443, i64 7, ptr @sty_name.10444, i64 3, i64 %null_ext84, ptr @src_file.10445, i64 88, i64 446)
   %fn_val85 = load ptr, ptr %fn_val, align 8
   %name86 = load ptr, ptr %name, align 8
   %27 = call ptr @Ctx__with_fn(ptr %ctx81, ptr %fn_val85, ptr %name86)
   store ptr %27, ptr %body_ctx, align 8
   %DEFER_STACK = load ptr, ptr @DEFER_STACK, align 8
   store ptr %DEFER_STACK, ptr %saved_defers, align 8
-  %28 = call i64 @"features::defer_stmt::codegen::defer_reset"()
-  %29 = call ptr @forge_rc_alloc(i64 16)
+  %28 = call ptr @"codegen::types::rc_cleanup_save"()
+  store ptr %28, ptr %saved_rc, align 8
+  %29 = call ptr @"codegen::rc_releasable_save"()
+  store ptr %29, ptr %saved_rel, align 8
+  %30 = call i64 @"features::defer_stmt::codegen::defer_reset"()
+  %31 = call i64 @"codegen::types::rc_cleanup_reset"()
+  %32 = call ptr @forge_rc_alloc(i64 16)
   %ctx87 = load ptr, ptr %ctx, align 8
   %cast88 = ptrtoint ptr %ctx87 to i64
   %null_chk89 = icmp eq i64 %cast88, 0
   %null_ext90 = zext i1 %null_chk89 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10446, i64 3, ptr @sty_name.10447, i64 3, i64 %null_ext90, ptr @src_file.10448, i64 88, i64 449)
-  %30 = call ptr @Ctx__i64(ptr %ctx87, i64 0)
-  %fld_ptr = getelementptr inbounds nuw %EmitValue, ptr %29, i32 0, i32 0
-  store ptr %30, ptr %fld_ptr, align 8
-  %31 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr91 = getelementptr inbounds nuw %ValueType, ptr %31, i32 0, i32 0
+  call void @forge_null_deref_trap(ptr @fld_name.10446, i64 3, ptr @sty_name.10447, i64 3, i64 %null_ext90, ptr @src_file.10448, i64 88, i64 454)
+  %33 = call ptr @Ctx__i64(ptr %ctx87, i64 0)
+  %fld_ptr = getelementptr inbounds nuw %EmitValue, ptr %32, i32 0, i32 0
+  store ptr %33, ptr %fld_ptr, align 8
+  %34 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr91 = getelementptr inbounds nuw %ValueType, ptr %34, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr91, align 8
-  %pay_ptr92 = getelementptr inbounds nuw %ValueType, ptr %31, i32 0, i32 1
+  %pay_ptr92 = getelementptr inbounds nuw %ValueType, ptr %34, i32 0, i32 1
   store ptr null, ptr %pay_ptr92, align 8
-  %cast93 = ptrtoint ptr %31 to i64
-  %fld_ptr94 = getelementptr inbounds nuw %EmitValue, ptr %29, i32 0, i32 1
+  %cast93 = ptrtoint ptr %34 to i64
+  %fld_ptr94 = getelementptr inbounds nuw %EmitValue, ptr %32, i32 0, i32 1
   %cast95 = inttoptr i64 %cast93 to ptr
   store ptr %cast95, ptr %fld_ptr94, align 8
-  %cast96 = ptrtoint ptr %29 to i64
+  %cast96 = ptrtoint ptr %32 to i64
   %cast97 = inttoptr i64 %cast96 to ptr
   store ptr %cast97, ptr %result, align 8
   %body_ctx98 = load ptr, ptr %body_ctx, align 8
   %body_env99 = load ptr, ptr %body_env, align 8
   %body100 = load ptr, ptr %body, align 8
-  %32 = call ptr @"codegen::emit_expr"(ptr %body_ctx98, ptr %body_env99, ptr %body100)
-  %tag_ptr101 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %32, i32 0, i32 0
+  %35 = call ptr @"codegen::emit_expr"(ptr %body_ctx98, ptr %body_env99, ptr %body100)
+  %tag_ptr101 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %35, i32 0, i32 0
   %tag102 = load i64, ptr %tag_ptr101, align 8
   %tag_eq104 = icmp eq i64 %tag102, 5862623
   br i1 %tag_eq104, label %match_arm, label %match_next
@@ -114647,8 +114668,8 @@ march_arm:                                        ; preds = %entry
   %ctx62 = load ptr, ptr %ctx, align 8
   %env63 = load ptr, ptr %env, align 8
   %captures64 = load ptr, ptr %captures, align 8
-  %33 = call ptr @"features::closures::codegen::infer_param_types"(ptr %params60, ptr %body61, ptr %ctx62, ptr %env63, ptr %captures64)
-  %cast65 = ptrtoint ptr %33 to i64
+  %36 = call ptr @"features::closures::codegen::infer_param_types"(ptr %params60, ptr %body61, ptr %ctx62, ptr %env63, ptr %captures64)
+  %cast65 = ptrtoint ptr %36 to i64
   store i64 %cast65, ptr %match_result, align 8
   br label %match_end
 
@@ -114662,26 +114683,30 @@ march_arm66:                                      ; preds = %march_next
   br label %match_end
 
 march_next67:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10441, i64 %tag, ptr @mu_file.10442, i64 437)
+  call void @forge_match_unreachable(ptr @.match_fn.10441, i64 %tag, ptr @mu_file.10442, i64 439)
   unreachable
 
 match_end103:                                     ; preds = %match_arm
-  %saved_defers120 = load ptr, ptr %saved_defers, align 8
-  store ptr %saved_defers120, ptr @DEFER_STACK, align 8
-  %ctx121 = load ptr, ptr %ctx, align 8
-  %cast122 = ptrtoint ptr %ctx121 to i64
-  %null_chk123 = icmp eq i64 %cast122, 0
-  %null_ext124 = zext i1 %null_chk123 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10454, i64 14, ptr @sty_name.10455, i64 3, i64 %null_ext124, ptr @src_file.10456, i64 88, i64 461)
-  %34 = call i1 @Ctx__has_terminator(ptr %ctx121)
-  %widen125 = zext i1 %34 to i64
-  %not_cmp = icmp eq i64 %widen125, 0
+  %saved_defers122 = load ptr, ptr %saved_defers, align 8
+  store ptr %saved_defers122, ptr @DEFER_STACK, align 8
+  %saved_rc123 = load ptr, ptr %saved_rc, align 8
+  %37 = call i64 @"codegen::types::rc_cleanup_restore"(ptr %saved_rc123)
+  %saved_rel124 = load ptr, ptr %saved_rel, align 8
+  %38 = call i64 @"codegen::rc_releasable_restore"(ptr %saved_rel124)
+  %ctx125 = load ptr, ptr %ctx, align 8
+  %cast126 = ptrtoint ptr %ctx125 to i64
+  %null_chk127 = icmp eq i64 %cast126, 0
+  %null_ext128 = zext i1 %null_chk127 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10454, i64 14, ptr @sty_name.10455, i64 3, i64 %null_ext128, ptr @src_file.10456, i64 88, i64 470)
+  %39 = call i1 @Ctx__has_terminator(ptr %ctx125)
+  %widen129 = zext i1 %39 to i64
+  %not_cmp = icmp eq i64 %widen129, 0
   %not_cmp_ext = zext i1 %not_cmp to i64
   %if_cond = icmp ne i64 %not_cmp_ext, 0
   br i1 %if_cond, label %if_then, label %if_else
 
 match_arm:                                        ; preds = %match_end
-  %pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %32, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %35, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %v_slot_base = ptrtoint ptr %payload to i64
   %v_slot_addr = add i64 %v_slot_base, 0
@@ -114697,7 +114722,7 @@ match_next:                                       ; preds = %match_end
   br i1 %tag_eq109, label %match_arm107, label %match_next108
 
 match_arm107:                                     ; preds = %match_next
-  %pay_slot110 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %32, i32 0, i32 1
+  %pay_slot110 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %35, i32 0, i32 1
   %payload111 = load ptr, ptr %pay_slot110, align 8
   %e_slot_base = ptrtoint ptr %payload111 to i64
   %e_slot_addr = add i64 %e_slot_base, 0
@@ -114706,124 +114731,128 @@ match_arm107:                                     ; preds = %match_next
   store ptr %e, ptr %e112, align 8
   %saved_defers113 = load ptr, ptr %saved_defers, align 8
   store ptr %saved_defers113, ptr @DEFER_STACK, align 8
-  %ctx114 = load ptr, ptr %ctx, align 8
-  %cast115 = ptrtoint ptr %ctx114 to i64
-  %null_chk116 = icmp eq i64 %cast115, 0
-  %null_ext117 = zext i1 %null_chk116 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10449, i64 8, ptr @sty_name.10450, i64 3, i64 %null_ext117, ptr @src_file.10451, i64 88, i64 455)
-  %saved_bb118 = load ptr, ptr %saved_bb, align 8
-  %35 = call i64 @Ctx__position(ptr %ctx114, ptr %saved_bb118)
-  %e119 = load ptr, ptr %e112, align 8
-  %36 = call ptr @"codegen::types::err_emit"(ptr %e119)
-  ret ptr %36
+  %saved_rc114 = load ptr, ptr %saved_rc, align 8
+  %40 = call i64 @"codegen::types::rc_cleanup_restore"(ptr %saved_rc114)
+  %saved_rel115 = load ptr, ptr %saved_rel, align 8
+  %41 = call i64 @"codegen::rc_releasable_restore"(ptr %saved_rel115)
+  %ctx116 = load ptr, ptr %ctx, align 8
+  %cast117 = ptrtoint ptr %ctx116 to i64
+  %null_chk118 = icmp eq i64 %cast117, 0
+  %null_ext119 = zext i1 %null_chk118 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10449, i64 8, ptr @sty_name.10450, i64 3, i64 %null_ext119, ptr @src_file.10451, i64 88, i64 462)
+  %saved_bb120 = load ptr, ptr %saved_bb, align 8
+  %42 = call i64 @Ctx__position(ptr %ctx116, ptr %saved_bb120)
+  %e121 = load ptr, ptr %e112, align 8
+  %43 = call ptr @"codegen::types::err_emit"(ptr %e121)
+  ret ptr %43
 
 match_next108:                                    ; preds = %match_next
-  call void @forge_match_unreachable(ptr @.match_fn.10452, i64 %tag102, ptr @mu_file.10453, i64 450)
+  call void @forge_match_unreachable(ptr @.match_fn.10452, i64 %tag102, ptr @mu_file.10453, i64 455)
   unreachable
 
 ifcont:                                           ; preds = %if_else, %if_then
-  %ctx139 = load ptr, ptr %ctx, align 8
-  %cast140 = ptrtoint ptr %ctx139 to i64
-  %null_chk141 = icmp eq i64 %cast140, 0
-  %null_ext142 = zext i1 %null_chk141 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10466, i64 8, ptr @sty_name.10467, i64 3, i64 %null_ext142, ptr @src_file.10468, i64 88, i64 466)
-  %saved_bb143 = load ptr, ptr %saved_bb, align 8
-  %37 = call i64 @Ctx__position(ptr %ctx139, ptr %saved_bb143)
-  %ctx144 = load ptr, ptr %ctx, align 8
-  %cast145 = ptrtoint ptr %ctx144 to i64
-  %null_chk146 = icmp eq i64 %cast145, 0
-  %null_ext147 = zext i1 %null_chk146 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10469, i64 10, ptr @sty_name.10470, i64 3, i64 %null_ext147, ptr @src_file.10471, i64 88, i64 474)
-  %fn_val148 = load ptr, ptr %fn_val, align 8
-  %38 = call ptr @Ctx__ptr_to_int(ptr %ctx144, ptr %fn_val148, ptr @.str.10472)
-  store ptr %38, ptr %fn_ptr_i64, align 8
-  %ctx149 = load ptr, ptr %ctx, align 8
-  %cast150 = ptrtoint ptr %ctx149 to i64
-  %null_chk151 = icmp eq i64 %cast150, 0
-  %null_ext152 = zext i1 %null_chk151 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10473, i64 13, ptr @sty_name.10474, i64 3, i64 %null_ext152, ptr @src_file.10475, i64 88, i64 475)
-  %fn_ptr_i64153 = load ptr, ptr %fn_ptr_i64, align 8
-  %39 = call ptr @Ctx__closure_array(ptr %ctx149, ptr %fn_ptr_i64153)
-  store ptr %39, ptr %closure_arr, align 8
-  %num_captures154 = load i64, ptr %num_captures, align 8
-  %sgt = icmp sgt i64 %num_captures154, 0
+  %ctx143 = load ptr, ptr %ctx, align 8
+  %cast144 = ptrtoint ptr %ctx143 to i64
+  %null_chk145 = icmp eq i64 %cast144, 0
+  %null_ext146 = zext i1 %null_chk145 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10466, i64 8, ptr @sty_name.10467, i64 3, i64 %null_ext146, ptr @src_file.10468, i64 88, i64 475)
+  %saved_bb147 = load ptr, ptr %saved_bb, align 8
+  %44 = call i64 @Ctx__position(ptr %ctx143, ptr %saved_bb147)
+  %ctx148 = load ptr, ptr %ctx, align 8
+  %cast149 = ptrtoint ptr %ctx148 to i64
+  %null_chk150 = icmp eq i64 %cast149, 0
+  %null_ext151 = zext i1 %null_chk150 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10469, i64 10, ptr @sty_name.10470, i64 3, i64 %null_ext151, ptr @src_file.10471, i64 88, i64 483)
+  %fn_val152 = load ptr, ptr %fn_val, align 8
+  %45 = call ptr @Ctx__ptr_to_int(ptr %ctx148, ptr %fn_val152, ptr @.str.10472)
+  store ptr %45, ptr %fn_ptr_i64, align 8
+  %ctx153 = load ptr, ptr %ctx, align 8
+  %cast154 = ptrtoint ptr %ctx153 to i64
+  %null_chk155 = icmp eq i64 %cast154, 0
+  %null_ext156 = zext i1 %null_chk155 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10473, i64 13, ptr @sty_name.10474, i64 3, i64 %null_ext156, ptr @src_file.10475, i64 88, i64 484)
+  %fn_ptr_i64157 = load ptr, ptr %fn_ptr_i64, align 8
+  %46 = call ptr @Ctx__closure_array(ptr %ctx153, ptr %fn_ptr_i64157)
+  store ptr %46, ptr %closure_arr, align 8
+  %num_captures158 = load i64, ptr %num_captures, align 8
+  %sgt = icmp sgt i64 %num_captures158, 0
   %sgt_ext = zext i1 %sgt to i64
-  %if_cond156 = icmp ne i64 %sgt_ext, 0
-  br i1 %if_cond156, label %if_then157, label %if_else158
+  %if_cond160 = icmp ne i64 %sgt_ext, 0
+  br i1 %if_cond160, label %if_then161, label %if_else162
 
 if_then:                                          ; preds = %match_end103
-  %body_ctx126 = load ptr, ptr %body_ctx, align 8
-  %cast127 = ptrtoint ptr %body_ctx126 to i64
-  %null_chk128 = icmp eq i64 %cast127, 0
-  %null_ext129 = zext i1 %null_chk128 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10457, i64 14, ptr @sty_name.10458, i64 3, i64 %null_ext129, ptr @src_file.10459, i64 88, i64 462)
-  %40 = call ptr @Ctx__current_fn_ret(ptr %body_ctx126)
-  store ptr %40, ptr %lambda_ret, align 8
-  %ctx130 = load ptr, ptr %ctx, align 8
-  %cast131 = ptrtoint ptr %ctx130 to i64
+  %body_ctx130 = load ptr, ptr %body_ctx, align 8
+  %cast131 = ptrtoint ptr %body_ctx130 to i64
   %null_chk132 = icmp eq i64 %cast131, 0
   %null_ext133 = zext i1 %null_chk132 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10460, i64 3, ptr @sty_name.10461, i64 3, i64 %null_ext133, ptr @src_file.10462, i64 88, i64 463)
-  %result134 = load ptr, ptr %result, align 8
-  %cast135 = ptrtoint ptr %result134 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10457, i64 14, ptr @sty_name.10458, i64 3, i64 %null_ext133, ptr @src_file.10459, i64 88, i64 471)
+  %47 = call ptr @Ctx__current_fn_ret(ptr %body_ctx130)
+  store ptr %47, ptr %lambda_ret, align 8
+  %ctx134 = load ptr, ptr %ctx, align 8
+  %cast135 = ptrtoint ptr %ctx134 to i64
   %null_chk136 = icmp eq i64 %cast135, 0
   %null_ext137 = zext i1 %null_chk136 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10463, i64 5, ptr @sty_name.10464, i64 9, i64 %null_ext137, ptr @src_file.10465, i64 88, i64 463)
-  %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %result134, i32 0, i32 0
+  call void @forge_null_deref_trap(ptr @fld_name.10460, i64 3, ptr @sty_name.10461, i64 3, i64 %null_ext137, ptr @src_file.10462, i64 88, i64 472)
+  %result138 = load ptr, ptr %result, align 8
+  %cast139 = ptrtoint ptr %result138 to i64
+  %null_chk140 = icmp eq i64 %cast139, 0
+  %null_ext141 = zext i1 %null_chk140 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10463, i64 5, ptr @sty_name.10464, i64 9, i64 %null_ext141, ptr @src_file.10465, i64 88, i64 472)
+  %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %result138, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
-  %lambda_ret138 = load ptr, ptr %lambda_ret, align 8
-  %41 = call i64 @Ctx__ret(ptr %ctx130, ptr %value, ptr %lambda_ret138)
+  %lambda_ret142 = load ptr, ptr %lambda_ret, align 8
+  %48 = call i64 @Ctx__ret(ptr %ctx134, ptr %value, ptr %lambda_ret142)
   br label %ifcont
 
 if_else:                                          ; preds = %match_end103
   br label %ifcont
 
-ifcont155:                                        ; preds = %if_else158, %if_then157
-  %ctx162 = load ptr, ptr %ctx, align 8
-  %cast163 = ptrtoint ptr %ctx162 to i64
-  %null_chk164 = icmp eq i64 %cast163, 0
-  %null_ext165 = zext i1 %null_chk164 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10476, i64 6, ptr @sty_name.10477, i64 3, i64 %null_ext165, ptr @src_file.10478, i64 88, i64 479)
-  %closure_arr166 = load ptr, ptr %closure_arr, align 8
-  %42 = call ptr @Ctx__to_i64(ptr %ctx162, ptr %closure_arr166, ptr @.str.10479)
-  store ptr %42, ptr %closure_i64, align 8
-  %closure_i64167 = load ptr, ptr %closure_i64, align 8
-  %43 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr168 = getelementptr inbounds nuw %ValueType, ptr %43, i32 0, i32 0
-  store i64 229420732536866, ptr %tag_ptr168, align 8
-  %pay_ptr169 = getelementptr inbounds nuw %ValueType, ptr %43, i32 0, i32 1
-  %44 = call ptr @forge_rc_alloc(i64 16)
-  store ptr %44, ptr %pay_ptr169, align 8
-  %num_captures170 = load i64, ptr %num_captures, align 8
-  %slot_base = ptrtoint ptr %44 to i64
+ifcont159:                                        ; preds = %if_else162, %if_then161
+  %ctx166 = load ptr, ptr %ctx, align 8
+  %cast167 = ptrtoint ptr %ctx166 to i64
+  %null_chk168 = icmp eq i64 %cast167, 0
+  %null_ext169 = zext i1 %null_chk168 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10476, i64 6, ptr @sty_name.10477, i64 3, i64 %null_ext169, ptr @src_file.10478, i64 88, i64 488)
+  %closure_arr170 = load ptr, ptr %closure_arr, align 8
+  %49 = call ptr @Ctx__to_i64(ptr %ctx166, ptr %closure_arr170, ptr @.str.10479)
+  store ptr %49, ptr %closure_i64, align 8
+  %closure_i64171 = load ptr, ptr %closure_i64, align 8
+  %50 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr172 = getelementptr inbounds nuw %ValueType, ptr %50, i32 0, i32 0
+  store i64 229420732536866, ptr %tag_ptr172, align 8
+  %pay_ptr173 = getelementptr inbounds nuw %ValueType, ptr %50, i32 0, i32 1
+  %51 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %51, ptr %pay_ptr173, align 8
+  %num_captures174 = load i64, ptr %num_captures, align 8
+  %slot_base = ptrtoint ptr %51 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
-  store i64 %num_captures170, ptr %slot, align 8
-  %result171 = load ptr, ptr %result, align 8
-  %cast172 = ptrtoint ptr %result171 to i64
-  %null_chk173 = icmp eq i64 %cast172, 0
-  %null_ext174 = zext i1 %null_chk173 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10480, i64 2, ptr @sty_name.10481, i64 9, i64 %null_ext174, ptr @src_file.10482, i64 88, i64 480)
-  %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %result171, i32 0, i32 1
+  store i64 %num_captures174, ptr %slot, align 8
+  %result175 = load ptr, ptr %result, align 8
+  %cast176 = ptrtoint ptr %result175 to i64
+  %null_chk177 = icmp eq i64 %cast176, 0
+  %null_ext178 = zext i1 %null_chk177 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.10480, i64 2, ptr @sty_name.10481, i64 9, i64 %null_ext178, ptr @src_file.10482, i64 88, i64 489)
+  %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %result175, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
-  %slot_base175 = ptrtoint ptr %44 to i64
-  %slot_addr176 = add i64 %slot_base175, 8
-  %slot177 = inttoptr i64 %slot_addr176 to ptr
-  store ptr %ty, ptr %slot177, align 8
-  %cast178 = ptrtoint ptr %43 to i64
-  %cast179 = inttoptr i64 %cast178 to ptr
-  %45 = call ptr @"codegen::types::ok_emit_typed"(ptr %closure_i64167, ptr %cast179)
-  ret ptr %45
+  %slot_base179 = ptrtoint ptr %51 to i64
+  %slot_addr180 = add i64 %slot_base179, 8
+  %slot181 = inttoptr i64 %slot_addr180 to ptr
+  store ptr %ty, ptr %slot181, align 8
+  %cast182 = ptrtoint ptr %50 to i64
+  %cast183 = inttoptr i64 %cast182 to ptr
+  %52 = call ptr @"codegen::types::ok_emit_typed"(ptr %closure_i64171, ptr %cast183)
+  ret ptr %52
 
-if_then157:                                       ; preds = %ifcont
-  %ctx159 = load ptr, ptr %ctx, align 8
-  %captures160 = load ptr, ptr %captures, align 8
-  %closure_arr161 = load ptr, ptr %closure_arr, align 8
-  %46 = call i64 @"features::closures::codegen::push_captured_values"(ptr %ctx159, ptr %captures160, ptr %closure_arr161)
-  br label %ifcont155
+if_then161:                                       ; preds = %ifcont
+  %ctx163 = load ptr, ptr %ctx, align 8
+  %captures164 = load ptr, ptr %captures, align 8
+  %closure_arr165 = load ptr, ptr %closure_arr, align 8
+  %53 = call i64 @"features::closures::codegen::push_captured_values"(ptr %ctx163, ptr %captures164, ptr %closure_arr165)
+  br label %ifcont159
 
-if_else158:                                       ; preds = %ifcont
-  br label %ifcont155
+if_else162:                                       ; preds = %ifcont
+  br label %ifcont159
 }
 
 define ptr @"features::closures::codegen::bind_captures_as_params"(ptr %0, ptr %1, ptr %2, ptr %3, i64 %4) {
@@ -114891,7 +114920,7 @@ march_arm3:                                       ; preds = %march_next
   %cast14 = ptrtoint ptr %ctx13 to i64
   %null_chk = icmp eq i64 %cast14, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10483, i64 9, ptr @sty_name.10484, i64 3, i64 %null_ext, ptr @src_file.10485, i64 88, i64 488)
+  call void @forge_null_deref_trap(ptr @fld_name.10483, i64 9, ptr @sty_name.10484, i64 3, i64 %null_ext, ptr @src_file.10485, i64 88, i64 497)
   %fn_val15 = load ptr, ptr %fn_val, align 8
   %idx16 = load i64, ptr %idx, align 8
   %5 = call ptr @Ctx__get_param(ptr %ctx13, ptr %fn_val15, i64 %idx16)
@@ -114901,7 +114930,7 @@ march_arm3:                                       ; preds = %march_next
   %cast19 = ptrtoint ptr %ctx18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10486, i64 4, ptr @sty_name.10487, i64 3, i64 %null_ext21, ptr @src_file.10488, i64 88, i64 489)
+  call void @forge_null_deref_trap(ptr @fld_name.10486, i64 4, ptr @sty_name.10487, i64 3, i64 %null_ext21, ptr @src_file.10488, i64 88, i64 498)
   %env22 = load ptr, ptr %env, align 8
   %name23 = load ptr, ptr %name6, align 8
   %param_val24 = load ptr, ptr %param_val, align 8
@@ -114917,7 +114946,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10489, i64 %tag, ptr @mu_file.10490, i64 484)
+  call void @forge_match_unreachable(ptr @.match_fn.10489, i64 %tag, ptr @mu_file.10490, i64 493)
   unreachable
 }
 
@@ -114973,7 +115002,7 @@ march_arm2:                                       ; preds = %march_next
   %cast10 = ptrtoint ptr %ctx9 to i64
   %null_chk = icmp eq i64 %cast10, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10491, i64 8, ptr @sty_name.10492, i64 3, i64 %null_ext, ptr @src_file.10493, i64 88, i64 499)
+  call void @forge_null_deref_trap(ptr @fld_name.10491, i64 8, ptr @sty_name.10492, i64 3, i64 %null_ext, ptr @src_file.10493, i64 88, i64 508)
   %alloca11 = load ptr, ptr %alloca5, align 8
   %4 = call ptr @Ctx__load_i64(ptr %ctx9, ptr %alloca11, ptr @.str.10494)
   store ptr %4, ptr %val, align 8
@@ -114981,7 +115010,7 @@ march_arm2:                                       ; preds = %march_next
   %cast13 = ptrtoint ptr %ctx12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10495, i64 10, ptr @sty_name.10496, i64 3, i64 %null_ext15, ptr @src_file.10497, i64 88, i64 500)
+  call void @forge_null_deref_trap(ptr @fld_name.10495, i64 10, ptr @sty_name.10496, i64 3, i64 %null_ext15, ptr @src_file.10497, i64 88, i64 509)
   %arr16 = load ptr, ptr %arr, align 8
   %val17 = load ptr, ptr %val, align 8
   %5 = call i64 @Ctx__array_push(ptr %ctx12, ptr %arr16, ptr %val17)
@@ -114993,7 +115022,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10498, i64 %tag, ptr @mu_file.10499, i64 495)
+  call void @forge_match_unreachable(ptr @.match_fn.10498, i64 %tag, ptr @mu_file.10499, i64 504)
   unreachable
 }
 
@@ -115046,7 +115075,7 @@ march_arm2:                                       ; preds = %march_next
   %cast7 = ptrtoint ptr %se6 to i64
   %null_chk = icmp eq i64 %cast7, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10501, i64 4, ptr @sty_name.10502, i64 5, i64 %null_ext, ptr @src_file.10503, i64 88, i64 515)
+  call void @forge_null_deref_trap(ptr @fld_name.10501, i64 4, ptr @sty_name.10502, i64 5, i64 %null_ext, ptr @src_file.10503, i64 88, i64 524)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se6, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %tag_ptr8 = getelementptr inbounds nuw %Expr, ptr %node, i32 0, i32 0
@@ -115056,7 +115085,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq14, label %march_arm12, label %march_next13
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10512, i64 %tag, ptr @mu_file.10513, i64 511)
+  call void @forge_match_unreachable(ptr @.match_fn.10512, i64 %tag, ptr @mu_file.10513, i64 520)
   unreachable
 
 match_end11:                                      ; preds = %march_arm27, %march_arm12
@@ -115097,13 +115126,13 @@ march_arm27:                                      ; preds = %march_next13
   %cast30 = ptrtoint ptr %ctx29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10504, i64 4, ptr @sty_name.10505, i64 3, i64 %null_ext32, ptr @src_file.10506, i64 88, i64 515)
+  call void @forge_null_deref_trap(ptr @fld_name.10504, i64 4, ptr @sty_name.10505, i64 3, i64 %null_ext32, ptr @src_file.10506, i64 88, i64 524)
   %env33 = load ptr, ptr %env, align 8
   %se34 = load ptr, ptr %se5, align 8
   %cast35 = ptrtoint ptr %se34 to i64
   %null_chk36 = icmp eq i64 %cast35, 0
   %null_ext37 = zext i1 %null_chk36 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10507, i64 4, ptr @sty_name.10508, i64 5, i64 %null_ext37, ptr @src_file.10509, i64 88, i64 515)
+  call void @forge_null_deref_trap(ptr @fld_name.10507, i64 4, ptr @sty_name.10508, i64 5, i64 %null_ext37, ptr @src_file.10509, i64 88, i64 524)
   %node_ptr38 = getelementptr inbounds nuw %SExpr, ptr %se34, i32 0, i32 0
   %node39 = load ptr, ptr %node_ptr38, align 8
   %6 = call ptr @Ctx__emit(ptr %ctx29, ptr %env33, ptr %node39)
@@ -115112,7 +115141,7 @@ march_arm27:                                      ; preds = %march_next13
   br label %match_end11
 
 march_next28:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10510, i64 %tag9, ptr @mu_file.10511, i64 515)
+  call void @forge_match_unreachable(ptr @.match_fn.10510, i64 %tag9, ptr @mu_file.10511, i64 524)
   unreachable
 }
 
@@ -115136,7 +115165,7 @@ entry:
   %cast = ptrtoint ptr %ctx1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10514, i64 8, ptr @sty_name.10515, i64 3, i64 %null_ext, ptr @src_file.10516, i64 88, i64 526)
+  call void @forge_null_deref_trap(ptr @fld_name.10514, i64 8, ptr @sty_name.10515, i64 3, i64 %null_ext, ptr @src_file.10516, i64 88, i64 535)
   %alloca2 = load ptr, ptr %alloca, align 8
   %name3 = load ptr, ptr %name, align 8
   %5 = call ptr @Ctx__load_i64(ptr %ctx1, ptr %alloca2, ptr %name3)
@@ -115149,7 +115178,7 @@ entry:
   %cast7 = ptrtoint ptr %local6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10517, i64 2, ptr @sty_name.10518, i64 9, i64 %null_ext9, ptr @src_file.10519, i64 88, i64 528)
+  call void @forge_null_deref_trap(ptr @fld_name.10517, i64 2, ptr @sty_name.10518, i64 9, i64 %null_ext9, ptr @src_file.10519, i64 88, i64 537)
   %ty_ptr = getelementptr inbounds nuw %VarLookup, ptr %local6, i32 0, i32 2
   %ty = load ptr, ptr %ty_ptr, align 8
   %7 = call ptr @"core::ast::vtype_fn_ret"(ptr %ty)
@@ -115158,7 +115187,7 @@ entry:
   %cast11 = ptrtoint ptr %local10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10520, i64 2, ptr @sty_name.10521, i64 9, i64 %null_ext13, ptr @src_file.10522, i64 88, i64 531)
+  call void @forge_null_deref_trap(ptr @fld_name.10520, i64 2, ptr @sty_name.10521, i64 9, i64 %null_ext13, ptr @src_file.10522, i64 88, i64 540)
   %ty_ptr14 = getelementptr inbounds nuw %VarLookup, ptr %local10, i32 0, i32 2
   %ty15 = load ptr, ptr %ty_ptr14, align 8
   %8 = call i1 @"core::ast::vtype_is_closure"(ptr %ty15)
@@ -115180,7 +115209,7 @@ if_then:                                          ; preds = %entry
   %cast17 = ptrtoint ptr %local16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10523, i64 2, ptr @sty_name.10524, i64 9, i64 %null_ext19, ptr @src_file.10525, i64 88, i64 532)
+  call void @forge_null_deref_trap(ptr @fld_name.10523, i64 2, ptr @sty_name.10524, i64 9, i64 %null_ext19, ptr @src_file.10525, i64 88, i64 541)
   %ty_ptr20 = getelementptr inbounds nuw %VarLookup, ptr %local16, i32 0, i32 2
   %ty21 = load ptr, ptr %ty_ptr20, align 8
   %10 = call i64 @"core::ast::vtype_closure_captures"(ptr %ty21)
@@ -115232,7 +115261,7 @@ entry:
   %cast = ptrtoint ptr %ctx1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10526, i64 8, ptr @sty_name.10527, i64 3, i64 %null_ext, ptr @src_file.10528, i64 88, i64 543)
+  call void @forge_null_deref_trap(ptr @fld_name.10526, i64 8, ptr @sty_name.10527, i64 3, i64 %null_ext, ptr @src_file.10528, i64 88, i64 552)
   %global2 = load ptr, ptr %global, align 8
   %name3 = load ptr, ptr %name, align 8
   %6 = call ptr @Ctx__load_i64(ptr %ctx1, ptr %global2, ptr %name3)
@@ -115311,7 +115340,7 @@ entry:
   %cast = ptrtoint ptr %ctx1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10529, i64 6, ptr @sty_name.10530, i64 3, i64 %null_ext, ptr @src_file.10531, i64 88, i64 560)
+  call void @forge_null_deref_trap(ptr @fld_name.10529, i64 6, ptr @sty_name.10530, i64 3, i64 %null_ext, ptr @src_file.10531, i64 88, i64 569)
   %closure_val2 = load ptr, ptr %closure_val, align 8
   %5 = call ptr @Ctx__to_ptr(ptr %ctx1, ptr %closure_val2, ptr @.str.10532)
   store ptr %5, ptr %closure_ptr, align 8
@@ -115319,13 +115348,13 @@ entry:
   %cast4 = ptrtoint ptr %ctx3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10533, i64 9, ptr @sty_name.10534, i64 3, i64 %null_ext6, ptr @src_file.10535, i64 88, i64 562)
+  call void @forge_null_deref_trap(ptr @fld_name.10533, i64 9, ptr @sty_name.10534, i64 3, i64 %null_ext6, ptr @src_file.10535, i64 88, i64 571)
   %closure_ptr7 = load ptr, ptr %closure_ptr, align 8
   %ctx8 = load ptr, ptr %ctx, align 8
   %cast9 = ptrtoint ptr %ctx8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10536, i64 3, ptr @sty_name.10537, i64 3, i64 %null_ext11, ptr @src_file.10538, i64 88, i64 562)
+  call void @forge_null_deref_trap(ptr @fld_name.10536, i64 3, ptr @sty_name.10537, i64 3, i64 %null_ext11, ptr @src_file.10538, i64 88, i64 571)
   %6 = call ptr @Ctx__i64(ptr %ctx8, i64 1)
   %7 = call ptr @Ctx__array_get(ptr %ctx3, ptr %closure_ptr7, ptr %6)
   store ptr %7, ptr %get_fn_call, align 8
@@ -115333,7 +115362,7 @@ entry:
   %cast13 = ptrtoint ptr %ctx12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10539, i64 10, ptr @sty_name.10540, i64 3, i64 %null_ext15, ptr @src_file.10541, i64 88, i64 563)
+  call void @forge_null_deref_trap(ptr @fld_name.10539, i64 10, ptr @sty_name.10540, i64 3, i64 %null_ext15, ptr @src_file.10541, i64 88, i64 572)
   %get_fn_call16 = load ptr, ptr %get_fn_call, align 8
   %8 = call ptr @Ctx__int_to_ptr(ptr %ctx12, ptr %get_fn_call16, ptr @.str.10542)
   store ptr %8, ptr %fn_ptr, align 8
@@ -115348,7 +115377,7 @@ entry:
   %cast21 = ptrtoint ptr %ctx20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10543, i64 14, ptr @sty_name.10544, i64 3, i64 %null_ext23, ptr @src_file.10545, i64 88, i64 568)
+  call void @forge_null_deref_trap(ptr @fld_name.10543, i64 14, ptr @sty_name.10544, i64 3, i64 %null_ext23, ptr @src_file.10545, i64 88, i64 577)
   %total_args24 = load i64, ptr %total_args, align 8
   %10 = call ptr @Ctx__i64_type_array(ptr %ctx20, i64 %total_args24)
   store ptr %10, ptr %param_arr, align 8
@@ -115356,12 +115385,12 @@ entry:
   %cast26 = ptrtoint ptr %ctx25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10546, i64 7, ptr @sty_name.10547, i64 3, i64 %null_ext28, ptr @src_file.10548, i64 88, i64 569)
+  call void @forge_null_deref_trap(ptr @fld_name.10546, i64 7, ptr @sty_name.10547, i64 3, i64 %null_ext28, ptr @src_file.10548, i64 88, i64 578)
   %ctx29 = load ptr, ptr %ctx, align 8
   %cast30 = ptrtoint ptr %ctx29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10549, i64 8, ptr @sty_name.10550, i64 3, i64 %null_ext32, ptr @src_file.10551, i64 88, i64 569)
+  call void @forge_null_deref_trap(ptr @fld_name.10549, i64 8, ptr @sty_name.10550, i64 3, i64 %null_ext32, ptr @src_file.10551, i64 88, i64 578)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx29, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %param_arr33 = load ptr, ptr %param_arr, align 8
@@ -115372,14 +115401,14 @@ entry:
   %cast36 = ptrtoint ptr %ctx35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10552, i64 15, ptr @sty_name.10553, i64 3, i64 %null_ext38, ptr @src_file.10554, i64 88, i64 570)
+  call void @forge_null_deref_trap(ptr @fld_name.10552, i64 15, ptr @sty_name.10553, i64 3, i64 %null_ext38, ptr @src_file.10554, i64 88, i64 579)
   %param_arr39 = load ptr, ptr %param_arr, align 8
   %12 = call i64 @Ctx__type_array_free(ptr %ctx35, ptr %param_arr39)
   %ctx40 = load ptr, ptr %ctx, align 8
   %cast41 = ptrtoint ptr %ctx40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10555, i64 11, ptr @sty_name.10556, i64 3, i64 %null_ext43, ptr @src_file.10557, i64 88, i64 572)
+  call void @forge_null_deref_trap(ptr @fld_name.10555, i64 11, ptr @sty_name.10556, i64 3, i64 %null_ext43, ptr @src_file.10557, i64 88, i64 581)
   %total_args44 = load i64, ptr %total_args, align 8
   %13 = call ptr @Ctx__value_array(ptr %ctx40, i64 %total_args44)
   store ptr %13, ptr %val_arr, align 8
@@ -115404,7 +115433,7 @@ match_end:                                        ; preds = %match_arm
   %cast65 = ptrtoint ptr %ctx64 to i64
   %null_chk66 = icmp eq i64 %cast65, 0
   %null_ext67 = zext i1 %null_chk66 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10563, i64 10, ptr @sty_name.10564, i64 3, i64 %null_ext67, ptr @src_file.10565, i64 88, i64 584)
+  call void @forge_null_deref_trap(ptr @fld_name.10563, i64 10, ptr @sty_name.10564, i64 3, i64 %null_ext67, ptr @src_file.10565, i64 88, i64 593)
   %fn_type68 = load ptr, ptr %fn_type, align 8
   %fn_ptr69 = load ptr, ptr %fn_ptr, align 8
   %val_arr70 = load ptr, ptr %val_arr, align 8
@@ -115415,7 +115444,7 @@ match_end:                                        ; preds = %match_arm
   %cast73 = ptrtoint ptr %ctx72 to i64
   %null_chk74 = icmp eq i64 %cast73, 0
   %null_ext75 = zext i1 %null_chk74 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10567, i64 16, ptr @sty_name.10568, i64 3, i64 %null_ext75, ptr @src_file.10569, i64 88, i64 585)
+  call void @forge_null_deref_trap(ptr @fld_name.10567, i64 16, ptr @sty_name.10568, i64 3, i64 %null_ext75, ptr @src_file.10569, i64 88, i64 594)
   %val_arr76 = load ptr, ptr %val_arr, align 8
   %17 = call i64 @Ctx__value_array_free(ptr %ctx72, ptr %val_arr76)
   %result77 = load ptr, ptr %result, align 8
@@ -115442,7 +115471,7 @@ match_arm49:                                      ; preds = %match_next
   %cast54 = ptrtoint ptr %ctx53 to i64
   %null_chk55 = icmp eq i64 %cast54, 0
   %null_ext56 = zext i1 %null_chk55 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10558, i64 16, ptr @sty_name.10559, i64 3, i64 %null_ext56, ptr @src_file.10560, i64 88, i64 577)
+  call void @forge_null_deref_trap(ptr @fld_name.10558, i64 16, ptr @sty_name.10559, i64 3, i64 %null_ext56, ptr @src_file.10560, i64 88, i64 586)
   %val_arr57 = load ptr, ptr %val_arr, align 8
   %20 = call i64 @Ctx__value_array_free(ptr %ctx53, ptr %val_arr57)
   %e58 = load ptr, ptr %e52, align 8
@@ -115450,7 +115479,7 @@ match_arm49:                                      ; preds = %match_next
   ret ptr %21
 
 match_next50:                                     ; preds = %match_next
-  call void @forge_match_unreachable(ptr @.match_fn.10561, i64 %tag, ptr @mu_file.10562, i64 573)
+  call void @forge_match_unreachable(ptr @.match_fn.10561, i64 %tag, ptr @mu_file.10562, i64 582)
   unreachable
 }
 
@@ -115481,13 +115510,13 @@ ifcont:                                           ; preds = %if_else
   %cast = ptrtoint ptr %ctx3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10570, i64 9, ptr @sty_name.10571, i64 3, i64 %null_ext, ptr @src_file.10572, i64 88, i64 592)
+  call void @forge_null_deref_trap(ptr @fld_name.10570, i64 9, ptr @sty_name.10571, i64 3, i64 %null_ext, ptr @src_file.10572, i64 88, i64 601)
   %closure_val4 = load ptr, ptr %closure_val, align 8
   %ctx5 = load ptr, ptr %ctx, align 8
   %cast6 = ptrtoint ptr %ctx5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10573, i64 3, ptr @sty_name.10574, i64 3, i64 %null_ext8, ptr @src_file.10575, i64 88, i64 592)
+  call void @forge_null_deref_trap(ptr @fld_name.10573, i64 3, ptr @sty_name.10574, i64 3, i64 %null_ext8, ptr @src_file.10575, i64 88, i64 601)
   %i9 = load i64, ptr %i, align 8
   %add = add i64 %i9, 2
   %6 = call ptr @Ctx__i64(ptr %ctx5, i64 %add)
@@ -115497,7 +115526,7 @@ ifcont:                                           ; preds = %if_else
   %cast11 = ptrtoint ptr %ctx10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10576, i64 15, ptr @sty_name.10577, i64 3, i64 %null_ext13, ptr @src_file.10578, i64 88, i64 593)
+  call void @forge_null_deref_trap(ptr @fld_name.10576, i64 15, ptr @sty_name.10577, i64 3, i64 %null_ext13, ptr @src_file.10578, i64 88, i64 602)
   %val_arr14 = load ptr, ptr %val_arr, align 8
   %start_idx15 = load i64, ptr %start_idx, align 8
   %i16 = load i64, ptr %i, align 8
@@ -115554,7 +115583,7 @@ try_ok:                                           ; preds = %entry
   %cast6 = ptrtoint ptr %r5 to i64
   %null_chk = icmp eq i64 %cast6, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10579, i64 5, ptr @sty_name.10580, i64 9, i64 %null_ext, ptr @src_file.10581, i64 88, i64 599)
+  call void @forge_null_deref_trap(ptr @fld_name.10579, i64 5, ptr @sty_name.10580, i64 9, i64 %null_ext, ptr @src_file.10581, i64 88, i64 608)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r5, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %ret_ty7 = load ptr, ptr %ret_ty, align 8
@@ -115601,7 +115630,7 @@ try_ok:                                           ; preds = %entry
   %cast7 = ptrtoint ptr %r6 to i64
   %null_chk = icmp eq i64 %cast7, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10582, i64 5, ptr @sty_name.10583, i64 9, i64 %null_ext, ptr @src_file.10584, i64 88, i64 604)
+  call void @forge_null_deref_trap(ptr @fld_name.10582, i64 5, ptr @sty_name.10583, i64 9, i64 %null_ext, ptr @src_file.10584, i64 88, i64 613)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r6, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %ret_ty8 = load ptr, ptr %ret_ty, align 8
@@ -115662,7 +115691,7 @@ if_then:                                          ; preds = %entry
   %cast = ptrtoint ptr %ctx3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10585, i64 4, ptr @sty_name.10586, i64 3, i64 %null_ext, ptr @src_file.10587, i64 88, i64 619)
+  call void @forge_null_deref_trap(ptr @fld_name.10585, i64 4, ptr @sty_name.10586, i64 3, i64 %null_ext, ptr @src_file.10587, i64 88, i64 628)
   %5 = call ptr @forge_array_new()
   %fn_i644 = load ptr, ptr %fn_i64, align 8
   %cast5 = ptrtoint ptr %fn_i644 to i64
@@ -115706,13 +115735,13 @@ match_arm:                                        ; preds = %if_then11
   %cast16 = ptrtoint ptr %ctx15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10589, i64 4, ptr @sty_name.10590, i64 3, i64 %null_ext18, ptr @src_file.10591, i64 88, i64 625)
+  call void @forge_null_deref_trap(ptr @fld_name.10589, i64 4, ptr @sty_name.10590, i64 3, i64 %null_ext18, ptr @src_file.10591, i64 88, i64 634)
   %env19 = load ptr, ptr %env, align 8
   %se20 = load ptr, ptr %se14, align 8
   %cast21 = ptrtoint ptr %se20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10592, i64 4, ptr @sty_name.10593, i64 5, i64 %null_ext23, ptr @src_file.10594, i64 88, i64 625)
+  call void @forge_null_deref_trap(ptr @fld_name.10592, i64 4, ptr @sty_name.10593, i64 5, i64 %null_ext23, ptr @src_file.10594, i64 88, i64 634)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se20, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %8 = call ptr @Ctx__emit(ptr %ctx15, ptr %env19, ptr %node)
@@ -115734,7 +115763,7 @@ try_ok:                                           ; preds = %match_arm
   %cast26 = ptrtoint ptr %ctx25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10595, i64 4, ptr @sty_name.10596, i64 3, i64 %null_ext28, ptr @src_file.10597, i64 88, i64 626)
+  call void @forge_null_deref_trap(ptr @fld_name.10595, i64 4, ptr @sty_name.10596, i64 3, i64 %null_ext28, ptr @src_file.10597, i64 88, i64 635)
   %9 = call ptr @forge_array_new()
   %fn_i6429 = load ptr, ptr %fn_i64, align 8
   %cast30 = ptrtoint ptr %fn_i6429 to i64
@@ -115743,7 +115772,7 @@ try_ok:                                           ; preds = %match_arm
   %cast32 = ptrtoint ptr %a031 to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10599, i64 5, ptr @sty_name.10600, i64 9, i64 %null_ext34, ptr @src_file.10601, i64 88, i64 626)
+  call void @forge_null_deref_trap(ptr @fld_name.10599, i64 5, ptr @sty_name.10600, i64 9, i64 %null_ext34, ptr @src_file.10601, i64 88, i64 635)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %a031, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %cast35 = ptrtoint ptr %value to i64
@@ -115760,7 +115789,7 @@ match_arm36:                                      ; preds = %match_next
   ret ptr %12
 
 match_next37:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10603, i64 %tag, ptr @mu_file.10604, i64 622)
+  call void @forge_match_unreachable(ptr @.match_fn.10603, i64 %tag, ptr @mu_file.10604, i64 631)
   unreachable
 
 ifcont41:                                         ; preds = %if_else44, %match_end48
@@ -115802,13 +115831,13 @@ match_arm49:                                      ; preds = %if_then43
   %cast59 = ptrtoint ptr %ctx58 to i64
   %null_chk60 = icmp eq i64 %cast59, 0
   %null_ext61 = zext i1 %null_chk60 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10605, i64 4, ptr @sty_name.10606, i64 3, i64 %null_ext61, ptr @src_file.10607, i64 88, i64 635)
+  call void @forge_null_deref_trap(ptr @fld_name.10605, i64 4, ptr @sty_name.10606, i64 3, i64 %null_ext61, ptr @src_file.10607, i64 88, i64 644)
   %env62 = load ptr, ptr %env, align 8
   %se063 = load ptr, ptr %se054, align 8
   %cast64 = ptrtoint ptr %se063 to i64
   %null_chk65 = icmp eq i64 %cast64, 0
   %null_ext66 = zext i1 %null_chk65 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10608, i64 4, ptr @sty_name.10609, i64 5, i64 %null_ext66, ptr @src_file.10610, i64 88, i64 635)
+  call void @forge_null_deref_trap(ptr @fld_name.10608, i64 4, ptr @sty_name.10609, i64 5, i64 %null_ext66, ptr @src_file.10610, i64 88, i64 644)
   %node_ptr67 = getelementptr inbounds nuw %SExpr, ptr %se063, i32 0, i32 0
   %node68 = load ptr, ptr %node_ptr67, align 8
   %13 = call ptr @Ctx__emit(ptr %ctx58, ptr %env62, ptr %node68)
@@ -115852,13 +115881,13 @@ march_arm:                                        ; preds = %try_ok72
   %cast88 = ptrtoint ptr %ctx87 to i64
   %null_chk89 = icmp eq i64 %cast88, 0
   %null_ext90 = zext i1 %null_chk89 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10611, i64 4, ptr @sty_name.10612, i64 3, i64 %null_ext90, ptr @src_file.10613, i64 88, i64 639)
+  call void @forge_null_deref_trap(ptr @fld_name.10611, i64 4, ptr @sty_name.10612, i64 3, i64 %null_ext90, ptr @src_file.10613, i64 88, i64 648)
   %env91 = load ptr, ptr %env, align 8
   %se192 = load ptr, ptr %se186, align 8
   %cast93 = ptrtoint ptr %se192 to i64
   %null_chk94 = icmp eq i64 %cast93, 0
   %null_ext95 = zext i1 %null_chk94 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10614, i64 4, ptr @sty_name.10615, i64 5, i64 %null_ext95, ptr @src_file.10616, i64 88, i64 639)
+  call void @forge_null_deref_trap(ptr @fld_name.10614, i64 4, ptr @sty_name.10615, i64 5, i64 %null_ext95, ptr @src_file.10616, i64 88, i64 648)
   %node_ptr96 = getelementptr inbounds nuw %SExpr, ptr %se192, i32 0, i32 0
   %node97 = load ptr, ptr %node_ptr96, align 8
   %14 = call ptr @Ctx__emit(ptr %ctx87, ptr %env91, ptr %node97)
@@ -115880,7 +115909,7 @@ try_ok101:                                        ; preds = %march_arm
   %cast108 = ptrtoint ptr %ctx107 to i64
   %null_chk109 = icmp eq i64 %cast108, 0
   %null_ext110 = zext i1 %null_chk109 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10617, i64 4, ptr @sty_name.10618, i64 3, i64 %null_ext110, ptr @src_file.10619, i64 88, i64 640)
+  call void @forge_null_deref_trap(ptr @fld_name.10617, i64 4, ptr @sty_name.10618, i64 3, i64 %null_ext110, ptr @src_file.10619, i64 88, i64 649)
   %15 = call ptr @forge_array_new()
   %fn_i64111 = load ptr, ptr %fn_i64, align 8
   %cast112 = ptrtoint ptr %fn_i64111 to i64
@@ -115889,7 +115918,7 @@ try_ok101:                                        ; preds = %march_arm
   %cast114 = ptrtoint ptr %a0113 to i64
   %null_chk115 = icmp eq i64 %cast114, 0
   %null_ext116 = zext i1 %null_chk115 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10621, i64 5, ptr @sty_name.10622, i64 9, i64 %null_ext116, ptr @src_file.10623, i64 88, i64 640)
+  call void @forge_null_deref_trap(ptr @fld_name.10621, i64 5, ptr @sty_name.10622, i64 9, i64 %null_ext116, ptr @src_file.10623, i64 88, i64 649)
   %value_ptr117 = getelementptr inbounds nuw %EmitValue, ptr %a0113, i32 0, i32 0
   %value118 = load ptr, ptr %value_ptr117, align 8
   %cast119 = ptrtoint ptr %value118 to i64
@@ -115898,7 +115927,7 @@ try_ok101:                                        ; preds = %march_arm
   %cast121 = ptrtoint ptr %a1120 to i64
   %null_chk122 = icmp eq i64 %cast121, 0
   %null_ext123 = zext i1 %null_chk122 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10624, i64 5, ptr @sty_name.10625, i64 9, i64 %null_ext123, ptr @src_file.10626, i64 88, i64 640)
+  call void @forge_null_deref_trap(ptr @fld_name.10624, i64 5, ptr @sty_name.10625, i64 9, i64 %null_ext123, ptr @src_file.10626, i64 88, i64 649)
   %value_ptr124 = getelementptr inbounds nuw %EmitValue, ptr %a1120, i32 0, i32 0
   %value125 = load ptr, ptr %value_ptr124, align 8
   %cast126 = ptrtoint ptr %value125 to i64
@@ -115915,7 +115944,7 @@ march_arm127:                                     ; preds = %march_next
   ret ptr %18
 
 march_next128:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10628, i64 %tag81, ptr @mu_file.10629, i64 636)
+  call void @forge_match_unreachable(ptr @.match_fn.10628, i64 %tag81, ptr @mu_file.10629, i64 645)
   unreachable
 
 match_arm129:                                     ; preds = %match_next50
@@ -115923,7 +115952,7 @@ match_arm129:                                     ; preds = %match_next50
   ret ptr %19
 
 match_next130:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10631, i64 %tag47, ptr @mu_file.10632, i64 632)
+  call void @forge_match_unreachable(ptr @.match_fn.10631, i64 %tag47, ptr @mu_file.10632, i64 641)
   unreachable
 
 ifcont134:                                        ; preds = %if_else137, %match_end141
@@ -115988,13 +116017,13 @@ match_arm142:                                     ; preds = %if_then136
   %cast156 = ptrtoint ptr %ctx155 to i64
   %null_chk157 = icmp eq i64 %cast156, 0
   %null_ext158 = zext i1 %null_chk157 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10633, i64 4, ptr @sty_name.10634, i64 3, i64 %null_ext158, ptr @src_file.10635, i64 88, i64 652)
+  call void @forge_null_deref_trap(ptr @fld_name.10633, i64 4, ptr @sty_name.10634, i64 3, i64 %null_ext158, ptr @src_file.10635, i64 88, i64 661)
   %env159 = load ptr, ptr %env, align 8
   %se0160 = load ptr, ptr %se0151, align 8
   %cast161 = ptrtoint ptr %se0160 to i64
   %null_chk162 = icmp eq i64 %cast161, 0
   %null_ext163 = zext i1 %null_chk162 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10636, i64 4, ptr @sty_name.10637, i64 5, i64 %null_ext163, ptr @src_file.10638, i64 88, i64 652)
+  call void @forge_null_deref_trap(ptr @fld_name.10636, i64 4, ptr @sty_name.10637, i64 5, i64 %null_ext163, ptr @src_file.10638, i64 88, i64 661)
   %node_ptr164 = getelementptr inbounds nuw %SExpr, ptr %se0160, i32 0, i32 0
   %node165 = load ptr, ptr %node_ptr164, align 8
   %33 = call ptr @Ctx__emit(ptr %ctx155, ptr %env159, ptr %node165)
@@ -116045,13 +116074,13 @@ march_arm181:                                     ; preds = %try_ok169
   %cast195 = ptrtoint ptr %ctx194 to i64
   %null_chk196 = icmp eq i64 %cast195, 0
   %null_ext197 = zext i1 %null_chk196 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10639, i64 4, ptr @sty_name.10640, i64 3, i64 %null_ext197, ptr @src_file.10641, i64 88, i64 656)
+  call void @forge_null_deref_trap(ptr @fld_name.10639, i64 4, ptr @sty_name.10640, i64 3, i64 %null_ext197, ptr @src_file.10641, i64 88, i64 665)
   %env198 = load ptr, ptr %env, align 8
   %se1199 = load ptr, ptr %se1190, align 8
   %cast200 = ptrtoint ptr %se1199 to i64
   %null_chk201 = icmp eq i64 %cast200, 0
   %null_ext202 = zext i1 %null_chk201 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10642, i64 4, ptr @sty_name.10643, i64 5, i64 %null_ext202, ptr @src_file.10644, i64 88, i64 656)
+  call void @forge_null_deref_trap(ptr @fld_name.10642, i64 4, ptr @sty_name.10643, i64 5, i64 %null_ext202, ptr @src_file.10644, i64 88, i64 665)
   %node_ptr203 = getelementptr inbounds nuw %SExpr, ptr %se1199, i32 0, i32 0
   %node204 = load ptr, ptr %node_ptr203, align 8
   %34 = call ptr @Ctx__emit(ptr %ctx194, ptr %env198, ptr %node204)
@@ -116096,13 +116125,13 @@ march_arm220:                                     ; preds = %try_ok208
   %cast227 = ptrtoint ptr %ctx226 to i64
   %null_chk228 = icmp eq i64 %cast227, 0
   %null_ext229 = zext i1 %null_chk228 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10645, i64 4, ptr @sty_name.10646, i64 3, i64 %null_ext229, ptr @src_file.10647, i64 88, i64 660)
+  call void @forge_null_deref_trap(ptr @fld_name.10645, i64 4, ptr @sty_name.10646, i64 3, i64 %null_ext229, ptr @src_file.10647, i64 88, i64 669)
   %env230 = load ptr, ptr %env, align 8
   %se2231 = load ptr, ptr %se2225, align 8
   %cast232 = ptrtoint ptr %se2231 to i64
   %null_chk233 = icmp eq i64 %cast232, 0
   %null_ext234 = zext i1 %null_chk233 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10648, i64 4, ptr @sty_name.10649, i64 5, i64 %null_ext234, ptr @src_file.10650, i64 88, i64 660)
+  call void @forge_null_deref_trap(ptr @fld_name.10648, i64 4, ptr @sty_name.10649, i64 5, i64 %null_ext234, ptr @src_file.10650, i64 88, i64 669)
   %node_ptr235 = getelementptr inbounds nuw %SExpr, ptr %se2231, i32 0, i32 0
   %node236 = load ptr, ptr %node_ptr235, align 8
   %35 = call ptr @Ctx__emit(ptr %ctx226, ptr %env230, ptr %node236)
@@ -116124,7 +116153,7 @@ try_ok240:                                        ; preds = %march_arm220
   %cast247 = ptrtoint ptr %ctx246 to i64
   %null_chk248 = icmp eq i64 %cast247, 0
   %null_ext249 = zext i1 %null_chk248 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10651, i64 4, ptr @sty_name.10652, i64 3, i64 %null_ext249, ptr @src_file.10653, i64 88, i64 661)
+  call void @forge_null_deref_trap(ptr @fld_name.10651, i64 4, ptr @sty_name.10652, i64 3, i64 %null_ext249, ptr @src_file.10653, i64 88, i64 670)
   %36 = call ptr @forge_array_new()
   %fn_i64250 = load ptr, ptr %fn_i64, align 8
   %cast251 = ptrtoint ptr %fn_i64250 to i64
@@ -116133,7 +116162,7 @@ try_ok240:                                        ; preds = %march_arm220
   %cast253 = ptrtoint ptr %a0252 to i64
   %null_chk254 = icmp eq i64 %cast253, 0
   %null_ext255 = zext i1 %null_chk254 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10655, i64 5, ptr @sty_name.10656, i64 9, i64 %null_ext255, ptr @src_file.10657, i64 88, i64 661)
+  call void @forge_null_deref_trap(ptr @fld_name.10655, i64 5, ptr @sty_name.10656, i64 9, i64 %null_ext255, ptr @src_file.10657, i64 88, i64 670)
   %value_ptr256 = getelementptr inbounds nuw %EmitValue, ptr %a0252, i32 0, i32 0
   %value257 = load ptr, ptr %value_ptr256, align 8
   %cast258 = ptrtoint ptr %value257 to i64
@@ -116142,7 +116171,7 @@ try_ok240:                                        ; preds = %march_arm220
   %cast260 = ptrtoint ptr %a1259 to i64
   %null_chk261 = icmp eq i64 %cast260, 0
   %null_ext262 = zext i1 %null_chk261 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10658, i64 5, ptr @sty_name.10659, i64 9, i64 %null_ext262, ptr @src_file.10660, i64 88, i64 661)
+  call void @forge_null_deref_trap(ptr @fld_name.10658, i64 5, ptr @sty_name.10659, i64 9, i64 %null_ext262, ptr @src_file.10660, i64 88, i64 670)
   %value_ptr263 = getelementptr inbounds nuw %EmitValue, ptr %a1259, i32 0, i32 0
   %value264 = load ptr, ptr %value_ptr263, align 8
   %cast265 = ptrtoint ptr %value264 to i64
@@ -116151,7 +116180,7 @@ try_ok240:                                        ; preds = %march_arm220
   %cast267 = ptrtoint ptr %a2266 to i64
   %null_chk268 = icmp eq i64 %cast267, 0
   %null_ext269 = zext i1 %null_chk268 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10661, i64 5, ptr @sty_name.10662, i64 9, i64 %null_ext269, ptr @src_file.10663, i64 88, i64 661)
+  call void @forge_null_deref_trap(ptr @fld_name.10661, i64 5, ptr @sty_name.10662, i64 9, i64 %null_ext269, ptr @src_file.10663, i64 88, i64 670)
   %value_ptr270 = getelementptr inbounds nuw %EmitValue, ptr %a2266, i32 0, i32 0
   %value271 = load ptr, ptr %value_ptr270, align 8
   %cast272 = ptrtoint ptr %value271 to i64
@@ -116168,7 +116197,7 @@ march_arm273:                                     ; preds = %march_next221
   ret ptr %39
 
 march_next274:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10665, i64 %tag217, ptr @mu_file.10666, i64 657)
+  call void @forge_match_unreachable(ptr @.match_fn.10665, i64 %tag217, ptr @mu_file.10666, i64 666)
   unreachable
 
 march_arm276:                                     ; preds = %march_next182
@@ -116176,7 +116205,7 @@ march_arm276:                                     ; preds = %march_next182
   ret ptr %40
 
 march_next277:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10668, i64 %tag178, ptr @mu_file.10669, i64 653)
+  call void @forge_match_unreachable(ptr @.match_fn.10668, i64 %tag178, ptr @mu_file.10669, i64 662)
   unreachable
 
 match_arm279:                                     ; preds = %match_next143
@@ -116184,7 +116213,7 @@ match_arm279:                                     ; preds = %match_next143
   ret ptr %41
 
 match_next280:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10671, i64 %tag140, ptr @mu_file.10672, i64 649)
+  call void @forge_match_unreachable(ptr @.match_fn.10671, i64 %tag140, ptr @mu_file.10672, i64 658)
   unreachable
 }
 
@@ -116246,13 +116275,13 @@ march_arm2:                                       ; preds = %march_next
   %cast10 = ptrtoint ptr %ctx9 to i64
   %null_chk = icmp eq i64 %cast10, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10676, i64 4, ptr @sty_name.10677, i64 3, i64 %null_ext, ptr @src_file.10678, i64 88, i64 680)
+  call void @forge_null_deref_trap(ptr @fld_name.10676, i64 4, ptr @sty_name.10677, i64 3, i64 %null_ext, ptr @src_file.10678, i64 88, i64 689)
   %env11 = load ptr, ptr %env, align 8
   %se12 = load ptr, ptr %se5, align 8
   %cast13 = ptrtoint ptr %se12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10679, i64 4, ptr @sty_name.10680, i64 5, i64 %null_ext15, ptr @src_file.10681, i64 88, i64 680)
+  call void @forge_null_deref_trap(ptr @fld_name.10679, i64 4, ptr @sty_name.10680, i64 5, i64 %null_ext15, ptr @src_file.10681, i64 88, i64 689)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se12, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %7 = call ptr @Ctx__emit(ptr %ctx9, ptr %env11, ptr %node)
@@ -116262,7 +116291,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10688, i64 %tag, ptr @mu_file.10689, i64 676)
+  call void @forge_match_unreachable(ptr @.match_fn.10688, i64 %tag, ptr @mu_file.10689, i64 685)
   unreachable
 
 try_ok:                                           ; preds = %march_arm2
@@ -116275,14 +116304,14 @@ try_ok:                                           ; preds = %march_arm2
   %cast18 = ptrtoint ptr %ctx17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10682, i64 15, ptr @sty_name.10683, i64 3, i64 %null_ext20, ptr @src_file.10684, i64 88, i64 681)
+  call void @forge_null_deref_trap(ptr @fld_name.10682, i64 15, ptr @sty_name.10683, i64 3, i64 %null_ext20, ptr @src_file.10684, i64 88, i64 690)
   %arr21 = load ptr, ptr %arr, align 8
   %idx22 = load i64, ptr %idx, align 8
   %r23 = load ptr, ptr %r, align 8
   %cast24 = ptrtoint ptr %r23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10685, i64 5, ptr @sty_name.10686, i64 9, i64 %null_ext26, ptr @src_file.10687, i64 88, i64 681)
+  call void @forge_null_deref_trap(ptr @fld_name.10685, i64 5, ptr @sty_name.10686, i64 9, i64 %null_ext26, ptr @src_file.10687, i64 88, i64 690)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r23, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %8 = call i64 @Ctx__value_array_set(ptr %ctx17, ptr %arr21, i64 %idx22, ptr %value)
@@ -116383,7 +116412,7 @@ march_arm3:                                       ; preds = %march_next
   %cast17 = ptrtoint ptr %ctx16 to i64
   %null_chk = icmp eq i64 %cast17, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10690, i64 9, ptr @sty_name.10691, i64 3, i64 %null_ext, ptr @src_file.10692, i64 88, i64 692)
+  call void @forge_null_deref_trap(ptr @fld_name.10690, i64 9, ptr @sty_name.10691, i64 3, i64 %null_ext, ptr @src_file.10692, i64 88, i64 701)
   %fn_val18 = load ptr, ptr %fn_val, align 8
   %idx19 = load i64, ptr %idx, align 8
   %6 = call ptr @Ctx__get_param(ptr %ctx16, ptr %fn_val18, i64 %idx19)
@@ -116396,7 +116425,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq27, label %march_arm25, label %march_next26
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10702, i64 %tag, ptr @mu_file.10703, i64 688)
+  call void @forge_match_unreachable(ptr @.match_fn.10702, i64 %tag, ptr @mu_file.10703, i64 697)
   unreachable
 
 match_end24:                                      ; preds = %sif_end, %march_arm25
@@ -116437,7 +116466,7 @@ march_arm33:                                      ; preds = %march_next26
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next34:                                     ; preds = %march_next26
-  call void @forge_match_unreachable(ptr @.match_fn.10695, i64 %tag22, ptr @mu_file.10696, i64 694)
+  call void @forge_match_unreachable(ptr @.match_fn.10695, i64 %tag22, ptr @mu_file.10696, i64 703)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm33
@@ -116486,7 +116515,7 @@ match_end50:                                      ; preds = %march_arm59, %march
   %cast69 = ptrtoint ptr %ctx68 to i64
   %null_chk70 = icmp eq i64 %cast69, 0
   %null_ext71 = zext i1 %null_chk70 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.10699, i64 4, ptr @sty_name.10700, i64 3, i64 %null_ext71, ptr @src_file.10701, i64 88, i64 709)
+  call void @forge_null_deref_trap(ptr @fld_name.10699, i64 4, ptr @sty_name.10700, i64 3, i64 %null_ext71, ptr @src_file.10701, i64 88, i64 718)
   %env72 = load ptr, ptr %env, align 8
   %name73 = load ptr, ptr %name6, align 8
   %param_val74 = load ptr, ptr %param_val, align 8
@@ -116530,7 +116559,7 @@ march_arm59:                                      ; preds = %march_next52
   br label %match_end50
 
 march_next60:                                     ; preds = %march_next52
-  call void @forge_match_unreachable(ptr @.match_fn.10697, i64 %tag48, ptr @mu_file.10698, i64 705)
+  call void @forge_match_unreachable(ptr @.match_fn.10697, i64 %tag48, ptr @mu_file.10698, i64 714)
   unreachable
 }
 
@@ -119477,9 +119506,9 @@ entry:
 define i64 @"features::defer_stmt::codegen::defer_reset"() {
 entry:
   %0 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %EscapeSet, ptr %0, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %0, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %0, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %0, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %0 to i64
   store i64 %cast, ptr @DEFER_STACK, align 8
@@ -141798,9 +141827,9 @@ match_end:                                        ; preds = %match_end22, %march
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -144516,9 +144545,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -144599,9 +144628,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -144725,9 +144754,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -144819,9 +144848,9 @@ match_end:                                        ; preds = %ife_end, %march_arm
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -148114,9 +148143,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -148142,9 +148171,9 @@ march_arm3:                                       ; preds = %march_next
   %next = load ptr, ptr %next_slot, align 8
   store ptr %next, ptr %next9, align 8
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr10 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr10 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr10, align 8
-  %pay_ptr11 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr11 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   %4 = call ptr @forge_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr11, align 8
   %ctx12 = load ptr, ptr %ctx, align 8
@@ -150836,9 +150865,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -155124,9 +155153,9 @@ match_end:                                        ; preds = %march_arm14, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -155674,9 +155703,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %1 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -155882,9 +155911,9 @@ match_end:                                        ; preds = %march_arm14, %guard
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -156025,9 +156054,9 @@ march_next9:                                      ; preds = %march_next3
 define i64 @"codegen::types::rc_cleanup_reset"() {
 entry:
   %0 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %EscapeSet, ptr %0, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %0, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %0, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %0, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %0 to i64
   store i64 %cast, ptr @RC_CLEANUP, align 8
@@ -156070,6 +156099,22 @@ entry:
   store ptr %RC_CLEANUP, ptr %slot12, align 8
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr @RC_CLEANUP, align 8
+  ret i64 %cast
+}
+
+define ptr @"codegen::types::rc_cleanup_save"() {
+entry:
+  %RC_CLEANUP = load ptr, ptr @RC_CLEANUP, align 8
+  ret ptr %RC_CLEANUP
+}
+
+define i64 @"codegen::types::rc_cleanup_restore"(ptr %0) {
+entry:
+  %saved = alloca ptr, align 8
+  store ptr %0, ptr %saved, align 8
+  %saved1 = load ptr, ptr %saved, align 8
+  store ptr %saved1, ptr @RC_CLEANUP, align 8
+  %cast = ptrtoint ptr %saved1 to i64
   ret i64 %cast
 }
 
@@ -156153,7 +156198,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13463, i64 %tag, ptr @mu_file.13464, i64 304)
+  call void @forge_match_unreachable(ptr @.match_fn.13463, i64 %tag, ptr @mu_file.13464, i64 308)
   unreachable
 
 sif_then:                                         ; preds = %march_arm2
@@ -156161,14 +156206,14 @@ sif_then:                                         ; preds = %march_arm2
   %cast15 = ptrtoint ptr %ctx14 to i64
   %null_chk = icmp eq i64 %cast15, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13457, i64 7, ptr @sty_name.13458, i64 3, i64 %null_ext, ptr @src_file.13459, i64 88, i64 309)
+  call void @forge_null_deref_trap(ptr @fld_name.13457, i64 7, ptr @sty_name.13458, i64 3, i64 %null_ext, ptr @src_file.13459, i64 88, i64 313)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx14, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ctx16 = load ptr, ptr %ctx, align 8
   %cast17 = ptrtoint ptr %ctx16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13460, i64 7, ptr @sty_name.13461, i64 3, i64 %null_ext19, ptr @src_file.13462, i64 88, i64 309)
+  call void @forge_null_deref_trap(ptr @fld_name.13460, i64 7, ptr @sty_name.13461, i64 3, i64 %null_ext19, ptr @src_file.13462, i64 88, i64 313)
   %i1_type_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx16, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %5 = call ptr @forge_llvm_const_int(ptr %i1_type, i64 1, i64 0)
@@ -156219,9 +156264,9 @@ march_arm:                                        ; preds = %entry
   %fld_ptr = getelementptr inbounds nuw %StructLookup, ptr %2, i32 0, i32 0
   store i64 0, ptr %fld_ptr, align 8
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   %fld_ptr3 = getelementptr inbounds nuw %StructLookup, ptr %2, i32 0, i32 1
@@ -156290,7 +156335,7 @@ march_arm19:                                      ; preds = %march_next7
   br label %match_end
 
 march_next20:                                     ; preds = %march_next7
-  call void @forge_match_unreachable(ptr @.match_fn.13465, i64 %tag, ptr @mu_file.13466, i64 328)
+  call void @forge_match_unreachable(ptr @.match_fn.13465, i64 %tag, ptr @mu_file.13466, i64 332)
   unreachable
 }
 
@@ -156321,9 +156366,9 @@ march_arm:                                        ; preds = %entry
   %fld_ptr = getelementptr inbounds nuw %EnumLookup, ptr %2, i32 0, i32 0
   store i64 0, ptr %fld_ptr, align 8
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %3 to i64
   %fld_ptr3 = getelementptr inbounds nuw %EnumLookup, ptr %2, i32 0, i32 1
@@ -156392,7 +156437,7 @@ march_arm19:                                      ; preds = %march_next7
   br label %match_end
 
 march_next20:                                     ; preds = %march_next7
-  call void @forge_match_unreachable(ptr @.match_fn.13467, i64 %tag, ptr @mu_file.13468, i64 346)
+  call void @forge_match_unreachable(ptr @.match_fn.13467, i64 %tag, ptr @mu_file.13468, i64 350)
   unreachable
 }
 
@@ -156447,7 +156492,7 @@ march_arm2:                                       ; preds = %march_next
   %cast = ptrtoint ptr %2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13470, i64 5, ptr @sty_name.13471, i64 13, i64 %null_ext, ptr @src_file.13472, i64 88, i64 356)
+  call void @forge_null_deref_trap(ptr @fld_name.13470, i64 5, ptr @sty_name.13471, i64 13, i64 %null_ext, ptr @src_file.13472, i64 88, i64 360)
   %found_ptr = getelementptr inbounds nuw %VariantLookup, ptr %2, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %guard = icmp ne i64 %found, 0
@@ -156479,7 +156524,7 @@ march_arm13:                                      ; preds = %march_next3
   br label %match_end
 
 march_next14:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13473, i64 %tag, ptr @mu_file.13474, i64 356)
+  call void @forge_match_unreachable(ptr @.match_fn.13473, i64 %tag, ptr @mu_file.13474, i64 360)
   unreachable
 }
 
@@ -156547,14 +156592,14 @@ march_arm2:                                       ; preds = %march_next
   %cast = ptrtoint ptr %v14 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13476, i64 5, ptr @sty_name.13477, i64 13, i64 %null_ext, ptr @src_file.13478, i64 88, i64 371)
+  call void @forge_null_deref_trap(ptr @fld_name.13476, i64 5, ptr @sty_name.13477, i64 13, i64 %null_ext, ptr @src_file.13478, i64 88, i64 375)
   %found_ptr = getelementptr inbounds nuw %VariantLookup, ptr %v14, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %l_bool = icmp ne i64 %found, 0
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13482, i64 %tag, ptr @mu_file.13483, i64 366)
+  call void @forge_match_unreachable(ptr @.match_fn.13482, i64 %tag, ptr @mu_file.13483, i64 370)
   unreachable
 
 sc_rhs:                                           ; preds = %march_arm2
@@ -156562,7 +156607,7 @@ sc_rhs:                                           ; preds = %march_arm2
   %cast16 = ptrtoint ptr %v15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13479, i64 6, ptr @sty_name.13480, i64 13, i64 %null_ext18, ptr @src_file.13481, i64 88, i64 371)
+  call void @forge_null_deref_trap(ptr @fld_name.13479, i64 6, ptr @sty_name.13480, i64 13, i64 %null_ext18, ptr @src_file.13481, i64 88, i64 375)
   %fields_ptr = getelementptr inbounds nuw %VariantLookup, ptr %v15, i32 0, i32 1
   %fields = load ptr, ptr %fields_ptr, align 8
   %4 = call i64 @"core::ast::field_list_length"(ptr %fields)
@@ -156686,7 +156731,7 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13484, i64 %tag, ptr @mu_file.13485, i64 385)
+  call void @forge_match_unreachable(ptr @.match_fn.13484, i64 %tag, ptr @mu_file.13485, i64 389)
   unreachable
 }
 
@@ -156804,7 +156849,7 @@ march_arm27:                                      ; preds = %march_next9
   br label %match_end
 
 march_next28:                                     ; preds = %march_next9
-  call void @forge_match_unreachable(ptr @.match_fn.13486, i64 %tag, ptr @mu_file.13487, i64 399)
+  call void @forge_match_unreachable(ptr @.match_fn.13486, i64 %tag, ptr @mu_file.13487, i64 403)
   unreachable
 }
 
@@ -156876,7 +156921,7 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13488, i64 %tag, ptr @mu_file.13489, i64 417)
+  call void @forge_match_unreachable(ptr @.match_fn.13488, i64 %tag, ptr @mu_file.13489, i64 421)
   unreachable
 }
 
@@ -157475,7 +157520,7 @@ ifcont:                                           ; preds = %if_else
   %cast28 = ptrtoint ptr %regs27 to i64
   %null_chk = icmp eq i64 %cast28, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13503, i64 13, ptr @sty_name.13504, i64 8, i64 %null_ext, ptr @src_file.13505, i64 88, i64 505)
+  call void @forge_null_deref_trap(ptr @fld_name.13503, i64 13, ptr @sty_name.13504, i64 8, i64 %null_ext, ptr @src_file.13505, i64 88, i64 509)
   %union_aliases_ptr = getelementptr inbounds nuw %TypeRegs, ptr %regs27, i32 0, i32 3
   %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
   %ty29 = load ptr, ptr %ty, align 8
@@ -157554,7 +157599,7 @@ ifcont31:                                         ; preds = %if_else34
   %cast38 = ptrtoint ptr %regs37 to i64
   %null_chk39 = icmp eq i64 %cast38, 0
   %null_ext40 = zext i1 %null_chk39 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13507, i64 8, ptr @sty_name.13508, i64 8, i64 %null_ext40, ptr @src_file.13509, i64 88, i64 508)
+  call void @forge_null_deref_trap(ptr @fld_name.13507, i64 8, ptr @sty_name.13508, i64 8, i64 %null_ext40, ptr @src_file.13509, i64 88, i64 512)
   %newtypes_ptr = getelementptr inbounds nuw %TypeRegs, ptr %regs37, i32 0, i32 2
   %newtypes = load ptr, ptr %newtypes_ptr, align 8
   %ty41 = load ptr, ptr %ty, align 8
@@ -157582,14 +157627,14 @@ ifcont46:                                         ; preds = %if_else49
   %cast64 = ptrtoint ptr %regs63 to i64
   %null_chk65 = icmp eq i64 %cast64, 0
   %null_ext66 = zext i1 %null_chk65 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13511, i64 7, ptr @sty_name.13512, i64 8, i64 %null_ext66, ptr @src_file.13513, i64 88, i64 511)
+  call void @forge_null_deref_trap(ptr @fld_name.13511, i64 7, ptr @sty_name.13512, i64 8, i64 %null_ext66, ptr @src_file.13513, i64 88, i64 515)
   %structs_ptr = getelementptr inbounds nuw %TypeRegs, ptr %regs63, i32 0, i32 0
   %structs = load ptr, ptr %structs_ptr, align 8
   %regs67 = load ptr, ptr %regs, align 8
   %cast68 = ptrtoint ptr %regs67 to i64
   %null_chk69 = icmp eq i64 %cast68, 0
   %null_ext70 = zext i1 %null_chk69 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13514, i64 5, ptr @sty_name.13515, i64 8, i64 %null_ext70, ptr @src_file.13516, i64 88, i64 511)
+  call void @forge_null_deref_trap(ptr @fld_name.13514, i64 5, ptr @sty_name.13515, i64 8, i64 %null_ext70, ptr @src_file.13516, i64 88, i64 515)
   %enums_ptr = getelementptr inbounds nuw %TypeRegs, ptr %regs67, i32 0, i32 1
   %enums = load ptr, ptr %enums_ptr, align 8
   %ty71 = load ptr, ptr %ty, align 8
@@ -158183,7 +158228,7 @@ parm_body114:                                     ; preds = %parm_next107
   br label %pmatch_end
 
 parm_next115:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13534, i64 -1, ptr @mu_file.13535, i64 550)
+  call void @forge_match_unreachable(ptr @.match_fn.13534, i64 -1, ptr @mu_file.13535, i64 554)
   unreachable
 
 sc_rhs:                                           ; preds = %pmatch_end
@@ -158474,7 +158519,7 @@ ifcont268:                                        ; preds = %if_else271, %ifcont
   %cast312 = ptrtoint ptr %enum_l311 to i64
   %null_chk313 = icmp eq i64 %cast312, 0
   %null_ext314 = zext i1 %null_chk313 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13547, i64 5, ptr @sty_name.13548, i64 10, i64 %null_ext314, ptr @src_file.13549, i64 88, i64 600)
+  call void @forge_null_deref_trap(ptr @fld_name.13547, i64 5, ptr @sty_name.13548, i64 10, i64 %null_ext314, ptr @src_file.13549, i64 88, i64 604)
   %found_ptr315 = getelementptr inbounds nuw %EnumLookup, ptr %enum_l311, i32 0, i32 0
   %found316 = load i64, ptr %found_ptr315, align 8
   %if_cond318 = icmp ne i64 %found316, 0
@@ -158492,7 +158537,7 @@ if_then270:                                       ; preds = %ifcont153
   %cast276 = ptrtoint ptr %me275 to i64
   %null_chk = icmp eq i64 %cast276, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13541, i64 5, ptr @sty_name.13542, i64 10, i64 %null_ext, ptr @src_file.13543, i64 88, i64 595)
+  call void @forge_null_deref_trap(ptr @fld_name.13541, i64 5, ptr @sty_name.13542, i64 10, i64 %null_ext, ptr @src_file.13543, i64 88, i64 599)
   %found_ptr = getelementptr inbounds nuw %EnumLookup, ptr %me275, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %if_cond278 = icmp ne i64 %found, 0
@@ -158510,7 +158555,7 @@ ifcont277:                                        ; preds = %if_else280
   %cast292 = ptrtoint ptr %ms291 to i64
   %null_chk293 = icmp eq i64 %cast292, 0
   %null_ext294 = zext i1 %null_chk293 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13544, i64 5, ptr @sty_name.13545, i64 12, i64 %null_ext294, ptr @src_file.13546, i64 88, i64 597)
+  call void @forge_null_deref_trap(ptr @fld_name.13544, i64 5, ptr @sty_name.13545, i64 12, i64 %null_ext294, ptr @src_file.13546, i64 88, i64 601)
   %found_ptr295 = getelementptr inbounds nuw %StructLookup, ptr %ms291, i32 0, i32 0
   %found296 = load i64, ptr %found_ptr295, align 8
   %if_cond298 = icmp ne i64 %found296, 0
@@ -158566,7 +158611,7 @@ ifcont317:                                        ; preds = %if_else320
   %cast332 = ptrtoint ptr %struct_l331 to i64
   %null_chk333 = icmp eq i64 %cast332, 0
   %null_ext334 = zext i1 %null_chk333 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13550, i64 5, ptr @sty_name.13551, i64 12, i64 %null_ext334, ptr @src_file.13552, i64 88, i64 604)
+  call void @forge_null_deref_trap(ptr @fld_name.13550, i64 5, ptr @sty_name.13551, i64 12, i64 %null_ext334, ptr @src_file.13552, i64 88, i64 608)
   %found_ptr335 = getelementptr inbounds nuw %StructLookup, ptr %struct_l331, i32 0, i32 0
   %found336 = load i64, ptr %found_ptr335, align 8
   %if_cond338 = icmp ne i64 %found336, 0
@@ -158634,7 +158679,7 @@ entry:
   %cast = ptrtoint ptr %ctx1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13553, i64 7, ptr @sty_name.13554, i64 3, i64 %null_ext, ptr @src_file.13555, i64 88, i64 612)
+  call void @forge_null_deref_trap(ptr @fld_name.13553, i64 7, ptr @sty_name.13554, i64 3, i64 %null_ext, ptr @src_file.13555, i64 88, i64 616)
   %structs_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx1, i32 0, i32 9
   %structs = load ptr, ptr %structs_ptr, align 8
   %fld_ptr = getelementptr inbounds nuw %TypeRegs, ptr %2, i32 0, i32 0
@@ -158643,7 +158688,7 @@ entry:
   %cast3 = ptrtoint ptr %ctx2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13556, i64 5, ptr @sty_name.13557, i64 3, i64 %null_ext5, ptr @src_file.13558, i64 88, i64 612)
+  call void @forge_null_deref_trap(ptr @fld_name.13556, i64 5, ptr @sty_name.13557, i64 3, i64 %null_ext5, ptr @src_file.13558, i64 88, i64 616)
   %enums_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx2, i32 0, i32 10
   %enums = load ptr, ptr %enums_ptr, align 8
   %fld_ptr6 = getelementptr inbounds nuw %TypeRegs, ptr %2, i32 0, i32 1
@@ -158652,7 +158697,7 @@ entry:
   %cast8 = ptrtoint ptr %ctx7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13559, i64 8, ptr @sty_name.13560, i64 3, i64 %null_ext10, ptr @src_file.13561, i64 88, i64 612)
+  call void @forge_null_deref_trap(ptr @fld_name.13559, i64 8, ptr @sty_name.13560, i64 3, i64 %null_ext10, ptr @src_file.13561, i64 88, i64 616)
   %newtypes_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx7, i32 0, i32 18
   %newtypes = load ptr, ptr %newtypes_ptr, align 8
   %fld_ptr11 = getelementptr inbounds nuw %TypeRegs, ptr %2, i32 0, i32 2
@@ -158661,7 +158706,7 @@ entry:
   %cast13 = ptrtoint ptr %ctx12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13562, i64 13, ptr @sty_name.13563, i64 3, i64 %null_ext15, ptr @src_file.13564, i64 88, i64 612)
+  call void @forge_null_deref_trap(ptr @fld_name.13562, i64 13, ptr @sty_name.13563, i64 3, i64 %null_ext15, ptr @src_file.13564, i64 88, i64 616)
   %union_aliases_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx12, i32 0, i32 19
   %union_aliases = load ptr, ptr %union_aliases_ptr, align 8
   %fld_ptr16 = getelementptr inbounds nuw %TypeRegs, ptr %2, i32 0, i32 3
@@ -158722,7 +158767,7 @@ ifcont37:                                         ; preds = %if_else40
   %cast43 = ptrtoint ptr %ctx42 to i64
   %null_chk44 = icmp eq i64 %cast43, 0
   %null_ext45 = zext i1 %null_chk44 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13568, i64 11, ptr @sty_name.13569, i64 3, i64 %null_ext45, ptr @src_file.13570, i64 88, i64 617)
+  call void @forge_null_deref_trap(ptr @fld_name.13568, i64 11, ptr @sty_name.13569, i64 3, i64 %null_ext45, ptr @src_file.13570, i64 88, i64 621)
   %trait_decls_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx42, i32 0, i32 17
   %trait_decls = load ptr, ptr %trait_decls_ptr, align 8
   %ty46 = load ptr, ptr %ty, align 8
@@ -158966,7 +159011,7 @@ march_arm83:                                      ; preds = %march_next79
   br label %match_end
 
 march_next84:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13571, i64 %tag, ptr @mu_file.13572, i64 632)
+  call void @forge_match_unreachable(ptr @.match_fn.13571, i64 %tag, ptr @mu_file.13572, i64 636)
   unreachable
 }
 
@@ -159168,7 +159213,7 @@ march_arm81:                                      ; preds = %march_next77
   br label %match_end
 
 march_next82:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13573, i64 %tag, ptr @mu_file.13574, i64 655)
+  call void @forge_match_unreachable(ptr @.match_fn.13573, i64 %tag, ptr @mu_file.13574, i64 659)
   unreachable
 }
 
@@ -159225,7 +159270,7 @@ march_arm11:                                      ; preds = %march_next9
   br label %match_end
 
 march_next12:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13575, i64 %tag, ptr @mu_file.13576, i64 678)
+  call void @forge_match_unreachable(ptr @.match_fn.13575, i64 %tag, ptr @mu_file.13576, i64 682)
   unreachable
 }
 
@@ -159239,14 +159284,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13577, i64 2, ptr @sty_name.13578, i64 3, i64 %null_ext, ptr @src_file.13579, i64 88, i64 694)
+  call void @forge_null_deref_trap(ptr @fld_name.13577, i64 2, ptr @sty_name.13578, i64 3, i64 %null_ext, ptr @src_file.13579, i64 88, i64 698)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13580, i64 10, ptr @sty_name.13581, i64 3, i64 %null_ext5, ptr @src_file.13582, i64 88, i64 694)
+  call void @forge_null_deref_trap(ptr @fld_name.13580, i64 10, ptr @sty_name.13581, i64 3, i64 %null_ext5, ptr @src_file.13582, i64 88, i64 698)
   %current_fn_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 3
   %current_fn = load ptr, ptr %current_fn_ptr, align 8
   %name6 = load ptr, ptr %name, align 8
@@ -159266,7 +159311,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13583, i64 2, ptr @sty_name.13584, i64 3, i64 %null_ext, ptr @src_file.13585, i64 88, i64 695)
+  call void @forge_null_deref_trap(ptr @fld_name.13583, i64 2, ptr @sty_name.13584, i64 3, i64 %null_ext, ptr @src_file.13585, i64 88, i64 699)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %fn_val2 = load ptr, ptr %fn_val, align 8
@@ -159285,7 +159330,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13586, i64 8, ptr @sty_name.13587, i64 3, i64 %null_ext, ptr @src_file.13588, i64 88, i64 696)
+  call void @forge_null_deref_trap(ptr @fld_name.13586, i64 8, ptr @sty_name.13587, i64 3, i64 %null_ext, ptr @src_file.13588, i64 88, i64 700)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %value2 = load i64, ptr %value, align 8
@@ -159303,7 +159348,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13589, i64 2, ptr @sty_name.13590, i64 3, i64 %null_ext, ptr @src_file.13591, i64 88, i64 697)
+  call void @forge_null_deref_trap(ptr @fld_name.13589, i64 2, ptr @sty_name.13590, i64 3, i64 %null_ext, ptr @src_file.13591, i64 88, i64 701)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %2 = call ptr @forge_llvm_int8_type(ptr %lc)
@@ -159322,7 +159367,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13592, i64 6, ptr @sty_name.13593, i64 3, i64 %null_ext, ptr @src_file.13594, i64 88, i64 698)
+  call void @forge_null_deref_trap(ptr @fld_name.13592, i64 6, ptr @sty_name.13593, i64 3, i64 %null_ext, ptr @src_file.13594, i64 88, i64 702)
   %module_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -159340,7 +159385,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13595, i64 4, ptr @sty_name.13596, i64 3, i64 %null_ext, ptr @src_file.13597, i64 88, i64 699)
+  call void @forge_null_deref_trap(ptr @fld_name.13595, i64 4, ptr @sty_name.13596, i64 3, i64 %null_ext, ptr @src_file.13597, i64 88, i64 703)
   %2 = call ptr @forge_array_new()
   %size2 = load ptr, ptr %size, align 8
   %cast3 = ptrtoint ptr %size2 to i64
@@ -159359,7 +159404,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13599, i64 4, ptr @sty_name.13600, i64 3, i64 %null_ext, ptr @src_file.13601, i64 88, i64 700)
+  call void @forge_null_deref_trap(ptr @fld_name.13599, i64 4, ptr @sty_name.13600, i64 3, i64 %null_ext, ptr @src_file.13601, i64 88, i64 704)
   %2 = call ptr @forge_array_new()
   %size2 = load ptr, ptr %size, align 8
   %cast3 = ptrtoint ptr %size2 to i64
@@ -159378,7 +159423,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13603, i64 4, ptr @sty_name.13604, i64 3, i64 %null_ext, ptr @src_file.13605, i64 88, i64 701)
+  call void @forge_null_deref_trap(ptr @fld_name.13603, i64 4, ptr @sty_name.13604, i64 3, i64 %null_ext, ptr @src_file.13605, i64 88, i64 705)
   %2 = call ptr @forge_array_new()
   %val2 = load ptr, ptr %val, align 8
   %cast3 = ptrtoint ptr %val2 to i64
@@ -159397,7 +159442,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13607, i64 4, ptr @sty_name.13608, i64 3, i64 %null_ext, ptr @src_file.13609, i64 88, i64 702)
+  call void @forge_null_deref_trap(ptr @fld_name.13607, i64 4, ptr @sty_name.13608, i64 3, i64 %null_ext, ptr @src_file.13609, i64 88, i64 706)
   %2 = call ptr @forge_array_new()
   %val2 = load ptr, ptr %val, align 8
   %cast3 = ptrtoint ptr %val2 to i64
@@ -159498,7 +159543,7 @@ entry:
   %cast = ptrtoint ptr %self2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13611, i64 14, ptr @sty_name.13612, i64 3, i64 %null_ext, ptr @src_file.13613, i64 88, i64 716)
+  call void @forge_null_deref_trap(ptr @fld_name.13611, i64 14, ptr @sty_name.13612, i64 3, i64 %null_ext, ptr @src_file.13613, i64 88, i64 720)
   %arr3 = load ptr, ptr %arr, align 8
   %count4 = load i64, ptr %count, align 8
   %3 = call i64 @Ctx__fill_i64_types(ptr %self2, ptr %arr3, i64 0, i64 %count4)
@@ -159530,7 +159575,7 @@ ifcont:                                           ; preds = %if_else
   %cast = ptrtoint ptr %self5 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13614, i64 8, ptr @sty_name.13615, i64 3, i64 %null_ext, ptr @src_file.13616, i64 88, i64 722)
+  call void @forge_null_deref_trap(ptr @fld_name.13614, i64 8, ptr @sty_name.13615, i64 3, i64 %null_ext, ptr @src_file.13616, i64 88, i64 726)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self5, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %4 = call i64 @forge_llvm_type_array_set(ptr %arr3, i64 %idx4, ptr %i64_type)
@@ -159538,7 +159583,7 @@ ifcont:                                           ; preds = %if_else
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13617, i64 14, ptr @sty_name.13618, i64 3, i64 %null_ext9, ptr @src_file.13619, i64 88, i64 723)
+  call void @forge_null_deref_trap(ptr @fld_name.13617, i64 14, ptr @sty_name.13618, i64 3, i64 %null_ext9, ptr @src_file.13619, i64 88, i64 727)
   %arr10 = load ptr, ptr %arr, align 8
   %idx11 = load i64, ptr %idx, align 8
   %add = add i64 %idx11, 1
@@ -159582,7 +159627,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13620, i64 6, ptr @sty_name.13621, i64 3, i64 %null_ext, ptr @src_file.13622, i64 88, i64 728)
+  call void @forge_null_deref_trap(ptr @fld_name.13620, i64 6, ptr @sty_name.13621, i64 3, i64 %null_ext, ptr @src_file.13622, i64 88, i64 732)
   %module_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -159650,7 +159695,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13623, i64 7, ptr @sty_name.13624, i64 3, i64 %null_ext, ptr @src_file.13625, i64 88, i64 738)
+  call void @forge_null_deref_trap(ptr @fld_name.13623, i64 7, ptr @sty_name.13624, i64 3, i64 %null_ext, ptr @src_file.13625, i64 88, i64 742)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %fn_ty2 = load ptr, ptr %fn_ty, align 8
@@ -159674,7 +159719,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13626, i64 7, ptr @sty_name.13627, i64 3, i64 %null_ext, ptr @src_file.13628, i64 88, i64 746)
+  call void @forge_null_deref_trap(ptr @fld_name.13626, i64 7, ptr @sty_name.13627, i64 3, i64 %null_ext, ptr @src_file.13628, i64 88, i64 750)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -159682,7 +159727,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13629, i64 8, ptr @sty_name.13630, i64 3, i64 %null_ext6, ptr @src_file.13631, i64 88, i64 746)
+  call void @forge_null_deref_trap(ptr @fld_name.13629, i64 8, ptr @sty_name.13630, i64 3, i64 %null_ext6, ptr @src_file.13631, i64 88, i64 750)
   %ptr_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %3 = call ptr @forge_llvm_cast_to_type(ptr %builder, ptr %val2, ptr %ptr_type)
@@ -159701,7 +159746,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13632, i64 7, ptr @sty_name.13633, i64 3, i64 %null_ext, ptr @src_file.13634, i64 88, i64 747)
+  call void @forge_null_deref_trap(ptr @fld_name.13632, i64 7, ptr @sty_name.13633, i64 3, i64 %null_ext, ptr @src_file.13634, i64 88, i64 751)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -159709,7 +159754,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13635, i64 8, ptr @sty_name.13636, i64 3, i64 %null_ext6, ptr @src_file.13637, i64 88, i64 747)
+  call void @forge_null_deref_trap(ptr @fld_name.13635, i64 8, ptr @sty_name.13636, i64 3, i64 %null_ext6, ptr @src_file.13637, i64 88, i64 751)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %3 = call ptr @forge_llvm_cast_to_type(ptr %builder, ptr %val2, ptr %i64_type)
@@ -159728,7 +159773,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13638, i64 7, ptr @sty_name.13639, i64 3, i64 %null_ext, ptr @src_file.13640, i64 88, i64 748)
+  call void @forge_null_deref_trap(ptr @fld_name.13638, i64 7, ptr @sty_name.13639, i64 3, i64 %null_ext, ptr @src_file.13640, i64 88, i64 752)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -159736,7 +159781,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13641, i64 11, ptr @sty_name.13642, i64 3, i64 %null_ext6, ptr @src_file.13643, i64 88, i64 748)
+  call void @forge_null_deref_trap(ptr @fld_name.13641, i64 11, ptr @sty_name.13642, i64 3, i64 %null_ext6, ptr @src_file.13643, i64 88, i64 752)
   %double_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %3 = call ptr @forge_llvm_cast_to_type(ptr %builder, ptr %val2, ptr %double_type)
@@ -159755,7 +159800,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13644, i64 7, ptr @sty_name.13645, i64 3, i64 %null_ext, ptr @src_file.13646, i64 88, i64 751)
+  call void @forge_null_deref_trap(ptr @fld_name.13644, i64 7, ptr @sty_name.13645, i64 3, i64 %null_ext, ptr @src_file.13646, i64 88, i64 755)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -159763,7 +159808,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13647, i64 8, ptr @sty_name.13648, i64 3, i64 %null_ext6, ptr @src_file.13649, i64 88, i64 751)
+  call void @forge_null_deref_trap(ptr @fld_name.13647, i64 8, ptr @sty_name.13648, i64 3, i64 %null_ext6, ptr @src_file.13649, i64 88, i64 755)
   %vt7 = load ptr, ptr %vt, align 8
   %3 = call ptr @Ctx__type_for(ptr %self3, ptr %vt7)
   %4 = call ptr @forge_llvm_cast_to_type(ptr %builder, ptr %val2, ptr %3)
@@ -159782,7 +159827,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13650, i64 7, ptr @sty_name.13651, i64 3, i64 %null_ext, ptr @src_file.13652, i64 88, i64 754)
+  call void @forge_null_deref_trap(ptr @fld_name.13650, i64 7, ptr @sty_name.13651, i64 3, i64 %null_ext, ptr @src_file.13652, i64 88, i64 758)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -159790,7 +159835,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13653, i64 11, ptr @sty_name.13654, i64 3, i64 %null_ext6, ptr @src_file.13655, i64 88, i64 754)
+  call void @forge_null_deref_trap(ptr @fld_name.13653, i64 11, ptr @sty_name.13654, i64 3, i64 %null_ext6, ptr @src_file.13655, i64 88, i64 758)
   %double_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -159810,7 +159855,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13656, i64 7, ptr @sty_name.13657, i64 3, i64 %null_ext, ptr @src_file.13658, i64 88, i64 755)
+  call void @forge_null_deref_trap(ptr @fld_name.13656, i64 7, ptr @sty_name.13657, i64 3, i64 %null_ext, ptr @src_file.13658, i64 88, i64 759)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -159818,7 +159863,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13659, i64 8, ptr @sty_name.13660, i64 3, i64 %null_ext6, ptr @src_file.13661, i64 88, i64 755)
+  call void @forge_null_deref_trap(ptr @fld_name.13659, i64 8, ptr @sty_name.13660, i64 3, i64 %null_ext6, ptr @src_file.13661, i64 88, i64 759)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -159836,28 +159881,28 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13662, i64 8, ptr @sty_name.13663, i64 3, i64 %null_ext, ptr @src_file.13664, i64 88, i64 759)
+  call void @forge_null_deref_trap(ptr @fld_name.13662, i64 8, ptr @sty_name.13663, i64 3, i64 %null_ext, ptr @src_file.13664, i64 88, i64 763)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13665, i64 7, ptr @sty_name.13666, i64 3, i64 %null_ext5, ptr @src_file.13667, i64 88, i64 759)
+  call void @forge_null_deref_trap(ptr @fld_name.13665, i64 7, ptr @sty_name.13666, i64 3, i64 %null_ext5, ptr @src_file.13667, i64 88, i64 763)
   %i1_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13668, i64 11, ptr @sty_name.13669, i64 3, i64 %null_ext9, ptr @src_file.13670, i64 88, i64 759)
+  call void @forge_null_deref_trap(ptr @fld_name.13668, i64 11, ptr @sty_name.13669, i64 3, i64 %null_ext9, ptr @src_file.13670, i64 88, i64 763)
   %double_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self6, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %self10 = load ptr, ptr %self, align 8
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13671, i64 8, ptr @sty_name.13672, i64 3, i64 %null_ext13, ptr @src_file.13673, i64 88, i64 759)
+  call void @forge_null_deref_trap(ptr @fld_name.13671, i64 8, ptr @sty_name.13672, i64 3, i64 %null_ext13, ptr @src_file.13673, i64 88, i64 763)
   %ptr_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self10, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %vt14 = load ptr, ptr %vt, align 8
@@ -159877,14 +159922,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13674, i64 7, ptr @sty_name.13675, i64 3, i64 %null_ext, ptr @src_file.13676, i64 88, i64 763)
+  call void @forge_null_deref_trap(ptr @fld_name.13674, i64 7, ptr @sty_name.13675, i64 3, i64 %null_ext, ptr @src_file.13676, i64 88, i64 767)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13677, i64 8, ptr @sty_name.13678, i64 3, i64 %null_ext5, ptr @src_file.13679, i64 88, i64 763)
+  call void @forge_null_deref_trap(ptr @fld_name.13677, i64 8, ptr @sty_name.13678, i64 3, i64 %null_ext5, ptr @src_file.13679, i64 88, i64 767)
   %vt6 = load ptr, ptr %vt, align 8
   %3 = call ptr @Ctx__type_for(ptr %self2, ptr %vt6)
   %name7 = load ptr, ptr %name, align 8
@@ -159906,14 +159951,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13680, i64 7, ptr @sty_name.13681, i64 3, i64 %null_ext, ptr @src_file.13682, i64 88, i64 764)
+  call void @forge_null_deref_trap(ptr @fld_name.13680, i64 7, ptr @sty_name.13681, i64 3, i64 %null_ext, ptr @src_file.13682, i64 88, i64 768)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13683, i64 8, ptr @sty_name.13684, i64 3, i64 %null_ext5, ptr @src_file.13685, i64 88, i64 764)
+  call void @forge_null_deref_trap(ptr @fld_name.13683, i64 8, ptr @sty_name.13684, i64 3, i64 %null_ext5, ptr @src_file.13685, i64 88, i64 768)
   %vt6 = load ptr, ptr %vt, align 8
   %4 = call ptr @Ctx__type_for(ptr %self2, ptr %vt6)
   %src7 = load ptr, ptr %src, align 8
@@ -159932,7 +159977,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13686, i64 8, ptr @sty_name.13687, i64 3, i64 %null_ext, ptr @src_file.13688, i64 88, i64 768)
+  call void @forge_null_deref_trap(ptr @fld_name.13686, i64 8, ptr @sty_name.13687, i64 3, i64 %null_ext, ptr @src_file.13688, i64 88, i64 772)
   %vt2 = load ptr, ptr %vt, align 8
   %2 = call ptr @Ctx__type_for(ptr %self1, ptr %vt2)
   %3 = call ptr @forge_llvm_const_null(ptr %2)
@@ -159951,14 +159996,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13689, i64 7, ptr @sty_name.13690, i64 3, i64 %null_ext, ptr @src_file.13691, i64 88, i64 772)
+  call void @forge_null_deref_trap(ptr @fld_name.13689, i64 7, ptr @sty_name.13690, i64 3, i64 %null_ext, ptr @src_file.13691, i64 88, i64 776)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13692, i64 7, ptr @sty_name.13693, i64 3, i64 %null_ext5, ptr @src_file.13694, i64 88, i64 772)
+  call void @forge_null_deref_trap(ptr @fld_name.13692, i64 7, ptr @sty_name.13693, i64 3, i64 %null_ext5, ptr @src_file.13694, i64 88, i64 776)
   %val6 = load ptr, ptr %val, align 8
   %ret_ty7 = load ptr, ptr %ret_ty, align 8
   %3 = call ptr @Ctx__cast_to(ptr %self2, ptr %val6, ptr %ret_ty7)
@@ -159977,14 +160022,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13695, i64 7, ptr @sty_name.13696, i64 3, i64 %null_ext, ptr @src_file.13697, i64 88, i64 773)
+  call void @forge_null_deref_trap(ptr @fld_name.13695, i64 7, ptr @sty_name.13696, i64 3, i64 %null_ext, ptr @src_file.13697, i64 88, i64 777)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13698, i64 8, ptr @sty_name.13699, i64 3, i64 %null_ext5, ptr @src_file.13700, i64 88, i64 773)
+  call void @forge_null_deref_trap(ptr @fld_name.13698, i64 8, ptr @sty_name.13699, i64 3, i64 %null_ext5, ptr @src_file.13700, i64 88, i64 777)
   %ret_ty6 = load ptr, ptr %ret_ty, align 8
   %2 = call ptr @Ctx__zero_for(ptr %self2, ptr %ret_ty6)
   %3 = call ptr @forge_llvm_build_ret(ptr %builder, ptr %2)
@@ -160011,7 +160056,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13701, i64 6, ptr @sty_name.13702, i64 3, i64 %null_ext, ptr @src_file.13703, i64 88, i64 778)
+  call void @forge_null_deref_trap(ptr @fld_name.13701, i64 6, ptr @sty_name.13702, i64 3, i64 %null_ext, ptr @src_file.13703, i64 88, i64 782)
   %module_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -160058,7 +160103,7 @@ for.exit:                                         ; preds = %for.cond
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13704, i64 7, ptr @sty_name.13705, i64 3, i64 %null_ext17, ptr @src_file.13706, i64 88, i64 785)
+  call void @forge_null_deref_trap(ptr @fld_name.13704, i64 7, ptr @sty_name.13705, i64 3, i64 %null_ext17, ptr @src_file.13706, i64 88, i64 789)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self14, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ft18 = load ptr, ptr %ft, align 8
@@ -160128,7 +160173,7 @@ for.exit:                                         ; preds = %for.cond
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13708, i64 7, ptr @sty_name.13709, i64 3, i64 %null_ext, ptr @src_file.13710, i64 88, i64 798)
+  call void @forge_null_deref_trap(ptr @fld_name.13708, i64 7, ptr @sty_name.13709, i64 3, i64 %null_ext, ptr @src_file.13710, i64 88, i64 802)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self11, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ft13 = load ptr, ptr %ft, align 8
@@ -160200,7 +160245,7 @@ for.exit:                                         ; preds = %for.cond
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13712, i64 7, ptr @sty_name.13713, i64 3, i64 %null_ext, ptr @src_file.13714, i64 88, i64 811)
+  call void @forge_null_deref_trap(ptr @fld_name.13712, i64 7, ptr @sty_name.13713, i64 3, i64 %null_ext, ptr @src_file.13714, i64 88, i64 815)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self11, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ft13 = load ptr, ptr %ft, align 8
@@ -160234,7 +160279,7 @@ entry:
   %cast = ptrtoint ptr %self2 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13715, i64 7, ptr @sty_name.13716, i64 3, i64 %null_ext, ptr @src_file.13717, i64 88, i64 821)
+  call void @forge_null_deref_trap(ptr @fld_name.13715, i64 7, ptr @sty_name.13716, i64 3, i64 %null_ext, ptr @src_file.13717, i64 88, i64 825)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ft3 = load ptr, ptr %ft, align 8
@@ -160262,7 +160307,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13719, i64 6, ptr @sty_name.13720, i64 3, i64 %null_ext, ptr @src_file.13721, i64 88, i64 826)
+  call void @forge_null_deref_trap(ptr @fld_name.13719, i64 6, ptr @sty_name.13720, i64 3, i64 %null_ext, ptr @src_file.13721, i64 88, i64 830)
   %val2 = load ptr, ptr %val, align 8
   %4 = call ptr @Ctx__to_i64(ptr %self1, ptr %val2, ptr @.str.13722)
   store ptr %4, ptr %val_i64, align 8
@@ -160270,13 +160315,13 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13723, i64 4, ptr @sty_name.13724, i64 3, i64 %null_ext6, ptr @src_file.13725, i64 88, i64 827)
+  call void @forge_null_deref_trap(ptr @fld_name.13723, i64 4, ptr @sty_name.13724, i64 3, i64 %null_ext6, ptr @src_file.13725, i64 88, i64 831)
   %val_i647 = load ptr, ptr %val_i64, align 8
   %self8 = load ptr, ptr %self, align 8
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13726, i64 8, ptr @sty_name.13727, i64 3, i64 %null_ext11, ptr @src_file.13728, i64 88, i64 827)
+  call void @forge_null_deref_trap(ptr @fld_name.13726, i64 8, ptr @sty_name.13727, i64 3, i64 %null_ext11, ptr @src_file.13728, i64 88, i64 831)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self8, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %5 = call ptr @forge_llvm_const_int(ptr %i64_type, i64 0, i64 0)
@@ -160286,13 +160331,13 @@ entry:
   %cast13 = ptrtoint ptr %self12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13730, i64 4, ptr @sty_name.13731, i64 3, i64 %null_ext15, ptr @src_file.13732, i64 88, i64 828)
+  call void @forge_null_deref_trap(ptr @fld_name.13730, i64 4, ptr @sty_name.13731, i64 3, i64 %null_ext15, ptr @src_file.13732, i64 88, i64 832)
   %is_null_i116 = load ptr, ptr %is_null_i1, align 8
   %self17 = load ptr, ptr %self, align 8
   %cast18 = ptrtoint ptr %self17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13733, i64 8, ptr @sty_name.13734, i64 3, i64 %null_ext20, ptr @src_file.13735, i64 88, i64 828)
+  call void @forge_null_deref_trap(ptr @fld_name.13733, i64 8, ptr @sty_name.13734, i64 3, i64 %null_ext20, ptr @src_file.13735, i64 88, i64 832)
   %i64_type_ptr21 = getelementptr inbounds nuw %Ctx, ptr %self17, i32 0, i32 5
   %i64_type22 = load ptr, ptr %i64_type_ptr21, align 8
   %7 = call ptr @Ctx__zext(ptr %self12, ptr %is_null_i116, ptr %i64_type22, ptr @.str.13736)
@@ -160301,13 +160346,13 @@ entry:
   %cast24 = ptrtoint ptr %self23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13737, i64 4, ptr @sty_name.13738, i64 3, i64 %null_ext26, ptr @src_file.13739, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13737, i64 4, ptr @sty_name.13738, i64 3, i64 %null_ext26, ptr @src_file.13739, i64 88, i64 833)
   %8 = call ptr @forge_array_new()
   %self27 = load ptr, ptr %self, align 8
   %cast28 = ptrtoint ptr %self27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13741, i64 10, ptr @sty_name.13742, i64 3, i64 %null_ext30, ptr @src_file.13743, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13741, i64 10, ptr @sty_name.13742, i64 3, i64 %null_ext30, ptr @src_file.13743, i64 88, i64 833)
   %field_name31 = load ptr, ptr %field_name, align 8
   %9 = call ptr @Ctx__global_str(ptr %self27, ptr %field_name31, ptr @.str.13744)
   %cast32 = ptrtoint ptr %9 to i64
@@ -160316,7 +160361,7 @@ entry:
   %cast34 = ptrtoint ptr %self33 to i64
   %null_chk35 = icmp eq i64 %cast34, 0
   %null_ext36 = zext i1 %null_chk35 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13745, i64 3, ptr @sty_name.13746, i64 3, i64 %null_ext36, ptr @src_file.13747, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13745, i64 3, ptr @sty_name.13746, i64 3, i64 %null_ext36, ptr @src_file.13747, i64 88, i64 833)
   %field_name37 = load ptr, ptr %field_name, align 8
   %10 = call i64 @strlen(ptr %field_name37)
   %11 = call ptr @Ctx__i64(ptr %self33, i64 %10)
@@ -160326,7 +160371,7 @@ entry:
   %cast40 = ptrtoint ptr %self39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13748, i64 10, ptr @sty_name.13749, i64 3, i64 %null_ext42, ptr @src_file.13750, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13748, i64 10, ptr @sty_name.13749, i64 3, i64 %null_ext42, ptr @src_file.13750, i64 88, i64 833)
   %type_name43 = load ptr, ptr %type_name, align 8
   %12 = call ptr @Ctx__global_str(ptr %self39, ptr %type_name43, ptr @.str.13751)
   %cast44 = ptrtoint ptr %12 to i64
@@ -160335,7 +160380,7 @@ entry:
   %cast46 = ptrtoint ptr %self45 to i64
   %null_chk47 = icmp eq i64 %cast46, 0
   %null_ext48 = zext i1 %null_chk47 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13752, i64 3, ptr @sty_name.13753, i64 3, i64 %null_ext48, ptr @src_file.13754, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13752, i64 3, ptr @sty_name.13753, i64 3, i64 %null_ext48, ptr @src_file.13754, i64 88, i64 833)
   %type_name49 = load ptr, ptr %type_name, align 8
   %13 = call i64 @strlen(ptr %type_name49)
   %14 = call ptr @Ctx__i64(ptr %self45, i64 %13)
@@ -160348,12 +160393,12 @@ entry:
   %cast54 = ptrtoint ptr %self53 to i64
   %null_chk55 = icmp eq i64 %cast54, 0
   %null_ext56 = zext i1 %null_chk55 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13755, i64 10, ptr @sty_name.13756, i64 3, i64 %null_ext56, ptr @src_file.13757, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13755, i64 10, ptr @sty_name.13756, i64 3, i64 %null_ext56, ptr @src_file.13757, i64 88, i64 833)
   %self57 = load ptr, ptr %self, align 8
   %cast58 = ptrtoint ptr %self57 to i64
   %null_chk59 = icmp eq i64 %cast58, 0
   %null_ext60 = zext i1 %null_chk59 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13758, i64 11, ptr @sty_name.13759, i64 3, i64 %null_ext60, ptr @src_file.13760, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13758, i64 11, ptr @sty_name.13759, i64 3, i64 %null_ext60, ptr @src_file.13760, i64 88, i64 833)
   %source_file_ptr = getelementptr inbounds nuw %Ctx, ptr %self57, i32 0, i32 21
   %source_file = load ptr, ptr %source_file_ptr, align 8
   %15 = call ptr @Ctx__global_str(ptr %self53, ptr %source_file, ptr @.str.13761)
@@ -160363,12 +160408,12 @@ entry:
   %cast63 = ptrtoint ptr %self62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13762, i64 3, ptr @sty_name.13763, i64 3, i64 %null_ext65, ptr @src_file.13764, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13762, i64 3, ptr @sty_name.13763, i64 3, i64 %null_ext65, ptr @src_file.13764, i64 88, i64 833)
   %self66 = load ptr, ptr %self, align 8
   %cast67 = ptrtoint ptr %self66 to i64
   %null_chk68 = icmp eq i64 %cast67, 0
   %null_ext69 = zext i1 %null_chk68 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13765, i64 11, ptr @sty_name.13766, i64 3, i64 %null_ext69, ptr @src_file.13767, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13765, i64 11, ptr @sty_name.13766, i64 3, i64 %null_ext69, ptr @src_file.13767, i64 88, i64 833)
   %source_file_ptr70 = getelementptr inbounds nuw %Ctx, ptr %self66, i32 0, i32 21
   %source_file71 = load ptr, ptr %source_file_ptr70, align 8
   %16 = call i64 @strlen(ptr %source_file71)
@@ -160379,12 +160424,12 @@ entry:
   %cast74 = ptrtoint ptr %self73 to i64
   %null_chk75 = icmp eq i64 %cast74, 0
   %null_ext76 = zext i1 %null_chk75 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13768, i64 3, ptr @sty_name.13769, i64 3, i64 %null_ext76, ptr @src_file.13770, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13768, i64 3, ptr @sty_name.13769, i64 3, i64 %null_ext76, ptr @src_file.13770, i64 88, i64 833)
   %self77 = load ptr, ptr %self, align 8
   %cast78 = ptrtoint ptr %self77 to i64
   %null_chk79 = icmp eq i64 %cast78, 0
   %null_ext80 = zext i1 %null_chk79 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13771, i64 11, ptr @sty_name.13772, i64 3, i64 %null_ext80, ptr @src_file.13773, i64 88, i64 829)
+  call void @forge_null_deref_trap(ptr @fld_name.13771, i64 11, ptr @sty_name.13772, i64 3, i64 %null_ext80, ptr @src_file.13773, i64 88, i64 833)
   %source_line_ptr = getelementptr inbounds nuw %Ctx, ptr %self77, i32 0, i32 22
   %source_line = load i64, ptr %source_line_ptr, align 8
   %18 = call ptr @Ctx__i64(ptr %self73, i64 %source_line)
@@ -160405,7 +160450,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13774, i64 7, ptr @sty_name.13775, i64 3, i64 %null_ext, ptr @src_file.13776, i64 88, i64 840)
+  call void @forge_null_deref_trap(ptr @fld_name.13774, i64 7, ptr @sty_name.13775, i64 3, i64 %null_ext, ptr @src_file.13776, i64 88, i64 844)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %bb2 = load ptr, ptr %bb, align 8
@@ -160425,7 +160470,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13777, i64 7, ptr @sty_name.13778, i64 3, i64 %null_ext, ptr @src_file.13779, i64 88, i64 845)
+  call void @forge_null_deref_trap(ptr @fld_name.13777, i64 7, ptr @sty_name.13778, i64 3, i64 %null_ext, ptr @src_file.13779, i64 88, i64 849)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -160448,14 +160493,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13780, i64 7, ptr @sty_name.13781, i64 3, i64 %null_ext, ptr @src_file.13782, i64 88, i64 851)
+  call void @forge_null_deref_trap(ptr @fld_name.13780, i64 7, ptr @sty_name.13781, i64 3, i64 %null_ext, ptr @src_file.13782, i64 88, i64 855)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13783, i64 7, ptr @sty_name.13784, i64 3, i64 %null_ext5, ptr @src_file.13785, i64 88, i64 851)
+  call void @forge_null_deref_trap(ptr @fld_name.13783, i64 7, ptr @sty_name.13784, i64 3, i64 %null_ext5, ptr @src_file.13785, i64 88, i64 855)
   %val6 = load ptr, ptr %val, align 8
   %field_ty7 = load ptr, ptr %field_ty, align 8
   %4 = call ptr @Ctx__cast_to(ptr %self2, ptr %val6, ptr %field_ty7)
@@ -160479,7 +160524,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13786, i64 7, ptr @sty_name.13787, i64 3, i64 %null_ext, ptr @src_file.13788, i64 88, i64 854)
+  call void @forge_null_deref_trap(ptr @fld_name.13786, i64 7, ptr @sty_name.13787, i64 3, i64 %null_ext, ptr @src_file.13788, i64 88, i64 858)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ty2 = load ptr, ptr %ty, align 8
@@ -160501,14 +160546,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13789, i64 7, ptr @sty_name.13790, i64 3, i64 %null_ext, ptr @src_file.13791, i64 88, i64 855)
+  call void @forge_null_deref_trap(ptr @fld_name.13789, i64 7, ptr @sty_name.13790, i64 3, i64 %null_ext, ptr @src_file.13791, i64 88, i64 859)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13792, i64 8, ptr @sty_name.13793, i64 3, i64 %null_ext5, ptr @src_file.13794, i64 88, i64 855)
+  call void @forge_null_deref_trap(ptr @fld_name.13792, i64 8, ptr @sty_name.13793, i64 3, i64 %null_ext5, ptr @src_file.13794, i64 88, i64 859)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %src6 = load ptr, ptr %src, align 8
@@ -160529,14 +160574,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13795, i64 7, ptr @sty_name.13796, i64 3, i64 %null_ext, ptr @src_file.13797, i64 88, i64 856)
+  call void @forge_null_deref_trap(ptr @fld_name.13795, i64 7, ptr @sty_name.13796, i64 3, i64 %null_ext, ptr @src_file.13797, i64 88, i64 860)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13798, i64 2, ptr @sty_name.13799, i64 3, i64 %null_ext5, ptr @src_file.13800, i64 88, i64 856)
+  call void @forge_null_deref_trap(ptr @fld_name.13798, i64 2, ptr @sty_name.13799, i64 3, i64 %null_ext5, ptr @src_file.13800, i64 88, i64 860)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %3 = call ptr @forge_llvm_int8_type(ptr %lc)
@@ -160558,7 +160603,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13801, i64 7, ptr @sty_name.13802, i64 3, i64 %null_ext, ptr @src_file.13803, i64 88, i64 857)
+  call void @forge_null_deref_trap(ptr @fld_name.13801, i64 7, ptr @sty_name.13802, i64 3, i64 %null_ext, ptr @src_file.13803, i64 88, i64 861)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ty2 = load ptr, ptr %ty, align 8
@@ -160577,14 +160622,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13804, i64 7, ptr @sty_name.13805, i64 3, i64 %null_ext, ptr @src_file.13806, i64 88, i64 858)
+  call void @forge_null_deref_trap(ptr @fld_name.13804, i64 7, ptr @sty_name.13805, i64 3, i64 %null_ext, ptr @src_file.13806, i64 88, i64 862)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13807, i64 8, ptr @sty_name.13808, i64 3, i64 %null_ext5, ptr @src_file.13809, i64 88, i64 858)
+  call void @forge_null_deref_trap(ptr @fld_name.13807, i64 8, ptr @sty_name.13808, i64 3, i64 %null_ext5, ptr @src_file.13809, i64 88, i64 862)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name6 = load ptr, ptr %name, align 8
@@ -160608,7 +160653,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13810, i64 7, ptr @sty_name.13811, i64 3, i64 %null_ext, ptr @src_file.13812, i64 88, i64 859)
+  call void @forge_null_deref_trap(ptr @fld_name.13810, i64 7, ptr @sty_name.13811, i64 3, i64 %null_ext, ptr @src_file.13812, i64 88, i64 863)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %ty2 = load ptr, ptr %ty, align 8
@@ -160631,7 +160676,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13813, i64 7, ptr @sty_name.13814, i64 3, i64 %null_ext, ptr @src_file.13815, i64 88, i64 860)
+  call void @forge_null_deref_trap(ptr @fld_name.13813, i64 7, ptr @sty_name.13814, i64 3, i64 %null_ext, ptr @src_file.13815, i64 88, i64 864)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %text2 = load ptr, ptr %text, align 8
@@ -160650,7 +160695,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13816, i64 7, ptr @sty_name.13817, i64 3, i64 %null_ext, ptr @src_file.13818, i64 88, i64 863)
+  call void @forge_null_deref_trap(ptr @fld_name.13816, i64 7, ptr @sty_name.13817, i64 3, i64 %null_ext, ptr @src_file.13818, i64 88, i64 867)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %bb2 = load ptr, ptr %bb, align 8
@@ -160673,7 +160718,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13819, i64 7, ptr @sty_name.13820, i64 3, i64 %null_ext, ptr @src_file.13821, i64 88, i64 864)
+  call void @forge_null_deref_trap(ptr @fld_name.13819, i64 7, ptr @sty_name.13820, i64 3, i64 %null_ext, ptr @src_file.13821, i64 88, i64 868)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %cond2 = load ptr, ptr %cond, align 8
@@ -160694,7 +160739,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13822, i64 7, ptr @sty_name.13823, i64 3, i64 %null_ext, ptr @src_file.13824, i64 88, i64 865)
+  call void @forge_null_deref_trap(ptr @fld_name.13822, i64 7, ptr @sty_name.13823, i64 3, i64 %null_ext, ptr @src_file.13824, i64 88, i64 869)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -160711,7 +160756,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13825, i64 7, ptr @sty_name.13826, i64 3, i64 %null_ext, ptr @src_file.13827, i64 88, i64 866)
+  call void @forge_null_deref_trap(ptr @fld_name.13825, i64 7, ptr @sty_name.13826, i64 3, i64 %null_ext, ptr @src_file.13827, i64 88, i64 870)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %1 = call ptr @forge_llvm_build_unreachable(ptr %builder)
@@ -160727,7 +160772,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13828, i64 7, ptr @sty_name.13829, i64 3, i64 %null_ext, ptr @src_file.13830, i64 88, i64 867)
+  call void @forge_null_deref_trap(ptr @fld_name.13828, i64 7, ptr @sty_name.13829, i64 3, i64 %null_ext, ptr @src_file.13830, i64 88, i64 871)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %1 = call i64 @forge_llvm_block_has_terminator(ptr %builder)
@@ -160745,7 +160790,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13831, i64 7, ptr @sty_name.13832, i64 3, i64 %null_ext, ptr @src_file.13833, i64 88, i64 868)
+  call void @forge_null_deref_trap(ptr @fld_name.13831, i64 7, ptr @sty_name.13832, i64 3, i64 %null_ext, ptr @src_file.13833, i64 88, i64 872)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %1 = call ptr @forge_llvm_get_insert_block(ptr %builder)
@@ -160766,7 +160811,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13834, i64 7, ptr @sty_name.13835, i64 3, i64 %null_ext, ptr @src_file.13836, i64 88, i64 871)
+  call void @forge_null_deref_trap(ptr @fld_name.13834, i64 7, ptr @sty_name.13835, i64 3, i64 %null_ext, ptr @src_file.13836, i64 88, i64 875)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160790,7 +160835,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13837, i64 7, ptr @sty_name.13838, i64 3, i64 %null_ext, ptr @src_file.13839, i64 88, i64 872)
+  call void @forge_null_deref_trap(ptr @fld_name.13837, i64 7, ptr @sty_name.13838, i64 3, i64 %null_ext, ptr @src_file.13839, i64 88, i64 876)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160814,7 +160859,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13840, i64 7, ptr @sty_name.13841, i64 3, i64 %null_ext, ptr @src_file.13842, i64 88, i64 873)
+  call void @forge_null_deref_trap(ptr @fld_name.13840, i64 7, ptr @sty_name.13841, i64 3, i64 %null_ext, ptr @src_file.13842, i64 88, i64 877)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160838,7 +160883,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13843, i64 7, ptr @sty_name.13844, i64 3, i64 %null_ext, ptr @src_file.13845, i64 88, i64 874)
+  call void @forge_null_deref_trap(ptr @fld_name.13843, i64 7, ptr @sty_name.13844, i64 3, i64 %null_ext, ptr @src_file.13845, i64 88, i64 878)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160862,7 +160907,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13846, i64 7, ptr @sty_name.13847, i64 3, i64 %null_ext, ptr @src_file.13848, i64 88, i64 875)
+  call void @forge_null_deref_trap(ptr @fld_name.13846, i64 7, ptr @sty_name.13847, i64 3, i64 %null_ext, ptr @src_file.13848, i64 88, i64 879)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160886,7 +160931,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13849, i64 7, ptr @sty_name.13850, i64 3, i64 %null_ext, ptr @src_file.13851, i64 88, i64 876)
+  call void @forge_null_deref_trap(ptr @fld_name.13849, i64 7, ptr @sty_name.13850, i64 3, i64 %null_ext, ptr @src_file.13851, i64 88, i64 880)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160910,7 +160955,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13852, i64 7, ptr @sty_name.13853, i64 3, i64 %null_ext, ptr @src_file.13854, i64 88, i64 877)
+  call void @forge_null_deref_trap(ptr @fld_name.13852, i64 7, ptr @sty_name.13853, i64 3, i64 %null_ext, ptr @src_file.13854, i64 88, i64 881)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160934,7 +160979,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13855, i64 7, ptr @sty_name.13856, i64 3, i64 %null_ext, ptr @src_file.13857, i64 88, i64 878)
+  call void @forge_null_deref_trap(ptr @fld_name.13855, i64 7, ptr @sty_name.13856, i64 3, i64 %null_ext, ptr @src_file.13857, i64 88, i64 882)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160958,7 +161003,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13858, i64 7, ptr @sty_name.13859, i64 3, i64 %null_ext, ptr @src_file.13860, i64 88, i64 879)
+  call void @forge_null_deref_trap(ptr @fld_name.13858, i64 7, ptr @sty_name.13859, i64 3, i64 %null_ext, ptr @src_file.13860, i64 88, i64 883)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -160982,7 +161027,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13861, i64 7, ptr @sty_name.13862, i64 3, i64 %null_ext, ptr @src_file.13863, i64 88, i64 880)
+  call void @forge_null_deref_trap(ptr @fld_name.13861, i64 7, ptr @sty_name.13862, i64 3, i64 %null_ext, ptr @src_file.13863, i64 88, i64 884)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161004,7 +161049,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13864, i64 7, ptr @sty_name.13865, i64 3, i64 %null_ext, ptr @src_file.13866, i64 88, i64 881)
+  call void @forge_null_deref_trap(ptr @fld_name.13864, i64 7, ptr @sty_name.13865, i64 3, i64 %null_ext, ptr @src_file.13866, i64 88, i64 885)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -161029,7 +161074,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13867, i64 7, ptr @sty_name.13868, i64 3, i64 %null_ext, ptr @src_file.13869, i64 88, i64 884)
+  call void @forge_null_deref_trap(ptr @fld_name.13867, i64 7, ptr @sty_name.13868, i64 3, i64 %null_ext, ptr @src_file.13869, i64 88, i64 888)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %pred2 = load i64, ptr %pred, align 8
@@ -161056,7 +161101,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13870, i64 7, ptr @sty_name.13871, i64 3, i64 %null_ext, ptr @src_file.13872, i64 88, i64 885)
+  call void @forge_null_deref_trap(ptr @fld_name.13870, i64 7, ptr @sty_name.13871, i64 3, i64 %null_ext, ptr @src_file.13872, i64 88, i64 889)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %pred2 = load i64, ptr %pred, align 8
@@ -161081,7 +161126,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13873, i64 7, ptr @sty_name.13874, i64 3, i64 %null_ext, ptr @src_file.13875, i64 88, i64 886)
+  call void @forge_null_deref_trap(ptr @fld_name.13873, i64 7, ptr @sty_name.13874, i64 3, i64 %null_ext, ptr @src_file.13875, i64 88, i64 890)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -161105,7 +161150,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13876, i64 7, ptr @sty_name.13877, i64 3, i64 %null_ext, ptr @src_file.13878, i64 88, i64 887)
+  call void @forge_null_deref_trap(ptr @fld_name.13876, i64 7, ptr @sty_name.13877, i64 3, i64 %null_ext, ptr @src_file.13878, i64 88, i64 891)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -161129,7 +161174,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13879, i64 7, ptr @sty_name.13880, i64 3, i64 %null_ext, ptr @src_file.13881, i64 88, i64 890)
+  call void @forge_null_deref_trap(ptr @fld_name.13879, i64 7, ptr @sty_name.13880, i64 3, i64 %null_ext, ptr @src_file.13881, i64 88, i64 894)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161153,7 +161198,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13882, i64 7, ptr @sty_name.13883, i64 3, i64 %null_ext, ptr @src_file.13884, i64 88, i64 891)
+  call void @forge_null_deref_trap(ptr @fld_name.13882, i64 7, ptr @sty_name.13883, i64 3, i64 %null_ext, ptr @src_file.13884, i64 88, i64 895)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161177,7 +161222,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13885, i64 7, ptr @sty_name.13886, i64 3, i64 %null_ext, ptr @src_file.13887, i64 88, i64 892)
+  call void @forge_null_deref_trap(ptr @fld_name.13885, i64 7, ptr @sty_name.13886, i64 3, i64 %null_ext, ptr @src_file.13887, i64 88, i64 896)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161201,7 +161246,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13888, i64 7, ptr @sty_name.13889, i64 3, i64 %null_ext, ptr @src_file.13890, i64 88, i64 893)
+  call void @forge_null_deref_trap(ptr @fld_name.13888, i64 7, ptr @sty_name.13889, i64 3, i64 %null_ext, ptr @src_file.13890, i64 88, i64 897)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161225,7 +161270,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13891, i64 7, ptr @sty_name.13892, i64 3, i64 %null_ext, ptr @src_file.13893, i64 88, i64 894)
+  call void @forge_null_deref_trap(ptr @fld_name.13891, i64 7, ptr @sty_name.13892, i64 3, i64 %null_ext, ptr @src_file.13893, i64 88, i64 898)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161247,7 +161292,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13894, i64 7, ptr @sty_name.13895, i64 3, i64 %null_ext, ptr @src_file.13896, i64 88, i64 895)
+  call void @forge_null_deref_trap(ptr @fld_name.13894, i64 7, ptr @sty_name.13895, i64 3, i64 %null_ext, ptr @src_file.13896, i64 88, i64 899)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -161266,14 +161311,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13897, i64 7, ptr @sty_name.13898, i64 3, i64 %null_ext, ptr @src_file.13899, i64 88, i64 898)
+  call void @forge_null_deref_trap(ptr @fld_name.13897, i64 7, ptr @sty_name.13898, i64 3, i64 %null_ext, ptr @src_file.13899, i64 88, i64 902)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13900, i64 7, ptr @sty_name.13901, i64 3, i64 %null_ext5, ptr @src_file.13902, i64 88, i64 898)
+  call void @forge_null_deref_trap(ptr @fld_name.13900, i64 7, ptr @sty_name.13901, i64 3, i64 %null_ext5, ptr @src_file.13902, i64 88, i64 902)
   %i1_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %name6 = load ptr, ptr %name, align 8
@@ -161293,14 +161338,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13903, i64 7, ptr @sty_name.13904, i64 3, i64 %null_ext, ptr @src_file.13905, i64 88, i64 899)
+  call void @forge_null_deref_trap(ptr @fld_name.13903, i64 7, ptr @sty_name.13904, i64 3, i64 %null_ext, ptr @src_file.13905, i64 88, i64 903)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13906, i64 8, ptr @sty_name.13907, i64 3, i64 %null_ext5, ptr @src_file.13908, i64 88, i64 899)
+  call void @forge_null_deref_trap(ptr @fld_name.13906, i64 8, ptr @sty_name.13907, i64 3, i64 %null_ext5, ptr @src_file.13908, i64 88, i64 903)
   %ty6 = load ptr, ptr %ty, align 8
   %3 = call ptr @Ctx__type_for(ptr %self2, ptr %ty6)
   %name7 = load ptr, ptr %name, align 8
@@ -161335,7 +161380,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13909, i64 7, ptr @sty_name.13910, i64 3, i64 %null_ext, ptr @src_file.13911, i64 88, i64 903)
+  call void @forge_null_deref_trap(ptr @fld_name.13909, i64 7, ptr @sty_name.13910, i64 3, i64 %null_ext, ptr @src_file.13911, i64 88, i64 907)
   %i1_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %val2 = load i64, ptr %val, align 8
@@ -161353,7 +161398,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13912, i64 2, ptr @sty_name.13913, i64 3, i64 %null_ext, ptr @src_file.13914, i64 88, i64 906)
+  call void @forge_null_deref_trap(ptr @fld_name.13912, i64 2, ptr @sty_name.13913, i64 3, i64 %null_ext, ptr @src_file.13914, i64 88, i64 910)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -161373,7 +161418,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13915, i64 7, ptr @sty_name.13916, i64 3, i64 %null_ext, ptr @src_file.13917, i64 88, i64 907)
+  call void @forge_null_deref_trap(ptr @fld_name.13915, i64 7, ptr @sty_name.13916, i64 3, i64 %null_ext, ptr @src_file.13917, i64 88, i64 911)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -161381,7 +161426,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13918, i64 8, ptr @sty_name.13919, i64 3, i64 %null_ext6, ptr @src_file.13920, i64 88, i64 907)
+  call void @forge_null_deref_trap(ptr @fld_name.13918, i64 8, ptr @sty_name.13919, i64 3, i64 %null_ext6, ptr @src_file.13920, i64 88, i64 911)
   %ptr_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -161401,7 +161446,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13921, i64 7, ptr @sty_name.13922, i64 3, i64 %null_ext, ptr @src_file.13923, i64 88, i64 908)
+  call void @forge_null_deref_trap(ptr @fld_name.13921, i64 7, ptr @sty_name.13922, i64 3, i64 %null_ext, ptr @src_file.13923, i64 88, i64 912)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val2 = load ptr, ptr %val, align 8
@@ -161409,7 +161454,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13924, i64 8, ptr @sty_name.13925, i64 3, i64 %null_ext6, ptr @src_file.13926, i64 88, i64 908)
+  call void @forge_null_deref_trap(ptr @fld_name.13924, i64 8, ptr @sty_name.13925, i64 3, i64 %null_ext6, ptr @src_file.13926, i64 88, i64 912)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -161433,7 +161478,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13927, i64 7, ptr @sty_name.13928, i64 3, i64 %null_ext, ptr @src_file.13929, i64 88, i64 913)
+  call void @forge_null_deref_trap(ptr @fld_name.13927, i64 7, ptr @sty_name.13928, i64 3, i64 %null_ext, ptr @src_file.13929, i64 88, i64 917)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %base2 = load ptr, ptr %base, align 8
@@ -161441,7 +161486,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13930, i64 8, ptr @sty_name.13931, i64 3, i64 %null_ext6, ptr @src_file.13932, i64 88, i64 913)
+  call void @forge_null_deref_trap(ptr @fld_name.13930, i64 8, ptr @sty_name.13931, i64 3, i64 %null_ext6, ptr @src_file.13932, i64 88, i64 917)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name7 = load ptr, ptr %name, align 8
@@ -161462,7 +161507,7 @@ entry:
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13934, i64 7, ptr @sty_name.13935, i64 3, i64 %null_ext13, ptr @src_file.13936, i64 88, i64 914)
+  call void @forge_null_deref_trap(ptr @fld_name.13934, i64 7, ptr @sty_name.13935, i64 3, i64 %null_ext13, ptr @src_file.13936, i64 88, i64 918)
   %builder_ptr14 = getelementptr inbounds nuw %Ctx, ptr %self10, i32 0, i32 2
   %builder15 = load ptr, ptr %builder_ptr14, align 8
   %base_int16 = load ptr, ptr %base_int, align 8
@@ -161485,7 +161530,7 @@ entry:
   %cast26 = ptrtoint ptr %self25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13938, i64 7, ptr @sty_name.13939, i64 3, i64 %null_ext28, ptr @src_file.13940, i64 88, i64 915)
+  call void @forge_null_deref_trap(ptr @fld_name.13938, i64 7, ptr @sty_name.13939, i64 3, i64 %null_ext28, ptr @src_file.13940, i64 88, i64 919)
   %builder_ptr29 = getelementptr inbounds nuw %Ctx, ptr %self25, i32 0, i32 2
   %builder30 = load ptr, ptr %builder_ptr29, align 8
   %addr31 = load ptr, ptr %addr, align 8
@@ -161493,7 +161538,7 @@ entry:
   %cast33 = ptrtoint ptr %self32 to i64
   %null_chk34 = icmp eq i64 %cast33, 0
   %null_ext35 = zext i1 %null_chk34 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13941, i64 8, ptr @sty_name.13942, i64 3, i64 %null_ext35, ptr @src_file.13943, i64 88, i64 915)
+  call void @forge_null_deref_trap(ptr @fld_name.13941, i64 8, ptr @sty_name.13942, i64 3, i64 %null_ext35, ptr @src_file.13943, i64 88, i64 919)
   %ptr_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self32, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %name36 = load ptr, ptr %name, align 8
@@ -161516,13 +161561,13 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13944, i64 7, ptr @sty_name.13945, i64 3, i64 %null_ext, ptr @src_file.13946, i64 88, i64 920)
+  call void @forge_null_deref_trap(ptr @fld_name.13944, i64 7, ptr @sty_name.13945, i64 3, i64 %null_ext, ptr @src_file.13946, i64 88, i64 924)
   %base2 = load ptr, ptr %base, align 8
   %self3 = load ptr, ptr %self, align 8
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13947, i64 3, ptr @sty_name.13948, i64 3, i64 %null_ext6, ptr @src_file.13949, i64 88, i64 920)
+  call void @forge_null_deref_trap(ptr @fld_name.13947, i64 3, ptr @sty_name.13948, i64 3, i64 %null_ext6, ptr @src_file.13949, i64 88, i64 924)
   %idx7 = load i64, ptr %idx, align 8
   %mul = mul i64 %idx7, 8
   %4 = call ptr @Ctx__i64(ptr %self3, i64 %mul)
@@ -161544,14 +161589,14 @@ entry:
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13951, i64 7, ptr @sty_name.13952, i64 3, i64 %null_ext14, ptr @src_file.13953, i64 88, i64 921)
+  call void @forge_null_deref_trap(ptr @fld_name.13951, i64 7, ptr @sty_name.13952, i64 3, i64 %null_ext14, ptr @src_file.13953, i64 88, i64 925)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self11, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self15 = load ptr, ptr %self, align 8
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13954, i64 8, ptr @sty_name.13955, i64 3, i64 %null_ext18, ptr @src_file.13956, i64 88, i64 921)
+  call void @forge_null_deref_trap(ptr @fld_name.13954, i64 8, ptr @sty_name.13955, i64 3, i64 %null_ext18, ptr @src_file.13956, i64 88, i64 925)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self15, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %slot19 = load ptr, ptr %slot, align 8
@@ -161577,13 +161622,13 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13957, i64 7, ptr @sty_name.13958, i64 3, i64 %null_ext, ptr @src_file.13959, i64 88, i64 926)
+  call void @forge_null_deref_trap(ptr @fld_name.13957, i64 7, ptr @sty_name.13958, i64 3, i64 %null_ext, ptr @src_file.13959, i64 88, i64 930)
   %base2 = load ptr, ptr %base, align 8
   %self3 = load ptr, ptr %self, align 8
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13960, i64 3, ptr @sty_name.13961, i64 3, i64 %null_ext6, ptr @src_file.13962, i64 88, i64 926)
+  call void @forge_null_deref_trap(ptr @fld_name.13960, i64 3, ptr @sty_name.13961, i64 3, i64 %null_ext6, ptr @src_file.13962, i64 88, i64 930)
   %idx7 = load i64, ptr %idx, align 8
   %mul = mul i64 %idx7, 8
   %5 = call ptr @Ctx__i64(ptr %self3, i64 %mul)
@@ -161605,14 +161650,14 @@ entry:
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13964, i64 7, ptr @sty_name.13965, i64 3, i64 %null_ext14, ptr @src_file.13966, i64 88, i64 927)
+  call void @forge_null_deref_trap(ptr @fld_name.13964, i64 7, ptr @sty_name.13965, i64 3, i64 %null_ext14, ptr @src_file.13966, i64 88, i64 931)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self11, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self15 = load ptr, ptr %self, align 8
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13967, i64 8, ptr @sty_name.13968, i64 3, i64 %null_ext18, ptr @src_file.13969, i64 88, i64 927)
+  call void @forge_null_deref_trap(ptr @fld_name.13967, i64 8, ptr @sty_name.13968, i64 3, i64 %null_ext18, ptr @src_file.13969, i64 88, i64 931)
   %ty19 = load ptr, ptr %ty, align 8
   %12 = call ptr @Ctx__type_for(ptr %self15, ptr %ty19)
   %slot20 = load ptr, ptr %slot, align 8
@@ -161638,13 +161683,13 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13970, i64 7, ptr @sty_name.13971, i64 3, i64 %null_ext, ptr @src_file.13972, i64 88, i64 932)
+  call void @forge_null_deref_trap(ptr @fld_name.13970, i64 7, ptr @sty_name.13971, i64 3, i64 %null_ext, ptr @src_file.13972, i64 88, i64 936)
   %base2 = load ptr, ptr %base, align 8
   %self3 = load ptr, ptr %self, align 8
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13973, i64 3, ptr @sty_name.13974, i64 3, i64 %null_ext6, ptr @src_file.13975, i64 88, i64 932)
+  call void @forge_null_deref_trap(ptr @fld_name.13973, i64 3, ptr @sty_name.13974, i64 3, i64 %null_ext6, ptr @src_file.13975, i64 88, i64 936)
   %idx7 = load i64, ptr %idx, align 8
   %mul = mul i64 %idx7, 8
   %5 = call ptr @Ctx__i64(ptr %self3, i64 %mul)
@@ -161654,14 +161699,14 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13977, i64 7, ptr @sty_name.13978, i64 3, i64 %null_ext11, ptr @src_file.13979, i64 88, i64 933)
+  call void @forge_null_deref_trap(ptr @fld_name.13977, i64 7, ptr @sty_name.13978, i64 3, i64 %null_ext11, ptr @src_file.13979, i64 88, i64 937)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self12 = load ptr, ptr %self, align 8
   %cast13 = ptrtoint ptr %self12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13980, i64 7, ptr @sty_name.13981, i64 3, i64 %null_ext15, ptr @src_file.13982, i64 88, i64 933)
+  call void @forge_null_deref_trap(ptr @fld_name.13980, i64 7, ptr @sty_name.13981, i64 3, i64 %null_ext15, ptr @src_file.13982, i64 88, i64 937)
   %val16 = load ptr, ptr %val, align 8
   %field_ty17 = load ptr, ptr %field_ty, align 8
   %7 = call ptr @Ctx__cast_to(ptr %self12, ptr %val16, ptr %field_ty17)
@@ -161688,14 +161733,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13983, i64 7, ptr @sty_name.13984, i64 3, i64 %null_ext, ptr @src_file.13985, i64 88, i64 940)
+  call void @forge_null_deref_trap(ptr @fld_name.13983, i64 7, ptr @sty_name.13984, i64 3, i64 %null_ext, ptr @src_file.13985, i64 88, i64 944)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13986, i64 8, ptr @sty_name.13987, i64 3, i64 %null_ext5, ptr @src_file.13988, i64 88, i64 940)
+  call void @forge_null_deref_trap(ptr @fld_name.13986, i64 8, ptr @sty_name.13987, i64 3, i64 %null_ext5, ptr @src_file.13988, i64 88, i64 944)
   %ty6 = load ptr, ptr %ty, align 8
   %5 = call ptr @Ctx__type_for(ptr %self2, ptr %ty6)
   %name7 = load ptr, ptr %name, align 8
@@ -161705,7 +161750,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13989, i64 7, ptr @sty_name.13990, i64 3, i64 %null_ext11, ptr @src_file.13991, i64 88, i64 941)
+  call void @forge_null_deref_trap(ptr @fld_name.13989, i64 7, ptr @sty_name.13990, i64 3, i64 %null_ext11, ptr @src_file.13991, i64 88, i64 945)
   %builder_ptr12 = getelementptr inbounds nuw %Ctx, ptr %self8, i32 0, i32 2
   %builder13 = load ptr, ptr %builder_ptr12, align 8
   %value14 = load ptr, ptr %value, align 8
@@ -161727,7 +161772,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13992, i64 6, ptr @sty_name.13993, i64 3, i64 %null_ext, ptr @src_file.13994, i64 88, i64 946)
+  call void @forge_null_deref_trap(ptr @fld_name.13992, i64 6, ptr @sty_name.13993, i64 3, i64 %null_ext, ptr @src_file.13994, i64 88, i64 950)
   %module_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %1 = call i64 @forge_llvm_verify_module_print(ptr %module)
@@ -161744,7 +161789,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13995, i64 6, ptr @sty_name.13996, i64 3, i64 %null_ext, ptr @src_file.13997, i64 88, i64 947)
+  call void @forge_null_deref_trap(ptr @fld_name.13995, i64 6, ptr @sty_name.13996, i64 3, i64 %null_ext, ptr @src_file.13997, i64 88, i64 951)
   %module_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %path2 = load ptr, ptr %path, align 8
@@ -161760,7 +161805,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.13998, i64 7, ptr @sty_name.13999, i64 3, i64 %null_ext, ptr @src_file.14000, i64 88, i64 949)
+  call void @forge_null_deref_trap(ptr @fld_name.13998, i64 7, ptr @sty_name.13999, i64 3, i64 %null_ext, ptr @src_file.14000, i64 88, i64 953)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %1 = call i64 @forge_llvm_dispose_builder(ptr %builder)
@@ -161768,7 +161813,7 @@ entry:
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14001, i64 6, ptr @sty_name.14002, i64 3, i64 %null_ext5, ptr @src_file.14003, i64 88, i64 950)
+  call void @forge_null_deref_trap(ptr @fld_name.14001, i64 6, ptr @sty_name.14002, i64 3, i64 %null_ext5, ptr @src_file.14003, i64 88, i64 954)
   %module_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 1
   %module = load ptr, ptr %module_ptr, align 8
   %2 = call i64 @forge_llvm_module_dispose(ptr %module)
@@ -161776,7 +161821,7 @@ entry:
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14004, i64 2, ptr @sty_name.14005, i64 3, i64 %null_ext9, ptr @src_file.14006, i64 88, i64 951)
+  call void @forge_null_deref_trap(ptr @fld_name.14004, i64 2, ptr @sty_name.14005, i64 3, i64 %null_ext9, ptr @src_file.14006, i64 88, i64 955)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self6, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %3 = call i64 @forge_llvm_context_dispose(ptr %lc)
@@ -161797,7 +161842,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14007, i64 7, ptr @sty_name.14008, i64 3, i64 %null_ext, ptr @src_file.14009, i64 88, i64 957)
+  call void @forge_null_deref_trap(ptr @fld_name.14007, i64 7, ptr @sty_name.14008, i64 3, i64 %null_ext, ptr @src_file.14009, i64 88, i64 961)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161821,7 +161866,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14010, i64 7, ptr @sty_name.14011, i64 3, i64 %null_ext, ptr @src_file.14012, i64 88, i64 958)
+  call void @forge_null_deref_trap(ptr @fld_name.14010, i64 7, ptr @sty_name.14011, i64 3, i64 %null_ext, ptr @src_file.14012, i64 88, i64 962)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161845,7 +161890,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14013, i64 7, ptr @sty_name.14014, i64 3, i64 %null_ext, ptr @src_file.14015, i64 88, i64 959)
+  call void @forge_null_deref_trap(ptr @fld_name.14013, i64 7, ptr @sty_name.14014, i64 3, i64 %null_ext, ptr @src_file.14015, i64 88, i64 963)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %a2 = load ptr, ptr %a, align 8
@@ -161886,7 +161931,7 @@ if_then:                                          ; preds = %entry
   %cast = ptrtoint ptr %self3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14016, i64 7, ptr @sty_name.14017, i64 3, i64 %null_ext, ptr @src_file.14018, i64 88, i64 965)
+  call void @forge_null_deref_trap(ptr @fld_name.14016, i64 7, ptr @sty_name.14017, i64 3, i64 %null_ext, ptr @src_file.14018, i64 88, i64 969)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %val4 = load ptr, ptr %val, align 8
@@ -161894,7 +161939,7 @@ if_then:                                          ; preds = %entry
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14019, i64 8, ptr @sty_name.14020, i64 3, i64 %null_ext8, ptr @src_file.14021, i64 88, i64 965)
+  call void @forge_null_deref_trap(ptr @fld_name.14019, i64 8, ptr @sty_name.14020, i64 3, i64 %null_ext8, ptr @src_file.14021, i64 88, i64 969)
   %ptr_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self5, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %5 = call ptr @forge_llvm_const_null(ptr %ptr_type)
@@ -161917,7 +161962,7 @@ if_then15:                                        ; preds = %ifcont
   %cast18 = ptrtoint ptr %self17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14022, i64 7, ptr @sty_name.14023, i64 3, i64 %null_ext20, ptr @src_file.14024, i64 88, i64 966)
+  call void @forge_null_deref_trap(ptr @fld_name.14022, i64 7, ptr @sty_name.14023, i64 3, i64 %null_ext20, ptr @src_file.14024, i64 88, i64 970)
   %builder_ptr21 = getelementptr inbounds nuw %Ctx, ptr %self17, i32 0, i32 2
   %builder22 = load ptr, ptr %builder_ptr21, align 8
   %val23 = load ptr, ptr %val, align 8
@@ -161925,7 +161970,7 @@ if_then15:                                        ; preds = %ifcont
   %cast25 = ptrtoint ptr %self24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14025, i64 11, ptr @sty_name.14026, i64 3, i64 %null_ext27, ptr @src_file.14027, i64 88, i64 966)
+  call void @forge_null_deref_trap(ptr @fld_name.14025, i64 11, ptr @sty_name.14026, i64 3, i64 %null_ext27, ptr @src_file.14027, i64 88, i64 970)
   %double_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self24, i32 0, i32 8
   %double_type = load ptr, ptr %double_type_ptr, align 8
   %7 = call ptr @forge_llvm_const_null(ptr %double_type)
@@ -161956,7 +162001,7 @@ ifcont35:                                         ; preds = %if_else38
   %cast41 = ptrtoint ptr %self40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14028, i64 7, ptr @sty_name.14029, i64 3, i64 %null_ext43, ptr @src_file.14030, i64 88, i64 968)
+  call void @forge_null_deref_trap(ptr @fld_name.14028, i64 7, ptr @sty_name.14029, i64 3, i64 %null_ext43, ptr @src_file.14030, i64 88, i64 972)
   %builder_ptr44 = getelementptr inbounds nuw %Ctx, ptr %self40, i32 0, i32 2
   %builder45 = load ptr, ptr %builder_ptr44, align 8
   %val46 = load ptr, ptr %val, align 8
@@ -161990,7 +162035,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14031, i64 6, ptr @sty_name.14032, i64 3, i64 %null_ext, ptr @src_file.14033, i64 88, i64 974)
+  call void @forge_null_deref_trap(ptr @fld_name.14031, i64 6, ptr @sty_name.14032, i64 3, i64 %null_ext, ptr @src_file.14033, i64 88, i64 978)
   %val2 = load ptr, ptr %val, align 8
   %prefix3 = load ptr, ptr %prefix, align 8
   %3 = call i64 @strlen(ptr %prefix3)
@@ -162010,14 +162055,14 @@ entry:
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14035, i64 2, ptr @sty_name.14036, i64 3, i64 %null_ext9, ptr @src_file.14037, i64 88, i64 975)
+  call void @forge_null_deref_trap(ptr @fld_name.14035, i64 2, ptr @sty_name.14036, i64 3, i64 %null_ext9, ptr @src_file.14037, i64 88, i64 979)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self6, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %self10 = load ptr, ptr %self, align 8
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14038, i64 10, ptr @sty_name.14039, i64 3, i64 %null_ext13, ptr @src_file.14040, i64 88, i64 975)
+  call void @forge_null_deref_trap(ptr @fld_name.14038, i64 10, ptr @sty_name.14039, i64 3, i64 %null_ext13, ptr @src_file.14040, i64 88, i64 979)
   %current_fn_ptr = getelementptr inbounds nuw %Ctx, ptr %self10, i32 0, i32 3
   %current_fn = load ptr, ptr %current_fn_ptr, align 8
   %prefix14 = load ptr, ptr %prefix, align 8
@@ -162038,14 +162083,14 @@ entry:
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14042, i64 2, ptr @sty_name.14043, i64 3, i64 %null_ext24, ptr @src_file.14044, i64 88, i64 976)
+  call void @forge_null_deref_trap(ptr @fld_name.14042, i64 2, ptr @sty_name.14043, i64 3, i64 %null_ext24, ptr @src_file.14044, i64 88, i64 980)
   %lc_ptr25 = getelementptr inbounds nuw %Ctx, ptr %self21, i32 0, i32 0
   %lc26 = load ptr, ptr %lc_ptr25, align 8
   %self27 = load ptr, ptr %self, align 8
   %cast28 = ptrtoint ptr %self27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14045, i64 10, ptr @sty_name.14046, i64 3, i64 %null_ext30, ptr @src_file.14047, i64 88, i64 976)
+  call void @forge_null_deref_trap(ptr @fld_name.14045, i64 10, ptr @sty_name.14046, i64 3, i64 %null_ext30, ptr @src_file.14047, i64 88, i64 980)
   %current_fn_ptr31 = getelementptr inbounds nuw %Ctx, ptr %self27, i32 0, i32 3
   %current_fn32 = load ptr, ptr %current_fn_ptr31, align 8
   %prefix33 = load ptr, ptr %prefix, align 8
@@ -162066,7 +162111,7 @@ entry:
   %cast41 = ptrtoint ptr %self40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14049, i64 7, ptr @sty_name.14050, i64 3, i64 %null_ext43, ptr @src_file.14051, i64 88, i64 977)
+  call void @forge_null_deref_trap(ptr @fld_name.14049, i64 7, ptr @sty_name.14050, i64 3, i64 %null_ext43, ptr @src_file.14051, i64 88, i64 981)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self40, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %cond44 = load ptr, ptr %cond, align 8
@@ -162077,7 +162122,7 @@ entry:
   %cast48 = ptrtoint ptr %self47 to i64
   %null_chk49 = icmp eq i64 %cast48, 0
   %null_ext50 = zext i1 %null_chk49 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14052, i64 7, ptr @sty_name.14053, i64 3, i64 %null_ext50, ptr @src_file.14054, i64 88, i64 978)
+  call void @forge_null_deref_trap(ptr @fld_name.14052, i64 7, ptr @sty_name.14053, i64 3, i64 %null_ext50, ptr @src_file.14054, i64 88, i64 982)
   %builder_ptr51 = getelementptr inbounds nuw %Ctx, ptr %self47, i32 0, i32 2
   %builder52 = load ptr, ptr %builder_ptr51, align 8
   %then_bb53 = load ptr, ptr %then_bb, align 8
@@ -162102,7 +162147,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14055, i64 7, ptr @sty_name.14056, i64 3, i64 %null_ext, ptr @src_file.14057, i64 88, i64 985)
+  call void @forge_null_deref_trap(ptr @fld_name.14055, i64 7, ptr @sty_name.14056, i64 3, i64 %null_ext, ptr @src_file.14057, i64 88, i64 989)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %b2 = load ptr, ptr %b, align 8
@@ -162114,7 +162159,7 @@ entry:
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14058, i64 7, ptr @sty_name.14059, i64 3, i64 %null_ext8, ptr @src_file.14060, i64 88, i64 986)
+  call void @forge_null_deref_trap(ptr @fld_name.14058, i64 7, ptr @sty_name.14059, i64 3, i64 %null_ext8, ptr @src_file.14060, i64 88, i64 990)
   %builder_ptr9 = getelementptr inbounds nuw %Ctx, ptr %self5, i32 0, i32 2
   %builder10 = load ptr, ptr %builder_ptr9, align 8
   %a11 = load ptr, ptr %a, align 8
@@ -162126,7 +162171,7 @@ entry:
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14061, i64 7, ptr @sty_name.14062, i64 3, i64 %null_ext17, ptr @src_file.14063, i64 88, i64 987)
+  call void @forge_null_deref_trap(ptr @fld_name.14061, i64 7, ptr @sty_name.14062, i64 3, i64 %null_ext17, ptr @src_file.14063, i64 88, i64 991)
   %builder_ptr18 = getelementptr inbounds nuw %Ctx, ptr %self14, i32 0, i32 2
   %builder19 = load ptr, ptr %builder_ptr18, align 8
   %cmp20 = load ptr, ptr %cmp, align 8
@@ -162134,7 +162179,7 @@ entry:
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14064, i64 8, ptr @sty_name.14065, i64 3, i64 %null_ext24, ptr @src_file.14066, i64 88, i64 987)
+  call void @forge_null_deref_trap(ptr @fld_name.14064, i64 8, ptr @sty_name.14065, i64 3, i64 %null_ext24, ptr @src_file.14066, i64 88, i64 991)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self21, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name25 = load ptr, ptr %name, align 8
@@ -162169,7 +162214,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14068, i64 7, ptr @sty_name.14069, i64 3, i64 %null_ext, ptr @src_file.14070, i64 88, i64 991)
+  call void @forge_null_deref_trap(ptr @fld_name.14068, i64 7, ptr @sty_name.14069, i64 3, i64 %null_ext, ptr @src_file.14070, i64 88, i64 995)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %b2 = load ptr, ptr %b, align 8
@@ -162181,7 +162226,7 @@ entry:
   %cast6 = ptrtoint ptr %self5 to i64
   %null_chk7 = icmp eq i64 %cast6, 0
   %null_ext8 = zext i1 %null_chk7 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14071, i64 7, ptr @sty_name.14072, i64 3, i64 %null_ext8, ptr @src_file.14073, i64 88, i64 992)
+  call void @forge_null_deref_trap(ptr @fld_name.14071, i64 7, ptr @sty_name.14072, i64 3, i64 %null_ext8, ptr @src_file.14073, i64 88, i64 996)
   %builder_ptr9 = getelementptr inbounds nuw %Ctx, ptr %self5, i32 0, i32 2
   %builder10 = load ptr, ptr %builder_ptr9, align 8
   %a11 = load ptr, ptr %a, align 8
@@ -162193,7 +162238,7 @@ entry:
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14074, i64 7, ptr @sty_name.14075, i64 3, i64 %null_ext17, ptr @src_file.14076, i64 88, i64 993)
+  call void @forge_null_deref_trap(ptr @fld_name.14074, i64 7, ptr @sty_name.14075, i64 3, i64 %null_ext17, ptr @src_file.14076, i64 88, i64 997)
   %builder_ptr18 = getelementptr inbounds nuw %Ctx, ptr %self14, i32 0, i32 2
   %builder19 = load ptr, ptr %builder_ptr18, align 8
   %cmp20 = load ptr, ptr %cmp, align 8
@@ -162201,7 +162246,7 @@ entry:
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14077, i64 8, ptr @sty_name.14078, i64 3, i64 %null_ext24, ptr @src_file.14079, i64 88, i64 993)
+  call void @forge_null_deref_trap(ptr @fld_name.14077, i64 8, ptr @sty_name.14078, i64 3, i64 %null_ext24, ptr @src_file.14079, i64 88, i64 997)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self21, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name25 = load ptr, ptr %name, align 8
@@ -162231,7 +162276,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14081, i64 7, ptr @sty_name.14082, i64 3, i64 %null_ext, ptr @src_file.14083, i64 88, i64 998)
+  call void @forge_null_deref_trap(ptr @fld_name.14081, i64 7, ptr @sty_name.14082, i64 3, i64 %null_ext, ptr @src_file.14083, i64 88, i64 1002)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %2 = call i64 @forge_llvm_block_has_terminator(ptr %builder)
@@ -162246,7 +162291,7 @@ sif_then:                                         ; preds = %entry
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14084, i64 7, ptr @sty_name.14085, i64 3, i64 %null_ext5, ptr @src_file.14086, i64 88, i64 999)
+  call void @forge_null_deref_trap(ptr @fld_name.14084, i64 7, ptr @sty_name.14085, i64 3, i64 %null_ext5, ptr @src_file.14086, i64 88, i64 1003)
   %builder_ptr6 = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 2
   %builder7 = load ptr, ptr %builder_ptr6, align 8
   %bb8 = load ptr, ptr %bb, align 8
@@ -162279,7 +162324,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14087, i64 7, ptr @sty_name.14088, i64 3, i64 %null_ext, ptr @src_file.14089, i64 88, i64 1006)
+  call void @forge_null_deref_trap(ptr @fld_name.14087, i64 7, ptr @sty_name.14088, i64 3, i64 %null_ext, ptr @src_file.14089, i64 88, i64 1010)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %4 = call i64 @forge_llvm_block_has_terminator(ptr %builder)
@@ -162294,7 +162339,7 @@ sif_then:                                         ; preds = %entry
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14090, i64 6, ptr @sty_name.14091, i64 3, i64 %null_ext5, ptr @src_file.14092, i64 88, i64 1007)
+  call void @forge_null_deref_trap(ptr @fld_name.14090, i64 6, ptr @sty_name.14091, i64 3, i64 %null_ext5, ptr @src_file.14092, i64 88, i64 1011)
   %val6 = load ptr, ptr %val, align 8
   %5 = call ptr @Ctx__to_i64(ptr %self2, ptr %val6, ptr @.str.14093)
   store ptr %5, ptr %store_val, align 8
@@ -162302,7 +162347,7 @@ sif_then:                                         ; preds = %entry
   %cast8 = ptrtoint ptr %self7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14094, i64 7, ptr @sty_name.14095, i64 3, i64 %null_ext10, ptr @src_file.14096, i64 88, i64 1008)
+  call void @forge_null_deref_trap(ptr @fld_name.14094, i64 7, ptr @sty_name.14095, i64 3, i64 %null_ext10, ptr @src_file.14096, i64 88, i64 1012)
   %builder_ptr11 = getelementptr inbounds nuw %Ctx, ptr %self7, i32 0, i32 2
   %builder12 = load ptr, ptr %builder_ptr11, align 8
   %store_val13 = load ptr, ptr %store_val, align 8
@@ -162312,7 +162357,7 @@ sif_then:                                         ; preds = %entry
   %cast16 = ptrtoint ptr %self15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14097, i64 7, ptr @sty_name.14098, i64 3, i64 %null_ext18, ptr @src_file.14099, i64 88, i64 1009)
+  call void @forge_null_deref_trap(ptr @fld_name.14097, i64 7, ptr @sty_name.14098, i64 3, i64 %null_ext18, ptr @src_file.14099, i64 88, i64 1013)
   %builder_ptr19 = getelementptr inbounds nuw %Ctx, ptr %self15, i32 0, i32 2
   %builder20 = load ptr, ptr %builder_ptr19, align 8
   %bb21 = load ptr, ptr %bb, align 8
@@ -162339,7 +162384,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14100, i64 7, ptr @sty_name.14101, i64 3, i64 %null_ext, ptr @src_file.14102, i64 88, i64 1015)
+  call void @forge_null_deref_trap(ptr @fld_name.14100, i64 7, ptr @sty_name.14101, i64 3, i64 %null_ext, ptr @src_file.14102, i64 88, i64 1019)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %text2 = load ptr, ptr %text, align 8
@@ -162362,7 +162407,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14104, i64 6, ptr @sty_name.14105, i64 3, i64 %null_ext, ptr @src_file.14106, i64 88, i64 1022)
+  call void @forge_null_deref_trap(ptr @fld_name.14104, i64 6, ptr @sty_name.14105, i64 3, i64 %null_ext, ptr @src_file.14106, i64 88, i64 1026)
   %val2 = load ptr, ptr %val, align 8
   %3 = call ptr @Ctx__to_ptr(ptr %self1, ptr %val2, ptr @.str.14107)
   store ptr %3, ptr %obj, align 8
@@ -162370,7 +162415,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14108, i64 2, ptr @sty_name.14109, i64 3, i64 %null_ext6, ptr @src_file.14110, i64 88, i64 1023)
+  call void @forge_null_deref_trap(ptr @fld_name.14108, i64 2, ptr @sty_name.14109, i64 3, i64 %null_ext6, ptr @src_file.14110, i64 88, i64 1027)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %type_name7 = load ptr, ptr %type_name, align 8
@@ -162380,7 +162425,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14111, i64 7, ptr @sty_name.14112, i64 3, i64 %null_ext11, ptr @src_file.14113, i64 88, i64 1024)
+  call void @forge_null_deref_trap(ptr @fld_name.14111, i64 7, ptr @sty_name.14112, i64 3, i64 %null_ext11, ptr @src_file.14113, i64 88, i64 1028)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty12 = load ptr, ptr %st_ty, align 8
@@ -162391,14 +162436,14 @@ entry:
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14115, i64 7, ptr @sty_name.14116, i64 3, i64 %null_ext17, ptr @src_file.14117, i64 88, i64 1025)
+  call void @forge_null_deref_trap(ptr @fld_name.14115, i64 7, ptr @sty_name.14116, i64 3, i64 %null_ext17, ptr @src_file.14117, i64 88, i64 1029)
   %builder_ptr18 = getelementptr inbounds nuw %Ctx, ptr %self14, i32 0, i32 2
   %builder19 = load ptr, ptr %builder_ptr18, align 8
   %self20 = load ptr, ptr %self, align 8
   %cast21 = ptrtoint ptr %self20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14118, i64 8, ptr @sty_name.14119, i64 3, i64 %null_ext23, ptr @src_file.14120, i64 88, i64 1025)
+  call void @forge_null_deref_trap(ptr @fld_name.14118, i64 8, ptr @sty_name.14119, i64 3, i64 %null_ext23, ptr @src_file.14120, i64 88, i64 1029)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self20, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %tag_gep24 = load ptr, ptr %tag_gep, align 8
@@ -162421,7 +162466,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14122, i64 6, ptr @sty_name.14123, i64 3, i64 %null_ext, ptr @src_file.14124, i64 88, i64 1030)
+  call void @forge_null_deref_trap(ptr @fld_name.14122, i64 6, ptr @sty_name.14123, i64 3, i64 %null_ext, ptr @src_file.14124, i64 88, i64 1034)
   %val2 = load ptr, ptr %val, align 8
   %3 = call ptr @Ctx__to_ptr(ptr %self1, ptr %val2, ptr @.str.14125)
   store ptr %3, ptr %obj, align 8
@@ -162429,7 +162474,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14126, i64 2, ptr @sty_name.14127, i64 3, i64 %null_ext6, ptr @src_file.14128, i64 88, i64 1031)
+  call void @forge_null_deref_trap(ptr @fld_name.14126, i64 2, ptr @sty_name.14127, i64 3, i64 %null_ext6, ptr @src_file.14128, i64 88, i64 1035)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %type_name7 = load ptr, ptr %type_name, align 8
@@ -162439,7 +162484,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14129, i64 7, ptr @sty_name.14130, i64 3, i64 %null_ext11, ptr @src_file.14131, i64 88, i64 1032)
+  call void @forge_null_deref_trap(ptr @fld_name.14129, i64 7, ptr @sty_name.14130, i64 3, i64 %null_ext11, ptr @src_file.14131, i64 88, i64 1036)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty12 = load ptr, ptr %st_ty, align 8
@@ -162450,14 +162495,14 @@ entry:
   %cast15 = ptrtoint ptr %self14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14133, i64 7, ptr @sty_name.14134, i64 3, i64 %null_ext17, ptr @src_file.14135, i64 88, i64 1033)
+  call void @forge_null_deref_trap(ptr @fld_name.14133, i64 7, ptr @sty_name.14134, i64 3, i64 %null_ext17, ptr @src_file.14135, i64 88, i64 1037)
   %builder_ptr18 = getelementptr inbounds nuw %Ctx, ptr %self14, i32 0, i32 2
   %builder19 = load ptr, ptr %builder_ptr18, align 8
   %self20 = load ptr, ptr %self, align 8
   %cast21 = ptrtoint ptr %self20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14136, i64 8, ptr @sty_name.14137, i64 3, i64 %null_ext23, ptr @src_file.14138, i64 88, i64 1033)
+  call void @forge_null_deref_trap(ptr @fld_name.14136, i64 8, ptr @sty_name.14137, i64 3, i64 %null_ext23, ptr @src_file.14138, i64 88, i64 1037)
   %ptr_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self20, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %pay_gep24 = load ptr, ptr %pay_gep, align 8
@@ -162484,7 +162529,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14140, i64 6, ptr @sty_name.14141, i64 3, i64 %null_ext, ptr @src_file.14142, i64 88, i64 1038)
+  call void @forge_null_deref_trap(ptr @fld_name.14140, i64 6, ptr @sty_name.14141, i64 3, i64 %null_ext, ptr @src_file.14142, i64 88, i64 1042)
   %val2 = load ptr, ptr %val, align 8
   %5 = call ptr @Ctx__to_ptr(ptr %self1, ptr %val2, ptr @.str.14143)
   store ptr %5, ptr %obj, align 8
@@ -162492,7 +162537,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14144, i64 2, ptr @sty_name.14145, i64 3, i64 %null_ext6, ptr @src_file.14146, i64 88, i64 1039)
+  call void @forge_null_deref_trap(ptr @fld_name.14144, i64 2, ptr @sty_name.14145, i64 3, i64 %null_ext6, ptr @src_file.14146, i64 88, i64 1043)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %type_name7 = load ptr, ptr %type_name, align 8
@@ -162502,7 +162547,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14147, i64 7, ptr @sty_name.14148, i64 3, i64 %null_ext11, ptr @src_file.14149, i64 88, i64 1040)
+  call void @forge_null_deref_trap(ptr @fld_name.14147, i64 7, ptr @sty_name.14148, i64 3, i64 %null_ext11, ptr @src_file.14149, i64 88, i64 1044)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty12 = load ptr, ptr %st_ty, align 8
@@ -162526,14 +162571,14 @@ entry:
   %cast19 = ptrtoint ptr %self18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14151, i64 7, ptr @sty_name.14152, i64 3, i64 %null_ext21, ptr @src_file.14153, i64 88, i64 1041)
+  call void @forge_null_deref_trap(ptr @fld_name.14151, i64 7, ptr @sty_name.14152, i64 3, i64 %null_ext21, ptr @src_file.14153, i64 88, i64 1045)
   %builder_ptr22 = getelementptr inbounds nuw %Ctx, ptr %self18, i32 0, i32 2
   %builder23 = load ptr, ptr %builder_ptr22, align 8
   %self24 = load ptr, ptr %self, align 8
   %cast25 = ptrtoint ptr %self24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14154, i64 8, ptr @sty_name.14155, i64 3, i64 %null_ext27, ptr @src_file.14156, i64 88, i64 1041)
+  call void @forge_null_deref_trap(ptr @fld_name.14154, i64 8, ptr @sty_name.14155, i64 3, i64 %null_ext27, ptr @src_file.14156, i64 88, i64 1045)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self24, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %fld_gep28 = load ptr, ptr %fld_gep, align 8
@@ -162563,7 +162608,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14157, i64 6, ptr @sty_name.14158, i64 3, i64 %null_ext, ptr @src_file.14159, i64 88, i64 1046)
+  call void @forge_null_deref_trap(ptr @fld_name.14157, i64 6, ptr @sty_name.14158, i64 3, i64 %null_ext, ptr @src_file.14159, i64 88, i64 1050)
   %val2 = load ptr, ptr %val, align 8
   %6 = call ptr @Ctx__to_ptr(ptr %self1, ptr %val2, ptr @.str.14160)
   store ptr %6, ptr %obj, align 8
@@ -162571,7 +162616,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14161, i64 2, ptr @sty_name.14162, i64 3, i64 %null_ext6, ptr @src_file.14163, i64 88, i64 1047)
+  call void @forge_null_deref_trap(ptr @fld_name.14161, i64 2, ptr @sty_name.14162, i64 3, i64 %null_ext6, ptr @src_file.14163, i64 88, i64 1051)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %type_name7 = load ptr, ptr %type_name, align 8
@@ -162581,7 +162626,7 @@ entry:
   %cast9 = ptrtoint ptr %self8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14164, i64 7, ptr @sty_name.14165, i64 3, i64 %null_ext11, ptr @src_file.14166, i64 88, i64 1048)
+  call void @forge_null_deref_trap(ptr @fld_name.14164, i64 7, ptr @sty_name.14165, i64 3, i64 %null_ext11, ptr @src_file.14166, i64 88, i64 1052)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self8, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty12 = load ptr, ptr %st_ty, align 8
@@ -162605,14 +162650,14 @@ entry:
   %cast19 = ptrtoint ptr %self18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14168, i64 7, ptr @sty_name.14169, i64 3, i64 %null_ext21, ptr @src_file.14170, i64 88, i64 1049)
+  call void @forge_null_deref_trap(ptr @fld_name.14168, i64 7, ptr @sty_name.14169, i64 3, i64 %null_ext21, ptr @src_file.14170, i64 88, i64 1053)
   %builder_ptr22 = getelementptr inbounds nuw %Ctx, ptr %self18, i32 0, i32 2
   %builder23 = load ptr, ptr %builder_ptr22, align 8
   %self24 = load ptr, ptr %self, align 8
   %cast25 = ptrtoint ptr %self24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14171, i64 8, ptr @sty_name.14172, i64 3, i64 %null_ext27, ptr @src_file.14173, i64 88, i64 1049)
+  call void @forge_null_deref_trap(ptr @fld_name.14171, i64 8, ptr @sty_name.14172, i64 3, i64 %null_ext27, ptr @src_file.14173, i64 88, i64 1053)
   %ty28 = load ptr, ptr %ty, align 8
   %14 = call ptr @Ctx__type_for(ptr %self24, ptr %ty28)
   %fld_gep29 = load ptr, ptr %fld_gep, align 8
@@ -162641,7 +162686,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14174, i64 2, ptr @sty_name.14175, i64 3, i64 %null_ext, ptr @src_file.14176, i64 88, i64 1054)
+  call void @forge_null_deref_trap(ptr @fld_name.14174, i64 2, ptr @sty_name.14175, i64 3, i64 %null_ext, ptr @src_file.14176, i64 88, i64 1058)
   %lc_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 0
   %lc = load ptr, ptr %lc_ptr, align 8
   %type_name2 = load ptr, ptr %type_name, align 8
@@ -162651,7 +162696,7 @@ entry:
   %cast4 = ptrtoint ptr %self3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14177, i64 7, ptr @sty_name.14178, i64 3, i64 %null_ext6, ptr @src_file.14179, i64 88, i64 1055)
+  call void @forge_null_deref_trap(ptr @fld_name.14177, i64 7, ptr @sty_name.14178, i64 3, i64 %null_ext6, ptr @src_file.14179, i64 88, i64 1059)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self3, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %st_ty7 = load ptr, ptr %st_ty, align 8
@@ -162663,14 +162708,14 @@ entry:
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14181, i64 7, ptr @sty_name.14182, i64 3, i64 %null_ext13, ptr @src_file.14183, i64 88, i64 1056)
+  call void @forge_null_deref_trap(ptr @fld_name.14181, i64 7, ptr @sty_name.14182, i64 3, i64 %null_ext13, ptr @src_file.14183, i64 88, i64 1060)
   %builder_ptr14 = getelementptr inbounds nuw %Ctx, ptr %self10, i32 0, i32 2
   %builder15 = load ptr, ptr %builder_ptr14, align 8
   %self16 = load ptr, ptr %self, align 8
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14184, i64 7, ptr @sty_name.14185, i64 3, i64 %null_ext19, ptr @src_file.14186, i64 88, i64 1056)
+  call void @forge_null_deref_trap(ptr @fld_name.14184, i64 7, ptr @sty_name.14185, i64 3, i64 %null_ext19, ptr @src_file.14186, i64 88, i64 1060)
   %val20 = load ptr, ptr %val, align 8
   %field_ty21 = load ptr, ptr %field_ty, align 8
   %8 = call ptr @Ctx__cast_to(ptr %self16, ptr %val20, ptr %field_ty21)
@@ -162690,7 +162735,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14187, i64 14, ptr @sty_name.14188, i64 3, i64 %null_ext, ptr @src_file.14189, i64 88, i64 1062)
+  call void @forge_null_deref_trap(ptr @fld_name.14187, i64 14, ptr @sty_name.14188, i64 3, i64 %null_ext, ptr @src_file.14189, i64 88, i64 1066)
   %2 = call i1 @Ctx__has_terminator(ptr %self1)
   %widen = zext i1 %2 to i64
   %if_cond = icmp ne i64 %widen, 0
@@ -162701,18 +162746,18 @@ ifcont:                                           ; preds = %if_else
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14190, i64 4, ptr @sty_name.14191, i64 3, i64 %null_ext5, ptr @src_file.14192, i64 88, i64 1063)
+  call void @forge_null_deref_trap(ptr @fld_name.14190, i64 4, ptr @sty_name.14191, i64 3, i64 %null_ext5, ptr @src_file.14192, i64 88, i64 1067)
   %3 = call ptr @forge_array_new()
   %self6 = load ptr, ptr %self, align 8
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14194, i64 10, ptr @sty_name.14195, i64 3, i64 %null_ext9, ptr @src_file.14196, i64 88, i64 1063)
+  call void @forge_null_deref_trap(ptr @fld_name.14194, i64 10, ptr @sty_name.14195, i64 3, i64 %null_ext9, ptr @src_file.14196, i64 88, i64 1067)
   %self10 = load ptr, ptr %self, align 8
   %cast11 = ptrtoint ptr %self10 to i64
   %null_chk12 = icmp eq i64 %cast11, 0
   %null_ext13 = zext i1 %null_chk12 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14197, i64 15, ptr @sty_name.14198, i64 3, i64 %null_ext13, ptr @src_file.14199, i64 88, i64 1063)
+  call void @forge_null_deref_trap(ptr @fld_name.14197, i64 15, ptr @sty_name.14198, i64 3, i64 %null_ext13, ptr @src_file.14199, i64 88, i64 1067)
   %current_fn_name_ptr = getelementptr inbounds nuw %Ctx, ptr %self10, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %4 = call ptr @Ctx__global_str(ptr %self6, ptr %current_fn_name, ptr @.str.14200)
@@ -162725,12 +162770,12 @@ ifcont:                                           ; preds = %if_else
   %cast18 = ptrtoint ptr %self17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14201, i64 10, ptr @sty_name.14202, i64 3, i64 %null_ext20, ptr @src_file.14203, i64 88, i64 1063)
+  call void @forge_null_deref_trap(ptr @fld_name.14201, i64 10, ptr @sty_name.14202, i64 3, i64 %null_ext20, ptr @src_file.14203, i64 88, i64 1067)
   %self21 = load ptr, ptr %self, align 8
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14204, i64 11, ptr @sty_name.14205, i64 3, i64 %null_ext24, ptr @src_file.14206, i64 88, i64 1063)
+  call void @forge_null_deref_trap(ptr @fld_name.14204, i64 11, ptr @sty_name.14205, i64 3, i64 %null_ext24, ptr @src_file.14206, i64 88, i64 1067)
   %source_file_ptr = getelementptr inbounds nuw %Ctx, ptr %self21, i32 0, i32 21
   %source_file = load ptr, ptr %source_file_ptr, align 8
   %5 = call ptr @Ctx__global_str(ptr %self17, ptr %source_file, ptr @.str.14207)
@@ -162740,12 +162785,12 @@ ifcont:                                           ; preds = %if_else
   %cast27 = ptrtoint ptr %self26 to i64
   %null_chk28 = icmp eq i64 %cast27, 0
   %null_ext29 = zext i1 %null_chk28 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14208, i64 3, ptr @sty_name.14209, i64 3, i64 %null_ext29, ptr @src_file.14210, i64 88, i64 1063)
+  call void @forge_null_deref_trap(ptr @fld_name.14208, i64 3, ptr @sty_name.14209, i64 3, i64 %null_ext29, ptr @src_file.14210, i64 88, i64 1067)
   %self30 = load ptr, ptr %self, align 8
   %cast31 = ptrtoint ptr %self30 to i64
   %null_chk32 = icmp eq i64 %cast31, 0
   %null_ext33 = zext i1 %null_chk32 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14211, i64 11, ptr @sty_name.14212, i64 3, i64 %null_ext33, ptr @src_file.14213, i64 88, i64 1063)
+  call void @forge_null_deref_trap(ptr @fld_name.14211, i64 11, ptr @sty_name.14212, i64 3, i64 %null_ext33, ptr @src_file.14213, i64 88, i64 1067)
   %source_line_ptr = getelementptr inbounds nuw %Ctx, ptr %self30, i32 0, i32 22
   %source_line = load i64, ptr %source_line_ptr, align 8
   %6 = call ptr @Ctx__i64(ptr %self26, i64 %source_line)
@@ -162756,7 +162801,7 @@ ifcont:                                           ; preds = %if_else
   %cast36 = ptrtoint ptr %self35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14214, i64 11, ptr @sty_name.14215, i64 3, i64 %null_ext38, ptr @src_file.14216, i64 88, i64 1067)
+  call void @forge_null_deref_trap(ptr @fld_name.14214, i64 11, ptr @sty_name.14215, i64 3, i64 %null_ext38, ptr @src_file.14216, i64 88, i64 1071)
   %8 = call i64 @Ctx__unreachable(ptr %self35)
   ret i64 %8
 
@@ -162775,7 +162820,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14217, i64 4, ptr @sty_name.14218, i64 3, i64 %null_ext, ptr @src_file.14219, i64 88, i64 1072)
+  call void @forge_null_deref_trap(ptr @fld_name.14217, i64 4, ptr @sty_name.14218, i64 3, i64 %null_ext, ptr @src_file.14219, i64 88, i64 1076)
   %1 = call ptr @forge_array_new()
   %2 = call ptr @Ctx__call(ptr %self1, ptr @.str.14220, ptr %1)
   ret ptr %2
@@ -162793,7 +162838,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14221, i64 4, ptr @sty_name.14222, i64 3, i64 %null_ext, ptr @src_file.14223, i64 88, i64 1073)
+  call void @forge_null_deref_trap(ptr @fld_name.14221, i64 4, ptr @sty_name.14222, i64 3, i64 %null_ext, ptr @src_file.14223, i64 88, i64 1077)
   %3 = call ptr @forge_array_new()
   %arr2 = load ptr, ptr %arr, align 8
   %cast3 = ptrtoint ptr %arr2 to i64
@@ -162818,7 +162863,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14225, i64 4, ptr @sty_name.14226, i64 3, i64 %null_ext, ptr @src_file.14227, i64 88, i64 1074)
+  call void @forge_null_deref_trap(ptr @fld_name.14225, i64 4, ptr @sty_name.14226, i64 3, i64 %null_ext, ptr @src_file.14227, i64 88, i64 1078)
   %3 = call ptr @forge_array_new()
   %arr2 = load ptr, ptr %arr, align 8
   %cast3 = ptrtoint ptr %arr2 to i64
@@ -162840,7 +162885,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14229, i64 4, ptr @sty_name.14230, i64 3, i64 %null_ext, ptr @src_file.14231, i64 88, i64 1075)
+  call void @forge_null_deref_trap(ptr @fld_name.14229, i64 4, ptr @sty_name.14230, i64 3, i64 %null_ext, ptr @src_file.14231, i64 88, i64 1079)
   %2 = call ptr @forge_array_new()
   %arr2 = load ptr, ptr %arr, align 8
   %cast3 = ptrtoint ptr %arr2 to i64
@@ -162873,9 +162918,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -162934,7 +162979,7 @@ march_arm3:                                       ; preds = %march_next
   %cast26 = ptrtoint ptr %self25 to i64
   %null_chk = icmp eq i64 %cast26, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14233, i64 14, ptr @sty_name.14234, i64 3, i64 %null_ext, ptr @src_file.14235, i64 88, i64 1081)
+  call void @forge_null_deref_trap(ptr @fld_name.14233, i64 14, ptr @sty_name.14234, i64 3, i64 %null_ext, ptr @src_file.14235, i64 88, i64 1085)
   %next27 = load ptr, ptr %next12, align 8
   %6 = call ptr @Ctx__resolve_params(ptr %self25, ptr %next27)
   %slot_base28 = ptrtoint ptr %4 to i64
@@ -162946,7 +162991,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14236, i64 %tag, ptr @mu_file.14237, i64 1081)
+  call void @forge_match_unreachable(ptr @.match_fn.14236, i64 %tag, ptr @mu_file.14237, i64 1085)
   unreachable
 }
 
@@ -162974,9 +163019,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -163035,7 +163080,7 @@ march_arm3:                                       ; preds = %march_next
   %cast26 = ptrtoint ptr %self25 to i64
   %null_chk = icmp eq i64 %cast26, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14238, i64 14, ptr @sty_name.14239, i64 3, i64 %null_ext, ptr @src_file.14240, i64 88, i64 1090)
+  call void @forge_null_deref_trap(ptr @fld_name.14238, i64 14, ptr @sty_name.14239, i64 3, i64 %null_ext, ptr @src_file.14240, i64 88, i64 1094)
   %next27 = load ptr, ptr %next12, align 8
   %6 = call ptr @Ctx__resolve_fields(ptr %self25, ptr %next27)
   %slot_base28 = ptrtoint ptr %4 to i64
@@ -163047,7 +163092,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14241, i64 %tag, ptr @mu_file.14242, i64 1090)
+  call void @forge_match_unreachable(ptr @.match_fn.14241, i64 %tag, ptr @mu_file.14242, i64 1094)
   unreachable
 }
 
@@ -163089,7 +163134,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14243, i64 7, ptr @sty_name.14244, i64 3, i64 %null_ext, ptr @src_file.14245, i64 88, i64 1110)
+  call void @forge_null_deref_trap(ptr @fld_name.14243, i64 7, ptr @sty_name.14244, i64 3, i64 %null_ext, ptr @src_file.14245, i64 88, i64 1114)
   %fn_rets_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 11
   %fn_rets = load ptr, ptr %fn_rets_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -163105,14 +163150,14 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14246, i64 7, ptr @sty_name.14247, i64 3, i64 %null_ext, ptr @src_file.14248, i64 88, i64 1113)
+  call void @forge_null_deref_trap(ptr @fld_name.14246, i64 7, ptr @sty_name.14247, i64 3, i64 %null_ext, ptr @src_file.14248, i64 88, i64 1117)
   %fn_rets_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 11
   %fn_rets = load ptr, ptr %fn_rets_ptr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14249, i64 15, ptr @sty_name.14250, i64 3, i64 %null_ext5, ptr @src_file.14251, i64 88, i64 1113)
+  call void @forge_null_deref_trap(ptr @fld_name.14249, i64 15, ptr @sty_name.14250, i64 3, i64 %null_ext5, ptr @src_file.14251, i64 88, i64 1117)
   %current_fn_name_ptr = getelementptr inbounds nuw %Ctx, ptr %self2, i32 0, i32 4
   %current_fn_name = load ptr, ptr %current_fn_name_ptr, align 8
   %1 = call ptr @"codegen::types::fn_ret_lookup"(ptr %fn_rets, ptr %current_fn_name)
@@ -163357,7 +163402,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14252, i64 7, ptr @sty_name.14253, i64 3, i64 %null_ext, ptr @src_file.14254, i64 88, i64 1130)
+  call void @forge_null_deref_trap(ptr @fld_name.14252, i64 7, ptr @sty_name.14253, i64 3, i64 %null_ext, ptr @src_file.14254, i64 88, i64 1134)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %pred2 = load i64, ptr %pred, align 8
@@ -163370,7 +163415,7 @@ entry:
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14255, i64 7, ptr @sty_name.14256, i64 3, i64 %null_ext9, ptr @src_file.14257, i64 88, i64 1131)
+  call void @forge_null_deref_trap(ptr @fld_name.14255, i64 7, ptr @sty_name.14256, i64 3, i64 %null_ext9, ptr @src_file.14257, i64 88, i64 1135)
   %builder_ptr10 = getelementptr inbounds nuw %Ctx, ptr %self6, i32 0, i32 2
   %builder11 = load ptr, ptr %builder_ptr10, align 8
   %cmp12 = load ptr, ptr %cmp, align 8
@@ -163378,7 +163423,7 @@ entry:
   %cast14 = ptrtoint ptr %self13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14258, i64 8, ptr @sty_name.14259, i64 3, i64 %null_ext16, ptr @src_file.14260, i64 88, i64 1131)
+  call void @forge_null_deref_trap(ptr @fld_name.14258, i64 8, ptr @sty_name.14259, i64 3, i64 %null_ext16, ptr @src_file.14260, i64 88, i64 1135)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self13, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name17 = load ptr, ptr %name, align 8
@@ -163422,7 +163467,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14262, i64 7, ptr @sty_name.14263, i64 3, i64 %null_ext, ptr @src_file.14264, i64 88, i64 1135)
+  call void @forge_null_deref_trap(ptr @fld_name.14262, i64 7, ptr @sty_name.14263, i64 3, i64 %null_ext, ptr @src_file.14264, i64 88, i64 1139)
   %builder_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 2
   %builder = load ptr, ptr %builder_ptr, align 8
   %pred2 = load i64, ptr %pred, align 8
@@ -163435,7 +163480,7 @@ entry:
   %cast7 = ptrtoint ptr %self6 to i64
   %null_chk8 = icmp eq i64 %cast7, 0
   %null_ext9 = zext i1 %null_chk8 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14265, i64 7, ptr @sty_name.14266, i64 3, i64 %null_ext9, ptr @src_file.14267, i64 88, i64 1136)
+  call void @forge_null_deref_trap(ptr @fld_name.14265, i64 7, ptr @sty_name.14266, i64 3, i64 %null_ext9, ptr @src_file.14267, i64 88, i64 1140)
   %builder_ptr10 = getelementptr inbounds nuw %Ctx, ptr %self6, i32 0, i32 2
   %builder11 = load ptr, ptr %builder_ptr10, align 8
   %cmp12 = load ptr, ptr %cmp, align 8
@@ -163443,7 +163488,7 @@ entry:
   %cast14 = ptrtoint ptr %self13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14268, i64 8, ptr @sty_name.14269, i64 3, i64 %null_ext16, ptr @src_file.14270, i64 88, i64 1136)
+  call void @forge_null_deref_trap(ptr @fld_name.14268, i64 8, ptr @sty_name.14269, i64 3, i64 %null_ext16, ptr @src_file.14270, i64 88, i64 1140)
   %i64_type_ptr = getelementptr inbounds nuw %Ctx, ptr %self13, i32 0, i32 5
   %i64_type = load ptr, ptr %i64_type_ptr, align 8
   %name17 = load ptr, ptr %name, align 8
@@ -163480,19 +163525,19 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14272, i64 4, ptr @sty_name.14273, i64 3, i64 %null_ext, ptr @src_file.14274, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14272, i64 4, ptr @sty_name.14273, i64 3, i64 %null_ext, ptr @src_file.14274, i64 88, i64 1146)
   %2 = call ptr @forge_array_new()
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14276, i64 7, ptr @sty_name.14277, i64 3, i64 %null_ext5, ptr @src_file.14278, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14276, i64 7, ptr @sty_name.14277, i64 3, i64 %null_ext5, ptr @src_file.14278, i64 88, i64 1146)
   %rhs6 = load ptr, ptr %rhs, align 8
   %self7 = load ptr, ptr %self, align 8
   %cast8 = ptrtoint ptr %self7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14279, i64 3, ptr @sty_name.14280, i64 3, i64 %null_ext10, ptr @src_file.14281, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14279, i64 3, ptr @sty_name.14280, i64 3, i64 %null_ext10, ptr @src_file.14281, i64 88, i64 1146)
   %3 = call ptr @Ctx__i64(ptr %self7, i64 0)
   %4 = call ptr @Ctx__icmp_eq(ptr %self2, ptr %rhs6, ptr %3, ptr @.str.14282)
   %cast11 = ptrtoint ptr %4 to i64
@@ -163501,12 +163546,12 @@ entry:
   %cast13 = ptrtoint ptr %self12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14283, i64 10, ptr @sty_name.14284, i64 3, i64 %null_ext15, ptr @src_file.14285, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14283, i64 10, ptr @sty_name.14284, i64 3, i64 %null_ext15, ptr @src_file.14285, i64 88, i64 1146)
   %self16 = load ptr, ptr %self, align 8
   %cast17 = ptrtoint ptr %self16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14286, i64 11, ptr @sty_name.14287, i64 3, i64 %null_ext19, ptr @src_file.14288, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14286, i64 11, ptr @sty_name.14287, i64 3, i64 %null_ext19, ptr @src_file.14288, i64 88, i64 1146)
   %source_file_ptr = getelementptr inbounds nuw %Ctx, ptr %self16, i32 0, i32 21
   %source_file = load ptr, ptr %source_file_ptr, align 8
   %5 = call ptr @Ctx__global_str(ptr %self12, ptr %source_file, ptr @.str.14289)
@@ -163516,12 +163561,12 @@ entry:
   %cast22 = ptrtoint ptr %self21 to i64
   %null_chk23 = icmp eq i64 %cast22, 0
   %null_ext24 = zext i1 %null_chk23 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14290, i64 3, ptr @sty_name.14291, i64 3, i64 %null_ext24, ptr @src_file.14292, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14290, i64 3, ptr @sty_name.14291, i64 3, i64 %null_ext24, ptr @src_file.14292, i64 88, i64 1146)
   %self25 = load ptr, ptr %self, align 8
   %cast26 = ptrtoint ptr %self25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14293, i64 11, ptr @sty_name.14294, i64 3, i64 %null_ext28, ptr @src_file.14295, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14293, i64 11, ptr @sty_name.14294, i64 3, i64 %null_ext28, ptr @src_file.14295, i64 88, i64 1146)
   %source_file_ptr29 = getelementptr inbounds nuw %Ctx, ptr %self25, i32 0, i32 21
   %source_file30 = load ptr, ptr %source_file_ptr29, align 8
   %6 = call i64 @strlen(ptr %source_file30)
@@ -163532,12 +163577,12 @@ entry:
   %cast33 = ptrtoint ptr %self32 to i64
   %null_chk34 = icmp eq i64 %cast33, 0
   %null_ext35 = zext i1 %null_chk34 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14296, i64 3, ptr @sty_name.14297, i64 3, i64 %null_ext35, ptr @src_file.14298, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14296, i64 3, ptr @sty_name.14297, i64 3, i64 %null_ext35, ptr @src_file.14298, i64 88, i64 1146)
   %self36 = load ptr, ptr %self, align 8
   %cast37 = ptrtoint ptr %self36 to i64
   %null_chk38 = icmp eq i64 %cast37, 0
   %null_ext39 = zext i1 %null_chk38 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14299, i64 11, ptr @sty_name.14300, i64 3, i64 %null_ext39, ptr @src_file.14301, i64 88, i64 1142)
+  call void @forge_null_deref_trap(ptr @fld_name.14299, i64 11, ptr @sty_name.14300, i64 3, i64 %null_ext39, ptr @src_file.14301, i64 88, i64 1146)
   %source_line_ptr = getelementptr inbounds nuw %Ctx, ptr %self36, i32 0, i32 22
   %source_line = load i64, ptr %source_line_ptr, align 8
   %8 = call ptr @Ctx__i64(ptr %self32, i64 %source_line)
@@ -163558,7 +163603,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14302, i64 7, ptr @sty_name.14303, i64 3, i64 %null_ext, ptr @src_file.14304, i64 88, i64 1151)
+  call void @forge_null_deref_trap(ptr @fld_name.14302, i64 7, ptr @sty_name.14303, i64 3, i64 %null_ext, ptr @src_file.14304, i64 88, i64 1155)
   %structs_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 9
   %structs = load ptr, ptr %structs_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -163576,7 +163621,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14305, i64 5, ptr @sty_name.14306, i64 3, i64 %null_ext, ptr @src_file.14307, i64 88, i64 1152)
+  call void @forge_null_deref_trap(ptr @fld_name.14305, i64 5, ptr @sty_name.14306, i64 3, i64 %null_ext, ptr @src_file.14307, i64 88, i64 1156)
   %enums_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 10
   %enums = load ptr, ptr %enums_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -163594,7 +163639,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14308, i64 14, ptr @sty_name.14309, i64 3, i64 %null_ext, ptr @src_file.14310, i64 88, i64 1153)
+  call void @forge_null_deref_trap(ptr @fld_name.14308, i64 14, ptr @sty_name.14309, i64 3, i64 %null_ext, ptr @src_file.14310, i64 88, i64 1157)
   %top_level_vars_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 13
   %top_level_vars = load ptr, ptr %top_level_vars_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -163614,7 +163659,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14311, i64 11, ptr @sty_name.14312, i64 3, i64 %null_ext, ptr @src_file.14313, i64 88, i64 1157)
+  call void @forge_null_deref_trap(ptr @fld_name.14311, i64 11, ptr @sty_name.14312, i64 3, i64 %null_ext, ptr @src_file.14313, i64 88, i64 1161)
   %enum_name2 = load ptr, ptr %enum_name, align 8
   %2 = call ptr @Ctx__lookup_enum(ptr %self1, ptr %enum_name2)
   store ptr %2, ptr %lookup, align 8
@@ -163622,7 +163667,7 @@ entry:
   %cast4 = ptrtoint ptr %lookup3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14314, i64 5, ptr @sty_name.14315, i64 10, i64 %null_ext6, ptr @src_file.14316, i64 88, i64 1158)
+  call void @forge_null_deref_trap(ptr @fld_name.14314, i64 5, ptr @sty_name.14315, i64 10, i64 %null_ext6, ptr @src_file.14316, i64 88, i64 1162)
   %found_ptr = getelementptr inbounds nuw %EnumLookup, ptr %lookup3, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %not_cmp = icmp eq i64 %found, 0
@@ -163635,7 +163680,7 @@ ifcont:                                           ; preds = %if_else
   %cast10 = ptrtoint ptr %lookup9 to i64
   %null_chk11 = icmp eq i64 %cast10, 0
   %null_ext12 = zext i1 %null_chk11 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14317, i64 8, ptr @sty_name.14318, i64 10, i64 %null_ext12, ptr @src_file.14319, i64 88, i64 1159)
+  call void @forge_null_deref_trap(ptr @fld_name.14317, i64 8, ptr @sty_name.14318, i64 10, i64 %null_ext12, ptr @src_file.14319, i64 88, i64 1163)
   %variants_ptr = getelementptr inbounds nuw %EnumLookup, ptr %lookup9, i32 0, i32 1
   %variants = load ptr, ptr %variants_ptr, align 8
   %3 = call ptr @"core::ast::variant_lookup"(ptr %variants, ptr @.str.14320)
@@ -163644,7 +163689,7 @@ ifcont:                                           ; preds = %if_else
   %cast14 = ptrtoint ptr %ok13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
   %null_ext16 = zext i1 %null_chk15 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14321, i64 5, ptr @sty_name.14322, i64 13, i64 %null_ext16, ptr @src_file.14323, i64 88, i64 1160)
+  call void @forge_null_deref_trap(ptr @fld_name.14321, i64 5, ptr @sty_name.14322, i64 13, i64 %null_ext16, ptr @src_file.14323, i64 88, i64 1164)
   %found_ptr17 = getelementptr inbounds nuw %VariantLookup, ptr %ok13, i32 0, i32 0
   %found18 = load i64, ptr %found_ptr17, align 8
   %not_cmp19 = icmp eq i64 %found18, 0
@@ -163670,7 +163715,7 @@ ifcont21:                                         ; preds = %if_else24
   %cast30 = ptrtoint ptr %ok29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14324, i64 6, ptr @sty_name.14325, i64 13, i64 %null_ext32, ptr @src_file.14326, i64 88, i64 1161)
+  call void @forge_null_deref_trap(ptr @fld_name.14324, i64 6, ptr @sty_name.14325, i64 13, i64 %null_ext32, ptr @src_file.14326, i64 88, i64 1165)
   %fields_ptr = getelementptr inbounds nuw %VariantLookup, ptr %ok29, i32 0, i32 1
   %fields = load ptr, ptr %fields_ptr, align 8
   %5 = call ptr @"codegen::types::field_resolved_at"(ptr %fields, i64 0)
@@ -163700,7 +163745,7 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14327, i64 9, ptr @sty_name.14328, i64 3, i64 %null_ext, ptr @src_file.14329, i64 88, i64 1163)
+  call void @forge_null_deref_trap(ptr @fld_name.14327, i64 9, ptr @sty_name.14328, i64 3, i64 %null_ext, ptr @src_file.14329, i64 88, i64 1167)
   %fn_params_ptr = getelementptr inbounds nuw %Ctx, ptr %self1, i32 0, i32 12
   %fn_params = load ptr, ptr %fn_params_ptr, align 8
   %name2 = load ptr, ptr %name, align 8
@@ -163719,20 +163764,20 @@ entry:
   %cast = ptrtoint ptr %self1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14330, i64 9, ptr @sty_name.14331, i64 3, i64 %null_ext, ptr @src_file.14332, i64 88, i64 1169)
+  call void @forge_null_deref_trap(ptr @fld_name.14330, i64 9, ptr @sty_name.14331, i64 3, i64 %null_ext, ptr @src_file.14332, i64 88, i64 1173)
   %2 = call ptr @Ctx__array_new(ptr %self1)
   store ptr %2, ptr %arr, align 8
   %self2 = load ptr, ptr %self, align 8
   %cast3 = ptrtoint ptr %self2 to i64
   %null_chk4 = icmp eq i64 %cast3, 0
   %null_ext5 = zext i1 %null_chk4 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14333, i64 10, ptr @sty_name.14334, i64 3, i64 %null_ext5, ptr @src_file.14335, i64 88, i64 1170)
+  call void @forge_null_deref_trap(ptr @fld_name.14333, i64 10, ptr @sty_name.14334, i64 3, i64 %null_ext5, ptr @src_file.14335, i64 88, i64 1174)
   %arr6 = load ptr, ptr %arr, align 8
   %self7 = load ptr, ptr %self, align 8
   %cast8 = ptrtoint ptr %self7 to i64
   %null_chk9 = icmp eq i64 %cast8, 0
   %null_ext10 = zext i1 %null_chk9 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14336, i64 3, ptr @sty_name.14337, i64 3, i64 %null_ext10, ptr @src_file.14338, i64 88, i64 1170)
+  call void @forge_null_deref_trap(ptr @fld_name.14336, i64 3, ptr @sty_name.14337, i64 3, i64 %null_ext10, ptr @src_file.14338, i64 88, i64 1174)
   %3 = call i64 @"codegen::types::closure_marker"()
   %4 = call ptr @Ctx__i64(ptr %self7, i64 %3)
   %5 = call i64 @Ctx__array_push(ptr %self2, ptr %arr6, ptr %4)
@@ -163740,7 +163785,7 @@ entry:
   %cast12 = ptrtoint ptr %self11 to i64
   %null_chk13 = icmp eq i64 %cast12, 0
   %null_ext14 = zext i1 %null_chk13 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14339, i64 10, ptr @sty_name.14340, i64 3, i64 %null_ext14, ptr @src_file.14341, i64 88, i64 1171)
+  call void @forge_null_deref_trap(ptr @fld_name.14339, i64 10, ptr @sty_name.14340, i64 3, i64 %null_ext14, ptr @src_file.14341, i64 88, i64 1175)
   %arr15 = load ptr, ptr %arr, align 8
   %fn_ptr16 = load ptr, ptr %fn_ptr, align 8
   %6 = call i64 @Ctx__array_push(ptr %self11, ptr %arr15, ptr %fn_ptr16)
@@ -165446,25 +165491,26 @@ match_end:                                        ; preds = %match_arm
   call void @forge_null_deref_trap(ptr @fld_name.14463, i64 8, ptr @sty_name.14464, i64 3, i64 %null_ext771, ptr @src_file.14465, i64 88, i64 271)
   %entry772 = load ptr, ptr %entry698, align 8
   %269 = call i64 @Ctx__position(ptr %ctx768, ptr %entry772)
-  %270 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr773 = getelementptr inbounds nuw %VarEnv, ptr %270, i32 0, i32 0
+  %270 = call i64 @"codegen::types::rc_cleanup_reset"()
+  %271 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr773 = getelementptr inbounds nuw %VarEnv, ptr %271, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr773, align 8
-  %pay_ptr774 = getelementptr inbounds nuw %VarEnv, ptr %270, i32 0, i32 1
+  %pay_ptr774 = getelementptr inbounds nuw %VarEnv, ptr %271, i32 0, i32 1
   store ptr null, ptr %pay_ptr774, align 8
-  %cast775 = ptrtoint ptr %270 to i64
+  %cast775 = ptrtoint ptr %271 to i64
   %cast776 = inttoptr i64 %cast775 to ptr
   store ptr %cast776, ptr %initial, align 8
   %ctx777 = load ptr, ptr %ctx, align 8
   %initial778 = load ptr, ptr %initial, align 8
   %stmts779 = load ptr, ptr %stmts, align 8
-  %271 = call ptr @"codegen::setup::emit_top_level"(ptr %ctx777, ptr %initial778, ptr %stmts779)
-  %tag_ptr780 = getelementptr inbounds nuw %Result__VarEnv__string, ptr %271, i32 0, i32 0
+  %272 = call ptr @"codegen::setup::emit_top_level"(ptr %ctx777, ptr %initial778, ptr %stmts779)
+  %tag_ptr780 = getelementptr inbounds nuw %Result__VarEnv__string, ptr %272, i32 0, i32 0
   %tag781 = load i64, ptr %tag_ptr780, align 8
   %tag_eq785 = icmp eq i64 %tag781, 5862623
   br i1 %tag_eq785, label %match_arm783, label %match_next784
 
 match_arm:                                        ; preds = %ife_end
-  %272 = call ptr @forge_map_new_cstr()
+  %273 = call ptr @forge_map_new_cstr()
   br label %match_end
 
 match_next:                                       ; preds = %ife_end
@@ -165484,19 +165530,19 @@ match_arm757:                                     ; preds = %match_next
   %null_chk = icmp eq i64 %cast762, 0
   %null_ext = zext i1 %null_chk to i64
   call void @forge_null_deref_trap(ptr @fld_name.14458, i64 7, ptr @sty_name.14459, i64 3, i64 %null_ext, ptr @src_file.14460, i64 88, i64 263)
-  %273 = call i64 @Ctx__dispose(ptr %ctx761)
-  %274 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr763 = getelementptr inbounds nuw %Result__int__string, ptr %274, i32 0, i32 0
+  %274 = call i64 @Ctx__dispose(ptr %ctx761)
+  %275 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr763 = getelementptr inbounds nuw %Result__int__string, ptr %275, i32 0, i32 0
   store i64 193456014, ptr %tag_ptr763, align 8
-  %pay_ptr764 = getelementptr inbounds nuw %Result__int__string, ptr %274, i32 0, i32 1
-  %275 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %275, ptr %pay_ptr764, align 8
+  %pay_ptr764 = getelementptr inbounds nuw %Result__int__string, ptr %275, i32 0, i32 1
+  %276 = call ptr @forge_rc_alloc(i64 8)
+  store ptr %276, ptr %pay_ptr764, align 8
   %e765 = load ptr, ptr %e760, align 8
-  %slot_base = ptrtoint ptr %275 to i64
+  %slot_base = ptrtoint ptr %276 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
   store ptr %e765, ptr %slot, align 8
-  %cast766 = ptrtoint ptr %274 to i64
+  %cast766 = ptrtoint ptr %275 to i64
   %cast767 = inttoptr i64 %cast766 to ptr
   ret ptr %cast767
 
@@ -165509,16 +165555,16 @@ match_end782:                                     ; preds = %match_arm783
   %cast809 = ptrtoint ptr %ctx808 to i64
   %null_chk810 = icmp eq i64 %cast809, 0
   %null_ext811 = zext i1 %null_chk810 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14471, i64 14, ptr @sty_name.14472, i64 3, i64 %null_ext811, ptr @src_file.14473, i64 88, i64 283)
-  %276 = call i1 @Ctx__has_terminator(ptr %ctx808)
-  %widen = zext i1 %276 to i64
+  call void @forge_null_deref_trap(ptr @fld_name.14471, i64 14, ptr @sty_name.14472, i64 3, i64 %null_ext811, ptr @src_file.14473, i64 88, i64 284)
+  %277 = call i1 @Ctx__has_terminator(ptr %ctx808)
+  %widen = zext i1 %277 to i64
   %not_cmp = icmp eq i64 %widen, 0
   %not_cmp_ext = zext i1 %not_cmp to i64
   %if_cond = icmp ne i64 %not_cmp_ext, 0
   br i1 %if_cond, label %if_then, label %if_else
 
 match_arm783:                                     ; preds = %match_end
-  %277 = call ptr @forge_map_new_cstr()
+  %278 = call ptr @forge_map_new_cstr()
   br label %match_end782
 
 match_next784:                                    ; preds = %match_end
@@ -165526,7 +165572,7 @@ match_next784:                                    ; preds = %match_end
   br i1 %tag_eq788, label %match_arm786, label %match_next787
 
 match_arm786:                                     ; preds = %match_next784
-  %pay_slot789 = getelementptr inbounds nuw %Result__VarEnv__string, ptr %271, i32 0, i32 1
+  %pay_slot789 = getelementptr inbounds nuw %Result__VarEnv__string, ptr %272, i32 0, i32 1
   %payload790 = load ptr, ptr %pay_slot789, align 8
   %e_slot_base791 = ptrtoint ptr %payload790 to i64
   %e_slot_addr792 = add i64 %e_slot_base791, 0
@@ -165537,25 +165583,25 @@ match_arm786:                                     ; preds = %match_next784
   %cast797 = ptrtoint ptr %ctx796 to i64
   %null_chk798 = icmp eq i64 %cast797, 0
   %null_ext799 = zext i1 %null_chk798 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14466, i64 7, ptr @sty_name.14467, i64 3, i64 %null_ext799, ptr @src_file.14468, i64 88, i64 277)
-  %278 = call i64 @Ctx__dispose(ptr %ctx796)
-  %279 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr800 = getelementptr inbounds nuw %Result__int__string, ptr %279, i32 0, i32 0
+  call void @forge_null_deref_trap(ptr @fld_name.14466, i64 7, ptr @sty_name.14467, i64 3, i64 %null_ext799, ptr @src_file.14468, i64 88, i64 278)
+  %279 = call i64 @Ctx__dispose(ptr %ctx796)
+  %280 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr800 = getelementptr inbounds nuw %Result__int__string, ptr %280, i32 0, i32 0
   store i64 193456014, ptr %tag_ptr800, align 8
-  %pay_ptr801 = getelementptr inbounds nuw %Result__int__string, ptr %279, i32 0, i32 1
-  %280 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %280, ptr %pay_ptr801, align 8
+  %pay_ptr801 = getelementptr inbounds nuw %Result__int__string, ptr %280, i32 0, i32 1
+  %281 = call ptr @forge_rc_alloc(i64 8)
+  store ptr %281, ptr %pay_ptr801, align 8
   %e802 = load ptr, ptr %e795, align 8
-  %slot_base803 = ptrtoint ptr %280 to i64
+  %slot_base803 = ptrtoint ptr %281 to i64
   %slot_addr804 = add i64 %slot_base803, 0
   %slot805 = inttoptr i64 %slot_addr804 to ptr
   store ptr %e802, ptr %slot805, align 8
-  %cast806 = ptrtoint ptr %279 to i64
+  %cast806 = ptrtoint ptr %280 to i64
   %cast807 = inttoptr i64 %cast806 to ptr
   ret ptr %cast807
 
 match_next787:                                    ; preds = %match_next784
-  call void @forge_match_unreachable(ptr @.match_fn.14469, i64 %tag781, ptr @mu_file.14470, i64 273)
+  call void @forge_match_unreachable(ptr @.match_fn.14469, i64 %tag781, ptr @mu_file.14470, i64 274)
   unreachable
 
 ifcont:                                           ; preds = %if_else, %if_then
@@ -165563,22 +165609,22 @@ ifcont:                                           ; preds = %if_else, %if_then
   %cast825 = ptrtoint ptr %ctx824 to i64
   %null_chk826 = icmp eq i64 %cast825, 0
   %null_ext827 = zext i1 %null_chk826 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14480, i64 13, ptr @sty_name.14481, i64 3, i64 %null_ext827, ptr @src_file.14482, i64 88, i64 287)
-  %281 = call i64 @Ctx__verify_module(ptr %ctx824)
+  call void @forge_null_deref_trap(ptr @fld_name.14480, i64 13, ptr @sty_name.14481, i64 3, i64 %null_ext827, ptr @src_file.14482, i64 88, i64 288)
+  %282 = call i64 @Ctx__verify_module(ptr %ctx824)
   %ctx828 = load ptr, ptr %ctx, align 8
   %cast829 = ptrtoint ptr %ctx828 to i64
   %null_chk830 = icmp eq i64 %cast829, 0
   %null_ext831 = zext i1 %null_chk830 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14483, i64 8, ptr @sty_name.14484, i64 3, i64 %null_ext831, ptr @src_file.14485, i64 88, i64 288)
+  call void @forge_null_deref_trap(ptr @fld_name.14483, i64 8, ptr @sty_name.14484, i64 3, i64 %null_ext831, ptr @src_file.14485, i64 88, i64 289)
   %output_path832 = load ptr, ptr %output_path, align 8
-  %282 = call i64 @Ctx__write_ir(ptr %ctx828, ptr %output_path832)
-  store i64 %282, ptr %write_result, align 8
+  %283 = call i64 @Ctx__write_ir(ptr %ctx828, ptr %output_path832)
+  store i64 %283, ptr %write_result, align 8
   %ctx833 = load ptr, ptr %ctx, align 8
   %cast834 = ptrtoint ptr %ctx833 to i64
   %null_chk835 = icmp eq i64 %cast834, 0
   %null_ext836 = zext i1 %null_chk835 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14486, i64 7, ptr @sty_name.14487, i64 3, i64 %null_ext836, ptr @src_file.14488, i64 88, i64 289)
-  %283 = call i64 @Ctx__dispose(ptr %ctx833)
+  call void @forge_null_deref_trap(ptr @fld_name.14486, i64 7, ptr @sty_name.14487, i64 3, i64 %null_ext836, ptr @src_file.14488, i64 88, i64 290)
+  %284 = call i64 @Ctx__dispose(ptr %ctx833)
   %write_result837 = load i64, ptr %write_result, align 8
   %ne = icmp ne i64 %write_result837, 0
   %ne_ext = zext i1 %ne to i64
@@ -165590,65 +165636,65 @@ if_then:                                          ; preds = %match_end782
   %cast813 = ptrtoint ptr %ctx812 to i64
   %null_chk814 = icmp eq i64 %cast813, 0
   %null_ext815 = zext i1 %null_chk814 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14474, i64 3, ptr @sty_name.14475, i64 3, i64 %null_ext815, ptr @src_file.14476, i64 88, i64 284)
+  call void @forge_null_deref_trap(ptr @fld_name.14474, i64 3, ptr @sty_name.14475, i64 3, i64 %null_ext815, ptr @src_file.14476, i64 88, i64 285)
   %ctx816 = load ptr, ptr %ctx, align 8
   %cast817 = ptrtoint ptr %ctx816 to i64
   %null_chk818 = icmp eq i64 %cast817, 0
   %null_ext819 = zext i1 %null_chk818 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14477, i64 3, ptr @sty_name.14478, i64 3, i64 %null_ext819, ptr @src_file.14479, i64 88, i64 284)
-  %284 = call ptr @Ctx__i64(ptr %ctx816, i64 0)
-  %285 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr820 = getelementptr inbounds nuw %ValueType, ptr %285, i32 0, i32 0
+  call void @forge_null_deref_trap(ptr @fld_name.14477, i64 3, ptr @sty_name.14478, i64 3, i64 %null_ext819, ptr @src_file.14479, i64 88, i64 285)
+  %285 = call ptr @Ctx__i64(ptr %ctx816, i64 0)
+  %286 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr820 = getelementptr inbounds nuw %ValueType, ptr %286, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr820, align 8
-  %pay_ptr821 = getelementptr inbounds nuw %ValueType, ptr %285, i32 0, i32 1
+  %pay_ptr821 = getelementptr inbounds nuw %ValueType, ptr %286, i32 0, i32 1
   store ptr null, ptr %pay_ptr821, align 8
-  %cast822 = ptrtoint ptr %285 to i64
+  %cast822 = ptrtoint ptr %286 to i64
   %cast823 = inttoptr i64 %cast822 to ptr
-  %286 = call i64 @Ctx__ret(ptr %ctx812, ptr %284, ptr %cast823)
+  %287 = call i64 @Ctx__ret(ptr %ctx812, ptr %285, ptr %cast823)
   br label %ifcont
 
 if_else:                                          ; preds = %match_end782
   br label %ifcont
 
 ifcont838:                                        ; preds = %if_else841
-  %287 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr852 = getelementptr inbounds nuw %Result__int__string, ptr %287, i32 0, i32 0
+  %288 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr852 = getelementptr inbounds nuw %Result__int__string, ptr %288, i32 0, i32 0
   store i64 5862623, ptr %tag_ptr852, align 8
-  %pay_ptr853 = getelementptr inbounds nuw %Result__int__string, ptr %287, i32 0, i32 1
-  %288 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %288, ptr %pay_ptr853, align 8
-  %slot_base854 = ptrtoint ptr %288 to i64
+  %pay_ptr853 = getelementptr inbounds nuw %Result__int__string, ptr %288, i32 0, i32 1
+  %289 = call ptr @forge_rc_alloc(i64 8)
+  store ptr %289, ptr %pay_ptr853, align 8
+  %slot_base854 = ptrtoint ptr %289 to i64
   %slot_addr855 = add i64 %slot_base854, 0
   %slot856 = inttoptr i64 %slot_addr855 to ptr
   store i64 0, ptr %slot856, align 8
-  %cast857 = ptrtoint ptr %287 to i64
+  %cast857 = ptrtoint ptr %288 to i64
   %cast858 = inttoptr i64 %cast857 to ptr
   ret ptr %cast858
 
 if_then840:                                       ; preds = %ifcont
-  %289 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr842 = getelementptr inbounds nuw %Result__int__string, ptr %289, i32 0, i32 0
+  %290 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr842 = getelementptr inbounds nuw %Result__int__string, ptr %290, i32 0, i32 0
   store i64 193456014, ptr %tag_ptr842, align 8
-  %pay_ptr843 = getelementptr inbounds nuw %Result__int__string, ptr %289, i32 0, i32 1
-  %290 = call ptr @forge_rc_alloc(i64 8)
-  store ptr %290, ptr %pay_ptr843, align 8
+  %pay_ptr843 = getelementptr inbounds nuw %Result__int__string, ptr %290, i32 0, i32 1
+  %291 = call ptr @forge_rc_alloc(i64 8)
+  store ptr %291, ptr %pay_ptr843, align 8
   %output_path844 = load ptr, ptr %output_path, align 8
-  %291 = call i64 @strlen(ptr @.str.14489)
-  %292 = call i64 @strlen(ptr %output_path844)
-  %concat_total = add i64 %291, %292
+  %292 = call i64 @strlen(ptr @.str.14489)
+  %293 = call i64 @strlen(ptr %output_path844)
+  %concat_total = add i64 %292, %293
   %concat_size = add i64 %concat_total, 1
-  %293 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %294 = call ptr @memcpy(ptr %293, ptr @.str.14489, i64 %291)
-  %cast845 = ptrtoint ptr %293 to i64
-  %dst2_int = add i64 %cast845, %291
+  %294 = call ptr @forge_bump_alloc(i64 %concat_size)
+  %295 = call ptr @memcpy(ptr %294, ptr @.str.14489, i64 %292)
+  %cast845 = ptrtoint ptr %294 to i64
+  %dst2_int = add i64 %cast845, %292
   %cast846 = inttoptr i64 %dst2_int to ptr
-  %rhs_len_p1 = add i64 %292, 1
-  %295 = call ptr @memcpy(ptr %cast846, ptr %output_path844, i64 %rhs_len_p1)
-  %slot_base847 = ptrtoint ptr %290 to i64
+  %rhs_len_p1 = add i64 %293, 1
+  %296 = call ptr @memcpy(ptr %cast846, ptr %output_path844, i64 %rhs_len_p1)
+  %slot_base847 = ptrtoint ptr %291 to i64
   %slot_addr848 = add i64 %slot_base847, 0
   %slot849 = inttoptr i64 %slot_addr848 to ptr
-  store ptr %293, ptr %slot849, align 8
-  %cast850 = ptrtoint ptr %289 to i64
+  store ptr %294, ptr %slot849, align 8
+  %cast850 = ptrtoint ptr %290 to i64
   %cast851 = inttoptr i64 %cast850 to ptr
   ret ptr %cast851
 
@@ -165680,9 +165726,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -165744,7 +165790,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14490, i64 %tag, ptr @mu_file.14491, i64 300)
+  call void @forge_match_unreachable(ptr @.match_fn.14490, i64 %tag, ptr @mu_file.14491, i64 301)
   unreachable
 }
 
@@ -165772,9 +165818,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -165841,7 +165887,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14492, i64 %tag, ptr @mu_file.14493, i64 308)
+  call void @forge_match_unreachable(ptr @.match_fn.14492, i64 %tag, ptr @mu_file.14493, i64 309)
   unreachable
 }
 
@@ -165869,9 +165915,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %2 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -165938,7 +165984,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14494, i64 %tag, ptr @mu_file.14495, i64 316)
+  call void @forge_match_unreachable(ptr @.match_fn.14494, i64 %tag, ptr @mu_file.14495, i64 317)
   unreachable
 }
 
@@ -166019,7 +166065,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14496, i64 %tag, ptr @mu_file.14497, i64 325)
+  call void @forge_match_unreachable(ptr @.match_fn.14496, i64 %tag, ptr @mu_file.14497, i64 326)
   unreachable
 }
 
@@ -166106,7 +166152,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14498, i64 4, ptr @sty_name.14499, i64 5, i64 %null_ext, ptr @src_file.14500, i64 88, i64 340)
+  call void @forge_null_deref_trap(ptr @fld_name.14498, i64 4, ptr @sty_name.14499, i64 5, i64 %null_ext, ptr @src_file.14500, i64 88, i64 341)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %9 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -166119,7 +166165,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14503, i64 %tag, ptr @mu_file.14504, i64 336)
+  call void @forge_match_unreachable(ptr @.match_fn.14503, i64 %tag, ptr @mu_file.14504, i64 337)
   unreachable
 
 match_end16:                                      ; preds = %march_arm159, %march_arm143, %march_arm138, %march_arm133, %march_arm67, %march_arm17
@@ -166382,7 +166428,7 @@ march_arm159:                                     ; preds = %march_next144
   br label %match_end16
 
 march_next160:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14501, i64 %tag14, ptr @mu_file.14502, i64 341)
+  call void @forge_match_unreachable(ptr @.match_fn.14501, i64 %tag14, ptr @mu_file.14502, i64 342)
   unreachable
 }
 
@@ -166539,7 +166585,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14505, i64 4, ptr @sty_name.14506, i64 5, i64 %null_ext, ptr @src_file.14507, i64 88, i64 390)
+  call void @forge_null_deref_trap(ptr @fld_name.14505, i64 4, ptr @sty_name.14506, i64 5, i64 %null_ext, ptr @src_file.14507, i64 88, i64 391)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %10 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -166552,7 +166598,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14510, i64 %tag, ptr @mu_file.14511, i64 386)
+  call void @forge_match_unreachable(ptr @.match_fn.14510, i64 %tag, ptr @mu_file.14511, i64 387)
   unreachable
 
 match_end16:                                      ; preds = %march_arm110, %march_arm93, %march_arm65, %march_arm37, %march_arm17
@@ -166709,7 +166755,7 @@ march_arm110:                                     ; preds = %march_next94
   br label %match_end16
 
 march_next111:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14508, i64 %tag14, ptr @mu_file.14509, i64 391)
+  call void @forge_match_unreachable(ptr @.match_fn.14508, i64 %tag14, ptr @mu_file.14509, i64 392)
   unreachable
 }
 
@@ -166800,7 +166846,7 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14513, i64 %tag, ptr @mu_file.14514, i64 405)
+  call void @forge_match_unreachable(ptr @.match_fn.14513, i64 %tag, ptr @mu_file.14514, i64 406)
   unreachable
 
 ifcont:                                           ; preds = %if_else, %if_then
@@ -166967,7 +167013,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14515, i64 4, ptr @sty_name.14516, i64 5, i64 %null_ext, ptr @src_file.14517, i64 88, i64 430)
+  call void @forge_null_deref_trap(ptr @fld_name.14515, i64 4, ptr @sty_name.14516, i64 5, i64 %null_ext, ptr @src_file.14517, i64 88, i64 431)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %10 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -166980,7 +167026,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14520, i64 %tag, ptr @mu_file.14521, i64 426)
+  call void @forge_match_unreachable(ptr @.match_fn.14520, i64 %tag, ptr @mu_file.14521, i64 427)
   unreachable
 
 match_end16:                                      ; preds = %march_arm85, %march_arm68, %march_arm17
@@ -167129,7 +167175,7 @@ march_arm85:                                      ; preds = %march_next69
   br label %match_end16
 
 march_next86:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14518, i64 %tag14, ptr @mu_file.14519, i64 431)
+  call void @forge_match_unreachable(ptr @.match_fn.14518, i64 %tag14, ptr @mu_file.14519, i64 432)
   unreachable
 }
 
@@ -167188,7 +167234,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14522, i64 4, ptr @sty_name.14523, i64 5, i64 %null_ext, ptr @src_file.14524, i64 88, i64 461)
+  call void @forge_null_deref_trap(ptr @fld_name.14522, i64 4, ptr @sty_name.14523, i64 5, i64 %null_ext, ptr @src_file.14524, i64 88, i64 462)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -167199,7 +167245,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14527, i64 %tag, ptr @mu_file.14528, i64 457)
+  call void @forge_match_unreachable(ptr @.match_fn.14527, i64 %tag, ptr @mu_file.14528, i64 458)
   unreachable
 
 match_end15:                                      ; preds = %march_arm45, %march_arm36, %march_arm16
@@ -167283,7 +167329,7 @@ march_arm45:                                      ; preds = %march_next37
   br label %match_end15
 
 march_next46:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14525, i64 %tag13, ptr @mu_file.14526, i64 461)
+  call void @forge_match_unreachable(ptr @.match_fn.14525, i64 %tag13, ptr @mu_file.14526, i64 462)
   unreachable
 }
 
@@ -167313,9 +167359,9 @@ match_end:                                        ; preds = %match_end15, %march
 
 march_arm:                                        ; preds = %entry
   %1 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -167344,7 +167390,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14529, i64 4, ptr @sty_name.14530, i64 5, i64 %null_ext, ptr @src_file.14531, i64 88, i64 476)
+  call void @forge_null_deref_trap(ptr @fld_name.14529, i64 4, ptr @sty_name.14530, i64 5, i64 %null_ext, ptr @src_file.14531, i64 88, i64 477)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -167355,7 +167401,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14534, i64 %tag, ptr @mu_file.14535, i64 472)
+  call void @forge_match_unreachable(ptr @.match_fn.14534, i64 %tag, ptr @mu_file.14535, i64 473)
   unreachable
 
 match_end15:                                      ; preds = %march_arm69, %march_arm37, %march_arm16
@@ -167460,7 +167506,7 @@ march_arm69:                                      ; preds = %march_next38
   br label %match_end15
 
 march_next70:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14532, i64 %tag13, ptr @mu_file.14533, i64 476)
+  call void @forge_match_unreachable(ptr @.match_fn.14532, i64 %tag13, ptr @mu_file.14533, i64 477)
   unreachable
 }
 
@@ -167519,7 +167565,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14536, i64 4, ptr @sty_name.14537, i64 5, i64 %null_ext, ptr @src_file.14538, i64 88, i64 490)
+  call void @forge_null_deref_trap(ptr @fld_name.14536, i64 4, ptr @sty_name.14537, i64 5, i64 %null_ext, ptr @src_file.14538, i64 88, i64 491)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -167530,7 +167576,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14541, i64 %tag, ptr @mu_file.14542, i64 486)
+  call void @forge_match_unreachable(ptr @.match_fn.14541, i64 %tag, ptr @mu_file.14542, i64 487)
   unreachable
 
 match_end15:                                      ; preds = %march_arm45, %march_arm36, %march_arm16
@@ -167613,7 +167659,7 @@ march_arm45:                                      ; preds = %march_next37
   br label %match_end15
 
 march_next46:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14539, i64 %tag13, ptr @mu_file.14540, i64 490)
+  call void @forge_match_unreachable(ptr @.match_fn.14539, i64 %tag13, ptr @mu_file.14540, i64 491)
   unreachable
 }
 
@@ -167672,7 +167718,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14543, i64 4, ptr @sty_name.14544, i64 5, i64 %null_ext, ptr @src_file.14545, i64 88, i64 505)
+  call void @forge_null_deref_trap(ptr @fld_name.14543, i64 4, ptr @sty_name.14544, i64 5, i64 %null_ext, ptr @src_file.14545, i64 88, i64 506)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -167683,7 +167729,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14548, i64 %tag, ptr @mu_file.14549, i64 501)
+  call void @forge_match_unreachable(ptr @.match_fn.14548, i64 %tag, ptr @mu_file.14549, i64 502)
   unreachable
 
 match_end15:                                      ; preds = %march_arm45, %march_arm36, %march_arm16
@@ -167766,7 +167812,7 @@ march_arm45:                                      ; preds = %march_next37
   br label %match_end15
 
 march_next46:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14546, i64 %tag13, ptr @mu_file.14547, i64 505)
+  call void @forge_match_unreachable(ptr @.match_fn.14546, i64 %tag13, ptr @mu_file.14547, i64 506)
   unreachable
 }
 
@@ -167873,7 +167919,7 @@ march_arm15:                                      ; preds = %guard_pass
   %cast = ptrtoint ptr %base_lookup29 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14551, i64 5, ptr @sty_name.14552, i64 12, i64 %null_ext, ptr @src_file.14553, i64 88, i64 523)
+  call void @forge_null_deref_trap(ptr @fld_name.14551, i64 5, ptr @sty_name.14552, i64 12, i64 %null_ext, ptr @src_file.14553, i64 88, i64 524)
   %found_ptr = getelementptr inbounds nuw %StructLookup, ptr %base_lookup29, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %not_cmp = icmp eq i64 %found, 0
@@ -167920,7 +167966,7 @@ if_then39:                                        ; preds = %ifcont
   %cast42 = ptrtoint ptr %base_lookup41 to i64
   %null_chk43 = icmp eq i64 %cast42, 0
   %null_ext44 = zext i1 %null_chk43 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14555, i64 6, ptr @sty_name.14556, i64 12, i64 %null_ext44, ptr @src_file.14557, i64 88, i64 525)
+  call void @forge_null_deref_trap(ptr @fld_name.14555, i64 6, ptr @sty_name.14556, i64 12, i64 %null_ext44, ptr @src_file.14557, i64 88, i64 526)
   %fields_ptr = getelementptr inbounds nuw %StructLookup, ptr %base_lookup41, i32 0, i32 1
   %fields45 = load ptr, ptr %fields_ptr, align 8
   %excluded_fields46 = load ptr, ptr %excluded_fields26, align 8
@@ -167935,7 +167981,7 @@ ifcont51:                                         ; preds = %if_else54
   %cast63 = ptrtoint ptr %base_lookup62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14562, i64 6, ptr @sty_name.14563, i64 12, i64 %null_ext65, ptr @src_file.14564, i64 88, i64 530)
+  call void @forge_null_deref_trap(ptr @fld_name.14562, i64 6, ptr @sty_name.14563, i64 12, i64 %null_ext65, ptr @src_file.14564, i64 88, i64 531)
   %fields_ptr66 = getelementptr inbounds nuw %StructLookup, ptr %base_lookup62, i32 0, i32 1
   %fields67 = load ptr, ptr %fields_ptr66, align 8
   %cast68 = ptrtoint ptr %fields67 to i64
@@ -167947,7 +167993,7 @@ if_then53:                                        ; preds = %ifcont37
   %cast56 = ptrtoint ptr %base_lookup55 to i64
   %null_chk57 = icmp eq i64 %cast56, 0
   %null_ext58 = zext i1 %null_chk57 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14559, i64 6, ptr @sty_name.14560, i64 12, i64 %null_ext58, ptr @src_file.14561, i64 88, i64 528)
+  call void @forge_null_deref_trap(ptr @fld_name.14559, i64 6, ptr @sty_name.14560, i64 12, i64 %null_ext58, ptr @src_file.14561, i64 88, i64 529)
   %fields_ptr59 = getelementptr inbounds nuw %StructLookup, ptr %base_lookup55, i32 0, i32 1
   %fields60 = load ptr, ptr %fields_ptr59, align 8
   %excluded_fields61 = load ptr, ptr %excluded_fields26, align 8
@@ -167964,7 +168010,7 @@ march_arm69:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next70:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14565, i64 %tag12, ptr @mu_file.14566, i64 519)
+  call void @forge_match_unreachable(ptr @.match_fn.14565, i64 %tag12, ptr @mu_file.14566, i64 520)
   unreachable
 
 march_arm73:                                      ; preds = %march_next
@@ -167974,7 +168020,7 @@ march_arm73:                                      ; preds = %march_next
   br label %match_end
 
 march_next74:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14567, i64 %tag, ptr @mu_file.14568, i64 516)
+  call void @forge_match_unreachable(ptr @.match_fn.14567, i64 %tag, ptr @mu_file.14568, i64 517)
   unreachable
 }
 
@@ -168092,7 +168138,7 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14569, i64 %tag, ptr @mu_file.14570, i64 551)
+  call void @forge_match_unreachable(ptr @.match_fn.14569, i64 %tag, ptr @mu_file.14570, i64 552)
   unreachable
 }
 
@@ -168160,7 +168206,7 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14571, i64 %tag, ptr @mu_file.14572, i64 564)
+  call void @forge_match_unreachable(ptr @.match_fn.14571, i64 %tag, ptr @mu_file.14572, i64 565)
   unreachable
 }
 
@@ -168253,7 +168299,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14573, i64 4, ptr @sty_name.14574, i64 5, i64 %null_ext, ptr @src_file.14575, i64 88, i64 579)
+  call void @forge_null_deref_trap(ptr @fld_name.14573, i64 4, ptr @sty_name.14574, i64 5, i64 %null_ext, ptr @src_file.14575, i64 88, i64 580)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %9 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -168266,7 +168312,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14580, i64 %tag, ptr @mu_file.14581, i64 575)
+  call void @forge_match_unreachable(ptr @.match_fn.14580, i64 %tag, ptr @mu_file.14581, i64 576)
   unreachable
 
 match_end16:                                      ; preds = %march_arm185, %march_arm165, %march_arm149, %march_arm80, %ifcont
@@ -168575,7 +168621,7 @@ march_arm185:                                     ; preds = %march_next166
   br label %match_end16
 
 march_next186:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14578, i64 %tag14, ptr @mu_file.14579, i64 580)
+  call void @forge_match_unreachable(ptr @.match_fn.14578, i64 %tag14, ptr @mu_file.14579, i64 581)
   unreachable
 }
 
@@ -168600,9 +168646,9 @@ match_end:                                        ; preds = %march_arm3, %march_
 
 march_arm:                                        ; preds = %entry
   %1 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 0
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr2, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   store i64 %cast, ptr %match_result, align 8
@@ -168628,9 +168674,9 @@ march_arm3:                                       ; preds = %march_next
   %next = load ptr, ptr %next_slot, align 8
   store ptr %next, ptr %next9, align 8
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr10 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr10 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr10, align 8
-  %pay_ptr11 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr11 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   %3 = call ptr @forge_rc_alloc(i64 16)
   store ptr %3, ptr %pay_ptr11, align 8
   %ty12 = load ptr, ptr %ty6, align 8
@@ -168649,7 +168695,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14582, i64 %tag, ptr @mu_file.14583, i64 624)
+  call void @forge_match_unreachable(ptr @.match_fn.14582, i64 %tag, ptr @mu_file.14583, i64 625)
   unreachable
 }
 
@@ -168710,7 +168756,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14584, i64 4, ptr @sty_name.14585, i64 5, i64 %null_ext, ptr @src_file.14586, i64 88, i64 635)
+  call void @forge_null_deref_trap(ptr @fld_name.14584, i64 4, ptr @sty_name.14585, i64 5, i64 %null_ext, ptr @src_file.14586, i64 88, i64 636)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -168723,7 +168769,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14589, i64 %tag, ptr @mu_file.14590, i64 631)
+  call void @forge_match_unreachable(ptr @.match_fn.14589, i64 %tag, ptr @mu_file.14590, i64 632)
   unreachable
 
 match_end16:                                      ; preds = %march_arm55, %march_arm46, %march_arm37, %march_arm17
@@ -168826,7 +168872,7 @@ march_arm55:                                      ; preds = %march_next47
   br label %match_end16
 
 march_next56:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14587, i64 %tag14, ptr @mu_file.14588, i64 636)
+  call void @forge_match_unreachable(ptr @.match_fn.14587, i64 %tag14, ptr @mu_file.14588, i64 637)
   unreachable
 }
 
@@ -168992,7 +169038,7 @@ march_arm3:                                       ; preds = %march_next
   %cast78 = ptrtoint ptr %ss77 to i64
   %null_chk = icmp eq i64 %cast78, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14591, i64 4, ptr @sty_name.14592, i64 5, i64 %null_ext, ptr @src_file.14593, i64 88, i64 655)
+  call void @forge_null_deref_trap(ptr @fld_name.14591, i64 4, ptr @sty_name.14592, i64 5, i64 %null_ext, ptr @src_file.14593, i64 88, i64 656)
   %line_ptr = getelementptr inbounds nuw %SStmt, ptr %ss77, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %with_ovr = getelementptr inbounds nuw %Ctx, ptr %4, i32 0, i32 22
@@ -169004,7 +169050,7 @@ march_arm3:                                       ; preds = %march_next
   %cast82 = ptrtoint ptr %ss81 to i64
   %null_chk83 = icmp eq i64 %cast82, 0
   %null_ext84 = zext i1 %null_chk83 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14594, i64 4, ptr @sty_name.14595, i64 5, i64 %null_ext84, ptr @src_file.14596, i64 88, i64 656)
+  call void @forge_null_deref_trap(ptr @fld_name.14594, i64 4, ptr @sty_name.14595, i64 5, i64 %null_ext84, ptr @src_file.14596, i64 88, i64 657)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss81, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %5 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
@@ -169017,7 +169063,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq92, label %march_arm90, label %march_next91
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14617, i64 %tag, ptr @mu_file.14618, i64 651)
+  call void @forge_match_unreachable(ptr @.match_fn.14617, i64 %tag, ptr @mu_file.14618, i64 652)
   unreachable
 
 match_end89:                                      ; preds = %try_ok243, %try_ok214, %try_ok169, %try_ok127, %try_ok, %march_arm90
@@ -169115,14 +169161,14 @@ try_ok127:                                        ; preds = %march_arm111
   %cast134 = ptrtoint ptr %result133 to i64
   %null_chk135 = icmp eq i64 %cast134, 0
   %null_ext136 = zext i1 %null_chk135 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14597, i64 3, ptr @sty_name.14598, i64 10, i64 %null_ext136, ptr @src_file.14599, i64 88, i64 667)
+  call void @forge_null_deref_trap(ptr @fld_name.14597, i64 3, ptr @sty_name.14598, i64 10, i64 %null_ext136, ptr @src_file.14599, i64 88, i64 668)
   %ctx_ptr = getelementptr inbounds nuw %TopLevelOk, ptr %result133, i32 0, i32 0
   %ctx137 = load ptr, ptr %ctx_ptr, align 8
   %result138 = load ptr, ptr %result, align 8
   %cast139 = ptrtoint ptr %result138 to i64
   %null_chk140 = icmp eq i64 %cast139, 0
   %null_ext141 = zext i1 %null_chk140 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14600, i64 3, ptr @sty_name.14601, i64 10, i64 %null_ext141, ptr @src_file.14602, i64 88, i64 667)
+  call void @forge_null_deref_trap(ptr @fld_name.14600, i64 3, ptr @sty_name.14601, i64 10, i64 %null_ext141, ptr @src_file.14602, i64 88, i64 668)
   %env_ptr = getelementptr inbounds nuw %TopLevelOk, ptr %result138, i32 0, i32 1
   %env142 = load ptr, ptr %env_ptr, align 8
   %next143 = load ptr, ptr %next9, align 8
@@ -169173,14 +169219,14 @@ try_ok169:                                        ; preds = %march_arm145
   %cast177 = ptrtoint ptr %result176 to i64
   %null_chk178 = icmp eq i64 %cast177, 0
   %null_ext179 = zext i1 %null_chk178 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14603, i64 3, ptr @sty_name.14604, i64 10, i64 %null_ext179, ptr @src_file.14605, i64 88, i64 672)
+  call void @forge_null_deref_trap(ptr @fld_name.14603, i64 3, ptr @sty_name.14604, i64 10, i64 %null_ext179, ptr @src_file.14605, i64 88, i64 673)
   %ctx_ptr180 = getelementptr inbounds nuw %TopLevelOk, ptr %result176, i32 0, i32 0
   %ctx181 = load ptr, ptr %ctx_ptr180, align 8
   %result182 = load ptr, ptr %result174, align 8
   %cast183 = ptrtoint ptr %result182 to i64
   %null_chk184 = icmp eq i64 %cast183, 0
   %null_ext185 = zext i1 %null_chk184 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14606, i64 3, ptr @sty_name.14607, i64 10, i64 %null_ext185, ptr @src_file.14608, i64 88, i64 672)
+  call void @forge_null_deref_trap(ptr @fld_name.14606, i64 3, ptr @sty_name.14607, i64 10, i64 %null_ext185, ptr @src_file.14608, i64 88, i64 673)
   %env_ptr186 = getelementptr inbounds nuw %TopLevelOk, ptr %result182, i32 0, i32 1
   %env187 = load ptr, ptr %env_ptr186, align 8
   %next188 = load ptr, ptr %next9, align 8
@@ -169230,14 +169276,14 @@ try_ok214:                                        ; preds = %march_arm190
   %cast222 = ptrtoint ptr %result221 to i64
   %null_chk223 = icmp eq i64 %cast222, 0
   %null_ext224 = zext i1 %null_chk223 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14609, i64 3, ptr @sty_name.14610, i64 10, i64 %null_ext224, ptr @src_file.14611, i64 88, i64 677)
+  call void @forge_null_deref_trap(ptr @fld_name.14609, i64 3, ptr @sty_name.14610, i64 10, i64 %null_ext224, ptr @src_file.14611, i64 88, i64 678)
   %ctx_ptr225 = getelementptr inbounds nuw %TopLevelOk, ptr %result221, i32 0, i32 0
   %ctx226 = load ptr, ptr %ctx_ptr225, align 8
   %result227 = load ptr, ptr %result219, align 8
   %cast228 = ptrtoint ptr %result227 to i64
   %null_chk229 = icmp eq i64 %cast228, 0
   %null_ext230 = zext i1 %null_chk229 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14612, i64 3, ptr @sty_name.14613, i64 10, i64 %null_ext230, ptr @src_file.14614, i64 88, i64 677)
+  call void @forge_null_deref_trap(ptr @fld_name.14612, i64 3, ptr @sty_name.14613, i64 10, i64 %null_ext230, ptr @src_file.14614, i64 88, i64 678)
   %env_ptr231 = getelementptr inbounds nuw %TopLevelOk, ptr %result227, i32 0, i32 1
   %env232 = load ptr, ptr %env_ptr231, align 8
   %next233 = load ptr, ptr %next9, align 8
@@ -169260,7 +169306,7 @@ march_arm235:                                     ; preds = %march_next191
   br i1 %try_is_ok242, label %try_ok243, label %try_err244
 
 march_next236:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14615, i64 %tag87, ptr @mu_file.14616, i64 657)
+  call void @forge_match_unreachable(ptr @.match_fn.14615, i64 %tag87, ptr @mu_file.14616, i64 658)
   unreachable
 
 try_ok243:                                        ; preds = %march_arm235
@@ -169300,7 +169346,7 @@ entry:
   %cast = ptrtoint ptr %ctx1 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14619, i64 15, ptr @sty_name.14620, i64 3, i64 %null_ext, ptr @src_file.14621, i64 88, i64 690)
+  call void @forge_null_deref_trap(ptr @fld_name.14619, i64 15, ptr @sty_name.14620, i64 3, i64 %null_ext, ptr @src_file.14621, i64 88, i64 691)
   %name2 = load ptr, ptr %name, align 8
   %4 = call ptr @Ctx__lookup_toplevel(ptr %ctx1, ptr %name2)
   store ptr %4, ptr %g, align 8
@@ -169308,7 +169354,7 @@ entry:
   %cast4 = ptrtoint ptr %g3 to i64
   %null_chk5 = icmp eq i64 %cast4, 0
   %null_ext6 = zext i1 %null_chk5 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14622, i64 5, ptr @sty_name.14623, i64 14, i64 %null_ext6, ptr @src_file.14624, i64 88, i64 691)
+  call void @forge_null_deref_trap(ptr @fld_name.14622, i64 5, ptr @sty_name.14623, i64 14, i64 %null_ext6, ptr @src_file.14624, i64 88, i64 692)
   %found_ptr = getelementptr inbounds nuw %TopLevelLookup, ptr %g3, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %not_cmp = icmp eq i64 %found, 0
@@ -169321,7 +169367,7 @@ ifcont:                                           ; preds = %if_else
   %cast19 = ptrtoint ptr %ctx18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14627, i64 4, ptr @sty_name.14628, i64 3, i64 %null_ext21, ptr @src_file.14629, i64 88, i64 694)
+  call void @forge_null_deref_trap(ptr @fld_name.14627, i64 4, ptr @sty_name.14628, i64 3, i64 %null_ext21, ptr @src_file.14629, i64 88, i64 695)
   %env22 = load ptr, ptr %env, align 8
   %init23 = load ptr, ptr %init, align 8
   %5 = call ptr @Ctx__emit(ptr %ctx18, ptr %env22, ptr %init23)
@@ -169381,14 +169427,14 @@ try_ok:                                           ; preds = %ifcont
   %cast26 = ptrtoint ptr %r25 to i64
   %null_chk27 = icmp eq i64 %cast26, 0
   %null_ext28 = zext i1 %null_chk27 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14630, i64 2, ptr @sty_name.14631, i64 9, i64 %null_ext28, ptr @src_file.14632, i64 88, i64 695)
+  call void @forge_null_deref_trap(ptr @fld_name.14630, i64 2, ptr @sty_name.14631, i64 9, i64 %null_ext28, ptr @src_file.14632, i64 88, i64 696)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %r25, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %g29 = load ptr, ptr %g, align 8
   %cast30 = ptrtoint ptr %g29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14633, i64 2, ptr @sty_name.14634, i64 14, i64 %null_ext32, ptr @src_file.14635, i64 88, i64 695)
+  call void @forge_null_deref_trap(ptr @fld_name.14633, i64 2, ptr @sty_name.14634, i64 14, i64 %null_ext32, ptr @src_file.14635, i64 88, i64 696)
   %ty_ptr33 = getelementptr inbounds nuw %TopLevelLookup, ptr %g29, i32 0, i32 2
   %ty34 = load ptr, ptr %ty_ptr33, align 8
   %18 = call i1 @"features::union_type::codegen::needs_union_wrap"(ptr %ty, ptr %ty34)
@@ -169415,7 +169461,7 @@ ifcont35:                                         ; preds = %if_else38, %try_ok5
   %cast102 = ptrtoint ptr %g101 to i64
   %null_chk103 = icmp eq i64 %cast102, 0
   %null_ext104 = zext i1 %null_chk103 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14663, i64 11, ptr @sty_name.14664, i64 14, i64 %null_ext104, ptr @src_file.14665, i64 88, i64 701)
+  call void @forge_null_deref_trap(ptr @fld_name.14663, i64 11, ptr @sty_name.14664, i64 14, i64 %null_ext104, ptr @src_file.14665, i64 88, i64 702)
   %llvm_global_ptr105 = getelementptr inbounds nuw %TopLevelLookup, ptr %g101, i32 0, i32 1
   %llvm_global106 = load ptr, ptr %llvm_global_ptr105, align 8
   %slot_base107 = ptrtoint ptr %20 to i64
@@ -169426,7 +169472,7 @@ ifcont35:                                         ; preds = %if_else38, %try_ok5
   %cast111 = ptrtoint ptr %r110 to i64
   %null_chk112 = icmp eq i64 %cast111, 0
   %null_ext113 = zext i1 %null_chk112 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14666, i64 2, ptr @sty_name.14667, i64 9, i64 %null_ext113, ptr @src_file.14668, i64 88, i64 701)
+  call void @forge_null_deref_trap(ptr @fld_name.14666, i64 2, ptr @sty_name.14667, i64 9, i64 %null_ext113, ptr @src_file.14668, i64 88, i64 702)
   %ty_ptr114 = getelementptr inbounds nuw %EmitValue, ptr %r110, i32 0, i32 1
   %ty115 = load ptr, ptr %ty_ptr114, align 8
   %slot_base116 = ptrtoint ptr %20 to i64
@@ -169437,7 +169483,7 @@ ifcont35:                                         ; preds = %if_else38, %try_ok5
   %cast120 = ptrtoint ptr %ctx119 to i64
   %null_chk121 = icmp eq i64 %cast120, 0
   %null_ext122 = zext i1 %null_chk121 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14669, i64 14, ptr @sty_name.14670, i64 3, i64 %null_ext122, ptr @src_file.14671, i64 88, i64 701)
+  call void @forge_null_deref_trap(ptr @fld_name.14669, i64 14, ptr @sty_name.14670, i64 3, i64 %null_ext122, ptr @src_file.14671, i64 88, i64 702)
   %top_level_vars_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx119, i32 0, i32 13
   %top_level_vars = load ptr, ptr %top_level_vars_ptr, align 8
   %slot_base123 = ptrtoint ptr %20 to i64
@@ -169451,7 +169497,7 @@ ifcont35:                                         ; preds = %if_else38, %try_ok5
   %cast129 = ptrtoint ptr %ctx128 to i64
   %null_chk130 = icmp eq i64 %cast129, 0
   %null_ext131 = zext i1 %null_chk130 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14672, i64 14, ptr @sty_name.14673, i64 3, i64 %null_ext131, ptr @src_file.14674, i64 88, i64 702)
+  call void @forge_null_deref_trap(ptr @fld_name.14672, i64 14, ptr @sty_name.14673, i64 3, i64 %null_ext131, ptr @src_file.14674, i64 88, i64 703)
   %updated_top132 = load ptr, ptr %updated_top, align 8
   %21 = call ptr @Ctx__with_top_level(ptr %ctx128, ptr %updated_top132)
   store ptr %21, ptr %updated_cg, align 8
@@ -169484,21 +169530,21 @@ if_then37:                                        ; preds = %try_ok
   %cast41 = ptrtoint ptr %r40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14636, i64 5, ptr @sty_name.14637, i64 9, i64 %null_ext43, ptr @src_file.14638, i64 88, i64 696)
+  call void @forge_null_deref_trap(ptr @fld_name.14636, i64 5, ptr @sty_name.14637, i64 9, i64 %null_ext43, ptr @src_file.14638, i64 88, i64 697)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r40, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %r44 = load ptr, ptr %r, align 8
   %cast45 = ptrtoint ptr %r44 to i64
   %null_chk46 = icmp eq i64 %cast45, 0
   %null_ext47 = zext i1 %null_chk46 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14639, i64 2, ptr @sty_name.14640, i64 9, i64 %null_ext47, ptr @src_file.14641, i64 88, i64 696)
+  call void @forge_null_deref_trap(ptr @fld_name.14639, i64 2, ptr @sty_name.14640, i64 9, i64 %null_ext47, ptr @src_file.14641, i64 88, i64 697)
   %ty_ptr48 = getelementptr inbounds nuw %EmitValue, ptr %r44, i32 0, i32 1
   %ty49 = load ptr, ptr %ty_ptr48, align 8
   %g50 = load ptr, ptr %g, align 8
   %cast51 = ptrtoint ptr %g50 to i64
   %null_chk52 = icmp eq i64 %cast51, 0
   %null_ext53 = zext i1 %null_chk52 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14642, i64 2, ptr @sty_name.14643, i64 14, i64 %null_ext53, ptr @src_file.14644, i64 88, i64 696)
+  call void @forge_null_deref_trap(ptr @fld_name.14642, i64 2, ptr @sty_name.14643, i64 14, i64 %null_ext53, ptr @src_file.14644, i64 88, i64 697)
   %ty_ptr54 = getelementptr inbounds nuw %TopLevelLookup, ptr %g50, i32 0, i32 2
   %ty55 = load ptr, ptr %ty_ptr54, align 8
   %25 = call ptr @"features::union_type::codegen::emit_union_wrap"(ptr %ctx39, ptr %value, ptr %ty49, ptr %ty55)
@@ -169512,19 +169558,19 @@ if_else38:                                        ; preds = %try_ok
   %cast80 = ptrtoint ptr %ctx79 to i64
   %null_chk81 = icmp eq i64 %cast80, 0
   %null_ext82 = zext i1 %null_chk81 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14654, i64 5, ptr @sty_name.14655, i64 3, i64 %null_ext82, ptr @src_file.14656, i64 88, i64 699)
+  call void @forge_null_deref_trap(ptr @fld_name.14654, i64 5, ptr @sty_name.14655, i64 3, i64 %null_ext82, ptr @src_file.14656, i64 88, i64 700)
   %r83 = load ptr, ptr %r, align 8
   %cast84 = ptrtoint ptr %r83 to i64
   %null_chk85 = icmp eq i64 %cast84, 0
   %null_ext86 = zext i1 %null_chk85 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14657, i64 5, ptr @sty_name.14658, i64 9, i64 %null_ext86, ptr @src_file.14659, i64 88, i64 699)
+  call void @forge_null_deref_trap(ptr @fld_name.14657, i64 5, ptr @sty_name.14658, i64 9, i64 %null_ext86, ptr @src_file.14659, i64 88, i64 700)
   %value_ptr87 = getelementptr inbounds nuw %EmitValue, ptr %r83, i32 0, i32 0
   %value88 = load ptr, ptr %value_ptr87, align 8
   %g89 = load ptr, ptr %g, align 8
   %cast90 = ptrtoint ptr %g89 to i64
   %null_chk91 = icmp eq i64 %cast90, 0
   %null_ext92 = zext i1 %null_chk91 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14660, i64 11, ptr @sty_name.14661, i64 14, i64 %null_ext92, ptr @src_file.14662, i64 88, i64 699)
+  call void @forge_null_deref_trap(ptr @fld_name.14660, i64 11, ptr @sty_name.14661, i64 14, i64 %null_ext92, ptr @src_file.14662, i64 88, i64 700)
   %llvm_global_ptr93 = getelementptr inbounds nuw %TopLevelLookup, ptr %g89, i32 0, i32 1
   %llvm_global94 = load ptr, ptr %llvm_global_ptr93, align 8
   %26 = call i64 @Ctx__store(ptr %ctx79, ptr %value88, ptr %llvm_global94)
@@ -169540,19 +169586,19 @@ try_ok59:                                         ; preds = %if_then37
   %cast66 = ptrtoint ptr %ctx65 to i64
   %null_chk67 = icmp eq i64 %cast66, 0
   %null_ext68 = zext i1 %null_chk67 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14645, i64 5, ptr @sty_name.14646, i64 3, i64 %null_ext68, ptr @src_file.14647, i64 88, i64 697)
+  call void @forge_null_deref_trap(ptr @fld_name.14645, i64 5, ptr @sty_name.14646, i64 3, i64 %null_ext68, ptr @src_file.14647, i64 88, i64 698)
   %wrapped69 = load ptr, ptr %wrapped, align 8
   %cast70 = ptrtoint ptr %wrapped69 to i64
   %null_chk71 = icmp eq i64 %cast70, 0
   %null_ext72 = zext i1 %null_chk71 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14648, i64 5, ptr @sty_name.14649, i64 9, i64 %null_ext72, ptr @src_file.14650, i64 88, i64 697)
+  call void @forge_null_deref_trap(ptr @fld_name.14648, i64 5, ptr @sty_name.14649, i64 9, i64 %null_ext72, ptr @src_file.14650, i64 88, i64 698)
   %value_ptr73 = getelementptr inbounds nuw %EmitValue, ptr %wrapped69, i32 0, i32 0
   %value74 = load ptr, ptr %value_ptr73, align 8
   %g75 = load ptr, ptr %g, align 8
   %cast76 = ptrtoint ptr %g75 to i64
   %null_chk77 = icmp eq i64 %cast76, 0
   %null_ext78 = zext i1 %null_chk77 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.14651, i64 11, ptr @sty_name.14652, i64 14, i64 %null_ext78, ptr @src_file.14653, i64 88, i64 697)
+  call void @forge_null_deref_trap(ptr @fld_name.14651, i64 11, ptr @sty_name.14652, i64 14, i64 %null_ext78, ptr @src_file.14653, i64 88, i64 698)
   %llvm_global_ptr = getelementptr inbounds nuw %TopLevelLookup, ptr %g75, i32 0, i32 1
   %llvm_global = load ptr, ptr %llvm_global_ptr, align 8
   %27 = call i64 @Ctx__store(ptr %ctx65, ptr %value74, ptr %llvm_global)
@@ -174937,7 +174983,7 @@ march_next51:                                     ; No predecessors!
   unreachable
 }
 
-define i1 @"codegen::escape::escape_has"(ptr %0, ptr %1) {
+define i1 @"codegen::escape::releasable_has"(ptr %0, ptr %1) {
 entry:
   %next13 = alloca ptr, align 8
   %n5 = alloca ptr, align 8
@@ -174947,7 +174993,7 @@ entry:
   store ptr %0, ptr %set, align 8
   store ptr %1, ptr %name, align 8
   %set1 = load ptr, ptr %set, align 8
-  %tag_ptr = getelementptr inbounds nuw %EscapeSet, ptr %set1, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %set1, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 193455868
@@ -174967,7 +175013,7 @@ march_next:                                       ; preds = %entry
   br i1 %tag_eq4, label %march_arm2, label %march_next3
 
 march_arm2:                                       ; preds = %march_next
-  %pay_slot = getelementptr inbounds nuw %EscapeSet, ptr %set1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %ReleasableSet, ptr %set1, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %n_slot_base = ptrtoint ptr %payload to i64
   %n_slot_addr = add i64 %n_slot_base, 0
@@ -174992,7 +175038,7 @@ guard_pass:                                       ; preds = %march_arm2
   br label %match_end
 
 march_arm8:                                       ; preds = %march_next3
-  %pay_slot11 = getelementptr inbounds nuw %EscapeSet, ptr %set1, i32 0, i32 1
+  %pay_slot11 = getelementptr inbounds nuw %ReleasableSet, ptr %set1, i32 0, i32 1
   %payload12 = load ptr, ptr %pay_slot11, align 8
   %next_slot_base = ptrtoint ptr %payload12 to i64
   %next_slot_addr = add i64 %next_slot_base, 8
@@ -175001,17 +175047,17 @@ march_arm8:                                       ; preds = %march_next3
   store ptr %next, ptr %next13, align 8
   %next14 = load ptr, ptr %next13, align 8
   %name15 = load ptr, ptr %name, align 8
-  %3 = call i1 @"codegen::escape::escape_has"(ptr %next14, ptr %name15)
+  %3 = call i1 @"codegen::escape::releasable_has"(ptr %next14, ptr %name15)
   %widen16 = zext i1 %3 to i64
   store i64 %widen16, ptr %match_result, align 8
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.15703, i64 %tag, ptr @mu_file.15704, i64 15)
+  call void @forge_match_unreachable(ptr @.match_fn.15703, i64 %tag, ptr @mu_file.15704, i64 18)
   unreachable
 }
 
-define ptr @"codegen::escape::escape_add"(ptr %0, ptr %1) {
+define ptr @"codegen::escape::releasable_add"(ptr %0, ptr %1) {
 entry:
   %sif_result = alloca i64, align 8
   %name = alloca ptr, align 8
@@ -175020,7 +175066,7 @@ entry:
   store ptr %1, ptr %name, align 8
   %set1 = load ptr, ptr %set, align 8
   %name2 = load ptr, ptr %name, align 8
-  %2 = call i1 @"codegen::escape::escape_has"(ptr %set1, ptr %name2)
+  %2 = call i1 @"codegen::escape::releasable_has"(ptr %set1, ptr %name2)
   %widen = zext i1 %2 to i64
   %sif_cond = icmp ne i64 %widen, 0
   store i64 0, ptr %sif_result, align 8
@@ -175034,9 +175080,9 @@ sif_then:                                         ; preds = %entry
 
 sif_else:                                         ; preds = %entry
   %3 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 0
   store i64 6384368267, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %3, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %3, i32 0, i32 1
   %4 = call ptr @forge_rc_alloc(i64 16)
   store ptr %4, ptr %pay_ptr, align 8
   %name4 = load ptr, ptr %name, align 8
@@ -175059,26 +175105,154 @@ sif_end:                                          ; preds = %sif_else, %sif_then
   ret ptr %cast10
 }
 
-define ptr @"codegen::escape::analyze_escapes"(ptr %0) {
+define ptr @"codegen::escape::releasable_remove"(ptr %0, ptr %1) {
 entry:
+  %next31 = alloca ptr, align 8
+  %n24 = alloca ptr, align 8
+  %next9 = alloca ptr, align 8
+  %n6 = alloca ptr, align 8
+  %match_result = alloca i64, align 8
+  %name = alloca ptr, align 8
+  %set = alloca ptr, align 8
+  store ptr %0, ptr %set, align 8
+  store ptr %1, ptr %name, align 8
+  %set1 = load ptr, ptr %set, align 8
+  %tag_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %set1, i32 0, i32 0
+  %tag = load i64, ptr %tag_ptr, align 8
+  store i64 0, ptr %match_result, align 8
+  %tag_eq = icmp eq i64 %tag, 193455868
+  br i1 %tag_eq, label %march_arm, label %march_next
+
+match_end:                                        ; preds = %march_arm15, %guard_pass, %march_arm
+  %match_val = load i64, ptr %match_result, align 8
+  %cast41 = inttoptr i64 %match_val to ptr
+  ret ptr %cast41
+
+march_arm:                                        ; preds = %entry
+  %2 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
+  store i64 193455868, ptr %tag_ptr2, align 8
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
+  store ptr null, ptr %pay_ptr, align 8
+  %cast = ptrtoint ptr %2 to i64
+  store i64 %cast, ptr %match_result, align 8
+  br label %match_end
+
+march_next:                                       ; preds = %entry
+  %tag_eq5 = icmp eq i64 %tag, 6384368267
+  br i1 %tag_eq5, label %march_arm3, label %march_next4
+
+march_arm3:                                       ; preds = %march_next
+  %pay_slot = getelementptr inbounds nuw %ReleasableSet, ptr %set1, i32 0, i32 1
+  %payload = load ptr, ptr %pay_slot, align 8
+  %n_slot_base = ptrtoint ptr %payload to i64
+  %n_slot_addr = add i64 %n_slot_base, 0
+  %n_slot = inttoptr i64 %n_slot_addr to ptr
+  %n = load ptr, ptr %n_slot, align 8
+  store ptr %n, ptr %n6, align 8
+  %pay_slot7 = getelementptr inbounds nuw %ReleasableSet, ptr %set1, i32 0, i32 1
+  %payload8 = load ptr, ptr %pay_slot7, align 8
+  %next_slot_base = ptrtoint ptr %payload8 to i64
+  %next_slot_addr = add i64 %next_slot_base, 8
+  %next_slot = inttoptr i64 %next_slot_addr to ptr
+  %next = load ptr, ptr %next_slot, align 8
+  store ptr %next, ptr %next9, align 8
+  %n10 = load ptr, ptr %n6, align 8
+  %name11 = load ptr, ptr %name, align 8
+  %3 = call i32 @strcmp(ptr %n10, ptr %name11)
+  %widen = sext i32 %3 to i64
+  %streq_cmp = icmp eq i64 %widen, 0
+  %streq_ext = zext i1 %streq_cmp to i64
+  %guard = icmp ne i64 %streq_ext, 0
+  br i1 %guard, label %guard_pass, label %march_next4
+
+march_next4:                                      ; preds = %march_arm3, %march_next
+  %tag_eq17 = icmp eq i64 %tag, 6384368267
+  br i1 %tag_eq17, label %march_arm15, label %march_next16
+
+guard_pass:                                       ; preds = %march_arm3
+  %next12 = load ptr, ptr %next9, align 8
+  %name13 = load ptr, ptr %name, align 8
+  %4 = call ptr @"codegen::escape::releasable_remove"(ptr %next12, ptr %name13)
+  %cast14 = ptrtoint ptr %4 to i64
+  store i64 %cast14, ptr %match_result, align 8
+  br label %match_end
+
+march_arm15:                                      ; preds = %march_next4
+  %pay_slot18 = getelementptr inbounds nuw %ReleasableSet, ptr %set1, i32 0, i32 1
+  %payload19 = load ptr, ptr %pay_slot18, align 8
+  %n_slot_base20 = ptrtoint ptr %payload19 to i64
+  %n_slot_addr21 = add i64 %n_slot_base20, 0
+  %n_slot22 = inttoptr i64 %n_slot_addr21 to ptr
+  %n23 = load ptr, ptr %n_slot22, align 8
+  store ptr %n23, ptr %n24, align 8
+  %pay_slot25 = getelementptr inbounds nuw %ReleasableSet, ptr %set1, i32 0, i32 1
+  %payload26 = load ptr, ptr %pay_slot25, align 8
+  %next_slot_base27 = ptrtoint ptr %payload26 to i64
+  %next_slot_addr28 = add i64 %next_slot_base27, 8
+  %next_slot29 = inttoptr i64 %next_slot_addr28 to ptr
+  %next30 = load ptr, ptr %next_slot29, align 8
+  store ptr %next30, ptr %next31, align 8
+  %5 = call ptr @forge_rc_alloc(i64 16)
+  %tag_ptr32 = getelementptr inbounds nuw %ReleasableSet, ptr %5, i32 0, i32 0
+  store i64 6384368267, ptr %tag_ptr32, align 8
+  %pay_ptr33 = getelementptr inbounds nuw %ReleasableSet, ptr %5, i32 0, i32 1
+  %6 = call ptr @forge_rc_alloc(i64 16)
+  store ptr %6, ptr %pay_ptr33, align 8
+  %n34 = load ptr, ptr %n24, align 8
+  %slot_base = ptrtoint ptr %6 to i64
+  %slot_addr = add i64 %slot_base, 0
+  %slot = inttoptr i64 %slot_addr to ptr
+  store ptr %n34, ptr %slot, align 8
+  %next35 = load ptr, ptr %next31, align 8
+  %name36 = load ptr, ptr %name, align 8
+  %7 = call ptr @"codegen::escape::releasable_remove"(ptr %next35, ptr %name36)
+  %slot_base37 = ptrtoint ptr %6 to i64
+  %slot_addr38 = add i64 %slot_base37, 8
+  %slot39 = inttoptr i64 %slot_addr38 to ptr
+  store ptr %7, ptr %slot39, align 8
+  %cast40 = ptrtoint ptr %5 to i64
+  store i64 %cast40, ptr %match_result, align 8
+  br label %match_end
+
+march_next16:                                     ; preds = %march_next4
+  call void @forge_match_unreachable(ptr @.match_fn.15705, i64 %tag, ptr @mu_file.15706, i64 30)
+  unreachable
+}
+
+define ptr @"codegen::escape::analyze_releasable"(ptr %0) {
+entry:
+  %all_bindings = alloca ptr, align 8
   %body = alloca ptr, align 8
   store ptr %0, ptr %body, align 8
   %body1 = load ptr, ptr %body, align 8
   %1 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %1 to i64
   %cast2 = inttoptr i64 %cast to ptr
-  %2 = call ptr @"codegen::escape::analyze_stmts"(ptr %body1, ptr %cast2)
-  ret ptr %2
+  %2 = call ptr @"codegen::escape::collect_bindings"(ptr %body1, ptr %cast2)
+  store ptr %2, ptr %all_bindings, align 8
+  %body3 = load ptr, ptr %body, align 8
+  %all_bindings4 = load ptr, ptr %all_bindings, align 8
+  %3 = call ptr @"codegen::escape::remove_escaped"(ptr %body3, ptr %all_bindings4)
+  ret ptr %3
 }
 
-define ptr @"codegen::escape::analyze_stmts"(ptr %0, ptr %1) {
+define ptr @"codegen::escape::collect_bindings"(ptr %0, ptr %1) {
 entry:
   %updated = alloca ptr, align 8
-  %match_result13 = alloca i64, align 8
+  %sif_result = alloca i64, align 8
+  %s1 = alloca ptr, align 8
+  %else_b68 = alloca ptr, align 8
+  %then_b65 = alloca ptr, align 8
+  %body56 = alloca ptr, align 8
+  %name47 = alloca ptr, align 8
+  %name34 = alloca ptr, align 8
+  %name21 = alloca ptr, align 8
+  %match_result14 = alloca i64, align 8
   %next9 = alloca ptr, align 8
   %ss6 = alloca ptr, align 8
   %match_result = alloca i64, align 8
@@ -175093,10 +175267,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 193455868
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %match_end14, %march_arm
-  %match_val36 = load i64, ptr %match_result, align 8
-  %cast37 = inttoptr i64 %match_val36 to ptr
-  ret ptr %cast37
+match_end:                                        ; preds = %match_end15, %march_arm
+  %match_val85 = load i64, ptr %match_result, align 8
+  %cast86 = inttoptr i64 %match_val85 to ptr
+  ret ptr %cast86
 
 march_arm:                                        ; preds = %entry
   %set2 = load ptr, ptr %set, align 8
@@ -175123,154 +175297,350 @@ march_arm3:                                       ; preds = %march_next
   %next_slot = inttoptr i64 %next_slot_addr to ptr
   %next = load ptr, ptr %next_slot, align 8
   store ptr %next, ptr %next9, align 8
-  %next10 = load ptr, ptr %next9, align 8
-  %tag_ptr11 = getelementptr inbounds nuw %StmtList, ptr %next10, i32 0, i32 0
-  %tag12 = load i64, ptr %tag_ptr11, align 8
-  store i64 0, ptr %match_result13, align 8
-  %tag_eq17 = icmp eq i64 %tag12, 193455868
-  br i1 %tag_eq17, label %march_arm15, label %march_next16
+  %ss10 = load ptr, ptr %ss6, align 8
+  %cast11 = ptrtoint ptr %ss10 to i64
+  %null_chk = icmp eq i64 %cast11, 0
+  %null_ext = zext i1 %null_chk to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15707, i64 4, ptr @sty_name.15708, i64 5, i64 %null_ext, ptr @src_file.15709, i64 88, i64 52)
+  %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
+  %node = load ptr, ptr %node_ptr, align 8
+  %2 = call ptr @"core::ast::stmt_unwrap"(ptr %node)
+  %tag_ptr12 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 0
+  %tag13 = load i64, ptr %tag_ptr12, align 8
+  store i64 0, ptr %match_result14, align 8
+  %tag_eq18 = icmp eq i64 %tag13, 193463210
+  br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15713, i64 %tag, ptr @mu_file.15714, i64 32)
+  call void @forge_match_unreachable(ptr @.match_fn.15712, i64 %tag, ptr @mu_file.15713, i64 48)
   unreachable
 
-match_end14:                                      ; preds = %march_arm22, %march_arm15
-  %match_val = load i64, ptr %match_result13, align 8
-  %cast32 = inttoptr i64 %match_val to ptr
-  store ptr %cast32, ptr %updated, align 8
-  %next33 = load ptr, ptr %next9, align 8
-  %updated34 = load ptr, ptr %updated, align 8
-  %2 = call ptr @"codegen::escape::analyze_stmts"(ptr %next33, ptr %updated34)
-  %cast35 = ptrtoint ptr %2 to i64
-  store i64 %cast35, ptr %match_result, align 8
+match_end15:                                      ; preds = %march_arm77, %sif_end, %march_arm51, %march_arm38, %march_arm25, %march_arm16
+  %match_val = load i64, ptr %match_result14, align 8
+  %cast81 = inttoptr i64 %match_val to ptr
+  store ptr %cast81, ptr %updated, align 8
+  %next82 = load ptr, ptr %next9, align 8
+  %updated83 = load ptr, ptr %updated, align 8
+  %3 = call ptr @"codegen::escape::collect_bindings"(ptr %next82, ptr %updated83)
+  %cast84 = ptrtoint ptr %3 to i64
+  store i64 %cast84, ptr %match_result, align 8
   br label %match_end
 
-march_arm15:                                      ; preds = %march_arm3
-  %ss18 = load ptr, ptr %ss6, align 8
-  %cast19 = ptrtoint ptr %ss18 to i64
-  %null_chk = icmp eq i64 %cast19, 0
-  %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15705, i64 4, ptr @sty_name.15706, i64 5, i64 %null_ext, ptr @src_file.15707, i64 88, i64 38)
-  %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss18, i32 0, i32 0
-  %node = load ptr, ptr %node_ptr, align 8
-  %set20 = load ptr, ptr %set, align 8
-  %3 = call ptr @"codegen::escape::analyze_last_stmt"(ptr %node, ptr %set20)
-  %cast21 = ptrtoint ptr %3 to i64
-  store i64 %cast21, ptr %match_result13, align 8
-  br label %match_end14
+march_arm16:                                      ; preds = %march_arm3
+  %pay_slot19 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
+  %payload20 = load ptr, ptr %pay_slot19, align 8
+  %name_slot_base = ptrtoint ptr %payload20 to i64
+  %name_slot_addr = add i64 %name_slot_base, 0
+  %name_slot = inttoptr i64 %name_slot_addr to ptr
+  %name = load ptr, ptr %name_slot, align 8
+  store ptr %name, ptr %name21, align 8
+  %set22 = load ptr, ptr %set, align 8
+  %name23 = load ptr, ptr %name21, align 8
+  %4 = call ptr @"codegen::escape::releasable_add"(ptr %set22, ptr %name23)
+  %cast24 = ptrtoint ptr %4 to i64
+  store i64 %cast24, ptr %match_result14, align 8
+  br label %match_end15
 
-march_next16:                                     ; preds = %march_arm3
-  br label %march_arm22
+march_next17:                                     ; preds = %march_arm3
+  %tag_eq27 = icmp eq i64 %tag13, 193464827
+  br i1 %tag_eq27, label %march_arm25, label %march_next26
 
-march_arm22:                                      ; preds = %march_next16
-  %ss24 = load ptr, ptr %ss6, align 8
-  %cast25 = ptrtoint ptr %ss24 to i64
-  %null_chk26 = icmp eq i64 %cast25, 0
-  %null_ext27 = zext i1 %null_chk26 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15708, i64 4, ptr @sty_name.15709, i64 5, i64 %null_ext27, ptr @src_file.15710, i64 88, i64 38)
-  %node_ptr28 = getelementptr inbounds nuw %SStmt, ptr %ss24, i32 0, i32 0
-  %node29 = load ptr, ptr %node_ptr28, align 8
-  %set30 = load ptr, ptr %set, align 8
-  %4 = call ptr @"codegen::escape::analyze_stmt"(ptr %node29, ptr %set30)
-  %cast31 = ptrtoint ptr %4 to i64
-  store i64 %cast31, ptr %match_result13, align 8
-  br label %match_end14
+march_arm25:                                      ; preds = %march_next17
+  %pay_slot28 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
+  %payload29 = load ptr, ptr %pay_slot28, align 8
+  %name_slot_base30 = ptrtoint ptr %payload29 to i64
+  %name_slot_addr31 = add i64 %name_slot_base30, 0
+  %name_slot32 = inttoptr i64 %name_slot_addr31 to ptr
+  %name33 = load ptr, ptr %name_slot32, align 8
+  store ptr %name33, ptr %name34, align 8
+  %set35 = load ptr, ptr %set, align 8
+  %name36 = load ptr, ptr %name34, align 8
+  %5 = call ptr @"codegen::escape::releasable_add"(ptr %set35, ptr %name36)
+  %cast37 = ptrtoint ptr %5 to i64
+  store i64 %cast37, ptr %match_result14, align 8
+  br label %match_end15
 
-march_next23:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15711, i64 %tag12, ptr @mu_file.15712, i64 38)
+march_next26:                                     ; preds = %march_next17
+  %tag_eq40 = icmp eq i64 %tag13, 210671119148
+  br i1 %tag_eq40, label %march_arm38, label %march_next39
+
+march_arm38:                                      ; preds = %march_next26
+  %pay_slot41 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
+  %payload42 = load ptr, ptr %pay_slot41, align 8
+  %name_slot_base43 = ptrtoint ptr %payload42 to i64
+  %name_slot_addr44 = add i64 %name_slot_base43, 0
+  %name_slot45 = inttoptr i64 %name_slot_addr44 to ptr
+  %name46 = load ptr, ptr %name_slot45, align 8
+  store ptr %name46, ptr %name47, align 8
+  %set48 = load ptr, ptr %set, align 8
+  %name49 = load ptr, ptr %name47, align 8
+  %6 = call ptr @"codegen::escape::releasable_add"(ptr %set48, ptr %name49)
+  %cast50 = ptrtoint ptr %6 to i64
+  store i64 %cast50, ptr %match_result14, align 8
+  br label %match_end15
+
+march_next39:                                     ; preds = %march_next26
+  %tag_eq53 = icmp eq i64 %tag13, 210669825968
+  br i1 %tag_eq53, label %march_arm51, label %march_next52
+
+march_arm51:                                      ; preds = %march_next39
+  %pay_slot54 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
+  %payload55 = load ptr, ptr %pay_slot54, align 8
+  %body_slot_base = ptrtoint ptr %payload55 to i64
+  %body_slot_addr = add i64 %body_slot_base, 0
+  %body_slot = inttoptr i64 %body_slot_addr to ptr
+  %body = load ptr, ptr %body_slot, align 8
+  store ptr %body, ptr %body56, align 8
+  %body57 = load ptr, ptr %body56, align 8
+  %set58 = load ptr, ptr %set, align 8
+  %7 = call ptr @"codegen::escape::collect_bindings"(ptr %body57, ptr %set58)
+  %cast59 = ptrtoint ptr %7 to i64
+  store i64 %cast59, ptr %match_result14, align 8
+  br label %match_end15
+
+march_next52:                                     ; preds = %march_next39
+  %tag_eq62 = icmp eq i64 %tag13, 5862420
+  br i1 %tag_eq62, label %march_arm60, label %march_next61
+
+march_arm60:                                      ; preds = %march_next52
+  %pay_slot63 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
+  %payload64 = load ptr, ptr %pay_slot63, align 8
+  %then_b_slot_base = ptrtoint ptr %payload64 to i64
+  %then_b_slot_addr = add i64 %then_b_slot_base, 8
+  %then_b_slot = inttoptr i64 %then_b_slot_addr to ptr
+  %then_b = load ptr, ptr %then_b_slot, align 8
+  store ptr %then_b, ptr %then_b65, align 8
+  %pay_slot66 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
+  %payload67 = load ptr, ptr %pay_slot66, align 8
+  %else_b_slot_base = ptrtoint ptr %payload67 to i64
+  %else_b_slot_addr = add i64 %else_b_slot_base, 16
+  %else_b_slot = inttoptr i64 %else_b_slot_addr to ptr
+  %else_b = load ptr, ptr %else_b_slot, align 8
+  store ptr %else_b, ptr %else_b68, align 8
+  %then_b69 = load ptr, ptr %then_b65, align 8
+  %set70 = load ptr, ptr %set, align 8
+  %8 = call ptr @"codegen::escape::collect_bindings_stmt"(ptr %then_b69, ptr %set70)
+  store ptr %8, ptr %s1, align 8
+  %else_b71 = load ptr, ptr %else_b68, align 8
+  %ne = icmp ne ptr %else_b71, null
+  %ne_ext = zext i1 %ne to i64
+  %sif_cond = icmp ne i64 %ne_ext, 0
+  store i64 0, ptr %sif_result, align 8
+  br i1 %sif_cond, label %sif_then, label %sif_else
+
+march_next61:                                     ; preds = %march_next52
+  br label %march_arm77
+
+sif_then:                                         ; preds = %march_arm60
+  %else_b72 = load ptr, ptr %else_b68, align 8
+  %s173 = load ptr, ptr %s1, align 8
+  %9 = call ptr @"codegen::escape::collect_bindings_stmt"(ptr %else_b72, ptr %s173)
+  %cast74 = ptrtoint ptr %9 to i64
+  store i64 %cast74, ptr %sif_result, align 8
+  br label %sif_end
+
+sif_else:                                         ; preds = %march_arm60
+  %s175 = load ptr, ptr %s1, align 8
+  %cast76 = ptrtoint ptr %s175 to i64
+  store i64 %cast76, ptr %sif_result, align 8
+  br label %sif_end
+
+sif_end:                                          ; preds = %sif_else, %sif_then
+  %sif_val = load i64, ptr %sif_result, align 8
+  store i64 %sif_val, ptr %match_result14, align 8
+  br label %match_end15
+
+march_arm77:                                      ; preds = %march_next61
+  %set79 = load ptr, ptr %set, align 8
+  %cast80 = ptrtoint ptr %set79 to i64
+  store i64 %cast80, ptr %match_result14, align 8
+  br label %match_end15
+
+march_next78:                                     ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.15710, i64 %tag13, ptr @mu_file.15711, i64 52)
   unreachable
 }
 
-define ptr @"codegen::escape::analyze_last_stmt"(ptr %0, ptr %1) {
+define ptr @"codegen::escape::collect_bindings_stmt"(ptr %0, ptr %1) {
 entry:
-  %expr16 = alloca ptr, align 8
-  %expr3 = alloca ptr, align 8
+  %name23 = alloca ptr, align 8
+  %name10 = alloca ptr, align 8
+  %body2 = alloca ptr, align 8
   %match_result = alloca i64, align 8
-  %inner = alloca ptr, align 8
   %set = alloca ptr, align 8
   %stmt = alloca ptr, align 8
   store ptr %0, ptr %stmt, align 8
   store ptr %1, ptr %set, align 8
   %stmt1 = load ptr, ptr %stmt, align 8
   %2 = call ptr @"core::ast::stmt_unwrap"(ptr %stmt1)
-  store ptr %2, ptr %inner, align 8
-  %inner2 = load ptr, ptr %inner, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
-  %tag_eq = icmp eq i64 %tag, 6384055044
+  %tag_eq = icmp eq i64 %tag, 210669825968
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm20, %march_arm7, %march_arm
+match_end:                                        ; preds = %march_arm27, %march_arm14, %march_arm5, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast25 = inttoptr i64 %match_val to ptr
-  ret ptr %cast25
+  %cast31 = inttoptr i64 %match_val to ptr
+  ret ptr %cast31
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
-  %expr_slot_base = ptrtoint ptr %payload to i64
-  %expr_slot_addr = add i64 %expr_slot_base, 0
-  %expr_slot = inttoptr i64 %expr_slot_addr to ptr
-  %expr = load ptr, ptr %expr_slot, align 8
-  store ptr %expr, ptr %expr3, align 8
-  %expr4 = load ptr, ptr %expr3, align 8
-  %expr5 = load ptr, ptr %expr3, align 8
-  %set6 = load ptr, ptr %set, align 8
-  %3 = call ptr @"codegen::escape::analyze_expr_escapes"(ptr %expr5, ptr %set6)
-  %4 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %expr4, ptr %3)
-  %cast = ptrtoint ptr %4 to i64
+  %body_slot_base = ptrtoint ptr %payload to i64
+  %body_slot_addr = add i64 %body_slot_base, 0
+  %body_slot = inttoptr i64 %body_slot_addr to ptr
+  %body = load ptr, ptr %body_slot, align 8
+  store ptr %body, ptr %body2, align 8
+  %body3 = load ptr, ptr %body2, align 8
+  %set4 = load ptr, ptr %set, align 8
+  %3 = call ptr @"codegen::escape::collect_bindings"(ptr %body3, ptr %set4)
+  %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
   br label %match_end
 
 march_next:                                       ; preds = %entry
-  %tag_eq9 = icmp eq i64 %tag, 6952722321413
-  br i1 %tag_eq9, label %march_arm7, label %march_next8
+  %tag_eq7 = icmp eq i64 %tag, 193463210
+  br i1 %tag_eq7, label %march_arm5, label %march_next6
 
-march_arm7:                                       ; preds = %march_next
-  %pay_slot10 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
-  %payload11 = load ptr, ptr %pay_slot10, align 8
-  %expr_slot_base12 = ptrtoint ptr %payload11 to i64
-  %expr_slot_addr13 = add i64 %expr_slot_base12, 0
-  %expr_slot14 = inttoptr i64 %expr_slot_addr13 to ptr
-  %expr15 = load ptr, ptr %expr_slot14, align 8
-  store ptr %expr15, ptr %expr16, align 8
-  %expr17 = load ptr, ptr %expr16, align 8
-  %set18 = load ptr, ptr %set, align 8
-  %5 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %expr17, ptr %set18)
-  %cast19 = ptrtoint ptr %5 to i64
-  store i64 %cast19, ptr %match_result, align 8
+march_arm5:                                       ; preds = %march_next
+  %pay_slot8 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
+  %payload9 = load ptr, ptr %pay_slot8, align 8
+  %name_slot_base = ptrtoint ptr %payload9 to i64
+  %name_slot_addr = add i64 %name_slot_base, 0
+  %name_slot = inttoptr i64 %name_slot_addr to ptr
+  %name = load ptr, ptr %name_slot, align 8
+  store ptr %name, ptr %name10, align 8
+  %set11 = load ptr, ptr %set, align 8
+  %name12 = load ptr, ptr %name10, align 8
+  %4 = call ptr @"codegen::escape::releasable_add"(ptr %set11, ptr %name12)
+  %cast13 = ptrtoint ptr %4 to i64
+  store i64 %cast13, ptr %match_result, align 8
   br label %match_end
 
-march_next8:                                      ; preds = %march_next
-  br label %march_arm20
+march_next6:                                      ; preds = %march_next
+  %tag_eq16 = icmp eq i64 %tag, 193464827
+  br i1 %tag_eq16, label %march_arm14, label %march_next15
 
-march_arm20:                                      ; preds = %march_next8
-  %inner22 = load ptr, ptr %inner, align 8
-  %set23 = load ptr, ptr %set, align 8
-  %6 = call ptr @"codegen::escape::analyze_stmt"(ptr %inner22, ptr %set23)
-  %cast24 = ptrtoint ptr %6 to i64
-  store i64 %cast24, ptr %match_result, align 8
+march_arm14:                                      ; preds = %march_next6
+  %pay_slot17 = getelementptr inbounds nuw %Stmt, ptr %2, i32 0, i32 1
+  %payload18 = load ptr, ptr %pay_slot17, align 8
+  %name_slot_base19 = ptrtoint ptr %payload18 to i64
+  %name_slot_addr20 = add i64 %name_slot_base19, 0
+  %name_slot21 = inttoptr i64 %name_slot_addr20 to ptr
+  %name22 = load ptr, ptr %name_slot21, align 8
+  store ptr %name22, ptr %name23, align 8
+  %set24 = load ptr, ptr %set, align 8
+  %name25 = load ptr, ptr %name23, align 8
+  %5 = call ptr @"codegen::escape::releasable_add"(ptr %set24, ptr %name25)
+  %cast26 = ptrtoint ptr %5 to i64
+  store i64 %cast26, ptr %match_result, align 8
   br label %match_end
 
-march_next21:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15715, i64 %tag, ptr @mu_file.15716, i64 51)
+march_next15:                                     ; preds = %march_next6
+  br label %march_arm27
+
+march_arm27:                                      ; preds = %march_next15
+  %set29 = load ptr, ptr %set, align 8
+  %cast30 = ptrtoint ptr %set29 to i64
+  store i64 %cast30, ptr %match_result, align 8
+  br label %match_end
+
+march_next28:                                     ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.15714, i64 %tag, ptr @mu_file.15715, i64 70)
   unreachable
 }
 
-define ptr @"codegen::escape::analyze_stmt"(ptr %0, ptr %1) {
+define ptr @"codegen::escape::remove_escaped"(ptr %0, ptr %1) {
 entry:
-  %init115 = alloca ptr, align 8
-  %init102 = alloca ptr, align 8
-  %init89 = alloca ptr, align 8
-  %body80 = alloca ptr, align 8
-  %body67 = alloca ptr, align 8
-  %body54 = alloca ptr, align 8
+  %updated = alloca ptr, align 8
+  %next9 = alloca ptr, align 8
+  %ss6 = alloca ptr, align 8
+  %match_result = alloca i64, align 8
+  %set = alloca ptr, align 8
+  %stmts = alloca ptr, align 8
+  store ptr %0, ptr %stmts, align 8
+  store ptr %1, ptr %set, align 8
+  %stmts1 = load ptr, ptr %stmts, align 8
+  %tag_ptr = getelementptr inbounds nuw %StmtList, ptr %stmts1, i32 0, i32 0
+  %tag = load i64, ptr %tag_ptr, align 8
+  store i64 0, ptr %match_result, align 8
+  %tag_eq = icmp eq i64 %tag, 193455868
+  br i1 %tag_eq, label %march_arm, label %march_next
+
+match_end:                                        ; preds = %march_arm3, %march_arm
+  %match_val = load i64, ptr %match_result, align 8
+  %cast16 = inttoptr i64 %match_val to ptr
+  ret ptr %cast16
+
+march_arm:                                        ; preds = %entry
+  %set2 = load ptr, ptr %set, align 8
+  %cast = ptrtoint ptr %set2 to i64
+  store i64 %cast, ptr %match_result, align 8
+  br label %match_end
+
+march_next:                                       ; preds = %entry
+  %tag_eq5 = icmp eq i64 %tag, 6384368267
+  br i1 %tag_eq5, label %march_arm3, label %march_next4
+
+march_arm3:                                       ; preds = %march_next
+  %pay_slot = getelementptr inbounds nuw %StmtList, ptr %stmts1, i32 0, i32 1
+  %payload = load ptr, ptr %pay_slot, align 8
+  %ss_slot_base = ptrtoint ptr %payload to i64
+  %ss_slot_addr = add i64 %ss_slot_base, 0
+  %ss_slot = inttoptr i64 %ss_slot_addr to ptr
+  %ss = load ptr, ptr %ss_slot, align 8
+  store ptr %ss, ptr %ss6, align 8
+  %pay_slot7 = getelementptr inbounds nuw %StmtList, ptr %stmts1, i32 0, i32 1
+  %payload8 = load ptr, ptr %pay_slot7, align 8
+  %next_slot_base = ptrtoint ptr %payload8 to i64
+  %next_slot_addr = add i64 %next_slot_base, 8
+  %next_slot = inttoptr i64 %next_slot_addr to ptr
+  %next = load ptr, ptr %next_slot, align 8
+  store ptr %next, ptr %next9, align 8
+  %ss10 = load ptr, ptr %ss6, align 8
+  %cast11 = ptrtoint ptr %ss10 to i64
+  %null_chk = icmp eq i64 %cast11, 0
+  %null_ext = zext i1 %null_chk to i64
+  call void @forge_null_deref_trap(ptr @fld_name.15716, i64 4, ptr @sty_name.15717, i64 5, i64 %null_ext, ptr @src_file.15718, i64 88, i64 85)
+  %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
+  %node = load ptr, ptr %node_ptr, align 8
+  %set12 = load ptr, ptr %set, align 8
+  %2 = call ptr @"codegen::escape::remove_escaped_stmt"(ptr %node, ptr %set12)
+  store ptr %2, ptr %updated, align 8
+  %next13 = load ptr, ptr %next9, align 8
+  %updated14 = load ptr, ptr %updated, align 8
+  %3 = call ptr @"codegen::escape::remove_escaped"(ptr %next13, ptr %updated14)
+  %cast15 = ptrtoint ptr %3 to i64
+  store i64 %cast15, ptr %match_result, align 8
+  br label %match_end
+
+march_next4:                                      ; preds = %march_next
+  call void @forge_match_unreachable(ptr @.match_fn.15719, i64 %tag, ptr @mu_file.15720, i64 81)
+  unreachable
+}
+
+define ptr @"codegen::escape::remove_escaped_stmt"(ptr %0, ptr %1) {
+entry:
+  %body143 = alloca ptr, align 8
+  %coll136 = alloca ptr, align 8
+  %s2127 = alloca ptr, align 8
+  %s1124 = alloca ptr, align 8
+  %body121 = alloca ptr, align 8
+  %end114 = alloca ptr, align 8
+  %start111 = alloca ptr, align 8
+  %body101 = alloca ptr, align 8
+  %cond94 = alloca ptr, align 8
   %sif_result = alloca i64, align 8
+  %s2 = alloca ptr, align 8
   %s1 = alloca ptr, align 8
-  %else_b36 = alloca ptr, align 8
-  %then_b33 = alloca ptr, align 8
-  %body24 = alloca ptr, align 8
+  %else_b74 = alloca ptr, align 8
+  %then_b71 = alloca ptr, align 8
+  %cond68 = alloca ptr, align 8
+  %body59 = alloca ptr, align 8
+  %init50 = alloca ptr, align 8
+  %init37 = alloca ptr, align 8
+  %init24 = alloca ptr, align 8
   %expr15 = alloca ptr, align 8
   %expr3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
@@ -175289,10 +175659,10 @@ entry:
   %tag_eq = icmp eq i64 %tag, 6952722321413
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm124, %march_arm119, %march_arm106, %march_arm93, %march_arm84, %march_arm71, %march_arm58, %march_arm45, %sif_end, %march_arm19, %march_arm6, %march_arm
+match_end:                                        ; preds = %march_arm148, %march_arm131, %march_arm106, %march_arm85, %sif_end, %march_arm54, %march_arm41, %march_arm28, %march_arm19, %march_arm6, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast128 = inttoptr i64 %match_val to ptr
-  ret ptr %cast128
+  %cast152 = inttoptr i64 %match_val to ptr
+  ret ptr %cast152
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
@@ -175304,7 +175674,7 @@ march_arm:                                        ; preds = %entry
   store ptr %expr, ptr %expr3, align 8
   %expr4 = load ptr, ptr %expr3, align 8
   %set5 = load ptr, ptr %set, align 8
-  %3 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %expr4, ptr %set5)
+  %3 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %expr4, ptr %set5)
   %cast = ptrtoint ptr %3 to i64
   store i64 %cast, ptr %match_result, align 8
   br label %match_end
@@ -175323,76 +175693,144 @@ march_arm6:                                       ; preds = %march_next
   store ptr %expr14, ptr %expr15, align 8
   %expr16 = load ptr, ptr %expr15, align 8
   %set17 = load ptr, ptr %set, align 8
-  %4 = call ptr @"codegen::escape::analyze_expr_escapes"(ptr %expr16, ptr %set17)
+  %4 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %expr16, ptr %set17)
   %cast18 = ptrtoint ptr %4 to i64
   store i64 %cast18, ptr %match_result, align 8
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  %tag_eq21 = icmp eq i64 %tag, 210669825968
+  %tag_eq21 = icmp eq i64 %tag, 193463210
   br i1 %tag_eq21, label %march_arm19, label %march_next20
 
 march_arm19:                                      ; preds = %march_next7
   %pay_slot22 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
   %payload23 = load ptr, ptr %pay_slot22, align 8
-  %body_slot_base = ptrtoint ptr %payload23 to i64
-  %body_slot_addr = add i64 %body_slot_base, 0
-  %body_slot = inttoptr i64 %body_slot_addr to ptr
-  %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body24, align 8
-  %body25 = load ptr, ptr %body24, align 8
+  %init_slot_base = ptrtoint ptr %payload23 to i64
+  %init_slot_addr = add i64 %init_slot_base, 16
+  %init_slot = inttoptr i64 %init_slot_addr to ptr
+  %init = load ptr, ptr %init_slot, align 8
+  store ptr %init, ptr %init24, align 8
+  %init25 = load ptr, ptr %init24, align 8
   %set26 = load ptr, ptr %set, align 8
-  %5 = call ptr @"codegen::escape::analyze_stmts"(ptr %body25, ptr %set26)
+  %5 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %init25, ptr %set26)
   %cast27 = ptrtoint ptr %5 to i64
   store i64 %cast27, ptr %match_result, align 8
   br label %match_end
 
 march_next20:                                     ; preds = %march_next7
-  %tag_eq30 = icmp eq i64 %tag, 5862420
+  %tag_eq30 = icmp eq i64 %tag, 193464827
   br i1 %tag_eq30, label %march_arm28, label %march_next29
 
 march_arm28:                                      ; preds = %march_next20
   %pay_slot31 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
   %payload32 = load ptr, ptr %pay_slot31, align 8
-  %then_b_slot_base = ptrtoint ptr %payload32 to i64
+  %init_slot_base33 = ptrtoint ptr %payload32 to i64
+  %init_slot_addr34 = add i64 %init_slot_base33, 16
+  %init_slot35 = inttoptr i64 %init_slot_addr34 to ptr
+  %init36 = load ptr, ptr %init_slot35, align 8
+  store ptr %init36, ptr %init37, align 8
+  %init38 = load ptr, ptr %init37, align 8
+  %set39 = load ptr, ptr %set, align 8
+  %6 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %init38, ptr %set39)
+  %cast40 = ptrtoint ptr %6 to i64
+  store i64 %cast40, ptr %match_result, align 8
+  br label %match_end
+
+march_next29:                                     ; preds = %march_next20
+  %tag_eq43 = icmp eq i64 %tag, 210671119148
+  br i1 %tag_eq43, label %march_arm41, label %march_next42
+
+march_arm41:                                      ; preds = %march_next29
+  %pay_slot44 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload45 = load ptr, ptr %pay_slot44, align 8
+  %init_slot_base46 = ptrtoint ptr %payload45 to i64
+  %init_slot_addr47 = add i64 %init_slot_base46, 16
+  %init_slot48 = inttoptr i64 %init_slot_addr47 to ptr
+  %init49 = load ptr, ptr %init_slot48, align 8
+  store ptr %init49, ptr %init50, align 8
+  %init51 = load ptr, ptr %init50, align 8
+  %set52 = load ptr, ptr %set, align 8
+  %7 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %init51, ptr %set52)
+  %cast53 = ptrtoint ptr %7 to i64
+  store i64 %cast53, ptr %match_result, align 8
+  br label %match_end
+
+march_next42:                                     ; preds = %march_next29
+  %tag_eq56 = icmp eq i64 %tag, 210669825968
+  br i1 %tag_eq56, label %march_arm54, label %march_next55
+
+march_arm54:                                      ; preds = %march_next42
+  %pay_slot57 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload58 = load ptr, ptr %pay_slot57, align 8
+  %body_slot_base = ptrtoint ptr %payload58 to i64
+  %body_slot_addr = add i64 %body_slot_base, 0
+  %body_slot = inttoptr i64 %body_slot_addr to ptr
+  %body = load ptr, ptr %body_slot, align 8
+  store ptr %body, ptr %body59, align 8
+  %body60 = load ptr, ptr %body59, align 8
+  %set61 = load ptr, ptr %set, align 8
+  %8 = call ptr @"codegen::escape::remove_escaped"(ptr %body60, ptr %set61)
+  %cast62 = ptrtoint ptr %8 to i64
+  store i64 %cast62, ptr %match_result, align 8
+  br label %match_end
+
+march_next55:                                     ; preds = %march_next42
+  %tag_eq65 = icmp eq i64 %tag, 5862420
+  br i1 %tag_eq65, label %march_arm63, label %march_next64
+
+march_arm63:                                      ; preds = %march_next55
+  %pay_slot66 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload67 = load ptr, ptr %pay_slot66, align 8
+  %cond_slot_base = ptrtoint ptr %payload67 to i64
+  %cond_slot_addr = add i64 %cond_slot_base, 0
+  %cond_slot = inttoptr i64 %cond_slot_addr to ptr
+  %cond = load ptr, ptr %cond_slot, align 8
+  store ptr %cond, ptr %cond68, align 8
+  %pay_slot69 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload70 = load ptr, ptr %pay_slot69, align 8
+  %then_b_slot_base = ptrtoint ptr %payload70 to i64
   %then_b_slot_addr = add i64 %then_b_slot_base, 8
   %then_b_slot = inttoptr i64 %then_b_slot_addr to ptr
   %then_b = load ptr, ptr %then_b_slot, align 8
-  store ptr %then_b, ptr %then_b33, align 8
-  %pay_slot34 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
-  %payload35 = load ptr, ptr %pay_slot34, align 8
-  %else_b_slot_base = ptrtoint ptr %payload35 to i64
+  store ptr %then_b, ptr %then_b71, align 8
+  %pay_slot72 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload73 = load ptr, ptr %pay_slot72, align 8
+  %else_b_slot_base = ptrtoint ptr %payload73 to i64
   %else_b_slot_addr = add i64 %else_b_slot_base, 16
   %else_b_slot = inttoptr i64 %else_b_slot_addr to ptr
   %else_b = load ptr, ptr %else_b_slot, align 8
-  store ptr %else_b, ptr %else_b36, align 8
-  %then_b37 = load ptr, ptr %then_b33, align 8
-  %set38 = load ptr, ptr %set, align 8
-  %6 = call ptr @"codegen::escape::analyze_stmt"(ptr %then_b37, ptr %set38)
-  store ptr %6, ptr %s1, align 8
-  %else_b39 = load ptr, ptr %else_b36, align 8
-  %ne = icmp ne ptr %else_b39, null
+  store ptr %else_b, ptr %else_b74, align 8
+  %cond75 = load ptr, ptr %cond68, align 8
+  %set76 = load ptr, ptr %set, align 8
+  %9 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %cond75, ptr %set76)
+  store ptr %9, ptr %s1, align 8
+  %then_b77 = load ptr, ptr %then_b71, align 8
+  %s178 = load ptr, ptr %s1, align 8
+  %10 = call ptr @"codegen::escape::remove_escaped_stmt"(ptr %then_b77, ptr %s178)
+  store ptr %10, ptr %s2, align 8
+  %else_b79 = load ptr, ptr %else_b74, align 8
+  %ne = icmp ne ptr %else_b79, null
   %ne_ext = zext i1 %ne to i64
   %sif_cond = icmp ne i64 %ne_ext, 0
   store i64 0, ptr %sif_result, align 8
   br i1 %sif_cond, label %sif_then, label %sif_else
 
-march_next29:                                     ; preds = %march_next20
-  %tag_eq47 = icmp eq i64 %tag, 210694580318
-  br i1 %tag_eq47, label %march_arm45, label %march_next46
+march_next64:                                     ; preds = %march_next55
+  %tag_eq87 = icmp eq i64 %tag, 210694580318
+  br i1 %tag_eq87, label %march_arm85, label %march_next86
 
-sif_then:                                         ; preds = %march_arm28
-  %else_b40 = load ptr, ptr %else_b36, align 8
-  %s141 = load ptr, ptr %s1, align 8
-  %7 = call ptr @"codegen::escape::analyze_stmt"(ptr %else_b40, ptr %s141)
-  %cast42 = ptrtoint ptr %7 to i64
-  store i64 %cast42, ptr %sif_result, align 8
+sif_then:                                         ; preds = %march_arm63
+  %else_b80 = load ptr, ptr %else_b74, align 8
+  %s281 = load ptr, ptr %s2, align 8
+  %11 = call ptr @"codegen::escape::remove_escaped_stmt"(ptr %else_b80, ptr %s281)
+  %cast82 = ptrtoint ptr %11 to i64
+  store i64 %cast82, ptr %sif_result, align 8
   br label %sif_end
 
-sif_else:                                         ; preds = %march_arm28
-  %s143 = load ptr, ptr %s1, align 8
-  %cast44 = ptrtoint ptr %s143 to i64
-  store i64 %cast44, ptr %sif_result, align 8
+sif_else:                                         ; preds = %march_arm63
+  %s283 = load ptr, ptr %s2, align 8
+  %cast84 = ptrtoint ptr %s283 to i64
+  store i64 %cast84, ptr %sif_result, align 8
   br label %sif_end
 
 sif_end:                                          ; preds = %sif_else, %sif_then
@@ -175400,226 +175838,144 @@ sif_end:                                          ; preds = %sif_else, %sif_then
   store i64 %sif_val, ptr %match_result, align 8
   br label %match_end
 
-march_arm45:                                      ; preds = %march_next29
-  %pay_slot48 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
-  %payload49 = load ptr, ptr %pay_slot48, align 8
-  %body_slot_base50 = ptrtoint ptr %payload49 to i64
-  %body_slot_addr51 = add i64 %body_slot_base50, 8
-  %body_slot52 = inttoptr i64 %body_slot_addr51 to ptr
-  %body53 = load ptr, ptr %body_slot52, align 8
-  store ptr %body53, ptr %body54, align 8
-  %body55 = load ptr, ptr %body54, align 8
-  %set56 = load ptr, ptr %set, align 8
-  %8 = call ptr @"codegen::escape::analyze_stmt"(ptr %body55, ptr %set56)
-  %cast57 = ptrtoint ptr %8 to i64
-  store i64 %cast57, ptr %match_result, align 8
-  br label %match_end
-
-march_next46:                                     ; preds = %march_next29
-  %tag_eq60 = icmp eq i64 %tag, 193457004
-  br i1 %tag_eq60, label %march_arm58, label %march_next59
-
-march_arm58:                                      ; preds = %march_next46
-  %pay_slot61 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
-  %payload62 = load ptr, ptr %pay_slot61, align 8
-  %body_slot_base63 = ptrtoint ptr %payload62 to i64
-  %body_slot_addr64 = add i64 %body_slot_base63, 24
-  %body_slot65 = inttoptr i64 %body_slot_addr64 to ptr
-  %body66 = load ptr, ptr %body_slot65, align 8
-  store ptr %body66, ptr %body67, align 8
-  %body68 = load ptr, ptr %body67, align 8
-  %set69 = load ptr, ptr %set, align 8
-  %9 = call ptr @"codegen::escape::analyze_stmt"(ptr %body68, ptr %set69)
-  %cast70 = ptrtoint ptr %9 to i64
-  store i64 %cast70, ptr %match_result, align 8
-  br label %match_end
-
-march_next59:                                     ; preds = %march_next46
-  %tag_eq73 = icmp eq i64 %tag, 210674679875
-  br i1 %tag_eq73, label %march_arm71, label %march_next72
-
-march_arm71:                                      ; preds = %march_next59
-  %pay_slot74 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
-  %payload75 = load ptr, ptr %pay_slot74, align 8
-  %body_slot_base76 = ptrtoint ptr %payload75 to i64
-  %body_slot_addr77 = add i64 %body_slot_base76, 16
-  %body_slot78 = inttoptr i64 %body_slot_addr77 to ptr
-  %body79 = load ptr, ptr %body_slot78, align 8
-  store ptr %body79, ptr %body80, align 8
-  %body81 = load ptr, ptr %body80, align 8
-  %set82 = load ptr, ptr %set, align 8
-  %10 = call ptr @"codegen::escape::analyze_stmt"(ptr %body81, ptr %set82)
-  %cast83 = ptrtoint ptr %10 to i64
-  store i64 %cast83, ptr %match_result, align 8
-  br label %match_end
-
-march_next72:                                     ; preds = %march_next59
-  %tag_eq86 = icmp eq i64 %tag, 193463210
-  br i1 %tag_eq86, label %march_arm84, label %march_next85
-
-march_arm84:                                      ; preds = %march_next72
-  %pay_slot87 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
-  %payload88 = load ptr, ptr %pay_slot87, align 8
-  %init_slot_base = ptrtoint ptr %payload88 to i64
-  %init_slot_addr = add i64 %init_slot_base, 16
-  %init_slot = inttoptr i64 %init_slot_addr to ptr
-  %init = load ptr, ptr %init_slot, align 8
-  store ptr %init, ptr %init89, align 8
-  %init90 = load ptr, ptr %init89, align 8
-  %set91 = load ptr, ptr %set, align 8
-  %11 = call ptr @"codegen::escape::analyze_expr_escapes"(ptr %init90, ptr %set91)
-  %cast92 = ptrtoint ptr %11 to i64
-  store i64 %cast92, ptr %match_result, align 8
-  br label %match_end
-
-march_next85:                                     ; preds = %march_next72
-  %tag_eq95 = icmp eq i64 %tag, 193464827
-  br i1 %tag_eq95, label %march_arm93, label %march_next94
-
-march_arm93:                                      ; preds = %march_next85
-  %pay_slot96 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
-  %payload97 = load ptr, ptr %pay_slot96, align 8
-  %init_slot_base98 = ptrtoint ptr %payload97 to i64
-  %init_slot_addr99 = add i64 %init_slot_base98, 16
-  %init_slot100 = inttoptr i64 %init_slot_addr99 to ptr
-  %init101 = load ptr, ptr %init_slot100, align 8
-  store ptr %init101, ptr %init102, align 8
-  %init103 = load ptr, ptr %init102, align 8
+march_arm85:                                      ; preds = %march_next64
+  %pay_slot88 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload89 = load ptr, ptr %pay_slot88, align 8
+  %cond_slot_base90 = ptrtoint ptr %payload89 to i64
+  %cond_slot_addr91 = add i64 %cond_slot_base90, 0
+  %cond_slot92 = inttoptr i64 %cond_slot_addr91 to ptr
+  %cond93 = load ptr, ptr %cond_slot92, align 8
+  store ptr %cond93, ptr %cond94, align 8
+  %pay_slot95 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload96 = load ptr, ptr %pay_slot95, align 8
+  %body_slot_base97 = ptrtoint ptr %payload96 to i64
+  %body_slot_addr98 = add i64 %body_slot_base97, 8
+  %body_slot99 = inttoptr i64 %body_slot_addr98 to ptr
+  %body100 = load ptr, ptr %body_slot99, align 8
+  store ptr %body100, ptr %body101, align 8
+  %body102 = load ptr, ptr %body101, align 8
+  %cond103 = load ptr, ptr %cond94, align 8
   %set104 = load ptr, ptr %set, align 8
-  %12 = call ptr @"codegen::escape::analyze_expr_escapes"(ptr %init103, ptr %set104)
-  %cast105 = ptrtoint ptr %12 to i64
+  %12 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %cond103, ptr %set104)
+  %13 = call ptr @"codegen::escape::remove_escaped_stmt"(ptr %body102, ptr %12)
+  %cast105 = ptrtoint ptr %13 to i64
   store i64 %cast105, ptr %match_result, align 8
   br label %match_end
 
-march_next94:                                     ; preds = %march_next85
-  %tag_eq108 = icmp eq i64 %tag, 210671119148
+march_next86:                                     ; preds = %march_next64
+  %tag_eq108 = icmp eq i64 %tag, 193457004
   br i1 %tag_eq108, label %march_arm106, label %march_next107
 
-march_arm106:                                     ; preds = %march_next94
+march_arm106:                                     ; preds = %march_next86
   %pay_slot109 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
   %payload110 = load ptr, ptr %pay_slot109, align 8
-  %init_slot_base111 = ptrtoint ptr %payload110 to i64
-  %init_slot_addr112 = add i64 %init_slot_base111, 16
-  %init_slot113 = inttoptr i64 %init_slot_addr112 to ptr
-  %init114 = load ptr, ptr %init_slot113, align 8
-  store ptr %init114, ptr %init115, align 8
-  %init116 = load ptr, ptr %init115, align 8
-  %set117 = load ptr, ptr %set, align 8
-  %13 = call ptr @"codegen::escape::analyze_expr_escapes"(ptr %init116, ptr %set117)
-  %cast118 = ptrtoint ptr %13 to i64
-  store i64 %cast118, ptr %match_result, align 8
+  %start_slot_base = ptrtoint ptr %payload110 to i64
+  %start_slot_addr = add i64 %start_slot_base, 8
+  %start_slot = inttoptr i64 %start_slot_addr to ptr
+  %start = load ptr, ptr %start_slot, align 8
+  store ptr %start, ptr %start111, align 8
+  %pay_slot112 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload113 = load ptr, ptr %pay_slot112, align 8
+  %end_slot_base = ptrtoint ptr %payload113 to i64
+  %end_slot_addr = add i64 %end_slot_base, 16
+  %end_slot = inttoptr i64 %end_slot_addr to ptr
+  %end = load ptr, ptr %end_slot, align 8
+  store ptr %end, ptr %end114, align 8
+  %pay_slot115 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload116 = load ptr, ptr %pay_slot115, align 8
+  %body_slot_base117 = ptrtoint ptr %payload116 to i64
+  %body_slot_addr118 = add i64 %body_slot_base117, 24
+  %body_slot119 = inttoptr i64 %body_slot_addr118 to ptr
+  %body120 = load ptr, ptr %body_slot119, align 8
+  store ptr %body120, ptr %body121, align 8
+  %start122 = load ptr, ptr %start111, align 8
+  %set123 = load ptr, ptr %set, align 8
+  %14 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %start122, ptr %set123)
+  store ptr %14, ptr %s1124, align 8
+  %end125 = load ptr, ptr %end114, align 8
+  %s1126 = load ptr, ptr %s1124, align 8
+  %15 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %end125, ptr %s1126)
+  store ptr %15, ptr %s2127, align 8
+  %body128 = load ptr, ptr %body121, align 8
+  %s2129 = load ptr, ptr %s2127, align 8
+  %16 = call ptr @"codegen::escape::remove_escaped_stmt"(ptr %body128, ptr %s2129)
+  %cast130 = ptrtoint ptr %16 to i64
+  store i64 %cast130, ptr %match_result, align 8
   br label %match_end
 
-march_next107:                                    ; preds = %march_next94
-  %tag_eq121 = icmp eq i64 %tag, 210682481234
-  br i1 %tag_eq121, label %march_arm119, label %march_next120
+march_next107:                                    ; preds = %march_next86
+  %tag_eq133 = icmp eq i64 %tag, 210674679875
+  br i1 %tag_eq133, label %march_arm131, label %march_next132
 
-march_arm119:                                     ; preds = %march_next107
-  %set122 = load ptr, ptr %set, align 8
-  %cast123 = ptrtoint ptr %set122 to i64
-  store i64 %cast123, ptr %match_result, align 8
+march_arm131:                                     ; preds = %march_next107
+  %pay_slot134 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload135 = load ptr, ptr %pay_slot134, align 8
+  %coll_slot_base = ptrtoint ptr %payload135 to i64
+  %coll_slot_addr = add i64 %coll_slot_base, 8
+  %coll_slot = inttoptr i64 %coll_slot_addr to ptr
+  %coll = load ptr, ptr %coll_slot, align 8
+  store ptr %coll, ptr %coll136, align 8
+  %pay_slot137 = getelementptr inbounds nuw %Stmt, ptr %inner2, i32 0, i32 1
+  %payload138 = load ptr, ptr %pay_slot137, align 8
+  %body_slot_base139 = ptrtoint ptr %payload138 to i64
+  %body_slot_addr140 = add i64 %body_slot_base139, 16
+  %body_slot141 = inttoptr i64 %body_slot_addr140 to ptr
+  %body142 = load ptr, ptr %body_slot141, align 8
+  store ptr %body142, ptr %body143, align 8
+  %body144 = load ptr, ptr %body143, align 8
+  %coll145 = load ptr, ptr %coll136, align 8
+  %set146 = load ptr, ptr %set, align 8
+  %17 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %coll145, ptr %set146)
+  %18 = call ptr @"codegen::escape::remove_escaped_stmt"(ptr %body144, ptr %17)
+  %cast147 = ptrtoint ptr %18 to i64
+  store i64 %cast147, ptr %match_result, align 8
   br label %match_end
 
-march_next120:                                    ; preds = %march_next107
-  br label %march_arm124
+march_next132:                                    ; preds = %march_next107
+  br label %march_arm148
 
-march_arm124:                                     ; preds = %march_next120
-  %set126 = load ptr, ptr %set, align 8
-  %cast127 = ptrtoint ptr %set126 to i64
-  store i64 %cast127, ptr %match_result, align 8
+march_arm148:                                     ; preds = %march_next132
+  %set150 = load ptr, ptr %set, align 8
+  %cast151 = ptrtoint ptr %set150 to i64
+  store i64 %cast151, ptr %match_result, align 8
   br label %match_end
 
-march_next125:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15717, i64 %tag, ptr @mu_file.15718, i64 60)
+march_next149:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.15721, i64 %tag, ptr @mu_file.15722, i64 93)
   unreachable
 }
 
-define ptr @"codegen::escape::collect_escaping_idents"(ptr %0, ptr %1) {
+define ptr @"codegen::escape::remove_escaped_expr"(ptr %0, ptr %1) {
 entry:
-  %inner10 = alloca ptr, align 8
-  %name2 = alloca ptr, align 8
-  %match_result = alloca i64, align 8
-  %set = alloca ptr, align 8
-  %expr = alloca ptr, align 8
-  store ptr %0, ptr %expr, align 8
-  store ptr %1, ptr %set, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
-  %tag = load i64, ptr %tag_ptr, align 8
-  store i64 0, ptr %match_result, align 8
-  %tag_eq = icmp eq i64 %tag, 210677829401
-  br i1 %tag_eq, label %march_arm, label %march_next
-
-match_end:                                        ; preds = %march_arm14, %march_arm5, %march_arm
-  %match_val = load i64, ptr %match_result, align 8
-  %cast18 = inttoptr i64 %match_val to ptr
-  ret ptr %cast18
-
-march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload = load ptr, ptr %pay_slot, align 8
-  %name_slot_base = ptrtoint ptr %payload to i64
-  %name_slot_addr = add i64 %name_slot_base, 0
-  %name_slot = inttoptr i64 %name_slot_addr to ptr
-  %name = load ptr, ptr %name_slot, align 8
-  store ptr %name, ptr %name2, align 8
-  %set3 = load ptr, ptr %set, align 8
-  %name4 = load ptr, ptr %name2, align 8
-  %2 = call ptr @"codegen::escape::escape_add"(ptr %set3, ptr %name4)
-  %cast = ptrtoint ptr %2 to i64
-  store i64 %cast, ptr %match_result, align 8
-  br label %match_end
-
-march_next:                                       ; preds = %entry
-  %tag_eq7 = icmp eq i64 %tag, 7571062398479056
-  br i1 %tag_eq7, label %march_arm5, label %march_next6
-
-march_arm5:                                       ; preds = %march_next
-  %pay_slot8 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload9 = load ptr, ptr %pay_slot8, align 8
-  %inner_slot_base = ptrtoint ptr %payload9 to i64
-  %inner_slot_addr = add i64 %inner_slot_base, 0
-  %inner_slot = inttoptr i64 %inner_slot_addr to ptr
-  %inner = load ptr, ptr %inner_slot, align 8
-  store ptr %inner, ptr %inner10, align 8
-  %inner11 = load ptr, ptr %inner10, align 8
-  %set12 = load ptr, ptr %set, align 8
-  %3 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %inner11, ptr %set12)
-  %cast13 = ptrtoint ptr %3 to i64
-  store i64 %cast13, ptr %match_result, align 8
-  br label %match_end
-
-march_next6:                                      ; preds = %march_next
-  br label %march_arm14
-
-march_arm14:                                      ; preds = %march_next6
-  %set16 = load ptr, ptr %set, align 8
-  %cast17 = ptrtoint ptr %set16 to i64
-  store i64 %cast17, ptr %match_result, align 8
-  br label %match_end
-
-march_next15:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15719, i64 %tag, ptr @mu_file.15720, i64 90)
-  unreachable
-}
-
-define ptr @"codegen::escape::analyze_expr_escapes"(ptr %0, ptr %1) {
-entry:
-  %value118 = alloca ptr, align 8
-  %value105 = alloca ptr, align 8
-  %body96 = alloca ptr, align 8
-  %inner83 = alloca ptr, align 8
-  %s174 = alloca ptr, align 8
+  %e238 = alloca ptr, align 8
+  %t235 = alloca ptr, align 8
+  %cond232 = alloca ptr, align 8
+  %body223 = alloca ptr, align 8
+  %body210 = alloca ptr, align 8
+  %inits200 = alloca ptr, align 8
+  %obj193 = alloca ptr, align 8
+  %elems180 = alloca ptr, align 8
+  %inits171 = alloca ptr, align 8
+  %val161 = alloca ptr, align 8
+  %obj154 = alloca ptr, align 8
+  %val141 = alloca ptr, align 8
+  %idx131 = alloca ptr, align 8
+  %obj128 = alloca ptr, align 8
+  %inner115 = alloca ptr, align 8
+  %right101 = alloca ptr, align 8
+  %left94 = alloca ptr, align 8
+  %inner81 = alloca ptr, align 8
   %right71 = alloca ptr, align 8
   %left68 = alloca ptr, align 8
+  %s159 = alloca ptr, align 8
+  %args56 = alloca ptr, align 8
+  %callee49 = alloca ptr, align 8
   %s1 = alloca ptr, align 8
-  %inits57 = alloca ptr, align 8
-  %obj50 = alloca ptr, align 8
-  %body41 = alloca ptr, align 8
-  %elems32 = alloca ptr, align 8
-  %inits23 = alloca ptr, align 8
-  %args14 = alloca ptr, align 8
-  %args2 = alloca ptr, align 8
+  %args34 = alloca ptr, align 8
+  %callee31 = alloca ptr, align 8
+  %name22 = alloca ptr, align 8
+  %match_result6 = alloca i64, align 8
+  %obj2 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %set = alloca ptr, align 8
   %expr = alloca ptr, align 8
@@ -175629,140 +175985,139 @@ entry:
   %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
-  %tag_eq = icmp eq i64 %tag, 6383957985
+  %tag_eq = icmp eq i64 %tag, -4621855438574596325
   br i1 %tag_eq, label %march_arm, label %march_next
 
-match_end:                                        ; preds = %march_arm122, %march_arm109, %march_arm100, %march_arm87, %march_arm78, %march_arm63, %march_arm45, %march_arm36, %march_arm27, %march_arm18, %march_arm5, %march_arm
-  %match_val = load i64, ptr %match_result, align 8
-  %cast126 = inttoptr i64 %match_val to ptr
-  ret ptr %cast126
+match_end:                                        ; preds = %march_arm244, %march_arm227, %march_arm214, %march_arm205, %march_arm184, %march_arm175, %march_arm166, %march_arm145, %march_arm136, %march_arm119, %march_arm106, %march_arm85, %march_arm76, %march_arm63, %march_arm40, %march_arm26, %march_arm17, %match_end7
+  %match_val248 = load i64, ptr %match_result, align 8
+  %cast249 = inttoptr i64 %match_val248 to ptr
+  ret ptr %cast249
 
 march_arm:                                        ; preds = %entry
   %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
-  %args_slot_base = ptrtoint ptr %payload to i64
-  %args_slot_addr = add i64 %args_slot_base, 8
-  %args_slot = inttoptr i64 %args_slot_addr to ptr
-  %args = load ptr, ptr %args_slot, align 8
-  store ptr %args, ptr %args2, align 8
-  %args3 = load ptr, ptr %args2, align 8
-  %set4 = load ptr, ptr %set, align 8
-  %2 = call ptr @"codegen::escape::collect_escaping_args"(ptr %args3, ptr %set4)
-  %cast = ptrtoint ptr %2 to i64
-  store i64 %cast, ptr %match_result, align 8
-  br label %match_end
-
-march_next:                                       ; preds = %entry
-  %tag_eq7 = icmp eq i64 %tag, -4620497126533663650
-  br i1 %tag_eq7, label %march_arm5, label %march_next6
-
-march_arm5:                                       ; preds = %march_next
-  %pay_slot8 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload9 = load ptr, ptr %pay_slot8, align 8
-  %args_slot_base10 = ptrtoint ptr %payload9 to i64
-  %args_slot_addr11 = add i64 %args_slot_base10, 16
-  %args_slot12 = inttoptr i64 %args_slot_addr11 to ptr
-  %args13 = load ptr, ptr %args_slot12, align 8
-  store ptr %args13, ptr %args14, align 8
-  %args15 = load ptr, ptr %args14, align 8
-  %set16 = load ptr, ptr %set, align 8
-  %3 = call ptr @"codegen::escape::collect_escaping_args"(ptr %args15, ptr %set16)
-  %cast17 = ptrtoint ptr %3 to i64
-  store i64 %cast17, ptr %match_result, align 8
-  br label %match_end
-
-march_next6:                                      ; preds = %march_next
-  %tag_eq20 = icmp eq i64 %tag, 249862025149459091
-  br i1 %tag_eq20, label %march_arm18, label %march_next19
-
-march_arm18:                                      ; preds = %march_next6
-  %pay_slot21 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload22 = load ptr, ptr %pay_slot21, align 8
-  %inits_slot_base = ptrtoint ptr %payload22 to i64
-  %inits_slot_addr = add i64 %inits_slot_base, 8
-  %inits_slot = inttoptr i64 %inits_slot_addr to ptr
-  %inits = load ptr, ptr %inits_slot, align 8
-  store ptr %inits, ptr %inits23, align 8
-  %inits24 = load ptr, ptr %inits23, align 8
-  %set25 = load ptr, ptr %set, align 8
-  %4 = call ptr @"codegen::escape::collect_escaping_field_inits"(ptr %inits24, ptr %set25)
-  %cast26 = ptrtoint ptr %4 to i64
-  store i64 %cast26, ptr %match_result, align 8
-  br label %match_end
-
-march_next19:                                     ; preds = %march_next6
-  %tag_eq29 = icmp eq i64 %tag, 229432243077098
-  br i1 %tag_eq29, label %march_arm27, label %march_next28
-
-march_arm27:                                      ; preds = %march_next19
-  %pay_slot30 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload31 = load ptr, ptr %pay_slot30, align 8
-  %elems_slot_base = ptrtoint ptr %payload31 to i64
-  %elems_slot_addr = add i64 %elems_slot_base, 0
-  %elems_slot = inttoptr i64 %elems_slot_addr to ptr
-  %elems = load ptr, ptr %elems_slot, align 8
-  store ptr %elems, ptr %elems32, align 8
-  %elems33 = load ptr, ptr %elems32, align 8
-  %set34 = load ptr, ptr %set, align 8
-  %5 = call ptr @"codegen::escape::collect_escaping_args"(ptr %elems33, ptr %set34)
-  %cast35 = ptrtoint ptr %5 to i64
-  store i64 %cast35, ptr %match_result, align 8
-  br label %match_end
-
-march_next28:                                     ; preds = %march_next19
-  %tag_eq38 = icmp eq i64 %tag, 6952482492646
-  br i1 %tag_eq38, label %march_arm36, label %march_next37
-
-march_arm36:                                      ; preds = %march_next28
-  %pay_slot39 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload40 = load ptr, ptr %pay_slot39, align 8
-  %body_slot_base = ptrtoint ptr %payload40 to i64
-  %body_slot_addr = add i64 %body_slot_base, 8
-  %body_slot = inttoptr i64 %body_slot_addr to ptr
-  %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body41, align 8
-  %body42 = load ptr, ptr %body41, align 8
-  %set43 = load ptr, ptr %set, align 8
-  %6 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %body42, ptr %set43)
-  %cast44 = ptrtoint ptr %6 to i64
-  store i64 %cast44, ptr %match_result, align 8
-  br label %match_end
-
-march_next37:                                     ; preds = %march_next28
-  %tag_eq47 = icmp eq i64 %tag, 6384685697
-  br i1 %tag_eq47, label %march_arm45, label %march_next46
-
-march_arm45:                                      ; preds = %march_next37
-  %pay_slot48 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload49 = load ptr, ptr %pay_slot48, align 8
-  %obj_slot_base = ptrtoint ptr %payload49 to i64
+  %obj_slot_base = ptrtoint ptr %payload to i64
   %obj_slot_addr = add i64 %obj_slot_base, 0
   %obj_slot = inttoptr i64 %obj_slot_addr to ptr
   %obj = load ptr, ptr %obj_slot, align 8
-  store ptr %obj, ptr %obj50, align 8
-  %pay_slot51 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload52 = load ptr, ptr %pay_slot51, align 8
-  %inits_slot_base53 = ptrtoint ptr %payload52 to i64
-  %inits_slot_addr54 = add i64 %inits_slot_base53, 8
-  %inits_slot55 = inttoptr i64 %inits_slot_addr54 to ptr
-  %inits56 = load ptr, ptr %inits_slot55, align 8
-  store ptr %inits56, ptr %inits57, align 8
-  %obj58 = load ptr, ptr %obj50, align 8
-  %set59 = load ptr, ptr %set, align 8
-  %7 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %obj58, ptr %set59)
-  store ptr %7, ptr %s1, align 8
-  %inits60 = load ptr, ptr %inits57, align 8
-  %s161 = load ptr, ptr %s1, align 8
-  %8 = call ptr @"codegen::escape::collect_escaping_field_inits"(ptr %inits60, ptr %s161)
-  %cast62 = ptrtoint ptr %8 to i64
+  store ptr %obj, ptr %obj2, align 8
+  %obj3 = load ptr, ptr %obj2, align 8
+  %tag_ptr4 = getelementptr inbounds nuw %Expr, ptr %obj3, i32 0, i32 0
+  %tag5 = load i64, ptr %tag_ptr4, align 8
+  store i64 0, ptr %match_result6, align 8
+  %tag_eq10 = icmp eq i64 %tag5, 210677829401
+  br i1 %tag_eq10, label %march_arm8, label %march_next9
+
+march_next:                                       ; preds = %entry
+  %tag_eq19 = icmp eq i64 %tag, 210677829401
+  br i1 %tag_eq19, label %march_arm17, label %march_next18
+
+match_end7:                                       ; preds = %march_arm12, %march_arm8
+  %match_val = load i64, ptr %match_result6, align 8
+  store i64 %match_val, ptr %match_result, align 8
+  br label %match_end
+
+march_arm8:                                       ; preds = %march_arm
+  %set11 = load ptr, ptr %set, align 8
+  %cast = ptrtoint ptr %set11 to i64
+  store i64 %cast, ptr %match_result6, align 8
+  br label %match_end7
+
+march_next9:                                      ; preds = %march_arm
+  br label %march_arm12
+
+march_arm12:                                      ; preds = %march_next9
+  %obj14 = load ptr, ptr %obj2, align 8
+  %set15 = load ptr, ptr %set, align 8
+  %2 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %obj14, ptr %set15)
+  %cast16 = ptrtoint ptr %2 to i64
+  store i64 %cast16, ptr %match_result6, align 8
+  br label %match_end7
+
+march_next13:                                     ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.15723, i64 %tag5, ptr @mu_file.15724, i64 119)
+  unreachable
+
+march_arm17:                                      ; preds = %march_next
+  %pay_slot20 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload21 = load ptr, ptr %pay_slot20, align 8
+  %name_slot_base = ptrtoint ptr %payload21 to i64
+  %name_slot_addr = add i64 %name_slot_base, 0
+  %name_slot = inttoptr i64 %name_slot_addr to ptr
+  %name = load ptr, ptr %name_slot, align 8
+  store ptr %name, ptr %name22, align 8
+  %set23 = load ptr, ptr %set, align 8
+  %name24 = load ptr, ptr %name22, align 8
+  %3 = call ptr @"codegen::escape::releasable_remove"(ptr %set23, ptr %name24)
+  %cast25 = ptrtoint ptr %3 to i64
+  store i64 %cast25, ptr %match_result, align 8
+  br label %match_end
+
+march_next18:                                     ; preds = %march_next
+  %tag_eq28 = icmp eq i64 %tag, 6383957985
+  br i1 %tag_eq28, label %march_arm26, label %march_next27
+
+march_arm26:                                      ; preds = %march_next18
+  %pay_slot29 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload30 = load ptr, ptr %pay_slot29, align 8
+  %callee_slot_base = ptrtoint ptr %payload30 to i64
+  %callee_slot_addr = add i64 %callee_slot_base, 0
+  %callee_slot = inttoptr i64 %callee_slot_addr to ptr
+  %callee = load ptr, ptr %callee_slot, align 8
+  store ptr %callee, ptr %callee31, align 8
+  %pay_slot32 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload33 = load ptr, ptr %pay_slot32, align 8
+  %args_slot_base = ptrtoint ptr %payload33 to i64
+  %args_slot_addr = add i64 %args_slot_base, 8
+  %args_slot = inttoptr i64 %args_slot_addr to ptr
+  %args = load ptr, ptr %args_slot, align 8
+  store ptr %args, ptr %args34, align 8
+  %callee35 = load ptr, ptr %callee31, align 8
+  %set36 = load ptr, ptr %set, align 8
+  %4 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %callee35, ptr %set36)
+  store ptr %4, ptr %s1, align 8
+  %args37 = load ptr, ptr %args34, align 8
+  %s138 = load ptr, ptr %s1, align 8
+  %5 = call ptr @"codegen::escape::remove_escaped_args"(ptr %args37, ptr %s138)
+  %cast39 = ptrtoint ptr %5 to i64
+  store i64 %cast39, ptr %match_result, align 8
+  br label %match_end
+
+march_next27:                                     ; preds = %march_next18
+  %tag_eq42 = icmp eq i64 %tag, -4620497126533663650
+  br i1 %tag_eq42, label %march_arm40, label %march_next41
+
+march_arm40:                                      ; preds = %march_next27
+  %pay_slot43 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload44 = load ptr, ptr %pay_slot43, align 8
+  %callee_slot_base45 = ptrtoint ptr %payload44 to i64
+  %callee_slot_addr46 = add i64 %callee_slot_base45, 0
+  %callee_slot47 = inttoptr i64 %callee_slot_addr46 to ptr
+  %callee48 = load ptr, ptr %callee_slot47, align 8
+  store ptr %callee48, ptr %callee49, align 8
+  %pay_slot50 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload51 = load ptr, ptr %pay_slot50, align 8
+  %args_slot_base52 = ptrtoint ptr %payload51 to i64
+  %args_slot_addr53 = add i64 %args_slot_base52, 16
+  %args_slot54 = inttoptr i64 %args_slot_addr53 to ptr
+  %args55 = load ptr, ptr %args_slot54, align 8
+  store ptr %args55, ptr %args56, align 8
+  %callee57 = load ptr, ptr %callee49, align 8
+  %set58 = load ptr, ptr %set, align 8
+  %6 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %callee57, ptr %set58)
+  store ptr %6, ptr %s159, align 8
+  %args60 = load ptr, ptr %args56, align 8
+  %s161 = load ptr, ptr %s159, align 8
+  %7 = call ptr @"codegen::escape::remove_escaped_args"(ptr %args60, ptr %s161)
+  %cast62 = ptrtoint ptr %7 to i64
   store i64 %cast62, ptr %match_result, align 8
   br label %match_end
 
-march_next46:                                     ; preds = %march_next37
+march_next41:                                     ; preds = %march_next27
   %tag_eq65 = icmp eq i64 %tag, 6952100661418
   br i1 %tag_eq65, label %march_arm63, label %march_next64
 
-march_arm63:                                      ; preds = %march_next46
+march_arm63:                                      ; preds = %march_next41
   %pay_slot66 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
   %payload67 = load ptr, ptr %pay_slot66, align 8
   %left_slot_base = ptrtoint ptr %payload67 to i64
@@ -175777,110 +176132,313 @@ march_arm63:                                      ; preds = %march_next46
   %right_slot = inttoptr i64 %right_slot_addr to ptr
   %right = load ptr, ptr %right_slot, align 8
   store ptr %right, ptr %right71, align 8
-  %left72 = load ptr, ptr %left68, align 8
-  %set73 = load ptr, ptr %set, align 8
-  %9 = call ptr @"codegen::escape::analyze_expr_escapes"(ptr %left72, ptr %set73)
-  store ptr %9, ptr %s174, align 8
-  %right75 = load ptr, ptr %right71, align 8
-  %s176 = load ptr, ptr %s174, align 8
-  %10 = call ptr @"codegen::escape::analyze_expr_escapes"(ptr %right75, ptr %s176)
-  %cast77 = ptrtoint ptr %10 to i64
-  store i64 %cast77, ptr %match_result, align 8
+  %right72 = load ptr, ptr %right71, align 8
+  %left73 = load ptr, ptr %left68, align 8
+  %set74 = load ptr, ptr %set, align 8
+  %8 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %left73, ptr %set74)
+  %9 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %right72, ptr %8)
+  %cast75 = ptrtoint ptr %9 to i64
+  store i64 %cast75, ptr %match_result, align 8
   br label %match_end
 
-march_next64:                                     ; preds = %march_next46
-  %tag_eq80 = icmp eq i64 %tag, 210692415604
-  br i1 %tag_eq80, label %march_arm78, label %march_next79
+march_next64:                                     ; preds = %march_next41
+  %tag_eq78 = icmp eq i64 %tag, 210692415604
+  br i1 %tag_eq78, label %march_arm76, label %march_next77
 
-march_arm78:                                      ; preds = %march_next64
-  %pay_slot81 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload82 = load ptr, ptr %pay_slot81, align 8
-  %inner_slot_base = ptrtoint ptr %payload82 to i64
+march_arm76:                                      ; preds = %march_next64
+  %pay_slot79 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload80 = load ptr, ptr %pay_slot79, align 8
+  %inner_slot_base = ptrtoint ptr %payload80 to i64
   %inner_slot_addr = add i64 %inner_slot_base, 8
   %inner_slot = inttoptr i64 %inner_slot_addr to ptr
   %inner = load ptr, ptr %inner_slot, align 8
-  store ptr %inner, ptr %inner83, align 8
-  %inner84 = load ptr, ptr %inner83, align 8
-  %set85 = load ptr, ptr %set, align 8
-  %11 = call ptr @"codegen::escape::analyze_expr_escapes"(ptr %inner84, ptr %set85)
-  %cast86 = ptrtoint ptr %11 to i64
-  store i64 %cast86, ptr %match_result, align 8
+  store ptr %inner, ptr %inner81, align 8
+  %inner82 = load ptr, ptr %inner81, align 8
+  %set83 = load ptr, ptr %set, align 8
+  %10 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %inner82, ptr %set83)
+  %cast84 = ptrtoint ptr %10 to i64
+  store i64 %cast84, ptr %match_result, align 8
   br label %match_end
 
-march_next79:                                     ; preds = %march_next64
-  %tag_eq89 = icmp eq i64 %tag, 210669825968
-  br i1 %tag_eq89, label %march_arm87, label %march_next88
+march_next77:                                     ; preds = %march_next64
+  %tag_eq87 = icmp eq i64 %tag, 229432463287872
+  br i1 %tag_eq87, label %march_arm85, label %march_next86
 
-march_arm87:                                      ; preds = %march_next79
-  %pay_slot90 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload91 = load ptr, ptr %pay_slot90, align 8
-  %body_slot_base92 = ptrtoint ptr %payload91 to i64
-  %body_slot_addr93 = add i64 %body_slot_base92, 0
-  %body_slot94 = inttoptr i64 %body_slot_addr93 to ptr
-  %body95 = load ptr, ptr %body_slot94, align 8
-  store ptr %body95, ptr %body96, align 8
-  %body97 = load ptr, ptr %body96, align 8
-  %set98 = load ptr, ptr %set, align 8
-  %12 = call ptr @"codegen::escape::analyze_stmts"(ptr %body97, ptr %set98)
-  %cast99 = ptrtoint ptr %12 to i64
-  store i64 %cast99, ptr %match_result, align 8
+march_arm85:                                      ; preds = %march_next77
+  %pay_slot88 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload89 = load ptr, ptr %pay_slot88, align 8
+  %left_slot_base90 = ptrtoint ptr %payload89 to i64
+  %left_slot_addr91 = add i64 %left_slot_base90, 0
+  %left_slot92 = inttoptr i64 %left_slot_addr91 to ptr
+  %left93 = load ptr, ptr %left_slot92, align 8
+  store ptr %left93, ptr %left94, align 8
+  %pay_slot95 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload96 = load ptr, ptr %pay_slot95, align 8
+  %right_slot_base97 = ptrtoint ptr %payload96 to i64
+  %right_slot_addr98 = add i64 %right_slot_base97, 16
+  %right_slot99 = inttoptr i64 %right_slot_addr98 to ptr
+  %right100 = load ptr, ptr %right_slot99, align 8
+  store ptr %right100, ptr %right101, align 8
+  %right102 = load ptr, ptr %right101, align 8
+  %left103 = load ptr, ptr %left94, align 8
+  %set104 = load ptr, ptr %set, align 8
+  %11 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %left103, ptr %set104)
+  %12 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %right102, ptr %11)
+  %cast105 = ptrtoint ptr %12 to i64
+  store i64 %cast105, ptr %match_result, align 8
   br label %match_end
 
-march_next88:                                     ; preds = %march_next79
-  %tag_eq102 = icmp eq i64 %tag, 6952073573258
-  br i1 %tag_eq102, label %march_arm100, label %march_next101
+march_next86:                                     ; preds = %march_next77
+  %tag_eq108 = icmp eq i64 %tag, 7571062398479056
+  br i1 %tag_eq108, label %march_arm106, label %march_next107
 
-march_arm100:                                     ; preds = %march_next88
-  %pay_slot103 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload104 = load ptr, ptr %pay_slot103, align 8
-  %value_slot_base = ptrtoint ptr %payload104 to i64
-  %value_slot_addr = add i64 %value_slot_base, 8
-  %value_slot = inttoptr i64 %value_slot_addr to ptr
-  %value = load ptr, ptr %value_slot, align 8
-  store ptr %value, ptr %value105, align 8
-  %value106 = load ptr, ptr %value105, align 8
-  %set107 = load ptr, ptr %set, align 8
-  %13 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %value106, ptr %set107)
-  %cast108 = ptrtoint ptr %13 to i64
-  store i64 %cast108, ptr %match_result, align 8
+march_arm106:                                     ; preds = %march_next86
+  %pay_slot109 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload110 = load ptr, ptr %pay_slot109, align 8
+  %inner_slot_base111 = ptrtoint ptr %payload110 to i64
+  %inner_slot_addr112 = add i64 %inner_slot_base111, 0
+  %inner_slot113 = inttoptr i64 %inner_slot_addr112 to ptr
+  %inner114 = load ptr, ptr %inner_slot113, align 8
+  store ptr %inner114, ptr %inner115, align 8
+  %inner116 = load ptr, ptr %inner115, align 8
+  %set117 = load ptr, ptr %set, align 8
+  %13 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %inner116, ptr %set117)
+  %cast118 = ptrtoint ptr %13 to i64
+  store i64 %cast118, ptr %match_result, align 8
   br label %match_end
 
-march_next101:                                    ; preds = %march_next88
-  %tag_eq111 = icmp eq i64 %tag, -4621855438555042642
-  br i1 %tag_eq111, label %march_arm109, label %march_next110
+march_next107:                                    ; preds = %march_next86
+  %tag_eq121 = icmp eq i64 %tag, 210678187389
+  br i1 %tag_eq121, label %march_arm119, label %march_next120
 
-march_arm109:                                     ; preds = %march_next101
-  %pay_slot112 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload113 = load ptr, ptr %pay_slot112, align 8
-  %value_slot_base114 = ptrtoint ptr %payload113 to i64
-  %value_slot_addr115 = add i64 %value_slot_base114, 16
-  %value_slot116 = inttoptr i64 %value_slot_addr115 to ptr
-  %value117 = load ptr, ptr %value_slot116, align 8
-  store ptr %value117, ptr %value118, align 8
-  %value119 = load ptr, ptr %value118, align 8
-  %set120 = load ptr, ptr %set, align 8
-  %14 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %value119, ptr %set120)
-  %cast121 = ptrtoint ptr %14 to i64
-  store i64 %cast121, ptr %match_result, align 8
+march_arm119:                                     ; preds = %march_next107
+  %pay_slot122 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload123 = load ptr, ptr %pay_slot122, align 8
+  %obj_slot_base124 = ptrtoint ptr %payload123 to i64
+  %obj_slot_addr125 = add i64 %obj_slot_base124, 0
+  %obj_slot126 = inttoptr i64 %obj_slot_addr125 to ptr
+  %obj127 = load ptr, ptr %obj_slot126, align 8
+  store ptr %obj127, ptr %obj128, align 8
+  %pay_slot129 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload130 = load ptr, ptr %pay_slot129, align 8
+  %idx_slot_base = ptrtoint ptr %payload130 to i64
+  %idx_slot_addr = add i64 %idx_slot_base, 8
+  %idx_slot = inttoptr i64 %idx_slot_addr to ptr
+  %idx = load ptr, ptr %idx_slot, align 8
+  store ptr %idx, ptr %idx131, align 8
+  %idx132 = load ptr, ptr %idx131, align 8
+  %obj133 = load ptr, ptr %obj128, align 8
+  %set134 = load ptr, ptr %set, align 8
+  %14 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %obj133, ptr %set134)
+  %15 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %idx132, ptr %14)
+  %cast135 = ptrtoint ptr %15 to i64
+  store i64 %cast135, ptr %match_result, align 8
   br label %match_end
 
-march_next110:                                    ; preds = %march_next101
-  br label %march_arm122
+march_next120:                                    ; preds = %march_next107
+  %tag_eq138 = icmp eq i64 %tag, 6952073573258
+  br i1 %tag_eq138, label %march_arm136, label %march_next137
 
-march_arm122:                                     ; preds = %march_next110
-  %set124 = load ptr, ptr %set, align 8
-  %cast125 = ptrtoint ptr %set124 to i64
-  store i64 %cast125, ptr %match_result, align 8
+march_arm136:                                     ; preds = %march_next120
+  %pay_slot139 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload140 = load ptr, ptr %pay_slot139, align 8
+  %val_slot_base = ptrtoint ptr %payload140 to i64
+  %val_slot_addr = add i64 %val_slot_base, 8
+  %val_slot = inttoptr i64 %val_slot_addr to ptr
+  %val = load ptr, ptr %val_slot, align 8
+  store ptr %val, ptr %val141, align 8
+  %val142 = load ptr, ptr %val141, align 8
+  %set143 = load ptr, ptr %set, align 8
+  %16 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %val142, ptr %set143)
+  %cast144 = ptrtoint ptr %16 to i64
+  store i64 %cast144, ptr %match_result, align 8
   br label %match_end
 
-march_next123:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15721, i64 %tag, ptr @mu_file.15722, i64 99)
+march_next137:                                    ; preds = %march_next120
+  %tag_eq147 = icmp eq i64 %tag, -4621855438555042642
+  br i1 %tag_eq147, label %march_arm145, label %march_next146
+
+march_arm145:                                     ; preds = %march_next137
+  %pay_slot148 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload149 = load ptr, ptr %pay_slot148, align 8
+  %obj_slot_base150 = ptrtoint ptr %payload149 to i64
+  %obj_slot_addr151 = add i64 %obj_slot_base150, 0
+  %obj_slot152 = inttoptr i64 %obj_slot_addr151 to ptr
+  %obj153 = load ptr, ptr %obj_slot152, align 8
+  store ptr %obj153, ptr %obj154, align 8
+  %pay_slot155 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload156 = load ptr, ptr %pay_slot155, align 8
+  %val_slot_base157 = ptrtoint ptr %payload156 to i64
+  %val_slot_addr158 = add i64 %val_slot_base157, 16
+  %val_slot159 = inttoptr i64 %val_slot_addr158 to ptr
+  %val160 = load ptr, ptr %val_slot159, align 8
+  store ptr %val160, ptr %val161, align 8
+  %val162 = load ptr, ptr %val161, align 8
+  %obj163 = load ptr, ptr %obj154, align 8
+  %set164 = load ptr, ptr %set, align 8
+  %17 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %obj163, ptr %set164)
+  %18 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %val162, ptr %17)
+  %cast165 = ptrtoint ptr %18 to i64
+  store i64 %cast165, ptr %match_result, align 8
+  br label %match_end
+
+march_next146:                                    ; preds = %march_next137
+  %tag_eq168 = icmp eq i64 %tag, 249862025149459091
+  br i1 %tag_eq168, label %march_arm166, label %march_next167
+
+march_arm166:                                     ; preds = %march_next146
+  %pay_slot169 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload170 = load ptr, ptr %pay_slot169, align 8
+  %inits_slot_base = ptrtoint ptr %payload170 to i64
+  %inits_slot_addr = add i64 %inits_slot_base, 8
+  %inits_slot = inttoptr i64 %inits_slot_addr to ptr
+  %inits = load ptr, ptr %inits_slot, align 8
+  store ptr %inits, ptr %inits171, align 8
+  %inits172 = load ptr, ptr %inits171, align 8
+  %set173 = load ptr, ptr %set, align 8
+  %19 = call ptr @"codegen::escape::remove_escaped_field_inits"(ptr %inits172, ptr %set173)
+  %cast174 = ptrtoint ptr %19 to i64
+  store i64 %cast174, ptr %match_result, align 8
+  br label %match_end
+
+march_next167:                                    ; preds = %march_next146
+  %tag_eq177 = icmp eq i64 %tag, 229432243077098
+  br i1 %tag_eq177, label %march_arm175, label %march_next176
+
+march_arm175:                                     ; preds = %march_next167
+  %pay_slot178 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload179 = load ptr, ptr %pay_slot178, align 8
+  %elems_slot_base = ptrtoint ptr %payload179 to i64
+  %elems_slot_addr = add i64 %elems_slot_base, 0
+  %elems_slot = inttoptr i64 %elems_slot_addr to ptr
+  %elems = load ptr, ptr %elems_slot, align 8
+  store ptr %elems, ptr %elems180, align 8
+  %elems181 = load ptr, ptr %elems180, align 8
+  %set182 = load ptr, ptr %set, align 8
+  %20 = call ptr @"codegen::escape::remove_escaped_args"(ptr %elems181, ptr %set182)
+  %cast183 = ptrtoint ptr %20 to i64
+  store i64 %cast183, ptr %match_result, align 8
+  br label %match_end
+
+march_next176:                                    ; preds = %march_next167
+  %tag_eq186 = icmp eq i64 %tag, 6384685697
+  br i1 %tag_eq186, label %march_arm184, label %march_next185
+
+march_arm184:                                     ; preds = %march_next176
+  %pay_slot187 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload188 = load ptr, ptr %pay_slot187, align 8
+  %obj_slot_base189 = ptrtoint ptr %payload188 to i64
+  %obj_slot_addr190 = add i64 %obj_slot_base189, 0
+  %obj_slot191 = inttoptr i64 %obj_slot_addr190 to ptr
+  %obj192 = load ptr, ptr %obj_slot191, align 8
+  store ptr %obj192, ptr %obj193, align 8
+  %pay_slot194 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload195 = load ptr, ptr %pay_slot194, align 8
+  %inits_slot_base196 = ptrtoint ptr %payload195 to i64
+  %inits_slot_addr197 = add i64 %inits_slot_base196, 8
+  %inits_slot198 = inttoptr i64 %inits_slot_addr197 to ptr
+  %inits199 = load ptr, ptr %inits_slot198, align 8
+  store ptr %inits199, ptr %inits200, align 8
+  %inits201 = load ptr, ptr %inits200, align 8
+  %obj202 = load ptr, ptr %obj193, align 8
+  %set203 = load ptr, ptr %set, align 8
+  %21 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %obj202, ptr %set203)
+  %22 = call ptr @"codegen::escape::remove_escaped_field_inits"(ptr %inits201, ptr %21)
+  %cast204 = ptrtoint ptr %22 to i64
+  store i64 %cast204, ptr %match_result, align 8
+  br label %match_end
+
+march_next185:                                    ; preds = %march_next176
+  %tag_eq207 = icmp eq i64 %tag, 6952482492646
+  br i1 %tag_eq207, label %march_arm205, label %march_next206
+
+march_arm205:                                     ; preds = %march_next185
+  %pay_slot208 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload209 = load ptr, ptr %pay_slot208, align 8
+  %body_slot_base = ptrtoint ptr %payload209 to i64
+  %body_slot_addr = add i64 %body_slot_base, 8
+  %body_slot = inttoptr i64 %body_slot_addr to ptr
+  %body = load ptr, ptr %body_slot, align 8
+  store ptr %body, ptr %body210, align 8
+  %body211 = load ptr, ptr %body210, align 8
+  %set212 = load ptr, ptr %set, align 8
+  %23 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %body211, ptr %set212)
+  %cast213 = ptrtoint ptr %23 to i64
+  store i64 %cast213, ptr %match_result, align 8
+  br label %match_end
+
+march_next206:                                    ; preds = %march_next185
+  %tag_eq216 = icmp eq i64 %tag, 210669825968
+  br i1 %tag_eq216, label %march_arm214, label %march_next215
+
+march_arm214:                                     ; preds = %march_next206
+  %pay_slot217 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload218 = load ptr, ptr %pay_slot217, align 8
+  %body_slot_base219 = ptrtoint ptr %payload218 to i64
+  %body_slot_addr220 = add i64 %body_slot_base219, 0
+  %body_slot221 = inttoptr i64 %body_slot_addr220 to ptr
+  %body222 = load ptr, ptr %body_slot221, align 8
+  store ptr %body222, ptr %body223, align 8
+  %body224 = load ptr, ptr %body223, align 8
+  %set225 = load ptr, ptr %set, align 8
+  %24 = call ptr @"codegen::escape::remove_escaped"(ptr %body224, ptr %set225)
+  %cast226 = ptrtoint ptr %24 to i64
+  store i64 %cast226, ptr %match_result, align 8
+  br label %match_end
+
+march_next215:                                    ; preds = %march_next206
+  %tag_eq229 = icmp eq i64 %tag, 6952369602963
+  br i1 %tag_eq229, label %march_arm227, label %march_next228
+
+march_arm227:                                     ; preds = %march_next215
+  %pay_slot230 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload231 = load ptr, ptr %pay_slot230, align 8
+  %cond_slot_base = ptrtoint ptr %payload231 to i64
+  %cond_slot_addr = add i64 %cond_slot_base, 0
+  %cond_slot = inttoptr i64 %cond_slot_addr to ptr
+  %cond = load ptr, ptr %cond_slot, align 8
+  store ptr %cond, ptr %cond232, align 8
+  %pay_slot233 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload234 = load ptr, ptr %pay_slot233, align 8
+  %t_slot_base = ptrtoint ptr %payload234 to i64
+  %t_slot_addr = add i64 %t_slot_base, 8
+  %t_slot = inttoptr i64 %t_slot_addr to ptr
+  %t = load ptr, ptr %t_slot, align 8
+  store ptr %t, ptr %t235, align 8
+  %pay_slot236 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %payload237 = load ptr, ptr %pay_slot236, align 8
+  %e_slot_base = ptrtoint ptr %payload237 to i64
+  %e_slot_addr = add i64 %e_slot_base, 16
+  %e_slot = inttoptr i64 %e_slot_addr to ptr
+  %e = load ptr, ptr %e_slot, align 8
+  store ptr %e, ptr %e238, align 8
+  %e239 = load ptr, ptr %e238, align 8
+  %t240 = load ptr, ptr %t235, align 8
+  %cond241 = load ptr, ptr %cond232, align 8
+  %set242 = load ptr, ptr %set, align 8
+  %25 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %cond241, ptr %set242)
+  %26 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %t240, ptr %25)
+  %27 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %e239, ptr %26)
+  %cast243 = ptrtoint ptr %27 to i64
+  store i64 %cast243, ptr %match_result, align 8
+  br label %match_end
+
+march_next228:                                    ; preds = %march_next215
+  br label %march_arm244
+
+march_arm244:                                     ; preds = %march_next228
+  %set246 = load ptr, ptr %set, align 8
+  %cast247 = ptrtoint ptr %set246 to i64
+  store i64 %cast247, ptr %match_result, align 8
+  br label %match_end
+
+march_next245:                                    ; No predecessors!
+  call void @forge_match_unreachable(ptr @.match_fn.15725, i64 %tag, ptr @mu_file.15726, i64 119)
   unreachable
 }
 
-define ptr @"codegen::escape::collect_escaping_args"(ptr %0, ptr %1) {
+define ptr @"codegen::escape::remove_escaped_args"(ptr %0, ptr %1) {
 entry:
-  %updated = alloca ptr, align 8
   %next9 = alloca ptr, align 8
   %se6 = alloca ptr, align 8
   %match_result = alloca i64, align 8
@@ -175897,8 +176455,8 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast16 = inttoptr i64 %match_val to ptr
-  ret ptr %cast16
+  %cast15 = inttoptr i64 %match_val to ptr
+  ret ptr %cast15
 
 march_arm:                                        ; preds = %entry
   %set2 = load ptr, ptr %set, align 8
@@ -175925,33 +176483,30 @@ march_arm3:                                       ; preds = %march_next
   %next_slot = inttoptr i64 %next_slot_addr to ptr
   %next = load ptr, ptr %next_slot, align 8
   store ptr %next, ptr %next9, align 8
-  %se10 = load ptr, ptr %se6, align 8
-  %cast11 = ptrtoint ptr %se10 to i64
-  %null_chk = icmp eq i64 %cast11, 0
+  %next10 = load ptr, ptr %next9, align 8
+  %se11 = load ptr, ptr %se6, align 8
+  %cast12 = ptrtoint ptr %se11 to i64
+  %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15723, i64 4, ptr @sty_name.15724, i64 5, i64 %null_ext, ptr @src_file.15725, i64 88, i64 136)
-  %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se10, i32 0, i32 0
+  call void @forge_null_deref_trap(ptr @fld_name.15727, i64 4, ptr @sty_name.15728, i64 5, i64 %null_ext, ptr @src_file.15729, i64 88, i64 156)
+  %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se11, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
-  %set12 = load ptr, ptr %set, align 8
-  %2 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %node, ptr %set12)
-  store ptr %2, ptr %updated, align 8
-  %next13 = load ptr, ptr %next9, align 8
-  %updated14 = load ptr, ptr %updated, align 8
-  %3 = call ptr @"codegen::escape::collect_escaping_args"(ptr %next13, ptr %updated14)
-  %cast15 = ptrtoint ptr %3 to i64
-  store i64 %cast15, ptr %match_result, align 8
+  %set13 = load ptr, ptr %set, align 8
+  %2 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %node, ptr %set13)
+  %3 = call ptr @"codegen::escape::remove_escaped_args"(ptr %next10, ptr %2)
+  %cast14 = ptrtoint ptr %3 to i64
+  store i64 %cast14, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15726, i64 %tag, ptr @mu_file.15727, i64 132)
+  call void @forge_match_unreachable(ptr @.match_fn.15730, i64 %tag, ptr @mu_file.15731, i64 156)
   unreachable
 }
 
-define ptr @"codegen::escape::collect_escaping_field_inits"(ptr %0, ptr %1) {
+define ptr @"codegen::escape::remove_escaped_field_inits"(ptr %0, ptr %1) {
 entry:
-  %updated = alloca ptr, align 8
   %next9 = alloca ptr, align 8
-  %value_se6 = alloca ptr, align 8
+  %val_se6 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %set = alloca ptr, align 8
   %inits = alloca ptr, align 8
@@ -175966,8 +176521,8 @@ entry:
 
 match_end:                                        ; preds = %march_arm3, %march_arm
   %match_val = load i64, ptr %match_result, align 8
-  %cast16 = inttoptr i64 %match_val to ptr
-  ret ptr %cast16
+  %cast15 = inttoptr i64 %match_val to ptr
+  ret ptr %cast15
 
 march_arm:                                        ; preds = %entry
   %set2 = load ptr, ptr %set, align 8
@@ -175982,11 +176537,11 @@ march_next:                                       ; preds = %entry
 march_arm3:                                       ; preds = %march_next
   %pay_slot = getelementptr inbounds nuw %FieldInitList, ptr %inits1, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
-  %value_se_slot_base = ptrtoint ptr %payload to i64
-  %value_se_slot_addr = add i64 %value_se_slot_base, 8
-  %value_se_slot = inttoptr i64 %value_se_slot_addr to ptr
-  %value_se = load ptr, ptr %value_se_slot, align 8
-  store ptr %value_se, ptr %value_se6, align 8
+  %val_se_slot_base = ptrtoint ptr %payload to i64
+  %val_se_slot_addr = add i64 %val_se_slot_base, 8
+  %val_se_slot = inttoptr i64 %val_se_slot_addr to ptr
+  %val_se = load ptr, ptr %val_se_slot, align 8
+  store ptr %val_se, ptr %val_se6, align 8
   %pay_slot7 = getelementptr inbounds nuw %FieldInitList, ptr %inits1, i32 0, i32 1
   %payload8 = load ptr, ptr %pay_slot7, align 8
   %next_slot_base = ptrtoint ptr %payload8 to i64
@@ -175994,35 +176549,49 @@ march_arm3:                                       ; preds = %march_next
   %next_slot = inttoptr i64 %next_slot_addr to ptr
   %next = load ptr, ptr %next_slot, align 8
   store ptr %next, ptr %next9, align 8
-  %value_se10 = load ptr, ptr %value_se6, align 8
-  %cast11 = ptrtoint ptr %value_se10 to i64
-  %null_chk = icmp eq i64 %cast11, 0
+  %next10 = load ptr, ptr %next9, align 8
+  %val_se11 = load ptr, ptr %val_se6, align 8
+  %cast12 = ptrtoint ptr %val_se11 to i64
+  %null_chk = icmp eq i64 %cast12, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15728, i64 4, ptr @sty_name.15729, i64 5, i64 %null_ext, ptr @src_file.15730, i64 88, i64 147)
-  %node_ptr = getelementptr inbounds nuw %SExpr, ptr %value_se10, i32 0, i32 0
+  call void @forge_null_deref_trap(ptr @fld_name.15732, i64 4, ptr @sty_name.15733, i64 5, i64 %null_ext, ptr @src_file.15734, i64 88, i64 163)
+  %node_ptr = getelementptr inbounds nuw %SExpr, ptr %val_se11, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
-  %set12 = load ptr, ptr %set, align 8
-  %2 = call ptr @"codegen::escape::collect_escaping_idents"(ptr %node, ptr %set12)
-  store ptr %2, ptr %updated, align 8
-  %next13 = load ptr, ptr %next9, align 8
-  %updated14 = load ptr, ptr %updated, align 8
-  %3 = call ptr @"codegen::escape::collect_escaping_field_inits"(ptr %next13, ptr %updated14)
-  %cast15 = ptrtoint ptr %3 to i64
-  store i64 %cast15, ptr %match_result, align 8
+  %set13 = load ptr, ptr %set, align 8
+  %2 = call ptr @"codegen::escape::remove_escaped_expr"(ptr %node, ptr %set13)
+  %3 = call ptr @"codegen::escape::remove_escaped_field_inits"(ptr %next10, ptr %2)
+  %cast14 = ptrtoint ptr %3 to i64
+  store i64 %cast14, ptr %match_result, align 8
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15731, i64 %tag, ptr @mu_file.15732, i64 143)
+  call void @forge_match_unreachable(ptr @.match_fn.15735, i64 %tag, ptr @mu_file.15736, i64 163)
   unreachable
 }
 
-define i64 @"codegen::rc_set_escapes"(ptr %0) {
+define i64 @"codegen::rc_set_releasable"(ptr %0) {
 entry:
-  %es = alloca ptr, align 8
-  store ptr %0, ptr %es, align 8
-  %es1 = load ptr, ptr %es, align 8
-  store ptr %es1, ptr @RC_ESCAPES, align 8
-  %cast = ptrtoint ptr %es1 to i64
+  %rs = alloca ptr, align 8
+  store ptr %0, ptr %rs, align 8
+  %rs1 = load ptr, ptr %rs, align 8
+  store ptr %rs1, ptr @RC_RELEASABLE, align 8
+  %cast = ptrtoint ptr %rs1 to i64
+  ret i64 %cast
+}
+
+define ptr @"codegen::rc_releasable_save"() {
+entry:
+  %RC_RELEASABLE = load ptr, ptr @RC_RELEASABLE, align 8
+  ret ptr %RC_RELEASABLE
+}
+
+define i64 @"codegen::rc_releasable_restore"(ptr %0) {
+entry:
+  %saved = alloca ptr, align 8
+  store ptr %0, ptr %saved, align 8
+  %saved1 = load ptr, ptr %saved, align 8
+  store ptr %saved1, ptr @RC_RELEASABLE, align 8
+  %cast = ptrtoint ptr %saved1 to i64
   ret i64 %cast
 }
 
@@ -176175,7 +176744,7 @@ march_arm3:                                       ; preds = %march_next
   %cast78 = ptrtoint ptr %ss77 to i64
   %null_chk = icmp eq i64 %cast78, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15733, i64 4, ptr @sty_name.15734, i64 5, i64 %null_ext, ptr @src_file.15735, i64 88, i64 68)
+  call void @forge_null_deref_trap(ptr @fld_name.15737, i64 4, ptr @sty_name.15738, i64 5, i64 %null_ext, ptr @src_file.15739, i64 88, i64 70)
   %line_ptr = getelementptr inbounds nuw %SStmt, ptr %ss77, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %with_ovr = getelementptr inbounds nuw %Ctx, ptr %4, i32 0, i32 22
@@ -176189,7 +176758,7 @@ march_arm3:                                       ; preds = %march_next
   %cast84 = ptrtoint ptr %ss83 to i64
   %null_chk85 = icmp eq i64 %cast84, 0
   %null_ext86 = zext i1 %null_chk85 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15736, i64 4, ptr @sty_name.15737, i64 5, i64 %null_ext86, ptr @src_file.15738, i64 88, i64 69)
+  call void @forge_null_deref_trap(ptr @fld_name.15740, i64 4, ptr @sty_name.15741, i64 5, i64 %null_ext86, ptr @src_file.15742, i64 88, i64 71)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss83, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %5 = call ptr @"codegen::emit_stmt"(ptr %line_ctx81, ptr %env82, ptr %node)
@@ -176199,7 +176768,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15739, i64 %tag, ptr @mu_file.15740, i64 64)
+  call void @forge_match_unreachable(ptr @.match_fn.15743, i64 %tag, ptr @mu_file.15744, i64 66)
   unreachable
 
 try_ok:                                           ; preds = %march_arm3
@@ -176295,17 +176864,15 @@ march_arm2:                                       ; preds = %march_next
   %next_slot = inttoptr i64 %next_slot_addr to ptr
   %next = load ptr, ptr %next_slot, align 8
   store ptr %next, ptr %next14, align 8
-  %RC_ESCAPES = load ptr, ptr @RC_ESCAPES, align 8
+  %RC_RELEASABLE = load ptr, ptr @RC_RELEASABLE, align 8
   %name15 = load ptr, ptr %name5, align 8
-  %3 = call i1 @"codegen::escape::escape_has"(ptr %RC_ESCAPES, ptr %name15)
+  %3 = call i1 @"codegen::escape::releasable_has"(ptr %RC_RELEASABLE, ptr %name15)
   %widen = zext i1 %3 to i64
-  %not_cmp = icmp eq i64 %widen, 0
-  %not_cmp_ext = zext i1 %not_cmp to i64
-  %if_cond = icmp ne i64 %not_cmp_ext, 0
+  %if_cond = icmp ne i64 %widen, 0
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15778, i64 %tag, ptr @mu_file.15779, i64 83)
+  call void @forge_match_unreachable(ptr @.match_fn.15782, i64 %tag, ptr @mu_file.15783, i64 85)
   unreachable
 
 ifcont:                                           ; preds = %if_else, %if_then
@@ -176320,36 +176887,36 @@ if_then:                                          ; preds = %march_arm2
   %cast17 = ptrtoint ptr %ctx16 to i64
   %null_chk = icmp eq i64 %cast17, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15741, i64 4, ptr @sty_name.15742, i64 3, i64 %null_ext, ptr @src_file.15743, i64 88, i64 90)
+  call void @forge_null_deref_trap(ptr @fld_name.15745, i64 4, ptr @sty_name.15746, i64 3, i64 %null_ext, ptr @src_file.15747, i64 88, i64 92)
   %ctx18 = load ptr, ptr %ctx, align 8
   %cast19 = ptrtoint ptr %ctx18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15744, i64 7, ptr @sty_name.15745, i64 3, i64 %null_ext21, ptr @src_file.15746, i64 88, i64 90)
+  call void @forge_null_deref_trap(ptr @fld_name.15748, i64 7, ptr @sty_name.15749, i64 3, i64 %null_ext21, ptr @src_file.15750, i64 88, i64 92)
   %i1_type_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx18, i32 0, i32 6
   %i1_type = load ptr, ptr %i1_type_ptr, align 8
   %moved_flag22 = load ptr, ptr %moved_flag11, align 8
-  %5 = call ptr @Ctx__load(ptr %ctx16, ptr %i1_type, ptr %moved_flag22, ptr @.str.15747)
+  %5 = call ptr @Ctx__load(ptr %ctx16, ptr %i1_type, ptr %moved_flag22, ptr @.str.15751)
   store ptr %5, ptr %was_moved, align 8
   %ctx23 = load ptr, ptr %ctx, align 8
   %cast24 = ptrtoint ptr %ctx23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15748, i64 2, ptr @sty_name.15749, i64 3, i64 %null_ext26, ptr @src_file.15750, i64 88, i64 91)
-  %6 = call ptr @Ctx__bb(ptr %ctx23, ptr @.str.15751)
+  call void @forge_null_deref_trap(ptr @fld_name.15752, i64 2, ptr @sty_name.15753, i64 3, i64 %null_ext26, ptr @src_file.15754, i64 88, i64 93)
+  %6 = call ptr @Ctx__bb(ptr %ctx23, ptr @.str.15755)
   store ptr %6, ptr %release_bb, align 8
   %ctx27 = load ptr, ptr %ctx, align 8
   %cast28 = ptrtoint ptr %ctx27 to i64
   %null_chk29 = icmp eq i64 %cast28, 0
   %null_ext30 = zext i1 %null_chk29 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15752, i64 2, ptr @sty_name.15753, i64 3, i64 %null_ext30, ptr @src_file.15754, i64 88, i64 92)
-  %7 = call ptr @Ctx__bb(ptr %ctx27, ptr @.str.15755)
+  call void @forge_null_deref_trap(ptr @fld_name.15756, i64 2, ptr @sty_name.15757, i64 3, i64 %null_ext30, ptr @src_file.15758, i64 88, i64 94)
+  %7 = call ptr @Ctx__bb(ptr %ctx27, ptr @.str.15759)
   store ptr %7, ptr %skip_bb, align 8
   %ctx31 = load ptr, ptr %ctx, align 8
   %cast32 = ptrtoint ptr %ctx31 to i64
   %null_chk33 = icmp eq i64 %cast32, 0
   %null_ext34 = zext i1 %null_chk33 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15756, i64 7, ptr @sty_name.15757, i64 3, i64 %null_ext34, ptr @src_file.15758, i64 88, i64 93)
+  call void @forge_null_deref_trap(ptr @fld_name.15760, i64 7, ptr @sty_name.15761, i64 3, i64 %null_ext34, ptr @src_file.15762, i64 88, i64 95)
   %was_moved35 = load ptr, ptr %was_moved, align 8
   %skip_bb36 = load ptr, ptr %skip_bb, align 8
   %release_bb37 = load ptr, ptr %release_bb, align 8
@@ -176358,43 +176925,43 @@ if_then:                                          ; preds = %march_arm2
   %cast39 = ptrtoint ptr %ctx38 to i64
   %null_chk40 = icmp eq i64 %cast39, 0
   %null_ext41 = zext i1 %null_chk40 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15759, i64 8, ptr @sty_name.15760, i64 3, i64 %null_ext41, ptr @src_file.15761, i64 88, i64 94)
+  call void @forge_null_deref_trap(ptr @fld_name.15763, i64 8, ptr @sty_name.15764, i64 3, i64 %null_ext41, ptr @src_file.15765, i64 88, i64 96)
   %release_bb42 = load ptr, ptr %release_bb, align 8
   %9 = call i64 @Ctx__position(ptr %ctx38, ptr %release_bb42)
   %ctx43 = load ptr, ptr %ctx, align 8
   %cast44 = ptrtoint ptr %ctx43 to i64
   %null_chk45 = icmp eq i64 %cast44, 0
   %null_ext46 = zext i1 %null_chk45 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15762, i64 4, ptr @sty_name.15763, i64 3, i64 %null_ext46, ptr @src_file.15764, i64 88, i64 95)
+  call void @forge_null_deref_trap(ptr @fld_name.15766, i64 4, ptr @sty_name.15767, i64 3, i64 %null_ext46, ptr @src_file.15768, i64 88, i64 97)
   %ctx47 = load ptr, ptr %ctx, align 8
   %cast48 = ptrtoint ptr %ctx47 to i64
   %null_chk49 = icmp eq i64 %cast48, 0
   %null_ext50 = zext i1 %null_chk49 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15765, i64 8, ptr @sty_name.15766, i64 3, i64 %null_ext50, ptr @src_file.15767, i64 88, i64 95)
+  call void @forge_null_deref_trap(ptr @fld_name.15769, i64 8, ptr @sty_name.15770, i64 3, i64 %null_ext50, ptr @src_file.15771, i64 88, i64 97)
   %ptr_type_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx47, i32 0, i32 7
   %ptr_type = load ptr, ptr %ptr_type_ptr, align 8
   %alloca51 = load ptr, ptr %alloca8, align 8
-  %10 = call ptr @Ctx__load(ptr %ctx43, ptr %ptr_type, ptr %alloca51, ptr @.str.15768)
+  %10 = call ptr @Ctx__load(ptr %ctx43, ptr %ptr_type, ptr %alloca51, ptr @.str.15772)
   store ptr %10, ptr %val, align 8
   %ctx52 = load ptr, ptr %ctx, align 8
   %cast53 = ptrtoint ptr %ctx52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15769, i64 10, ptr @sty_name.15770, i64 3, i64 %null_ext55, ptr @src_file.15771, i64 88, i64 96)
+  call void @forge_null_deref_trap(ptr @fld_name.15773, i64 10, ptr @sty_name.15774, i64 3, i64 %null_ext55, ptr @src_file.15775, i64 88, i64 98)
   %val56 = load ptr, ptr %val, align 8
   %11 = call ptr @Ctx__rc_release(ptr %ctx52, ptr %val56)
   %ctx57 = load ptr, ptr %ctx, align 8
   %cast58 = ptrtoint ptr %ctx57 to i64
   %null_chk59 = icmp eq i64 %cast58, 0
   %null_ext60 = zext i1 %null_chk59 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15772, i64 2, ptr @sty_name.15773, i64 3, i64 %null_ext60, ptr @src_file.15774, i64 88, i64 97)
+  call void @forge_null_deref_trap(ptr @fld_name.15776, i64 2, ptr @sty_name.15777, i64 3, i64 %null_ext60, ptr @src_file.15778, i64 88, i64 99)
   %skip_bb61 = load ptr, ptr %skip_bb, align 8
   %12 = call i64 @Ctx__br(ptr %ctx57, ptr %skip_bb61)
   %ctx62 = load ptr, ptr %ctx, align 8
   %cast63 = ptrtoint ptr %ctx62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15775, i64 8, ptr @sty_name.15776, i64 3, i64 %null_ext65, ptr @src_file.15777, i64 88, i64 98)
+  call void @forge_null_deref_trap(ptr @fld_name.15779, i64 8, ptr @sty_name.15780, i64 3, i64 %null_ext65, ptr @src_file.15781, i64 88, i64 100)
   %skip_bb66 = load ptr, ptr %skip_bb, align 8
   %13 = call i64 @Ctx__position(ptr %ctx62, ptr %skip_bb66)
   br label %ifcont
@@ -176465,7 +177032,7 @@ march_arm13:                                      ; preds = %march_next6
   br label %match_end
 
 march_next14:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15780, i64 %tag, ptr @mu_file.15781, i64 107)
+  call void @forge_match_unreachable(ptr @.match_fn.15784, i64 %tag, ptr @mu_file.15785, i64 109)
   unreachable
 }
 
@@ -176578,14 +177145,14 @@ try_ok19:                                         ; preds = %march_arm7
   %cast28 = ptrtoint ptr %ctx27 to i64
   %null_chk = icmp eq i64 %cast28, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15782, i64 14, ptr @sty_name.15783, i64 3, i64 %null_ext, ptr @src_file.15784, i64 88, i64 125)
+  call void @forge_null_deref_trap(ptr @fld_name.15786, i64 14, ptr @sty_name.15787, i64 3, i64 %null_ext, ptr @src_file.15788, i64 88, i64 127)
   %7 = call ptr @Ctx__current_fn_ret(ptr %ctx27)
   store ptr %7, ptr %fn_ret, align 8
   %r29 = load ptr, ptr %r, align 8
   %cast30 = ptrtoint ptr %r29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15785, i64 2, ptr @sty_name.15786, i64 9, i64 %null_ext32, ptr @src_file.15787, i64 88, i64 127)
+  call void @forge_null_deref_trap(ptr @fld_name.15789, i64 2, ptr @sty_name.15790, i64 9, i64 %null_ext32, ptr @src_file.15791, i64 88, i64 129)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %r29, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %fn_ret33 = load ptr, ptr %fn_ret, align 8
@@ -176610,14 +177177,14 @@ if_then:                                          ; preds = %try_ok19
   %cast36 = ptrtoint ptr %r35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15788, i64 5, ptr @sty_name.15789, i64 9, i64 %null_ext38, ptr @src_file.15790, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.15792, i64 5, ptr @sty_name.15793, i64 9, i64 %null_ext38, ptr @src_file.15794, i64 88, i64 130)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r35, i32 0, i32 0
   %value39 = load ptr, ptr %value_ptr, align 8
   %r40 = load ptr, ptr %r, align 8
   %cast41 = ptrtoint ptr %r40 to i64
   %null_chk42 = icmp eq i64 %cast41, 0
   %null_ext43 = zext i1 %null_chk42 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15791, i64 2, ptr @sty_name.15792, i64 9, i64 %null_ext43, ptr @src_file.15793, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.15795, i64 2, ptr @sty_name.15796, i64 9, i64 %null_ext43, ptr @src_file.15797, i64 88, i64 130)
   %ty_ptr44 = getelementptr inbounds nuw %EmitValue, ptr %r40, i32 0, i32 1
   %ty45 = load ptr, ptr %ty_ptr44, align 8
   %fn_ret46 = load ptr, ptr %fn_ret, align 8
@@ -176632,12 +177199,12 @@ if_else:                                          ; preds = %try_ok19
   %cast68 = ptrtoint ptr %ctx67 to i64
   %null_chk69 = icmp eq i64 %cast68, 0
   %null_ext70 = zext i1 %null_chk69 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15800, i64 3, ptr @sty_name.15801, i64 3, i64 %null_ext70, ptr @src_file.15802, i64 88, i64 131)
+  call void @forge_null_deref_trap(ptr @fld_name.15804, i64 3, ptr @sty_name.15805, i64 3, i64 %null_ext70, ptr @src_file.15806, i64 88, i64 133)
   %r71 = load ptr, ptr %r, align 8
   %cast72 = ptrtoint ptr %r71 to i64
   %null_chk73 = icmp eq i64 %cast72, 0
   %null_ext74 = zext i1 %null_chk73 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15803, i64 5, ptr @sty_name.15804, i64 9, i64 %null_ext74, ptr @src_file.15805, i64 88, i64 131)
+  call void @forge_null_deref_trap(ptr @fld_name.15807, i64 5, ptr @sty_name.15808, i64 9, i64 %null_ext74, ptr @src_file.15809, i64 88, i64 133)
   %value_ptr75 = getelementptr inbounds nuw %EmitValue, ptr %r71, i32 0, i32 0
   %value76 = load ptr, ptr %value_ptr75, align 8
   %fn_ret77 = load ptr, ptr %fn_ret, align 8
@@ -176654,12 +177221,12 @@ try_ok50:                                         ; preds = %if_then
   %cast57 = ptrtoint ptr %ctx56 to i64
   %null_chk58 = icmp eq i64 %cast57, 0
   %null_ext59 = zext i1 %null_chk58 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15794, i64 3, ptr @sty_name.15795, i64 3, i64 %null_ext59, ptr @src_file.15796, i64 88, i64 129)
+  call void @forge_null_deref_trap(ptr @fld_name.15798, i64 3, ptr @sty_name.15799, i64 3, i64 %null_ext59, ptr @src_file.15800, i64 88, i64 131)
   %wrapped60 = load ptr, ptr %wrapped, align 8
   %cast61 = ptrtoint ptr %wrapped60 to i64
   %null_chk62 = icmp eq i64 %cast61, 0
   %null_ext63 = zext i1 %null_chk62 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15797, i64 5, ptr @sty_name.15798, i64 9, i64 %null_ext63, ptr @src_file.15799, i64 88, i64 129)
+  call void @forge_null_deref_trap(ptr @fld_name.15801, i64 5, ptr @sty_name.15802, i64 9, i64 %null_ext63, ptr @src_file.15803, i64 88, i64 131)
   %value_ptr64 = getelementptr inbounds nuw %EmitValue, ptr %wrapped60, i32 0, i32 0
   %value65 = load ptr, ptr %value_ptr64, align 8
   %fn_ret66 = load ptr, ptr %fn_ret, align 8
@@ -176677,14 +177244,14 @@ march_arm80:                                      ; preds = %march_next8
   %cast86 = ptrtoint ptr %ctx85 to i64
   %null_chk87 = icmp eq i64 %cast86, 0
   %null_ext88 = zext i1 %null_chk87 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15806, i64 14, ptr @sty_name.15807, i64 3, i64 %null_ext88, ptr @src_file.15808, i64 88, i64 138)
+  call void @forge_null_deref_trap(ptr @fld_name.15810, i64 14, ptr @sty_name.15811, i64 3, i64 %null_ext88, ptr @src_file.15812, i64 88, i64 140)
   %14 = call ptr @Ctx__current_fn_ret(ptr %ctx85)
   store ptr %14, ptr %fn_ret89, align 8
   %ctx90 = load ptr, ptr %ctx, align 8
   %cast91 = ptrtoint ptr %ctx90 to i64
   %null_chk92 = icmp eq i64 %cast91, 0
   %null_ext93 = zext i1 %null_chk92 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15809, i64 8, ptr @sty_name.15810, i64 3, i64 %null_ext93, ptr @src_file.15811, i64 88, i64 139)
+  call void @forge_null_deref_trap(ptr @fld_name.15813, i64 8, ptr @sty_name.15814, i64 3, i64 %null_ext93, ptr @src_file.15815, i64 88, i64 141)
   %fn_ret94 = load ptr, ptr %fn_ret89, align 8
   %15 = call i64 @Ctx__ret_void(ptr %ctx90, ptr %fn_ret94)
   %env95 = load ptr, ptr %env, align 8
@@ -176915,7 +177482,7 @@ march_arm229:                                     ; preds = %march_next220
   %cast233 = ptrtoint ptr %ctx232 to i64
   %null_chk234 = icmp eq i64 %cast233, 0
   %null_ext235 = zext i1 %null_chk234 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15812, i64 5, ptr @sty_name.15813, i64 3, i64 %null_ext235, ptr @src_file.15814, i64 88, i64 155)
+  call void @forge_null_deref_trap(ptr @fld_name.15816, i64 5, ptr @sty_name.15817, i64 3, i64 %null_ext235, ptr @src_file.15818, i64 88, i64 157)
   %loops_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx232, i32 0, i32 14
   %loops = load ptr, ptr %loops_ptr, align 8
   %24 = call ptr @"codegen::types::loops_top"(ptr %loops)
@@ -176924,7 +177491,7 @@ march_arm229:                                     ; preds = %march_next220
   %cast237 = ptrtoint ptr %frame236 to i64
   %null_chk238 = icmp eq i64 %cast237, 0
   %null_ext239 = zext i1 %null_chk238 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15815, i64 5, ptr @sty_name.15816, i64 9, i64 %null_ext239, ptr @src_file.15817, i64 88, i64 156)
+  call void @forge_null_deref_trap(ptr @fld_name.15819, i64 5, ptr @sty_name.15820, i64 9, i64 %null_ext239, ptr @src_file.15821, i64 88, i64 158)
   %found_ptr = getelementptr inbounds nuw %LoopFrame, ptr %frame236, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %not_cmp = icmp eq i64 %found, 0
@@ -176941,12 +177508,12 @@ ifcont240:                                        ; preds = %if_else243
   %cast245 = ptrtoint ptr %ctx244 to i64
   %null_chk246 = icmp eq i64 %cast245, 0
   %null_ext247 = zext i1 %null_chk246 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15819, i64 2, ptr @sty_name.15820, i64 3, i64 %null_ext247, ptr @src_file.15821, i64 88, i64 159)
+  call void @forge_null_deref_trap(ptr @fld_name.15823, i64 2, ptr @sty_name.15824, i64 3, i64 %null_ext247, ptr @src_file.15825, i64 88, i64 161)
   %frame248 = load ptr, ptr %frame, align 8
   %cast249 = ptrtoint ptr %frame248 to i64
   %null_chk250 = icmp eq i64 %cast249, 0
   %null_ext251 = zext i1 %null_chk250 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15822, i64 7, ptr @sty_name.15823, i64 9, i64 %null_ext251, ptr @src_file.15824, i64 88, i64 159)
+  call void @forge_null_deref_trap(ptr @fld_name.15826, i64 7, ptr @sty_name.15827, i64 9, i64 %null_ext251, ptr @src_file.15828, i64 88, i64 161)
   %exit_bb_ptr = getelementptr inbounds nuw %LoopFrame, ptr %frame248, i32 0, i32 2
   %exit_bb = load ptr, ptr %exit_bb_ptr, align 8
   %25 = call i64 @Ctx__br(ptr %ctx244, ptr %exit_bb)
@@ -176957,7 +177524,7 @@ ifcont240:                                        ; preds = %if_else243
   br label %match_end
 
 if_then242:                                       ; preds = %march_arm229
-  %27 = call ptr @"codegen::types::err_stmt"(ptr @.str.15818)
+  %27 = call ptr @"codegen::types::err_stmt"(ptr @.str.15822)
   ret ptr %27
 
 if_else243:                                       ; preds = %march_arm229
@@ -176968,7 +177535,7 @@ march_arm254:                                     ; preds = %march_next230
   %cast258 = ptrtoint ptr %ctx257 to i64
   %null_chk259 = icmp eq i64 %cast258, 0
   %null_ext260 = zext i1 %null_chk259 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15825, i64 5, ptr @sty_name.15826, i64 3, i64 %null_ext260, ptr @src_file.15827, i64 88, i64 164)
+  call void @forge_null_deref_trap(ptr @fld_name.15829, i64 5, ptr @sty_name.15830, i64 3, i64 %null_ext260, ptr @src_file.15831, i64 88, i64 166)
   %loops_ptr261 = getelementptr inbounds nuw %Ctx, ptr %ctx257, i32 0, i32 14
   %loops262 = load ptr, ptr %loops_ptr261, align 8
   %28 = call ptr @"codegen::types::loops_top"(ptr %loops262)
@@ -176977,7 +177544,7 @@ march_arm254:                                     ; preds = %march_next230
   %cast265 = ptrtoint ptr %frame264 to i64
   %null_chk266 = icmp eq i64 %cast265, 0
   %null_ext267 = zext i1 %null_chk266 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15828, i64 5, ptr @sty_name.15829, i64 9, i64 %null_ext267, ptr @src_file.15830, i64 88, i64 165)
+  call void @forge_null_deref_trap(ptr @fld_name.15832, i64 5, ptr @sty_name.15833, i64 9, i64 %null_ext267, ptr @src_file.15834, i64 88, i64 167)
   %found_ptr268 = getelementptr inbounds nuw %LoopFrame, ptr %frame264, i32 0, i32 0
   %found269 = load i64, ptr %found_ptr268, align 8
   %not_cmp270 = icmp eq i64 %found269, 0
@@ -176993,12 +177560,12 @@ ifcont272:                                        ; preds = %if_else275
   %cast277 = ptrtoint ptr %ctx276 to i64
   %null_chk278 = icmp eq i64 %cast277, 0
   %null_ext279 = zext i1 %null_chk278 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15832, i64 2, ptr @sty_name.15833, i64 3, i64 %null_ext279, ptr @src_file.15834, i64 88, i64 168)
+  call void @forge_null_deref_trap(ptr @fld_name.15836, i64 2, ptr @sty_name.15837, i64 3, i64 %null_ext279, ptr @src_file.15838, i64 88, i64 170)
   %frame280 = load ptr, ptr %frame263, align 8
   %cast281 = ptrtoint ptr %frame280 to i64
   %null_chk282 = icmp eq i64 %cast281, 0
   %null_ext283 = zext i1 %null_chk282 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15835, i64 7, ptr @sty_name.15836, i64 9, i64 %null_ext283, ptr @src_file.15837, i64 88, i64 168)
+  call void @forge_null_deref_trap(ptr @fld_name.15839, i64 7, ptr @sty_name.15840, i64 9, i64 %null_ext283, ptr @src_file.15841, i64 88, i64 170)
   %cond_bb_ptr = getelementptr inbounds nuw %LoopFrame, ptr %frame280, i32 0, i32 1
   %cond_bb = load ptr, ptr %cond_bb_ptr, align 8
   %29 = call i64 @Ctx__br(ptr %ctx276, ptr %cond_bb)
@@ -177009,7 +177576,7 @@ ifcont272:                                        ; preds = %if_else275
   br label %match_end
 
 if_then274:                                       ; preds = %march_arm254
-  %31 = call ptr @"codegen::types::err_stmt"(ptr @.str.15831)
+  %31 = call ptr @"codegen::types::err_stmt"(ptr @.str.15835)
   ret ptr %31
 
 if_else275:                                       ; preds = %march_arm254
@@ -177024,7 +177591,7 @@ march_arm286:                                     ; preds = %march_next255
   %cast292 = ptrtoint ptr %ctx291 to i64
   %null_chk293 = icmp eq i64 %cast292, 0
   %null_ext294 = zext i1 %null_chk293 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15838, i64 8, ptr @sty_name.15839, i64 3, i64 %null_ext294, ptr @src_file.15840, i64 88, i64 174)
+  call void @forge_null_deref_trap(ptr @fld_name.15842, i64 8, ptr @sty_name.15843, i64 3, i64 %null_ext294, ptr @src_file.15844, i64 88, i64 176)
   %features_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx291, i32 0, i32 16
   %features = load ptr, ptr %features_ptr, align 8
   %tag295 = load i64, ptr %tag290, align 8
@@ -177034,27 +177601,27 @@ march_arm286:                                     ; preds = %march_next255
   br i1 %if_cond298, label %if_then299, label %if_else300
 
 march_next287:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15847, i64 %tag, ptr @mu_file.15848, i64 115)
+  call void @forge_match_unreachable(ptr @.match_fn.15851, i64 %tag, ptr @mu_file.15852, i64 117)
   unreachable
 
 ifcont297:                                        ; preds = %if_else300
   %tag311 = load i64, ptr %tag290, align 8
   %34 = call ptr @forge_bump_alloc(i64 32)
-  %35 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %34, i64 32, ptr @.i2s_fmt.15845, i64 %tag311)
+  %35 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %34, i64 32, ptr @.i2s_fmt.15849, i64 %tag311)
   %widen312 = sext i32 %35 to i64
-  %36 = call i64 @strlen(ptr @.str.15844)
+  %36 = call i64 @strlen(ptr @.str.15848)
   %37 = call i64 @strlen(ptr %34)
   %concat_total = add i64 %36, %37
   %concat_size = add i64 %concat_total, 1
   %38 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %39 = call ptr @memcpy(ptr %38, ptr @.str.15844, i64 %36)
+  %39 = call ptr @memcpy(ptr %38, ptr @.str.15848, i64 %36)
   %cast313 = ptrtoint ptr %38 to i64
   %dst2_int = add i64 %cast313, %36
   %cast314 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %37, 1
   %40 = call ptr @memcpy(ptr %cast314, ptr %34, i64 %rhs_len_p1)
   %41 = call i64 @strlen(ptr %38)
-  %42 = call i64 @strlen(ptr @.str.15846)
+  %42 = call i64 @strlen(ptr @.str.15850)
   %concat_total315 = add i64 %41, %42
   %concat_size316 = add i64 %concat_total315, 1
   %43 = call ptr @forge_bump_alloc(i64 %concat_size316)
@@ -177063,7 +177630,7 @@ ifcont297:                                        ; preds = %if_else300
   %dst2_int318 = add i64 %cast317, %41
   %cast319 = inttoptr i64 %dst2_int318 to ptr
   %rhs_len_p1320 = add i64 %42, 1
-  %45 = call ptr @memcpy(ptr %cast319, ptr @.str.15846, i64 %rhs_len_p1320)
+  %45 = call ptr @memcpy(ptr %cast319, ptr @.str.15850, i64 %rhs_len_p1320)
   %46 = call ptr @"codegen::types::err_stmt"(ptr %43)
   %cast321 = ptrtoint ptr %46 to i64
   store i64 %cast321, ptr %match_result, align 8
@@ -177074,7 +177641,7 @@ if_then299:                                       ; preds = %march_arm286
   %cast302 = ptrtoint ptr %ctx301 to i64
   %null_chk303 = icmp eq i64 %cast302, 0
   %null_ext304 = zext i1 %null_chk303 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15841, i64 8, ptr @sty_name.15842, i64 3, i64 %null_ext304, ptr @src_file.15843, i64 88, i64 175)
+  call void @forge_null_deref_trap(ptr @fld_name.15845, i64 8, ptr @sty_name.15846, i64 3, i64 %null_ext304, ptr @src_file.15847, i64 88, i64 177)
   %features_ptr305 = getelementptr inbounds nuw %Ctx, ptr %ctx301, i32 0, i32 16
   %features306 = load ptr, ptr %features_ptr305, align 8
   %tag307 = load i64, ptr %tag290, align 8
@@ -177160,7 +177727,7 @@ march_arm:                                        ; preds = %entry
   %cast = ptrtoint ptr %ctx4 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15849, i64 3, ptr @sty_name.15850, i64 3, i64 %null_ext, ptr @src_file.15851, i64 88, i64 189)
+  call void @forge_null_deref_trap(ptr @fld_name.15853, i64 3, ptr @sty_name.15854, i64 3, i64 %null_ext, ptr @src_file.15855, i64 88, i64 191)
   %value5 = load i64, ptr %value, align 8
   %4 = call ptr @Ctx__i64(ptr %ctx4, i64 %value5)
   %5 = call ptr @"codegen::types::ok_emit"(ptr %4)
@@ -177184,26 +177751,26 @@ march_arm7:                                       ; preds = %march_next
   %cast18 = ptrtoint ptr %ctx17 to i64
   %null_chk19 = icmp eq i64 %cast18, 0
   %null_ext20 = zext i1 %null_chk19 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15852, i64 10, ptr @sty_name.15853, i64 3, i64 %null_ext20, ptr @src_file.15854, i64 88, i64 193)
+  call void @forge_null_deref_trap(ptr @fld_name.15856, i64 10, ptr @sty_name.15857, i64 3, i64 %null_ext20, ptr @src_file.15858, i64 88, i64 195)
   %text21 = load ptr, ptr %text16, align 8
-  %6 = call ptr @Ctx__global_str(ptr %ctx17, ptr %text21, ptr @.str.15855)
+  %6 = call ptr @Ctx__global_str(ptr %ctx17, ptr %text21, ptr @.str.15859)
   store ptr %6, ptr %str_ptr, align 8
   %ctx22 = load ptr, ptr %ctx, align 8
   %cast23 = ptrtoint ptr %ctx22 to i64
   %null_chk24 = icmp eq i64 %cast23, 0
   %null_ext25 = zext i1 %null_chk24 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15856, i64 4, ptr @sty_name.15857, i64 3, i64 %null_ext25, ptr @src_file.15858, i64 88, i64 194)
+  call void @forge_null_deref_trap(ptr @fld_name.15860, i64 4, ptr @sty_name.15861, i64 3, i64 %null_ext25, ptr @src_file.15862, i64 88, i64 196)
   %7 = call ptr @forge_array_new()
   %str_ptr26 = load ptr, ptr %str_ptr, align 8
   %cast27 = ptrtoint ptr %str_ptr26 to i64
   call void @forge_array_push(ptr %7, i64 %cast27)
-  %8 = call ptr @Ctx__call(ptr %ctx22, ptr @.str.15859, ptr %7)
+  %8 = call ptr @Ctx__call(ptr %ctx22, ptr @.str.15863, ptr %7)
   store ptr %8, ptr %bits, align 8
   %ctx28 = load ptr, ptr %ctx, align 8
   %cast29 = ptrtoint ptr %ctx28 to i64
   %null_chk30 = icmp eq i64 %cast29, 0
   %null_ext31 = zext i1 %null_chk30 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15860, i64 7, ptr @sty_name.15861, i64 3, i64 %null_ext31, ptr @src_file.15862, i64 88, i64 195)
+  call void @forge_null_deref_trap(ptr @fld_name.15864, i64 7, ptr @sty_name.15865, i64 3, i64 %null_ext31, ptr @src_file.15866, i64 88, i64 197)
   %bits32 = load ptr, ptr %bits, align 8
   %9 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr33 = getelementptr inbounds nuw %Tk, ptr %9, i32 0, i32 0
@@ -177238,7 +177805,7 @@ march_arm41:                                      ; preds = %march_next8
   %text49 = load ptr, ptr %text_slot48, align 8
   store ptr %text49, ptr %text50, align 8
   %text51 = load ptr, ptr %text50, align 8
-  %13 = call i32 @strcmp(ptr %text51, ptr @.str.15863)
+  %13 = call i32 @strcmp(ptr %text51, ptr @.str.15867)
   %widen = sext i32 %13 to i64
   %streq_cmp = icmp eq i64 %widen, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -177254,7 +177821,7 @@ ifcont:                                           ; preds = %if_else
   %cast61 = ptrtoint ptr %ctx60 to i64
   %null_chk62 = icmp eq i64 %cast61, 0
   %null_ext63 = zext i1 %null_chk62 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15867, i64 3, ptr @sty_name.15868, i64 3, i64 %null_ext63, ptr @src_file.15869, i64 88, i64 202)
+  call void @forge_null_deref_trap(ptr @fld_name.15871, i64 3, ptr @sty_name.15872, i64 3, i64 %null_ext63, ptr @src_file.15873, i64 88, i64 204)
   %14 = call ptr @Ctx__i64(ptr %ctx60, i64 0)
   %15 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr64 = getelementptr inbounds nuw %ValueType, ptr %15, i32 0, i32 0
@@ -177273,7 +177840,7 @@ if_then:                                          ; preds = %march_arm41
   %cast53 = ptrtoint ptr %ctx52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15864, i64 3, ptr @sty_name.15865, i64 3, i64 %null_ext55, ptr @src_file.15866, i64 88, i64 200)
+  call void @forge_null_deref_trap(ptr @fld_name.15868, i64 3, ptr @sty_name.15869, i64 3, i64 %null_ext55, ptr @src_file.15870, i64 88, i64 202)
   %17 = call ptr @Ctx__i64(ptr %ctx52, i64 1)
   %18 = call ptr @forge_rc_alloc(i64 16)
   %tag_ptr56 = getelementptr inbounds nuw %ValueType, ptr %18, i32 0, i32 0
@@ -177293,7 +177860,7 @@ march_arm69:                                      ; preds = %march_next42
   %cast73 = ptrtoint ptr %ctx72 to i64
   %null_chk74 = icmp eq i64 %cast73, 0
   %null_ext75 = zext i1 %null_chk74 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15870, i64 3, ptr @sty_name.15871, i64 3, i64 %null_ext75, ptr @src_file.15872, i64 88, i64 185)
+  call void @forge_null_deref_trap(ptr @fld_name.15874, i64 3, ptr @sty_name.15875, i64 3, i64 %null_ext75, ptr @src_file.15876, i64 88, i64 187)
   %20 = call ptr @Ctx__i64(ptr %ctx72, i64 0)
   %21 = call ptr @"codegen::types::ok_emit"(ptr %20)
   %cast76 = ptrtoint ptr %21 to i64
@@ -177319,9 +177886,9 @@ march_arm77:                                      ; preds = %march_next70
   %cast89 = ptrtoint ptr %ctx88 to i64
   %null_chk90 = icmp eq i64 %cast89, 0
   %null_ext91 = zext i1 %null_chk90 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15873, i64 10, ptr @sty_name.15874, i64 3, i64 %null_ext91, ptr @src_file.15875, i64 88, i64 208)
+  call void @forge_null_deref_trap(ptr @fld_name.15877, i64 10, ptr @sty_name.15878, i64 3, i64 %null_ext91, ptr @src_file.15879, i64 88, i64 210)
   %inner92 = load ptr, ptr %inner, align 8
-  %23 = call ptr @Ctx__global_str(ptr %ctx88, ptr %inner92, ptr @.str.15876)
+  %23 = call ptr @Ctx__global_str(ptr %ctx88, ptr %inner92, ptr @.str.15880)
   store ptr %23, ptr %str_ptr93, align 8
   %str_ptr94 = load ptr, ptr %str_ptr93, align 8
   %24 = call ptr @"codegen::types::ok_emit_str"(ptr %str_ptr94)
@@ -177464,7 +178031,7 @@ march_arm177:                                     ; preds = %march_next148
   %ctx183 = load ptr, ptr %ctx, align 8
   %env184 = load ptr, ptr %env, align 8
   %name185 = load ptr, ptr %name182, align 8
-  %29 = call ptr @"codegen::emit_name_lookup"(ptr %ctx183, ptr %env184, ptr %name185, ptr @.str.15877)
+  %29 = call ptr @"codegen::emit_name_lookup"(ptr %ctx183, ptr %env184, ptr %name185, ptr @.str.15881)
   %cast186 = ptrtoint ptr %29 to i64
   store i64 %cast186, ptr %match_result, align 8
   br label %match_end
@@ -177484,7 +178051,7 @@ march_arm187:                                     ; preds = %march_next178
   %ctx193 = load ptr, ptr %ctx, align 8
   %env194 = load ptr, ptr %env, align 8
   %path195 = load ptr, ptr %path192, align 8
-  %30 = call ptr @"codegen::emit_name_lookup"(ptr %ctx193, ptr %env194, ptr %path195, ptr @.str.15878)
+  %30 = call ptr @"codegen::emit_name_lookup"(ptr %ctx193, ptr %env194, ptr %path195, ptr @.str.15882)
   %cast196 = ptrtoint ptr %30 to i64
   store i64 %cast196, ptr %match_result, align 8
   br label %match_end
@@ -177535,7 +178102,7 @@ try_ok:                                           ; preds = %march_arm197
   %cast218 = ptrtoint ptr %local217 to i64
   %null_chk219 = icmp eq i64 %cast218, 0
   %null_ext220 = zext i1 %null_chk219 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15879, i64 5, ptr @sty_name.15880, i64 9, i64 %null_ext220, ptr @src_file.15881, i64 88, i64 221)
+  call void @forge_null_deref_trap(ptr @fld_name.15883, i64 5, ptr @sty_name.15884, i64 9, i64 %null_ext220, ptr @src_file.15885, i64 88, i64 223)
   %found_ptr = getelementptr inbounds nuw %VarLookup, ptr %local217, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %if_cond222 = icmp ne i64 %found, 0
@@ -177549,7 +178116,7 @@ ifcont221:                                        ; preds = %if_else224
   %cast322 = ptrtoint ptr %ctx321 to i64
   %null_chk323 = icmp eq i64 %cast322, 0
   %null_ext324 = zext i1 %null_chk323 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15927, i64 15, ptr @sty_name.15928, i64 3, i64 %null_ext324, ptr @src_file.15929, i64 88, i64 231)
+  call void @forge_null_deref_trap(ptr @fld_name.15931, i64 15, ptr @sty_name.15932, i64 3, i64 %null_ext324, ptr @src_file.15933, i64 88, i64 233)
   %name325 = load ptr, ptr %name206, align 8
   %33 = call ptr @Ctx__lookup_toplevel(ptr %ctx321, ptr %name325)
   store ptr %33, ptr %g, align 8
@@ -177557,7 +178124,7 @@ ifcont221:                                        ; preds = %if_else224
   %cast327 = ptrtoint ptr %g326 to i64
   %null_chk328 = icmp eq i64 %cast327, 0
   %null_ext329 = zext i1 %null_chk328 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15930, i64 5, ptr @sty_name.15931, i64 14, i64 %null_ext329, ptr @src_file.15932, i64 88, i64 232)
+  call void @forge_null_deref_trap(ptr @fld_name.15934, i64 5, ptr @sty_name.15935, i64 14, i64 %null_ext329, ptr @src_file.15936, i64 88, i64 234)
   %found_ptr330 = getelementptr inbounds nuw %TopLevelLookup, ptr %g326, i32 0, i32 0
   %found331 = load i64, ptr %found_ptr330, align 8
   %if_cond333 = icmp ne i64 %found331, 0
@@ -177568,14 +178135,14 @@ if_then223:                                       ; preds = %try_ok
   %cast226 = ptrtoint ptr %r225 to i64
   %null_chk227 = icmp eq i64 %cast226, 0
   %null_ext228 = zext i1 %null_chk227 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15882, i64 2, ptr @sty_name.15883, i64 9, i64 %null_ext228, ptr @src_file.15884, i64 88, i64 223)
+  call void @forge_null_deref_trap(ptr @fld_name.15886, i64 2, ptr @sty_name.15887, i64 9, i64 %null_ext228, ptr @src_file.15888, i64 88, i64 225)
   %ty_ptr = getelementptr inbounds nuw %EmitValue, ptr %r225, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
   %local229 = load ptr, ptr %local, align 8
   %cast230 = ptrtoint ptr %local229 to i64
   %null_chk231 = icmp eq i64 %cast230, 0
   %null_ext232 = zext i1 %null_chk231 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15885, i64 2, ptr @sty_name.15886, i64 9, i64 %null_ext232, ptr @src_file.15887, i64 88, i64 223)
+  call void @forge_null_deref_trap(ptr @fld_name.15889, i64 2, ptr @sty_name.15890, i64 9, i64 %null_ext232, ptr @src_file.15891, i64 88, i64 225)
   %ty_ptr233 = getelementptr inbounds nuw %VarLookup, ptr %local229, i32 0, i32 2
   %ty234 = load ptr, ptr %ty_ptr233, align 8
   %34 = call i1 @"features::union_type::codegen::needs_union_wrap"(ptr %ty, ptr %ty234)
@@ -177591,19 +178158,19 @@ ifcont236:                                        ; preds = %if_else239
   %cast294 = ptrtoint ptr %ctx293 to i64
   %null_chk295 = icmp eq i64 %cast294, 0
   %null_ext296 = zext i1 %null_chk295 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15912, i64 5, ptr @sty_name.15913, i64 3, i64 %null_ext296, ptr @src_file.15914, i64 88, i64 228)
+  call void @forge_null_deref_trap(ptr @fld_name.15916, i64 5, ptr @sty_name.15917, i64 3, i64 %null_ext296, ptr @src_file.15918, i64 88, i64 230)
   %r297 = load ptr, ptr %r, align 8
   %cast298 = ptrtoint ptr %r297 to i64
   %null_chk299 = icmp eq i64 %cast298, 0
   %null_ext300 = zext i1 %null_chk299 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15915, i64 5, ptr @sty_name.15916, i64 9, i64 %null_ext300, ptr @src_file.15917, i64 88, i64 228)
+  call void @forge_null_deref_trap(ptr @fld_name.15919, i64 5, ptr @sty_name.15920, i64 9, i64 %null_ext300, ptr @src_file.15921, i64 88, i64 230)
   %value_ptr301 = getelementptr inbounds nuw %EmitValue, ptr %r297, i32 0, i32 0
   %value302 = load ptr, ptr %value_ptr301, align 8
   %local303 = load ptr, ptr %local, align 8
   %cast304 = ptrtoint ptr %local303 to i64
   %null_chk305 = icmp eq i64 %cast304, 0
   %null_ext306 = zext i1 %null_chk305 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15918, i64 6, ptr @sty_name.15919, i64 9, i64 %null_ext306, ptr @src_file.15920, i64 88, i64 228)
+  call void @forge_null_deref_trap(ptr @fld_name.15922, i64 6, ptr @sty_name.15923, i64 9, i64 %null_ext306, ptr @src_file.15924, i64 88, i64 230)
   %alloca_ptr307 = getelementptr inbounds nuw %VarLookup, ptr %local303, i32 0, i32 1
   %alloca308 = load ptr, ptr %alloca_ptr307, align 8
   %35 = call i64 @Ctx__store(ptr %ctx293, ptr %value302, ptr %alloca308)
@@ -177611,14 +178178,14 @@ ifcont236:                                        ; preds = %if_else239
   %cast310 = ptrtoint ptr %r309 to i64
   %null_chk311 = icmp eq i64 %cast310, 0
   %null_ext312 = zext i1 %null_chk311 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15921, i64 5, ptr @sty_name.15922, i64 9, i64 %null_ext312, ptr @src_file.15923, i64 88, i64 229)
+  call void @forge_null_deref_trap(ptr @fld_name.15925, i64 5, ptr @sty_name.15926, i64 9, i64 %null_ext312, ptr @src_file.15927, i64 88, i64 231)
   %value_ptr313 = getelementptr inbounds nuw %EmitValue, ptr %r309, i32 0, i32 0
   %value314 = load ptr, ptr %value_ptr313, align 8
   %local315 = load ptr, ptr %local, align 8
   %cast316 = ptrtoint ptr %local315 to i64
   %null_chk317 = icmp eq i64 %cast316, 0
   %null_ext318 = zext i1 %null_chk317 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15924, i64 2, ptr @sty_name.15925, i64 9, i64 %null_ext318, ptr @src_file.15926, i64 88, i64 229)
+  call void @forge_null_deref_trap(ptr @fld_name.15928, i64 2, ptr @sty_name.15929, i64 9, i64 %null_ext318, ptr @src_file.15930, i64 88, i64 231)
   %ty_ptr319 = getelementptr inbounds nuw %VarLookup, ptr %local315, i32 0, i32 2
   %ty320 = load ptr, ptr %ty_ptr319, align 8
   %36 = call ptr @"codegen::types::ok_emit_typed"(ptr %value314, ptr %ty320)
@@ -177630,21 +178197,21 @@ if_then238:                                       ; preds = %if_then223
   %cast242 = ptrtoint ptr %r241 to i64
   %null_chk243 = icmp eq i64 %cast242, 0
   %null_ext244 = zext i1 %null_chk243 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15888, i64 5, ptr @sty_name.15889, i64 9, i64 %null_ext244, ptr @src_file.15890, i64 88, i64 224)
+  call void @forge_null_deref_trap(ptr @fld_name.15892, i64 5, ptr @sty_name.15893, i64 9, i64 %null_ext244, ptr @src_file.15894, i64 88, i64 226)
   %value_ptr = getelementptr inbounds nuw %EmitValue, ptr %r241, i32 0, i32 0
   %value245 = load ptr, ptr %value_ptr, align 8
   %r246 = load ptr, ptr %r, align 8
   %cast247 = ptrtoint ptr %r246 to i64
   %null_chk248 = icmp eq i64 %cast247, 0
   %null_ext249 = zext i1 %null_chk248 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15891, i64 2, ptr @sty_name.15892, i64 9, i64 %null_ext249, ptr @src_file.15893, i64 88, i64 224)
+  call void @forge_null_deref_trap(ptr @fld_name.15895, i64 2, ptr @sty_name.15896, i64 9, i64 %null_ext249, ptr @src_file.15897, i64 88, i64 226)
   %ty_ptr250 = getelementptr inbounds nuw %EmitValue, ptr %r246, i32 0, i32 1
   %ty251 = load ptr, ptr %ty_ptr250, align 8
   %local252 = load ptr, ptr %local, align 8
   %cast253 = ptrtoint ptr %local252 to i64
   %null_chk254 = icmp eq i64 %cast253, 0
   %null_ext255 = zext i1 %null_chk254 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15894, i64 2, ptr @sty_name.15895, i64 9, i64 %null_ext255, ptr @src_file.15896, i64 88, i64 224)
+  call void @forge_null_deref_trap(ptr @fld_name.15898, i64 2, ptr @sty_name.15899, i64 9, i64 %null_ext255, ptr @src_file.15900, i64 88, i64 226)
   %ty_ptr256 = getelementptr inbounds nuw %VarLookup, ptr %local252, i32 0, i32 2
   %ty257 = load ptr, ptr %ty_ptr256, align 8
   %37 = call ptr @"features::union_type::codegen::emit_union_wrap"(ptr %ctx240, ptr %value245, ptr %ty251, ptr %ty257)
@@ -177666,19 +178233,19 @@ try_ok261:                                        ; preds = %if_then238
   %cast268 = ptrtoint ptr %ctx267 to i64
   %null_chk269 = icmp eq i64 %cast268, 0
   %null_ext270 = zext i1 %null_chk269 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15897, i64 5, ptr @sty_name.15898, i64 3, i64 %null_ext270, ptr @src_file.15899, i64 88, i64 225)
+  call void @forge_null_deref_trap(ptr @fld_name.15901, i64 5, ptr @sty_name.15902, i64 3, i64 %null_ext270, ptr @src_file.15903, i64 88, i64 227)
   %wrapped271 = load ptr, ptr %wrapped, align 8
   %cast272 = ptrtoint ptr %wrapped271 to i64
   %null_chk273 = icmp eq i64 %cast272, 0
   %null_ext274 = zext i1 %null_chk273 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15900, i64 5, ptr @sty_name.15901, i64 9, i64 %null_ext274, ptr @src_file.15902, i64 88, i64 225)
+  call void @forge_null_deref_trap(ptr @fld_name.15904, i64 5, ptr @sty_name.15905, i64 9, i64 %null_ext274, ptr @src_file.15906, i64 88, i64 227)
   %value_ptr275 = getelementptr inbounds nuw %EmitValue, ptr %wrapped271, i32 0, i32 0
   %value276 = load ptr, ptr %value_ptr275, align 8
   %local277 = load ptr, ptr %local, align 8
   %cast278 = ptrtoint ptr %local277 to i64
   %null_chk279 = icmp eq i64 %cast278, 0
   %null_ext280 = zext i1 %null_chk279 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15903, i64 6, ptr @sty_name.15904, i64 9, i64 %null_ext280, ptr @src_file.15905, i64 88, i64 225)
+  call void @forge_null_deref_trap(ptr @fld_name.15907, i64 6, ptr @sty_name.15908, i64 9, i64 %null_ext280, ptr @src_file.15909, i64 88, i64 227)
   %alloca_ptr = getelementptr inbounds nuw %VarLookup, ptr %local277, i32 0, i32 1
   %alloca = load ptr, ptr %alloca_ptr, align 8
   %38 = call i64 @Ctx__store(ptr %ctx267, ptr %value276, ptr %alloca)
@@ -177686,14 +178253,14 @@ try_ok261:                                        ; preds = %if_then238
   %cast282 = ptrtoint ptr %wrapped281 to i64
   %null_chk283 = icmp eq i64 %cast282, 0
   %null_ext284 = zext i1 %null_chk283 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15906, i64 5, ptr @sty_name.15907, i64 9, i64 %null_ext284, ptr @src_file.15908, i64 88, i64 226)
+  call void @forge_null_deref_trap(ptr @fld_name.15910, i64 5, ptr @sty_name.15911, i64 9, i64 %null_ext284, ptr @src_file.15912, i64 88, i64 228)
   %value_ptr285 = getelementptr inbounds nuw %EmitValue, ptr %wrapped281, i32 0, i32 0
   %value286 = load ptr, ptr %value_ptr285, align 8
   %local287 = load ptr, ptr %local, align 8
   %cast288 = ptrtoint ptr %local287 to i64
   %null_chk289 = icmp eq i64 %cast288, 0
   %null_ext290 = zext i1 %null_chk289 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15909, i64 2, ptr @sty_name.15910, i64 9, i64 %null_ext290, ptr @src_file.15911, i64 88, i64 226)
+  call void @forge_null_deref_trap(ptr @fld_name.15913, i64 2, ptr @sty_name.15914, i64 9, i64 %null_ext290, ptr @src_file.15915, i64 88, i64 228)
   %ty_ptr291 = getelementptr inbounds nuw %VarLookup, ptr %local287, i32 0, i32 2
   %ty292 = load ptr, ptr %ty_ptr291, align 8
   %39 = call ptr @"codegen::types::ok_emit_typed"(ptr %value286, ptr %ty292)
@@ -177704,19 +178271,19 @@ try_err262:                                       ; preds = %if_then238
 
 ifcont332:                                        ; preds = %if_else335
   %name436 = load ptr, ptr %name206, align 8
-  %40 = call i64 @strlen(ptr @.str.15978)
+  %40 = call i64 @strlen(ptr @.str.15982)
   %41 = call i64 @strlen(ptr %name436)
   %concat_total = add i64 %40, %41
   %concat_size = add i64 %concat_total, 1
   %42 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %43 = call ptr @memcpy(ptr %42, ptr @.str.15978, i64 %40)
+  %43 = call ptr @memcpy(ptr %42, ptr @.str.15982, i64 %40)
   %cast437 = ptrtoint ptr %42 to i64
   %dst2_int = add i64 %cast437, %40
   %cast438 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %41, 1
   %44 = call ptr @memcpy(ptr %cast438, ptr %name436, i64 %rhs_len_p1)
   %45 = call i64 @strlen(ptr %42)
-  %46 = call i64 @strlen(ptr @.str.15979)
+  %46 = call i64 @strlen(ptr @.str.15983)
   %concat_total439 = add i64 %45, %46
   %concat_size440 = add i64 %concat_total439, 1
   %47 = call ptr @forge_bump_alloc(i64 %concat_size440)
@@ -177725,7 +178292,7 @@ ifcont332:                                        ; preds = %if_else335
   %dst2_int442 = add i64 %cast441, %45
   %cast443 = inttoptr i64 %dst2_int442 to ptr
   %rhs_len_p1444 = add i64 %46, 1
-  %49 = call ptr @memcpy(ptr %cast443, ptr @.str.15979, i64 %rhs_len_p1444)
+  %49 = call ptr @memcpy(ptr %cast443, ptr @.str.15983, i64 %rhs_len_p1444)
   %50 = call ptr @"codegen::types::err_emit"(ptr %47)
   %cast445 = ptrtoint ptr %50 to i64
   store i64 %cast445, ptr %match_result, align 8
@@ -177736,14 +178303,14 @@ if_then334:                                       ; preds = %ifcont221
   %cast337 = ptrtoint ptr %r336 to i64
   %null_chk338 = icmp eq i64 %cast337, 0
   %null_ext339 = zext i1 %null_chk338 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15933, i64 2, ptr @sty_name.15934, i64 9, i64 %null_ext339, ptr @src_file.15935, i64 88, i64 233)
+  call void @forge_null_deref_trap(ptr @fld_name.15937, i64 2, ptr @sty_name.15938, i64 9, i64 %null_ext339, ptr @src_file.15939, i64 88, i64 235)
   %ty_ptr340 = getelementptr inbounds nuw %EmitValue, ptr %r336, i32 0, i32 1
   %ty341 = load ptr, ptr %ty_ptr340, align 8
   %g342 = load ptr, ptr %g, align 8
   %cast343 = ptrtoint ptr %g342 to i64
   %null_chk344 = icmp eq i64 %cast343, 0
   %null_ext345 = zext i1 %null_chk344 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15936, i64 2, ptr @sty_name.15937, i64 14, i64 %null_ext345, ptr @src_file.15938, i64 88, i64 233)
+  call void @forge_null_deref_trap(ptr @fld_name.15940, i64 2, ptr @sty_name.15941, i64 14, i64 %null_ext345, ptr @src_file.15942, i64 88, i64 235)
   %ty_ptr346 = getelementptr inbounds nuw %TopLevelLookup, ptr %g342, i32 0, i32 2
   %ty347 = load ptr, ptr %ty_ptr346, align 8
   %51 = call i1 @"features::union_type::codegen::needs_union_wrap"(ptr %ty341, ptr %ty347)
@@ -177759,19 +178326,19 @@ ifcont349:                                        ; preds = %if_else352
   %cast409 = ptrtoint ptr %ctx408 to i64
   %null_chk410 = icmp eq i64 %cast409, 0
   %null_ext411 = zext i1 %null_chk410 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15963, i64 5, ptr @sty_name.15964, i64 3, i64 %null_ext411, ptr @src_file.15965, i64 88, i64 238)
+  call void @forge_null_deref_trap(ptr @fld_name.15967, i64 5, ptr @sty_name.15968, i64 3, i64 %null_ext411, ptr @src_file.15969, i64 88, i64 240)
   %r412 = load ptr, ptr %r, align 8
   %cast413 = ptrtoint ptr %r412 to i64
   %null_chk414 = icmp eq i64 %cast413, 0
   %null_ext415 = zext i1 %null_chk414 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15966, i64 5, ptr @sty_name.15967, i64 9, i64 %null_ext415, ptr @src_file.15968, i64 88, i64 238)
+  call void @forge_null_deref_trap(ptr @fld_name.15970, i64 5, ptr @sty_name.15971, i64 9, i64 %null_ext415, ptr @src_file.15972, i64 88, i64 240)
   %value_ptr416 = getelementptr inbounds nuw %EmitValue, ptr %r412, i32 0, i32 0
   %value417 = load ptr, ptr %value_ptr416, align 8
   %g418 = load ptr, ptr %g, align 8
   %cast419 = ptrtoint ptr %g418 to i64
   %null_chk420 = icmp eq i64 %cast419, 0
   %null_ext421 = zext i1 %null_chk420 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15969, i64 11, ptr @sty_name.15970, i64 14, i64 %null_ext421, ptr @src_file.15971, i64 88, i64 238)
+  call void @forge_null_deref_trap(ptr @fld_name.15973, i64 11, ptr @sty_name.15974, i64 14, i64 %null_ext421, ptr @src_file.15975, i64 88, i64 240)
   %llvm_global_ptr422 = getelementptr inbounds nuw %TopLevelLookup, ptr %g418, i32 0, i32 1
   %llvm_global423 = load ptr, ptr %llvm_global_ptr422, align 8
   %52 = call i64 @Ctx__store(ptr %ctx408, ptr %value417, ptr %llvm_global423)
@@ -177779,14 +178346,14 @@ ifcont349:                                        ; preds = %if_else352
   %cast425 = ptrtoint ptr %r424 to i64
   %null_chk426 = icmp eq i64 %cast425, 0
   %null_ext427 = zext i1 %null_chk426 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15972, i64 5, ptr @sty_name.15973, i64 9, i64 %null_ext427, ptr @src_file.15974, i64 88, i64 239)
+  call void @forge_null_deref_trap(ptr @fld_name.15976, i64 5, ptr @sty_name.15977, i64 9, i64 %null_ext427, ptr @src_file.15978, i64 88, i64 241)
   %value_ptr428 = getelementptr inbounds nuw %EmitValue, ptr %r424, i32 0, i32 0
   %value429 = load ptr, ptr %value_ptr428, align 8
   %g430 = load ptr, ptr %g, align 8
   %cast431 = ptrtoint ptr %g430 to i64
   %null_chk432 = icmp eq i64 %cast431, 0
   %null_ext433 = zext i1 %null_chk432 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15975, i64 2, ptr @sty_name.15976, i64 14, i64 %null_ext433, ptr @src_file.15977, i64 88, i64 239)
+  call void @forge_null_deref_trap(ptr @fld_name.15979, i64 2, ptr @sty_name.15980, i64 14, i64 %null_ext433, ptr @src_file.15981, i64 88, i64 241)
   %ty_ptr434 = getelementptr inbounds nuw %TopLevelLookup, ptr %g430, i32 0, i32 2
   %ty435 = load ptr, ptr %ty_ptr434, align 8
   %53 = call ptr @"codegen::types::ok_emit_typed"(ptr %value429, ptr %ty435)
@@ -177798,21 +178365,21 @@ if_then351:                                       ; preds = %if_then334
   %cast355 = ptrtoint ptr %r354 to i64
   %null_chk356 = icmp eq i64 %cast355, 0
   %null_ext357 = zext i1 %null_chk356 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15939, i64 5, ptr @sty_name.15940, i64 9, i64 %null_ext357, ptr @src_file.15941, i64 88, i64 234)
+  call void @forge_null_deref_trap(ptr @fld_name.15943, i64 5, ptr @sty_name.15944, i64 9, i64 %null_ext357, ptr @src_file.15945, i64 88, i64 236)
   %value_ptr358 = getelementptr inbounds nuw %EmitValue, ptr %r354, i32 0, i32 0
   %value359 = load ptr, ptr %value_ptr358, align 8
   %r360 = load ptr, ptr %r, align 8
   %cast361 = ptrtoint ptr %r360 to i64
   %null_chk362 = icmp eq i64 %cast361, 0
   %null_ext363 = zext i1 %null_chk362 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15942, i64 2, ptr @sty_name.15943, i64 9, i64 %null_ext363, ptr @src_file.15944, i64 88, i64 234)
+  call void @forge_null_deref_trap(ptr @fld_name.15946, i64 2, ptr @sty_name.15947, i64 9, i64 %null_ext363, ptr @src_file.15948, i64 88, i64 236)
   %ty_ptr364 = getelementptr inbounds nuw %EmitValue, ptr %r360, i32 0, i32 1
   %ty365 = load ptr, ptr %ty_ptr364, align 8
   %g366 = load ptr, ptr %g, align 8
   %cast367 = ptrtoint ptr %g366 to i64
   %null_chk368 = icmp eq i64 %cast367, 0
   %null_ext369 = zext i1 %null_chk368 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15945, i64 2, ptr @sty_name.15946, i64 14, i64 %null_ext369, ptr @src_file.15947, i64 88, i64 234)
+  call void @forge_null_deref_trap(ptr @fld_name.15949, i64 2, ptr @sty_name.15950, i64 14, i64 %null_ext369, ptr @src_file.15951, i64 88, i64 236)
   %ty_ptr370 = getelementptr inbounds nuw %TopLevelLookup, ptr %g366, i32 0, i32 2
   %ty371 = load ptr, ptr %ty_ptr370, align 8
   %54 = call ptr @"features::union_type::codegen::emit_union_wrap"(ptr %ctx353, ptr %value359, ptr %ty365, ptr %ty371)
@@ -177834,19 +178401,19 @@ try_ok375:                                        ; preds = %if_then351
   %cast383 = ptrtoint ptr %ctx382 to i64
   %null_chk384 = icmp eq i64 %cast383, 0
   %null_ext385 = zext i1 %null_chk384 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15948, i64 5, ptr @sty_name.15949, i64 3, i64 %null_ext385, ptr @src_file.15950, i64 88, i64 235)
+  call void @forge_null_deref_trap(ptr @fld_name.15952, i64 5, ptr @sty_name.15953, i64 3, i64 %null_ext385, ptr @src_file.15954, i64 88, i64 237)
   %wrapped386 = load ptr, ptr %wrapped380, align 8
   %cast387 = ptrtoint ptr %wrapped386 to i64
   %null_chk388 = icmp eq i64 %cast387, 0
   %null_ext389 = zext i1 %null_chk388 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15951, i64 5, ptr @sty_name.15952, i64 9, i64 %null_ext389, ptr @src_file.15953, i64 88, i64 235)
+  call void @forge_null_deref_trap(ptr @fld_name.15955, i64 5, ptr @sty_name.15956, i64 9, i64 %null_ext389, ptr @src_file.15957, i64 88, i64 237)
   %value_ptr390 = getelementptr inbounds nuw %EmitValue, ptr %wrapped386, i32 0, i32 0
   %value391 = load ptr, ptr %value_ptr390, align 8
   %g392 = load ptr, ptr %g, align 8
   %cast393 = ptrtoint ptr %g392 to i64
   %null_chk394 = icmp eq i64 %cast393, 0
   %null_ext395 = zext i1 %null_chk394 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15954, i64 11, ptr @sty_name.15955, i64 14, i64 %null_ext395, ptr @src_file.15956, i64 88, i64 235)
+  call void @forge_null_deref_trap(ptr @fld_name.15958, i64 11, ptr @sty_name.15959, i64 14, i64 %null_ext395, ptr @src_file.15960, i64 88, i64 237)
   %llvm_global_ptr = getelementptr inbounds nuw %TopLevelLookup, ptr %g392, i32 0, i32 1
   %llvm_global = load ptr, ptr %llvm_global_ptr, align 8
   %55 = call i64 @Ctx__store(ptr %ctx382, ptr %value391, ptr %llvm_global)
@@ -177854,14 +178421,14 @@ try_ok375:                                        ; preds = %if_then351
   %cast397 = ptrtoint ptr %wrapped396 to i64
   %null_chk398 = icmp eq i64 %cast397, 0
   %null_ext399 = zext i1 %null_chk398 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15957, i64 5, ptr @sty_name.15958, i64 9, i64 %null_ext399, ptr @src_file.15959, i64 88, i64 236)
+  call void @forge_null_deref_trap(ptr @fld_name.15961, i64 5, ptr @sty_name.15962, i64 9, i64 %null_ext399, ptr @src_file.15963, i64 88, i64 238)
   %value_ptr400 = getelementptr inbounds nuw %EmitValue, ptr %wrapped396, i32 0, i32 0
   %value401 = load ptr, ptr %value_ptr400, align 8
   %g402 = load ptr, ptr %g, align 8
   %cast403 = ptrtoint ptr %g402 to i64
   %null_chk404 = icmp eq i64 %cast403, 0
   %null_ext405 = zext i1 %null_chk404 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15960, i64 2, ptr @sty_name.15961, i64 14, i64 %null_ext405, ptr @src_file.15962, i64 88, i64 236)
+  call void @forge_null_deref_trap(ptr @fld_name.15964, i64 2, ptr @sty_name.15965, i64 14, i64 %null_ext405, ptr @src_file.15966, i64 88, i64 238)
   %ty_ptr406 = getelementptr inbounds nuw %TopLevelLookup, ptr %g402, i32 0, i32 2
   %ty407 = load ptr, ptr %ty_ptr406, align 8
   %56 = call ptr @"codegen::types::ok_emit_typed"(ptr %value401, ptr %ty407)
@@ -177990,7 +178557,7 @@ march_arm506:                                     ; preds = %march_next485
   %cast512 = ptrtoint ptr %ctx511 to i64
   %null_chk513 = icmp eq i64 %cast512, 0
   %null_ext514 = zext i1 %null_chk513 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15980, i64 8, ptr @sty_name.15981, i64 3, i64 %null_ext514, ptr @src_file.15982, i64 88, i64 250)
+  call void @forge_null_deref_trap(ptr @fld_name.15984, i64 8, ptr @sty_name.15985, i64 3, i64 %null_ext514, ptr @src_file.15986, i64 88, i64 252)
   %features_ptr = getelementptr inbounds nuw %Ctx, ptr %ctx511, i32 0, i32 16
   %features = load ptr, ptr %features_ptr, align 8
   %tag515 = load i64, ptr %tag510, align 8
@@ -178000,27 +178567,27 @@ march_arm506:                                     ; preds = %march_next485
   br i1 %if_cond518, label %if_then519, label %if_else520
 
 march_next507:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15989, i64 %tag, ptr @mu_file.15990, i64 185)
+  call void @forge_match_unreachable(ptr @.match_fn.15993, i64 %tag, ptr @mu_file.15994, i64 187)
   unreachable
 
 ifcont517:                                        ; preds = %if_else520
   %tag531 = load i64, ptr %tag510, align 8
   %63 = call ptr @forge_bump_alloc(i64 32)
-  %64 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %63, i64 32, ptr @.i2s_fmt.15987, i64 %tag531)
+  %64 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %63, i64 32, ptr @.i2s_fmt.15991, i64 %tag531)
   %widen532 = sext i32 %64 to i64
-  %65 = call i64 @strlen(ptr @.str.15986)
+  %65 = call i64 @strlen(ptr @.str.15990)
   %66 = call i64 @strlen(ptr %63)
   %concat_total533 = add i64 %65, %66
   %concat_size534 = add i64 %concat_total533, 1
   %67 = call ptr @forge_bump_alloc(i64 %concat_size534)
-  %68 = call ptr @memcpy(ptr %67, ptr @.str.15986, i64 %65)
+  %68 = call ptr @memcpy(ptr %67, ptr @.str.15990, i64 %65)
   %cast535 = ptrtoint ptr %67 to i64
   %dst2_int536 = add i64 %cast535, %65
   %cast537 = inttoptr i64 %dst2_int536 to ptr
   %rhs_len_p1538 = add i64 %66, 1
   %69 = call ptr @memcpy(ptr %cast537, ptr %63, i64 %rhs_len_p1538)
   %70 = call i64 @strlen(ptr %67)
-  %71 = call i64 @strlen(ptr @.str.15988)
+  %71 = call i64 @strlen(ptr @.str.15992)
   %concat_total539 = add i64 %70, %71
   %concat_size540 = add i64 %concat_total539, 1
   %72 = call ptr @forge_bump_alloc(i64 %concat_size540)
@@ -178029,7 +178596,7 @@ ifcont517:                                        ; preds = %if_else520
   %dst2_int542 = add i64 %cast541, %70
   %cast543 = inttoptr i64 %dst2_int542 to ptr
   %rhs_len_p1544 = add i64 %71, 1
-  %74 = call ptr @memcpy(ptr %cast543, ptr @.str.15988, i64 %rhs_len_p1544)
+  %74 = call ptr @memcpy(ptr %cast543, ptr @.str.15992, i64 %rhs_len_p1544)
   %75 = call ptr @"codegen::types::err_emit"(ptr %72)
   %cast545 = ptrtoint ptr %75 to i64
   store i64 %cast545, ptr %match_result, align 8
@@ -178040,7 +178607,7 @@ if_then519:                                       ; preds = %march_arm506
   %cast522 = ptrtoint ptr %ctx521 to i64
   %null_chk523 = icmp eq i64 %cast522, 0
   %null_ext524 = zext i1 %null_chk523 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15983, i64 8, ptr @sty_name.15984, i64 3, i64 %null_ext524, ptr @src_file.15985, i64 88, i64 251)
+  call void @forge_null_deref_trap(ptr @fld_name.15987, i64 8, ptr @sty_name.15988, i64 3, i64 %null_ext524, ptr @src_file.15989, i64 88, i64 253)
   %features_ptr525 = getelementptr inbounds nuw %Ctx, ptr %ctx521, i32 0, i32 16
   %features526 = load ptr, ptr %features_ptr525, align 8
   %tag527 = load i64, ptr %tag510, align 8
@@ -178081,7 +178648,7 @@ entry:
   %cast = ptrtoint ptr %local3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15991, i64 5, ptr @sty_name.15992, i64 9, i64 %null_ext, ptr @src_file.15993, i64 88, i64 262)
+  call void @forge_null_deref_trap(ptr @fld_name.15995, i64 5, ptr @sty_name.15996, i64 9, i64 %null_ext, ptr @src_file.15997, i64 88, i64 264)
   %found_ptr = getelementptr inbounds nuw %VarLookup, ptr %local3, i32 0, i32 0
   %found = load i64, ptr %found_ptr, align 8
   %if_cond = icmp ne i64 %found, 0
@@ -178092,7 +178659,7 @@ ifcont:                                           ; preds = %if_else
   %cast25 = ptrtoint ptr %ctx24 to i64
   %null_chk26 = icmp eq i64 %cast25, 0
   %null_ext27 = zext i1 %null_chk26 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16006, i64 15, ptr @sty_name.16007, i64 3, i64 %null_ext27, ptr @src_file.16008, i64 88, i64 266)
+  call void @forge_null_deref_trap(ptr @fld_name.16010, i64 15, ptr @sty_name.16011, i64 3, i64 %null_ext27, ptr @src_file.16012, i64 88, i64 268)
   %name28 = load ptr, ptr %name, align 8
   %5 = call ptr @Ctx__lookup_toplevel(ptr %ctx24, ptr %name28)
   store ptr %5, ptr %g, align 8
@@ -178100,7 +178667,7 @@ ifcont:                                           ; preds = %if_else
   %cast30 = ptrtoint ptr %g29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16009, i64 5, ptr @sty_name.16010, i64 14, i64 %null_ext32, ptr @src_file.16011, i64 88, i64 267)
+  call void @forge_null_deref_trap(ptr @fld_name.16013, i64 5, ptr @sty_name.16014, i64 14, i64 %null_ext32, ptr @src_file.16015, i64 88, i64 269)
   %found_ptr33 = getelementptr inbounds nuw %TopLevelLookup, ptr %g29, i32 0, i32 0
   %found34 = load i64, ptr %found_ptr33, align 8
   %if_cond36 = icmp ne i64 %found34, 0
@@ -178111,19 +178678,19 @@ if_then:                                          ; preds = %entry
   %cast5 = ptrtoint ptr %ctx4 to i64
   %null_chk6 = icmp eq i64 %cast5, 0
   %null_ext7 = zext i1 %null_chk6 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15994, i64 10, ptr @sty_name.15995, i64 3, i64 %null_ext7, ptr @src_file.15996, i64 88, i64 263)
+  call void @forge_null_deref_trap(ptr @fld_name.15998, i64 10, ptr @sty_name.15999, i64 3, i64 %null_ext7, ptr @src_file.16000, i64 88, i64 265)
   %local8 = load ptr, ptr %local, align 8
   %cast9 = ptrtoint ptr %local8 to i64
   %null_chk10 = icmp eq i64 %cast9, 0
   %null_ext11 = zext i1 %null_chk10 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.15997, i64 2, ptr @sty_name.15998, i64 9, i64 %null_ext11, ptr @src_file.15999, i64 88, i64 263)
+  call void @forge_null_deref_trap(ptr @fld_name.16001, i64 2, ptr @sty_name.16002, i64 9, i64 %null_ext11, ptr @src_file.16003, i64 88, i64 265)
   %ty_ptr = getelementptr inbounds nuw %VarLookup, ptr %local8, i32 0, i32 2
   %ty = load ptr, ptr %ty_ptr, align 8
   %local12 = load ptr, ptr %local, align 8
   %cast13 = ptrtoint ptr %local12 to i64
   %null_chk14 = icmp eq i64 %cast13, 0
   %null_ext15 = zext i1 %null_chk14 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16000, i64 6, ptr @sty_name.16001, i64 9, i64 %null_ext15, ptr @src_file.16002, i64 88, i64 263)
+  call void @forge_null_deref_trap(ptr @fld_name.16004, i64 6, ptr @sty_name.16005, i64 9, i64 %null_ext15, ptr @src_file.16006, i64 88, i64 265)
   %alloca_ptr = getelementptr inbounds nuw %VarLookup, ptr %local12, i32 0, i32 1
   %alloca = load ptr, ptr %alloca_ptr, align 8
   %name16 = load ptr, ptr %name, align 8
@@ -178134,7 +178701,7 @@ if_then:                                          ; preds = %entry
   %cast19 = ptrtoint ptr %local18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16003, i64 2, ptr @sty_name.16004, i64 9, i64 %null_ext21, ptr @src_file.16005, i64 88, i64 264)
+  call void @forge_null_deref_trap(ptr @fld_name.16007, i64 2, ptr @sty_name.16008, i64 9, i64 %null_ext21, ptr @src_file.16009, i64 88, i64 266)
   %ty_ptr22 = getelementptr inbounds nuw %VarLookup, ptr %local18, i32 0, i32 2
   %ty23 = load ptr, ptr %ty_ptr22, align 8
   %7 = call ptr @"codegen::types::ok_emit_typed"(ptr %loaded17, ptr %ty23)
@@ -178148,7 +178715,7 @@ ifcont35:                                         ; preds = %if_else38
   %cast63 = ptrtoint ptr %ctx62 to i64
   %null_chk64 = icmp eq i64 %cast63, 0
   %null_ext65 = zext i1 %null_chk64 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16024, i64 6, ptr @sty_name.16025, i64 3, i64 %null_ext65, ptr @src_file.16026, i64 88, i64 271)
+  call void @forge_null_deref_trap(ptr @fld_name.16028, i64 6, ptr @sty_name.16029, i64 3, i64 %null_ext65, ptr @src_file.16030, i64 88, i64 273)
   %name66 = load ptr, ptr %name, align 8
   %8 = call ptr @Ctx__get_fn(ptr %ctx62, ptr %name66)
   store ptr %8, ptr %fn_val, align 8
@@ -178163,19 +178730,19 @@ if_then37:                                        ; preds = %ifcont
   %cast40 = ptrtoint ptr %ctx39 to i64
   %null_chk41 = icmp eq i64 %cast40, 0
   %null_ext42 = zext i1 %null_chk41 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16012, i64 10, ptr @sty_name.16013, i64 3, i64 %null_ext42, ptr @src_file.16014, i64 88, i64 268)
+  call void @forge_null_deref_trap(ptr @fld_name.16016, i64 10, ptr @sty_name.16017, i64 3, i64 %null_ext42, ptr @src_file.16018, i64 88, i64 270)
   %g43 = load ptr, ptr %g, align 8
   %cast44 = ptrtoint ptr %g43 to i64
   %null_chk45 = icmp eq i64 %cast44, 0
   %null_ext46 = zext i1 %null_chk45 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16015, i64 2, ptr @sty_name.16016, i64 14, i64 %null_ext46, ptr @src_file.16017, i64 88, i64 268)
+  call void @forge_null_deref_trap(ptr @fld_name.16019, i64 2, ptr @sty_name.16020, i64 14, i64 %null_ext46, ptr @src_file.16021, i64 88, i64 270)
   %ty_ptr47 = getelementptr inbounds nuw %TopLevelLookup, ptr %g43, i32 0, i32 2
   %ty48 = load ptr, ptr %ty_ptr47, align 8
   %g49 = load ptr, ptr %g, align 8
   %cast50 = ptrtoint ptr %g49 to i64
   %null_chk51 = icmp eq i64 %cast50, 0
   %null_ext52 = zext i1 %null_chk51 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16018, i64 11, ptr @sty_name.16019, i64 14, i64 %null_ext52, ptr @src_file.16020, i64 88, i64 268)
+  call void @forge_null_deref_trap(ptr @fld_name.16022, i64 11, ptr @sty_name.16023, i64 14, i64 %null_ext52, ptr @src_file.16024, i64 88, i64 270)
   %llvm_global_ptr = getelementptr inbounds nuw %TopLevelLookup, ptr %g49, i32 0, i32 1
   %llvm_global = load ptr, ptr %llvm_global_ptr, align 8
   %name53 = load ptr, ptr %name, align 8
@@ -178186,7 +178753,7 @@ if_then37:                                        ; preds = %ifcont
   %cast57 = ptrtoint ptr %g56 to i64
   %null_chk58 = icmp eq i64 %cast57, 0
   %null_ext59 = zext i1 %null_chk58 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16021, i64 2, ptr @sty_name.16022, i64 14, i64 %null_ext59, ptr @src_file.16023, i64 88, i64 269)
+  call void @forge_null_deref_trap(ptr @fld_name.16025, i64 2, ptr @sty_name.16026, i64 14, i64 %null_ext59, ptr @src_file.16027, i64 88, i64 271)
   %ty_ptr60 = getelementptr inbounds nuw %TopLevelLookup, ptr %g56, i32 0, i32 2
   %ty61 = load ptr, ptr %ty_ptr60, align 8
   %10 = call ptr @"codegen::types::ok_emit_typed"(ptr %loaded55, ptr %ty61)
@@ -178197,19 +178764,19 @@ if_else38:                                        ; preds = %ifcont
 
 ifcont68:                                         ; preds = %if_else71
   %label99 = load ptr, ptr %label, align 8
-  %11 = call i64 @strlen(ptr @.str.16041)
+  %11 = call i64 @strlen(ptr @.str.16045)
   %12 = call i64 @strlen(ptr %label99)
   %concat_total = add i64 %11, %12
   %concat_size = add i64 %concat_total, 1
   %13 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %14 = call ptr @memcpy(ptr %13, ptr @.str.16041, i64 %11)
+  %14 = call ptr @memcpy(ptr %13, ptr @.str.16045, i64 %11)
   %cast100 = ptrtoint ptr %13 to i64
   %dst2_int = add i64 %cast100, %11
   %cast101 = inttoptr i64 %dst2_int to ptr
   %rhs_len_p1 = add i64 %12, 1
   %15 = call ptr @memcpy(ptr %cast101, ptr %label99, i64 %rhs_len_p1)
   %16 = call i64 @strlen(ptr %13)
-  %17 = call i64 @strlen(ptr @.str.16042)
+  %17 = call i64 @strlen(ptr @.str.16046)
   %concat_total102 = add i64 %16, %17
   %concat_size103 = add i64 %concat_total102, 1
   %18 = call ptr @forge_bump_alloc(i64 %concat_size103)
@@ -178218,7 +178785,7 @@ ifcont68:                                         ; preds = %if_else71
   %dst2_int105 = add i64 %cast104, %16
   %cast106 = inttoptr i64 %dst2_int105 to ptr
   %rhs_len_p1107 = add i64 %17, 1
-  %20 = call ptr @memcpy(ptr %cast106, ptr @.str.16042, i64 %rhs_len_p1107)
+  %20 = call ptr @memcpy(ptr %cast106, ptr @.str.16046, i64 %rhs_len_p1107)
   %name108 = load ptr, ptr %name, align 8
   %21 = call i64 @strlen(ptr %18)
   %22 = call i64 @strlen(ptr %name108)
@@ -178232,7 +178799,7 @@ ifcont68:                                         ; preds = %if_else71
   %rhs_len_p1114 = add i64 %22, 1
   %25 = call ptr @memcpy(ptr %cast113, ptr %name108, i64 %rhs_len_p1114)
   %26 = call i64 @strlen(ptr %23)
-  %27 = call i64 @strlen(ptr @.str.16043)
+  %27 = call i64 @strlen(ptr @.str.16047)
   %concat_total115 = add i64 %26, %27
   %concat_size116 = add i64 %concat_total115, 1
   %28 = call ptr @forge_bump_alloc(i64 %concat_size116)
@@ -178241,7 +178808,7 @@ ifcont68:                                         ; preds = %if_else71
   %dst2_int118 = add i64 %cast117, %26
   %cast119 = inttoptr i64 %dst2_int118 to ptr
   %rhs_len_p1120 = add i64 %27, 1
-  %30 = call ptr @memcpy(ptr %cast119, ptr @.str.16043, i64 %rhs_len_p1120)
+  %30 = call ptr @memcpy(ptr %cast119, ptr @.str.16047, i64 %rhs_len_p1120)
   %31 = call ptr @"codegen::types::err_emit"(ptr %28)
   ret ptr %31
 
@@ -178250,15 +178817,15 @@ if_then70:                                        ; preds = %ifcont35
   %cast73 = ptrtoint ptr %ctx72 to i64
   %null_chk74 = icmp eq i64 %cast73, 0
   %null_ext75 = zext i1 %null_chk74 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16027, i64 6, ptr @sty_name.16028, i64 3, i64 %null_ext75, ptr @src_file.16029, i64 88, i64 273)
+  call void @forge_null_deref_trap(ptr @fld_name.16031, i64 6, ptr @sty_name.16032, i64 3, i64 %null_ext75, ptr @src_file.16033, i64 88, i64 275)
   %fn_val76 = load ptr, ptr %fn_val, align 8
-  %32 = call ptr @Ctx__to_i64(ptr %ctx72, ptr %fn_val76, ptr @.str.16030)
+  %32 = call ptr @Ctx__to_i64(ptr %ctx72, ptr %fn_val76, ptr @.str.16034)
   store ptr %32, ptr %fn_i64, align 8
   %ctx77 = load ptr, ptr %ctx, align 8
   %cast78 = ptrtoint ptr %ctx77 to i64
   %null_chk79 = icmp eq i64 %cast78, 0
   %null_ext80 = zext i1 %null_chk79 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16031, i64 13, ptr @sty_name.16032, i64 3, i64 %null_ext80, ptr @src_file.16033, i64 88, i64 274)
+  call void @forge_null_deref_trap(ptr @fld_name.16035, i64 13, ptr @sty_name.16036, i64 3, i64 %null_ext80, ptr @src_file.16037, i64 88, i64 276)
   %fn_i6481 = load ptr, ptr %fn_i64, align 8
   %33 = call ptr @Ctx__closure_array(ptr %ctx77, ptr %fn_i6481)
   store ptr %33, ptr %closure_arr, align 8
@@ -178266,15 +178833,15 @@ if_then70:                                        ; preds = %ifcont35
   %cast83 = ptrtoint ptr %ctx82 to i64
   %null_chk84 = icmp eq i64 %cast83, 0
   %null_ext85 = zext i1 %null_chk84 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16034, i64 6, ptr @sty_name.16035, i64 3, i64 %null_ext85, ptr @src_file.16036, i64 88, i64 275)
+  call void @forge_null_deref_trap(ptr @fld_name.16038, i64 6, ptr @sty_name.16039, i64 3, i64 %null_ext85, ptr @src_file.16040, i64 88, i64 277)
   %closure_arr86 = load ptr, ptr %closure_arr, align 8
-  %34 = call ptr @Ctx__to_i64(ptr %ctx82, ptr %closure_arr86, ptr @.str.16037)
+  %34 = call ptr @Ctx__to_i64(ptr %ctx82, ptr %closure_arr86, ptr @.str.16041)
   store ptr %34, ptr %closure_i64, align 8
   %ctx87 = load ptr, ptr %ctx, align 8
   %cast88 = ptrtoint ptr %ctx87 to i64
   %null_chk89 = icmp eq i64 %cast88, 0
   %null_ext90 = zext i1 %null_chk89 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16038, i64 6, ptr @sty_name.16039, i64 3, i64 %null_ext90, ptr @src_file.16040, i64 88, i64 276)
+  call void @forge_null_deref_trap(ptr @fld_name.16042, i64 6, ptr @sty_name.16043, i64 3, i64 %null_ext90, ptr @src_file.16044, i64 88, i64 278)
   %name91 = load ptr, ptr %name, align 8
   %35 = call ptr @Ctx__fn_ret(ptr %ctx87, ptr %name91)
   store ptr %35, ptr %ret_ty, align 8
@@ -178380,7 +178947,7 @@ march_arm3:                                       ; preds = %march_next
   %cast11 = ptrtoint ptr %ss10 to i64
   %null_chk = icmp eq i64 %cast11, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16044, i64 4, ptr @sty_name.16045, i64 5, i64 %null_ext, ptr @src_file.16046, i64 88, i64 29)
+  call void @forge_null_deref_trap(ptr @fld_name.16048, i64 4, ptr @sty_name.16049, i64 5, i64 %null_ext, ptr @src_file.16050, i64 88, i64 29)
   %node_ptr = getelementptr inbounds nuw %SStmt, ptr %ss10, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %2 = call ptr @"desugar::desugar_stmt"(ptr %node)
@@ -178396,14 +178963,14 @@ march_arm3:                                       ; preds = %march_next
   %cast16 = ptrtoint ptr %ss15 to i64
   %null_chk17 = icmp eq i64 %cast16, 0
   %null_ext18 = zext i1 %null_chk17 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16047, i64 4, ptr @sty_name.16048, i64 5, i64 %null_ext18, ptr @src_file.16049, i64 88, i64 30)
+  call void @forge_null_deref_trap(ptr @fld_name.16051, i64 4, ptr @sty_name.16052, i64 5, i64 %null_ext18, ptr @src_file.16053, i64 88, i64 30)
   %line_ptr = getelementptr inbounds nuw %SStmt, ptr %ss15, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %ss19 = load ptr, ptr %ss6, align 8
   %cast20 = ptrtoint ptr %ss19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16050, i64 3, ptr @sty_name.16051, i64 5, i64 %null_ext22, ptr @src_file.16052, i64 88, i64 30)
+  call void @forge_null_deref_trap(ptr @fld_name.16054, i64 3, ptr @sty_name.16055, i64 5, i64 %null_ext22, ptr @src_file.16056, i64 88, i64 30)
   %col_ptr = getelementptr inbounds nuw %SStmt, ptr %ss19, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %5 = call ptr @"core::ast::sstmt"(ptr %new_stmt14, i64 %line, i64 %col)
@@ -178422,7 +178989,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16053, i64 %tag, ptr @mu_file.16054, i64 25)
+  call void @forge_match_unreachable(ptr @.match_fn.16057, i64 %tag, ptr @mu_file.16058, i64 25)
   unreachable
 }
 
@@ -179150,7 +179717,7 @@ march_arm378:                                     ; preds = %march_next359
   br label %match_end
 
 march_next379:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16055, i64 %tag, ptr @mu_file.16056, i64 36)
+  call void @forge_match_unreachable(ptr @.match_fn.16059, i64 %tag, ptr @mu_file.16060, i64 36)
   unreachable
 }
 
@@ -179219,7 +179786,7 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16057, i64 %tag, ptr @mu_file.16058, i64 78)
+  call void @forge_match_unreachable(ptr @.match_fn.16061, i64 %tag, ptr @mu_file.16062, i64 78)
   unreachable
 }
 
@@ -179248,7 +179815,7 @@ match_end:                                        ; preds = %march_arm4, %march_
   store ptr %cast6, ptr %name, align 8
   %name7 = load ptr, ptr %name, align 8
   store i64 0, ptr %pmatch_result, align 8
-  %3 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16062)
+  %3 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16066)
   %widen = sext i32 %3 to i64
   %str_eq = icmp eq i64 %widen, 0
   br i1 %str_eq, label %parm_body, label %parm_next
@@ -179270,11 +179837,11 @@ march_next:                                       ; preds = %entry
   br label %march_arm4
 
 march_arm4:                                       ; preds = %march_next
-  store i64 ptrtoint (ptr @.str.16059 to i64), ptr %match_result, align 8
+  store i64 ptrtoint (ptr @.str.16063 to i64), ptr %match_result, align 8
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16060, i64 %tag, ptr @mu_file.16061, i64 85)
+  call void @forge_match_unreachable(ptr @.match_fn.16064, i64 %tag, ptr @mu_file.16065, i64 85)
   unreachable
 
 pmatch_end:                                       ; preds = %parm_body40, %parm_body34, %parm_body28, %parm_body22, %parm_body16, %parm_body10, %parm_body
@@ -179290,7 +179857,7 @@ parm_body:                                        ; preds = %match_end
   br label %pmatch_end
 
 parm_next:                                        ; preds = %match_end
-  %5 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16063)
+  %5 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16067)
   %widen12 = sext i32 %5 to i64
   %str_eq13 = icmp eq i64 %widen12, 0
   br i1 %str_eq13, label %parm_body10, label %parm_next11
@@ -179303,7 +179870,7 @@ parm_body10:                                      ; preds = %parm_next
   br label %pmatch_end
 
 parm_next11:                                      ; preds = %parm_next
-  %7 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16064)
+  %7 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16068)
   %widen18 = sext i32 %7 to i64
   %str_eq19 = icmp eq i64 %widen18, 0
   br i1 %str_eq19, label %parm_body16, label %parm_next17
@@ -179316,7 +179883,7 @@ parm_body16:                                      ; preds = %parm_next11
   br label %pmatch_end
 
 parm_next17:                                      ; preds = %parm_next11
-  %9 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16065)
+  %9 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16069)
   %widen24 = sext i32 %9 to i64
   %str_eq25 = icmp eq i64 %widen24, 0
   br i1 %str_eq25, label %parm_body22, label %parm_next23
@@ -179329,7 +179896,7 @@ parm_body22:                                      ; preds = %parm_next17
   br label %pmatch_end
 
 parm_next23:                                      ; preds = %parm_next17
-  %11 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16066)
+  %11 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16070)
   %widen30 = sext i32 %11 to i64
   %str_eq31 = icmp eq i64 %widen30, 0
   br i1 %str_eq31, label %parm_body28, label %parm_next29
@@ -179342,7 +179909,7 @@ parm_body28:                                      ; preds = %parm_next23
   br label %pmatch_end
 
 parm_next29:                                      ; preds = %parm_next23
-  %13 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16067)
+  %13 = call i32 @strcmp(ptr %name7, ptr @.lit_str.16071)
   %widen36 = sext i32 %13 to i64
   %str_eq37 = icmp eq i64 %widen36, 0
   br i1 %str_eq37, label %parm_body34, label %parm_next35
@@ -179364,7 +179931,7 @@ parm_body40:                                      ; preds = %parm_next35
   br label %pmatch_end
 
 parm_next41:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16068, i64 -1, ptr @mu_file.16069, i64 86)
+  call void @forge_match_unreachable(ptr @.match_fn.16072, i64 -1, ptr @mu_file.16073, i64 86)
   unreachable
 }
 
@@ -179410,7 +179977,7 @@ march_arm:                                        ; preds = %entry
   %cast = ptrtoint ptr %cond_se6 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16070, i64 4, ptr @sty_name.16071, i64 5, i64 %null_ext, ptr @src_file.16072, i64 88, i64 102)
+  call void @forge_null_deref_trap(ptr @fld_name.16074, i64 4, ptr @sty_name.16075, i64 5, i64 %null_ext, ptr @src_file.16076, i64 88, i64 102)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %cond_se6, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   store ptr %node, ptr %cond, align 8
@@ -179477,7 +180044,7 @@ match_end11:                                      ; preds = %march_arm25, %march
   %slot_base54 = ptrtoint ptr %9 to i64
   %slot_addr55 = add i64 %slot_base54, 0
   %slot56 = inttoptr i64 %slot_addr55 to ptr
-  store ptr @.str.16079, ptr %slot56, align 8
+  store ptr @.str.16083, ptr %slot56, align 8
   %cast57 = ptrtoint ptr %8 to i64
   %slot_base58 = ptrtoint ptr %7 to i64
   %slot_addr59 = add i64 %slot_base58, 0
@@ -179546,7 +180113,7 @@ march_arm12:                                      ; preds = %march_arm
   %cast19 = ptrtoint ptr %msg_se18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16073, i64 4, ptr @sty_name.16074, i64 5, i64 %null_ext21, ptr @src_file.16075, i64 88, i64 103)
+  call void @forge_null_deref_trap(ptr @fld_name.16077, i64 4, ptr @sty_name.16078, i64 5, i64 %null_ext21, ptr @src_file.16079, i64 88, i64 103)
   %node_ptr22 = getelementptr inbounds nuw %SExpr, ptr %msg_se18, i32 0, i32 0
   %node23 = load ptr, ptr %node_ptr22, align 8
   %cast24 = ptrtoint ptr %node23 to i64
@@ -179566,13 +180133,13 @@ march_arm25:                                      ; preds = %march_next13
   %slot_base = ptrtoint ptr %16 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
-  store ptr @.str.16076, ptr %slot, align 8
+  store ptr @.str.16080, ptr %slot, align 8
   %cast28 = ptrtoint ptr %15 to i64
   store i64 %cast28, ptr %match_result10, align 8
   br label %match_end11
 
 march_next26:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16077, i64 %tag9, ptr @mu_file.16078, i64 103)
+  call void @forge_match_unreachable(ptr @.match_fn.16081, i64 %tag9, ptr @mu_file.16082, i64 103)
   unreachable
 
 march_arm93:                                      ; preds = %march_next
@@ -179591,7 +180158,7 @@ march_arm93:                                      ; preds = %march_next
   %slot_base99 = ptrtoint ptr %20 to i64
   %slot_addr100 = add i64 %slot_base99, 0
   %slot101 = inttoptr i64 %slot_addr100 to ptr
-  store ptr @.str.16080, ptr %slot101, align 8
+  store ptr @.str.16084, ptr %slot101, align 8
   %cast102 = ptrtoint ptr %19 to i64
   %slot_base103 = ptrtoint ptr %18 to i64
   %slot_addr104 = add i64 %slot_base103, 0
@@ -179613,7 +180180,7 @@ march_arm93:                                      ; preds = %march_next
   %slot_base111 = ptrtoint ptr %24 to i64
   %slot_addr112 = add i64 %slot_base111, 0
   %slot113 = inttoptr i64 %slot_addr112 to ptr
-  store ptr @.str.16081, ptr %slot113, align 8
+  store ptr @.str.16085, ptr %slot113, align 8
   %cast114 = ptrtoint ptr %23 to i64
   %cast115 = inttoptr i64 %cast114 to ptr
   %25 = call ptr @"core::ast::sexpr_dummy"(ptr %cast115)
@@ -179643,7 +180210,7 @@ march_arm93:                                      ; preds = %march_next
   br label %match_end
 
 march_next94:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16082, i64 %tag, ptr @mu_file.16083, i64 99)
+  call void @forge_match_unreachable(ptr @.match_fn.16086, i64 %tag, ptr @mu_file.16087, i64 99)
   unreachable
 }
 
@@ -179679,7 +180246,7 @@ march_arm:                                        ; preds = %entry
   %cast = ptrtoint ptr %val_se3 to i64
   %null_chk = icmp eq i64 %cast, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16084, i64 4, ptr @sty_name.16085, i64 5, i64 %null_ext, ptr @src_file.16086, i64 88, i64 125)
+  call void @forge_null_deref_trap(ptr @fld_name.16088, i64 4, ptr @sty_name.16089, i64 5, i64 %null_ext, ptr @src_file.16090, i64 88, i64 125)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %val_se3, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   store ptr %node, ptr %val, align 8
@@ -179698,7 +180265,7 @@ march_arm:                                        ; preds = %entry
   %slot_base = ptrtoint ptr %4 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
-  store ptr @.str.16087, ptr %slot, align 8
+  store ptr @.str.16091, ptr %slot, align 8
   %cast7 = ptrtoint ptr %3 to i64
   %slot_base8 = ptrtoint ptr %2 to i64
   %slot_addr9 = add i64 %slot_base8, 0
@@ -179731,7 +180298,7 @@ march_arm:                                        ; preds = %entry
   %slot_base23 = ptrtoint ptr %9 to i64
   %slot_addr24 = add i64 %slot_base23, 0
   %slot25 = inttoptr i64 %slot_addr24 to ptr
-  store ptr @.str.16088, ptr %slot25, align 8
+  store ptr @.str.16092, ptr %slot25, align 8
   %cast26 = ptrtoint ptr %8 to i64
   %slot_base27 = ptrtoint ptr %7 to i64
   %slot_addr28 = add i64 %slot_base27, 0
@@ -179753,7 +180320,7 @@ march_arm:                                        ; preds = %entry
   %slot_base35 = ptrtoint ptr %13 to i64
   %slot_addr36 = add i64 %slot_base35, 0
   %slot37 = inttoptr i64 %slot_addr36 to ptr
-  store ptr @.str.16089, ptr %slot37, align 8
+  store ptr @.str.16093, ptr %slot37, align 8
   %cast38 = ptrtoint ptr %12 to i64
   %cast39 = inttoptr i64 %cast38 to ptr
   %14 = call ptr @"core::ast::sexpr_dummy"(ptr %cast39)
@@ -179808,11 +180375,11 @@ march_arm:                                        ; preds = %entry
   %slot_base68 = ptrtoint ptr %21 to i64
   %slot_addr69 = add i64 %slot_base68, 0
   %slot70 = inttoptr i64 %slot_addr69 to ptr
-  store ptr @.str.16090, ptr %slot70, align 8
+  store ptr @.str.16094, ptr %slot70, align 8
   %slot_base71 = ptrtoint ptr %21 to i64
   %slot_addr72 = add i64 %slot_base71, 8
   %slot73 = inttoptr i64 %slot_addr72 to ptr
-  store ptr @.str.16091, ptr %slot73, align 8
+  store ptr @.str.16095, ptr %slot73, align 8
   %val74 = load ptr, ptr %val, align 8
   %slot_base75 = ptrtoint ptr %21 to i64
   %slot_addr76 = add i64 %slot_base75, 16
@@ -179852,7 +180419,7 @@ march_arm:                                        ; preds = %entry
   %slot_base91 = ptrtoint ptr %30 to i64
   %slot_addr92 = add i64 %slot_base91, 0
   %slot93 = inttoptr i64 %slot_addr92 to ptr
-  store ptr @.str.16092, ptr %slot93, align 8
+  store ptr @.str.16096, ptr %slot93, align 8
   %cast94 = ptrtoint ptr %29 to i64
   %slot_base95 = ptrtoint ptr %28 to i64
   %slot_addr96 = add i64 %slot_base95, 0
@@ -179922,7 +180489,7 @@ march_arm:                                        ; preds = %entry
   %slot_base133 = ptrtoint ptr %41 to i64
   %slot_addr134 = add i64 %slot_base133, 0
   %slot135 = inttoptr i64 %slot_addr134 to ptr
-  store ptr @.str.16093, ptr %slot135, align 8
+  store ptr @.str.16097, ptr %slot135, align 8
   %cast136 = ptrtoint ptr %40 to i64
   %slot_base137 = ptrtoint ptr %39 to i64
   %slot_addr138 = add i64 %slot_base137, 0
@@ -179988,7 +180555,7 @@ march_arm169:                                     ; preds = %march_next
   %slot_base175 = ptrtoint ptr %47 to i64
   %slot_addr176 = add i64 %slot_base175, 0
   %slot177 = inttoptr i64 %slot_addr176 to ptr
-  store ptr @.str.16094, ptr %slot177, align 8
+  store ptr @.str.16098, ptr %slot177, align 8
   %cast178 = ptrtoint ptr %46 to i64
   %slot_base179 = ptrtoint ptr %45 to i64
   %slot_addr180 = add i64 %slot_base179, 0
@@ -180010,7 +180577,7 @@ march_arm169:                                     ; preds = %march_next
   %slot_base187 = ptrtoint ptr %51 to i64
   %slot_addr188 = add i64 %slot_base187, 0
   %slot189 = inttoptr i64 %slot_addr188 to ptr
-  store ptr @.str.16095, ptr %slot189, align 8
+  store ptr @.str.16099, ptr %slot189, align 8
   %cast190 = ptrtoint ptr %50 to i64
   %cast191 = inttoptr i64 %cast190 to ptr
   %52 = call ptr @"core::ast::sexpr_dummy"(ptr %cast191)
@@ -180040,7 +180607,7 @@ march_arm169:                                     ; preds = %march_next
   br label %match_end
 
 march_next170:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16096, i64 %tag, ptr @mu_file.16097, i64 122)
+  call void @forge_match_unreachable(ptr @.match_fn.16100, i64 %tag, ptr @mu_file.16101, i64 122)
   unreachable
 }
 
@@ -180077,7 +180644,7 @@ match_end:                                        ; preds = %march_arm23, %march
   %slot_base36 = ptrtoint ptr %4 to i64
   %slot_addr37 = add i64 %slot_base36, 0
   %slot38 = inttoptr i64 %slot_addr37 to ptr
-  store ptr @.str.16105, ptr %slot38, align 8
+  store ptr @.str.16109, ptr %slot38, align 8
   %cast39 = ptrtoint ptr %3 to i64
   %slot_base40 = ptrtoint ptr %2 to i64
   %slot_addr41 = add i64 %slot_base40, 0
@@ -180140,7 +180707,7 @@ march_arm:                                        ; preds = %entry
   %slot_base = ptrtoint ptr %12 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
-  store ptr @.str.16098, ptr %slot, align 8
+  store ptr @.str.16102, ptr %slot, align 8
   %cast = ptrtoint ptr %11 to i64
   %slot_base6 = ptrtoint ptr %10 to i64
   %slot_addr7 = add i64 %slot_base6, 0
@@ -180162,7 +180729,7 @@ march_arm:                                        ; preds = %entry
   %cast18 = ptrtoint ptr %se17 to i64
   %null_chk = icmp eq i64 %cast18, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16099, i64 4, ptr @sty_name.16100, i64 5, i64 %null_ext, ptr @src_file.16101, i64 88, i64 158)
+  call void @forge_null_deref_trap(ptr @fld_name.16103, i64 4, ptr @sty_name.16104, i64 5, i64 %null_ext, ptr @src_file.16105, i64 88, i64 158)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se17, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %slot_base19 = ptrtoint ptr %10 to i64
@@ -180186,13 +180753,13 @@ march_arm23:                                      ; preds = %march_next
   %slot_base27 = ptrtoint ptr %15 to i64
   %slot_addr28 = add i64 %slot_base27, 0
   %slot29 = inttoptr i64 %slot_addr28 to ptr
-  store ptr @.str.16102, ptr %slot29, align 8
+  store ptr @.str.16106, ptr %slot29, align 8
   %cast30 = ptrtoint ptr %14 to i64
   store i64 %cast30, ptr %match_result, align 8
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16103, i64 %tag, ptr @mu_file.16104, i64 158)
+  call void @forge_match_unreachable(ptr @.match_fn.16107, i64 %tag, ptr @mu_file.16108, i64 158)
   unreachable
 }
 
@@ -180229,7 +180796,7 @@ match_end:                                        ; preds = %march_arm23, %march
   %slot_base36 = ptrtoint ptr %4 to i64
   %slot_addr37 = add i64 %slot_base36, 0
   %slot38 = inttoptr i64 %slot_addr37 to ptr
-  store ptr @.str.16113, ptr %slot38, align 8
+  store ptr @.str.16117, ptr %slot38, align 8
   %cast39 = ptrtoint ptr %3 to i64
   %slot_base40 = ptrtoint ptr %2 to i64
   %slot_addr41 = add i64 %slot_base40, 0
@@ -180292,7 +180859,7 @@ march_arm:                                        ; preds = %entry
   %slot_base = ptrtoint ptr %12 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
-  store ptr @.str.16106, ptr %slot, align 8
+  store ptr @.str.16110, ptr %slot, align 8
   %cast = ptrtoint ptr %11 to i64
   %slot_base6 = ptrtoint ptr %10 to i64
   %slot_addr7 = add i64 %slot_base6, 0
@@ -180314,7 +180881,7 @@ march_arm:                                        ; preds = %entry
   %cast18 = ptrtoint ptr %se17 to i64
   %null_chk = icmp eq i64 %cast18, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16107, i64 4, ptr @sty_name.16108, i64 5, i64 %null_ext, ptr @src_file.16109, i64 88, i64 166)
+  call void @forge_null_deref_trap(ptr @fld_name.16111, i64 4, ptr @sty_name.16112, i64 5, i64 %null_ext, ptr @src_file.16113, i64 88, i64 166)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se17, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %slot_base19 = ptrtoint ptr %10 to i64
@@ -180338,13 +180905,13 @@ march_arm23:                                      ; preds = %march_next
   %slot_base27 = ptrtoint ptr %15 to i64
   %slot_addr28 = add i64 %slot_base27, 0
   %slot29 = inttoptr i64 %slot_addr28 to ptr
-  store ptr @.str.16110, ptr %slot29, align 8
+  store ptr @.str.16114, ptr %slot29, align 8
   %cast30 = ptrtoint ptr %14 to i64
   store i64 %cast30, ptr %match_result, align 8
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16111, i64 %tag, ptr @mu_file.16112, i64 166)
+  call void @forge_match_unreachable(ptr @.match_fn.16115, i64 %tag, ptr @mu_file.16116, i64 166)
   unreachable
 }
 
@@ -180443,16 +181010,16 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %slot_base = ptrtoint ptr %7 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
-  store ptr @.str.16114, ptr %slot, align 8
+  store ptr @.str.16118, ptr %slot, align 8
   %slot_base29 = ptrtoint ptr %7 to i64
   %slot_addr30 = add i64 %slot_base29, 8
   %slot31 = inttoptr i64 %slot_addr30 to ptr
-  store ptr @.str.16115, ptr %slot31, align 8
+  store ptr @.str.16119, ptr %slot31, align 8
   %a_se32 = load ptr, ptr %a_se2, align 8
   %cast33 = ptrtoint ptr %a_se32 to i64
   %null_chk = icmp eq i64 %cast33, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16116, i64 4, ptr @sty_name.16117, i64 5, i64 %null_ext, ptr @src_file.16118, i64 88, i64 184)
+  call void @forge_null_deref_trap(ptr @fld_name.16120, i64 4, ptr @sty_name.16121, i64 5, i64 %null_ext, ptr @src_file.16122, i64 88, i64 184)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %a_se32, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %slot_base34 = ptrtoint ptr %7 to i64
@@ -180481,16 +181048,16 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %slot_base46 = ptrtoint ptr %12 to i64
   %slot_addr47 = add i64 %slot_base46, 0
   %slot48 = inttoptr i64 %slot_addr47 to ptr
-  store ptr @.str.16119, ptr %slot48, align 8
+  store ptr @.str.16123, ptr %slot48, align 8
   %slot_base49 = ptrtoint ptr %12 to i64
   %slot_addr50 = add i64 %slot_base49, 8
   %slot51 = inttoptr i64 %slot_addr50 to ptr
-  store ptr @.str.16120, ptr %slot51, align 8
+  store ptr @.str.16124, ptr %slot51, align 8
   %b_se52 = load ptr, ptr %b_se16, align 8
   %cast53 = ptrtoint ptr %b_se52 to i64
   %null_chk54 = icmp eq i64 %cast53, 0
   %null_ext55 = zext i1 %null_chk54 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16121, i64 4, ptr @sty_name.16122, i64 5, i64 %null_ext55, ptr @src_file.16123, i64 88, i64 184)
+  call void @forge_null_deref_trap(ptr @fld_name.16125, i64 4, ptr @sty_name.16126, i64 5, i64 %null_ext55, ptr @src_file.16127, i64 88, i64 184)
   %node_ptr56 = getelementptr inbounds nuw %SExpr, ptr %b_se52, i32 0, i32 0
   %node57 = load ptr, ptr %node_ptr56, align 8
   %slot_base58 = ptrtoint ptr %12 to i64
@@ -180537,7 +181104,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %slot_base76 = ptrtoint ptr %23 to i64
   %slot_addr77 = add i64 %slot_base76, 0
   %slot78 = inttoptr i64 %slot_addr77 to ptr
-  store ptr @.str.16124, ptr %slot78, align 8
+  store ptr @.str.16128, ptr %slot78, align 8
   %cast79 = ptrtoint ptr %22 to i64
   %slot_base80 = ptrtoint ptr %21 to i64
   %slot_addr81 = add i64 %slot_base80, 0
@@ -180558,7 +181125,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %slot_base90 = ptrtoint ptr %25 to i64
   %slot_addr91 = add i64 %slot_base90, 0
   %slot92 = inttoptr i64 %slot_addr91 to ptr
-  store ptr @.str.16125, ptr %slot92, align 8
+  store ptr @.str.16129, ptr %slot92, align 8
   %cast93 = ptrtoint ptr %24 to i64
   %slot_base94 = ptrtoint ptr %21 to i64
   %slot_addr95 = add i64 %slot_base94, 16
@@ -180580,7 +181147,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %slot_base105 = ptrtoint ptr %27 to i64
   %slot_addr106 = add i64 %slot_base105, 0
   %slot107 = inttoptr i64 %slot_addr106 to ptr
-  store ptr @.str.16126, ptr %slot107, align 8
+  store ptr @.str.16130, ptr %slot107, align 8
   %cast108 = ptrtoint ptr %26 to i64
   %slot_base109 = ptrtoint ptr %19 to i64
   %slot_addr110 = add i64 %slot_base109, 8
@@ -180596,7 +181163,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %slot_base115 = ptrtoint ptr %29 to i64
   %slot_addr116 = add i64 %slot_base115, 0
   %slot117 = inttoptr i64 %slot_addr116 to ptr
-  store ptr @.str.16127, ptr %slot117, align 8
+  store ptr @.str.16131, ptr %slot117, align 8
   %cast118 = ptrtoint ptr %28 to i64
   %slot_base119 = ptrtoint ptr %19 to i64
   %slot_addr120 = add i64 %slot_base119, 16
@@ -180685,7 +181252,7 @@ march_arm156:                                     ; preds = %march_next12
   %slot_base162 = ptrtoint ptr %37 to i64
   %slot_addr163 = add i64 %slot_base162, 0
   %slot164 = inttoptr i64 %slot_addr163 to ptr
-  store ptr @.str.16128, ptr %slot164, align 8
+  store ptr @.str.16132, ptr %slot164, align 8
   %cast165 = ptrtoint ptr %36 to i64
   %slot_base166 = ptrtoint ptr %35 to i64
   %slot_addr167 = add i64 %slot_base166, 0
@@ -180707,7 +181274,7 @@ march_arm156:                                     ; preds = %march_next12
   %slot_base174 = ptrtoint ptr %41 to i64
   %slot_addr175 = add i64 %slot_base174, 0
   %slot176 = inttoptr i64 %slot_addr175 to ptr
-  store ptr @.str.16129, ptr %slot176, align 8
+  store ptr @.str.16133, ptr %slot176, align 8
   %cast177 = ptrtoint ptr %40 to i64
   %cast178 = inttoptr i64 %cast177 to ptr
   %42 = call ptr @"core::ast::sexpr_dummy"(ptr %cast178)
@@ -180737,7 +181304,7 @@ march_arm156:                                     ; preds = %march_next12
   br label %match_end10
 
 march_next157:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16130, i64 %tag8, ptr @mu_file.16131, i64 180)
+  call void @forge_match_unreachable(ptr @.match_fn.16134, i64 %tag8, ptr @mu_file.16135, i64 180)
   unreachable
 
 march_arm195:                                     ; preds = %march_next
@@ -180756,7 +181323,7 @@ march_arm195:                                     ; preds = %march_next
   %slot_base201 = ptrtoint ptr %47 to i64
   %slot_addr202 = add i64 %slot_base201, 0
   %slot203 = inttoptr i64 %slot_addr202 to ptr
-  store ptr @.str.16132, ptr %slot203, align 8
+  store ptr @.str.16136, ptr %slot203, align 8
   %cast204 = ptrtoint ptr %46 to i64
   %slot_base205 = ptrtoint ptr %45 to i64
   %slot_addr206 = add i64 %slot_base205, 0
@@ -180778,7 +181345,7 @@ march_arm195:                                     ; preds = %march_next
   %slot_base213 = ptrtoint ptr %51 to i64
   %slot_addr214 = add i64 %slot_base213, 0
   %slot215 = inttoptr i64 %slot_addr214 to ptr
-  store ptr @.str.16133, ptr %slot215, align 8
+  store ptr @.str.16137, ptr %slot215, align 8
   %cast216 = ptrtoint ptr %50 to i64
   %cast217 = inttoptr i64 %cast216 to ptr
   %52 = call ptr @"core::ast::sexpr_dummy"(ptr %cast217)
@@ -180808,7 +181375,7 @@ march_arm195:                                     ; preds = %march_next
   br label %match_end
 
 march_next196:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16134, i64 %tag, ptr @mu_file.16135, i64 177)
+  call void @forge_match_unreachable(ptr @.match_fn.16138, i64 %tag, ptr @mu_file.16139, i64 177)
   unreachable
 }
 
@@ -181872,7 +182439,7 @@ march_arm570:                                     ; preds = %march_next547
   br label %match_end
 
 march_next571:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16136, i64 %tag, ptr @mu_file.16137, i64 214)
+  call void @forge_match_unreachable(ptr @.match_fn.16140, i64 %tag, ptr @mu_file.16141, i64 214)
   unreachable
 }
 
@@ -181934,7 +182501,7 @@ march_arm3:                                       ; preds = %march_next
   %cast13 = ptrtoint ptr %se12 to i64
   %null_chk = icmp eq i64 %cast13, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16138, i64 4, ptr @sty_name.16139, i64 5, i64 %null_ext, ptr @src_file.16140, i64 88, i64 245)
+  call void @forge_null_deref_trap(ptr @fld_name.16142, i64 4, ptr @sty_name.16143, i64 5, i64 %null_ext, ptr @src_file.16144, i64 88, i64 245)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %se12, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %4 = call ptr @"desugar::desugar_expr"(ptr %node)
@@ -181942,14 +182509,14 @@ march_arm3:                                       ; preds = %march_next
   %cast15 = ptrtoint ptr %se14 to i64
   %null_chk16 = icmp eq i64 %cast15, 0
   %null_ext17 = zext i1 %null_chk16 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16141, i64 4, ptr @sty_name.16142, i64 5, i64 %null_ext17, ptr @src_file.16143, i64 88, i64 245)
+  call void @forge_null_deref_trap(ptr @fld_name.16145, i64 4, ptr @sty_name.16146, i64 5, i64 %null_ext17, ptr @src_file.16147, i64 88, i64 245)
   %line_ptr = getelementptr inbounds nuw %SExpr, ptr %se14, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %se18 = load ptr, ptr %se6, align 8
   %cast19 = ptrtoint ptr %se18 to i64
   %null_chk20 = icmp eq i64 %cast19, 0
   %null_ext21 = zext i1 %null_chk20 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16144, i64 3, ptr @sty_name.16145, i64 5, i64 %null_ext21, ptr @src_file.16146, i64 88, i64 245)
+  call void @forge_null_deref_trap(ptr @fld_name.16148, i64 3, ptr @sty_name.16149, i64 5, i64 %null_ext21, ptr @src_file.16150, i64 88, i64 245)
   %col_ptr = getelementptr inbounds nuw %SExpr, ptr %se18, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %5 = call ptr @"core::ast::sexpr"(ptr %4, i64 %line, i64 %col)
@@ -181968,7 +182535,7 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16147, i64 %tag, ptr @mu_file.16148, i64 245)
+  call void @forge_match_unreachable(ptr @.match_fn.16151, i64 %tag, ptr @mu_file.16152, i64 245)
   unreachable
 }
 
@@ -182045,7 +182612,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16167, i64 %tag, ptr @mu_file.16168, i64 252)
+  call void @forge_match_unreachable(ptr @.match_fn.16171, i64 %tag, ptr @mu_file.16172, i64 252)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -182072,7 +182639,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast37 = ptrtoint ptr %body36 to i64
   %null_chk38 = icmp eq i64 %cast37, 0
   %null_ext39 = zext i1 %null_chk38 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16158, i64 4, ptr @sty_name.16159, i64 5, i64 %null_ext39, ptr @src_file.16160, i64 88, i64 257)
+  call void @forge_null_deref_trap(ptr @fld_name.16162, i64 4, ptr @sty_name.16163, i64 5, i64 %null_ext39, ptr @src_file.16164, i64 88, i64 257)
   %node_ptr40 = getelementptr inbounds nuw %SExpr, ptr %body36, i32 0, i32 0
   %node41 = load ptr, ptr %node_ptr40, align 8
   %4 = call ptr @"desugar::desugar_expr"(ptr %node41)
@@ -182080,14 +182647,14 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast43 = ptrtoint ptr %body42 to i64
   %null_chk44 = icmp eq i64 %cast43, 0
   %null_ext45 = zext i1 %null_chk44 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16161, i64 4, ptr @sty_name.16162, i64 5, i64 %null_ext45, ptr @src_file.16163, i64 88, i64 257)
+  call void @forge_null_deref_trap(ptr @fld_name.16165, i64 4, ptr @sty_name.16166, i64 5, i64 %null_ext45, ptr @src_file.16167, i64 88, i64 257)
   %line_ptr46 = getelementptr inbounds nuw %SExpr, ptr %body42, i32 0, i32 1
   %line47 = load i64, ptr %line_ptr46, align 8
   %body48 = load ptr, ptr %body12, align 8
   %cast49 = ptrtoint ptr %body48 to i64
   %null_chk50 = icmp eq i64 %cast49, 0
   %null_ext51 = zext i1 %null_chk50 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16164, i64 3, ptr @sty_name.16165, i64 5, i64 %null_ext51, ptr @src_file.16166, i64 88, i64 257)
+  call void @forge_null_deref_trap(ptr @fld_name.16168, i64 3, ptr @sty_name.16169, i64 5, i64 %null_ext51, ptr @src_file.16170, i64 88, i64 257)
   %col_ptr52 = getelementptr inbounds nuw %SExpr, ptr %body48, i32 0, i32 2
   %col53 = load i64, ptr %col_ptr52, align 8
   %5 = call ptr @"core::ast::sexpr"(ptr %4, i64 %line47, i64 %col53)
@@ -182110,7 +182677,7 @@ ife_then:                                         ; preds = %march_arm3
   %cast18 = ptrtoint ptr %guard17 to i64
   %null_chk = icmp eq i64 %cast18, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16149, i64 4, ptr @sty_name.16150, i64 5, i64 %null_ext, ptr @src_file.16151, i64 88, i64 256)
+  call void @forge_null_deref_trap(ptr @fld_name.16153, i64 4, ptr @sty_name.16154, i64 5, i64 %null_ext, ptr @src_file.16155, i64 88, i64 256)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %guard17, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %7 = call ptr @"desugar::desugar_expr"(ptr %node)
@@ -182118,14 +182685,14 @@ ife_then:                                         ; preds = %march_arm3
   %cast20 = ptrtoint ptr %guard19 to i64
   %null_chk21 = icmp eq i64 %cast20, 0
   %null_ext22 = zext i1 %null_chk21 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16152, i64 4, ptr @sty_name.16153, i64 5, i64 %null_ext22, ptr @src_file.16154, i64 88, i64 256)
+  call void @forge_null_deref_trap(ptr @fld_name.16156, i64 4, ptr @sty_name.16157, i64 5, i64 %null_ext22, ptr @src_file.16158, i64 88, i64 256)
   %line_ptr = getelementptr inbounds nuw %SExpr, ptr %guard19, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %guard23 = load ptr, ptr %guard9, align 8
   %cast24 = ptrtoint ptr %guard23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16155, i64 3, ptr @sty_name.16156, i64 5, i64 %null_ext26, ptr @src_file.16157, i64 88, i64 256)
+  call void @forge_null_deref_trap(ptr @fld_name.16159, i64 3, ptr @sty_name.16160, i64 5, i64 %null_ext26, ptr @src_file.16161, i64 88, i64 256)
   %col_ptr = getelementptr inbounds nuw %SExpr, ptr %guard23, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %8 = call ptr @"core::ast::sexpr"(ptr %7, i64 %line, i64 %col)
@@ -182203,7 +182770,7 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16187, i64 %tag, ptr @mu_file.16188, i64 263)
+  call void @forge_match_unreachable(ptr @.match_fn.16191, i64 %tag, ptr @mu_file.16192, i64 263)
   unreachable
 
 ife_end:                                          ; preds = %ife_else, %ife_then
@@ -182225,7 +182792,7 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast30 = ptrtoint ptr %body29 to i64
   %null_chk31 = icmp eq i64 %cast30, 0
   %null_ext32 = zext i1 %null_chk31 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16178, i64 4, ptr @sty_name.16179, i64 5, i64 %null_ext32, ptr @src_file.16180, i64 88, i64 268)
+  call void @forge_null_deref_trap(ptr @fld_name.16182, i64 4, ptr @sty_name.16183, i64 5, i64 %null_ext32, ptr @src_file.16184, i64 88, i64 268)
   %node_ptr33 = getelementptr inbounds nuw %SExpr, ptr %body29, i32 0, i32 0
   %node34 = load ptr, ptr %node_ptr33, align 8
   %4 = call ptr @"desugar::desugar_expr"(ptr %node34)
@@ -182233,14 +182800,14 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast36 = ptrtoint ptr %body35 to i64
   %null_chk37 = icmp eq i64 %cast36, 0
   %null_ext38 = zext i1 %null_chk37 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16181, i64 4, ptr @sty_name.16182, i64 5, i64 %null_ext38, ptr @src_file.16183, i64 88, i64 268)
+  call void @forge_null_deref_trap(ptr @fld_name.16185, i64 4, ptr @sty_name.16186, i64 5, i64 %null_ext38, ptr @src_file.16187, i64 88, i64 268)
   %line_ptr39 = getelementptr inbounds nuw %SExpr, ptr %body35, i32 0, i32 1
   %line40 = load i64, ptr %line_ptr39, align 8
   %body41 = load ptr, ptr %body9, align 8
   %cast42 = ptrtoint ptr %body41 to i64
   %null_chk43 = icmp eq i64 %cast42, 0
   %null_ext44 = zext i1 %null_chk43 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16184, i64 3, ptr @sty_name.16185, i64 5, i64 %null_ext44, ptr @src_file.16186, i64 88, i64 268)
+  call void @forge_null_deref_trap(ptr @fld_name.16188, i64 3, ptr @sty_name.16189, i64 5, i64 %null_ext44, ptr @src_file.16190, i64 88, i64 268)
   %col_ptr45 = getelementptr inbounds nuw %SExpr, ptr %body41, i32 0, i32 2
   %col46 = load i64, ptr %col_ptr45, align 8
   %5 = call ptr @"core::ast::sexpr"(ptr %4, i64 %line40, i64 %col46)
@@ -182263,7 +182830,7 @@ ife_then:                                         ; preds = %march_arm3
   %cast15 = ptrtoint ptr %cond14 to i64
   %null_chk = icmp eq i64 %cast15, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16169, i64 4, ptr @sty_name.16170, i64 5, i64 %null_ext, ptr @src_file.16171, i64 88, i64 267)
+  call void @forge_null_deref_trap(ptr @fld_name.16173, i64 4, ptr @sty_name.16174, i64 5, i64 %null_ext, ptr @src_file.16175, i64 88, i64 267)
   %node_ptr = getelementptr inbounds nuw %SExpr, ptr %cond14, i32 0, i32 0
   %node = load ptr, ptr %node_ptr, align 8
   %7 = call ptr @"desugar::desugar_expr"(ptr %node)
@@ -182271,14 +182838,14 @@ ife_then:                                         ; preds = %march_arm3
   %cast17 = ptrtoint ptr %cond16 to i64
   %null_chk18 = icmp eq i64 %cast17, 0
   %null_ext19 = zext i1 %null_chk18 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16172, i64 4, ptr @sty_name.16173, i64 5, i64 %null_ext19, ptr @src_file.16174, i64 88, i64 267)
+  call void @forge_null_deref_trap(ptr @fld_name.16176, i64 4, ptr @sty_name.16177, i64 5, i64 %null_ext19, ptr @src_file.16178, i64 88, i64 267)
   %line_ptr = getelementptr inbounds nuw %SExpr, ptr %cond16, i32 0, i32 1
   %line = load i64, ptr %line_ptr, align 8
   %cond20 = load ptr, ptr %cond6, align 8
   %cast21 = ptrtoint ptr %cond20 to i64
   %null_chk22 = icmp eq i64 %cast21, 0
   %null_ext23 = zext i1 %null_chk22 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16175, i64 3, ptr @sty_name.16176, i64 5, i64 %null_ext23, ptr @src_file.16177, i64 88, i64 267)
+  call void @forge_null_deref_trap(ptr @fld_name.16179, i64 3, ptr @sty_name.16180, i64 5, i64 %null_ext23, ptr @src_file.16181, i64 88, i64 267)
   %col_ptr = getelementptr inbounds nuw %SExpr, ptr %cond20, i32 0, i32 2
   %col = load i64, ptr %col_ptr, align 8
   %8 = call ptr @"core::ast::sexpr"(ptr %7, i64 %line, i64 %col)
@@ -182375,15 +182942,15 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16189, i64 %tag, ptr @mu_file.16190, i64 274)
+  call void @forge_match_unreachable(ptr @.match_fn.16193, i64 %tag, ptr @mu_file.16194, i64 274)
   unreachable
 }
 
 define i64 @print_usage() {
 entry:
-  call void @forge_eprintln(ptr @.str.16191)
-  call void @forge_eprintln(ptr @.str.16192)
-  call void @forge_eprintln(ptr @.str.16193)
+  call void @forge_eprintln(ptr @.str.16195)
+  call void @forge_eprintln(ptr @.str.16196)
+  call void @forge_eprintln(ptr @.str.16197)
   ret i64 0
 }
 
@@ -182446,7 +183013,7 @@ ifcont:                                           ; preds = %if_else, %if_then
   %2 = call ptr @forge_selfhost_get_arg_cstr(i64 2)
   store ptr %2, ptr %path, align 8
   %path1 = load ptr, ptr %path, align 8
-  %3 = call i64 @forge_str_starts_with(ptr %path1, ptr @.str.16194)
+  %3 = call i64 @forge_str_starts_with(ptr %path1, ptr @.str.16198)
   store i64 %3, ptr %is_flag, align 8
   %is_flag2 = load i64, ptr %is_flag, align 8
   %not_cmp = icmp eq i64 %is_flag2, 0
@@ -182483,12 +183050,12 @@ ifcont6:                                          ; preds = %if_else9, %if_then8
 
 if_then8:                                         ; preds = %sc_merge
   %path10 = load ptr, ptr %path, align 8
-  %6 = call i64 @strlen(ptr @.str.16195)
+  %6 = call i64 @strlen(ptr @.str.16199)
   %7 = call i64 @strlen(ptr %path10)
   %concat_total = add i64 %6, %7
   %concat_size = add i64 %concat_total, 1
   %8 = call ptr @forge_bump_alloc(i64 %concat_size)
-  %9 = call ptr @memcpy(ptr %8, ptr @.str.16195, i64 %6)
+  %9 = call ptr @memcpy(ptr %8, ptr @.str.16199, i64 %6)
   %cast = ptrtoint ptr %8 to i64
   %dst2_int = add i64 %cast, %6
   %cast11 = inttoptr i64 %dst2_int to ptr
@@ -182505,13 +183072,13 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast15 = inttoptr i64 %ife_val to ptr
   store ptr %cast15, ptr %source, align 8
   %command16 = load ptr, ptr %command, align 8
-  %12 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16197)
+  %12 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16201)
   %widen = sext i32 %12 to i64
   %str_eq = icmp eq i64 %widen, 0
   br i1 %str_eq, label %parm_body, label %parm_next
 
 ife_then:                                         ; preds = %ifcont6
-  store i64 ptrtoint (ptr @.str.16196 to i64), ptr %ife_result, align 8
+  store i64 ptrtoint (ptr @.str.16200 to i64), ptr %ife_result, align 8
   br label %ife_end
 
 ife_else:                                         ; preds = %ifcont6
@@ -182523,7 +183090,7 @@ ife_else:                                         ; preds = %ifcont6
 
 pmatch_end:                                       ; preds = %parm_body352
   %command354 = load ptr, ptr %command, align 8
-  %14 = call i32 @strcmp(ptr %command354, ptr @.str.16310)
+  %14 = call i32 @strcmp(ptr %command354, ptr @.str.16314)
   %widen355 = sext i32 %14 to i64
   %streq_cmp = icmp eq i64 %widen355, 0
   %streq_ext = zext i1 %streq_cmp to i64
@@ -182538,14 +183105,14 @@ parm_body:                                        ; preds = %ife_end
   %cast19 = ptrtoint ptr %result18 to i64
   %null_chk = icmp eq i64 %cast19, 0
   %null_ext = zext i1 %null_chk to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16198, i64 9, ptr @sty_name.16199, i64 11, i64 %null_ext, ptr @src_file.16200, i64 88, i64 83)
+  call void @forge_null_deref_trap(ptr @fld_name.16202, i64 9, ptr @sty_name.16203, i64 11, i64 %null_ext, ptr @src_file.16204, i64 88, i64 83)
   %had_error_ptr = getelementptr inbounds nuw %ParseResult, ptr %result18, i32 0, i32 1
   %had_error = load i64, ptr %had_error_ptr, align 8
   %l_bool20 = icmp ne i64 %had_error, 0
   br i1 %l_bool20, label %sc_merge22, label %sc_rhs21
 
 parm_next:                                        ; preds = %ife_end
-  %16 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16210)
+  %16 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16214)
   %widen47 = sext i32 %16 to i64
   %str_eq48 = icmp eq i64 %widen47, 0
   br i1 %str_eq48, label %parm_body45, label %parm_next46
@@ -182555,7 +183122,7 @@ sc_rhs21:                                         ; preds = %parm_body
   %cast24 = ptrtoint ptr %result23 to i64
   %null_chk25 = icmp eq i64 %cast24, 0
   %null_ext26 = zext i1 %null_chk25 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16201, i64 4, ptr @sty_name.16202, i64 11, i64 %null_ext26, ptr @src_file.16203, i64 88, i64 83)
+  call void @forge_null_deref_trap(ptr @fld_name.16205, i64 4, ptr @sty_name.16206, i64 11, i64 %null_ext26, ptr @src_file.16207, i64 88, i64 83)
   %expr_ptr = getelementptr inbounds nuw %ParseResult, ptr %result23, i32 0, i32 0
   %expr = load ptr, ptr %expr_ptr, align 8
   %eq = icmp eq ptr %expr, null
@@ -182574,7 +183141,7 @@ ifcont30:                                         ; preds = %if_else33, %if_then
   %cast39 = ptrtoint ptr %result38 to i64
   %null_chk40 = icmp eq i64 %cast39, 0
   %null_ext41 = zext i1 %null_chk40 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16207, i64 4, ptr @sty_name.16208, i64 11, i64 %null_ext41, ptr @src_file.16209, i64 88, i64 86)
+  call void @forge_null_deref_trap(ptr @fld_name.16211, i64 4, ptr @sty_name.16212, i64 11, i64 %null_ext41, ptr @src_file.16213, i64 88, i64 86)
   %expr_ptr42 = getelementptr inbounds nuw %ParseResult, ptr %result38, i32 0, i32 0
   %expr43 = load ptr, ptr %expr_ptr42, align 8
   %17 = call ptr @"core::ast::render_expr"(ptr %expr43)
@@ -182587,7 +183154,7 @@ if_then32:                                        ; preds = %sc_merge22
   %cast35 = ptrtoint ptr %result34 to i64
   %null_chk36 = icmp eq i64 %cast35, 0
   %null_ext37 = zext i1 %null_chk36 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16204, i64 13, ptr @sty_name.16205, i64 11, i64 %null_ext37, ptr @src_file.16206, i64 88, i64 84)
+  call void @forge_null_deref_trap(ptr @fld_name.16208, i64 13, ptr @sty_name.16209, i64 11, i64 %null_ext37, ptr @src_file.16210, i64 88, i64 84)
   %error_message_ptr = getelementptr inbounds nuw %ParseResult, ptr %result34, i32 0, i32 2
   %error_message = load ptr, ptr %error_message_ptr, align 8
   %19 = call i64 @fail(ptr %error_message)
@@ -182604,14 +183171,14 @@ parm_body45:                                      ; preds = %parm_next
   %cast52 = ptrtoint ptr %result51 to i64
   %null_chk53 = icmp eq i64 %cast52, 0
   %null_ext54 = zext i1 %null_chk53 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16211, i64 9, ptr @sty_name.16212, i64 18, i64 %null_ext54, ptr @src_file.16213, i64 88, i64 92)
+  call void @forge_null_deref_trap(ptr @fld_name.16215, i64 9, ptr @sty_name.16216, i64 18, i64 %null_ext54, ptr @src_file.16217, i64 88, i64 92)
   %had_error_ptr55 = getelementptr inbounds nuw %ProgramParseResult, ptr %result51, i32 0, i32 1
   %had_error56 = load i64, ptr %had_error_ptr55, align 8
   %l_bool57 = icmp ne i64 %had_error56, 0
   br i1 %l_bool57, label %sc_merge59, label %sc_rhs58
 
 parm_next46:                                      ; preds = %parm_next
-  %21 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16223)
+  %21 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16227)
   %widen88 = sext i32 %21 to i64
   %str_eq89 = icmp eq i64 %widen88, 0
   br i1 %str_eq89, label %parm_body86, label %parm_next87
@@ -182621,7 +183188,7 @@ sc_rhs58:                                         ; preds = %parm_body45
   %cast61 = ptrtoint ptr %result60 to i64
   %null_chk62 = icmp eq i64 %cast61, 0
   %null_ext63 = zext i1 %null_chk62 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16214, i64 5, ptr @sty_name.16215, i64 18, i64 %null_ext63, ptr @src_file.16216, i64 88, i64 92)
+  call void @forge_null_deref_trap(ptr @fld_name.16218, i64 5, ptr @sty_name.16219, i64 18, i64 %null_ext63, ptr @src_file.16220, i64 88, i64 92)
   %stmts_ptr = getelementptr inbounds nuw %ProgramParseResult, ptr %result60, i32 0, i32 0
   %stmts = load ptr, ptr %stmts_ptr, align 8
   %eq64 = icmp eq ptr %stmts, null
@@ -182640,7 +183207,7 @@ ifcont69:                                         ; preds = %if_else72, %if_then
   %cast80 = ptrtoint ptr %result79 to i64
   %null_chk81 = icmp eq i64 %cast80, 0
   %null_ext82 = zext i1 %null_chk81 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16220, i64 5, ptr @sty_name.16221, i64 18, i64 %null_ext82, ptr @src_file.16222, i64 88, i64 95)
+  call void @forge_null_deref_trap(ptr @fld_name.16224, i64 5, ptr @sty_name.16225, i64 18, i64 %null_ext82, ptr @src_file.16226, i64 88, i64 95)
   %stmts_ptr83 = getelementptr inbounds nuw %ProgramParseResult, ptr %result79, i32 0, i32 0
   %stmts84 = load ptr, ptr %stmts_ptr83, align 8
   %22 = call ptr @"core::ast::render_stmt_list"(ptr %stmts84)
@@ -182653,7 +183220,7 @@ if_then71:                                        ; preds = %sc_merge59
   %cast74 = ptrtoint ptr %result73 to i64
   %null_chk75 = icmp eq i64 %cast74, 0
   %null_ext76 = zext i1 %null_chk75 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16217, i64 13, ptr @sty_name.16218, i64 18, i64 %null_ext76, ptr @src_file.16219, i64 88, i64 93)
+  call void @forge_null_deref_trap(ptr @fld_name.16221, i64 13, ptr @sty_name.16222, i64 18, i64 %null_ext76, ptr @src_file.16223, i64 88, i64 93)
   %error_message_ptr77 = getelementptr inbounds nuw %ProgramParseResult, ptr %result73, i32 0, i32 2
   %error_message78 = load ptr, ptr %error_message_ptr77, align 8
   %24 = call i64 @fail(ptr %error_message78)
@@ -182670,14 +183237,14 @@ parm_body86:                                      ; preds = %parm_next46
   %cast93 = ptrtoint ptr %result92 to i64
   %null_chk94 = icmp eq i64 %cast93, 0
   %null_ext95 = zext i1 %null_chk94 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16224, i64 9, ptr @sty_name.16225, i64 10, i64 %null_ext95, ptr @src_file.16226, i64 88, i64 101)
+  call void @forge_null_deref_trap(ptr @fld_name.16228, i64 9, ptr @sty_name.16229, i64 10, i64 %null_ext95, ptr @src_file.16230, i64 88, i64 101)
   %had_error_ptr96 = getelementptr inbounds nuw %EvalResult, ptr %result92, i32 0, i32 1
   %had_error97 = load i64, ptr %had_error_ptr96, align 8
   %l_bool98 = icmp ne i64 %had_error97, 0
   br i1 %l_bool98, label %sc_merge100, label %sc_rhs99
 
 parm_next87:                                      ; preds = %parm_next46
-  %26 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16236)
+  %26 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16240)
   %widen129 = sext i32 %26 to i64
   %str_eq130 = icmp eq i64 %widen129, 0
   br i1 %str_eq130, label %parm_body127, label %parm_next128
@@ -182687,7 +183254,7 @@ sc_rhs99:                                         ; preds = %parm_body86
   %cast102 = ptrtoint ptr %result101 to i64
   %null_chk103 = icmp eq i64 %cast102, 0
   %null_ext104 = zext i1 %null_chk103 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16227, i64 5, ptr @sty_name.16228, i64 10, i64 %null_ext104, ptr @src_file.16229, i64 88, i64 101)
+  call void @forge_null_deref_trap(ptr @fld_name.16231, i64 5, ptr @sty_name.16232, i64 10, i64 %null_ext104, ptr @src_file.16233, i64 88, i64 101)
   %value_ptr = getelementptr inbounds nuw %EvalResult, ptr %result101, i32 0, i32 0
   %value = load ptr, ptr %value_ptr, align 8
   %eq105 = icmp eq ptr %value, null
@@ -182706,7 +183273,7 @@ ifcont110:                                        ; preds = %if_else113, %if_the
   %cast121 = ptrtoint ptr %result120 to i64
   %null_chk122 = icmp eq i64 %cast121, 0
   %null_ext123 = zext i1 %null_chk122 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16233, i64 5, ptr @sty_name.16234, i64 10, i64 %null_ext123, ptr @src_file.16235, i64 88, i64 104)
+  call void @forge_null_deref_trap(ptr @fld_name.16237, i64 5, ptr @sty_name.16238, i64 10, i64 %null_ext123, ptr @src_file.16239, i64 88, i64 104)
   %value_ptr124 = getelementptr inbounds nuw %EvalResult, ptr %result120, i32 0, i32 0
   %value125 = load ptr, ptr %value_ptr124, align 8
   %27 = call ptr @"features::eval::render_value"(ptr %value125)
@@ -182719,7 +183286,7 @@ if_then112:                                       ; preds = %sc_merge100
   %cast115 = ptrtoint ptr %result114 to i64
   %null_chk116 = icmp eq i64 %cast115, 0
   %null_ext117 = zext i1 %null_chk116 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16230, i64 13, ptr @sty_name.16231, i64 10, i64 %null_ext117, ptr @src_file.16232, i64 88, i64 102)
+  call void @forge_null_deref_trap(ptr @fld_name.16234, i64 13, ptr @sty_name.16235, i64 10, i64 %null_ext117, ptr @src_file.16236, i64 88, i64 102)
   %error_message_ptr118 = getelementptr inbounds nuw %EvalResult, ptr %result114, i32 0, i32 2
   %error_message119 = load ptr, ptr %error_message_ptr118, align 8
   %29 = call i64 @fail(ptr %error_message119)
@@ -182736,14 +183303,14 @@ parm_body127:                                     ; preds = %parm_next87
   %cast133 = ptrtoint ptr %parsed132 to i64
   %null_chk134 = icmp eq i64 %cast133, 0
   %null_ext135 = zext i1 %null_chk134 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16237, i64 9, ptr @sty_name.16238, i64 18, i64 %null_ext135, ptr @src_file.16239, i64 88, i64 110)
+  call void @forge_null_deref_trap(ptr @fld_name.16241, i64 9, ptr @sty_name.16242, i64 18, i64 %null_ext135, ptr @src_file.16243, i64 88, i64 110)
   %had_error_ptr136 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed132, i32 0, i32 1
   %had_error137 = load i64, ptr %had_error_ptr136, align 8
   %l_bool138 = icmp ne i64 %had_error137, 0
   br i1 %l_bool138, label %sc_merge140, label %sc_rhs139
 
 parm_next128:                                     ; preds = %parm_next87
-  %31 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16295)
+  %31 = call i32 @strcmp(ptr %command16, ptr @.lit_str.16299)
   %widen311 = sext i32 %31 to i64
   %str_eq312 = icmp eq i64 %widen311, 0
   br i1 %str_eq312, label %parm_body309, label %parm_next310
@@ -182753,7 +183320,7 @@ sc_rhs139:                                        ; preds = %parm_body127
   %cast142 = ptrtoint ptr %parsed141 to i64
   %null_chk143 = icmp eq i64 %cast142, 0
   %null_ext144 = zext i1 %null_chk143 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16240, i64 5, ptr @sty_name.16241, i64 18, i64 %null_ext144, ptr @src_file.16242, i64 88, i64 110)
+  call void @forge_null_deref_trap(ptr @fld_name.16244, i64 5, ptr @sty_name.16245, i64 18, i64 %null_ext144, ptr @src_file.16246, i64 88, i64 110)
   %stmts_ptr145 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed141, i32 0, i32 0
   %stmts146 = load ptr, ptr %stmts_ptr145, align 8
   %eq147 = icmp eq ptr %stmts146, null
@@ -182775,7 +183342,7 @@ ifcont152:                                        ; preds = %if_else155, %ifcont
   %cast181 = ptrtoint ptr %parsed180 to i64
   %null_chk182 = icmp eq i64 %cast181, 0
   %null_ext183 = zext i1 %null_chk182 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16252, i64 5, ptr @sty_name.16253, i64 18, i64 %null_ext183, ptr @src_file.16254, i64 88, i64 118)
+  call void @forge_null_deref_trap(ptr @fld_name.16256, i64 5, ptr @sty_name.16257, i64 18, i64 %null_ext183, ptr @src_file.16258, i64 88, i64 118)
   %stmts_ptr184 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed180, i32 0, i32 0
   %stmts185 = load ptr, ptr %stmts_ptr184, align 8
   %entry_dir186 = load ptr, ptr %entry_dir, align 8
@@ -182792,7 +183359,7 @@ ifcont152:                                        ; preds = %if_else155, %ifcont
   %cast190 = ptrtoint ptr %mod_resolved189 to i64
   %null_chk191 = icmp eq i64 %cast190, 0
   %null_ext192 = zext i1 %null_chk191 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16255, i64 9, ptr @sty_name.16256, i64 13, i64 %null_ext192, ptr @src_file.16257, i64 88, i64 119)
+  call void @forge_null_deref_trap(ptr @fld_name.16259, i64 9, ptr @sty_name.16260, i64 13, i64 %null_ext192, ptr @src_file.16261, i64 88, i64 119)
   %had_error_ptr193 = getelementptr inbounds nuw %ModListResult, ptr %mod_resolved189, i32 0, i32 2
   %had_error194 = load i64, ptr %had_error_ptr193, align 8
   %if_cond196 = icmp ne i64 %had_error194, 0
@@ -182803,7 +183370,7 @@ if_then154:                                       ; preds = %sc_merge140
   %cast157 = ptrtoint ptr %parsed156 to i64
   %null_chk158 = icmp eq i64 %cast157, 0
   %null_ext159 = zext i1 %null_chk158 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16243, i64 3, ptr @sty_name.16244, i64 18, i64 %null_ext159, ptr @src_file.16245, i64 88, i64 111)
+  call void @forge_null_deref_trap(ptr @fld_name.16247, i64 3, ptr @sty_name.16248, i64 18, i64 %null_ext159, ptr @src_file.16249, i64 88, i64 111)
   %bag_ptr = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed156, i32 0, i32 3
   %bag = load ptr, ptr %bag_ptr, align 8
   %35 = call i1 @"diagnostics::bag_has_errors"(ptr %bag)
@@ -182819,7 +183386,7 @@ ifcont161:                                        ; preds = %if_else164, %if_the
   %cast174 = ptrtoint ptr %parsed173 to i64
   %null_chk175 = icmp eq i64 %cast174, 0
   %null_ext176 = zext i1 %null_chk175 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16249, i64 13, ptr @sty_name.16250, i64 18, i64 %null_ext176, ptr @src_file.16251, i64 88, i64 114)
+  call void @forge_null_deref_trap(ptr @fld_name.16253, i64 13, ptr @sty_name.16254, i64 18, i64 %null_ext176, ptr @src_file.16255, i64 88, i64 114)
   %error_message_ptr177 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed173, i32 0, i32 2
   %error_message178 = load ptr, ptr %error_message_ptr177, align 8
   %36 = call i64 @fail(ptr %error_message178)
@@ -182832,7 +183399,7 @@ if_then163:                                       ; preds = %if_then154
   %cast168 = ptrtoint ptr %parsed167 to i64
   %null_chk169 = icmp eq i64 %cast168, 0
   %null_ext170 = zext i1 %null_chk169 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16246, i64 3, ptr @sty_name.16247, i64 18, i64 %null_ext170, ptr @src_file.16248, i64 88, i64 112)
+  call void @forge_null_deref_trap(ptr @fld_name.16250, i64 3, ptr @sty_name.16251, i64 18, i64 %null_ext170, ptr @src_file.16252, i64 88, i64 112)
   %bag_ptr171 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed167, i32 0, i32 3
   %bag172 = load ptr, ptr %bag_ptr171, align 8
   %37 = call i64 @"diagnostics::render::render_bag"(ptr %source165, ptr %path166, ptr %bag172)
@@ -182846,7 +183413,7 @@ ifcont195:                                        ; preds = %if_else198, %if_the
   %cast219 = ptrtoint ptr %mod_resolved218 to i64
   %null_chk220 = icmp eq i64 %cast219, 0
   %null_ext221 = zext i1 %null_chk220 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16264, i64 5, ptr @sty_name.16265, i64 13, i64 %null_ext221, ptr @src_file.16266, i64 88, i64 124)
+  call void @forge_null_deref_trap(ptr @fld_name.16268, i64 5, ptr @sty_name.16269, i64 13, i64 %null_ext221, ptr @src_file.16270, i64 88, i64 124)
   %stmts_ptr222 = getelementptr inbounds nuw %ModListResult, ptr %mod_resolved218, i32 0, i32 0
   %stmts223 = load ptr, ptr %stmts_ptr222, align 8
   %38 = call ptr @"resolve::names::resolve_names"(ptr %stmts223)
@@ -182855,7 +183422,7 @@ ifcont195:                                        ; preds = %if_else198, %if_the
   %cast225 = ptrtoint ptr %named224 to i64
   %null_chk226 = icmp eq i64 %cast225, 0
   %null_ext227 = zext i1 %null_chk226 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16267, i64 3, ptr @sty_name.16268, i64 17, i64 %null_ext227, ptr @src_file.16269, i64 88, i64 125)
+  call void @forge_null_deref_trap(ptr @fld_name.16271, i64 3, ptr @sty_name.16272, i64 17, i64 %null_ext227, ptr @src_file.16273, i64 88, i64 125)
   %bag_ptr228 = getelementptr inbounds nuw %NameResolveResult, ptr %named224, i32 0, i32 3
   %bag229 = load ptr, ptr %bag_ptr228, align 8
   %39 = call i1 @"diagnostics::bag_has_errors"(ptr %bag229)
@@ -182875,7 +183442,7 @@ if_then197:                                       ; preds = %ifcont152
   %cast203 = ptrtoint ptr %mod_resolved202 to i64
   %null_chk204 = icmp eq i64 %cast203, 0
   %null_ext205 = zext i1 %null_chk204 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16258, i64 13, ptr @sty_name.16259, i64 13, i64 %null_ext205, ptr @src_file.16260, i64 88, i64 120)
+  call void @forge_null_deref_trap(ptr @fld_name.16262, i64 13, ptr @sty_name.16263, i64 13, i64 %null_ext205, ptr @src_file.16264, i64 88, i64 120)
   %error_message_ptr206 = getelementptr inbounds nuw %ModListResult, ptr %mod_resolved202, i32 0, i32 3
   %error_message207 = load ptr, ptr %error_message_ptr206, align 8
   %42 = call ptr @"diagnostics::span_dummy"()
@@ -182891,7 +183458,7 @@ if_then197:                                       ; preds = %ifcont152
   %cast213 = ptrtoint ptr %mod_resolved212 to i64
   %null_chk214 = icmp eq i64 %cast213, 0
   %null_ext215 = zext i1 %null_chk214 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16261, i64 13, ptr @sty_name.16262, i64 13, i64 %null_ext215, ptr @src_file.16263, i64 88, i64 122)
+  call void @forge_null_deref_trap(ptr @fld_name.16265, i64 13, ptr @sty_name.16266, i64 13, i64 %null_ext215, ptr @src_file.16267, i64 88, i64 122)
   %error_message_ptr216 = getelementptr inbounds nuw %ModListResult, ptr %mod_resolved212, i32 0, i32 3
   %error_message217 = load ptr, ptr %error_message_ptr216, align 8
   %46 = call i64 @fail(ptr %error_message217)
@@ -182905,7 +183472,7 @@ ifcont231:                                        ; preds = %if_else234, %if_the
   %cast244 = ptrtoint ptr %named243 to i64
   %null_chk245 = icmp eq i64 %cast244, 0
   %null_ext246 = zext i1 %null_chk245 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16273, i64 9, ptr @sty_name.16274, i64 17, i64 %null_ext246, ptr @src_file.16275, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.16277, i64 9, ptr @sty_name.16278, i64 17, i64 %null_ext246, ptr @src_file.16279, i64 88, i64 128)
   %had_error_ptr247 = getelementptr inbounds nuw %NameResolveResult, ptr %named243, i32 0, i32 1
   %had_error248 = load i64, ptr %had_error_ptr247, align 8
   %if_cond250 = icmp ne i64 %had_error248, 0
@@ -182918,7 +183485,7 @@ if_then233:                                       ; preds = %ifcont195
   %cast238 = ptrtoint ptr %named237 to i64
   %null_chk239 = icmp eq i64 %cast238, 0
   %null_ext240 = zext i1 %null_chk239 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16270, i64 3, ptr @sty_name.16271, i64 17, i64 %null_ext240, ptr @src_file.16272, i64 88, i64 126)
+  call void @forge_null_deref_trap(ptr @fld_name.16274, i64 3, ptr @sty_name.16275, i64 17, i64 %null_ext240, ptr @src_file.16276, i64 88, i64 126)
   %bag_ptr241 = getelementptr inbounds nuw %NameResolveResult, ptr %named237, i32 0, i32 3
   %bag242 = load ptr, ptr %bag_ptr241, align 8
   %47 = call i64 @"diagnostics::render::render_bag"(ptr %source235, ptr %path236, ptr %bag242)
@@ -182932,7 +183499,7 @@ ifcont249:                                        ; preds = %if_else252, %if_the
   %cast260 = ptrtoint ptr %named259 to i64
   %null_chk261 = icmp eq i64 %cast260, 0
   %null_ext262 = zext i1 %null_chk261 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16279, i64 5, ptr @sty_name.16280, i64 17, i64 %null_ext262, ptr @src_file.16281, i64 88, i64 130)
+  call void @forge_null_deref_trap(ptr @fld_name.16283, i64 5, ptr @sty_name.16284, i64 17, i64 %null_ext262, ptr @src_file.16285, i64 88, i64 130)
   %stmts_ptr263 = getelementptr inbounds nuw %NameResolveResult, ptr %named259, i32 0, i32 0
   %stmts264 = load ptr, ptr %stmts_ptr263, align 8
   %48 = call ptr @"typeck::typecheck_program"(ptr %stmts264)
@@ -182941,7 +183508,7 @@ ifcont249:                                        ; preds = %if_else252, %if_the
   %cast266 = ptrtoint ptr %tc_result265 to i64
   %null_chk267 = icmp eq i64 %cast266, 0
   %null_ext268 = zext i1 %null_chk267 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16282, i64 3, ptr @sty_name.16283, i64 15, i64 %null_ext268, ptr @src_file.16284, i64 88, i64 131)
+  call void @forge_null_deref_trap(ptr @fld_name.16286, i64 3, ptr @sty_name.16287, i64 15, i64 %null_ext268, ptr @src_file.16288, i64 88, i64 131)
   %bag_ptr269 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result265, i32 0, i32 2
   %bag270 = load ptr, ptr %bag_ptr269, align 8
   %49 = call i1 @"diagnostics::bag_has_errors"(ptr %bag270)
@@ -182954,7 +183521,7 @@ if_then251:                                       ; preds = %ifcont231
   %cast254 = ptrtoint ptr %named253 to i64
   %null_chk255 = icmp eq i64 %cast254, 0
   %null_ext256 = zext i1 %null_chk255 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16276, i64 13, ptr @sty_name.16277, i64 17, i64 %null_ext256, ptr @src_file.16278, i64 88, i64 128)
+  call void @forge_null_deref_trap(ptr @fld_name.16280, i64 13, ptr @sty_name.16281, i64 17, i64 %null_ext256, ptr @src_file.16282, i64 88, i64 128)
   %error_message_ptr257 = getelementptr inbounds nuw %NameResolveResult, ptr %named253, i32 0, i32 2
   %error_message258 = load ptr, ptr %error_message_ptr257, align 8
   %50 = call i64 @fail(ptr %error_message258)
@@ -182968,7 +183535,7 @@ sc_rhs273:                                        ; preds = %ifcont249
   %cast276 = ptrtoint ptr %tc_result275 to i64
   %null_chk277 = icmp eq i64 %cast276, 0
   %null_ext278 = zext i1 %null_chk277 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16285, i64 3, ptr @sty_name.16286, i64 15, i64 %null_ext278, ptr @src_file.16287, i64 88, i64 131)
+  call void @forge_null_deref_trap(ptr @fld_name.16289, i64 3, ptr @sty_name.16290, i64 15, i64 %null_ext278, ptr @src_file.16291, i64 88, i64 131)
   %bag_ptr279 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result275, i32 0, i32 2
   %bag280 = load ptr, ptr %bag_ptr279, align 8
   %51 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag280)
@@ -182987,7 +183554,7 @@ ifcont285:                                        ; preds = %if_else288, %if_the
   %cast298 = ptrtoint ptr %tc_result297 to i64
   %null_chk299 = icmp eq i64 %cast298, 0
   %null_ext300 = zext i1 %null_chk299 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16291, i64 3, ptr @sty_name.16292, i64 15, i64 %null_ext300, ptr @src_file.16293, i64 88, i64 134)
+  call void @forge_null_deref_trap(ptr @fld_name.16295, i64 3, ptr @sty_name.16296, i64 15, i64 %null_ext300, ptr @src_file.16297, i64 88, i64 134)
   %bag_ptr301 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result297, i32 0, i32 2
   %bag302 = load ptr, ptr %bag_ptr301, align 8
   %52 = call i1 @"diagnostics::bag_has_errors"(ptr %bag302)
@@ -183002,7 +183569,7 @@ if_then287:                                       ; preds = %sc_merge274
   %cast292 = ptrtoint ptr %tc_result291 to i64
   %null_chk293 = icmp eq i64 %cast292, 0
   %null_ext294 = zext i1 %null_chk293 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16288, i64 3, ptr @sty_name.16289, i64 15, i64 %null_ext294, ptr @src_file.16290, i64 88, i64 132)
+  call void @forge_null_deref_trap(ptr @fld_name.16292, i64 3, ptr @sty_name.16293, i64 15, i64 %null_ext294, ptr @src_file.16294, i64 88, i64 132)
   %bag_ptr295 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result291, i32 0, i32 2
   %bag296 = load ptr, ptr %bag_ptr295, align 8
   %53 = call i64 @"diagnostics::render::render_bag"(ptr %source289, ptr %path290, ptr %bag296)
@@ -183012,7 +183579,7 @@ if_else288:                                       ; preds = %sc_merge274
   br label %ifcont285
 
 ifcont304:                                        ; preds = %if_else307
-  %54 = call i32 @puts(ptr @.str.16294)
+  %54 = call i32 @puts(ptr @.str.16298)
   %widen308 = sext i32 %54 to i64
   ret i64 0
 
@@ -183030,7 +183597,7 @@ parm_body309:                                     ; preds = %parm_next128
   %cast316 = ptrtoint ptr %result315 to i64
   %null_chk317 = icmp eq i64 %cast316, 0
   %null_ext318 = zext i1 %null_chk317 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16296, i64 9, ptr @sty_name.16297, i64 10, i64 %null_ext318, ptr @src_file.16298, i64 88, i64 141)
+  call void @forge_null_deref_trap(ptr @fld_name.16300, i64 9, ptr @sty_name.16301, i64 10, i64 %null_ext318, ptr @src_file.16302, i64 88, i64 141)
   %had_error_ptr319 = getelementptr inbounds nuw %EvalResult, ptr %result315, i32 0, i32 1
   %had_error320 = load i64, ptr %had_error_ptr319, align 8
   %l_bool321 = icmp ne i64 %had_error320, 0
@@ -183044,7 +183611,7 @@ sc_rhs322:                                        ; preds = %parm_body309
   %cast325 = ptrtoint ptr %result324 to i64
   %null_chk326 = icmp eq i64 %cast325, 0
   %null_ext327 = zext i1 %null_chk326 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16299, i64 5, ptr @sty_name.16300, i64 10, i64 %null_ext327, ptr @src_file.16301, i64 88, i64 141)
+  call void @forge_null_deref_trap(ptr @fld_name.16303, i64 5, ptr @sty_name.16304, i64 10, i64 %null_ext327, ptr @src_file.16305, i64 88, i64 141)
   %value_ptr328 = getelementptr inbounds nuw %EvalResult, ptr %result324, i32 0, i32 0
   %value329 = load ptr, ptr %value_ptr328, align 8
   %eq330 = icmp eq ptr %value329, null
@@ -183063,7 +183630,7 @@ ifcont335:                                        ; preds = %if_else338, %if_the
   %cast346 = ptrtoint ptr %result345 to i64
   %null_chk347 = icmp eq i64 %cast346, 0
   %null_ext348 = zext i1 %null_chk347 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16305, i64 5, ptr @sty_name.16306, i64 10, i64 %null_ext348, ptr @src_file.16307, i64 88, i64 144)
+  call void @forge_null_deref_trap(ptr @fld_name.16309, i64 5, ptr @sty_name.16310, i64 10, i64 %null_ext348, ptr @src_file.16311, i64 88, i64 144)
   %value_ptr349 = getelementptr inbounds nuw %EvalResult, ptr %result345, i32 0, i32 0
   %value350 = load ptr, ptr %value_ptr349, align 8
   %56 = call ptr @"features::eval::render_value"(ptr %value350)
@@ -183076,7 +183643,7 @@ if_then337:                                       ; preds = %sc_merge323
   %cast340 = ptrtoint ptr %result339 to i64
   %null_chk341 = icmp eq i64 %cast340, 0
   %null_ext342 = zext i1 %null_chk341 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16302, i64 13, ptr @sty_name.16303, i64 10, i64 %null_ext342, ptr @src_file.16304, i64 88, i64 142)
+  call void @forge_null_deref_trap(ptr @fld_name.16306, i64 13, ptr @sty_name.16307, i64 10, i64 %null_ext342, ptr @src_file.16308, i64 88, i64 142)
   %error_message_ptr343 = getelementptr inbounds nuw %EvalResult, ptr %result339, i32 0, i32 2
   %error_message344 = load ptr, ptr %error_message_ptr343, align 8
   %58 = call i64 @fail(ptr %error_message344)
@@ -183090,7 +183657,7 @@ parm_body352:                                     ; preds = %parm_next310
   br label %pmatch_end
 
 parm_next353:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16308, i64 -1, ptr @mu_file.16309, i64 79)
+  call void @forge_match_unreachable(ptr @.match_fn.16312, i64 -1, ptr @mu_file.16313, i64 79)
   unreachable
 
 ifcont356:                                        ; preds = %if_else359
@@ -183099,7 +183666,7 @@ ifcont356:                                        ; preds = %if_else359
   ret i64 0
 
 if_then358:                                       ; preds = %pmatch_end
-  store ptr @.str.16311, ptr %stop_after, align 8
+  store ptr @.str.16315, ptr %stop_after, align 8
   store i1 false, ptr %debug_null, align 8
   %61 = call i64 @forge_selfhost_argc()
   store i64 %61, ptr %argc, align 8
@@ -183125,7 +183692,7 @@ for.body:                                         ; preds = %for.cond
   %62 = call ptr @forge_selfhost_get_arg_cstr(i64 %flag_idx363)
   store ptr %62, ptr %arg, align 8
   %arg364 = load ptr, ptr %arg, align 8
-  %63 = call i64 @forge_str_starts_with(ptr %arg364, ptr @.str.16312)
+  %63 = call i64 @forge_str_starts_with(ptr %arg364, ptr @.str.16316)
   %if_cond366 = icmp ne i64 %63, 0
   br i1 %if_cond366, label %if_then367, label %if_else368
 
@@ -183152,7 +183719,7 @@ for.exit:                                         ; preds = %for.cond
 
 ifcont365:                                        ; preds = %if_else368, %if_then367
   %arg375 = load ptr, ptr %arg, align 8
-  %65 = call i32 @strcmp(ptr %arg375, ptr @.str.16313)
+  %65 = call i32 @strcmp(ptr %arg375, ptr @.str.16317)
   %widen376 = sext i32 %65 to i64
   %streq_cmp377 = icmp eq i64 %widen376, 0
   %streq_ext378 = zext i1 %streq_cmp377 to i64
@@ -183210,7 +183777,7 @@ ifcont397:                                        ; preds = %if_else400, %if_the
   br i1 %if_cond405, label %if_then406, label %if_else407
 
 if_then399:                                       ; preds = %sc_merge392
-  %70 = call i64 @fail(ptr @.str.16314)
+  %70 = call i64 @fail(ptr @.str.16318)
   br label %ifcont397
 
 if_else400:                                       ; preds = %sc_merge392
@@ -183227,7 +183794,7 @@ ifcont404:                                        ; preds = %if_else407, %if_the
   %cast419 = ptrtoint ptr %parsed418 to i64
   %null_chk420 = icmp eq i64 %cast419, 0
   %null_ext421 = zext i1 %null_chk420 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16316, i64 9, ptr @sty_name.16317, i64 18, i64 %null_ext421, ptr @src_file.16318, i64 88, i64 180)
+  call void @forge_null_deref_trap(ptr @fld_name.16320, i64 9, ptr @sty_name.16321, i64 18, i64 %null_ext421, ptr @src_file.16322, i64 88, i64 180)
   %had_error_ptr422 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed418, i32 0, i32 1
   %had_error423 = load i64, ptr %had_error_ptr422, align 8
   %l_bool424 = icmp ne i64 %had_error423, 0
@@ -183235,12 +183802,12 @@ ifcont404:                                        ; preds = %if_else407, %if_the
 
 if_then406:                                       ; preds = %ifcont397
   %cpath408 = load ptr, ptr %cpath, align 8
-  %73 = call i64 @strlen(ptr @.str.16315)
+  %73 = call i64 @strlen(ptr @.str.16319)
   %74 = call i64 @strlen(ptr %cpath408)
   %concat_total409 = add i64 %73, %74
   %concat_size410 = add i64 %concat_total409, 1
   %75 = call ptr @forge_bump_alloc(i64 %concat_size410)
-  %76 = call ptr @memcpy(ptr %75, ptr @.str.16315, i64 %73)
+  %76 = call ptr @memcpy(ptr %75, ptr @.str.16319, i64 %73)
   %cast411 = ptrtoint ptr %75 to i64
   %dst2_int412 = add i64 %cast411, %73
   %cast413 = inttoptr i64 %dst2_int412 to ptr
@@ -183257,7 +183824,7 @@ sc_rhs425:                                        ; preds = %ifcont404
   %cast428 = ptrtoint ptr %parsed427 to i64
   %null_chk429 = icmp eq i64 %cast428, 0
   %null_ext430 = zext i1 %null_chk429 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16319, i64 5, ptr @sty_name.16320, i64 18, i64 %null_ext430, ptr @src_file.16321, i64 88, i64 180)
+  call void @forge_null_deref_trap(ptr @fld_name.16323, i64 5, ptr @sty_name.16324, i64 18, i64 %null_ext430, ptr @src_file.16325, i64 88, i64 180)
   %stmts_ptr431 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed427, i32 0, i32 0
   %stmts432 = load ptr, ptr %stmts_ptr431, align 8
   %eq433 = icmp eq ptr %stmts432, null
@@ -183273,7 +183840,7 @@ sc_merge426:                                      ; preds = %sc_rhs425, %ifcont4
 
 ifcont438:                                        ; preds = %if_else441, %ifcont449
   %stop_after467 = load ptr, ptr %stop_after, align 8
-  %79 = call i32 @strcmp(ptr %stop_after467, ptr @.str.16331)
+  %79 = call i32 @strcmp(ptr %stop_after467, ptr @.str.16335)
   %widen468 = sext i32 %79 to i64
   %streq_cmp469 = icmp eq i64 %widen468, 0
   %streq_ext470 = zext i1 %streq_cmp469 to i64
@@ -183285,7 +183852,7 @@ if_then440:                                       ; preds = %sc_merge426
   %cast443 = ptrtoint ptr %parsed442 to i64
   %null_chk444 = icmp eq i64 %cast443, 0
   %null_ext445 = zext i1 %null_chk444 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16322, i64 3, ptr @sty_name.16323, i64 18, i64 %null_ext445, ptr @src_file.16324, i64 88, i64 181)
+  call void @forge_null_deref_trap(ptr @fld_name.16326, i64 3, ptr @sty_name.16327, i64 18, i64 %null_ext445, ptr @src_file.16328, i64 88, i64 181)
   %bag_ptr446 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed442, i32 0, i32 3
   %bag447 = load ptr, ptr %bag_ptr446, align 8
   %80 = call i1 @"diagnostics::bag_has_errors"(ptr %bag447)
@@ -183301,7 +183868,7 @@ ifcont449:                                        ; preds = %if_else452, %if_the
   %cast462 = ptrtoint ptr %parsed461 to i64
   %null_chk463 = icmp eq i64 %cast462, 0
   %null_ext464 = zext i1 %null_chk463 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16328, i64 13, ptr @sty_name.16329, i64 18, i64 %null_ext464, ptr @src_file.16330, i64 88, i64 184)
+  call void @forge_null_deref_trap(ptr @fld_name.16332, i64 13, ptr @sty_name.16333, i64 18, i64 %null_ext464, ptr @src_file.16334, i64 88, i64 184)
   %error_message_ptr465 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed461, i32 0, i32 2
   %error_message466 = load ptr, ptr %error_message_ptr465, align 8
   %81 = call i64 @fail(ptr %error_message466)
@@ -183314,7 +183881,7 @@ if_then451:                                       ; preds = %if_then440
   %cast456 = ptrtoint ptr %parsed455 to i64
   %null_chk457 = icmp eq i64 %cast456, 0
   %null_ext458 = zext i1 %null_chk457 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16325, i64 3, ptr @sty_name.16326, i64 18, i64 %null_ext458, ptr @src_file.16327, i64 88, i64 182)
+  call void @forge_null_deref_trap(ptr @fld_name.16329, i64 3, ptr @sty_name.16330, i64 18, i64 %null_ext458, ptr @src_file.16331, i64 88, i64 182)
   %bag_ptr459 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed455, i32 0, i32 3
   %bag460 = load ptr, ptr %bag_ptr459, align 8
   %82 = call i64 @"diagnostics::render::render_bag"(ptr %csource453, ptr %cpath454, ptr %bag460)
@@ -183328,7 +183895,7 @@ ifcont471:                                        ; preds = %if_else474
   %cast477 = ptrtoint ptr %parsed476 to i64
   %null_chk478 = icmp eq i64 %cast477, 0
   %null_ext479 = zext i1 %null_chk478 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16333, i64 5, ptr @sty_name.16334, i64 18, i64 %null_ext479, ptr @src_file.16335, i64 88, i64 194)
+  call void @forge_null_deref_trap(ptr @fld_name.16337, i64 5, ptr @sty_name.16338, i64 18, i64 %null_ext479, ptr @src_file.16339, i64 88, i64 194)
   %stmts_ptr480 = getelementptr inbounds nuw %ProgramParseResult, ptr %parsed476, i32 0, i32 0
   %stmts481 = load ptr, ptr %stmts_ptr480, align 8
   %83 = call ptr @"desugar::desugar_program"(ptr %stmts481)
@@ -183351,14 +183918,14 @@ ifcont471:                                        ; preds = %if_else474
   %cast492 = ptrtoint ptr %mod_resolved491 to i64
   %null_chk493 = icmp eq i64 %cast492, 0
   %null_ext494 = zext i1 %null_chk493 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16336, i64 9, ptr @sty_name.16337, i64 13, i64 %null_ext494, ptr @src_file.16338, i64 88, i64 199)
+  call void @forge_null_deref_trap(ptr @fld_name.16340, i64 9, ptr @sty_name.16341, i64 13, i64 %null_ext494, ptr @src_file.16342, i64 88, i64 199)
   %had_error_ptr495 = getelementptr inbounds nuw %ModListResult, ptr %mod_resolved491, i32 0, i32 2
   %had_error496 = load i64, ptr %had_error_ptr495, align 8
   %if_cond498 = icmp ne i64 %had_error496, 0
   br i1 %if_cond498, label %if_then499, label %if_else500
 
 if_then473:                                       ; preds = %ifcont438
-  %87 = call i32 @puts(ptr @.str.16332)
+  %87 = call i32 @puts(ptr @.str.16336)
   %widen475 = sext i32 %87 to i64
   ret i64 0
 
@@ -183367,7 +183934,7 @@ if_else474:                                       ; preds = %ifcont438
 
 ifcont497:                                        ; preds = %if_else500, %if_then499
   %stop_after521 = load ptr, ptr %stop_after, align 8
-  %88 = call i32 @strcmp(ptr %stop_after521, ptr @.str.16345)
+  %88 = call i32 @strcmp(ptr %stop_after521, ptr @.str.16349)
   %widen522 = sext i32 %88 to i64
   %streq_cmp523 = icmp eq i64 %widen522, 0
   %streq_ext524 = zext i1 %streq_cmp523 to i64
@@ -183386,7 +183953,7 @@ if_then499:                                       ; preds = %ifcont471
   %cast505 = ptrtoint ptr %mod_resolved504 to i64
   %null_chk506 = icmp eq i64 %cast505, 0
   %null_ext507 = zext i1 %null_chk506 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16339, i64 13, ptr @sty_name.16340, i64 13, i64 %null_ext507, ptr @src_file.16341, i64 88, i64 200)
+  call void @forge_null_deref_trap(ptr @fld_name.16343, i64 13, ptr @sty_name.16344, i64 13, i64 %null_ext507, ptr @src_file.16345, i64 88, i64 200)
   %error_message_ptr508 = getelementptr inbounds nuw %ModListResult, ptr %mod_resolved504, i32 0, i32 3
   %error_message509 = load ptr, ptr %error_message_ptr508, align 8
   %91 = call ptr @"diagnostics::span_dummy"()
@@ -183402,7 +183969,7 @@ if_then499:                                       ; preds = %ifcont471
   %cast516 = ptrtoint ptr %mod_resolved515 to i64
   %null_chk517 = icmp eq i64 %cast516, 0
   %null_ext518 = zext i1 %null_chk517 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16342, i64 13, ptr @sty_name.16343, i64 13, i64 %null_ext518, ptr @src_file.16344, i64 88, i64 202)
+  call void @forge_null_deref_trap(ptr @fld_name.16346, i64 13, ptr @sty_name.16347, i64 13, i64 %null_ext518, ptr @src_file.16348, i64 88, i64 202)
   %error_message_ptr519 = getelementptr inbounds nuw %ModListResult, ptr %mod_resolved515, i32 0, i32 3
   %error_message520 = load ptr, ptr %error_message_ptr519, align 8
   %95 = call i64 @fail(ptr %error_message520)
@@ -183416,7 +183983,7 @@ ifcont525:                                        ; preds = %if_else528
   %cast531 = ptrtoint ptr %mod_resolved530 to i64
   %null_chk532 = icmp eq i64 %cast531, 0
   %null_ext533 = zext i1 %null_chk532 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16347, i64 5, ptr @sty_name.16348, i64 13, i64 %null_ext533, ptr @src_file.16349, i64 88, i64 208)
+  call void @forge_null_deref_trap(ptr @fld_name.16351, i64 5, ptr @sty_name.16352, i64 13, i64 %null_ext533, ptr @src_file.16353, i64 88, i64 208)
   %stmts_ptr534 = getelementptr inbounds nuw %ModListResult, ptr %mod_resolved530, i32 0, i32 0
   %stmts535 = load ptr, ptr %stmts_ptr534, align 8
   %96 = call ptr @"resolve::names::resolve_names"(ptr %stmts535)
@@ -183425,7 +183992,7 @@ ifcont525:                                        ; preds = %if_else528
   %cast538 = ptrtoint ptr %named537 to i64
   %null_chk539 = icmp eq i64 %cast538, 0
   %null_ext540 = zext i1 %null_chk539 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16350, i64 3, ptr @sty_name.16351, i64 17, i64 %null_ext540, ptr @src_file.16352, i64 88, i64 209)
+  call void @forge_null_deref_trap(ptr @fld_name.16354, i64 3, ptr @sty_name.16355, i64 17, i64 %null_ext540, ptr @src_file.16356, i64 88, i64 209)
   %bag_ptr541 = getelementptr inbounds nuw %NameResolveResult, ptr %named537, i32 0, i32 3
   %bag542 = load ptr, ptr %bag_ptr541, align 8
   %97 = call i1 @"diagnostics::bag_has_errors"(ptr %bag542)
@@ -183434,7 +184001,7 @@ ifcont525:                                        ; preds = %if_else528
   br i1 %if_cond545, label %if_then546, label %if_else547
 
 if_then527:                                       ; preds = %ifcont497
-  %98 = call i32 @puts(ptr @.str.16346)
+  %98 = call i32 @puts(ptr @.str.16350)
   %widen529 = sext i32 %98 to i64
   ret i64 0
 
@@ -183446,7 +184013,7 @@ ifcont544:                                        ; preds = %if_else547, %if_the
   %cast557 = ptrtoint ptr %named556 to i64
   %null_chk558 = icmp eq i64 %cast557, 0
   %null_ext559 = zext i1 %null_chk558 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16356, i64 9, ptr @sty_name.16357, i64 17, i64 %null_ext559, ptr @src_file.16358, i64 88, i64 212)
+  call void @forge_null_deref_trap(ptr @fld_name.16360, i64 9, ptr @sty_name.16361, i64 17, i64 %null_ext559, ptr @src_file.16362, i64 88, i64 212)
   %had_error_ptr560 = getelementptr inbounds nuw %NameResolveResult, ptr %named556, i32 0, i32 1
   %had_error561 = load i64, ptr %had_error_ptr560, align 8
   %if_cond563 = icmp ne i64 %had_error561, 0
@@ -183459,7 +184026,7 @@ if_then546:                                       ; preds = %ifcont525
   %cast551 = ptrtoint ptr %named550 to i64
   %null_chk552 = icmp eq i64 %cast551, 0
   %null_ext553 = zext i1 %null_chk552 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16353, i64 3, ptr @sty_name.16354, i64 17, i64 %null_ext553, ptr @src_file.16355, i64 88, i64 210)
+  call void @forge_null_deref_trap(ptr @fld_name.16357, i64 3, ptr @sty_name.16358, i64 17, i64 %null_ext553, ptr @src_file.16359, i64 88, i64 210)
   %bag_ptr554 = getelementptr inbounds nuw %NameResolveResult, ptr %named550, i32 0, i32 3
   %bag555 = load ptr, ptr %bag_ptr554, align 8
   %99 = call i64 @"diagnostics::render::render_bag"(ptr %csource548, ptr %cpath549, ptr %bag555)
@@ -183470,7 +184037,7 @@ if_else547:                                       ; preds = %ifcont525
 
 ifcont562:                                        ; preds = %if_else565, %if_then564
   %stop_after572 = load ptr, ptr %stop_after, align 8
-  %100 = call i32 @strcmp(ptr %stop_after572, ptr @.str.16362)
+  %100 = call i32 @strcmp(ptr %stop_after572, ptr @.str.16366)
   %widen573 = sext i32 %100 to i64
   %streq_cmp574 = icmp eq i64 %widen573, 0
   %streq_ext575 = zext i1 %streq_cmp574 to i64
@@ -183482,7 +184049,7 @@ if_then564:                                       ; preds = %ifcont544
   %cast567 = ptrtoint ptr %named566 to i64
   %null_chk568 = icmp eq i64 %cast567, 0
   %null_ext569 = zext i1 %null_chk568 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16359, i64 13, ptr @sty_name.16360, i64 17, i64 %null_ext569, ptr @src_file.16361, i64 88, i64 212)
+  call void @forge_null_deref_trap(ptr @fld_name.16363, i64 13, ptr @sty_name.16364, i64 17, i64 %null_ext569, ptr @src_file.16365, i64 88, i64 212)
   %error_message_ptr570 = getelementptr inbounds nuw %NameResolveResult, ptr %named566, i32 0, i32 2
   %error_message571 = load ptr, ptr %error_message_ptr570, align 8
   %101 = call i64 @fail(ptr %error_message571)
@@ -183496,7 +184063,7 @@ ifcont576:                                        ; preds = %if_else579
   %cast582 = ptrtoint ptr %named581 to i64
   %null_chk583 = icmp eq i64 %cast582, 0
   %null_ext584 = zext i1 %null_chk583 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16364, i64 5, ptr @sty_name.16365, i64 17, i64 %null_ext584, ptr @src_file.16366, i64 88, i64 218)
+  call void @forge_null_deref_trap(ptr @fld_name.16368, i64 5, ptr @sty_name.16369, i64 17, i64 %null_ext584, ptr @src_file.16370, i64 88, i64 218)
   %stmts_ptr585 = getelementptr inbounds nuw %NameResolveResult, ptr %named581, i32 0, i32 0
   %stmts586 = load ptr, ptr %stmts_ptr585, align 8
   %102 = call ptr @"typeck::typecheck_program"(ptr %stmts586)
@@ -183505,7 +184072,7 @@ ifcont576:                                        ; preds = %if_else579
   %cast589 = ptrtoint ptr %tc_result588 to i64
   %null_chk590 = icmp eq i64 %cast589, 0
   %null_ext591 = zext i1 %null_chk590 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16367, i64 3, ptr @sty_name.16368, i64 15, i64 %null_ext591, ptr @src_file.16369, i64 88, i64 219)
+  call void @forge_null_deref_trap(ptr @fld_name.16371, i64 3, ptr @sty_name.16372, i64 15, i64 %null_ext591, ptr @src_file.16373, i64 88, i64 219)
   %bag_ptr592 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result588, i32 0, i32 2
   %bag593 = load ptr, ptr %bag_ptr592, align 8
   %103 = call i1 @"diagnostics::bag_has_errors"(ptr %bag593)
@@ -183514,7 +184081,7 @@ ifcont576:                                        ; preds = %if_else579
   br i1 %l_bool595, label %sc_merge597, label %sc_rhs596
 
 if_then578:                                       ; preds = %ifcont562
-  %104 = call i32 @puts(ptr @.str.16363)
+  %104 = call i32 @puts(ptr @.str.16367)
   %widen580 = sext i32 %104 to i64
   ret i64 0
 
@@ -183526,7 +184093,7 @@ sc_rhs596:                                        ; preds = %ifcont576
   %cast599 = ptrtoint ptr %tc_result598 to i64
   %null_chk600 = icmp eq i64 %cast599, 0
   %null_ext601 = zext i1 %null_chk600 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16370, i64 3, ptr @sty_name.16371, i64 15, i64 %null_ext601, ptr @src_file.16372, i64 88, i64 219)
+  call void @forge_null_deref_trap(ptr @fld_name.16374, i64 3, ptr @sty_name.16375, i64 15, i64 %null_ext601, ptr @src_file.16376, i64 88, i64 219)
   %bag_ptr602 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result598, i32 0, i32 2
   %bag603 = load ptr, ptr %bag_ptr602, align 8
   %105 = call i1 @"diagnostics::bag_has_warnings"(ptr %bag603)
@@ -183545,7 +184112,7 @@ ifcont608:                                        ; preds = %if_else611, %if_the
   %cast621 = ptrtoint ptr %tc_result620 to i64
   %null_chk622 = icmp eq i64 %cast621, 0
   %null_ext623 = zext i1 %null_chk622 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16376, i64 3, ptr @sty_name.16377, i64 15, i64 %null_ext623, ptr @src_file.16378, i64 88, i64 222)
+  call void @forge_null_deref_trap(ptr @fld_name.16380, i64 3, ptr @sty_name.16381, i64 15, i64 %null_ext623, ptr @src_file.16382, i64 88, i64 222)
   %bag_ptr624 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result620, i32 0, i32 2
   %bag625 = load ptr, ptr %bag_ptr624, align 8
   %106 = call i1 @"diagnostics::bag_has_errors"(ptr %bag625)
@@ -183560,7 +184127,7 @@ if_then610:                                       ; preds = %sc_merge597
   %cast615 = ptrtoint ptr %tc_result614 to i64
   %null_chk616 = icmp eq i64 %cast615, 0
   %null_ext617 = zext i1 %null_chk616 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16373, i64 3, ptr @sty_name.16374, i64 15, i64 %null_ext617, ptr @src_file.16375, i64 88, i64 220)
+  call void @forge_null_deref_trap(ptr @fld_name.16377, i64 3, ptr @sty_name.16378, i64 15, i64 %null_ext617, ptr @src_file.16379, i64 88, i64 220)
   %bag_ptr618 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result614, i32 0, i32 2
   %bag619 = load ptr, ptr %bag_ptr618, align 8
   %107 = call i64 @"diagnostics::render::render_bag"(ptr %csource612, ptr %cpath613, ptr %bag619)
@@ -183571,7 +184138,7 @@ if_else611:                                       ; preds = %sc_merge597
 
 ifcont627:                                        ; preds = %if_else630, %if_then629
   %stop_after631 = load ptr, ptr %stop_after, align 8
-  %108 = call i32 @strcmp(ptr %stop_after631, ptr @.str.16380)
+  %108 = call i32 @strcmp(ptr %stop_after631, ptr @.str.16384)
   %widen632 = sext i32 %108 to i64
   %streq_cmp633 = icmp eq i64 %widen632, 0
   %streq_ext634 = zext i1 %streq_cmp633 to i64
@@ -183579,7 +184146,7 @@ ifcont627:                                        ; preds = %if_else630, %if_the
   br i1 %if_cond636, label %if_then637, label %if_else638
 
 if_then629:                                       ; preds = %ifcont608
-  %109 = call i64 @fail(ptr @.str.16379)
+  %109 = call i64 @fail(ptr @.str.16383)
   br label %ifcont627
 
 if_else630:                                       ; preds = %ifcont608
@@ -183590,7 +184157,7 @@ ifcont635:                                        ; preds = %if_else638
   %cast641 = ptrtoint ptr %tc_result640 to i64
   %null_chk642 = icmp eq i64 %cast641, 0
   %null_ext643 = zext i1 %null_chk642 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16382, i64 5, ptr @sty_name.16383, i64 15, i64 %null_ext643, ptr @src_file.16384, i64 88, i64 229)
+  call void @forge_null_deref_trap(ptr @fld_name.16386, i64 5, ptr @sty_name.16387, i64 15, i64 %null_ext643, ptr @src_file.16388, i64 88, i64 229)
   %stmts_ptr644 = getelementptr inbounds nuw %TypeCheckResult, ptr %tc_result640, i32 0, i32 0
   %stmts645 = load ptr, ptr %stmts_ptr644, align 8
   %110 = call ptr @"features::generics::mono::monomorphize"(ptr %stmts645)
@@ -183599,7 +184166,7 @@ ifcont635:                                        ; preds = %if_else638
   %cast647 = ptrtoint ptr %mono646 to i64
   %null_chk648 = icmp eq i64 %cast647, 0
   %null_ext649 = zext i1 %null_chk648 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16385, i64 3, ptr @sty_name.16386, i64 10, i64 %null_ext649, ptr @src_file.16387, i64 88, i64 230)
+  call void @forge_null_deref_trap(ptr @fld_name.16389, i64 3, ptr @sty_name.16390, i64 10, i64 %null_ext649, ptr @src_file.16391, i64 88, i64 230)
   %bag_ptr650 = getelementptr inbounds nuw %MonoResult, ptr %mono646, i32 0, i32 1
   %bag651 = load ptr, ptr %bag_ptr650, align 8
   %111 = call i1 @"diagnostics::bag_has_errors"(ptr %bag651)
@@ -183608,7 +184175,7 @@ ifcont635:                                        ; preds = %if_else638
   br i1 %if_cond654, label %if_then655, label %if_else656
 
 if_then637:                                       ; preds = %ifcont627
-  %112 = call i32 @puts(ptr @.str.16381)
+  %112 = call i32 @puts(ptr @.str.16385)
   %widen639 = sext i32 %112 to i64
   ret i64 0
 
@@ -183618,7 +184185,7 @@ if_else638:                                       ; preds = %ifcont627
 ifcont653:                                        ; preds = %if_else656, %if_then655
   %cpath665 = load ptr, ptr %cpath, align 8
   %113 = call i64 @strlen(ptr %cpath665)
-  %114 = call i64 @strlen(ptr @.str.16392)
+  %114 = call i64 @strlen(ptr @.str.16396)
   %concat_total666 = add i64 %113, %114
   %concat_size667 = add i64 %concat_total666, 1
   %115 = call ptr @forge_bump_alloc(i64 %concat_size667)
@@ -183627,13 +184194,13 @@ ifcont653:                                        ; preds = %if_else656, %if_the
   %dst2_int669 = add i64 %cast668, %113
   %cast670 = inttoptr i64 %dst2_int669 to ptr
   %rhs_len_p1671 = add i64 %114, 1
-  %117 = call ptr @memcpy(ptr %cast670, ptr @.str.16392, i64 %rhs_len_p1671)
+  %117 = call ptr @memcpy(ptr %cast670, ptr @.str.16396, i64 %rhs_len_p1671)
   store ptr %115, ptr %output, align 8
   %mono672 = load ptr, ptr %mono, align 8
   %cast673 = ptrtoint ptr %mono672 to i64
   %null_chk674 = icmp eq i64 %cast673, 0
   %null_ext675 = zext i1 %null_chk674 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16393, i64 5, ptr @sty_name.16394, i64 10, i64 %null_ext675, ptr @src_file.16395, i64 88, i64 235)
+  call void @forge_null_deref_trap(ptr @fld_name.16397, i64 5, ptr @sty_name.16398, i64 10, i64 %null_ext675, ptr @src_file.16399, i64 88, i64 235)
   %stmts_ptr676 = getelementptr inbounds nuw %MonoResult, ptr %mono672, i32 0, i32 0
   %stmts677 = load ptr, ptr %stmts_ptr676, align 8
   %output678 = load ptr, ptr %output, align 8
@@ -183652,11 +184219,11 @@ if_then655:                                       ; preds = %ifcont635
   %cast660 = ptrtoint ptr %mono659 to i64
   %null_chk661 = icmp eq i64 %cast660, 0
   %null_ext662 = zext i1 %null_chk661 to i64
-  call void @forge_null_deref_trap(ptr @fld_name.16388, i64 3, ptr @sty_name.16389, i64 10, i64 %null_ext662, ptr @src_file.16390, i64 88, i64 231)
+  call void @forge_null_deref_trap(ptr @fld_name.16392, i64 3, ptr @sty_name.16393, i64 10, i64 %null_ext662, ptr @src_file.16394, i64 88, i64 231)
   %bag_ptr663 = getelementptr inbounds nuw %MonoResult, ptr %mono659, i32 0, i32 1
   %bag664 = load ptr, ptr %bag_ptr663, align 8
   %119 = call i64 @"diagnostics::render::render_bag"(ptr %csource657, ptr %cpath658, ptr %bag664)
-  %120 = call i64 @fail(ptr @.str.16391)
+  %120 = call i64 @fail(ptr @.str.16395)
   br label %ifcont653
 
 if_else656:                                       ; preds = %ifcont635
@@ -183689,7 +184256,7 @@ match_arm682:                                     ; preds = %match_next
   br label %match_end
 
 match_next683:                                    ; preds = %match_next
-  call void @forge_match_unreachable(ptr @.match_fn.16396, i64 %tag, ptr @mu_file.16397, i64 235)
+  call void @forge_match_unreachable(ptr @.match_fn.16400, i64 %tag, ptr @mu_file.16401, i64 235)
   unreachable
 }
 
@@ -183697,26 +184264,26 @@ define i64 @__bs_top_level() {
 entry:
   store i64 0, ptr @LAMBDA_COUNTER, align 8
   %0 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw %EscapeSet, ptr %0, i32 0, i32 0
+  %tag_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %0, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr, align 8
-  %pay_ptr = getelementptr inbounds nuw %EscapeSet, ptr %0, i32 0, i32 1
+  %pay_ptr = getelementptr inbounds nuw %ReleasableSet, ptr %0, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast = ptrtoint ptr %0 to i64
   store i64 %cast, ptr @DEFER_STACK, align 8
   %1 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr1 = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 0
+  %tag_ptr1 = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr1, align 8
-  %pay_ptr2 = getelementptr inbounds nuw %EscapeSet, ptr %1, i32 0, i32 1
+  %pay_ptr2 = getelementptr inbounds nuw %ReleasableSet, ptr %1, i32 0, i32 1
   store ptr null, ptr %pay_ptr2, align 8
   %cast3 = ptrtoint ptr %1 to i64
   store i64 %cast3, ptr @RC_CLEANUP, align 8
   %2 = call ptr @forge_rc_alloc(i64 16)
-  %tag_ptr4 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 0
+  %tag_ptr4 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 0
   store i64 193455868, ptr %tag_ptr4, align 8
-  %pay_ptr5 = getelementptr inbounds nuw %EscapeSet, ptr %2, i32 0, i32 1
+  %pay_ptr5 = getelementptr inbounds nuw %ReleasableSet, ptr %2, i32 0, i32 1
   store ptr null, ptr %pay_ptr5, align 8
   %cast6 = ptrtoint ptr %2 to i64
-  store i64 %cast6, ptr @RC_ESCAPES, align 8
+  store i64 %cast6, ptr @RC_RELEASABLE, align 8
   ret i64 0
 }
 

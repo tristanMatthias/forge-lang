@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
-use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx, rc_cleanup_reset}
 use core.registry.{build_registry}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelOk}
@@ -268,6 +268,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     // in a function-body block. Reposition it back at main's entry
     // before emitting top-level statements.
     ctx.position(entry)
+    rc_cleanup_reset()
     let initial: VarEnv = VarEnv.End
     match emit_top_level(ctx, initial, stmts) {
         .Ok(_) -> {}

@@ -1,144 +1,160 @@
 // WHY: escape analysis for RC — determines which locals' values
-// escape their defining scope (stored in struct fields, passed to
-// functions, added to collections, captured by closures, or returned).
-// Non-escaped, non-moved locals can be released at scope exit.
+// escape their defining scope. A local is "releasable" if its ONLY
+// uses are field reads (p.x, p.y). Any other use (return, pass as
+// argument, store into struct, etc.) means the value might be
+// referenced elsewhere and must NOT be released at scope exit.
+//
+// Conservative: if in doubt, mark as escaped (don't release).
 
 use core.ast.{Expr, ExprList, FieldInitList, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
 
-// A set of variable names that escape their scope.
-export enum EscapeSet {
+// Set of variable names that are safe to release at scope exit.
+export enum ReleasableSet {
     End
-    Node(name: string, next: EscapeSet)
+    Node(name: string, next: ReleasableSet)
 }
 
-export fn escape_has(set: EscapeSet, name: string) -> bool {
+export fn releasable_has(set: ReleasableSet, name: string) -> bool {
     match set {
         .End -> false
         .Node(n, _) if n == name -> true
-        .Node(_, next) -> escape_has(next, name)
+        .Node(_, next) -> releasable_has(next, name)
     }
 }
 
-fn escape_add(set: EscapeSet, name: string) -> EscapeSet {
-    if escape_has(set, name) { set } else { EscapeSet.Node(name, set) }
+fn releasable_add(set: ReleasableSet, name: string) -> ReleasableSet {
+    if releasable_has(set, name) { set } else { ReleasableSet.Node(name, set) }
 }
 
-// Analyze a function body for escaping locals.
-export fn analyze_escapes(body: StmtList) -> EscapeSet {
-    analyze_stmts(body, EscapeSet.End)
+fn releasable_remove(set: ReleasableSet, name: string) -> ReleasableSet {
+    match set {
+        .End -> .End
+        .Node(n, next) if n == name -> releasable_remove(next, name)
+        .Node(n, next) -> ReleasableSet.Node(n, releasable_remove(next, name))
+    }
 }
 
-fn analyze_stmts(stmts: StmtList, set: EscapeSet) -> EscapeSet {
+// Analyze a function body. Start by collecting all ptr-typed let/mut/const
+// bindings as potentially releasable. Then walk all expressions — any use
+// of a name OTHER than field access removes it from the releasable set.
+export fn analyze_releasable(body: StmtList) -> ReleasableSet {
+    // Phase 1: collect all binding names
+    let all_bindings = collect_bindings(body, ReleasableSet.End)
+    // Phase 2: remove names that escape
+    remove_escaped(body, all_bindings)
+}
+
+fn collect_bindings(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
     match stmts {
         .End -> set
         .Node(ss, next) -> {
-            // Last statement: if it's an expression, it's the implicit return
-            let updated = match next {
-                .End -> analyze_last_stmt(ss.node, set)
-                _ -> analyze_stmt(ss.node, set)
+            let updated = match stmt_unwrap(ss.node) {
+                .Let(name, _, _) -> releasable_add(set, name)
+                .Mut(name, _, _) -> releasable_add(set, name)
+                .Const(name, _, _) -> releasable_add(set, name)
+                .Block(body) -> collect_bindings(body, set)
+                .If(_, then_b, else_b) -> {
+                    let s1 = collect_bindings_stmt(then_b, set)
+                    if else_b != null { collect_bindings_stmt(else_b!, s1) } else { s1 }
+                }
+                _ -> set
             }
-            analyze_stmts(next, updated)
+            collect_bindings(next, updated)
         }
     }
 }
 
-// The last statement in a function body is the implicit return value.
-// Any idents in the last expression escape.
-fn analyze_last_stmt(stmt: Stmt, set: EscapeSet) -> EscapeSet {
+fn collect_bindings_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
+    match stmt_unwrap(stmt) {
+        .Block(body) -> collect_bindings(body, set)
+        .Let(name, _, _) -> releasable_add(set, name)
+        .Mut(name, _, _) -> releasable_add(set, name)
+        _ -> set
+    }
+}
+
+// Phase 2: walk all expressions. If a name is used in any context OTHER
+// than `.FieldAccess(Ident(name), _)`, remove it from releasable set.
+fn remove_escaped(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
+    match stmts {
+        .End -> set
+        .Node(ss, next) -> {
+            let updated = remove_escaped_stmt(ss.node, set)
+            remove_escaped(next, updated)
+        }
+    }
+}
+
+fn remove_escaped_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
     let inner = stmt_unwrap(stmt)
     match inner {
-        .Expr(expr) -> collect_escaping_idents(expr, analyze_expr_escapes(expr, set))
-        .Return(expr) -> collect_escaping_idents(expr, set)
-        _ -> analyze_stmt(inner, set)
-    }
-}
-
-fn analyze_stmt(stmt: Stmt, set: EscapeSet) -> EscapeSet {
-    let inner = stmt_unwrap(stmt)
-    match inner {
-        // Return: the returned expression escapes
-        .Return(expr) -> collect_escaping_idents(expr, set)
-        // Expression statement: check for calls with escaping args
-        .Expr(expr) -> analyze_expr_escapes(expr, set)
-        // Block: recurse
-        .Block(body) -> analyze_stmts(body, set)
-        // If: condition doesn't escape, but branches might contain returns/calls
-        .If(_, then_b, else_b) -> {
-            let s1 = analyze_stmt(then_b, set)
-            if else_b != null { analyze_stmt(else_b!, s1) } else { s1 }
+        .Return(expr) -> remove_escaped_expr(expr, set)
+        .Expr(expr) -> remove_escaped_expr(expr, set)
+        .Let(_, _, init) -> remove_escaped_expr(init, set)
+        .Mut(_, _, init) -> remove_escaped_expr(init, set)
+        .Const(_, _, init) -> remove_escaped_expr(init, set)
+        .Block(body) -> remove_escaped(body, set)
+        .If(cond, then_b, else_b) -> {
+            let s1 = remove_escaped_expr(cond, set)
+            let s2 = remove_escaped_stmt(then_b, s1)
+            if else_b != null { remove_escaped_stmt(else_b!, s2) } else { s2 }
         }
-        // While/For: body might contain escaping statements
-        .While(_, body) -> analyze_stmt(body, set)
-        .For(_, _, _, body) -> analyze_stmt(body, set)
-        .ForIn(_, _, body) -> analyze_stmt(body, set)
-        // Let/Mut/Const with struct literal or call initializer: the initializer
-        // may contain idents that escape into the struct
-        .Let(_, _, init) -> analyze_expr_escapes(init, set)
-        .Mut(_, _, init) -> analyze_expr_escapes(init, set)
-        .Const(_, _, init) -> analyze_expr_escapes(init, set)
-        .Match(_, _) -> set  // TODO: analyze match arms
+        .While(cond, body) -> remove_escaped_stmt(body, remove_escaped_expr(cond, set))
+        .For(_, start, end, body) -> {
+            let s1 = remove_escaped_expr(start, set)
+            let s2 = remove_escaped_expr(end, s1)
+            remove_escaped_stmt(body, s2)
+        }
+        .ForIn(_, coll, body) -> remove_escaped_stmt(body, remove_escaped_expr(coll, set))
         _ -> set
     }
 }
 
-// Collect all Ident names from an expression — these are values that escape.
-// Used for return expressions and struct field inits.
-fn collect_escaping_idents(expr: Expr, set: EscapeSet) -> EscapeSet {
+fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
     match expr {
-        .Ident(name) -> escape_add(set, name)
-        .Grouping(inner) -> collect_escaping_idents(inner, set)
+        // Field access is safe — reading a field doesn't escape the struct
+        .FieldAccess(obj, _) -> match obj {
+            .Ident(_) -> set  // p.x is safe — don't remove p
+            _ -> remove_escaped_expr(obj, set)  // nested: (expr).field
+        }
+        // These are escaping uses:
+        .Ident(name) -> releasable_remove(set, name)
+        // Recurse into sub-expressions
+        .Call(callee, args) -> {
+            let s1 = remove_escaped_expr(callee, set)
+            remove_escaped_args(args, s1)
+        }
+        .GenericCall(callee, _, args) -> {
+            let s1 = remove_escaped_expr(callee, set)
+            remove_escaped_args(args, s1)
+        }
+        .Binary(left, _, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
+        .Unary(_, inner) -> remove_escaped_expr(inner, set)
+        .Logical(left, _, right) -> remove_escaped_expr(right, remove_escaped_expr(left, set))
+        .Grouping(inner) -> remove_escaped_expr(inner, set)
+        .Index(obj, idx) -> remove_escaped_expr(idx, remove_escaped_expr(obj, set))
+        .Assign(_, val) -> remove_escaped_expr(val, set)
+        .FieldAssign(obj, _, val) -> remove_escaped_expr(val, remove_escaped_expr(obj, set))
+        .StructLit(_, inits) -> remove_escaped_field_inits(inits, set)
+        .ListLit(elems) -> remove_escaped_args(elems, set)
+        .With(obj, inits) -> remove_escaped_field_inits(inits, remove_escaped_expr(obj, set))
+        .Lambda(_, body) -> remove_escaped_expr(body, set)
+        .Block(body) -> remove_escaped(body, set)
+        .IfExpr(cond, t, e) -> remove_escaped_expr(e, remove_escaped_expr(t, remove_escaped_expr(cond, set)))
         _ -> set
     }
 }
 
-// Analyze an expression for sub-expressions that cause escapes.
-fn analyze_expr_escapes(expr: Expr, set: EscapeSet) -> EscapeSet {
-    match expr {
-        // Function call: all arguments escape (callee may store them)
-        .Call(_, args) -> collect_escaping_args(args, set)
-        .GenericCall(_, _, args) -> collect_escaping_args(args, set)
-        // Struct literal: field values escape into the struct
-        .StructLit(_, inits) -> collect_escaping_field_inits(inits, set)
-        // List literal: elements escape
-        .ListLit(elems) -> collect_escaping_args(elems, set)
-        // Lambda/closure: captured variables escape
-        .Lambda(_, body) -> collect_escaping_idents(body, set)
-        // With expression: field values escape
-        .With(obj, inits) -> {
-            let s1 = collect_escaping_idents(obj, set)
-            collect_escaping_field_inits(inits, s1)
-        }
-        // Binary/unary: recurse but these don't cause escapes themselves
-        .Binary(left, _, right) -> {
-            let s1 = analyze_expr_escapes(left, set)
-            analyze_expr_escapes(right, s1)
-        }
-        .Unary(_, inner) -> analyze_expr_escapes(inner, set)
-        // Block expression
-        .Block(body) -> analyze_stmts(body, set)
-        // Assign: RHS escapes into the variable
-        .Assign(_, value) -> collect_escaping_idents(value, set)
-        .FieldAssign(_, _, value) -> collect_escaping_idents(value, set)
-        _ -> set
-    }
-}
-
-fn collect_escaping_args(args: ExprList, set: EscapeSet) -> EscapeSet {
+fn remove_escaped_args(args: ExprList, set: ReleasableSet) -> ReleasableSet {
     match args {
         .End -> set
-        .Node(se, next) -> {
-            let updated = collect_escaping_idents(se.node, set)
-            collect_escaping_args(next, updated)
-        }
+        .Node(se, next) -> remove_escaped_args(next, remove_escaped_expr(se.node, set))
     }
 }
 
-fn collect_escaping_field_inits(inits: FieldInitList, set: EscapeSet) -> EscapeSet {
+fn remove_escaped_field_inits(inits: FieldInitList, set: ReleasableSet) -> ReleasableSet {
     match inits {
         .End -> set
-        .Node(_, value_se, next) -> {
-            let updated = collect_escaping_idents(value_se.node, set)
-            collect_escaping_field_inits(next, updated)
-        }
+        .Node(_, val_se, next) -> remove_escaped_field_inits(next, remove_escaped_expr(val_se.node, set))
     }
 }
