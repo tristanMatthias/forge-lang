@@ -32,7 +32,7 @@ export fn expr_contains_it(expr: Expr) -> bool {
         .MapLit(entries) -> expr_list_contains_it(entries)
         .Slice(obj, s, e) -> expr_contains_it(obj) || expr_contains_it(s) || expr_contains_it(e)
         .MatchExpr(subj, _) -> expr_contains_it(subj)
-        .Catch(inner, _, body) -> expr_contains_it(inner) || expr_contains_it(body)
+        .Catch(inner, _, body, _, _) -> expr_contains_it(inner) || expr_contains_it(body)
         _ -> false
     }
 }

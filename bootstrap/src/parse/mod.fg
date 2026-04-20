@@ -833,6 +833,8 @@ impl Parser {
                 continue
             }
             // Catch: `expr catch { body }` or `expr catch (e) { body }` (spec Axis 12.5-12.6)
+            let catch_line = self.current_line
+            let catch_col = self.current_column
             if self.check(Tk.KwCatch) {
                 self.advance()
                 mut binding = ""
@@ -847,7 +849,7 @@ impl Parser {
                 let body_stmts = self.parse_statement_list(true)?
                 self.allow_dot_postfix = saved_dot
                 if !self.consume(Tk.RightBrace, "expected `}` after catch body") { return null }
-                result = Expr.Catch(result, binding, Expr.Block(body_stmts))
+                result = Expr.Catch(result, binding, Expr.Block(body_stmts), catch_line, catch_col)
                 continue
             }
             // Optional chaining: `expr?.field`

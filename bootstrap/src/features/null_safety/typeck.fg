@@ -1,12 +1,12 @@
 // WHY: type checking for null-safety features (catch, null coalesce).
 
 use core.ast.{Expr, ValueType, vtype_eq, vtype_display, vtype_assignable}
-use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_report}
+use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_report_at}
 use diagnostics.{DiagCode}
 
 export fn check_catch(tc: TC, expr: Expr) -> ExprResult {
     match expr {
-        .Catch(inner, _, body) -> {
+        .Catch(inner, _, body, cl, cc) -> {
             let ci = check_expr(tc, inner)
             let cb = check_expr(ci.tc, body)
             let maybe_ok = tc_catch_ok_type(ci.tc, inner)
@@ -14,7 +14,7 @@ export fn check_catch(tc: TC, expr: Expr) -> ExprResult {
                 let ok_ty = maybe_ok!
                 if !vtype_eq(ok_ty, cb.ty) && !vtype_assignable(cb.ty, ok_ty) {
                     let msg = "catch body type `${vtype_display(cb.ty)}` does not match expected type `${vtype_display(ok_ty)}`"
-                    return tc_er(tc_report(cb.tc, DiagCode.TypeMismatch, msg), ok_ty)
+                    return tc_er(tc_report_at(cb.tc, DiagCode.TypeMismatch, msg, cl, cc), ok_ty)
                 }
                 return tc_er(cb.tc, ok_ty)
             }

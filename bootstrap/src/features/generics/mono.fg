@@ -544,7 +544,7 @@ fn collect_inst_expr(expr: Expr, regs: GenRegs, st: CollectState) -> CollectStat
             let s2 = collect_inst_expr(coll, regs, s1)
             if filter != null { collect_inst_expr(filter!, regs, s2) } else { s2 }
         }
-        .Catch(inner, _, body) -> collect_inst_expr(body, regs, collect_inst_expr(inner, regs, st))
+        .Catch(inner, _, body, _, _) -> collect_inst_expr(body, regs, collect_inst_expr(inner, regs, st))
         _ -> st
     }
 }
@@ -700,7 +700,7 @@ fn substitute_expr(expr: Expr, ta: TypeArgList) -> Expr {
                 .ListComp(substitute_expr(body, ta), v, substitute_expr(coll, ta), null)
             }
         }
-        .Catch(inner, b, body) -> .Catch(substitute_expr(inner, ta), b, substitute_expr(body, ta))
+        .Catch(inner, b, body, cl, cc) -> .Catch(substitute_expr(inner, ta), b, substitute_expr(body, ta), cl, cc)
         _ -> expr
     }
 }
@@ -848,7 +848,7 @@ fn rewrite_expr(expr: Expr, regs: GenRegs, insts: InstList) -> Expr {
                 .ListComp(rewrite_expr(body, regs, insts), v, rewrite_expr(coll, regs, insts), null)
             }
         }
-        .Catch(inner, b, body) -> .Catch(rewrite_expr(inner, regs, insts), b, rewrite_expr(body, regs, insts))
+        .Catch(inner, b, body, cl, cc) -> .Catch(rewrite_expr(inner, regs, insts), b, rewrite_expr(body, regs, insts), cl, cc)
         _ -> expr
     }
 }

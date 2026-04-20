@@ -56,10 +56,10 @@ export fn init_null_safety(reg: Registry) {
     register(reg, f3)
 
     let f4 = feature_new("catch") with {
-        expr_tag: Expr.Catch(Expr.Null, "", Expr.Null),
+        expr_tag: Expr.Catch(Expr.Null, "", Expr.Null, 0, 0),
         emit_expr: catch_emit_expr,
         resolve_expr: (r: Resolver, expr: Expr) -> match expr {
-            .Catch(inner, binding, body) -> {
+            .Catch(inner, binding, body, _, _) -> {
                 let ri = resolve_expr(r, inner)
                 let scoped = if binding.length > 0 {
                     let entered = enter_resolve_scope(ri)
@@ -72,7 +72,7 @@ export fn init_null_safety(reg: Registry) {
         },
         check_expr: check_catch,
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
-            .Catch(_, _, _) -> error_result(rt, "catch is not supported by the tree-walk evaluator")
+            .Catch(_, _, _, _, _) -> error_result(rt, "catch is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Catch")
         },
     }
@@ -81,7 +81,7 @@ export fn init_null_safety(reg: Registry) {
 
 fn catch_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
-        .Catch(inner, binding, body) -> emit_catch(ctx, env, inner, binding, body)
+        .Catch(inner, binding, body, _, _) -> emit_catch(ctx, env, inner, binding, body)
         _ -> err_emit("expected Catch")
     }
 }

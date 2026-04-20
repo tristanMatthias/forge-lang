@@ -118,7 +118,7 @@ fn find_captures(expr: Expr, params: ParamList, env: VarEnv, captures: CaptureLi
             let c2 = find_captures(coll, params, env, c1)
             if filter != null { find_captures(filter!, params, env, c2) } else { c2 }
         }
-        .Catch(inner, _, body) -> {
+        .Catch(inner, _, body, _, _) -> {
             let c1 = find_captures(inner, params, env, captures)
             find_captures(body, params, env, c1)
         }

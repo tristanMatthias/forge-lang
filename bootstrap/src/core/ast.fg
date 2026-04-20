@@ -517,7 +517,7 @@ export enum Expr {
     ListComp(body: Expr, variable: string, collection: Expr, filter: Expr?)
     QualifiedIdent(path: string)
     When(arms: WhenArmList)
-    Catch(inner: Expr, binding: string, body: Expr)
+    Catch(inner: Expr, binding: string, body: Expr, line: int, col: int)
 }
 
 export enum Stmt {
@@ -827,7 +827,7 @@ export fn render_expr(expr: Expr) -> string {
         .QualifiedIdent(path) -> path
         .When(arms) -> "(when ${render_when_arm_list(arms)})"
         .ListComp(body, variable, collection, _) -> "(list-comp ${render_expr(body)} for ${variable} in ${render_expr(collection)})"
-        .Catch(inner, binding, body) -> "(catch ${render_expr(inner)} (${binding}) ${render_expr(body)})"
+        .Catch(inner, binding, body, _, _) -> "(catch ${render_expr(inner)} (${binding}) ${render_expr(body)})"
     }
 }
 
