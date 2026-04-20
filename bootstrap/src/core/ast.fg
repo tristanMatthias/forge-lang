@@ -384,7 +384,9 @@ export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
 // Returns the union type string or "" if not a union alias.
 export fn union_alias_type(fields: FieldList) -> string {
     match fields {
-        .Node(name, ty, _, _) if name == "__union" -> ty
+        .Node(name, ty, _, next) if name == "__union" -> {
+            match next { .End -> ty, _ -> "" }
+        }
         _ -> ""
     }
 }
@@ -393,7 +395,10 @@ export fn union_alias_type(fields: FieldList) -> string {
 // Returns the wrapped type string or "" if not a newtype.
 export fn newtype_inner_type(fields: FieldList) -> string {
     match fields {
-        .Node(name, ty, _, _) if name == "__newtype" -> ty
+        .Node(name, ty, _, next) if name == "__newtype" -> {
+            // Only match when __newtype is the sole field (no collision with user fields)
+            match next { .End -> ty, _ -> "" }
+        }
         _ -> ""
     }
 }
