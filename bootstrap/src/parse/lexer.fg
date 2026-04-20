@@ -124,6 +124,13 @@ impl Parser {
             return
         }
 
+        // Raw string: r"..." or r"""..."""
+        if ch == "r" && self.peek_char() == "\"" {
+            self.advance_char()  // consume opening '"'
+            self.scan_raw_string()
+            return
+        }
+
         if p_is_alpha(ch) {
             self.scan_identifier_token()
             return
@@ -486,6 +493,60 @@ impl Parser {
         }
         self.report(DiagCode.UnterminatedString, "unterminated multiline string (missing closing \"\"\")")
         self.set_current(Tk.Error, "")
+    }
+
+    // Raw string: r"..." or r"""..."""
+    // No escape processing, no interpolation. Content is literal.
+    fn scan_raw_string(self) {
+        // Check for raw multiline: r"""..."""
+        if self.peek_char() == "\"" && self.peek_next_char() == "\"" {
+            self.advance_char()
+            self.advance_char()
+            // Skip first newline after opening r"""
+            if !self.is_at_end() && self.peek_char() == "\n" {
+                self.advance_char()
+            }
+            mut content = ""
+            while !self.is_at_end() {
+                let ch = self.peek_char()
+                if ch == "\"" && self.peek_next_char() == "\"" {
+                    if self.current + 2 < self.source.length && self.source[self.current + 2] == "\"" {
+                        self.advance_char()
+                        self.advance_char()
+                        self.advance_char()
+                        let stripped = multiline_strip_indent(content)
+                        self.set_current(Tk.String, "\"" + stripped + "\"")
+                        return
+                    }
+                }
+                content = content + ch
+                self.advance_char()
+            }
+            self.report(DiagCode.UnterminatedString, "unterminated raw multiline string (missing closing r\"\"\")")
+            self.set_current(Tk.Error, "")
+            return
+        }
+        // Single-line raw string: r"..."
+        mut content = "\""
+        while !self.is_at_end() {
+            let ch = self.peek_char()
+            if ch == "\"" { break }
+            if ch == "\n" {
+                self.report(DiagCode.UnterminatedString, "unterminated raw string")
+                self.set_current(Tk.Error, "")
+                return
+            }
+            content = content + ch
+            self.advance_char()
+        }
+        if self.is_at_end() {
+            self.report(DiagCode.UnterminatedString, "unterminated raw string")
+            self.set_current(Tk.Error, "")
+            return
+        }
+        self.advance_char()  // consume closing "
+        content = content + "\""
+        self.set_current(Tk.String, content)
     }
 
 }
