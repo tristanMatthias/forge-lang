@@ -307,14 +307,80 @@ void *forge_bump_alloc(size_t size) {
     return ptr;
 }
 
-// Drop-in replacement for malloc — used by the codegen's `with`
-// expressions, struct constructors, and enum constructors.
-// The codegen emits `call @malloc(i64 N)` for these; we intercept
-// by defining malloc here. Array/map code uses forge_array_*/forge_map_*
-// which call the real system malloc internally.
+// ─── Reference counting ──────────────────────────────────────────
 //
-// The codegen calls forge_bump_alloc() for struct/enum/with allocations.
-// malloc() is still used by array/map code that needs realloc.
+// RC header layout (8 bytes, placed BEFORE the user pointer):
+//   [ int32_t refcount | int32_t type_tag ]
+//   ^                                      ^
+//   header_ptr                             user_ptr (what callers see)
+//
+// forge_rc_alloc returns user_ptr. The header is at user_ptr - 8.
+// Non-atomic counters (spec Axis 9.4) — single-threaded v1.0.
+
+#define RC_HEADER_SIZE 8
+
+typedef struct {
+    int32_t refcount;
+    int32_t type_tag;   // reserved for cycle detection / drop dispatch
+} RcHeader;
+
+static inline RcHeader* rc_header(void* ptr) {
+    return (RcHeader*)((char*)ptr - RC_HEADER_SIZE);
+}
+
+static int rc_trace = 0;
+
+__attribute__((constructor))
+static void auto_enable_rc_trace(void) {
+    if (getenv("FORGE_RC_TRACE")) {
+        rc_trace = 1;
+        fprintf(stderr, "[RC_TRACE] enabled\n");
+    }
+}
+
+// Allocate an RC-managed object. Returns pointer to payload (past header).
+void* forge_rc_alloc(int64_t payload_size) {
+    size_t total = RC_HEADER_SIZE + (size_t)payload_size;
+    total = (total + 7) & ~7;  // align to 8
+    void* raw = forge_bump_alloc(total);
+    RcHeader* hdr = (RcHeader*)raw;
+    hdr->refcount = 1;
+    hdr->type_tag = 0;
+    void* user_ptr = (char*)raw + RC_HEADER_SIZE;
+    if (rc_trace) {
+        fprintf(stderr, "[RC] alloc %p (payload=%lld, rc=1)\n", user_ptr, (long long)payload_size);
+    }
+    return user_ptr;
+}
+
+// Increment reference count.
+void forge_rc_retain(void* ptr) {
+    if (!ptr) return;
+    RcHeader* hdr = rc_header(ptr);
+    hdr->refcount++;
+    if (rc_trace) {
+        fprintf(stderr, "[RC] retain %p (rc=%d)\n", ptr, hdr->refcount);
+    }
+}
+
+// Decrement reference count. Currently does NOT free (bump arena).
+// When we switch to a freeing allocator, this will call the destructor
+// and deallocate at refcount 0.
+void forge_rc_release(void* ptr) {
+    if (!ptr) return;
+    RcHeader* hdr = rc_header(ptr);
+    hdr->refcount--;
+    if (rc_trace) {
+        fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, hdr->refcount);
+    }
+    // TODO: when allocator supports free, deallocate at refcount == 0
+}
+
+// Debug: get current refcount.
+int64_t forge_rc_refcount(void* ptr) {
+    if (!ptr) return 0;
+    return (int64_t)rc_header(ptr)->refcount;
+}
 
 // ─── Central error reporting ──────────────────────────────────────
 //

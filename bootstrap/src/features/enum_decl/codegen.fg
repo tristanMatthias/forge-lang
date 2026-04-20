@@ -38,7 +38,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     }
     // Enum layout: {i8 tag, ptr payload}
     // Allocate outer struct (always 16 bytes)
-    let buf = ctx.malloc(ctx.i64(16))
+    let buf = ctx.rc_alloc(ctx.i64(16))
     let tag_gep = ctx.gep(st_ty, buf, 0, "tag_ptr")
     ctx.store(ctx.i64(v.tag), tag_gep)
 
@@ -48,7 +48,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
     if num_fields == 0 {
         ctx.store(ctx.zero_for(ValueType.Ptr), payload_gep)
     } else {
-        let pay_buf = ctx.malloc(ctx.i64(num_fields * 8))
+        let pay_buf = ctx.rc_alloc(ctx.i64(num_fields * 8))
         ctx.store(pay_buf, payload_gep)
         let resolved_fields = ctx.resolve_fields(v.fields)
         let fill = fill_enum_payload(ctx, env, pay_buf, resolved_fields, args, 0)?
@@ -59,7 +59,7 @@ export fn emit_enum_ctor(ctx: Ctx, env: VarEnv, type_name: string, variant: stri
 
 export fn malloc_enum_bytes(ctx: Ctx, variants: VariantList) -> ptr {
     // Fixed size: {i8 tag, ptr payload} = 16 bytes always
-    ctx.malloc(ctx.i64(16))
+    ctx.rc_alloc(ctx.i64(16))
 }
 
 fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList, args: ExprList, idx: int) -> Result<EmitValue, string> {

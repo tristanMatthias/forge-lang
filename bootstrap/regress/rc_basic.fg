@@ -1,0 +1,33 @@
+/// expect: 10
+/// expect: 20
+/// expect: red
+/// expect: (30, 40)
+/// expect: (1, 2)
+type Point = { x: int, y: int }
+enum Color { Red, Blue(name: string) }
+
+fn make_point(x: int, y: int) -> Point {
+    Point { x, y }
+}
+
+fn main() {
+    // Struct allocation (RC managed)
+    let p = make_point(10, 20)
+    println(string(p.x))
+    println(string(p.y))
+
+    // Enum allocation (RC managed)
+    let c = Color.Blue("red")
+    match c {
+        .Red -> println("red-variant")
+        .Blue(name) -> println(name)
+    }
+
+    // With expression (creates new RC object)
+    let p2 = p with { x: 30, y: 40 }
+    println("(${string(p2.x)}, ${string(p2.y)})")
+
+    // Tuple allocation (RC managed)
+    let t = (1, 2)
+    println("(${string(t.0)}, ${string(t.1)})")
+}

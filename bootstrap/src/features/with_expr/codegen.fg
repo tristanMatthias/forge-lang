@@ -23,7 +23,7 @@ export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) 
 
     // Count fields and allocate new struct
     let field_count = field_list_length(lookup.fields)
-    let new_buf = ctx.malloc(ctx.i64(field_count * 8))
+    let new_buf = ctx.rc_alloc(ctx.i64(field_count * 8))
     let src_ptr = ctx.to_ptr(r.value, "with_src")
 
     // Copy all fields from original

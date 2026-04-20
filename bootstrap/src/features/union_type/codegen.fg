@@ -14,11 +14,11 @@ export fn emit_union_wrap(ctx: Ctx, val: ptr, val_ty: ValueType, union_ty: Value
     let tag = forge_variant_hash(type_name)
     let st_ty = ctx.get_type("__union")
     // Allocate outer struct (16 bytes: i64 tag + ptr payload)
-    let buf = ctx.malloc(ctx.i64(16))
+    let buf = ctx.rc_alloc(ctx.i64(16))
     let tag_gep = ctx.gep(st_ty, buf, 0, "union_tag_ptr")
     ctx.store(ctx.i64(tag), tag_gep)
     // Store payload: value as i64 in a heap slot
-    let pay_buf = ctx.malloc(ctx.i64(8))
+    let pay_buf = ctx.rc_alloc(ctx.i64(8))
     ctx.store_slot(pay_buf, 0, val, val_ty)
     let pay_gep = ctx.gep(st_ty, buf, 1, "union_pay_ptr")
     ctx.store(pay_buf, pay_gep)
