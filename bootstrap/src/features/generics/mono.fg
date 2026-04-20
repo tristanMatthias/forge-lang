@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup}
+use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_new}
 
 // ── Registries ──
@@ -228,7 +228,17 @@ fn vtype_to_string(ty: ValueType) -> string {
         .FnTyped(_, _) -> "fn"
         .Tuple(_) -> "tuple"
         .Trait(n) -> n
-        .Union(_) -> "union"
+        .Union(types) -> render_union_mangled(types)
+    }
+}
+
+fn render_union_mangled(tl: TypeList) -> string {
+    match tl {
+        .End -> ""
+        .Node(ty, next) -> {
+            let rest = render_union_mangled(next)
+            if rest == "" { vtype_to_string(ty) } else { vtype_to_string(ty) + "|" + rest }
+        }
     }
 }
 
