@@ -10,9 +10,14 @@ mod printing
 mod blocks
 mod indexing
 mod helpers
+mod escape
 
 use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, field_type_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
 use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, RcCleanupStack, RC_CLEANUP, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, field_type_at, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, rc_mark_moved, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx, vtype_is_ptr_type}
+use codegen.escape.{EscapeSet, escape_has}
+
+export mut RC_ESCAPES: EscapeSet = .End
+export fn rc_set_escapes(es: EscapeSet) { RC_ESCAPES = es }
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag, has_expr_emit, has_stmt_emit}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
 use features.defer_stmt.codegen.{emit_defers}
@@ -76,16 +81,19 @@ export fn emit_rc_cleanup(ctx: Ctx) {
 fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
     match stack {
         .End -> {}
-        .Node(_, alloca, moved_flag, next) -> {
-            let was_moved = ctx.load(ctx.i1_type, moved_flag, "rc_moved")
-            let release_bb = ctx.bb("rc_release")
-            let skip_bb = ctx.bb("rc_skip")
-            ctx.cond_br(was_moved, skip_bb, release_bb)
-            ctx.position(release_bb)
-            let val = ctx.load(ctx.ptr_type, alloca, "rc_local")
-            ctx.rc_release(val)
-            ctx.br(skip_bb)
-            ctx.position(skip_bb)
+        .Node(name, alloca, moved_flag, next) -> {
+            // Skip escaped locals — their values are owned by other structures
+            if !escape_has(RC_ESCAPES, name) {
+                let was_moved = ctx.load(ctx.i1_type, moved_flag, "rc_moved")
+                let release_bb = ctx.bb("rc_release")
+                let skip_bb = ctx.bb("rc_skip")
+                ctx.cond_br(was_moved, skip_bb, release_bb)
+                ctx.position(release_bb)
+                let val = ctx.load(ctx.ptr_type, alloca, "rc_local")
+                ctx.rc_release(val)
+                ctx.br(skip_bb)
+                ctx.position(skip_bb)
+            }
             emit_rc_stack(ctx, next)
         }
     }

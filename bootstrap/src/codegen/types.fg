@@ -935,12 +935,6 @@ impl Ctx {
     fn bind(self, env: VarEnv, name: string, value: ptr, ty: ValueType) -> VarEnv {
         let alloca = forge_llvm_build_alloca(self.builder, self.type_for(ty), name)
         forge_llvm_build_store_cast(self.builder, value, alloca)
-        // Track RC-managed locals for scope-exit release
-        if vtype_is_ptr_type(ty) {
-            let moved_flag = forge_llvm_build_alloca(self.builder, self.i1_type, name + ".moved")
-            forge_llvm_build_store(self.builder, forge_llvm_const_int(self.i1_type, 0, 0), moved_flag)
-            rc_cleanup_push(name, alloca, moved_flag)
-        }
         env_extend(env, name, alloca, ty)
     }
 
