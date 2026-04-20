@@ -118,6 +118,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
         }
         .Return(value) -> {
             let r = emit_expr(ctx, env, value)?
+            emit_rc_cleanup(ctx)
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
             // Union wrapping: if function returns a union, wrap the concrete value
@@ -130,6 +131,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
             ok_stmt(env)
         }
         .ReturnEmpty -> {
+            emit_rc_cleanup(ctx)
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
             ctx.ret_void(fn_ret)

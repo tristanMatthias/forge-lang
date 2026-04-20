@@ -34,42 +34,52 @@ fn releasable_remove(set: ReleasableSet, name: string) -> ReleasableSet {
     }
 }
 
-// Analyze a function body. Start by collecting all ptr-typed let/mut/const
-// bindings as potentially releasable. Then walk all expressions — any use
-// of a name OTHER than field access removes it from the releasable set.
+// Analyze a function body. A local is releasable only if:
+// 1. Its initializer is an allocation (struct lit, enum ctor, tuple, with-expr)
+// 2. Its only uses are field reads (not returned, passed as arg, etc.)
 export fn analyze_releasable(body: StmtList) -> ReleasableSet {
-    // Phase 1: collect all binding names
-    let all_bindings = collect_bindings(body, ReleasableSet.End)
-    // Phase 2: remove names that escape
-    remove_escaped(body, all_bindings)
+    let owned = collect_owned_bindings(body, ReleasableSet.End)
+    remove_escaped(body, owned)
 }
 
-fn collect_bindings(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
+// Only collect bindings whose initializer creates a new RC object.
+fn collect_owned_bindings(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
     match stmts {
         .End -> set
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .Let(name, _, _) -> releasable_add(set, name)
-                .Mut(name, _, _) -> releasable_add(set, name)
-                .Const(name, _, _) -> releasable_add(set, name)
-                .Block(body) -> collect_bindings(body, set)
+                .Let(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+                .Mut(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+                .Const(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+                .Block(body) -> collect_owned_bindings(body, set)
                 .If(_, then_b, else_b) -> {
-                    let s1 = collect_bindings_stmt(then_b, set)
-                    if else_b != null { collect_bindings_stmt(else_b!, s1) } else { s1 }
+                    let s1 = collect_owned_stmt(then_b, set)
+                    if else_b != null { collect_owned_stmt(else_b!, s1) } else { s1 }
                 }
                 _ -> set
             }
-            collect_bindings(next, updated)
+            collect_owned_bindings(next, updated)
         }
     }
 }
 
-fn collect_bindings_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
+fn collect_owned_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
     match stmt_unwrap(stmt) {
-        .Block(body) -> collect_bindings(body, set)
-        .Let(name, _, _) -> releasable_add(set, name)
-        .Mut(name, _, _) -> releasable_add(set, name)
+        .Block(body) -> collect_owned_bindings(body, set)
+        .Let(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+        .Mut(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
         _ -> set
+    }
+}
+
+// An allocating expression creates a new heap object that the local owns.
+fn is_allocating_expr(expr: Expr) -> bool {
+    match expr {
+        .StructLit(_, _) -> true
+        .EnumCtor(_, _, _) -> true
+        .Tuple(_) -> true
+        .With(_, _) -> true
+        _ -> false
     }
 }
 

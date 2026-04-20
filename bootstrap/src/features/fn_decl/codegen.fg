@@ -57,6 +57,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     let ret_ty = body_cg.fn_ret(name)
     let r = emit_block_loop(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
     if !ctx.has_terminator() {
+        emit_rc_cleanup(body_cg)
         emit_defers(body_cg, env)
         // Union wrapping: if function returns a union, wrap the implicit return value
         if needs_union_wrap(r.ty, ret_ty) {

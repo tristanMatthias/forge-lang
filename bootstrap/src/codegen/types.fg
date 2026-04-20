@@ -939,6 +939,11 @@ impl Ctx {
     fn bind(self, env: VarEnv, name: string, value: ptr, ty: ValueType) -> VarEnv {
         let alloca = forge_llvm_build_alloca(self.builder, self.type_for(ty), name)
         forge_llvm_build_store_cast(self.builder, value, alloca)
+        if vtype_is_ptr_type(ty) {
+            let mf = forge_llvm_build_alloca(self.builder, self.i1_type, "mv")
+            forge_llvm_build_store(self.builder, forge_llvm_const_int(self.i1_type, 0, 0), mf)
+            rc_cleanup_push(name, alloca, mf)
+        }
         env_extend(env, name, alloca, ty)
     }
 
