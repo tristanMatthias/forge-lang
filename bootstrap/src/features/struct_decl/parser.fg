@@ -35,8 +35,7 @@ impl Parser {
                 let rendered = render_type_expr(te!)
                 // Union type alias: type X = int | string
                 if rendered.contains("|") {
-                    let fields = FieldList.Node("__union", rendered, ValueType.Int, FieldList.End)
-                    return Stmt.TypeDecl(name, tp, fields)
+                    return Stmt.UnionAliasDecl(name, rendered)
                 }
                 // Type operators: type X = Base without { fields }
                 if self.check(Tk.Identifier) {
@@ -51,8 +50,7 @@ impl Parser {
                     }
                 }
                 // Newtype wrapper: type UserId = string — nominal distinction
-                let fields = FieldList.Node("__newtype", rendered, ValueType.Int, FieldList.End)
-                return Stmt.TypeDecl(name, tp, fields)
+                return Stmt.NewtypeDecl(name, rendered)
             }
         }
         Stmt.TypeDecl(name, tp, FieldList.End)

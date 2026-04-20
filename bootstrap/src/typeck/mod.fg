@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, union_alias_type, newtype_inner_type, struct_type_lookup}
+use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe}
 use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_with_help, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
@@ -164,12 +164,42 @@ fn is_shape(set: ShapeSet, name: string) -> bool {
     }
 }
 
+// Newtype registry: maps name to inner type string
+enum NewtypeReg {
+    End
+    Node(name: string, inner_ty: string, next: NewtypeReg)
+}
+
+fn newtype_lookup(reg: NewtypeReg, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, inner, _) if n == name -> inner
+        .Node(_, _, next) -> newtype_lookup(next, name)
+    }
+}
+
+// Union alias registry: maps name to type string
+enum UnionAliasReg {
+    End
+    Node(name: string, type_str: string, next: UnionAliasReg)
+}
+
+fn union_alias_lookup(reg: UnionAliasReg, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, ts, _) if n == name -> ts
+        .Node(_, _, next) -> union_alias_lookup(next, name)
+    }
+}
+
 type TC = {
     types: TypeEntry,
     fns: FnTypeEntry,
     structs: StructTypeReg,
     shapes: ShapeSet,
     enums: EnumTypeReg,
+    newtypes: NewtypeReg,
+    union_aliases: UnionAliasReg,
     depth: int,
     bag: DiagnosticBag,
     current_fn: string,
@@ -191,6 +221,8 @@ fn tc_new() -> TC {
         structs: StructTypeReg.End,
         shapes: ShapeSet.End,
         enums: EnumTypeReg.End,
+        newtypes: NewtypeReg.End,
+        union_aliases: UnionAliasReg.End,
         depth: 0,
         bag: bag_new(),
         current_fn: "",
@@ -305,14 +337,13 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
         return ValueType.Fn(ValueType.Int)
     }
     if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty) }
-    if struct_type_has(tc.structs, ty) {
-        let fields = struct_type_lookup(tc.structs, ty)
-        let ua = union_alias_type(fields)
-        if ua != "" { return translate_type(tc, ua) }
-        let nt = newtype_inner_type(fields)
-        if nt != "" { return ValueType.Newtype(ty, translate_type(tc, nt)) }
-        return ValueType.Struct(ty)
-    }
+    // Union alias: type X = int | string
+    let ua = union_alias_lookup(tc.union_aliases, ty)
+    if ua != "" { return translate_type(tc, ua) }
+    // Newtype: type UserId = string
+    let nt = newtype_lookup(tc.newtypes, ty)
+    if nt != "" { return ValueType.Newtype(ty, translate_type(tc, nt)) }
+    if struct_type_has(tc.structs, ty) { return ValueType.Struct(ty) }
     if trait_has(tc.traits, ty) { return ValueType.Trait(ty) }
     // Handle generic type annotations: "Result<EmitValue, string>" → look up base "Result"
     let base = tc_base_type_name(ty)
@@ -371,16 +402,18 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
             let updated = match stmt_unwrap(ss.node) {
                 .TypeDecl(name, _, fields) -> {
                     let resolved = tc_resolve_type_operator(fields, tc.structs)
-                    let with_struct = tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
-                    // Register newtype constructor as a function: Name(inner) -> Name
-                    let nt = newtype_inner_type(fields)
-                    if nt != "" {
-                        let inner_ty = translate_type(with_struct, nt)
-                        let ctor_params = ParamList.Node("value", nt, inner_ty, ParamList.End)
-                        with_struct with { fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty), with_struct.fns) }
-                    } else {
-                        with_struct
+                    tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
+                }
+                .NewtypeDecl(name, inner_ty_str) -> {
+                    let inner_ty = translate_type(tc, inner_ty_str)
+                    let ctor_params = ParamList.Node("value", inner_ty_str, inner_ty, ParamList.End)
+                    tc with {
+                        newtypes: NewtypeReg.Node(name, inner_ty_str, tc.newtypes),
+                        fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty), tc.fns),
                     }
+                }
+                .UnionAliasDecl(name, type_str) -> {
+                    tc with { union_aliases: UnionAliasReg.Node(name, type_str, tc.union_aliases) }
                 }
                 .ShapeDecl(name, fields) -> tc with {
                     structs: StructTypeReg.Node(name, fields, tc.structs),

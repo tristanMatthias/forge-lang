@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend, union_alias_type, newtype_inner_type}
-use codegen.types.{Ctx, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
 use core.registry.{build_registry}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelOk}
@@ -192,8 +192,11 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
     let dt = forge_llvm_double_type(lc)
-    let structs = declare_structs(lc, i64t, i1t, dt, pt, stmts, StructReg.End)
-    let enums = declare_enums(lc, i64t, i1t, dt, pt, stmts, structs, EnumReg.End)
+    // Collect newtype/union alias registries first — needed for field type resolution
+    let cg_newtypes = collect_newtypes(stmts, CgNewtypeReg.End)
+    let cg_union_aliases = collect_union_aliases(stmts, CgUnionAliasReg.End)
+    let structs = declare_structs(lc, i64t, i1t, dt, pt, stmts, cg_newtypes, cg_union_aliases, StructReg.End)
+    let enums = declare_enums(lc, i64t, i1t, dt, pt, stmts, structs, cg_newtypes, cg_union_aliases, EnumReg.End)
     // Union type layout: {i64 tag, ptr payload} — same as enums
     let union_arr = forge_llvm_type_array_new(2)
     forge_llvm_type_array_set(union_arr, 0, i64t)
@@ -203,7 +206,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     forge_llvm_type_array_free(union_arr)
     let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
     let top_level_vars = declare_globals(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, TopLevelVars.End)
-    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, FnRetTypes.End)
+    let type_regs = TypeRegs { structs, enums, newtypes: cg_newtypes, union_aliases: cg_union_aliases }
+    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, type_regs, stmts, FnRetTypes.End)
     let fn_params = collect_fn_params(stmts, FnParamTypes.End)
 
     // Synthesize a wrapper function for the top-level non-function
@@ -240,6 +244,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         defers: DeferStack.End,
         features: build_registry(),
         trait_decls,
+        newtypes: cg_newtypes,
+        union_aliases: cg_union_aliases,
         debug_null_checks,
         source_file,
         source_line: 0,
@@ -285,30 +291,30 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
 }
 
 // Rebuild a FieldList with `resolved` populated from `translate_param_type`.
-fn resolve_variant_fields(variants: VariantList, structs: StructReg, enums: EnumReg) -> VariantList {
+fn resolve_variant_fields(variants: VariantList, regs: TypeRegs) -> VariantList {
     match variants {
         .End -> .End
         .Node(name, fields, next) ->
-            VariantList.Node(name, resolve_field_list(fields, structs, enums), resolve_variant_fields(next, structs, enums))
+            VariantList.Node(name, resolve_field_list(fields, regs), resolve_variant_fields(next, regs))
     }
 }
 
-fn resolve_field_list(fields: FieldList, structs: StructReg, enums: EnumReg) -> FieldList {
+fn resolve_field_list(fields: FieldList, regs: TypeRegs) -> FieldList {
     match fields {
         .End -> .End
         .Node(name, ty, _, next) ->
-            .Node(name, ty, translate_param_type(structs, enums, ty), resolve_field_list(next, structs, enums))
+            .Node(name, ty, resolve_type(regs, ty), resolve_field_list(next, regs))
     }
 }
 
-// Rebuild a ParamList with `resolved` populated from `translate_param_type`.
-fn resolve_param_list(params: ParamList, structs: StructReg, enums: EnumReg) -> ParamList {
+fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
     match params {
         .End -> .End
         .Node(name, ty, _, next) ->
-            .Node(name, ty, translate_param_type(structs, enums, ty), resolve_param_list(next, structs, enums))
+            .Node(name, ty, resolve_type(regs, ty), resolve_param_list(next, regs))
     }
 }
+
 
 fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: FieldList, idx: int) {
     match fields {
@@ -320,27 +326,16 @@ fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fiel
     }
 }
 
-fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, reg: StructReg) -> StructReg {
+fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
                 .TypeDecl(name, _, fields) -> {
-                    // Union aliases: type X = int | string — register in struct reg
-                    // but don't create an LLVM struct type (uses __union type)
-                    let ua = union_alias_type(fields)
-                    if ua != "" {
-                        return declare_structs(ctx, i64t, i1t, dt, pt, next, StructReg.Node(name, fields, reg))
-                    }
-                    // Newtype wrappers: type UserId = string — register in struct reg
-                    // but don't create an LLVM struct type (zero-cost, same bytes)
-                    let nt = newtype_inner_type(fields)
-                    if nt != "" {
-                        return declare_structs(ctx, i64t, i1t, dt, pt, next, StructReg.Node(name, fields, reg))
-                    }
                     let op_fields = resolve_type_operator(fields, reg)
-                    let resolved_fields = resolve_field_list(op_fields, reg, EnumReg.End)
+                    let base_regs = TypeRegs { structs: reg, enums: EnumReg.End, newtypes: nts, union_aliases: uas }
+                    let resolved_fields = resolve_field_list(op_fields, base_regs)
                     let count = field_list_length(resolved_fields)
                     let field_arr = forge_llvm_type_array_new(count)
                     fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, 0)
@@ -350,8 +345,8 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
                     StructReg.Node(name, resolved_fields, reg)
                 }
                 .ShapeDecl(name, fields) -> {
-                    // Shapes compile to same LLVM layout as structs (spec Axis 3)
-                    let resolved_fields = resolve_field_list(fields, reg, EnumReg.End)
+                    let base_regs = TypeRegs { structs: reg, enums: EnumReg.End, newtypes: nts, union_aliases: uas }
+                    let resolved_fields = resolve_field_list(fields, base_regs)
                     let count = field_list_length(resolved_fields)
                     let field_arr = forge_llvm_type_array_new(count)
                     fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, 0)
@@ -360,10 +355,12 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
                     forge_llvm_type_array_free(field_arr)
                     StructReg.Node(name, resolved_fields, reg)
                 }
-                .Module(_, body) -> declare_structs(ctx, i64t, i1t, dt, pt, body, reg)
+                .UnionAliasDecl(_, _) -> reg
+                .NewtypeDecl(_, _) -> reg
+                .Module(_, body) -> declare_structs(ctx, i64t, i1t, dt, pt, body, nts, uas, reg)
                 _ -> reg
             }
-            declare_structs(ctx, i64t, i1t, dt, pt, next, updated)
+            declare_structs(ctx, i64t, i1t, dt, pt, next, nts, uas, updated)
         }
     }
 }
@@ -397,26 +394,27 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
 }
 
 // Declare per-variant payload struct types: %EnumName.VariantName = type { field_types... }
-fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: VariantList, structs: StructReg, enums: EnumReg) {
+fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: VariantList, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, enums: EnumReg) {
     match variants {
         .End -> {}
         .Node(vname, fields, next) -> {
             let count = field_list_length(fields)
             if count > 0 {
                 let payload_name = "${enum_name}__${vname}"
-                let resolved_fields = resolve_field_list(fields, structs, enums)
+                let vp_regs = TypeRegs { structs, enums, newtypes: nts, union_aliases: uas }
+                let resolved_fields = resolve_field_list(fields, vp_regs)
                 let arr = forge_llvm_type_array_new(count)
                 fill_struct_field_types(arr, i64t, i1t, dt, pt, resolved_fields, 0)
                 let st = forge_llvm_struct_create_named(lc, payload_name)
                 forge_llvm_struct_set_body(st, arr, count, 0)
                 forge_llvm_type_array_free(arr)
             }
-            declare_variant_payloads(lc, i64t, i1t, dt, pt, enum_name, next, structs, enums)
+            declare_variant_payloads(lc, i64t, i1t, dt, pt, enum_name, next, structs, nts, uas, enums)
         }
     }
 }
 
-fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, structs: StructReg, reg: EnumReg) -> EnumReg {
+fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: EnumReg) -> EnumReg {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
@@ -431,14 +429,15 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
                     forge_llvm_struct_set_body(st, field_arr, 2, 0)
                     forge_llvm_type_array_free(field_arr)
                     // Per-variant typed payload structs
-                    declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs, reg)
-                    let resolved_variants = resolve_variant_fields(variants, structs, reg)
+                    declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs, nts, uas, reg)
+                    let ev_regs = TypeRegs { structs, enums: reg, newtypes: nts, union_aliases: uas }
+                    let resolved_variants = resolve_variant_fields(variants, ev_regs)
                     EnumReg.Node(name, resolved_variants, reg)
                 }
-                .Module(_, body) -> declare_enums(ctx, i64t, i1t, dt, pt, body, structs, reg)
+                .Module(_, body) -> declare_enums(ctx, i64t, i1t, dt, pt, body, structs, nts, uas, reg)
                 _ -> reg
             }
-            declare_enums(ctx, i64t, i1t, dt, pt, next, structs, updated)
+            declare_enums(ctx, i64t, i1t, dt, pt, next, structs, nts, uas, updated)
         }
     }
 }
@@ -466,6 +465,34 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
                 .Function(name, _, _, ret_ty, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
+        }
+    }
+}
+
+fn collect_newtypes(stmts: StmtList, reg: CgNewtypeReg) -> CgNewtypeReg {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let updated = match stmt_unwrap(ss.node) {
+                .NewtypeDecl(name, inner_ty) -> CgNewtypeReg.Node(name, inner_ty, reg)
+                .Module(_, body) -> collect_newtypes(body, reg)
+                _ -> reg
+            }
+            collect_newtypes(next, updated)
+        }
+    }
+}
+
+fn collect_union_aliases(stmts: StmtList, reg: CgUnionAliasReg) -> CgUnionAliasReg {
+    match stmts {
+        .End -> reg
+        .Node(ss, next) -> {
+            let updated = match stmt_unwrap(ss.node) {
+                .UnionAliasDecl(name, type_str) -> CgUnionAliasReg.Node(name, type_str, reg)
+                .Module(_, body) -> collect_union_aliases(body, reg)
+                _ -> reg
+            }
+            collect_union_aliases(next, updated)
         }
     }
 }
@@ -513,8 +540,8 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
     }
 }
 
-fn decl_fn_ret_type(structs: StructReg, enums: EnumReg, ret_ty: string, body: StmtList) -> ValueType {
-    let base = translate_param_type(structs, enums, ret_ty)
+fn decl_fn_ret_type(regs: TypeRegs, ret_ty: string, body: StmtList) -> ValueType {
+    let base = resolve_type(regs, ret_ty)
     let last = stmts_last_expr(body)
     match last {
         .Lambda(_, _) -> {
@@ -525,7 +552,7 @@ fn decl_fn_ret_type(structs: StructReg, enums: EnumReg, ret_ty: string, body: St
     }
 }
 
-fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
+fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, regs: TypeRegs, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
@@ -533,7 +560,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
             let updated = match stmt {
                 .Function(name, _, params, ret_ty, body) -> {
                     // Names are already qualified by the name resolution pass
-                    let resolved_params = resolve_param_list(params, structs, enums)
+                    let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
                     let existing = forge_llvm_get_named_function(m, name)
                     if existing != null {
@@ -542,10 +569,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
                     }
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
-                    let ret_vt = decl_fn_ret_type(structs, enums, ret_ty, body)
-                    if name.starts_with("Ctx__emit") || name == "emit_var_decl" {
-                        eprintln("[decl_fn] name=${name} ret_ty=${ret_ty} ret_vt_enum=${vtype_enum_name(ret_vt)}")
-                    }
+                    let ret_vt = decl_fn_ret_type(regs, ret_ty, body)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
@@ -553,22 +577,22 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, st
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
                 .ExternFn(name, params, ret_ty) -> {
-                    let resolved_params = resolve_param_list(params, structs, enums)
+                    let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
-                    let ret_vt = translate_param_type(structs, enums, ret_ty)
+                    let ret_vt = resolve_type(regs, ret_ty)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
-                .Impl(_, methods) -> declare_functions(m, ctx, i64t, i1t, dt, pt, structs, enums, methods, reg)
-                .Module(_, body) -> declare_functions(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
+                .Impl(_, methods) -> declare_functions(m, ctx, i64t, i1t, dt, pt, regs, methods, reg)
+                .Module(_, body) -> declare_functions(m, ctx, i64t, i1t, dt, pt, regs, body, reg)
                 _ -> reg
             }
-            declare_functions(m, ctx, i64t, i1t, dt, pt, structs, enums, next, updated)
+            declare_functions(m, ctx, i64t, i1t, dt, pt, regs, next, updated)
         }
     }
 }

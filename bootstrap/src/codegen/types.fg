@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend, union_type_list_merge, find_type_pipe, union_alias_type, newtype_inner_type}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
 use features.error_propagation.{Result}
 
@@ -47,9 +47,49 @@ export type Ctx = {
     defers: DeferStack,
     features: Registry,
     trait_decls: TraitDeclReg,
+    newtypes: CgNewtypeReg,
+    union_aliases: CgUnionAliasReg,
     debug_null_checks: int,
     source_file: string,
     source_line: int,
+}
+
+// ── Type registries bundle ──
+// All type registries needed for type resolution, bundled into one struct.
+// Eliminates scattered parameters and makes it easy to add new type kinds.
+export type TypeRegs = {
+    structs: StructReg,
+    enums: EnumReg,
+    newtypes: CgNewtypeReg,
+    union_aliases: CgUnionAliasReg,
+}
+
+// Newtype registry — maps name to inner type string
+export enum CgNewtypeReg {
+    End
+    Node(name: string, inner_ty: string, next: CgNewtypeReg)
+}
+
+export fn cg_newtype_lookup(reg: CgNewtypeReg, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, inner, _) if n == name -> inner
+        .Node(_, _, next) -> cg_newtype_lookup(next, name)
+    }
+}
+
+// Union alias registry — maps name to type string
+export enum CgUnionAliasReg {
+    End
+    Node(name: string, type_str: string, next: CgUnionAliasReg)
+}
+
+export fn cg_union_alias_lookup(reg: CgUnionAliasReg, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, ts, _) if n == name -> ts
+        .Node(_, _, next) -> cg_union_alias_lookup(next, name)
+    }
 }
 
 // Trait declaration registry — maps trait name to method names + return types.
@@ -411,6 +451,28 @@ fn mangle_generic_type(ty: string) -> string {
     "${result}__${mangle_generic_type(last_seg)}"
 }
 
+// Resolve a type string using ALL registries (structs, enums, newtypes, union aliases).
+// This is the single entry point for type resolution in the codegen pipeline.
+export fn resolve_type(regs: TypeRegs, ty: string) -> ValueType {
+    // Union types: A|B|C
+    let pipe_idx = find_type_pipe(ty)
+    if pipe_idx >= 0 {
+        let left_str = ty.substring(0, pipe_idx)
+        let right_str = ty.substring(pipe_idx + 1, ty.length)
+        let left = resolve_type(regs, left_str)
+        let right = resolve_type(regs, right_str)
+        return ValueType.Union(union_type_list_merge(left, right))
+    }
+    // Union alias: type X = int | string
+    let ua = cg_union_alias_lookup(regs.union_aliases, ty)
+    if ua != "" { return resolve_type(regs, ua) }
+    // Newtype: type UserId = string
+    let nt = cg_newtype_lookup(regs.newtypes, ty)
+    if nt != "" { return ValueType.Newtype(ty, resolve_type(regs, nt)) }
+    // Fall through to base type resolution
+    translate_param_type(regs.structs, regs.enums, ty)
+}
+
 export fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> TypeList {
     if s == "" { return TypeList.End }
     // Find next comma at depth 0
@@ -502,17 +564,6 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     }
     let struct_l = struct_reg_lookup(structs, base_ty)
     if struct_l.found {
-        // Union alias: type X = int | string → encoded as __union marker field
-        let union_str = union_alias_type(struct_l.fields)
-        if union_str != "" {
-            return translate_param_type(structs, enums, union_str)
-        }
-        // Newtype wrapper: type UserId = string → nominally distinct
-        let nt_inner = newtype_inner_type(struct_l.fields)
-        if nt_inner != "" {
-            let inner_ty = translate_param_type(structs, enums, nt_inner)
-            return ValueType.Newtype(base_ty, inner_ty)
-        }
         return ValueType.Struct(base_ty)
     }
     ValueType.Int
@@ -520,8 +571,9 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
 
 // translate_param_type with trait awareness — uses Ctx for trait registry.
 export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
-    let base = translate_param_type(ctx.structs, ctx.enums, ty)
-    // If base type is Int (unknown), check if it's a trait name
+    let regs = TypeRegs { structs: ctx.structs, enums: ctx.enums, newtypes: ctx.newtypes, union_aliases: ctx.union_aliases }
+    let base = resolve_type(regs, ty)
+    // If still unresolved (Int), check traits
     if !vtype_eq(base, ValueType.Int) { return base }
     if ty in ["", "int", "i64"] { return base }
     if trait_decl_has(ctx.trait_decls, ty) {
@@ -1003,12 +1055,12 @@ impl Ctx {
 
     // Translate a type annotation string to ValueType.
     fn translate_type(self, ty: string) -> ValueType {
-        translate_param_type(self.structs, self.enums, ty)
+        translate_type_ctx(self, ty)
     }
 
     // Translate a struct field's type annotation to ValueType.
     fn resolve_field_type(self, fields: FieldList, name: string) -> ValueType {
-        translate_param_type(self.structs, self.enums, field_type_of(fields, name))
+        translate_type_ctx(self, field_type_of(fields, name))
     }
 
     // ── Registry lookups ──
