@@ -278,6 +278,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 14. ALWAYS fix hacks and workarounds before ending a session. No hack survives a commit. If a proper fix requires a seed cycle, do the seed cycle.
 15. NEVER skip a feature because it's "complex" or "a bigger lift." You discovered the defer/errdefer interleaving is wrong — fix it NOW, don't file a ticket and move on. The ticket IS the work. Do it.
 16. NEVER build on top of bad architecture. If the foundation is wrong, stop and fix the foundation FIRST. "Pre-existing tech debt" is not an excuse — it's your job to fix it. String-based type annotations, untyped registries, i64 fallbacks — these are bugs, not features. Every time you encounter one, fix it before continuing. Tech debt compounds; the longer you wait the harder it gets.
+17. NEVER create mutable globals (`export mut`). Mutable globals break parallel compilation, create hidden state coupling, and make save/restore bugs inevitable. Thread state through function parameters or struct fields. The existing globals (DEFER_STACK, RC_CLEANUP, RC_RELEASABLE) are legacy — they exist because emit_stmt returns VarEnv instead of (Ctx, VarEnv). When emit_stmt is refactored to return Ctx, eliminate them.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
