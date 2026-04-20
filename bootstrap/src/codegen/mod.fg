@@ -67,17 +67,30 @@ export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEn
 }
 
 // Release all RC-managed locals tracked on the cleanup stack.
-export fn emit_rc_cleanup(ctx: Ctx) {
-    emit_rc_stack(ctx, RC_CLEANUP)
+// `skip_val` is the return value pointer — if a local holds this value,
+// skip its release (ownership transfers to the caller).
+export fn emit_rc_cleanup(ctx: Ctx, skip_val: ptr) {
+    emit_rc_stack(ctx, RC_CLEANUP, skip_val)
 }
 
-fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
+fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack, skip_ptr: ptr) {
     match stack {
         .End -> {}
         .Node(alloca, next) -> {
-            let val = ctx.load(ctx.ptr_type, alloca, "rc_cleanup")
-            ctx.rc_release(val)
-            emit_rc_stack(ctx, next)
+            let val = ctx.load(ctx.ptr_type, alloca, "rc_local")
+            if skip_ptr != null {
+                let is_ret = ctx.eq(val, skip_ptr, "rc_is_ret")
+                let release_bb = ctx.bb("rc_release")
+                let skip_bb = ctx.bb("rc_skip")
+                ctx.cond_br(is_ret, skip_bb, release_bb)
+                ctx.position(release_bb)
+                ctx.rc_release(val)
+                ctx.br(skip_bb)
+                ctx.position(skip_bb)
+            } else {
+                ctx.rc_release(val)
+            }
+            emit_rc_stack(ctx, next, skip_ptr)
         }
     }
 }
@@ -90,7 +103,6 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
         }
         .Return(value) -> {
             let r = emit_expr(ctx, env, value)?
-            // TODO: emit_rc_cleanup(ctx) — needs ownership tracking to avoid releasing return values
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
             // Union wrapping: if function returns a union, wrap the concrete value
@@ -103,7 +115,6 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
             ok_stmt(env)
         }
         .ReturnEmpty -> {
-            // TODO: emit_rc_cleanup(ctx) — needs ownership tracking
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
             ctx.ret_void(fn_ret)
