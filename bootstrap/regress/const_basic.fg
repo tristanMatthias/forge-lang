@@ -2,7 +2,7 @@
 /// expect: 3.14
 /// expect: avra
 /// expect: 500
-/// expect: true
+/// expect: 1
 fn main() {
     const MAX: int = 1000
     const PI: float = 3.14

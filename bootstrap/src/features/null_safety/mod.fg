@@ -1,9 +1,11 @@
 mod codegen
+mod typeck
 use codegen.types.{err_emit}
 use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.null_safety.codegen.{emit_null_coalesce, emit_optional_chain, emit_try, emit_catch}
+use features.null_safety.typeck.{check_catch, check_null_coalesce}
 use features.struct_decl.typeck.{check_field_access}
 use typeck.{check_expr, tc_er}
 
@@ -18,7 +20,7 @@ export fn init_null_safety(reg: Registry) {
             }
             _ -> r
         },
-        check_expr: nc_check_expr,
+        check_expr: check_null_coalesce,
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .NullCoalesce(_, _) -> error_result(rt, "null coalesce is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected NullCoalesce")
@@ -59,7 +61,6 @@ export fn init_null_safety(reg: Registry) {
         resolve_expr: (r: Resolver, expr: Expr) -> match expr {
             .Catch(inner, binding, body) -> {
                 let ri = resolve_expr(r, inner)
-                // Declare binding in a new scope for the catch body
                 let scoped = if binding.length > 0 {
                     let entered = enter_resolve_scope(ri)
                     define_name(declare_name(entered, binding), binding)
@@ -69,16 +70,7 @@ export fn init_null_safety(reg: Registry) {
             }
             _ -> r
         },
-        // Catch type checking is handled directly in check_expr (typeck/mod.fg)
-        // to access fn_ret_strs for Result Ok-type resolution.
-        check_expr: (tc: TC, expr: Expr) -> match expr {
-            .Catch(inner, _, body) -> {
-                let ci = check_expr(tc, inner)
-                let cb = check_expr(ci.tc, body)
-                tc_er(cb.tc, cb.ty)
-            }
-            _ -> tc_er(tc, .Int)
-        },
+        check_expr: check_catch,
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Catch(_, _, _) -> error_result(rt, "catch is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Catch")
@@ -91,17 +83,6 @@ fn catch_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, strin
     match expr {
         .Catch(inner, binding, body) -> emit_catch(ctx, env, inner, binding, body)
         _ -> err_emit("expected Catch")
-    }
-}
-
-fn nc_check_expr(tc: TC, expr: Expr) -> ExprResult {
-    match expr {
-        .NullCoalesce(left, right) -> {
-            let l = check_expr(tc, left)
-            let r = check_expr(l.tc, right)
-            tc_er(r.tc, r.ty)
-        }
-        _ -> tc_er(tc, .Int)
     }
 }
 

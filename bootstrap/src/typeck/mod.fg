@@ -10,6 +10,7 @@ use features.match_expr.typeck.{tc_check_match_arm_returns}
 use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts}
 use features.list_lit.typeck.{check_list_method}
 use features.map_lit.typeck.{check_map_method}
+use features.let_stmt.typeck.{is_const_expr}
 
 // ── Type environment ──
 
@@ -769,20 +770,6 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let fn_ty = fn_type_lookup(tc.fns, path)
             tc_er(tc, fn_ty)
         }
-        .Catch(inner, _, body) -> {
-            let ci = check_expr(tc, inner)
-            let cb = check_expr(ci.tc, body)
-            let maybe_ok = tc_catch_ok_type(ci.tc, inner)
-            if maybe_ok != null {
-                let ok_ty = maybe_ok!
-                if !vtype_eq(ok_ty, cb.ty) && !vtype_assignable(cb.ty, ok_ty) {
-                    let msg = "catch body type `${vtype_display(cb.ty)}` does not match expected type `${vtype_display(ok_ty)}`"
-                    return tc_er(tc_report(cb.tc, DiagCode.TypeMismatch, msg), ok_ty)
-                }
-                return tc_er(cb.tc, ok_ty)
-            }
-            tc_er(cb.tc, cb.ty)
-        }
         _ -> {
             let tag = forge_expr_tag(expr)
             let result = dispatch_expr_check(tc.features, tag, tc, expr)
@@ -1083,23 +1070,6 @@ export fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
             let rest = check_expr_list_types(r.tc, next)
             ExprListResult { tc: rest.tc, types: TypeList.Node(r.ty, rest.types) }
         }
-    }
-}
-
-// ── Constant expression validation ──
-// A constant expression is one that can be evaluated at compile time.
-fn is_const_expr(expr: Expr) -> bool {
-    match expr {
-        .Number(_) -> true
-        .FloatLit(_) -> true
-        .String(_) -> true
-        .Bool(_) -> true
-        .Null -> true
-        .Unary(_, inner) -> is_const_expr(inner)
-        .Binary(left, _, right) -> is_const_expr(left) && is_const_expr(right)
-        .Grouping(inner) -> is_const_expr(inner)
-        .Ident(_) -> true  // could be another const — resolver ensures it's defined
-        _ -> false
     }
 }
 

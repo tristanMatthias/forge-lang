@@ -365,33 +365,23 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
     }
 }
 
+fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty: string, reg: TopLevelVars) -> TopLevelVars {
+    let vt = translate_param_type(structs, enums, ty)
+    let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
+    let g = forge_llvm_add_global(m, llvm_ty, name)
+    forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
+    TopLevelVars.Node(name, g, vt, reg)
+}
+
 fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, stmts: StmtList, reg: TopLevelVars) -> TopLevelVars {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Let(name, ty, _) -> {
-                    let vt = translate_param_type(structs, enums, ty)
-                    let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
-                    let g = forge_llvm_add_global(m, llvm_ty, name)
-                    forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
-                    TopLevelVars.Node(name, g, vt, reg)
-                }
-                .Mut(name, ty, _) -> {
-                    let vt = translate_param_type(structs, enums, ty)
-                    let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
-                    let g = forge_llvm_add_global(m, llvm_ty, name)
-                    forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
-                    TopLevelVars.Node(name, g, vt, reg)
-                }
-                .Const(name, ty, _) -> {
-                    let vt = translate_param_type(structs, enums, ty)
-                    let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
-                    let g = forge_llvm_add_global(m, llvm_ty, name)
-                    forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
-                    TopLevelVars.Node(name, g, vt, reg)
-                }
+                .Let(name, ty, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
+                .Mut(name, ty, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
+                .Const(name, ty, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
                 .Module(_, body) -> declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }
