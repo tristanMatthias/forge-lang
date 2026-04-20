@@ -385,6 +385,13 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
                     forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
                     TopLevelVars.Node(name, g, vt, reg)
                 }
+                .Const(name, ty, _) -> {
+                    let vt = translate_param_type(structs, enums, ty)
+                    let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
+                    let g = forge_llvm_add_global(m, llvm_ty, name)
+                    forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
+                    TopLevelVars.Node(name, g, vt, reg)
+                }
                 .Module(_, body) -> declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }
@@ -639,6 +646,10 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     emit_top_level(result.ctx, result.env, next)
                 }
                 .Mut(name, _, init) -> {
+                    let result = emit_top_level_init(tl_ctx, env, name, init)?
+                    emit_top_level(result.ctx, result.env, next)
+                }
+                .Const(name, _, init) -> {
                     let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }

@@ -245,6 +245,11 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after_init = resolve_expr(declared, initializer)
             define_name(after_init, name)
         }
+        .Const(name, _, initializer) -> {
+            let declared = declare_name(r, name)  // immutable (const)
+            let after_init = resolve_expr(declared, initializer)
+            define_name(after_init, name)
+        }
         .Expr(expr) -> resolve_expr(r, expr)
         .Block(body) -> {
             let entered = enter_resolve_scope(r)

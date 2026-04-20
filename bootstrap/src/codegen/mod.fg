@@ -93,6 +93,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
         }
         .Let(name, ty, initializer) -> emit_var_decl(ctx, env, name, ty, initializer)
         .Mut(name, ty, initializer) -> emit_var_decl(ctx, env, name, ty, initializer)
+        .Const(name, ty, initializer) -> emit_var_decl(ctx, env, name, ty, initializer)
         .Block(body) -> {
             emit_stmt_list(ctx, env, body)?
             ok_stmt(env)

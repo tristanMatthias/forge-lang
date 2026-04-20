@@ -550,6 +550,16 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             }
             tc_bind(r.tc, name, declared_ty)
         }
+        .Const(name, ty_str, init) -> {
+            let r = check_expr(tc, init)
+            let declared_ty = if ty_str.length > 0 { translate_type(r.tc, ty_str) } else { r.ty }
+            // Validate that the initializer is a compile-time constant expression
+            if !is_const_expr(init) {
+                let msg = "`const` requires a compile-time constant expression (use `let` for runtime values)"
+                return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+            }
+            tc_bind(r.tc, name, declared_ty)
+        }
         .Expr(e) -> {
             let r = check_expr(tc, e)
             r.tc
@@ -1076,6 +1086,23 @@ export fn check_expr_list_types(tc: TC, exprs: ExprList) -> ExprListResult {
     }
 }
 
+// ── Constant expression validation ──
+// A constant expression is one that can be evaluated at compile time.
+fn is_const_expr(expr: Expr) -> bool {
+    match expr {
+        .Number(_) -> true
+        .FloatLit(_) -> true
+        .String(_) -> true
+        .Bool(_) -> true
+        .Null -> true
+        .Unary(_, inner) -> is_const_expr(inner)
+        .Binary(left, _, right) -> is_const_expr(left) && is_const_expr(right)
+        .Grouping(inner) -> is_const_expr(inner)
+        .Ident(_) -> true  // could be another const — resolver ensures it's defined
+        _ -> false
+    }
+}
+
 // ── Pass 3: Type annotation ──
 // Walks the AST and stamps resolved ValueTypes onto SExpr.ty fields.
 // Uses the TC state populated by Pass 1+2 (all bindings are in scope).
@@ -1101,6 +1128,11 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
                     let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
                     tc_bind(tc, name, declared_ty)
                 }
+                .Const(name, ty_str, init) -> {
+                    let r = check_expr(tc, init)
+                    let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
+                    tc_bind(tc, name, declared_ty)
+                }
                 _ -> tc
             }
             StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(updated_tc, next))
@@ -1112,6 +1144,7 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
     match stmt {
         .Let(name, ty, init) -> .Let(name, ty, annotate_expr(tc, init))
         .Mut(name, ty, init) -> .Mut(name, ty, annotate_expr(tc, init))
+        .Const(name, ty, init) -> .Const(name, ty, annotate_expr(tc, init))
         .Expr(e) -> .Expr(annotate_expr(tc, e))
         .Return(val) -> .Return(annotate_expr(tc, val))
         .Block(body) -> .Block(annotate_stmts(tc, body))

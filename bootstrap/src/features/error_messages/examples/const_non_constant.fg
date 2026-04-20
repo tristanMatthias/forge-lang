@@ -1,0 +1,6 @@
+/// expect-error: const` requires a compile-time constant expression
+fn get_time() -> int { 42 }
+fn main() {
+    const now = get_time()
+    println(string(now))
+}

@@ -46,7 +46,7 @@ export fn init_let_stmt(reg: Registry) {
 
     let f_const = feature_new("const") with {
         decl_keyword: "kw_const",
-        parse_decl: kw_parse_let,
+        parse_decl: (p: Parser) -> p.parse_const_statement(),
     }
     register(reg, f_const)
 

@@ -1,4 +1,4 @@
-// WHY: parses `let` and `mut` variable bindings.
+// WHY: parses `let`, `mut`, and `const` variable bindings.
 
 use core.ast.{Stmt, ParamList}
 use parse.{Parser}
@@ -63,6 +63,23 @@ impl Parser {
         }
         let initializer = self.parse_expression()?
         Stmt.LetDestructure(names, initializer)
+    }
+
+    fn parse_const_statement(self) -> Stmt? {
+        self.advance()
+        let name = self.consume_identifier("expected constant name")?
+        let ty = if self.check(Tk.Colon) {
+            self.advance()
+            let t = self.consume_type("expected type after `:`")?
+            t
+        } else {
+            ""
+        }
+        if !self.consume(Tk.Equal, "expected `=` after constant name") {
+            return null
+        }
+        let initializer = self.parse_expression()?
+        Stmt.Const(name, ty, initializer)
     }
 
     fn parse_destructure_names(self) -> ParamList? {

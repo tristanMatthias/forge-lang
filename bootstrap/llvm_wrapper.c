@@ -130,6 +130,10 @@ LLVMValueRef forge_llvm_const_int(LLVMTypeRef ty, int64_t value, int sign_extend
     return LLVMConstInt(ty, (unsigned long long)value, sign_extend);
 }
 
+LLVMValueRef forge_llvm_const_real(LLVMTypeRef ty, double value) {
+    return LLVMConstReal(ty, value);
+}
+
 // ── Functions ──
 
 LLVMValueRef forge_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeRef fn_type) {
@@ -156,6 +160,10 @@ LLVMValueRef forge_llvm_add_global(LLVMModuleRef m, LLVMTypeRef ty, const char* 
 
 void forge_llvm_set_initializer(LLVMValueRef g, LLVMValueRef val) {
     LLVMSetInitializer(g, val);
+}
+
+void forge_llvm_set_global_constant(LLVMValueRef g, int is_constant) {
+    LLVMSetGlobalConstant(g, is_constant);
 }
 
 // ── Basic blocks ──

@@ -523,6 +523,7 @@ export enum Expr {
 export enum Stmt {
     Let(name: string, ty: string, initializer: Expr)
     Mut(name: string, ty: string, initializer: Expr)
+    Const(name: string, ty: string, initializer: Expr)
     Expr(expr: Expr)
     Block(body: StmtList)
     If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
@@ -925,6 +926,7 @@ export fn render_stmt(stmt: Stmt) -> string {
     match stmt {
         .Let(name, ty, initializer) -> "(let ${name}:${ty} ${render_expr(initializer)})"
         .Mut(name, ty, initializer) -> "(mut ${name}:${ty} ${render_expr(initializer)})"
+        .Const(name, ty, initializer) -> "(const ${name}:${ty} ${render_expr(initializer)})"
         .Expr(expr) -> "(expr ${render_expr(expr)})"
         .Block(body) -> "(block ${render_stmt_list(body)})"
         .If(condition, then_branch, else_branch) -> {
