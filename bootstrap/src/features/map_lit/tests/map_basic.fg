@@ -1,4 +1,4 @@
-let m = {"name": "Alice", "age": "30"}
+mut m = {"name": "Alice", "age": "30"}
 println(m.get("name"))
 println(m.get("age"))
 println(string(m.has("name")))

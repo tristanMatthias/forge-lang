@@ -298,6 +298,11 @@ fn fa_root(expr: Expr) -> string {
     }
 }
 
+// Built-in methods that mutate their receiver (spec Axis 11.5).
+fn is_mutating_method(name: string) -> bool {
+    name in ["push", "pop", "insert", "remove", "clear", "sort", "reverse", "set"]
+}
+
 export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     if r.had_error {
         return r
@@ -353,7 +358,23 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         }
         .Call(callee, args) -> {
             let after_callee = resolve_expr(r, callee)
-            resolve_expr_list(after_callee, args)
+            let after_args = resolve_expr_list(after_callee, args)
+            // Deep immutability: block mutating method calls on let bindings
+            match callee {
+                .FieldAccess(obj, method) -> {
+                    if is_mutating_method(method) {
+                        let root = fa_root(obj)
+                        if root.length > 0 && root != "self" {
+                            let lu = lookup_name(after_args.scopes, root)
+                            if lu.found && !lu.mutable {
+                                return resolve_report(after_args, DiagCode.ImmutableAssign, "cannot call mutating method `${method}` on immutable variable `${root}` (use `mut` or `with` for updates)")
+                            }
+                        }
+                    }
+                }
+                _ -> {}
+            }
+            after_args
         }
         .Index(obj, idx) -> {
             let after_obj = resolve_expr(r, obj)

@@ -1,5 +1,5 @@
 // Stress: large list, chained operations
-let big = []
+mut big = []
 for i in 0..100 {
     big.push(i)
 }

@@ -1,4 +1,4 @@
-let nums = [10, 20, 30]
+mut nums = [10, 20, 30]
 nums.set(1, 99)
 println(string(nums[1]))
 nums.set(0, 77)

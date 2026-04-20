@@ -16,7 +16,7 @@ let result = nodes
 println(string(result))
 
 // Build a map from struct list
-let lookup = {}
+mut lookup = {}
 for n in nodes {
     lookup.set(n.label, string(n.value))
 }

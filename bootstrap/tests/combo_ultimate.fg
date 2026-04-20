@@ -42,7 +42,7 @@ println(string(perms & READ != 0))
 println(string(perms & EXEC != 0))
 
 // Map of results
-let results = {}
+mut results = {}
 results.set("pass", "3")
 results.set("fail", "0")
 results.set("skip", "1")

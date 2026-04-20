@@ -1,5 +1,5 @@
 // Stress: many entries
-let m = {}
+mut m = {}
 for i in 0..50 {
     m.set(string(i), string(i * i))
 }
@@ -19,7 +19,7 @@ let k = m.keys()
 println(string(k.length))
 
 // Map with empty string key
-let weird = {}
+mut weird = {}
 weird.set("", "empty_key")
 println(weird.get(""))
 println(string(weird.has("")))

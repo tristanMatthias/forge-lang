@@ -9,7 +9,7 @@ for s in scores {
 println(`max: ${string(max_val)}`)
 
 // Map with integer values
-let counts = {}
+mut counts = {}
 counts.set("a", string(1))
 counts.set("b", string(2))
 counts.set("c", string(3))

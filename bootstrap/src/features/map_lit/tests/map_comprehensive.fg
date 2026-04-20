@@ -1,5 +1,5 @@
 // Basic map operations
-let m = {"x": "10", "y": "20", "z": "30"}
+mut m = {"x": "10", "y": "20", "z": "30"}
 m.length |> string |> println
 println(m.get("x"))
 println(m.get("z"))

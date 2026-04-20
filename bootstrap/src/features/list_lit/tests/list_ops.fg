@@ -1,5 +1,5 @@
 // List literals
-let nums = [10, 20, 30]
+mut nums = [10, 20, 30]
 nums.length |> string |> println
 nums[0] |> string |> println
 nums[1] |> string |> println
