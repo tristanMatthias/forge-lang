@@ -367,6 +367,15 @@ export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
 
 // Find top-level | in a type string (not inside <>, (), or []).
 // Returns index of first top-level |, or -1 if none.
+// Check if a FieldList represents a union alias (marker field "__union")
+// Returns the union type string or "" if not a union alias.
+export fn union_alias_type(fields: FieldList) -> string {
+    match fields {
+        .Node(name, ty, _, _) if name == "__union" -> ty
+        _ -> ""
+    }
+}
+
 // Used by both typeck and codegen to parse "A|B" union type strings.
 export fn find_type_pipe(s: string) -> int {
     mut depth = 0

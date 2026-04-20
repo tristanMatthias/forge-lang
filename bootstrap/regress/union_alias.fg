@@ -1,0 +1,29 @@
+/// expect: 42
+/// expect: hi
+/// expect: struct alias: 99
+
+type StringOrInt = int | string
+
+fn show(v: StringOrInt) -> string {
+    match v {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+type ValOrMsg = int | string
+
+type Wrapper = {
+    val: ValOrMsg,
+}
+
+fn main() {
+    println(show(42))
+    println(show("hi"))
+
+    let w = Wrapper { val: 99 }
+    match w.val {
+        int(n) -> println("struct alias: " + string(n))
+        string(s) -> println("struct alias: " + s)
+    }
+}

@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
 // and the supporting field grammars (declaration + literal init).
 
-use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList}
+use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList, ValueType, render_type_expr}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -18,26 +18,7 @@ impl Parser {
         if !self.consume(Tk.Equal, "expected `=` after type name") {
             return null
         }
-        // Type operators: Type without {fields} / Type only {fields} / partial Type
-        if self.check(Tk.Identifier) && self.current_lexeme != "table" {
-            let base = self.current_lexeme
-            self.advance()
-            if self.check(Tk.Identifier) {
-                let op = self.current_lexeme
-                if op in ["without", "only"] {
-                    self.advance()
-                    if !self.consume(Tk.LeftBrace, "expected `{` after type operator") { return null }
-                    let op_fields = self.parse_ident_list()
-                    if !self.consume(Tk.RightBrace, "expected `}` after type operator fields") { return null }
-                    // Encode derivation: __base=Base, __op=without, then excluded field names
-                    let derived = FieldList.Node("__base", base, ValueType.Int, FieldList.Node("__op", op, ValueType.Int, op_fields))
-                    return Stmt.TypeDecl(name, tp, derived)
-                }
-            }
-            // Not a type operator — could be `type X = BaseType` (alias)
-            // For now, emit as TypeDecl with empty fields
-            return Stmt.TypeDecl(name, tp, FieldList.End)
-        }
+        // Struct body: type X = { fields }
         if self.check(Tk.LeftBrace) {
             self.advance()
             let fields = self.parse_field_list()?
@@ -45,6 +26,33 @@ impl Parser {
                 return null
             }
             return Stmt.TypeDecl(name, tp, fields)
+        }
+        // Non-brace RHS: type expressions, type operators, or aliases
+        // Handles: type X = int | string, type X = Base without { f }, type X = OtherType
+        if self.check(Tk.Identifier) || self.check(Tk.KwFn) || self.check(Tk.LeftBracket) {
+            let te = self.parse_type_expr("expected type after `=`")
+            if te != null {
+                let rendered = render_type_expr(te!)
+                // Union type alias: type X = int | string
+                if rendered.contains("|") {
+                    let fields = FieldList.Node("__union", rendered, ValueType.Int, FieldList.End)
+                    return Stmt.TypeDecl(name, tp, fields)
+                }
+                // Type operators: type X = Base without { fields }
+                if self.check(Tk.Identifier) {
+                    let op = self.current_lexeme
+                    if op in ["without", "only"] {
+                        self.advance()
+                        if !self.consume(Tk.LeftBrace, "expected `{` after type operator") { return null }
+                        let op_fields = self.parse_ident_list()
+                        if !self.consume(Tk.RightBrace, "expected `}` after type operator fields") { return null }
+                        let derived = FieldList.Node("__base", rendered, ValueType.Int, FieldList.Node("__op", op, ValueType.Int, op_fields))
+                        return Stmt.TypeDecl(name, tp, derived)
+                    }
+                }
+                // Plain alias: type X = OtherType
+                return Stmt.TypeDecl(name, tp, FieldList.End)
+            }
         }
         Stmt.TypeDecl(name, tp, FieldList.End)
     }
