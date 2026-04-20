@@ -9,8 +9,8 @@ export fn init_spec_test(reg: Registry) {
     let f1 = feature_new("spec") with {
         stmt_tag: Stmt.SpecBlock("", StmtList.End),
         emit_stmt: spec_emit_stmt,
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .SpecBlock(_, body) -> resolve_stmt_list(r, body), _ -> r },
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .SpecBlock(_, body) -> resolve_stmt_list(r, body), _ -> r },
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .SpecBlock(_, _) -> ok_result(rt, value_null())
             _ -> error_result(rt, "expected SpecBlock")
         },
@@ -22,8 +22,8 @@ export fn init_spec_test(reg: Registry) {
     let f2 = feature_new("given") with {
         stmt_tag: Stmt.GivenBlock("", StmtList.End),
         emit_stmt: spec_emit_stmt,
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .GivenBlock(_, body) -> resolve_stmt_list(r, body), _ -> r },
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .GivenBlock(_, body) -> resolve_stmt_list(r, body), _ -> r },
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .GivenBlock(_, _) -> ok_result(rt, value_null())
             _ -> error_result(rt, "expected GivenBlock")
         },
@@ -33,8 +33,8 @@ export fn init_spec_test(reg: Registry) {
     let f3 = feature_new("then") with {
         stmt_tag: Stmt.ThenBlock("", Expr.Null),
         emit_stmt: spec_emit_stmt,
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .ThenBlock(_, cond) -> resolve_expr(r, cond), _ -> r },
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .ThenBlock(_, cond) -> resolve_expr(r, cond), _ -> r },
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .ThenBlock(_, _) -> ok_result(rt, value_null())
             _ -> error_result(rt, "expected ThenBlock")
         },

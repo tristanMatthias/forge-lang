@@ -17,21 +17,21 @@ export fn init_let_stmt(reg: Registry) {
     let f = feature_new("let_destructure") with {
         stmt_tag: Stmt.LetDestructure(ParamList.End, Expr.Null),
         emit_stmt: let_destructure_emit_stmt,
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt {
             .LetDestructure(names, initializer) -> {
                 let after_init = resolve_expr(r, initializer)
                 define_param_names(after_init, names)
             }
             _ -> r
         },
-        check_stmt: (tc: int, stmt: Stmt) -> match stmt {
+        check_stmt: (tc: TC, stmt: Stmt) -> match stmt {
             .LetDestructure(names, init) -> {
                 let r = check_expr(tc, init)
                 bind_destructure(r.tc, names, r.ty)
             }
             _ -> tc
         },
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .LetDestructure(_, _) -> error_result(rt, "destructuring is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected LetDestructure")
         },

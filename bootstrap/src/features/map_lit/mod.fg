@@ -12,15 +12,15 @@ export fn init_map_lit(reg: Registry) {
     let f = feature_new("map_lit") with {
         expr_tag: Expr.MapLit(ExprList.End),
         emit_expr: map_lit_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr { .MapLit(entries) -> resolve_expr_list(r, entries), _ -> r },
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .MapLit(entries) -> resolve_expr_list(r, entries), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .MapLit(entries) -> {
                 let checked = check_expr_list(tc, entries)
                 tc_er(checked, .Map)
             }
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .MapLit(_) -> error_result(rt, "map literals are not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected MapLit")
         },

@@ -11,7 +11,7 @@ export fn init_closures(reg: Registry) {
     let f = feature_new("lambda") with {
         expr_tag: Expr.Lambda(ParamList.End, Expr.Null),
         emit_expr: lambda_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
             .Lambda(params, body) -> {
                 let entered = enter_resolve_scope(r)
                 let with_params = declare_params(entered, params)
@@ -20,7 +20,7 @@ export fn init_closures(reg: Registry) {
             }
             _ -> r
         },
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .Lambda(params, body) -> {
                 let inner = tc_enter(tc)
                 let with_params = tc_bind_params(inner, params)
@@ -30,7 +30,7 @@ export fn init_closures(reg: Registry) {
             }
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Lambda(_, _) -> error_result(rt, "lambdas are not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Lambda")
         },

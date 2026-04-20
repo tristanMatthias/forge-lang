@@ -1,5 +1,5 @@
-; seed built from commit 9d487b99 at 2026-04-20T18:53:05Z
-; source hash: e2b036bd6f3782f00bbd9c10aeb103b66c8c4fcca99fde05e2d68dac89037850
+; seed built from commit 31bfcf88 at 2026-04-20T18:58:38Z
+; source hash: 277027b44ae302d9319e7cd3f66ff13effb73392b6414fdd76659ef814e81954
 ; ModuleID = 'bootstrap'
 source_filename = "bootstrap"
 
@@ -179044,16 +179044,17 @@ entry:
 define i64 @__lambda_0(i64 %0, i64 %1) {
 entry:
   %after_subject = alloca ptr, align 8
-  %arms5 = alloca ptr, align 8
-  %subject2 = alloca ptr, align 8
+  %arms6 = alloca ptr, align 8
+  %subject3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210682481234
@@ -179064,27 +179065,26 @@ match_end:                                        ; preds = %march_arm12, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %subject_slot_base = ptrtoint ptr %payload to i64
   %subject_slot_addr = add i64 %subject_slot_base, 0
   %subject_slot = inttoptr i64 %subject_slot_addr to ptr
   %subject = load ptr, ptr %subject_slot, align 8
-  store ptr %subject, ptr %subject2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %arms_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %subject, ptr %subject3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %arms_slot_base = ptrtoint ptr %payload5 to i64
   %arms_slot_addr = add i64 %arms_slot_base, 8
   %arms_slot = inttoptr i64 %arms_slot_addr to ptr
   %arms = load ptr, ptr %arms_slot, align 8
-  store ptr %arms, ptr %arms5, align 8
-  %r6 = load i64, ptr %r, align 8
-  %subject7 = load ptr, ptr %subject2, align 8
-  %cast8 = inttoptr i64 %r6 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast8, ptr %subject7)
+  store ptr %arms, ptr %arms6, align 8
+  %r7 = load ptr, ptr %r, align 8
+  %subject8 = load ptr, ptr %subject3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r7, ptr %subject8)
   store ptr %2, ptr %after_subject, align 8
   %after_subject9 = load ptr, ptr %after_subject, align 8
-  %arms10 = load ptr, ptr %arms5, align 8
+  %arms10 = load ptr, ptr %arms6, align 8
   %3 = call ptr @"features::match_expr::resolver::resolve_match_arms"(ptr %after_subject9, ptr %arms10)
   %cast11 = ptrtoint ptr %3 to i64
   store i64 %cast11, ptr %match_result, align 8
@@ -179094,8 +179094,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm12
 
 march_arm12:                                      ; preds = %march_next
-  %r14 = load i64, ptr %r, align 8
-  store i64 %r14, ptr %match_result, align 8
+  %r14 = load ptr, ptr %r, align 8
+  %cast15 = ptrtoint ptr %r14 to i64
+  store i64 %cast15, ptr %match_result, align 8
   br label %match_end
 
 march_next13:                                     ; No predecessors!
@@ -179106,16 +179107,17 @@ march_next13:                                     ; No predecessors!
 define i64 @__lambda_1(i64 %0, i64 %1) {
 entry:
   %after_subject = alloca ptr, align 8
-  %arms5 = alloca ptr, align 8
-  %subject2 = alloca ptr, align 8
+  %arms6 = alloca ptr, align 8
+  %subject3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249852778830120657
@@ -179126,27 +179128,26 @@ match_end:                                        ; preds = %march_arm12, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %subject_slot_base = ptrtoint ptr %payload to i64
   %subject_slot_addr = add i64 %subject_slot_base, 0
   %subject_slot = inttoptr i64 %subject_slot_addr to ptr
   %subject = load ptr, ptr %subject_slot, align 8
-  store ptr %subject, ptr %subject2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %arms_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %subject, ptr %subject3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %arms_slot_base = ptrtoint ptr %payload5 to i64
   %arms_slot_addr = add i64 %arms_slot_base, 8
   %arms_slot = inttoptr i64 %arms_slot_addr to ptr
   %arms = load ptr, ptr %arms_slot, align 8
-  store ptr %arms, ptr %arms5, align 8
-  %r6 = load i64, ptr %r, align 8
-  %subject7 = load ptr, ptr %subject2, align 8
-  %cast8 = inttoptr i64 %r6 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast8, ptr %subject7)
+  store ptr %arms, ptr %arms6, align 8
+  %r7 = load ptr, ptr %r, align 8
+  %subject8 = load ptr, ptr %subject3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r7, ptr %subject8)
   store ptr %2, ptr %after_subject, align 8
   %after_subject9 = load ptr, ptr %after_subject, align 8
-  %arms10 = load ptr, ptr %arms5, align 8
+  %arms10 = load ptr, ptr %arms6, align 8
   %3 = call ptr @"features::match_expr::resolver::resolve_match_arms"(ptr %after_subject9, ptr %arms10)
   %cast11 = ptrtoint ptr %3 to i64
   store i64 %cast11, ptr %match_result, align 8
@@ -179156,8 +179157,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm12
 
 march_arm12:                                      ; preds = %march_next
-  %r14 = load i64, ptr %r, align 8
-  store i64 %r14, ptr %match_result, align 8
+  %r14 = load ptr, ptr %r, align 8
+  %cast15 = ptrtoint ptr %r14 to i64
+  store i64 %cast15, ptr %match_result, align 8
   br label %match_end
 
 march_next13:                                     ; No predecessors!
@@ -179169,12 +179171,13 @@ define i64 @__lambda_2(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210682481234
@@ -179185,9 +179188,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.5247)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.5247)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -179196,11 +179198,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.5248)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.5248)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -179212,12 +179213,13 @@ define i64 @__lambda_3(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249852778830120657
@@ -179228,9 +179230,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.5251)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.5251)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -179239,11 +179240,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.5252)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.5252)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -179268,15 +179268,16 @@ entry:
 
 define i64 @__lambda_5(i64 %0, i64 %1) {
 entry:
-  %arms2 = alloca ptr, align 8
+  %arms3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6384684119
@@ -179287,17 +179288,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %arms_slot_base = ptrtoint ptr %payload to i64
   %arms_slot_addr = add i64 %arms_slot_base, 0
   %arms_slot = inttoptr i64 %arms_slot_addr to ptr
   %arms = load ptr, ptr %arms_slot, align 8
-  store ptr %arms, ptr %arms2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %arms4 = load ptr, ptr %arms2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"features::match_expr::resolver::resolve_when_arms"(ptr %cast5, ptr %arms4)
+  store ptr %arms, ptr %arms3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %arms5 = load ptr, ptr %arms3, align 8
+  %2 = call ptr @"features::match_expr::resolver::resolve_when_arms"(ptr %r4, ptr %arms5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -179306,8 +179306,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -179377,12 +179378,13 @@ define i64 @__lambda_7(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6384684119
@@ -179393,9 +179395,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.5264)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.5264)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -179404,11 +179405,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.5265)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.5265)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -179435,17 +179435,18 @@ define i64 @__lambda_9(i64 %0, i64 %1) {
 entry:
   %after_t = alloca ptr, align 8
   %after_c = alloca ptr, align 8
-  %e8 = alloca ptr, align 8
-  %t5 = alloca ptr, align 8
-  %c2 = alloca ptr, align 8
+  %e9 = alloca ptr, align 8
+  %t6 = alloca ptr, align 8
+  %c3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952369602963
@@ -179456,38 +179457,37 @@ match_end:                                        ; preds = %march_arm17, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %c_slot_base = ptrtoint ptr %payload to i64
   %c_slot_addr = add i64 %c_slot_base, 0
   %c_slot = inttoptr i64 %c_slot_addr to ptr
   %c = load ptr, ptr %c_slot, align 8
-  store ptr %c, ptr %c2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %t_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %c, ptr %c3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %t_slot_base = ptrtoint ptr %payload5 to i64
   %t_slot_addr = add i64 %t_slot_base, 8
   %t_slot = inttoptr i64 %t_slot_addr to ptr
   %t = load ptr, ptr %t_slot, align 8
-  store ptr %t, ptr %t5, align 8
-  %pay_slot6 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload7 = load ptr, ptr %pay_slot6, align 8
-  %e_slot_base = ptrtoint ptr %payload7 to i64
+  store ptr %t, ptr %t6, align 8
+  %pay_slot7 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload8 = load ptr, ptr %pay_slot7, align 8
+  %e_slot_base = ptrtoint ptr %payload8 to i64
   %e_slot_addr = add i64 %e_slot_base, 16
   %e_slot = inttoptr i64 %e_slot_addr to ptr
   %e = load ptr, ptr %e_slot, align 8
-  store ptr %e, ptr %e8, align 8
-  %r9 = load i64, ptr %r, align 8
-  %c10 = load ptr, ptr %c2, align 8
-  %cast11 = inttoptr i64 %r9 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast11, ptr %c10)
+  store ptr %e, ptr %e9, align 8
+  %r10 = load ptr, ptr %r, align 8
+  %c11 = load ptr, ptr %c3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r10, ptr %c11)
   store ptr %2, ptr %after_c, align 8
   %after_c12 = load ptr, ptr %after_c, align 8
-  %t13 = load ptr, ptr %t5, align 8
+  %t13 = load ptr, ptr %t6, align 8
   %3 = call ptr @"resolve::resolve_expr"(ptr %after_c12, ptr %t13)
   store ptr %3, ptr %after_t, align 8
   %after_t14 = load ptr, ptr %after_t, align 8
-  %e15 = load ptr, ptr %e8, align 8
+  %e15 = load ptr, ptr %e9, align 8
   %4 = call ptr @"resolve::resolve_expr"(ptr %after_t14, ptr %e15)
   %cast16 = ptrtoint ptr %4 to i64
   store i64 %cast16, ptr %match_result, align 8
@@ -179497,8 +179497,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm17
 
 march_arm17:                                      ; preds = %march_next
-  %r19 = load i64, ptr %r, align 8
-  store i64 %r19, ptr %match_result, align 8
+  %r19 = load ptr, ptr %r, align 8
+  %cast20 = ptrtoint ptr %r19 to i64
+  store i64 %cast20, ptr %match_result, align 8
   br label %match_end
 
 march_next18:                                     ; No predecessors!
@@ -179510,12 +179511,13 @@ define i64 @__lambda_10(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952369602963
@@ -179526,9 +179528,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.5492)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.5492)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -179537,11 +179538,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.5493)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.5493)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -179567,16 +179567,17 @@ entry:
 define i64 @__lambda_12(i64 %0, i64 %1) {
 entry:
   %after_cond = alloca ptr, align 8
-  %body5 = alloca ptr, align 8
-  %condition2 = alloca ptr, align 8
+  %body6 = alloca ptr, align 8
+  %condition3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210694580318
@@ -179587,27 +179588,26 @@ match_end:                                        ; preds = %march_arm12, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %condition_slot_base = ptrtoint ptr %payload to i64
   %condition_slot_addr = add i64 %condition_slot_base, 0
   %condition_slot = inttoptr i64 %condition_slot_addr to ptr
   %condition = load ptr, ptr %condition_slot, align 8
-  store ptr %condition, ptr %condition2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %body_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %condition, ptr %condition3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %body_slot_base = ptrtoint ptr %payload5 to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body5, align 8
-  %r6 = load i64, ptr %r, align 8
-  %condition7 = load ptr, ptr %condition2, align 8
-  %cast8 = inttoptr i64 %r6 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast8, ptr %condition7)
+  store ptr %body, ptr %body6, align 8
+  %r7 = load ptr, ptr %r, align 8
+  %condition8 = load ptr, ptr %condition3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r7, ptr %condition8)
   store ptr %2, ptr %after_cond, align 8
   %after_cond9 = load ptr, ptr %after_cond, align 8
-  %body10 = load ptr, ptr %body5, align 8
+  %body10 = load ptr, ptr %body6, align 8
   %3 = call ptr @"resolve::resolve_stmt"(ptr %after_cond9, ptr %body10)
   %cast11 = ptrtoint ptr %3 to i64
   store i64 %cast11, ptr %match_result, align 8
@@ -179617,8 +179617,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm12
 
 march_arm12:                                      ; preds = %march_next
-  %r14 = load i64, ptr %r, align 8
-  store i64 %r14, ptr %match_result, align 8
+  %r14 = load ptr, ptr %r, align 8
+  %cast15 = ptrtoint ptr %r14 to i64
+  store i64 %cast15, ptr %match_result, align 8
   br label %match_end
 
 march_next13:                                     ; No predecessors!
@@ -179628,16 +179629,17 @@ march_next13:                                     ; No predecessors!
 
 define i64 @__lambda_13(i64 %0, i64 %1) {
 entry:
-  %body5 = alloca ptr, align 8
-  %condition2 = alloca ptr, align 8
+  %body6 = alloca ptr, align 8
+  %condition3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210694580318
@@ -179648,25 +179650,24 @@ match_end:                                        ; preds = %march_arm11, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %condition_slot_base = ptrtoint ptr %payload to i64
   %condition_slot_addr = add i64 %condition_slot_base, 0
   %condition_slot = inttoptr i64 %condition_slot_addr to ptr
   %condition = load ptr, ptr %condition_slot, align 8
-  store ptr %condition, ptr %condition2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %body_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %condition, ptr %condition3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %body_slot_base = ptrtoint ptr %payload5 to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body5, align 8
-  %rt6 = load i64, ptr %rt, align 8
-  %condition7 = load ptr, ptr %condition2, align 8
-  %body8 = load ptr, ptr %body5, align 8
-  %cast9 = inttoptr i64 %rt6 to ptr
-  %2 = call ptr @"features::eval::execute_while"(ptr %cast9, ptr %condition7, ptr %body8)
+  store ptr %body, ptr %body6, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %condition8 = load ptr, ptr %condition3, align 8
+  %body9 = load ptr, ptr %body6, align 8
+  %2 = call ptr @"features::eval::execute_while"(ptr %rt7, ptr %condition8, ptr %body9)
   %cast10 = ptrtoint ptr %2 to i64
   store i64 %cast10, ptr %match_result, align 8
   br label %match_end
@@ -179675,11 +179676,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm11
 
 march_arm11:                                      ; preds = %march_next
-  %rt13 = load i64, ptr %rt, align 8
-  %cast14 = inttoptr i64 %rt13 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast14, ptr @.str.5650)
-  %cast15 = ptrtoint ptr %3 to i64
-  store i64 %cast15, ptr %match_result, align 8
+  %rt13 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt13, ptr @.str.5650)
+  %cast14 = ptrtoint ptr %3 to i64
+  store i64 %cast14, ptr %match_result, align 8
   br label %match_end
 
 march_next12:                                     ; No predecessors!
@@ -179721,12 +179721,13 @@ define i64 @__lambda_16(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210674679875
@@ -179737,9 +179738,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.5929)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.5929)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -179748,11 +179748,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.5930)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.5930)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -179778,16 +179777,17 @@ entry:
 define i64 @__lambda_18(i64 %0, i64 %1) {
 entry:
   %after_init = alloca ptr, align 8
-  %initializer5 = alloca ptr, align 8
-  %names2 = alloca ptr, align 8
+  %initializer6 = alloca ptr, align 8
+  %names3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -8909097885654680508
@@ -179798,27 +179798,26 @@ match_end:                                        ; preds = %march_arm12, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %names_slot_base = ptrtoint ptr %payload to i64
   %names_slot_addr = add i64 %names_slot_base, 0
   %names_slot = inttoptr i64 %names_slot_addr to ptr
   %names = load ptr, ptr %names_slot, align 8
-  store ptr %names, ptr %names2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %initializer_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %names, ptr %names3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %initializer_slot_base = ptrtoint ptr %payload5 to i64
   %initializer_slot_addr = add i64 %initializer_slot_base, 8
   %initializer_slot = inttoptr i64 %initializer_slot_addr to ptr
   %initializer = load ptr, ptr %initializer_slot, align 8
-  store ptr %initializer, ptr %initializer5, align 8
-  %r6 = load i64, ptr %r, align 8
-  %initializer7 = load ptr, ptr %initializer5, align 8
-  %cast8 = inttoptr i64 %r6 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast8, ptr %initializer7)
+  store ptr %initializer, ptr %initializer6, align 8
+  %r7 = load ptr, ptr %r, align 8
+  %initializer8 = load ptr, ptr %initializer6, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r7, ptr %initializer8)
   store ptr %2, ptr %after_init, align 8
   %after_init9 = load ptr, ptr %after_init, align 8
-  %names10 = load ptr, ptr %names2, align 8
+  %names10 = load ptr, ptr %names3, align 8
   %3 = call ptr @"resolve::define_param_names"(ptr %after_init9, ptr %names10)
   %cast11 = ptrtoint ptr %3 to i64
   store i64 %cast11, ptr %match_result, align 8
@@ -179828,8 +179827,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm12
 
 march_arm12:                                      ; preds = %march_next
-  %r14 = load i64, ptr %r, align 8
-  store i64 %r14, ptr %match_result, align 8
+  %r14 = load ptr, ptr %r, align 8
+  %cast15 = ptrtoint ptr %r14 to i64
+  store i64 %cast15, ptr %match_result, align 8
   br label %match_end
 
 march_next13:                                     ; No predecessors!
@@ -179840,16 +179840,17 @@ march_next13:                                     ; No predecessors!
 define i64 @__lambda_19(i64 %0, i64 %1) {
 entry:
   %r = alloca ptr, align 8
-  %init5 = alloca ptr, align 8
-  %names2 = alloca ptr, align 8
+  %init6 = alloca ptr, align 8
+  %names3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -8909097885654680508
@@ -179860,24 +179861,23 @@ match_end:                                        ; preds = %march_arm18, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %names_slot_base = ptrtoint ptr %payload to i64
   %names_slot_addr = add i64 %names_slot_base, 0
   %names_slot = inttoptr i64 %names_slot_addr to ptr
   %names = load ptr, ptr %names_slot, align 8
-  store ptr %names, ptr %names2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %init_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %names, ptr %names3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %init_slot_base = ptrtoint ptr %payload5 to i64
   %init_slot_addr = add i64 %init_slot_base, 8
   %init_slot = inttoptr i64 %init_slot_addr to ptr
   %init = load ptr, ptr %init_slot, align 8
-  store ptr %init, ptr %init5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %init7 = load ptr, ptr %init5, align 8
-  %cast8 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"typeck::check_expr"(ptr %cast8, ptr %init7)
+  store ptr %init, ptr %init6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %init8 = load ptr, ptr %init6, align 8
+  %2 = call ptr @"typeck::check_expr"(ptr %tc7, ptr %init8)
   store ptr %2, ptr %r, align 8
   %r9 = load ptr, ptr %r, align 8
   %cast10 = ptrtoint ptr %r9 to i64
@@ -179886,7 +179886,7 @@ march_arm:                                        ; preds = %entry
   call void @forge_null_deref_trap(ptr @fld_name.6144, i64 2, ptr @sty_name.6145, i64 10, i64 %null_ext, ptr @src_file.6146, i64 88, i64 32)
   %tc_ptr = getelementptr inbounds nuw %ExprResult, ptr %r9, i32 0, i32 0
   %tc11 = load ptr, ptr %tc_ptr, align 8
-  %names12 = load ptr, ptr %names2, align 8
+  %names12 = load ptr, ptr %names3, align 8
   %r13 = load ptr, ptr %r, align 8
   %cast14 = ptrtoint ptr %r13 to i64
   %null_chk15 = icmp eq i64 %cast14, 0
@@ -179903,8 +179903,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm18
 
 march_arm18:                                      ; preds = %march_next
-  %tc20 = load i64, ptr %tc, align 8
-  store i64 %tc20, ptr %match_result, align 8
+  %tc20 = load ptr, ptr %tc, align 8
+  %cast21 = ptrtoint ptr %tc20 to i64
+  store i64 %cast21, ptr %match_result, align 8
   br label %match_end
 
 march_next19:                                     ; No predecessors!
@@ -179916,12 +179917,13 @@ define i64 @__lambda_20(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -8909097885654680508
@@ -179932,9 +179934,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.6152)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.6152)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -179943,11 +179944,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.6153)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.6153)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -179987,15 +179987,16 @@ entry:
 
 define i64 @__lambda_23(i64 %0, i64 %1) {
 entry:
-  %inits2 = alloca ptr, align 8
+  %inits3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249862025149459091
@@ -180006,17 +180007,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %inits_slot_base = ptrtoint ptr %payload to i64
   %inits_slot_addr = add i64 %inits_slot_base, 8
   %inits_slot = inttoptr i64 %inits_slot_addr to ptr
   %inits = load ptr, ptr %inits_slot, align 8
-  store ptr %inits, ptr %inits2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %inits4 = load ptr, ptr %inits2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_field_init_list"(ptr %cast5, ptr %inits4)
+  store ptr %inits, ptr %inits3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %inits5 = load ptr, ptr %inits3, align 8
+  %2 = call ptr @"resolve::resolve_field_init_list"(ptr %r4, ptr %inits5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -180025,8 +180025,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -180037,16 +180038,17 @@ march_next8:                                      ; No predecessors!
 define i64 @__lambda_24(i64 %0, i64 %1) {
 entry:
   %checked = alloca ptr, align 8
-  %inits5 = alloca ptr, align 8
-  %name2 = alloca ptr, align 8
+  %inits6 = alloca ptr, align 8
+  %name3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249862025149459091
@@ -180057,24 +180059,23 @@ match_end:                                        ; preds = %march_arm15, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %name_slot_base = ptrtoint ptr %payload to i64
   %name_slot_addr = add i64 %name_slot_base, 0
   %name_slot = inttoptr i64 %name_slot_addr to ptr
   %name = load ptr, ptr %name_slot, align 8
-  store ptr %name, ptr %name2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %inits_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %name, ptr %name3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %inits_slot_base = ptrtoint ptr %payload5 to i64
   %inits_slot_addr = add i64 %inits_slot_base, 8
   %inits_slot = inttoptr i64 %inits_slot_addr to ptr
   %inits = load ptr, ptr %inits_slot, align 8
-  store ptr %inits, ptr %inits5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %inits7 = load ptr, ptr %inits5, align 8
-  %cast8 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"features::struct_decl::typeck::check_field_inits"(ptr %cast8, ptr %inits7)
+  store ptr %inits, ptr %inits6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %inits8 = load ptr, ptr %inits6, align 8
+  %2 = call ptr @"features::struct_decl::typeck::check_field_inits"(ptr %tc7, ptr %inits8)
   store ptr %2, ptr %checked, align 8
   %checked9 = load ptr, ptr %checked, align 8
   %3 = call ptr @forge_bump_alloc(i64 16)
@@ -180083,7 +180084,7 @@ march_arm:                                        ; preds = %entry
   %pay_ptr = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 1
   %4 = call ptr @forge_bump_alloc(i64 8)
   store ptr %4, ptr %pay_ptr, align 8
-  %name11 = load ptr, ptr %name2, align 8
+  %name11 = load ptr, ptr %name3, align 8
   %slot_base = ptrtoint ptr %4 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
@@ -180099,18 +180100,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm15
 
 march_arm15:                                      ; preds = %march_next
-  %tc17 = load i64, ptr %tc, align 8
+  %tc17 = load ptr, ptr %tc, align 8
   %6 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr18 = getelementptr inbounds nuw %ValueType, ptr %6, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr18, align 8
   %pay_ptr19 = getelementptr inbounds nuw %ValueType, ptr %6, i32 0, i32 1
   store ptr null, ptr %pay_ptr19, align 8
   %cast20 = ptrtoint ptr %6 to i64
-  %cast21 = inttoptr i64 %tc17 to ptr
-  %cast22 = inttoptr i64 %cast20 to ptr
-  %7 = call ptr @"typeck::tc_er"(ptr %cast21, ptr %cast22)
-  %cast23 = ptrtoint ptr %7 to i64
-  store i64 %cast23, ptr %match_result, align 8
+  %cast21 = inttoptr i64 %cast20 to ptr
+  %7 = call ptr @"typeck::tc_er"(ptr %tc17, ptr %cast21)
+  %cast22 = ptrtoint ptr %7 to i64
+  store i64 %cast22, ptr %match_result, align 8
   br label %match_end
 
 march_next16:                                     ; No predecessors!
@@ -180122,12 +180122,13 @@ define i64 @__lambda_25(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249862025149459091
@@ -180138,9 +180139,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.7424)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.7424)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -180149,11 +180149,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.7425)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.7425)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -180163,16 +180162,17 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_26(i64 %0, i64 %1) {
 entry:
-  %field5 = alloca ptr, align 8
-  %obj2 = alloca ptr, align 8
+  %field6 = alloca ptr, align 8
+  %obj3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -4621855438574596325
@@ -180183,25 +180183,24 @@ match_end:                                        ; preds = %march_arm11, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %obj_slot_base = ptrtoint ptr %payload to i64
   %obj_slot_addr = add i64 %obj_slot_base, 0
   %obj_slot = inttoptr i64 %obj_slot_addr to ptr
   %obj = load ptr, ptr %obj_slot, align 8
-  store ptr %obj, ptr %obj2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %field_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %obj, ptr %obj3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %field_slot_base = ptrtoint ptr %payload5 to i64
   %field_slot_addr = add i64 %field_slot_base, 8
   %field_slot = inttoptr i64 %field_slot_addr to ptr
   %field = load ptr, ptr %field_slot, align 8
-  store ptr %field, ptr %field5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %obj7 = load ptr, ptr %obj2, align 8
-  %field8 = load ptr, ptr %field5, align 8
-  %cast9 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"features::struct_decl::typeck::check_field_access"(ptr %cast9, ptr %obj7, ptr %field8)
+  store ptr %field, ptr %field6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %obj8 = load ptr, ptr %obj3, align 8
+  %field9 = load ptr, ptr %field6, align 8
+  %2 = call ptr @"features::struct_decl::typeck::check_field_access"(ptr %tc7, ptr %obj8, ptr %field9)
   %cast10 = ptrtoint ptr %2 to i64
   store i64 %cast10, ptr %match_result, align 8
   br label %match_end
@@ -180210,18 +180209,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm11
 
 march_arm11:                                      ; preds = %march_next
-  %tc13 = load i64, ptr %tc, align 8
+  %tc13 = load ptr, ptr %tc, align 8
   %3 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr14 = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr14, align 8
   %pay_ptr = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast15 = ptrtoint ptr %3 to i64
-  %cast16 = inttoptr i64 %tc13 to ptr
-  %cast17 = inttoptr i64 %cast15 to ptr
-  %4 = call ptr @"typeck::tc_er"(ptr %cast16, ptr %cast17)
-  %cast18 = ptrtoint ptr %4 to i64
-  store i64 %cast18, ptr %match_result, align 8
+  %cast16 = inttoptr i64 %cast15 to ptr
+  %4 = call ptr @"typeck::tc_er"(ptr %tc13, ptr %cast16)
+  %cast17 = ptrtoint ptr %4 to i64
+  store i64 %cast17, ptr %match_result, align 8
   br label %match_end
 
 march_next12:                                     ; No predecessors!
@@ -180233,12 +180231,13 @@ define i64 @__lambda_27(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -4621855438574596325
@@ -180249,9 +180248,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.7432)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.7432)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -180260,11 +180258,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.7433)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.7433)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -180274,15 +180271,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_28(i64 %0, i64 %1) {
 entry:
-  %args2 = alloca ptr, align 8
+  %args3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 7570972219441074
@@ -180293,17 +180291,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %args_slot_base = ptrtoint ptr %payload to i64
   %args_slot_addr = add i64 %args_slot_base, 16
   %args_slot = inttoptr i64 %args_slot_addr to ptr
   %args = load ptr, ptr %args_slot, align 8
-  store ptr %args, ptr %args2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %args4 = load ptr, ptr %args2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr_list"(ptr %cast5, ptr %args4)
+  store ptr %args, ptr %args3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %args5 = load ptr, ptr %args3, align 8
+  %2 = call ptr @"resolve::resolve_expr_list"(ptr %r4, ptr %args5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -180312,8 +180309,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -180324,16 +180322,17 @@ march_next8:                                      ; No predecessors!
 define i64 @__lambda_29(i64 %0, i64 %1) {
 entry:
   %checked = alloca ptr, align 8
-  %args5 = alloca ptr, align 8
-  %type_name2 = alloca ptr, align 8
+  %args6 = alloca ptr, align 8
+  %type_name3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 7570972219441074
@@ -180344,24 +180343,23 @@ match_end:                                        ; preds = %march_arm15, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %type_name_slot_base = ptrtoint ptr %payload to i64
   %type_name_slot_addr = add i64 %type_name_slot_base, 0
   %type_name_slot = inttoptr i64 %type_name_slot_addr to ptr
   %type_name = load ptr, ptr %type_name_slot, align 8
-  store ptr %type_name, ptr %type_name2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %args_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %type_name, ptr %type_name3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %args_slot_base = ptrtoint ptr %payload5 to i64
   %args_slot_addr = add i64 %args_slot_base, 16
   %args_slot = inttoptr i64 %args_slot_addr to ptr
   %args = load ptr, ptr %args_slot, align 8
-  store ptr %args, ptr %args5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %args7 = load ptr, ptr %args5, align 8
-  %cast8 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"typeck::check_expr_list"(ptr %cast8, ptr %args7)
+  store ptr %args, ptr %args6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %args8 = load ptr, ptr %args6, align 8
+  %2 = call ptr @"typeck::check_expr_list"(ptr %tc7, ptr %args8)
   store ptr %2, ptr %checked, align 8
   %checked9 = load ptr, ptr %checked, align 8
   %3 = call ptr @forge_bump_alloc(i64 16)
@@ -180370,7 +180368,7 @@ march_arm:                                        ; preds = %entry
   %pay_ptr = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 1
   %4 = call ptr @forge_bump_alloc(i64 8)
   store ptr %4, ptr %pay_ptr, align 8
-  %type_name11 = load ptr, ptr %type_name2, align 8
+  %type_name11 = load ptr, ptr %type_name3, align 8
   %slot_base = ptrtoint ptr %4 to i64
   %slot_addr = add i64 %slot_base, 0
   %slot = inttoptr i64 %slot_addr to ptr
@@ -180386,18 +180384,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm15
 
 march_arm15:                                      ; preds = %march_next
-  %tc17 = load i64, ptr %tc, align 8
+  %tc17 = load ptr, ptr %tc, align 8
   %6 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr18 = getelementptr inbounds nuw %ValueType, ptr %6, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr18, align 8
   %pay_ptr19 = getelementptr inbounds nuw %ValueType, ptr %6, i32 0, i32 1
   store ptr null, ptr %pay_ptr19, align 8
   %cast20 = ptrtoint ptr %6 to i64
-  %cast21 = inttoptr i64 %tc17 to ptr
-  %cast22 = inttoptr i64 %cast20 to ptr
-  %7 = call ptr @"typeck::tc_er"(ptr %cast21, ptr %cast22)
-  %cast23 = ptrtoint ptr %7 to i64
-  store i64 %cast23, ptr %match_result, align 8
+  %cast21 = inttoptr i64 %cast20 to ptr
+  %7 = call ptr @"typeck::tc_er"(ptr %tc17, ptr %cast21)
+  %cast22 = ptrtoint ptr %7 to i64
+  store i64 %cast22, ptr %match_result, align 8
   br label %match_end
 
 march_next16:                                     ; No predecessors!
@@ -180409,12 +180406,13 @@ define i64 @__lambda_30(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 7570972219441074
@@ -180425,9 +180423,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.7443)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.7443)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -180436,11 +180433,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.7444)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.7444)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -180451,24 +180447,27 @@ march_next6:                                      ; No predecessors!
 define i64 @__lambda_31(i64 %0, i64 %1) {
 entry:
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %r1 = load i64, ptr %r, align 8
-  ret i64 %r1
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %r2 = load ptr, ptr %r, align 8
+  %cast3 = ptrtoint ptr %r2 to i64
+  ret i64 %cast3
 }
 
 define i64 @__lambda_32(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -4621855438555042642
@@ -180479,9 +180478,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.7449)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.7449)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -180490,11 +180488,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.7450)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.7450)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -180565,16 +180562,17 @@ entry:
 define i64 @__lambda_37(i64 %0, i64 %1) {
 entry:
   %after_left = alloca ptr, align 8
-  %right5 = alloca ptr, align 8
-  %left2 = alloca ptr, align 8
+  %right6 = alloca ptr, align 8
+  %left3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -4524237550030153793
@@ -180585,27 +180583,26 @@ match_end:                                        ; preds = %march_arm12, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %left_slot_base = ptrtoint ptr %payload to i64
   %left_slot_addr = add i64 %left_slot_base, 0
   %left_slot = inttoptr i64 %left_slot_addr to ptr
   %left = load ptr, ptr %left_slot, align 8
-  store ptr %left, ptr %left2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %right_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %left, ptr %left3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %right_slot_base = ptrtoint ptr %payload5 to i64
   %right_slot_addr = add i64 %right_slot_base, 8
   %right_slot = inttoptr i64 %right_slot_addr to ptr
   %right = load ptr, ptr %right_slot, align 8
-  store ptr %right, ptr %right5, align 8
-  %r6 = load i64, ptr %r, align 8
-  %left7 = load ptr, ptr %left2, align 8
-  %cast8 = inttoptr i64 %r6 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast8, ptr %left7)
+  store ptr %right, ptr %right6, align 8
+  %r7 = load ptr, ptr %r, align 8
+  %left8 = load ptr, ptr %left3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r7, ptr %left8)
   store ptr %2, ptr %after_left, align 8
   %after_left9 = load ptr, ptr %after_left, align 8
-  %right10 = load ptr, ptr %right5, align 8
+  %right10 = load ptr, ptr %right6, align 8
   %3 = call ptr @"resolve::resolve_expr"(ptr %after_left9, ptr %right10)
   %cast11 = ptrtoint ptr %3 to i64
   store i64 %cast11, ptr %match_result, align 8
@@ -180615,8 +180612,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm12
 
 march_arm12:                                      ; preds = %march_next
-  %r14 = load i64, ptr %r, align 8
-  store i64 %r14, ptr %match_result, align 8
+  %r14 = load ptr, ptr %r, align 8
+  %cast15 = ptrtoint ptr %r14 to i64
+  store i64 %cast15, ptr %match_result, align 8
   br label %match_end
 
 march_next13:                                     ; No predecessors!
@@ -180628,12 +180626,13 @@ define i64 @__lambda_38(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -4524237550030153793
@@ -180644,9 +180643,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.9188)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.9188)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -180655,11 +180653,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.9189)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.9189)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -180669,15 +180666,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_39(i64 %0, i64 %1) {
 entry:
-  %obj2 = alloca ptr, align 8
+  %obj3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -298532342185360562
@@ -180688,17 +180686,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %obj_slot_base = ptrtoint ptr %payload to i64
   %obj_slot_addr = add i64 %obj_slot_base, 0
   %obj_slot = inttoptr i64 %obj_slot_addr to ptr
   %obj = load ptr, ptr %obj_slot, align 8
-  store ptr %obj, ptr %obj2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %obj4 = load ptr, ptr %obj2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast5, ptr %obj4)
+  store ptr %obj, ptr %obj3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %obj5 = load ptr, ptr %obj3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r4, ptr %obj5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -180707,8 +180704,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -180718,16 +180716,17 @@ march_next8:                                      ; No predecessors!
 
 define i64 @__lambda_40(i64 %0, i64 %1) {
 entry:
-  %field5 = alloca ptr, align 8
-  %obj2 = alloca ptr, align 8
+  %field6 = alloca ptr, align 8
+  %obj3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -298532342185360562
@@ -180738,25 +180737,24 @@ match_end:                                        ; preds = %march_arm11, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %obj_slot_base = ptrtoint ptr %payload to i64
   %obj_slot_addr = add i64 %obj_slot_base, 0
   %obj_slot = inttoptr i64 %obj_slot_addr to ptr
   %obj = load ptr, ptr %obj_slot, align 8
-  store ptr %obj, ptr %obj2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %field_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %obj, ptr %obj3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %field_slot_base = ptrtoint ptr %payload5 to i64
   %field_slot_addr = add i64 %field_slot_base, 8
   %field_slot = inttoptr i64 %field_slot_addr to ptr
   %field = load ptr, ptr %field_slot, align 8
-  store ptr %field, ptr %field5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %obj7 = load ptr, ptr %obj2, align 8
-  %field8 = load ptr, ptr %field5, align 8
-  %cast9 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"features::struct_decl::typeck::check_field_access"(ptr %cast9, ptr %obj7, ptr %field8)
+  store ptr %field, ptr %field6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %obj8 = load ptr, ptr %obj3, align 8
+  %field9 = load ptr, ptr %field6, align 8
+  %2 = call ptr @"features::struct_decl::typeck::check_field_access"(ptr %tc7, ptr %obj8, ptr %field9)
   %cast10 = ptrtoint ptr %2 to i64
   store i64 %cast10, ptr %match_result, align 8
   br label %match_end
@@ -180765,18 +180763,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm11
 
 march_arm11:                                      ; preds = %march_next
-  %tc13 = load i64, ptr %tc, align 8
+  %tc13 = load ptr, ptr %tc, align 8
   %3 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr14 = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr14, align 8
   %pay_ptr = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast15 = ptrtoint ptr %3 to i64
-  %cast16 = inttoptr i64 %tc13 to ptr
-  %cast17 = inttoptr i64 %cast15 to ptr
-  %4 = call ptr @"typeck::tc_er"(ptr %cast16, ptr %cast17)
-  %cast18 = ptrtoint ptr %4 to i64
-  store i64 %cast18, ptr %match_result, align 8
+  %cast16 = inttoptr i64 %cast15 to ptr
+  %4 = call ptr @"typeck::tc_er"(ptr %tc13, ptr %cast16)
+  %cast17 = ptrtoint ptr %4 to i64
+  store i64 %cast17, ptr %match_result, align 8
   br label %match_end
 
 march_next12:                                     ; No predecessors!
@@ -180788,12 +180785,13 @@ define i64 @__lambda_41(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, -298532342185360562
@@ -180804,9 +180802,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.9198)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.9198)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -180815,11 +180812,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.9199)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.9199)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -180829,15 +180825,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_42(i64 %0, i64 %1) {
 entry:
-  %inner2 = alloca ptr, align 8
+  %inner3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 193472356
@@ -180848,17 +180845,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %inner_slot_base = ptrtoint ptr %payload to i64
   %inner_slot_addr = add i64 %inner_slot_base, 0
   %inner_slot = inttoptr i64 %inner_slot_addr to ptr
   %inner = load ptr, ptr %inner_slot, align 8
-  store ptr %inner, ptr %inner2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %inner4 = load ptr, ptr %inner2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast5, ptr %inner4)
+  store ptr %inner, ptr %inner3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %inner5 = load ptr, ptr %inner3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r4, ptr %inner5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -180867,8 +180863,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -180878,15 +180875,16 @@ march_next8:                                      ; No predecessors!
 
 define i64 @__lambda_43(i64 %0, i64 %1) {
 entry:
-  %inner2 = alloca ptr, align 8
+  %inner3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 193472356
@@ -180897,17 +180895,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %inner_slot_base = ptrtoint ptr %payload to i64
   %inner_slot_addr = add i64 %inner_slot_base, 0
   %inner_slot = inttoptr i64 %inner_slot_addr to ptr
   %inner = load ptr, ptr %inner_slot, align 8
-  store ptr %inner, ptr %inner2, align 8
-  %tc3 = load i64, ptr %tc, align 8
-  %inner4 = load ptr, ptr %inner2, align 8
-  %cast5 = inttoptr i64 %tc3 to ptr
-  %2 = call ptr @"typeck::check_expr"(ptr %cast5, ptr %inner4)
+  store ptr %inner, ptr %inner3, align 8
+  %tc4 = load ptr, ptr %tc, align 8
+  %inner5 = load ptr, ptr %inner3, align 8
+  %2 = call ptr @"typeck::check_expr"(ptr %tc4, ptr %inner5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -180916,18 +180913,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %tc9 = load i64, ptr %tc, align 8
+  %tc9 = load ptr, ptr %tc, align 8
   %3 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr10 = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr10, align 8
   %pay_ptr = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast11 = ptrtoint ptr %3 to i64
-  %cast12 = inttoptr i64 %tc9 to ptr
-  %cast13 = inttoptr i64 %cast11 to ptr
-  %4 = call ptr @"typeck::tc_er"(ptr %cast12, ptr %cast13)
-  %cast14 = ptrtoint ptr %4 to i64
-  store i64 %cast14, ptr %match_result, align 8
+  %cast12 = inttoptr i64 %cast11 to ptr
+  %4 = call ptr @"typeck::tc_er"(ptr %tc9, ptr %cast12)
+  %cast13 = ptrtoint ptr %4 to i64
+  store i64 %cast13, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -180939,12 +180935,13 @@ define i64 @__lambda_44(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 193472356
@@ -180955,9 +180952,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.9207)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.9207)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -180966,11 +180962,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.9208)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.9208)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -180986,17 +180981,18 @@ entry:
   %entered = alloca ptr, align 8
   %ife_result = alloca i64, align 8
   %ri = alloca ptr, align 8
-  %body8 = alloca ptr, align 8
-  %binding5 = alloca ptr, align 8
-  %inner2 = alloca ptr, align 8
+  %body9 = alloca ptr, align 8
+  %binding6 = alloca ptr, align 8
+  %inner3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210670622024
@@ -181007,33 +181003,32 @@ match_end:                                        ; preds = %march_arm30, %sif_e
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %inner_slot_base = ptrtoint ptr %payload to i64
   %inner_slot_addr = add i64 %inner_slot_base, 0
   %inner_slot = inttoptr i64 %inner_slot_addr to ptr
   %inner = load ptr, ptr %inner_slot, align 8
-  store ptr %inner, ptr %inner2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %binding_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %inner, ptr %inner3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %binding_slot_base = ptrtoint ptr %payload5 to i64
   %binding_slot_addr = add i64 %binding_slot_base, 8
   %binding_slot = inttoptr i64 %binding_slot_addr to ptr
   %binding = load ptr, ptr %binding_slot, align 8
-  store ptr %binding, ptr %binding5, align 8
-  %pay_slot6 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload7 = load ptr, ptr %pay_slot6, align 8
-  %body_slot_base = ptrtoint ptr %payload7 to i64
+  store ptr %binding, ptr %binding6, align 8
+  %pay_slot7 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload8 = load ptr, ptr %pay_slot7, align 8
+  %body_slot_base = ptrtoint ptr %payload8 to i64
   %body_slot_addr = add i64 %body_slot_base, 16
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body8, align 8
-  %r9 = load i64, ptr %r, align 8
-  %inner10 = load ptr, ptr %inner2, align 8
-  %cast11 = inttoptr i64 %r9 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast11, ptr %inner10)
+  store ptr %body, ptr %body9, align 8
+  %r10 = load ptr, ptr %r, align 8
+  %inner11 = load ptr, ptr %inner3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r10, ptr %inner11)
   store ptr %2, ptr %ri, align 8
-  %binding12 = load ptr, ptr %binding5, align 8
+  %binding12 = load ptr, ptr %binding6, align 8
   %3 = call i64 @strlen(ptr %binding12)
   %sgt = icmp sgt i64 %3, 0
   %sgt_ext = zext i1 %sgt to i64
@@ -181048,10 +181043,10 @@ ife_end:                                          ; preds = %ife_else, %ife_then
   %cast20 = inttoptr i64 %ife_val to ptr
   store ptr %cast20, ptr %scoped, align 8
   %scoped21 = load ptr, ptr %scoped, align 8
-  %body22 = load ptr, ptr %body8, align 8
+  %body22 = load ptr, ptr %body9, align 8
   %4 = call ptr @"resolve::resolve_expr"(ptr %scoped21, ptr %body22)
   store ptr %4, ptr %rb, align 8
-  %binding23 = load ptr, ptr %binding5, align 8
+  %binding23 = load ptr, ptr %binding6, align 8
   %5 = call i64 @strlen(ptr %binding23)
   %sgt24 = icmp sgt i64 %5, 0
   %sgt_ext25 = zext i1 %sgt24 to i64
@@ -181064,9 +181059,9 @@ ife_then:                                         ; preds = %march_arm
   %6 = call ptr @"resolve::enter_resolve_scope"(ptr %ri13)
   store ptr %6, ptr %entered, align 8
   %entered14 = load ptr, ptr %entered, align 8
-  %binding15 = load ptr, ptr %binding5, align 8
+  %binding15 = load ptr, ptr %binding6, align 8
   %7 = call ptr @"resolve::declare_name"(ptr %entered14, ptr %binding15)
-  %binding16 = load ptr, ptr %binding5, align 8
+  %binding16 = load ptr, ptr %binding6, align 8
   %8 = call ptr @"resolve::define_name"(ptr %7, ptr %binding16)
   %cast17 = ptrtoint ptr %8 to i64
   store i64 %cast17, ptr %ife_result, align 8
@@ -181097,8 +181092,9 @@ sif_end:                                          ; preds = %sif_else, %sif_then
   br label %match_end
 
 march_arm30:                                      ; preds = %march_next
-  %r32 = load i64, ptr %r, align 8
-  store i64 %r32, ptr %match_result, align 8
+  %r32 = load ptr, ptr %r, align 8
+  %cast33 = ptrtoint ptr %r32 to i64
+  store i64 %cast33, ptr %match_result, align 8
   br label %match_end
 
 march_next31:                                     ; No predecessors!
@@ -181110,16 +181106,17 @@ define i64 @__lambda_46(i64 %0, i64 %1) {
 entry:
   %cb = alloca ptr, align 8
   %ci = alloca ptr, align 8
-  %body5 = alloca ptr, align 8
-  %inner2 = alloca ptr, align 8
+  %body6 = alloca ptr, align 8
+  %inner3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210670622024
@@ -181130,24 +181127,23 @@ match_end:                                        ; preds = %march_arm24, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %inner_slot_base = ptrtoint ptr %payload to i64
   %inner_slot_addr = add i64 %inner_slot_base, 0
   %inner_slot = inttoptr i64 %inner_slot_addr to ptr
   %inner = load ptr, ptr %inner_slot, align 8
-  store ptr %inner, ptr %inner2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %body_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %inner, ptr %inner3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %body_slot_base = ptrtoint ptr %payload5 to i64
   %body_slot_addr = add i64 %body_slot_base, 16
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %inner7 = load ptr, ptr %inner2, align 8
-  %cast8 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"typeck::check_expr"(ptr %cast8, ptr %inner7)
+  store ptr %body, ptr %body6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %inner8 = load ptr, ptr %inner3, align 8
+  %2 = call ptr @"typeck::check_expr"(ptr %tc7, ptr %inner8)
   store ptr %2, ptr %ci, align 8
   %ci9 = load ptr, ptr %ci, align 8
   %cast10 = ptrtoint ptr %ci9 to i64
@@ -181156,7 +181152,7 @@ march_arm:                                        ; preds = %entry
   call void @forge_null_deref_trap(ptr @fld_name.9215, i64 2, ptr @sty_name.9216, i64 10, i64 %null_ext, ptr @src_file.9217, i64 88, i64 80)
   %tc_ptr = getelementptr inbounds nuw %ExprResult, ptr %ci9, i32 0, i32 0
   %tc11 = load ptr, ptr %tc_ptr, align 8
-  %body12 = load ptr, ptr %body5, align 8
+  %body12 = load ptr, ptr %body6, align 8
   %3 = call ptr @"typeck::check_expr"(ptr %tc11, ptr %body12)
   store ptr %3, ptr %cb, align 8
   %cb13 = load ptr, ptr %cb, align 8
@@ -181182,18 +181178,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm24
 
 march_arm24:                                      ; preds = %march_next
-  %tc26 = load i64, ptr %tc, align 8
+  %tc26 = load ptr, ptr %tc, align 8
   %5 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr27 = getelementptr inbounds nuw %ValueType, ptr %5, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr27, align 8
   %pay_ptr = getelementptr inbounds nuw %ValueType, ptr %5, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast28 = ptrtoint ptr %5 to i64
-  %cast29 = inttoptr i64 %tc26 to ptr
-  %cast30 = inttoptr i64 %cast28 to ptr
-  %6 = call ptr @"typeck::tc_er"(ptr %cast29, ptr %cast30)
-  %cast31 = ptrtoint ptr %6 to i64
-  store i64 %cast31, ptr %match_result, align 8
+  %cast29 = inttoptr i64 %cast28 to ptr
+  %6 = call ptr @"typeck::tc_er"(ptr %tc26, ptr %cast29)
+  %cast30 = ptrtoint ptr %6 to i64
+  store i64 %cast30, ptr %match_result, align 8
   br label %match_end
 
 march_next25:                                     ; No predecessors!
@@ -181205,12 +181200,13 @@ define i64 @__lambda_47(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210670622024
@@ -181221,9 +181217,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.9226)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.9226)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -181232,11 +181227,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.9227)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.9227)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -181261,15 +181255,16 @@ entry:
 
 define i64 @__lambda_49(i64 %0, i64 %1) {
 entry:
-  %elements2 = alloca ptr, align 8
+  %elements3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210691497359
@@ -181280,17 +181275,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %elements_slot_base = ptrtoint ptr %payload to i64
   %elements_slot_addr = add i64 %elements_slot_base, 0
   %elements_slot = inttoptr i64 %elements_slot_addr to ptr
   %elements = load ptr, ptr %elements_slot, align 8
-  store ptr %elements, ptr %elements2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %elements4 = load ptr, ptr %elements2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr_list"(ptr %cast5, ptr %elements4)
+  store ptr %elements, ptr %elements3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %elements5 = load ptr, ptr %elements3, align 8
+  %2 = call ptr @"resolve::resolve_expr_list"(ptr %r4, ptr %elements5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -181299,8 +181293,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -181311,15 +181306,16 @@ march_next8:                                      ; No predecessors!
 define i64 @__lambda_50(i64 %0, i64 %1) {
 entry:
   %pair = alloca ptr, align 8
-  %elements2 = alloca ptr, align 8
+  %elements3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210691497359
@@ -181330,17 +181326,16 @@ match_end:                                        ; preds = %march_arm17, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %elements_slot_base = ptrtoint ptr %payload to i64
   %elements_slot_addr = add i64 %elements_slot_base, 0
   %elements_slot = inttoptr i64 %elements_slot_addr to ptr
   %elements = load ptr, ptr %elements_slot, align 8
-  store ptr %elements, ptr %elements2, align 8
-  %tc3 = load i64, ptr %tc, align 8
-  %elements4 = load ptr, ptr %elements2, align 8
-  %cast5 = inttoptr i64 %tc3 to ptr
-  %2 = call ptr @"typeck::check_expr_list_types"(ptr %cast5, ptr %elements4)
+  store ptr %elements, ptr %elements3, align 8
+  %tc4 = load ptr, ptr %tc, align 8
+  %elements5 = load ptr, ptr %elements3, align 8
+  %2 = call ptr @"typeck::check_expr_list_types"(ptr %tc4, ptr %elements5)
   store ptr %2, ptr %pair, align 8
   %pair6 = load ptr, ptr %pair, align 8
   %cast7 = ptrtoint ptr %pair6 to i64
@@ -181377,18 +181372,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm17
 
 march_arm17:                                      ; preds = %march_next
-  %tc19 = load i64, ptr %tc, align 8
+  %tc19 = load ptr, ptr %tc, align 8
   %6 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr20 = getelementptr inbounds nuw %ValueType, ptr %6, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr20, align 8
   %pay_ptr21 = getelementptr inbounds nuw %ValueType, ptr %6, i32 0, i32 1
   store ptr null, ptr %pay_ptr21, align 8
   %cast22 = ptrtoint ptr %6 to i64
-  %cast23 = inttoptr i64 %tc19 to ptr
-  %cast24 = inttoptr i64 %cast22 to ptr
-  %7 = call ptr @"typeck::tc_er"(ptr %cast23, ptr %cast24)
-  %cast25 = ptrtoint ptr %7 to i64
-  store i64 %cast25, ptr %match_result, align 8
+  %cast23 = inttoptr i64 %cast22 to ptr
+  %7 = call ptr @"typeck::tc_er"(ptr %tc19, ptr %cast23)
+  %cast24 = ptrtoint ptr %7 to i64
+  store i64 %cast24, ptr %match_result, align 8
   br label %match_end
 
 march_next18:                                     ; No predecessors!
@@ -181400,12 +181394,13 @@ define i64 @__lambda_51(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210691497359
@@ -181416,9 +181411,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.9532)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.9532)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -181427,11 +181421,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.9533)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.9533)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -181441,15 +181434,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_52(i64 %0, i64 %1) {
 entry:
-  %obj2 = alloca ptr, align 8
+  %obj3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 8245494550993564743
@@ -181460,17 +181454,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %obj_slot_base = ptrtoint ptr %payload to i64
   %obj_slot_addr = add i64 %obj_slot_base, 0
   %obj_slot = inttoptr i64 %obj_slot_addr to ptr
   %obj = load ptr, ptr %obj_slot, align 8
-  store ptr %obj, ptr %obj2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %obj4 = load ptr, ptr %obj2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast5, ptr %obj4)
+  store ptr %obj, ptr %obj3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %obj5 = load ptr, ptr %obj3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r4, ptr %obj5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -181479,8 +181472,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -181491,16 +181485,17 @@ march_next8:                                      ; No predecessors!
 define i64 @__lambda_53(i64 %0, i64 %1) {
 entry:
   %o = alloca ptr, align 8
-  %idx5 = alloca i64, align 8
-  %obj2 = alloca ptr, align 8
+  %idx6 = alloca i64, align 8
+  %obj3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 8245494550993564743
@@ -181511,24 +181506,23 @@ match_end:                                        ; preds = %march_arm18, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %obj_slot_base = ptrtoint ptr %payload to i64
   %obj_slot_addr = add i64 %obj_slot_base, 0
   %obj_slot = inttoptr i64 %obj_slot_addr to ptr
   %obj = load ptr, ptr %obj_slot, align 8
-  store ptr %obj, ptr %obj2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %idx_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %obj, ptr %obj3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %idx_slot_base = ptrtoint ptr %payload5 to i64
   %idx_slot_addr = add i64 %idx_slot_base, 8
   %idx_slot = inttoptr i64 %idx_slot_addr to ptr
   %idx = load i64, ptr %idx_slot, align 8
-  store i64 %idx, ptr %idx5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %obj7 = load ptr, ptr %obj2, align 8
-  %cast8 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"typeck::check_expr"(ptr %cast8, ptr %obj7)
+  store i64 %idx, ptr %idx6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %obj8 = load ptr, ptr %obj3, align 8
+  %2 = call ptr @"typeck::check_expr"(ptr %tc7, ptr %obj8)
   store ptr %2, ptr %o, align 8
   %o9 = load ptr, ptr %o, align 8
   %cast10 = ptrtoint ptr %o9 to i64
@@ -181544,7 +181538,7 @@ march_arm:                                        ; preds = %entry
   call void @forge_null_deref_trap(ptr @fld_name.9542, i64 2, ptr @sty_name.9543, i64 10, i64 %null_ext15, ptr @src_file.9544, i64 88, i64 38)
   %ty_ptr = getelementptr inbounds nuw %ExprResult, ptr %o12, i32 0, i32 1
   %ty = load ptr, ptr %ty_ptr, align 8
-  %idx16 = load i64, ptr %idx5, align 8
+  %idx16 = load i64, ptr %idx6, align 8
   %3 = call ptr @"core::ast::vtype_tuple_at"(ptr %ty, i64 %idx16)
   %4 = call ptr @"typeck::tc_er"(ptr %tc11, ptr %3)
   %cast17 = ptrtoint ptr %4 to i64
@@ -181555,18 +181549,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm18
 
 march_arm18:                                      ; preds = %march_next
-  %tc20 = load i64, ptr %tc, align 8
+  %tc20 = load ptr, ptr %tc, align 8
   %5 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr21 = getelementptr inbounds nuw %ValueType, ptr %5, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr21, align 8
   %pay_ptr = getelementptr inbounds nuw %ValueType, ptr %5, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast22 = ptrtoint ptr %5 to i64
-  %cast23 = inttoptr i64 %tc20 to ptr
-  %cast24 = inttoptr i64 %cast22 to ptr
-  %6 = call ptr @"typeck::tc_er"(ptr %cast23, ptr %cast24)
-  %cast25 = ptrtoint ptr %6 to i64
-  store i64 %cast25, ptr %match_result, align 8
+  %cast23 = inttoptr i64 %cast22 to ptr
+  %6 = call ptr @"typeck::tc_er"(ptr %tc20, ptr %cast23)
+  %cast24 = ptrtoint ptr %6 to i64
+  store i64 %cast24, ptr %match_result, align 8
   br label %match_end
 
 march_next19:                                     ; No predecessors!
@@ -181578,12 +181571,13 @@ define i64 @__lambda_54(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 8245494550993564743
@@ -181594,9 +181588,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.9547)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.9547)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -181605,11 +181598,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.9548)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.9548)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -181620,16 +181612,17 @@ march_next6:                                      ; No predecessors!
 define i64 @__lambda_55(i64 %0, i64 %1) {
 entry:
   %after_obj = alloca ptr, align 8
-  %overrides5 = alloca ptr, align 8
-  %obj2 = alloca ptr, align 8
+  %overrides6 = alloca ptr, align 8
+  %obj3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6384685697
@@ -181640,27 +181633,26 @@ match_end:                                        ; preds = %march_arm12, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %obj_slot_base = ptrtoint ptr %payload to i64
   %obj_slot_addr = add i64 %obj_slot_base, 0
   %obj_slot = inttoptr i64 %obj_slot_addr to ptr
   %obj = load ptr, ptr %obj_slot, align 8
-  store ptr %obj, ptr %obj2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %overrides_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %obj, ptr %obj3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %overrides_slot_base = ptrtoint ptr %payload5 to i64
   %overrides_slot_addr = add i64 %overrides_slot_base, 8
   %overrides_slot = inttoptr i64 %overrides_slot_addr to ptr
   %overrides = load ptr, ptr %overrides_slot, align 8
-  store ptr %overrides, ptr %overrides5, align 8
-  %r6 = load i64, ptr %r, align 8
-  %obj7 = load ptr, ptr %obj2, align 8
-  %cast8 = inttoptr i64 %r6 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast8, ptr %obj7)
+  store ptr %overrides, ptr %overrides6, align 8
+  %r7 = load ptr, ptr %r, align 8
+  %obj8 = load ptr, ptr %obj3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r7, ptr %obj8)
   store ptr %2, ptr %after_obj, align 8
   %after_obj9 = load ptr, ptr %after_obj, align 8
-  %overrides10 = load ptr, ptr %overrides5, align 8
+  %overrides10 = load ptr, ptr %overrides6, align 8
   %3 = call ptr @"resolve::resolve_field_init_list"(ptr %after_obj9, ptr %overrides10)
   %cast11 = ptrtoint ptr %3 to i64
   store i64 %cast11, ptr %match_result, align 8
@@ -181670,8 +181662,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm12
 
 march_arm12:                                      ; preds = %march_next
-  %r14 = load i64, ptr %r, align 8
-  store i64 %r14, ptr %match_result, align 8
+  %r14 = load ptr, ptr %r, align 8
+  %cast15 = ptrtoint ptr %r14 to i64
+  store i64 %cast15, ptr %match_result, align 8
   br label %match_end
 
 march_next13:                                     ; No predecessors!
@@ -181683,12 +181676,13 @@ define i64 @__lambda_56(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6384685697
@@ -181699,9 +181693,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.9678)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.9678)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -181710,11 +181703,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.9679)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.9679)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -181724,15 +181716,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_57(i64 %0, i64 %1) {
 entry:
-  %elements2 = alloca ptr, align 8
+  %elements3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229432243077098
@@ -181743,17 +181736,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %elements_slot_base = ptrtoint ptr %payload to i64
   %elements_slot_addr = add i64 %elements_slot_base, 0
   %elements_slot = inttoptr i64 %elements_slot_addr to ptr
   %elements = load ptr, ptr %elements_slot, align 8
-  store ptr %elements, ptr %elements2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %elements4 = load ptr, ptr %elements2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr_list"(ptr %cast5, ptr %elements4)
+  store ptr %elements, ptr %elements3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %elements5 = load ptr, ptr %elements3, align 8
+  %2 = call ptr @"resolve::resolve_expr_list"(ptr %r4, ptr %elements5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -181762,8 +181754,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -181773,15 +181766,16 @@ march_next8:                                      ; No predecessors!
 
 define i64 @__lambda_58(i64 %0, i64 %1) {
 entry:
-  %elements2 = alloca ptr, align 8
+  %elements3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229432243077098
@@ -181792,17 +181786,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %elements_slot_base = ptrtoint ptr %payload to i64
   %elements_slot_addr = add i64 %elements_slot_base, 0
   %elements_slot = inttoptr i64 %elements_slot_addr to ptr
   %elements = load ptr, ptr %elements_slot, align 8
-  store ptr %elements, ptr %elements2, align 8
-  %tc3 = load i64, ptr %tc, align 8
-  %elements4 = load ptr, ptr %elements2, align 8
-  %cast5 = inttoptr i64 %tc3 to ptr
-  %2 = call ptr @"features::list_lit::typeck::check_list_lit"(ptr %cast5, ptr %elements4)
+  store ptr %elements, ptr %elements3, align 8
+  %tc4 = load ptr, ptr %tc, align 8
+  %elements5 = load ptr, ptr %elements3, align 8
+  %2 = call ptr @"features::list_lit::typeck::check_list_lit"(ptr %tc4, ptr %elements5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -181811,18 +181804,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %tc9 = load i64, ptr %tc, align 8
+  %tc9 = load ptr, ptr %tc, align 8
   %3 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr10 = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr10, align 8
   %pay_ptr = getelementptr inbounds nuw %ValueType, ptr %3, i32 0, i32 1
   store ptr null, ptr %pay_ptr, align 8
   %cast11 = ptrtoint ptr %3 to i64
-  %cast12 = inttoptr i64 %tc9 to ptr
-  %cast13 = inttoptr i64 %cast11 to ptr
-  %4 = call ptr @"typeck::tc_er"(ptr %cast12, ptr %cast13)
-  %cast14 = ptrtoint ptr %4 to i64
-  store i64 %cast14, ptr %match_result, align 8
+  %cast12 = inttoptr i64 %cast11 to ptr
+  %4 = call ptr @"typeck::tc_er"(ptr %tc9, ptr %cast12)
+  %cast13 = ptrtoint ptr %4 to i64
+  store i64 %cast13, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -181834,12 +181826,13 @@ define i64 @__lambda_59(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229432243077098
@@ -181850,9 +181843,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.9961)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.9961)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -181861,11 +181853,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.9962)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.9962)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -181878,16 +181869,17 @@ entry:
   %after_body = alloca ptr, align 8
   %with_params = alloca ptr, align 8
   %entered = alloca ptr, align 8
-  %body5 = alloca ptr, align 8
-  %params2 = alloca ptr, align 8
+  %body6 = alloca ptr, align 8
+  %params3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952482492646
@@ -181898,30 +181890,29 @@ match_end:                                        ; preds = %march_arm14, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %params_slot_base = ptrtoint ptr %payload to i64
   %params_slot_addr = add i64 %params_slot_base, 0
   %params_slot = inttoptr i64 %params_slot_addr to ptr
   %params = load ptr, ptr %params_slot, align 8
-  store ptr %params, ptr %params2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %body_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %params, ptr %params3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %body_slot_base = ptrtoint ptr %payload5 to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body5, align 8
-  %r6 = load i64, ptr %r, align 8
-  %cast7 = inttoptr i64 %r6 to ptr
-  %2 = call ptr @"resolve::enter_resolve_scope"(ptr %cast7)
+  store ptr %body, ptr %body6, align 8
+  %r7 = load ptr, ptr %r, align 8
+  %2 = call ptr @"resolve::enter_resolve_scope"(ptr %r7)
   store ptr %2, ptr %entered, align 8
   %entered8 = load ptr, ptr %entered, align 8
-  %params9 = load ptr, ptr %params2, align 8
+  %params9 = load ptr, ptr %params3, align 8
   %3 = call ptr @"resolve::declare_params"(ptr %entered8, ptr %params9)
   store ptr %3, ptr %with_params, align 8
   %with_params10 = load ptr, ptr %with_params, align 8
-  %body11 = load ptr, ptr %body5, align 8
+  %body11 = load ptr, ptr %body6, align 8
   %4 = call ptr @"resolve::resolve_expr"(ptr %with_params10, ptr %body11)
   store ptr %4, ptr %after_body, align 8
   %after_body12 = load ptr, ptr %after_body, align 8
@@ -181934,8 +181925,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm14
 
 march_arm14:                                      ; preds = %march_next
-  %r16 = load i64, ptr %r, align 8
-  store i64 %r16, ptr %match_result, align 8
+  %r16 = load ptr, ptr %r, align 8
+  %cast17 = ptrtoint ptr %r16 to i64
+  store i64 %cast17, ptr %match_result, align 8
   br label %match_end
 
 march_next15:                                     ; No predecessors!
@@ -181949,16 +181941,17 @@ entry:
   %b = alloca ptr, align 8
   %with_params = alloca ptr, align 8
   %inner = alloca ptr, align 8
-  %body5 = alloca ptr, align 8
-  %params2 = alloca ptr, align 8
+  %body6 = alloca ptr, align 8
+  %params3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952482492646
@@ -181969,30 +181962,29 @@ match_end:                                        ; preds = %march_arm24, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %params_slot_base = ptrtoint ptr %payload to i64
   %params_slot_addr = add i64 %params_slot_base, 0
   %params_slot = inttoptr i64 %params_slot_addr to ptr
   %params = load ptr, ptr %params_slot, align 8
-  store ptr %params, ptr %params2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %body_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %params, ptr %params3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %body_slot_base = ptrtoint ptr %payload5 to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %cast7 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"typeck::tc_enter"(ptr %cast7)
+  store ptr %body, ptr %body6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %2 = call ptr @"typeck::tc_enter"(ptr %tc7)
   store ptr %2, ptr %inner, align 8
   %inner8 = load ptr, ptr %inner, align 8
-  %params9 = load ptr, ptr %params2, align 8
+  %params9 = load ptr, ptr %params3, align 8
   %3 = call ptr @"typeck::tc_bind_params"(ptr %inner8, ptr %params9)
   store ptr %3, ptr %with_params, align 8
   %with_params10 = load ptr, ptr %with_params, align 8
-  %body11 = load ptr, ptr %body5, align 8
+  %body11 = load ptr, ptr %body6, align 8
   %4 = call ptr @"typeck::check_expr"(ptr %with_params10, ptr %body11)
   store ptr %4, ptr %b, align 8
   %b12 = load ptr, ptr %b, align 8
@@ -182033,18 +182025,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm24
 
 march_arm24:                                      ; preds = %march_next
-  %tc26 = load i64, ptr %tc, align 8
+  %tc26 = load ptr, ptr %tc, align 8
   %9 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr27 = getelementptr inbounds nuw %ValueType, ptr %9, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr27, align 8
   %pay_ptr28 = getelementptr inbounds nuw %ValueType, ptr %9, i32 0, i32 1
   store ptr null, ptr %pay_ptr28, align 8
   %cast29 = ptrtoint ptr %9 to i64
-  %cast30 = inttoptr i64 %tc26 to ptr
-  %cast31 = inttoptr i64 %cast29 to ptr
-  %10 = call ptr @"typeck::tc_er"(ptr %cast30, ptr %cast31)
-  %cast32 = ptrtoint ptr %10 to i64
-  store i64 %cast32, ptr %match_result, align 8
+  %cast30 = inttoptr i64 %cast29 to ptr
+  %10 = call ptr @"typeck::tc_er"(ptr %tc26, ptr %cast30)
+  %cast31 = ptrtoint ptr %10 to i64
+  store i64 %cast31, ptr %match_result, align 8
   br label %match_end
 
 march_next25:                                     ; No predecessors!
@@ -182056,12 +182047,13 @@ define i64 @__lambda_62(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952482492646
@@ -182072,9 +182064,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.10391)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.10391)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -182083,11 +182074,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10392)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10392)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -182097,15 +182087,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_63(i64 %0, i64 %1) {
 entry:
-  %entries2 = alloca ptr, align 8
+  %entries3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952521712076
@@ -182116,17 +182107,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %entries_slot_base = ptrtoint ptr %payload to i64
   %entries_slot_addr = add i64 %entries_slot_base, 0
   %entries_slot = inttoptr i64 %entries_slot_addr to ptr
   %entries = load ptr, ptr %entries_slot, align 8
-  store ptr %entries, ptr %entries2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %entries4 = load ptr, ptr %entries2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr_list"(ptr %cast5, ptr %entries4)
+  store ptr %entries, ptr %entries3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %entries5 = load ptr, ptr %entries3, align 8
+  %2 = call ptr @"resolve::resolve_expr_list"(ptr %r4, ptr %entries5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -182135,8 +182125,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -182147,15 +182138,16 @@ march_next8:                                      ; No predecessors!
 define i64 @__lambda_64(i64 %0, i64 %1) {
 entry:
   %checked = alloca ptr, align 8
-  %entries2 = alloca ptr, align 8
+  %entries3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952521712076
@@ -182166,17 +182158,16 @@ match_end:                                        ; preds = %march_arm11, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %entries_slot_base = ptrtoint ptr %payload to i64
   %entries_slot_addr = add i64 %entries_slot_base, 0
   %entries_slot = inttoptr i64 %entries_slot_addr to ptr
   %entries = load ptr, ptr %entries_slot, align 8
-  store ptr %entries, ptr %entries2, align 8
-  %tc3 = load i64, ptr %tc, align 8
-  %entries4 = load ptr, ptr %entries2, align 8
-  %cast5 = inttoptr i64 %tc3 to ptr
-  %2 = call ptr @"typeck::check_expr_list"(ptr %cast5, ptr %entries4)
+  store ptr %entries, ptr %entries3, align 8
+  %tc4 = load ptr, ptr %tc, align 8
+  %entries5 = load ptr, ptr %entries3, align 8
+  %2 = call ptr @"typeck::check_expr_list"(ptr %tc4, ptr %entries5)
   store ptr %2, ptr %checked, align 8
   %checked6 = load ptr, ptr %checked, align 8
   %3 = call ptr @forge_bump_alloc(i64 16)
@@ -182195,18 +182186,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm11
 
 march_arm11:                                      ; preds = %march_next
-  %tc13 = load i64, ptr %tc, align 8
+  %tc13 = load ptr, ptr %tc, align 8
   %5 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr14 = getelementptr inbounds nuw %ValueType, ptr %5, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr14, align 8
   %pay_ptr15 = getelementptr inbounds nuw %ValueType, ptr %5, i32 0, i32 1
   store ptr null, ptr %pay_ptr15, align 8
   %cast16 = ptrtoint ptr %5 to i64
-  %cast17 = inttoptr i64 %tc13 to ptr
-  %cast18 = inttoptr i64 %cast16 to ptr
-  %6 = call ptr @"typeck::tc_er"(ptr %cast17, ptr %cast18)
-  %cast19 = ptrtoint ptr %6 to i64
-  store i64 %cast19, ptr %match_result, align 8
+  %cast17 = inttoptr i64 %cast16 to ptr
+  %6 = call ptr @"typeck::tc_er"(ptr %tc13, ptr %cast17)
+  %cast18 = ptrtoint ptr %6 to i64
+  store i64 %cast18, ptr %match_result, align 8
   br label %match_end
 
 march_next12:                                     ; No predecessors!
@@ -182218,12 +182208,13 @@ define i64 @__lambda_65(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952521712076
@@ -182234,9 +182225,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.10619)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.10619)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -182245,11 +182235,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10620)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10620)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -182259,15 +182248,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_66(i64 %0, i64 %1) {
 entry:
-  %body2 = alloca ptr, align 8
+  %body3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210671936523
@@ -182278,17 +182268,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %body_slot_base = ptrtoint ptr %payload to i64
   %body_slot_addr = add i64 %body_slot_base, 0
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %body4 = load ptr, ptr %body2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast5, ptr %body4)
+  store ptr %body, ptr %body3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %body5 = load ptr, ptr %body3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r4, ptr %body5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -182297,8 +182286,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -182309,15 +182299,16 @@ march_next8:                                      ; No predecessors!
 define i64 @__lambda_67(i64 %0, i64 %1) {
 entry:
   %r = alloca ptr, align 8
-  %body2 = alloca ptr, align 8
+  %body3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210671936523
@@ -182328,17 +182319,16 @@ match_end:                                        ; preds = %march_arm10, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %body_slot_base = ptrtoint ptr %payload to i64
   %body_slot_addr = add i64 %body_slot_base, 0
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body2, align 8
-  %tc3 = load i64, ptr %tc, align 8
-  %body4 = load ptr, ptr %body2, align 8
-  %cast5 = inttoptr i64 %tc3 to ptr
-  %2 = call ptr @"typeck::check_expr"(ptr %cast5, ptr %body4)
+  store ptr %body, ptr %body3, align 8
+  %tc4 = load ptr, ptr %tc, align 8
+  %body5 = load ptr, ptr %body3, align 8
+  %2 = call ptr @"typeck::check_expr"(ptr %tc4, ptr %body5)
   store ptr %2, ptr %r, align 8
   %r6 = load ptr, ptr %r, align 8
   %cast7 = ptrtoint ptr %r6 to i64
@@ -182355,8 +182345,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm10
 
 march_arm10:                                      ; preds = %march_next
-  %tc12 = load i64, ptr %tc, align 8
-  store i64 %tc12, ptr %match_result, align 8
+  %tc12 = load ptr, ptr %tc, align 8
+  %cast13 = ptrtoint ptr %tc12 to i64
+  store i64 %cast13, ptr %match_result, align 8
   br label %match_end
 
 march_next11:                                     ; No predecessors!
@@ -182368,12 +182359,13 @@ define i64 @__lambda_68(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 210671936523
@@ -182384,10 +182376,9 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
+  %rt3 = load ptr, ptr %rt, align 8
   %2 = call ptr @"features::eval::value_null"()
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %3 = call ptr @"features::eval::ok_result"(ptr %cast3, ptr %2)
+  %3 = call ptr @"features::eval::ok_result"(ptr %rt3, ptr %2)
   %cast4 = ptrtoint ptr %3 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -182396,11 +182387,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %4 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10660)
-  %cast9 = ptrtoint ptr %4 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %4 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10660)
+  %cast8 = ptrtoint ptr %4 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -182425,15 +182415,16 @@ entry:
 
 define i64 @__lambda_70(i64 %0, i64 %1) {
 entry:
-  %body2 = alloca ptr, align 8
+  %body3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 7570977258439764
@@ -182444,17 +182435,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %body_slot_base = ptrtoint ptr %payload to i64
   %body_slot_addr = add i64 %body_slot_base, 0
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %body4 = load ptr, ptr %body2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast5, ptr %body4)
+  store ptr %body, ptr %body3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %body5 = load ptr, ptr %body3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r4, ptr %body5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -182463,8 +182453,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -182475,15 +182466,16 @@ march_next8:                                      ; No predecessors!
 define i64 @__lambda_71(i64 %0, i64 %1) {
 entry:
   %r = alloca ptr, align 8
-  %body2 = alloca ptr, align 8
+  %body3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 7570977258439764
@@ -182494,17 +182486,16 @@ match_end:                                        ; preds = %march_arm10, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %body_slot_base = ptrtoint ptr %payload to i64
   %body_slot_addr = add i64 %body_slot_base, 0
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body2, align 8
-  %tc3 = load i64, ptr %tc, align 8
-  %body4 = load ptr, ptr %body2, align 8
-  %cast5 = inttoptr i64 %tc3 to ptr
-  %2 = call ptr @"typeck::check_expr"(ptr %cast5, ptr %body4)
+  store ptr %body, ptr %body3, align 8
+  %tc4 = load ptr, ptr %tc, align 8
+  %body5 = load ptr, ptr %body3, align 8
+  %2 = call ptr @"typeck::check_expr"(ptr %tc4, ptr %body5)
   store ptr %2, ptr %r, align 8
   %r6 = load ptr, ptr %r, align 8
   %cast7 = ptrtoint ptr %r6 to i64
@@ -182521,8 +182512,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm10
 
 march_arm10:                                      ; preds = %march_next
-  %tc12 = load i64, ptr %tc, align 8
-  store i64 %tc12, ptr %match_result, align 8
+  %tc12 = load ptr, ptr %tc, align 8
+  %cast13 = ptrtoint ptr %tc12 to i64
+  store i64 %cast13, ptr %match_result, align 8
   br label %match_end
 
 march_next11:                                     ; No predecessors!
@@ -182534,12 +182526,13 @@ define i64 @__lambda_72(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 7570977258439764
@@ -182550,10 +182543,9 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
+  %rt3 = load ptr, ptr %rt, align 8
   %2 = call ptr @"features::eval::value_null"()
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %3 = call ptr @"features::eval::ok_result"(ptr %cast3, ptr %2)
+  %3 = call ptr @"features::eval::ok_result"(ptr %rt3, ptr %2)
   %cast4 = ptrtoint ptr %3 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -182562,11 +182554,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %4 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10675)
-  %cast9 = ptrtoint ptr %4 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %4 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10675)
+  %cast8 = ptrtoint ptr %4 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -182591,15 +182582,16 @@ entry:
 
 define i64 @__lambda_74(i64 %0, i64 %1) {
 entry:
-  %subject2 = alloca ptr, align 8
+  %subject3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229428702698687
@@ -182610,17 +182602,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %subject_slot_base = ptrtoint ptr %payload to i64
   %subject_slot_addr = add i64 %subject_slot_base, 0
   %subject_slot = inttoptr i64 %subject_slot_addr to ptr
   %subject = load ptr, ptr %subject_slot, align 8
-  store ptr %subject, ptr %subject2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %subject4 = load ptr, ptr %subject2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast5, ptr %subject4)
+  store ptr %subject, ptr %subject3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %subject5 = load ptr, ptr %subject3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r4, ptr %subject5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -182629,8 +182620,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -182641,15 +182633,16 @@ march_next8:                                      ; No predecessors!
 define i64 @__lambda_75(i64 %0, i64 %1) {
 entry:
   %s = alloca ptr, align 8
-  %subject2 = alloca ptr, align 8
+  %subject3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229428702698687
@@ -182660,17 +182653,16 @@ match_end:                                        ; preds = %march_arm13, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %subject_slot_base = ptrtoint ptr %payload to i64
   %subject_slot_addr = add i64 %subject_slot_base, 0
   %subject_slot = inttoptr i64 %subject_slot_addr to ptr
   %subject = load ptr, ptr %subject_slot, align 8
-  store ptr %subject, ptr %subject2, align 8
-  %tc3 = load i64, ptr %tc, align 8
-  %subject4 = load ptr, ptr %subject2, align 8
-  %cast5 = inttoptr i64 %tc3 to ptr
-  %2 = call ptr @"typeck::check_expr"(ptr %cast5, ptr %subject4)
+  store ptr %subject, ptr %subject3, align 8
+  %tc4 = load ptr, ptr %tc, align 8
+  %subject5 = load ptr, ptr %subject3, align 8
+  %2 = call ptr @"typeck::check_expr"(ptr %tc4, ptr %subject5)
   store ptr %2, ptr %s, align 8
   %s6 = load ptr, ptr %s, align 8
   %cast7 = ptrtoint ptr %s6 to i64
@@ -182695,18 +182687,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm13
 
 march_arm13:                                      ; preds = %march_next
-  %tc15 = load i64, ptr %tc, align 8
+  %tc15 = load ptr, ptr %tc, align 8
   %5 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr16 = getelementptr inbounds nuw %ValueType, ptr %5, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr16, align 8
   %pay_ptr17 = getelementptr inbounds nuw %ValueType, ptr %5, i32 0, i32 1
   store ptr null, ptr %pay_ptr17, align 8
   %cast18 = ptrtoint ptr %5 to i64
-  %cast19 = inttoptr i64 %tc15 to ptr
-  %cast20 = inttoptr i64 %cast18 to ptr
-  %6 = call ptr @"typeck::tc_er"(ptr %cast19, ptr %cast20)
-  %cast21 = ptrtoint ptr %6 to i64
-  store i64 %cast21, ptr %match_result, align 8
+  %cast19 = inttoptr i64 %cast18 to ptr
+  %6 = call ptr @"typeck::tc_er"(ptr %tc15, ptr %cast19)
+  %cast20 = ptrtoint ptr %6 to i64
+  store i64 %cast20, ptr %match_result, align 8
   br label %match_end
 
 march_next14:                                     ; No predecessors!
@@ -182718,12 +182709,13 @@ define i64 @__lambda_76(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229428702698687
@@ -182734,9 +182726,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.10742)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.10742)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -182745,11 +182736,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10743)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10743)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -182760,16 +182750,17 @@ march_next6:                                      ; No predecessors!
 define i64 @__lambda_77(i64 %0, i64 %1) {
 entry:
   %r2 = alloca ptr, align 8
-  %items5 = alloca ptr, align 8
-  %needle2 = alloca ptr, align 8
+  %items6 = alloca ptr, align 8
+  %needle3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229428507021722
@@ -182780,27 +182771,26 @@ match_end:                                        ; preds = %march_arm12, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %needle_slot_base = ptrtoint ptr %payload to i64
   %needle_slot_addr = add i64 %needle_slot_base, 0
   %needle_slot = inttoptr i64 %needle_slot_addr to ptr
   %needle = load ptr, ptr %needle_slot, align 8
-  store ptr %needle, ptr %needle2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %items_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %needle, ptr %needle3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %items_slot_base = ptrtoint ptr %payload5 to i64
   %items_slot_addr = add i64 %items_slot_base, 8
   %items_slot = inttoptr i64 %items_slot_addr to ptr
   %items = load ptr, ptr %items_slot, align 8
-  store ptr %items, ptr %items5, align 8
-  %r6 = load i64, ptr %r, align 8
-  %needle7 = load ptr, ptr %needle2, align 8
-  %cast8 = inttoptr i64 %r6 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast8, ptr %needle7)
+  store ptr %items, ptr %items6, align 8
+  %r7 = load ptr, ptr %r, align 8
+  %needle8 = load ptr, ptr %needle3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r7, ptr %needle8)
   store ptr %2, ptr %r2, align 8
   %r29 = load ptr, ptr %r2, align 8
-  %items10 = load ptr, ptr %items5, align 8
+  %items10 = load ptr, ptr %items6, align 8
   %3 = call ptr @"resolve::resolve_expr_list"(ptr %r29, ptr %items10)
   %cast11 = ptrtoint ptr %3 to i64
   store i64 %cast11, ptr %match_result, align 8
@@ -182810,8 +182800,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm12
 
 march_arm12:                                      ; preds = %march_next
-  %r14 = load i64, ptr %r, align 8
-  store i64 %r14, ptr %match_result, align 8
+  %r14 = load ptr, ptr %r, align 8
+  %cast15 = ptrtoint ptr %r14 to i64
+  store i64 %cast15, ptr %match_result, align 8
   br label %match_end
 
 march_next13:                                     ; No predecessors!
@@ -182823,16 +182814,17 @@ define i64 @__lambda_78(i64 %0, i64 %1) {
 entry:
   %s2 = alloca ptr, align 8
   %s = alloca ptr, align 8
-  %items5 = alloca ptr, align 8
-  %needle2 = alloca ptr, align 8
+  %items6 = alloca ptr, align 8
+  %needle3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %tc = alloca i64, align 8
-  store i64 %0, ptr %tc, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %tc = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %tc, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229428507021722
@@ -182843,24 +182835,23 @@ match_end:                                        ; preds = %march_arm18, %march
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %needle_slot_base = ptrtoint ptr %payload to i64
   %needle_slot_addr = add i64 %needle_slot_base, 0
   %needle_slot = inttoptr i64 %needle_slot_addr to ptr
   %needle = load ptr, ptr %needle_slot, align 8
-  store ptr %needle, ptr %needle2, align 8
-  %pay_slot3 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
-  %payload4 = load ptr, ptr %pay_slot3, align 8
-  %items_slot_base = ptrtoint ptr %payload4 to i64
+  store ptr %needle, ptr %needle3, align 8
+  %pay_slot4 = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 1
+  %payload5 = load ptr, ptr %pay_slot4, align 8
+  %items_slot_base = ptrtoint ptr %payload5 to i64
   %items_slot_addr = add i64 %items_slot_base, 8
   %items_slot = inttoptr i64 %items_slot_addr to ptr
   %items = load ptr, ptr %items_slot, align 8
-  store ptr %items, ptr %items5, align 8
-  %tc6 = load i64, ptr %tc, align 8
-  %needle7 = load ptr, ptr %needle2, align 8
-  %cast8 = inttoptr i64 %tc6 to ptr
-  %2 = call ptr @"typeck::check_expr"(ptr %cast8, ptr %needle7)
+  store ptr %items, ptr %items6, align 8
+  %tc7 = load ptr, ptr %tc, align 8
+  %needle8 = load ptr, ptr %needle3, align 8
+  %2 = call ptr @"typeck::check_expr"(ptr %tc7, ptr %needle8)
   store ptr %2, ptr %s, align 8
   %s9 = load ptr, ptr %s, align 8
   %cast10 = ptrtoint ptr %s9 to i64
@@ -182869,7 +182860,7 @@ march_arm:                                        ; preds = %entry
   call void @forge_null_deref_trap(ptr @fld_name.10770, i64 2, ptr @sty_name.10771, i64 10, i64 %null_ext, ptr @src_file.10772, i64 88, i64 25)
   %tc_ptr = getelementptr inbounds nuw %ExprResult, ptr %s9, i32 0, i32 0
   %tc11 = load ptr, ptr %tc_ptr, align 8
-  %items12 = load ptr, ptr %items5, align 8
+  %items12 = load ptr, ptr %items6, align 8
   %3 = call ptr @"typeck::check_expr_list"(ptr %tc11, ptr %items12)
   store ptr %3, ptr %s2, align 8
   %s213 = load ptr, ptr %s2, align 8
@@ -182889,18 +182880,17 @@ march_next:                                       ; preds = %entry
   br label %march_arm18
 
 march_arm18:                                      ; preds = %march_next
-  %tc20 = load i64, ptr %tc, align 8
+  %tc20 = load ptr, ptr %tc, align 8
   %6 = call ptr @forge_bump_alloc(i64 16)
   %tag_ptr21 = getelementptr inbounds nuw %ValueType, ptr %6, i32 0, i32 0
   store i64 193460240, ptr %tag_ptr21, align 8
   %pay_ptr22 = getelementptr inbounds nuw %ValueType, ptr %6, i32 0, i32 1
   store ptr null, ptr %pay_ptr22, align 8
   %cast23 = ptrtoint ptr %6 to i64
-  %cast24 = inttoptr i64 %tc20 to ptr
-  %cast25 = inttoptr i64 %cast23 to ptr
-  %7 = call ptr @"typeck::tc_er"(ptr %cast24, ptr %cast25)
-  %cast26 = ptrtoint ptr %7 to i64
-  store i64 %cast26, ptr %match_result, align 8
+  %cast24 = inttoptr i64 %cast23 to ptr
+  %7 = call ptr @"typeck::tc_er"(ptr %tc20, ptr %cast24)
+  %cast25 = ptrtoint ptr %7 to i64
+  store i64 %cast25, ptr %match_result, align 8
   br label %match_end
 
 march_next19:                                     ; No predecessors!
@@ -182912,12 +182902,13 @@ define i64 @__lambda_79(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %expr = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %expr, align 8
-  %expr1 = load ptr, ptr %expr, align 8
-  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %expr, align 8
+  %expr2 = load ptr, ptr %expr, align 8
+  %tag_ptr = getelementptr inbounds nuw %Expr, ptr %expr2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 229428507021722
@@ -182928,9 +182919,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.10775)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.10775)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -182939,11 +182929,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10776)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10776)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -182953,15 +182942,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_80(i64 %0, i64 %1) {
 entry:
-  %body2 = alloca ptr, align 8
+  %body3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249861837142781531
@@ -182972,17 +182962,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %body_slot_base = ptrtoint ptr %payload to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %body4 = load ptr, ptr %body2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_stmt_list"(ptr %cast5, ptr %body4)
+  store ptr %body, ptr %body3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %body5 = load ptr, ptr %body3, align 8
+  %2 = call ptr @"resolve::resolve_stmt_list"(ptr %r4, ptr %body5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -182991,8 +182980,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -183004,12 +182994,13 @@ define i64 @__lambda_81(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249861837142781531
@@ -183020,10 +183011,9 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
+  %rt3 = load ptr, ptr %rt, align 8
   %2 = call ptr @"features::eval::value_null"()
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %3 = call ptr @"features::eval::ok_result"(ptr %cast3, ptr %2)
+  %3 = call ptr @"features::eval::ok_result"(ptr %rt3, ptr %2)
   %cast4 = ptrtoint ptr %3 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -183032,11 +183022,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %4 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10936)
-  %cast9 = ptrtoint ptr %4 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %4 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10936)
+  %cast8 = ptrtoint ptr %4 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -183061,15 +183050,16 @@ entry:
 
 define i64 @__lambda_83(i64 %0, i64 %1) {
 entry:
-  %body2 = alloca ptr, align 8
+  %body3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 8244874571807159657
@@ -183080,17 +183070,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %body_slot_base = ptrtoint ptr %payload to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %body4 = load ptr, ptr %body2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_stmt_list"(ptr %cast5, ptr %body4)
+  store ptr %body, ptr %body3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %body5 = load ptr, ptr %body3, align 8
+  %2 = call ptr @"resolve::resolve_stmt_list"(ptr %r4, ptr %body5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -183099,8 +183088,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -183112,12 +183102,13 @@ define i64 @__lambda_84(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 8244874571807159657
@@ -183128,10 +183119,9 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
+  %rt3 = load ptr, ptr %rt, align 8
   %2 = call ptr @"features::eval::value_null"()
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %3 = call ptr @"features::eval::ok_result"(ptr %cast3, ptr %2)
+  %3 = call ptr @"features::eval::ok_result"(ptr %rt3, ptr %2)
   %cast4 = ptrtoint ptr %3 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -183140,11 +183130,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %4 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10947)
-  %cast9 = ptrtoint ptr %4 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %4 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10947)
+  %cast8 = ptrtoint ptr %4 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -183154,15 +183143,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_85(i64 %0, i64 %1) {
 entry:
-  %cond2 = alloca ptr, align 8
+  %cond3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249862903034345279
@@ -183173,17 +183163,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %cond_slot_base = ptrtoint ptr %payload to i64
   %cond_slot_addr = add i64 %cond_slot_base, 8
   %cond_slot = inttoptr i64 %cond_slot_addr to ptr
   %cond = load ptr, ptr %cond_slot, align 8
-  store ptr %cond, ptr %cond2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %cond4 = load ptr, ptr %cond2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_expr"(ptr %cast5, ptr %cond4)
+  store ptr %cond, ptr %cond3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %cond5 = load ptr, ptr %cond3, align 8
+  %2 = call ptr @"resolve::resolve_expr"(ptr %r4, ptr %cond5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -183192,8 +183181,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -183205,12 +183195,13 @@ define i64 @__lambda_86(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 249862903034345279
@@ -183221,10 +183212,9 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
+  %rt3 = load ptr, ptr %rt, align 8
   %2 = call ptr @"features::eval::value_null"()
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %3 = call ptr @"features::eval::ok_result"(ptr %cast3, ptr %2)
+  %3 = call ptr @"features::eval::ok_result"(ptr %rt3, ptr %2)
   %cast4 = ptrtoint ptr %3 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -183233,11 +183223,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %4 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.10954)
-  %cast9 = ptrtoint ptr %4 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %4 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.10954)
+  %cast8 = ptrtoint ptr %4 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -183247,15 +183236,16 @@ march_next6:                                      ; No predecessors!
 
 define i64 @__lambda_87(i64 %0, i64 %1) {
 entry:
-  %arms2 = alloca ptr, align 8
+  %arms3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952761151397
@@ -183266,17 +183256,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %arms_slot_base = ptrtoint ptr %payload to i64
   %arms_slot_addr = add i64 %arms_slot_base, 0
   %arms_slot = inttoptr i64 %arms_slot_addr to ptr
   %arms = load ptr, ptr %arms_slot, align 8
-  store ptr %arms, ptr %arms2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %arms4 = load ptr, ptr %arms2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"features::select_stmt::resolver::resolve_select_arms"(ptr %cast5, ptr %arms4)
+  store ptr %arms, ptr %arms3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %arms5 = load ptr, ptr %arms3, align 8
+  %2 = call ptr @"features::select_stmt::resolver::resolve_select_arms"(ptr %r4, ptr %arms5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -183285,8 +183274,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -183298,12 +183288,13 @@ define i64 @__lambda_88(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952761151397
@@ -183314,9 +183305,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.11106)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.11106)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -183325,11 +183315,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.11107)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.11107)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -183354,15 +183343,16 @@ entry:
 
 define i64 @__lambda_90(i64 %0, i64 %1) {
 entry:
-  %body2 = alloca ptr, align 8
+  %body3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 7571424103057362
@@ -183373,17 +183363,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %body_slot_base = ptrtoint ptr %payload to i64
   %body_slot_addr = add i64 %body_slot_base, 0
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %body4 = load ptr, ptr %body2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_stmt_list"(ptr %cast5, ptr %body4)
+  store ptr %body, ptr %body3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %body5 = load ptr, ptr %body3, align 8
+  %2 = call ptr @"resolve::resolve_stmt_list"(ptr %r4, ptr %body5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -183392,8 +183381,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -183405,12 +183395,13 @@ define i64 @__lambda_91(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 7571424103057362
@@ -183421,9 +183412,8 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %2 = call ptr @"features::eval::error_result"(ptr %cast3, ptr @.str.11157)
+  %rt3 = load ptr, ptr %rt, align 8
+  %2 = call ptr @"features::eval::error_result"(ptr %rt3, ptr @.str.11157)
   %cast4 = ptrtoint ptr %2 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -183432,11 +183422,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %3 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.11158)
-  %cast9 = ptrtoint ptr %3 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %3 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.11158)
+  %cast8 = ptrtoint ptr %3 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -183461,15 +183450,16 @@ entry:
 
 define i64 @__lambda_93(i64 %0, i64 %1) {
 entry:
-  %body2 = alloca ptr, align 8
+  %body3 = alloca ptr, align 8
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %r = alloca i64, align 8
-  store i64 %0, ptr %r, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %r = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %r, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952537928459
@@ -183480,17 +183470,16 @@ match_end:                                        ; preds = %march_arm7, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 1
+  %pay_slot = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 1
   %payload = load ptr, ptr %pay_slot, align 8
   %body_slot_base = ptrtoint ptr %payload to i64
   %body_slot_addr = add i64 %body_slot_base, 8
   %body_slot = inttoptr i64 %body_slot_addr to ptr
   %body = load ptr, ptr %body_slot, align 8
-  store ptr %body, ptr %body2, align 8
-  %r3 = load i64, ptr %r, align 8
-  %body4 = load ptr, ptr %body2, align 8
-  %cast5 = inttoptr i64 %r3 to ptr
-  %2 = call ptr @"resolve::resolve_stmt_list"(ptr %cast5, ptr %body4)
+  store ptr %body, ptr %body3, align 8
+  %r4 = load ptr, ptr %r, align 8
+  %body5 = load ptr, ptr %body3, align 8
+  %2 = call ptr @"resolve::resolve_stmt_list"(ptr %r4, ptr %body5)
   %cast6 = ptrtoint ptr %2 to i64
   store i64 %cast6, ptr %match_result, align 8
   br label %match_end
@@ -183499,8 +183488,9 @@ march_next:                                       ; preds = %entry
   br label %march_arm7
 
 march_arm7:                                       ; preds = %march_next
-  %r9 = load i64, ptr %r, align 8
-  store i64 %r9, ptr %match_result, align 8
+  %r9 = load ptr, ptr %r, align 8
+  %cast10 = ptrtoint ptr %r9 to i64
+  store i64 %cast10, ptr %match_result, align 8
   br label %match_end
 
 march_next8:                                      ; No predecessors!
@@ -183512,12 +183502,13 @@ define i64 @__lambda_94(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 6952537928459
@@ -183528,10 +183519,9 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
+  %rt3 = load ptr, ptr %rt, align 8
   %2 = call ptr @"features::eval::value_null"()
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %3 = call ptr @"features::eval::ok_result"(ptr %cast3, ptr %2)
+  %3 = call ptr @"features::eval::ok_result"(ptr %rt3, ptr %2)
   %cast4 = ptrtoint ptr %3 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -183540,11 +183530,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %4 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.11316)
-  %cast9 = ptrtoint ptr %4 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %4 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.11316)
+  %cast8 = ptrtoint ptr %4 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!
@@ -183571,12 +183560,13 @@ define i64 @__lambda_96(i64 %0, i64 %1) {
 entry:
   %match_result = alloca i64, align 8
   %stmt = alloca ptr, align 8
-  %rt = alloca i64, align 8
-  store i64 %0, ptr %rt, align 8
-  %cast = inttoptr i64 %1 to ptr
-  store ptr %cast, ptr %stmt, align 8
-  %stmt1 = load ptr, ptr %stmt, align 8
-  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt1, i32 0, i32 0
+  %rt = alloca ptr, align 8
+  %cast = inttoptr i64 %0 to ptr
+  store ptr %cast, ptr %rt, align 8
+  %cast1 = inttoptr i64 %1 to ptr
+  store ptr %cast1, ptr %stmt, align 8
+  %stmt2 = load ptr, ptr %stmt, align 8
+  %tag_ptr = getelementptr inbounds nuw %Stmt, ptr %stmt2, i32 0, i32 0
   %tag = load i64, ptr %tag_ptr, align 8
   store i64 0, ptr %match_result, align 8
   %tag_eq = icmp eq i64 %tag, 193473458
@@ -183587,10 +183577,9 @@ match_end:                                        ; preds = %march_arm5, %march_
   ret i64 %match_val
 
 march_arm:                                        ; preds = %entry
-  %rt2 = load i64, ptr %rt, align 8
+  %rt3 = load ptr, ptr %rt, align 8
   %2 = call ptr @"features::eval::value_null"()
-  %cast3 = inttoptr i64 %rt2 to ptr
-  %3 = call ptr @"features::eval::ok_result"(ptr %cast3, ptr %2)
+  %3 = call ptr @"features::eval::ok_result"(ptr %rt3, ptr %2)
   %cast4 = ptrtoint ptr %3 to i64
   store i64 %cast4, ptr %match_result, align 8
   br label %match_end
@@ -183599,11 +183588,10 @@ march_next:                                       ; preds = %entry
   br label %march_arm5
 
 march_arm5:                                       ; preds = %march_next
-  %rt7 = load i64, ptr %rt, align 8
-  %cast8 = inttoptr i64 %rt7 to ptr
-  %4 = call ptr @"features::eval::error_result"(ptr %cast8, ptr @.str.11325)
-  %cast9 = ptrtoint ptr %4 to i64
-  store i64 %cast9, ptr %match_result, align 8
+  %rt7 = load ptr, ptr %rt, align 8
+  %4 = call ptr @"features::eval::error_result"(ptr %rt7, ptr @.str.11325)
+  %cast8 = ptrtoint ptr %4 to i64
+  store i64 %cast8, ptr %match_result, align 8
   br label %match_end
 
 march_next6:                                      ; No predecessors!

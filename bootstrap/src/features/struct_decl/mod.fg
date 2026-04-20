@@ -14,15 +14,15 @@ export fn init_struct_decl(reg: Registry) {
     let f1 = feature_new("struct_lit") with {
         expr_tag: Expr.StructLit("", FieldInitList.End),
         emit_expr: struct_lit_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr { .StructLit(_, inits) -> resolve_field_init_list(r, inits), _ -> r },
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .StructLit(_, inits) -> resolve_field_init_list(r, inits), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .StructLit(name, inits) -> {
                 let checked = check_field_inits(tc, inits)
                 tc_er(checked, .Struct(name))
             }
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .StructLit(_, _) -> error_result(rt, "struct literals are not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected StructLit")
         },
@@ -33,11 +33,11 @@ export fn init_struct_decl(reg: Registry) {
         expr_tag: Expr.FieldAccess(Expr.Null, ""),
         emit_expr: field_access_emit_expr,
         resolve_expr: field_access_resolve_expr,
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .FieldAccess(obj, field) -> check_field_access(tc, obj, field)
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .FieldAccess(_, _) -> error_result(rt, "field access is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected FieldAccess")
         },
@@ -47,15 +47,15 @@ export fn init_struct_decl(reg: Registry) {
     let f3 = feature_new("enum_ctor") with {
         expr_tag: Expr.EnumCtor("", "", ExprList.End),
         emit_expr: enum_ctor_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr { .EnumCtor(_, _, args) -> resolve_expr_list(r, args), _ -> r },
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .EnumCtor(_, _, args) -> resolve_expr_list(r, args), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .EnumCtor(type_name, _, args) -> {
                 let checked = check_expr_list(tc, args)
                 tc_er(checked, .Enum(type_name))
             }
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .EnumCtor(_, _, _) -> error_result(rt, "enum constructors are not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected EnumCtor")
         },
@@ -66,9 +66,9 @@ export fn init_struct_decl(reg: Registry) {
         expr_tag: Expr.FieldAssign(Expr.Null, "", Expr.Null),
         emit_expr: field_assign_emit_expr,
         // FieldAssign resolution is handled directly in resolve/mod.fg (deep immutability check)
-        resolve_expr: (r: int, expr: Expr) -> r,
+        resolve_expr: (r: Resolver, expr: Expr) -> r,
         check_expr: field_assign_check_expr,
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .FieldAssign(_, _, _) -> error_result(rt, "field assignment is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected FieldAssign")
         },

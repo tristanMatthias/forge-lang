@@ -13,7 +13,7 @@ export fn init_while_stmt(reg: Registry) {
     let f = feature_new("while") with {
         stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
         emit_stmt: while_emit_stmt,
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt {
             .While(condition, body) -> {
                 let after_cond = resolve_expr(r, condition)
                 resolve_stmt(after_cond, body)
@@ -21,7 +21,7 @@ export fn init_while_stmt(reg: Registry) {
             _ -> r
         },
         check_stmt: while_check_stmt,
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .While(condition, body) -> execute_while(rt, condition, body)
             _ -> error_result(rt, "expected While")
         },

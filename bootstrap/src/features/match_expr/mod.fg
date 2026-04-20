@@ -17,14 +17,14 @@ export fn init_match_expr(reg: Registry) {
         stmt_tag: Stmt.Match(Expr.Null, MatchArmList.End),
         emit_expr: match_emit_expr,
         emit_stmt: match_emit_stmt,
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt {
             .Match(subject, arms) -> {
                 let after_subject = resolve_expr(r, subject)
                 resolve_match_arms(after_subject, arms)
             }
             _ -> r
         },
-        resolve_expr: (r: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
             .MatchExpr(subject, arms) -> {
                 let after_subject = resolve_expr(r, subject)
                 resolve_match_arms(after_subject, arms)
@@ -33,11 +33,11 @@ export fn init_match_expr(reg: Registry) {
         },
         check_stmt: match_check_stmt,
         check_expr: match_check_expr,
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .Match(_, _) -> error_result(rt, "match statements are not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Match")
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .MatchExpr(_, _) -> error_result(rt, "match expressions are not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected MatchExpr")
         },
@@ -49,7 +49,7 @@ export fn init_match_expr(reg: Registry) {
     let fw = feature_new("match_when") with {
         expr_tag: Expr.When(WhenArmList.End),
         emit_expr: when_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
             .When(arms) -> resolve_when_arms(r, arms)
             _ -> r
         },
@@ -57,7 +57,7 @@ export fn init_match_expr(reg: Registry) {
             .When(arms) -> check_when_expr(tc, arms)
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .When(_) -> error_result(rt, "subjectless match is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected When")
         },

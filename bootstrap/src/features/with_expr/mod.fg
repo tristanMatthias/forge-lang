@@ -11,7 +11,7 @@ export fn init_with_expr(reg: Registry) {
     let f = feature_new("with") with {
         expr_tag: Expr.With(Expr.Null, FieldInitList.End),
         emit_expr: with_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
             .With(obj, overrides) -> {
                 let after_obj = resolve_expr(r, obj)
                 resolve_field_init_list(after_obj, overrides)
@@ -19,7 +19,7 @@ export fn init_with_expr(reg: Registry) {
             _ -> r
         },
         check_expr: with_check_expr,
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .With(_, _) -> error_result(rt, "with expression is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected With")
         },

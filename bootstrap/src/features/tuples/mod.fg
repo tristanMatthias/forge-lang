@@ -11,15 +11,15 @@ export fn init_tuples(reg: Registry) {
     let f1 = feature_new("tuple") with {
         expr_tag: Expr.Tuple(ExprList.End),
         emit_expr: tuple_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr { .Tuple(elements) -> resolve_expr_list(r, elements), _ -> r },
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .Tuple(elements) -> resolve_expr_list(r, elements), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .Tuple(elements) -> {
                 let pair = check_expr_list_types(tc, elements)
                 tc_er(pair.tc, .Tuple(pair.types))
             }
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Tuple(_) -> error_result(rt, "tuples are not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Tuple")
         },
@@ -29,15 +29,15 @@ export fn init_tuples(reg: Registry) {
     let f2 = feature_new("tuple_index") with {
         expr_tag: Expr.TupleIndex(Expr.Null, 0),
         emit_expr: tuple_index_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr { .TupleIndex(obj, _) -> resolve_expr(r, obj), _ -> r },
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .TupleIndex(obj, _) -> resolve_expr(r, obj), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .TupleIndex(obj, idx) -> {
                 let o = check_expr(tc, obj)
                 tc_er(o.tc, vtype_tuple_at(o.ty, idx))
             }
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .TupleIndex(_, _) -> error_result(rt, "tuple indexing is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected TupleIndex")
         },

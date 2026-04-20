@@ -16,7 +16,7 @@ export fn init_if_stmt(reg: Registry) {
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
         resolve_stmt: if_resolve_stmt,
-        resolve_expr: (r: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
             .IfExpr(c, t, e) -> {
                 let after_c = resolve_expr(r, c)
                 let after_t = resolve_expr(after_c, t)
@@ -27,7 +27,7 @@ export fn init_if_stmt(reg: Registry) {
         check_stmt: if_check_stmt,
         check_expr: if_check_expr,
         eval_stmt: if_eval_stmt,
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .IfExpr(_, _, _) -> error_result(rt, "if expressions are not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected IfExpr")
         },

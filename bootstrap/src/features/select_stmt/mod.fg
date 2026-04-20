@@ -10,8 +10,8 @@ export fn init_select_stmt(reg: Registry) {
     let f = feature_new("select") with {
         stmt_tag: Stmt.Select(SelectArmList.End),
         emit_stmt: select_emit_stmt,
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r },
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r },
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .Select(_) -> error_result(rt, "select is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Select")
         },

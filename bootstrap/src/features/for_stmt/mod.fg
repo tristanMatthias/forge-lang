@@ -24,7 +24,7 @@ export fn init_for_stmt(reg: Registry) {
         emit_stmt: for_in_emit_stmt,
         resolve_stmt: for_in_resolve_stmt,
         check_stmt: for_in_check_stmt,
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .ForIn(_, _, _) -> error_result(rt, "for-in is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected ForIn")
         },

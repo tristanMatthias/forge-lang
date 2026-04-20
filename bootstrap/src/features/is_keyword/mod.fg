@@ -10,15 +10,15 @@ export fn init_is_keyword(reg: Registry) {
     let f = feature_new("is") with {
         expr_tag: Expr.IsCheck(Expr.Null, ""),
         emit_expr: is_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr { .IsCheck(subject, _) -> resolve_expr(r, subject), _ -> r },
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .IsCheck(subject, _) -> resolve_expr(r, subject), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .IsCheck(subject, _) -> {
                 let s = check_expr(tc, subject)
                 tc_er(s.tc, .Bool)
             }
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .IsCheck(_, _) -> error_result(rt, "is-check is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected IsCheck")
         },

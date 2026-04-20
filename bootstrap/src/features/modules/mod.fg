@@ -19,8 +19,8 @@ use resolve.{resolve_stmt_list}
 export fn init_modules(reg: Registry) {
     let f1 = feature_new("mod") with {
         stmt_tag: Stmt.Module("", StmtList.End),
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r },
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r },
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .Module(_, _) -> ok_result(rt, value_null())
             _ -> error_result(rt, "expected Module")
         },
@@ -31,7 +31,7 @@ export fn init_modules(reg: Registry) {
 
     let f2 = feature_new("use") with {
         stmt_tag: Stmt.Use("", ParamList.End),
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .Use(_, _) -> ok_result(rt, value_null())
             _ -> error_result(rt, "expected Use")
         },

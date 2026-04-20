@@ -11,7 +11,7 @@ export fn init_null_safety(reg: Registry) {
     let f1 = feature_new("null_coalesce") with {
         expr_tag: Expr.NullCoalesce(Expr.Null, Expr.Null),
         emit_expr: null_coalesce_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
             .NullCoalesce(left, right) -> {
                 let after_left = resolve_expr(r, left)
                 resolve_expr(after_left, right)
@@ -19,7 +19,7 @@ export fn init_null_safety(reg: Registry) {
             _ -> r
         },
         check_expr: nc_check_expr,
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .NullCoalesce(_, _) -> error_result(rt, "null coalesce is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected NullCoalesce")
         },
@@ -29,12 +29,12 @@ export fn init_null_safety(reg: Registry) {
     let f2 = feature_new("optional_chain") with {
         expr_tag: Expr.OptionalChain(Expr.Null, ""),
         emit_expr: optional_chain_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr { .OptionalChain(obj, _) -> resolve_expr(r, obj), _ -> r },
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .OptionalChain(obj, _) -> resolve_expr(r, obj), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .OptionalChain(_, _) -> error_result(rt, "optional chain is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected OptionalChain")
         },
@@ -44,9 +44,9 @@ export fn init_null_safety(reg: Registry) {
     let f3 = feature_new("try") with {
         expr_tag: Expr.Try(Expr.Null),
         emit_expr: try_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr { .Try(inner) -> resolve_expr(r, inner), _ -> r },
-        check_expr: (tc: int, expr: Expr) -> match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Int) },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .Try(inner) -> resolve_expr(r, inner), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Int) },
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Try(_) -> error_result(rt, "try operator is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Try")
         },
@@ -56,7 +56,7 @@ export fn init_null_safety(reg: Registry) {
     let f4 = feature_new("catch") with {
         expr_tag: Expr.Catch(Expr.Null, "", Expr.Null),
         emit_expr: catch_emit_expr,
-        resolve_expr: (r: int, expr: Expr) -> match expr {
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
             .Catch(inner, binding, body) -> {
                 let ri = resolve_expr(r, inner)
                 // Declare binding in a new scope for the catch body
@@ -71,7 +71,7 @@ export fn init_null_safety(reg: Registry) {
         },
         // Catch type checking is handled directly in check_expr (typeck/mod.fg)
         // to access fn_ret_strs for Result Ok-type resolution.
-        check_expr: (tc: int, expr: Expr) -> match expr {
+        check_expr: (tc: TC, expr: Expr) -> match expr {
             .Catch(inner, _, body) -> {
                 let ci = check_expr(tc, inner)
                 let cb = check_expr(ci.tc, body)
@@ -79,7 +79,7 @@ export fn init_null_safety(reg: Registry) {
             }
             _ -> tc_er(tc, .Int)
         },
-        eval_expr: (rt: int, expr: Expr) -> match expr {
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Catch(_, _, _) -> error_result(rt, "catch is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Catch")
         },

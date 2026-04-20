@@ -9,8 +9,8 @@ export fn init_parallel_stmt(reg: Registry) {
     let f = feature_new("parallel") with {
         stmt_tag: Stmt.Parallel(StmtList.End),
         emit_stmt: parallel_emit_stmt,
-        resolve_stmt: (r: int, stmt: Stmt) -> match stmt { .Parallel(body) -> resolve_stmt_list(r, body), _ -> r },
-        eval_stmt: (rt: int, stmt: Stmt) -> match stmt {
+        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .Parallel(body) -> resolve_stmt_list(r, body), _ -> r },
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
             .Parallel(_) -> error_result(rt, "parallel is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Parallel")
         },
