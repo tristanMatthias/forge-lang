@@ -235,21 +235,9 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         return r
     }
     match stmt {
-        .Let(name, _, initializer) -> {
-            let declared = declare_name(r, name)  // immutable
-            let after_init = resolve_expr(declared, initializer)
-            define_name(after_init, name)
-        }
-        .Mut(name, _, initializer) -> {
-            let declared = declare_name_mutable(r, name)  // mutable
-            let after_init = resolve_expr(declared, initializer)
-            define_name(after_init, name)
-        }
-        .Const(name, _, initializer) -> {
-            let declared = declare_name(r, name)  // immutable (const)
-            let after_init = resolve_expr(declared, initializer)
-            define_name(after_init, name)
-        }
+        .Let(name, _, init) -> resolve_binding(r, name, init, false)
+        .Mut(name, _, init) -> resolve_binding(r, name, init, true)
+        .Const(name, _, init) -> resolve_binding(r, name, init, false)
         .Expr(expr) -> resolve_expr(r, expr)
         .Block(body) -> {
             let entered = enter_resolve_scope(r)
@@ -301,6 +289,24 @@ fn fa_root(expr: Expr) -> string {
         .FieldAccess(inner, _) -> fa_root(inner)
         _ -> ""
     }
+}
+
+// Check that a mutation operation on `obj` targets a mutable root variable.
+fn check_immutable_root(r: Resolver, obj: Expr, operation: string) -> Resolver? {
+    let root = fa_root(obj)
+    if root.length > 0 && root != "self" {
+        let lu = lookup_name(r.scopes, root)
+        if lu.found && !lu.mutable {
+            return resolve_report(r, DiagCode.ImmutableAssign, "${operation} on immutable variable `${root}` (use `mut` or `with` for updates)")
+        }
+    }
+    null
+}
+
+fn resolve_binding(r: Resolver, name: string, init: Expr, is_mutable: bool) -> Resolver {
+    let declared = if is_mutable { declare_name_mutable(r, name) } else { declare_name(r, name) }
+    let after_init = resolve_expr(declared, init)
+    define_name(after_init, name)
 }
 
 // Built-in methods that mutate their receiver (spec Axis 11.5).
@@ -364,17 +370,11 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .Call(callee, args) -> {
             let after_callee = resolve_expr(r, callee)
             let after_args = resolve_expr_list(after_callee, args)
-            // Deep immutability: block mutating method calls on let bindings
             match callee {
                 .FieldAccess(obj, method) -> {
                     if is_mutating_method(method) {
-                        let root = fa_root(obj)
-                        if root.length > 0 && root != "self" {
-                            let lu = lookup_name(after_args.scopes, root)
-                            if lu.found && !lu.mutable {
-                                return resolve_report(after_args, DiagCode.ImmutableAssign, "cannot call mutating method `${method}` on immutable variable `${root}` (use `mut` or `with` for updates)")
-                            }
-                        }
+                        let err = check_immutable_root(after_args, obj, "cannot call mutating method `${method}`")
+                        if err != null { return err! }
                     }
                 }
                 _ -> {}
@@ -399,14 +399,8 @@ export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
         .FieldAssign(obj, field, value) -> {
             let ra = resolve_expr(r, obj)
             let rb = resolve_expr(ra, value)
-            // Deep immutability (spec Axis 11.5): reject field mutation on let bindings
-            let root = fa_root(obj)
-            if root.length > 0 && root != "self" {
-                let lu = lookup_name(rb.scopes, root)
-                if lu.found && !lu.mutable {
-                    return resolve_report(rb, DiagCode.ImmutableAssign, "cannot mutate field `${field}` on immutable variable `${root}` (use `mut` or `with` for updates)")
-                }
-            }
+            let err = check_immutable_root(rb, obj, "cannot mutate field `${field}`")
+            if err != null { return err! }
             rb
         }
         _ -> {

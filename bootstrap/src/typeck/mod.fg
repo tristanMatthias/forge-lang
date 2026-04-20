@@ -530,37 +530,25 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
     }
 }
 
+fn check_binding(tc: TC, name: string, ty_str: string, init: Expr, is_const: bool) -> TC {
+    let r = check_expr(tc, init)
+    let declared_ty = if ty_str.length > 0 { translate_type(r.tc, ty_str) } else { r.ty }
+    if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Int) {
+        let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
+        return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+    }
+    if is_const && !is_const_expr(init) {
+        let msg = "`const` requires a compile-time constant expression (use `let` for runtime values)"
+        return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+    }
+    tc_bind(r.tc, name, declared_ty)
+}
+
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Let(name, ty_str, init) -> {
-            let r = check_expr(tc, init)
-            let declared_ty = if ty_str.length > 0 { translate_type(r.tc, ty_str) } else { r.ty }
-            // Newtype: reject raw assignment without constructor
-            if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Int) {
-                let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
-                return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
-            }
-            tc_bind(r.tc, name, declared_ty)
-        }
-        .Mut(name, ty_str, init) -> {
-            let r = check_expr(tc, init)
-            let declared_ty = if ty_str.length > 0 { translate_type(r.tc, ty_str) } else { r.ty }
-            if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Int) {
-                let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
-                return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
-            }
-            tc_bind(r.tc, name, declared_ty)
-        }
-        .Const(name, ty_str, init) -> {
-            let r = check_expr(tc, init)
-            let declared_ty = if ty_str.length > 0 { translate_type(r.tc, ty_str) } else { r.ty }
-            // Validate that the initializer is a compile-time constant expression
-            if !is_const_expr(init) {
-                let msg = "`const` requires a compile-time constant expression (use `let` for runtime values)"
-                return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
-            }
-            tc_bind(r.tc, name, declared_ty)
-        }
+        .Let(name, ty_str, init) -> check_binding(tc, name, ty_str, init, false)
+        .Mut(name, ty_str, init) -> check_binding(tc, name, ty_str, init, false)
+        .Const(name, ty_str, init) -> check_binding(tc, name, ty_str, init, true)
         .Expr(e) -> {
             let r = check_expr(tc, e)
             r.tc
@@ -1081,28 +1069,21 @@ fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
     tc_bind_params(tc_enter(tc), params)
 }
 
+fn annotate_bind(tc: TC, name: string, ty_str: string, init: Expr) -> TC {
+    let r = check_expr(tc, init)
+    let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
+    tc_bind(tc, name, declared_ty)
+}
+
 fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
     match stmts {
         .End -> .End
         .Node(ss, next) -> {
             let new_stmt = annotate_stmt(tc, ss.node)
-            // Update tc with Let/Mut bindings so later statements see correct types
             let updated_tc = match ss.node {
-                .Let(name, ty_str, init) -> {
-                    let r = check_expr(tc, init)
-                    let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
-                    tc_bind(tc, name, declared_ty)
-                }
-                .Mut(name, ty_str, init) -> {
-                    let r = check_expr(tc, init)
-                    let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
-                    tc_bind(tc, name, declared_ty)
-                }
-                .Const(name, ty_str, init) -> {
-                    let r = check_expr(tc, init)
-                    let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
-                    tc_bind(tc, name, declared_ty)
-                }
+                .Let(name, ty_str, init) -> annotate_bind(tc, name, ty_str, init)
+                .Mut(name, ty_str, init) -> annotate_bind(tc, name, ty_str, init)
+                .Const(name, ty_str, init) -> annotate_bind(tc, name, ty_str, init)
                 _ -> tc
             }
             StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(updated_tc, next))
