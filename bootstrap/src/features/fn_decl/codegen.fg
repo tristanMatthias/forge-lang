@@ -7,8 +7,9 @@ use codegen.types.{Ctx, EmitValue, ParamTypeList,  ok_emit, ok_emit_str, ok_emit
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
-use codegen.{emit_rc_cleanup}
-use codegen.types.{rc_cleanup_reset}
+use codegen.{emit_rc_cleanup, rc_mark_return}
+use codegen.types.{rc_cleanup_reset, rc_mark_moved}
+use codegen.helpers.{stmts_last_expr}
 
 export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {

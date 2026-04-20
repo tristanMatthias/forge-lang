@@ -278,18 +278,39 @@ export enum DeferStack {
     ErrFrame(body: SExpr, next: DeferStack)
 }
 
-// RC cleanup stack — tracks allocas of RC-managed locals for release at scope exit.
+// RC cleanup stack — tracks RC-managed locals for release at scope exit.
+// Each entry has the value alloca and a moved_flag (i1 alloca).
+// If moved_flag is true at scope exit, the value was consumed elsewhere
+// and should NOT be released.
 export enum RcCleanupStack {
     End
-    Node(alloca: ptr, next: RcCleanupStack)
+    Node(name: string, alloca: ptr, moved_flag: ptr, next: RcCleanupStack)
 }
 
 export mut RC_CLEANUP: RcCleanupStack = .End
 
 export fn rc_cleanup_reset() { RC_CLEANUP = .End }
 
-export fn rc_cleanup_push(alloca: ptr) {
-    RC_CLEANUP = RcCleanupStack.Node(alloca, RC_CLEANUP)
+export fn rc_cleanup_push(name: string, alloca: ptr, moved_flag: ptr) {
+    RC_CLEANUP = RcCleanupStack.Node(name, alloca, moved_flag, RC_CLEANUP)
+}
+
+// Mark a named local as moved (ownership transferred).
+export fn rc_mark_moved(ctx: Ctx, name: string) {
+    rc_mark_moved_stack(ctx, name, RC_CLEANUP)
+}
+
+fn rc_mark_moved_stack(ctx: Ctx, name: string, stack: RcCleanupStack) {
+    match stack {
+        .End -> {}
+        .Node(n, _, moved_flag, next) -> {
+            if n == name {
+                forge_llvm_build_store(ctx.builder, forge_llvm_const_int(ctx.i1_type, 1, 0), moved_flag)
+            } else {
+                rc_mark_moved_stack(ctx, name, next)
+            }
+        }
+    }
 }
 
 export enum StructReg {
@@ -914,6 +935,12 @@ impl Ctx {
     fn bind(self, env: VarEnv, name: string, value: ptr, ty: ValueType) -> VarEnv {
         let alloca = forge_llvm_build_alloca(self.builder, self.type_for(ty), name)
         forge_llvm_build_store_cast(self.builder, value, alloca)
+        // Track RC-managed locals for scope-exit release
+        if vtype_is_ptr_type(ty) {
+            let moved_flag = forge_llvm_build_alloca(self.builder, self.i1_type, name + ".moved")
+            forge_llvm_build_store(self.builder, forge_llvm_const_int(self.i1_type, 0, 0), moved_flag)
+            rc_cleanup_push(name, alloca, moved_flag)
+        }
         env_extend(env, name, alloca, ty)
     }
 
