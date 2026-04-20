@@ -1,6 +1,6 @@
 mod parser
 mod codegen
-use core.ast.{vtype_display, vtype_eq}
+use core.ast.{TypeList, ValueType, vtype_display, vtype_eq}
 use codegen.types.{err_emit, err_stmt}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
 use features.eval.{eval_expr, execute_stmt}
@@ -92,8 +92,9 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let t = check_expr(after_cond, then_branch)
             let e = check_expr(t.tc, else_branch)
             if !vtype_eq(t.ty, e.ty) && !vtype_eq(t.ty, .Int) && !vtype_eq(e.ty, .Int) && !vtype_eq(t.ty, .Void) && !vtype_eq(e.ty, .Void) {
-                let msg = "if-expression branches have different types: `${vtype_display(t.ty)}` vs `${vtype_display(e.ty)}`"
-                return tc_er(tc_report(e.tc, DiagCode.TypeMismatch, msg), t.ty)
+                // Both branches have concrete different types — result is a union
+                let union_ty = ValueType.Union(TypeList.Node(t.ty, TypeList.Node(e.ty, TypeList.End)))
+                return tc_er(e.tc, union_ty)
             }
             tc_er(e.tc, t.ty)
         }

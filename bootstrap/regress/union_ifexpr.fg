@@ -1,0 +1,36 @@
+/// expect: hello
+/// expect: 3.14
+/// expect: name: Alice
+/// expect: 1
+
+type Dog = { name: string }
+type Cat = { color: string }
+
+fn main() {
+    // String vs Float — auto-inferred union
+    let u = if true { "hello" } else { 3.14 }
+    match u {
+        string(s) -> println(s)
+        float(f) -> println(string(f))
+    }
+
+    let u2 = if false { "hello" } else { 3.14 }
+    match u2 {
+        string(s) -> println(s)
+        float(f) -> println(string(f))
+    }
+
+    // Struct vs Struct — auto-inferred union
+    let pet = if true { Dog { name: "Alice" } } else { Cat { color: "orange" } }
+    match pet {
+        Dog(d) -> println("name: " + d.name)
+        Cat(c) -> println("color: " + c.color)
+    }
+
+    // Bool vs String — auto-inferred union
+    let b = if true { true } else { "nope" }
+    match b {
+        bool(v) -> println(string(v))
+        string(s) -> println(s)
+    }
+}

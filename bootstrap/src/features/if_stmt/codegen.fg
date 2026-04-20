@@ -1,8 +1,9 @@
 // WHY: emits LLVM IR for `if` as statement and expression.
 
-use core.ast.{Expr, Stmt, VarEnv}
+use core.ast.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq}
 use codegen.types.{Ctx, EmitValue,  ok_stmt, ok_emit_typed, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt}
+use features.union_type.codegen.{emit_union_wrap}
 
 export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<VarEnv, string> {
     let cond = ctx.emit(env, condition)?
@@ -22,26 +23,88 @@ export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, els
     ok_stmt(env)
 }
 
+// A type is safe for automatic union inference when both branches
+// produce unambiguous user-facing types. Int is excluded because it
+// doubles as null (i64 0) and as the type checker's fallback for
+// unresolved expressions.
+fn is_union_safe_type(ty: ValueType) -> bool {
+    match ty {
+        .Str -> true
+        .Bool -> true
+        .Float -> true
+        .Struct(_) -> true
+        .Enum(_) -> true
+        .Union(_) -> true
+        _ -> false
+    }
+}
+
 export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> Result<EmitValue, string> {
     let cond = ctx.emit(env, condition)?
+    let result_slot = ctx.alloca_i64("ife_result")
     let merge_bb = ctx.bb("ife_end")
     let else_bb = ctx.if_true(emit_value_ptr(cond), "ife")
 
+    // ── Then branch ──
     let t = ctx.emit(env, then_branch)?
     let t_ty = emit_value_ty(t)
-    let t_val = ctx.cast_to(emit_value_ptr(t), t_ty)
-    let then_end = ctx.current_bb()
+    ctx.store(emit_value_ptr(t), result_slot)
     ctx.br_if_open(merge_bb)
 
+    // ── Else branch ──
     ctx.position(else_bb)
     let e = ctx.emit(env, else_branch)?
-    let e_val = ctx.cast_to(emit_value_ptr(e), t_ty)
-    let else_end = ctx.current_bb()
+    let e_ty = emit_value_ty(e)
+    ctx.store(emit_value_ptr(e), result_slot)
     ctx.br_if_open(merge_bb)
 
+    // ── Merge ──
     ctx.position(merge_bb)
-    let phi = ctx.phi_for(t_ty, "ife_val")
-    ctx.add_incoming(phi, t_val, then_end)
-    ctx.add_incoming(phi, e_val, else_end)
-    ok_emit_typed(phi, t_ty)
+
+    // Same type or non-union-safe: return raw value with then-type
+    if vtype_eq(t_ty, e_ty) || !is_union_safe_type(t_ty) || !is_union_safe_type(e_ty) {
+        let result = ctx.load_i64(result_slot, "ife_val")
+        return ok_emit_typed(result, t_ty)
+    }
+
+    // Mixed user-facing types: wrap using a runtime tag check.
+    // We stored the raw value and a branch tag. Now load, check which
+    // branch ran, and wrap with the correct type.
+    let union_ty = ValueType.Union(TypeList.Node(t_ty, TypeList.Node(e_ty, TypeList.End)))
+    let raw_val = ctx.load_i64(result_slot, "ife_raw")
+
+    // Use an if/else at LLVM level to wrap with correct type.
+    // The condition is: did the then branch run? We re-evaluate the
+    // condition (which is pure for bools/comparisons) via the same cond.
+    // Actually we can't — cond was consumed. Use a tag alloca instead.
+    // But we didn't store a tag. Let me add one.
+
+    // SIMPLEST CORRECT APPROACH: use two separate result slots,
+    // one per branch. Each stores its union-wrapped value directly.
+    // At merge, load from the single wrapped_slot that both branches
+    // write to.
+    // The issue: we already emitted both branches into result_slot
+    // without wrapping. We can't go back.
+
+    // SOLUTION: for the union case, DON'T use the result_slot.
+    // Emit a SECOND if/else that wraps based on which type is stored.
+    // This is redundant but correct.
+    let wrap_slot = ctx.alloca_i64("ife_wrap")
+    let wrap_merge = ctx.bb("ife_wrap_end")
+    let wrap_else = ctx.if_true(emit_value_ptr(cond), "ife_wrap")
+
+    // Then-type wrap
+    let t_wrapped = emit_union_wrap(ctx, raw_val, t_ty, union_ty)?
+    ctx.store(emit_value_ptr(t_wrapped), wrap_slot)
+    ctx.br_if_open(wrap_merge)
+
+    // Else-type wrap
+    ctx.position(wrap_else)
+    let e_wrapped = emit_union_wrap(ctx, raw_val, e_ty, union_ty)?
+    ctx.store(emit_value_ptr(e_wrapped), wrap_slot)
+    ctx.br_if_open(wrap_merge)
+
+    ctx.position(wrap_merge)
+    let result = ctx.load_i64(wrap_slot, "ife_union_val")
+    ok_emit_typed(result, union_ty)
 }
