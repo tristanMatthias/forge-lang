@@ -1,0 +1,40 @@
+/// expect: Hello
+/// expect: World
+/// expect: ---
+/// expect: Hi Alice!
+/// expect: Welcome.
+/// expect: ---
+/// expect: hello
+/// expect: ---
+/// expect: line1
+/// expect: line2
+fn main() {
+    // Basic multiline with indent stripping
+    let text = """
+        Hello
+        World
+        """
+    println(text)
+    println("---")
+
+    // Multiline with interpolation
+    let name = "Alice"
+    let greeting = """
+        Hi ${name}!
+        Welcome.
+        """
+    println(greeting)
+    println("---")
+
+    // Single-line triple quote
+    let single = """hello"""
+    println(single)
+    println("---")
+
+    // No indent stripping (closing """ at col 0)
+    let nostrip = """
+line1
+line2
+"""
+    println(nostrip)
+}

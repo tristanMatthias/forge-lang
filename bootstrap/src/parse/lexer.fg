@@ -298,6 +298,13 @@ impl Parser {
     }
 
     fn scan_string_token(self) {
+        // Check for triple-quoted multiline string: """..."""
+        if self.peek_char() == "\"" && self.peek_next_char() == "\"" {
+            self.advance_char()
+            self.advance_char()
+            self.scan_multiline_string()
+            return
+        }
         // Build the lexeme with escapes resolved. Surrounding quotes
         // are kept so codegen.fg's strip_quotes still works.
         //
@@ -387,6 +394,155 @@ impl Parser {
         }
     }
 
+    // Triple-quoted multiline string: """..."""
+    // Strips common leading whitespace based on closing """ indentation.
+    fn scan_multiline_string(self) {
+        mut content = "\""
+        mut has_interpolation = false
+        mut brace_depth = 0
+        // Skip the first newline after opening """ if present
+        if !self.is_at_end() && self.peek_char() == "\n" {
+            self.advance_char()
+        }
+        while !self.is_at_end() {
+            let ch = self.peek_char()
+            // Inside ${...}: track braces, skip nested strings
+            if brace_depth > 0 {
+                if ch == "\"" {
+                    content = content + ch
+                    self.advance_char()
+                    while !self.is_at_end() && self.peek_char() != "\"" {
+                        if self.peek_char() == "\\" {
+                            content = content + self.peek_char()
+                            self.advance_char()
+                        }
+                        if !self.is_at_end() {
+                            content = content + self.peek_char()
+                            self.advance_char()
+                        }
+                    }
+                    if !self.is_at_end() {
+                        content = content + self.peek_char()
+                        self.advance_char()
+                    }
+                    continue
+                }
+                if ch == "{" { brace_depth = brace_depth + 1 }
+                if ch == "}" { brace_depth = brace_depth - 1 }
+                content = content + ch
+                self.advance_char()
+                continue
+            }
+            // Check for closing """
+            if ch == "\"" && self.peek_next_char() == "\"" {
+                // Need to check third quote
+                if self.current + 2 < self.source.length && self.source[self.current + 2] == "\"" {
+                    self.advance_char()
+                    self.advance_char()
+                    self.advance_char()
+                    // Strip common indentation: determine indent from what precedes closing """
+                    let stripped = multiline_strip_indent(content.substring(1, content.length))
+                    if has_interpolation {
+                        self.set_current(Tk.Template, stripped)
+                    } else {
+                        self.set_current(Tk.String, "\"" + stripped + "\"")
+                    }
+                    return
+                }
+            }
+            // Interpolation
+            if ch == "$" && self.peek_next_char() == "{" {
+                has_interpolation = true
+                brace_depth = 1
+                content = content + "$" + "{"
+                self.advance_char()
+                self.advance_char()
+                continue
+            }
+            // Escape sequences
+            if ch == "\\" {
+                self.advance_char()
+                if self.is_at_end() { break }
+                let esc = self.peek_char()
+                self.advance_char()
+                match esc {
+                    "n"  -> { content = content + "\n" }
+                    "t"  -> { content = content + "\t" }
+                    "r"  -> { content = content + "\r" }
+                    "\\" -> { content = content + "\\" }
+                    "\"" -> { content = content + "\"" }
+                    "0"  -> { content = content + "\0" }
+                    "x"  -> {
+                        let hi = self.advance_char()
+                        let lo = self.advance_char()
+                        content = content + forge_char_from_hex(hi, lo)
+                    }
+                    _    -> { content = content + "\\" + esc }
+                }
+            } else {
+                content = content + ch
+                self.advance_char()
+            }
+        }
+        self.report(DiagCode.UnterminatedString, "unterminated multiline string (missing closing \"\"\")")
+        self.set_current(Tk.Error, "")
+    }
+
+}
+
+// Strip common leading whitespace from multiline string content.
+// The indentation is determined by the last line (which contained the closing """).
+fn multiline_strip_indent(raw: string) -> string {
+    // Find the last line to determine indent
+    mut last_newline = -1
+    for i in 0..raw.length {
+        if raw[i] == "\n" { last_newline = i }
+    }
+    // If no newlines, return as-is
+    if last_newline < 0 { return raw }
+    // The indent is the whitespace on the last line (after last newline)
+    let last_line = raw.substring(last_newline + 1, raw.length)
+    mut indent_len = 0
+    while indent_len < last_line.length {
+        let ch = last_line[indent_len]
+        if ch != " " && ch != "\t" { break }
+        indent_len = indent_len + 1
+    }
+    // If closing """ is on its own line with only whitespace, strip that last line
+    // and strip `indent_len` chars from the start of every other line
+    let body = if indent_len == last_line.length {
+        // Last line is just whitespace (closing """ was indented on its own line)
+        // Remove the trailing newline + that whitespace
+        raw.substring(0, last_newline)
+    } else {
+        raw
+    }
+    if indent_len == 0 { return body }
+    let indent = last_line.substring(0, indent_len)
+    // Strip `indent` from the start of each line
+    mut result = ""
+    mut line_start = 0
+    for i in 0..body.length {
+        if body[i] == "\n" {
+            let line = body.substring(line_start, i)
+            let stripped_line = if line.starts_with(indent) {
+                line.substring(indent_len, line.length)
+            } else { line }
+            if result.length > 0 { result = result + "\n" }
+            result = result + stripped_line
+            line_start = i + 1
+        }
+    }
+    // Handle last line (no trailing newline)
+    if line_start < body.length {
+        let line = body.substring(line_start, body.length)
+        let stripped_line = if line.starts_with(indent) {
+            line.substring(indent_len, line.length)
+        } else { line }
+        if result.length > 0 { result = result + "\n" }
+        result = result + stripped_line
+    }
+    result
 }
 
 // ── Numeric literal parsing ──
