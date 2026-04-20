@@ -69,11 +69,13 @@ export fn init_null_safety(reg: Registry) {
             }
             _ -> r
         },
+        // Catch type checking is handled directly in check_expr (typeck/mod.fg)
+        // to access fn_ret_strs for Result Ok-type resolution.
         check_expr: (tc: int, expr: Expr) -> match expr {
             .Catch(inner, _, body) -> {
-                let i = check_expr(tc, inner)
-                let b = check_expr(i.tc, body)
-                tc_er(b.tc, b.ty)
+                let ci = check_expr(tc, inner)
+                let cb = check_expr(ci.tc, body)
+                tc_er(cb.tc, cb.ty)
             }
             _ -> tc_er(tc, .Int)
         },

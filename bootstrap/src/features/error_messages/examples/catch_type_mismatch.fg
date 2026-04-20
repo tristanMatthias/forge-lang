@@ -1,0 +1,12 @@
+/// expect-error: catch body type
+enum Result<T, E> { Ok(value: T), Err(error: E) }
+
+fn parse_int(s: string) -> Result<int, string> {
+    if s == "42" { return Result.Ok(42) }
+    Result.Err("not a number")
+}
+
+fn main() {
+    let port = parse_int("bad") catch { "hello" }
+    println(string(port))
+}

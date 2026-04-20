@@ -85,6 +85,78 @@ fn tc_count_args(list: ExprList) -> int {
     }
 }
 
+// ── Raw return-type string registry ──
+// Stores the raw annotation string for function return types so that
+// generic type parameters (e.g. the Ok type in Result<T, E>) can be
+// extracted for downstream checks like `catch` body type validation.
+
+enum FnRetStrReg {
+    End
+    Node(name: string, ret_str: string, next: FnRetStrReg)
+}
+
+fn fn_ret_str_lookup(reg: FnRetStrReg, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, s, _) if n == name -> s
+        .Node(_, _, next) -> fn_ret_str_lookup(next, name)
+    }
+}
+
+// Extract the first generic argument from a type string.
+// "Result<int, string>" → "int", "Result<EmitValue, string>" → "EmitValue"
+// Returns "" if no generic args found.
+fn tc_first_generic_arg(ty: string) -> string {
+    let lt = ty.index_of("<")
+    if lt < 0 { return "" }
+    let inner = ty.substring(lt + 1, ty.length)
+    // Find the end of the first arg: either ',' or '>'
+    // Must handle nested generics: Result<List<int>, string>
+    mut depth = 0
+    mut i = 0
+    while i < inner.length {
+        let ch = inner.substring(i, i + 1)
+        if ch == "<" { depth = depth + 1 }
+        if ch == ">" {
+            if depth == 0 { return inner.substring(0, i).trim() }
+            depth = depth - 1
+        }
+        if ch == "," && depth == 0 {
+            return inner.substring(0, i).trim()
+        }
+        i = i + 1
+    }
+    ""
+}
+
+// Look up the Ok type for a catch expression.
+// Given a TC and the inner expression, determines the expected catch body type.
+// Returns the Ok type as a ValueType, or null if unknown.
+export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
+    // For a direct call, look up the raw return type string
+    let fn_name = match inner {
+        .Call(callee, _) -> match callee {
+            .Ident(name) -> name
+            .QualifiedIdent(path) -> path
+            _ -> ""
+        }
+        .GenericCall(callee, _, _) -> match callee {
+            .Ident(name) -> name
+            .QualifiedIdent(path) -> path
+            _ -> ""
+        }
+        _ -> ""
+    }
+    if fn_name == "" { return null }
+    let ret_str = fn_ret_str_lookup(tc.fn_ret_strs, fn_name)
+    if ret_str == "" { return null }
+    let base = tc_base_type_name(ret_str)
+    if base != "Result" { return null }
+    let ok_str = tc_first_generic_arg(ret_str)
+    if ok_str == "" { return null }
+    translate_type(tc, ok_str)
+}
+
 // ── Struct/Enum registries ──
 
 enum StructTypeReg {
@@ -195,6 +267,7 @@ fn union_alias_lookup(reg: UnionAliasReg, name: string) -> string {
 type TC = {
     types: TypeEntry,
     fns: FnTypeEntry,
+    fn_ret_strs: FnRetStrReg,
     structs: StructTypeReg,
     shapes: ShapeSet,
     enums: EnumTypeReg,
@@ -218,6 +291,7 @@ fn tc_new() -> TC {
     TC {
         types: TypeEntry.End,
         fns: FnTypeEntry.End,
+        fn_ret_strs: FnRetStrReg.End,
         structs: StructTypeReg.End,
         shapes: ShapeSet.End,
         enums: EnumTypeReg.End,
@@ -423,10 +497,12 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
                 }
                 .Function(name, _, params, ret_ty, _) -> tc with {
-                    fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns)
+                    fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns),
+                    fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
                 }
                 .ExternFn(name, params, ret_ty) -> tc with {
-                    fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns)
+                    fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns),
+                    fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
                 }
                 .Impl(_, methods) -> collect_decls(tc, methods)
                 .Module(_, body) -> collect_decls(tc, body)
@@ -682,6 +758,20 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .QualifiedIdent(path) -> {
             let fn_ty = fn_type_lookup(tc.fns, path)
             tc_er(tc, fn_ty)
+        }
+        .Catch(inner, _, body) -> {
+            let ci = check_expr(tc, inner)
+            let cb = check_expr(ci.tc, body)
+            let maybe_ok = tc_catch_ok_type(ci.tc, inner)
+            if maybe_ok != null {
+                let ok_ty = maybe_ok!
+                if !vtype_eq(ok_ty, cb.ty) && !vtype_assignable(cb.ty, ok_ty) {
+                    let msg = "catch body type `${vtype_display(cb.ty)}` does not match expected type `${vtype_display(ok_ty)}`"
+                    return tc_er(tc_report(cb.tc, DiagCode.TypeMismatch, msg), ok_ty)
+                }
+                return tc_er(cb.tc, ok_ty)
+            }
+            tc_er(cb.tc, cb.ty)
         }
         _ -> {
             let tag = forge_expr_tag(expr)
