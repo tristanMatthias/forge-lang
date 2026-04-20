@@ -732,21 +732,24 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprL
     }
 }
 
+// Extract the first argument's type. Safe to call after check_expr_list
+// because re-deriving an expression's type is idempotent (no new bindings).
+fn tc_first_arg_type(tc: TC, args: ExprList) -> ValueType {
+    match args {
+        .End -> ValueType.Void
+        .Node(arg_se, _) -> check_expr(tc, arg_se.node).ty
+    }
+}
+
 // Check newtype constructor argument matches the inner type
-fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, args: ExprList) -> TC {
+fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueType) -> TC {
     match ret_ty {
         .Newtype(_, inner_ty) -> {
-            match args {
-                .Node(arg_se, _) -> {
-                    let arg_ty = check_expr(tc, arg_se.node).ty
-                    if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Int && inner_ty is .Int) {
-                        let msg = "`${name}()` expects `${vtype_display(inner_ty)}`, got `${vtype_display(arg_ty)}`"
-                        return tc_report(tc, DiagCode.TypeMismatch, msg)
-                    }
-                    tc
-                }
-                _ -> tc
+            if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Int && inner_ty is .Int) {
+                let msg = "`${name}()` expects `${vtype_display(inner_ty)}`, got `${vtype_display(arg_ty)}`"
+                return tc_report(tc, DiagCode.TypeMismatch, msg)
             }
+            tc
         }
         _ -> tc
     }
@@ -844,7 +847,8 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
                 let newtype_checked = tc_check_newtype_args(shape_checked, name, tc_fn_params(shape_checked.fns, name), args)
                 // Newtype constructor: check arg matches inner type
                 let ret_ty = fn_type_lookup(newtype_checked.fns, name)
-                let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, ret_ty, args)
+                let first_arg_ty = tc_first_arg_type(newtype_checked, args)
+                let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, ret_ty, first_arg_ty)
                 return tc_er(ctor_checked, ret_ty)
             }
             // Variable holding a closure

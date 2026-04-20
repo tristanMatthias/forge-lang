@@ -62,44 +62,39 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
     // ── Merge ──
     ctx.position(merge_bb)
 
-    // Same type or non-union-safe: return raw value with then-type
+    // Same type or non-union-safe: load raw value
     if vtype_eq(t_ty, e_ty) || !is_union_safe_type(t_ty) || !is_union_safe_type(e_ty) {
         let result = ctx.load_i64(result_slot, "ife_val")
         return ok_emit_typed(result, t_ty)
     }
 
-    // Mixed user-facing types: wrap using a runtime tag check.
-    // We stored the raw value and a branch tag. Now load, check which
-    // branch ran, and wrap with the correct type.
+    // Mixed user-facing types: re-emit with wrapping baked into each branch.
+    // We can't go back and insert wrapping into already-emitted branches,
+    // so we emit fresh branches that wrap directly. The condition SSA value
+    // persists across basic blocks in LLVM, so reusing it is correct.
     let union_ty = ValueType.Union(TypeList.Node(t_ty, TypeList.Node(e_ty, TypeList.End)))
-    let raw_val = ctx.load_i64(result_slot, "ife_raw")
-
-    // Use an if/else at LLVM level to wrap with correct type.
-    // The condition is: did the then branch run? We re-evaluate the
-    // condition (which is pure for bools/comparisons) via the same cond.
-    // Actually we can't — cond was consumed. Use a tag alloca instead.
-    // But we didn't store a tag. Let me add one.
-
-    // SIMPLEST CORRECT APPROACH: use two separate result slots,
-    // one per branch. Each stores its union-wrapped value directly.
-    // At merge, load from the single wrapped_slot that both branches
-    // write to.
-    // The issue: we already emitted both branches into result_slot
-    // without wrapping. We can't go back.
-
-    // SOLUTION: for the union case, DON'T use the result_slot.
-    // Emit a SECOND if/else that wraps based on which type is stored.
-    // This is redundant but correct.
     let wrap_slot = ctx.alloca_i64("ife_wrap")
     let wrap_merge = ctx.bb("ife_wrap_end")
+    // Branch tag: 0 = then, 1 = else. Stored during initial emission.
+    let tag_slot = ctx.alloca_i64("ife_branch_tag")
+    // We need to store the tag in the original branches. But those branches
+    // already terminated. Instead, use the raw value + its known type:
+    // the then branch stored a value of type t_ty, the else stored e_ty.
+    // At merge, the raw_val is one or the other. We wrap BOTH ways and
+    // select based on the original condition.
+    //
+    // Since LLVM SSA values survive across blocks, emit_value_ptr(cond) is
+    // still valid here. This is NOT re-evaluation — it's reusing the same
+    // i1 value computed earlier. No side effects, no redundant computation.
+    let raw_val = ctx.load_i64(result_slot, "ife_raw")
     let wrap_else = ctx.if_true(emit_value_ptr(cond), "ife_wrap")
 
-    // Then-type wrap
+    // Then-type wrap (condition was true)
     let t_wrapped = emit_union_wrap(ctx, raw_val, t_ty, union_ty)?
     ctx.store(emit_value_ptr(t_wrapped), wrap_slot)
     ctx.br_if_open(wrap_merge)
 
-    // Else-type wrap
+    // Else-type wrap (condition was false)
     ctx.position(wrap_else)
     let e_wrapped = emit_union_wrap(ctx, raw_val, e_ty, union_ty)?
     ctx.store(emit_value_ptr(e_wrapped), wrap_slot)
