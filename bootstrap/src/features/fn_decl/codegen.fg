@@ -7,6 +7,8 @@ use codegen.types.{Ctx, EmitValue, ParamTypeList,  ok_emit, ok_emit_str, ok_emit
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{defer_reset, emit_defers}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+use codegen.{emit_rc_cleanup}
+use codegen.types.{rc_cleanup_reset}
 
 export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
@@ -44,11 +46,13 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     }
 
     defer_reset()
+    rc_cleanup_reset()
 
     // Use the function's return type for the default block value.
     let ret_ty = body_cg.fn_ret(name)
     let r = emit_block_loop(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
     if !ctx.has_terminator() {
+        // TODO: emit_rc_cleanup(body_cg) — needs ownership tracking
         emit_defers(body_cg, env)
         // Union wrapping: if function returns a union, wrap the implicit return value
         if needs_union_wrap(r.ty, ret_ty) {

@@ -12,7 +12,7 @@ mod indexing
 mod helpers
 
 use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, field_type_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList,  StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, field_type_at, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, RcCleanupStack, RC_CLEANUP, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, field_type_at, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx, vtype_is_ptr_type}
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag, has_expr_emit, has_stmt_emit}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
 use features.defer_stmt.codegen.{emit_defers}
@@ -66,6 +66,22 @@ export fn emit_stmt_list(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEn
     }
 }
 
+// Release all RC-managed locals tracked on the cleanup stack.
+export fn emit_rc_cleanup(ctx: Ctx) {
+    emit_rc_stack(ctx, RC_CLEANUP)
+}
+
+fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
+    match stack {
+        .End -> {}
+        .Node(alloca, next) -> {
+            let val = ctx.load(ctx.ptr_type, alloca, "rc_cleanup")
+            ctx.rc_release(val)
+            emit_rc_stack(ctx, next)
+        }
+    }
+}
+
 export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
     match stmt {
         .Expr(expr) -> {
@@ -74,6 +90,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
         }
         .Return(value) -> {
             let r = emit_expr(ctx, env, value)?
+            // TODO: emit_rc_cleanup(ctx) — needs ownership tracking to avoid releasing return values
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
             // Union wrapping: if function returns a union, wrap the concrete value
@@ -86,6 +103,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
             ok_stmt(env)
         }
         .ReturnEmpty -> {
+            // TODO: emit_rc_cleanup(ctx) — needs ownership tracking
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
             ctx.ret_void(fn_ret)

@@ -278,6 +278,19 @@ export enum DeferStack {
     ErrFrame(body: SExpr, next: DeferStack)
 }
 
+// RC cleanup stack — tracks allocas of RC-managed locals for release at scope exit.
+export enum RcCleanupStack {
+    End
+    Node(alloca: ptr, next: RcCleanupStack)
+}
+
+export mut RC_CLEANUP: RcCleanupStack = .End
+
+export fn rc_cleanup_reset() { RC_CLEANUP = .End }
+
+export fn rc_cleanup_push(alloca: ptr) {
+    RC_CLEANUP = RcCleanupStack.Node(alloca, RC_CLEANUP)
+}
 
 export enum StructReg {
     End
