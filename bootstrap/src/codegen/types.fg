@@ -799,6 +799,18 @@ impl Ctx {
         self.fill_i64_types(arr, idx + 1, count)
     }
 
+    // Fill type array from TypeList for declared params, then i64 for captures.
+    fn fill_typed_lambda_params(self, arr: ptr, types: TypeList, idx: int, total: int) {
+        if idx >= total { return }
+        let llvm_ty = match types {
+            .Node(vt, _) -> llvm_type_for_full(self.i64_type, self.i1_type, self.double_type, self.ptr_type, vt)
+            .End -> self.i64_type
+        }
+        forge_llvm_type_array_set(arr, idx, llvm_ty)
+        let rest = match types { .Node(_, next) -> next, .End -> TypeList.End }
+        self.fill_typed_lambda_params(arr, rest, idx + 1, total)
+    }
+
     // ── Function creation ──
     fn fn_type(self, ret: ptr, params: ptr, count: int) -> ptr { forge_llvm_function_type(ret, params, count, 0) }
     fn add_function(self, name: string, ty: ptr) -> ptr { forge_llvm_add_function(self.module, name, ty) }

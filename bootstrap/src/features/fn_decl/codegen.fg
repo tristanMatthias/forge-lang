@@ -310,29 +310,17 @@ export fn emit_first_arg(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitVa
 }
 
 export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -> Result<EmitValue, string> {
-    if name == "println" {
-        return emit_println(ctx, env, args)
-    }
-    if name == "eprintln" {
-        return emit_eprintln(ctx, env, args)
-    }
-    if name == "string" {
-        return emit_int_to_string(ctx, env, args)
-    }
-    if name == "forge_format_float" {
-        return emit_format_float(ctx, env, args)
-    }
-    if name == "forge_format_int" {
-        return emit_format_int(ctx, env, args)
-    }
-    if name == "int" {
-        return emit_string_to_int(ctx, env, args)
-    }
-    if name == "float" {
-        return emit_string_to_float(ctx, env, args)
-    }
-    if name == "panic" {
-        return emit_panic(ctx, env, args)
+    // Built-in functions — dispatched by name.
+    match name {
+        "println"            -> return emit_println(ctx, env, args)
+        "eprintln"           -> return emit_eprintln(ctx, env, args)
+        "string"             -> return emit_int_to_string(ctx, env, args)
+        "forge_format_float" -> return emit_format_float(ctx, env, args)
+        "forge_format_int"   -> return emit_format_int(ctx, env, args)
+        "int"                -> return emit_string_to_int(ctx, env, args)
+        "float"              -> return emit_string_to_float(ctx, env, args)
+        "panic"              -> return emit_panic(ctx, env, args)
+        _ -> {}
     }
     // Newtype construction: UserId(value) → zero-cost, just retype the value
     let nt_inner = cg_newtype_lookup(ctx.newtypes, name)

@@ -409,9 +409,19 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
     // Detect captured variables from the enclosing scope
     let captures = find_captures(body, params, env, CaptureList.End)
     let num_captures = capture_list_len(captures)
-    let arity = param_list_length(params) + num_captures
+    let num_declared = param_list_length(params)
+    let arity = num_declared + num_captures
 
-    let param_arr = ctx.i64_type_array(arity)
+    // Compute effective parameter types BEFORE creating the LLVM function,
+    // so we can build a properly-typed LLVM function signature.
+    let effective_types = match param_types {
+        .End -> infer_param_types(params, body, ctx, env, captures)
+        _ -> param_types
+    }
+
+    // Build typed LLVM function: declared params use effective_types, captures use i64.
+    let param_arr = forge_llvm_type_array_new(arity)
+    ctx.fill_typed_lambda_params(param_arr, effective_types, 0, arity)
     let fn_type = ctx.fn_type(ctx.i64_type, param_arr, arity)
     ctx.type_array_free(param_arr)
     let fn_val = ctx.add_function(name, fn_type)
@@ -420,15 +430,6 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
 
     let entry = ctx.bb_in(fn_val, "entry")
     ctx.position(entry)
-
-    // Bind declared params first, then captured vars as extra params.
-    // If no explicit types were provided, infer from body usage
-    // (e.g., a param used with a Float capture should be Float).
-    let num_declared = param_list_length(params)
-    let effective_types = match param_types {
-        .End -> infer_param_types(params, body, ctx, env, captures)
-        _ -> param_types
-    }
     let env_with_params = bind_lambda_params_typed(ctx, env, params, fn_val, 0, effective_types)
     let body_env = bind_captures_as_params(ctx, env_with_params, captures, fn_val, num_declared)
 
