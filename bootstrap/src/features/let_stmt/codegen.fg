@@ -6,6 +6,7 @@ use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_trait_name, vtype_struct_
 use codegen.types.{Ctx, ok_stmt, translate_type_ctx, vtype_is_copy, releasable_has}
 use features.trait_decl.codegen.{box_for_trait}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+use diagnostics.{DiagCode}
 
 export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: string, initializer: Expr) -> Result<VarEnv, string> {
     // Copy-type stack allocation (spec 9.12): if the initializer is
@@ -45,7 +46,9 @@ export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: stri
                     let boxed_list = emit_trait_boxed_list(ctx, env, elements, elem_trait)?
                     return ok_stmt(ctx.bind(env, name, boxed_list, var_ty))
                 }
-                _ -> {}
+                _ -> {
+                    ctx.warn(DiagCode.TypeMismatch, "List<${elem_trait}> binding requires a list literal for trait boxing — variable assignment skips boxing")
+                }
             }
         }
     }
