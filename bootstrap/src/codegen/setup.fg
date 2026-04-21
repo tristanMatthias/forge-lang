@@ -1,8 +1,8 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
-use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx, vtype_is_ptr_type, enum_reg_lookup}
-use codegen.escape.{analyze_releasable}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
 use core.registry.{build_registry}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
@@ -238,6 +238,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     let entry = forge_llvm_append_basic_block(lc, main_fn, "entry")
     forge_llvm_position_at_end(builder, entry)
 
+    let copy_types = analyze_copy_types(structs, enums)
     mut ctx = Ctx {
         lc,
         module: m,
@@ -261,10 +262,12 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         trait_decls,
         newtypes: cg_newtypes,
         union_aliases: cg_union_aliases,
+        copy_types,
         debug_null_checks,
         source_file,
         source_line: 0,
         arena_ptr: null,
+        copy_alloc_target: null,
     }
 
     // Analyze which types are cycle-capable (can reference themselves

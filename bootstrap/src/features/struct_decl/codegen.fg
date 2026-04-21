@@ -15,13 +15,18 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
     if st_ty == null {
         return err_emit("LLVM struct type `${name}` not declared")
     }
-    let buf = malloc_struct_bytes(ctx, lookup.fields)
+    let buf = malloc_struct_bytes(ctx, name, lookup.fields)
     let fill = fill_struct_fields(ctx, env, st_ty, buf, inits, lookup.fields)?
     let as_i64 = ctx.to_i64(buf, "struct_i64")
     ok_emit_typed(as_i64, .Struct(name))
 }
 
-fn malloc_struct_bytes(ctx: Ctx, fields: FieldList) -> ptr {
+fn malloc_struct_bytes(ctx: Ctx, name: string, fields: FieldList) -> ptr {
+    // Copy-type stack allocation (spec 9.12): if a pre-allocated stack
+    // target exists (set by emit_var_decl), write directly into it.
+    if ctx.copy_alloc_target != null {
+        return ctx.copy_alloc_target
+    }
     let count = field_list_length(fields)
     ctx.arena_alloc(ctx.i64(count * 8))
 }

@@ -1,0 +1,48 @@
+/// expect: 42
+/// expect: 99
+/// expect: 200
+/// expect: 300
+/// expect: sum=270
+/// expect: not_copy=hello
+/// expect: returned=8080
+
+type Point = { x: int, y: int }
+type Color = { r: int, g: int, b: int }
+
+// NOT Copy — contains a string field
+type Named = { name: string, val: int }
+
+// Copy struct returned from function — should be heap-allocated (escapes)
+type Config = { port: int }
+
+fn make_config() -> Config {
+    Config { port: 8080 }
+}
+
+fn main() {
+    // Basic Copy struct — stack-allocated, no RC
+    let p = Point { x: 42, y: 99 }
+    println(string(p.x))
+    println(string(p.y))
+
+    // Copy struct via `with` — the original is not mutated
+    let p2 = p with { x: 200, y: 300 }
+    println(string(p2.x))
+    println(string(p2.y))
+
+    // Copy struct in a loop — arena or stack allocation
+    mut total = 0
+    for i in 0..10 {
+        let c = Color { r: i, g: i * 2, b: i * 3 }
+        total = total + c.r + c.g + c.b
+    }
+    println("sum=${total}")
+
+    // Non-Copy struct — still heap-allocated with RC
+    let n = Named { name: "hello", val: 42 }
+    println("not_copy=${n.name}")
+
+    // Copy struct returned from function — escapes, so heap-allocated
+    let cfg = make_config()
+    println("returned=${cfg.port}")
+}

@@ -6,8 +6,8 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.ast.{Expr, ExprList, FieldInitList, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
-use codegen.types.{ReleasableSet, releasable_has}
+use core.ast.{Expr, ExprList, FieldList, FieldInitList, VariantList, ValueType, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
+use codegen.types.{ReleasableSet, releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, CopySet, copy_set_has}
 
 fn releasable_add(set: ReleasableSet, name: string) -> ReleasableSet {
     if releasable_has(set, name) { set } else { ReleasableSet.Node(name, set) }
@@ -363,5 +363,127 @@ export fn is_arena_eligible(body: Stmt) -> bool {
         .While(_, _) -> false
         .For(_, _, _, _) -> false
         .ForIn(_, _, _) -> false
+    }
+}
+
+// ── Copy trait auto-derivation (spec 9.12) ────────────────────────
+//
+// A type is Copy if it contains only primitive (non-heap) fields.
+// Primitives: int, float, bool. Structs/enums are Copy if ALL their
+// fields recursively resolve to Copy types. Str, List, Map, Ptr,
+// Closure, Fn, Trait are NOT Copy (heap-managed).
+//
+// The analysis uses a fixed-point iteration: start with all
+// struct/enum names as Copy candidates, then repeatedly remove any
+// whose fields reference non-Copy types until stable.
+
+export fn analyze_copy_types(structs: StructReg, enums: EnumReg) -> CopySet {
+    // Seed: all struct and enum names are candidates
+    let candidates = seed_struct_candidates(structs, seed_enum_candidates(enums, CopySet.End))
+    // Fixed-point: keep removing non-Copy types until stable
+    fixpoint_copy(candidates, structs, enums)
+}
+
+fn seed_struct_candidates(reg: StructReg, set: CopySet) -> CopySet {
+    match reg {
+        .End -> set
+        .Node(name, _, next) -> seed_struct_candidates(next, CopySet.Node(name, set))
+    }
+}
+
+fn seed_enum_candidates(reg: EnumReg, set: CopySet) -> CopySet {
+    match reg {
+        .End -> set
+        .Node(name, _, next) -> seed_enum_candidates(next, CopySet.Node(name, set))
+    }
+}
+
+fn fixpoint_copy(candidates: CopySet, structs: StructReg, enums: EnumReg) -> CopySet {
+    let refined = refine_copy(candidates, structs, enums)
+    if copy_set_eq(refined, candidates) { refined }
+    else { fixpoint_copy(refined, structs, enums) }
+}
+
+fn refine_copy(candidates: CopySet, structs: StructReg, enums: EnumReg) -> CopySet {
+    match candidates {
+        .End -> .End
+        .Node(name, next) -> {
+            let rest = refine_copy(next, structs, enums)
+            if is_name_copy(name, candidates, structs, enums) {
+                CopySet.Node(name, rest)
+            } else {
+                rest
+            }
+        }
+    }
+}
+
+fn is_name_copy(name: string, candidates: CopySet, structs: StructReg, enums: EnumReg) -> bool {
+    // Check struct registry
+    let sl = struct_reg_lookup(structs, name)
+    if sl.found { return fields_all_copy(sl.fields, candidates) }
+    // Check enum registry
+    let el = enum_reg_lookup(enums, name)
+    if el.found { return variants_all_copy(el.variants, candidates) }
+    false
+}
+
+fn fields_all_copy(fields: FieldList, candidates: CopySet) -> bool {
+    match fields {
+        .End -> true
+        .Node(_, ty, _, next) -> {
+            if !field_type_is_copy(ty, candidates) { false }
+            else { fields_all_copy(next, candidates) }
+        }
+    }
+}
+
+fn variants_all_copy(variants: VariantList, candidates: CopySet) -> bool {
+    match variants {
+        .End -> true
+        .Node(_, fields, next) -> {
+            if !fields_all_copy(fields, candidates) { false }
+            else { variants_all_copy(next, candidates) }
+        }
+    }
+}
+
+// Check if a type annotation string represents a Copy type.
+// Uses the candidate set for struct/enum names.
+fn field_type_is_copy(ty: string, candidates: CopySet) -> bool {
+    match ty {
+        "int" or "i64" -> true
+        "float" or "f64" -> true
+        "bool" -> true
+        "string" or "str" -> false
+        "ptr" -> false
+        _ -> {
+            // Check if it's a known Copy candidate (struct or enum name)
+            if ty.starts_with("List(") { return false }
+            if ty.starts_with("Map") { return false }
+            if ty.starts_with("fn") { return false }
+            copy_set_has(candidates, ty)
+        }
+    }
+}
+
+fn copy_set_eq(a: CopySet, b: CopySet) -> bool {
+    copy_set_len(a) == copy_set_len(b) && copy_set_subset(a, b)
+}
+
+fn copy_set_len(set: CopySet) -> int {
+    match set {
+        .End -> 0
+        .Node(_, next) -> 1 + copy_set_len(next)
+    }
+}
+
+fn copy_set_subset(a: CopySet, b: CopySet) -> bool {
+    match a {
+        .End -> true
+        .Node(name, next) -> {
+            if !copy_set_has(b, name) { false }
+            else { copy_set_subset(next, b) }
+        }
     }
 }

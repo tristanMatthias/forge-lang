@@ -51,6 +51,7 @@ export type Ctx = {
     trait_decls: TraitDeclReg,
     newtypes: CgNewtypeReg,
     union_aliases: CgUnionAliasReg,
+    copy_types: CopySet,
     debug_null_checks: int,
     source_file: string,
     source_line: int,
@@ -58,6 +59,10 @@ export type Ctx = {
     // value holding a runtime arena pointer. Allocations that are known
     // to be non-escaping will use forge_arena_alloc instead of forge_rc_alloc.
     arena_ptr: ptr,
+    // Copy-type stack allocation target (spec 9.12). When non-null, this
+    // is a stack alloca that emit_struct_lit should write into instead of
+    // heap-allocating. Set by emit_var_decl for Copy-type releasable locals.
+    copy_alloc_target: ptr,
 }
 
 // ── Type registries bundle ──
@@ -299,6 +304,38 @@ export enum RcCleanupStack {
 export enum ReleasableSet {
     End
     Node(name: string, next: ReleasableSet)
+}
+
+// Set of type names that are Copy (all-primitive fields, no heap references).
+// Built once by analyze_copy_types and threaded through Ctx.
+export enum CopySet {
+    End
+    Node(name: string, next: CopySet)
+}
+
+export fn copy_set_has(set: CopySet, name: string) -> bool {
+    match set {
+        .End -> false
+        .Node(n, _) if n == name -> true
+        .Node(_, next) -> copy_set_has(next, name)
+    }
+}
+
+// Check if a ValueType is Copy given the computed CopySet.
+// Primitives (Int, Float, Bool) are always Copy.
+// Struct/Enum types are Copy if they're in the CopySet.
+// All other types (Str, List, Map, Ptr, Fn, Closure, Trait) are NOT Copy.
+export fn vtype_is_copy(vt: ValueType, copies: CopySet) -> bool {
+    match vt {
+        .Int -> true
+        .Float -> true
+        .Bool -> true
+        .Void -> true
+        .Struct(name) -> copy_set_has(copies, name)
+        .Enum(name) -> copy_set_has(copies, name)
+        .Newtype(_, inner) -> vtype_is_copy(inner, copies)
+        _ -> false
+    }
 }
 
 export fn releasable_has(set: ReleasableSet, name: string) -> bool {
@@ -944,6 +981,18 @@ impl Ctx {
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
             self.rc_cleanup = RcCleanupStack.Node(name, alloca, ty, self.rc_cleanup)
         }
+        env_extend(env, name, alloca, ty)
+    }
+
+    // Copy-type stack binding (spec 9.12): bind a local whose struct
+    // data is already on the stack (written directly by emit_struct_lit
+    // via copy_alloc_target). No RC cleanup needed — stack memory is
+    // freed when the function returns.
+    fn bind_copy_stack(self, env: VarEnv, name: string, stack_ptr: ptr, ty: ValueType, struct_name: string) -> VarEnv {
+        // Store the stack pointer as the local's value
+        let alloca = forge_llvm_build_alloca(self.builder, self.type_for(ty), name)
+        forge_llvm_build_store_cast(self.builder, stack_ptr, alloca)
+        // No RC cleanup — stack memory doesn't need freeing
         env_extend(env, name, alloca, ty)
     }
 
