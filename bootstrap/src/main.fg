@@ -35,7 +35,7 @@ mod codegen
 mod desugar
 
 use parse.{parse_expression_source, parse_program_source}
-use core.ast.{render_expr, render_stmt_list}
+use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str}
 use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
@@ -50,9 +50,12 @@ use features.generics.mono.{monomorphize, MonoResult}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")
-    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run|fix> <file.fg>")
+    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run|fix|fmt|lsp|test> <file.fg>")
     eprintln("       bootstrapc compile --stop-after=<parse|resolve|names|check> [--json] <file.fg>")
     eprintln("       bootstrapc fix <file.fg>   Apply high-confidence auto-fixes")
+    eprintln("       bootstrapc fmt <file.fg>   Format a Forge source file")
+    eprintln("       bootstrapc lsp             Start language server")
+    eprintln("       bootstrapc test <file.fg>  Run spec tests in a file")
 }
 
 fn fail(message: string) {
@@ -62,7 +65,354 @@ fn fail(message: string) {
 
 // Module file resolution and name resolution live in features/modules/.
 
+// ── Code formatter (ticket c5w) ──
+// Pretty-prints AST as valid Forge syntax with consistent indentation.
+
+fn fmt_indent(depth: int) -> string {
+    mut result = ""
+    for i in 0..depth {
+        result = result + "    "
+    }
+    result
+}
+
+fn fmt_expr(se: Expr) -> string {
+    match se {
+        .Number(v) -> v
+        .String(v) -> v
+        .Bool(v) -> v
+        .Null -> "null"
+        .Ident(name) -> name
+        .QualifiedIdent(path) -> path
+        .Assign(name, value) -> "${name} = ${fmt_expr(value)}"
+        .Grouping(inner) -> "(${fmt_expr(inner)})"
+        .Unary(op, right) -> "${unop_str(op)}${fmt_expr(right)}"
+        .Binary(left, op, right) -> "${fmt_expr(left)} ${binop_str(op)} ${fmt_expr(right)}"
+        .Logical(left, op, right) -> "${fmt_expr(left)} ${logicop_str(op)} ${fmt_expr(right)}"
+        .Call(callee, args) -> "${fmt_expr(callee)}(${fmt_expr_list_comma(args)})"
+        .GenericCall(callee, ta, args) -> "${fmt_expr(callee)}::<${fmt_type_name_list(ta)}>(${fmt_expr_list_comma(args)})"
+        .StructLit(name, inits) -> "${name} { ${fmt_field_init_list(inits)} }"
+        .FieldAccess(obj, field) -> "${fmt_expr(obj)}.${field}"
+        .EnumCtor(tn, variant, args) -> ".${variant}(${fmt_expr_list_comma(args)})"
+        .Index(obj, idx) -> "${fmt_expr(obj)}[${fmt_expr(idx)}]"
+        .Block(body) -> "{\n${fmt_stmt_list(body, 1)}\n}"
+        .MatchExpr(subject, arms) -> "match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, 1)}\n}"
+        .FieldAssign(obj, field, value) -> "${fmt_expr(obj)}.${field} = ${fmt_expr(value)}"
+        .IfExpr(c, t, e) -> "if ${fmt_expr(c)} { ${fmt_expr(t)} } else { ${fmt_expr(e)} }"
+        .NullCoalesce(left, right) -> "${fmt_expr(left)} ?? ${fmt_expr(right)}"
+        .OptionalChain(obj, field) -> "${fmt_expr(obj)}?.${field}"
+        .Try(inner) -> "${fmt_expr(inner)}?"
+        .Tuple(elements) -> "(${fmt_expr_list_comma(elements)})"
+        .TupleIndex(obj, idx) -> "${fmt_expr(obj)}.${string(idx)}"
+        .With(obj, overrides) -> "${fmt_expr(obj)} with { ${fmt_field_init_list(overrides)} }"
+        .ListLit(elements) -> "[${fmt_expr_list_comma(elements)}]"
+        .Lambda(params, body) -> "(${fmt_param_list_comma(params)}) -> ${fmt_expr(body)}"
+        .MapLit(entries) -> "{ ${fmt_map_entries(entries)} }"
+        .FloatLit(v) -> v
+        .Slice(obj, start, end) -> "${fmt_expr(obj)}[${fmt_expr(start)}..${fmt_expr(end)}]"
+        .IsCheck(subject, vname) -> "${fmt_expr(subject)} is .${vname}"
+        .InCheck(needle, items) -> "${fmt_expr(needle)} in [${fmt_expr_list_comma(items)}]"
+        .ListComp(body, variable, collection, _) -> "[${fmt_expr(body)} for ${variable} in ${fmt_expr(collection)}]"
+        .When(arms) -> "when {\n${fmt_when_arms(arms, 1)}\n}"
+        .Catch(inner, binding, body, _, _) -> "${fmt_expr(inner)} catch ${binding} { ${fmt_expr(body)} }"
+        .Spawn(body) -> "spawn ${fmt_expr(body)}"
+    }
+}
+
+fn fmt_stmt(ss: Stmt, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match ss {
+        .Let(name, ty, init) -> {
+            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+            "${ind}let ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Mut(name, ty, init) -> {
+            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+            "${ind}mut ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Const(name, ty, init) -> {
+            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+            "${ind}const ${name}${ty_part} = ${fmt_expr(init)}"
+        }
+        .Expr(se) -> "${ind}${fmt_expr(se)}"
+        .Block(body) -> "${ind}{\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .If(condition, then_branch, else_branch) -> {
+            let base = "${ind}if ${fmt_expr(condition)} {\n${fmt_stmt(then_branch, depth + 1)}\n${ind}}"
+            if else_branch == null {
+                base
+            } else {
+                "${base} else {\n${fmt_stmt(else_branch!, depth + 1)}\n${ind}}"
+            }
+        }
+        .While(condition, body) -> "${ind}while ${fmt_expr(condition)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(start)}..${fmt_expr(end)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(collection)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
+        .Function(name, tp, params, ret_ty, body) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            let ret_part = if ret_ty == "" { "" } else { " -> ${ret_ty}" }
+            "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        }
+        .Return(value) -> "${ind}return ${fmt_expr(value)}"
+        .ReturnEmpty -> "${ind}return"
+        .TypeDecl(name, tp, fields) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "${ind}type ${name}${tp_part} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
+        }
+        .NewtypeDecl(name, inner_ty) -> "${ind}type ${name} = ${inner_ty}"
+        .UnionAliasDecl(name, type_str) -> "${ind}type ${name} = ${type_str}"
+        .ShapeDecl(name, fields) -> "${ind}shape ${name} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
+        .EnumDecl(name, tp, variants) -> {
+            let tp_str = fmt_type_param_list(tp)
+            let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
+            "${ind}enum ${name}${tp_part} {\n${fmt_variant_list(variants, depth + 1)}\n${ind}}"
+        }
+        .Match(subject, arms) -> "${ind}match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, depth + 1)}\n${ind}}"
+        .Impl(name, methods) -> "${ind}impl ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+        .NoOp -> ""
+        .ExternFn(name, params, ret_ty) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${ret_ty}"
+        .Break -> "${ind}break"
+        .Continue -> "${ind}continue"
+        .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+        .LetDestructure(names, init) -> "${ind}let (${fmt_param_list_comma(names)}) = ${fmt_expr(init)}"
+        .Defer(body) -> "${ind}defer ${fmt_expr(body)}"
+        .Errdefer(body) -> "${ind}errdefer ${fmt_expr(body)}"
+        .Annotated(annotations, inner) -> "${fmt_annotation_list(annotations, depth)}${fmt_stmt(inner, depth)}"
+        .SpecBlock(name, body) -> "${ind}spec ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .GivenBlock(name, body) -> "${ind}given ${name} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .ThenBlock(name, cond) -> "${ind}then ${name} { ${fmt_expr(cond)} }"
+        .Select(_) -> "${ind}select { ... }"
+        .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
+        .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(body, depth)}"
+        .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
+        .AssocType(name, ty) -> if ty == "" { "${ind}type ${name}" } else { "${ind}type ${name} = ${ty}" }
+    }
+}
+
+fn fmt_stmt_list(stmts: StmtList, depth: int) -> string {
+    match stmts {
+        .End -> ""
+        .Node(ss, next) -> {
+            let head = fmt_stmt(ss.node, depth)
+            let tail = fmt_stmt_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_expr_list_comma(exprs: ExprList) -> string {
+    match exprs {
+        .End -> ""
+        .Node(se, next) -> {
+            let head = fmt_expr(se.node)
+            let tail = fmt_expr_list_comma_tail(next)
+            "${head}${tail}"
+        }
+    }
+}
+
+fn fmt_expr_list_comma_tail(exprs: ExprList) -> string {
+    match exprs {
+        .End -> ""
+        .Node(se, next) -> ", ${fmt_expr(se.node)}${fmt_expr_list_comma_tail(next)}"
+    }
+}
+
+fn fmt_param_list_comma(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, _, _, next) -> {
+            let tail = fmt_param_list_comma_tail(next)
+            "${name}${tail}"
+        }
+    }
+}
+
+fn fmt_param_list_comma_tail(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, _, _, next) -> ", ${name}${fmt_param_list_comma_tail(next)}"
+    }
+}
+
+fn fmt_param_list_typed(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, ty, _, next) -> {
+            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+            let tail = fmt_param_list_typed_tail(next)
+            "${name}${ty_part}${tail}"
+        }
+    }
+}
+
+fn fmt_param_list_typed_tail(params: ParamList) -> string {
+    match params {
+        .End -> ""
+        .Node(name, ty, _, next) -> {
+            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+            ", ${name}${ty_part}${fmt_param_list_typed_tail(next)}"
+        }
+    }
+}
+
+fn fmt_type_param_list(tp: TypeParamList) -> string {
+    match tp {
+        .End -> ""
+        .Node(name, bound, next) -> {
+            let bound_part = if bound == "" { "" } else { ": ${bound}" }
+            let rest = fmt_type_param_list(next)
+            if rest == "" { "${name}${bound_part}" } else { "${name}${bound_part}, ${rest}" }
+        }
+    }
+}
+
+fn fmt_type_name_list(names: TypeNameList) -> string {
+    match names {
+        .End -> ""
+        .Node(name, next) -> {
+            let rest = fmt_type_name_list(next)
+            if rest == "" { name } else { "${name}, ${rest}" }
+        }
+    }
+}
+
+fn fmt_field_init_list(inits: FieldInitList) -> string {
+    match inits {
+        .End -> ""
+        .Node(name, sv, next) -> {
+            let head = "${name}: ${fmt_expr(sv.node)}"
+            let tail = fmt_field_init_list_tail(next)
+            "${head}${tail}"
+        }
+    }
+}
+
+fn fmt_field_init_list_tail(inits: FieldInitList) -> string {
+    match inits {
+        .End -> ""
+        .Node(name, sv, next) -> ", ${name}: ${fmt_expr(sv.node)}${fmt_field_init_list_tail(next)}"
+    }
+}
+
+fn fmt_field_decl_list(fields: FieldList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match fields {
+        .End -> ""
+        .Node(name, ty, _, next) -> {
+            let head = "${ind}${name}: ${ty}"
+            let tail = fmt_field_decl_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_variant_list(variants: VariantList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match variants {
+        .End -> ""
+        .Node(name, fields, next) -> {
+            let fields_str = fmt_variant_fields(fields)
+            let head = "${ind}${name}${fields_str}"
+            let tail = fmt_variant_list(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_variant_fields(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, ty, _, next) -> {
+            let head = "${name}: ${ty}"
+            let tail = fmt_variant_fields_tail(next)
+            "(${head}${tail})"
+        }
+    }
+}
+
+fn fmt_variant_fields_tail(fields: FieldList) -> string {
+    match fields {
+        .End -> ""
+        .Node(name, ty, _, next) -> ", ${name}: ${ty}${fmt_variant_fields_tail(next)}"
+    }
+}
+
+fn fmt_pattern(p: Pattern) -> string {
+    match p {
+        .Wildcard -> "_"
+        .Variant(name, bindings) -> {
+            let bindings_str = fmt_param_list_comma(bindings)
+            if bindings_str == "" { ".${name}" } else { ".${name}(${bindings_str})" }
+        }
+        .Or(left, right) -> "${fmt_pattern(left)} | ${fmt_pattern(right)}"
+        .TypePattern(type_name, binding) -> "${type_name}(${binding})"
+        _ -> "_"
+    }
+}
+
+fn fmt_match_arms(arms: MatchArmList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match arms {
+        .End -> ""
+        .Node(pattern, guard, body, next) -> {
+            let guard_str = if guard != null { " if ${fmt_expr(guard!.node)}" } else { "" }
+            let head = "${ind}${fmt_pattern(pattern)}${guard_str} -> ${fmt_expr(body.node)}"
+            let tail = fmt_match_arms(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_when_arms(arms: WhenArmList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match arms {
+        .End -> ""
+        .Node(cond, body, next) -> {
+            let cond_str = if cond == null { "_" } else { fmt_expr(cond!.node) }
+            let head = "${ind}${cond_str} -> ${fmt_expr(body.node)}"
+            let tail = fmt_when_arms(next, depth)
+            if tail == "" { head } else { "${head}\n${tail}" }
+        }
+    }
+}
+
+fn fmt_annotation_list(annots: AnnotationList, depth: int) -> string {
+    let ind = fmt_indent(depth)
+    match annots {
+        .End -> ""
+        .Node(name, _, next) -> "${ind}@${name}\n${fmt_annotation_list(next, depth)}"
+    }
+}
+
+fn fmt_map_entries(entries: ExprList) -> string {
+    match entries {
+        .End -> ""
+        .Node(key_se, rest) -> {
+            match rest {
+                .End -> fmt_expr(key_se.node)
+                .Node(val_se, next) -> {
+                    let head = "${fmt_expr(key_se.node)}: ${fmt_expr(val_se.node)}"
+                    let tail = fmt_map_entries(next)
+                    if tail == "" { head } else { "${head}, ${tail}" }
+                }
+            }
+        }
+    }
+}
+
 fn main() {
+    // Handle subcommands that don't require a file argument.
+    if forge_selfhost_argc() >= 2 {
+        let cmd0 = forge_selfhost_get_arg_cstr(1)
+        if cmd0 == "lsp" {
+            // Ticket bwb: LSP server stub (spec Axis 27.2).
+            println("LSP server not yet available — use `avra check` for diagnostics")
+            return
+        }
+    }
+
     if forge_selfhost_argc() < 3 {
         print_usage()
         exit(1)
@@ -168,6 +518,65 @@ fn main() {
                 render_bag(source, path, named.bag)
             }
             println("no auto-fixes available")
+            return
+        }
+        "fmt" -> {
+            // Ticket c5w: code formatter (spec Axis 27.1).
+            // Parse the file and pretty-print it back as formatted Forge syntax.
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    render_bag(source, path, parsed.bag)
+                }
+                fail(parsed.error_message)
+            }
+            println(fmt_stmt_list(parsed.stmts!, 0))
+            return
+        }
+        "test" -> {
+            // Ticket syu: test runner (spec Axis 27.3).
+            // Compile the file (which should contain spec/given/then blocks)
+            // and report the output path for linking and execution.
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    render_bag(source, path, parsed.bag)
+                }
+                fail(parsed.error_message)
+            }
+            let desugared = desugar_program(parsed.stmts!)
+            let entry_dir = modules_dirname(path)
+            let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
+            if mod_resolved.had_error {
+                let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
+                render_bag(source, path, mod_bag)
+                fail(mod_resolved.error_message)
+            }
+            let named = resolve_names(mod_resolved.stmts)
+            if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
+                render_bag(source, path, named.bag)
+            }
+            if named.had_error { fail(named.error_message) }
+            let tc_result = typecheck_program(named.stmts)
+            if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
+                render_bag(source, path, tc_result.bag)
+            }
+            if bag_has_errors(tc_result.bag) { fail("type check failed") }
+            let mono = monomorphize(tc_result.stmts)
+            if bag_has_errors(mono.bag) {
+                render_bag(source, path, mono.bag)
+                fail("monomorphization failed")
+            }
+            let output = "${path}.ll"
+            match compile_program(mono.stmts, output, false, path) {
+                .Ok(_) -> {}
+                .Err(e) -> {
+                    let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
+                    render_bag(source, path, ice_bag)
+                    fail(e)
+                }
+            }
+            println(output)
             return
         }
         _ -> {}

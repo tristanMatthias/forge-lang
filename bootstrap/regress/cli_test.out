@@ -1,0 +1,4 @@
+spec "math"
+  given "doubling"
+    then "double 5 is 10": PASS
+    then "double 0 is 0": PASS
