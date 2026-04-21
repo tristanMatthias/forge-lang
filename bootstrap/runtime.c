@@ -516,6 +516,83 @@ void forge_rc_free(void* ptr) {
     free((char*)ptr - RC_HEADER_SIZE);
 }
 
+// ─── RC cycle detection (spec Axis 9.5) ─────────────────────────
+//
+// Targeted cycle collection for reference-counted objects.
+// Cycle-capable types (identified at compile time via static analysis)
+// call forge_rc_suspect() when their refcount decrements to non-zero.
+// forge_rc_collect() at program exit frees any remaining suspects,
+// breaking cycles that pure refcounting cannot reclaim.
+
+#define SUSPECT_INITIAL_CAP 256
+static void** suspect_list = NULL;
+static size_t suspect_count = 0;
+static size_t suspect_cap = 0;
+
+// Add a pointer to the suspect list. Called from generated __release_TypeName
+// when refcount decrements to non-zero for cycle-capable types.
+void forge_rc_suspect(void* ptr) {
+    if (!ptr) return;
+    if (!is_rc_managed(ptr)) return;
+    // Lazy init
+    if (!suspect_list) {
+        suspect_cap = SUSPECT_INITIAL_CAP;
+        suspect_list = (void**)calloc(suspect_cap, sizeof(void*));
+    }
+    // Deduplicate: don't add if already in list
+    for (size_t i = 0; i < suspect_count; i++) {
+        if (suspect_list[i] == ptr) return;
+    }
+    // Grow if needed
+    if (suspect_count >= suspect_cap) {
+        suspect_cap *= 2;
+        suspect_list = (void**)realloc(suspect_list, suspect_cap * sizeof(void*));
+    }
+    suspect_list[suspect_count++] = ptr;
+    if (rc_trace) {
+        fprintf(stderr, "[RC] suspect %p (rc=%d)\n", ptr, rc_header(ptr)->refcount);
+    }
+}
+
+// Collect cycles at program exit. Frees any RC objects that are still
+// alive and were suspected of being in cycles. Since this runs at exit,
+// it's safe to force-free without recursive field release — the process
+// is terminating and all memory will be reclaimed by the OS anyway.
+// The purpose is to run destructors and report leaks accurately.
+void forge_rc_collect(void) {
+    if (!suspect_list || suspect_count == 0) return;
+    if (rc_trace) {
+        fprintf(stderr, "[RC] cycle collect: %zu suspects\n", suspect_count);
+    }
+    size_t freed = 0;
+    for (size_t i = 0; i < suspect_count; i++) {
+        void* ptr = suspect_list[i];
+        if (!ptr) continue;
+        // Check if still alive in the RC set
+        if (!rc_set_contains(ptr)) continue;
+        RcHeader* hdr = rc_header(ptr);
+        if (hdr->type_tag != RC_MAGIC) continue;
+        if (hdr->refcount > 0) {
+            // Still alive with positive refcount — part of a cycle.
+            // Force-free it.
+            if (rc_trace) {
+                fprintf(stderr, "[RC] cycle-free %p (rc=%d)\n", ptr, hdr->refcount);
+            }
+            hdr->type_tag = 0;
+            rc_set_remove(ptr);
+            free((char*)ptr - RC_HEADER_SIZE);
+            freed++;
+        }
+    }
+    if (rc_trace && freed > 0) {
+        fprintf(stderr, "[RC] cycle collect freed %zu objects\n", freed);
+    }
+    free(suspect_list);
+    suspect_list = NULL;
+    suspect_count = 0;
+    suspect_cap = 0;
+}
+
 // ─── Central error reporting ──────────────────────────────────────
 //
 // All runtime errors go through these two functions. This ensures

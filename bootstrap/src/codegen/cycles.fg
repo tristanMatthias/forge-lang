@@ -1,0 +1,141 @@
+// WHY: Static analysis to identify cycle-capable types for targeted
+// RC cycle detection (spec Axis 9.5). A type is cycle-capable if it
+// can reach itself through any chain of pointer-typed fields.
+// This analysis runs at compile time before release function emission.
+// Cycle-capable types get forge_rc_suspect() calls in their release
+// functions when refcount decrements to non-zero.
+
+use core.ast.{FieldList, ValueType, VariantList}
+use codegen.types.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
+
+// Set of type names that are cycle-capable.
+export enum CycleSet {
+    End
+    Node(name: string, next: CycleSet)
+}
+
+// Check if a name is in the cycle set.
+export fn cycle_set_has(cs: CycleSet, name: string) -> bool {
+    match cs {
+        .End -> false
+        .Node(n, next) -> if n == name { true } else { cycle_set_has(next, name) }
+    }
+}
+
+// ── Visited set for DFS ──
+// Tracks which types we've already visited to avoid infinite loops.
+enum CycleVisited {
+    End
+    Node(name: string, next: CycleVisited)
+}
+
+fn visited_has(vs: CycleVisited, name: string) -> bool {
+    match vs {
+        .End -> false
+        .Node(n, next) -> if n == name { true } else { visited_has(next, name) }
+    }
+}
+
+// ── Core DFS reachability check ──
+// Starting from a type's fields, can we reach `target` through
+// any chain of struct/enum field types?
+
+fn fields_reach_target(fields: FieldList, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
+    match fields {
+        .End -> false
+        .Node(_, _, resolved, next) -> {
+            if type_reaches_target(resolved, target, visited, structs, enums) {
+                true
+            } else {
+                fields_reach_target(next, target, visited, structs, enums)
+            }
+        }
+    }
+}
+
+fn variants_reach_target(variants: VariantList, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
+    match variants {
+        .End -> false
+        .Node(_, fields, next) -> {
+            if fields_reach_target(fields, target, visited, structs, enums) {
+                true
+            } else {
+                variants_reach_target(next, target, visited, structs, enums)
+            }
+        }
+    }
+}
+
+fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
+    match ty {
+        .Struct(name) -> {
+            if name == target { return true }
+            if visited_has(visited, name) { return false }
+            let vs2 = CycleVisited.Node(name, visited)
+            let lookup = struct_reg_lookup(structs, name)
+            if lookup.found {
+                fields_reach_target(lookup.fields, target, vs2, structs, enums)
+            } else {
+                false
+            }
+        }
+        .Enum(name) -> {
+            if name == target { return true }
+            if visited_has(visited, name) { return false }
+            let vs2 = CycleVisited.Node(name, visited)
+            let elookup = enum_reg_lookup(enums, name)
+            if elookup.found {
+                variants_reach_target(elookup.variants, target, vs2, structs, enums)
+            } else {
+                false
+            }
+        }
+        .List(el) -> type_reaches_target(el, target, visited, structs, enums)
+        .Newtype(_, nt_inner) -> type_reaches_target(nt_inner, target, visited, structs, enums)
+        // Leaf types cannot form cycles
+        _ -> false
+    }
+}
+
+// ── Entry point: analyze all types ──
+// Walk struct and enum registries. For each type, check if any of
+// its fields can reach back to itself. Returns the set of all
+// cycle-capable type names.
+
+fn analyze_structs(reg: StructReg, cs: CycleSet, structs: StructReg, enums: EnumReg) -> CycleSet {
+    match reg {
+        .End -> cs
+        .Node(name, fields, next) -> {
+            let visited = CycleVisited.Node(name, CycleVisited.End)
+            let is_cyclic = fields_reach_target(fields, name, visited, structs, enums)
+            let updated = if is_cyclic {
+                CycleSet.Node(name, cs)
+            } else {
+                cs
+            }
+            analyze_structs(next, updated, structs, enums)
+        }
+    }
+}
+
+fn analyze_enums(reg: EnumReg, cs: CycleSet, structs: StructReg, enums: EnumReg) -> CycleSet {
+    match reg {
+        .End -> cs
+        .Node(name, variants, next) -> {
+            let visited = CycleVisited.Node(name, CycleVisited.End)
+            let is_cyclic = variants_reach_target(variants, name, visited, structs, enums)
+            let updated = if is_cyclic {
+                CycleSet.Node(name, cs)
+            } else {
+                cs
+            }
+            analyze_enums(next, updated, structs, enums)
+        }
+    }
+}
+
+export fn analyze_cycles(structs: StructReg, enums: EnumReg) -> CycleSet {
+    let cs = CycleSet.End
+    let cs2 = analyze_structs(structs, cs, structs, enums)
+    analyze_enums(enums, cs2, structs, enums)
+}

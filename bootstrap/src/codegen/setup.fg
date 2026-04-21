@@ -3,6 +3,7 @@
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
 use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable}
+use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
 use core.registry.{build_registry}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
@@ -54,6 +55,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_rc_release", vt, [pt])
     decl(m, "forge_rc_should_free", i64t, [pt])
     decl(m, "forge_rc_free", vt, [pt])
+    decl(m, "forge_rc_suspect", vt, [pt])
+    decl(m, "forge_rc_collect", vt, [])
     decl(m, "memcpy", pt, [pt, pt, i64t])
     decl(m, "strcmp", i32t, [pt, pt])
     decl_va(m, "snprintf", i32t, [pt, i64t, pt])
@@ -258,10 +261,15 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         source_line: 0,
     }
 
+    // Analyze which types are cycle-capable (can reference themselves
+    // through any chain of fields). Used by release functions to add
+    // suspects for cycle collection (spec Axis 9.5).
+    let cycles = analyze_cycles(ctx.structs, ctx.enums)
+
     // Generate __release_TypeName functions for recursive RC field cleanup.
     // Must happen after Ctx is built (needs all type registries) but before
     // function bodies (they may call release functions via emit_rc_release_typed).
-    emit_release_functions(ctx)
+    emit_release_functions(ctx, cycles)
 
     // Reposition builder at main's entry after release fn emission.
     ctx.position(entry)
@@ -290,8 +298,9 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         }
     }
 
-    // Default return 0 if the program didn't end in an explicit return
+    // Run cycle collector before exit to reclaim cycle-leaked objects.
     if !ctx.has_terminator() {
+        ctx.call("forge_rc_collect", [])
         ctx.ret(ctx.i64(0), .Int)
     }
 
@@ -560,7 +569,9 @@ fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: Fie
 }
 
 // Emit the body of a __release_StructName function.
-fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList) {
+// If is_cyclic is true, the "not freed" path calls forge_rc_suspect
+// to register the object for cycle collection.
+fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic: bool) {
     let fn_val = ctx.get_fn("__release_${name}")
     if fn_val == null { return }
     let fctx = ctx.with_fn(fn_val, "__release_${name}")
@@ -578,8 +589,11 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList) {
     emit_struct_field_releases(fctx, obj, name, fields, 0)
     fctx.call("forge_rc_free", [obj])
     forge_llvm_build_br(fctx.builder, done_bb)
-    // Done path: return void
+    // Done path: for cycle-capable types, add to suspect list
     forge_llvm_position_at_end(fctx.builder, done_bb)
+    if is_cyclic {
+        fctx.call("forge_rc_suspect", [obj])
+    }
     forge_llvm_build_ret(fctx.builder, forge_llvm_const_int(fctx.i64_type, 0, 0))
 }
 
@@ -633,7 +647,8 @@ fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: s
 }
 
 // Emit the body of a __release_EnumName function.
-fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList) {
+// If is_cyclic is true, the "not freed" path calls forge_rc_suspect.
+fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cyclic: bool) {
     let fn_val = ctx.get_fn("__release_${name}")
     if fn_val == null { return }
     let fctx = ctx.with_fn(fn_val, "__release_${name}")
@@ -662,45 +677,50 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList) {
     // Release the payload pointer (it's a separate allocation for enums with payload)
     fctx.call("forge_rc_free", [obj])
     forge_llvm_build_br(fctx.builder, done_bb)
-    // Done: return void
+    // Done: for cycle-capable types, add to suspect list
     forge_llvm_position_at_end(fctx.builder, done_bb)
+    if is_cyclic {
+        fctx.call("forge_rc_suspect", [obj])
+    }
     forge_llvm_build_ret(fctx.builder, forge_llvm_const_int(fctx.i64_type, 0, 0))
 }
 
 // Walk StructReg and emit release function bodies.
-fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg) {
+fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
     match reg {
         .End -> {}
         .Node(name, fields, next) -> {
             if fields_have_rc(fields) {
-                emit_release_body_struct(ctx, name, fields)
+                let is_cyclic = cycle_set_has(cycles, name)
+                emit_release_body_struct(ctx, name, fields, is_cyclic)
             }
-            emit_release_bodies_structs(ctx, next)
+            emit_release_bodies_structs(ctx, next, cycles)
         }
     }
 }
 
 // Walk EnumReg and emit release function bodies.
-fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg) {
+fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: CycleSet) {
     match reg {
         .End -> {}
         .Node(name, variants, next) -> {
             if variants_have_rc(variants) {
-                emit_release_body_enum(ctx, name, variants)
+                let is_cyclic = cycle_set_has(cycles, name)
+                emit_release_body_enum(ctx, name, variants, is_cyclic)
             }
-            emit_release_bodies_enums(ctx, next)
+            emit_release_bodies_enums(ctx, next, cycles)
         }
     }
 }
 
 // Top-level entry: declare + emit all release functions.
-fn emit_release_functions(ctx: Ctx) {
+fn emit_release_functions(ctx: Ctx, cycles: CycleSet) {
     // Phase 1: declare all signatures (needed for mutual recursion)
     declare_release_fns_structs(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.structs)
     declare_release_fns_enums(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.enums)
-    // Phase 2: emit bodies
-    emit_release_bodies_structs(ctx, ctx.structs)
-    emit_release_bodies_enums(ctx, ctx.enums)
+    // Phase 2: emit bodies (cycle-capable types get suspect calls)
+    emit_release_bodies_structs(ctx, ctx.structs, cycles)
+    emit_release_bodies_enums(ctx, ctx.enums, cycles)
 }
 
 fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {
