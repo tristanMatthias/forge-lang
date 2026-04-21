@@ -2287,6 +2287,7 @@ void forge_test_run_then(const char* name, int64_t result) {
 
 void forge_test_summary(void) {
     int64_t total = forge_test_pass_count + forge_test_fail_count;
+    if (total == 0) return;  // no tests were run — skip summary
     printf("\n%lld/%lld tests passed", forge_test_pass_count, total);
     if (forge_test_fail_count > 0) {
         printf(" (%lld failed)", forge_test_fail_count);

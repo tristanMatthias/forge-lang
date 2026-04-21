@@ -202,7 +202,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_test_start_given", i32t, [pt])
     decl(m, "forge_test_end_given", i32t, [pt])
     decl(m, "forge_test_run_then", i64t, [pt, i64t])
-    decl(m, "forge_test_summary", i32t, [pt])
+    decl(m, "forge_test_summary", i32t, [])
 
     // ── arenas (spec Axis 9.6) ──
     decl(m, "forge_arena_new", pt, [])
@@ -330,8 +330,10 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         }
     }
 
-    // Run cycle collector before exit to reclaim cycle-leaked objects.
+    // Emit test summary if any spec blocks were compiled, then
+    // run cycle collector before exit.
     if !ctx.has_terminator() {
+        ctx.call("forge_test_summary", [])
         ctx.call("forge_rc_collect", [])
         ctx.ret(ctx.i64(0), .Int)
     }
