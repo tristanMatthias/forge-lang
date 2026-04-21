@@ -16,7 +16,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs
+.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs next work epic
 
 DIAG := NO_AUTOCYCLE=1 bash scripts/diagnose.sh
 
@@ -35,6 +35,11 @@ help:
 	@echo "  make seed-sigs     Compare function signatures between seed and source."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
+	@echo ""
+	@echo "Workflow:"
+	@echo "  make next              Show next work item (highest priority open ticket)."
+	@echo "  make work TICKET=x EPIC=y  Work a ticket using the 9-step inner formula."
+	@echo "  make epic EPIC=x       Show epic status and open items."
 	@echo ""
 	@echo "Anything not listed: bash scripts/diagnose.sh --help"
 
@@ -126,3 +131,50 @@ grammar:
 	@echo "" >> GRAMMAR.md
 	@for f in src/features/*/grammar.md; do echo "---" >> GRAMMAR.md; echo "" >> GRAMMAR.md; cat "$$f" >> GRAMMAR.md; echo "" >> GRAMMAR.md; done
 	@echo "assembled GRAMMAR.md ($$(wc -l < GRAMMAR.md | tr -d ' ') lines)"
+
+# ── Workflow commands ──
+
+# Show the next ticket to work on (highest priority open item in current epic).
+next:
+	@echo "=== Next work item ==="
+	@bd ready -n 5 2>/dev/null || echo "Run 'bd prime' for setup"
+
+# Work a ticket using the inner formula process (9 steps).
+# Usage: make work TICKET=<id> EPIC=<epic-id>
+work:
+ifndef TICKET
+	@echo "usage: make work TICKET=<bead-id> EPIC=<epic-id>" >&2
+	@echo "  Runs the ticket-inner formula (implement → check → cleanup → break → polish)" >&2
+	@echo "" >&2
+	@echo "Current epic children:" >&2
+	@bd show $(EPIC) 2>/dev/null | grep "↑.*○" || echo "  (no EPIC specified or no open items)"
+	@exit 1
+endif
+	@echo "=== Working ticket $(TICKET) under epic $(EPIC) ==="
+	@echo "Formula: ticket-inner (9 steps)"
+	@echo ""
+	@bd formula show ticket-inner 2>/dev/null
+	@echo ""
+	@echo "Starting..."
+	@bd update $(TICKET) --claim 2>/dev/null
+
+# Run the full epic workflow (outer formula).
+# Usage: make epic EPIC=<epic-id>
+epic:
+ifndef EPIC
+	@echo "usage: make epic EPIC=<epic-id>" >&2
+	@echo "  Runs the epic-outer formula (select → work all tickets → review → close)" >&2
+	@echo "" >&2
+	@echo "Available epics:" >&2
+	@bd list --type epic 2>/dev/null || echo "  (none found)"
+	@exit 1
+endif
+	@echo "=== Working epic $(EPIC) ==="
+	@echo "Formula: epic-outer (4 steps)"
+	@echo ""
+	@bd show $(EPIC) 2>/dev/null
+	@echo ""
+	@echo "Open items:"
+	@bd show $(EPIC) 2>/dev/null | grep "↑.*○"
+	@echo ""
+	@echo "Run 'make work TICKET=<id> EPIC=$(EPIC)' for each ticket."

@@ -295,11 +295,41 @@ bd update <id> --claim  # Claim work
 bd close <id>         # Complete work
 ```
 
+### Workflow Formulas
+
+Two beads formulas define the development process:
+
+**`ticket-inner`** — 9-step process for each ticket:
+1. Implement fully to spec
+2. Check work against spec (file bugs for gaps)
+3. Fix all bugs found
+4. Cleanup: hacks, workarounds, dead code
+5. Cleanup: DRY, centralize, architecture
+6. Cleanup: ridiculously aggressive (zero tolerance)
+7. Break it: aggressive red team tests
+8. Break it: outside the box (fuzzing, stress)
+9. Final cleanup: beautify and polish
+
+**`epic-outer`** — 4-step process for each epic:
+1. Select and claim the epic
+2. Work every ticket via ticket-inner (in priority order)
+3. Epic-level integration review
+4. Close the epic
+
+**Makefile commands:**
+```bash
+make next                    # Show next work item
+make work TICKET=<id> EPIC=<id>  # Start working a ticket
+make epic EPIC=<id>          # Show epic status + open items
+```
+
 ### Rules
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- When working a ticket, follow the ticket-inner formula (all 9 steps, no skipping)
+- When working an epic, follow the epic-outer formula (all tickets, no cherry-picking)
 
 ## Session Completion
 
