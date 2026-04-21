@@ -254,7 +254,7 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         }
         .Return(value) -> resolve_expr(r, value)
         .ReturnEmpty or .NoOp or .Break or .Continue -> r
-        .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .TraitDecl(_, _) or .Use(_, _) -> r
+        .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .TraitDecl(_, _) or .Use(_, _) or .AssocType(_, _) -> r
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
         .ExternFn(name, _, _) -> declare_function(r, name)
         .Annotated(_, inner) -> resolve_stmt(r, inner)

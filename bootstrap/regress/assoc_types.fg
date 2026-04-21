@@ -1,0 +1,31 @@
+// Associated types in traits and impl blocks.
+// Verifies parsing of `type Item` in traits and `type Item = int` in impls.
+
+trait Container {
+    type Item
+    fn get(self) -> string
+}
+
+type IntBox = { value: int }
+
+impl Container for IntBox {
+    type Item = int
+    fn get(self) -> string {
+        string(self.value)
+    }
+}
+
+type StrBox = { value: string }
+
+impl Container for StrBox {
+    type Item = string
+    fn get(self) -> string {
+        self.value
+    }
+}
+
+let ib = IntBox { value: 42 }
+println(ib.get())
+
+let sb = StrBox { value: "hello" }
+println(sb.get())

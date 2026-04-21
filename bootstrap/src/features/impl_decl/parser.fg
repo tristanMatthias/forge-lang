@@ -50,8 +50,21 @@ impl Parser {
         if self.check(Tk.RightBrace) {
             return StmtList.End
         }
+        // Associated type definition: `type Name = ConcreteType`
+        if self.check(Tk.KwType) {
+            let line = self.current_line
+            let col = self.current_column
+            self.advance()
+            let name = self.consume_identifier("expected associated type name")?
+            if !self.consume(Tk.Equal, "expected `=` after associated type name") {
+                return null
+            }
+            let ty = self.consume_type("expected type after `=`")?
+            let rest = self.parse_impl_methods(type_name)?
+            return StmtList.Node(sstmt(Stmt.AssocType(name, ty), line, col), rest)
+        }
         if !self.check(Tk.KwFn) {
-            self.set_error("expected `fn` inside impl block")
+            self.set_error("expected `fn` or `type` inside impl block")
             return null
         }
         let method = self.parse_method_declaration(type_name)?

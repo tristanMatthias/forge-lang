@@ -25,11 +25,21 @@ impl Parser {
         Stmt.TraitDecl(name, methods)
     }
 
-    // Parse method signatures inside a trait body. Each method is
-    // stored as an ExternFn (name, params, ret_ty) — they have no body.
+    // Parse method signatures and associated type declarations inside a trait body.
+    // Methods are stored as ExternFn (name, params, ret_ty) — they have no body.
+    // Associated types are stored as AssocType(name, "").
     fn parse_trait_methods(self) -> StmtList? {
         if self.check(Tk.RightBrace) {
             return StmtList.End
+        }
+        // Associated type declaration: `type Name`
+        if self.check(Tk.KwType) {
+            let line = self.current_line
+            let col = self.current_column
+            self.advance()
+            let name = self.consume_identifier("expected associated type name")?
+            let rest = self.parse_trait_methods()?
+            return StmtList.Node(sstmt(Stmt.AssocType(name, ""), line, col), rest)
         }
         let method = self.parse_trait_method_sig()?
         let rest = self.parse_trait_methods()?

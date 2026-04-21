@@ -560,6 +560,7 @@ export enum Stmt {
     Parallel(body: StmtList)
     Module(name: string, body: StmtList)
     Use(module_path: string, names: ParamList)
+    AssocType(name: string, ty: string)
 }
 
 // When arms: `cond -> body` or `else -> body` (cond is null for else)
@@ -978,6 +979,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Parallel(_) -> "(parallel ...)"
         .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
+        .AssocType(name, ty) -> if ty == "" { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${ty})" }
     }
 }
 

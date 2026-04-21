@@ -110,6 +110,7 @@ fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
         .Parallel(_) -> set
         .Module(_, _) -> set
         .Use(_, _) -> set
+        .AssocType(_, _) -> set
     }
 }
 
@@ -255,6 +256,7 @@ fn count_allocating_in_stmts(stmts: StmtList) -> int {
                 .Parallel(_) -> 0
                 .Module(_, _) -> 0
                 .Use(_, _) -> 0
+                .AssocType(_, _) -> 0
             }
             n + count_allocating_in_stmts(next)
         }
@@ -298,6 +300,7 @@ fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
         .Parallel(_) -> 0
         .Module(_, _) -> 0
         .Use(_, _) -> 0
+        .AssocType(_, _) -> 0
     }
 }
 
@@ -345,6 +348,7 @@ export fn is_arena_eligible(body: Stmt) -> bool {
         .Parallel(_) -> false
         .Module(_, _) -> false
         .Use(_, _) -> false
+        .AssocType(_, _) -> false
         .If(_, _, _) -> false
         .While(_, _) -> false
         .For(_, _, _, _) -> false
