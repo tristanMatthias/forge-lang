@@ -94,7 +94,6 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_array_contains", i64t, [pt, i64t])
     decl(m, "forge_array_index_of", i64t, [pt, i64t])
     decl(m, "forge_array_reverse", pt, [pt])
-    decl(m, "forge_array_slice", pt, [pt, i64t, i64t])
 
     // ── strings ──
     decl(m, "forge_str_contains", i64t, [pt, pt])

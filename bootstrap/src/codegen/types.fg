@@ -734,8 +734,9 @@ export fn llvm_type_for(i64t: ptr, pt: ptr, vt: ValueType) -> ptr {
         .Trait(_) -> pt
         .Union(_) -> pt
         .Newtype(_, inner) -> llvm_type_for(i64t, pt, inner)
+        .Tuple(_) -> pt
+        .NarrowedEnum(_, _) -> pt
         .Void -> i64t
-        _ -> i64t
     }
 }
 
