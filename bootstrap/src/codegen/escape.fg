@@ -52,22 +52,17 @@ fn single_pass_escape(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
     }
 }
 
+fn analyze_binding(name: string, init: Expr, set: ReleasableSet) -> ReleasableSet {
+    let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+    remove_escaped_expr(init, s1)
+}
+
 fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
     let inner = stmt_unwrap(stmt)
     match inner {
-        // Bindings: add if allocating, then check init for escapes
-        .Let(name, _, init) -> {
-            let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-            remove_escaped_expr(init, s1)
-        }
-        .Mut(name, _, init) -> {
-            let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-            remove_escaped_expr(init, s1)
-        }
-        .Const(name, _, init) -> {
-            let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-            remove_escaped_expr(init, s1)
-        }
+        .Let(name, _, init) -> analyze_binding(name, init, set)
+        .Mut(name, _, init) -> analyze_binding(name, init, set)
+        .Const(name, _, init) -> analyze_binding(name, init, set)
         // Recurse into blocks
         .Block(body) -> single_pass_escape(body, set)
         .If(cond, then_b, else_b) -> {

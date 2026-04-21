@@ -583,53 +583,38 @@ export fn emit_when_expr(ctx: Ctx, env: VarEnv, arms: WhenArmList) -> Result<Emi
     let merge_bb = ctx.bb("when_end")
     let result_slot = ctx.alloca_i64("when_result")
     ctx.store(ctx.i64(0), result_slot)
-    let ty = emit_when_arms(ctx, env, arms, merge_bb, result_slot)
+    let ty = emit_when_arms(ctx, env, arms, merge_bb, result_slot)?
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "when_val")
     ok_emit_typed(loaded, ty)
 }
 
-fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, result_slot: ptr) -> ValueType {
+fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, result_slot: ptr) -> Result<ValueType, string> {
     match arms {
-        .End -> .Int
+        .End -> ok_match_ty(.Int)
         .Node(cond, body, next) -> {
             if cond == null {
                 // Else arm — emit body directly, store, branch to merge
-                mut arm_ty = .Int
-                match ctx.emit(env, body.node) {
-                    .Ok(r) -> {
-                        ctx.store(emit_value_ptr(r), result_slot)
-                        arm_ty = emit_value_ty(r)
-                    }
-                    .Err(e) -> { eprintln("codegen error in when else-arm: ${e}") }
-                }
+                let r = ctx.emit(env, body.node)?
+                ctx.store(emit_value_ptr(r), result_slot)
                 ctx.br_if_open(merge_bb)
-                arm_ty
+                ok_match_ty(emit_value_ty(r))
             } else {
-                mut cond_r = EmitValue { value: ctx.i64(0), ty: .Int }
-                match ctx.emit(env, cond!.node) {
-                    .Ok(r) -> { cond_r = r }
-                    .Err(e) -> { eprintln("codegen error in when condition: ${e}") }
-                }
+                let cond_r = ctx.emit(env, cond!.node)?
                 let cond_i1 = ctx.truthy(emit_value_ptr(cond_r), "when_cond")
                 let arm_bb = ctx.bb("when_arm")
                 let next_bb = ctx.bb("when_next")
                 ctx.cond_br(cond_i1, arm_bb, next_bb)
                 // Arm body
                 ctx.position(arm_bb)
-                mut arm_ty = .Int
-                match ctx.emit(env, body.node) {
-                    .Ok(r) -> {
-                        ctx.store(emit_value_ptr(r), result_slot)
-                        arm_ty = emit_value_ty(r)
-                    }
-                    .Err(e) -> { eprintln("codegen error in when arm body: ${e}") }
-                }
+                let body_r = ctx.emit(env, body.node)?
+                ctx.store(emit_value_ptr(body_r), result_slot)
+                let arm_ty = emit_value_ty(body_r)
                 ctx.br_if_open(merge_bb)
                 // Check next arm
                 ctx.position(next_bb)
-                let rest_ty = emit_when_arms(ctx, env, next, merge_bb, result_slot)
-                if vtype_eq(arm_ty, .Int) { rest_ty } else { arm_ty }
+                let rest_ty = emit_when_arms(ctx, env, next, merge_bb, result_slot)?
+                if vtype_eq(arm_ty, .Int) { ok_match_ty(rest_ty) } else { ok_match_ty(arm_ty) }
             }
         }
     }
