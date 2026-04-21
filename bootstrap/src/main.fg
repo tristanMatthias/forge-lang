@@ -169,7 +169,17 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
             "${ind}enum ${name}${tp_part} {\n${fmt_variant_list(variants, depth + 1)}\n${ind}}"
         }
         .Match(subject, arms) -> "${ind}match ${fmt_expr(subject)} {\n${fmt_match_arms(arms, depth + 1)}\n${ind}}"
-        .Impl(name, methods) -> "${ind}impl ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+        .Impl(name, methods) -> {
+            let colon = name.index_of(":")
+            let impl_header = if colon >= 0 {
+                let trait_name = name.substring(0, colon)
+                let type_name = name.substring(colon + 1, name.length)
+                "impl ${trait_name} for ${type_name}"
+            } else {
+                "impl ${name}"
+            }
+            "${ind}${impl_header} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
+        }
         .NoOp -> ""
         .ExternFn(name, params, ret_ty) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${ret_ty}"
         .Break -> "${ind}break"
