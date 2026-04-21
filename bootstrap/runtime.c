@@ -339,27 +339,116 @@ static void auto_enable_rc_trace(void) {
     }
 }
 
-// Allocate an RC-managed object. Returns pointer to payload (past header).
+// ─── RC pointer set (open-addressing hash set) ──────────────────
+// Tracks all live RC-managed pointers so is_rc_managed can safely
+// distinguish RC objects from bump/stack/literal pointers.
+#define RC_SET_INITIAL_CAP 4096
+static void** rc_set_buckets = NULL;
+static size_t rc_set_cap = 0;
+static size_t rc_set_count = 0;
+
+static void rc_set_init(void) {
+    if (rc_set_buckets) return;
+    rc_set_cap = RC_SET_INITIAL_CAP;
+    rc_set_buckets = (void**)calloc(rc_set_cap, sizeof(void*));
+}
+
+static size_t rc_set_hash(void* ptr) {
+    uintptr_t v = (uintptr_t)ptr;
+    v = ((v >> 3) ^ (v >> 17)) * 0x9E3779B97F4A7C15ULL;
+    return (size_t)v;
+}
+
+static void rc_set_insert_into(void** buckets, size_t cap, void* ptr) {
+    size_t idx = rc_set_hash(ptr) & (cap - 1);
+    while (buckets[idx] != NULL && buckets[idx] != ptr) {
+        idx = (idx + 1) & (cap - 1);
+    }
+    buckets[idx] = ptr;
+}
+
+static void rc_set_grow(void) {
+    size_t new_cap = rc_set_cap * 2;
+    void** new_buckets = (void**)calloc(new_cap, sizeof(void*));
+    for (size_t i = 0; i < rc_set_cap; i++) {
+        if (rc_set_buckets[i]) {
+            rc_set_insert_into(new_buckets, new_cap, rc_set_buckets[i]);
+        }
+    }
+    free(rc_set_buckets);
+    rc_set_buckets = new_buckets;
+    rc_set_cap = new_cap;
+}
+
+static void rc_set_add(void* ptr) {
+    rc_set_init();
+    if (rc_set_count * 2 >= rc_set_cap) rc_set_grow();
+    size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
+    while (rc_set_buckets[idx] != NULL && rc_set_buckets[idx] != ptr) {
+        idx = (idx + 1) & (rc_set_cap - 1);
+    }
+    if (rc_set_buckets[idx] == NULL) {
+        rc_set_buckets[idx] = ptr;
+        rc_set_count++;
+    }
+}
+
+static int rc_set_contains(void* ptr) {
+    if (!rc_set_buckets || rc_set_count == 0) return 0;
+    size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
+    while (rc_set_buckets[idx] != NULL) {
+        if (rc_set_buckets[idx] == ptr) return 1;
+        idx = (idx + 1) & (rc_set_cap - 1);
+    }
+    return 0;
+}
+
+static void rc_set_remove(void* ptr) {
+    if (!rc_set_buckets) return;
+    size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
+    while (rc_set_buckets[idx] != NULL) {
+        if (rc_set_buckets[idx] == ptr) {
+            // Robin Hood deletion: clear and re-insert displaced entries
+            rc_set_buckets[idx] = NULL;
+            rc_set_count--;
+            idx = (idx + 1) & (rc_set_cap - 1);
+            while (rc_set_buckets[idx] != NULL) {
+                void* displaced = rc_set_buckets[idx];
+                rc_set_buckets[idx] = NULL;
+                rc_set_count--;
+                rc_set_add(displaced);
+                idx = (idx + 1) & (rc_set_cap - 1);
+            }
+            return;
+        }
+        idx = (idx + 1) & (rc_set_cap - 1);
+    }
+}
+
+// Allocate an RC-managed object via system malloc.
+// Returns pointer to payload (past header).
 void* forge_rc_alloc(int64_t payload_size) {
     size_t total = RC_HEADER_SIZE + (size_t)payload_size;
     total = (total + 7) & ~7;  // align to 8
-    void* raw = forge_bump_alloc(total);
+    void* raw = malloc(total);
+    if (!raw) {
+        forge_runtime_errorf("out of memory in forge_rc_alloc");
+        exit(1);
+    }
     RcHeader* hdr = (RcHeader*)raw;
     hdr->refcount = 1;
     hdr->type_tag = RC_MAGIC;
     void* user_ptr = (char*)raw + RC_HEADER_SIZE;
+    rc_set_add(user_ptr);
     if (rc_trace) {
         fprintf(stderr, "[RC] alloc %p (payload=%lld, rc=1)\n", user_ptr, (long long)payload_size);
     }
     return user_ptr;
 }
 
-// Check if a pointer is within the bump arena (RC-managed).
+// Check if a pointer is an RC-managed object using the pointer set.
 static inline int is_rc_managed(void* ptr) {
-    if (!bump_arena) return 0;
-    uintptr_t addr = (uintptr_t)ptr;
-    uintptr_t arena_start = (uintptr_t)bump_arena;
-    return addr >= arena_start + RC_HEADER_SIZE && addr < arena_start + BUMP_ARENA_SIZE;
+    return rc_set_contains(ptr);
 }
 
 // Increment reference count.
@@ -374,18 +463,23 @@ void forge_rc_retain(void* ptr) {
     }
 }
 
-// Decrement reference count. Currently does NOT free (bump arena).
-// When we switch to a freeing allocator, this will call the destructor
-// and deallocate at refcount 0.
+// Decrement reference count. Frees the object when refcount reaches 0.
 void forge_rc_release(void* ptr) {
     if (!ptr) return;
-    // Only release RC-managed objects with valid headers.
     if (!is_rc_managed(ptr)) return;
     RcHeader* hdr = rc_header(ptr);
     if (hdr->type_tag != RC_MAGIC) return;
     hdr->refcount--;
     if (rc_trace) {
         fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, hdr->refcount);
+    }
+    if (hdr->refcount == 0) {
+        if (rc_trace) {
+            fprintf(stderr, "[RC] free %p\n", ptr);
+        }
+        hdr->type_tag = 0;  // Clear magic to prevent double-free
+        rc_set_remove(ptr);
+        free((char*)ptr - RC_HEADER_SIZE);
     }
 }
 
