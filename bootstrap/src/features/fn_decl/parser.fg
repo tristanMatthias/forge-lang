@@ -1,7 +1,7 @@
 // WHY: parses top-level `fn` declarations and the parameter list
 // they introduce.
 
-use core.ast.{Stmt, ParamList, TypeParamList}
+use core.ast.{Stmt, ParamList, TypeParamList, ValueType, render_type_expr, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -72,24 +72,24 @@ impl Parser {
 
         let name = self.consume_identifier("expected parameter name")?
 
-        // Optional `: Type` annotation. Stored verbatim; codegen
-        // translates the textual type into its internal value tag.
         if self.check(Tk.Colon) {
             self.advance()
-            let ty = self.consume_type("expected parameter type after `:`")?
-            return self.finish_param(name, ty)
+            let te = self.parse_type_expr("expected parameter type after `:`")?
+            let ty = render_type_expr(te)
+            let resolved = type_expr_to_vtype(te)
+            return self.finish_param(name, ty, resolved)
         }
 
-        self.finish_param(name, "i64")
+        self.finish_param(name, "i64", ValueType.Int)
     }
 
-    fn finish_param(self, name: string, ty: string) -> ParamList? {
+    fn finish_param(self, name: string, ty: string, resolved: ValueType) -> ParamList? {
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_param_list()?
-            return ParamList.Node(name, ty, ValueType.Int, rest)
+            return ParamList.Node(name, ty, resolved, rest)
         }
-        ParamList.Node(name, ty, ValueType.Int, ParamList.End)
+        ParamList.Node(name, ty, resolved, ParamList.End)
     }
 
     // Parse `where T: Trait1, U: Trait2` and merge bounds into existing TypeParamList.

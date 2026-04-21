@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
 // and the supporting field grammars (declaration + literal init).
 
-use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList, TypeExpr, ValueType, render_type_expr}
+use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList, TypeExpr, ValueType, render_type_expr, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -101,13 +101,15 @@ impl Parser {
         if !self.consume(Tk.Colon, "expected `:` after field name") {
             return null
         }
-        let ty = self.consume_type("expected field type")?
+        let te = self.parse_type_expr("expected field type")?
+        let ty = render_type_expr(te)
+        let resolved = type_expr_to_vtype(te)
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_field_list()?
-            return FieldList.Node(name, ty, ValueType.Int, rest)
+            return FieldList.Node(name, ty, resolved, rest)
         }
-        FieldList.Node(name, ty, ValueType.Int, FieldList.End)
+        FieldList.Node(name, ty, resolved, FieldList.End)
     }
 
     fn parse_field_init_list(self) -> FieldInitList? {

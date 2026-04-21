@@ -192,6 +192,57 @@ fn render_tel(list: TypeExprList) -> string {
     }
 }
 
+// Convert a structured TypeExpr to a ValueType without string round-tripping.
+// This is a parser-time conversion — it only knows primitive names and structural
+// types. Named types that require registry lookups (structs, enums, traits) are
+// left as ValueType.Struct(name) and resolved later by typeck/codegen.
+// Convert a TypeExpr to a ValueType at parse time. Only resolves primitives
+// and structural types (List, Union, Fn, Map). Named types that require
+// registry lookups (structs, enums, traits, newtypes) resolve to Int —
+// these are handled later by typeck/codegen's translate_type with full
+// registry context. Phase B will eliminate this fallback.
+export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
+    match te {
+        .Named(name) -> match name {
+            "int" -> ValueType.Int
+            "i64" -> ValueType.Int
+            "string" -> ValueType.Str
+            "str" -> ValueType.Str
+            "float" -> ValueType.Float
+            "f64" -> ValueType.Float
+            "bool" -> ValueType.Bool
+            "ptr" -> ValueType.Ptr
+            "Map" -> ValueType.Map
+            _ -> ValueType.Int
+        }
+        .Infer -> ValueType.Int
+        .Union(left, right) -> {
+            let lt = type_expr_to_vtype(left)
+            let rt = type_expr_to_vtype(right)
+            ValueType.Union(union_type_list_merge(lt, rt))
+        }
+        .Optional(inner) -> type_expr_to_vtype(inner)
+        .FnType(params, ret) -> ValueType.FnTyped(tel_to_type_list(params), type_expr_to_vtype(ret))
+        .ListType(elem) -> ValueType.List(type_expr_to_vtype(elem))
+        .Generic(base, args) -> {
+            match base {
+                "List" -> {
+                    let elem = match args { .Node(t, _) -> type_expr_to_vtype(t), .End -> ValueType.Int }
+                    ValueType.List(elem)
+                }
+                _ -> ValueType.Int
+            }
+        }
+    }
+}
+
+fn tel_to_type_list(tel: TypeExprList) -> TypeList {
+    match tel {
+        .End -> TypeList.End
+        .Node(te, next) -> TypeList.Node(type_expr_to_vtype(te), tel_to_type_list(next))
+    }
+}
+
 export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprList {
     match list {
         .End -> TypeExprList.Node(ty, TypeExprList.End)
