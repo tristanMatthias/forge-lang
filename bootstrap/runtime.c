@@ -382,7 +382,7 @@ static void rc_set_grow(void) {
 
 static void rc_set_add(void* ptr) {
     rc_set_init();
-    if (rc_set_count * 2 >= rc_set_cap) rc_set_grow();
+    if (rc_set_count * 4 >= rc_set_cap * 3) rc_set_grow();  // 75% load factor
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
     while (rc_set_buckets[idx] != NULL && rc_set_buckets[idx] != ptr) {
         idx = (idx + 1) & (rc_set_cap - 1);
@@ -408,16 +408,20 @@ static void rc_set_remove(void* ptr) {
     size_t idx = rc_set_hash(ptr) & (rc_set_cap - 1);
     while (rc_set_buckets[idx] != NULL) {
         if (rc_set_buckets[idx] == ptr) {
-            // Robin Hood deletion: clear and re-insert displaced entries
+            // Backward-shift deletion: move entries back to fill the gap.
+            // Each subsequent entry in the cluster is checked: if it's at
+            // its home position (PSL=0), stop; otherwise shift it back one
+            // slot. This avoids tombstones and maintains probe ordering.
             rc_set_buckets[idx] = NULL;
             rc_set_count--;
-            idx = (idx + 1) & (rc_set_cap - 1);
-            while (rc_set_buckets[idx] != NULL) {
-                void* displaced = rc_set_buckets[idx];
-                rc_set_buckets[idx] = NULL;
-                rc_set_count--;
-                rc_set_add(displaced);
-                idx = (idx + 1) & (rc_set_cap - 1);
+            size_t next = (idx + 1) & (rc_set_cap - 1);
+            while (rc_set_buckets[next] != NULL) {
+                size_t home = rc_set_hash(rc_set_buckets[next]) & (rc_set_cap - 1);
+                if (home == next) break;  // entry is at home position (PSL=0), stop
+                rc_set_buckets[idx] = rc_set_buckets[next];
+                rc_set_buckets[next] = NULL;
+                idx = next;
+                next = (idx + 1) & (rc_set_cap - 1);
             }
             return;
         }
@@ -432,7 +436,7 @@ void* forge_rc_alloc(int64_t payload_size) {
     total = (total + 7) & ~7;  // align to 8
     void* raw = malloc(total);
     if (!raw) {
-        forge_runtime_errorf("out of memory in forge_rc_alloc");
+        forge_runtime_errorf("out of memory (rc_alloc %lld bytes)", (long long)payload_size);
         exit(1);
     }
     RcHeader* hdr = (RcHeader*)raw;
