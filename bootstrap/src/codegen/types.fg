@@ -1167,3 +1167,4 @@ impl Ctx {
         self with { defers }
     }
 }
+export type StmtResult = { ctx: Ctx, env: VarEnv }
