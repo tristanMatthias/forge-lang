@@ -1,0 +1,6 @@
+file not found
+kind: io.not_found
+unexpected token
+kind: parse.syntax
+handled error: file not found
+handled error: unexpected token

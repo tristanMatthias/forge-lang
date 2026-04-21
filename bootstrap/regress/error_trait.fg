@@ -1,0 +1,66 @@
+/// expect: file not found
+/// expect: kind: io.not_found
+/// expect: unexpected token
+/// expect: kind: parse.syntax
+/// expect: handled error: file not found
+/// expect: handled error: unexpected token
+
+// Error trait (spec Axis 12.4): standard interface for error types.
+// Types that implement Error get structured error reporting.
+// This test verifies trait definition, impl, dyn dispatch, and
+// integration with Result and match.
+
+trait Error {
+    fn message(self) -> string
+    fn kind(self) -> string
+}
+
+type IoError = { msg: string, code: int }
+type ParseError = { msg: string, line: int }
+
+impl Error for IoError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "io.not_found" }
+}
+
+impl Error for ParseError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "parse.syntax" }
+}
+
+// Dynamic dispatch: accept any Error trait object
+fn print_error(e: Error) {
+    println(e.message())
+    println("kind: " + e.kind())
+}
+
+// Result with match
+enum Result { Ok(value: int), Err(error: string) }
+
+fn try_io() -> Result {
+    Result.Err("file not found")
+}
+
+fn try_parse() -> Result {
+    Result.Err("unexpected token")
+}
+
+fn handle_result(r: Result) {
+    match r {
+        .Ok(v) -> println("ok: " + string(v))
+        .Err(e) -> println("handled error: " + e)
+    }
+}
+
+fn main() {
+    // Direct trait object dispatch
+    let io_err = IoError { msg: "file not found", code: 404 }
+    let parse_err = ParseError { msg: "unexpected token", line: 42 }
+
+    print_error(io_err)
+    print_error(parse_err)
+
+    // Result + match integration
+    handle_result(try_io())
+    handle_result(try_parse())
+}
