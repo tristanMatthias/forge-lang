@@ -1,6 +1,7 @@
 // WHY: codegen for trait dynamic dispatch.
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_display, vtype_struct_name, vtype_enum_name, expr_list_length}
+use core.llvm.{forge_llvm_append_basic_block, forge_llvm_position_at_end, forge_llvm_get_insert_block, forge_llvm_function_type, forge_llvm_add_function, forge_llvm_type_array_new, forge_llvm_type_array_set, forge_llvm_type_array_free, forge_llvm_get_param, forge_llvm_count_params, forge_llvm_build_ret, forge_llvm_build_bitcast, forge_llvm_fn_type_of, forge_llvm_value_array_new, forge_llvm_value_array_set, forge_llvm_value_array_free, forge_llvm_build_call_coerce}
 use codegen.types.{Ctx, EmitValue, TraitMethodNames, ok_emit_typed, err_emit, translate_type_ctx, trait_decl_lookup}
 use features.fn_decl.codegen.{emit_first_arg}
 
@@ -35,11 +36,13 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
     let fn_closure = ctx.array_get(vtable, ctx.i64(idx))
     let user_count = expr_list_length(args)
     if user_count == 0 {
-        return ok_emit_typed(ctx.call("forge_closure_call_1", [fn_closure, concrete]), ret_ty)
+        let raw = ctx.call("forge_closure_call_1", [fn_closure, concrete])
+        return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
     }
     // 1-arg case
     let first_arg = emit_first_arg(ctx, env, args)?
-    ok_emit_typed(ctx.call("forge_closure_call_2", [fn_closure, concrete, first_arg.value]), ret_ty)
+    let raw = ctx.call("forge_closure_call_2", [fn_closure, concrete, first_arg.value])
+    ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
 }
 
 export fn resolve_concrete_type_name(ty: ValueType) -> string {
@@ -58,13 +61,61 @@ export fn box_for_trait(ctx: Ctx, value: ptr, trait_name: string, concrete_name:
     ctx.to_i64(obj_val, "tobj_i64")
 }
 
+// Build an i64-returning wrapper for a float-returning vtable method.
+// The closure dispatch (forge_closure_call_N) casts all fn pointers to
+// int64_t (*)(int64_t, ...) — if the target actually returns double,
+// the ABI mismatch causes the float result to be lost (returned in d0
+// but read from x0). This wrapper calls the real method and bitcasts
+// the double return to i64.
+fn build_float_vtable_wrapper(ctx: Ctx, mangled: string, real_fn: ptr, arity: int) -> ptr {
+    let wrap_name = "${mangled}__vtable_wrap"
+    // Check if wrapper already exists (e.g., multiple trait objects of same type)
+    let existing = ctx.get_fn(wrap_name)
+    if existing != null { return existing }
+    // Create wrapper: i64 (i64, i64, ...) with `arity` i64 params
+    let param_arr = forge_llvm_type_array_new(arity)
+    for i in 0..arity {
+        forge_llvm_type_array_set(param_arr, i, ctx.i64_type)
+    }
+    let fn_type = forge_llvm_function_type(ctx.i64_type, param_arr, arity, 0)
+    forge_llvm_type_array_free(param_arr)
+    let wrapper = forge_llvm_add_function(ctx.module, wrap_name, fn_type)
+    // Save current builder position
+    let saved_bb = forge_llvm_get_insert_block(ctx.builder)
+    // Build wrapper body
+    let entry = forge_llvm_append_basic_block(ctx.lc, wrapper, "entry")
+    forge_llvm_position_at_end(ctx.builder, entry)
+    // Forward all params to the real function
+    let args = forge_llvm_value_array_new(arity)
+    for i in 0..arity {
+        forge_llvm_value_array_set(args, i, forge_llvm_get_param(wrapper, i))
+    }
+    // Call real fn using its proper type (which returns double)
+    let real_ft = forge_llvm_fn_type_of(real_fn)
+    let result = forge_llvm_build_call_coerce(ctx.builder, real_ft, real_fn, args, arity, "vcall")
+    forge_llvm_value_array_free(args)
+    // Bitcast double → i64
+    let as_i64 = forge_llvm_build_bitcast(ctx.builder, result, ctx.i64_type, "f2i")
+    forge_llvm_build_ret(ctx.builder, as_i64)
+    // Restore builder position
+    forge_llvm_position_at_end(ctx.builder, saved_bb)
+    wrapper
+}
+
 export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
     match methods {
         .End -> {}
-        .Node(method_name, _, next) -> {
+        .Node(method_name, ret_ty_str, next) -> {
             let mangled = "${concrete_name}__${method_name}"
             let fn_val = ctx.get_fn(mangled)
-            let fn_i64 = ctx.ptr_to_int(fn_val, "vfn_ptr")
+            // For float-returning methods, use a wrapper to avoid ABI mismatch
+            let ret_vt = translate_type_ctx(ctx, ret_ty_str)
+            let arity = forge_llvm_count_params(fn_val)
+            let target = match ret_vt {
+                .Float -> build_float_vtable_wrapper(ctx, mangled, fn_val, arity)
+                _ -> fn_val
+            }
+            let fn_i64 = ctx.ptr_to_int(target, "vfn_ptr")
             let closure = ctx.closure_array(fn_i64)
             ctx.array_push(vtable, ctx.to_i64(closure, "vcl_i64"))
             push_vtable_entries_call(ctx, vtable, next, concrete_name)

@@ -144,6 +144,10 @@ LLVMValueRef forge_llvm_get_param(LLVMValueRef f, int index) {
     return LLVMGetParam(f, (unsigned)index);
 }
 
+int64_t forge_llvm_count_params(LLVMValueRef f) {
+    return (int64_t)LLVMCountParams(f);
+}
+
 LLVMTypeRef forge_llvm_fn_type_of(LLVMValueRef fn_val) {
     return LLVMGlobalGetValueType(fn_val);
 }
