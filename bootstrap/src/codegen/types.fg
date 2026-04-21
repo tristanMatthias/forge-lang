@@ -583,7 +583,15 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
         "bool"            -> return ValueType.Bool
         "ptr"             -> return ValueType.Ptr
         "fn"              -> return ValueType.Fn(ValueType.Int)
-        "List"            -> return ValueType.List(ValueType.Int)
+        "List"            -> {
+            // List<T> — extract inner type from angle brackets
+            if base_ty != ty {
+                let inner_name = ty.substring(5, ty.length - 1)
+                let inner = translate_param_type(structs, enums, inner_name)
+                return ValueType.List(inner)
+            }
+            return ValueType.List(ValueType.Int)
+        }
         "Map"             -> return ValueType.Map
         _ -> {}
     }
@@ -638,6 +646,13 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
 
 // translate_param_type with trait awareness — uses Ctx for trait registry.
 export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
+    // List<T> with trait-aware inner type resolution
+    let bname = base_type_name(ty)
+    if bname == "List" && bname != ty {
+        let inner_name = ty.substring(5, ty.length - 1)
+        let inner = translate_type_ctx(ctx, inner_name)
+        return ValueType.List(inner)
+    }
     let regs = TypeRegs { structs: ctx.structs, enums: ctx.enums, newtypes: ctx.newtypes, union_aliases: ctx.union_aliases }
     let base = resolve_type(regs, ty)
     // If still unresolved (Int), check traits

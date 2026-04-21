@@ -2,7 +2,7 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.ast.{Expr, ValueType, VarEnv, vtype_trait_name, vtype_struct_name, vtype_enum_name, field_list_length}
+use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, field_list_length}
 use codegen.types.{Ctx, ok_stmt, translate_type_ctx, vtype_is_copy, releasable_has}
 use features.trait_decl.codegen.{box_for_trait}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
@@ -32,6 +32,21 @@ export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: stri
         if concrete_name != "" {
             let obj_i64 = box_for_trait(ctx, r.value, trait_name, concrete_name)
             return ok_stmt(ctx.bind(env, name, obj_i64, var_ty))
+        }
+    }
+    // List<Trait> boxing: `let xs: List<Trait> = [concrete1, concrete2]`
+    // Each element must be individually boxed as a trait object.
+    if vtype_is_list(var_ty) {
+        let elem_ty = vtype_list_elem(var_ty)
+        let elem_trait = vtype_trait_name(elem_ty)
+        if elem_trait != "" {
+            match initializer {
+                .ListLit(elements) -> {
+                    let boxed_list = emit_trait_boxed_list(ctx, env, elements, elem_trait)?
+                    return ok_stmt(ctx.bind(env, name, boxed_list, var_ty))
+                }
+                _ -> {}
+            }
         }
     }
     // Union wrapping: `let x: int | string = 42` → wrap into discriminated union
@@ -95,6 +110,31 @@ fn resolve_concrete_name(ty: ValueType) -> string {
     let e = vtype_enum_name(ty)
     if e != "" { return e }
     ""
+}
+
+// Emit a list literal where each element is trait-boxed.
+// Used for `let xs: List<Trait> = [concrete1, concrete2]`.
+fn emit_trait_boxed_list(ctx: Ctx, env: VarEnv, elements: ExprList, trait_name: string) -> Result<ptr, string> {
+    let arr = ctx.array_new()
+    push_boxed_elements(ctx, env, arr, elements, trait_name)
+}
+
+fn push_boxed_elements(ctx: Ctx, env: VarEnv, arr: ptr, elements: ExprList, trait_name: string) -> Result<ptr, string> {
+    match elements {
+        .End -> .Ok(arr)
+        .Node(se, next) -> {
+            let r = ctx.emit(env, se.node)?
+            let concrete_name = resolve_concrete_name(r.ty)
+            let boxed = if concrete_name != "" {
+                box_for_trait(ctx, r.value, trait_name, concrete_name)
+            } else {
+                // Already boxed or unknown type — push as-is
+                r.value
+            }
+            ctx.array_push(arr, boxed)
+            push_boxed_elements(ctx, env, arr, next, trait_name)
+        }
+    }
 }
 
 // build_vtable and push_vtable_entries removed — use box_for_trait from codegen/mod.fg
