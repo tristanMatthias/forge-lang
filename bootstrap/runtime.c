@@ -2116,6 +2116,7 @@ typedef struct {
     pthread_t thread;
     int64_t closure;
     int64_t result;     // captured return value from closure
+    int joined;         // set to 1 after pthread_join (prevents double-join)
 } ForgeTask;
 
 static void* forge_thread_entry(void* arg) {
@@ -2129,24 +2130,72 @@ int64_t forge_spawn(int64_t closure) {
     ForgeTask* task = (ForgeTask*)malloc(sizeof(ForgeTask));
     task->closure = closure;
     task->result = 0;
+    task->joined = 0;
     pthread_create(&task->thread, NULL, forge_thread_entry, task);
     return (int64_t)(uintptr_t)task;
 }
 
 // Wait for a spawned task to finish and return its result value.
+// Does NOT free the task — the task group frees all tasks at scope exit.
+// When no task group is active (legacy usage), caller is responsible.
 int64_t forge_task_await(int64_t handle) {
     ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
-    pthread_join(task->thread, NULL);
-    int64_t result = task->result;
-    free(task);
-    return result;
+    if (!task->joined) {
+        pthread_join(task->thread, NULL);
+        task->joined = 1;
+    }
+    return task->result;
 }
 
 // Legacy join — kept for backward compat with existing tests.
+// Does NOT free the task — the task group handles cleanup.
 void forge_thread_join(int64_t handle) {
     ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
-    pthread_join(task->thread, NULL);
-    free(task);
+    if (!task->joined) {
+        pthread_join(task->thread, NULL);
+        task->joined = 1;
+    }
+}
+
+// ── Task Groups (structured concurrency) ──
+// A task group collects spawned task handles so they can all be
+// awaited when the enclosing scope exits. This prevents task leaks.
+
+typedef struct {
+    int64_t* handles;
+    int count;
+    int capacity;
+} ForgeTaskGroup;
+
+void* forge_task_group_new(void) {
+    ForgeTaskGroup* g = (ForgeTaskGroup*)malloc(sizeof(ForgeTaskGroup));
+    g->capacity = 8;
+    g->count = 0;
+    g->handles = (int64_t*)malloc(g->capacity * sizeof(int64_t));
+    return g;
+}
+
+void forge_task_group_add(void* group, int64_t handle) {
+    ForgeTaskGroup* g = (ForgeTaskGroup*)group;
+    if (g->count >= g->capacity) {
+        g->capacity *= 2;
+        g->handles = (int64_t*)realloc(g->handles, g->capacity * sizeof(int64_t));
+    }
+    g->handles[g->count++] = handle;
+}
+
+void forge_task_group_await_all(void* group) {
+    ForgeTaskGroup* g = (ForgeTaskGroup*)group;
+    for (int i = 0; i < g->count; i++) {
+        ForgeTask* task = (ForgeTask*)(uintptr_t)g->handles[i];
+        if (!task->joined) {
+            pthread_join(task->thread, NULL);
+            task->joined = 1;
+        }
+        free(task);
+    }
+    free(g->handles);
+    free(g);
 }
 
 // Yield the current fiber. No-op in v1.0 (pthreads-based).

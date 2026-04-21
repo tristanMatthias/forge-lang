@@ -1,6 +1,7 @@
 // WHY: codegen for `spawn { body }`. Wraps the body in a zero-arg
 // closure and calls forge_spawn(closure), returning the thread handle.
-// Per spec Axis 18: v1.0 green-thread tasks via cooperative scheduling.
+// Per spec Axis 18.7: structured concurrency — spawned tasks are bound
+// to the enclosing scope and auto-awaited at scope exit.
 
 use codegen.{emit_expr}
 use codegen.types.{ok_emit, ok_emit_typed, err_emit, EmitValue}
@@ -19,5 +20,43 @@ fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
 
     // Call forge_spawn(closure_ptr) which returns a thread handle
     let handle = ctx.call("forge_spawn", [closure.value])
+
+    // Structured concurrency: if a task group is active, register
+    // this handle so it gets awaited when the scope exits.
+    if ctx.task_group != null {
+        ctx.call("forge_task_group_add", [ctx.task_group, handle])
+    }
+
     ok_emit_typed(handle, .Int)
+}
+
+// ── AST scan: does a statement list contain any Spawn expressions? ──
+// Used by emit_function_body to decide whether to create a task group.
+
+export fn stmts_has_spawn(stmts: StmtList) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> stmt_has_spawn(ss.node) || stmts_has_spawn(next)
+    }
+}
+
+fn stmt_has_spawn(st: Stmt) -> bool {
+    match st {
+        .Expr(e) -> expr_has_spawn(e)
+        .Return(e) -> expr_has_spawn(e)
+        .Let(_, _, e) -> expr_has_spawn(e)
+        .Mut(_, _, e) -> expr_has_spawn(e)
+        .Const(_, _, e) -> expr_has_spawn(e)
+        .Block(body) -> stmts_has_spawn(body)
+        .Annotated(_, inner) -> stmt_has_spawn(inner)
+        _ -> false
+    }
+}
+
+fn expr_has_spawn(ex: Expr) -> bool {
+    match ex {
+        .Spawn(_) -> true
+        .Block(stmts) -> stmts_has_spawn(stmts)
+        _ -> false
+    }
 }

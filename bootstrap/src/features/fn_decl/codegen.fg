@@ -10,6 +10,7 @@ use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_rc_cleanup}
 use codegen.types.{ReleasableSet}
 use codegen.escape.{analyze_releasable}
+use features.spawn_expr.codegen.{stmts_has_spawn}
 
 export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, string> {
     match stmts {
@@ -38,6 +39,13 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     mut body_cg = ctx.with_fn(fn_val, name)
     body_cg.rc_releasable = analyze_releasable(body)
 
+    // Structured concurrency (spec Axis 18.7): if the function body
+    // contains spawn expressions, create a task group so all spawned
+    // tasks are automatically awaited when the scope exits.
+    if stmts_has_spawn(body) {
+        body_cg.task_group = body_cg.call("forge_task_group_new", [])
+    }
+
     let resolved_params = body_cg.resolve_params(params)
     let empty_env: VarEnv = VarEnv.End
     let env = bind_params_inline(body_cg, fn_val, resolved_params, 0, empty_env)
@@ -51,6 +59,10 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     let ret_ty = body_cg.fn_ret(name)
     let br = emit_block_loop_ctx(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
     if !ctx.has_terminator() {
+        // Structured concurrency: await all spawned tasks before cleanup.
+        if body_cg.task_group != null {
+            br.ctx.call("forge_task_group_await_all", [body_cg.task_group])
+        }
         emit_rc_cleanup(br.ctx)
         // Use br.ctx which has accumulated defers and rc_cleanup from the function body
         emit_defers(br.ctx, env)

@@ -63,6 +63,9 @@ export type Ctx = {
     // is a stack alloca that emit_struct_lit should write into instead of
     // heap-allocating. Set by emit_var_decl for Copy-type releasable locals.
     copy_alloc_target: ptr,
+    // Structured concurrency task group (spec Axis 18.7). When non-null,
+    // spawn expressions add their handles here, and scope exit awaits all.
+    task_group: ptr,
 }
 
 // ── Type registries bundle ──
@@ -1198,7 +1201,7 @@ impl Ctx {
     // ── Context builders ──
 
     fn with_fn(self, fn_val: ptr, fn_name: string) -> Ctx {
-        self with { current_fn: fn_val, current_fn_name: fn_name, defers: DeferStack.End, rc_cleanup: RcCleanupStack.End, rc_releasable: ReleasableSet.End }
+        self with { current_fn: fn_val, current_fn_name: fn_name, defers: DeferStack.End, rc_cleanup: RcCleanupStack.End, rc_releasable: ReleasableSet.End, task_group: null }
     }
 
     fn with_loops(self, loops: LoopStack) -> Ctx {

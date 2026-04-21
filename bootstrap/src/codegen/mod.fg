@@ -211,6 +211,10 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
         }
         .Return(value) -> {
             let r = emit_expr(ctx, env, value)?
+            // Structured concurrency: await all spawned tasks before returning.
+            if ctx.task_group != null {
+                ctx.call("forge_task_group_await_all", [ctx.task_group])
+            }
             emit_rc_cleanup(ctx)
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()
@@ -224,6 +228,10 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
             ok_sr(ctx, env)
         }
         .ReturnEmpty -> {
+            // Structured concurrency: await all spawned tasks before returning.
+            if ctx.task_group != null {
+                ctx.call("forge_task_group_await_all", [ctx.task_group])
+            }
             emit_rc_cleanup(ctx)
             emit_defers(ctx, env)
             let fn_ret = ctx.current_fn_ret()

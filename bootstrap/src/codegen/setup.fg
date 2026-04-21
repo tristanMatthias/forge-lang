@@ -168,6 +168,9 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_thread_join", i32t, [pt])
     decl(m, "forge_yield", vt, [])
     decl(m, "forge_scheduler_run", vt, [])
+    decl(m, "forge_task_group_new", pt, [])
+    decl(m, "forge_task_group_add", vt, [pt, pt])
+    decl(m, "forge_task_group_await_all", vt, [pt])
     decl(m, "forge_channel_new", pt, [])
     decl(m, "forge_channel_send", vt, [pt, i64t])
     decl(m, "forge_channel_recv", i64t, [pt])
@@ -271,6 +274,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         source_line: 0,
         arena_ptr: null,
         copy_alloc_target: null,
+        task_group: null,
     }
 
     // Analyze which types are cycle-capable (can reference themselves
