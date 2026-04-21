@@ -521,9 +521,17 @@ fn mangle_generic_type(ty: string) -> string {
 // Resolve a type string using ALL registries (structs, enums, newtypes, union aliases).
 // This is the single entry point for type resolution in the codegen pipeline.
 export fn resolve_type(regs: TypeRegs, ty: string) -> ValueType {
-    // Union types: A|B|C
+    // Union types: A|B|C — but check if the full string is a known
+    // enum/struct first (mangled names like Result__X__A|B contain |
+    // inside type args and should not be split).
     let pipe_idx = find_type_pipe(ty)
     if pipe_idx >= 0 {
+        // Before splitting, check if this is a known mangled enum/struct name
+        // (e.g. "Result__X__A|B" contains | inside type args but is a single enum)
+        let check_e = enum_reg_lookup(regs.enums, ty)
+        if check_e.found { return ValueType.Enum(ty) }
+        let check_s = struct_reg_lookup(regs.structs, ty)
+        if check_s.found { return ValueType.Struct(ty) }
         let left_str = ty.substring(0, pipe_idx)
         let right_str = ty.substring(pipe_idx + 1, ty.length)
         let left = resolve_type(regs, left_str)
@@ -566,8 +574,14 @@ export fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> 
 
 export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -> ValueType {
     // Union types: "A|B|C" → ValueType.Union(TypeList)
+    // But first check if the full string is a known mangled enum/struct
+    // (e.g. "Result__X__A|B" contains | inside type args).
     let pipe_idx = find_type_pipe(ty)
     if pipe_idx >= 0 {
+        let check_e = enum_reg_lookup(enums, ty)
+        if check_e.found { return ValueType.Enum(ty) }
+        let check_s = struct_reg_lookup(structs, ty)
+        if check_s.found { return ValueType.Struct(ty) }
         let left_str = ty.substring(0, pipe_idx)
         let right_str = ty.substring(pipe_idx + 1, ty.length)
         let left = translate_param_type(structs, enums, left_str)
@@ -1228,6 +1242,14 @@ impl Ctx {
         let ok = variant_lookup(lookup.variants, "Ok")
         if !ok.found { return ValueType.Int }
         field_resolved_at(ok.fields, 0)
+    }
+    // Resolve the Err variant's payload type for Result enums.
+    fn resolve_err_type(self, enum_name: string) -> ValueType {
+        let lookup = self.lookup_enum(enum_name)
+        if !lookup.found { return ValueType.Int }
+        let ev = variant_lookup(lookup.variants, "Err")
+        if !ev.found { return ValueType.Int }
+        field_resolved_at(ev.fields, 0)
     }
     fn lookup_fn_params(self, name: string) -> ParamTypeList { fn_param_lookup(self.fn_params, name) }
 

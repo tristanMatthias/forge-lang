@@ -1,0 +1,5 @@
+ok: hello world
+io error: file not found
+parse error: bad json
+ok nested: 42
+io error: file not found

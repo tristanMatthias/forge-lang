@@ -12,6 +12,7 @@
 use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
 use features.defer_stmt.codegen.{emit_defers_on_error}
+use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
 export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> Result<EmitValue, string> {
     let l = ctx.emit(env, left)?
@@ -99,7 +100,6 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
     // ── Mode 1: Result enum (including monomorphized Result__T__E) ──
     // Check tag: Ok → extract payload value, Err → return Result.
     let enum_name = vtype_enum_name(r.ty)
-    if enum_name != "" { eprintln("[emit_try] enum=${enum_name} line=${string(ctx.source_line)}") }
     if enum_name == "Result" || enum_name.starts_with("Result__") {
         let enum_ty = ctx.get_type(enum_name)
         let enum_ptr = ctx.to_ptr(r.value, "try_res_ptr")
@@ -114,7 +114,37 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
         ctx.position(err_bb)
         emit_defers_on_error(ctx, env)
         let try_fn_ret = ctx.current_fn_ret()
-        ctx.ret(r.value, try_fn_ret)
+        // ── Auto-widening: if inner error type is narrower than outer, wrap ──
+        let outer_enum_name = vtype_enum_name(try_fn_ret)
+        let ret_val = if outer_enum_name != "" && outer_enum_name != enum_name {
+            // Inner and outer Result are different monomorphizations.
+            // Extract error payload from inner, widen if needed, build outer Result.
+            let inner_err_ty = ctx.resolve_err_type(enum_name)
+            let outer_err_ty = ctx.resolve_err_type(outer_enum_name)
+            if needs_union_wrap(inner_err_ty, outer_err_ty) {
+                // Extract error payload from inner Result
+                let err_pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_widen_pay_slot")
+                let err_pay_ptr = ctx.load(ctx.ptr_type, err_pay_gep, "try_widen_payload")
+                let err_val = ctx.load_i64(err_pay_ptr, "try_err_val")
+                // Wrap the concrete error in the wider union type
+                let wrapped = emit_union_wrap(ctx, err_val, inner_err_ty, outer_err_ty)?
+                // Build a new outer Result enum: {tag=Err, payload=wrapped_err}
+                let outer_st_ty = ctx.get_type(outer_enum_name)
+                let outer_buf = ctx.arena_alloc(ctx.i64(16))
+                let outer_tag_gep = ctx.gep(outer_st_ty, outer_buf, 0, "try_widen_tag")
+                ctx.store(ctx.i64(forge_variant_hash("Err")), outer_tag_gep)
+                let outer_pay_buf = ctx.arena_alloc(ctx.i64(8))
+                ctx.store_slot(outer_pay_buf, 0, wrapped.value, outer_err_ty)
+                let outer_pay_gep = ctx.gep(outer_st_ty, outer_buf, 1, "try_widen_pay")
+                ctx.store(outer_pay_buf, outer_pay_gep)
+                ctx.to_i64(outer_buf, "try_widened_result")
+            } else {
+                r.value
+            }
+        } else {
+            r.value
+        }
+        ctx.ret(ret_val, try_fn_ret)
 
         ctx.position(ok_bb)
         let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "try_pay_slot")

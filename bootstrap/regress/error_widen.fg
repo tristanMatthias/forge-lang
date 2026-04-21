@@ -1,0 +1,89 @@
+/// expect: ok: hello world
+/// expect: io error: file not found
+/// expect: parse error: bad json
+/// expect: ok nested: 42
+/// expect: io error: file not found
+
+// Union error type auto-widening at ? sites (spec Axis 12.3)
+// When a function returns Result<T, A | B> and calls a function
+// returning Result<T, A>, the ? operator auto-widens A into A | B.
+
+enum Result<T, E> { Ok(value: T), Err(error: E) }
+
+type IoError = { message: string }
+type ParseError = { message: string }
+
+fn read_file(path: string) -> Result<string, IoError> {
+    if path == "missing.txt" {
+        return Result.Err(IoError { message: "file not found" })
+    }
+    if path == "bad.json" {
+        return Result.Ok("bad")
+    }
+    Result.Ok("hello world")
+}
+
+fn parse_json(text: string) -> Result<int, ParseError> {
+    if text == "bad" {
+        return Result.Err(ParseError { message: "bad json" })
+    }
+    Result.Ok(42)
+}
+
+// This function's error type is a union — ? must auto-widen
+fn load_config(path: string) -> Result<string, IoError | ParseError> {
+    let text = read_file(path)?
+    Result.Ok(text)
+}
+
+// Chain both: read_file? widens IoError, parse_json? widens ParseError
+fn load_and_parse(path: string) -> Result<int, IoError | ParseError> {
+    let text = read_file(path)?
+    let val = parse_json(text)?
+    Result.Ok(val)
+}
+
+fn main() {
+    match load_config("ok.txt") {
+        .Ok(v) -> println("ok: ${v}")
+        .Err(e) -> match e {
+            IoError(ie) -> println("io error: ${ie.message}")
+            ParseError(pe) -> println("parse error: ${pe.message}")
+        }
+    }
+
+    match load_config("missing.txt") {
+        .Ok(v) -> println("ok: ${v}")
+        .Err(e) -> match e {
+            IoError(ie) -> println("io error: ${ie.message}")
+            ParseError(pe) -> println("parse error: ${pe.message}")
+        }
+    }
+
+    // This triggers ParseError (read succeeds, parse fails)
+    match load_and_parse("bad.json") {
+        .Ok(v) -> println("ok nested: ${string(v)}")
+        .Err(e) -> match e {
+            IoError(ie) -> println("io error: ${ie.message}")
+            ParseError(pe) -> println("parse error: ${pe.message}")
+        }
+    }
+
+    // This triggers Ok path (both read and parse succeed)
+    match load_and_parse("ok.txt") {
+        .Ok(v) -> println("ok nested: ${string(v)}")
+        .Err(e) -> match e {
+            IoError(ie) -> println("io error: ${ie.message}")
+            ParseError(pe) -> println("parse error: ${pe.message}")
+        }
+    }
+
+    // This triggers IoError (read fails)
+    match load_and_parse("missing.txt") {
+        .Ok(v) -> println("ok nested: ${string(v)}")
+        .Err(e) -> match e {
+            IoError(ie) -> println("io error: ${ie.message}")
+            ParseError(pe) -> println("parse error: ${pe.message}")
+        }
+    }
+}
