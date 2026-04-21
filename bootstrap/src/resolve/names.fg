@@ -375,7 +375,6 @@ fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
     match params {
         .End -> ctx
         .Node(name, _, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, false, true, 0, ctx.locals)), next)
-        _ -> ctx
     }
 }
 
@@ -393,7 +392,6 @@ fn bind_pattern_list(ctx: NameCtx, pats: PatternList) -> NameCtx {
     match pats {
         .End -> ctx
         .Node(pat, next) -> bind_pattern_list(bind_pattern_ctx(ctx, pat), next)
-        _ -> ctx
     }
 }
 
@@ -427,7 +425,7 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     // Pass 3: Detect unused imports — collect all QualifiedIdent paths
     // from the rewritten AST and warn about imports that were never used.
     let used = collect_used_paths_stmts(rewritten, UsedPathSet.End)
-    let unused_bag = check_unused_imports(rewritten, use_result.aliases, used)
+    let unused_bag = check_unused_imports(use_result.aliases, used)
 
     // Merge diagnostics from all passes
     let merged_bag = bag_merge(bag_merge(use_result.bag, resolved.bag), unused_bag)
@@ -545,7 +543,6 @@ fn rewrite_ident(ctx: NameCtx, name: string, original: Expr) -> Expr {
         let from_sibling = match mod_node {
             .End -> ""
             .Node(_, _, items, _, _) -> item_lookup(items, name)
-            _ -> ""
         }
         if from_sibling != "" { return Expr.QualifiedIdent(from_sibling) }
     }
@@ -712,7 +709,7 @@ fn collect_used_paths_match_arms(arms: MatchArmList, acc: UsedPathSet) -> UsedPa
 
 // Check each alias in the use_result against the used paths set.
 // Returns a DiagnosticBag with warnings for unused imports.
-fn check_unused_imports(stmts: StmtList, aliases: AliasEntry, used: UsedPathSet) -> DiagnosticBag {
+fn check_unused_imports(aliases: AliasEntry, used: UsedPathSet) -> DiagnosticBag {
     // Walk top-level Use stmts to match aliases to source spans
     check_unused_aliases(aliases, used, bag_new())
 }

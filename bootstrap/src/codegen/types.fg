@@ -716,30 +716,6 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
     }
 }
 
-// Fallback for callers without i1/double refs — maps Bool/Float to i64.
-export fn llvm_type_for(i64t: ptr, pt: ptr, vt: ValueType) -> ptr {
-    match vt {
-        .Int -> i64t
-        .Bool -> i64t
-        .Float -> i64t
-        .Str -> pt
-        .Ptr -> pt
-        .Struct(_) -> pt
-        .Enum(_) -> pt
-        .List(_) -> pt
-        .Map -> pt
-        .Fn(_) -> pt
-        .FnTyped(_, _) -> pt
-        .Closure(_, _) -> pt
-        .Trait(_) -> pt
-        .Union(_) -> pt
-        .Newtype(_, inner) -> llvm_type_for(i64t, pt, inner)
-        .Tuple(_) -> pt
-        .NarrowedEnum(_, _) -> pt
-        .Void -> i64t
-    }
-}
-
 // Returns true if the ValueType maps to a pointer LLVM type.
 export fn vtype_is_ptr_type(vt: ValueType) -> bool {
     match vt {

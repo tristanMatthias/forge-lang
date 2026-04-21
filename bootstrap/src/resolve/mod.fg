@@ -69,7 +69,7 @@ fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
                 res = match stmt_unwrap(ss.node) {
                     .Function(name, _, _, _, _) -> declare_function(res, name)
                     .ExternFn(name, _, _) -> declare_function(res, name)
-                    .Impl(type_name, methods) -> collect_method_names(res, type_name, methods)
+                    .Impl(_, methods) -> collect_method_names(res, methods)
                     .Module(_, body) -> collect_function_names(res, body)
                     _ -> res
                 }
@@ -80,7 +80,7 @@ fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
     res
 }
 
-fn collect_method_names(r: Resolver, type_name: string, methods: StmtList) -> Resolver {
+fn collect_method_names(r: Resolver, methods: StmtList) -> Resolver {
     mut current = methods
     mut res = r
     while true {
