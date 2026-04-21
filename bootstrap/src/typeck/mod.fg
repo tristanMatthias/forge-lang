@@ -4,7 +4,7 @@
 // compile pipeline before codegen runs. Per spec Axis 20.
 
 use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe}
-use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_with_help, span_dummy, span_new}
+use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_help, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
 use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts}
@@ -456,9 +456,11 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
     let tc1 = collect_decls(tc0, stmts)
     // Pass 2: check all statement bodies
     let tc2 = check_stmts(tc1, stmts)
+    // Pass 2.5: naming convention warnings
+    let tc3 = check_naming_conventions(tc2, stmts)
     // Pass 3: annotate AST — stamp resolved types onto SExpr nodes
-    let annotated = annotate_stmts(tc2, stmts)
-    TypeCheckResult { stmts: annotated, had_error: bag_has_errors(tc2.bag), bag: tc2.bag }
+    let annotated = annotate_stmts(tc3, stmts)
+    TypeCheckResult { stmts: annotated, had_error: bag_has_errors(tc3.bag), bag: tc3.bag }
 }
 
 // ── Pass 1: Declaration collection ──
@@ -1216,6 +1218,135 @@ fn annotate_when_arms(tc: TC, arms: WhenArmList) -> WhenArmList {
             let new_cond = if cond != null { annotate_sexpr(tc, cond!) } else { null }
             WhenArmList.Node(new_cond, annotate_sexpr(tc, body), annotate_when_arms(tc, next))
         }
+    }
+}
+
+// ── Naming convention checks ──
+// PascalCase: first char uppercase, no underscores (except leading _)
+// snake_case: all lowercase or underscore or digit
+// SCREAMING_SNAKE: all uppercase or underscore or digit
+
+fn is_upper(ch: string) -> bool { ch in "A".."Z" }
+fn is_lower(ch: string) -> bool { ch in "a".."z" }
+fn is_naming_digit(ch: string) -> bool { ch in "0".."9" }
+
+fn is_pascal_case(name: string) -> bool {
+    if name.length == 0 { return true }
+    let first = name[0]
+    if first == "_" { return true }  // skip private names
+    if !is_upper(first) { return false }
+    // PascalCase: no underscores in the rest
+    mut i = 1
+    while i < name.length {
+        if name[i] == "_" { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn is_snake_case(name: string) -> bool {
+    if name.length == 0 { return true }
+    let first = name[0]
+    if first == "_" { return true }
+    if is_upper(first) { return false }
+    mut i = 0
+    while i < name.length {
+        let ch = name[i]
+        if !is_lower(ch) && ch != "_" && !is_naming_digit(ch) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+fn is_screaming_snake(name: string) -> bool {
+    if name.length == 0 { return true }
+    if name[0] == "_" { return true }
+    mut i = 0
+    while i < name.length {
+        let ch = name[i]
+        if !is_upper(ch) && ch != "_" && !is_naming_digit(ch) {
+            return false
+        }
+        i = i + 1
+    }
+    true
+}
+
+fn naming_warn(tc: TC, msg: string) -> TC {
+    let sp = span_dummy()
+    let d = diag_warning(DiagCode.NamingConvention, msg, sp)
+    tc with { bag: bag_report(tc.bag, d) }
+}
+
+fn check_naming_conventions(tc: TC, stmts: StmtList) -> TC {
+    match stmts {
+        .End -> tc
+        .Node(ss, next) -> {
+            let updated = check_naming_stmt(tc, ss.node)
+            check_naming_conventions(updated, next)
+        }
+    }
+}
+
+fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .Annotated(_, inner) -> check_naming_stmt(tc, inner)
+        .Function(name, _, _, _, body) -> {
+            let tc2 = if name != "main" && !is_snake_case(name) {
+                naming_warn(tc, "function `${name}` should be snake_case")
+            } else {
+                tc
+            }
+            check_naming_conventions(tc2, body)
+        }
+        .TypeDecl(name, _, _) -> {
+            if !is_pascal_case(name) {
+                naming_warn(tc, "type `${name}` should be PascalCase")
+            } else {
+                tc
+            }
+        }
+        .EnumDecl(name, _, _) -> {
+            if !is_pascal_case(name) {
+                naming_warn(tc, "enum `${name}` should be PascalCase")
+            } else {
+                tc
+            }
+        }
+        .Const(name, _, _) -> {
+            if !is_screaming_snake(name) {
+                naming_warn(tc, "constant `${name}` should be SCREAMING_SNAKE_CASE")
+            } else {
+                tc
+            }
+        }
+        .Let(name, _, _) -> {
+            if !is_snake_case(name) {
+                naming_warn(tc, "variable `${name}` should be snake_case")
+            } else {
+                tc
+            }
+        }
+        .Mut(name, _, _) -> {
+            if !is_snake_case(name) {
+                naming_warn(tc, "variable `${name}` should be snake_case")
+            } else {
+                tc
+            }
+        }
+        .Block(body) -> check_naming_conventions(tc, body)
+        .If(_, then_br, else_br) -> {
+            let tc2 = check_naming_stmt(tc, then_br)
+            if else_br != null { check_naming_stmt(tc2, else_br!) } else { tc2 }
+        }
+        .While(_, body) -> check_naming_stmt(tc, body)
+        .For(_, _, _, body) -> check_naming_stmt(tc, body)
+        .ForIn(_, _, body) -> check_naming_stmt(tc, body)
+        .Module(_, body) -> check_naming_conventions(tc, body)
+        .Impl(_, methods) -> check_naming_conventions(tc, methods)
+        _ -> tc
     }
 }
 

@@ -1,0 +1,19 @@
+// Test: pipe operator |> desugars to function calls.
+
+fn double(x: int) -> int { x * 2 }
+fn add_one(x: int) -> int { x + 1 }
+fn add(x: int, y: int) -> int { x + y }
+
+fn main() {
+    // Basic pipe: x |> f desugars to f(x)
+    let a = 5 |> double
+    println(string(a))
+
+    // Chained pipe
+    let b = 5 |> double |> add_one
+    println(string(b))
+
+    // Pipe with extra args: x |> f(y) desugars to f(x, y)
+    let c = 3 |> add(4)
+    println(string(c))
+}

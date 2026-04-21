@@ -118,6 +118,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     // ── float ──
     decl(m, "forge_float_parse", i64t, [pt])
     decl(m, "forge_float_to_string", i64t, [i64t])
+    decl(m, "forge_format_float", pt, [i64t, pt])
+    decl(m, "forge_format_int", pt, [i64t, pt])
 
     // ── ptr ops ──
     decl(m, "forge_ptr_store_byte", vt, [pt, i64t, i64t])

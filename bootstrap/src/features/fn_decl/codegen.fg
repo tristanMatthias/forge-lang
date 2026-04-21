@@ -315,6 +315,12 @@ export fn emit_call_named(ctx: Ctx, env: VarEnv, name: string, args: ExprList) -
     if name == "string" {
         return emit_int_to_string(ctx, env, args)
     }
+    if name == "forge_format_float" {
+        return emit_format_float(ctx, env, args)
+    }
+    if name == "forge_format_int" {
+        return emit_format_int(ctx, env, args)
+    }
     if name == "int" {
         return emit_string_to_int(ctx, env, args)
     }
@@ -403,6 +409,40 @@ fn emit_int_to_string_inner(ctx: Ctx, val: ptr, ty: ValueType) -> Result<EmitVal
     let fmt = ctx.global_str("%lld", ".i2s_fmt")
     ctx.call("snprintf", [buf, ctx.i64(32), fmt, val])
     ok_emit_str(buf)
+}
+
+// forge_format_float(float_val, spec_str) → str
+fn emit_format_float(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
+    match args {
+        .End -> err_emit("forge_format_float() expects 2 args")
+        .Node(se1, rest) -> match rest {
+            .End -> err_emit("forge_format_float() expects 2 args")
+            .Node(se2, _) -> {
+                let val_r = ctx.emit(env, se1.node)?
+                let spec_r = ctx.emit(env, se2.node)?
+                let spec_ptr = ctx.to_ptr(spec_r.value, "fmt_spec")
+                let result = ctx.call("forge_format_float", [val_r.value, spec_ptr])
+                ok_emit_str(result)
+            }
+        }
+    }
+}
+
+// forge_format_int(int_val, spec_str) → str
+fn emit_format_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {
+    match args {
+        .End -> err_emit("forge_format_int() expects 2 args")
+        .Node(se1, rest) -> match rest {
+            .End -> err_emit("forge_format_int() expects 2 args")
+            .Node(se2, _) -> {
+                let val_r = ctx.emit(env, se1.node)?
+                let spec_r = ctx.emit(env, se2.node)?
+                let spec_ptr = ctx.to_ptr(spec_r.value, "fmt_spec")
+                let result = ctx.call("forge_format_int", [val_r.value, spec_ptr])
+                ok_emit_str(result)
+            }
+        }
+    }
 }
 
 export fn emit_string_to_int(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitValue, string> {

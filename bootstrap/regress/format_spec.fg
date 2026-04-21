@@ -1,0 +1,10 @@
+// Test: string interpolation format specs ${expr:spec}.
+
+fn main() {
+    let pi = 3.14159265
+    println("pi is ${pi:.2f}")
+    println("sci ${pi:.3e}")
+    let x = 255
+    println("hex ${x:x}")
+    println("padded ${42:08d}")
+}

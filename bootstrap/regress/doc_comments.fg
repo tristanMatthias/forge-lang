@@ -1,0 +1,12 @@
+//! Module documentation for the greeting module.
+
+/// Greets a person by name.
+/// Returns a greeting string.
+fn greet(name: string) -> string {
+    "hello " + name
+}
+
+/// Main entry point.
+fn main() {
+    println(greet("world"))
+}

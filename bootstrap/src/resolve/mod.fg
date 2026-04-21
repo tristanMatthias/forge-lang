@@ -47,6 +47,8 @@ export fn resolve_program(stmts: StmtList) -> ResolveResult {
     r = declare_function(r, "float")
     r = declare_function(r, "panic")
     r = declare_function(r, "exit")
+    r = declare_function(r, "forge_format_float")
+    r = declare_function(r, "forge_format_int")
     r = declare_function(r, "self")
     r = collect_function_names(r, stmts)
     r = resolve_stmt_list(r, stmts)

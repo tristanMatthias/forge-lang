@@ -1,0 +1,15 @@
+// Test: block comments /* */ with nesting support.
+
+fn main() {
+    /* simple block comment */
+    println("a")
+    /* nested /* inner */ still comment */
+    println("b")
+    /*
+     * multiline
+     * block comment
+     */
+    println("c")
+    /* deeply /* nested /* three */ levels */ done */
+    println("d")
+}

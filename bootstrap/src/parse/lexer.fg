@@ -53,7 +53,38 @@ impl Parser {
             "}" -> { self.set_current(Tk.RightBrace, "}")   return }
             "+" -> { self.set_current(Tk.Plus, "+")         return }
             "*" -> { self.set_current(Tk.Star, "*")         return }
-            "/" -> { self.set_current(Tk.Slash, "/")        return }
+            "/" -> {
+                // Doc comments: /// and //!
+                if self.peek_char() == "/" {
+                    let third = self.peek_next_char()
+                    if third == "/" {
+                        self.advance_char()  // consume second /
+                        self.advance_char()  // consume third /
+                        // Read content until end of line
+                        mut content = ""
+                        // Skip one leading space if present
+                        if self.peek_char() == " " { self.advance_char() }
+                        while !self.is_at_end() && self.peek_char() != "\n" {
+                            content = content + self.advance_char()
+                        }
+                        self.set_current(Tk.DocComment, content)
+                        return
+                    }
+                    if third == "!" {
+                        self.advance_char()  // consume second /
+                        self.advance_char()  // consume !
+                        mut content = ""
+                        if self.peek_char() == " " { self.advance_char() }
+                        while !self.is_at_end() && self.peek_char() != "\n" {
+                            content = content + self.advance_char()
+                        }
+                        self.set_current(Tk.ModDocComment, content)
+                        return
+                    }
+                }
+                self.set_current(Tk.Slash, "/")
+                return
+            }
             ":" -> { self.set_current(Tk.Colon, ":")        return }
             "@" -> { self.set_current(Tk.At, "@")           return }
             "[" -> { self.set_current(Tk.LeftBracket, "[")  return }
@@ -116,6 +147,7 @@ impl Parser {
             }
             "\"" -> { self.scan_string_token()    return }
             "`"  -> { self.scan_template_token()  return }
+            "'"  -> { self.scan_char_literal()     return }
             _ -> {}
         }
 
@@ -248,14 +280,86 @@ impl Parser {
         self.current_lexeme = lexeme
     }
 
+    // Scan a character literal: 'x' or '\n' etc.
+    // Produces a Tk.Number with the Unicode codepoint value.
+    fn scan_char_literal(self) {
+        if self.is_at_end() {
+            self.report(DiagCode.SyntaxError, "unterminated character literal")
+            self.set_current(Tk.Error, "")
+            return
+        }
+        let ch = self.peek_char()
+        mut code_point = 0
+        if ch == "\\" {
+            // Escape sequence
+            self.advance_char()
+            if self.is_at_end() {
+                self.report(DiagCode.SyntaxError, "unterminated character literal")
+                self.set_current(Tk.Error, "")
+                return
+            }
+            let esc = self.advance_char()
+            match esc {
+                "n"  -> { code_point = 10 }
+                "t"  -> { code_point = 9 }
+                "r"  -> { code_point = 13 }
+                "0"  -> { code_point = 0 }
+                "\\" -> { code_point = 92 }
+                "'"  -> { code_point = 39 }
+                _    -> {
+                    self.report(DiagCode.SyntaxError, "unknown escape in character literal: \\${esc}")
+                    self.set_current(Tk.Error, "")
+                    return
+                }
+            }
+        } else {
+            code_point = ch.char_code()
+            self.advance_char()
+        }
+        if self.is_at_end() || self.peek_char() != "'" {
+            self.report(DiagCode.SyntaxError, "unterminated character literal, expected closing '")
+            self.set_current(Tk.Error, "")
+            return
+        }
+        self.advance_char()  // consume closing '
+        self.set_current(Tk.Number, string(code_point))
+    }
+
     fn skip_whitespace_and_comments(self) {
         while !self.is_at_end() {
             let ch = self.peek_char()
             if ch in [" ", "\r", "\t", "\n"] {
                 self.advance_char()
             } else if ch == "/" && self.peek_next_char() == "/" {
+                // Check for doc comments: /// and //!
+                // These are NOT skipped — they become tokens.
+                if self.current + 2 < self.source.length {
+                    let third = self.source[self.current + 2]
+                    if third == "/" || third == "!" {
+                        return  // stop skipping, let advance_token handle it
+                    }
+                }
                 while !self.is_at_end() && self.peek_char() != "\n" {
                     self.advance_char()
+                }
+            } else if ch == "/" && self.peek_next_char() == "*" {
+                // Block comment with nesting: /* ... /* ... */ ... */
+                self.advance_char()  // consume /
+                self.advance_char()  // consume *
+                mut depth = 1
+                while depth > 0 && !self.is_at_end() {
+                    let bc = self.peek_char()
+                    if bc == "/" && self.peek_next_char() == "*" {
+                        self.advance_char()
+                        self.advance_char()
+                        depth = depth + 1
+                    } else if bc == "*" && self.peek_next_char() == "/" {
+                        self.advance_char()
+                        self.advance_char()
+                        depth = depth - 1
+                    } else {
+                        self.advance_char()
+                    }
                 }
             } else {
                 return

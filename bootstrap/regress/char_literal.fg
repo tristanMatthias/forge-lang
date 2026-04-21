@@ -1,0 +1,14 @@
+// Test: character literals 'x' produce integer codepoints.
+
+fn main() {
+    let a = 'A'
+    println(string(a))
+    let z = 'z'
+    println(string(z))
+    let newline = '\n'
+    println(string(newline))
+    let tab = '\t'
+    println(string(tab))
+    let zero = '0'
+    println(string(zero))
+}

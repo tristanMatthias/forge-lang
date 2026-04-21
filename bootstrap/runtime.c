@@ -1729,6 +1729,42 @@ const char* forge_float_to_string(int64_t bits) {
     return buf;
 }
 
+// Format a float with a printf-style format spec (e.g. ".2f", ".4e").
+// The spec should NOT include the leading '%'.
+// Takes float bits as int64 (same convention as forge_float_to_string).
+const char* forge_format_float(int64_t bits, const char* spec) {
+    double d;
+    memcpy(&d, &bits, sizeof(d));
+    char fmt[32];
+    snprintf(fmt, sizeof(fmt), "%%%s", spec);
+    char* buf = (char*)malloc(128);
+    snprintf(buf, 128, fmt, d);
+    return buf;
+}
+
+// Format an int with a printf-style format spec (e.g. "d", "x", "08x").
+const char* forge_format_int(int64_t n, const char* spec) {
+    char fmt[32];
+    snprintf(fmt, sizeof(fmt), "%%%s", spec);
+    // Replace 'd' with 'lld', 'x' with 'llx', etc. for 64-bit
+    char* buf = (char*)malloc(128);
+    // Build a proper format with the right length modifier
+    char fmt2[32];
+    int flen = strlen(fmt);
+    char last = fmt[flen - 1];
+    if (last == 'd' || last == 'i' || last == 'x' || last == 'X' || last == 'o') {
+        memcpy(fmt2, fmt, flen - 1);
+        fmt2[flen - 1] = 'l';
+        fmt2[flen] = 'l';
+        fmt2[flen + 1] = last;
+        fmt2[flen + 2] = '\0';
+    } else {
+        memcpy(fmt2, fmt, flen + 1);
+    }
+    snprintf(buf, 128, fmt2, n);
+    return buf;
+}
+
 // ── Feature registry helpers ──
 // Extract the enum discriminant tag (first byte) from an enum value.
 // Enums are heap-allocated structs with {i8 tag, i64 field1, ...}.

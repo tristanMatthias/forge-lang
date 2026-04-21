@@ -1,0 +1,4 @@
+// Test: reserved keywords produce an error.
+fn main() {
+    async
+}

@@ -167,7 +167,9 @@ fn p_starts_with_upper(name: string) -> bool {
 // sub-parser — they're just Expr.Ident.
 fn template_is_simple_ident(s: string) -> bool {
     if s.length == 0 { return false }
-    mut i = 0
+    // First char must be alpha (not digit) to be an identifier
+    if !p_is_alpha(s[0]) { return false }
+    mut i = 1
     while i < s.length {
         let ch = s[i]
         if !p_is_alpha_numeric(ch) {
@@ -176,6 +178,41 @@ fn template_is_simple_ident(s: string) -> bool {
         i = i + 1
     }
     true
+}
+
+// Result of splitting a template interpolation on format spec.
+type FormatSplit = { expr: string, fmt: string }
+
+// Split `expr:spec` at the last colon at brace/paren depth 0.
+// Returns the expression part and format spec (empty if no spec).
+fn template_split_format(s: string) -> FormatSplit {
+    mut last_colon = -1
+    mut depth = 0
+    mut i = 0
+    while i < s.length {
+        let ch = s[i]
+        if ch in ["(", "[", "{"] { depth = depth + 1 }
+        if ch in [")", "]", "}"] { depth = depth - 1 }
+        if ch == ":" && depth == 0 {
+            last_colon = i
+        }
+        i = i + 1
+    }
+    if last_colon < 0 {
+        return FormatSplit { expr: s, fmt: "" }
+    }
+    // Validate that what's after the colon looks like a format spec
+    // (starts with . or digit or a format char).
+    let fspec = s.substring(last_colon + 1, s.length)
+    if fspec.length == 0 {
+        return FormatSplit { expr: s, fmt: "" }
+    }
+    let first = fspec[0]
+    if first == "." || p_is_digit(first) || first in ["d", "x", "X", "o", "f", "e", "E", "g", "G"] {
+        FormatSplit { expr: s.substring(0, last_colon), fmt: fspec }
+    } else {
+        FormatSplit { expr: s, fmt: "" }
+    }
 }
 
 // Parse a sub-expression from a string (used by template desugaring).
@@ -227,6 +264,17 @@ export fn p_keyword_kind(text: string) -> Tk {
         "shape"    -> Tk.KwShape
         "parallel" -> Tk.KwParallel
         "spawn"    -> Tk.KwSpawn
+        // Reserved future keywords
+        "async"    -> Tk.KwReserved
+        "await"    -> Tk.KwReserved
+        "yield"    -> Tk.KwReserved
+        "move"     -> Tk.KwReserved
+        "ref"      -> Tk.KwReserved
+        "unsafe"   -> Tk.KwReserved
+        "macro"    -> Tk.KwReserved
+        "systems"  -> Tk.KwReserved
+        "bare"     -> Tk.KwReserved
+        "hardware" -> Tk.KwReserved
         _          -> Tk.Identifier
     }
 }
@@ -344,6 +392,45 @@ impl Parser {
     }
 
     fn parse_declaration(self) -> Stmt? {
+        // Reserved future keywords produce an error immediately.
+        if self.check(Tk.KwReserved) {
+            let kw = self.current_lexeme
+            self.set_error("`${kw}` is a reserved keyword and cannot be used yet")
+            self.advance()
+            return null
+        }
+
+        // Doc comments: /// and //! become @doc annotations.
+        if self.check(Tk.DocComment) {
+            mut doc_text = self.current_lexeme
+            self.advance()
+            // Collect consecutive /// lines into one doc string
+            while self.check(Tk.DocComment) {
+                doc_text = doc_text + "\n" + self.current_lexeme
+                self.advance()
+            }
+            let inner = self.parse_declaration()?
+            let doc_arg = ExprList.Node(sexpr_dummy(Expr.String("\"${doc_text}\"")), ExprList.End)
+            return Stmt.Annotated(
+                AnnotationList.Node("doc", doc_arg, AnnotationList.End),
+                inner
+            )
+        }
+        if self.check(Tk.ModDocComment) {
+            mut doc_text = self.current_lexeme
+            self.advance()
+            while self.check(Tk.ModDocComment) {
+                doc_text = doc_text + "\n" + self.current_lexeme
+                self.advance()
+            }
+            // Module docs don't wrap a declaration — store as a NoOp with annotation
+            let doc_arg = ExprList.Node(sexpr_dummy(Expr.String("\"${doc_text}\"")), ExprList.End)
+            return Stmt.Annotated(
+                AnnotationList.Node("module_doc", doc_arg, AnnotationList.End),
+                Stmt.NoOp
+            )
+        }
+
         // Annotations: `@name` or `@name(args)` before a declaration.
         if self.check(Tk.At) {
             let annotations = self.parse_annotations()
@@ -1224,18 +1311,40 @@ impl Parser {
                 // sub-parser. This split avoids creating a Parser struct
                 // for the common case.
                 let sub_source = raw.substring(expr_start, j)
-                let parsed = if template_is_simple_ident(sub_source) {
-                    Expr.Ident(sub_source)
+                // Check for format spec: split on last ':' at depth 0
+                let fmt_split = template_split_format(sub_source)
+                let expr_part = fmt_split.expr
+                let fmt_spec = fmt_split.fmt
+                let parsed = if template_is_simple_ident(expr_part) {
+                    Expr.Ident(expr_part)
                 } else {
-                    let sub_result = parse_template_expr(sub_source)
+                    let sub_result = parse_template_expr(expr_part)
                     if sub_result == null {
-                        self.set_error("invalid expression in template: ${sub_source}")
+                        self.set_error("invalid expression in template: ${expr_part}")
                         return null
                     }
                     sub_result!
                 }
-                // Wrap in string() call for automatic conversion.
-                let str_call = Expr.Call(Expr.Ident("string"), ExprList.Node(sexpr_dummy(parsed!), ExprList.End))
+                // If format spec exists, use forge_format_float/int; otherwise string().
+                let str_call = if fmt_spec.length > 0 {
+                    // Determine if float or int format
+                    let last_ch = fmt_spec[fmt_spec.length - 1]
+                    if last_ch in ["f", "e", "E", "g", "G"] {
+                        // Float format: forge_format_float(expr, spec)
+                        Expr.Call(Expr.Ident("forge_format_float"), ExprList.Node(
+                            sexpr_dummy(parsed!),
+                            ExprList.Node(sexpr_dummy(Expr.String("\"${fmt_spec}\"")), ExprList.End)
+                        ))
+                    } else {
+                        // Int format: forge_format_int(expr, spec)
+                        Expr.Call(Expr.Ident("forge_format_int"), ExprList.Node(
+                            sexpr_dummy(parsed!),
+                            ExprList.Node(sexpr_dummy(Expr.String("\"${fmt_spec}\"")), ExprList.End)
+                        ))
+                    }
+                } else {
+                    Expr.Call(Expr.Ident("string"), ExprList.Node(sexpr_dummy(parsed!), ExprList.End))
+                }
                 if result == null {
                     result = str_call
                 } else {
@@ -1340,7 +1449,10 @@ impl Parser {
     }
 
     fn consume_identifier(self, message: string) -> string? {
-        if self.check(Tk.Identifier) {
+        // Accept identifiers and reserved keywords in identifier position
+        // (e.g. `task.await` — `await` is reserved as a statement keyword
+        // but valid as a field/method name).
+        if self.check(Tk.Identifier) || self.check(Tk.KwReserved) {
             let name = self.current_lexeme
             self.advance()
             return name

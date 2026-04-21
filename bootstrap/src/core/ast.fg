@@ -1166,6 +1166,11 @@ export enum Tk {
     KwWhere
     KwWhile
     KwWith
+    // Reserved future keywords (parse as errors)
+    KwReserved
+    // Doc comments
+    DocComment
+    ModDocComment
     // Special
     Eof
     Error
