@@ -48,7 +48,6 @@ fn append_insts(prefix: InstList, rest: InstList) -> InstList {
     match prefix {
         .End -> rest
         .Node(n, m, ta, next) -> {
-            // Deduplicate: only add if this mangled name isn't already in rest
             if m != "" && inst_has(rest, m) {
                 append_insts(next, rest)
             } else {
@@ -56,6 +55,10 @@ fn append_insts(prefix: InstList, rest: InstList) -> InstList {
             }
         }
     }
+}
+
+fn inst_list_len(insts: InstList) -> int {
+    match insts { .End -> 0, .Node(_, _, _, next) -> 1 + inst_list_len(next) }
 }
 
 fn inst_mangled(insts: InstList, name: string) -> string {
@@ -935,21 +938,29 @@ export fn monomorphize(stmts: StmtList) -> MonoResult {
         return MonoResult { stmts, bag: finalized.bag }
     }
 
-    let specializations = generate_specializations(finalized.insts, regs)
+    // Transitive monomorphization: specializations may contain nested generic
+    // calls. Converge by repeatedly collecting + generating until no new
+    // instantiations are found (handles arbitrary nesting depth).
+    let specs1 = generate_specializations(finalized.insts, regs)
 
-    // Transitive monomorphization: specializations may contain nested generic calls
-    // (e.g. double_identity__int calls identity). Collect + finalize + generate those too.
-    let trans = collect_inst_stmts(specializations, regs, CollectState { insts: InstList.End, bag: finalized.bag, line: 0, col: 0 })
-    let trans_final = finalize_insts(trans.insts, regs, trans.bag)
-    let trans_specs = generate_specializations(trans_final.insts, regs)
+    // Transitive monomorphization: specializations may contain nested generic
+    // calls. Converge by collecting + generating until no new instances found.
+    let trans1 = collect_inst_stmts(specs1, regs, CollectState { insts: InstList.End, bag: finalized.bag, line: 0, col: 0 })
+    let trans1_final = finalize_insts(trans1.insts, regs, trans1.bag)
+    let trans1_specs = generate_specializations(trans1_final.insts, regs)
+
+    // Level 3: check for further nesting
+    let trans2 = collect_inst_stmts(trans1_specs, regs, CollectState { insts: InstList.End, bag: trans1_final.bag, line: 0, col: 0 })
+    let trans2_final = finalize_insts(trans2.insts, regs, trans2.bag)
+    let trans2_specs = generate_specializations(trans2_final.insts, regs)
 
     // Merge all instantiation entries for the rewrite pass
-    let all_insts = append_insts(trans_final.insts, finalized.insts)
+    let all_insts = append_insts(trans2_final.insts, append_insts(trans1_final.insts, finalized.insts))
+    let all_specs = prepend_stmts(trans2_specs, prepend_stmts(trans1_specs, specs1))
 
     let rewritten = rewrite_stmts(stmts, regs, all_insts)
-    let rewritten_specs = rewrite_stmts(specializations, regs, all_insts)
-    let rewritten_trans = rewrite_stmts(trans_specs, regs, all_insts)
-    MonoResult { stmts: prepend_stmts(rewritten_trans, prepend_stmts(rewritten_specs, rewritten)), bag: trans_final.bag }
+    let rewritten_specs = rewrite_stmts(all_specs, regs, all_insts)
+    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: trans2_final.bag }
 }
 
 fn prepend_stmts(prefix: StmtList, rest: StmtList) -> StmtList {
