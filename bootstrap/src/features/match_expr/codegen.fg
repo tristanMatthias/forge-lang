@@ -4,6 +4,7 @@ use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, 
 use codegen.types.{Ctx, EmitValue, StmtResult,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, translate_type_ctx}
 use codegen.{ok_sr, err_sr}
 use features.union_type.codegen.{emit_union_tag, emit_union_extract}
+use diagnostics.{DiagCode}
 
 fn ok_match_ty(ty: ValueType) -> Result<ValueType, string> {
     if false { return Result.Err("") }
@@ -15,8 +16,8 @@ fn err_match_ty(message: string) -> Result<ValueType, string> {
     Result.Err(message)
 }
 
-fn warn_arm_type_mismatch(body_ty: ValueType, rest_ty: ValueType) {
-    eprintln("warning: match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
+fn warn_arm_type_mismatch(ctx: Ctx, body_ty: ValueType, rest_ty: ValueType) {
+    ctx.warn(DiagCode.TypeMismatch, "match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
 }
 
 fn forward_emit_err(message: string) -> Result<EmitValue, string> {
@@ -181,7 +182,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                     let rest_ty = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)?
                     let body_ty = emit_value_ty(body_result)
                     if !vtype_eq(rest_ty, .Int) && !vtype_eq(body_ty, rest_ty) {
-                        warn_arm_type_mismatch(body_ty, rest_ty)
+                        warn_arm_type_mismatch(ctx, body_ty, rest_ty)
                     }
                     ok_match_ty(body_ty)
                 }
@@ -558,7 +559,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchA
                     let rest_ty = emit_primitive_arms_expr(ctx, env, subj, next, merge_bb, result_slot)?
                     let body_ty = emit_value_ty(body_r)
                     if !vtype_eq(rest_ty, .Int) && !vtype_eq(body_ty, rest_ty) {
-                        warn_arm_type_mismatch(body_ty, rest_ty)
+                        warn_arm_type_mismatch(ctx, body_ty, rest_ty)
                     }
                     ok_match_ty(body_ty)
                 }

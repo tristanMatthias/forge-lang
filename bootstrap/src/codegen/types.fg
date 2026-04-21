@@ -15,6 +15,7 @@
 use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
 use features.error_propagation.{Result}
+use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
 
 // ── Codegen context ──
 //
@@ -66,6 +67,10 @@ export type Ctx = {
     // Structured concurrency task group (spec Axis 18.7). When non-null,
     // spawn expressions add their handles here, and scope exit awaits all.
     task_group: ptr,
+    // Diagnostic bag for codegen warnings (spec Axis 20).
+    // Enables codegen to emit warnings through the diagnostic system
+    // instead of raw eprintln calls.
+    bag: DiagnosticBag,
 }
 
 // ── Type registries bundle ──
@@ -753,6 +758,11 @@ impl Ctx {
     }
     fn rc_retain(self, val: ptr) -> ptr { self.call("forge_rc_retain", [val]) }
     fn rc_release(self, val: ptr) -> ptr { self.call("forge_rc_release", [val]) }
+
+    // ── Diagnostics ──
+    fn warn(self, code: DiagCode, message: string) {
+        self.bag = bag_report(self.bag, diag_warning(code, message, span_new(0, 0, self.source_line, 0)))
+    }
 
     // ── Value / type array management ──
     // These wrap the raw C array API so feature code never touches it.

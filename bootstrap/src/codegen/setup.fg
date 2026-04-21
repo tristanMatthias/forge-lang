@@ -8,6 +8,7 @@ use core.registry.{build_registry}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.helpers.{stmts_last_expr}
+use diagnostics.{bag_new}
 use features.fn_decl.codegen.{emit_function_bodies}
 
 // Declare an extern function from a list of parameter types.
@@ -290,6 +291,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         arena_ptr: null,
         copy_alloc_target: null,
         task_group: null,
+        bag: bag_new(),
     }
 
     // Analyze which types are cycle-capable (can reference themselves

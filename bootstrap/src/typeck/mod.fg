@@ -609,14 +609,21 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let c1 = check_expr(tc, cond)
             check_stmt(c1.tc, body)
         }
-        .For(_, start, end, body) -> {
+        .For(vname, start, end, body) -> {
             let c1 = check_expr(tc, start)
             let c2 = check_expr(c1.tc, end)
-            check_stmt(c2.tc, body)
+            let inner = tc_enter(c2.tc)
+            let bound = tc_bind(inner, vname, .Int)
+            let after = check_stmt(bound, body)
+            tc_exit(after)
         }
-        .ForIn(_, coll, body) -> {
+        .ForIn(vname, coll, body) -> {
             let c1 = check_expr(tc, coll)
-            check_stmt(c1.tc, body)
+            let elem_ty = vtype_list_elem(c1.ty)
+            let inner = tc_enter(c1.tc)
+            let bound = tc_bind(inner, vname, elem_ty)
+            let after = check_stmt(bound, body)
+            tc_exit(after)
         }
         .Match(subj, _) -> {
             let c1 = check_expr(tc, subj)
