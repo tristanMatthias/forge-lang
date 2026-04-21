@@ -39,10 +39,31 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
         let raw = ctx.call("forge_closure_call_1", [fn_closure, concrete])
         return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
     }
-    // 1-arg case
-    let first_arg = emit_first_arg(ctx, env, args)?
-    let raw = ctx.call("forge_closure_call_2", [fn_closure, concrete, first_arg.value])
-    ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
+    if user_count == 1 {
+        let first_arg = emit_first_arg(ctx, env, args)?
+        let raw = ctx.call("forge_closure_call_2", [fn_closure, concrete, first_arg.value])
+        return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
+    }
+    if user_count == 2 {
+        let a0 = emit_trait_arg(ctx, env, args, 0)?
+        let a1 = emit_trait_arg(ctx, env, args, 1)?
+        let raw = ctx.call("forge_closure_call_3", [fn_closure, concrete, a0.value, a1.value])
+        return ok_emit_typed(ctx.cast_to(raw, ret_ty), ret_ty)
+    }
+    err_emit("trait dispatch supports up to 2 user arguments (got ${string(user_count)})")
+}
+
+fn emit_trait_arg(ctx: Ctx, env: VarEnv, args: ExprList, n: int) -> Result<EmitValue, string> {
+    match args {
+        .End -> err_emit("trait dispatch: missing argument")
+        .Node(se, next) -> {
+            if n == 0 {
+                ctx.emit(env, se.node)
+            } else {
+                emit_trait_arg(ctx, env, next, n - 1)
+            }
+        }
+    }
 }
 
 export fn resolve_concrete_type_name(ty: ValueType) -> string {

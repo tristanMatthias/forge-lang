@@ -1,0 +1,22 @@
+/// expect: 107
+// Trait dispatch with multiple user arguments.
+// Verifies all args are forwarded through vtable closure call.
+
+trait Math {
+    fn add(self, x: int, y: int) -> int
+}
+
+type Calculator = { base: int }
+
+impl Math for Calculator {
+    fn add(self, x: int, y: int) -> int { self.base + x + y }
+}
+
+fn compute(m: Math, a: int, b: int) -> int {
+    m.add(a, b)
+}
+
+fn main() {
+    let c = Calculator { base: 100 }
+    println(string(compute(c, 3, 4)))
+}
