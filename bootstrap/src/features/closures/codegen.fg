@@ -301,7 +301,23 @@ fn has_float_ident(expr: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList, par
         }
         .Unary(_, inner) -> has_float_ident(inner, ctx, env, captures, params)
         .Grouping(inner) -> has_float_ident(inner, ctx, env, captures, params)
+        .Call(callee, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
+        .GenericCall(callee, _, args) -> has_float_ident(callee, ctx, env, captures, params) || has_float_ident_list(args, ctx, env, captures, params)
+        .FieldAccess(obj, _) -> has_float_ident(obj, ctx, env, captures, params)
+        .Index(obj, idx) -> has_float_ident(obj, ctx, env, captures, params) || has_float_ident(idx, ctx, env, captures, params)
+        .IfExpr(c, t, e) -> has_float_ident(c, ctx, env, captures, params) || has_float_ident(t, ctx, env, captures, params) || has_float_ident(e, ctx, env, captures, params)
+        .NullCoalesce(left, right) -> has_float_ident(left, ctx, env, captures, params) || has_float_ident(right, ctx, env, captures, params)
+        .Try(inner) -> has_float_ident(inner, ctx, env, captures, params)
+        .With(base, _) -> has_float_ident(base, ctx, env, captures, params)
+        .TupleIndex(obj, _) -> has_float_ident(obj, ctx, env, captures, params)
         _ -> false
+    }
+}
+
+fn has_float_ident_list(exprs: ExprList, ctx: Ctx, env: VarEnv, captures: CaptureList, params: ParamList) -> bool {
+    match exprs {
+        .End -> false
+        .Node(se, next) -> has_float_ident(se.node, ctx, env, captures, params) || has_float_ident_list(next, ctx, env, captures, params)
     }
 }
 
