@@ -50,11 +50,6 @@ use parse.lexer.{parse_int_literal}
 
 // ── Public API ──
 
-export type TopLevelOk = {
-    ctx: Ctx,
-    env: VarEnv,
-}
-
 extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
 export fn ok_sr(ctx: Ctx, env: VarEnv) -> Result<StmtResult, string> {

@@ -5,7 +5,7 @@ use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, D
 use codegen.escape.{analyze_releasable}
 use core.registry.{build_registry}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
-use codegen.{emit_expr, emit_stmt, emit_stmt_list, TopLevelOk}
+use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.helpers.{stmts_last_expr}
 use features.fn_decl.codegen.{emit_function_bodies}
 
@@ -271,7 +271,6 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     // in a function-body block. Reposition it back at main's entry
     // before emitting top-level statements.
     ctx.position(entry)
-    ctx.rc_cleanup = RcCleanupStack.End
     ctx.rc_releasable = analyze_releasable(stmts)
     let initial: VarEnv = VarEnv.End
     match emit_top_level(ctx, initial, stmts) {
@@ -660,7 +659,7 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
     }
 }
 
-fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> Result<TopLevelOk, string> {
+fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> Result<StmtResult, string> {
     let g = ctx.lookup_toplevel(name)
     if !g.found {
         return Result.Err("codegen error: global `${name}` not declared")
@@ -674,5 +673,5 @@ fn emit_top_level_init(ctx: Ctx, env: VarEnv, name: string, init: Expr) -> Resul
     }
     let updated_top = TopLevelVars.Node(name, g.llvm_global, r.ty, ctx.top_level_vars)
     let updated_cg = ctx.with_top_level(updated_top)
-    Result.Ok(TopLevelOk { ctx: updated_cg, env })
+    Result.Ok(StmtResult { ctx: updated_cg, env })
 }
