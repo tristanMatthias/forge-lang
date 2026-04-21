@@ -15,6 +15,10 @@ fn err_match_ty(message: string) -> Result<ValueType, string> {
     Result.Err(message)
 }
 
+fn warn_arm_type_mismatch(body_ty: ValueType, rest_ty: ValueType) {
+    eprintln("warning: match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
+}
+
 fn forward_emit_err(message: string) -> Result<EmitValue, string> {
     if false { return Result.Ok(EmitValue { value: null_ptr_val(), ty: .Int }) }
     Result.Err(message)
@@ -177,7 +181,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                     let rest_ty = emit_match_expr_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb, result_slot)?
                     let body_ty = emit_value_ty(body_result)
                     if !vtype_eq(rest_ty, .Int) && !vtype_eq(body_ty, rest_ty) {
-                        eprintln("warning: match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
+                        warn_arm_type_mismatch(body_ty, rest_ty)
                     }
                     ok_match_ty(body_ty)
                 }
@@ -583,7 +587,7 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchA
                     let rest_ty = emit_primitive_arms_expr(ctx, env, subj, next, merge_bb, result_slot)?
                     let body_ty = emit_value_ty(body_r)
                     if !vtype_eq(rest_ty, .Int) && !vtype_eq(body_ty, rest_ty) {
-                        eprintln("warning: match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
+                        warn_arm_type_mismatch(body_ty, rest_ty)
                     }
                     ok_match_ty(body_ty)
                 }
@@ -677,7 +681,7 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
                         ctx.store(emit_value_ptr(r), result_slot)
                         arm_ty = emit_value_ty(r)
                     }
-                    .Err(_) -> {}
+                    .Err(e) -> { eprintln("codegen error in when else-arm: ${e}") }
                 }
                 ctx.br_if_open(merge_bb)
                 arm_ty
@@ -685,7 +689,7 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
                 mut cond_r = EmitValue { value: ctx.i64(0), ty: .Int }
                 match ctx.emit(env, cond!.node) {
                     .Ok(r) -> { cond_r = r }
-                    .Err(_) -> {}
+                    .Err(e) -> { eprintln("codegen error in when condition: ${e}") }
                 }
                 let cond_i1 = ctx.truthy(emit_value_ptr(cond_r), "when_cond")
                 let arm_bb = ctx.bb("when_arm")
@@ -699,7 +703,7 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
                         ctx.store(emit_value_ptr(r), result_slot)
                         arm_ty = emit_value_ty(r)
                     }
-                    .Err(_) -> {}
+                    .Err(e) -> { eprintln("codegen error in when arm body: ${e}") }
                 }
                 ctx.br_if_open(merge_bb)
                 // Check next arm

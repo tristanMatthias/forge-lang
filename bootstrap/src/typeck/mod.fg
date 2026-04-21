@@ -604,13 +604,17 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
 // Check that `impl Trait for Type` provides all required methods.
 fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, body: StmtList) -> TC {
     let checked = check_stmts(tc, body)
-    // Skip return type checking for functions without a declared
-    // return type, or with nullable returns (where body can
-    // legitimately produce null or a value through many paths).
-    if ret_ty_str.length == 0 || ret_ty_str.contains("?") {
+    // Skip return type checking for functions without a declared return type.
+    if ret_ty_str.length == 0 {
         return checked
     }
-    let declared_ret = translate_type(checked, ret_ty_str)
+    // For nullable returns (T?), strip the ? and check against the
+    // inner type. Both the inner type and Void/null are valid returns.
+    mut effective_ret_str = ret_ty_str
+    if ret_ty_str.ends_with("?") {
+        effective_ret_str = ret_ty_str.substring(0, ret_ty_str.length - 1)
+    }
+    let declared_ret = translate_type(checked, effective_ret_str)
     // Check every explicit `return expr` produces a compatible type.
     let after_explicit = tc_check_explicit_returns(checked, name, declared_ret, body)
     // Check implicit return: the last expression in the body.
@@ -999,19 +1003,24 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
         return check_map_method(checked_args, method)
     }
 
-    // Struct method — look up in fn registry as TypeName__method
-    let struct_name = match o.ty {
+    // Method lookup — look up in fn registry as TypeName__method.
+    // Works for structs, enums, newtypes, and trait types.
+    let type_name = match o.ty {
         .Struct(n) -> n
+        .Enum(n) -> n
+        .Newtype(n, _) -> n
+        .Trait(n) -> n
         _ -> ""
     }
-    if struct_name.length > 0 {
-        let qualified = "${struct_name}__${method}"
+    if type_name.length > 0 {
+        let qualified = "${type_name}__${method}"
         if fn_type_has(checked_args.fns, qualified) {
             return tc_er(checked_args, fn_type_lookup(checked_args.fns, qualified))
         }
     }
 
-    // Fallback
+    // Fallback — return Int for unknown methods (translate_type
+    // fallback; cannot give a better type without full trait resolution)
     tc_er(checked_args, .Int)
 }
 

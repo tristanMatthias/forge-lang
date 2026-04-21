@@ -882,8 +882,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
                     let arity = param_list_length(resolved_params)
                     let existing = forge_llvm_get_named_function(m, name)
                     if existing != null {
-                        eprintln("FATAL: duplicate function `${name}` — rename to avoid collision")
-                        exit(1)
+                        fail("FATAL: duplicate function `${name}` — rename to avoid collision")
                     }
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)

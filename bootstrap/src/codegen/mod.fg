@@ -18,7 +18,7 @@ use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes
 
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
-use features.defer_stmt.codegen.{emit_defers}
+use features.defer_stmt.codegen.{emit_defers, emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use features.fn_decl.codegen.{emit_function_bodies}
 use features.let_stmt.codegen.{emit_var_decl}
@@ -216,7 +216,16 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
                 ctx.call("forge_task_group_await_all", [ctx.task_group])
             }
             emit_rc_cleanup(ctx)
-            emit_defers(ctx, env)
+            // errdefer: detect Err(...) returns and run error-path defers.
+            let is_err_return = match value {
+                .EnumCtor(_, variant, _) -> variant == "Err"
+                _ -> false
+            }
+            if is_err_return {
+                emit_defers_on_error(ctx, env)
+            } else {
+                emit_defers(ctx, env)
+            }
             let fn_ret = ctx.current_fn_ret()
             // Union wrapping: if function returns a union, wrap the concrete value
             if needs_union_wrap(r.ty, fn_ret) {

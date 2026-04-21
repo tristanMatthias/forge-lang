@@ -275,6 +275,8 @@ export fn p_keyword_kind(text: string) -> Tk {
         "systems"  -> Tk.KwReserved
         "bare"     -> Tk.KwReserved
         "hardware" -> Tk.KwReserved
+        "owned"    -> Tk.KwReserved
+        "borrow"   -> Tk.KwReserved
         _          -> Tk.Identifier
     }
 }
@@ -1327,9 +1329,12 @@ impl Parser {
                 }
                 // If format spec exists, use forge_format_float/int; otherwise string().
                 let str_call = if fmt_spec.length > 0 {
-                    // Determine if float or int format
+                    // Determine if float or int format.
+                    // Float: ends with f/e/E/g/G, or starts with . (precision without type letter).
                     let last_ch = fmt_spec[fmt_spec.length - 1]
-                    if last_ch in ["f", "e", "E", "g", "G"] {
+                    let first_ch = fmt_spec[0]
+                    let is_float_fmt = last_ch in ["f", "e", "E", "g", "G"] || first_ch == "."
+                    if is_float_fmt {
                         // Float format: forge_format_float(expr, spec)
                         Expr.Call(Expr.Ident("forge_format_float"), ExprList.Node(
                             sexpr_dummy(parsed!),
