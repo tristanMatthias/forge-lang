@@ -1,0 +1,19 @@
+/// expect: trait works
+// Test: orphan rule allows impl when you own the type or trait.
+trait Greetable {
+    fn greet(self) -> string
+}
+
+type Dog = { name: string }
+
+impl Greetable for Dog {
+    fn greet(self) -> string {
+        "woof from " + self.name
+    }
+}
+
+fn main() {
+    let d = Dog { name: "Rex" }
+    println(d.greet())
+    println("trait works")
+}

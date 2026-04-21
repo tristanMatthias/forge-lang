@@ -2,7 +2,7 @@
 
 use core.ast.{Stmt, StmtList, SStmt}
 use diagnostics.{DiagCode}
-use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, trait_lookup, trait_has}
+use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, trait_lookup, trait_has, tc_owns_type}
 
 export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) -> TC {
     let colon_idx = impl_name.index_of(":")
@@ -11,7 +11,16 @@ export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) 
     let trait_name = impl_name.substring(0, colon_idx)
     let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
 
-    if !trait_has(tc.traits, trait_name) {
+    // Orphan rule (spec Axis 16.5): you can only `impl Trait for Type`
+    // if you own either the Trait or the Type. In practice this means
+    // at least one must be defined in the current compilation unit.
+    let owns_trait = trait_has(tc.traits, trait_name)
+    let owns_type = tc_owns_type(tc, type_name)
+    if !owns_trait && !owns_type {
+        return tc_report(tc, DiagCode.OrphanImpl, "orphan impl: neither trait `${trait_name}` nor type `${type_name}` is defined in this compilation unit")
+    }
+
+    if !owns_trait {
         return tc_report(tc, DiagCode.TypeMismatch, "unknown trait `${trait_name}`")
     }
 

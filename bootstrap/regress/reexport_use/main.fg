@@ -1,0 +1,8 @@
+mod middle
+
+use middle.{greet, add}
+
+fn main() {
+    println(greet("world"))
+    println(string(add(3, 4)))
+}

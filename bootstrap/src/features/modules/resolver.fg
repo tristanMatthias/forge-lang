@@ -48,16 +48,52 @@ type ModStmtResult = {
     error_message: string,
 }
 
+// Import stack — tracks files currently being resolved to detect cycles.
+// Separate from LoadedPaths (which tracks ALL resolved files).
+enum ImportStack {
+    End
+    Node(path: string, next: ImportStack)
+}
+
+fn stack_has(stack: ImportStack, path: string) -> bool {
+    match stack {
+        .End -> false
+        .Node(p, _) if p == path -> true
+        .Node(_, next) -> stack_has(next, path)
+    }
+}
+
+// Render import stack for error messages: "a.fg -> b.fg -> a.fg"
+fn render_cycle(stack: ImportStack, cycle_path: string) -> string {
+    mut parts = cycle_path
+    mut cur = stack
+    while true {
+        match cur {
+            .End -> { return parts }
+            .Node(p, next) -> {
+                parts = "${p} -> ${parts}"
+                cur = next
+                if p == cycle_path { return parts }
+            }
+        }
+    }
+    parts
+}
+
 // Resolve all Stmt.Module stubs in a StmtList.
 export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths) -> ModListResult {
+    resolve_module_files_inner(stmts, dir, loaded, ImportStack.End)
+}
+
+fn resolve_module_files_inner(stmts: StmtList, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModListResult {
     match stmts {
         .End -> ModListResult { stmts: StmtList.End, loaded, had_error: false, error_message: "" }
         .Node(ss, next) -> {
-            let head = resolve_module_stmt(ss.node, dir, loaded)
+            let head = resolve_module_stmt(ss.node, dir, loaded, stack)
             if head.had_error {
                 return ModListResult { stmts: StmtList.End, loaded: head.loaded, had_error: true, error_message: head.error_message }
             }
-            let rest = resolve_module_files(next, dir, head.loaded)?
+            let rest = resolve_module_files_inner(next, dir, head.loaded, stack)?
             ModListResult {
                 stmts: StmtList.Node(sstmt(head.stmt, ss.line, ss.col), rest.stmts),
                 loaded: rest.loaded,
@@ -68,7 +104,7 @@ export fn resolve_module_files(stmts: StmtList, dir: string, loaded: LoadedPaths
     }
 }
 
-fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths) -> ModStmtResult {
+fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: ImportStack) -> ModStmtResult {
     match stmt {
         .Module(name, _) -> {
             let sibling = "${dir}${name}.fg"
@@ -79,24 +115,31 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths) -> ModStmtR
             if mod_path == "" {
                 return ModStmtResult { stmt, loaded, had_error: true, error_message: "module `${name}` not found (looked for ${sibling} and ${dir_mod})" }
             }
+            // Circular import detection: if mod_path is on the import
+            // stack, we have a cycle. Report a clear error.
+            if stack_has(stack, mod_path) {
+                let cycle = render_cycle(stack, mod_path)
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "[F0303] circular import detected: ${cycle}" }
+            }
             if loaded_has(loaded, mod_path) {
                 return ModStmtResult { stmt: Stmt.Module(name, StmtList.End), loaded, had_error: false, error_message: "" }
             }
             let new_loaded = LoadedPaths.Node(mod_path, loaded)
+            let new_stack = ImportStack.Node(mod_path, stack)
             let mod_source = forge_selfhost_read_file(mod_path)
             let parsed = parse_program_source(mod_source)
             if parsed.had_error || parsed.stmts == null {
                 return ModStmtResult { stmt, loaded: new_loaded, had_error: true, error_message: "error in module `${name}`: ${parsed.error_message}" }
             }
             let mod_dir = modules_dirname(mod_path)
-            let resolved = resolve_module_files(parsed.stmts!, mod_dir, new_loaded)
+            let resolved = resolve_module_files_inner(parsed.stmts!, mod_dir, new_loaded, new_stack)
             if resolved.had_error {
                 return ModStmtResult { stmt, loaded: resolved.loaded, had_error: true, error_message: resolved.error_message }
             }
             ModStmtResult { stmt: Stmt.Module(name, resolved.stmts), loaded: resolved.loaded, had_error: false, error_message: "" }
         }
         .Annotated(annotations, inner) -> {
-            let r = resolve_module_stmt(inner, dir, loaded)?
+            let r = resolve_module_stmt(inner, dir, loaded, stack)?
             ModStmtResult { stmt: Stmt.Annotated(annotations, r.stmt), loaded: r.loaded, had_error: false, error_message: "" }
         }
         _ -> ModStmtResult { stmt, loaded, had_error: false, error_message: "" }

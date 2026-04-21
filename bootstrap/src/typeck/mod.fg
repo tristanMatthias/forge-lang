@@ -223,6 +223,15 @@ export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     }
 }
 
+// Orphan rule helper: check if a type name is defined in this compilation unit.
+export fn tc_owns_type(tc: TC, name: string) -> bool {
+    if struct_type_has(tc.structs, name) { return true }
+    if enum_type_has(tc.enums, name) { return true }
+    // Primitive types are always "owned"
+    if name in ["int", "string", "bool", "float", "ptr"] { return true }
+    false
+}
+
 // Shape name set — tracks which struct names are shapes (structural types).
 enum ShapeSet {
     End

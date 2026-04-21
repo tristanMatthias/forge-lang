@@ -125,7 +125,7 @@ fn main() {
                 fail(mod_resolved.error_message)
             }
             let named = resolve_names(mod_resolved.stmts)
-            if bag_has_errors(named.bag) {
+            if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
                 render_bag(source, path, named.bag)
             }
             if named.had_error { fail(named.error_message) }
@@ -215,7 +215,7 @@ fn main() {
             return
         }
         let named = resolve_names(mod_resolved.stmts)
-        if bag_has_errors(named.bag) {
+        if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
             render_bag(csource, cpath, named.bag)
         }
         if named.had_error { fail(named.error_message) }

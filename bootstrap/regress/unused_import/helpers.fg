@@ -1,0 +1,2 @@
+export fn used_fn() -> string { "used" }
+export fn unused_fn() -> string { "unused" }

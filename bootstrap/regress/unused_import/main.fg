@@ -1,0 +1,6 @@
+mod helpers
+use helpers.{used_fn, unused_fn}
+
+fn main() {
+    println(used_fn())
+}

@@ -13,7 +13,7 @@
 //                                  type checking
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
-use diagnostics.{DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, span_new, span_dummy}
+use diagnostics.{DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, span_new, span_dummy}
 use resolve.{resolve_program}
 
 // ── Module tree ──
@@ -186,9 +186,36 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
         .Impl(_, methods) -> collect_impl_items(methods, mod_path, rest)
         .Annotated(annotations, inner) -> {
             let is_export = annotation_has_export(annotations)
+            // Re-exports: `export use path.{name1, name2}` makes imported
+            // names visible as exports of the current module.
+            if is_export {
+                match inner {
+                    .Use(use_path, names) -> {
+                        // The use path is relative to the current module, so
+                        // prefix with the module path to get the canonical path.
+                        let rel_path = dots_to_colons(use_path)
+                        let canonical_mod = if mod_path == "" { rel_path } else { "${mod_path}::${rel_path}" }
+                        return collect_reexport_items(names, canonical_mod, rest)
+                    }
+                    _ -> {}
+                }
+            }
             collect_item_from_stmt(inner, mod_path, is_export, rest)
         }
         _ -> rest
+    }
+}
+
+// Collect re-exported names from `export use path.{name1, name2}`.
+// Each imported name becomes an exported item in the current module,
+// with its canonical path pointing at the source module.
+fn collect_reexport_items(names: ParamList, source_mod: string, rest: ModuleItem) -> ModuleItem {
+    match names {
+        .End -> rest
+        .Node(name, _, _, next) -> {
+            let canonical = "${source_mod}::${name}"
+            ModuleItem.Node(name, canonical, true, collect_reexport_items(next, source_mod, rest))
+        }
     }
 }
 
@@ -397,8 +424,13 @@ export fn resolve_names(stmts: StmtList) -> NameResolveResult {
     // Pass 2: Validate variable scopes (was separate resolve_program call)
     let resolved = resolve_program(rewritten)
 
-    // Merge diagnostics from both passes
-    let merged_bag = bag_merge(use_result.bag, resolved.bag)
+    // Pass 3: Detect unused imports — collect all QualifiedIdent paths
+    // from the rewritten AST and warn about imports that were never used.
+    let used = collect_used_paths_stmts(rewritten, UsedPathSet.End)
+    let unused_bag = check_unused_imports(rewritten, use_result.aliases, used)
+
+    // Merge diagnostics from all passes
+    let merged_bag = bag_merge(bag_merge(use_result.bag, resolved.bag), unused_bag)
     let has_errors = bag_has_errors(merged_bag) || resolved.had_error
     NameResolveResult {
         stmts: rewritten,
@@ -553,6 +585,149 @@ fn rewrite_when_arms(ctx: NameCtx, arms: WhenArmList) -> WhenArmList {
         .Node(cond, body, next) -> {
             let new_cond = if cond == null { null } else { sexpr(rewrite_expr(ctx, cond!.node), cond!.line, cond!.col) }
             WhenArmList.Node(new_cond, sexpr(rewrite_expr(ctx, body.node), body.line, body.col), rewrite_when_arms(ctx, next))
+        }
+    }
+}
+
+// ── Unused import detection ──
+// After the rewrite pass, collect all QualifiedIdent canonical paths
+// from the rewritten AST, then check each use-imported alias against
+// the used set. Emit warnings for imports that were never referenced.
+
+enum UsedPathSet {
+    End
+    Node(path: string, next: UsedPathSet)
+}
+
+fn used_has(set: UsedPathSet, path: string) -> bool {
+    match set {
+        .End -> false
+        .Node(p, _) if p == path -> true
+        .Node(_, next) -> used_has(next, path)
+    }
+}
+
+// Collect all QualifiedIdent paths from the rewritten AST.
+fn collect_used_paths_stmts(stmts: StmtList, acc: UsedPathSet) -> UsedPathSet {
+    match stmts {
+        .End -> acc
+        .Node(ss, next) -> {
+            let with_stmt = collect_used_paths_stmt(ss.node, acc)
+            collect_used_paths_stmts(next, with_stmt)
+        }
+    }
+}
+
+fn collect_used_paths_stmt(stmt: Stmt, acc: UsedPathSet) -> UsedPathSet {
+    match stmt {
+        .Expr(e) -> collect_used_paths_expr(e, acc)
+        .Let(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Mut(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Const(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Return(e) -> collect_used_paths_expr(e, acc)
+        .Block(body) -> collect_used_paths_stmts(body, acc)
+        .Function(_, _, _, _, body) -> collect_used_paths_stmts(body, acc)
+        .If(cond, then_b, else_b) -> {
+            let a = collect_used_paths_expr(cond, acc)
+            let b = collect_used_paths_stmt(then_b, a)
+            if else_b != null { collect_used_paths_stmt(else_b!, b) } else { b }
+        }
+        .While(cond, body) -> collect_used_paths_stmt(body, collect_used_paths_expr(cond, acc))
+        .For(_, start, end, body) -> {
+            let a = collect_used_paths_expr(start, acc)
+            let b = collect_used_paths_expr(end, a)
+            collect_used_paths_stmt(body, b)
+        }
+        .ForIn(_, coll, body) -> collect_used_paths_stmt(body, collect_used_paths_expr(coll, acc))
+        .Match(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
+        .Module(_, body) -> collect_used_paths_stmts(body, acc)
+        .Impl(_, methods) -> collect_used_paths_stmts(methods, acc)
+        .Annotated(_, inner) -> collect_used_paths_stmt(inner, acc)
+        .Defer(body) -> collect_used_paths_expr(body, acc)
+        .LetDestructure(_, init) -> collect_used_paths_expr(init, acc)
+        _ -> acc
+    }
+}
+
+fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
+    if expr == null { return acc }
+    match expr {
+        .QualifiedIdent(path) -> UsedPathSet.Node(path, acc)
+        .Call(callee, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
+        .GenericCall(callee, _, args) -> collect_used_paths_expr_list(args, collect_used_paths_expr(callee, acc))
+        .Binary(l, _, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
+        .Unary(_, r) -> collect_used_paths_expr(r, acc)
+        .Logical(l, _, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
+        .Grouping(inner) -> collect_used_paths_expr(inner, acc)
+        .Assign(_, val) -> collect_used_paths_expr(val, acc)
+        .Index(obj, idx) -> collect_used_paths_expr(idx, collect_used_paths_expr(obj, acc))
+        .Block(body) -> collect_used_paths_stmts(body, acc)
+        .FieldAccess(obj, _) -> collect_used_paths_expr(obj, acc)
+        .FieldAssign(obj, _, val) -> collect_used_paths_expr(val, collect_used_paths_expr(obj, acc))
+        .IfExpr(c, t, e) -> collect_used_paths_expr(e, collect_used_paths_expr(t, collect_used_paths_expr(c, acc)))
+        .NullCoalesce(l, r) -> collect_used_paths_expr(r, collect_used_paths_expr(l, acc))
+        .OptionalChain(obj, _) -> collect_used_paths_expr(obj, acc)
+        .Try(inner) -> collect_used_paths_expr(inner, acc)
+        .Tuple(elems) -> collect_used_paths_expr_list(elems, acc)
+        .ListLit(elems) -> collect_used_paths_expr_list(elems, acc)
+        .MapLit(entries) -> collect_used_paths_expr_list(entries, acc)
+        .StructLit(_, inits) -> collect_used_paths_field_inits(inits, acc)
+        .EnumCtor(_, _, args) -> collect_used_paths_expr_list(args, acc)
+        .MatchExpr(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
+        .Lambda(_, body) -> collect_used_paths_expr(body, acc)
+        .With(obj, overrides) -> collect_used_paths_field_inits(overrides, collect_used_paths_expr(obj, acc))
+        .Slice(obj, s, e) -> collect_used_paths_expr(e, collect_used_paths_expr(s, collect_used_paths_expr(obj, acc)))
+        .IsCheck(subj, _) -> collect_used_paths_expr(subj, acc)
+        .InCheck(needle, items) -> collect_used_paths_expr_list(items, collect_used_paths_expr(needle, acc))
+        .Catch(inner, _, body, _, _) -> collect_used_paths_expr(body, collect_used_paths_expr(inner, acc))
+        .Spawn(body) -> collect_used_paths_expr(body, acc)
+        _ -> acc
+    }
+}
+
+fn collect_used_paths_expr_list(exprs: ExprList, acc: UsedPathSet) -> UsedPathSet {
+    match exprs {
+        .End -> acc
+        .Node(se, next) -> collect_used_paths_expr_list(next, collect_used_paths_expr(se.node, acc))
+    }
+}
+
+fn collect_used_paths_field_inits(inits: FieldInitList, acc: UsedPathSet) -> UsedPathSet {
+    match inits {
+        .End -> acc
+        .Node(_, sv, next) -> collect_used_paths_field_inits(next, collect_used_paths_expr(sv.node, acc))
+    }
+}
+
+fn collect_used_paths_match_arms(arms: MatchArmList, acc: UsedPathSet) -> UsedPathSet {
+    match arms {
+        .End -> acc
+        .Node(_, guard, body, next) -> {
+            let with_guard = if guard != null { collect_used_paths_expr(guard!.node, acc) } else { acc }
+            let with_body = collect_used_paths_expr(body.node, with_guard)
+            collect_used_paths_match_arms(next, with_body)
+        }
+    }
+}
+
+// Check each alias in the use_result against the used paths set.
+// Returns a DiagnosticBag with warnings for unused imports.
+fn check_unused_imports(stmts: StmtList, aliases: AliasEntry, used: UsedPathSet) -> DiagnosticBag {
+    // Walk top-level Use stmts to match aliases to source spans
+    check_unused_aliases(aliases, used, bag_new())
+}
+
+fn check_unused_aliases(aliases: AliasEntry, used: UsedPathSet, bag: DiagnosticBag) -> DiagnosticBag {
+    match aliases {
+        .End -> bag
+        .Node(short_name, canonical, next) -> {
+            let after = if !used_has(used, canonical) {
+                let d = diag_warning(DiagCode.UnusedImport, "unused import `${short_name}`", span_dummy())
+                bag_report(bag, d)
+            } else {
+                bag
+            }
+            check_unused_aliases(next, used, after)
         }
     }
 }
