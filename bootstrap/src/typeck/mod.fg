@@ -382,6 +382,10 @@ fn tc_base_type_name(ty: string) -> string {
 }
 
 export fn translate_type(tc: TC, ty: string) -> ValueType {
+    // Nullable types: "T?" → translate inner T (no ValueType.Optional yet)
+    if ty.ends_with("?") && ty.length > 1 {
+        return translate_type(tc, ty.substring(0, ty.length - 1))
+    }
     // Union types: "A|B|C" → ValueType.Union(TypeList)
     // The parser's render_type_expr produces "A|B" for TypeExpr.Union.
     // | never appears inside fn types (uses ->), generics (uses <>), or list types.

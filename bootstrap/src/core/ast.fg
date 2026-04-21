@@ -163,7 +163,7 @@ export fn render_type_expr(te: TypeExpr) -> string {
         .Named(name) -> name
         .Infer -> ""
         .Union(left, right) -> render_type_expr(left) + "|" + render_type_expr(right)
-        .Optional(inner) -> render_type_expr(inner)
+        .Optional(inner) -> render_type_expr(inner) + "?"
         .FnType(params, ret) -> render_fn_te(params, ret)
         .ListType(elem) -> "List(" + render_type_expr(elem) + ")"
         .Generic(base, args) -> base + "<" + render_tel(args) + ">"

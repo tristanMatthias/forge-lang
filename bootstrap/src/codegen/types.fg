@@ -576,6 +576,10 @@ export fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> 
 }
 
 export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -> ValueType {
+    // Nullable types: "T?" → translate inner T
+    if ty.ends_with("?") && ty.length > 1 {
+        return translate_param_type(structs, enums, ty.substring(0, ty.length - 1))
+    }
     // Union types: "A|B|C" → ValueType.Union(TypeList)
     // But first check if the full string is a known mangled enum/struct
     // (e.g. "Result__X__A|B" contains | inside type args).
