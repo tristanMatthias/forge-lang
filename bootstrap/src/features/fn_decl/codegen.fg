@@ -179,53 +179,42 @@ export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> Resu
     }
 }
 
+fn emit_string_method(ctx: Ctx, env: VarEnv, str_val: ptr, method: string, args: ExprList) -> Result<EmitValue, string> {
+    match method {
+        "length" -> {
+            let str_ptr = ctx.to_ptr(str_val, "len_arg")
+            ok_emit(ctx.call("strlen", [str_ptr]))
+        }
+        "substring" -> emit_substring(ctx, env, str_val, args)
+        "contains" or "starts_with" or "ends_with" or "index_of" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let str_ptr = ctx.to_ptr(str_val, "str_self")
+            let arg_ptr = ctx.to_ptr(arg_r.value, "str_arg")
+            ok_emit(ctx.call("forge_str_${method}", [str_ptr, arg_ptr]))
+        }
+        "replace" -> emit_str_replace(ctx, env, str_val, args)
+        "trim" -> ok_emit_str(ctx.call("forge_str_trim", [ctx.to_ptr(str_val, "str_self")]))
+        "to_upper" or "upper" -> ok_emit_str(ctx.call("forge_str_to_upper", [ctx.to_ptr(str_val, "str_self")]))
+        "to_lower" or "lower" -> ok_emit_str(ctx.call("forge_str_to_lower", [ctx.to_ptr(str_val, "str_self")]))
+        "split" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let str_ptr = ctx.to_ptr(str_val, "str_self")
+            let sep_ptr = ctx.to_ptr(arg_r.value, "sep_arg")
+            ok_emit_typed(ctx.call("forge_str_split", [str_ptr, sep_ptr]), .List(.Str))
+        }
+        "char_code" -> {
+            let str_ptr = ctx.to_ptr(str_val, "str_self")
+            let byte_val = ctx.load_i8(str_ptr, "char_byte")
+            ok_emit(ctx.zext(byte_val, ctx.i64_type, "char_code"))
+        }
+        _ -> err_emit("string method `${method}` not implemented")
+    }
+}
+
 export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, args: ExprList) -> Result<EmitValue, string> {
-    // Special-case `.length` and `.substring` on strings — these are
-    // emitted via libc strlen / a custom substring helper rather than
-    // dispatched as methods.
     let r = ctx.emit(env, obj)?
     if vtype_is_str(r.ty) {
-        match method {
-            "length" -> {
-                let str_ptr = ctx.to_ptr(r.value, "len_arg")
-                return ok_emit(ctx.call("strlen", [str_ptr]))
-            }
-            "substring" -> return emit_substring(ctx, env, r.value, args)
-            "contains" or "starts_with" or "ends_with" or "index_of" -> {
-                let arg_r = emit_single_arg(ctx, env, args)?
-                let str_ptr = ctx.to_ptr(r.value, "str_self")
-                let arg_ptr = ctx.to_ptr(arg_r.value, "str_arg")
-                return ok_emit(ctx.call("forge_str_${method}", [str_ptr, arg_ptr]))
-            }
-            "replace" -> return emit_str_replace(ctx, env, r.value, args)
-            "trim" -> {
-                let str_ptr = ctx.to_ptr(r.value, "str_self")
-                return ok_emit_str(ctx.call("forge_str_trim", [str_ptr]))
-            }
-            "to_upper" or "upper" -> {
-                let str_ptr = ctx.to_ptr(r.value, "str_self")
-                return ok_emit_str(ctx.call("forge_str_to_upper", [str_ptr]))
-            }
-            "to_lower" or "lower" -> {
-                let str_ptr = ctx.to_ptr(r.value, "str_self")
-                return ok_emit_str(ctx.call("forge_str_to_lower", [str_ptr]))
-            }
-            "split" -> {
-                let arg_r = emit_single_arg(ctx, env, args)?
-                let str_ptr = ctx.to_ptr(r.value, "str_self")
-                let sep_ptr = ctx.to_ptr(arg_r.value, "sep_arg")
-                let result = ctx.call("forge_str_split", [str_ptr, sep_ptr])
-                return ok_emit_typed(result, .List(.Str))
-            }
-            "char_code" -> {
-                // str.char_code() → int (first byte as integer)
-                let str_ptr = ctx.to_ptr(r.value, "str_self")
-                let byte_val = ctx.load_i8(str_ptr, "char_byte")
-                let as_i64 = ctx.zext(byte_val, ctx.i64_type, "char_code")
-                return ok_emit(as_i64)
-            }
-            _ -> return err_emit("string method `${method}` not implemented")
-        }
+        return emit_string_method(ctx, env, r.value, method, args)
     }
     // List methods — dispatched to features/list_lit/codegen.fg
     if vtype_is_list(r.ty) {

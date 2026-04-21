@@ -604,36 +604,48 @@ fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: Fie
 }
 
 // Emit the body of a __release_StructName function.
-// If is_cyclic is true, the "not freed" path calls forge_rc_suspect
-// to register the object for cycle collection.
-fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic: bool) {
+// Shared scaffolding for __release_TypeName functions.
+// Sets up: entry → should_free check → free_bb / alive_bb / done_bb.
+// Returns (fctx, obj, free_bb, done_bb) positioned at free_bb.
+// Caller emits type-specific field releases, then calls emit_release_finish.
+type ReleaseScaffold = { fctx: Ctx, obj: ptr, free_bb: ptr, alive_bb: ptr, done_bb: ptr }
+
+fn emit_release_scaffold(ctx: Ctx, name: string) -> ReleaseScaffold? {
     let fn_val = ctx.get_fn("__release_${name}")
-    if fn_val == null { return }
+    if fn_val == null { return null }
     let fctx = ctx.with_fn(fn_val, "__release_${name}")
     let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
     forge_llvm_position_at_end(fctx.builder, entry)
     let obj = forge_llvm_get_param(fn_val, 0)
-    // Check if this release should free (refcount hit 0)
     let should = fctx.call("forge_rc_should_free", [obj])
     let cond = forge_llvm_build_icmp(fctx.builder, 33, should, forge_llvm_const_int(fctx.i64_type, 0, 0), "should_free")
     let free_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "do_free")
     let alive_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "alive")
     let done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "done")
     forge_llvm_build_cond_br(fctx.builder, cond, free_bb, alive_bb)
-    // Free path: release fields then free
-    forge_llvm_position_at_end(fctx.builder, free_bb)
-    emit_struct_field_releases(fctx, obj, name, fields, 0)
-    fctx.call("forge_rc_free", [obj])
-    forge_llvm_build_br(fctx.builder, done_bb)
-    // Alive path: refcount > 0 after decrement — suspect if cyclic
-    forge_llvm_position_at_end(fctx.builder, alive_bb)
+    // Builder left after entry's cond_br. Caller positions at free_bb.
+    ReleaseScaffold { fctx, obj, free_bb, alive_bb, done_bb }
+}
+
+fn emit_release_finish(sc: ReleaseScaffold, is_cyclic: bool) {
+    forge_llvm_position_at_end(sc.fctx.builder, sc.alive_bb)
     if is_cyclic {
-        fctx.call("forge_rc_suspect", [obj])
+        sc.fctx.call("forge_rc_suspect", [sc.obj])
     }
-    forge_llvm_build_br(fctx.builder, done_bb)
-    // Done
-    forge_llvm_position_at_end(fctx.builder, done_bb)
-    forge_llvm_build_ret(fctx.builder, forge_llvm_const_int(fctx.i64_type, 0, 0))
+    forge_llvm_build_br(sc.fctx.builder, sc.done_bb)
+    forge_llvm_position_at_end(sc.fctx.builder, sc.done_bb)
+    forge_llvm_build_ret(sc.fctx.builder, forge_llvm_const_int(sc.fctx.i64_type, 0, 0))
+}
+
+fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic: bool) {
+    let sc = emit_release_scaffold(ctx, name)
+    if sc == null { return }
+    let s = sc!
+    forge_llvm_position_at_end(s.fctx.builder, s.free_bb)
+    emit_struct_field_releases(s.fctx, s.obj, name, fields, 0)
+    s.fctx.call("forge_rc_free", [s.obj])
+    forge_llvm_build_br(s.fctx.builder, s.done_bb)
+    emit_release_finish(s, is_cyclic)
 }
 
 // Emit release calls for ptr-type fields in an enum variant payload.
@@ -685,44 +697,24 @@ fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: s
     }
 }
 
-// Emit the body of a __release_EnumName function.
-// If is_cyclic is true, the "not freed" path calls forge_rc_suspect.
 fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cyclic: bool) {
+    let sc = emit_release_scaffold(ctx, name)
+    if sc == null { return }
+    let s = sc!
     let fn_val = ctx.get_fn("__release_${name}")
-    if fn_val == null { return }
-    let fctx = ctx.with_fn(fn_val, "__release_${name}")
-    let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
-    forge_llvm_position_at_end(fctx.builder, entry)
-    let obj = forge_llvm_get_param(fn_val, 0)
-    // Check if this release should free
-    let should = fctx.call("forge_rc_should_free", [obj])
-    let cond = forge_llvm_build_icmp(fctx.builder, 33, should, forge_llvm_const_int(fctx.i64_type, 0, 0), "should_free")
-    let free_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "do_free")
-    let alive_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "alive")
-    let done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "done")
-    forge_llvm_build_cond_br(fctx.builder, cond, free_bb, alive_bb)
-    // Free path: load tag + payload, check each variant, release fields, then free
-    forge_llvm_position_at_end(fctx.builder, free_bb)
-    let enum_ty = forge_llvm_get_type_by_name(fctx.lc, name)
-    let tag_gep = forge_llvm_build_struct_gep2(fctx.builder, enum_ty, obj, 0, "tag_ptr")
-    let tag_val = forge_llvm_build_load(fctx.builder, fctx.i64_type, tag_gep, "tag")
-    let pay_gep = forge_llvm_build_struct_gep2(fctx.builder, enum_ty, obj, 1, "pay_ptr")
-    let payload = forge_llvm_build_load(fctx.builder, fctx.ptr_type, pay_gep, "payload")
+    forge_llvm_position_at_end(s.fctx.builder, s.free_bb)
+    let enum_ty = forge_llvm_get_type_by_name(s.fctx.lc, name)
+    let tag_gep = forge_llvm_build_struct_gep2(s.fctx.builder, enum_ty, s.obj, 0, "tag_ptr")
+    let tag_val = forge_llvm_build_load(s.fctx.builder, s.fctx.i64_type, tag_gep, "tag")
+    let pay_gep = forge_llvm_build_struct_gep2(s.fctx.builder, enum_ty, s.obj, 1, "pay_ptr")
+    let payload = forge_llvm_build_load(s.fctx.builder, s.fctx.ptr_type, pay_gep, "payload")
     let fields_done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "fields_done")
-    emit_enum_variant_releases(fctx, tag_val, payload, name, variants, fields_done_bb)
-    forge_llvm_build_br(fctx.builder, fields_done_bb)
-    forge_llvm_position_at_end(fctx.builder, fields_done_bb)
-    fctx.call("forge_rc_free", [obj])
-    forge_llvm_build_br(fctx.builder, done_bb)
-    // Alive path: refcount > 0 after decrement — suspect if cyclic
-    forge_llvm_position_at_end(fctx.builder, alive_bb)
-    if is_cyclic {
-        fctx.call("forge_rc_suspect", [obj])
-    }
-    forge_llvm_build_br(fctx.builder, done_bb)
-    // Done
-    forge_llvm_position_at_end(fctx.builder, done_bb)
-    forge_llvm_build_ret(fctx.builder, forge_llvm_const_int(fctx.i64_type, 0, 0))
+    emit_enum_variant_releases(s.fctx, tag_val, payload, name, variants, fields_done_bb)
+    forge_llvm_build_br(s.fctx.builder, fields_done_bb)
+    forge_llvm_position_at_end(s.fctx.builder, fields_done_bb)
+    s.fctx.call("forge_rc_free", [s.obj])
+    forge_llvm_build_br(s.fctx.builder, s.done_bb)
+    emit_release_finish(s, is_cyclic)
 }
 
 // Walk StructReg and emit release function bodies.
