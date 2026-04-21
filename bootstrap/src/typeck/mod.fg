@@ -381,6 +381,35 @@ fn tc_base_type_name(ty: string) -> string {
     ty
 }
 
+// Upgrade a parser-resolved ValueType using TC registries.
+// The parser maps unknown names to Struct(name) or Int. This function
+// checks registries to distinguish structs from enums, traits, newtypes, etc.
+fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
+    match vt {
+        .Struct(name) -> {
+            if enum_type_has(tc.enums, name) { return ValueType.Enum(name) }
+            let ua = union_alias_lookup(tc.union_aliases, name)
+            if ua != "" { return translate_type(tc, ua) }
+            let nt = newtype_lookup(tc.newtypes, name)
+            if nt != "" { return ValueType.Newtype(name, translate_type(tc, nt)) }
+            if struct_type_has(tc.structs, name) { return ValueType.Struct(name) }
+            if trait_has(tc.traits, name) { return ValueType.Trait(name) }
+            ValueType.Int
+        }
+        .List(elem) -> ValueType.List(resolve_vtype(tc, elem))
+        .Union(types) -> ValueType.Union(resolve_vtype_list(tc, types))
+        .FnTyped(params, ret) -> ValueType.FnTyped(resolve_vtype_list(tc, params), resolve_vtype(tc, ret))
+        _ -> vt
+    }
+}
+
+fn resolve_vtype_list(tc: TC, types: TypeList) -> TypeList {
+    match types {
+        .End -> .End
+        .Node(ty, next) -> TypeList.Node(resolve_vtype(tc, ty), resolve_vtype_list(tc, next))
+    }
+}
+
 export fn translate_type(tc: TC, ty: string) -> ValueType {
     // Nullable types: "T?" → translate inner T (no ValueType.Optional yet)
     if ty.ends_with("?") && ty.length > 1 {
@@ -517,15 +546,18 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
                 }
                 .Function(name, _, params, ret_ty, ret_vt, _) -> {
-                    // Prefer parser-resolved ret_vtype for primitives/structural types;
-                    // fall back to translate_type for named types that need registry context.
-                    let resolved_ret = match ret_vt {
-                        .Void -> if ret_ty == "" { ValueType.Void } else { translate_type(tc, ret_ty) }
-                        .Int -> translate_type(tc, ret_ty)
-                        _ -> ret_vt
+                    let resolved_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" {
+                        ValueType.Void
+                    } else {
+                        resolve_vtype(tc, ret_vt)
                     }
+                    // Fall back to string translation if resolve_vtype returned Int
+                    // but the string annotation is non-empty and non-int
+                    let final_ret = if vtype_eq(resolved_ret, .Int) && ret_ty.length > 0 && ret_ty != "int" && ret_ty != "i64" {
+                        translate_type(tc, ret_ty)
+                    } else { resolved_ret }
                     tc with {
-                        fns: FnTypeEntry.Node(name, params, resolved_ret, tc.fns),
+                        fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
                         fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
                     }
                 }
@@ -662,17 +694,16 @@ fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, ret_vt: ValueType,
     if ret_ty_str.length == 0 && vtype_eq(ret_vt, .Void) {
         return checked
     }
-    // Use parser-resolved ret_vtype when available (non-Int = resolved).
-    // Fall back to translate_type for named types or nullable string handling.
-    let declared_ret = if !vtype_eq(ret_vt, .Void) && !vtype_eq(ret_vt, .Int) {
-        ret_vt
-    } else {
+    // Use resolve_vtype to upgrade parser-resolved type with registries
+    let resolved = resolve_vtype(checked, ret_vt)
+    let declared_ret = if vtype_eq(resolved, .Int) && ret_ty_str.length > 0 && ret_ty_str != "int" && ret_ty_str != "i64" {
+        // resolve_vtype couldn't handle it (returned Int fallback) — use string translation
         mut effective_ret_str = ret_ty_str
         if ret_ty_str.ends_with("?") {
             effective_ret_str = ret_ty_str.substring(0, ret_ty_str.length - 1)
         }
         translate_type(checked, effective_ret_str)
-    }
+    } else { resolved }
     // Check every explicit `return expr` produces a compatible type.
     let after_explicit = tc_check_explicit_returns(checked, name, declared_ret, body)
     // Check implicit return: the last expression in the body.
@@ -772,8 +803,13 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
 export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
-        .Node(name, ty_str, _, next) -> {
-            let ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { ValueType.Int }
+        .Node(name, ty_str, resolved, next) -> {
+            // Use parser-resolved type upgraded via registries
+            let ty = if !vtype_eq(resolved, .Int) || ty_str == "int" || ty_str == "i64" {
+                resolve_vtype(tc, resolved)
+            } else if ty_str.length > 0 {
+                translate_type(tc, ty_str)
+            } else { ValueType.Int }
             tc_bind_params(tc_bind(tc, name, ty), next)
         }
     }
