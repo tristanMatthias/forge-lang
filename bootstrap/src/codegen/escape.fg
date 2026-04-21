@@ -60,9 +60,9 @@ fn analyze_binding(name: string, init: Expr, set: ReleasableSet) -> ReleasableSe
 fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
     let inner = stmt_unwrap(stmt)
     match inner {
-        .Let(name, _, init) -> analyze_binding(name, init, set)
-        .Mut(name, _, init) -> analyze_binding(name, init, set)
-        .Const(name, _, init) -> analyze_binding(name, init, set)
+        .Let(name, _, _, init) -> analyze_binding(name, init, set)
+        .Mut(name, _, _, init) -> analyze_binding(name, init, set)
+        .Const(name, _, _, init) -> analyze_binding(name, init, set)
         // Recurse into blocks
         .Block(body) -> single_pass_escape(body, set)
         .If(cond, then_b, else_b) -> {
@@ -92,7 +92,7 @@ fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
         .UnionAliasDecl(_, _) -> set
         .ShapeDecl(_, _) -> set
         .EnumDecl(_, _, _) -> set
-        .ExternFn(_, _, _) -> set
+        .ExternFn(_, _, _, _) -> set
         .TraitDecl(_, _) -> set
         .Impl(_, _) -> set
         .NoOp -> set
@@ -224,9 +224,9 @@ fn count_allocating_in_stmts(stmts: StmtList) -> int {
 fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
     match stmt_unwrap(stmt) {
         .Block(inner) -> count_allocating_in_stmts(inner)
-        .Let(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
-        .Mut(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
-        .Const(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .Let(_, _, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .Mut(_, _, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .Const(_, _, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
         .If(_, then_b, _) -> count_allocating_in_stmt_single(then_b)
         .While(_, wb) -> count_allocating_in_stmt_single(wb)
         .For(_, _, _, fb) -> count_allocating_in_stmt_single(fb)
@@ -243,7 +243,7 @@ fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
         .Match(_, _) -> 0
         .Impl(_, _) -> 0
         .NoOp -> 0
-        .ExternFn(_, _, _) -> 0
+        .ExternFn(_, _, _, _) -> 0
         .Break -> 0
         .Continue -> 0
         .TraitDecl(_, _) -> 0
@@ -276,9 +276,9 @@ export fn is_arena_eligible(body: Stmt) -> bool {
             let releasable = single_pass_escape(stmts, ReleasableSet.End)
             releasable_any(releasable)
         }
-        .Let(_, _, init) -> is_allocating_expr(init)
-        .Mut(_, _, init) -> is_allocating_expr(init)
-        .Const(_, _, init) -> is_allocating_expr(init)
+        .Let(_, _, _, init) -> is_allocating_expr(init)
+        .Mut(_, _, _, init) -> is_allocating_expr(init)
+        .Const(_, _, _, init) -> is_allocating_expr(init)
         .Expr(_) -> false
         .Return(_) -> false
         .ReturnEmpty -> false
@@ -291,7 +291,7 @@ export fn is_arena_eligible(body: Stmt) -> bool {
         .Match(_, _) -> false
         .Impl(_, _) -> false
         .NoOp -> false
-        .ExternFn(_, _, _) -> false
+        .ExternFn(_, _, _, _) -> false
         .Break -> false
         .Continue -> false
         .TraitDecl(_, _) -> false

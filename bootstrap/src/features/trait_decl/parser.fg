@@ -80,6 +80,6 @@ impl Parser {
             }
             return Stmt.Function(name, TypeParamList.End, params, ret_ty, ret_vtype, body)
         }
-        Stmt.ExternFn(name, params, ret_ty)
+        Stmt.ExternFn(name, params, ret_ty, ret_vtype)
     }
 }

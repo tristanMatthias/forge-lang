@@ -359,7 +359,7 @@ fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
 
 export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
-        .Let(name, _, initializer) -> {
+        .Let(name, _, _, initializer) -> {
             let init = eval_expr(runtime, initializer)
             if init.had_error {
                 return init
@@ -368,7 +368,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             let next_runtime = define_binding(init.runtime, name, false, init.value)
             ok_result(next_runtime, value_null())
         }
-        .Mut(name, _, initializer) -> {
+        .Mut(name, _, _, initializer) -> {
             let init = eval_expr(runtime, initializer)
             if init.had_error {
                 return init
@@ -415,7 +415,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         // These declarations are erased at the eval layer — the tree-walk runtime
         // is value-untyped, so types/enums/traits/impls have no runtime existence.
         .TypeDecl(_, _, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .NoOp
-        or .ExternFn(_, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
+        or .ExternFn(_, _, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
         .Annotated(_, inner) -> execute_stmt(runtime, inner)

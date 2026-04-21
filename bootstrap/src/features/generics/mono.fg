@@ -457,8 +457,8 @@ fn collect_inst_stmts(stmts: StmtList, regs: GenRegs, st: CollectState) -> Colle
 
 fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectState {
     match stmt {
-        .Let(_, _, init) -> collect_inst_expr(init, regs, st)
-        .Mut(_, _, init) -> collect_inst_expr(init, regs, st)
+        .Let(_, _, _, init) -> collect_inst_expr(init, regs, st)
+        .Mut(_, _, _, init) -> collect_inst_expr(init, regs, st)
         .Expr(e) -> collect_inst_expr(e, regs, st)
         .Return(val) -> collect_inst_expr(val, regs, st)
         .Defer(body) -> collect_inst_expr(body, regs, st)
@@ -659,8 +659,8 @@ fn substitute_expr_list(exprs: ExprList, ta: TypeArgList) -> ExprList {
 
 fn substitute_stmt(stmt: Stmt, ta: TypeArgList) -> Stmt {
     match stmt {
-        .Let(name, ty, init) -> .Let(name, type_arg_lookup(ta, ty), substitute_expr(init, ta))
-        .Mut(name, ty, init) -> .Mut(name, type_arg_lookup(ta, ty), substitute_expr(init, ta))
+        .Let(name, ty, _, init) -> .Let(name, type_arg_lookup(ta, ty), ValueType.Int, substitute_expr(init, ta))
+        .Mut(name, ty, _, init) -> .Mut(name, type_arg_lookup(ta, ty), ValueType.Int, substitute_expr(init, ta))
         .Expr(e) -> .Expr(substitute_expr(e, ta))
         .Return(val) -> .Return(substitute_expr(val, ta))
         .ReturnEmpty -> stmt
@@ -774,8 +774,8 @@ fn rewrite_stmts(stmts: StmtList, regs: GenRegs, insts: InstList) -> StmtList {
 
 fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: InstList) -> Stmt {
     match stmt {
-        .Let(name, ty, init) -> .Let(name, rewrite_type_name(ty, regs, insts), rewrite_expr(init, regs, insts))
-        .Mut(name, ty, init) -> .Mut(name, rewrite_type_name(ty, regs, insts), rewrite_expr(init, regs, insts))
+        .Let(name, ty, _, init) -> .Let(name, rewrite_type_name(ty, regs, insts), ValueType.Int, rewrite_expr(init, regs, insts))
+        .Mut(name, ty, _, init) -> .Mut(name, rewrite_type_name(ty, regs, insts), ValueType.Int, rewrite_expr(init, regs, insts))
         .Expr(e) -> .Expr(rewrite_expr(e, regs, insts))
         .Return(val) -> .Return(rewrite_expr(val, regs, insts))
         .Block(body) -> .Block(rewrite_stmts(body, regs, insts))
@@ -787,7 +787,7 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: InstList) -> Stmt {
         .For(v, s, e, body) -> .For(v, rewrite_expr(s, regs, insts), rewrite_expr(e, regs, insts), rewrite_stmt(body, regs, insts))
         .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr(coll, regs, insts), rewrite_stmt(body, regs, insts))
         .Function(name, tp, params, ret_ty, _, body) -> rewrite_function(name, tp, params, ret_ty, body, regs, insts)
-        .ExternFn(name, params, ret_ty) -> .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_type_name(ret_ty, regs, insts))
+        .ExternFn(name, params, ret_ty, _) -> .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_type_name(ret_ty, regs, insts), ValueType.Int)
         .Match(subj, arms) -> .Match(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
         .Module(name, body) -> .Module(name, rewrite_stmts(body, regs, insts))
         .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt(inner, regs, insts))

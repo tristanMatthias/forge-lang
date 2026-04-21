@@ -591,9 +591,9 @@ export enum Expr {
 }
 
 export enum Stmt {
-    Let(name: string, ty: string, initializer: Expr)
-    Mut(name: string, ty: string, initializer: Expr)
-    Const(name: string, ty: string, initializer: Expr)
+    Let(name: string, ty: string, ty_vt: ValueType, initializer: Expr)
+    Mut(name: string, ty: string, ty_vt: ValueType, initializer: Expr)
+    Const(name: string, ty: string, ty_vt: ValueType, initializer: Expr)
     Expr(expr: Expr)
     Block(body: StmtList)
     If(condition: Expr, then_branch: Stmt, else_branch: Stmt?)
@@ -615,7 +615,7 @@ export enum Stmt {
     Match(subject: Expr, arms: MatchArmList)
     Impl(type_name: string, methods: StmtList)
     NoOp
-    ExternFn(name: string, params: ParamList, ret_ty: string)
+    ExternFn(name: string, params: ParamList, ret_ty: string, ret_vtype: ValueType)
     Break
     Continue
     TraitDecl(name: string, methods: StmtList)
@@ -996,9 +996,9 @@ fn render_param_list_tail(params: ParamList) -> string {
 
 export fn render_stmt(stmt: Stmt) -> string {
     match stmt {
-        .Let(name, ty, initializer) -> "(let ${name}:${ty} ${render_expr(initializer)})"
-        .Mut(name, ty, initializer) -> "(mut ${name}:${ty} ${render_expr(initializer)})"
-        .Const(name, ty, initializer) -> "(const ${name}:${ty} ${render_expr(initializer)})"
+        .Let(name, ty, _, initializer) -> "(let ${name}:${ty} ${render_expr(initializer)})"
+        .Mut(name, ty, _, initializer) -> "(mut ${name}:${ty} ${render_expr(initializer)})"
+        .Const(name, ty, _, initializer) -> "(const ${name}:${ty} ${render_expr(initializer)})"
         .Expr(expr) -> "(expr ${render_expr(expr)})"
         .Block(body) -> "(block ${render_stmt_list(body)})"
         .If(condition, then_branch, else_branch) -> {
@@ -1035,7 +1035,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Match(subject, arms) -> "(match ${render_expr(subject)} ${render_match_arm_list(arms)})"
         .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(methods)})"
         .NoOp -> "(noop)"
-        .ExternFn(name, params, ret_ty) -> "(extern ${name} ${render_param_list(params)} -> ${ret_ty})"
+        .ExternFn(name, params, ret_ty, _) -> "(extern ${name} ${render_param_list(params)} -> ${ret_ty})"
         .Break -> "(break)"
         .Continue -> "(continue)"
         .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(methods)})"

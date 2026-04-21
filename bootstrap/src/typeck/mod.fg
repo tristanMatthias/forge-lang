@@ -565,9 +565,19 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                         fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
                     }
                 }
-                .ExternFn(name, params, ret_ty) -> tc with {
-                    fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns),
-                    fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
+                .ExternFn(name, params, ret_ty, ret_vt) -> {
+                    let resolved_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" {
+                        ValueType.Void
+                    } else {
+                        resolve_vtype(tc, ret_vt)
+                    }
+                    let final_ret = if vtype_eq(resolved_ret, .Int) && ret_ty.length > 0 && ret_ty != "int" && ret_ty != "i64" {
+                        translate_type(tc, ret_ty)
+                    } else { resolved_ret }
+                    tc with {
+                        fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
+                        fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
+                    }
                 }
                 .Impl(_, methods) -> collect_decls(tc, methods)
                 .Module(_, body) -> collect_decls(tc, body)
@@ -594,9 +604,15 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
     }
 }
 
-fn check_binding(tc: TC, name: string, ty_str: string, init: Expr, is_const: bool) -> TC {
+fn check_binding(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr, is_const: bool) -> TC {
     let r = check_expr(tc, init)
-    let declared_ty = if ty_str.length > 0 { translate_type(r.tc, ty_str) } else { r.ty }
+    // Use parser-resolved type, upgrade via registries; fall back to string
+    let resolved = resolve_vtype(r.tc, ty_vt)
+    let declared_ty = if !vtype_eq(resolved, .Int) || ty_str == "int" || ty_str == "i64" {
+        resolved
+    } else if ty_str.length > 0 {
+        translate_type(r.tc, ty_str)
+    } else { r.ty }
     if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Int) {
         let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
@@ -614,9 +630,9 @@ fn check_binding(tc: TC, name: string, ty_str: string, init: Expr, is_const: boo
 
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Let(name, ty_str, init) -> check_binding(tc, name, ty_str, init, false)
-        .Mut(name, ty_str, init) -> check_binding(tc, name, ty_str, init, false)
-        .Const(name, ty_str, init) -> check_binding(tc, name, ty_str, init, true)
+        .Let(name, ty_str, ty_vt, init) -> check_binding(tc, name, ty_str, ty_vt, init, false)
+        .Mut(name, ty_str, ty_vt, init) -> check_binding(tc, name, ty_str, ty_vt, init, false)
+        .Const(name, ty_str, ty_vt, init) -> check_binding(tc, name, ty_str, ty_vt, init, true)
         .Expr(e) -> {
             let r = check_expr(tc, e)
             r.tc
@@ -1197,9 +1213,14 @@ fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
     tc_bind_params(tc_enter(tc), params)
 }
 
-fn annotate_bind(tc: TC, name: string, ty_str: string, init: Expr) -> TC {
+fn annotate_bind(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr) -> TC {
     let r = check_expr(tc, init)
-    let declared_ty = if ty_str.length > 0 { translate_type(tc, ty_str) } else { r.ty }
+    let resolved = resolve_vtype(tc, ty_vt)
+    let declared_ty = if !vtype_eq(resolved, .Int) || ty_str == "int" || ty_str == "i64" {
+        resolved
+    } else if ty_str.length > 0 {
+        translate_type(tc, ty_str)
+    } else { r.ty }
     tc_bind(tc, name, declared_ty)
 }
 
@@ -1209,9 +1230,9 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
         .Node(ss, next) -> {
             let new_stmt = annotate_stmt(tc, ss.node)
             let updated_tc = match ss.node {
-                .Let(name, ty_str, init) -> annotate_bind(tc, name, ty_str, init)
-                .Mut(name, ty_str, init) -> annotate_bind(tc, name, ty_str, init)
-                .Const(name, ty_str, init) -> annotate_bind(tc, name, ty_str, init)
+                .Let(name, ty_str, ty_vt, init) -> annotate_bind(tc, name, ty_str, ty_vt, init)
+                .Mut(name, ty_str, ty_vt, init) -> annotate_bind(tc, name, ty_str, ty_vt, init)
+                .Const(name, ty_str, ty_vt, init) -> annotate_bind(tc, name, ty_str, ty_vt, init)
                 _ -> tc
             }
             StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(updated_tc, next))
@@ -1221,9 +1242,9 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
 
 fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, ty, init) -> .Let(name, ty, annotate_expr(tc, init))
-        .Mut(name, ty, init) -> .Mut(name, ty, annotate_expr(tc, init))
-        .Const(name, ty, init) -> .Const(name, ty, annotate_expr(tc, init))
+        .Let(name, ty, _, init) -> .Let(name, ty, ValueType.Int, annotate_expr(tc, init))
+        .Mut(name, ty, _, init) -> .Mut(name, ty, ValueType.Int, annotate_expr(tc, init))
+        .Const(name, ty, _, init) -> .Const(name, ty, ValueType.Int, annotate_expr(tc, init))
         .Expr(e) -> .Expr(annotate_expr(tc, e))
         .Return(val) -> .Return(annotate_expr(tc, val))
         .Block(body) -> .Block(annotate_stmts(tc, body))
@@ -1437,21 +1458,21 @@ fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
                 tc
             }
         }
-        .Const(name, _, _) -> {
+        .Const(name, _, _, _) -> {
             if !is_screaming_snake(name) {
                 naming_warn(tc, "constant `${name}` should be SCREAMING_SNAKE_CASE")
             } else {
                 tc
             }
         }
-        .Let(name, _, _) -> {
+        .Let(name, _, _, _) -> {
             if !is_snake_case(name) {
                 naming_warn(tc, "variable `${name}` should be snake_case")
             } else {
                 tc
             }
         }
-        .Mut(name, _, _) -> {
+        .Mut(name, _, _, _) -> {
             if !is_snake_case(name) {
                 naming_warn(tc, "variable `${name}` should be snake_case")
             } else {

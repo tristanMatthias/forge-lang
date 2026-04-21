@@ -154,7 +154,7 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
             let canonical = "${mod_path}::${name}"
             ModuleItem.Node(name, canonical, exported, rest)
         }
-        .ExternFn(name, _, _) -> {
+        .ExternFn(name, _, _, _) -> {
             // Extern fns keep bare names (C ABI) but are registered
             // for visibility tracking
             ModuleItem.Node(name, name, true, rest)
@@ -451,8 +451,8 @@ fn rewrite_stmt_list(ctx: NameCtx, stmts: StmtList) -> StmtList {
 
 fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, ty, init) -> .Let(name, ty, rewrite_expr(ctx, init))
-        .Mut(name, ty, init) -> .Mut(name, ty, rewrite_expr(ctx, init))
+        .Let(name, ty, _, init) -> .Let(name, ty, ValueType.Int, rewrite_expr(ctx, init))
+        .Mut(name, ty, _, init) -> .Mut(name, ty, ValueType.Int, rewrite_expr(ctx, init))
         .Expr(e) -> .Expr(rewrite_expr(ctx, e))
         .Return(e) -> .Return(rewrite_expr(ctx, e))
         .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
@@ -618,9 +618,9 @@ fn collect_used_paths_stmts(stmts: StmtList, acc: UsedPathSet) -> UsedPathSet {
 fn collect_used_paths_stmt(stmt: Stmt, acc: UsedPathSet) -> UsedPathSet {
     match stmt {
         .Expr(e) -> collect_used_paths_expr(e, acc)
-        .Let(_, _, init) -> collect_used_paths_expr(init, acc)
-        .Mut(_, _, init) -> collect_used_paths_expr(init, acc)
-        .Const(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Let(_, _, _, init) -> collect_used_paths_expr(init, acc)
+        .Mut(_, _, _, init) -> collect_used_paths_expr(init, acc)
+        .Const(_, _, _, init) -> collect_used_paths_expr(init, acc)
         .Return(e) -> collect_used_paths_expr(e, acc)
         .Block(body) -> collect_used_paths_stmts(body, acc)
         .Function(_, _, _, _, _, body) -> collect_used_paths_stmts(body, acc)

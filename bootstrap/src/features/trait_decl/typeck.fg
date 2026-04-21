@@ -60,7 +60,7 @@ export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
         .End -> TraitMethodList.End
         .Node(ss, next) -> {
             match ss.node {
-                .ExternFn(name, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
+                .ExternFn(name, _, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
                 _ -> collect_method_names_from_stmts(next)
             }
         }

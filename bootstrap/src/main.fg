@@ -117,15 +117,15 @@ fn fmt_expr(se: Expr) -> string {
 fn fmt_stmt(ss: Stmt, depth: int) -> string {
     let ind = fmt_indent(depth)
     match ss {
-        .Let(name, ty, init) -> {
+        .Let(name, ty, _, init) -> {
             let ty_part = if ty == "" { "" } else { ": ${ty}" }
             "${ind}let ${name}${ty_part} = ${fmt_expr(init)}"
         }
-        .Mut(name, ty, init) -> {
+        .Mut(name, ty, _, init) -> {
             let ty_part = if ty == "" { "" } else { ": ${ty}" }
             "${ind}mut ${name}${ty_part} = ${fmt_expr(init)}"
         }
-        .Const(name, ty, init) -> {
+        .Const(name, ty, _, init) -> {
             let ty_part = if ty == "" { "" } else { ": ${ty}" }
             "${ind}const ${name}${ty_part} = ${fmt_expr(init)}"
         }
@@ -176,7 +176,7 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
             "${ind}${impl_header} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
         }
         .NoOp -> ""
-        .ExternFn(name, params, ret_ty) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${ret_ty}"
+        .ExternFn(name, params, ret_ty, _) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${ret_ty}"
         .Break -> "${ind}break"
         .Continue -> "${ind}continue"
         .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"

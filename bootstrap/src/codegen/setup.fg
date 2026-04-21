@@ -439,9 +439,9 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Let(name, ty, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
-                .Mut(name, ty, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
-                .Const(name, ty, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
+                .Let(name, ty, _, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
+                .Mut(name, ty, _, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
+                .Const(name, ty, _, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
                 .Module(_, body) -> declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }
@@ -774,7 +774,7 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
         .End -> .End
         .Node(ss, next) -> {
             match stmt_unwrap(ss.node) {
-                .ExternFn(name, _, ret_ty) -> .Node(name, ret_ty, collect_trait_fn_names(next))
+                .ExternFn(name, _, ret_ty, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
                 .Function(name, _, _, ret_ty, _, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
@@ -888,7 +888,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
                     forge_llvm_add_function(m, name, fn_type)
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
-                .ExternFn(name, params, ret_ty) -> {
+                .ExternFn(name, params, ret_ty, _) -> {
                     let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
                     let param_arr = forge_llvm_type_array_new(arity)
@@ -946,15 +946,15 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     let new_env = emit_top_level(tl_ctx, env, body)?
                     emit_top_level(ctx, new_env, next)
                 }
-                .Let(name, _, init) -> {
+                .Let(name, _, _, init) -> {
                     let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }
-                .Mut(name, _, init) -> {
+                .Mut(name, _, _, init) -> {
                     let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }
-                .Const(name, _, init) -> {
+                .Const(name, _, _, init) -> {
                     let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }

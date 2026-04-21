@@ -44,9 +44,9 @@ fn stmt_has_spawn(st: Stmt) -> bool {
     match st {
         .Expr(e) -> expr_has_spawn(e)
         .Return(e) -> expr_has_spawn(e)
-        .Let(_, _, e) -> expr_has_spawn(e)
-        .Mut(_, _, e) -> expr_has_spawn(e)
-        .Const(_, _, e) -> expr_has_spawn(e)
+        .Let(_, _, _, e) -> expr_has_spawn(e)
+        .Mut(_, _, _, e) -> expr_has_spawn(e)
+        .Const(_, _, _, e) -> expr_has_spawn(e)
         .Block(body) -> stmts_has_spawn(body)
         .Annotated(_, inner) -> stmt_has_spawn(inner)
         _ -> false

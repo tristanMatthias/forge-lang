@@ -34,8 +34,8 @@ fn desugar_stmt_list(stmts: StmtList) -> StmtList {
 fn desugar_stmt(stmt: Stmt) -> Stmt {
     match stmt {
         .Expr(e) -> .Expr(desugar_expr(e))
-        .Let(name, ty, init) -> .Let(name, ty, desugar_expr(init))
-        .Mut(name, ty, init) -> .Mut(name, ty, desugar_expr(init))
+        .Let(name, ty, _, init) -> .Let(name, ty, ValueType.Int, desugar_expr(init))
+        .Mut(name, ty, _, init) -> .Mut(name, ty, ValueType.Int, desugar_expr(init))
         .Return(e) -> .Return(desugar_expr(e))
         .Block(body) -> .Block(desugar_stmt_list(body))
         .If(cond, then_b, else_b) -> {
@@ -126,7 +126,7 @@ fn desugar_dbg(args: ExprList) -> Expr {
                 Expr.Call(Expr.Ident("string"), ExprList.Node(sexpr_dummy(Expr.Ident("__dbg")), ExprList.End))
             )
             Expr.Block(StmtList.Node(
-                sstmt(Stmt.Let("__dbg", "", val), 0, 0),
+                sstmt(Stmt.Let("__dbg", "", ValueType.Int, val), 0, 0),
                 StmtList.Node(
                     sstmt(Stmt.Expr(
                         Expr.Call(Expr.Ident("println"), ExprList.Node(
@@ -176,9 +176,9 @@ fn desugar_min_max(args: ExprList, is_min: int) -> Expr {
                 .Node(b_se, _) -> {
                     let op = if is_min { BinOp.Lt } else { BinOp.Gt }
                     Expr.Block(StmtList.Node(
-                        sstmt(Stmt.Let("__a", "", a_se.node), 0, 0),
+                        sstmt(Stmt.Let("__a", "", ValueType.Int, a_se.node), 0, 0),
                         StmtList.Node(
-                            sstmt(Stmt.Let("__b", "", b_se.node), 0, 0),
+                            sstmt(Stmt.Let("__b", "", ValueType.Int, b_se.node), 0, 0),
                             StmtList.Node(
                                 sstmt(Stmt.Expr(
                                     Expr.IfExpr(
