@@ -1,18 +1,19 @@
 // WHY: codegen for `parallel { fn1(); fn2(); fn3() }`.
 
-use codegen.types.{err_stmt, ok_stmt}
-export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+use codegen.types.{err_stmt, ok_stmt, StmtResult}
+use codegen.{ok_sr, err_sr}
+export fn parallel_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Parallel(body) -> emit_parallel(ctx, env, body)
-        _ -> err_stmt("parallel_emit_stmt: expected Parallel")
+        _ -> err_sr("parallel_emit_stmt: expected Parallel")
     }
 }
 
-fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, string> {
+fn emit_parallel(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<StmtResult, string> {
     let closures = ctx.array_new()
     let r = collect_parallel_closures(ctx, env, stmts, closures)?
     ctx.call("forge_parallel_run", [closures])
-    ok_stmt(env)
+    ok_sr(ctx, env)
 }
 
 fn collect_parallel_closures(ctx: Ctx, env: VarEnv, stmts: StmtList, arr: ptr) -> Result<VarEnv, string> {

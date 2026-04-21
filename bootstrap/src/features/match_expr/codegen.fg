@@ -1,7 +1,8 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_str, vtype_is_union, vtype_union_types}
-use codegen.types.{Ctx, EmitValue,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, translate_type_ctx}
+use codegen.types.{Ctx, EmitValue, StmtResult,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, translate_type_ctx}
+use codegen.{ok_sr, err_sr}
 use features.union_type.codegen.{emit_union_tag, emit_union_extract}
 
 fn ok_match_ty(ty: ValueType) -> Result<ValueType, string> {
@@ -19,9 +20,8 @@ fn forward_emit_err(message: string) -> Result<EmitValue, string> {
     Result.Err(message)
 }
 
-fn forward_stmt_err(message: string) -> Result<VarEnv, string> {
-    if false { return Result.Ok(VarEnv.End) }
-    Result.Err(message)
+fn forward_stmt_err(message: string) -> Result<StmtResult, string> {
+    err_sr(message)
 }
 
 // ── Match as expression ──
@@ -188,14 +188,14 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
 
 // ── Match as statement ──
 
-export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> Result<VarEnv, string> {
+export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -> Result<StmtResult, string> {
     match ctx.emit(env, subject) {
         .Err(msg) -> forward_stmt_err(msg)
         .Ok(r) -> {
             // Union type match
             if vtype_is_union(emit_value_ty(r)) {
                 let ur = emit_union_match_expr(ctx, env, r, arms)?
-                return ok_stmt(env)
+                return ok_sr(ctx, env)
             }
             let enum_name = vtype_enum_name(emit_value_ty(r))
             if enum_name == "" {
@@ -205,23 +205,23 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
                 return emit_primitive_match_stmt(ctx, env, r, arms)
             }
             let lookup = ctx.lookup_enum(enum_name)
-            if !lookup.found { return err_stmt("codegen error: unknown enum `${enum_name}`") }
+            if !lookup.found { return err_sr("codegen error: unknown enum `${enum_name}`") }
             let st_ty = ctx.get_type(enum_name)
             let subj_ptr = ctx.to_ptr(emit_value_ptr(r), "match_subj")
             let tag_val = ctx.enum_tag(emit_value_ptr(r), enum_name)
             let merge_bb = ctx.bb("match_end")
             let arm_result = emit_match_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, lookup.variants, merge_bb)?
             ctx.position(merge_bb)
-            ok_stmt(env)
+            ok_sr(ctx, env)
         }
     }
 }
 
-fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> Result<VarEnv, string> {
+fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> Result<StmtResult, string> {
     match arms {
         .End -> {
             ctx.match_trap(tag_val)
-            ok_stmt(env)
+            ok_sr(ctx, env)
         }
         .Node(pattern, guard, body, next) -> {
             let arm_bb = ctx.bb("match_arm")
@@ -592,17 +592,17 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchA
     }
 }
 
-fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<VarEnv, string> {
+fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<StmtResult, string> {
     let merge_bb = ctx.bb("pmatch_end")
     emit_primitive_arms_stmt(ctx, env, subj, arms, merge_bb)
 }
 
-fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList, merge_bb: ptr) -> Result<VarEnv, string> {
+fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList, merge_bb: ptr) -> Result<StmtResult, string> {
     match arms {
         .End -> {
             ctx.match_trap(ctx.i64(-1))
             ctx.position(merge_bb)
-            ok_stmt(env)
+            ok_sr(ctx, env)
         }
         .Node(pattern, guard, body, next) -> {
             let body_bb = ctx.bb("parm_body")

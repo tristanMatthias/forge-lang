@@ -1,7 +1,8 @@
 mod parser
 mod codegen
 mod typeck
-use codegen.types.{err_stmt}
+use codegen.types.{err_stmt, StmtResult}
+use codegen.{ok_sr, err_sr}
 use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{define_param_names, resolve_expr}
@@ -57,9 +58,12 @@ export fn init_let_stmt(reg: Registry) {
     register(reg, f_mut)
 }
 
-fn let_destructure_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+fn let_destructure_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
-        .LetDestructure(names, initializer) -> emit_let_destructure(ctx, env, names, initializer)
-        _ -> err_stmt("expected LetDestructure")
+        .LetDestructure(names, initializer) -> {
+            let new_env = emit_let_destructure(ctx, env, names, initializer)?
+            ok_sr(ctx, new_env)
+        }
+        _ -> err_sr("expected LetDestructure")
     }
 }

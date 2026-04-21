@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
-use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx, rc_cleanup_reset}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx, rc_cleanup_reset}
 use codegen.{rc_set_releasable}
 use codegen.escape.{analyze_releasable}
 use core.registry.{build_registry}
@@ -651,8 +651,8 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     emit_top_level(result.ctx, result.env, next)
                 }
                 _ -> {
-                    let new_env = emit_stmt(tl_ctx, env, stmt)?
-                    emit_top_level(ctx, new_env, next)
+                    let sr = emit_stmt(tl_ctx, env, stmt)?
+                    emit_top_level(sr.ctx, sr.env, next)
                 }
             }
         }

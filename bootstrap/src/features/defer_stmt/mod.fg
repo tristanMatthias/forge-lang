@@ -1,7 +1,8 @@
 mod parser
 mod codegen
 use core.ast.{sexpr_dummy}
-use codegen.types.{err_stmt, ok_stmt}
+use codegen.types.{err_stmt, ok_stmt, StmtResult}
+use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr}
@@ -50,22 +51,22 @@ export fn init_defer_stmt(reg: Registry) {
     register(reg, f2)
 }
 
-fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
             errdefer_push(sexpr_dummy(body))
-            ok_stmt(env)
+            ok_sr(ctx, env)
         }
-        _ -> err_stmt("expected Errdefer")
+        _ -> err_sr("expected Errdefer")
     }
 }
 
-fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Defer(body) -> {
             defer_push(sexpr_dummy(body))
-            ok_stmt(env)
+            ok_sr(ctx, env)
         }
-        _ -> err_stmt("expected Defer")
+        _ -> err_sr("expected Defer")
     }
 }

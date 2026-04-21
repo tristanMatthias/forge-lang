@@ -1,7 +1,7 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
 use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitValue,  err_emit, ok_emit_typed, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
+use codegen.types.{Ctx, EmitValue, StmtResult,  err_emit, ok_emit_typed, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.codegen.{emit_match_expr}
 
@@ -20,7 +20,7 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
         .Match(subject, arms) -> emit_match_expr(ctx, env, subject, arms)
         .If(condition, then_branch, else_branch) -> emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)
         _ -> {
-            emit_stmt(ctx, env, stmt)?
+            let sr = emit_stmt(ctx, env, stmt)?
             ok_emit_typed(last_val, last_ty)
         }
     }
@@ -62,8 +62,8 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
             match next {
                 .End -> emit_stmt_as_value(line_ctx, env, ss.node, last_val, last_ty)
                 _ -> {
-                    let new_env = emit_stmt(line_ctx, env, ss.node)?
-                    emit_block_loop(ctx, new_env, next, last_val, last_ty)
+                    let sr = emit_stmt(line_ctx, env, ss.node)?
+                    emit_block_loop(sr.ctx, sr.env, next, last_val, last_ty)
                 }
             }
         }

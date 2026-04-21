@@ -1,26 +1,26 @@
 // WHY: emits LLVM IR for `if` as statement and expression.
 
 use core.ast.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq}
-use codegen.types.{Ctx, EmitValue,  ok_stmt, ok_emit_typed, emit_value_ptr, emit_value_ty}
-use codegen.{emit_expr, emit_stmt}
+use codegen.types.{Ctx, EmitValue, StmtResult,  ok_stmt, ok_emit_typed, emit_value_ptr, emit_value_ty}
+use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
 use features.union_type.codegen.{emit_union_wrap}
 
-export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<VarEnv, string> {
+export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<StmtResult, string> {
     let cond = ctx.emit(env, condition)?
     let merge_bb = ctx.bb("ifcont")
     let else_bb = ctx.if_true(emit_value_ptr(cond), "if")
 
-    let then_result = emit_stmt(ctx, env, then_branch)?
+    let then_sr = emit_stmt(ctx, env, then_branch)?
     ctx.br_if_open(merge_bb)
 
     ctx.position(else_bb)
     if else_branch != null {
-        let else_result = emit_stmt(ctx, env, else_branch!)?
+        let else_sr = emit_stmt(ctx, env, else_branch!)?
     }
     ctx.br_if_open(merge_bb)
 
     ctx.position(merge_bb)
-    ok_stmt(env)
+    ok_sr(ctx, env)
 }
 
 // A type is safe for automatic union inference when both branches

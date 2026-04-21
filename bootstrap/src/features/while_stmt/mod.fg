@@ -1,7 +1,8 @@
 mod parser
 mod codegen
 use core.ast.{vtype_display, vtype_eq}
-use codegen.types.{err_stmt}
+use codegen.types.{err_stmt, StmtResult}
+use codegen.{err_sr}
 use features.eval.{error_result}
 use features.eval.{execute_while}
 use core.registry.{feature_new, register}
@@ -31,10 +32,10 @@ export fn init_while_stmt(reg: Registry) {
     register(reg, f)
 }
 
-fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .While(condition, body) -> emit_while(ctx, env, condition, body)
-        _ -> err_stmt("expected While")
+        _ -> err_sr("expected While")
     }
 }
 

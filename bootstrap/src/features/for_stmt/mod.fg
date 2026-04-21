@@ -1,7 +1,8 @@
 mod parser
 mod codegen
 use core.ast.{vtype_list_elem}
-use codegen.types.{err_stmt}
+use codegen.types.{err_stmt, StmtResult}
+use codegen.{err_sr}
 use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
@@ -32,17 +33,17 @@ export fn init_for_stmt(reg: Registry) {
     register(reg, f2)
 }
 
-fn for_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+fn for_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .For(variable, start, end, body) -> emit_for(ctx, env, variable, start, end, body)
-        _ -> err_stmt("expected For")
+        _ -> err_sr("expected For")
     }
 }
 
-fn for_in_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+fn for_in_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .ForIn(variable, collection, body) -> emit_for_in(ctx, env, variable, collection, body)
-        _ -> err_stmt("expected ForIn")
+        _ -> err_sr("expected ForIn")
     }
 }
 

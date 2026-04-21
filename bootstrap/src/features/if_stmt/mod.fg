@@ -1,7 +1,8 @@
 mod parser
 mod codegen
 use core.ast.{TypeList, ValueType, vtype_display, vtype_eq}
-use codegen.types.{err_emit, err_stmt}
+use codegen.types.{err_emit, err_stmt, StmtResult}
+use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
 use features.eval.{eval_expr, execute_stmt}
 use core.registry.{feature_new, register}
@@ -44,10 +45,10 @@ fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> 
     }
 }
 
-fn if_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+fn if_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
-        _ -> err_stmt("expected If")
+        _ -> err_sr("expected If")
     }
 }
 

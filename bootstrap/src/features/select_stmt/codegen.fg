@@ -3,16 +3,17 @@
 // until one has data, then dispatches to the matching arm.
 
 use features.error_propagation.{Result}
-use codegen.types.{err_stmt, ok_stmt}
+use codegen.types.{err_stmt, ok_stmt, StmtResult}
 use codegen.blocks.{emit_block_loop}
-export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string> {
+use codegen.{ok_sr, err_sr}
+export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Select(arms) -> emit_select(ctx, env, arms)
-        _ -> err_stmt("select_emit_stmt: expected Select")
+        _ -> err_sr("select_emit_stmt: expected Select")
     }
 }
 
-fn emit_select(ctx: Ctx, env: VarEnv, arms: SelectArmList) -> Result<VarEnv, string> {
+fn emit_select(ctx: Ctx, env: VarEnv, arms: SelectArmList) -> Result<StmtResult, string> {
     let channels = ctx.array_new()
     let count = push_channels(ctx, env, arms, channels, 0)?
 
@@ -35,9 +36,9 @@ fn push_channels(ctx: Ctx, env: VarEnv, arms: SelectArmList, arr: ptr, count: in
     }
 }
 
-fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, val: ptr, arm_idx: int) -> Result<VarEnv, string> {
+fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, val: ptr, arm_idx: int) -> Result<StmtResult, string> {
     match arms {
-        .End -> ok_stmt(env)
+        .End -> ok_sr(ctx, env)
         .Node(binding, _, body, next) -> {
             let cmp = ctx.eq(idx, ctx.i64(arm_idx), "sel_cmp")
             let then_bb = ctx.bb("sel_then")
@@ -55,7 +56,7 @@ fn emit_select_dispatch(ctx: Ctx, env: VarEnv, arms: SelectArmList, idx: ptr, va
             ctx.br_if_open(merge_bb)
 
             ctx.position(merge_bb)
-            ok_stmt(env)
+            ok_sr(ctx, env)
         }
     }
 }
