@@ -600,6 +600,36 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
         }
         .Module(_, body) -> check_stmts(tc, body)
         .Annotated(_, inner) -> check_stmt(tc, inner)
+        .If(cond, then_b, else_b) -> {
+            let c1 = check_expr(tc, cond)
+            let c2 = check_stmt(c1.tc, then_b)
+            if else_b != null { check_stmt(c2, else_b!) } else { c2 }
+        }
+        .While(cond, body) -> {
+            let c1 = check_expr(tc, cond)
+            check_stmt(c1.tc, body)
+        }
+        .For(_, start, end, body) -> {
+            let c1 = check_expr(tc, start)
+            let c2 = check_expr(c1.tc, end)
+            check_stmt(c2.tc, body)
+        }
+        .ForIn(_, coll, body) -> {
+            let c1 = check_expr(tc, coll)
+            check_stmt(c1.tc, body)
+        }
+        .Match(subj, _) -> {
+            let c1 = check_expr(tc, subj)
+            c1.tc
+        }
+        .Defer(body) -> {
+            let r = check_expr(tc, body)
+            r.tc
+        }
+        .LetDestructure(_, init) -> {
+            let r = check_expr(tc, init)
+            r.tc
+        }
         _ -> {
             let tag = forge_stmt_tag(stmt)
             let result = dispatch_stmt_check(tc.features, tag, tc, stmt)
