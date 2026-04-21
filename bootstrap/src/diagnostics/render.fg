@@ -2,7 +2,7 @@
 // Hybrid design inspired by ariadne (box frame), miette (severity
 // symbols), Roc (Unicode separators), and codespan (connecting carets).
 
-use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, Span, Severity, severity_str, diag_code_str}
+use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticList, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
 
 // ── ANSI colors ──
 
@@ -168,6 +168,14 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
         eprintln(`  ${color_bold("help:")} ${diag.help}`)
     }
 
+    // Cause chain (ticket qar) — render linked cause diagnostics
+    match diag.cause {
+        .None -> {}
+        .Cause(cause_diag) -> {
+            eprintln(`  ${color_dim("caused by:")} ${cause_diag.message}`)
+        }
+    }
+
     eprintln("")
 }
 
@@ -221,6 +229,53 @@ fn render_warnings(source: string, filename: string, list: DiagnosticList, count
                 render_diagnostic(source, filename, diag)
                 render_warnings(source, filename, next, count + 1, max)
             }
+        }
+    }
+}
+
+// ── JSON diagnostic output (ticket d2e) ──
+// Outputs one JSON object per line to stderr.
+
+fn json_escape(s: string) -> string {
+    // Minimal JSON escaping: backslash and double-quote.
+    mut out = ""
+    for i in 0..s.length {
+        let ch = s[i]
+        if ch == "\\" {
+            out = out + "\\\\"
+        } else if ch == "\"" {
+            out = out + "\\\""
+        } else if ch == "\n" {
+            out = out + "\\n"
+        } else {
+            out = out + ch
+        }
+    }
+    out
+}
+
+export fn render_diagnostic_json(filename: string, diag: Diagnostic) {
+    let code_str = diag_code_str(diag.code)
+    let sev = severity_str(diag.severity)
+    let msg = json_escape(diag.message)
+    let hlp = json_escape(diag.help)
+    let conf = confidence_str(diag.confidence)
+    let line_s = string(diag.span.line)
+    let col_s = string(diag.span.col)
+    let fname = json_escape(filename)
+    eprintln("{\"code\":\"${code_str}\",\"severity\":\"${sev}\",\"message\":\"${msg}\",\"file\":\"${fname}\",\"line\":${line_s},\"col\":${col_s},\"help\":\"${hlp}\",\"confidence\":\"${conf}\"}")
+}
+
+export fn render_bag_json(filename: string, bag: DiagnosticBag) {
+    render_list_json(filename, bag.diagnostics)
+}
+
+fn render_list_json(filename: string, list: DiagnosticList) {
+    match list {
+        .End -> {}
+        .Node(diag, next) -> {
+            render_list_json(filename, next)
+            render_diagnostic_json(filename, diag)
         }
     }
 }

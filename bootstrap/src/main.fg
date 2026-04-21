@@ -43,15 +43,16 @@ use resolve.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use features.modules.package.{load_package_config, PackageConfig}
 use typeck.{typecheck_program}
-use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, span_dummy}
-use diagnostics.render.{render_bag}
+use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy}
+use diagnostics.render.{render_bag, render_bag_json}
 use codegen.setup.{compile_program}
 use features.generics.mono.{monomorphize, MonoResult}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")
-    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run> <file.fg>")
-    eprintln("       bootstrapc compile --stop-after=<parse|resolve|names|check> <file.fg>")
+    eprintln("Usage: bootstrapc <expr|program|eval|check|compile|run|fix> <file.fg>")
+    eprintln("       bootstrapc compile --stop-after=<parse|resolve|names|check> [--json] <file.fg>")
+    eprintln("       bootstrapc fix <file.fg>   Apply high-confidence auto-fixes")
 }
 
 fn fail(message: string) {
@@ -146,6 +147,29 @@ fn main() {
             println(render_value(result.value!))
             return
         }
+        "fix" -> {
+            // Ticket 8ym: autofix infrastructure.
+            // Parse and check the file, then apply high-confidence fixes.
+            // For v1.0: no auto-fixes are implemented yet, so we just report that.
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    render_bag(source, path, parsed.bag)
+                }
+                fail(parsed.error_message)
+            }
+            let entry_dir = modules_dirname(path)
+            let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+            if mod_resolved.had_error {
+                fail(mod_resolved.error_message)
+            }
+            let named = resolve_names(mod_resolved.stmts)
+            if bag_has_errors(named.bag) {
+                render_bag(source, path, named.bag)
+            }
+            println("no auto-fixes available")
+            return
+        }
         _ -> {}
     }
 
@@ -154,6 +178,7 @@ fn main() {
         // that appear before the file path (always the last argument).
         mut stop_after = ""
         mut debug_null = false
+        mut json_output = false
         let argc = forge_selfhost_argc()
         // The file path is always the last argument.
         let cpath_idx = argc - 1
@@ -165,6 +190,9 @@ fn main() {
             }
             if arg == "--debug-null" {
                 debug_null = true
+            }
+            if arg == "--json" {
+                json_output = true
             }
         }
         let has_flags = cpath_idx > 2
@@ -188,7 +216,8 @@ fn main() {
         let parsed = parse_program_source(csource)
         if parsed.had_error || parsed.stmts == null {
             if bag_has_errors(parsed.bag) {
-                render_bag(csource, cpath, parsed.bag)
+                if json_output { render_bag_json(cpath, parsed.bag) }
+                else { render_bag(csource, cpath, parsed.bag) }
             }
             fail(parsed.error_message)
         }
@@ -207,7 +236,8 @@ fn main() {
         let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
         if mod_resolved.had_error {
             let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-            render_bag(csource, cpath, mod_bag)
+            if json_output { render_bag_json(cpath, mod_bag) }
+            else { render_bag(csource, cpath, mod_bag) }
             fail(mod_resolved.error_message)
         }
         if stop_after == "resolve" {
@@ -216,7 +246,8 @@ fn main() {
         }
         let named = resolve_names(mod_resolved.stmts)
         if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
-            render_bag(csource, cpath, named.bag)
+            if json_output { render_bag_json(cpath, named.bag) }
+            else { render_bag(csource, cpath, named.bag) }
         }
         if named.had_error { fail(named.error_message) }
         if stop_after == "names" {
@@ -226,7 +257,8 @@ fn main() {
         // Type check — gates compilation on errors
         let tc_result = typecheck_program(named.stmts)
         if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
-            render_bag(csource, cpath, tc_result.bag)
+            if json_output { render_bag_json(cpath, tc_result.bag) }
+            else { render_bag(csource, cpath, tc_result.bag) }
         }
         if bag_has_errors(tc_result.bag) { fail("type check failed") }
         if stop_after == "check" {
@@ -237,13 +269,20 @@ fn main() {
         // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
         let mono = monomorphize(tc_result.stmts)
         if bag_has_errors(mono.bag) {
-            render_bag(csource, cpath, mono.bag)
+            if json_output { render_bag_json(cpath, mono.bag) }
+            else { render_bag(csource, cpath, mono.bag) }
             fail("monomorphization failed")
         }
         let output = "${cpath}.ll"
+        // Ticket t2w: ICE handler — wrap codegen errors in F9999.
         match compile_program(mono.stmts, output, debug_null, cpath) {
             .Ok(_) -> {}
-            .Err(e) -> fail(e)
+            .Err(e) -> {
+                let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
+                if json_output { render_bag_json(cpath, ice_bag) }
+                else { render_bag(csource, cpath, ice_bag) }
+                fail(e)
+            }
         }
         println(output)
         return
