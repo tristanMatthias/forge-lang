@@ -84,32 +84,31 @@ export enum DiagCode {
     ExpectedIn
     ExpectedExpression
     UnexpectedSemicolon
-    // Name resolution (F01xx — legacy, spec says F3000-3999)
-    UndefinedVariable
-    ImmutableAssign
-    // Type checking (F02xx — legacy, spec says F1000-1999)
+    // Type checking (F1000-1999 per spec Axis 20)
     TypeMismatch
     WrongArgCount
-    // Module system (F03xx)
+    CannotInferTypeParam
+    // Name resolution (F3000-3999 per spec Axis 20)
+    UndefinedVariable
+    ImmutableAssign
+    // Module system (F3100-3199)
     ModuleNotFound
     ImportNotFound
     ImportPrivate
     CircularImport
     OrphanImpl
-    UnusedImport
-    // Generics / monomorphization (F04xx)
-    CannotInferTypeParam
-    // Warnings (F08xx)
+    // Warnings (F9000-9998 per spec Axis 20)
     NonExhaustiveMatch
+    UnusedImport
     UnusedImport2
     NamingConvention
-    // Spec testing (F09xx)
+    // Spec testing (F9100)
     SpecTestFailure
-    // Internal (F09xx)
+    // Internal (F9900)
     InternalError
     // ICE (F9999) — Internal Compiler Error
     ICE
-    // Runtime errors (F10xx)
+    // Runtime errors (F5000-5999 — not in spec ranges, compiler-internal)
     RuntimeNullDeref
     RuntimeDivByZero
     RuntimeIndexOOB
@@ -137,29 +136,29 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .ExpectedIn          -> ErrorDef { code: "F0031", help: "for loops use `in`: `for x in list { ... }` or `for i in 0..10 { ... }`" }
         .ExpectedExpression  -> ErrorDef { code: "F0040", help: "expected a value, variable, or expression here" }
         .UnexpectedSemicolon -> ErrorDef { code: "F0041", help: "Forge doesn't use semicolons — remove the `;`" }
-        .UndefinedVariable   -> ErrorDef { code: "F0100", help: "" }
-        .ImmutableAssign     -> ErrorDef { code: "F0101", help: "declare with `mut` instead of `let` to allow reassignment" }
-        .TypeMismatch        -> ErrorDef { code: "F0200", help: "" }
-        .WrongArgCount       -> ErrorDef { code: "F0201", help: "" }
-        .ModuleNotFound      -> ErrorDef { code: "F0300", help: "create the module file or remove the `mod` declaration" }
-        .ImportNotFound      -> ErrorDef { code: "F0301", help: "check the spelling or add `export` to the function in the target module" }
-        .ImportPrivate       -> ErrorDef { code: "F0302", help: "add `export` before the declaration to make it importable" }
-        .CircularImport      -> ErrorDef { code: "F0303", help: "break the cycle by moving shared types to a common module" }
-        .OrphanImpl          -> ErrorDef { code: "F0304", help: "move the `impl` to the module that defines either the trait or the type" }
-        .UnusedImport        -> ErrorDef { code: "F0802", help: "remove unused imports to keep code clean" }
-        .UnusedImport2       -> ErrorDef { code: "F0802", help: "remove unused imports to keep code clean" }
-        .CannotInferTypeParam -> ErrorDef { code: "F0400", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
-        .SpecTestFailure     -> ErrorDef { code: "F0900", help: "check the spec/given/then test — expected result did not match" }
-        .InternalError       -> ErrorDef { code: "F0999", help: "" }
+        .TypeMismatch        -> ErrorDef { code: "F1000", help: "" }
+        .WrongArgCount       -> ErrorDef { code: "F1001", help: "" }
+        .CannotInferTypeParam -> ErrorDef { code: "F1002", help: "add explicit type arguments, or ensure the type can be inferred from the arguments" }
+        .UndefinedVariable   -> ErrorDef { code: "F3000", help: "" }
+        .ImmutableAssign     -> ErrorDef { code: "F3001", help: "declare with `mut` instead of `let` to allow reassignment" }
+        .ModuleNotFound      -> ErrorDef { code: "F3100", help: "create the module file or remove the `mod` declaration" }
+        .ImportNotFound      -> ErrorDef { code: "F3101", help: "check the spelling or add `export` to the function in the target module" }
+        .ImportPrivate       -> ErrorDef { code: "F3102", help: "add `export` before the declaration to make it importable" }
+        .CircularImport      -> ErrorDef { code: "F3103", help: "break the cycle by moving shared types to a common module" }
+        .OrphanImpl          -> ErrorDef { code: "F3104", help: "move the `impl` to the module that defines either the trait or the type" }
+        .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
+        .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
+        .UnusedImport2       -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
+        .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }
+        .SpecTestFailure     -> ErrorDef { code: "F9100", help: "check the spec/given/then test — expected result did not match" }
+        .InternalError       -> ErrorDef { code: "F9900", help: "" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
-        .RuntimeNullDeref    -> ErrorDef { code: "F1000", help: "" }
-        .RuntimeDivByZero    -> ErrorDef { code: "F1001", help: "" }
-        .RuntimeIndexOOB     -> ErrorDef { code: "F1002", help: "" }
-        .RuntimeMatchFallthrough -> ErrorDef { code: "F1003", help: "" }
-        .RuntimeStackOverflow -> ErrorDef { code: "F1004", help: "" }
-        .RuntimeNullArg      -> ErrorDef { code: "F1005", help: "" }
-        .NonExhaustiveMatch  -> ErrorDef { code: "F0801", help: "add a wildcard `_ -> ...` arm, or handle all variants explicitly" }
-        .NamingConvention    -> ErrorDef { code: "F0803", help: "types use PascalCase, functions/variables use snake_case, constants use SCREAMING_SNAKE" }
+        .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "" }
+        .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "" }
+        .RuntimeIndexOOB     -> ErrorDef { code: "F5002", help: "" }
+        .RuntimeMatchFallthrough -> ErrorDef { code: "F5003", help: "" }
+        .RuntimeStackOverflow -> ErrorDef { code: "F5004", help: "" }
+        .RuntimeNullArg      -> ErrorDef { code: "F5005", help: "" }
     }
 }
 

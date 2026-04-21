@@ -287,7 +287,7 @@ fn field_type_for(fields: FieldList, name: string) -> string {
     match fields { .End -> "", .Node(n, ty, _, _) if n == name -> ty, .Node(_, _, _, next) -> field_type_for(next, name) }
 }
 
-// Validate that all type params are resolved. Emit F0400 for each missing one.
+// Validate that all type params are resolved. Emit F1002 for each missing one.
 fn check_resolved(tp: TypeParamList, ta: TypeArgList, name: string, line: int, col: int, bag: DiagnosticBag) -> DiagnosticBag {
     match tp {
         .End -> bag

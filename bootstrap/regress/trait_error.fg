@@ -1,5 +1,5 @@
 // Error test: missing trait method should be caught.
-/// expect-error: F0200
+/// expect-error: F1000
 
 trait Drawable {
     fn draw(self) -> string

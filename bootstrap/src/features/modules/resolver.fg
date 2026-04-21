@@ -119,7 +119,7 @@ fn resolve_module_stmt(stmt: Stmt, dir: string, loaded: LoadedPaths, stack: Impo
             // stack, we have a cycle. Report a clear error.
             if stack_has(stack, mod_path) {
                 let cycle = render_cycle(stack, mod_path)
-                return ModStmtResult { stmt, loaded, had_error: true, error_message: "[F0303] circular import detected: ${cycle}" }
+                return ModStmtResult { stmt, loaded, had_error: true, error_message: "[F3103] circular import detected: ${cycle}" }
             }
             if loaded_has(loaded, mod_path) {
                 return ModStmtResult { stmt: Stmt.Module(name, StmtList.End), loaded, had_error: false, error_message: "" }
