@@ -171,6 +171,7 @@ fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
         .IsCheck(subj, _) -> remove_escaped_expr(subj, set)
         .InCheck(needle, items) -> remove_escaped_args(items, remove_escaped_expr(needle, set))
         .EnumCtor(_, _, args) -> remove_escaped_args(args, set)
+        .Spawn(body) -> remove_escaped_expr(body, set)
         .When(_) -> set  // when arms don't contain ident escapes at this level
         .ListComp(body, _, coll, filter) -> {
             let s1 = remove_escaped_expr(body, set)

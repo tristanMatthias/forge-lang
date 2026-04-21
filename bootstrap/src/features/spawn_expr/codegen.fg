@@ -1,0 +1,23 @@
+// WHY: codegen for `spawn { body }`. Wraps the body in a zero-arg
+// closure and calls forge_spawn(closure), returning the thread handle.
+// Per spec Axis 18: v1.0 green-thread tasks via cooperative scheduling.
+
+use codegen.{emit_expr}
+use codegen.types.{ok_emit, ok_emit_typed, err_emit, EmitValue}
+use features.closures.codegen.{emit_lambda}
+
+export fn spawn_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Spawn(body) -> emit_spawn(ctx, env, body)
+        _ -> err_emit("spawn_emit_expr: expected Spawn")
+    }
+}
+
+fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
+    // Wrap body in a zero-arg lambda: () -> { body }
+    let closure = emit_lambda(ctx, env, ParamList.End, body)?
+
+    // Call forge_spawn(closure_ptr) which returns a thread handle
+    let handle = ctx.call("forge_spawn", [closure.value])
+    ok_emit_typed(handle, .Int)
+}

@@ -1,0 +1,18 @@
+// WHY: parses `spawn { body }` into a Spawn expression.
+// Per spec Axis 18: spawn creates a green-thread task.
+
+use parse.{Parser}
+use core.ast.{Expr, Tk}
+
+impl Parser {
+    fn parse_spawn_expression(self) -> Expr? {
+        self.advance()  // consume `spawn`
+        if !self.check(Tk.LeftBrace) {
+            self.consume(Tk.LeftBrace, "expected `{` after spawn")
+            return null
+        }
+        // parse_block_expression consumes { stmts }
+        let body = self.parse_block_expression()?
+        Expr.Spawn(body)
+    }
+}

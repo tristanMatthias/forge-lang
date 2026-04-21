@@ -31,6 +31,7 @@ mod in_operator
 mod spec_test
 mod select_stmt
 mod parallel_stmt
+mod spawn_expr
 mod modules
 mod eval
 mod union_type
@@ -51,6 +52,7 @@ use features.match_expr.{init_match_expr}
 use features.modules.{init_modules}
 use features.null_safety.{init_null_safety}
 use features.parallel_stmt.{init_parallel_stmt}
+use features.spawn_expr.{init_spawn_expr}
 use features.return_stmt.{init_return_stmt}
 use features.select_stmt.{init_select_stmt}
 use features.spec_test.{init_spec_test}
@@ -79,6 +81,7 @@ export fn init_features(reg: Registry) {
     init_spec_test(reg)
     init_select_stmt(reg)
     init_parallel_stmt(reg)
+    init_spawn_expr(reg)
     init_fn_decl(reg)
     init_enum_decl(reg)
     init_impl_decl(reg)

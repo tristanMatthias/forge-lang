@@ -1,0 +1,31 @@
+// WHY: feature registration for `spawn { body }` expression.
+// Per spec Axis 18: green-thread task spawning.
+
+mod codegen
+mod parser
+use features.eval.{error_result}
+use core.registry.{feature_new, register}
+use resolve.{resolve_expr}
+use features.spawn_expr.codegen.{spawn_emit_expr}
+use typeck.{check_expr, tc_er}
+
+export fn init_spawn_expr(reg: Registry) {
+    let f = feature_new("spawn") with {
+        expr_tag: Expr.Spawn(Expr.Null),
+        emit_expr: spawn_emit_expr,
+        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .Spawn(body) -> resolve_expr(r, body), _ -> r },
+        check_expr: (tc: TC, expr: Expr) -> match expr {
+            .Spawn(body) -> {
+                let b = check_expr(tc, body)
+                // spawn returns an int handle (task handle)
+                tc_er(b.tc, .Int)
+            }
+            _ -> tc_er(tc, .Int)
+        },
+        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
+            .Spawn(_) -> error_result(rt, "spawn is not supported by the tree-walk evaluator")
+            _ -> error_result(rt, "expected Spawn")
+        },
+    }
+    register(reg, f)
+}

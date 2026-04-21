@@ -2139,6 +2139,17 @@ void forge_thread_join(int64_t handle) {
     free(thread);
 }
 
+// Yield the current fiber. No-op in v1.0 (pthreads-based).
+void forge_yield(void) {
+    // v1.0: no-op — real cooperative scheduling comes later
+}
+
+// Run the scheduler until all tasks complete. No-op in v1.0
+// because tasks are OS threads that run to completion.
+void forge_scheduler_run(void) {
+    // v1.0: no-op — pthreads run independently
+}
+
 // ── Channels ──
 // Unbuffered channel: send blocks until recv, recv blocks until send.
 

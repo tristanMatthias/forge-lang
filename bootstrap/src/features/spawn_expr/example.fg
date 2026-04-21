@@ -1,0 +1,20 @@
+/// expect: hello from spawn
+/// expect: after spawn
+/// expect: 42
+
+extern fn forge_thread_join(handle: int)
+
+fn main() {
+    let h = spawn {
+        println("hello from spawn")
+    }
+    forge_thread_join(h)
+    println("after spawn")
+
+    // spawn with a captured value
+    let x = 42
+    let h2 = spawn {
+        println(string(x))
+    }
+    forge_thread_join(h2)
+}

@@ -226,6 +226,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "select"   -> Tk.KwSelect
         "shape"    -> Tk.KwShape
         "parallel" -> Tk.KwParallel
+        "spawn"    -> Tk.KwSpawn
         _          -> Tk.Identifier
     }
 }
@@ -1155,6 +1156,10 @@ impl Parser {
 
         if self.check(Tk.KwIf) {
             return self.parse_if_expression()
+        }
+
+        if self.check(Tk.KwSpawn) {
+            return self.parse_spawn_expression()
         }
 
         if self.check(Tk.LeftBrace) {
