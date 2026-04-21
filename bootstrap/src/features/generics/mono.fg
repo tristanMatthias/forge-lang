@@ -460,13 +460,16 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .Defer(body) -> collect_inst_expr(body, regs, st)
         .Block(body) -> collect_inst_stmts(body, regs, st)
         .Module(_, body) -> collect_inst_stmts(body, regs, st)
-        .Function(_, tp, _, _, body) -> {
+        .Function(_, tp, _, ret_ty, body) -> {
             if tp is .Node { return st }
             // Scope merging to this function: collect body's instantiations
             // independently so enum ctors merge within the function, not globally.
             let fn_state = collect_inst_stmts(body, regs, CollectState { insts: InstList.End, bag: st.bag, line: st.line, col: st.col })
-            // Add the function-scoped entries to the parent
-            CollectState { insts: append_insts(fn_state.insts, st.insts), bag: fn_state.bag, line: st.line, col: st.col }
+            // Also collect instantiation from the return type annotation.
+            // This handles functions that return Result<T, E> but only construct
+            // one variant (e.g., only Err paths — T is inferred from annotation).
+            let with_ret = scope_insts_for_ret(ret_ty, regs, fn_state.insts)
+            CollectState { insts: append_insts(with_ret, st.insts), bag: fn_state.bag, line: st.line, col: st.col }
         }
         .If(cond, then_b, else_b) -> {
             let a = collect_inst_stmt(then_b, regs, collect_inst_expr(cond, regs, st))

@@ -9,24 +9,15 @@ use features.error_propagation.{Result}
 extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
 fn ok_br(value: ptr, ty: ValueType, ctx: Ctx) -> Result<BlockResult, string> {
-    if false { return Result.Err("") }
     let r = Result.Ok(BlockResult { value, ty, ctx })
     forge_tag_as_result(r)
     r
 }
 
 fn err_br(msg: string) -> Result<BlockResult, string> {
-    if false { return ok_br_dummy() }
     let r = Result.Err(msg)
     forge_tag_as_result(r)
     r
-}
-
-fn ok_br_dummy() -> Result<BlockResult, string> {
-    let n: ptr = null
-    use core.registry.{registry_new}
-    let dummy_ctx = Ctx { lc: n, module: n, builder: n, current_fn: n, current_fn_name: "", i64_type: n, i1_type: n, ptr_type: n, double_type: n, structs: .End, enums: .End, fn_rets: .End, fn_params: .End, top_level_vars: .End, loops: .End, defers: .End, features: registry_new(), trait_decls: .End, newtypes: .End, union_aliases: .End, debug_null_checks: 0, source_file: "", source_line: 0 }
-    Result.Ok(BlockResult { value: n, ty: .Int, ctx: dummy_ctx })
 }
 
 export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<EmitValue, string> {

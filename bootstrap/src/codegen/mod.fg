@@ -53,25 +53,15 @@ use parse.lexer.{parse_int_literal}
 extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
 export fn ok_sr(ctx: Ctx, env: VarEnv) -> Result<StmtResult, string> {
-    if false { return Result.Err("") }
     let r = Result.Ok(StmtResult { ctx, env })
     forge_tag_as_result(r)
     r
 }
 
 export fn err_sr(msg: string) -> Result<StmtResult, string> {
-    if false { return ok_sr_dummy() }
     let r = Result.Err(msg)
     forge_tag_as_result(r)
     r
-}
-
-// Never called — only exists so the compiler sees Result.Ok(StmtResult)
-// in err_sr's dead branch, teaching it the return type.
-fn ok_sr_dummy() -> Result<StmtResult, string> {
-    let n: ptr = null
-    let dummy_ctx = Ctx { lc: n, module: n, builder: n, current_fn: n, current_fn_name: "", i64_type: n, i1_type: n, ptr_type: n, double_type: n, structs: .End, enums: .End, fn_rets: .End, fn_params: .End, top_level_vars: .End, loops: .End, defers: .End, rc_cleanup: .End, rc_releasable: .End, features: registry_new(), trait_decls: .End, newtypes: .End, union_aliases: .End, debug_null_checks: 0, source_file: "", source_line: 0 }
-    Result.Ok(StmtResult { ctx: dummy_ctx, env: .End })
 }
 
 // ── Statement emission ──
