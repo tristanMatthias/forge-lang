@@ -904,21 +904,24 @@ fn field_type_lookup(fields: FieldList, name: string) -> string {
 // ── Binary operator type rules ──
 
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
+    // If either operand is Float, arithmetic produces Float.
+    let arith_ty = if vtype_eq(left, .Float) || vtype_eq(right, .Float) { ValueType.Float } else { ValueType.Int }
     match op {
         .Add -> {
-            // String + anything = String
-            if vtype_eq(left, .Str) || vtype_eq(right, .Str) {
-                return tc_er(tc, .Str)
-            }
-            tc_er(tc, .Int)
+            if vtype_eq(left, .Str) || vtype_eq(right, .Str) { return tc_er(tc, .Str) }
+            tc_er(tc, arith_ty)
         }
+        .Sub -> tc_er(tc, arith_ty)
+        .Mul -> tc_er(tc, arith_ty)
+        .Div -> tc_er(tc, arith_ty)
+        .Mod -> tc_er(tc, arith_ty)
         .Eq -> tc_er(tc, .Bool)
         .Ne -> tc_er(tc, .Bool)
         .Lt -> tc_er(tc, .Bool)
         .Le -> tc_er(tc, .Bool)
         .Gt -> tc_er(tc, .Bool)
         .Ge -> tc_er(tc, .Bool)
-        _ -> tc_er(tc, .Int)  // Sub, Mul, Div, Rem, bitwise
+        _ -> tc_er(tc, .Int)
     }
 }
 
