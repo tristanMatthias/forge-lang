@@ -924,6 +924,24 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
 
 // ── Call type inference ──
 
+// Check arity and return type for a named function call.
+fn tc_check_fn_call(checked: TC, name: string, args: ExprList) -> ExprResult {
+    let expected = tc_fn_arity(checked.fns, name)
+    let actual = tc_count_args(args)
+    if expected != actual {
+        let s = if expected != 1 { "s" } else { "" }
+        let msg = "`${name}` expects ${string(expected)} argument${s}, got ${string(actual)}"
+        return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, name))
+    }
+    // Check shape and newtype compatibility
+    let shape_checked = tc_check_shape_args(checked, tc_fn_params(checked.fns, name), args)
+    let newtype_checked = tc_check_newtype_args(shape_checked, name, tc_fn_params(shape_checked.fns, name), args)
+    let ret_ty = fn_type_lookup(newtype_checked.fns, name)
+    let first_arg_ty = tc_first_arg_type(newtype_checked, args)
+    let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, ret_ty, first_arg_ty)
+    tc_er(ctor_checked, ret_ty)
+}
+
 fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
     match callee {
         .Ident(name) -> {
@@ -937,39 +955,19 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
             }
             // User-defined function
             if fn_type_has(checked.fns, name) {
-                let expected = tc_fn_arity(checked.fns, name)
-                let actual = tc_count_args(args)
-                if expected != actual {
-                    let msg = "`${name}` expects ${string(expected)} argument${if expected != 1 { "s" } else { ""}}, got ${string(actual)}"
-                    return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, name))
-                }
-                // Check shape structural compatibility for each argument
-                let shape_checked = tc_check_shape_args(checked, tc_fn_params(checked.fns, name), args)
-                // Check newtype argument compatibility
-                let newtype_checked = tc_check_newtype_args(shape_checked, name, tc_fn_params(shape_checked.fns, name), args)
-                // Newtype constructor: check arg matches inner type
-                let ret_ty = fn_type_lookup(newtype_checked.fns, name)
-                let first_arg_ty = tc_first_arg_type(newtype_checked, args)
-                let ctor_checked = tc_check_newtype_ctor(newtype_checked, name, ret_ty, first_arg_ty)
-                return tc_er(ctor_checked, ret_ty)
+                return tc_check_fn_call(checked, name, args)
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)
             if vtype_eq(var_ty, .Int) {
-                return tc_er(checked, .Int) // unknown
+                return tc_er(checked, .Int)
             }
             tc_er(checked, vtype_fn_ret(var_ty))
         }
         .QualifiedIdent(path) -> {
             let checked = check_expr_list(tc, args)
             if fn_type_has(checked.fns, path) {
-                let expected = tc_fn_arity(checked.fns, path)
-                let actual = tc_count_args(args)
-                if expected != actual {
-                    let msg = "`${path}` expects ${string(expected)} argument${if expected != 1 { "s" } else { ""}}, got ${string(actual)}"
-                    return tc_er(tc_report(checked, DiagCode.WrongArgCount, msg), fn_type_lookup(checked.fns, path))
-                }
-                return tc_er(checked, fn_type_lookup(checked.fns, path))
+                return tc_check_fn_call(checked, path, args)
             }
             tc_er(checked, .Int)
         }
