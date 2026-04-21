@@ -560,7 +560,11 @@ fn check_binding(tc: TC, name: string, ty_str: string, init: Expr, is_const: boo
         let msg = "`const` requires a compile-time constant expression (use `let` for runtime values)"
         return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
     }
-    tc_bind(r.tc, name, declared_ty)
+    // Shape subtyping: if declared type is a shape, check init value has required fields
+    let after_shape = if ty_str.length > 0 {
+        tc_check_shape_compat(r.tc, ty_str, r.ty)
+    } else { r.tc }
+    tc_bind(after_shape, name, declared_ty)
 }
 
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
