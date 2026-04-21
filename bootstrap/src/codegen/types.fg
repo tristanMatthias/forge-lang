@@ -687,11 +687,11 @@ export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
 
 // ── LLVM type mapping ──
 //
-// Maps Forge's ValueType to the correct LLVM type. This is the core
-// function that eliminates the everything-is-i64 model.
+// Maps Forge's ValueType to the correct LLVM type.
 //
-// int, bool (for now), float (for now) → i64
-// string, ptr, struct, enum, list, map, fn, closure, trait → ptr
+// Int → i64, Bool → i1, Float → double, Void → i64
+// Str, Ptr, Struct, Enum, List, Map, Fn, Closure, Trait, Union, Tuple → ptr
+// Newtype → recurse on inner type
 
 export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType) -> ptr {
     match vt {

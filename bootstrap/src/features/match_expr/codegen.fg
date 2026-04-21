@@ -484,8 +484,8 @@ fn emit_literal_cmp(ctx: Ctx, subj: EmitValue, pattern: Pattern) -> ptr {
             ctx.eq(emit_value_ptr(subj), ctx.i64(val), "lit_eq")
         }
         .LitBool(val) -> {
-            // Bool subjects may be i1 (typed) or i64 (legacy). Use truthy
-            // to normalize to i1, then compare against the literal.
+            // Bool subjects may be i1 or i64 depending on source. Normalize
+            // to i1 via truthy, then compare against the literal.
             let subj_bool = ctx.truthy(emit_value_ptr(subj), "bool_subj")
             if val {
                 // match true: check if subject is truthy

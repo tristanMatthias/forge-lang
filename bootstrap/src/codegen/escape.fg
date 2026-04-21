@@ -116,6 +116,8 @@ fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
 
 
 // An allocating expression creates a new heap object that the local owns.
+// Only these 4 forms allocate via arena_alloc/rc_alloc. If a new allocating
+// expression type is added (e.g. MapLit, ListComp), add it here.
 fn is_allocating_expr(expr: Expr) -> bool {
     match expr {
         .StructLit(_, _) -> true
@@ -220,47 +222,7 @@ fn releasable_any(set: ReleasableSet) -> bool {
 fn count_allocating_in_stmts(stmts: StmtList) -> int {
     match stmts {
         .End -> 0
-        .Node(ss, next) -> {
-            let n = match stmt_unwrap(ss.node) {
-                .Let(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
-                .Mut(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
-                .Const(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
-                .Block(inner) -> count_allocating_in_stmts(inner)
-                .If(_, then_b, _) -> count_allocating_in_stmt_single(then_b)
-                .While(_, wb) -> count_allocating_in_stmt_single(wb)
-                .For(_, _, _, fb) -> count_allocating_in_stmt_single(fb)
-                .ForIn(_, _, fib) -> count_allocating_in_stmt_single(fib)
-                .Expr(_) -> 0
-                .Return(_) -> 0
-                .ReturnEmpty -> 0
-                .Function(_, _, _, _, _) -> 0
-                .TypeDecl(_, _, _) -> 0
-                .NewtypeDecl(_, _) -> 0
-                .UnionAliasDecl(_, _) -> 0
-                .ShapeDecl(_, _) -> 0
-                .EnumDecl(_, _, _) -> 0
-                .Match(_, _) -> 0
-                .Impl(_, _) -> 0
-                .NoOp -> 0
-                .ExternFn(_, _, _) -> 0
-                .Break -> 0
-                .Continue -> 0
-                .TraitDecl(_, _) -> 0
-                .LetDestructure(_, _) -> 0
-                .Defer(_) -> 0
-                .Errdefer(_) -> 0
-                .Annotated(_, _) -> 0
-                .SpecBlock(_, _) -> 0
-                .GivenBlock(_, _) -> 0
-                .ThenBlock(_, _) -> 0
-                .Select(_) -> 0
-                .Parallel(_) -> 0
-                .Module(_, _) -> 0
-                .Use(_, _) -> 0
-                .AssocType(_, _) -> 0
-            }
-            n + count_allocating_in_stmts(next)
-        }
+        .Node(ss, next) -> count_allocating_in_stmt_single(ss.node) + count_allocating_in_stmts(next)
     }
 }
 

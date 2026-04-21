@@ -211,40 +211,8 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
     match stmts {
         .End -> captures
         .Node(ss, next) -> {
-            // Track locally-bound names so they shadow outer env and aren't captured.
-            // After processing a Let/Mut/Const, add the name to params so subsequent
-            // statements won't capture it (the name is local to this closure body).
-            let c1 = match ss.node {
-                .Expr(e) -> find_captures(e, params, env, captures)
-                .Return(e) -> find_captures(e, params, env, captures)
-                .Let(_, _, init) -> find_captures(init, params, env, captures)
-                .Mut(_, _, init) -> find_captures(init, params, env, captures)
-                .If(cond, then_branch, else_branch) -> {
-                    let cc = find_captures(cond, params, env, captures)
-                    let cc2 = find_captures_stmt_body(then_branch, params, env, cc)
-                    if else_branch != null { find_captures_stmt_body(else_branch!, params, env, cc2) } else { cc2 }
-                }
-                .While(cond, body) -> {
-                    let cc = find_captures(cond, params, env, captures)
-                    find_captures_stmt_body(body, params, env, cc)
-                }
-                .For(_, start, end, body) -> {
-                    let cc = find_captures(start, params, env, captures)
-                    let cc2 = find_captures(end, params, env, cc)
-                    find_captures_stmt_body(body, params, env, cc2)
-                }
-                .ForIn(_, coll, body) -> {
-                    let cc = find_captures(coll, params, env, captures)
-                    find_captures_stmt_body(body, params, env, cc)
-                }
-                .Block(inner_stmts) -> find_captures_stmts(inner_stmts, params, env, captures)
-                .Match(subject, arms) -> {
-                    let cc = find_captures(subject, params, env, captures)
-                    find_captures_arms(arms, params, env, cc)
-                }
-                .Defer(body) -> find_captures(body, params, env, captures)
-                _ -> captures
-            }
+            // Process this statement for captures using the shared handler.
+            let c1 = find_captures_stmt_body(ss.node, params, env, captures)
             // If this statement binds a local name, add it to params so subsequent
             // uses of the name won't be treated as captures from the outer scope.
             let updated_params = match ss.node {
