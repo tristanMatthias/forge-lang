@@ -21,12 +21,15 @@ fn releasable_remove(set: ReleasableSet, name: string) -> ReleasableSet {
     }
 }
 
-// Analyze a function body. A local is releasable only if:
+// Analyze a function body in a single pass. A local is releasable only if:
 // 1. Its initializer is an allocation (struct lit, enum ctor, tuple, with-expr)
 // 2. Its only uses are field reads (not returned, passed as arg, etc.)
+//
+// Single-pass insight: declarations appear before uses in statement order.
+// When we see `let a = Point{...}`, add a. When we later see `f(a)`, remove a.
+// Uses can only REMOVE from the set, so forward references work naturally.
 export fn analyze_releasable(body: StmtList) -> ReleasableSet {
-    let owned = collect_owned_bindings(body, ReleasableSet.End)
-    remove_escaped(body, owned)
+    single_pass_escape(body, ReleasableSet.End)
 }
 
 // Analyze a single expression body (for lambdas).
@@ -37,86 +40,56 @@ export fn analyze_releasable_expr(body: Expr) -> ReleasableSet {
     }
 }
 
-// Only collect bindings whose initializer creates a new RC object.
-fn collect_owned_bindings(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
+// Single-pass escape analysis: walks statements once, adding allocating
+// bindings and removing escaped ones as it encounters them in order.
+fn single_pass_escape(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
     match stmts {
         .End -> set
         .Node(ss, next) -> {
-            let updated = match stmt_unwrap(ss.node) {
-                .Let(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-                .Mut(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-                .Const(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-                .Block(body) -> collect_owned_bindings(body, set)
-                .If(_, then_b, else_b) -> {
-                    let s1 = collect_owned_stmt(then_b, set)
-                    if else_b != null { collect_owned_stmt(else_b!, s1) } else { s1 }
-                }
-                _ -> set
-            }
-            collect_owned_bindings(next, updated)
+            let updated = single_pass_stmt(ss.node, set)
+            single_pass_escape(next, updated)
         }
     }
 }
 
-fn collect_owned_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
-    match stmt_unwrap(stmt) {
-        .Block(body) -> collect_owned_bindings(body, set)
-        .Let(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-        .Mut(name, _, init) -> if is_allocating_expr(init) { releasable_add(set, name) } else { set }
-        _ -> set
-    }
-}
-
-// An allocating expression creates a new heap object that the local owns.
-fn is_allocating_expr(expr: Expr) -> bool {
-    match expr {
-        .StructLit(_, _) -> true
-        .EnumCtor(_, _, _) -> true
-        .Tuple(_) -> true
-        .With(_, _) -> true
-        _ -> false
-    }
-}
-
-// Phase 2: walk all expressions. If a name is used in any context OTHER
-// than `.FieldAccess(Ident(name), _)`, remove it from releasable set.
-fn remove_escaped(stmts: StmtList, set: ReleasableSet) -> ReleasableSet {
-    match stmts {
-        .End -> set
-        .Node(ss, next) -> {
-            let updated = remove_escaped_stmt(ss.node, set)
-            remove_escaped(next, updated)
-        }
-    }
-}
-
-fn remove_escaped_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
+fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
     let inner = stmt_unwrap(stmt)
     match inner {
-        .Return(expr) -> remove_escaped_expr(expr, set)
-        .Expr(expr) -> remove_escaped_expr(expr, set)
-        .Let(_, _, init) -> remove_escaped_expr(init, set)
-        .Mut(_, _, init) -> remove_escaped_expr(init, set)
-        .Const(_, _, init) -> remove_escaped_expr(init, set)
-        .Block(body) -> remove_escaped(body, set)
+        // Bindings: add if allocating, then check init for escapes
+        .Let(name, _, init) -> {
+            let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+            remove_escaped_expr(init, s1)
+        }
+        .Mut(name, _, init) -> {
+            let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+            remove_escaped_expr(init, s1)
+        }
+        .Const(name, _, init) -> {
+            let s1 = if is_allocating_expr(init) { releasable_add(set, name) } else { set }
+            remove_escaped_expr(init, s1)
+        }
+        // Recurse into blocks
+        .Block(body) -> single_pass_escape(body, set)
         .If(cond, then_b, else_b) -> {
             let s1 = remove_escaped_expr(cond, set)
-            let s2 = remove_escaped_stmt(then_b, s1)
-            if else_b != null { remove_escaped_stmt(else_b!, s2) } else { s2 }
+            let s2 = single_pass_stmt(then_b, s1)
+            if else_b != null { single_pass_stmt(else_b!, s2) } else { s2 }
         }
-        .While(cond, body) -> remove_escaped_stmt(body, remove_escaped_expr(cond, set))
+        // Everything else: just check for escapes (same as remove_escaped_stmt)
+        .Return(expr) -> remove_escaped_expr(expr, set)
+        .Expr(expr) -> remove_escaped_expr(expr, set)
+        .While(cond, body) -> single_pass_stmt(body, remove_escaped_expr(cond, set))
         .For(_, start, end, body) -> {
             let s1 = remove_escaped_expr(start, set)
             let s2 = remove_escaped_expr(end, s1)
-            remove_escaped_stmt(body, s2)
+            single_pass_stmt(body, s2)
         }
-        .ForIn(_, coll, body) -> remove_escaped_stmt(body, remove_escaped_expr(coll, set))
+        .ForIn(_, coll, body) -> single_pass_stmt(body, remove_escaped_expr(coll, set))
         .Match(subj, _) -> remove_escaped_expr(subj, set)
         .Defer(body) -> remove_escaped_expr(body, set)
         .Errdefer(body) -> remove_escaped_expr(body, set)
-        .Annotated(_, inner) -> remove_escaped_stmt(inner, set)
+        .Annotated(_, inner) -> single_pass_stmt(inner, set)
         .LetDestructure(_, init) -> remove_escaped_expr(init, set)
-        // Declarations and control that don't contain escapable ident refs at this level
         .Function(_, _, _, _, _) -> set
         .ReturnEmpty -> set
         .TypeDecl(_, _, _) -> set
@@ -140,6 +113,20 @@ fn remove_escaped_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
     }
 }
 
+
+// An allocating expression creates a new heap object that the local owns.
+fn is_allocating_expr(expr: Expr) -> bool {
+    match expr {
+        .StructLit(_, _) -> true
+        .EnumCtor(_, _, _) -> true
+        .Tuple(_) -> true
+        .With(_, _) -> true
+        _ -> false
+    }
+}
+
+// Walk expressions checking for escaping uses. If a name is used in any
+// context OTHER than `.FieldAccess(Ident(name), _)`, remove from releasable set.
 fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
     match expr {
         // Field access is safe — reading a field doesn't escape the struct
@@ -169,7 +156,7 @@ fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
         .ListLit(elems) -> remove_escaped_args(elems, set)
         .With(obj, inits) -> remove_escaped_field_inits(inits, remove_escaped_expr(obj, set))
         .Lambda(_, body) -> remove_escaped_expr(body, set)
-        .Block(body) -> remove_escaped(body, set)
+        .Block(body) -> single_pass_escape(body, set)
         .IfExpr(cond, t, e) -> remove_escaped_expr(e, remove_escaped_expr(t, remove_escaped_expr(cond, set)))
         .MatchExpr(subj, _) -> remove_escaped_expr(subj, set)
         .Tuple(elems) -> remove_escaped_args(elems, set)
@@ -325,8 +312,7 @@ export fn is_arena_eligible(body: Stmt) -> bool {
             let owned_count = count_allocating_in_stmts(stmts)
             if owned_count == 0 { return false }
             // All allocations must be releasable (non-escaping)
-            let owned = collect_owned_bindings(stmts, ReleasableSet.End)
-            let releasable = remove_escaped(stmts, owned)
+            let releasable = single_pass_escape(stmts, ReleasableSet.End)
             releasable_any(releasable)
         }
         .Let(_, _, init) -> is_allocating_expr(init)
