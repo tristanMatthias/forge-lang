@@ -222,40 +222,11 @@ export fn emit_match(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmList) -
 }
 
 fn emit_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, subj_ptr: ptr, tag_val: ptr, variants: VariantList, merge_bb: ptr) -> Result<StmtResult, string> {
-    match arms {
-        .End -> {
-            ctx.match_trap(tag_val)
-            ok_sr(ctx, env)
-        }
-        .Node(pattern, guard, body, next) -> {
-            let arm_bb = ctx.bb("match_arm")
-            let next_bb = ctx.bb("match_next")
-            emit_pattern_tag_branch(ctx, pattern, tag_val, variants, arm_bb, next_bb)
-            ctx.position(arm_bb)
-            emit_nested_tag_checks(ctx, pattern, st_ty, subj_ptr, variants, next_bb)
-            let arm_env = bind_pattern_payload(ctx, env, pattern, st_ty, subj_ptr, variants)
-            if guard != null {
-                match ctx.emit(arm_env, guard!.node) {
-                    .Err(msg) -> return forward_stmt_err(msg)
-                    .Ok(guard_r) -> {
-                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "guard")
-                        let guard_pass_bb = ctx.bb("guard_pass")
-                        ctx.cond_br(guard_bool, guard_pass_bb, next_bb)
-                        ctx.position(guard_pass_bb)
-                    }
-                }
-            }
-            match ctx.emit(arm_env, body.node) {
-                .Err(msg) -> forward_stmt_err(msg)
-                .Ok(body_r) -> {
-                    let _body_ty = emit_value_ty(body_r)
-                    ctx.br_if_open(merge_bb)
-                    ctx.position(next_bb)
-                    emit_match_arms(ctx, env, next, st_ty, subj_ptr, tag_val, variants, merge_bb)
-                }
-            }
-        }
-    }
+    // Reuse the expression arm emitter with a dummy result_slot.
+    // The slot is written to but never loaded (statements discard the value).
+    let dummy_slot = ctx.alloca_i64("match_stmt_discard")
+    emit_match_expr_arms(ctx, env, arms, st_ty, subj_ptr, tag_val, variants, merge_bb, dummy_slot)?
+    ok_sr(ctx, env)
 }
 
 // ── Pattern payload binding ──
@@ -597,62 +568,11 @@ fn emit_primitive_arms_expr(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchA
 }
 
 fn emit_primitive_match_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList) -> Result<StmtResult, string> {
+    // Reuse the expression arm emitter with a dummy result_slot.
     let merge_bb = ctx.bb("pmatch_end")
-    emit_primitive_arms_stmt(ctx, env, subj, arms, merge_bb)
-}
-
-fn emit_primitive_arms_stmt(ctx: Ctx, env: VarEnv, subj: EmitValue, arms: MatchArmList, merge_bb: ptr) -> Result<StmtResult, string> {
-    match arms {
-        .End -> {
-            ctx.match_trap(ctx.i64(-1))
-            ctx.position(merge_bb)
-            ok_sr(ctx, env)
-        }
-        .Node(pattern, guard, body, next) -> {
-            let body_bb = ctx.bb("parm_body")
-            let next_bb = ctx.bb("parm_next")
-
-            if is_literal_pattern(pattern) {
-                let cmp = emit_literal_cmp(ctx, subj, pattern)
-                if guard != null {
-                    let lit_pass_bb = ctx.bb("lit_guard")
-                    ctx.cond_br(cmp, lit_pass_bb, next_bb)
-                    ctx.position(lit_pass_bb)
-                    match ctx.emit(env, guard!.node) {
-                        .Err(msg) -> return forward_stmt_err(msg)
-                        .Ok(guard_r) -> {
-                            let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
-                            ctx.cond_br(guard_bool, body_bb, next_bb)
-                        }
-                    }
-                } else {
-                    ctx.cond_br(cmp, body_bb, next_bb)
-                }
-            } else if guard != null {
-                match ctx.emit(env, guard!.node) {
-                    .Err(msg) -> return forward_stmt_err(msg)
-                    .Ok(guard_r) -> {
-                        let guard_bool = ctx.truthy(emit_value_ptr(guard_r), "pguard")
-                        ctx.cond_br(guard_bool, body_bb, next_bb)
-                    }
-                }
-            } else {
-                ctx.br(body_bb)
-            }
-
-            ctx.position(body_bb)
-            match ctx.emit(env, body.node) {
-                .Err(msg) -> forward_stmt_err(msg)
-                .Ok(body_r) -> {
-                    let _body_ty = emit_value_ty(body_r)
-                    ctx.br_if_open(merge_bb)
-
-                    ctx.position(next_bb)
-                    emit_primitive_arms_stmt(ctx, env, subj, next, merge_bb)
-                }
-            }
-        }
-    }
+    let dummy_slot = ctx.alloca_i64("pmatch_stmt_discard")
+    emit_primitive_arms_expr(ctx, env, subj, arms, merge_bb, dummy_slot)?
+    ok_sr(ctx, env)
 }
 
 // ── Subjectless match (when) as expression ──

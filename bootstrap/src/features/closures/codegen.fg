@@ -203,7 +203,12 @@ fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures:
             find_captures_arms(arms, params, env, c1)
         }
         .Defer(body) -> find_captures(body, params, env, captures)
-        _ -> captures
+        .Errdefer(body) -> find_captures(body, params, env, captures)
+        .Const(_, _, init) -> find_captures(init, params, env, captures)
+        .LetDestructure(_, init) -> find_captures(init, params, env, captures)
+        .Annotated(_, inner) -> find_captures_stmt_body(inner, params, env, captures)
+        .Parallel(body) -> find_captures_stmts(body, params, env, captures)
+        _ -> captures  // NoOp, Break, Continue, ExternFn, TypeDecl, EnumDecl, etc.
     }
 }
 
