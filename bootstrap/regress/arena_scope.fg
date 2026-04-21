@@ -1,0 +1,26 @@
+/// expect: sum=45
+/// expect: points_ok
+
+// Test scope-aware arena allocation (spec Axis 9.6).
+// For-loops with non-escaping struct allocations should use
+// per-scope arenas for O(1) allocation and O(1) bulk free.
+
+type Point = { x: int, y: int }
+
+fn main() {
+    // A for-loop that creates a struct literal per iteration
+    // where the struct only has field reads (non-escaping).
+    // The compiler should detect this and use arena allocation.
+    mut total = 0
+    for i in 0..10 {
+        let p = Point { x: i, y: i * 2 }
+        total = total + p.x
+    }
+    println("sum=${total}")
+
+    // Verify arena doesn't corrupt subsequent allocations
+    let q = Point { x: 100, y: 200 }
+    if q.x == 100 {
+        println("points_ok")
+    }
+}

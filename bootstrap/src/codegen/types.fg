@@ -54,6 +54,10 @@ export type Ctx = {
     debug_null_checks: int,
     source_file: string,
     source_line: int,
+    // Per-scope arena (spec Axis 9.6). When non-null, this is an LLVM
+    // value holding a runtime arena pointer. Allocations that are known
+    // to be non-escaping will use forge_arena_alloc instead of forge_rc_alloc.
+    arena_ptr: ptr,
 }
 
 // ── Type registries bundle ──
@@ -685,6 +689,17 @@ impl Ctx {
     fn i8(self, value: int) -> ptr { forge_llvm_const_int(forge_llvm_int8_type(self.lc), value, 0) }
     fn get_fn(self, name: string) -> ptr { forge_llvm_get_named_function(self.module, name) }
     fn rc_alloc(self, size: ptr) -> ptr { self.call("forge_rc_alloc", [size]) }
+    // Arena-aware allocation: if an arena scope is active, bump-allocate
+    // within the arena (no RC header, O(1) free at scope exit). Otherwise
+    // falls back to forge_rc_alloc. Used for non-escaping allocations
+    // detected by escape analysis (spec Axis 9.6).
+    fn arena_alloc(self, size: ptr) -> ptr {
+        if self.arena_ptr != null {
+            self.call("forge_arena_alloc", [self.arena_ptr, size])
+        } else {
+            self.call("forge_rc_alloc", [size])
+        }
+    }
     fn rc_retain(self, val: ptr) -> ptr { self.call("forge_rc_retain", [val]) }
     fn rc_release(self, val: ptr) -> ptr { self.call("forge_rc_release", [val]) }
 

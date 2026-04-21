@@ -23,7 +23,7 @@ export fn emit_struct_lit(ctx: Ctx, env: VarEnv, name: string, inits: FieldInitL
 
 fn malloc_struct_bytes(ctx: Ctx, fields: FieldList) -> ptr {
     let count = field_list_length(fields)
-    ctx.rc_alloc(ctx.i64(count * 8))
+    ctx.arena_alloc(ctx.i64(count * 8))
 }
 
 fn fill_struct_fields(ctx: Ctx, env: VarEnv, st_ty: ptr, alloca: ptr, inits: FieldInitList, fields: FieldList) -> Result<EmitValue, string> {

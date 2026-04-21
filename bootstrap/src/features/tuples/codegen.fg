@@ -18,7 +18,7 @@ fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) { ctx.store_slot(base,
 
 export fn emit_tuple(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<EmitValue, string> {
     let count = expr_list_length(elements)
-    let buf = ctx.rc_alloc(ctx.i64(count * 8))
+    let buf = ctx.arena_alloc(ctx.i64(count * 8))
     store_tuple_elements(ctx, env, elements, buf, 0, .End)
 }
 

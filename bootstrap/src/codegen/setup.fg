@@ -182,6 +182,11 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_test_run_then", i64t, [pt, i64t])
     decl(m, "forge_test_summary", i32t, [pt])
 
+    // ── arenas (spec Axis 9.6) ──
+    decl(m, "forge_arena_new", pt, [])
+    decl(m, "forge_arena_alloc", pt, [pt, i64t])
+    decl(m, "forge_arena_destroy", vt, [pt])
+
     // ── match trap ──
     decl(m, "forge_match_unreachable", vt, [pt, i64t, pt, i64t])
 
@@ -259,6 +264,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         debug_null_checks,
         source_file,
         source_line: 0,
+        arena_ptr: null,
     }
 
     // Analyze which types are cycle-capable (can reference themselves

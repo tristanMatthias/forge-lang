@@ -1,9 +1,12 @@
 // WHY: emits LLVM IR for `for variable in start..end { body }` with
 // break/continue support via the scoped loop stack in Ctx.
+// Arena-eligible loops (non-escaping allocations only) use per-scope
+// bump arenas for O(1) allocation and O(1) bulk free (spec Axis 9.6).
 
 use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem}
 use codegen.types.{Ctx, LoopStack, StmtResult,  ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, ok_sr}
+use codegen.escape.{is_arena_eligible}
 
 export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> Result<StmtResult, string> {
     // Evaluate start and end once, store in allocas
@@ -18,6 +21,16 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
     ctx.store(emit_value_ptr(end_r), end_alloca)
 
     let body_env = env_extend(env, variable, counter, .Int)
+
+    // Arena detection (spec Axis 9.6): if all allocations in the loop
+    // body are non-escaping, wrap the loop in a per-scope arena.
+    let use_arena = is_arena_eligible(body)
+    let arena_val = if use_arena {
+        ctx.call("forge_arena_new", [])
+    } else {
+        let n: ptr = null
+        n
+    }
 
     // Basic blocks: condition, body, increment, exit
     let cond_bb = ctx.bb("for.cond")
@@ -36,7 +49,13 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
 
     // Body — continue jumps to incr_bb, break jumps to exit_bb
     ctx.position(body_bb)
-    let body_ctx = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))
+    let body_ctx_base = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))
+    // If arena is active, pass it to the body context so arena_alloc is used
+    let body_ctx = if use_arena {
+        body_ctx_base with { arena_ptr: arena_val }
+    } else {
+        body_ctx_base
+    }
     let body_sr = emit_stmt(body_ctx, body_env, body)?
     ctx.br_if_open(incr_bb)
 
@@ -48,8 +67,11 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
     ctx.store(next, counter)
     ctx.br(cond_bb)
 
-    // Exit
+    // Exit — destroy arena if used
     ctx.position(exit_bb)
+    if use_arena {
+        ctx.call("forge_arena_destroy", [arena_val])
+    }
     ok_sr(ctx, env)
 }
 
@@ -75,6 +97,15 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     let elem_alloca = ctx.alloca_i64(variable)
     let body_env = env_extend(env, variable, elem_alloca, vtype_list_elem(emit_value_ty(coll_r)))
 
+    // Arena detection (spec Axis 9.6)
+    let use_arena = is_arena_eligible(body)
+    let arena_val = if use_arena {
+        ctx.call("forge_arena_new", [])
+    } else {
+        let n: ptr = null
+        n
+    }
+
     // Basic blocks
     let cond_bb = ctx.bb("forin.cond")
     let body_bb = ctx.bb("forin.body")
@@ -94,7 +125,12 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     let elem = ctx.array_get(emit_value_ptr(coll_r), cur)
     ctx.store(elem, elem_alloca)
 
-    let body_ctx = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))
+    let body_ctx_base = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))
+    let body_ctx = if use_arena {
+        body_ctx_base with { arena_ptr: arena_val }
+    } else {
+        body_ctx_base
+    }
     let body_sr = emit_stmt(body_ctx, body_env, body)?
     ctx.br_if_open(incr_bb)
 
@@ -105,7 +141,10 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     ctx.store(next, counter)
     ctx.br(cond_bb)
 
-    // Exit
+    // Exit — destroy arena if used
     ctx.position(exit_bb)
+    if use_arena {
+        ctx.call("forge_arena_destroy", [arena_val])
+    }
     ok_sr(ctx, env)
 }

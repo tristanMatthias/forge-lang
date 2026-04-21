@@ -593,6 +593,95 @@ void forge_rc_collect(void) {
     suspect_cap = 0;
 }
 
+// ─── Scope-aware arena allocation (spec Axis 9.6) ───────────────
+//
+// Per-scope bump allocators for short-lived allocations. The compiler
+// detects loops with non-escaping struct allocations and wraps them
+// in an arena scope. All allocations within the scope use O(1) bump
+// allocation, and the entire arena is freed in O(1) at scope exit.
+//
+// Arena layout: linked list of pages. Each page is a contiguous
+// allocation with a bump pointer. When a page fills, a new page
+// is allocated and linked.
+
+#define ARENA_PAGE_SIZE (64 * 1024)  // 64KB per page
+
+typedef struct ArenaPage {
+    struct ArenaPage* next;
+    size_t offset;
+    size_t capacity;
+    char data[];  // flexible array member
+} ArenaPage;
+
+typedef struct {
+    ArenaPage* current;   // current page for allocations
+    ArenaPage* first;     // first page (for freeing)
+} Arena;
+
+static ArenaPage* arena_page_new(size_t capacity) {
+    ArenaPage* page = (ArenaPage*)malloc(sizeof(ArenaPage) + capacity);
+    if (!page) {
+        fprintf(stderr, "\nerror: arena page allocation failed\n");
+        exit(1);
+    }
+    page->next = NULL;
+    page->offset = 0;
+    page->capacity = capacity;
+    return page;
+}
+
+// Create a new per-scope arena.
+void* forge_arena_new(void) {
+    Arena* arena = (Arena*)malloc(sizeof(Arena));
+    if (!arena) {
+        fprintf(stderr, "\nerror: arena allocation failed\n");
+        exit(1);
+    }
+    ArenaPage* page = arena_page_new(ARENA_PAGE_SIZE);
+    arena->current = page;
+    arena->first = page;
+    return arena;
+}
+
+// Bump-allocate within an arena. O(1) fast path.
+// Objects allocated here do NOT get RC headers — they are freed
+// in bulk when the arena is destroyed.
+void* forge_arena_alloc(void* arena_ptr, int64_t size) {
+    Arena* arena = (Arena*)arena_ptr;
+    size_t aligned = ((size_t)size + 7) & ~7;  // 8-byte align
+
+    // Fast path: fits in current page
+    if (arena->current->offset + aligned <= arena->current->capacity) {
+        void* ptr = &arena->current->data[arena->current->offset];
+        arena->current->offset += aligned;
+        return ptr;
+    }
+
+    // Slow path: allocate new page (at least big enough for this request)
+    size_t page_cap = aligned > ARENA_PAGE_SIZE ? aligned : ARENA_PAGE_SIZE;
+    ArenaPage* new_page = arena_page_new(page_cap);
+    new_page->next = NULL;
+    arena->current->next = new_page;
+    arena->current = new_page;
+
+    void* ptr = &new_page->data[new_page->offset];
+    new_page->offset += aligned;
+    return ptr;
+}
+
+// Destroy an arena, freeing all pages in O(1) amortized. Called at scope exit.
+void forge_arena_destroy(void* arena_ptr) {
+    if (!arena_ptr) return;
+    Arena* arena = (Arena*)arena_ptr;
+    ArenaPage* page = arena->first;
+    while (page) {
+        ArenaPage* next = page->next;
+        free(page);
+        page = next;
+    }
+    free(arena);
+}
+
 // ─── Central error reporting ──────────────────────────────────────
 //
 // All runtime errors go through these two functions. This ensures

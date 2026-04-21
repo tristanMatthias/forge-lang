@@ -212,3 +212,156 @@ fn remove_escaped_field_inits(inits: FieldInitList, set: ReleasableSet) -> Relea
         .Node(_, val_se, next) -> remove_escaped_field_inits(next, remove_escaped_expr(val_se.node, set))
     }
 }
+
+// ── Arena eligibility (spec Axis 9.6) ─────────────────────────────
+//
+// A for-loop body is arena-eligible if it contains at least one
+// allocating binding (struct lit, enum ctor, etc.) AND all such
+// bindings are non-escaping (releasable). This means every allocation
+// in the loop iteration can safely live in a bump arena that is
+// freed in bulk at scope exit.
+
+fn releasable_any(set: ReleasableSet) -> bool {
+    match set {
+        .End -> false
+        .Node(_, _) -> true
+    }
+}
+
+fn count_allocating_in_stmts(stmts: StmtList) -> int {
+    match stmts {
+        .End -> 0
+        .Node(ss, next) -> {
+            let n = match stmt_unwrap(ss.node) {
+                .Let(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+                .Mut(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+                .Const(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+                .Block(inner) -> count_allocating_in_stmts(inner)
+                .If(_, then_b, _) -> count_allocating_in_stmt_single(then_b)
+                .While(_, wb) -> count_allocating_in_stmt_single(wb)
+                .For(_, _, _, fb) -> count_allocating_in_stmt_single(fb)
+                .ForIn(_, _, fib) -> count_allocating_in_stmt_single(fib)
+                .Expr(_) -> 0
+                .Return(_) -> 0
+                .ReturnEmpty -> 0
+                .Function(_, _, _, _, _) -> 0
+                .TypeDecl(_, _, _) -> 0
+                .NewtypeDecl(_, _) -> 0
+                .UnionAliasDecl(_, _) -> 0
+                .ShapeDecl(_, _) -> 0
+                .EnumDecl(_, _, _) -> 0
+                .Match(_, _) -> 0
+                .Impl(_, _) -> 0
+                .NoOp -> 0
+                .ExternFn(_, _, _) -> 0
+                .Break -> 0
+                .Continue -> 0
+                .TraitDecl(_, _) -> 0
+                .LetDestructure(_, _) -> 0
+                .Defer(_) -> 0
+                .Errdefer(_) -> 0
+                .Annotated(_, _) -> 0
+                .SpecBlock(_, _) -> 0
+                .GivenBlock(_, _) -> 0
+                .ThenBlock(_, _) -> 0
+                .Select(_) -> 0
+                .Parallel(_) -> 0
+                .Module(_, _) -> 0
+                .Use(_, _) -> 0
+            }
+            n + count_allocating_in_stmts(next)
+        }
+    }
+}
+
+fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
+    match stmt_unwrap(stmt) {
+        .Block(inner) -> count_allocating_in_stmts(inner)
+        .Let(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .Mut(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .Const(_, _, init) -> if is_allocating_expr(init) { 1 } else { 0 }
+        .If(_, then_b, _) -> count_allocating_in_stmt_single(then_b)
+        .While(_, wb) -> count_allocating_in_stmt_single(wb)
+        .For(_, _, _, fb) -> count_allocating_in_stmt_single(fb)
+        .ForIn(_, _, fib) -> count_allocating_in_stmt_single(fib)
+        .Expr(_) -> 0
+        .Return(_) -> 0
+        .ReturnEmpty -> 0
+        .Function(_, _, _, _, _) -> 0
+        .TypeDecl(_, _, _) -> 0
+        .NewtypeDecl(_, _) -> 0
+        .UnionAliasDecl(_, _) -> 0
+        .ShapeDecl(_, _) -> 0
+        .EnumDecl(_, _, _) -> 0
+        .Match(_, _) -> 0
+        .Impl(_, _) -> 0
+        .NoOp -> 0
+        .ExternFn(_, _, _) -> 0
+        .Break -> 0
+        .Continue -> 0
+        .TraitDecl(_, _) -> 0
+        .LetDestructure(_, _) -> 0
+        .Defer(_) -> 0
+        .Errdefer(_) -> 0
+        .Annotated(_, _) -> 0
+        .SpecBlock(_, _) -> 0
+        .GivenBlock(_, _) -> 0
+        .ThenBlock(_, _) -> 0
+        .Select(_) -> 0
+        .Parallel(_) -> 0
+        .Module(_, _) -> 0
+        .Use(_, _) -> 0
+    }
+}
+
+// Check if a for-loop body is arena-eligible:
+// - Has allocating bindings
+// - All allocating bindings are non-escaping (releasable)
+export fn is_arena_eligible(body: Stmt) -> bool {
+    let inner = stmt_unwrap(body)
+    match inner {
+        .Block(stmts) -> {
+            // Must have at least one allocation
+            let owned_count = count_allocating_in_stmts(stmts)
+            if owned_count == 0 { return false }
+            // All allocations must be releasable (non-escaping)
+            let owned = collect_owned_bindings(stmts, ReleasableSet.End)
+            let releasable = remove_escaped(stmts, owned)
+            releasable_any(releasable)
+        }
+        .Let(_, _, init) -> is_allocating_expr(init)
+        .Mut(_, _, init) -> is_allocating_expr(init)
+        .Const(_, _, init) -> is_allocating_expr(init)
+        .Expr(_) -> false
+        .Return(_) -> false
+        .ReturnEmpty -> false
+        .Function(_, _, _, _, _) -> false
+        .TypeDecl(_, _, _) -> false
+        .NewtypeDecl(_, _) -> false
+        .UnionAliasDecl(_, _) -> false
+        .ShapeDecl(_, _) -> false
+        .EnumDecl(_, _, _) -> false
+        .Match(_, _) -> false
+        .Impl(_, _) -> false
+        .NoOp -> false
+        .ExternFn(_, _, _) -> false
+        .Break -> false
+        .Continue -> false
+        .TraitDecl(_, _) -> false
+        .LetDestructure(_, _) -> false
+        .Defer(_) -> false
+        .Errdefer(_) -> false
+        .Annotated(_, _) -> false
+        .SpecBlock(_, _) -> false
+        .GivenBlock(_, _) -> false
+        .ThenBlock(_, _) -> false
+        .Select(_) -> false
+        .Parallel(_) -> false
+        .Module(_, _) -> false
+        .Use(_, _) -> false
+        .If(_, _, _) -> false
+        .While(_, _) -> false
+        .For(_, _, _, _) -> false
+        .ForIn(_, _, _) -> false
+    }
+}
