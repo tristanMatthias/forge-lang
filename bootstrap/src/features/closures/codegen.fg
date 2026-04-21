@@ -15,8 +15,6 @@
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
 use codegen.types.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
 use codegen.{emit_expr}
-use codegen.types.{rc_cleanup_reset, rc_cleanup_save, rc_cleanup_restore}
-use codegen.{rc_set_releasable, rc_releasable_save, rc_releasable_restore}
 use codegen.escape.{analyze_releasable, analyze_releasable_expr}
 
 // ── Capture detection ──
@@ -405,24 +403,17 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
     let env_with_params = bind_lambda_params_typed(ctx, env, params, fn_val, 0, effective_types)
     let body_env = bind_captures_as_params(ctx, env_with_params, captures, fn_val, num_declared)
 
-    let body_ctx = ctx.with_fn(fn_val, name)
-    // with_fn resets defers to .End, so lambda body starts fresh.
-    let saved_rc = rc_cleanup_save()
-    let saved_rel = rc_releasable_save()
-    rc_cleanup_reset()
-    rc_set_releasable(analyze_releasable_expr(body))
+    mut body_ctx = ctx.with_fn(fn_val, name)
+    // with_fn resets defers/rc_cleanup/rc_releasable to .End, so lambda body starts fresh.
+    body_ctx.rc_releasable = analyze_releasable_expr(body)
     mut result = EmitValue { value: ctx.i64(0), ty: .Int }
     match emit_expr(body_ctx, body_env, body) {
         .Ok(v) -> { result = v }
         .Err(e) -> {
-            rc_cleanup_restore(saved_rc)
-            rc_releasable_restore(saved_rel)
             ctx.position(saved_bb)
             return err_emit(e)
         }
     }
-    rc_cleanup_restore(saved_rc)
-    rc_releasable_restore(saved_rel)
 
     if !ctx.has_terminator() {
         let lambda_ret = body_ctx.current_fn_ret()

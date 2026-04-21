@@ -7,20 +7,7 @@
 // Conservative: if in doubt, mark as escaped (don't release).
 
 use core.ast.{Expr, ExprList, FieldInitList, Stmt, StmtList, SExpr, SStmt, stmt_unwrap}
-
-// Set of variable names that are safe to release at scope exit.
-export enum ReleasableSet {
-    End
-    Node(name: string, next: ReleasableSet)
-}
-
-export fn releasable_has(set: ReleasableSet, name: string) -> bool {
-    match set {
-        .End -> false
-        .Node(n, _) if n == name -> true
-        .Node(_, next) -> releasable_has(next, name)
-    }
-}
+use codegen.types.{ReleasableSet, releasable_has}
 
 fn releasable_add(set: ReleasableSet, name: string) -> ReleasableSet {
     if releasable_has(set, name) { set } else { ReleasableSet.Node(name, set) }
