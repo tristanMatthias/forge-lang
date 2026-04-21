@@ -49,7 +49,6 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_eprintln", vt, [pt])
     decl(m, "strlen", i64t, [pt])
     decl(m, "malloc", pt, [i64t])
-    decl(m, "forge_bump_alloc", pt, [i64t])
     decl(m, "forge_rc_alloc", pt, [i64t])
     decl(m, "forge_rc_retain", vt, [pt])
     decl(m, "forge_rc_release", vt, [pt])

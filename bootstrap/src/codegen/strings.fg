@@ -13,7 +13,7 @@ export fn emit_concat(ctx: Ctx, lhs_i64: ptr, rhs_i64: ptr) -> Result<EmitValue,
 
     let total = ctx.add(lhs_len, rhs_len, "concat_total")
     let alloc_size = ctx.add(total, ctx.i64(1), "concat_size")
-    let buf = ctx.malloc(alloc_size)
+    let buf = ctx.rc_alloc(alloc_size)
 
     ctx.call("memcpy", [buf, lhs_ptr, lhs_len])
 
@@ -67,7 +67,7 @@ export fn emit_substring_inner(ctx: Ctx, env: VarEnv, str_i64: ptr, start_arg: E
     let one = ctx.i64(1)
     let alloc_size = ctx.add(len, one, "sub_alloc")
     // malloc(alloc_size)
-    let buf = ctx.malloc(alloc_size)
+    let buf = ctx.rc_alloc(alloc_size)
     // memcpy(buf, src + start, len)
     let src_int = ctx.to_i64(str_ptr, "sub_src_int")
     let off_int = ctx.add(src_int, start_r.value, "sub_off_int")

@@ -374,7 +374,7 @@ export fn emit_int_to_string(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<Em
                 return ok_emit_str(str_ptr)
             }
             // Int → string via snprintf into a 32-byte malloc'd buffer.
-            let buf = ctx.malloc(ctx.i64(32))
+            let buf = ctx.rc_alloc(ctx.i64(32))
             let fmt = ctx.global_str("%lld", ".i2s_fmt")
             ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
             ok_emit_str(buf)
@@ -387,7 +387,7 @@ fn emit_int_to_string_inner(ctx: Ctx, val: ptr, ty: ValueType) -> Result<EmitVal
         let str_ptr = ctx.call("forge_float_to_string", [val])
         return ok_emit_str(str_ptr)
     }
-    let buf = ctx.malloc(ctx.i64(32))
+    let buf = ctx.rc_alloc(ctx.i64(32))
     let fmt = ctx.global_str("%lld", ".i2s_fmt")
     ctx.call("snprintf", [buf, ctx.i64(32), fmt, val])
     ok_emit_str(buf)

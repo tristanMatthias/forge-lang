@@ -19,7 +19,7 @@ export fn emit_eprintln(ctx: Ctx, env: VarEnv, args: ExprList) -> Result<EmitVal
                     ctx.call("forge_float_to_string", [r.value])
                 }
                 _ -> {
-                    let buf = ctx.malloc(ctx.i64(32))
+                    let buf = ctx.rc_alloc(ctx.i64(32))
                     let fmt = ctx.global_str("%lld", ".eprint_fmt")
                     ctx.call("snprintf", [buf, ctx.i64(32), fmt, r.value])
                     buf

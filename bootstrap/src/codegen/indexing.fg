@@ -29,7 +29,7 @@ export fn emit_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: Expr) -> Result<Emit
     let off_int = ctx.add(src_int, i_r.value, "idx_off_int")
     let off_ptr = ctx.to_ptr(off_int, "idx_off")
     let byte = ctx.load_i8(off_ptr, "idx_byte")
-    let buf = ctx.malloc(ctx.i64(2))
+    let buf = ctx.rc_alloc(ctx.i64(2))
     ctx.store(byte, buf)
     // buf[1] = 0
     let buf_int = ctx.to_i64(buf, "idx_buf_int")
