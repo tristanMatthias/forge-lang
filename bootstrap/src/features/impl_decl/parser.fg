@@ -1,7 +1,7 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt}
+use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, render_type_expr, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -85,12 +85,13 @@ impl Parser {
         if !self.consume(Tk.RightParen, "expected `)` after parameters") {
             return null
         }
-        let ret_ty = if self.check(Tk.Arrow) {
+        mut ret_ty = ""
+        mut ret_vtype = ValueType.Void
+        if self.check(Tk.Arrow) {
             self.advance()
-            let r = self.consume_type("expected return type after `->`")?
-            r
-        } else {
-            ""
+            let te = self.parse_type_expr("expected return type after `->`")?
+            ret_ty = render_type_expr(te)
+            ret_vtype = type_expr_to_vtype(te)
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after method parameters") {
             return null
@@ -99,9 +100,8 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` after method body") {
             return null
         }
-        // Desugar to a top-level function named `Type__method`.
         let mangled = "${type_name}__${name}"
-        Stmt.Function(mangled, TypeParamList.End, params, ret_ty, body)
+        Stmt.Function(mangled, TypeParamList.End, params, ret_ty, ret_vtype, body)
     }
 
     fn parse_method_param_list(self, type_name: string) -> ParamList? {

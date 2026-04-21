@@ -150,7 +150,7 @@ fn collect_module_items(stmts: StmtList, mod_path: string) -> ModuleItem {
 
 fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: ModuleItem) -> ModuleItem {
     match stmt {
-        .Function(name, _, _, _, _) -> {
+        .Function(name, _, _, _, _, _) -> {
             let canonical = "${mod_path}::${name}"
             ModuleItem.Node(name, canonical, exported, rest)
         }
@@ -224,7 +224,7 @@ fn collect_impl_items(stmts: StmtList, mod_path: string, rest: ModuleItem) -> Mo
         .End -> rest
         .Node(ss, next) -> {
             let with_this = match stmt_unwrap(ss.node) {
-                .Function(name, _, _, _, _) -> {
+                .Function(name, _, _, _, _, _) -> {
                     // Impl methods are already mangled as Type__method.
                     // Keep bare name — method call codegen uses Type__method directly.
                     ModuleItem.Node(name, name, true, rest)
@@ -463,10 +463,10 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .While(cond, body) -> .While(rewrite_expr(ctx, cond), rewrite_stmt(ctx, body))
         .For(var, start, end, body) -> .For(var, rewrite_expr(ctx, start), rewrite_expr(ctx, end), rewrite_stmt(ctx, body))
         .ForIn(var, coll, body) -> .ForIn(var, rewrite_expr(ctx, coll), rewrite_stmt(ctx, body))
-        .Function(name, tp, params, ret_ty, body) -> {
+        .Function(name, tp, params, ret_ty, rvt, body) -> {
             let is_impl_method = name.contains("__")
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method { "${ctx.current_module}::${name}" } else { name }
-            Stmt.Function(qualified, tp, params, ret_ty, rewrite_stmt_list(bind_params_ctx(ctx, params), body))
+            Stmt.Function(qualified, tp, params, ret_ty, rvt, rewrite_stmt_list(bind_params_ctx(ctx, params), body))
         }
         .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
@@ -623,7 +623,7 @@ fn collect_used_paths_stmt(stmt: Stmt, acc: UsedPathSet) -> UsedPathSet {
         .Const(_, _, init) -> collect_used_paths_expr(init, acc)
         .Return(e) -> collect_used_paths_expr(e, acc)
         .Block(body) -> collect_used_paths_stmts(body, acc)
-        .Function(_, _, _, _, body) -> collect_used_paths_stmts(body, acc)
+        .Function(_, _, _, _, _, body) -> collect_used_paths_stmts(body, acc)
         .If(cond, then_b, else_b) -> {
             let a = collect_used_paths_expr(cond, acc)
             let b = collect_used_paths_stmt(then_b, a)

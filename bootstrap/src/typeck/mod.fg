@@ -516,9 +516,18 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                 .EnumDecl(name, _, variants) -> tc with {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
                 }
-                .Function(name, _, params, ret_ty, _) -> tc with {
-                    fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns),
-                    fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
+                .Function(name, _, params, ret_ty, ret_vt, _) -> {
+                    // Prefer parser-resolved ret_vtype for primitives/structural types;
+                    // fall back to translate_type for named types that need registry context.
+                    let resolved_ret = match ret_vt {
+                        .Void -> if ret_ty == "" { ValueType.Void } else { translate_type(tc, ret_ty) }
+                        .Int -> translate_type(tc, ret_ty)
+                        _ -> ret_vt
+                    }
+                    tc with {
+                        fns: FnTypeEntry.Node(name, params, resolved_ret, tc.fns),
+                        fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
+                    }
                 }
                 .ExternFn(name, params, ret_ty) -> tc with {
                     fns: FnTypeEntry.Node(name, params, translate_type(tc, ret_ty), tc.fns),
@@ -586,10 +595,10 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let checked = check_stmts(inner, body)
             tc_exit(checked)
         }
-        .Function(name, _, params, ret_ty, body) -> {
+        .Function(name, _, params, ret_ty, ret_vt, body) -> {
             let inner = tc_enter(tc) with { current_fn: name }
             let with_params = tc_bind_params(inner, params)
-            let checked = tc_check_fn_body(with_params, name, ret_ty, body)
+            let checked = tc_check_fn_body(with_params, name, ret_ty, ret_vt, body)
             tc_exit(checked)
         }
         .Impl(impl_name, methods) -> {
@@ -647,19 +656,23 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
 }
 
 // Check that `impl Trait for Type` provides all required methods.
-fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, body: StmtList) -> TC {
+fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, ret_vt: ValueType, body: StmtList) -> TC {
     let checked = check_stmts(tc, body)
     // Skip return type checking for functions without a declared return type.
-    if ret_ty_str.length == 0 {
+    if ret_ty_str.length == 0 && vtype_eq(ret_vt, .Void) {
         return checked
     }
-    // For nullable returns (T?), strip the ? and check against the
-    // inner type. Both the inner type and Void/null are valid returns.
-    mut effective_ret_str = ret_ty_str
-    if ret_ty_str.ends_with("?") {
-        effective_ret_str = ret_ty_str.substring(0, ret_ty_str.length - 1)
+    // Use parser-resolved ret_vtype when available (non-Int = resolved).
+    // Fall back to translate_type for named types or nullable string handling.
+    let declared_ret = if !vtype_eq(ret_vt, .Void) && !vtype_eq(ret_vt, .Int) {
+        ret_vt
+    } else {
+        mut effective_ret_str = ret_ty_str
+        if ret_ty_str.ends_with("?") {
+            effective_ret_str = ret_ty_str.substring(0, ret_ty_str.length - 1)
+        }
+        translate_type(checked, effective_ret_str)
     }
-    let declared_ret = translate_type(checked, effective_ret_str)
     // Check every explicit `return expr` produces a compatible type.
     let after_explicit = tc_check_explicit_returns(checked, name, declared_ret, body)
     // Check implicit return: the last expression in the body.
@@ -916,20 +929,18 @@ fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC 
 fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, required: FieldList, available: FieldList) -> TC {
     match required {
         .End -> tc
-        .Node(field_name, field_ty, _, next) -> {
+        .Node(field_name, field_ty, req_vt, next) -> {
             if !field_list_has(available, field_name) {
                 let msg = "type `${arg_name}` does not satisfy shape `${shape_name}` — missing field `${field_name}`"
                 tc_check_fields_present(tc_report(tc, DiagCode.TypeMismatch, msg), shape_name, arg_name, next, available)
             } else {
-                // Check field type matches using ValueType comparison (handles aliases like int/i64)
+                // Use parser-resolved ValueType when available for both sides
+                let expected_vt = if !vtype_eq(req_vt, .Int) { req_vt } else if field_ty.length > 0 { translate_type(tc, field_ty) } else { ValueType.Int }
                 let arg_field_ty = field_type_lookup(available, field_name)
-                let after = if field_ty.length > 0 && arg_field_ty.length > 0 {
-                    let expected_vt = translate_type(tc, field_ty)
-                    let actual_vt = translate_type(tc, arg_field_ty)
-                    if !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
-                        let msg = "field `${field_name}` has type `${arg_field_ty}` in `${arg_name}` but shape `${shape_name}` requires `${field_ty}`"
-                        tc_report(tc, DiagCode.TypeMismatch, msg)
-                    } else { tc }
+                let actual_vt = if arg_field_ty.length > 0 { translate_type(tc, arg_field_ty) } else { ValueType.Int }
+                let after = if !vtype_eq(expected_vt, .Int) && !vtype_eq(actual_vt, .Int) && !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
+                    let msg = "field `${field_name}` has type `${vtype_display(actual_vt)}` in `${arg_name}` but shape `${shape_name}` requires `${vtype_display(expected_vt)}`"
+                    tc_report(tc, DiagCode.TypeMismatch, msg)
                 } else { tc }
                 tc_check_fields_present(after, shape_name, arg_name, next, available)
             }
@@ -1186,8 +1197,8 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
         .While(cond, body) -> .While(annotate_expr(tc, cond), annotate_stmt(tc, body))
         .For(v, start, end, body) -> .For(v, annotate_expr(tc, start), annotate_expr(tc, end), annotate_stmt(tc, body))
         .ForIn(v, coll, body) -> .ForIn(v, annotate_expr(tc, coll), annotate_stmt(tc, body))
-        .Function(name, tp, params, ret_ty, body) ->
-            .Function(name, tp, params, ret_ty, annotate_stmts(annotate_enter_fn(tc, params), body))
+        .Function(name, tp, params, ret_ty, rvt, body) ->
+            .Function(name, tp, params, ret_ty, rvt, annotate_stmts(annotate_enter_fn(tc, params), body))
         .Match(subj, arms) -> .Match(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
         .Module(name, body) -> .Module(name, annotate_stmts(tc, body))
         .Annotated(annots, inner) -> .Annotated(annots, annotate_stmt(tc, inner))
@@ -1355,7 +1366,7 @@ fn check_naming_conventions(tc: TC, stmts: StmtList) -> TC {
 fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Annotated(_, inner) -> check_naming_stmt(tc, inner)
-        .Function(name, _, _, _, body) -> {
+        .Function(name, _, _, _, _, body) -> {
             let tc2 = if name != "main" && !is_snake_case(name) {
                 naming_warn(tc, "function `${name}` should be snake_case")
             } else {

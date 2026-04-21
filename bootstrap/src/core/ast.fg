@@ -604,7 +604,7 @@ export enum Stmt {
     // (e.g. "i64", "str", "Stmt", "i64?"). Codegen translates this
     // into its internal value-type tag and uses it to set the
     // result type of `call(fn)` so chained calls preserve typing.
-    Function(name: string, type_params: TypeParamList, params: ParamList, ret_ty: string, body: StmtList)
+    Function(name: string, type_params: TypeParamList, params: ParamList, ret_ty: string, ret_vtype: ValueType, body: StmtList)
     Return(value: Expr)
     ReturnEmpty
     TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
@@ -1012,7 +1012,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .While(condition, body) -> "(while ${render_expr(condition)} ${render_stmt(body)})"
         .For(variable, start, end, body) -> "(for ${variable} ${render_expr(start)}..${render_expr(end)} ${render_stmt(body)})"
         .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr(collection)} ${render_stmt(body)})"
-        .Function(name, tp, params, ret_ty, body) -> {
+        .Function(name, tp, params, ret_ty, _, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "(fn ${name}${tp_part} ${render_param_list(params)} -> ${ret_ty} ${render_stmt_list(body)})"

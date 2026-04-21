@@ -48,7 +48,7 @@ fn impl_has_method(methods: StmtList, name: string) -> bool {
         .End -> false
         .Node(ss, next) -> {
             match ss.node {
-                .Function(fn_name, _, _, _, _) if fn_name == name -> true
+                .Function(fn_name, _, _, _, _, _) if fn_name == name -> true
                 _ -> impl_has_method(next, name)
             }
         }

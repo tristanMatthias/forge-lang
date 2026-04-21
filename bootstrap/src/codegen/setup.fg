@@ -775,7 +775,7 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
         .Node(ss, next) -> {
             match stmt_unwrap(ss.node) {
                 .ExternFn(name, _, ret_ty) -> .Node(name, ret_ty, collect_trait_fn_names(next))
-                .Function(name, _, _, ret_ty, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
+                .Function(name, _, _, ret_ty, _, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
         }
@@ -871,7 +871,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Function(name, _, params, ret_ty, body) -> {
+                .Function(name, _, params, ret_ty, _, body) -> {
                     // Names are already qualified by the name resolution pass
                     let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
@@ -922,7 +922,7 @@ fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Function(name, _, params, _, _) -> {
+                .Function(name, _, params, _, _, _) -> {
                     .Node(name, params_to_type_list(params), reg)
                 }
                 .Impl(_, methods) -> collect_fn_params(methods, reg)
@@ -941,7 +941,7 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
             let tl_ctx = ctx with { source_line: ss.line }
             let stmt = stmt_unwrap(ss.node)
             match stmt {
-                .Function(_, _, _, _, _) -> emit_top_level(ctx, env, next)
+                .Function(_, _, _, _, _, _) -> emit_top_level(ctx, env, next)
                 .Module(_, body) -> {
                     let new_env = emit_top_level(tl_ctx, env, body)?
                     emit_top_level(ctx, new_env, next)

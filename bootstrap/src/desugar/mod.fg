@@ -49,7 +49,7 @@ fn desugar_stmt(stmt: Stmt) -> Stmt {
         .For(v, start, end, body) -> .For(v, desugar_expr(start), desugar_expr(end), desugar_stmt(body))
         .ForIn(v, coll, body) -> .ForIn(v, desugar_expr(coll), desugar_stmt(body))
         .Match(subj, arms) -> .Match(desugar_expr(subj), desugar_match_arms(arms))
-        .Function(name, tp, params, ret_ty, body) -> .Function(name, tp, params, ret_ty, desugar_stmt_list(body))
+        .Function(name, tp, params, ret_ty, _, body) -> .Function(name, tp, params, ret_ty, ValueType.Int, desugar_stmt_list(body))
         .Defer(body) -> .Defer(desugar_expr(body))
         .Module(name, body) -> .Module(name, desugar_stmt_list(body))
         .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner))

@@ -398,7 +398,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
 
             ok_result(exited, body_result.value)
         }
-        .Function(name, _, params, _, body) -> {
+        .Function(name, _, params, _, _, body) -> {
             let next_runtime = define_function(runtime, name, params, body)
             ok_result(next_runtime, value_null())
         }

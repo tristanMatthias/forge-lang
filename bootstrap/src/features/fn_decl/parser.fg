@@ -42,10 +42,14 @@ impl Parser {
         // Optional return type annotation: `-> Type`. Stored as a
         // textual tag and registered in the function-return-type
         // registry so chained calls preserve typing.
-        let ret_ty = if self.check(Tk.Arrow) {
+        mut ret_ty = ""
+        mut ret_vtype = ValueType.Void
+        if self.check(Tk.Arrow) {
             self.advance()
-            self.consume_type("expected return type after `->`")?
-        } else { "" }
+            let te = self.parse_type_expr("expected return type after `->`")?
+            ret_ty = render_type_expr(te)
+            ret_vtype = type_expr_to_vtype(te)
+        }
 
         // Optional where clause: `where T: Trait1, U: Trait2`
         if self.check(Tk.KwWhere) {
@@ -62,7 +66,7 @@ impl Parser {
             return null
         }
 
-        Stmt.Function(name, tp, params, ret_ty, body)
+        Stmt.Function(name, tp, params, ret_ty, ret_vtype, body)
     }
 
     fn parse_param_list(self) -> ParamList? {
