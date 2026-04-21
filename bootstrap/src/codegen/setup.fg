@@ -582,18 +582,22 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic
     let should = fctx.call("forge_rc_should_free", [obj])
     let cond = forge_llvm_build_icmp(fctx.builder, 33, should, forge_llvm_const_int(fctx.i64_type, 0, 0), "should_free")
     let free_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "do_free")
+    let alive_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "alive")
     let done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "done")
-    forge_llvm_build_cond_br(fctx.builder, cond, free_bb, done_bb)
+    forge_llvm_build_cond_br(fctx.builder, cond, free_bb, alive_bb)
     // Free path: release fields then free
     forge_llvm_position_at_end(fctx.builder, free_bb)
     emit_struct_field_releases(fctx, obj, name, fields, 0)
     fctx.call("forge_rc_free", [obj])
     forge_llvm_build_br(fctx.builder, done_bb)
-    // Done path: for cycle-capable types, add to suspect list
-    forge_llvm_position_at_end(fctx.builder, done_bb)
+    // Alive path: refcount > 0 after decrement — suspect if cyclic
+    forge_llvm_position_at_end(fctx.builder, alive_bb)
     if is_cyclic {
         fctx.call("forge_rc_suspect", [obj])
     }
+    forge_llvm_build_br(fctx.builder, done_bb)
+    // Done
+    forge_llvm_position_at_end(fctx.builder, done_bb)
     forge_llvm_build_ret(fctx.builder, forge_llvm_const_int(fctx.i64_type, 0, 0))
 }
 
@@ -659,8 +663,9 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cycl
     let should = fctx.call("forge_rc_should_free", [obj])
     let cond = forge_llvm_build_icmp(fctx.builder, 33, should, forge_llvm_const_int(fctx.i64_type, 0, 0), "should_free")
     let free_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "do_free")
+    let alive_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "alive")
     let done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "done")
-    forge_llvm_build_cond_br(fctx.builder, cond, free_bb, done_bb)
+    forge_llvm_build_cond_br(fctx.builder, cond, free_bb, alive_bb)
     // Free path: load tag + payload, check each variant, release fields, then free
     forge_llvm_position_at_end(fctx.builder, free_bb)
     let enum_ty = forge_llvm_get_type_by_name(fctx.lc, name)
@@ -668,20 +673,20 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cycl
     let tag_val = forge_llvm_build_load(fctx.builder, fctx.i64_type, tag_gep, "tag")
     let pay_gep = forge_llvm_build_struct_gep2(fctx.builder, enum_ty, obj, 1, "pay_ptr")
     let payload = forge_llvm_build_load(fctx.builder, fctx.ptr_type, pay_gep, "payload")
-    // Also need to release the payload allocation itself (it's a separate RC alloc)
     let fields_done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "fields_done")
     emit_enum_variant_releases(fctx, tag_val, payload, name, variants, fields_done_bb)
-    // Fall through to fields_done (if no variant matched)
     forge_llvm_build_br(fctx.builder, fields_done_bb)
     forge_llvm_position_at_end(fctx.builder, fields_done_bb)
-    // Release the payload pointer (it's a separate allocation for enums with payload)
     fctx.call("forge_rc_free", [obj])
     forge_llvm_build_br(fctx.builder, done_bb)
-    // Done: for cycle-capable types, add to suspect list
-    forge_llvm_position_at_end(fctx.builder, done_bb)
+    // Alive path: refcount > 0 after decrement — suspect if cyclic
+    forge_llvm_position_at_end(fctx.builder, alive_bb)
     if is_cyclic {
         fctx.call("forge_rc_suspect", [obj])
     }
+    forge_llvm_build_br(fctx.builder, done_bb)
+    // Done
+    forge_llvm_position_at_end(fctx.builder, done_bb)
     forge_llvm_build_ret(fctx.builder, forge_llvm_const_int(fctx.i64_type, 0, 0))
 }
 
