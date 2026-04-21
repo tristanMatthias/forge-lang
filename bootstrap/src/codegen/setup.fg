@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
-use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, translate_type_ctx, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable}
 use core.registry.{build_registry}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
@@ -52,6 +52,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_rc_alloc", pt, [i64t])
     decl(m, "forge_rc_retain", vt, [pt])
     decl(m, "forge_rc_release", vt, [pt])
+    decl(m, "forge_rc_should_free", i64t, [pt])
+    decl(m, "forge_rc_free", vt, [pt])
     decl(m, "memcpy", pt, [pt, pt, i64t])
     decl(m, "strcmp", i32t, [pt, pt])
     decl_va(m, "snprintf", i32t, [pt, i64t, pt])
@@ -256,6 +258,14 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         source_line: 0,
     }
 
+    // Generate __release_TypeName functions for recursive RC field cleanup.
+    // Must happen after Ctx is built (needs all type registries) but before
+    // function bodies (they may call release functions via emit_rc_release_typed).
+    emit_release_functions(ctx)
+
+    // Reposition builder at main's entry after release fn emission.
+    ctx.position(entry)
+
     // Pass 2: emit each user-defined function's body, then emit
     // every non-function top-level statement into main.
     match emit_function_bodies(ctx, stmts) {
@@ -443,6 +453,254 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
             declare_enums(ctx, i64t, i1t, dt, pt, next, structs, nts, uas, updated)
         }
     }
+}
+
+// ── Per-type release functions ──────────────────────────────────────
+// Generate __release_TypeName functions for every struct/enum that has
+// RC-managed (ptr-type) fields. These functions are called from
+// emit_rc_release_typed to recursively release inner objects before
+// freeing the outer one.
+
+// Check if a FieldList contains any ptr-type fields.
+fn fields_have_rc(fields: FieldList) -> bool {
+    match fields {
+        .End -> false
+        .Node(_, _, resolved, next) -> {
+            if vtype_is_ptr_type(resolved) { true }
+            else { fields_have_rc(next) }
+        }
+    }
+}
+
+// Check if any variant in a VariantList has ptr-type payload fields.
+fn variants_have_rc(variants: VariantList) -> bool {
+    match variants {
+        .End -> false
+        .Node(_, fields, next) -> {
+            if fields_have_rc(fields) { true }
+            else { variants_have_rc(next) }
+        }
+    }
+}
+
+// Declare __release_TypeName function signatures for all structs and enums
+// that have RC fields. Must happen before bodies are emitted so that
+// mutually-recursive types can reference each other's release functions.
+fn declare_release_fns_structs(m: ptr, i64t: ptr, pt: ptr, reg: StructReg) {
+    match reg {
+        .End -> {}
+        .Node(name, fields, next) -> {
+            if fields_have_rc(fields) {
+                decl(m, "__release_${name}", i64t, [pt])
+            }
+            declare_release_fns_structs(m, i64t, pt, next)
+        }
+    }
+}
+
+fn declare_release_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
+    match reg {
+        .End -> {}
+        .Node(name, variants, next) -> {
+            if variants_have_rc(variants) {
+                decl(m, "__release_${name}", i64t, [pt])
+            }
+            declare_release_fns_enums(m, i64t, pt, next)
+        }
+    }
+}
+
+// Emit a call to release a single field value based on its ValueType.
+// For Struct/Enum types: calls __release_TypeName if it exists, else forge_rc_release.
+// For other ptr types: calls forge_rc_release.
+fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
+    match ty {
+        .Struct(sn) -> {
+            let rfn = ctx.get_fn("__release_${sn}")
+            if rfn != null {
+                ctx.call("__release_${sn}", [val])
+            } else {
+                ctx.call("forge_rc_release", [val])
+            }
+        }
+        .Enum(en) -> {
+            let rfn = ctx.get_fn("__release_${en}")
+            if rfn != null {
+                ctx.call("__release_${en}", [val])
+            } else {
+                ctx.call("forge_rc_release", [val])
+            }
+        }
+        _ -> ctx.call("forge_rc_release", [val])
+    }
+}
+
+// Emit release calls for each ptr-type field in a struct.
+fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: FieldList, idx: int) {
+    match fields {
+        .End -> {}
+        .Node(fname, _, resolved, next) -> {
+            if vtype_is_ptr_type(resolved) {
+                let st_ty = forge_llvm_get_type_by_name(ctx.lc, type_name)
+                let fld_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj, idx, "rel_${fname}_ptr")
+                let fld_val = forge_llvm_build_load(ctx.builder, ctx.ptr_type, fld_gep, "rel_${fname}")
+                // Null check: field may be uninitialized or nullable
+                let is_null = forge_llvm_build_icmp(ctx.builder, 32, fld_val, forge_llvm_const_null(ctx.ptr_type), "is_null_${fname}")
+                let then_bb = forge_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${fname}_skip")
+                let else_bb = forge_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${fname}_do")
+                forge_llvm_build_cond_br(ctx.builder, is_null, then_bb, else_bb)
+                forge_llvm_position_at_end(ctx.builder, else_bb)
+                emit_field_release(ctx, fld_val, resolved)
+                forge_llvm_build_br(ctx.builder, then_bb)
+                forge_llvm_position_at_end(ctx.builder, then_bb)
+            }
+            emit_struct_field_releases(ctx, obj, type_name, next, idx + 1)
+        }
+    }
+}
+
+// Emit the body of a __release_StructName function.
+fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList) {
+    let fn_val = ctx.get_fn("__release_${name}")
+    if fn_val == null { return }
+    let fctx = ctx.with_fn(fn_val, "__release_${name}")
+    let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
+    forge_llvm_position_at_end(fctx.builder, entry)
+    let obj = forge_llvm_get_param(fn_val, 0)
+    // Check if this release should free (refcount hit 0)
+    let should = fctx.call("forge_rc_should_free", [obj])
+    let cond = forge_llvm_build_icmp(fctx.builder, 33, should, forge_llvm_const_int(fctx.i64_type, 0, 0), "should_free")
+    let free_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "do_free")
+    let done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "done")
+    forge_llvm_build_cond_br(fctx.builder, cond, free_bb, done_bb)
+    // Free path: release fields then free
+    forge_llvm_position_at_end(fctx.builder, free_bb)
+    emit_struct_field_releases(fctx, obj, name, fields, 0)
+    fctx.call("forge_rc_free", [obj])
+    forge_llvm_build_br(fctx.builder, done_bb)
+    // Done path: return void
+    forge_llvm_position_at_end(fctx.builder, done_bb)
+    forge_llvm_build_ret(fctx.builder, forge_llvm_const_int(fctx.i64_type, 0, 0))
+}
+
+// Emit release calls for ptr-type fields in an enum variant payload.
+fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, variant_name: string, fields: FieldList, idx: int) {
+    match fields {
+        .End -> {}
+        .Node(fname, _, resolved, next) -> {
+            if vtype_is_ptr_type(resolved) {
+                let payload_type_name = "${enum_name}__${variant_name}"
+                let pay_ty = forge_llvm_get_type_by_name(ctx.lc, payload_type_name)
+                if pay_ty != null {
+                    let fld_gep = forge_llvm_build_struct_gep2(ctx.builder, pay_ty, payload, idx, "vrel_${fname}_ptr")
+                    let fld_val = forge_llvm_build_load(ctx.builder, ctx.ptr_type, fld_gep, "vrel_${fname}")
+                    let is_null = forge_llvm_build_icmp(ctx.builder, 32, fld_val, forge_llvm_const_null(ctx.ptr_type), "vrel_null_${fname}")
+                    let then_bb = forge_llvm_append_basic_block(ctx.lc, ctx.current_fn, "vrel_${fname}_skip")
+                    let else_bb = forge_llvm_append_basic_block(ctx.lc, ctx.current_fn, "vrel_${fname}_do")
+                    forge_llvm_build_cond_br(ctx.builder, is_null, then_bb, else_bb)
+                    forge_llvm_position_at_end(ctx.builder, else_bb)
+                    emit_field_release(ctx, fld_val, resolved)
+                    forge_llvm_build_br(ctx.builder, then_bb)
+                    forge_llvm_position_at_end(ctx.builder, then_bb)
+                }
+            }
+            emit_variant_field_releases(ctx, payload, enum_name, variant_name, next, idx + 1)
+        }
+    }
+}
+
+// Emit tag-check + field-release code for each enum variant.
+fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: string, variants: VariantList, done_bb: ptr) {
+    match variants {
+        .End -> {}
+        .Node(vname, fields, next) -> {
+            if fields_have_rc(fields) {
+                let tag_hash = forge_variant_hash(vname)
+                let tag_const = forge_llvm_const_int(ctx.i64_type, tag_hash, 0)
+                let cmp = forge_llvm_build_icmp(ctx.builder, 32, tag_val, tag_const, "is_${vname}")
+                let match_bb = forge_llvm_append_basic_block(ctx.lc, ctx.current_fn, "rel_${vname}")
+                let next_bb = forge_llvm_append_basic_block(ctx.lc, ctx.current_fn, "try_next_${vname}")
+                forge_llvm_build_cond_br(ctx.builder, cmp, match_bb, next_bb)
+                forge_llvm_position_at_end(ctx.builder, match_bb)
+                // Cast payload ptr to variant struct type and release fields
+                emit_variant_field_releases(ctx, payload, enum_name, vname, fields, 0)
+                forge_llvm_build_br(ctx.builder, done_bb)
+                forge_llvm_position_at_end(ctx.builder, next_bb)
+            }
+            emit_enum_variant_releases(ctx, tag_val, payload, enum_name, next, done_bb)
+        }
+    }
+}
+
+// Emit the body of a __release_EnumName function.
+fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList) {
+    let fn_val = ctx.get_fn("__release_${name}")
+    if fn_val == null { return }
+    let fctx = ctx.with_fn(fn_val, "__release_${name}")
+    let entry = forge_llvm_append_basic_block(ctx.lc, fn_val, "entry")
+    forge_llvm_position_at_end(fctx.builder, entry)
+    let obj = forge_llvm_get_param(fn_val, 0)
+    // Check if this release should free
+    let should = fctx.call("forge_rc_should_free", [obj])
+    let cond = forge_llvm_build_icmp(fctx.builder, 33, should, forge_llvm_const_int(fctx.i64_type, 0, 0), "should_free")
+    let free_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "do_free")
+    let done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "done")
+    forge_llvm_build_cond_br(fctx.builder, cond, free_bb, done_bb)
+    // Free path: load tag + payload, check each variant, release fields, then free
+    forge_llvm_position_at_end(fctx.builder, free_bb)
+    let enum_ty = forge_llvm_get_type_by_name(fctx.lc, name)
+    let tag_gep = forge_llvm_build_struct_gep2(fctx.builder, enum_ty, obj, 0, "tag_ptr")
+    let tag_val = forge_llvm_build_load(fctx.builder, fctx.i64_type, tag_gep, "tag")
+    let pay_gep = forge_llvm_build_struct_gep2(fctx.builder, enum_ty, obj, 1, "pay_ptr")
+    let payload = forge_llvm_build_load(fctx.builder, fctx.ptr_type, pay_gep, "payload")
+    // Also need to release the payload allocation itself (it's a separate RC alloc)
+    let fields_done_bb = forge_llvm_append_basic_block(ctx.lc, fn_val, "fields_done")
+    emit_enum_variant_releases(fctx, tag_val, payload, name, variants, fields_done_bb)
+    // Fall through to fields_done (if no variant matched)
+    forge_llvm_build_br(fctx.builder, fields_done_bb)
+    forge_llvm_position_at_end(fctx.builder, fields_done_bb)
+    // Release the payload pointer (it's a separate allocation for enums with payload)
+    fctx.call("forge_rc_free", [obj])
+    forge_llvm_build_br(fctx.builder, done_bb)
+    // Done: return void
+    forge_llvm_position_at_end(fctx.builder, done_bb)
+    forge_llvm_build_ret(fctx.builder, forge_llvm_const_int(fctx.i64_type, 0, 0))
+}
+
+// Walk StructReg and emit release function bodies.
+fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg) {
+    match reg {
+        .End -> {}
+        .Node(name, fields, next) -> {
+            if fields_have_rc(fields) {
+                emit_release_body_struct(ctx, name, fields)
+            }
+            emit_release_bodies_structs(ctx, next)
+        }
+    }
+}
+
+// Walk EnumReg and emit release function bodies.
+fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg) {
+    match reg {
+        .End -> {}
+        .Node(name, variants, next) -> {
+            if variants_have_rc(variants) {
+                emit_release_body_enum(ctx, name, variants)
+            }
+            emit_release_bodies_enums(ctx, next)
+        }
+    }
+}
+
+// Top-level entry: declare + emit all release functions.
+fn emit_release_functions(ctx: Ctx) {
+    // Phase 1: declare all signatures (needed for mutual recursion)
+    declare_release_fns_structs(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.structs)
+    declare_release_fns_enums(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.enums)
+    // Phase 2: emit bodies
+    emit_release_bodies_structs(ctx, ctx.structs)
+    emit_release_bodies_enums(ctx, ctx.enums)
 }
 
 fn collect_trait_decls(stmts: StmtList, reg: TraitDeclReg) -> TraitDeclReg {

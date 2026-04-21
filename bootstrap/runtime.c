@@ -483,6 +483,35 @@ void forge_rc_release(void* ptr) {
     }
 }
 
+// Decrement refcount and return 1 if the object should be freed (refcount hit 0).
+// Does NOT free the memory — the caller is responsible for releasing fields
+// first, then calling forge_rc_free. Used by generated __release_TypeName
+// functions for recursive field release.
+int64_t forge_rc_should_free(void* ptr) {
+    if (!ptr) return 0;
+    if (!is_rc_managed(ptr)) return 0;
+    RcHeader* hdr = rc_header(ptr);
+    if (hdr->type_tag != RC_MAGIC) return 0;
+    hdr->refcount--;
+    if (rc_trace) {
+        fprintf(stderr, "[RC] should_free %p (rc=%d)\n", ptr, hdr->refcount);
+    }
+    return hdr->refcount == 0 ? 1 : 0;
+}
+
+// Free an RC object without decrementing. Called after forge_rc_should_free
+// returned 1 and the caller has released all inner fields.
+void forge_rc_free(void* ptr) {
+    if (!ptr) return;
+    RcHeader* hdr = rc_header(ptr);
+    if (rc_trace) {
+        fprintf(stderr, "[RC] free %p\n", ptr);
+    }
+    hdr->type_tag = 0;  // Clear magic to prevent double-free
+    rc_set_remove(ptr);
+    free((char*)ptr - RC_HEADER_SIZE);
+}
+
 // ─── Central error reporting ──────────────────────────────────────
 //
 // All runtime errors go through these two functions. This ensures

@@ -1,0 +1,25 @@
+// Test: recursive RC release frees inner struct fields when outer struct
+// is released at scope exit. The __release_TypeName functions generated
+// by codegen handle field-by-field cleanup.
+
+type Inner = {
+    value: string,
+}
+
+type Outer = {
+    name: string,
+    child: Inner,
+}
+
+fn test_struct_release() -> string {
+    let outer = Outer { name: "test", child: Inner { value: "hello" } }
+    outer.child.value
+}
+
+fn test_nested() -> string {
+    let deep = Outer { name: "deep", child: Inner { value: "world" } }
+    deep.name
+}
+
+println(test_struct_release())
+println(test_nested())
