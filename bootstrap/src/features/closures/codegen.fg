@@ -211,6 +211,9 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
     match stmts {
         .End -> captures
         .Node(ss, next) -> {
+            // Track locally-bound names so they shadow outer env and aren't captured.
+            // After processing a Let/Mut/Const, add the name to params so subsequent
+            // statements won't capture it (the name is local to this closure body).
             let c1 = match ss.node {
                 .Expr(e) -> find_captures(e, params, env, captures)
                 .Return(e) -> find_captures(e, params, env, captures)
@@ -242,7 +245,17 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
                 .Defer(body) -> find_captures(body, params, env, captures)
                 _ -> captures
             }
-            find_captures_stmts(next, params, env, c1)
+            // If this statement binds a local name, add it to params so subsequent
+            // uses of the name won't be treated as captures from the outer scope.
+            let updated_params = match ss.node {
+                .Let(name, _, _) -> ParamList.Node(name, "", ValueType.Int, params)
+                .Mut(name, _, _) -> ParamList.Node(name, "", ValueType.Int, params)
+                .Const(name, _, _) -> ParamList.Node(name, "", ValueType.Int, params)
+                .For(vname, _, _, _) -> ParamList.Node(vname, "", ValueType.Int, params)
+                .ForIn(vname, _, _) -> ParamList.Node(vname, "", ValueType.Int, params)
+                _ -> params
+            }
+            find_captures_stmts(next, updated_params, env, c1)
         }
     }
 }

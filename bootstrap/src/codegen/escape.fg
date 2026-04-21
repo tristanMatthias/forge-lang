@@ -115,7 +115,28 @@ fn remove_escaped_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
         .Defer(body) -> remove_escaped_expr(body, set)
         .Errdefer(body) -> remove_escaped_expr(body, set)
         .Annotated(_, inner) -> remove_escaped_stmt(inner, set)
-        _ -> set
+        .LetDestructure(_, init) -> remove_escaped_expr(init, set)
+        // Declarations and control that don't contain escapable ident refs at this level
+        .Function(_, _, _, _, _) -> set
+        .ReturnEmpty -> set
+        .TypeDecl(_, _, _) -> set
+        .NewtypeDecl(_, _) -> set
+        .UnionAliasDecl(_, _) -> set
+        .ShapeDecl(_, _) -> set
+        .EnumDecl(_, _, _) -> set
+        .ExternFn(_, _, _) -> set
+        .TraitDecl(_, _) -> set
+        .Impl(_, _) -> set
+        .NoOp -> set
+        .Break -> set
+        .Continue -> set
+        .SpecBlock(_, _) -> set
+        .GivenBlock(_, _) -> set
+        .ThenBlock(_, _) -> set
+        .Select(_) -> set
+        .Parallel(_) -> set
+        .Module(_, _) -> set
+        .Use(_, _) -> set
     }
 }
 
@@ -163,8 +184,18 @@ fn remove_escaped_expr(expr: Expr, set: ReleasableSet) -> ReleasableSet {
         .InCheck(needle, items) -> remove_escaped_args(items, remove_escaped_expr(needle, set))
         .EnumCtor(_, _, args) -> remove_escaped_args(args, set)
         .When(_) -> set  // when arms don't contain ident escapes at this level
-        // Leaf expressions (Number, String, Bool, Float, Null, QualifiedIdent) — no idents to escape
-        _ -> set
+        .ListComp(body, _, coll, filter) -> {
+            let s1 = remove_escaped_expr(body, set)
+            let s2 = remove_escaped_expr(coll, s1)
+            if filter != null { remove_escaped_expr(filter!, s2) } else { s2 }
+        }
+        // Leaf expressions — no idents to escape
+        .Number(_) -> set
+        .FloatLit(_) -> set
+        .String(_) -> set
+        .Bool(_) -> set
+        .Null -> set
+        .QualifiedIdent(_) -> set
     }
 }
 
