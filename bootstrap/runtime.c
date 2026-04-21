@@ -2449,16 +2449,15 @@ typedef struct {
     int64_t value;  // the received value
 } ForgeSelectResult;
 
-static ForgeSelectResult forge_select_result;
-
 // Polls channels in round-robin until one has data.
-// Returns pointer to static ForgeSelectResult.
+// Returns pointer to heap-allocated ForgeSelectResult.
 void* forge_select(void* channel_array, int64_t count) {
+    ForgeSelectResult* result = (ForgeSelectResult*)malloc(sizeof(ForgeSelectResult));
     ForgeArray* arr = (ForgeArray*)(uintptr_t)channel_array;
     if (!arr || arr->len == 0) {
-        forge_select_result.index = -1;
-        forge_select_result.value = 0;
-        return &forge_select_result;
+        result->index = -1;
+        result->value = 0;
+        return result;
     }
     // Spin-poll with backoff until one channel has data.
     // This is simple but correct. A production implementation
@@ -2473,9 +2472,9 @@ void* forge_select(void* channel_array, int64_t count) {
                 ch->has_value = 0;
                 pthread_cond_signal(&ch->send_cond);
                 pthread_mutex_unlock(&ch->mutex);
-                forge_select_result.index = i;
-                forge_select_result.value = val;
-                return &forge_select_result;
+                result->index = i;
+                result->value = val;
+                return result;
             }
             pthread_mutex_unlock(&ch->mutex);
         }
