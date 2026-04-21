@@ -1,0 +1,46 @@
+// @std/channel — channel operations and spawn.
+
+extern fn forge_spawn(closure: int) -> int
+extern fn forge_thread_join(handle: int)
+extern fn forge_channel_new() -> ptr
+extern fn forge_channel_send(ch: ptr, value: int)
+extern fn forge_channel_recv(ch: ptr) -> int
+extern fn forge_channel_close(ch: ptr)
+
+mut ch: ptr = null
+
+fn producer() {
+    forge_channel_send(ch, 1)
+    forge_channel_send(ch, 2)
+    forge_channel_send(ch, 3)
+}
+
+fn main() {
+    // Basic channel send/recv
+    ch = forge_channel_new()
+    let h = forge_spawn(producer)
+
+    let a = forge_channel_recv(ch)
+    let b = forge_channel_recv(ch)
+    let c = forge_channel_recv(ch)
+    forge_thread_join(h)
+
+    println(string(a))
+    println(string(b))
+    println(string(c))
+    println(string(a + b + c))
+
+    // Close channel
+    forge_channel_close(ch)
+    println("closed ok")
+
+    // Select with two channels
+    let ch1 = forge_channel_new()
+    let ch2 = forge_channel_new()
+    forge_channel_send(ch1, 100)
+
+    select {
+        v <- ch1 -> { println("ch1: " + string(v)) }
+        v <- ch2 -> { println("ch2: " + string(v)) }
+    }
+}

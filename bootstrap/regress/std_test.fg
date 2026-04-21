@@ -1,0 +1,43 @@
+// @std/test — comprehensive spec/given/then test framework.
+
+fn abs(x: int) -> int {
+    if x < 0 { -x } else { x }
+}
+
+fn is_even(x: int) -> bool { x % 2 == 0 }
+
+fn fib(n: int) -> int {
+    if n <= 1 { return n }
+    fib(n - 1) + fib(n - 2)
+}
+
+fn main() {
+    spec "math" {
+        given "absolute value" {
+            then "positive stays positive" { abs(5) == 5 }
+            then "negative becomes positive" { abs(-3) == 3 }
+            then "zero stays zero" { abs(0) == 0 }
+        }
+
+        given "even/odd" {
+            then "2 is even" { is_even(2) }
+            then "3 is not even" { !is_even(3) }
+            then "0 is even" { is_even(0) }
+        }
+
+        given "fibonacci" {
+            then "fib(0) = 0" { fib(0) == 0 }
+            then "fib(1) = 1" { fib(1) == 1 }
+            then "fib(10) = 55" { fib(10) == 55 }
+        }
+    }
+
+    spec "comparisons" {
+        given "ordering" {
+            then "less than" { 1 < 2 }
+            then "greater than" { 5 > 3 }
+            then "equality" { 42 == 42 }
+            then "not equal" { 1 != 2 }
+        }
+    }
+}

@@ -1,0 +1,61 @@
+// @std/string — comprehensive string operations.
+
+fn main() {
+    let s = "Hello, World!"
+
+    // Length
+    println(string(s.length))
+
+    // Contains
+    println(string(s.contains("World")))
+    println(string(s.contains("xyz")))
+
+    // Starts/ends with
+    println(string(s.starts_with("Hello")))
+    println(string(s.starts_with("World")))
+    println(string(s.ends_with("!")))
+    println(string(s.ends_with("Hello")))
+
+    // Index of
+    println(string(s.index_of("World")))
+    println(string(s.index_of("xyz")))
+
+    // Replace
+    let r = s.replace("World", "Forge")
+    println(r)
+
+    // Trim
+    let padded = "  spaced  "
+    println(padded.trim())
+
+    // Upper / Lower
+    let mixed = "Hello"
+    println(mixed.upper())
+    println(mixed.lower())
+
+    // Split
+    let csv = "a,b,c,d"
+    let parts = csv.split(",")
+    println(string(parts.length))
+    println(parts[0])
+    println(parts[1])
+    println(parts[2])
+    println(parts[3])
+
+    // Join
+    let joined = parts.join(" - ")
+    println(joined)
+
+    // Substring
+    let sub = s.substring(0, 5)
+    println(sub)
+
+    // Char code
+    let ch = "A"
+    println(string(ch.char_code()))
+
+    // Empty string
+    let empty = ""
+    println(string(empty.length))
+    println(string(empty.contains("x")))
+}

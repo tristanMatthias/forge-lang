@@ -91,6 +91,10 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_array_filter", pt, [pt, i64t])
     decl(m, "forge_array_foreach", vt, [pt, i64t])
     decl(m, "forge_array_reduce", i64t, [pt, i64t, i64t])
+    decl(m, "forge_array_contains", i64t, [pt, i64t])
+    decl(m, "forge_array_index_of", i64t, [pt, i64t])
+    decl(m, "forge_array_reverse", pt, [pt])
+    decl(m, "forge_array_slice", pt, [pt, i64t, i64t])
 
     // ── strings ──
     decl(m, "forge_str_contains", i64t, [pt, pt])
@@ -102,6 +106,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_str_trim", pt, [pt])
     decl(m, "forge_str_to_upper", pt, [pt])
     decl(m, "forge_str_to_lower", pt, [pt])
+    decl(m, "forge_str_join", pt, [pt, pt])
 
     // ── maps ──
     decl(m, "forge_map_new_cstr", pt, [])
@@ -110,6 +115,13 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_map_has_cstr", i64t, [pt, pt])
     decl(m, "forge_map_len_cstr", i64t, [pt])
     decl(m, "forge_map_keys_cstr", pt, [pt])
+    decl(m, "forge_map_values_cstr", pt, [pt])
+    decl(m, "forge_map_remove_cstr", i64t, [pt, pt])
+
+    // ── file I/O ──
+    decl(m, "forge_file_read", pt, [pt])
+    decl(m, "forge_file_write", i64t, [pt, pt])
+    decl(m, "forge_file_exists", i64t, [pt])
     decl(m, "forge_intmap_new", pt, [])
     decl(m, "forge_intmap_set", vt, [pt, i64t, i64t])
     decl(m, "forge_intmap_get", i64t, [pt, i64t])

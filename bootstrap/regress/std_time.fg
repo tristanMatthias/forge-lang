@@ -1,0 +1,44 @@
+// @std/time — time operations.
+
+extern fn forge_datetime_now() -> int
+extern fn forge_datetime_format(epoch: int, fmt: string) -> string
+extern fn forge_datetime_year(epoch: int) -> int
+extern fn forge_datetime_month(epoch: int) -> int
+extern fn forge_datetime_day(epoch: int) -> int
+extern fn forge_datetime_hour(epoch: int) -> int
+extern fn forge_datetime_minute(epoch: int) -> int
+extern fn forge_datetime_second(epoch: int) -> int
+extern fn forge_uptime_ms() -> int
+
+fn main() {
+    let now = forge_datetime_now()
+    if now > 0 { println("epoch ok") }
+
+    // Year, month, day range checks
+    let yr = forge_datetime_year(now)
+    if yr >= 2026 { println("year ok") }
+
+    let mo = forge_datetime_month(now)
+    if mo >= 1 && mo <= 12 { println("month ok") }
+
+    let dy = forge_datetime_day(now)
+    if dy >= 1 && dy <= 31 { println("day ok") }
+
+    let hr = forge_datetime_hour(now)
+    if hr >= 0 && hr <= 23 { println("hour ok") }
+
+    let mn = forge_datetime_minute(now)
+    if mn >= 0 && mn <= 59 { println("minute ok") }
+
+    let sc = forge_datetime_second(now)
+    if sc >= 0 && sc <= 59 { println("second ok") }
+
+    // Known epoch: 2000-06-15 12:00:00 UTC = 961070400
+    // (midday mid-year to avoid timezone edge cases)
+    let mid2000 = 961070400
+    println(string(forge_datetime_year(mid2000)))
+
+    // Uptime (should be small positive number)
+    let up = forge_uptime_ms()
+    if up >= 0 && up < 10000 { println("uptime ok") }
+}

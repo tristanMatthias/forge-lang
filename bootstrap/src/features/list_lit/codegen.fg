@@ -91,7 +91,40 @@ export fn emit_list_method_call(ctx: Ctx, env: VarEnv, list_val: ptr, list_ty: V
             let elem_ty = vtype_list_elem(list_ty)
             return emit_list_reduce_typed(ctx, env, list_val, args, elem_ty)
         }
+        "contains" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(ctx.call("forge_array_contains", [list_val, arg_r.value]))
+        }
+        "index_of" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            return ok_emit(ctx.call("forge_array_index_of", [list_val, arg_r.value]))
+        }
+        "reverse" -> {
+            return ok_emit_typed(ctx.call("forge_array_reverse", [list_val]), list_ty)
+        }
+        "slice" -> return emit_list_slice(ctx, env, list_val, list_ty, args)
+        "join" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            let sep_ptr = ctx.to_ptr(arg_r.value, "join_sep")
+            return ok_emit_typed(ctx.call("forge_str_join", [list_val, sep_ptr]), .Str)
+        }
         _ -> err_emit("list method `${method}` not implemented")
+    }
+}
+
+fn emit_list_slice(ctx: Ctx, env: VarEnv, list: ptr, list_ty: ValueType, args: ExprList) -> Result<EmitValue, string> {
+    match args {
+        .Node(se_start, rest) -> {
+            match rest {
+                .Node(se_end, _) -> {
+                    let start_r = ctx.emit(env, se_start.node)?
+                    let end_r = ctx.emit(env, se_end.node)?
+                    ok_emit_typed(ctx.call("forge_array_slice", [list, start_r.value, end_r.value]), list_ty)
+                }
+                _ -> err_emit("list.slice expects 2 arguments: start and end")
+            }
+        }
+        _ -> err_emit("list.slice expects 2 arguments: start and end")
     }
 }
 

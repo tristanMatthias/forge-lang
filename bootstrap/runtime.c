@@ -1155,6 +1155,39 @@ void* forge_map_keys_cstr(void* map) {
     return arr;
 }
 
+// Return an array of all values.
+void* forge_map_values_cstr(void* map) {
+    ForgeHashMap* m = (ForgeHashMap*)map;
+    void* arr = forge_array_new();
+    for (int64_t i = 0; i < m->cap; i++) {
+        if (m->keys[i]) {
+            forge_array_push(arr, m->values[i]);
+        }
+    }
+    return arr;
+}
+
+// Remove a key from the map. Returns 1 if found, 0 if not.
+int64_t forge_map_remove_cstr(void* map, const char* key) {
+    if (!map || !key) return 0;
+    ForgeHashMap* m = (ForgeHashMap*)map;
+    uint64_t h = 5381;
+    for (const char* p = key; *p; p++) h = h * 33 + (unsigned char)*p;
+    int64_t idx = (int64_t)(h % (uint64_t)m->cap);
+    for (int64_t i = 0; i < m->cap; i++) {
+        int64_t probe = (idx + i) % m->cap;
+        if (!m->keys[probe]) return 0;
+        if (strcmp(m->keys[probe], key) == 0) {
+            free(m->keys[probe]);
+            m->keys[probe] = NULL;
+            m->values[probe] = 0;
+            m->count--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void forge_map_grow(ForgeHashMap* m) {
     int64_t old_cap = m->cap;
     char** old_keys = m->keys;
@@ -1405,6 +1438,71 @@ void forge_array_foreach(void* arr, int64_t fn_ptr) {
     for (int64_t i = 0; i < src->len; i++) {
         forge_closure_call_1(fn_ptr, src->data[i]);
     }
+}
+
+// Check if array contains a value. For strings, does pointer/strcmp comparison.
+int64_t forge_array_contains(void* arr, int64_t value) {
+    ForgeArray* a = (ForgeArray*)arr;
+    for (int64_t i = 0; i < a->len; i++) {
+        if (a->data[i] == value) return 1;
+    }
+    return 0;
+}
+
+// Find index of value in array. Returns -1 if not found.
+int64_t forge_array_index_of(void* arr, int64_t value) {
+    ForgeArray* a = (ForgeArray*)arr;
+    for (int64_t i = 0; i < a->len; i++) {
+        if (a->data[i] == value) return i;
+    }
+    return -1;
+}
+
+// Reverse an array in-place. Returns the same array.
+void* forge_array_reverse(void* arr) {
+    ForgeArray* a = (ForgeArray*)arr;
+    for (int64_t i = 0, j = a->len - 1; i < j; i++, j--) {
+        int64_t tmp = a->data[i];
+        a->data[i] = a->data[j];
+        a->data[j] = tmp;
+    }
+    return arr;
+}
+
+// Join a list of strings with a separator.
+const char* forge_str_join(void* arr, const char* sep) {
+    ForgeArray* a = (ForgeArray*)arr;
+    if (a->len == 0) return "";
+    size_t sep_len = strlen(sep);
+    size_t total = 0;
+    for (int64_t i = 0; i < a->len; i++) {
+        const char* s = (const char*)a->data[i];
+        total += s ? strlen(s) : 0;
+        if (i > 0) total += sep_len;
+    }
+    char* buf = (char*)malloc(total + 1);
+    char* p = buf;
+    for (int64_t i = 0; i < a->len; i++) {
+        if (i > 0) { memcpy(p, sep, sep_len); p += sep_len; }
+        const char* s = (const char*)a->data[i];
+        if (s) { size_t l = strlen(s); memcpy(p, s, l); p += l; }
+    }
+    *p = '\0';
+    return buf;
+}
+
+// ── File I/O (public API) ──
+// These alias the selfhost_ versions for user programs.
+const char* forge_file_read(const char* path) {
+    return forge_selfhost_read_file(path);
+}
+
+int64_t forge_file_write(const char* path, const char* content) {
+    return forge_selfhost_write_file(path, content);
+}
+
+int64_t forge_file_exists(const char* path) {
+    return forge_selfhost_file_exists(path);
 }
 
 // ─── Closure support ──────────────────────────────────────────────

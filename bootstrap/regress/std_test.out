@@ -1,0 +1,19 @@
+spec "math"
+  given "absolute value"
+    then "positive stays positive": PASS
+    then "negative becomes positive": PASS
+    then "zero stays zero": PASS
+  given "even/odd"
+    then "2 is even": PASS
+    then "3 is not even": PASS
+    then "0 is even": PASS
+  given "fibonacci"
+    then "fib(0) = 0": PASS
+    then "fib(1) = 1": PASS
+    then "fib(10) = 55": PASS
+spec "comparisons"
+  given "ordering"
+    then "less than": PASS
+    then "greater than": PASS
+    then "equality": PASS
+    then "not equal": PASS

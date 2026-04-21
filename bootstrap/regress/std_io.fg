@@ -1,0 +1,25 @@
+// @std/io — file read/write operations via C runtime.
+
+extern fn forge_file_read(path: string) -> string
+extern fn forge_file_write(path: string, content: string) -> int
+extern fn forge_file_exists(path: string) -> int
+
+fn main() {
+    let path = "/tmp/forge_std_io_test.txt"
+
+    // Write
+    let ok = forge_file_write(path, "hello forge\nline two")
+    println(string(ok))
+
+    // Exists
+    println(string(forge_file_exists(path)))
+    println(string(forge_file_exists("/tmp/nonexistent_forge_test_xyz.txt")))
+
+    // Read
+    let content = forge_file_read(path)
+    println(content)
+
+    // Overwrite
+    forge_file_write(path, "replaced")
+    println(forge_file_read(path))
+}

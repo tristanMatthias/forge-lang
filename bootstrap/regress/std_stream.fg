@@ -1,0 +1,35 @@
+// @std/stream — lazy pipeline operations via list combinators.
+// v1.0: streams are modeled as list pipelines using map/filter/reduce.
+// True lazy evaluation will be added in a future version.
+
+fn main() {
+    // Pipeline: generate, transform, collect
+    mut nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    // map + filter pipeline
+    let evens = nums.filter((x) -> x % 2 == 0)
+    println(string(evens.length))
+    println(string(evens[0]))
+    println(string(evens[1]))
+
+    // map then reduce
+    let doubled = nums.map((x) -> x * 2)
+    let sum = doubled.reduce(0, (acc, x) -> acc + x)
+    println(string(sum))
+
+    // Chained: filter then map
+    let big_doubled = nums.filter((x) -> x > 5).map((x) -> x * 10)
+    println(string(big_doubled.length))
+    println(string(big_doubled[0]))
+    println(string(big_doubled[1]))
+    println(string(big_doubled[4]))
+
+    // Reduce to find max
+    let mx = nums.reduce(0, (best, x) -> if x > best { x } else { best })
+    println(string(mx))
+
+    // Pipeline with string list
+    let words = "the quick brown fox".split(" ")
+    let uppers = words.map((w) -> w.upper())
+    println(uppers.join(" "))
+}
