@@ -742,6 +742,9 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
         .ForIn(_, _, body) -> tc_check_stmt_returns(tc, fn_name, declared, body)
         .Match(_, arms) -> tc_check_match_arm_returns(tc, fn_name, declared, arms)
         .Annotated(_, inner) -> tc_check_stmt_returns(tc, fn_name, declared, inner)
+        .Defer(_) -> tc  // defer bodies should not contain return
+        .Errdefer(_) -> tc
+        .Parallel(body) -> tc_check_explicit_returns(tc, fn_name, declared, body)
         _ -> tc
     }
 }
