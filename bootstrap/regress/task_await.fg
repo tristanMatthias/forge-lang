@@ -1,0 +1,24 @@
+// Task.await: spawn returns a task handle, .await joins and returns the result.
+
+fn compute() -> int {
+    42
+}
+
+fn main() {
+    // Basic: spawn a closure, await its result
+    let task = spawn { compute() }
+    let result = task.await
+    println(string(result))
+
+    // Spawn with captured value
+    let x = 100
+    let task2 = spawn { x + 7 }
+    println(string(task2.await))
+
+    // Multiple tasks
+    let t1 = spawn { 10 }
+    let t2 = spawn { 20 }
+    let t3 = spawn { 30 }
+    let sum = t1.await + t2.await + t3.await
+    println(string(sum))
+}

@@ -2110,33 +2110,43 @@ void forge_test_summary(void) {
 
 // ── Concurrency ──
 // Thread spawning via pthreads. spawn takes a closure (ForgeArray)
-// and runs it in a new thread.
+// and runs it in a new thread. Returns a task handle for .await.
 
 typedef struct {
+    pthread_t thread;
     int64_t closure;
-} ForgeThreadArg;
+    int64_t result;     // captured return value from closure
+} ForgeTask;
 
 static void* forge_thread_entry(void* arg) {
-    ForgeThreadArg* ta = (ForgeThreadArg*)arg;
-    forge_closure_call_0(ta->closure);
-    free(ta);
+    ForgeTask* task = (ForgeTask*)arg;
+    task->result = forge_closure_call_0(task->closure);
     return NULL;
 }
 
-// Spawn a closure in a new thread. Returns a thread handle (i64).
+// Spawn a closure in a new thread. Returns a task handle (ptr to ForgeTask).
 int64_t forge_spawn(int64_t closure) {
-    pthread_t* thread = (pthread_t*)malloc(sizeof(pthread_t));
-    ForgeThreadArg* arg = (ForgeThreadArg*)malloc(sizeof(ForgeThreadArg));
-    arg->closure = closure;
-    pthread_create(thread, NULL, forge_thread_entry, arg);
-    return (int64_t)(uintptr_t)thread;
+    ForgeTask* task = (ForgeTask*)malloc(sizeof(ForgeTask));
+    task->closure = closure;
+    task->result = 0;
+    pthread_create(&task->thread, NULL, forge_thread_entry, task);
+    return (int64_t)(uintptr_t)task;
 }
 
-// Wait for a spawned thread to finish.
+// Wait for a spawned task to finish and return its result value.
+int64_t forge_task_await(int64_t handle) {
+    ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
+    pthread_join(task->thread, NULL);
+    int64_t result = task->result;
+    free(task);
+    return result;
+}
+
+// Legacy join — kept for backward compat with existing tests.
 void forge_thread_join(int64_t handle) {
-    pthread_t* thread = (pthread_t*)(uintptr_t)handle;
-    pthread_join(*thread, NULL);
-    free(thread);
+    ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
+    pthread_join(task->thread, NULL);
+    free(task);
 }
 
 // Yield the current fiber. No-op in v1.0 (pthreads-based).
@@ -2254,10 +2264,11 @@ void forge_parallel_run(void* closure_array) {
     if (!arr || arr->len == 0) return;
     int64_t n = arr->len;
     pthread_t* threads = (pthread_t*)malloc(n * sizeof(pthread_t));
-    ForgeThreadArg** args = (ForgeThreadArg**)malloc(n * sizeof(ForgeThreadArg*));
+    ForgeTask** args = (ForgeTask**)malloc(n * sizeof(ForgeTask*));
     for (int64_t i = 0; i < n; i++) {
-        args[i] = (ForgeThreadArg*)malloc(sizeof(ForgeThreadArg));
+        args[i] = (ForgeTask*)malloc(sizeof(ForgeTask));
         args[i]->closure = arr->data[i];
+        args[i]->result = 0;
         pthread_create(&threads[i], NULL, forge_thread_entry, args[i]);
     }
     for (int64_t i = 0; i < n; i++) {

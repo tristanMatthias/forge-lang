@@ -164,6 +164,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
 
     // ── concurrency ──
     decl(m, "forge_spawn", i64t, [pt])
+    decl(m, "forge_task_await", i64t, [pt])
     decl(m, "forge_thread_join", i32t, [pt])
     decl(m, "forge_yield", vt, [])
     decl(m, "forge_scheduler_run", vt, [])

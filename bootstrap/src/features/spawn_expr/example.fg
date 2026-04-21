@@ -1,6 +1,7 @@
 /// expect: hello from spawn
 /// expect: after spawn
 /// expect: 42
+/// expect: result: 99
 
 extern fn forge_thread_join(handle: int)
 
@@ -17,4 +18,9 @@ fn main() {
         println(string(x))
     }
     forge_thread_join(h2)
+
+    // task.await — spawn returns a task handle, .await joins and returns the result
+    let task = spawn { 99 }
+    let result = task.await
+    println("result: " + string(result))
 }
