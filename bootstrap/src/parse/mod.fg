@@ -204,6 +204,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "true"     -> Tk.KwTrue
         "for"      -> Tk.KwFor
         "in"       -> Tk.KwIn
+        "where"    -> Tk.KwWhere
         "while"    -> Tk.KwWhile
         "type"     -> Tk.KwType
         "enum"     -> Tk.KwEnum

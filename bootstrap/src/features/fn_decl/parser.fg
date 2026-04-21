@@ -5,12 +5,26 @@ use core.ast.{Stmt, ParamList, TypeParamList}
 use parse.{Parser}
 use core.ast.{Tk}
 
+// Merge a where-clause bound into an existing TypeParamList.
+// If the param already exists, append the bound (separated by " + ").
+// If it doesn't exist, add a new entry.
+fn merge_type_param_bound(params: TypeParamList, name: string, bounds: string) -> TypeParamList {
+    match params {
+        .End -> TypeParamList.Node(name, bounds, TypeParamList.End)
+        .Node(n, existing_bounds, next) if n == name -> {
+            let merged = if existing_bounds == "" { bounds } else { existing_bounds + " + " + bounds }
+            TypeParamList.Node(n, merged, next)
+        }
+        .Node(n, b, next) -> TypeParamList.Node(n, b, merge_type_param_bound(next, name, bounds))
+    }
+}
+
 impl Parser {
     fn parse_function_declaration(self) -> Stmt? {
         self.advance()
         let name = self.consume_identifier("expected function name")?
         // Optional generic parameters: fn name<T, U>(...)
-        let tp = if self.check(Tk.Less) {
+        mut tp = if self.check(Tk.Less) {
             self.parse_type_params()
         } else {
             TypeParamList.End
@@ -32,6 +46,11 @@ impl Parser {
             self.advance()
             self.consume_type("expected return type after `->`")?
         } else { "" }
+
+        // Optional where clause: `where T: Trait1, U: Trait2`
+        if self.check(Tk.KwWhere) {
+            tp = self.parse_where_clause(tp)
+        }
 
         if !self.consume(Tk.LeftBrace, "expected `{` after function parameters") {
             return null
@@ -71,5 +90,53 @@ impl Parser {
             return ParamList.Node(name, ty, ValueType.Int, rest)
         }
         ParamList.Node(name, ty, ValueType.Int, ParamList.End)
+    }
+
+    // Parse `where T: Trait1, U: Trait2` and merge bounds into existing TypeParamList.
+    // If the type param already exists with inline bounds, the where bounds are appended.
+    // If the type param doesn't exist in the list yet, it's added.
+    fn parse_where_clause(self, existing: TypeParamList) -> TypeParamList {
+        self.advance()  // consume `where`
+        self.parse_where_entries(existing)
+    }
+
+    fn parse_where_entries(self, acc: TypeParamList) -> TypeParamList {
+        if !self.check(Tk.Identifier) {
+            return acc
+        }
+        let name = self.current_lexeme
+        self.advance()
+        if !self.check(Tk.Colon) {
+            self.set_error("expected `:` after type parameter in where clause")
+            return acc
+        }
+        self.advance()
+        let bounds = self.parse_where_bounds()
+        let merged = merge_type_param_bound(acc, name, bounds)
+        if self.check(Tk.Comma) {
+            self.advance()
+            return self.parse_where_entries(merged)
+        }
+        merged
+    }
+
+    // Parse bounds like `Trait1 + Trait2`
+    fn parse_where_bounds(self) -> string {
+        if !self.check(Tk.Identifier) {
+            self.set_error("expected trait name in where clause")
+            return ""
+        }
+        mut result = self.current_lexeme
+        self.advance()
+        while self.check(Tk.Plus) {
+            self.advance()
+            if !self.check(Tk.Identifier) {
+                self.set_error("expected trait name after `+` in where clause")
+                return result
+            }
+            result = result + " + " + self.current_lexeme
+            self.advance()
+        }
+        result
     }
 }
