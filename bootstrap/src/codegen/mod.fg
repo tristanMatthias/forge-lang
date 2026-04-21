@@ -116,7 +116,35 @@ fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
                 ctx.rc_release(val)
             }
         }
-        _ -> ctx.rc_release(val)
+        .Newtype(name, _) -> {
+            // Newtype wraps another type — release via the wrapper's release function if it exists
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        // Str, Ptr, Fn: leaf RC types with no inner RC fields.
+        .Str -> ctx.rc_release(val)
+        .Ptr -> ctx.rc_release(val)
+        .Fn(_) -> ctx.rc_release(val)
+        // Tuple, Closure, Union, List, Map: may contain RC fields but
+        // recursive release is not yet implemented (ticket 0t0).
+        // Plain rc_release frees the outer allocation only.
+        .Tuple(_) -> ctx.rc_release(val)
+        .Closure(_, _) -> ctx.rc_release(val)
+        .Union(_) -> ctx.rc_release(val)
+        .List(_) -> ctx.rc_release(val)
+        .Map -> ctx.rc_release(val)
+        .Trait(_) -> ctx.rc_release(val)
+        // Value types — not RC-managed, no-op (rc_release checks magic).
+        .Int -> {}
+        .Bool -> {}
+        .Float -> {}
+        .Void -> {}
+        // FnTyped — function pointer, not heap-allocated.
+        .FnTyped(_, _) -> {}
     }
 }
 
