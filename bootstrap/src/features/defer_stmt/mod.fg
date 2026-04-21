@@ -6,7 +6,7 @@ use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr}
-use features.defer_stmt.codegen.{defer_push, errdefer_push}
+use codegen.types.{DeferStack}
 use typeck.{check_expr}
 
 export fn init_defer_stmt(reg: Registry) {
@@ -54,8 +54,8 @@ export fn init_defer_stmt(reg: Registry) {
 fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
-            errdefer_push(sexpr_dummy(body))
-            ok_sr(ctx, env)
+            let updated = ctx with { defers: DeferStack.ErrFrame(sexpr_dummy(body), ctx.defers) }
+            ok_sr(updated, env)
         }
         _ -> err_sr("expected Errdefer")
     }
@@ -64,8 +64,8 @@ fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, s
 fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Defer(body) -> {
-            defer_push(sexpr_dummy(body))
-            ok_sr(ctx, env)
+            let updated = ctx with { defers: DeferStack.Frame(sexpr_dummy(body), ctx.defers) }
+            ok_sr(updated, env)
         }
         _ -> err_sr("expected Defer")
     }

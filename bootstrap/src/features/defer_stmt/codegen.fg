@@ -1,33 +1,19 @@
 // WHY: codegen for `defer` and `errdefer` statements (spec Axis 12.7).
 // Both use a single unified stack so they interleave in LIFO declaration
 // order. defer = Frame (always runs), errdefer = ErrFrame (error only).
+// The stack lives on Ctx.defers — no mutable global needed.
 
 use core.ast.{Expr, VarEnv, SExpr}
 use codegen.types.{Ctx, DeferStack}
 
-// Single unified stack — reset at function entry, pushed by defer/errdefer.
-export mut DEFER_STACK: DeferStack = .End
-
-export fn defer_push(body: SExpr) {
-    DEFER_STACK = .Frame(body, DEFER_STACK)
-}
-
-export fn errdefer_push(body: SExpr) {
-    DEFER_STACK = .ErrFrame(body, DEFER_STACK)
-}
-
-export fn defer_reset() {
-    DEFER_STACK = .End
-}
-
 // Emit defers for a normal return — skip ErrFrame entries.
 export fn emit_defers(ctx: Ctx, env: VarEnv) {
-    emit_stack_filtered(ctx, env, DEFER_STACK, false)
+    emit_stack_filtered(ctx, env, ctx.defers, false)
 }
 
 // Emit defers for an error return — run ALL entries (Frame + ErrFrame).
 export fn emit_defers_on_error(ctx: Ctx, env: VarEnv) {
-    emit_stack_filtered(ctx, env, DEFER_STACK, true)
+    emit_stack_filtered(ctx, env, ctx.defers, true)
 }
 
 fn emit_stack_filtered(ctx: Ctx, env: VarEnv, stack: DeferStack, is_error: int) {

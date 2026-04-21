@@ -5,7 +5,7 @@ use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, VarEnv, env_
 use codegen.types.{cg_newtype_lookup}
 use codegen.types.{Ctx, EmitValue, ParamTypeList,  ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, param_type_at, trait_decl_has, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
-use features.defer_stmt.codegen.{defer_reset, emit_defers}
+use features.defer_stmt.codegen.{emit_defers}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_rc_cleanup, rc_set_releasable, rc_releasable_save, rc_releasable_restore}
 use codegen.types.{rc_cleanup_reset, rc_cleanup_save, rc_cleanup_restore}
@@ -46,7 +46,6 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
         emit_null_checks(body_cg, name, params, env)
     }
 
-    defer_reset()
     // Save outer function's RC state, set up for this function
     let saved_rc = rc_cleanup_save()
     let saved_rel = rc_releasable_save()
@@ -55,16 +54,17 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 
     // Use the function's return type for the default block value.
     let ret_ty = body_cg.fn_ret(name)
-    let r = emit_block_loop(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
+    let br = emit_block_loop_ctx(body_cg, env, body, body_cg.zero_for(ret_ty), ret_ty)?
     if !ctx.has_terminator() {
         emit_rc_cleanup(body_cg)
-        emit_defers(body_cg, env)
+        // Use br.ctx which has accumulated defers from the function body
+        emit_defers(br.ctx, env)
         // Union wrapping: if function returns a union, wrap the implicit return value
-        if needs_union_wrap(r.ty, ret_ty) {
-            let wrapped = emit_union_wrap(body_cg, r.value, r.ty, ret_ty)?
+        if needs_union_wrap(br.ty, ret_ty) {
+            let wrapped = emit_union_wrap(body_cg, br.value, br.ty, ret_ty)?
             ctx.ret(wrapped.value, ret_ty)
         } else {
-            ctx.ret(r.value, ret_ty)
+            ctx.ret(br.value, ret_ty)
         }
     }
     ctx.verify_fn(fn_val)
@@ -143,7 +143,7 @@ use codegen.printing.{emit_println, emit_eprintln}
 use features.list_lit.codegen.{emit_list_method_call}
 use features.map_lit.codegen.{emit_map_method_call}
 use features.trait_decl.codegen.{emit_trait_dispatch}
-use codegen.blocks.{emit_block_loop}
+use codegen.blocks.{emit_block_loop, emit_block_loop_ctx}
 use codegen.helpers.{emit_single_arg, fill_arg_array, fill_arg_array_boxing, strip_quotes}
 
 export fn emit_call(ctx: Ctx, env: VarEnv, callee: Expr, args: ExprList) -> Result<EmitValue, string> {

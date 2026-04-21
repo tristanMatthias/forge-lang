@@ -1,9 +1,33 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
 use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitValue, StmtResult,  err_emit, ok_emit_typed, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
+use codegen.types.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit_typed, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.codegen.{emit_match_expr}
+use features.error_propagation.{Result}
+
+extern fn forge_tag_as_result(ptr: ptr) -> ptr
+
+fn ok_br(value: ptr, ty: ValueType, ctx: Ctx) -> Result<BlockResult, string> {
+    if false { return Result.Err("") }
+    let r = Result.Ok(BlockResult { value, ty, ctx })
+    forge_tag_as_result(r)
+    r
+}
+
+fn err_br(msg: string) -> Result<BlockResult, string> {
+    if false { return ok_br_dummy() }
+    let r = Result.Err(msg)
+    forge_tag_as_result(r)
+    r
+}
+
+fn ok_br_dummy() -> Result<BlockResult, string> {
+    let n: ptr = null
+    use core.registry.{registry_new}
+    let dummy_ctx = Ctx { lc: n, module: n, builder: n, current_fn: n, current_fn_name: "", i64_type: n, i1_type: n, ptr_type: n, double_type: n, structs: .End, enums: .End, fn_rets: .End, fn_params: .End, top_level_vars: .End, loops: .End, defers: .End, features: registry_new(), trait_decls: .End, newtypes: .End, union_aliases: .End, debug_null_checks: 0, source_file: "", source_line: 0 }
+    Result.Ok(BlockResult { value: n, ty: .Int, ctx: dummy_ctx })
+}
 
 export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<EmitValue, string> {
     // A block expression's value is the value of the LAST
@@ -22,6 +46,31 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
         _ -> {
             let sr = emit_stmt(ctx, env, stmt)?
             ok_emit_typed(last_val, last_ty)
+        }
+    }
+}
+
+fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+    match stmt {
+        .Expr(e) -> {
+            let r = ctx.emit(env, e)?
+            ok_br(r.value, r.ty, ctx)
+        }
+        .Block(body) -> {
+            let r = emit_block_loop_ctx(ctx, env, body, ctx.i64(0), .Int)?
+            ok_br(r.value, r.ty, r.ctx)
+        }
+        .Match(subject, arms) -> {
+            let r = emit_match_expr(ctx, env, subject, arms)?
+            ok_br(r.value, r.ty, ctx)
+        }
+        .If(condition, then_branch, else_branch) -> {
+            let r = emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)?
+            ok_br(r.value, r.ty, ctx)
+        }
+        _ -> {
+            let sr = emit_stmt(ctx, env, stmt)?
+            ok_br(last_val, last_ty, sr.ctx)
         }
     }
 }
@@ -64,6 +113,24 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
                 _ -> {
                     let sr = emit_stmt(line_ctx, env, ss.node)?
                     emit_block_loop(sr.ctx, sr.env, next, last_val, last_ty)
+                }
+            }
+        }
+    }
+}
+
+// Like emit_block_loop but returns BlockResult with the final Ctx,
+// so the caller can access accumulated defers.
+export fn emit_block_loop_ctx(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+    match stmts {
+        .End -> ok_br(last_val, last_ty, ctx)
+        .Node(ss, next) -> {
+            let line_ctx = ctx with { source_line: ss.line }
+            match next {
+                .End -> emit_stmt_as_value_ctx(line_ctx, env, ss.node, last_val, last_ty)
+                _ -> {
+                    let sr = emit_stmt(line_ctx, env, ss.node)?
+                    emit_block_loop_ctx(sr.ctx, sr.env, next, last_val, last_ty)
                 }
             }
         }

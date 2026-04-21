@@ -1100,7 +1100,7 @@ impl Ctx {
     // ── Context builders ──
 
     fn with_fn(self, fn_val: ptr, fn_name: string) -> Ctx {
-        self with { current_fn: fn_val, current_fn_name: fn_name }
+        self with { current_fn: fn_val, current_fn_name: fn_name, defers: DeferStack.End }
     }
 
     fn with_loops(self, loops: LoopStack) -> Ctx {
@@ -1168,3 +1168,4 @@ impl Ctx {
     }
 }
 export type StmtResult = { ctx: Ctx, env: VarEnv }
+export type BlockResult = { value: ptr, ty: ValueType, ctx: Ctx }
