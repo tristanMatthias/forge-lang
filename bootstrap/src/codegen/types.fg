@@ -1167,11 +1167,17 @@ impl Ctx {
     // ── Type resolution ──
 
     // Resolve all type annotations in a ParamList from strings to ValueType.
+    // Uses parser-resolved type when available, falls back to string translation.
     fn resolve_params(self, params: ParamList) -> ParamList {
         match params {
             .End -> .End
-            .Node(name, ty, _, next) ->
-                .Node(name, ty, translate_type_ctx(self, ty), self.resolve_params(next))
+            .Node(name, ty, pv, next) -> {
+                mut rv = translate_type_ctx(self, ty)
+                if !vtype_eq(pv, .Int) || ty == "int" || ty == "i64" {
+                    rv = self.resolve_codegen_vtype(pv)
+                }
+                .Node(name, ty, rv, self.resolve_params(next))
+            }
         }
     }
 
@@ -1179,8 +1185,36 @@ impl Ctx {
     fn resolve_fields(self, fields: FieldList) -> FieldList {
         match fields {
             .End -> .End
-            .Node(name, ty, _, next) ->
-                .Node(name, ty, translate_type_ctx(self, ty), self.resolve_fields(next))
+            .Node(name, ty, pv, next) -> {
+                mut rv = translate_type_ctx(self, ty)
+                if !vtype_eq(pv, .Int) || ty == "int" || ty == "i64" {
+                    rv = self.resolve_codegen_vtype(pv)
+                }
+                .Node(name, ty, rv, self.resolve_fields(next))
+            }
+        }
+    }
+
+    // Upgrade a parser-resolved ValueType using codegen registries.
+    fn resolve_codegen_vtype(self, vt: ValueType) -> ValueType {
+        match vt {
+            .Struct(name) -> {
+                let e = enum_reg_lookup(self.enums, name)
+                if e.found { return ValueType.Enum(name) }
+                let s = struct_reg_lookup(self.structs, name)
+                if s.found { return ValueType.Struct(name) }
+                if trait_decl_has(self.trait_decls, name) { return ValueType.Trait(name) }
+                // Check newtype / union alias
+                let nt = cg_newtype_lookup(self.newtypes, name)
+                if nt != "" { return ValueType.Newtype(name, translate_type_ctx(self, nt)) }
+                let ua = cg_union_alias_lookup(self.union_aliases, name)
+                if ua != "" { return translate_type_ctx(self, ua) }
+                ValueType.Int
+            }
+            .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))
+            .Union(types) -> vt
+            .FnTyped(params, ret) -> vt
+            _ -> vt
         }
     }
 
