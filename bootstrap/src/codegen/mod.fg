@@ -86,15 +86,39 @@ export fn emit_rc_cleanup(ctx: Ctx) {
 fn emit_rc_stack(ctx: Ctx, stack: RcCleanupStack) {
     match stack {
         .End -> {}
-        .Node(_, alloca, next) -> {
+        .Node(_, alloca, ty, next) -> {
             let val = ctx.load(ctx.ptr_type, alloca, "rc_local")
-            ctx.rc_release(val)
+            emit_rc_release_typed(ctx, val, ty)
             emit_rc_stack(ctx, next)
         }
     }
 }
 
-
+// Release a value with knowledge of its type. For struct/enum types that
+// have a generated __release_TypeName function, calls that function which
+// recursively releases RC-managed fields before freeing. For other types,
+// falls back to plain forge_rc_release.
+fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
+    match ty {
+        .Struct(name) -> {
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        .Enum(name) -> {
+            let release_fn = ctx.get_fn("__release_${name}")
+            if release_fn != null {
+                ctx.call("__release_${name}", [val])
+            } else {
+                ctx.rc_release(val)
+            }
+        }
+        _ -> ctx.rc_release(val)
+    }
+}
 
 export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {

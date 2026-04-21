@@ -286,7 +286,7 @@ export enum DeferStack {
 // and should NOT be released.
 export enum RcCleanupStack {
     End
-    Node(name: string, alloca: ptr, next: RcCleanupStack)
+    Node(name: string, alloca: ptr, ty: ValueType, next: RcCleanupStack)
 }
 
 // Set of variable names that are safe to release at scope exit.
@@ -927,7 +927,7 @@ impl Ctx {
         let alloca = forge_llvm_build_alloca(self.builder, self.type_for(ty), name)
         forge_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
-            self.rc_cleanup = RcCleanupStack.Node(name, alloca, self.rc_cleanup)
+            self.rc_cleanup = RcCleanupStack.Node(name, alloca, ty, self.rc_cleanup)
         }
         env_extend(env, name, alloca, ty)
     }
