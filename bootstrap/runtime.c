@@ -31,36 +31,18 @@
 static void forge_runtime_error(const char* msg);
 static void forge_runtime_errorf(const char* fmt, ...);
 
-// ─── Bump allocator ──────────────────────────────────────────────
+// ─── Result arena (debug/validation only) ────────────────────────
 //
-// STEPPING STONE — will be removed when the real compiler has
-// ref-counting (Application level) and ownership (Systems level).
-//
-// Every allocation gets a fresh, unique, never-recycled address.
-// No free. No reuse. No overlap. No corruption. The compiler runs
-// for <1 second and uses <20MB — 128MB arena is more than enough.
-// The OS reclaims everything on process exit.
-//
-// This replaces malloc for ALL compiler-internal allocations
-// (structs, enums, strings, with-expressions). It does NOT replace
-// malloc for runtime data structures (arrays, maps) which need
-// realloc — those use the system allocator.
+// The global bump allocator has been removed. All runtime allocations
+// use forge_rc_alloc (refcounted) or per-scope arenas (forge_arena_*).
+// The result arena below is retained only for the FORGE_TRACK_RESULTS
+// debugging feature — it is not called from any codegen path.
 
-#define BUMP_ARENA_SIZE (512 * 1024 * 1024)  // 512MB
 #define RESULT_ARENA_SIZE (256 * 1024 * 1024) // 256MB
-static char *bump_arena = NULL;
-static size_t bump_offset = 0;
 static char *result_arena = NULL;
 static size_t result_offset = 0;
 
-static void bump_init(void) {
-    if (!bump_arena) {
-        bump_arena = (char *)malloc(BUMP_ARENA_SIZE);
-        if (!bump_arena) {
-            forge_runtime_error("could not allocate bump arena");
-            exit(1);
-        }
-    }
+static void result_arena_init(void) {
     if (!result_arena) {
         result_arena = (char *)malloc(RESULT_ARENA_SIZE);
         if (!result_arena) {
@@ -76,7 +58,7 @@ static void bump_init(void) {
 // detect at validation time if a non-Result pointer is being treated
 // as a Result (= bug).
 void *forge_result_alloc(size_t size) {
-    bump_init();
+    result_arena_init();
     size = (size + 7) & ~7;
     if (result_offset + size > RESULT_ARENA_SIZE) {
         forge_runtime_errorf("result arena exhausted");
@@ -151,7 +133,7 @@ int forge_check_redzones(const char* where) {
     for (size_t i = 0; i < alloc_count; i++) {
         AllocRecord* rec = &alloc_records[i];
         // Check trailing redzone (after payload)
-        char* trailer = bump_arena + rec->offset + rec->size;
+        char* trailer = (char*)(uintptr_t)rec->offset + rec->size;
         for (size_t j = 0; j < REDZONE_SIZE; j += 8) {
             uint64_t val = *(uint64_t*)(trailer + j);
             if (val != REDZONE_MAGIC) {
@@ -267,45 +249,8 @@ static void auto_enable_redzones(void) {
     }
 }
 
-void *forge_bump_alloc(size_t size) {
-    bump_init();
-    size = (size + 7) & ~7;
-    if (page_mode) {
-        long pagesize = sysconf(_SC_PAGESIZE);
-        void* page = mmap(NULL, pagesize, PROT_READ | PROT_WRITE,
-                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (page == MAP_FAILED) {
-            perror("mmap");
-            exit(1);
-        }
-        if (page_alloc_count < MAX_ALLOCS) {
-            page_allocs[page_alloc_count++] = page;
-        }
-        // Also track in alloc_records for validation lookup
-        if (redzone_enabled && alloc_count < MAX_ALLOCS) {
-            alloc_records[alloc_count].offset = (size_t)page;
-            alloc_records[alloc_count].size = size;
-            alloc_records[alloc_count].retaddr = __builtin_return_address(0);
-            alloc_count++;
-        }
-        return page;
-    }
-    size_t total = size + (redzone_enabled ? REDZONE_SIZE : 0);
-    if (bump_offset + total > BUMP_ARENA_SIZE) {
-        forge_runtime_errorf("bump arena exhausted (%zu bytes used)", bump_offset);
-        exit(1);
-    }
-    void *ptr = &bump_arena[bump_offset];
-    if (redzone_enabled && alloc_count < MAX_ALLOCS) {
-        alloc_records[alloc_count].offset = bump_offset;
-        alloc_records[alloc_count].size = size;
-        alloc_records[alloc_count].retaddr = __builtin_return_address(0);
-        alloc_count++;
-        write_redzone(bump_arena + bump_offset + size, REDZONE_SIZE);
-    }
-    bump_offset += total;
-    return ptr;
-}
+// forge_bump_alloc has been removed — all allocations use forge_rc_alloc
+// or per-scope arenas (forge_arena_*).
 
 // ─── Reference counting ──────────────────────────────────────────
 //
@@ -1716,13 +1661,9 @@ void forge_trace_ptr(const char* label, int64_t val) {
     uintptr_t p = (uintptr_t)val;
     const char* region = "unknown";
 
-    // Check bump arena
-    if (bump_arena && p >= (uintptr_t)bump_arena &&
-        p < (uintptr_t)bump_arena + BUMP_ARENA_SIZE) {
-        region = "bump";
-    }
+    // (Global bump arena removed — all allocations use RC or per-scope arenas)
     // Check stack (rough heuristic — stack is near sp)
-    else {
+    {
         uintptr_t sp;
         __asm__ volatile("mov %0, sp" : "=r"(sp));
         if (p > sp - 1024*1024 && p < sp + 1024*1024) {
@@ -2237,7 +2178,7 @@ int64_t forge_shell_exec_status(const char* cmd) {
 // Method dispatch: load vtable[method_index], call with concrete_value as self.
 
 void* forge_trait_object_new(int64_t value, void* vtable) {
-    int64_t* obj = (int64_t*)forge_bump_alloc(16);
+    int64_t* obj = (int64_t*)forge_rc_alloc(16);
     obj[0] = value;
     obj[1] = (int64_t)(uintptr_t)vtable;
     return obj;
@@ -2737,7 +2678,7 @@ int64_t forge_validate_result_ptr(void* ptr, const char* caller) {
         if (redzone_enabled) {
             for (size_t i = 0; i < alloc_count; i++) {
                 // In page mode, offset holds the pointer. In normal mode, it's offset.
-                size_t key = page_mode ? (size_t)ptr : (size_t)((char*)ptr - bump_arena);
+                size_t key = (size_t)ptr;
                 if (alloc_records[i].offset == key) {
                     fprintf(stderr, "[ALLOC INFO] ptr is alloc #%zu, size=%zu, retaddr=%p\n",
                         i, alloc_records[i].size, alloc_records[i].retaddr);
@@ -2773,19 +2714,4 @@ void forge_check_watched() {
 // Trace the specific arena offset that gets corrupted
 #define WATCH_OFFSET 0x36bf8
 static int watch_triggered = 0;
-void* forge_bump_alloc_traced(size_t size) {
-    bump_init();
-    size = (size + 7) & ~7;
-    if (bump_offset + size > BUMP_ARENA_SIZE) {
-        forge_runtime_errorf("bump arena exhausted (%zu bytes used)", bump_offset);
-        exit(1);
-    }
-    void *ptr = &bump_arena[bump_offset];
-    // Check if this allocation COVERS the watched offset
-    if (!watch_triggered && bump_offset <= WATCH_OFFSET && bump_offset + size > WATCH_OFFSET) {
-        watch_triggered = 1;
-        fprintf(stderr, "[ALLOC] offset 0x%zx covers WATCH at 0x%x (size=%zu)\n", bump_offset, WATCH_OFFSET, size);
-    }
-    bump_offset += size;
-    return ptr;
-}
+// forge_bump_alloc_traced removed — global bump arena eliminated.
