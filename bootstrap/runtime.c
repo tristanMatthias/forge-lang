@@ -1981,6 +1981,58 @@ int64_t forge_toml_get_bool(const char* toml, const char* key) {
     return 0;
 }
 
+// Section-aware TOML get: finds key within [section].
+// Searches for [section] header, then looks for key = "value" within it
+// (stops at the next [section] or end of string).
+const char* forge_toml_get_section_string(const char* toml, const char* section, const char* key) {
+    if (!toml || !section || !key) return "";
+    // Find [section]
+    size_t slen = strlen(section);
+    char header[256];
+    snprintf(header, sizeof(header), "[%s]", section);
+    const char* sec_start = strstr(toml, header);
+    if (!sec_start) return "";
+    // Move past the header line
+    sec_start = strchr(sec_start, '\n');
+    if (!sec_start) return "";
+    sec_start++;
+    // Find end of section (next [ at start of line, or end of string)
+    const char* sec_end = sec_start;
+    while (*sec_end) {
+        if (*sec_end == '[' && (sec_end == sec_start || sec_end[-1] == '\n')) break;
+        sec_end++;
+    }
+    // Search for key within this section
+    size_t klen = strlen(key);
+    const char* pos = sec_start;
+    while (pos < sec_end && (pos = strstr(pos, key)) != NULL && pos < sec_end) {
+        if (pos != sec_start && pos[-1] != '\n' && pos[-1] != ' ') { pos++; continue; }
+        const char* after = pos + klen;
+        while (*after == ' ' || *after == '\t') after++;
+        if (*after != '=') { pos++; continue; }
+        after++;
+        while (*after == ' ' || *after == '\t') after++;
+        if (*after != '"') { pos++; continue; }
+        after++; // skip opening quote
+        const char* end = strchr(after, '"');
+        if (!end || end > sec_end) return "";
+        size_t vlen = end - after;
+        char* result = (char*)malloc(vlen + 1);
+        memcpy(result, after, vlen);
+        result[vlen] = '\0';
+        return result;
+    }
+    return "";
+}
+
+// Section-aware: check if a [section] exists in the TOML.
+int64_t forge_toml_has_section(const char* toml, const char* section) {
+    if (!toml || !section) return 0;
+    char header[256];
+    snprintf(header, sizeof(header), "[%s]", section);
+    return strstr(toml, header) != NULL ? 1 : 0;
+}
+
 // ── Validation ──
 // Basic runtime validation: assert conditions, check non-null.
 int64_t forge_validate_not_null(int64_t value, const char* name) {

@@ -41,6 +41,7 @@ use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
 use resolve.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
+use features.modules.package.{load_package_config, PackageConfig}
 use typeck.{typecheck_program}
 use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, span_dummy}
 use diagnostics.render.{render_bag}
@@ -109,6 +110,12 @@ fn main() {
                 }
                 fail(parsed.error_message)
             }
+            // Load forge.toml package manifest if present.
+            let check_dir = modules_dirname(path)
+            let check_pkg = load_package_config(check_dir)
+            if check_pkg.found {
+                eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
+            }
             // Resolve module files
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
@@ -170,6 +177,13 @@ fn main() {
             fail("error: file not found: ${cpath}")
         }
         let csource = read_file(cpath)
+
+        // Load forge.toml package manifest if present in entry dir.
+        let pkg_dir = modules_dirname(cpath)
+        let pkg = load_package_config(pkg_dir)
+        if pkg.found {
+            eprintln("[pkg] ${pkg.name} v${pkg.version}")
+        }
 
         let parsed = parse_program_source(csource)
         if parsed.had_error || parsed.stmts == null {

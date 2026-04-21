@@ -161,6 +161,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_toml_get_string", i64t, [pt, i64t])
     decl(m, "forge_toml_get_int", i64t, [pt, i64t])
     decl(m, "forge_toml_get_bool", i64t, [pt, i64t])
+    decl(m, "forge_toml_get_section_string", i64t, [pt, i64t, i64t])
+    decl(m, "forge_toml_has_section", i64t, [pt, i64t])
 
     // ── concurrency ──
     decl(m, "forge_spawn", i64t, [pt])

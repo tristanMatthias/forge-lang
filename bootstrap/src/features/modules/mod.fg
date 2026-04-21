@@ -12,6 +12,7 @@
 
 mod parser
 mod resolver
+mod package
 use features.eval.{error_result, ok_result, value_null}
 use core.registry.{feature_new, register}
 use resolve.{resolve_stmt_list}
