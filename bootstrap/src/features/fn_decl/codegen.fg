@@ -96,24 +96,28 @@ fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: ParamList, idx: int, env: V
 // parameter name, then emit unreachable. This catches null propagation
 // at the source function instead of crashing 8000 calls later.
 
-fn should_null_check(ty: string) -> bool {
-    // Check types that are pointers at runtime: ptr, string, structs,
-    // enums, lists, maps, and named types (which are usually structs/enums).
-    // Skip: int, bool, float, fn (which are value types).
-    if ty in ["ptr", "string"] { return true }
-    // If it starts with uppercase, it's likely a named struct/enum type.
-    if ty.length > 0 {
-        let first = ty.substring(0, 1)
-        if first in "A".."Z" { return true }
+fn should_null_check_vt(vt: ValueType) -> bool {
+    match vt {
+        .Str -> true
+        .Ptr -> true
+        .Struct(_) -> true
+        .Enum(_) -> true
+        .List(_) -> true
+        .Map -> true
+        .Trait(_) -> true
+        .Union(_) -> true
+        .Newtype(_, inner) -> should_null_check_vt(inner)
+        .Tuple(_) -> true
+        .NarrowedEnum(_, _) -> true
+        _ -> false
     }
-    false
 }
 
 fn emit_null_checks(ctx: Ctx, fn_name: string, params: ParamList, env: VarEnv) {
     match params {
         .End -> {}
-        .Node(name, ty, _, next) -> {
-            if should_null_check(ty) {
+        .Node(name, _, vt, next) -> {
+            if should_null_check_vt(vt) {
                 emit_one_null_check(ctx, fn_name, name, env)
             }
             emit_null_checks(ctx, fn_name, next, env)
