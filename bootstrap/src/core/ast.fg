@@ -139,6 +139,7 @@ export enum ValueType {
     Trait(name: string),
     Union(types: TypeList),
     Newtype(name: string, inner: ValueType),
+    NarrowedEnum(enum_name: string, variant_name: string),
 }
 
 // TypeExpr — structured type annotation replacing string-based types.
@@ -220,6 +221,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
             _ -> false
         }
         .Newtype(n1, _) -> match b { .Newtype(n2, _) -> n1 == n2, _ -> false }
+        .NarrowedEnum(e1, v1) -> match b { .NarrowedEnum(e2, v2) -> e1 == e2 && v1 == v2, _ -> false }
         _ -> false
     }
 }
@@ -239,10 +241,21 @@ fn type_lists_eq(a: TypeList, b: TypeList) -> bool {
 // that contains it.
 export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
     if vtype_eq(src, dst) { return true }
+    // NarrowedEnum is assignable to its base Enum
+    if narrowed_assignable_to(src, dst) { return true }
     match dst {
         .Union(types) -> union_contains(types, src)
         _ -> false
     }
+}
+
+fn narrowed_assignable_to(src: ValueType, dst: ValueType) -> bool {
+    let en = vtype_enum_name(src)
+    let dn = vtype_enum_name(dst)
+    if en != "" && dn != "" && en == dn {
+        return vtype_narrowed_variant(src) != ""
+    }
+    false
 }
 
 export fn vtype_is_str(t: ValueType) -> bool { t is .Str }
@@ -278,7 +291,11 @@ export fn vtype_struct_name(t: ValueType) -> string {
 }
 
 export fn vtype_enum_name(t: ValueType) -> string {
-    match t { .Enum(n) -> n, _ -> "" }
+    match t { .Enum(n) -> n, .NarrowedEnum(n, _) -> n, _ -> "" }
+}
+
+export fn vtype_narrowed_variant(t: ValueType) -> string {
+    match t { .NarrowedEnum(_, v) -> v, _ -> "" }
 }
 
 export fn vtype_display(t: ValueType) -> string {
@@ -299,6 +316,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Trait(n) -> "dyn ${n}"
         .Union(types) -> render_union_display(types)
         .Newtype(name, _) -> name
+        .NarrowedEnum(en, vn) -> "${en}.${vn}"
     }
 }
 

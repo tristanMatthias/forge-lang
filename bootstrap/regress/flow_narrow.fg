@@ -1,0 +1,30 @@
+// Regression: flow-sensitive type narrowing after `is` check.
+// After `if x is .Variant`, payload fields are directly accessible
+// via x.field without a match expression.
+
+enum Animal {
+    Dog(name: string, age: int)
+    Cat(name: string)
+    Fish
+}
+
+fn describe(a: Animal) {
+    if a is .Dog {
+        println("Dog: " + a.name + " age " + string(a.age))
+    } else if a is .Cat {
+        println("Cat: " + a.name)
+    } else {
+        println("other")
+    }
+}
+
+// Top-level narrowing
+let x = Animal.Dog("Rex", 5)
+if x is .Dog {
+    println(x.name)
+}
+
+// Function-scope narrowing
+describe(Animal.Dog("Rex", 3))
+describe(Animal.Cat("Whiskers"))
+describe(Animal.Fish)

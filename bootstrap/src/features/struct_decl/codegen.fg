@@ -1,6 +1,6 @@
 // WHY: emits struct literal construction and field-filling.
 
-use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, SExpr}
+use core.ast.{Expr, ExprList, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, ValueType, vtype_struct_name, vtype_display, vtype_is_str, vtype_is_list, vtype_is_map, vtype_narrowed_variant, vtype_enum_name, variant_lookup, SExpr}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
 use codegen.{emit_expr, emit_enum_ctor}
 use features.enum_decl.codegen.{emit_enum_ctor}
@@ -103,6 +103,13 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
         return ok_emit(ctx.call("forge_map_len_cstr", [r.value]))
     }
 
+    // Flow-sensitive narrowing: NarrowedEnum(enum, variant) allows
+    // direct payload field access after `if x is .Variant`.
+    let narrowed_vname = vtype_narrowed_variant(r.ty)
+    if narrowed_vname != "" {
+        return emit_narrowed_field(ctx, r, field, narrowed_vname)
+    }
+
     let struct_name = vtype_struct_name(r.ty)
     if struct_name == "" {
         return err_emit("field access on non-struct value (ty=${vtype_display(r.ty)}, field=${field}, line=${string(ctx.source_line)})")
@@ -118,5 +125,33 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
 
     let field_ty = ctx.resolve_field_type(lookup.fields, field)
     let loaded = ctx.field_typed(r.value, struct_name, idx, field_ty, field)
+    ok_emit_typed(loaded, field_ty)
+}
+
+// Extract a payload field from a narrowed enum value.
+// The value is a ptr to {i64 tag, ptr payload}. The payload is a
+// heap-allocated buffer with fields at payload[0], payload[1], etc.
+fn emit_narrowed_field(ctx: Ctx, r: EmitValue, field: string, vname: string) -> Result<EmitValue, string> {
+    let en = vtype_enum_name(r.ty)
+    let lookup = ctx.lookup_enum(en)
+    if !lookup.found {
+        return err_emit("unknown enum `${en}` in narrowed field access")
+    }
+    let v = variant_lookup(lookup.variants, vname)
+    if !v.found {
+        return err_emit("unknown variant `${vname}` in enum `${en}`")
+    }
+    let fields = ctx.resolve_fields(v.fields)
+    let idx = field_index_of(fields, field)
+    if idx < 0 {
+        return err_emit("unknown field `${field}` on variant `${en}.${vname}`")
+    }
+    let field_ty = ctx.resolve_field_type(v.fields, field)
+    // Navigate: enum_ptr -> payload_ptr -> field
+    let enum_ty = ctx.get_type(en)
+    let enum_ptr = ctx.to_ptr(r.value, "narrow_eptr")
+    let pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "narrow_pay_slot")
+    let pay_ptr = ctx.load(ctx.ptr_type, pay_gep, "narrow_payload")
+    let loaded = ctx.load_slot_typed(pay_ptr, idx, field_ty, "narrow_${field}")
     ok_emit_typed(loaded, field_ty)
 }

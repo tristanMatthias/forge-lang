@@ -230,6 +230,7 @@ fn vtype_to_string(ty: ValueType) -> string {
         .Trait(n) -> n
         .Union(types) -> render_union_mangled(types)
         .Newtype(n, _) -> n
+        .NarrowedEnum(n, _) -> n
     }
 }
 

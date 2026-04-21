@@ -4,6 +4,7 @@ use core.ast.{Expr, Stmt, StmtList, ValueType, VarEnv, SStmt, stmt_unwrap}
 use codegen.types.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit_typed, ok_emit, ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.codegen.{emit_match_expr}
+use features.if_stmt.codegen.{narrow_env_for_is}
 use features.error_propagation.{Result}
 
 extern fn forge_tag_as_result(ptr: ptr) -> ptr
@@ -78,7 +79,8 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
 
     ctx.position(then_bb)
     let zero = ctx.i64(0)
-    let t = emit_stmt_as_value(ctx, env, then_branch, zero, .Int)?
+    let then_env = narrow_env_for_is(ctx, env, condition)
+    let t = emit_stmt_as_value(ctx, then_env, then_branch, zero, .Int)?
     ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
 
     ctx.position(else_bb)

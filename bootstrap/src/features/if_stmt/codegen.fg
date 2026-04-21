@@ -1,16 +1,66 @@
 // WHY: emits LLVM IR for `if` as statement and expression.
+// Also handles flow-sensitive type narrowing: when condition is
+// `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
-use core.ast.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq}
-use codegen.types.{Ctx, EmitValue, StmtResult,  ok_stmt, ok_emit_typed, emit_value_ptr, emit_value_ty}
+use core.ast.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
+use codegen.types.{Ctx, EmitValue, StmtResult, ok_stmt, ok_emit_typed, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
 use features.union_type.codegen.{emit_union_wrap}
+
+// Extract narrowing info from an IsCheck condition.
+fn is_check_var_name(condition: Expr) -> string {
+    match condition {
+        .IsCheck(subj, _) -> match subj {
+            .Ident(vn) -> vn
+            _ -> ""
+        }
+        _ -> ""
+    }
+}
+
+fn is_check_variant_name(condition: Expr) -> string {
+    match condition {
+        .IsCheck(_, vn) -> vn
+        _ -> ""
+    }
+}
+
+// Build a narrowed VarEnv for the then-branch of `if x is .Variant`.
+// Checks both local VarEnv and top-level Ctx vars.
+export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
+    let var_name = is_check_var_name(condition)
+    if var_name == "" { return env }
+    let vname = is_check_variant_name(condition)
+    if vname == "" { return env }
+    // Try local env first
+    let lu = env_lookup(env, var_name)
+    if lu.found {
+        let en = vtype_enum_name(lu.ty)
+        if en != "" {
+            return env_extend(env, var_name, lu.alloca, ValueType.NarrowedEnum(en, vname))
+        }
+        return env
+    }
+    // Try top-level vars
+    let g = ctx.lookup_toplevel(var_name)
+    if g.found {
+        let en = vtype_enum_name(g.ty)
+        if en != "" {
+            return env_extend(env, var_name, g.llvm_global, ValueType.NarrowedEnum(en, vname))
+        }
+    }
+    env
+}
 
 export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<StmtResult, string> {
     let cond = ctx.emit(env, condition)?
     let merge_bb = ctx.bb("ifcont")
     let else_bb = ctx.if_true(emit_value_ptr(cond), "if")
 
-    let then_sr = emit_stmt(ctx, env, then_branch)?
+    // Flow-sensitive narrowing: if condition is `x is .Variant`,
+    // narrow x's type in the then-branch.
+    let then_env = narrow_env_for_is(ctx, env, condition)
+    let then_sr = emit_stmt(ctx, then_env, then_branch)?
     ctx.br_if_open(merge_bb)
 
     ctx.position(else_bb)
@@ -46,8 +96,9 @@ export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr
     let merge_bb = ctx.bb("ife_end")
     let else_bb = ctx.if_true(emit_value_ptr(cond), "ife")
 
-    // ── Then branch ──
-    let t = ctx.emit(env, then_branch)?
+    // ── Then branch (with narrowing) ──
+    let then_env = narrow_env_for_is(ctx, env, condition)
+    let t = ctx.emit(then_env, then_branch)?
     let t_ty = emit_value_ty(t)
     ctx.store(emit_value_ptr(t), result_slot)
     ctx.br_if_open(merge_bb)
