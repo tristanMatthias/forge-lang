@@ -938,29 +938,33 @@ export fn monomorphize(stmts: StmtList) -> MonoResult {
         return MonoResult { stmts, bag: finalized.bag }
     }
 
-    // Transitive monomorphization: specializations may contain nested generic
-    // calls. Converge by repeatedly collecting + generating until no new
-    // instantiations are found (handles arbitrary nesting depth).
-    let specs1 = generate_specializations(finalized.insts, regs)
+    // Transitive monomorphization: specializations may contain nested
+    // generic calls. Converge by recursively collecting + generating
+    // until no new instantiations are found.
+    let initial_specs = generate_specializations(finalized.insts, regs)
+    let converged = mono_converge(initial_specs, regs, finalized.insts, initial_specs, finalized.bag, 0)
 
-    // Transitive monomorphization: specializations may contain nested generic
-    // calls. Converge by collecting + generating until no new instances found.
-    let trans1 = collect_inst_stmts(specs1, regs, CollectState { insts: InstList.End, bag: finalized.bag, line: 0, col: 0 })
-    let trans1_final = finalize_insts(trans1.insts, regs, trans1.bag)
-    let trans1_specs = generate_specializations(trans1_final.insts, regs)
+    let rewritten = rewrite_stmts(stmts, regs, converged.all_insts)
+    let rewritten_specs = rewrite_stmts(converged.all_specs, regs, converged.all_insts)
+    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: converged.bag }
+}
 
-    // Level 3: check for further nesting
-    let trans2 = collect_inst_stmts(trans1_specs, regs, CollectState { insts: InstList.End, bag: trans1_final.bag, line: 0, col: 0 })
-    let trans2_final = finalize_insts(trans2.insts, regs, trans2.bag)
-    let trans2_specs = generate_specializations(trans2_final.insts, regs)
+type ConvergeResult = { all_insts: InstList, all_specs: StmtList, bag: DiagnosticBag }
 
-    // Merge all instantiation entries for the rewrite pass
-    let all_insts = append_insts(trans2_final.insts, append_insts(trans1_final.insts, finalized.insts))
-    let all_specs = prepend_stmts(trans2_specs, prepend_stmts(trans1_specs, specs1))
-
-    let rewritten = rewrite_stmts(stmts, regs, all_insts)
-    let rewritten_specs = rewrite_stmts(all_specs, regs, all_insts)
-    MonoResult { stmts: prepend_stmts(rewritten_specs, rewritten), bag: trans2_final.bag }
+fn mono_converge(new_specs: StmtList, regs: GenRegs, all_insts: InstList, all_specs: StmtList, b: DiagnosticBag, depth: int) -> ConvergeResult {
+    if depth >= 10 { return ConvergeResult { all_insts, all_specs, bag: b } }
+    // Only scan NEW specs for further generic calls (not already-processed ones)
+    let trans = collect_inst_stmts(new_specs, regs, CollectState { insts: InstList.End, bag: b, line: 0, col: 0 })
+    let trans_final = finalize_insts(trans.insts, regs, trans.bag)
+    let new_count = inst_list_len(trans_final.insts)
+    if new_count == 0 {
+        ConvergeResult { all_insts, all_specs, bag: trans_final.bag }
+    } else {
+        let next_specs = generate_specializations(trans_final.insts, regs)
+        let merged_insts = append_insts(trans_final.insts, all_insts)
+        let merged_all_specs = prepend_stmts(next_specs, all_specs)
+        mono_converge(next_specs, regs, merged_insts, merged_all_specs, trans_final.bag, depth + 1)
+    }
 }
 
 fn prepend_stmts(prefix: StmtList, rest: StmtList) -> StmtList {
