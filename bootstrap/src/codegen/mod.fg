@@ -13,8 +13,8 @@ mod helpers
 mod escape
 mod cycles
 
-use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, field_type_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
-use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, RcCleanupStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, field_type_at, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx}
+use core.ast.{Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VarEnv, VariantList, env_extend, env_lookup, expr_list_length, field_index_of, field_init_length, field_list_length, field_type_of, param_list_length, sexpr_dummy, stmt_unwrap, variant_lookup, variant_max_payload, vtype_closure_captures, vtype_display, vtype_enum_name, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_fn, vtype_is_list, vtype_is_map, vtype_is_str, vtype_list_elem, vtype_struct_name, vtype_trait_name}
+use codegen.types.{Ctx, DeferStack, EmitValue, EnumLookup, EnumReg, FnParamTypes, FnRetTypes, LoopFrame, LoopStack, ParamTypeList, RcCleanupStack, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, advance_field_list, err_emit, err_stmt, field_type_at, loops_top, null_ptr_val, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, param_type_at, trait_decl_has, trait_decl_lookup, translate_param_type, translate_type_ctx, vtype_is_ptr_type}
 
 use core.registry.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, forge_expr_tag, forge_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg}
@@ -130,11 +130,17 @@ fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         .Str -> ctx.rc_release(val)
         .Ptr -> ctx.rc_release(val)
         .Fn(_) -> ctx.rc_release(val)
-        // Tuple, Closure, Union, List, Map: may contain RC fields but
-        // recursive release is not yet implemented (ticket 0t0).
-        // Plain rc_release frees the outer allocation only.
-        .Tuple(_) -> ctx.rc_release(val)
+        // Tuple: inline recursive release — check each ptr-typed element.
+        .Tuple(elements) -> emit_rc_release_tuple(ctx, val, elements)
+        // Closure: [TAG, fn_ptr, cap1, cap2, ...] — captures are independently
+        // RC-managed (retained when closure is created), so releasing the closure
+        // array itself via plain rc_release is correct. Each captured value has
+        // its own refcount and will be released when its owning scope ends.
         .Closure(_, _) -> ctx.rc_release(val)
+        // Union: {i64 tag, ptr payload} — payload values are independently
+        // RC-managed. The union wrapper is a thin envelope; releasing it via
+        // plain rc_release frees the envelope only. The payload's refcount is
+        // managed separately at the site where the value was created/wrapped.
         .Union(_) -> ctx.rc_release(val)
         .List(_) -> ctx.rc_release(val)
         .Map -> ctx.rc_release(val)
@@ -146,6 +152,45 @@ fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
         .Void -> {}
         // FnTyped — function pointer, not heap-allocated.
         .FnTyped(_, _) -> {}
+    }
+}
+
+// Emit inline recursive release for a tuple.
+// 1. forge_rc_should_free(val) — decrements refcount, returns 1 if it hit 0
+// 2. If should free: load each ptr-typed element, null-check, release recursively, then forge_rc_free
+// 3. If not freeing: done (refcount was just decremented)
+fn emit_rc_release_tuple(ctx: Ctx, val: ptr, elements: TypeList) {
+    let should = ctx.call("forge_rc_should_free", [val])
+    let cond = ctx.icmp_ne(should, ctx.i64(0), "tup_should_free")
+    let free_bb = ctx.bb("tup_free")
+    let done_bb = ctx.bb("tup_done")
+    ctx.cond_br(cond, free_bb, done_bb)
+    ctx.position(free_bb)
+    emit_tuple_elem_releases(ctx, val, elements, 0)
+    ctx.call("forge_rc_free", [val])
+    ctx.br(done_bb)
+    ctx.position(done_bb)
+}
+
+// Recursively emit release code for each ptr-typed element in a tuple.
+fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: TypeList, idx: int) {
+    match elements {
+        .End -> {}
+        .Node(elem_ty, next) -> {
+            if vtype_is_ptr_type(elem_ty) {
+                let loaded = ctx.load_slot(buf, idx, "trel_${idx}")
+                let as_ptr = ctx.to_ptr(loaded, "trel_ptr_${idx}")
+                let is_null = ctx.icmp_eq(as_ptr, ctx.zero_for(.Ptr), "trel_null_${idx}")
+                let skip_bb = ctx.bb("trel_skip_${idx}")
+                let do_bb = ctx.bb("trel_do_${idx}")
+                ctx.cond_br(is_null, skip_bb, do_bb)
+                ctx.position(do_bb)
+                emit_rc_release_typed(ctx, as_ptr, elem_ty)
+                ctx.br(skip_bb)
+                ctx.position(skip_bb)
+            }
+            emit_tuple_elem_releases(ctx, buf, next, idx + 1)
+        }
     }
 }
 
