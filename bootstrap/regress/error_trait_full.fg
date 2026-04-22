@@ -1,0 +1,44 @@
+/// expect: io.not_found: file not found
+/// expect: severity: error
+/// expect: transient: false
+/// expect: cause: disk failure
+
+enum Severity { Debug, Info, Warning, Error, Fatal }
+
+fn severity_str(s: Severity) -> string {
+    match s {
+        .Debug -> "debug"
+        .Info -> "info"
+        .Warning -> "warning"
+        .Error -> "error"
+        .Fatal -> "fatal"
+    }
+}
+
+trait Error {
+    fn message(self) -> string
+    fn kind(self) -> string
+    fn severity(self) -> Severity
+    fn is_transient(self) -> bool
+}
+
+type IoError = { msg: string, path: string, cause_msg: string }
+
+impl Error for IoError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "io.not_found" }
+    fn severity(self) -> Severity { Severity.Error }
+    fn is_transient(self) -> bool { false }
+}
+
+fn describe(e: Error) {
+    println(e.kind() + ": " + e.message())
+    println("severity: " + severity_str(e.severity()))
+    if e.is_transient() { println("transient: true") } else { println("transient: false") }
+}
+
+fn main() {
+    let err = IoError { msg: "file not found", path: "/tmp/x", cause_msg: "disk failure" }
+    describe(err)
+    println("cause: " + err.cause_msg)
+}
