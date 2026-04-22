@@ -86,6 +86,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_closure_call_1", i64t, [i64t, i64t])
     decl(m, "forge_closure_call_2", i64t, [i64t, i64t, i64t])
     decl(m, "forge_closure_call_3", i64t, [i64t, i64t, i64t, i64t])
+    decl(m, "forge_closure_call_4", i64t, [i64t, i64t, i64t, i64t, i64t])
+    decl(m, "forge_closure_call_5", i64t, [i64t, i64t, i64t, i64t, i64t, i64t])
 
     // ── higher-order list ops ──
     decl(m, "forge_array_map", pt, [pt, i64t])

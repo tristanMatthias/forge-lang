@@ -1355,6 +1355,14 @@ int64_t forge_closure_call_3(int64_t closure, int64_t a0, int64_t a1, int64_t a2
     int64_t args[] = { a0, a1, a2 };
     return forge_closure_dispatch(closure, args, 3);
 }
+int64_t forge_closure_call_4(int64_t closure, int64_t a0, int64_t a1, int64_t a2, int64_t a3) {
+    int64_t args[] = { a0, a1, a2, a3 };
+    return forge_closure_dispatch(closure, args, 4);
+}
+int64_t forge_closure_call_5(int64_t closure, int64_t a0, int64_t a1, int64_t a2, int64_t a3, int64_t a4) {
+    int64_t args[] = { a0, a1, a2, a3, a4 };
+    return forge_closure_dispatch(closure, args, 5);
+}
 
 // ── Levenshtein distance ──
 // Used by "did you mean?" suggestions in the compiler.
