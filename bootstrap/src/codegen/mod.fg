@@ -313,7 +313,7 @@ export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, stri
             }
             ok_emit_typed(ctx.i64(0), .Bool)
         }
-        .Null -> ok_emit(ctx.i64(0))
+        .Null -> ok_emit_typed(ctx.i64(0), .Void)
         .String(text) -> {
             let inner = strip_quotes(text)
             let str_ptr = ctx.global_str(inner, ".str")

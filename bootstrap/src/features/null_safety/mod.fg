@@ -34,7 +34,7 @@ export fn init_null_safety(reg: Registry) {
         resolve_expr: (r: Resolver, expr: Expr) -> match expr { .OptionalChain(obj, _) -> resolve_expr(r, obj), _ -> r },
         check_expr: (tc: TC, expr: Expr) -> match expr {
             .OptionalChain(obj, field) -> check_field_access(tc, obj, field)
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .OptionalChain(_, _) -> error_result(rt, "optional chain is not supported by the tree-walk evaluator")
@@ -47,7 +47,7 @@ export fn init_null_safety(reg: Registry) {
         expr_tag: Expr.Try(Expr.Null),
         emit_expr: try_emit_expr,
         resolve_expr: (r: Resolver, expr: Expr) -> match expr { .Try(inner) -> resolve_expr(r, inner), _ -> r },
-        check_expr: (tc: TC, expr: Expr) -> match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Int) },
+        check_expr: (tc: TC, expr: Expr) -> match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Unknown) },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Try(_) -> error_result(rt, "try operator is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Try")

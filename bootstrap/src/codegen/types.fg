@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
@@ -223,7 +223,7 @@ export fn advance_field_list(fields: FieldList) -> FieldList {
 // Get the resolved ValueType of the Nth field (0-indexed).
 export fn field_resolved_at(fields: FieldList, idx: int) -> ValueType {
     match fields {
-        .End -> .Int
+        .End -> .Unknown
         .Node(_, _, vt, _) if idx <= 0 -> vt
         .Node(_, _, _, next) -> field_resolved_at(next, idx - 1)
     }
@@ -421,7 +421,7 @@ export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: i
 
 export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
     match reg {
-        .End -> .Int
+        .End -> .Unknown
         .Node(n, ty, _) if n == name -> ty
         .Node(_, _, next) -> fn_ret_lookup(next, name)
     }
@@ -437,7 +437,7 @@ export fn toplevel_lookup(reg: TopLevelVars, name: string) -> TopLevelLookup {
     match reg {
         .End -> {
             let n: ptr = null
-            TopLevelLookup { found: false, llvm_global: n, ty: .Int }
+            TopLevelLookup { found: false, llvm_global: n, ty: .Unknown }
         }
         .Node(n, g, ty, _) if n == name -> TopLevelLookup { found: true, llvm_global: g, ty }
         .Node(_, _, _, next) -> toplevel_lookup(next, name)
@@ -607,7 +607,7 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
         "float" or "f64"  -> return ValueType.Float
         "bool"            -> return ValueType.Bool
         "ptr"             -> return ValueType.Ptr
-        "fn"              -> return ValueType.Fn(ValueType.Int)
+        "fn"              -> return ValueType.Fn(ValueType.Unknown)
         "List"            -> {
             // List<T> — extract inner type from angle brackets
             if base_ty != ty {
@@ -615,7 +615,7 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
                 let inner = translate_param_type(structs, enums, inner_name)
                 return ValueType.List(inner)
             }
-            return ValueType.List(ValueType.Int)
+            return ValueType.List(ValueType.Unknown)
         }
         "Map"             -> return ValueType.Map
         _ -> {}
@@ -647,7 +647,7 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
             let ret_type = translate_param_type(structs, enums, ret_name)
             return ValueType.Fn(ret_type)
         }
-        return ValueType.Fn(ValueType.Int)
+        return ValueType.Fn(ValueType.Unknown)
     }
     // If the type has generic args (e.g. "Result<EmitValue, string>"),
     // try the mangled name (e.g. "Result__EmitValue__string").
@@ -666,7 +666,7 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     if struct_l.found {
         return ValueType.Struct(base_ty)
     }
-    ValueType.Int
+    ValueType.Unknown
 }
 
 // translate_param_type with trait awareness — uses Ctx for trait registry.
@@ -681,8 +681,8 @@ export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
     let regs = TypeRegs { structs: ctx.structs, enums: ctx.enums, newtypes: ctx.newtypes, union_aliases: ctx.union_aliases }
     let base = resolve_type(regs, ty)
     // If still unresolved (Int), check traits
-    if !vtype_eq(base, ValueType.Int) { return base }
-    if ty in ["", "int", "i64"] { return base }
+    if !vtype_is_unknown(base) { return base }
+    if ty in ["", "int", "i64"] { return ValueType.Int }
     if trait_decl_has(ctx.trait_decls, ty) {
         return ValueType.Trait(ty)
     }
@@ -717,7 +717,7 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Tuple(_) -> pt
         .NarrowedEnum(_, _) -> pt
         .Void -> i64t
-        _ -> i64t
+        .Unknown -> i64t
     }
 }
 
@@ -728,6 +728,7 @@ export fn vtype_is_ptr_type(vt: ValueType) -> bool {
         .Bool -> false
         .Float -> false
         .Void -> false
+        .Unknown -> false
         _ -> true
     }
 }
@@ -1173,7 +1174,7 @@ impl Ctx {
             .End -> .End
             .Node(name, ty, pv, next) -> {
                 mut rv = translate_type_ctx(self, ty)
-                if !vtype_eq(pv, .Int) || ty == "int" || ty == "i64" {
+                if !vtype_is_unknown(pv) || ty == "int" || ty == "i64" {
                     rv = self.resolve_codegen_vtype(pv)
                 }
                 .Node(name, ty, rv, self.resolve_params(next))
@@ -1187,7 +1188,7 @@ impl Ctx {
             .End -> .End
             .Node(name, ty, pv, next) -> {
                 mut rv = translate_type_ctx(self, ty)
-                if !vtype_eq(pv, .Int) || ty == "int" || ty == "i64" {
+                if !vtype_is_unknown(pv) || ty == "int" || ty == "i64" {
                     rv = self.resolve_codegen_vtype(pv)
                 }
                 .Node(name, ty, rv, self.resolve_fields(next))
@@ -1284,17 +1285,17 @@ impl Ctx {
     // Resolve the Ok variant's payload type for Result enums.
     fn resolve_ok_type(self, enum_name: string) -> ValueType {
         let lookup = self.lookup_enum(enum_name)
-        if !lookup.found { return ValueType.Int }
+        if !lookup.found { return ValueType.Unknown }
         let ok = variant_lookup(lookup.variants, "Ok")
-        if !ok.found { return ValueType.Int }
+        if !ok.found { return ValueType.Unknown }
         field_resolved_at(ok.fields, 0)
     }
     // Resolve the Err variant's payload type for Result enums.
     fn resolve_err_type(self, enum_name: string) -> ValueType {
         let lookup = self.lookup_enum(enum_name)
-        if !lookup.found { return ValueType.Int }
+        if !lookup.found { return ValueType.Unknown }
         let ev = variant_lookup(lookup.variants, "Err")
-        if !ev.found { return ValueType.Int }
+        if !ev.found { return ValueType.Unknown }
         field_resolved_at(ev.fields, 0)
     }
     fn lookup_fn_params(self, name: string) -> ParamTypeList { fn_param_lookup(self.fn_params, name) }

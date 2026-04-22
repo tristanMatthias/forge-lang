@@ -16,7 +16,7 @@ export fn init_is_keyword(reg: Registry) {
                 let s = check_expr(tc, subject)
                 tc_er(s.tc, .Bool)
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .IsCheck(_, _) -> error_result(rt, "is-check is not supported by the tree-walk evaluator")

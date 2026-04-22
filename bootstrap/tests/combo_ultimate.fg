@@ -12,7 +12,7 @@ impl Describable for Task {
 }
 
 impl Task {
-    fn is_high_priority(self) -> int {
+    fn is_high_priority(self) -> bool {
         self.priority >= 3
     }
 }

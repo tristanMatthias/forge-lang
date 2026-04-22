@@ -69,7 +69,7 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
             let r = ctx.emit(env, se.node)?
             let fld_ty = match fields {
                 .Node(_, _, resolved, _) -> resolved
-                _ -> ValueType.Int
+                _ -> ValueType.Unknown
             }
             ctx.store_slot(payload_ptr, idx, r.value, fld_ty)
             let next_fields = match fields { .Node(_, _, _, rest) -> rest, _ -> FieldList.End }
@@ -87,7 +87,7 @@ fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr,
             let fld_gep = ctx.gep(pay_ty, payload_ptr, idx, "pay_fld")
             let fld_ty = match fields {
                 .Node(_, _, resolved, _) -> resolved
-                _ -> ValueType.Int
+                _ -> ValueType.Unknown
             }
             ctx.store_field(r.value, fld_gep, fld_ty)
             let next_fields = match fields { .Node(_, _, _, rest) -> rest, _ -> FieldList.End }

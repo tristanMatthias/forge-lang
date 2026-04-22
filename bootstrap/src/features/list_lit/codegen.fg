@@ -9,7 +9,7 @@ use codegen.helpers.{emit_single_arg}
 export fn emit_list_lit(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<EmitValue, string> {
     let arr = ctx.array_new()
     match elements {
-        .End -> ok_emit_typed(arr, .List(.Int))
+        .End -> ok_emit_typed(arr, .List(.Unknown))
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             ctx.array_push(arr, r.value)

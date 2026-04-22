@@ -20,7 +20,7 @@ export fn init_struct_decl(reg: Registry) {
                 let checked = check_field_inits(tc, inits)
                 tc_er(checked, .Struct(name))
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .StructLit(_, _) -> error_result(rt, "struct literals are not supported by the tree-walk evaluator")
@@ -35,7 +35,7 @@ export fn init_struct_decl(reg: Registry) {
         resolve_expr: field_access_resolve_expr,
         check_expr: (tc: TC, expr: Expr) -> match expr {
             .FieldAccess(obj, field) -> check_field_access(tc, obj, field)
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .FieldAccess(_, _) -> error_result(rt, "field access is not supported by the tree-walk evaluator")
@@ -53,7 +53,7 @@ export fn init_struct_decl(reg: Registry) {
                 let checked = check_expr_list(tc, args)
                 tc_er(checked, .Enum(type_name, TypeList.End))
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .EnumCtor(_, _, _) -> error_result(rt, "enum constructors are not supported by the tree-walk evaluator")
@@ -140,6 +140,6 @@ fn field_assign_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let v = check_expr(o.tc, value)
             tc_er(v.tc, v.ty)
         }
-        _ -> tc_er(tc, .Int)
+        _ -> tc_er(tc, .Unknown)
     }
 }

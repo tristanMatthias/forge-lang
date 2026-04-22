@@ -61,7 +61,7 @@ fn emit_spec_single(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<VarEnv, string>
         }
         _ -> {
             let wrapped = StmtList.Node(sstmt_dummy(stmt), StmtList.End)
-            emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Int)?
+            emit_block_loop(ctx, env, wrapped, ctx.i64(0), .Unknown)?
             ok_stmt(env)
         }
     }

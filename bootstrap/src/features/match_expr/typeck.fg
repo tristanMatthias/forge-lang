@@ -1,7 +1,7 @@
 // WHY: type checking for match statements and expressions.
 // Exhaustiveness checking, pattern variable binding, arm type unification.
 
-use core.ast.{Expr, Pattern, PatternList, MatchArmList, TypeList, WhenArmList, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_union, vtype_union_types}
+use core.ast.{Expr, Pattern, PatternList, MatchArmList, TypeList, WhenArmList, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, translate_type}
 
@@ -57,7 +57,7 @@ fn expr_diverges(body: Expr) -> bool {
 fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
     if expr_diverges(body) { return true }
     if vtype_eq(ty, .Void) { return true }
-    if vtype_eq(ty, .Int) { return true }
+    if vtype_is_unknown(ty) { return true }
     match ty {
         .Struct(name) -> name == ""
         .Enum(name, _) -> name == ""
@@ -261,7 +261,7 @@ fn tc_bind_pattern_params(tc: TC, params: ParamList) -> TC {
         .End -> tc
         .Node(name, _, _, next) -> {
             if name == "_" { return tc_bind_pattern_params(tc, next) }
-            tc_bind_pattern_params(tc_bind(tc, name, .Int), next)
+            tc_bind_pattern_params(tc_bind(tc, name, .Unknown), next)
         }
     }
 }
@@ -311,7 +311,7 @@ export fn check_match_expr_arms(tc: TC, arms: MatchArmList, first_ty: ValueType)
 
 export fn check_match_expr_infer(tc: TC, arms: MatchArmList) -> ExprResult {
     match arms {
-        .End -> tc_er(tc, .Int)
+        .End -> tc_er(tc, .Unknown)
         .Node(pattern, guard, body, next) -> {
             let with_bindings = tc_enter_pattern_scope(tc, pattern)
             let with_guard = if guard != null {
@@ -349,7 +349,7 @@ export fn tc_check_match_arm_returns(tc: TC, fn_name: string, declared: ValueTyp
 
 export fn check_when_expr(tc: TC, arms: WhenArmList) -> ExprResult {
     match arms {
-        .End -> tc_er(tc, .Int)
+        .End -> tc_er(tc, .Unknown)
         .Node(cond, body, next) -> {
             let after_cond = if cond == null { tc } else { check_expr(tc, cond!.node).tc }
             let b = check_expr(after_cond, body.node)

@@ -9,7 +9,7 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_str, vtype_struct_name, vtype_enum_name}
+use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
 use features.defer_stmt.codegen.{emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
@@ -38,7 +38,7 @@ export fn emit_null_coalesce(ctx: Ctx, env: VarEnv, left: Expr, right: Expr) -> 
 
     ctx.position(merge_bb)
     let loaded = ctx.load_i64(result_slot, "nc_val")
-    let merged_ty = if vtype_eq(l.ty, ValueType.Int) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
+    let merged_ty = if (vtype_is_unknown(l.ty) || vtype_eq(l.ty, .Void)) && vtype_is_str(r.ty) { ValueType.Str } else { l.ty }
     ok_emit_typed(loaded, merged_ty)
 }
 
@@ -238,7 +238,7 @@ export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: 
             let err_pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "catch_err_pay_slot")
             let err_pay_ptr = ctx.load(ctx.ptr_type, err_pay_gep, "catch_err_payload")
             let err_val = ctx.load_i64(err_pay_ptr, "catch_err_val")
-            ctx.bind(env, binding, err_val, .Int)
+            ctx.bind(env, binding, err_val, .Unknown)
         } else { env }
         let catch_r = ctx.emit(err_env, body)?
         ctx.store(ctx.to_i64(catch_r.value, "catch_body_val"), result_slot)
@@ -263,7 +263,7 @@ export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: 
     ctx.cond_br(is_null, null_bb, ok_bb)
 
     ctx.position(null_bb)
-    let null_env = if binding.length > 0 { ctx.bind(env, binding, ctx.i64(0), .Int) } else { env }
+    let null_env = if binding.length > 0 { ctx.bind(env, binding, ctx.i64(0), .Unknown) } else { env }
     let catch_r = ctx.emit(null_env, body)?
     ctx.store(ctx.to_i64(catch_r.value, "catch_null_val"), result_slot)
     ctx.br_if_open(merge_bb)

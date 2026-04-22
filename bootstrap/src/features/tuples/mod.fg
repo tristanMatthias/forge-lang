@@ -17,7 +17,7 @@ export fn init_tuples(reg: Registry) {
                 let pair = check_expr_list_types(tc, elements)
                 tc_er(pair.tc, .Tuple(pair.types))
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Tuple(_) -> error_result(rt, "tuples are not supported by the tree-walk evaluator")
@@ -35,7 +35,7 @@ export fn init_tuples(reg: Registry) {
                 let o = check_expr(tc, obj)
                 tc_er(o.tc, vtype_tuple_at(o.ty, idx))
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .TupleIndex(_, _) -> error_result(rt, "tuple indexing is not supported by the tree-walk evaluator")

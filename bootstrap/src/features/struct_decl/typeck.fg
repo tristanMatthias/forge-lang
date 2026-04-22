@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.ast.{Expr, ExprList, FieldList, FieldInitList, ValueType, SExpr, vtype_eq}
+use core.ast.{Expr, ExprList, FieldList, FieldInitList, ValueType, SExpr, vtype_eq, vtype_is_list}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, struct_type_has, translate_type}
 use diagnostics.{DiagCode}
 
@@ -13,7 +13,7 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
         return tc_er(o.tc, .Int)
     }
     // List .length
-    if vtype_eq(o.ty, .List(.Int)) || vtype_eq(o.ty, .List(.Str)) {
+    if vtype_is_list(o.ty) {
         if field == "length" { return tc_er(o.tc, .Int) }
     }
     // Struct field
@@ -25,13 +25,13 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
         let fields = struct_type_lookup(o.tc.structs, struct_name)
         if !tc_field_exists(fields, field) {
             let msg = "no field `${field}` on type `${struct_name}`"
-            return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), .Int)
+            return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), .Unknown)
         }
         let field_ty = field_type_in(o.tc, fields, field)
         return tc_er(o.tc, field_ty)
     }
     // Map .get is handled in method call
-    tc_er(o.tc, .Int)
+    tc_er(o.tc, .Unknown)
 }
 
 export fn check_field_inits(tc: TC, inits: FieldInitList) -> TC {
@@ -54,7 +54,7 @@ fn tc_field_exists(fields: FieldList, name: string) -> bool {
 
 fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
     match fields {
-        .End -> .Int
+        .End -> .Unknown
         .Node(fname, ftype, _, _) if fname == name -> translate_type(tc, ftype)
         .Node(_, _, _, next) -> field_type_in(tc, next, name)
     }

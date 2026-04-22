@@ -7,8 +7,8 @@
 // Phase B (after seed update): containers use SExpr/SStmt.
 export type SExpr = { node: Expr, line: int, col: int, ty: ValueType }
 export type SStmt = { node: Stmt, line: int, col: int }
-export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Int } }
-export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0, ty: ValueType.Int } }
+export fn sexpr(e: Expr, line: int, col: int) -> SExpr { SExpr { node: e, line, col, ty: ValueType.Unknown } }
+export fn sexpr_dummy(e: Expr) -> SExpr { SExpr { node: e, line: 0, col: 0, ty: ValueType.Unknown } }
 export fn sexpr_typed(e: Expr, line: int, col: int, ty: ValueType) -> SExpr { SExpr { node: e, line, col, ty } }
 export fn sstmt(s: Stmt, line: int, col: int) -> SStmt { SStmt { node: s, line, col } }
 export fn sstmt_dummy(s: Stmt) -> SStmt { SStmt { node: s, line: 0, col: 0 } }
@@ -214,9 +214,9 @@ export fn vtype_from_name(name: string) -> ValueType {
         "bool" -> ValueType.Bool
         "ptr" -> ValueType.Ptr
         "Map" -> ValueType.Map
-        "List" -> ValueType.List(ValueType.Int)
+        "List" -> ValueType.List(ValueType.Unknown)
         "void" -> ValueType.Void
-        "fn" -> ValueType.Fn(ValueType.Int)
+        "fn" -> ValueType.Fn(ValueType.Unknown)
         _ -> ValueType.Struct(name)
     }
 }
@@ -226,7 +226,7 @@ export fn vtype_from_name(name: string) -> ValueType {
 export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
     match te {
         .Named(name) -> vtype_from_name(name)
-        .Infer -> ValueType.Int
+        .Infer -> ValueType.Unknown
         .Union(left, right) -> {
             let lt = type_expr_to_vtype(left)
             let rt = type_expr_to_vtype(right)
@@ -238,7 +238,7 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
         .Generic(base, args) -> {
             match base {
                 "List" -> {
-                    let elem = match args { .Node(t, _) -> type_expr_to_vtype(t), .End -> ValueType.Int }
+                    let elem = match args { .Node(t, _) -> type_expr_to_vtype(t), .End -> ValueType.Unknown }
                     ValueType.List(elem)
                 }
                 // For named generics (Result<T,E>, etc.), produce Enum with type args.
@@ -287,6 +287,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         }
         .Newtype(n1, _) -> match b { .Newtype(n2, _) -> n1 == n2, _ -> false }
         .NarrowedEnum(e1, v1) -> match b { .NarrowedEnum(e2, v2) -> e1 == e2 && v1 == v2, _ -> false }
+        .Unknown -> b is .Unknown
         _ -> false
     }
 }
@@ -323,12 +324,14 @@ fn narrowed_assignable_to(src: ValueType, dst: ValueType) -> bool {
     false
 }
 
+export fn vtype_is_unknown(t: ValueType) -> bool { t is .Unknown }
+
 export fn vtype_is_str(t: ValueType) -> bool { t is .Str }
 
 export fn vtype_is_list(t: ValueType) -> bool { t is .List }
 
 export fn vtype_list_elem(t: ValueType) -> ValueType {
-    match t { .List(e) -> e, _ -> ValueType.Int }
+    match t { .List(e) -> e, _ -> ValueType.Unknown }
 }
 
 export fn vtype_is_map(t: ValueType) -> bool { t is .Map }
@@ -338,7 +341,7 @@ export fn vtype_is_fn(t: ValueType) -> bool {
 }
 
 export fn vtype_fn_ret(t: ValueType) -> ValueType {
-    match t { .Fn(r) -> r, .Closure(_, r) -> r, .FnTyped(_, r) -> r, _ -> ValueType.Int }
+    match t { .Fn(r) -> r, .Closure(_, r) -> r, .FnTyped(_, r) -> r, _ -> ValueType.Unknown }
 }
 
 export fn vtype_fn_params(t: ValueType) -> TypeList {
@@ -382,7 +385,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Union(types) -> render_union_display(types)
         .Newtype(name, _) -> name
         .NarrowedEnum(en, vn) -> "${en}.${vn}"
-        _ -> "<unknown>"
+        .Unknown -> "<unknown>"
     }
 }
 
@@ -409,7 +412,7 @@ export fn vtype_is_union(t: ValueType) -> bool { t is .Union }
 export fn vtype_is_newtype(t: ValueType) -> bool { t is .Newtype }
 
 export fn vtype_newtype_inner(t: ValueType) -> ValueType {
-    match t { .Newtype(_, inner) -> inner, _ -> ValueType.Int }
+    match t { .Newtype(_, inner) -> inner, _ -> ValueType.Unknown }
 }
 
 export fn vtype_newtype_name(t: ValueType) -> string {
@@ -457,7 +460,7 @@ export fn type_list_len(tl: TypeList) -> int {
 
 export fn type_list_at(tl: TypeList, idx: int) -> ValueType {
     match tl {
-        .End -> ValueType.Int
+        .End -> ValueType.Unknown
         .Node(ty, next) -> if idx == 0 { ty } else { type_list_at(next, idx - 1) }
     }
 }
@@ -498,13 +501,13 @@ export fn render_type_list(tl: TypeList) -> string {
 export fn vtype_tuple_at(t: ValueType, idx: int) -> ValueType {
     match t {
         .Tuple(types) -> typelist_at(types, idx)
-        _ -> ValueType.Int
+        _ -> ValueType.Unknown
     }
 }
 
 fn typelist_at(list: TypeList, idx: int) -> ValueType {
     match list {
-        .End -> ValueType.Int
+        .End -> ValueType.Unknown
         .Node(ty, _) if idx <= 0 -> ty
         .Node(_, next) -> typelist_at(next, idx - 1)
     }
@@ -704,7 +707,7 @@ export fn env_lookup(env: VarEnv, name: string) -> VarLookup {
     match env {
         .End -> {
             let n: ptr = null
-            VarLookup { found: false, alloca: n, ty: ValueType.Int }
+            VarLookup { found: false, alloca: n, ty: ValueType.Unknown }
         }
         .Node(n, alloca, ty, _) if n == name -> VarLookup { found: true, alloca, ty }
         .Node(_, _, _, next) -> env_lookup(next, name)

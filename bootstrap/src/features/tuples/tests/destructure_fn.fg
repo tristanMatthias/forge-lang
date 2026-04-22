@@ -1,4 +1,4 @@
-fn get_pair() -> int {
+fn get_pair() {
     (100, 200)
 }
 let (a, b) = get_pair()

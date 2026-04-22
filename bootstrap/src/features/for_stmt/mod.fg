@@ -94,6 +94,7 @@ fn for_in_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .ForIn(variable, collection, body) -> {
             let c = check_expr(tc, collection)
+            // vtype_list_elem returns Unknown for non-list types
             let elem_ty = vtype_list_elem(c.ty)
             let inner = tc_enter(c.tc)
             let bound = tc_bind(inner, variable, elem_ty)

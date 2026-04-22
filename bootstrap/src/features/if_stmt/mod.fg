@@ -1,6 +1,6 @@
 mod parser
 mod codegen
-use core.ast.{TypeList, ValueType, vtype_display, vtype_eq}
+use core.ast.{TypeList, ValueType, vtype_display, vtype_eq, vtype_is_unknown}
 use codegen.types.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
@@ -70,7 +70,7 @@ fn if_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .If(cond, then_branch, else_branch) -> {
             let c = check_expr(tc, cond)
-            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) {
+            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
             let after_then = check_stmt(after_cond, then_branch)
@@ -87,19 +87,19 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .IfExpr(cond, then_branch, else_branch) -> {
             let c = check_expr(tc, cond)
-            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) {
+            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "if condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
             let t = check_expr(after_cond, then_branch)
             let e = check_expr(t.tc, else_branch)
-            if !vtype_eq(t.ty, e.ty) && !vtype_eq(t.ty, .Int) && !vtype_eq(e.ty, .Int) && !vtype_eq(t.ty, .Void) && !vtype_eq(e.ty, .Void) {
+            if !vtype_eq(t.ty, e.ty) && !vtype_is_unknown(t.ty) && !vtype_is_unknown(e.ty) && !vtype_eq(t.ty, .Void) && !vtype_eq(e.ty, .Void) {
                 // Both branches have concrete different types — result is a union
                 let union_ty = ValueType.Union(TypeList.Node(t.ty, TypeList.Node(e.ty, TypeList.End)))
                 return tc_er(e.tc, union_ty)
             }
             tc_er(e.tc, t.ty)
         }
-        _ -> tc_er(tc, .Int)
+        _ -> tc_er(tc, .Unknown)
     }
 }
 

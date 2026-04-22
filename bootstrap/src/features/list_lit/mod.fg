@@ -16,7 +16,7 @@ export fn init_list_lit(reg: Registry) {
         resolve_expr: (r: Resolver, expr: Expr) -> match expr { .ListLit(elements) -> resolve_expr_list(r, elements), _ -> r },
         check_expr: (tc: TC, expr: Expr) -> match expr {
             .ListLit(elements) -> check_list_lit(tc, elements)
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .ListLit(_) -> error_result(rt, "list literals are not supported by the tree-walk evaluator")

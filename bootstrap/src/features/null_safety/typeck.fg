@@ -20,7 +20,7 @@ export fn check_catch(tc: TC, expr: Expr) -> ExprResult {
             }
             tc_er(cb.tc, cb.ty)
         }
-        _ -> tc_er(tc, .Int)
+        _ -> tc_er(tc, .Unknown)
     }
 }
 
@@ -31,6 +31,6 @@ export fn check_null_coalesce(tc: TC, expr: Expr) -> ExprResult {
             let r = check_expr(l.tc, right)
             tc_er(r.tc, r.ty)
         }
-        _ -> tc_er(tc, .Int)
+        _ -> tc_er(tc, .Unknown)
     }
 }

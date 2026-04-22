@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
+use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
 use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
@@ -21,7 +21,7 @@ enum TypeEntry {
 
 fn type_lookup(env: TypeEntry, name: string) -> ValueType {
     match env {
-        .End -> ValueType.Int  // fallback — resolver already caught undefined
+        .End -> ValueType.Unknown  // fallback — resolver already caught undefined
         .Node(n, ty, _, _) if n == name -> ty
         .Node(_, _, _, next) -> type_lookup(next, name)
     }
@@ -48,7 +48,7 @@ enum FnTypeEntry {
 
 fn fn_type_lookup(fns: FnTypeEntry, name: string) -> ValueType {
     match fns {
-        .End -> ValueType.Int
+        .End -> ValueType.Unknown
         .Node(n, _, ret, _) if n == name -> ret
         .Node(_, _, _, next) -> fn_type_lookup(next, name)
     }
@@ -438,8 +438,8 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
         "float" or "f64"  -> return ValueType.Float
         "bool"            -> return ValueType.Bool
         "ptr"             -> return ValueType.Ptr
-        "fn"              -> return ValueType.Fn(ValueType.Int)
-        "List"            -> return ValueType.List(ValueType.Int)
+        "fn"              -> return ValueType.Fn(ValueType.Unknown)
+        "List"            -> return ValueType.List(ValueType.Unknown)
         "Map"             -> return ValueType.Map
         _ -> {}
     }
@@ -460,7 +460,7 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
         if rest.starts_with("->") {
             return ValueType.Fn(translate_type(tc, rest.substring(2, rest.length)))
         }
-        return ValueType.Fn(ValueType.Int)
+        return ValueType.Fn(ValueType.Unknown)
     }
     if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty, TypeList.End) }
     // Union alias: type X = int | string
@@ -477,7 +477,7 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
         if enum_type_has(tc.enums, base) { return ValueType.Enum(base, TypeList.End) }
         if struct_type_has(tc.structs, base) { return ValueType.Struct(base) }
     }
-    ValueType.Int
+    ValueType.Unknown
 }
 
 // ── Entry point ──
@@ -605,7 +605,7 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
 fn check_binding(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr, is_const: bool) -> TC {
     let r = check_expr(tc, init)
     let declared_ty = if ty_str.length > 0 { resolve_vtype(r.tc, ty_vt) } else { r.ty }
-    if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Int) {
+    if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Unknown) {
         let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
     }
@@ -723,10 +723,10 @@ fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, ret_vt: ValueType,
 // functions whose last statement isn't an expression.
 fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts: StmtList) -> TC {
     let body_ty = tc_body_tail_type(tc, stmts)
-    // Skip when either side is Int (fallback/unreliable) or Void (no value).
-    if vtype_eq(declared, .Int) { return tc }
+    // Skip when either side is Unknown (fallback/unreliable) or Void (no value).
+    if vtype_is_unknown(declared) { return tc }
     match body_ty {
-        .Void or .Int -> tc
+        .Void or .Unknown -> tc
         _ -> {
             if !vtype_eq(declared, body_ty) && !vtype_assignable(body_ty, declared) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but body produces `${vtype_display(body_ty)}`"
@@ -779,7 +779,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
     match stmt {
         .Return(value) -> {
             let r = check_expr(tc, value)
-            if !vtype_eq(declared, r.ty) && !vtype_assignable(r.ty, declared) && !vtype_eq(r.ty, .Int) && !vtype_eq(r.ty, .Void) {
+            if !vtype_eq(declared, r.ty) && !vtype_assignable(r.ty, declared) && !vtype_is_unknown(r.ty) && !vtype_eq(r.ty, .Void) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but return produces `${vtype_display(r.ty)}`"
                 return tc_report(r.tc, DiagCode.TypeMismatch, msg)
             }
@@ -808,8 +808,12 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
 export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
-        .Node(name, _, resolved, next) -> {
-            let ty = resolve_vtype(tc, resolved)
+        .Node(name, ty_str, resolved, next) -> {
+            let ty = if vtype_is_unknown(resolved) && ty_str != "" {
+                translate_type(tc, ty_str)
+            } else {
+                resolve_vtype(tc, resolved)
+            }
             tc_bind_params(tc_bind(tc, name, ty), next)
         }
     }
@@ -827,7 +831,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
         .Ident(name) -> {
             let ty = type_lookup(tc.types, name)
             // If not found in locals, check function registry
-            if vtype_eq(ty, .Int) && fn_type_has(tc.fns, name) {
+            if vtype_is_unknown(ty) && fn_type_has(tc.fns, name) {
                 return tc_er(tc, .Fn(fn_type_lookup(tc.fns, name)))
             }
             tc_er(tc, ty)
@@ -878,7 +882,7 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
             let tag = forge_expr_tag(expr)
             let result = dispatch_expr_check(tc.features, tag, tc, expr)
             if result != null { return result! }
-            tc_er(tc, .Int)
+            tc_er(tc, .Unknown)
         }
     }
 }
@@ -912,7 +916,7 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprL
                 let arg_ty = check_expr(tc, arg_se.node).ty
                 // Newtype parameter check: must be same newtype or the inner type
                 if param_ty is .Newtype {
-                    if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Int) {
+                    if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Unknown) {
                         let msg = "`${fn_name}` parameter `${param_name}` expects `${vtype_display(param_ty)}`, got `${vtype_display(arg_ty)}`"
                         return tc_check_newtype_args(tc_report(tc, DiagCode.TypeMismatch, msg), fn_name, next_params, next_args)
                     }
@@ -936,7 +940,7 @@ fn tc_first_arg_type(tc: TC, args: ExprList) -> ValueType {
 fn tc_check_newtype_ctor(tc: TC, name: string, ret_ty: ValueType, arg_ty: ValueType) -> TC {
     match ret_ty {
         .Newtype(_, inner_ty) -> {
-            if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Int && inner_ty is .Int) {
+            if !vtype_eq(arg_ty, inner_ty) && !vtype_assignable(arg_ty, inner_ty) && !(arg_ty is .Unknown || inner_ty is .Unknown) {
                 let msg = "`${name}()` expects `${vtype_display(inner_ty)}`, got `${vtype_display(arg_ty)}`"
                 return tc_report(tc, DiagCode.TypeMismatch, msg)
             }
@@ -972,7 +976,7 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
             } else {
                 let expected_vt = resolve_vtype(tc, req_vt)
                 let actual_vt = resolve_vtype(tc, field_vtype_of(available, field_name))
-                let after = if !vtype_eq(expected_vt, .Int) && !vtype_eq(actual_vt, .Int) && !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
+                let after = if !vtype_is_unknown(expected_vt) && !vtype_is_unknown(actual_vt) && !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
                     let msg = "field `${field_name}` has type `${vtype_display(actual_vt)}` in `${arg_name}` but shape `${shape_name}` requires `${vtype_display(expected_vt)}`"
                     tc_report(tc, DiagCode.TypeMismatch, msg)
                 } else { tc }
@@ -1010,7 +1014,7 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
         .Le -> tc_er(tc, .Bool)
         .Gt -> tc_er(tc, .Bool)
         .Ge -> tc_er(tc, .Bool)
-        _ -> tc_er(tc, .Int)
+        _ -> tc_er(tc, .Unknown)
     }
 }
 
@@ -1051,8 +1055,8 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
             }
             // Variable holding a closure
             let var_ty = type_lookup(checked.types, name)
-            if vtype_eq(var_ty, .Int) {
-                return tc_er(checked, .Int)
+            if vtype_is_unknown(var_ty) {
+                return tc_er(checked, .Unknown)
             }
             tc_er(checked, vtype_fn_ret(var_ty))
         }
@@ -1061,7 +1065,7 @@ fn check_call(tc: TC, callee: Expr, args: ExprList) -> ExprResult {
             if fn_type_has(checked.fns, path) {
                 return tc_check_fn_call(checked, path, args)
             }
-            tc_er(checked, .Int)
+            tc_er(checked, .Unknown)
         }
         .FieldAccess(obj, method) -> check_method_call(tc, obj, method, args)
         _ -> {
@@ -1117,9 +1121,9 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
         }
     }
 
-    // Fallback — return Int for unknown methods (translate_type
+    // Fallback — return Unknown for unknown methods (translate_type
     // fallback; cannot give a better type without full trait resolution)
-    tc_er(checked_args, .Int)
+    tc_er(checked_args, .Unknown)
 }
 
 // ── Block expression type ──

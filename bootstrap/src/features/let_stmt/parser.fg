@@ -14,7 +14,7 @@ impl Parser {
         }
         let name = self.consume_identifier("expected variable name")?
         mut ty = ""
-        mut ty_vt = ValueType.Int
+        mut ty_vt = ValueType.Unknown
         if self.check(Tk.Colon) {
             self.advance()
             let te = self.parse_type_expr("expected type after `:`")?
@@ -30,7 +30,7 @@ impl Parser {
         self.advance()
         let name = self.consume_identifier("expected variable name")?
         mut ty = ""
-        mut ty_vt = ValueType.Int
+        mut ty_vt = ValueType.Unknown
         if self.check(Tk.Colon) {
             self.advance()
             let te = self.parse_type_expr("expected type after `:`")?
@@ -46,7 +46,7 @@ impl Parser {
         self.advance()
         let name = self.consume_identifier("expected constant name")?
         mut ty = ""
-        mut ty_vt = ValueType.Int
+        mut ty_vt = ValueType.Unknown
         if self.check(Tk.Colon) {
             self.advance()
             let te = self.parse_type_expr("expected type after `:`")?
@@ -84,8 +84,8 @@ impl Parser {
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_destructure_names()?
-            return ParamList.Node(name, "i64", ValueType.Int, rest)
+            return ParamList.Node(name, "i64", ValueType.Unknown, rest)
         }
-        ParamList.Node(name, "i64", ValueType.Int, ParamList.End)
+        ParamList.Node(name, "i64", ValueType.Unknown, ParamList.End)
     }
 }

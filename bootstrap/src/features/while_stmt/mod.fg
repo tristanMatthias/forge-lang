@@ -1,6 +1,6 @@
 mod parser
 mod codegen
-use core.ast.{vtype_display, vtype_eq}
+use core.ast.{vtype_display, vtype_eq, vtype_is_unknown}
 use codegen.types.{err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result}
@@ -43,7 +43,7 @@ fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .While(cond, body) -> {
             let c = check_expr(tc, cond)
-            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) {
+            let after_cond = if !vtype_eq(c.ty, .Bool) && !vtype_eq(c.ty, .Int) && !vtype_is_unknown(c.ty) {
                 tc_report(c.tc, DiagCode.TypeMismatch, "while condition must be `bool`, got `${vtype_display(c.ty)}`")
             } else { c.tc }
             check_stmt(after_cond, body)

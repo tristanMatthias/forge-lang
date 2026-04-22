@@ -5,7 +5,7 @@ use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check
 
 export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
     match elements {
-        .End -> tc_er(tc, .List(.Int))
+        .End -> tc_er(tc, .List(.Unknown))
         .Node(se, _) -> {
             let r = check_expr(tc, se.node)
             let checked = check_expr_list(r.tc, elements)
@@ -16,12 +16,13 @@ export fn check_list_lit(tc: TC, elements: ExprList) -> ExprResult {
 
 export fn check_list_method(tc: TC, elem: ValueType, method: string, args: ExprList) -> ExprResult {
     match method {
-        "length" or "len" or "reduce"            -> tc_er(tc, .Int)
+        "length" or "len"                          -> tc_er(tc, .Int)
+        "reduce"                                   -> tc_er(tc, .Unknown)
         "push" or "foreach"                      -> tc_er(tc, .Void)
         "pop" or "get"                           -> tc_er(tc, elem)
         "filter"                                 -> tc_er(tc, .List(elem))
         "map"                                    -> tc_er(tc, .List(tc_infer_lambda_ret(tc, args, elem)))
-        _                                        -> tc_er(tc, .Int)
+        _                                        -> tc_er(tc, .Unknown)
     }
 }
 

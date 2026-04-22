@@ -10,6 +10,6 @@ export fn check_map_method(tc: TC, method: string) -> ExprResult {
         "set"              -> tc_er(tc, .Void)
         "keys"             -> tc_er(tc, .List(.Str))
         "length" or "len"  -> tc_er(tc, .Int)
-        _                  -> tc_er(tc, .Int)
+        _                  -> tc_er(tc, .Unknown)
     }
 }

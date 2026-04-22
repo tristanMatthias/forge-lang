@@ -28,7 +28,7 @@ export fn init_closures(reg: Registry) {
                 let after = tc_exit(b.tc)
                 tc_er(after, ValueType.Fn(b.ty))
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Lambda(_, _) -> error_result(rt, "lambdas are not supported by the tree-walk evaluator")

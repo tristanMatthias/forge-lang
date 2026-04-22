@@ -51,7 +51,7 @@ fn noop_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string
 fn noop_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> { err_sr("no stmt handler") }
 fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
 fn noop_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver { r }
-fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Int) }
+fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Unknown) }
 fn noop_check_stmt(tc: TC, stmt: Stmt) -> TC { tc }
 fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     StepResult { runtime: rt, value: Value { kind: "null", number_text: "", text: "", bool_value: false }, had_error: true, is_return: false, error_message: "no eval_expr handler" }

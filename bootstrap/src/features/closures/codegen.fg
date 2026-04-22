@@ -221,11 +221,11 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
             // If this statement binds a local name, add it to params so subsequent
             // uses of the name won't be treated as captures from the outer scope.
             let updated_params = match ss.node {
-                .Let(name, _, _, _) -> ParamList.Node(name, "", ValueType.Int, params)
-                .Mut(name, _, _, _) -> ParamList.Node(name, "", ValueType.Int, params)
-                .Const(name, _, _, _) -> ParamList.Node(name, "", ValueType.Int, params)
-                .For(vname, _, _, _) -> ParamList.Node(vname, "", ValueType.Int, params)
-                .ForIn(vname, _, _) -> ParamList.Node(vname, "", ValueType.Int, params)
+                .Let(name, _, _, _) -> ParamList.Node(name, "", ValueType.Unknown, params)
+                .Mut(name, _, _, _) -> ParamList.Node(name, "", ValueType.Unknown, params)
+                .Const(name, _, _, _) -> ParamList.Node(name, "", ValueType.Unknown, params)
+                .For(vname, _, _, _) -> ParamList.Node(vname, "", ValueType.Unknown, params)
+                .ForIn(vname, _, _) -> ParamList.Node(vname, "", ValueType.Unknown, params)
                 _ -> params
             }
             find_captures_stmts(next, updated_params, env, c1)
@@ -247,12 +247,12 @@ fn env_type_of(ctx: Ctx, env: VarEnv, name: string) -> ValueType {
     if lookup.found { return lookup.ty }
     let g = ctx.lookup_toplevel(name)
     if g.found { return g.ty }
-    ValueType.Int
+    ValueType.Unknown
 }
 
 fn capture_type_of(captures: CaptureList, name: string) -> ValueType {
     match captures {
-        .End -> ValueType.Int
+        .End -> ValueType.Unknown
         .Node(cname, _, ty, _) if cname == name -> ty
         .Node(_, _, _, next) -> capture_type_of(next, name)
     }
@@ -347,13 +347,13 @@ fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captu
     match params {
         .End -> TypeList.End
         .Node(name, type_ann, raw_vt, next) -> {
-            // Priority: explicit annotation > float inference > default Int
+            // Priority: explicit annotation > float inference > default Unknown
             let ty = if type_ann != "" && type_ann != "i64" {
                 ctx.resolve_codegen_vtype(raw_vt)
             } else if param_used_with_float(name, body, ctx, env, captures, params) {
                 ValueType.Float
             } else {
-                ValueType.Int
+                ValueType.Unknown
             }
             TypeList.Node(ty, infer_param_types(next, body, ctx, env, captures))
         }
@@ -645,7 +645,7 @@ fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: pt
                     if type_ann != "" && type_ann != "i64" {
                         ctx.resolve_codegen_vtype(raw_vt)
                     } else {
-                        ValueType.Int
+                        ValueType.Unknown
                     }
                 }
             }

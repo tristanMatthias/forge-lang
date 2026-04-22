@@ -140,7 +140,7 @@ fn exprs_to_params(exprs: ExprList) -> ParamList {
                 .QualifiedIdent(n) -> n
                 _ -> "_"  // non-ident in lambda params — use placeholder
             }
-            ParamList.Node(name, "i64", ValueType.Int, exprs_to_params(next))
+            ParamList.Node(name, "i64", ValueType.Unknown, exprs_to_params(next))
         }
     }
 }

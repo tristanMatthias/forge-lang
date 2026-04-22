@@ -26,7 +26,7 @@ export fn emit_block_expr(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<Emit
     // statement, if that statement is a `Stmt.Expr`. Anything
     // else (return, let, while, ...) yields i64 0. Each non-last
     // statement is executed for its side effects.
-    emit_block_loop(ctx, env, stmts, ctx.i64(0), .Int)
+    emit_block_loop(ctx, env, stmts, ctx.i64(0), .Unknown)
 }
 
 export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
@@ -49,7 +49,7 @@ fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last
             ok_br(r.value, r.ty, ctx)
         }
         .Block(body) -> {
-            let r = emit_block_loop_ctx(ctx, env, body, ctx.i64(0), .Int)?
+            let r = emit_block_loop_ctx(ctx, env, body, ctx.i64(0), .Unknown)?
             ok_br(r.value, r.ty, r.ctx)
         }
         .Match(subject, arms) -> {
@@ -80,12 +80,12 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
     ctx.position(then_bb)
     let zero = ctx.i64(0)
     let then_env = narrow_env_for_is(ctx, env, condition)
-    let t = emit_stmt_as_value(ctx, then_env, then_branch, zero, .Int)?
+    let t = emit_stmt_as_value(ctx, then_env, then_branch, zero, .Unknown)?
     ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
 
     ctx.position(else_bb)
     if else_branch != null {
-        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Int)?
+        let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Unknown)?
         ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)
     } else {
         ctx.br(merge_bb)

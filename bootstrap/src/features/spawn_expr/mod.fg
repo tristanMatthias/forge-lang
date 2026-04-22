@@ -20,7 +20,7 @@ export fn init_spawn_expr(reg: Registry) {
                 // spawn returns an int handle (task handle)
                 tc_er(b.tc, .Int)
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Spawn(_) -> error_result(rt, "spawn is not supported by the tree-walk evaluator")

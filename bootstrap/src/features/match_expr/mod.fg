@@ -56,7 +56,7 @@ export fn init_match_expr(reg: Registry) {
         },
         check_expr: (tc: TC, expr: Expr) -> match expr {
             .When(arms) -> check_when_expr(tc, arms)
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .When(_) -> error_result(rt, "subjectless match is not supported by the tree-walk evaluator")
@@ -105,6 +105,6 @@ fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
             let checked = tc_check_exhaustive(s.tc, s.ty, arms)
             check_match_expr_infer(checked, arms)
         }
-        _ -> tc_er(tc, .Int)
+        _ -> tc_er(tc, .Unknown)
     }
 }

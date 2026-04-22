@@ -18,7 +18,7 @@ export fn init_map_lit(reg: Registry) {
                 let checked = check_expr_list(tc, entries)
                 tc_er(checked, .Map)
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .MapLit(_) -> error_result(rt, "map literals are not supported by the tree-walk evaluator")

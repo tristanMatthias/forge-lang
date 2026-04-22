@@ -23,7 +23,7 @@ export fn init_in_operator(reg: Registry) {
                 let s2 = check_expr_list(s.tc, items)
                 tc_er(s2, .Bool)
             }
-            _ -> tc_er(tc, .Int)
+            _ -> tc_er(tc, .Unknown)
         },
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .InCheck(_, _) -> error_result(rt, "in-check is not supported by the tree-walk evaluator")
