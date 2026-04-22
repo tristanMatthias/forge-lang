@@ -4,7 +4,7 @@
 // compile pipeline before codegen runs. Per spec Axis 20.
 
 use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
-use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, span_dummy, span_new}
+use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
 use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts}
@@ -1473,7 +1473,7 @@ fn is_screaming_snake(name: string) -> bool {
 
 fn naming_warn(tc: TC, msg: string) -> TC {
     let sp = span_dummy()
-    let d = diag_warning(DiagCode.NamingConvention, msg, sp)
+    let d = diag_with_confidence(diag_warning(DiagCode.NamingConvention, msg, sp), Confidence.Medium)
     tc with { bag: bag_report(tc.bag, d) }
 }
 

@@ -13,7 +13,7 @@
 //                                  type checking
 
 use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
-use diagnostics.{DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, span_new, span_dummy}
+use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_dummy}
 use resolve.{resolve_program}
 
 // ── Module tree ──
@@ -719,7 +719,7 @@ fn check_unused_aliases(aliases: AliasEntry, used: UsedPathSet, bag: DiagnosticB
         .End -> bag
         .Node(short_name, canonical, next) -> {
             let after = if !used_has(used, canonical) {
-                let d = diag_warning(DiagCode.UnusedImport, "unused import `${short_name}`", span_dummy())
+                let d = diag_with_confidence(diag_warning(DiagCode.UnusedImport, "unused import `${short_name}`", span_dummy()), Confidence.Medium)
                 bag_report(bag, d)
             } else {
                 bag
