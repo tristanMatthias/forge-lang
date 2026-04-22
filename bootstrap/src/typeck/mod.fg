@@ -21,7 +21,7 @@ enum TypeEntry {
 
 fn type_lookup(env: TypeEntry, name: string) -> ValueType {
     match env {
-        .End -> ValueType.Unknown  // fallback — resolver already caught undefined
+        .End -> ValueType.Unknown
         .Node(n, ty, _, _) if n == name -> ty
         .Node(_, _, _, next) -> type_lookup(next, name)
     }

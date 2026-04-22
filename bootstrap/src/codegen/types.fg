@@ -680,7 +680,7 @@ export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
     }
     let regs = TypeRegs { structs: ctx.structs, enums: ctx.enums, newtypes: ctx.newtypes, union_aliases: ctx.union_aliases }
     let base = resolve_type(regs, ty)
-    // If still unresolved (Int), check traits
+    // If resolved to a concrete type, return it. Otherwise check traits.
     if !vtype_is_unknown(base) { return base }
     if ty in ["", "int", "i64"] { return ValueType.Int }
     if trait_decl_has(ctx.trait_decls, ty) {
