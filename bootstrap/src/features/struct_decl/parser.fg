@@ -55,7 +55,7 @@ impl Parser {
                     }
                 }
                 // Newtype wrapper: type UserId = string — nominal distinction
-                return Stmt.NewtypeDecl(name, rendered)
+                return Stmt.NewtypeDecl(name, rendered, type_expr_to_vtype(type_expr))
             }
         }
         Stmt.TypeDecl(name, tp, FieldList.End)

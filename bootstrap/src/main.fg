@@ -155,7 +155,7 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "${ind}type ${name}${tp_part} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
         }
-        .NewtypeDecl(name, inner_ty) -> "${ind}type ${name} = ${inner_ty}"
+        .NewtypeDecl(name, inner_ty, _) -> "${ind}type ${name} = ${inner_ty}"
         .UnionAliasDecl(name, type_str) -> "${ind}type ${name} = ${type_str}"
         .ShapeDecl(name, fields) -> "${ind}shape ${name} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
         .EnumDecl(name, tp, variants) -> {

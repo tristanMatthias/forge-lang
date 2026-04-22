@@ -263,7 +263,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
             let sr = emit_stmt_list(ctx, env, body)?
             ok_sr(sr.ctx, env)
         }
-        .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _, _)
+        .TypeDecl(_, _, _) or .NewtypeDecl(_, _, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _, _)
         or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) or .AssocType(_, _) -> ok_sr(ctx, env)
         .Annotated(_, inner) -> emit_stmt(ctx, env, inner)
         .Break -> {

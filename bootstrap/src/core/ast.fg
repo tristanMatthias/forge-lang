@@ -608,7 +608,7 @@ export enum Stmt {
     Return(value: Expr)
     ReturnEmpty
     TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
-    NewtypeDecl(name: string, inner_ty: string)
+    NewtypeDecl(name: string, inner_ty: string, inner_vt: ValueType)
     UnionAliasDecl(name: string, type_str: string)
     ShapeDecl(name: string, fields: FieldList)
     EnumDecl(name: string, type_params: TypeParamList, variants: VariantList)
@@ -1024,7 +1024,7 @@ export fn render_stmt(stmt: Stmt) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "(type ${name}${tp_part} ${render_field_list(fields)})"
         }
-        .NewtypeDecl(name, inner_ty) -> "(newtype ${name} = ${inner_ty})"
+        .NewtypeDecl(name, inner_ty, _) -> "(newtype ${name} = ${inner_ty})"
         .UnionAliasDecl(name, type_str) -> "(union-alias ${name} = ${type_str})"
         .ShapeDecl(name, fields) -> "(shape ${name} ${render_field_list(fields)})"
         .EnumDecl(name, tp, variants) -> {

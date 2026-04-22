@@ -88,7 +88,7 @@ fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
         .Function(_, _, _, _, _, _) -> set
         .ReturnEmpty -> set
         .TypeDecl(_, _, _) -> set
-        .NewtypeDecl(_, _) -> set
+        .NewtypeDecl(_, _, _) -> set
         .UnionAliasDecl(_, _) -> set
         .ShapeDecl(_, _) -> set
         .EnumDecl(_, _, _) -> set
@@ -236,7 +236,7 @@ fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
         .ReturnEmpty -> 0
         .Function(_, _, _, _, _, _) -> 0
         .TypeDecl(_, _, _) -> 0
-        .NewtypeDecl(_, _) -> 0
+        .NewtypeDecl(_, _, _) -> 0
         .UnionAliasDecl(_, _) -> 0
         .ShapeDecl(_, _) -> 0
         .EnumDecl(_, _, _) -> 0
@@ -284,7 +284,7 @@ export fn is_arena_eligible(body: Stmt) -> bool {
         .ReturnEmpty -> false
         .Function(_, _, _, _, _, _) -> false
         .TypeDecl(_, _, _) -> false
-        .NewtypeDecl(_, _) -> false
+        .NewtypeDecl(_, _, _) -> false
         .UnionAliasDecl(_, _) -> false
         .ShapeDecl(_, _) -> false
         .EnumDecl(_, _, _) -> false

@@ -416,7 +416,7 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
                     StructReg.Node(name, resolved_fields, reg)
                 }
                 .UnionAliasDecl(_, _) -> reg
-                .NewtypeDecl(_, _) -> reg
+                .NewtypeDecl(_, _, _) -> reg
                 .Module(_, body) -> declare_structs(ctx, i64t, i1t, dt, pt, body, nts, uas, reg)
                 _ -> reg
             }
@@ -787,7 +787,7 @@ fn collect_newtypes(stmts: StmtList, reg: CgNewtypeReg) -> CgNewtypeReg {
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .NewtypeDecl(name, inner_ty) -> CgNewtypeReg.Node(name, inner_ty, reg)
+                .NewtypeDecl(name, inner_ty, _) -> CgNewtypeReg.Node(name, inner_ty, reg)
                 .Module(_, body) -> collect_newtypes(body, reg)
                 _ -> reg
             }

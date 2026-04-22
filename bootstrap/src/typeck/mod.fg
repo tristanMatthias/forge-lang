@@ -531,8 +531,9 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let resolved = tc_resolve_type_operator(fields, tc.structs)
                     tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
                 }
-                .NewtypeDecl(name, inner_ty_str) -> {
-                    let inner_ty = translate_type(tc, inner_ty_str)
+                .NewtypeDecl(name, inner_ty_str, inner_vt) -> {
+                    let resolved_inner = resolve_vtype(tc, inner_vt)
+                    let inner_ty = if !vtype_eq(resolved_inner, .Int) || inner_ty_str == "int" || inner_ty_str == "i64" { resolved_inner } else { translate_type(tc, inner_ty_str) }
                     let ctor_params = ParamList.Node("value", inner_ty_str, inner_ty, ParamList.End)
                     tc with {
                         newtypes: NewtypeReg.Node(name, inner_ty_str, tc.newtypes),
@@ -925,10 +926,11 @@ fn tc_check_shape_args(tc: TC, params: ParamList, args: ExprList) -> TC {
 fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprList) -> TC {
     match params {
         .End -> tc
-        .Node(param_name, param_ty_str, _, next_params) -> match args {
+        .Node(param_name, param_ty_str, param_vt, next_params) -> match args {
             .End -> tc
             .Node(arg_se, next_args) -> {
-                let param_ty = translate_type(tc, param_ty_str)
+                let resolved = resolve_vtype(tc, param_vt)
+                let param_ty = if !vtype_eq(resolved, .Int) || param_ty_str == "int" || param_ty_str == "i64" { resolved } else if param_ty_str.length > 0 { translate_type(tc, param_ty_str) } else { ValueType.Int }
                 let arg_ty = check_expr(tc, arg_se.node).ty
                 // Newtype parameter check: must be same newtype or the inner type
                 if param_ty is .Newtype {
@@ -990,8 +992,9 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
                 let msg = "type `${arg_name}` does not satisfy shape `${shape_name}` — missing field `${field_name}`"
                 tc_check_fields_present(tc_report(tc, DiagCode.TypeMismatch, msg), shape_name, arg_name, next, available)
             } else {
-                // Use parser-resolved ValueType when available for both sides
-                let expected_vt = if !vtype_eq(req_vt, .Int) { req_vt } else if field_ty.length > 0 { translate_type(tc, field_ty) } else { ValueType.Int }
+                // Use parser-resolved ValueType upgraded via registries
+                let resolved_req = resolve_vtype(tc, req_vt)
+                let expected_vt = if !vtype_eq(resolved_req, .Int) || field_ty == "int" || field_ty == "i64" { resolved_req } else if field_ty.length > 0 { translate_type(tc, field_ty) } else { ValueType.Int }
                 let arg_field_ty = field_type_lookup(available, field_name)
                 let actual_vt = if arg_field_ty.length > 0 { translate_type(tc, arg_field_ty) } else { ValueType.Int }
                 let after = if !vtype_eq(expected_vt, .Int) && !vtype_eq(actual_vt, .Int) && !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
