@@ -140,6 +140,7 @@ export enum ValueType {
     Union(types: TypeList),
     Newtype(name: string, inner: ValueType),
     NarrowedEnum(enum_name: string, variant_name: string),
+    Unknown,
 }
 
 // TypeExpr — structured type annotation replacing string-based types.
@@ -381,6 +382,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Union(types) -> render_union_display(types)
         .Newtype(name, _) -> name
         .NarrowedEnum(en, vn) -> "${en}.${vn}"
+        _ -> "<unknown>"
     }
 }
 

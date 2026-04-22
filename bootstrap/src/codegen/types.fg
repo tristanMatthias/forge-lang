@@ -717,6 +717,7 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Tuple(_) -> pt
         .NarrowedEnum(_, _) -> pt
         .Void -> i64t
+        _ -> i64t
     }
 }
 

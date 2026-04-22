@@ -161,6 +161,8 @@ fn emit_rc_release_typed(ctx: Ctx, val: ptr, ty: ValueType) {
                 ctx.rc_release(val)
             }
         }
+        // Catch-all for non-RC types (includes Unknown sentinel).
+        _ -> {}
     }
 }
 

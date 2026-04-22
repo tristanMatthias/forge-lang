@@ -69,11 +69,11 @@ export fn step_value(step: StepResult) -> Value {
     step.value
 }
 
-export fn step_had_error(step: StepResult) -> bool {
+export fn step_had_error(step: StepResult) -> int {
     step.had_error
 }
 
-export fn step_is_return(step: StepResult) -> bool {
+export fn step_is_return(step: StepResult) -> int {
     step.is_return
 }
 

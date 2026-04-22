@@ -235,6 +235,7 @@ fn vtype_to_string(ty: ValueType) -> string {
         .Union(types) -> render_union_mangled(types)
         .Newtype(n, _) -> n
         .NarrowedEnum(n, _) -> n
+        _ -> "unknown"
     }
 }
 
