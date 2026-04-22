@@ -294,10 +294,16 @@ fn field_type_for(fields: FieldList, name: string) -> string {
 fn check_resolved(tp: TypeParamList, ta: TypeArgList, name: string, line: int, col: int, bag: DiagnosticBag) -> DiagnosticBag {
     match tp {
         .End -> bag
-        .Node(pname, _, next) -> {
-            let updated = if type_arg_lookup(ta, pname) == pname {
+        .Node(pname, bounds, next) -> {
+            let concrete = type_arg_lookup(ta, pname)
+            let updated = if concrete == pname {
                 bag_report(bag, diag_error(DiagCode.CannotInferTypeParam, "cannot infer type parameter `${pname}` in `${name}<...>`", span_new(0, 0, line, col)))
             } else { bag }
+            // TODO: check trait bounds when TraitImplReg is available here.
+            // Currently the monomorphizer doesn't have access to the typeck's
+            // trait_impls registry. Bounds checking needs to be done either:
+            // (1) in typeck before monomorphization (requires generic call detection), or
+            // (2) by passing trait_impls into the monomorphizer.
             check_resolved(next, ta, name, line, col, updated)
         }
     }

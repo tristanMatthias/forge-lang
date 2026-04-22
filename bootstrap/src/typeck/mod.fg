@@ -255,7 +255,23 @@ type TC = {
     current_line: int,
     current_col: int,
     traits: TraitRegistry,
+    trait_impls: TraitImplReg,
     features: Registry,
+}
+
+// Registry of "impl Trait for Type" relationships.
+// Used to verify trait bounds on generic type arguments.
+enum TraitImplReg {
+    End
+    Node(trait_name: string, type_name: string, next: TraitImplReg)
+}
+
+fn type_implements_trait(reg: TraitImplReg, type_name: string, trait_name: string) -> bool {
+    match reg {
+        .End -> false
+        .Node(tn, ty, _) if tn == trait_name && ty == type_name -> true
+        .Node(_, _, next) -> type_implements_trait(next, type_name, trait_name)
+    }
 }
 
 type ExprResult = {
@@ -278,6 +294,7 @@ fn tc_new() -> TC {
         current_line: 0,
         current_col: 0,
         traits: TraitRegistry.End,
+        trait_impls: TraitImplReg.End,
         features: build_registry(),
     }
 }
@@ -469,6 +486,7 @@ export type TypeCheckResult = {
     stmts: StmtList,
     had_error: int,
     bag: DiagnosticBag,
+    trait_impls: TraitImplReg,
 }
 
 export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
@@ -485,7 +503,7 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
     let tc3 = check_naming_conventions(tc2, stmts)
     // Pass 3: annotate AST — uses fast paths for leaf expressions
     let annotated = annotate_stmts(tc3, stmts)
-    TypeCheckResult { stmts: annotated, had_error: bag_has_errors(tc3.bag), bag: tc3.bag }
+    TypeCheckResult { stmts: annotated, had_error: bag_has_errors(tc3.bag), bag: tc3.bag, trait_impls: tc3.trait_impls }
 }
 
 // ── Pass 1: Declaration collection ──
@@ -551,7 +569,15 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
 
                     }
                 }
-                .Impl(_, methods) -> collect_decls(tc, methods)
+                .Impl(impl_name, methods) -> {
+                    let colon_idx = impl_name.index_of(":")
+                    let with_impl = if colon_idx >= 0 {
+                        let trait_name = impl_name.substring(0, colon_idx)
+                        let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
+                        tc with { trait_impls: TraitImplReg.Node(trait_name, type_name, tc.trait_impls) }
+                    } else { tc }
+                    collect_decls(with_impl, methods)
+                }
                 .Module(_, body) -> collect_decls(tc, body)
                 .TraitDecl(name, methods) -> tc with {
                     traits: TraitRegistry.Node(name, collect_method_names_from_stmts(methods), tc.traits)
