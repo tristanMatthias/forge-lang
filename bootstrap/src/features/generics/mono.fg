@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_from_name}
+use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_from_name, find_type_pipe, union_type_list_merge}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_new}
 
 // ── Registries ──
@@ -785,6 +785,13 @@ fn vtype_from_type_string(ty: string) -> ValueType {
     // Handle nullable "T?"
     if ty.ends_with("?") && ty.length > 1 {
         return vtype_from_type_string(ty.substring(0, ty.length - 1))
+    }
+    // Handle union types "A | B"
+    let pipe = find_type_pipe(ty)
+    if pipe >= 0 {
+        let left = vtype_from_type_string(ty.substring(0, pipe).trim())
+        let right = vtype_from_type_string(ty.substring(pipe + 1, ty.length).trim())
+        return ValueType.Union(union_type_list_merge(left, right))
     }
     // Handle generic type strings like "Result<int, string>"
     let angle = find_char(ty, "<")

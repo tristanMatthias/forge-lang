@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe}
+use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
 use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
@@ -349,15 +349,29 @@ fn tc_base_type_name(ty: string) -> string {
 // Upgrade a parser-resolved ValueType using TC registries.
 // The parser maps unknown names to Struct(name) or Int. This function
 // checks registries to distinguish structs from enums, traits, newtypes, etc.
+// Parse a union alias string like "int | string" into a resolved ValueType.
+fn resolve_union_alias_str(tc: TC, ua: string) -> ValueType {
+    let pipe = find_type_pipe(ua)
+    if pipe >= 0 {
+        let left_str = ua.substring(0, pipe)
+        let right_str = ua.substring(pipe + 1, ua.length)
+        let left = resolve_vtype(tc, vtype_from_name(left_str.trim()))
+        let right = resolve_union_alias_str(tc, right_str)
+        ValueType.Union(union_type_list_merge(left, right))
+    } else {
+        resolve_vtype(tc, vtype_from_name(ua.trim()))
+    }
+}
+
 fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name) if name == "List" -> ValueType.List(ValueType.Int)
         .Struct(name) -> {
             if enum_type_has(tc.enums, name) { return ValueType.Enum(name, TypeList.End) }
             let ua = union_alias_lookup(tc.union_aliases, name)
-            if ua != "" { return translate_type(tc, ua) }
+            if ua != "" { return resolve_union_alias_str(tc, ua) }
             let nt = newtype_lookup(tc.newtypes, name)
-            if nt != "" { return ValueType.Newtype(name, translate_type(tc, nt)) }
+            if nt != "" { return ValueType.Newtype(name, resolve_vtype(tc, vtype_from_name(nt))) }
             if struct_type_has(tc.structs, name) { return ValueType.Struct(name) }
             if trait_has(tc.traits, name) { return ValueType.Trait(name) }
             vt  // keep Struct(name) — might be from another module or generic
@@ -507,8 +521,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
                 }
                 .NewtypeDecl(name, inner_ty_str, inner_vt) -> {
-                    let resolved_inner = resolve_vtype(tc, inner_vt)
-                    let inner_ty = if !vtype_eq(resolved_inner, .Int) || inner_ty_str == "int" || inner_ty_str == "i64" { resolved_inner } else { translate_type(tc, inner_ty_str) }
+                    let inner_ty = resolve_vtype(tc, inner_vt)
                     let ctor_params = ParamList.Node("value", inner_ty_str, inner_ty, ParamList.End)
                     tc with {
                         newtypes: NewtypeReg.Node(name, inner_ty_str, tc.newtypes),
@@ -932,11 +945,8 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
                 let msg = "type `${arg_name}` does not satisfy shape `${shape_name}` — missing field `${field_name}`"
                 tc_check_fields_present(tc_report(tc, DiagCode.TypeMismatch, msg), shape_name, arg_name, next, available)
             } else {
-                // Use parser-resolved ValueType upgraded via registries
-                let resolved_req = resolve_vtype(tc, req_vt)
-                let expected_vt = if !vtype_eq(resolved_req, .Int) || field_ty == "int" || field_ty == "i64" { resolved_req } else if field_ty.length > 0 { translate_type(tc, field_ty) } else { ValueType.Int }
-                let arg_field_ty = field_type_lookup(available, field_name)
-                let actual_vt = if arg_field_ty.length > 0 { translate_type(tc, arg_field_ty) } else { ValueType.Int }
+                let expected_vt = resolve_vtype(tc, req_vt)
+                let actual_vt = resolve_vtype(tc, field_vtype_of(available, field_name))
                 let after = if !vtype_eq(expected_vt, .Int) && !vtype_eq(actual_vt, .Int) && !vtype_eq(expected_vt, actual_vt) && !vtype_assignable(actual_vt, expected_vt) {
                     let msg = "field `${field_name}` has type `${vtype_display(actual_vt)}` in `${arg_name}` but shape `${shape_name}` requires `${vtype_display(expected_vt)}`"
                     tc_report(tc, DiagCode.TypeMismatch, msg)
@@ -1158,7 +1168,6 @@ fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
 
 fn annotate_bind(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr) -> TC {
     let r = check_expr(tc, init)
-    // Fallback for union type annotations (union_generic test)
     let resolved = resolve_vtype(tc, ty_vt)
     let declared_ty = if !vtype_eq(resolved, .Int) || ty_str == "int" || ty_str == "i64" {
         resolved
