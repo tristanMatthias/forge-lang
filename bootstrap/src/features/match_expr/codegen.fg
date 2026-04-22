@@ -6,24 +6,14 @@ use codegen.{ok_sr, err_sr}
 use features.union_type.codegen.{emit_union_tag, emit_union_extract}
 use diagnostics.{DiagCode}
 
-fn ok_match_ty(ty: ValueType) -> Result<ValueType, string> {
-    if false { return Result.Err("") }
-    Result.Ok(ty)
-}
-
-fn err_match_ty(message: string) -> Result<ValueType, string> {
-    if false { return Result.Ok(.Int) }
-    Result.Err(message)
-}
+fn ok_match_ty(ty: ValueType) -> Result<ValueType, string> { Result.Ok(ty) }
+fn err_match_ty(message: string) -> Result<ValueType, string> { Result.Err(message) }
 
 fn warn_arm_type_mismatch(ctx: Ctx, body_ty: ValueType, rest_ty: ValueType) {
     ctx.warn(DiagCode.TypeMismatch, "match arms have different types: `${vtype_display(body_ty)}` vs `${vtype_display(rest_ty)}`")
 }
 
-fn forward_emit_err(message: string) -> Result<EmitValue, string> {
-    if false { return Result.Ok(EmitValue { value: null_ptr_val(), ty: .Int }) }
-    Result.Err(message)
-}
+fn forward_emit_err(message: string) -> Result<EmitValue, string> { Result.Err(message) }
 
 fn forward_stmt_err(message: string) -> Result<StmtResult, string> {
     err_sr(message)
