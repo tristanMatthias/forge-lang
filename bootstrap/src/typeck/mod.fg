@@ -417,9 +417,19 @@ fn tc_base_type_name(ty: string) -> string {
 // checks registries to distinguish structs from enums, traits, newtypes, etc.
 // Parse a union alias string like "int | string" into a resolved ValueType.
 // Resolve a union alias string like "int | string" into a ValueType.
-// Delegates to translate_type which already handles pipe-splitting.
+// Parse a union alias string "A | B | C" into ValueType.Union without translate_type.
+// Uses resolve_vtype + vtype_from_name for each component.
 fn resolve_union_alias_str(tc: TC, ua: string) -> ValueType {
-    translate_type(tc, ua)
+    let pipe = find_type_pipe(ua)
+    if pipe >= 0 {
+        let left_str = ua.substring(0, pipe).trim()
+        let right_str = ua.substring(pipe + 1, ua.length).trim()
+        let left = resolve_vtype(tc, vtype_from_name(left_str))
+        let right = resolve_union_alias_str(tc, right_str)
+        ValueType.Union(union_type_list_merge(left, right))
+    } else {
+        resolve_vtype(tc, vtype_from_name(ua.trim()))
+    }
 }
 
 fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
