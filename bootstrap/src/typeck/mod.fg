@@ -718,16 +718,7 @@ fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, ret_vt: ValueType,
     }
     // Fall back to translate_type for nullable T? and complex return types
     // where resolve_vtype doesn't match what collect_decls registered
-    // Fallback needed: 23 tests fail without it. Root cause: some functions
-    // have ret_vt = Int despite having non-int annotations. See oljn.
-    let resolved = resolve_vtype(checked, ret_vt)
-    let declared_ret = if vtype_eq(resolved, .Int) && ret_ty_str.length > 0 && ret_ty_str != "int" && ret_ty_str != "i64" {
-        mut effective_ret_str = ret_ty_str
-        if ret_ty_str.ends_with("?") {
-            effective_ret_str = ret_ty_str.substring(0, ret_ty_str.length - 1)
-        }
-        translate_type(checked, effective_ret_str)
-    } else { resolved }
+    let declared_ret = resolve_vtype(checked, ret_vt)
     // Check every explicit `return expr` produces a compatible type.
     let after_explicit = tc_check_explicit_returns(checked, name, declared_ret, body)
     // Check implicit return: the last expression in the body.
@@ -1215,6 +1206,7 @@ fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
 
 fn annotate_bind(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr) -> TC {
     let r = check_expr(tc, init)
+    // Fallback for union type annotations (union_generic test)
     let resolved = resolve_vtype(tc, ty_vt)
     let declared_ty = if !vtype_eq(resolved, .Int) || ty_str == "int" || ty_str == "i64" {
         resolved
