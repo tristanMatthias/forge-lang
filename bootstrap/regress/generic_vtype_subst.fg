@@ -1,0 +1,25 @@
+// Regression test: monomorphizer must substitute ValueType in resolved fields.
+// Without substitute_vtype, pattern bindings on generic enum fields would fail
+// with "undefined variable" because the resolved field would stay Struct("T")
+// instead of being substituted to the concrete type.
+/// expect: 42
+/// expect: 99
+
+enum Box<T> {
+    Val(inner: T)
+    Empty
+}
+
+fn unwrap_or(b: Box, default: int) -> int {
+    match b {
+        .Val(v) -> v
+        .Empty -> default
+    }
+}
+
+fn main() {
+    let a = Box.Val(42)
+    let b = Box.Empty
+    println(string(unwrap_or(a, 0)))
+    println(string(unwrap_or(b, 99)))
+}

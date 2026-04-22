@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup}
+use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_from_name}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_new}
 
 // ── Registries ──
@@ -646,17 +646,7 @@ fn substitute_vtype(vt: ValueType, ta: TypeArgList) -> ValueType {
     match vt {
         .Struct(name) -> {
             let concrete = type_arg_lookup(ta, name)
-            if concrete != name {
-                match concrete {
-                    "int" -> ValueType.Int
-                    "i64" -> ValueType.Int
-                    "string" -> ValueType.Str
-                    "str" -> ValueType.Str
-                    "float" -> ValueType.Float
-                    "bool" -> ValueType.Bool
-                    _ -> ValueType.Struct(concrete)
-                }
-            } else { vt }
+            if concrete != name { vtype_from_name(concrete) } else { vt }
         }
         .List(elem) -> ValueType.List(substitute_vtype(elem, ta))
         .Union(types) -> ValueType.Union(substitute_vtype_list(types, ta))
