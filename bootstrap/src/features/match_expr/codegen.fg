@@ -1,7 +1,8 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_is_union, vtype_union_types}
-use codegen.types.{Ctx, EmitValue, StmtResult,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, translate_type_ctx}
+use codegen.types.{Ctx, EmitValue, StmtResult,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty}
+use core.ast.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
 use features.union_type.codegen.{emit_union_tag, emit_union_extract}
 use diagnostics.{DiagCode}
@@ -85,7 +86,7 @@ fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, subj_val: pt
                     ctx.cond_br(cmp, arm_bb, next_bb)
                     ctx.position(arm_bb)
                     // Extract payload and bind to variable
-                    let member_ty = translate_type_ctx(ctx, type_name)
+                    let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(type_name))
                     let extracted = emit_union_extract(ctx, subj_val, member_ty)
                     let arm_env = ctx.bind(env, binding, extracted.value, member_ty)
                     // Guard

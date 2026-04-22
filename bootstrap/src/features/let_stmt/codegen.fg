@@ -2,8 +2,8 @@
 // Handles trait boxing: `let d: Describable = Circle { ... }` creates
 // a trait object with a vtable for dynamic dispatch.
 
-use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, field_list_length}
-use codegen.types.{Ctx, ok_stmt, translate_type_ctx, vtype_is_copy, releasable_has}
+use core.ast.{Expr, ExprList, ValueType, VarEnv, vtype_is_unknown, vtype_from_name, vtype_trait_name, vtype_struct_name, vtype_enum_name, vtype_list_elem, vtype_is_list, field_list_length}
+use codegen.types.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
 use features.trait_decl.codegen.{box_for_trait}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use diagnostics.{DiagCode}
@@ -23,8 +23,6 @@ export fn emit_var_decl(ctx: Ctx, env: VarEnv, name: string, ty_annotation: stri
     // Use the type annotation when present, otherwise infer from initializer.
     let var_ty = if !vtype_is_unknown(ty_vt) {
         ctx.resolve_codegen_vtype(ty_vt)
-    } else if ty_annotation != "" {
-        translate_type_ctx(ctx, ty_annotation)
     } else {
         r.ty
     }
@@ -83,7 +81,7 @@ fn try_copy_stack_target(ctx: Ctx, name: string, ty_ann: string, init: Expr) -> 
             // `with` expressions produce the same struct type as the source.
             // The type annotation tells us the struct name.
             if ty_ann != "" {
-                let var_ty = translate_type_ctx(ctx, ty_ann)
+                let var_ty = ctx.resolve_codegen_vtype(vtype_from_name(ty_ann))
                 let sname = vtype_struct_name(var_ty)
                 if sname != "" {
                     return try_copy_for_struct(ctx, name, ty_ann, sname)
@@ -100,7 +98,7 @@ fn try_copy_for_struct(ctx: Ctx, name: string, ty_ann: string, sname: string) ->
     // Types with a drop impl must NOT be Copy — they need RC so __release fires
     let drop_fn = ctx.get_fn("${sname}__drop")
     if drop_fn != null { return CopyTarget { active: false, alloca_ptr: n } }
-    let var_ty = if ty_ann != "" { translate_type_ctx(ctx, ty_ann) } else { ValueType.Struct(sname) }
+    let var_ty = if ty_ann != "" { ctx.resolve_codegen_vtype(vtype_from_name(ty_ann)) } else { ValueType.Struct(sname) }
     if vtype_is_copy(var_ty, ctx.copy_types) {
         let st_ty = ctx.get_type(sname)
         if st_ty != null {
