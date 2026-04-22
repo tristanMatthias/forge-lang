@@ -178,3 +178,28 @@ endif
 	@bd show $(EPIC) 2>/dev/null | grep "↑.*○"
 	@echo ""
 	@echo "Run 'make work TICKET=<id> EPIC=$(EPIC)' for each ticket."
+
+# Automated work loop: pick next ticket from current epic, or switch epics.
+# Usage: make loop EPIC=<id>
+# If all tickets in EPIC are done, shows next epic to switch to.
+loop:
+ifndef EPIC
+	@echo "usage: make loop EPIC=<epic-id>" >&2
+	@echo "" >&2
+	@echo "Available epics:" >&2
+	@bd list --type epic --status open 2>/dev/null
+	@exit 1
+endif
+	@NEXT=$$(bd show $(EPIC) 2>/dev/null | grep "↑.*○" | head -1 | grep -o 'forge-crafting-intepreters-[a-z0-9]*' | sed 's/forge-crafting-intepreters-//'); \
+	if [ -z "$$NEXT" ]; then \
+		echo "=== Epic $(EPIC) complete! ==="; \
+		echo ""; \
+		echo "Next epics to work on:"; \
+		bd list --type epic --status open 2>/dev/null | grep -v "$(EPIC)"; \
+	else \
+		echo "=== Working ticket $$NEXT in epic $(EPIC) ==="; \
+		bd update $$NEXT --claim 2>/dev/null; \
+		bd mol pour ticket-inner --var ticket_id=$$NEXT --var epic_id=$(EPIC) 2>/dev/null; \
+		echo ""; \
+		bd show $$NEXT 2>/dev/null; \
+	fi
