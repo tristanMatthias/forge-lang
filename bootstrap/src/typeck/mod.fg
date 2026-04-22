@@ -1291,7 +1291,10 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
 }
 
 fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
-    let ty = match se.node {
+    // Annotate the inner expression tree (recurse into sub-expressions)
+    let annotated_node = annotate_expr(tc, se.node)
+    // Stamp this SExpr's type
+    let ty = match annotated_node {
         .Number(_) -> ValueType.Int
         .FloatLit(_) -> ValueType.Float
         .String(_) -> ValueType.Str
@@ -1300,7 +1303,7 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         .Ident(name) -> type_lookup(tc.types, name)
         _ -> check_expr(tc, se.node).ty
     }
-    sexpr_typed(se.node, se.line, se.col, ty)
+    sexpr_typed(annotated_node, se.line, se.col, ty)
 }
 
 fn annotate_expr_list(tc: TC, exprs: ExprList) -> ExprList {

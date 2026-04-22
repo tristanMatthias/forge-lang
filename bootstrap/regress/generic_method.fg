@@ -1,0 +1,26 @@
+// Generic function calling a method on a type-param value.
+/// expect: hello world
+/// expect: 1,2
+
+type Widget = { name: string }
+impl Widget {
+    fn greet(self) -> string { "hello " + self.name }
+}
+
+type Point = { x: int, y: int }
+impl Point {
+    fn show(self) -> string { string(self.x) + "," + string(self.y) }
+}
+
+fn call_method<T>(x: T) -> string {
+    x.greet()
+}
+
+fn show_it<T>(x: T) -> string {
+    x.show()
+}
+
+fn main() {
+    println(call_method(Widget { name: "world" }))
+    println(show_it(Point { x: 1, y: 2 }))
+}
