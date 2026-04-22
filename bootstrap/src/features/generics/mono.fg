@@ -803,9 +803,9 @@ fn vtype_from_type_string(ty: string) -> ValueType {
         return ValueType.Enum(base, args)
     }
     // Handle mangled names like "Result__int__string" — extract type args from __ separators
+    // Uses the full mangled name as enum name (codegen registers enums under mangled names)
     let dunder = find_dunder(ty)
     if dunder >= 0 {
-        let base = ty.substring(0, dunder)
         let args = parse_dunder_args(ty, dunder + 2)
         return ValueType.Enum(ty, args)
     }
@@ -818,10 +818,10 @@ fn parse_dunder_args(s: string, start: int) -> TypeList {
     let next_dunder = find_dunder_from(s, start)
     if next_dunder >= 0 {
         let arg = s.substring(start, next_dunder)
-        TypeList.Node(vtype_from_name(arg), parse_dunder_args(s, next_dunder + 2))
+        TypeList.Node(vtype_from_type_string(arg), parse_dunder_args(s, next_dunder + 2))
     } else {
         let arg = s.substring(start, s.length)
-        TypeList.Node(vtype_from_name(arg), TypeList.End)
+        TypeList.Node(vtype_from_type_string(arg), TypeList.End)
     }
 }
 
@@ -837,8 +837,7 @@ fn find_dunder_from(s: string, start: int) -> int {
 
 fn parse_type_args_to_list(args_str: string) -> TypeList {
     if args_str == "" { return TypeList.End }
-    // Split on top-level commas (not inside < >)
-    let comma = find_top_level_comma(args_str, 0, 0)
+    let comma = top_level_split_idx(args_str)
     if comma >= 0 {
         let head = args_str.substring(0, comma)
         let tail = args_str.substring(comma + 1, args_str.length)
@@ -846,15 +845,6 @@ fn parse_type_args_to_list(args_str: string) -> TypeList {
     } else {
         TypeList.Node(vtype_from_type_string(args_str.trim()), TypeList.End)
     }
-}
-
-fn find_top_level_comma(s: string, idx: int, depth: int) -> int {
-    if idx >= s.length { return -1 }
-    let ch = s.substring(idx, idx + 1)
-    if ch == "," && depth == 0 { return idx }
-    if ch == "<" { return find_top_level_comma(s, idx + 1, depth + 1) }
-    if ch == ">" { return find_top_level_comma(s, idx + 1, depth - 1) }
-    find_top_level_comma(s, idx + 1, depth)
 }
 
 fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: InstList) -> ValueType {
