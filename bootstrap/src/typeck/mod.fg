@@ -574,30 +574,14 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
                 }
                 .Function(name, _, params, ret_ty, ret_vt, _) -> {
-                    let resolved_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" {
-                        ValueType.Void
-                    } else {
-                        resolve_vtype(tc, ret_vt)
-                    }
-                    // Fall back to string translation if resolve_vtype returned Int
-                    // but the string annotation is non-empty and non-int
-                    let final_ret = if vtype_eq(resolved_ret, .Int) && ret_ty.length > 0 && ret_ty != "int" && ret_ty != "i64" {
-                        translate_type(tc, ret_ty)
-                    } else { resolved_ret }
+                    let final_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
                     tc with {
                         fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
                         fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
                     }
                 }
                 .ExternFn(name, params, ret_ty, ret_vt) -> {
-                    let resolved_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" {
-                        ValueType.Void
-                    } else {
-                        resolve_vtype(tc, ret_vt)
-                    }
-                    let final_ret = if vtype_eq(resolved_ret, .Int) && ret_ty.length > 0 && ret_ty != "int" && ret_ty != "i64" {
-                        translate_type(tc, ret_ty)
-                    } else { resolved_ret }
+                    let final_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
                     tc with {
                         fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
                         fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
@@ -630,13 +614,7 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
 
 fn check_binding(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr, is_const: bool) -> TC {
     let r = check_expr(tc, init)
-    // Use parser-resolved type, upgrade via registries; fall back to string
-    let resolved = resolve_vtype(r.tc, ty_vt)
-    let declared_ty = if !vtype_eq(resolved, .Int) || ty_str == "int" || ty_str == "i64" {
-        resolved
-    } else if ty_str.length > 0 {
-        translate_type(r.tc, ty_str)
-    } else { r.ty }
+    let declared_ty = if ty_str.length > 0 { resolve_vtype(r.tc, ty_vt) } else { r.ty }
     if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Int) {
         let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
@@ -847,13 +825,8 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
 export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
-        .Node(name, ty_str, resolved, next) -> {
-            // Use parser-resolved type upgraded via registries
-            let ty = if !vtype_eq(resolved, .Int) || ty_str == "int" || ty_str == "i64" {
-                resolve_vtype(tc, resolved)
-            } else if ty_str.length > 0 {
-                translate_type(tc, ty_str)
-            } else { ValueType.Int }
+        .Node(name, _, resolved, next) -> {
+            let ty = resolve_vtype(tc, resolved)
             tc_bind_params(tc_bind(tc, name, ty), next)
         }
     }
@@ -949,11 +922,10 @@ fn tc_check_shape_args(tc: TC, params: ParamList, args: ExprList) -> TC {
 fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprList) -> TC {
     match params {
         .End -> tc
-        .Node(param_name, param_ty_str, param_vt, next_params) -> match args {
+        .Node(param_name, _, param_vt, next_params) -> match args {
             .End -> tc
             .Node(arg_se, next_args) -> {
-                let resolved = resolve_vtype(tc, param_vt)
-                let param_ty = if !vtype_eq(resolved, .Int) || param_ty_str == "int" || param_ty_str == "i64" { resolved } else if param_ty_str.length > 0 { translate_type(tc, param_ty_str) } else { ValueType.Int }
+                let param_ty = resolve_vtype(tc, param_vt)
                 let arg_ty = check_expr(tc, arg_se.node).ty
                 // Newtype parameter check: must be same newtype or the inner type
                 if param_ty is .Newtype {
