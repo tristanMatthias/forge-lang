@@ -408,17 +408,10 @@ fn tc_base_type_name(ty: string) -> string {
 // The parser maps unknown names to Struct(name) or Int. This function
 // checks registries to distinguish structs from enums, traits, newtypes, etc.
 // Parse a union alias string like "int | string" into a resolved ValueType.
+// Resolve a union alias string like "int | string" into a ValueType.
+// Delegates to translate_type which already handles pipe-splitting.
 fn resolve_union_alias_str(tc: TC, ua: string) -> ValueType {
-    let pipe = find_type_pipe(ua)
-    if pipe >= 0 {
-        let left_str = ua.substring(0, pipe)
-        let right_str = ua.substring(pipe + 1, ua.length)
-        let left = resolve_vtype(tc, vtype_from_name(left_str.trim()))
-        let right = resolve_union_alias_str(tc, right_str)
-        ValueType.Union(union_type_list_merge(left, right))
-    } else {
-        resolve_vtype(tc, vtype_from_name(ua.trim()))
-    }
+    translate_type(tc, ua)
 }
 
 fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
