@@ -1,7 +1,7 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, render_type_expr, type_expr_to_vtype}
+use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, render_type_expr, type_expr_to_vtype, vtype_from_name}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -120,9 +120,9 @@ impl Parser {
             if self.check(Tk.Comma) {
                 self.advance()
                 let rest = self.parse_param_list()?
-                return ParamList.Node("self", type_name, ValueType.Unknown, rest)
+                return ParamList.Node("self", type_name, vtype_from_name(type_name), rest)
             }
-            return ParamList.Node("self", type_name, ValueType.Unknown, ParamList.End)
+            return ParamList.Node("self", type_name, vtype_from_name(type_name), ParamList.End)
         }
         self.parse_param_list()
     }

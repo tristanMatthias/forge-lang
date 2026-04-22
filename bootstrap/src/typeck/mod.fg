@@ -773,8 +773,6 @@ fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, ret_vt: ValueType,
     if ret_ty_str.length == 0 && vtype_eq(ret_vt, .Void) {
         return checked
     }
-    // Fall back to translate_type for nullable T? and complex return types
-    // where resolve_vtype doesn't match what collect_decls registered
     let declared_ret = resolve_vtype(checked, ret_vt)
     // Check every explicit `return expr` produces a compatible type.
     let after_explicit = tc_check_explicit_returns(checked, name, declared_ret, body)
@@ -878,11 +876,7 @@ export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
         .Node(name, ty_str, resolved, next) -> {
-            let ty = if vtype_is_unknown(resolved) && ty_str != "" {
-                translate_type(tc, ty_str)
-            } else {
-                resolve_vtype(tc, resolved)
-            }
+            let ty = resolve_vtype(tc, resolved)
             tc_bind_params(tc_bind(tc, name, ty), next)
         }
     }
