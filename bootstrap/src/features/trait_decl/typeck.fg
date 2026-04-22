@@ -2,7 +2,7 @@
 
 use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length}
 use diagnostics.{DiagCode}
-use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, tc_owns_type}
+use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, trait_assoc_types, tc_owns_type}
 
 export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) -> TC {
     let colon_idx = impl_name.index_of(":")
@@ -25,7 +25,36 @@ export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) 
     }
 
     let required = trait_lookup(tc.traits, trait_name)
-    check_required_methods(tc, trait_name, type_name, required, methods)
+    let after_methods = check_required_methods(tc, trait_name, type_name, required, methods)
+    // Check associated types are provided
+    let required_assoc = trait_assoc_types(tc.traits, trait_name)
+    check_required_assoc_types(after_methods, trait_name, type_name, required_assoc, methods)
+}
+
+fn check_required_assoc_types(tc: TC, trait_name: string, type_name: string, required: TraitAssocTypes, impl_stmts: StmtList) -> TC {
+    match required {
+        .End -> tc
+        .Node(name, next) -> {
+            if !impl_has_assoc_type(impl_stmts, name) {
+                let after = tc_report(tc, DiagCode.TypeMismatch, "trait `${trait_name}` requires associated type `${name}` but `${type_name}` does not define it")
+                check_required_assoc_types(after, trait_name, type_name, next, impl_stmts)
+            } else {
+                check_required_assoc_types(tc, trait_name, type_name, next, impl_stmts)
+            }
+        }
+    }
+}
+
+fn impl_has_assoc_type(stmts: StmtList, name: string) -> bool {
+    match stmts {
+        .End -> false
+        .Node(ss, next) -> {
+            match ss.node {
+                .AssocType(n, ty) if n == name && ty != "" -> true
+                _ -> impl_has_assoc_type(next, name)
+            }
+        }
+    }
 }
 
 fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: TraitMethodList, impl_methods: StmtList) -> TC {
