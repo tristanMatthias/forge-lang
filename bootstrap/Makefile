@@ -43,8 +43,30 @@ help:
 	@echo ""
 	@echo "Anything not listed: bash scripts/diagnose.sh --help"
 
+# Lint: catch common bootstrap mistakes before building.
+# Runs automatically before every build. Does NOT block — warnings only.
+lint:
+	@# Check for ValueType.Int in Stmt constructors outside parsers.
+	@# This catches the bug where pipeline stages (desugar, resolver, mono)
+	@# discard parser-resolved ValueType fields by writing ValueType.Int.
+	@HITS=$$(grep -rn 'ValueType\.Int' src/ --include='*.fg' \
+		| grep -E '\.(Let|Mut|Const|Function|ExternFn)\(' \
+		| grep -v 'parser\.' | grep -v '// '); \
+	if [ -n "$$HITS" ]; then \
+		echo "\033[1;33m[lint]\033[0m ValueType.Int in Stmt constructors (may discard resolved types):"; \
+		echo "$$HITS" | head -10; \
+		echo ""; \
+	fi
+	@# Remind about pipeline tracing when typeck/codegen changed.
+	@if git diff --name-only HEAD 2>/dev/null | grep -qE 'typeck/|codegen/|desugar/|resolve/|mono\.fg'; then \
+		echo "\033[1;33m[lint]\033[0m Pipeline stage modified. If tests fail, trace values through:"; \
+		echo "       parse → desugar → resolve_names → typecheck → monomorphize → codegen"; \
+		echo "       Use 'check' before 'compile' to isolate typeck vs codegen."; \
+		echo ""; \
+	fi
+
 # Build the bootstrap compiler. Produces build/bs2.
-build:
+build: lint
 	@$(DIAG) --build-bs2
 
 # Build at -O0 for lldb debugging. Produces build/bs2_O0.
