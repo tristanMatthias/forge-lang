@@ -1,0 +1,16 @@
+/// expect-error: does not implement trait
+
+trait Printable {
+    fn show(self) -> string
+}
+
+fn display<T: Printable>(x: T) -> string {
+    x.show()
+}
+
+type Plain = { value: int }
+
+fn main() {
+    let p = Plain { value: 42 }
+    println(display(p))
+}
