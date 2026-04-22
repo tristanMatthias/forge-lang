@@ -1291,7 +1291,6 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
 }
 
 fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
-    // Fast path for literal leaf expressions — skip full check_expr recomputation
     let ty = match se.node {
         .Number(_) -> ValueType.Int
         .FloatLit(_) -> ValueType.Float
