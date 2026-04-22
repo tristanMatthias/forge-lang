@@ -451,8 +451,8 @@ fn rewrite_stmt_list(ctx: NameCtx, stmts: StmtList) -> StmtList {
 
 fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, ty, _, init) -> .Let(name, ty, ValueType.Int, rewrite_expr(ctx, init))
-        .Mut(name, ty, _, init) -> .Mut(name, ty, ValueType.Int, rewrite_expr(ctx, init))
+        .Let(name, ty, vt, init) -> .Let(name, ty, vt, rewrite_expr(ctx, init))
+        .Mut(name, ty, vt, init) -> .Mut(name, ty, vt, rewrite_expr(ctx, init))
         .Expr(e) -> .Expr(rewrite_expr(ctx, e))
         .Return(e) -> .Return(rewrite_expr(ctx, e))
         .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
