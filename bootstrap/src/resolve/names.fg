@@ -668,8 +668,8 @@ fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
         .Tuple(elems) -> collect_used_paths_expr_list(elems, acc)
         .ListLit(elems) -> collect_used_paths_expr_list(elems, acc)
         .MapLit(entries) -> collect_used_paths_expr_list(entries, acc)
-        .StructLit(_, inits) -> collect_used_paths_field_inits(inits, acc)
-        .EnumCtor(_, _, args) -> collect_used_paths_expr_list(args, acc)
+        .StructLit(sn, inits) -> collect_used_paths_field_inits(inits, UsedPathSet.Node(sn, acc))
+        .EnumCtor(tn, _, args) -> collect_used_paths_expr_list(args, UsedPathSet.Node(tn, acc))
         .MatchExpr(subj, arms) -> collect_used_paths_match_arms(arms, collect_used_paths_expr(subj, acc))
         .Lambda(_, body) -> collect_used_paths_expr(body, acc)
         .With(obj, overrides) -> collect_used_paths_field_inits(overrides, collect_used_paths_expr(obj, acc))
@@ -678,6 +678,14 @@ fn collect_used_paths_expr(expr: Expr, acc: UsedPathSet) -> UsedPathSet {
         .InCheck(needle, items) -> collect_used_paths_expr_list(items, collect_used_paths_expr(needle, acc))
         .Catch(inner, _, body, _, _) -> collect_used_paths_expr(body, collect_used_paths_expr(inner, acc))
         .Spawn(body) -> collect_used_paths_expr(body, acc)
+        .Ident(name) -> {
+            // PascalCase identifiers may be imported type/enum names.
+            // Track them as used paths by looking up their alias.
+            if name.length > 0 && name[0] >= "A" && name[0] <= "Z" {
+                return UsedPathSet.Node(name, acc)
+            }
+            acc
+        }
         _ -> acc
     }
 }
@@ -718,7 +726,7 @@ fn check_unused_aliases(aliases: AliasEntry, used: UsedPathSet, bag: DiagnosticB
     match aliases {
         .End -> bag
         .Node(short_name, canonical, next) -> {
-            let after = if !used_has(used, canonical) {
+            let after = if !used_has(used, canonical) && !used_has(used, short_name) {
                 let d = diag_with_confidence(diag_warning(DiagCode.UnusedImport, "unused import `${short_name}`", span_dummy()), Confidence.Medium)
                 bag_report(bag, d)
             } else {
