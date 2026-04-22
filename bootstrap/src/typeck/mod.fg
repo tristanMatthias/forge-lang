@@ -1449,7 +1449,7 @@ fn is_snake_case(name: string) -> bool {
     mut i = 0
     while i < name.length {
         let ch = name[i]
-        if !is_lower(ch) && ch != "_" && !is_naming_digit(ch) {
+        if !is_lower(ch) && ch != "_" && ch != ":" && !is_naming_digit(ch) {
             return false
         }
         i = i + 1
@@ -1491,7 +1491,11 @@ fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Annotated(_, inner) -> check_naming_stmt(tc, inner)
         .Function(name, _, _, _, _, body) -> {
-            let tc2 = if name != "main" && !is_snake_case(name) {
+            // Strip impl prefix (TypeName__method → check method part only)
+            let check_name = if name.index_of("__") > 0 {
+                name.substring(name.index_of("__") + 2, name.length)
+            } else { name }
+            let tc2 = if check_name != "main" && !is_snake_case(check_name) {
                 naming_warn(tc, "function `${name}` should be snake_case")
             } else {
                 tc
