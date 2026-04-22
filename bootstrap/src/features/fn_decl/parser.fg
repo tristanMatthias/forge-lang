@@ -84,7 +84,7 @@ impl Parser {
             return self.finish_param(name, ty, resolved)
         }
 
-        self.finish_param(name, "i64", ValueType.Unknown)
+        self.finish_param(name, "i64", ValueType.Int)
     }
 
     fn finish_param(self, name: string, ty: string, resolved: ValueType) -> ParamList? {
