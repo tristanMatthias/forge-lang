@@ -91,45 +91,6 @@ fn tc_count_args(list: ExprList) -> int {
 // generic type parameters (e.g. the Ok type in Result<T, E>) can be
 // extracted for downstream checks like `catch` body type validation.
 
-enum FnRetStrReg {
-    End
-    Node(name: string, ret_str: string, next: FnRetStrReg)
-}
-
-fn fn_ret_str_lookup(reg: FnRetStrReg, name: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(n, s, _) if n == name -> s
-        .Node(_, _, next) -> fn_ret_str_lookup(next, name)
-    }
-}
-
-// Extract the first generic argument from a type string.
-// "Result<int, string>" → "int", "Result<EmitValue, string>" → "EmitValue"
-// Returns "" if no generic args found.
-fn tc_first_generic_arg(ty: string) -> string {
-    let lt = ty.index_of("<")
-    if lt < 0 { return "" }
-    let inner = ty.substring(lt + 1, ty.length)
-    // Find the end of the first arg: either ',' or '>'
-    // Must handle nested generics: Result<List<int>, string>
-    mut depth = 0
-    mut i = 0
-    while i < inner.length {
-        let ch = inner.substring(i, i + 1)
-        if ch == "<" { depth = depth + 1 }
-        if ch == ">" {
-            if depth == 0 { return inner.substring(0, i).trim() }
-            depth = depth - 1
-        }
-        if ch == "," && depth == 0 {
-            return inner.substring(0, i).trim()
-        }
-        i = i + 1
-    }
-    ""
-}
-
 // Look up the Ok type for a catch expression.
 // Given a TC and the inner expression, determines the expected catch body type.
 // Returns the Ok type as a ValueType, or null if unknown.
@@ -157,14 +118,7 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
             // First type arg is the Ok type
             match args {
                 .Node(ok_ty, _) -> ok_ty
-                .End -> {
-                    // No type args on the Enum — fall back to FnRetStrReg
-                    let ret_str = fn_ret_str_lookup(tc.fn_ret_strs, fn_name)
-                    if ret_str == "" { return null }
-                    let ok_str = tc_first_generic_arg(ret_str)
-                    if ok_str == "" { return null }
-                    translate_type(tc, ok_str)
-                }
+                .End -> null
             }
         }
         _ -> null
@@ -290,7 +244,6 @@ fn union_alias_lookup(reg: UnionAliasReg, name: string) -> string {
 type TC = {
     types: TypeEntry,
     fns: FnTypeEntry,
-    fn_ret_strs: FnRetStrReg,
     structs: StructTypeReg,
     shapes: ShapeSet,
     enums: EnumTypeReg,
@@ -314,7 +267,6 @@ fn tc_new() -> TC {
     TC {
         types: TypeEntry.End,
         fns: FnTypeEntry.End,
-        fn_ret_strs: FnRetStrReg.End,
         structs: StructTypeReg.End,
         shapes: ShapeSet.End,
         enums: EnumTypeReg.End,
@@ -577,14 +529,14 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let final_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
                     tc with {
                         fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
-                        fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
+
                     }
                 }
                 .ExternFn(name, params, ret_ty, ret_vt) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
                     tc with {
                         fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
-                        fn_ret_strs: FnRetStrReg.Node(name, ret_ty, tc.fn_ret_strs),
+
                     }
                 }
                 .Impl(_, methods) -> collect_decls(tc, methods)
