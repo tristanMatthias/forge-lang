@@ -1198,7 +1198,6 @@ impl Ctx {
     // Upgrade a parser-resolved ValueType using codegen registries.
     fn resolve_codegen_vtype(self, vt: ValueType) -> ValueType {
         match vt {
-            .Struct(name) if name == "List" -> ValueType.List(ValueType.Int)
             .Struct(name) -> {
                 let e = enum_reg_lookup(self.enums, name)
                 if e.found { return ValueType.Enum(name, TypeList.End) }
@@ -1212,11 +1211,16 @@ impl Ctx {
                 if ua != "" { return translate_type_ctx(self, ua) }
                 vt  // keep Struct(name) — might be from another module or generic
             }
+            .Enum(name, args) -> ValueType.Enum(name, self.resolve_codegen_vtype_list(args))
             .List(elem) -> ValueType.List(self.resolve_codegen_vtype(elem))
-            .Union(types) -> vt
-            .FnTyped(params, ret) -> vt
+            .Union(types) -> ValueType.Union(self.resolve_codegen_vtype_list(types))
+            .FnTyped(params, ret) -> ValueType.FnTyped(self.resolve_codegen_vtype_list(params), self.resolve_codegen_vtype(ret))
             _ -> vt
         }
+    }
+
+    fn resolve_codegen_vtype_list(self, types: TypeList) -> TypeList {
+        match types { .End -> .End, .Node(ty, next) -> TypeList.Node(self.resolve_codegen_vtype(ty), self.resolve_codegen_vtype_list(next)) }
     }
 
     // Translate a type annotation string to ValueType.

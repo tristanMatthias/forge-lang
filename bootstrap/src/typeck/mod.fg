@@ -365,7 +365,6 @@ fn resolve_union_alias_str(tc: TC, ua: string) -> ValueType {
 
 fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
-        .Struct(name) if name == "List" -> ValueType.List(ValueType.Int)
         .Struct(name) -> {
             if enum_type_has(tc.enums, name) { return ValueType.Enum(name, TypeList.End) }
             let ua = union_alias_lookup(tc.union_aliases, name)
@@ -1195,9 +1194,9 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
 
 fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, ty, _, init) -> .Let(name, ty, ValueType.Int, annotate_expr(tc, init))
-        .Mut(name, ty, _, init) -> .Mut(name, ty, ValueType.Int, annotate_expr(tc, init))
-        .Const(name, ty, _, init) -> .Const(name, ty, ValueType.Int, annotate_expr(tc, init))
+        .Let(name, ty, vt, init) -> .Let(name, ty, vt, annotate_expr(tc, init))
+        .Mut(name, ty, vt, init) -> .Mut(name, ty, vt, annotate_expr(tc, init))
+        .Const(name, ty, vt, init) -> .Const(name, ty, vt, annotate_expr(tc, init))
         .Expr(e) -> .Expr(annotate_expr(tc, e))
         .Return(val) -> .Return(annotate_expr(tc, val))
         .Block(body) -> .Block(annotate_stmts(tc, body))

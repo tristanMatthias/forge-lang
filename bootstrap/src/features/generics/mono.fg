@@ -363,9 +363,6 @@ fn mangle_annotation(base: string, tp: TypeParamList, args_str: string, regs: Ge
 }
 
 // Split "EmitValue, string" into TypeArgList matching type params.
-fn tp_first(tp: TypeParamList) -> string {
-    match tp { .End -> "(end)", .Node(n, _) -> n }
-}
 
 fn split_annotation_args(tp: TypeParamList, args_str: string, regs: GenRegs, insts: InstList) -> TypeArgList {
     match tp {
@@ -659,6 +656,10 @@ fn substitute_vtype(vt: ValueType, ta: TypeArgList) -> ValueType {
         .Union(types) -> ValueType.Union(substitute_vtype_list(types, ta))
         .FnTyped(params, ret) -> ValueType.FnTyped(substitute_vtype_list(params, ta), substitute_vtype(ret, ta))
         .Newtype(name, inner) -> ValueType.Newtype(name, substitute_vtype(inner, ta))
+        .Enum(name, args) -> ValueType.Enum(name, substitute_vtype_list(args, ta))
+        .Tuple(elems) -> ValueType.Tuple(substitute_vtype_list(elems, ta))
+        .Fn(ret) -> ValueType.Fn(substitute_vtype(ret, ta))
+        .Closure(n, ret) -> ValueType.Closure(n, substitute_vtype(ret, ta))
         _ -> vt
     }
 }
@@ -811,15 +812,7 @@ fn vtype_from_type_string(ty: string) -> ValueType {
     vtype_from_name(ty)
 }
 
-fn find_dunder(s: string) -> int {
-    if s.length < 3 { return -1 }
-    mut idx = 0
-    while idx < s.length - 1 {
-        if s.substring(idx, idx + 2) == "__" { return idx }
-        idx = idx + 1
-    }
-    -1
-}
+fn find_dunder(s: string) -> int { find_dunder_from(s, 0) }
 
 fn parse_dunder_args(s: string, start: int) -> TypeList {
     let next_dunder = find_dunder_from(s, start)

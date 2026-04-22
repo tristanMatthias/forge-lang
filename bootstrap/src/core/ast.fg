@@ -213,12 +213,15 @@ export fn vtype_from_name(name: string) -> ValueType {
         "bool" -> ValueType.Bool
         "ptr" -> ValueType.Ptr
         "Map" -> ValueType.Map
+        "List" -> ValueType.List(ValueType.Int)
+        "void" -> ValueType.Void
+        "fn" -> ValueType.Fn(ValueType.Int)
         _ -> ValueType.Struct(name)
     }
 }
 
-// these are handled later by typeck/codegen's translate_type with full
-// registry context. Phase B will eliminate this fallback.
+// Named types that require registry lookups (structs, enums, traits) resolve
+// to Struct(name) here. resolve_vtype/resolve_codegen_vtype upgrade them.
 export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
     match te {
         .Named(name) -> vtype_from_name(name)
