@@ -1,37 +1,16 @@
 {
   "hooks": {
-    "PreCompact": [
+    "PostToolUseFailure": [
       {
+        "matcher": "Bash",
         "hooks": [
           {
-            "command": "bd prime",
-            "type": "command"
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE 'make (build|test)'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUseFailure\",\"additionalContext\":\"BUILD/TEST FAILED. STOP. Before retrying, you MUST answer: (1) What is the EXACT error message? (2) Which pipeline stage caused it? (parse/desugar/resolve/typecheck/monomorphize/codegen) (3) What did you change? (4) Does the SEED have your changes or not? DO NOT retry the build until you have answered all 4 questions in your response. If you cannot answer #2, use ./build/bs2 check <file> to isolate typeck vs codegen. NEVER guess — trace the value through the pipeline.\"}}'; fi",
+            "timeout": 5
           }
-        ],
-        "matcher": ""
+        ]
       }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "bd prime",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "Bash(*)",
-      "Edit(*)",
-      "Write(*)",
-      "Read(*)",
-      "Glob(*)",
-      "Grep(*)",
-      "Agent(*)"
     ]
   }
 }
