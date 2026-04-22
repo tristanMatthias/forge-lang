@@ -49,10 +49,8 @@ fn expr_diverges(body: Expr) -> bool {
 // An arm's inferred type should be skipped in type unification when:
 // - The arm diverges (return/break/continue at the end)
 // - The arm's type is Void (side-effecting expression, no value produced)
-// - The arm's type is Int (the type checker's fallback for unresolved expressions)
+// - The arm's type is Unknown (type checker's sentinel for unresolved expressions)
 // - The arm's type is an unresolved named type (empty name from inference gaps)
-// Int is the fallback because the type checker defaults unknown expressions to Int.
-// Comparing Int against a concrete type is meaningless — Int just means "unknown."
 
 fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
     if expr_diverges(body) { return true }
