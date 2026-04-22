@@ -459,39 +459,48 @@ fn main() {
             return
         }
         "check" -> {
-            let parsed = parse_program_source(source)
+            // Parse --json flag if present
+            mut check_json = false
+            mut check_path = path
+            let check_argc = forge_selfhost_argc()
+            if check_argc > 3 {
+                check_path = forge_selfhost_get_arg_cstr(check_argc - 1)
+                for fi in 2..(check_argc - 1) {
+                    if forge_selfhost_get_arg_cstr(fi) == "--json" { check_json = true }
+                }
+            }
+            let check_source = if check_path != path { read_file(check_path) } else { source }
+
+            let parsed = parse_program_source(check_source)
             if parsed.had_error || parsed.stmts == null {
                 if bag_has_errors(parsed.bag) {
-                    render_bag(source, path, parsed.bag)
+                    if check_json { render_bag_json(check_path, parsed.bag) } else { render_bag(check_source, check_path, parsed.bag) }
                 }
                 fail(parsed.error_message)
             }
-            // Load forge.toml package manifest if present.
-            let check_dir = modules_dirname(path)
+            let check_dir = modules_dirname(check_path)
             let check_pkg = load_package_config(check_dir)
-            if check_pkg.found {
+            if check_pkg.found && !check_json {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
-            // Resolve module files
-            let entry_dir = modules_dirname(path)
+            let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
             if mod_resolved.had_error {
                 let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
-                render_bag(source, path, mod_bag)
+                if check_json { render_bag_json(check_path, mod_bag) } else { render_bag(check_source, check_path, mod_bag) }
                 fail(mod_resolved.error_message)
             }
             let named = resolve_names(mod_resolved.stmts)
             if bag_has_errors(named.bag) || bag_has_warnings(named.bag) {
-                render_bag(source, path, named.bag)
+                if check_json { render_bag_json(check_path, named.bag) } else { render_bag(check_source, check_path, named.bag) }
             }
             if named.had_error { fail(named.error_message) }
-            // Type check
             let tc_result = typecheck_program(named.stmts)
             if bag_has_errors(tc_result.bag) || bag_has_warnings(tc_result.bag) {
-                render_bag(source, path, tc_result.bag)
+                if check_json { render_bag_json(check_path, tc_result.bag) } else { render_bag(check_source, check_path, tc_result.bag) }
             }
             if bag_has_errors(tc_result.bag) { return }
-            println("ok")
+            if !check_json { println("ok") }
             return
         }
         "run" -> {
