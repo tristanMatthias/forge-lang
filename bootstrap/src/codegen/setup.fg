@@ -812,7 +812,7 @@ fn collect_union_aliases(stmts: StmtList, reg: CgUnionAliasReg) -> CgUnionAliasR
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .UnionAliasDecl(name, type_str, _) -> CgUnionAliasReg.Node(name, type_str, ValueType.Unknown, reg)
+                .UnionAliasDecl(name, type_str, type_vt) -> CgUnionAliasReg.Node(name, type_str, type_vt, reg)
                 .Module(_, body) -> collect_union_aliases(body, reg)
                 _ -> reg
             }
@@ -923,7 +923,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
 fn params_to_type_list(params: ParamList) -> ParamTypeList {
     match params {
         .End -> .End
-        .Node(_, ty, _, next) -> .Node(ty, ValueType.Unknown, params_to_type_list(next))
+        .Node(_, ty, resolved, next) -> .Node(ty, resolved, params_to_type_list(next))
     }
 }
 

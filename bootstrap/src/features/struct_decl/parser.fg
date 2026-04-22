@@ -37,7 +37,7 @@ impl Parser {
                 // Match on the TypeExpr structure, not string content
                 match type_expr {
                     .Union(_, _) -> {
-                        return Stmt.UnionAliasDecl(name, render_type_expr(type_expr), ValueType.Unknown)
+                        return Stmt.UnionAliasDecl(name, render_type_expr(type_expr), type_expr_to_vtype(type_expr))
                     }
                     _ -> {}
                 }
