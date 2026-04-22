@@ -36,7 +36,7 @@ export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) 
     copy_struct_fields(ctx, src_ptr, new_buf, struct_name, lookup.fields, 0)
 
     // Override specified fields
-    apply_overrides(ctx, env, new_buf, struct_name, lookup.fields, overrides)
+    apply_overrides(ctx, env, new_buf, struct_name, lookup.fields, overrides)?
 
     ok_emit_typed(ctx.to_i64(new_buf, "with_result"), r.ty)
 }
@@ -55,27 +55,21 @@ fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields:
     }
 }
 
-fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields: FieldList, overrides: FieldInitList) {
+fn apply_overrides(ctx: Ctx, env: VarEnv, dst: ptr, struct_name: string, fields: FieldList, overrides: FieldInitList) -> Result<int, string> {
     match overrides {
-        .End -> {}
+        .End -> .Ok(0)
         .Node(name, sv, next) -> {
             let idx = field_index_of(fields, name)
             if idx >= 0 {
-                match ctx.emit(env, sv.node) {
-                    .Ok(r) -> {
-                        let st_ty = ctx.get_type(struct_name)
-                        let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
-                        let fld_ty = ctx.resolve_field_type(fields, name)
-                        if needs_union_wrap(r.ty, fld_ty) {
-                            match emit_union_wrap(ctx, r.value, r.ty, fld_ty) {
-                                .Ok(wrapped) -> ctx.store(wrapped.value, gep)
-                                .Err(_) -> ctx.store(r.value, gep)
-                            }
-                        } else {
-                            ctx.store(r.value, gep)
-                        }
-                    }
-                    .Err(_) -> {}
+                let r = ctx.emit(env, sv.node)?
+                let st_ty = ctx.get_type(struct_name)
+                let gep = ctx.gep(st_ty, dst, idx, "with_ovr")
+                let fld_ty = ctx.resolve_field_type(fields, name)
+                if needs_union_wrap(r.ty, fld_ty) {
+                    let wrapped = emit_union_wrap(ctx, r.value, r.ty, fld_ty)?
+                    ctx.store(wrapped.value, gep)
+                } else {
+                    ctx.store(r.value, gep)
                 }
             }
             apply_overrides(ctx, env, dst, struct_name, fields, next)
