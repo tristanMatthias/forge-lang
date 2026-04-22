@@ -606,7 +606,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                         fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty), tc.fns),
                     }
                 }
-                .UnionAliasDecl(name, type_str) -> {
+                .UnionAliasDecl(name, type_str, _) -> {
                     tc with { union_aliases: UnionAliasReg.Node(name, type_str, tc.union_aliases) }
                 }
                 .ShapeDecl(name, fields) -> tc with {
@@ -659,7 +659,7 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
         .End -> tc
         .Node(ss, next) -> {
             let updated = match ss.node {
-                .AssocType(name, ty) -> {
+                .AssocType(name, ty, _) -> {
                     if ty != "" {
                         let key = "${type_name}.${name}"
                         let self_key = "Self.${name}"

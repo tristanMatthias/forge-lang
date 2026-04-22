@@ -61,7 +61,7 @@ impl Parser {
             }
             let ty = self.consume_type("expected type after `=`")?
             let rest = self.parse_impl_methods(type_name)?
-            return StmtList.Node(sstmt(Stmt.AssocType(name, ty), line, col), rest)
+            return StmtList.Node(sstmt(Stmt.AssocType(name, ty, ValueType.Unknown), line, col), rest)
         }
         if !self.check(Tk.KwFn) {
             self.set_error("expected `fn` or `type` inside impl block")

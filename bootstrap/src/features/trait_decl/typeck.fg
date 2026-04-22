@@ -50,7 +50,7 @@ fn impl_has_assoc_type(stmts: StmtList, name: string) -> bool {
         .End -> false
         .Node(ss, next) -> {
             match ss.node {
-                .AssocType(n, ty) if n == name && ty != "" -> true
+                .AssocType(n, ty, _) if n == name && ty != "" -> true
                 _ -> impl_has_assoc_type(next, name)
             }
         }
@@ -118,7 +118,7 @@ export fn collect_assoc_types_from_stmts(stmts: StmtList) -> TraitAssocTypes {
         .End -> TraitAssocTypes.End
         .Node(ss, next) -> {
             match ss.node {
-                .AssocType(name, _) -> TraitAssocTypes.Node(name, collect_assoc_types_from_stmts(next))
+                .AssocType(name, _, _) -> TraitAssocTypes.Node(name, collect_assoc_types_from_stmts(next))
                 _ -> collect_assoc_types_from_stmts(next)
             }
         }

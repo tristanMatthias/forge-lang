@@ -108,14 +108,14 @@ export fn cg_newtype_vtype_lookup(reg: CgNewtypeReg, name: string) -> ValueType 
 // Union alias registry — maps name to type string
 export enum CgUnionAliasReg {
     End
-    Node(name: string, type_str: string, next: CgUnionAliasReg)
+    Node(name: string, type_str: string, type_vt: ValueType, next: CgUnionAliasReg)
 }
 
 export fn cg_union_alias_lookup(reg: CgUnionAliasReg, name: string) -> string {
     match reg {
         .End -> ""
-        .Node(n, ts, _) if n == name -> ts
-        .Node(_, _, next) -> cg_union_alias_lookup(next, name)
+        .Node(n, ts, _, _) if n == name -> ts
+        .Node(_, _, _, next) -> cg_union_alias_lookup(next, name)
     }
 }
 
@@ -262,7 +262,7 @@ export enum FnRetTypes {
 // Per-parameter type string list — one entry per parameter of a function.
 export enum ParamTypeList {
     End
-    Node(ty: string, next: ParamTypeList)
+    Node(ty: string, ty_vt: ValueType, next: ParamTypeList)
 }
 
 // Maps function name → parameter type list (type annotation strings).
@@ -283,8 +283,8 @@ export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
 export fn param_type_at(list: ParamTypeList, idx: int) -> string {
     match list {
         .End -> ""
-        .Node(ty, _) if idx == 0 -> ty
-        .Node(_, next) -> param_type_at(next, idx - 1)
+        .Node(ty, _, _) if idx == 0 -> ty
+        .Node(_, _, next) -> param_type_at(next, idx - 1)
     }
 }
 

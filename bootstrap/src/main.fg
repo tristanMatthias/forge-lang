@@ -156,7 +156,7 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
             "${ind}type ${name}${tp_part} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
         }
         .NewtypeDecl(name, inner_ty, _) -> "${ind}type ${name} = ${inner_ty}"
-        .UnionAliasDecl(name, type_str) -> "${ind}type ${name} = ${type_str}"
+        .UnionAliasDecl(name, type_str, _) -> "${ind}type ${name} = ${type_str}"
         .ShapeDecl(name, fields) -> "${ind}shape ${name} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
         .EnumDecl(name, tp, variants) -> {
             let tp_str = fmt_type_param_list(tp)
@@ -191,7 +191,7 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
         .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(body, depth)}"
         .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
-        .AssocType(name, ty) -> if ty == "" { "${ind}type ${name}" } else { "${ind}type ${name} = ${ty}" }
+        .AssocType(name, ty, _) -> if ty == "" { "${ind}type ${name}" } else { "${ind}type ${name} = ${ty}" }
     }
 }
 

@@ -39,7 +39,7 @@ impl Parser {
             self.advance()
             let name = self.consume_identifier("expected associated type name")?
             let rest = self.parse_trait_methods()?
-            return StmtList.Node(sstmt(Stmt.AssocType(name, ""), line, col), rest)
+            return StmtList.Node(sstmt(Stmt.AssocType(name, "", ValueType.Unknown), line, col), rest)
         }
         let method = self.parse_trait_method_sig()?
         let rest = self.parse_trait_methods()?
