@@ -651,7 +651,9 @@ fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
                 .AssocType(name, ty) -> {
                     if ty != "" {
                         let key = "${type_name}.${name}"
-                        tc with { assoc_type_defs: AssocTypeDefs.Node(key, ty, tc.assoc_type_defs) }
+                        let self_key = "Self.${name}"
+                        let with_type = tc with { assoc_type_defs: AssocTypeDefs.Node(key, ty, tc.assoc_type_defs) }
+                        with_type with { assoc_type_defs: AssocTypeDefs.Node(self_key, ty, with_type.assoc_type_defs) }
                     } else { tc }
                 }
                 _ -> tc
