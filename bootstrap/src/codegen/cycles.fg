@@ -79,7 +79,7 @@ fn type_reaches_target(ty: ValueType, target: string, visited: CycleVisited, str
                 false
             }
         }
-        .Enum(name) -> {
+        .Enum(name, _) -> {
             if name == target { return true }
             if visited_has(visited, name) { return false }
             let vs2 = CycleVisited.Node(name, visited)

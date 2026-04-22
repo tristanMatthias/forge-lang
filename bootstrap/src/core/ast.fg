@@ -127,7 +127,7 @@ export enum ValueType {
     Bool,
     Ptr,
     Struct(name: string),
-    Enum(name: string),
+    Enum(name: string, type_args: TypeList),
     Tuple(elements: TypeList),
     List(elem: ValueType),
     Map,
@@ -237,9 +237,10 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
                     let elem = match args { .Node(t, _) -> type_expr_to_vtype(t), .End -> ValueType.Int }
                     ValueType.List(elem)
                 }
-                // For named generics (Result<T,E>, Map<K,V>, etc.), use Struct(base)
-                // so resolve_vtype can upgrade to Enum/Trait via registry lookup.
-                _ -> ValueType.Struct(base)
+                // For named generics (Result<T,E>, etc.), produce Enum with type args.
+                // resolve_vtype will verify this is actually an enum via registry.
+                // If it's a struct, the Enum tag is wrong but name is preserved.
+                _ -> ValueType.Enum(base, tel_to_type_list(args))
             }
         }
     }
@@ -269,7 +270,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Fn -> b is .Fn
         .Void -> b is .Void
         .Struct(n1) -> match b { .Struct(n2) -> n1 == n2, _ -> false }
-        .Enum(n1) -> match b { .Enum(n2) -> n1 == n2, _ -> false }
+        .Enum(n1, _) -> match b { .Enum(n2, _) -> n1 == n2, _ -> false }
         .Float -> b is .Float
         .Map -> b is .Map
         .FnTyped(_, _) -> match b { .FnTyped(_, _) -> true, .Fn(_) -> true, _ -> false }
@@ -351,7 +352,7 @@ export fn vtype_struct_name(t: ValueType) -> string {
 }
 
 export fn vtype_enum_name(t: ValueType) -> string {
-    match t { .Enum(n) -> n, .NarrowedEnum(n, _) -> n, _ -> "" }
+    match t { .Enum(n, _) -> n, .NarrowedEnum(n, _) -> n, _ -> "" }
 }
 
 export fn vtype_narrowed_variant(t: ValueType) -> string {
@@ -365,7 +366,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Bool -> "bool"
         .Ptr -> "ptr"
         .Struct(n) -> n
-        .Enum(n) -> n
+        .Enum(n, _) -> n
         .Tuple(_) -> "(tuple)"
         .List(_) -> "List"
         .Map -> "Map"

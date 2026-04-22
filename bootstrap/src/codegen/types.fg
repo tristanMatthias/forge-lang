@@ -340,7 +340,7 @@ export fn vtype_is_copy(vt: ValueType, copies: CopySet) -> bool {
         .Bool -> true
         .Void -> true
         .Struct(name) -> copy_set_has(copies, name)
-        .Enum(name) -> copy_set_has(copies, name)
+        .Enum(name, _) -> copy_set_has(copies, name)
         .Newtype(_, inner) -> vtype_is_copy(inner, copies)
         _ -> false
     }
@@ -537,7 +537,7 @@ export fn resolve_type(regs: TypeRegs, ty: string) -> ValueType {
         // Before splitting, check if this is a known mangled enum/struct name
         // (e.g. "Result__X__A|B" contains | inside type args but is a single enum)
         let check_e = enum_reg_lookup(regs.enums, ty)
-        if check_e.found { return ValueType.Enum(ty) }
+        if check_e.found { return ValueType.Enum(ty, TypeList.End) }
         let check_s = struct_reg_lookup(regs.structs, ty)
         if check_s.found { return ValueType.Struct(ty) }
         let left_str = ty.substring(0, pipe_idx)
@@ -591,7 +591,7 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     let pipe_idx = find_type_pipe(ty)
     if pipe_idx >= 0 {
         let check_e = enum_reg_lookup(enums, ty)
-        if check_e.found { return ValueType.Enum(ty) }
+        if check_e.found { return ValueType.Enum(ty, TypeList.End) }
         let check_s = struct_reg_lookup(structs, ty)
         if check_s.found { return ValueType.Struct(ty) }
         let left_str = ty.substring(0, pipe_idx)
@@ -655,13 +655,13 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     if base_ty != ty {
         let mangled = mangle_generic_type(ty)
         let me = enum_reg_lookup(enums, mangled)
-        if me.found { return ValueType.Enum(mangled) }
+        if me.found { return ValueType.Enum(mangled, TypeList.End) }
         let ms = struct_reg_lookup(structs, mangled)
         if ms.found { return ValueType.Struct(mangled) }
     }
     let enum_l = enum_reg_lookup(enums, base_ty)
     if enum_l.found {
-        return ValueType.Enum(base_ty)
+        return ValueType.Enum(base_ty, TypeList.End)
     }
     let struct_l = struct_reg_lookup(structs, base_ty)
     if struct_l.found {
@@ -706,7 +706,7 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .Str -> pt
         .Ptr -> pt
         .Struct(_) -> pt
-        .Enum(_) -> pt
+        .Enum(_, _) -> pt
         .List(_) -> pt
         .Map -> pt
         .Fn(_) -> pt
@@ -1200,7 +1200,7 @@ impl Ctx {
         match vt {
             .Struct(name) -> {
                 let e = enum_reg_lookup(self.enums, name)
-                if e.found { return ValueType.Enum(name) }
+                if e.found { return ValueType.Enum(name, TypeList.End) }
                 let s = struct_reg_lookup(self.structs, name)
                 if s.found { return ValueType.Struct(name) }
                 if trait_decl_has(self.trait_decls, name) { return ValueType.Trait(name) }

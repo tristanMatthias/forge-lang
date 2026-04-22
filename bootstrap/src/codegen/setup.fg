@@ -567,7 +567,7 @@ fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
                 ctx.call("forge_rc_release", [val])
             }
         }
-        .Enum(en) -> {
+        .Enum(en, _) -> {
             let rfn = ctx.get_fn("__release_${en}")
             if rfn != null {
                 ctx.call("__release_${en}", [val])

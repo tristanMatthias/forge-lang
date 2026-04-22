@@ -223,7 +223,7 @@ fn vtype_to_string(ty: ValueType) -> string {
         .Ptr -> "ptr"
         .Void -> "void"
         .Struct(n) -> n
-        .Enum(n) -> n
+        .Enum(n, _) -> n
         .List(_) -> "List"
         .Map -> "Map"
         .Fn(_) -> "fn"

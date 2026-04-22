@@ -101,7 +101,7 @@ fn should_null_check_vt(vt: ValueType) -> bool {
         .Str -> true
         .Ptr -> true
         .Struct(_) -> true
-        .Enum(_) -> true
+        .Enum(_, _) -> true
         .List(_) -> true
         .Map -> true
         .Trait(_) -> true

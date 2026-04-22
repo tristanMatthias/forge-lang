@@ -60,7 +60,7 @@ fn arm_type_skip(body: Expr, ty: ValueType) -> bool {
     if vtype_eq(ty, .Int) { return true }
     match ty {
         .Struct(name) -> name == ""
-        .Enum(name) -> name == ""
+        .Enum(name, _) -> name == ""
         _ -> false
     }
 }

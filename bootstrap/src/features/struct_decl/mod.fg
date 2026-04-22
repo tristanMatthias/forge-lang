@@ -51,7 +51,7 @@ export fn init_struct_decl(reg: Registry) {
         check_expr: (tc: TC, expr: Expr) -> match expr {
             .EnumCtor(type_name, _, args) -> {
                 let checked = check_expr_list(tc, args)
-                tc_er(checked, .Enum(type_name))
+                tc_er(checked, .Enum(type_name, TypeList.End))
             }
             _ -> tc_er(tc, .Int)
         },

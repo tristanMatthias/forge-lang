@@ -134,7 +134,6 @@ fn tc_first_generic_arg(ty: string) -> string {
 // Given a TC and the inner expression, determines the expected catch body type.
 // Returns the Ok type as a ValueType, or null if unknown.
 export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
-    // For a direct call, look up the raw return type string
     let fn_name = match inner {
         .Call(callee, _) -> match callee {
             .Ident(name) -> name
@@ -149,13 +148,27 @@ export fn tc_catch_ok_type(tc: TC, inner: Expr) -> ValueType? {
         _ -> ""
     }
     if fn_name == "" { return null }
-    let ret_str = fn_ret_str_lookup(tc.fn_ret_strs, fn_name)
-    if ret_str == "" { return null }
-    let base = tc_base_type_name(ret_str)
-    if base != "Result" { return null }
-    let ok_str = tc_first_generic_arg(ret_str)
-    if ok_str == "" { return null }
-    translate_type(tc, ok_str)
+    // Look up the function's return type from the typed registry
+    let ret_ty = fn_type_lookup(tc.fns, fn_name)
+    // Check if it's Result (Enum with type_args)
+    match ret_ty {
+        .Enum(name, args) -> {
+            if name != "Result" && !name.starts_with("Result__") { return null }
+            // First type arg is the Ok type
+            match args {
+                .Node(ok_ty, _) -> ok_ty
+                .End -> {
+                    // No type args on the Enum — fall back to FnRetStrReg
+                    let ret_str = fn_ret_str_lookup(tc.fn_ret_strs, fn_name)
+                    if ret_str == "" { return null }
+                    let ok_str = tc_first_generic_arg(ret_str)
+                    if ok_str == "" { return null }
+                    translate_type(tc, ok_str)
+                }
+            }
+        }
+        _ -> null
+    }
 }
 
 // ── Struct/Enum registries ──
@@ -387,7 +400,7 @@ fn tc_base_type_name(ty: string) -> string {
 fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name) -> {
-            if enum_type_has(tc.enums, name) { return ValueType.Enum(name) }
+            if enum_type_has(tc.enums, name) { return ValueType.Enum(name, TypeList.End) }
             let ua = union_alias_lookup(tc.union_aliases, name)
             if ua != "" { return translate_type(tc, ua) }
             let nt = newtype_lookup(tc.newtypes, name)
@@ -395,6 +408,15 @@ fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             if struct_type_has(tc.structs, name) { return ValueType.Struct(name) }
             if trait_has(tc.traits, name) { return ValueType.Trait(name) }
             ValueType.Int
+        }
+        .Enum(name, args) -> {
+            // Parser produced Enum(name, args) from Generic(name, args).
+            // Resolve the type args and verify it's an enum.
+            let resolved_args = resolve_vtype_list(tc, args)
+            if enum_type_has(tc.enums, name) { return ValueType.Enum(name, resolved_args) }
+            // Not an enum — might be a struct with generics
+            if struct_type_has(tc.structs, name) { return ValueType.Struct(name) }
+            ValueType.Enum(name, resolved_args)
         }
         .List(elem) -> ValueType.List(resolve_vtype(tc, elem))
         .Union(types) -> ValueType.Union(resolve_vtype_list(tc, types))
@@ -457,7 +479,7 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
         }
         return ValueType.Fn(ValueType.Int)
     }
-    if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty) }
+    if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty, TypeList.End) }
     // Union alias: type X = int | string
     let ua = union_alias_lookup(tc.union_aliases, ty)
     if ua != "" { return translate_type(tc, ua) }
@@ -469,7 +491,7 @@ export fn translate_type(tc: TC, ty: string) -> ValueType {
     // Handle generic type annotations: "Result<EmitValue, string>" → look up base "Result"
     let base = tc_base_type_name(ty)
     if base != ty {
-        if enum_type_has(tc.enums, base) { return ValueType.Enum(base) }
+        if enum_type_has(tc.enums, base) { return ValueType.Enum(base, TypeList.End) }
         if struct_type_has(tc.structs, base) { return ValueType.Struct(base) }
     }
     ValueType.Int
@@ -1130,7 +1152,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
     // Works for structs, enums, newtypes, and trait types.
     let type_name = match o.ty {
         .Struct(n) -> n
-        .Enum(n) -> n
+        .Enum(n, _) -> n
         .Newtype(n, _) -> n
         .Trait(n) -> n
         _ -> ""
