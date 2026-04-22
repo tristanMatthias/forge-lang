@@ -872,7 +872,7 @@ export fn field_type_of(fields: FieldList, name: string) -> string {
 // Returns the resolved ValueType for field `name`.
 export fn field_vtype_of(fields: FieldList, name: string) -> ValueType {
     match fields {
-        .End -> .Int
+        .End -> .Unknown
         .Node(n, _, vt, _) if n == name -> vt
         .Node(_, _, _, next) -> field_vtype_of(next, name)
     }

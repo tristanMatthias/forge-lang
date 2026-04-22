@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_type_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_type_of, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
@@ -86,14 +86,22 @@ export type TypeRegs = {
 // Newtype registry — maps name to inner type string
 export enum CgNewtypeReg {
     End
-    Node(name: string, inner_ty: string, next: CgNewtypeReg)
+    Node(name: string, inner_ty: string, inner_vt: ValueType, next: CgNewtypeReg)
 }
 
 export fn cg_newtype_lookup(reg: CgNewtypeReg, name: string) -> string {
     match reg {
         .End -> ""
-        .Node(n, inner, _) if n == name -> inner
-        .Node(_, _, next) -> cg_newtype_lookup(next, name)
+        .Node(n, inner, _, _) if n == name -> inner
+        .Node(_, _, _, next) -> cg_newtype_lookup(next, name)
+    }
+}
+
+export fn cg_newtype_vtype_lookup(reg: CgNewtypeReg, name: string) -> ValueType {
+    match reg {
+        .End -> ValueType.Unknown
+        .Node(n, _, vt, _) if n == name -> vt
+        .Node(_, _, _, next) -> cg_newtype_vtype_lookup(next, name)
     }
 }
 
@@ -1205,6 +1213,8 @@ impl Ctx {
                 if s.found { return ValueType.Struct(name) }
                 if trait_decl_has(self.trait_decls, name) { return ValueType.Trait(name) }
                 // Check newtype / union alias
+                let nt_vt = cg_newtype_vtype_lookup(self.newtypes, name)
+                if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, self.resolve_codegen_vtype(nt_vt)) }
                 let nt = cg_newtype_lookup(self.newtypes, name)
                 if nt != "" { return ValueType.Newtype(name, translate_type_ctx(self, nt)) }
                 let ua = cg_union_alias_lookup(self.union_aliases, name)
@@ -1228,8 +1238,12 @@ impl Ctx {
         translate_type_ctx(self, ty)
     }
 
-    // Translate a struct field's type annotation to ValueType.
+    // Resolve a struct field's type from its parsed ValueType.
     fn resolve_field_type(self, fields: FieldList, name: string) -> ValueType {
+        let vt = field_vtype_of(fields, name)
+        if !vtype_is_unknown(vt) {
+            return self.resolve_codegen_vtype(vt)
+        }
         translate_type_ctx(self, field_type_of(fields, name))
     }
 

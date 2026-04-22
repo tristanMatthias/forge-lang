@@ -798,7 +798,7 @@ fn collect_newtypes(stmts: StmtList, reg: CgNewtypeReg) -> CgNewtypeReg {
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .NewtypeDecl(name, inner_ty, _) -> CgNewtypeReg.Node(name, inner_ty, reg)
+                .NewtypeDecl(name, inner_ty, inner_vt) -> CgNewtypeReg.Node(name, inner_ty, inner_vt, reg)
                 .Module(_, body) -> collect_newtypes(body, reg)
                 _ -> reg
             }
