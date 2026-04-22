@@ -1988,6 +1988,12 @@ void* forge_trait_object_vtable(void* obj) {
     return (void*)(uintptr_t)((int64_t*)obj)[1];
 }
 
+// ── Codegen counters ──
+// Monotonic counters for unique name generation during codegen.
+// Kept in C to avoid mutable globals in Forge source.
+static int64_t g_lambda_counter = 0;
+int64_t forge_next_lambda_id(void) { return g_lambda_counter++; }
+
 // ── Spec test runtime ──
 // Tracks test results for the spec/given/then testing framework.
 static int64_t forge_test_pass_count = 0;

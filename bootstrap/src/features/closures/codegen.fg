@@ -362,8 +362,8 @@ fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captu
 
 // Global lambda counter for unique names.
 // This is the ONE allowed mutable global — it's a monotonic counter
-// that never resets. Thread-safe because the bootstrap is single-threaded.
-export mut LAMBDA_COUNTER = 0
+// Unique lambda ID generation — uses a C-side counter to avoid mutable globals.
+extern fn forge_next_lambda_id() -> int
 
 // Compile a lambda with default parameter types (all Int).
 export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> Result<EmitValue, string> {
@@ -374,8 +374,7 @@ export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> R
 // Used by .map/.filter/.reduce to pass the list's element type
 // so that int(x) / x.length / etc. work correctly inside the lambda.
 export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: Expr, param_types: TypeList) -> Result<EmitValue, string> {
-    let id = LAMBDA_COUNTER
-    LAMBDA_COUNTER = LAMBDA_COUNTER + 1
+    let id = forge_next_lambda_id()
     let name = "__lambda_${string(id)}"
     let params = ctx.resolve_params(raw_params)
 
