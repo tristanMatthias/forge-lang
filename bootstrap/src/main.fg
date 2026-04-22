@@ -36,12 +36,12 @@ use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
 use resolve.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
-use features.modules.package.{load_package_config, PackageConfig}
+use features.modules.package.{load_package_config}
 use typeck.{typecheck_program}
 use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy}
 use diagnostics.render.{render_bag, render_bag_json}
 use codegen.setup.{compile_program}
-use features.generics.mono.{monomorphize, MonoResult}
+use features.generics.mono.{monomorphize}
 
 fn print_usage() {
     eprintln("forge-bootstrap v0.1.0")
