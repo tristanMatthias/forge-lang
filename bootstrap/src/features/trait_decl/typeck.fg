@@ -2,7 +2,7 @@
 
 use core.ast.{Stmt, StmtList, SStmt}
 use diagnostics.{DiagCode}
-use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, trait_lookup, trait_has, tc_owns_type}
+use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, tc_owns_type}
 
 export fn check_trait_conformance(tc: TC, impl_name: string, methods: StmtList) -> TC {
     let colon_idx = impl_name.index_of(":")
@@ -62,6 +62,18 @@ export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
             match ss.node {
                 .ExternFn(name, _, _, _) -> TraitMethodList.Node(name, collect_method_names_from_stmts(next))
                 _ -> collect_method_names_from_stmts(next)
+            }
+        }
+    }
+}
+
+export fn collect_assoc_types_from_stmts(stmts: StmtList) -> TraitAssocTypes {
+    match stmts {
+        .End -> TraitAssocTypes.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .AssocType(name, _) -> TraitAssocTypes.Node(name, collect_assoc_types_from_stmts(next))
+                _ -> collect_assoc_types_from_stmts(next)
             }
         }
     }

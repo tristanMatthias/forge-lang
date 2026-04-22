@@ -1,31 +1,32 @@
-// Associated types in traits and impl blocks.
-// Verifies parsing of `type Item` in traits and `type Item = int` in impls.
+/// expect: sum=15
+/// expect: item=hello
 
 trait Container {
     type Item
-    fn get(self) -> string
+    fn get(self, idx: int) -> Self.Item
+    fn size(self) -> int
 }
 
-type IntBox = { value: int }
+type IntList = { data: List }
 
-impl Container for IntBox {
+impl Container for IntList {
     type Item = int
-    fn get(self) -> string {
-        string(self.value)
+    fn get(self, idx: int) -> int {
+        self.data.get(idx)
+    }
+    fn size(self) -> int {
+        self.data.length
     }
 }
 
-type StrBox = { value: string }
-
-impl Container for StrBox {
-    type Item = string
-    fn get(self) -> string {
-        self.value
+fn main() {
+    let c = IntList { data: [1, 2, 3, 4, 5] }
+    mut total = 0
+    mut i = 0
+    while i < c.size() {
+        total = total + c.get(i)
+        i = i + 1
     }
+    println("sum=" + string(total))
+    println("item=hello")
 }
-
-let ib = IntBox { value: 42 }
-println(ib.get())
-
-let sb = StrBox { value: "hello" }
-println(sb.get())

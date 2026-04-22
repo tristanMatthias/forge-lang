@@ -7,7 +7,7 @@ use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, Par
 use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
-use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts}
+use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts}
 use features.list_lit.typeck.{check_list_method}
 use features.map_lit.typeck.{check_map_method}
 use features.let_stmt.typeck.{is_const_expr}
@@ -169,24 +169,38 @@ enum TraitMethodList {
     Node(name: string, next: TraitMethodList)
 }
 
+// Associated types declared on a trait (e.g. `type Item`).
+enum TraitAssocTypes {
+    End
+    Node(name: string, next: TraitAssocTypes)
+}
+
 enum TraitRegistry {
     End
-    Node(trait_name: string, methods: TraitMethodList, next: TraitRegistry)
+    Node(trait_name: string, methods: TraitMethodList, assoc_types: TraitAssocTypes, next: TraitRegistry)
 }
 
 export fn trait_lookup(reg: TraitRegistry, name: string) -> TraitMethodList {
     match reg {
         .End -> TraitMethodList.End
-        .Node(n, methods, _) if n == name -> methods
-        .Node(_, _, next) -> trait_lookup(next, name)
+        .Node(n, methods, _, _) if n == name -> methods
+        .Node(_, _, _, next) -> trait_lookup(next, name)
     }
 }
 
 export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     match reg {
         .End -> false
-        .Node(n, _, _) if n == name -> true
-        .Node(_, _, next) -> trait_has(next, name)
+        .Node(n, _, _, _) if n == name -> true
+        .Node(_, _, _, next) -> trait_has(next, name)
+    }
+}
+
+export fn trait_assoc_types(reg: TraitRegistry, name: string) -> TraitAssocTypes {
+    match reg {
+        .End -> TraitAssocTypes.End
+        .Node(n, _, at, _) if n == name -> at
+        .Node(_, _, _, next) -> trait_assoc_types(next, name)
     }
 }
 
@@ -241,6 +255,21 @@ fn union_alias_lookup(reg: UnionAliasReg, name: string) -> string {
     }
 }
 
+// Associated type definitions from `impl Trait for Type { type Item = ConcreteType }`.
+// Key: "TypeName.AssocName" (e.g. "Circle.Item"), Value: concrete type string.
+enum AssocTypeDefs {
+    End
+    Node(key: string, concrete_ty: string, next: AssocTypeDefs)
+}
+
+fn assoc_type_lookup(reg: AssocTypeDefs, key: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(k, ty, _) if k == key -> ty
+        .Node(_, _, next) -> assoc_type_lookup(next, key)
+    }
+}
+
 type TC = {
     types: TypeEntry,
     fns: FnTypeEntry,
@@ -256,6 +285,7 @@ type TC = {
     current_col: int,
     traits: TraitRegistry,
     trait_impls: TraitImplReg,
+    assoc_type_defs: AssocTypeDefs,
     features: Registry,
 }
 
@@ -295,6 +325,7 @@ fn tc_new() -> TC {
         current_col: 0,
         traits: TraitRegistry.End,
         trait_impls: TraitImplReg.End,
+        assoc_type_defs: AssocTypeDefs.End,
         features: build_registry(),
     }
 }
@@ -383,6 +414,15 @@ fn resolve_union_alias_str(tc: TC, ua: string) -> ValueType {
 fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name) -> {
+            // Associated type: "TypeName.AssocType" → resolve to concrete type
+            let dot = name.index_of(".")
+            if dot >= 0 {
+                let assoc_key = name
+                let concrete = assoc_type_lookup(tc.assoc_type_defs, assoc_key)
+                if concrete != "" {
+                    return resolve_vtype(tc, vtype_from_name(concrete))
+                }
+            }
             if enum_type_has(tc.enums, name) { return ValueType.Enum(name, TypeList.End) }
             let ua = union_alias_lookup(tc.union_aliases, name)
             if ua != "" { return resolve_union_alias_str(tc, ua) }
@@ -574,17 +614,39 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let with_impl = if colon_idx >= 0 {
                         let trait_name = impl_name.substring(0, colon_idx)
                         let type_name = impl_name.substring(colon_idx + 1, impl_name.length)
-                        tc with { trait_impls: TraitImplReg.Node(trait_name, type_name, tc.trait_impls) }
+                        let with_trait = tc with { trait_impls: TraitImplReg.Node(trait_name, type_name, tc.trait_impls) }
+                        // Collect associated type definitions: `type Item = ConcreteType`
+                        collect_impl_assoc_types(with_trait, type_name, methods)
                     } else { tc }
                     collect_decls(with_impl, methods)
                 }
                 .Module(_, body) -> collect_decls(tc, body)
                 .TraitDecl(name, methods) -> tc with {
-                    traits: TraitRegistry.Node(name, collect_method_names_from_stmts(methods), tc.traits)
+                    traits: TraitRegistry.Node(name, collect_method_names_from_stmts(methods), collect_assoc_types_from_stmts(methods), tc.traits)
                 }
                 _ -> tc
             }
             collect_decls(updated, next)
+        }
+    }
+}
+
+// Collect associated type definitions from an impl block.
+// `type Item = ConcreteType` → store "TypeName.Item" → "ConcreteType" in assoc_type_defs.
+fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
+    match stmts {
+        .End -> tc
+        .Node(ss, next) -> {
+            let updated = match ss.node {
+                .AssocType(name, ty) -> {
+                    if ty != "" {
+                        let key = "${type_name}.${name}"
+                        tc with { assoc_type_defs: AssocTypeDefs.Node(key, ty, tc.assoc_type_defs) }
+                    } else { tc }
+                }
+                _ -> tc
+            }
+            collect_impl_assoc_types(updated, type_name, next)
         }
     }
 }
