@@ -124,6 +124,15 @@ update-seed:
 seed-patch:
 	@$(DIAG) --seed-patch
 
+# Patch seed to handle new enum variants.
+# Run this BEFORE 'make build' when adding new ValueType/Stmt/Expr variants.
+# Converts all match trap blocks to safe fallthrough so the seed doesn't
+# crash on unknown enum tags.
+seed-patch-traps:
+	@python3 scripts/patch-seed-traps.py
+	@rm -f build/seed build/seed.o
+	@echo "seed patched — next 'make build' uses patched seed"
+
 # Verify bootstrap chain integrity (no auto-cycle on failure).
 # Builds seed → bs2 → verifies bs2 self-compiles → verifies bs3 self-compiles.
 verify-seed:

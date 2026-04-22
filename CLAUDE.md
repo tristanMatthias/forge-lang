@@ -99,7 +99,7 @@ If you discover a missing language feature or infrastructure gap while working, 
 
 ### Phase 1: Plan
 1. Check the TRD (`docs/TRD_V1.md`) and beads (`bd ready`) for related tickets
-2. Identify seed impact — new keywords need a seed cycle. Enum changes do NOT (tags are hash-based, payloads heap-allocated).
+2. Identify seed impact — new keywords need a seed cycle. New enum VARIANTS on types the seed processes (ValueType, Expr, Stmt) DO need seed patching: run `make seed-patch-traps` before `make build` to convert the seed's match traps to safe fallthrough. Then `make update-seed` after the build succeeds. Adding fields to existing variants also needs this treatment.
 
 ### Phase 2: Two-Phase Bootstrap (only if adding new keywords)
 
