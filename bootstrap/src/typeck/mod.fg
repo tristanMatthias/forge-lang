@@ -392,13 +392,13 @@ fn tc_parse_type_list_str(tc: TC, s: string) -> TypeList {
         if ch == "(" { depth = depth + 1 }
         if ch == ")" { depth = depth - 1 }
         if ch == "," && depth == 0 {
-            let head = s.substring(0, i)
+            let head = s.substring(0, i).trim()
             let tail = s.substring(i + 1, s.length)
-            return TypeList.Node(translate_type(tc, head), tc_parse_type_list_str(tc, tail))
+            return TypeList.Node(resolve_vtype(tc, vtype_from_name(head)), tc_parse_type_list_str(tc, tail))
         }
         i = i + 1
     }
-    TypeList.Node(translate_type(tc, s), TypeList.End)
+    TypeList.Node(resolve_vtype(tc, vtype_from_name(s.trim())), TypeList.End)
 }
 
 // Extract the base name from a generic type annotation.
@@ -432,7 +432,7 @@ fn resolve_union_alias_str(tc: TC, ua: string) -> ValueType {
     }
 }
 
-fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
+export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name) -> {
             // Associated type: "TypeName.AssocType" → resolve to concrete type

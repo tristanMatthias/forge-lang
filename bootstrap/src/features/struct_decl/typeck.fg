@@ -3,7 +3,7 @@
 // Shared by struct_decl, with_expr, and null_safety features.
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, ValueType, SExpr, vtype_eq, vtype_is_list}
-use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, struct_type_has, translate_type}
+use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, struct_type_has, resolve_vtype}
 use diagnostics.{DiagCode}
 
 export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
@@ -55,7 +55,7 @@ fn tc_field_exists(fields: FieldList, name: string) -> bool {
 fn field_type_in(tc: TC, fields: FieldList, name: string) -> ValueType {
     match fields {
         .End -> .Unknown
-        .Node(fname, ftype, _, _) if fname == name -> translate_type(tc, ftype)
+        .Node(fname, _, resolved, _) if fname == name -> resolve_vtype(tc, resolved)
         .Node(_, _, _, next) -> field_type_in(tc, next, name)
     }
 }

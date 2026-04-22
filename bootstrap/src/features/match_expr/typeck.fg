@@ -3,7 +3,8 @@
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, TypeList, WhenArmList, ParamList, Stmt, StmtList, VariantList, ValueType, stmt_unwrap, vtype_display, vtype_enum_name, vtype_eq, vtype_is_unknown, vtype_is_union, vtype_union_types}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
-use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, translate_type}
+use typeck.{EnumTypeReg, ExprResult, TC, check_expr, tc_bind, tc_check_explicit_returns, tc_enter, tc_er, tc_exit, tc_report, resolve_vtype}
+use core.ast.{vtype_from_name}
 
 // ── Divergence detection ──
 // An arm that diverges (return/break/continue) never produces a value
@@ -238,7 +239,7 @@ fn tc_bind_pattern(tc: TC, pattern: Pattern) -> TC {
         .Wildcard -> tc
         .Variant(_, bindings) -> tc_bind_pattern_params(tc, bindings)
         .NestedVariant(_, sub_pats) -> tc_bind_pattern_list(tc, sub_pats)
-        .TypePattern(type_name, binding) -> tc_bind(tc, binding, translate_type(tc, type_name))
+        .TypePattern(type_name, binding) -> tc_bind(tc, binding, resolve_vtype(tc, vtype_from_name(type_name)))
         _ -> tc  // LitString, LitInt, LitBool, LitFloat — no bindings
     }
 }
