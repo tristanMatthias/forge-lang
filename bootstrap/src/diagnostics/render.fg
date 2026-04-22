@@ -126,13 +126,17 @@ export fn render_diagnostic(source: string, filename: string, diag: Diagnostic) 
         let span_len = diag.span.end - diag.span.start
         let hi_len = if span_len > 0 { span_len } else { 1 }
         let hi_start = col - 1
-        let hi_end = hi_start + hi_len
-        let before_span = if hi_start > 0 { src_line.substring(0, hi_start) } else { "" }
-        let in_span = if hi_end <= src_line.length {
-            src_line.substring(hi_start, hi_end)
-        } else {
-            src_line.substring(hi_start, src_line.length)
+        // Guard: if col is beyond the source line, show line without highlight
+        if hi_start >= src_line.length {
+            eprintln(`  ${color_gray(gutter(line, w))} ${vbar} ${src_line}`)
+            eprintln(color_gray("${repeat_hbar(w + 3)}${chr_rbot()}"))
+            if diag.help.length > 0 { eprintln(`  ${color_bold("help:")} ${diag.help}`) }
+            eprintln("")
+            return
         }
+        let hi_end = if hi_start + hi_len > src_line.length { src_line.length } else { hi_start + hi_len }
+        let before_span = if hi_start > 0 { src_line.substring(0, hi_start) } else { "" }
+        let in_span = src_line.substring(hi_start, hi_end)
         let after_span = if hi_end < src_line.length { src_line.substring(hi_end, src_line.length) } else { "" }
         let highlighted_line = before_span + severity_color(diag.severity, in_span) + after_span
         eprintln(`  ${color_gray(gutter(line, w))} ${vbar} ${highlighted_line}`)

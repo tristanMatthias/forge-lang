@@ -6,7 +6,7 @@
 use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
-use features.match_expr.typeck.{tc_check_match_arm_returns}
+use features.match_expr.typeck.{tc_check_match_arm_returns, tc_check_exhaustive}
 use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts}
 use features.list_lit.typeck.{check_list_method}
 use features.map_lit.typeck.{check_map_method}
@@ -649,9 +649,9 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let after = check_stmt(bound, body)
             tc_exit(after)
         }
-        .Match(subj, _) -> {
-            let c1 = check_expr(tc, subj)
-            c1.tc
+        .Match(subj, arms) -> {
+            let s = check_expr(tc, subj)
+            tc_check_exhaustive(s.tc, s.ty, arms)
         }
         .Defer(body) -> {
             let r = check_expr(tc, body)
