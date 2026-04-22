@@ -536,7 +536,9 @@ fn declare_release_fns_structs(m: ptr, i64t: ptr, pt: ptr, reg: StructReg) {
     match reg {
         .End -> {}
         .Node(name, fields, next) -> {
-            if fields_have_rc(fields) {
+            // Declare release function if struct has RC fields OR a drop impl
+            let has_drop = forge_llvm_get_named_function(m, "${name}__drop") != null
+            if fields_have_rc(fields) || has_drop {
                 decl(m, "__release_${name}", i64t, [pt])
             }
             declare_release_fns_structs(m, i64t, pt, next)
@@ -729,7 +731,9 @@ fn emit_release_bodies_structs(ctx: Ctx, reg: StructReg, cycles: CycleSet) {
     match reg {
         .End -> {}
         .Node(name, fields, next) -> {
-            if fields_have_rc(fields) {
+            // Generate release function if struct has RC fields OR a drop impl
+            let has_drop = ctx.get_fn("${name}__drop") != null
+            if fields_have_rc(fields) || has_drop {
                 let is_cyclic = cycle_set_has(cycles, name)
                 emit_release_body_struct(ctx, name, fields, is_cyclic)
             }
