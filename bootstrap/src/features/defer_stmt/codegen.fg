@@ -1,17 +1,20 @@
-// WHY: codegen for `defer` and `errdefer` statements (spec Axis 12.7).
-// Both use a single unified stack so they interleave in LIFO declaration
-// order. defer = Frame (always runs), errdefer = ErrFrame (error only).
+// WHY: codegen for `defer`, `errdefer`, and RC release (spec Axis 9.11, 12.7).
+// All three use a single unified stack so they interleave in LIFO declaration
+// order. defer = Frame (always runs), errdefer = ErrFrame (error only),
+// Release = RC cleanup for ptr-typed locals.
 // The stack lives on Ctx.defers — no mutable global needed.
 
-use core.ast.{Expr, VarEnv, SExpr}
+use core.ast.{Expr, VarEnv, SExpr, ValueType}
 use codegen.types.{Ctx, DeferStack}
+use codegen.{emit_rc_release_typed}
 
-// Emit defers for a normal return — skip ErrFrame entries.
+// Emit cleanup for a normal return — skip ErrFrame entries.
+// Handles defer + RC release in LIFO declaration order.
 export fn emit_defers(ctx: Ctx, env: VarEnv) {
     emit_stack_filtered(ctx, env, ctx.defers, false)
 }
 
-// Emit defers for an error return — run ALL entries (Frame + ErrFrame).
+// Emit cleanup for an error return — run ALL entries (Frame + ErrFrame + Release).
 export fn emit_defers_on_error(ctx: Ctx, env: VarEnv) {
     emit_stack_filtered(ctx, env, ctx.defers, true)
 }
@@ -27,6 +30,12 @@ fn emit_stack_filtered(ctx: Ctx, env: VarEnv, stack: DeferStack, is_error: int) 
         .ErrFrame(body, next) -> {
             // errdefer only runs on error path
             if is_error { ctx.emit(env, body.node) }
+            emit_stack_filtered(ctx, env, next, is_error)
+        }
+        .Release(name, alloca, ty, next) -> {
+            // RC release — load and release the value
+            let val = ctx.load_typed(ty, alloca, "${name}_cleanup")
+            emit_rc_release_typed(ctx, val, ty)
             emit_stack_filtered(ctx, env, next, is_error)
         }
     }

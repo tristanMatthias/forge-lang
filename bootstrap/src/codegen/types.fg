@@ -302,6 +302,7 @@ export enum DeferStack {
     End
     Frame(body: SExpr, next: DeferStack)
     ErrFrame(body: SExpr, next: DeferStack)
+    Release(name: string, alloca: ptr, ty: ValueType, next: DeferStack)
 }
 
 // RC cleanup stack — tracks RC-managed locals for release at scope exit.
@@ -1025,6 +1026,8 @@ impl Ctx {
         forge_llvm_build_store_cast(self.builder, value, alloca)
         if vtype_is_ptr_type(ty) && releasable_has(self.rc_releasable, name) {
             self.rc_cleanup = RcCleanupStack.Node(name, alloca, ty, self.rc_cleanup)
+            // Push Release onto defers for LIFO interleaving with defer/errdefer
+            self.defers = DeferStack.Release(name, alloca, ty, self.defers)
         }
         env_extend(env, name, alloca, ty)
     }

@@ -64,8 +64,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
         if body_cg.task_group != null {
             br.ctx.call("forge_task_group_await_all", [body_cg.task_group])
         }
-        emit_rc_cleanup(br.ctx)
-        // Use br.ctx which has accumulated defers and rc_cleanup from the function body
+        // Unified cleanup: defers + RC release in LIFO declaration order
         emit_defers(br.ctx, env)
         // Union wrapping: if function returns a union, wrap the implicit return value
         if needs_union_wrap(br.ty, ret_ty) {

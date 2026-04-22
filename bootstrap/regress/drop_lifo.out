@@ -1,5 +1,5 @@
 creating A
 creating B
+defer C
 dropping B
 dropping A
-defer C
