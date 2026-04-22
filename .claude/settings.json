@@ -1,12 +1,34 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\":\"SESSION START CHECKLIST — READ BEFORE DOING ANYTHING:\\n\\n1. Run: cd bootstrap && make regress — verify baseline passes\\n2. Run: bd ready -n 10 — see current tickets\\n3. NEVER close a ticket without 100% completion (CLAUDE.md rule 19)\\n4. NEVER defer work. Do it or leave the ticket open.\\n5. When adding new enum variants to ValueType/Expr/Stmt: run make seed-patch-traps FIRST\\n6. When make build fails: STOP. Answer 4 questions before retrying.\\n7. When make build fails with undefined variable after seed changes: the seed is stale. Run make seed-patch-traps && make clean && make build\\n8. After every successful change: git add + commit + push. Do NOT batch.\\n9. translate_type_ctx has a string fallback in resolve_param_vt. To remove it, ALL parser sites must populate ValueType (not Unknown). Check with: grep ValueType.Unknown src/ -r\"}'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUseFailure": [
       {
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE 'make (build|test)'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUseFailure\",\"additionalContext\":\"BUILD/TEST FAILED. STOP. Before retrying, you MUST answer: (1) What is the EXACT error message? (2) Which pipeline stage caused it? (parse/desugar/resolve/typecheck/monomorphize/codegen) (3) What did you change? (4) Does the SEED have your changes or not? DO NOT retry the build until you have answered all 4 questions in your response. If you cannot answer #2, use ./build/bs2 check <file> to isolate typeck vs codegen. NEVER guess — trace the value through the pipeline.\"}}'; fi",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // \"\"'); if echo \"$CMD\" | grep -qE 'make (build|test|regress)'; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUseFailure\",\"additionalContext\":\"BUILD/TEST FAILED. STOP. Before retrying, you MUST answer ALL 4 questions:\\n(1) What is the EXACT error message?\\n(2) Which pipeline stage? (parse/desugar/resolve/typecheck/mono/codegen/link/runtime)\\n(3) What did you change since the last successful build?\\n(4) Does the SEED match the current source? (If you added enum variants, run: make seed-patch-traps)\\n\\nDO NOT retry until you answer all 4 in your response. If error is undefined variable after enum changes, the seed is stale.\"}}'; fi",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\":\"SESSION END — before stopping: (1) Are all changes committed and pushed? (2) Are any tickets left in-progress that should be updated? (3) Does make regress still pass?\"}'",
             "timeout": 5
           }
         ]
