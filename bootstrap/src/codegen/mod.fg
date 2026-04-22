@@ -217,9 +217,10 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
             if ctx.task_group != null {
                 ctx.call("forge_task_group_await_all", [ctx.task_group])
             }
-            // errdefer: detect Err(...) returns and run error-path defers.
+            // errdefer: detect error returns — Err(...) or null for nullable fns.
             let is_err_return = match value {
                 .EnumCtor(_, variant, _) -> variant == "Err"
+                .Null -> true
                 _ -> false
             }
             if is_err_return {
