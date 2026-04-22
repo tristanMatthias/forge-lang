@@ -27,7 +27,7 @@ fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
         ctx.call("forge_task_group_add", [ctx.task_group, handle])
     }
 
-    ok_emit_typed(handle, .Int)
+    ok_emit_typed(handle, .Task(.Unknown))
 }
 
 // ── AST scan: does a statement list contain any Spawn expressions? ──

@@ -727,6 +727,7 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
         .NarrowedEnum(_, _) -> pt
         .Void -> i64t
         .Unknown -> i64t
+        .Task(_) -> i64t
     }
 }
 

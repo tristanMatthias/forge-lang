@@ -141,6 +141,7 @@ export enum ValueType {
     Newtype(name: string, inner: ValueType),
     NarrowedEnum(enum_name: string, variant_name: string),
     Unknown,
+    Task(result_ty: ValueType),
 }
 
 // TypeExpr — structured type annotation replacing string-based types.
@@ -288,6 +289,7 @@ export fn vtype_eq(a: ValueType, b: ValueType) -> bool {
         .Newtype(n1, _) -> match b { .Newtype(n2, _) -> n1 == n2, _ -> false }
         .NarrowedEnum(e1, v1) -> match b { .NarrowedEnum(e2, v2) -> e1 == e2 && v1 == v2, _ -> false }
         .Unknown -> b is .Unknown
+        .Task(_) -> b is .Task
         _ -> false
     }
 }
@@ -386,6 +388,7 @@ export fn vtype_display(t: ValueType) -> string {
         .Newtype(name, _) -> name
         .NarrowedEnum(en, vn) -> "${en}.${vn}"
         .Unknown -> "<unknown>"
+        .Task(r) -> "Task<${vtype_display(r)}>"
     }
 }
 
