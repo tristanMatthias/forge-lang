@@ -159,13 +159,13 @@ fn merge_across_scopes(insts: InstList) -> InstList {
 // After merging, finalize: compute mangled names and validate resolution.
 fn finalize_insts(insts: InstList, regs: GenRegs, bag: DiagnosticBag, ti: TraitImplReg) -> CollectState {
     match insts {
-        .End -> CollectState { insts: InstList.End, bag, line: 0, col: 0 }
+        .End -> CollectState { insts: InstList.End, bag, line: 0, col: 0, trait_impls: ti }
         .Node(name, _, ta, next) -> {
             let tp = lookup_type_params(name, regs)
             let new_bag = check_resolved(tp, ta, name, 0, 0, bag, ti)
             let mangled = mangle_name_ordered(name, tp, ta)
             let rest = finalize_insts(next, regs, new_bag, ti)
-            CollectState { insts: InstList.Node(name, mangled, ta, rest.insts), bag: rest.bag, line: 0, col: 0 }
+            CollectState { insts: InstList.Node(name, mangled, ta, rest.insts), bag: rest.bag, line: 0, col: 0, trait_impls: ti }
         }
     }
 }
@@ -481,7 +481,7 @@ fn has_generics(regs: GenRegs) -> bool {
 
 // ── Pass 2: Collect instantiation sites + validate ──
 
-type CollectState = { insts: InstList, bag: DiagnosticBag, line: int, col: int }
+type CollectState = { insts: InstList, bag: DiagnosticBag, line: int, col: int, trait_impls: TraitImplReg }
 
 fn collect_inst_stmts(stmts: StmtList, regs: GenRegs, st: CollectState) -> CollectState {
     match stmts {
@@ -503,12 +503,12 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
             if tp is .Node { return st }
             // Scope merging to this function: collect body's instantiations
             // independently so enum ctors merge within the function, not globally.
-            let fn_state = collect_inst_stmts(body, regs, CollectState { insts: InstList.End, bag: st.bag, line: st.line, col: st.col })
+            let fn_state = collect_inst_stmts(body, regs, CollectState { insts: InstList.End, bag: st.bag, line: st.line, col: st.col, trait_impls: st.trait_impls })
             // Also collect instantiation from the return type annotation.
             // This handles functions that return Result<T, E> but only construct
             // one variant (e.g., only Err paths — T is inferred from annotation).
             let with_ret = scope_insts_for_ret(ret_ty, regs, fn_state.insts)
-            CollectState { insts: append_insts(with_ret, st.insts), bag: fn_state.bag, line: st.line, col: st.col }
+            CollectState { insts: append_insts(with_ret, st.insts), bag: fn_state.bag, line: st.line, col: st.col, trait_impls: st.trait_impls }
         }
         .If(cond, then_b, else_b) -> {
             let a = collect_inst_stmt(then_b, regs, collect_inst_expr(cond, regs, st))
@@ -617,7 +617,7 @@ fn add_resolved_inst(name: string, tp: TypeParamList, ta: TypeArgList, st: Colle
         let new_insts = if inst_has(st.insts, mangled) { st.insts } else { InstList.Node(name, mangled, ta, st.insts) }
         st with { insts: new_insts }
     } else {
-        st with { bag: check_resolved(tp, ta, name, st.line, st.col, st.bag, TraitImplReg.End) }
+        st with { bag: check_resolved(tp, ta, name, st.line, st.col, st.bag, st.trait_impls) }
     }
 }
 
@@ -1066,7 +1066,7 @@ export fn monomorphize(stmts: StmtList, trait_impls: TraitImplReg) -> MonoResult
     if !has_generics(regs) { return MonoResult { stmts, bag: bag_new() } }
 
     // Pass 2: collect partial type args (enums merge across constructors)
-    let collected = collect_inst_stmts(stmts, regs, CollectState { insts: InstList.End, bag: bag_new(), line: 0, col: 0 })
+    let collected = collect_inst_stmts(stmts, regs, CollectState { insts: InstList.End, bag: bag_new(), line: 0, col: 0, trait_impls })
     if bag_has_errors(collected.bag) {
         return MonoResult { stmts, bag: collected.bag }
     }
@@ -1093,7 +1093,7 @@ type ConvergeResult = { all_insts: InstList, all_specs: StmtList, bag: Diagnosti
 
 fn mono_converge(new_specs: StmtList, regs: GenRegs, all_insts: InstList, all_specs: StmtList, b: DiagnosticBag, depth: int, ti: TraitImplReg) -> ConvergeResult {
     if depth >= 10 { return ConvergeResult { all_insts, all_specs, bag: b } }
-    let trans = collect_inst_stmts(new_specs, regs, CollectState { insts: InstList.End, bag: b, line: 0, col: 0 })
+    let trans = collect_inst_stmts(new_specs, regs, CollectState { insts: InstList.End, bag: b, line: 0, col: 0, trait_impls: ti })
     let trans_final = finalize_insts(trans.insts, regs, trans.bag, ti)
     let new_count = inst_list_len(trans_final.insts)
     if new_count == 0 {
