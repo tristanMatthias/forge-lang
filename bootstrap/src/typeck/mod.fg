@@ -1373,7 +1373,8 @@ fn annotate_expr(tc: TC, expr: Expr) -> Expr {
 fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
     // Annotate the inner expression tree (recurse into sub-expressions)
     let annotated_node = annotate_expr(tc, se.node)
-    // Stamp this SExpr's type
+    // Stamp this SExpr's type — fast path for common expressions avoids
+    // re-running check_expr (which would double-check the entire subtree).
     let ty = match annotated_node {
         .Number(_) -> ValueType.Int
         .FloatLit(_) -> ValueType.Float
@@ -1381,6 +1382,28 @@ fn annotate_sexpr(tc: TC, se: SExpr) -> SExpr {
         .Bool(_) -> ValueType.Bool
         .Null -> ValueType.Void
         .Ident(name) -> type_lookup(tc.types, name)
+        // Binary: arithmetic/comparison operators
+        .Binary(_, op, _) -> match op {
+            .Eq or .Ne or .Lt or .Le or .Gt or .Ge -> ValueType.Bool
+            _ -> ValueType.Int  // arithmetic defaults to int; float handled by check_expr
+        }
+        .Logical(_, _, _) -> ValueType.Bool
+        .Unary(_, _) -> ValueType.Int
+        // Call: look up return type from function registry
+        .Call(callee, _) -> match callee {
+            .Ident(name) -> fn_type_lookup(tc.fns, name)
+            _ -> check_expr(tc, se.node).ty
+        }
+        // Struct/Enum constructors
+        .StructLit(name, _) -> ValueType.Struct(name)
+        .EnumCtor(name, _, _) -> {
+            if name != "" { ValueType.Enum(name, TypeList.End) } else { check_expr(tc, se.node).ty }
+        }
+        .ListLit(_) -> ValueType.List(ValueType.Unknown)
+        .MapLit(_) -> ValueType.Map
+        .Tuple(_) -> ValueType.Tuple(TypeList.End)
+        .Lambda(_, _) -> ValueType.Fn(ValueType.Unknown)
+        // Fallback: re-run check_expr for complex expressions
         _ -> check_expr(tc, se.node).ty
     }
     sexpr_typed(annotated_node, se.line, se.col, ty)
