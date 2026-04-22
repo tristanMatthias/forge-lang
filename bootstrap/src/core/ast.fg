@@ -230,7 +230,9 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
                     let elem = match args { .Node(t, _) -> type_expr_to_vtype(t), .End -> ValueType.Int }
                     ValueType.List(elem)
                 }
-                _ -> ValueType.Int
+                // For named generics (Result<T,E>, Map<K,V>, etc.), use Struct(base)
+                // so resolve_vtype can upgrade to Enum/Trait via registry lookup.
+                _ -> ValueType.Struct(base)
             }
         }
     }
