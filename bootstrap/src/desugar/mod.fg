@@ -11,7 +11,7 @@
 //   4. Add tests
 //   NO codegen, NO resolver, NO typechecker, NO eval, NO feature registration.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp}
+use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType}
 
 // ── Public API ──
 
@@ -75,7 +75,43 @@ fn desugar_expr(expr: Expr) -> Expr {
 fn rewrite_expr(expr: Expr) -> Expr {
     match expr {
         .Call(callee, args) -> rewrite_call(expr, callee, args)
+        .ListLit(elems) -> rewrite_list_lit(expr, elems)
         _ -> expr
+    }
+}
+
+// Check if a ListLit contains a ListComp element and desugar it.
+// [x * 2 for x in nums] → { let __lc = []; for x in nums { __lc.push(x * 2) }; __lc }
+// [x for x in nums if x > 0] → { let __lc = []; for x in nums { if x > 0 { __lc.push(x) } }; __lc }
+fn rewrite_list_lit(original: Expr, elems: ExprList) -> Expr {
+    match elems {
+        .Node(se, _) -> {
+            match se.node {
+                .ListComp(body, variable, collection, filter) -> {
+                    let push_expr = Expr.Call(
+                        Expr.FieldAccess(Expr.Ident("__lc"), "push"),
+                        ExprList.Node(sexpr_dummy(body), ExprList.End)
+                    )
+                    let push_stmt = if filter != null {
+                        Stmt.If(filter!, Stmt.Expr(push_expr), null)
+                    } else {
+                        Stmt.Expr(push_expr)
+                    }
+                    Expr.Block(StmtList.Node(
+                        sstmt(Stmt.Mut("__lc", "", ValueType.Unknown, Expr.ListLit(ExprList.End)), 0, 0),
+                        StmtList.Node(
+                            sstmt(Stmt.ForIn(variable, collection, push_stmt), 0, 0),
+                            StmtList.Node(
+                                sstmt(Stmt.Expr(Expr.Ident("__lc")), 0, 0),
+                                StmtList.End
+                            )
+                        )
+                    ))
+                }
+                _ -> original
+            }
+        }
+        _ -> original
     }
 }
 
