@@ -135,6 +135,7 @@ impl Parser {
                 match {
                     self.match_next("<") -> self.set_current(Tk.Shl, "<<")
                     self.match_next("=") -> self.set_current(Tk.LessEqual, "<=")
+                    self.match_next("-") -> self.set_current(Tk.LeftArrow, "<-")
                     _                    -> self.set_current(Tk.Less, "<")
                 }
                 return

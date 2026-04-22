@@ -26,10 +26,8 @@ impl Parser {
         let binding = self.current_lexeme
         self.advance()
         // Expect `<-`
-        if !self.check(Tk.Less) { return SelectArmList.End }
-        self.advance()  // consume <
-        if !self.check(Tk.Minus) { return SelectArmList.End }
-        self.advance()  // consume -
+        if !self.check(Tk.LeftArrow) { return SelectArmList.End }
+        self.advance()  // consume <-
         // Parse channel expression
         let channel = self.parse_expression()
         if channel == null { return SelectArmList.End }

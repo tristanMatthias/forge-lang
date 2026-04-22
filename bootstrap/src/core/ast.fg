@@ -1164,6 +1164,7 @@ export enum Tk {
     DotDot
     Colon
     Arrow
+    LeftArrow
     At
     Tilde
     Question
