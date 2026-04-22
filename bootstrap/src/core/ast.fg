@@ -213,7 +213,7 @@ export fn vtype_from_name(name: string) -> ValueType {
         "bool" -> ValueType.Bool
         "ptr" -> ValueType.Ptr
         "Map" -> ValueType.Map
-        _ -> ValueType.Int
+        _ -> ValueType.Struct(name)
     }
 }
 

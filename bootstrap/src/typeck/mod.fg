@@ -399,6 +399,7 @@ fn tc_base_type_name(ty: string) -> string {
 // checks registries to distinguish structs from enums, traits, newtypes, etc.
 fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
+        .Struct(name) if name == "List" -> ValueType.List(ValueType.Int)
         .Struct(name) -> {
             if enum_type_has(tc.enums, name) { return ValueType.Enum(name, TypeList.End) }
             let ua = union_alias_lookup(tc.union_aliases, name)
@@ -407,7 +408,7 @@ fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             if nt != "" { return ValueType.Newtype(name, translate_type(tc, nt)) }
             if struct_type_has(tc.structs, name) { return ValueType.Struct(name) }
             if trait_has(tc.traits, name) { return ValueType.Trait(name) }
-            ValueType.Int
+            vt  // keep Struct(name) — might be from another module or generic
         }
         .Enum(name, args) -> {
             // Parser produced Enum(name, args) from Generic(name, args).
