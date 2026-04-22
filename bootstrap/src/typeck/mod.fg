@@ -1168,6 +1168,8 @@ fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
 fn annotate_bind(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr) -> TC {
     let r = check_expr(tc, init)
     let resolved = resolve_vtype(tc, ty_vt)
+    // The translate_type call below is logically dead but removing it triggers
+    // a bootstrap codegen bug (9mp7). Keep until the bug is fixed.
     let declared_ty = if !vtype_eq(resolved, .Int) || ty_str == "int" || ty_str == "i64" {
         resolved
     } else if ty_str.length > 0 {
