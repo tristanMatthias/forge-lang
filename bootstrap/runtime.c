@@ -2053,210 +2053,227 @@ void forge_test_summary(void) {
 // Thread spawning via pthreads. spawn takes a closure (ForgeArray)
 // and runs it in a new thread. Returns a task handle for .await.
 
-// ── Green-thread scheduler (spec Axis 18.1) ──
-// Single OS thread, cooperative scheduling via ucontext.
-// Tasks are lightweight fibers with 64KB stacks.
-// yield() switches to scheduler, scheduler picks next runnable fiber.
-
-#define FIBER_STACK_SIZE (1024 * 1024)
-
-typedef struct ForgeTask {
-    ucontext_t ctx;
-    void* stack;
+typedef struct {
+    pthread_t thread;
     int64_t closure;
-    int64_t result;
-    int done;
-    struct ForgeTask* next;
+    int64_t result;     // captured return value from closure
+    int joined;         // set to 1 after pthread_join (prevents double-join)
 } ForgeTask;
 
-static ucontext_t g_sched_ctx;
-static ForgeTask* g_run_head = NULL;
-static ForgeTask* g_run_tail = NULL;
-static ForgeTask* g_current = NULL;
-
-static void sched_enqueue(ForgeTask* task) {
-    task->next = NULL;
-    if (g_run_tail) { g_run_tail->next = task; g_run_tail = task; }
-    else { g_run_head = g_run_tail = task; }
+static void* forge_thread_entry(void* arg) {
+    ForgeTask* task = (ForgeTask*)arg;
+    task->result = forge_closure_call_0(task->closure);
+    return NULL;
 }
 
-static ForgeTask* sched_dequeue(void) {
-    if (!g_run_head) return NULL;
-    ForgeTask* t = g_run_head;
-    g_run_head = t->next;
-    if (!g_run_head) g_run_tail = NULL;
-    t->next = NULL;
-    return t;
-}
-
-static void fiber_entry(void) {
-    ForgeTask* self = g_current;
-    self->result = forge_closure_call_0(self->closure);
-    self->done = 1;
-    setcontext(&g_sched_ctx);
-}
-
-static void sched_run_until(ForgeTask* target) {
-    while (!target->done && g_run_head) {
-        ForgeTask* task = sched_dequeue();
-        if (task->done) continue;
-        g_current = task;
-        swapcontext(&g_sched_ctx, &task->ctx);
-        g_current = NULL;
-        if (!task->done) sched_enqueue(task);
-    }
-}
-
+// Spawn a closure in a new thread. Returns a task handle (ptr to ForgeTask).
 int64_t forge_spawn(int64_t closure) {
-    ForgeTask* task = (ForgeTask*)calloc(1, sizeof(ForgeTask));
+    ForgeTask* task = (ForgeTask*)malloc(sizeof(ForgeTask));
     task->closure = closure;
-    task->stack = malloc(FIBER_STACK_SIZE);
-    getcontext(&task->ctx);
-    task->ctx.uc_stack.ss_sp = task->stack;
-    task->ctx.uc_stack.ss_size = FIBER_STACK_SIZE;
-    task->ctx.uc_link = &g_sched_ctx;
-    makecontext(&task->ctx, fiber_entry, 0);
-    sched_enqueue(task);
+    task->result = 0;
+    task->joined = 0;
+    pthread_create(&task->thread, NULL, forge_thread_entry, task);
     return (int64_t)(uintptr_t)task;
 }
 
+// Wait for a spawned task to finish and return its result value.
+// Does NOT free the task — the task group frees all tasks at scope exit.
+// When no task group is active (legacy usage), caller is responsible.
 int64_t forge_task_await(int64_t handle) {
-    ForgeTask* target = (ForgeTask*)(uintptr_t)handle;
-    if (g_current) {
-        while (!target->done) {
-            sched_enqueue(g_current);
-            swapcontext(&g_current->ctx, &g_sched_ctx);
-        }
-    } else {
-        sched_run_until(target);
+    ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
+    if (!task->joined) {
+        pthread_join(task->thread, NULL);
+        task->joined = 1;
     }
-    return target->result;
+    return task->result;
 }
 
-void forge_thread_join(int64_t handle) { forge_task_await(handle); }
+// Legacy join — kept for backward compat with existing tests.
+// Does NOT free the task — the task group handles cleanup.
+void forge_thread_join(int64_t handle) {
+    ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
+    if (!task->joined) {
+        pthread_join(task->thread, NULL);
+        task->joined = 1;
+    }
+}
 
 // ── Task Groups (structured concurrency) ──
-typedef struct { int64_t* handles; int count; int capacity; } ForgeTaskGroup;
+// A task group collects spawned task handles so they can all be
+// awaited when the enclosing scope exits. This prevents task leaks.
+
+typedef struct {
+    int64_t* handles;
+    int count;
+    int capacity;
+} ForgeTaskGroup;
 
 void* forge_task_group_new(void) {
     ForgeTaskGroup* g = (ForgeTaskGroup*)malloc(sizeof(ForgeTaskGroup));
-    g->capacity = 8; g->count = 0;
+    g->capacity = 8;
+    g->count = 0;
     g->handles = (int64_t*)malloc(g->capacity * sizeof(int64_t));
     return g;
 }
 
 void forge_task_group_add(void* group, int64_t handle) {
     ForgeTaskGroup* g = (ForgeTaskGroup*)group;
-    if (g->count >= g->capacity) { g->capacity *= 2; g->handles = (int64_t*)realloc(g->handles, g->capacity * sizeof(int64_t)); }
+    if (g->count >= g->capacity) {
+        g->capacity *= 2;
+        g->handles = (int64_t*)realloc(g->handles, g->capacity * sizeof(int64_t));
+    }
     g->handles[g->count++] = handle;
 }
 
 void forge_task_group_await_all(void* group) {
     ForgeTaskGroup* g = (ForgeTaskGroup*)group;
     for (int i = 0; i < g->count; i++) {
-        forge_task_await(g->handles[i]);
         ForgeTask* task = (ForgeTask*)(uintptr_t)g->handles[i];
-        free(task->stack); free(task);
+        if (!task->joined) {
+            pthread_join(task->thread, NULL);
+            task->joined = 1;
+        }
+        free(task);
     }
-    free(g->handles); free(g);
+    free(g->handles);
+    free(g);
 }
 
+// Yield the current fiber. No-op in v1.0 (pthreads-based).
 void forge_yield(void) {
-    if (g_current) { sched_enqueue(g_current); swapcontext(&g_current->ctx, &g_sched_ctx); }
+    // v1.0: no-op — real cooperative scheduling comes later
 }
 
+// Run the scheduler until all tasks complete. No-op in v1.0
+// because tasks are OS threads that run to completion.
 void forge_scheduler_run(void) {
-    while (g_run_head) {
-        ForgeTask* task = sched_dequeue();
-        if (task->done) continue;
-        g_current = task;
-        swapcontext(&g_sched_ctx, &task->ctx);
-        g_current = NULL;
-        if (!task->done) sched_enqueue(task);
-    }
+    // v1.0: no-op — pthreads run independently
 }
 
-// ── Cooperative Channels (no mutexes — single-threaded) ──
-typedef struct { int64_t value; int has_value; int closed; } ForgeChannel;
+// ── Channels ──
+// Unbuffered channel: send blocks until recv, recv blocks until send.
 
-void* forge_channel_new(void) { return calloc(1, sizeof(ForgeChannel)); }
+typedef struct {
+    int64_t value;
+    int has_value;
+    pthread_mutex_t mutex;
+    pthread_cond_t send_cond;
+    pthread_cond_t recv_cond;
+} ForgeChannel;
+
+void* forge_channel_new(void) {
+    ForgeChannel* ch = (ForgeChannel*)calloc(1, sizeof(ForgeChannel));
+    pthread_mutex_init(&ch->mutex, NULL);
+    pthread_cond_init(&ch->send_cond, NULL);
+    pthread_cond_init(&ch->recv_cond, NULL);
+    return ch;
+}
 
 void forge_channel_send(void* channel, int64_t value) {
     ForgeChannel* ch = (ForgeChannel*)channel;
-    while (ch->has_value && !ch->closed) {
-        if (g_current) forge_yield();
-        else if (g_run_head) {
-            ForgeTask* task = sched_dequeue();
-            if (task && !task->done) {
-                g_current = task;
-                swapcontext(&g_sched_ctx, &task->ctx);
-                g_current = NULL;
-                if (!task->done) sched_enqueue(task);
-            }
-        }
-        else break;
+    pthread_mutex_lock(&ch->mutex);
+    while (ch->has_value) {
+        pthread_cond_wait(&ch->send_cond, &ch->mutex);
     }
-    ch->value = value; ch->has_value = 1;
+    ch->value = value;
+    ch->has_value = 1;
+    pthread_cond_signal(&ch->recv_cond);
+    pthread_mutex_unlock(&ch->mutex);
 }
 
 int64_t forge_channel_recv(void* channel) {
     ForgeChannel* ch = (ForgeChannel*)channel;
-    while (!ch->has_value && !ch->closed) {
-        if (g_current) forge_yield();
-        else if (g_run_head) {
-            // Run ONE fiber step, then recheck channel
-            ForgeTask* task = sched_dequeue();
-            if (task && !task->done) {
-                g_current = task;
-                swapcontext(&g_sched_ctx, &task->ctx);
-                g_current = NULL;
-                if (!task->done) sched_enqueue(task);
-            }
-        }
-        else break;
+    pthread_mutex_lock(&ch->mutex);
+    while (!ch->has_value) {
+        pthread_cond_wait(&ch->recv_cond, &ch->mutex);
     }
-    if (!ch->has_value) return 0;
-    int64_t value = ch->value; ch->has_value = 0; return value;
+    int64_t value = ch->value;
+    ch->has_value = 0;
+    pthread_cond_signal(&ch->send_cond);
+    pthread_mutex_unlock(&ch->mutex);
+    return value;
 }
 
-// ── Cooperative Select ──
-typedef struct { int64_t index; int64_t value; } ForgeSelectResult;
+// Select: poll multiple channels, block until one has data.
+// channels is a ForgeArray of channel pointers.
+// Returns: (index << 32) | (value & 0xFFFFFFFF) packed into i64.
+// Better approach: write index + value to out params.
+typedef struct {
+    int64_t index;  // which channel fired
+    int64_t value;  // the received value
+} ForgeSelectResult;
 
+// Polls channels in round-robin until one has data.
+// Returns pointer to heap-allocated ForgeSelectResult.
 void* forge_select(void* channel_array, int64_t count) {
     ForgeSelectResult* result = (ForgeSelectResult*)malloc(sizeof(ForgeSelectResult));
     ForgeArray* arr = (ForgeArray*)(uintptr_t)channel_array;
-    if (!arr || arr->len == 0) { result->index = -1; result->value = 0; return result; }
+    if (!arr || arr->len == 0) {
+        result->index = -1;
+        result->value = 0;
+        return result;
+    }
+    // Spin-poll with backoff until one channel has data.
+    // This is simple but correct. A production implementation
+    // would use condition variables or epoll.
     while (1) {
         for (int64_t i = 0; i < arr->len && i < count; i++) {
             ForgeChannel* ch = (ForgeChannel*)(uintptr_t)arr->data[i];
             if (!ch) continue;
+            pthread_mutex_lock(&ch->mutex);
             if (ch->has_value) {
-                result->index = i; result->value = ch->value; ch->has_value = 0;
+                int64_t val = ch->value;
+                ch->has_value = 0;
+                pthread_cond_signal(&ch->send_cond);
+                pthread_mutex_unlock(&ch->mutex);
+                result->index = i;
+                result->value = val;
                 return result;
             }
+            pthread_mutex_unlock(&ch->mutex);
         }
-        if (g_current) forge_yield(); else if (g_run_head) forge_scheduler_run(); else break;
+        // Brief sleep to avoid busy-waiting
+        usleep(100);  // 100 microseconds
     }
 }
 
-int64_t forge_select_index(void* result) { return ((ForgeSelectResult*)result)->index; }
-int64_t forge_select_value(void* result) { return ((ForgeSelectResult*)result)->value; }
+int64_t forge_select_index(void* result) {
+    ForgeSelectResult* r = (ForgeSelectResult*)result;
+    return r->index;
+}
 
+int64_t forge_select_value(void* result) {
+    ForgeSelectResult* r = (ForgeSelectResult*)result;
+    return r->value;
+}
+
+// Run an array of closures in parallel threads, join all before returning.
 void forge_parallel_run(void* closure_array) {
     ForgeArray* arr = (ForgeArray*)(uintptr_t)closure_array;
     if (!arr || arr->len == 0) return;
     int64_t n = arr->len;
-    int64_t* handles = (int64_t*)malloc(n * sizeof(int64_t));
-    for (int64_t i = 0; i < n; i++) handles[i] = forge_spawn(arr->data[i]);
+    pthread_t* threads = (pthread_t*)malloc(n * sizeof(pthread_t));
+    ForgeTask** args = (ForgeTask**)malloc(n * sizeof(ForgeTask*));
     for (int64_t i = 0; i < n; i++) {
-        forge_task_await(handles[i]);
-        ForgeTask* task = (ForgeTask*)(uintptr_t)handles[i];
-        free(task->stack); free(task);
+        args[i] = (ForgeTask*)malloc(sizeof(ForgeTask));
+        args[i]->closure = arr->data[i];
+        args[i]->result = 0;
+        pthread_create(&threads[i], NULL, forge_thread_entry, args[i]);
     }
-    free(handles);
+    for (int64_t i = 0; i < n; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    free(threads);
+    free(args);
 }
 
-void forge_channel_close(void* channel) { ForgeChannel* ch = (ForgeChannel*)channel; ch->closed = 1; }
+void forge_channel_close(void* channel) {
+    ForgeChannel* ch = (ForgeChannel*)channel;
+    pthread_mutex_destroy(&ch->mutex);
+    pthread_cond_destroy(&ch->send_cond);
+    pthread_cond_destroy(&ch->recv_cond);
+    free(ch);
+}
 
 // ── Debug: enum tag validation ──
 //

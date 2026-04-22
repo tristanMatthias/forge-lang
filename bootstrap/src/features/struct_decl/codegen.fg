@@ -90,11 +90,9 @@ export fn emit_field_access(ctx: Ctx, env: VarEnv, obj: Expr, field: string) -> 
 
     let r = ctx.emit(env, obj)?
 
-    // Task.await — join the spawned thread and return its result.
-    // v1.0: spawn returns Int (task handle), .await calls forge_task_await.
+    // Task.await — join the green thread and return its result.
     if field == "await" {
-        let handle_ptr = ctx.to_ptr(r.value, "task_ptr")
-        return ok_emit(ctx.call("forge_task_await", [handle_ptr]))
+        return ok_emit(ctx.call("forge_task_await", [r.value]))
     }
 
     // String/List/Map .length
