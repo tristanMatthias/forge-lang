@@ -785,8 +785,8 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
         .End -> .End
         .Node(ss, next) -> {
             match stmt_unwrap(ss.node) {
-                .ExternFn(name, _, ret_ty, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
-                .Function(name, _, _, ret_ty, _, _) -> .Node(name, ret_ty, collect_trait_fn_names(next))
+                .ExternFn(name, _, ret_ty, ret_vt) -> .Node(name, ret_ty, ret_vt, collect_trait_fn_names(next))
+                .Function(name, _, _, ret_ty, ret_vt, _) -> .Node(name, ret_ty, ret_vt, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
         }

@@ -3,21 +3,30 @@
 use core.ast.{Expr, ExprList, VarEnv, ValueType, vtype_display, vtype_struct_name, vtype_enum_name, expr_list_length}
 use core.llvm.{forge_llvm_append_basic_block, forge_llvm_position_at_end, forge_llvm_get_insert_block, forge_llvm_function_type, forge_llvm_add_function, forge_llvm_type_array_new, forge_llvm_type_array_set, forge_llvm_type_array_free, forge_llvm_get_param, forge_llvm_count_params, forge_llvm_build_ret, forge_llvm_build_bitcast, forge_llvm_fn_type_of, forge_llvm_value_array_new, forge_llvm_value_array_set, forge_llvm_value_array_free, forge_llvm_build_call_coerce}
 use codegen.types.{Ctx, EmitValue, TraitMethodNames, ok_emit_typed, err_emit, translate_type_ctx, trait_decl_lookup}
+use core.ast.{vtype_is_unknown, ValueType}
 use features.fn_decl.codegen.{emit_first_arg}
 
 export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
     match methods {
         .End -> 0 - 1
-        .Node(n, _, _) if n == name -> idx
-        .Node(_, _, next) -> trait_method_idx(next, name, idx + 1)
+        .Node(n, _, _, _) if n == name -> idx
+        .Node(_, _, _, next) -> trait_method_idx(next, name, idx + 1)
     }
 }
 
 export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string {
     match methods {
         .End -> ""
-        .Node(n, ret, _) if n == name -> ret
-        .Node(_, _, next) -> trait_method_ret_ty(next, name)
+        .Node(n, ret, _, _) if n == name -> ret
+        .Node(_, _, _, next) -> trait_method_ret_ty(next, name)
+    }
+}
+
+fn trait_method_ret_vt(methods: TraitMethodNames, name: string) -> ValueType {
+    match methods {
+        .End -> ValueType.Unknown
+        .Node(n, _, vt, _) if n == name -> vt
+        .Node(_, _, _, next) -> trait_method_ret_vt(next, name)
     }
 }
 
@@ -31,8 +40,13 @@ export fn emit_trait_dispatch(ctx: Ctx, env: VarEnv, obj_val: ptr, trait_name: s
         return err_emit("trait has no method `${method}`")
     }
     // Determine return type from trait declaration
-    let ret_ty_str = trait_method_ret_ty(methods, method)
-    let ret_ty = translate_type_ctx(ctx, ret_ty_str)
+    let ret_vt = trait_method_ret_vt(methods, method)
+    let ret_ty = if !vtype_is_unknown(ret_vt) {
+        ctx.resolve_codegen_vtype(ret_vt)
+    } else {
+        let ret_ty_str = trait_method_ret_ty(methods, method)
+        translate_type_ctx(ctx, ret_ty_str)
+    }
     let fn_closure = ctx.array_get(vtable, ctx.i64(idx))
     let user_count = expr_list_length(args)
     if user_count == 0 {
@@ -141,11 +155,15 @@ fn build_float_vtable_wrapper(ctx: Ctx, mangled: string, real_fn: ptr, arity: in
 export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
     match methods {
         .End -> {}
-        .Node(method_name, ret_ty_str, next) -> {
+        .Node(method_name, ret_ty_str, method_ret_vt, next) -> {
             let mangled = "${concrete_name}__${method_name}"
             let fn_val = ctx.get_fn(mangled)
             // For float-returning methods, use a wrapper to avoid ABI mismatch
-            let ret_vt = translate_type_ctx(ctx, ret_ty_str)
+            let ret_vt = if !vtype_is_unknown(method_ret_vt) {
+                ctx.resolve_codegen_vtype(method_ret_vt)
+            } else {
+                translate_type_ctx(ctx, ret_ty_str)
+            }
             let arity = forge_llvm_count_params(fn_val)
             let target = match ret_vt {
                 .Float -> build_float_vtable_wrapper(ctx, mangled, fn_val, arity)

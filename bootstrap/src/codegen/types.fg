@@ -122,7 +122,7 @@ export fn cg_union_alias_lookup(reg: CgUnionAliasReg, name: string) -> string {
 // Trait declaration registry — maps trait name to method names + return types.
 export enum TraitMethodNames {
     End
-    Node(name: string, ret_ty: string, next: TraitMethodNames)
+    Node(name: string, ret_ty: string, ret_vt: ValueType, next: TraitMethodNames)
 }
 
 export enum TraitDeclReg {
