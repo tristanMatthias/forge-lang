@@ -641,11 +641,40 @@ fn generate_specializations(insts: InstList, regs: GenRegs) -> StmtList {
 
 // ── Substitution ──
 
+// Substitute type params in a ValueType (for monomorphization).
+fn substitute_vtype(vt: ValueType, ta: TypeArgList) -> ValueType {
+    match vt {
+        .Struct(name) -> {
+            let concrete = type_arg_lookup(ta, name)
+            if concrete != name {
+                match concrete {
+                    "int" -> ValueType.Int
+                    "i64" -> ValueType.Int
+                    "string" -> ValueType.Str
+                    "str" -> ValueType.Str
+                    "float" -> ValueType.Float
+                    "bool" -> ValueType.Bool
+                    _ -> ValueType.Struct(concrete)
+                }
+            } else { vt }
+        }
+        .List(elem) -> ValueType.List(substitute_vtype(elem, ta))
+        .Union(types) -> ValueType.Union(substitute_vtype_list(types, ta))
+        .FnTyped(params, ret) -> ValueType.FnTyped(substitute_vtype_list(params, ta), substitute_vtype(ret, ta))
+        .Newtype(name, inner) -> ValueType.Newtype(name, substitute_vtype(inner, ta))
+        _ -> vt
+    }
+}
+
+fn substitute_vtype_list(types: TypeList, ta: TypeArgList) -> TypeList {
+    match types { .End -> .End, .Node(ty, next) -> TypeList.Node(substitute_vtype(ty, ta), substitute_vtype_list(next, ta)) }
+}
+
 fn substitute_params(params: ParamList, ta: TypeArgList) -> ParamList {
-    match params { .End -> .End, .Node(n, ty, r, next) -> ParamList.Node(n, type_arg_lookup(ta, ty), r, substitute_params(next, ta)) }
+    match params { .End -> .End, .Node(n, ty, r, next) -> ParamList.Node(n, type_arg_lookup(ta, ty), substitute_vtype(r, ta), substitute_params(next, ta)) }
 }
 fn substitute_fields(fields: FieldList, ta: TypeArgList) -> FieldList {
-    match fields { .End -> .End, .Node(n, ty, r, next) -> FieldList.Node(n, type_arg_lookup(ta, ty), r, substitute_fields(next, ta)) }
+    match fields { .End -> .End, .Node(n, ty, r, next) -> FieldList.Node(n, type_arg_lookup(ta, ty), substitute_vtype(r, ta), substitute_fields(next, ta)) }
 }
 fn substitute_variants(variants: VariantList, ta: TypeArgList) -> VariantList {
     match variants { .End -> .End, .Node(n, fields, next) -> VariantList.Node(n, substitute_fields(fields, ta), substitute_variants(next, ta)) }
