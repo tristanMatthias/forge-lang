@@ -1,0 +1,5 @@
+creating A
+creating B
+dropping B
+dropping A
+defer C

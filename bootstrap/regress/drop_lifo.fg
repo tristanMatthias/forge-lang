@@ -1,0 +1,21 @@
+/// expect: creating A
+/// expect: creating B
+/// expect: defer C
+/// expect: dropping B
+/// expect: dropping A
+
+type Resource = { name: string }
+
+impl Resource {
+    fn drop(self) {
+        println("dropping " + self.name)
+    }
+}
+
+fn main() {
+    let a = Resource { name: "A" }
+    println("creating A")
+    let b = Resource { name: "B" }
+    println("creating B")
+    defer println("defer C")
+}
