@@ -254,6 +254,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "break"    -> Tk.KwBreak
         "continue" -> Tk.KwContinue
         "defer"    -> Tk.KwDefer
+        "dyn"      -> Tk.KwDyn
         "trait"    -> Tk.KwTrait
         "with"     -> Tk.KwWith
         "is"       -> Tk.KwIs
@@ -1487,6 +1488,22 @@ impl Parser {
 
     // Parse a single type atom (everything except union |).
     fn parse_type_atom(self, message: string) -> TypeExpr? {
+        // dyn Trait — dynamic trait object
+        if self.check(Tk.KwDyn) {
+            self.advance()
+            if !self.check(Tk.Identifier) {
+                self.set_error("expected trait name after `dyn`")
+                return null
+            }
+            let trait_name = self.current_lexeme
+            self.advance()
+            let te = TypeExpr.Named(trait_name)
+            if self.check(Tk.Question) {
+                self.advance()
+                return TypeExpr.Optional(te)
+            }
+            return te
+        }
         // fn(T, T) -> T
         if self.check(Tk.KwFn) {
             self.advance()

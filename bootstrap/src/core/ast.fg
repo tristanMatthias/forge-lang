@@ -1230,6 +1230,7 @@ export enum Tk {
     KwWhere
     KwWhile
     KwWith
+    KwDyn
     // Reserved future keywords (parse as errors)
     KwReserved
     // Doc comments
@@ -1284,6 +1285,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwWhere -> "kw_where"
         .KwWhile -> "kw_while"
         .KwWith -> "kw_with"
+        .KwDyn -> "kw_dyn"
         _ -> ""
     }
 }
