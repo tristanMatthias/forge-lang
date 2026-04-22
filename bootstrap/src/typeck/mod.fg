@@ -230,14 +230,22 @@ fn is_shape(set: ShapeSet, name: string) -> bool {
 // Newtype registry: maps name to inner type string
 enum NewtypeReg {
     End
-    Node(name: string, inner_ty: string, next: NewtypeReg)
+    Node(name: string, inner_ty: string, inner_vt: ValueType, next: NewtypeReg)
 }
 
 fn newtype_lookup(reg: NewtypeReg, name: string) -> string {
     match reg {
         .End -> ""
-        .Node(n, inner, _) if n == name -> inner
-        .Node(_, _, next) -> newtype_lookup(next, name)
+        .Node(n, inner, _, _) if n == name -> inner
+        .Node(_, _, _, next) -> newtype_lookup(next, name)
+    }
+}
+
+fn newtype_vtype_lookup(reg: NewtypeReg, name: string) -> ValueType {
+    match reg {
+        .End -> ValueType.Unknown
+        .Node(n, _, vt, _) if n == name -> vt
+        .Node(_, _, _, next) -> newtype_vtype_lookup(next, name)
     }
 }
 
@@ -429,8 +437,8 @@ fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             if enum_type_has(tc.enums, name) { return ValueType.Enum(name, TypeList.End) }
             let ua = union_alias_lookup(tc.union_aliases, name)
             if ua != "" { return resolve_union_alias_str(tc, ua) }
-            let nt = newtype_lookup(tc.newtypes, name)
-            if nt != "" { return ValueType.Newtype(name, resolve_vtype(tc, vtype_from_name(nt))) }
+            let nt_vt = newtype_vtype_lookup(tc.newtypes, name)
+            if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt)) }
             if struct_type_has(tc.structs, name) { return ValueType.Struct(name) }
             if trait_has(tc.traits, name) { return ValueType.Trait(name) }
             vt  // keep Struct(name) — might be from another module or generic
@@ -584,7 +592,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let inner_ty = resolve_vtype(tc, inner_vt)
                     let ctor_params = ParamList.Node("value", inner_ty_str, inner_ty, ParamList.End)
                     tc with {
-                        newtypes: NewtypeReg.Node(name, inner_ty_str, tc.newtypes),
+                        newtypes: NewtypeReg.Node(name, inner_ty_str, inner_vt, tc.newtypes),
                         fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty), tc.fns),
                     }
                 }
