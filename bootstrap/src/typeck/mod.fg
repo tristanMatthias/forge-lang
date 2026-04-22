@@ -4,7 +4,7 @@
 // compile pipeline before codegen runs. Per spec Axis 20.
 
 use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
-use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, span_dummy, span_new}
+use diagnostics.{DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns}
 use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts}
@@ -347,6 +347,16 @@ export fn tc_report_at(tc: TC, code: DiagCode, msg: string, line: int, col: int,
     } else { msg }
     let sp = if line > 0 { span_new(0, len, line, col) } else { span_dummy() }
     tc with { bag: bag_report(tc.bag, diag_error(code, message, sp)) }
+}
+
+export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: string) -> TC {
+    let message = if tc.current_fn.length > 0 {
+        "${msg} (in function `${tc.current_fn}`)"
+    } else { msg }
+    let sp = if tc.current_line > 0 { span_new(0, 0, tc.current_line, tc.current_col) } else { span_dummy() }
+    let primary = diag_error(code, message, sp)
+    let cause = diag_error(code, cause_msg, span_dummy())
+    tc with { bag: bag_report(tc.bag, diag_with_cause(primary, cause)) }
 }
 
 export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
@@ -792,7 +802,8 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
         _ -> {
             if !vtype_eq(declared, body_ty) && !vtype_assignable(body_ty, declared) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but body produces `${vtype_display(body_ty)}`"
-                return tc_report(tc, DiagCode.TypeMismatch, msg)
+                let cause = "declared return type is `${vtype_display(declared)}`"
+                return tc_report_with_cause(tc, DiagCode.TypeMismatch, msg, cause)
             }
             tc
         }
@@ -843,7 +854,8 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
             let r = check_expr(tc, value)
             if !vtype_eq(declared, r.ty) && !vtype_assignable(r.ty, declared) && !vtype_is_unknown(r.ty) && !vtype_eq(r.ty, .Void) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but return produces `${vtype_display(r.ty)}`"
-                return tc_report(r.tc, DiagCode.TypeMismatch, msg)
+                let cause = "declared return type is `${vtype_display(declared)}`"
+                return tc_report_with_cause(r.tc, DiagCode.TypeMismatch, msg, cause)
             }
             r.tc
         }
