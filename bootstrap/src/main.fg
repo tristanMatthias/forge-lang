@@ -567,7 +567,7 @@ fn main() {
                 render_bag(source, path, tc_result.bag)
             }
             if bag_has_errors(tc_result.bag) { fail("type check failed") }
-            let mono = monomorphize(tc_result.stmts)
+            let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
             if bag_has_errors(mono.bag) {
                 render_bag(source, path, mono.bag)
                 fail("monomorphization failed")
@@ -681,7 +681,7 @@ fn main() {
         }
         // Monomorphize: replace generic declarations with concrete specializations.
         // Uses the type-annotated AST from typeck so inference reads SExpr.ty.
-        let mono = monomorphize(tc_result.stmts)
+        let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
         if bag_has_errors(mono.bag) {
             if json_output { render_bag_json(cpath, mono.bag) }
             else { render_bag(csource, cpath, mono.bag) }

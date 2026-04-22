@@ -4,7 +4,8 @@
 // generic declarations — codegen sees only concrete code.
 
 use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_from_name, find_type_pipe, union_type_list_merge}
-use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_new}
+use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
+use typeck.{TraitImplReg, type_implements_trait}
 
 // ── Registries ──
 
@@ -156,14 +157,14 @@ fn merge_across_scopes(insts: InstList) -> InstList {
 }
 
 // After merging, finalize: compute mangled names and validate resolution.
-fn finalize_insts(insts: InstList, regs: GenRegs, bag: DiagnosticBag) -> CollectState {
+fn finalize_insts(insts: InstList, regs: GenRegs, bag: DiagnosticBag, ti: TraitImplReg) -> CollectState {
     match insts {
         .End -> CollectState { insts: InstList.End, bag, line: 0, col: 0 }
         .Node(name, _, ta, next) -> {
             let tp = lookup_type_params(name, regs)
-            let new_bag = check_resolved(tp, ta, name, 0, 0, bag)
+            let new_bag = check_resolved(tp, ta, name, 0, 0, bag, ti)
             let mangled = mangle_name_ordered(name, tp, ta)
-            let rest = finalize_insts(next, regs, new_bag)
+            let rest = finalize_insts(next, regs, new_bag, ti)
             CollectState { insts: InstList.Node(name, mangled, ta, rest.insts), bag: rest.bag, line: 0, col: 0 }
         }
     }
@@ -291,22 +292,46 @@ fn field_type_for(fields: FieldList, name: string) -> string {
 }
 
 // Validate that all type params are resolved. Emit F1002 for each missing one.
-fn check_resolved(tp: TypeParamList, ta: TypeArgList, name: string, line: int, col: int, bag: DiagnosticBag) -> DiagnosticBag {
+fn check_resolved(tp: TypeParamList, ta: TypeArgList, name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
     match tp {
         .End -> bag
         .Node(pname, bounds, next) -> {
             let concrete = type_arg_lookup(ta, pname)
             let updated = if concrete == pname {
                 bag_report(bag, diag_error(DiagCode.CannotInferTypeParam, "cannot infer type parameter `${pname}` in `${name}<...>`", span_new(0, 0, line, col)))
+            } else if bounds != "" {
+                // Check trait bounds: "T: Display + Debug" → check each bound
+                check_type_bounds(concrete, bounds, name, pname, line, col, bag, ti)
             } else { bag }
-            // TODO: check trait bounds when TraitImplReg is available here.
-            // Currently the monomorphizer doesn't have access to the typeck's
-            // trait_impls registry. Bounds checking needs to be done either:
-            // (1) in typeck before monomorphization (requires generic call detection), or
-            // (2) by passing trait_impls into the monomorphizer.
-            check_resolved(next, ta, name, line, col, updated)
+            check_resolved(next, ta, name, line, col, updated, ti)
         }
     }
+}
+
+fn check_type_bounds(concrete: string, bounds: string, fn_name: string, param_name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
+    // bounds is "Trait1 + Trait2" — split on " + "
+    let plus = bounds.index_of(" + ")
+    if plus >= 0 {
+        let first = bounds.substring(0, plus)
+        let rest = bounds.substring(plus + 3, bounds.length)
+        let after_first = check_one_bound(concrete, first, fn_name, param_name, line, col, bag, ti)
+        check_type_bounds(concrete, rest, fn_name, param_name, line, col, after_first, ti)
+    } else {
+        check_one_bound(concrete, bounds, fn_name, param_name, line, col, bag, ti)
+    }
+}
+
+fn is_builtin_type(name: string) -> bool {
+    name == "int" || name == "i64" || name == "string" || name == "str" ||
+    name == "float" || name == "f64" || name == "bool" || name == "ptr"
+}
+
+fn check_one_bound(concrete: string, trait_name: string, fn_name: string, param_name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
+    // Built-in types are assumed to satisfy all bounds (no explicit impl blocks)
+    if is_builtin_type(concrete) { return bag }
+    if !type_implements_trait(ti, concrete, trait_name) {
+        bag_report(bag, diag_error(DiagCode.TypeMismatch, "type `${concrete}` does not implement trait `${trait_name}` (required by `${param_name}` in `${fn_name}`)", span_new(0, 0, line, col)))
+    } else { bag }
 }
 
 fn all_resolved(tp: TypeParamList, ta: TypeArgList) -> bool {
@@ -591,7 +616,7 @@ fn add_resolved_inst(name: string, tp: TypeParamList, ta: TypeArgList, st: Colle
         let new_insts = if inst_has(st.insts, mangled) { st.insts } else { InstList.Node(name, mangled, ta, st.insts) }
         st with { insts: new_insts }
     } else {
-        st with { bag: check_resolved(tp, ta, name, st.line, st.col, st.bag) }
+        st with { bag: check_resolved(tp, ta, name, st.line, st.col, st.bag, TraitImplReg.End) }
     }
 }
 
@@ -1035,7 +1060,7 @@ fn rewrite_struct_lit(name: string, inits: FieldInitList, regs: GenRegs, insts: 
 
 export type MonoResult = { stmts: StmtList, bag: DiagnosticBag }
 
-export fn monomorphize(stmts: StmtList) -> MonoResult {
+export fn monomorphize(stmts: StmtList, trait_impls: TraitImplReg) -> MonoResult {
     let regs = collect_generics(stmts, GenRegs { fns: GenericFnReg.End, enums: GenericEnumReg.End, structs: GenericStructReg.End })
     if !has_generics(regs) { return MonoResult { stmts, bag: bag_new() } }
 
@@ -1047,7 +1072,7 @@ export fn monomorphize(stmts: StmtList) -> MonoResult {
 
     // Merge partial entries across function scopes before finalizing.
     let merged = merge_across_scopes(collected.insts)
-    let finalized = finalize_insts(merged, regs, collected.bag)
+    let finalized = finalize_insts(merged, regs, collected.bag, trait_impls)
     if bag_has_errors(finalized.bag) {
         return MonoResult { stmts, bag: finalized.bag }
     }
@@ -1056,7 +1081,7 @@ export fn monomorphize(stmts: StmtList) -> MonoResult {
     // generic calls. Converge by recursively collecting + generating
     // until no new instantiations are found.
     let initial_specs = generate_specializations(finalized.insts, regs)
-    let converged = mono_converge(initial_specs, regs, finalized.insts, initial_specs, finalized.bag, 0)
+    let converged = mono_converge(initial_specs, regs, finalized.insts, initial_specs, finalized.bag, 0, trait_impls)
 
     let rewritten = rewrite_stmts(stmts, regs, converged.all_insts)
     let rewritten_specs = rewrite_stmts(converged.all_specs, regs, converged.all_insts)
@@ -1065,11 +1090,10 @@ export fn monomorphize(stmts: StmtList) -> MonoResult {
 
 type ConvergeResult = { all_insts: InstList, all_specs: StmtList, bag: DiagnosticBag }
 
-fn mono_converge(new_specs: StmtList, regs: GenRegs, all_insts: InstList, all_specs: StmtList, b: DiagnosticBag, depth: int) -> ConvergeResult {
+fn mono_converge(new_specs: StmtList, regs: GenRegs, all_insts: InstList, all_specs: StmtList, b: DiagnosticBag, depth: int, ti: TraitImplReg) -> ConvergeResult {
     if depth >= 10 { return ConvergeResult { all_insts, all_specs, bag: b } }
-    // Only scan NEW specs for further generic calls (not already-processed ones)
     let trans = collect_inst_stmts(new_specs, regs, CollectState { insts: InstList.End, bag: b, line: 0, col: 0 })
-    let trans_final = finalize_insts(trans.insts, regs, trans.bag)
+    let trans_final = finalize_insts(trans.insts, regs, trans.bag, ti)
     let new_count = inst_list_len(trans_final.insts)
     if new_count == 0 {
         ConvergeResult { all_insts, all_specs, bag: trans_final.bag }
@@ -1077,7 +1101,7 @@ fn mono_converge(new_specs: StmtList, regs: GenRegs, all_insts: InstList, all_sp
         let next_specs = generate_specializations(trans_final.insts, regs)
         let merged_insts = append_insts(trans_final.insts, all_insts)
         let merged_all_specs = prepend_stmts(next_specs, all_specs)
-        mono_converge(next_specs, regs, merged_insts, merged_all_specs, trans_final.bag, depth + 1)
+        mono_converge(next_specs, regs, merged_insts, merged_all_specs, trans_final.bag, depth + 1, ti)
     }
 }
 

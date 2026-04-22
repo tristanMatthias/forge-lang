@@ -266,7 +266,7 @@ enum TraitImplReg {
     Node(trait_name: string, type_name: string, next: TraitImplReg)
 }
 
-fn type_implements_trait(reg: TraitImplReg, type_name: string, trait_name: string) -> bool {
+export fn type_implements_trait(reg: TraitImplReg, type_name: string, trait_name: string) -> bool {
     match reg {
         .End -> false
         .Node(tn, ty, _) if tn == trait_name && ty == type_name -> true
