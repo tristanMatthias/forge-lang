@@ -164,39 +164,38 @@ export fn emit_value_ty(v: EmitValue) -> ValueType {
 extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
 export fn ok_emit(value: ptr) -> Result<EmitValue, string> {
-    if false { return Result.Err("") }
     let r = Result.Ok(EmitValue { value, ty: .Int })
     forge_tag_as_result(r)
     r
 }
 
 export fn ok_emit_str(value: ptr) -> Result<EmitValue, string> {
-    if false { return Result.Err("") }
+
     let r = Result.Ok(EmitValue { value, ty: .Str })
     forge_tag_as_result(r)
     r
 }
 export fn ok_emit_typed(value: ptr, ty: ValueType) -> Result<EmitValue, string> {
-    if false { return Result.Err("") }
+
     let r = Result.Ok(EmitValue { value, ty })
     forge_tag_as_result(r)
     r
 }
 export fn err_emit(message: string) -> Result<EmitValue, string> {
-    if false { return Result.Ok(EmitValue { value: null_ptr_val(), ty: .Int }) }
+
     let r = Result.Err("codegen error: ${message}")
     forge_tag_as_result(r)
     r
 }
 
 export fn ok_stmt(env: VarEnv) -> Result<VarEnv, string> {
-    if false { return Result.Err("") }
+
     let r = Result.Ok(env)
     forge_tag_as_result(r)
     r
 }
 export fn err_stmt(message: string) -> Result<VarEnv, string> {
-    if false { return Result.Ok(VarEnv.End) }
+
     let r = Result.Err(message)
     forge_tag_as_result(r)
     r
