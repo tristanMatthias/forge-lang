@@ -1,6 +1,4 @@
-file not found
-kind: io.not_found
-unexpected token
-kind: parse.syntax
-handled error: file not found
-handled error: unexpected token
+error: file not found
+kind: io
+error: invalid input
+kind: parse
