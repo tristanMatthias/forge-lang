@@ -95,6 +95,9 @@ fn try_copy_stack_target(ctx: Ctx, name: string, ty_ann: string, init: Expr) -> 
 
 fn try_copy_for_struct(ctx: Ctx, name: string, ty_ann: string, sname: string) -> CopyTarget {
     let n: ptr = null
+    // Types with a drop impl must NOT be Copy — they need RC so __release fires
+    let drop_fn = ctx.get_fn("${sname}__drop")
+    if drop_fn != null { return CopyTarget { active: false, alloca_ptr: n } }
     let var_ty = if ty_ann != "" { translate_type_ctx(ctx, ty_ann) } else { ValueType.Struct(sname) }
     if vtype_is_copy(var_ty, ctx.copy_types) {
         let st_ty = ctx.get_type(sname)

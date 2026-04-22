@@ -644,6 +644,11 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic
     if sc == null { return }
     let s = sc!
     forge_llvm_position_at_end(s.fctx.builder, s.free_bb)
+    // Call user-defined Drop::drop(self) if impl Drop for Type exists
+    let drop_fn = s.fctx.get_fn("${name}__drop")
+    if drop_fn != null {
+        s.fctx.call("${name}__drop", [s.obj])
+    }
     emit_struct_field_releases(s.fctx, s.obj, name, fields, 0)
     s.fctx.call("forge_rc_free", [s.obj])
     forge_llvm_build_br(s.fctx.builder, s.done_bb)
