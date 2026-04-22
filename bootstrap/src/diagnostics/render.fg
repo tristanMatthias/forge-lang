@@ -200,35 +200,36 @@ export fn render_bag(source: string, filename: string, bag: DiagnosticBag) {
     }
 }
 
-fn render_list(source: string, filename: string, list: DiagnosticList) {
-    // Errors first (always all shown), then warnings (capped at 10).
-    // Two passes to ensure errors are always visible even when buried
-    // in hundreds of warnings.
-    render_errors(source, filename, list)
-    render_warnings(source, filename, list, 0, 10)
+fn diag_list_is_end(list: DiagnosticList) -> bool {
+    match list { .End -> true, _ -> false }
 }
 
-fn render_errors(source: string, filename: string, list: DiagnosticList) {
-    match list {
-        .End -> {}
-        .Node(diag, next) -> {
-            if diag.severity is .Error { render_diagnostic(source, filename, diag) }
-            render_errors(source, filename, next)
+fn render_list(source: string, filename: string, list: DiagnosticList) {
+    // Iterative two-pass rendering — no stack overflow regardless of count.
+    // Pass 1: all errors
+    mut cur = list
+    while !diag_list_is_end(cur) {
+        match cur {
+            .Node(diag, next) -> {
+                if diag.severity is .Error { render_diagnostic(source, filename, diag) }
+                cur = next
+            }
+            _ -> {}
         }
     }
-}
-
-fn render_warnings(source: string, filename: string, list: DiagnosticList, count: int, max: int) {
-    if count >= max { return }
-    match list {
-        .End -> {}
-        .Node(diag, next) -> {
-            if diag.severity is .Error {
-                render_warnings(source, filename, next, count, max)
-            } else {
-                render_diagnostic(source, filename, diag)
-                render_warnings(source, filename, next, count + 1, max)
+    // Pass 2: warnings (capped at 10)
+    mut warn_count = 0
+    cur = list
+    while !diag_list_is_end(cur) && warn_count < 10 {
+        match cur {
+            .Node(diag, next) -> {
+                if !(diag.severity is .Error) {
+                    render_diagnostic(source, filename, diag)
+                    warn_count = warn_count + 1
+                }
+                cur = next
             }
+            _ -> {}
         }
     }
 }
@@ -267,15 +268,14 @@ export fn render_diagnostic_json(filename: string, diag: Diagnostic) {
 }
 
 export fn render_bag_json(filename: string, bag: DiagnosticBag) {
-    render_list_json(filename, bag.diagnostics)
-}
-
-fn render_list_json(filename: string, list: DiagnosticList) {
-    match list {
-        .End -> {}
-        .Node(diag, next) -> {
-            render_list_json(filename, next)
-            render_diagnostic_json(filename, diag)
+    mut cur = bag.diagnostics
+    while !diag_list_is_end(cur) {
+        match cur {
+            .Node(diag, next) -> {
+                render_diagnostic_json(filename, diag)
+                cur = next
+            }
+            _ -> {}
         }
     }
 }
