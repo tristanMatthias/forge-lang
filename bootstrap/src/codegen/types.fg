@@ -1172,13 +1172,8 @@ impl Ctx {
     fn resolve_params(self, params: ParamList) -> ParamList {
         match params {
             .End -> .End
-            .Node(name, ty, pv, next) -> {
-                mut rv = translate_type_ctx(self, ty)
-                if !vtype_is_unknown(pv) || ty == "int" || ty == "i64" {
-                    rv = self.resolve_codegen_vtype(pv)
-                }
-                .Node(name, ty, rv, self.resolve_params(next))
-            }
+            .Node(name, ty, pv, next) ->
+                .Node(name, ty, self.resolve_param_vt(ty, pv), self.resolve_params(next))
         }
     }
 
@@ -1186,14 +1181,18 @@ impl Ctx {
     fn resolve_fields(self, fields: FieldList) -> FieldList {
         match fields {
             .End -> .End
-            .Node(name, ty, pv, next) -> {
-                mut rv = translate_type_ctx(self, ty)
-                if !vtype_is_unknown(pv) || ty == "int" || ty == "i64" {
-                    rv = self.resolve_codegen_vtype(pv)
-                }
-                .Node(name, ty, rv, self.resolve_fields(next))
-            }
+            .Node(name, ty, pv, next) ->
+                .Node(name, ty, self.resolve_param_vt(ty, pv), self.resolve_fields(next))
         }
+    }
+
+    // Resolve a param/field ValueType: prefer the parsed ValueType
+    // when available, fall back to string-based translate_type_ctx when Unknown.
+    fn resolve_param_vt(self, ty: string, pv: ValueType) -> ValueType {
+        if !vtype_is_unknown(pv) {
+            return self.resolve_codegen_vtype(pv)
+        }
+        translate_type_ctx(self, ty)
     }
 
     // Upgrade a parser-resolved ValueType using codegen registries.
