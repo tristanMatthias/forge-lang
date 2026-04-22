@@ -369,56 +369,7 @@ export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: s
 
 export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
 
-// ── Type string translation ──
-
-fn tc_find_close_paren(s: string, start: int) -> int {
-    mut depth = 1
-    mut i = start
-    while i < s.length && depth > 0 {
-        let ch = s.substring(i, i + 1)
-        if ch == "(" { depth = depth + 1 }
-        if ch == ")" { depth = depth - 1 }
-        if depth > 0 { i = i + 1 }
-    }
-    i
-}
-
-fn tc_parse_type_list_str(tc: TC, s: string) -> TypeList {
-    if s == "" { return TypeList.End }
-    mut depth = 0
-    mut i = 0
-    while i < s.length {
-        let ch = s.substring(i, i + 1)
-        if ch == "(" { depth = depth + 1 }
-        if ch == ")" { depth = depth - 1 }
-        if ch == "," && depth == 0 {
-            let head = s.substring(0, i).trim()
-            let tail = s.substring(i + 1, s.length)
-            return TypeList.Node(resolve_vtype(tc, vtype_from_name(head)), tc_parse_type_list_str(tc, tail))
-        }
-        i = i + 1
-    }
-    TypeList.Node(resolve_vtype(tc, vtype_from_name(s.trim())), TypeList.End)
-}
-
-// Extract the base name from a generic type annotation.
-// "Result<EmitValue, string>" → "Result", "int" → "int"
-fn tc_base_type_name(ty: string) -> string {
-    mut i = 0
-    while i < ty.length {
-        if ty.substring(i, i + 1) == "<" { return ty.substring(0, i) }
-        i = i + 1
-    }
-    ty
-}
-
-// Upgrade a parser-resolved ValueType using TC registries.
-// The parser maps unknown names to Struct(name) or Int. This function
-// checks registries to distinguish structs from enums, traits, newtypes, etc.
-// Parse a union alias string like "int | string" into a resolved ValueType.
-// Resolve a union alias string like "int | string" into a ValueType.
-// Parse a union alias string "A | B | C" into ValueType.Union without translate_type.
-// Uses resolve_vtype + vtype_from_name for each component.
+// Parse a union alias string "A | B | C" into ValueType.Union.
 fn resolve_union_alias_str(tc: TC, ua: string) -> ValueType {
     let pipe = find_type_pipe(ua)
     if pipe >= 0 {
@@ -474,71 +425,6 @@ fn resolve_vtype_list(tc: TC, types: TypeList) -> TypeList {
         .End -> .End
         .Node(ty, next) -> TypeList.Node(resolve_vtype(tc, ty), resolve_vtype_list(tc, next))
     }
-}
-
-export fn translate_type(tc: TC, ty: string) -> ValueType {
-    // Nullable types: "T?" → translate inner T (no ValueType.Optional yet)
-    if ty.ends_with("?") && ty.length > 1 {
-        return translate_type(tc, ty.substring(0, ty.length - 1))
-    }
-    // Union types: "A|B|C" → ValueType.Union(TypeList)
-    // The parser's render_type_expr produces "A|B" for TypeExpr.Union.
-    // | never appears inside fn types (uses ->), generics (uses <>), or list types.
-    let pipe_idx = find_type_pipe(ty)
-    if pipe_idx >= 0 {
-        let left_str = ty.substring(0, pipe_idx)
-        let right_str = ty.substring(pipe_idx + 1, ty.length)
-        let left = translate_type(tc, left_str)
-        let right = translate_type(tc, right_str)
-        let types = union_type_list_merge(left, right)
-        return ValueType.Union(types)
-    }
-    match ty {
-        "str" or "string" -> return ValueType.Str
-        "i64" or "int"    -> return ValueType.Int
-        "float" or "f64"  -> return ValueType.Float
-        "bool"            -> return ValueType.Bool
-        "ptr"             -> return ValueType.Ptr
-        "fn"              -> return ValueType.Fn(ValueType.Unknown)
-        "List"            -> return ValueType.List(ValueType.Unknown)
-        "Map"             -> return ValueType.Map
-        _ -> {}
-    }
-    if ty.starts_with("fn") && ty.length > 2 {
-        let rest = ty.substring(2, ty.length)
-        if rest.starts_with("(") {
-            let close_idx = tc_find_close_paren(rest, 1)
-            let params_str = rest.substring(1, close_idx)
-            let param_types = tc_parse_type_list_str(tc, params_str)
-            let after_paren = rest.substring(close_idx + 1, rest.length)
-            let ret_ty = if after_paren.starts_with("->") {
-                translate_type(tc, after_paren.substring(2, after_paren.length))
-            } else {
-                ValueType.Void
-            }
-            return ValueType.FnTyped(param_types, ret_ty)
-        }
-        if rest.starts_with("->") {
-            return ValueType.Fn(translate_type(tc, rest.substring(2, rest.length)))
-        }
-        return ValueType.Fn(ValueType.Unknown)
-    }
-    if enum_type_has(tc.enums, ty) { return ValueType.Enum(ty, TypeList.End) }
-    // Union alias: type X = int | string
-    let ua = union_alias_lookup(tc.union_aliases, ty)
-    if ua != "" { return translate_type(tc, ua) }
-    // Newtype: type UserId = string
-    let nt = newtype_lookup(tc.newtypes, ty)
-    if nt != "" { return ValueType.Newtype(ty, translate_type(tc, nt)) }
-    if struct_type_has(tc.structs, ty) { return ValueType.Struct(ty) }
-    if trait_has(tc.traits, ty) { return ValueType.Trait(ty) }
-    // Handle generic type annotations: "Result<EmitValue, string>" → look up base "Result"
-    let base = tc_base_type_name(ty)
-    if base != ty {
-        if enum_type_has(tc.enums, base) { return ValueType.Enum(base, TypeList.End) }
-        if struct_type_has(tc.structs, base) { return ValueType.Struct(base) }
-    }
-    ValueType.Unknown
 }
 
 // ── Entry point ──
