@@ -1,0 +1,18 @@
+/// expect: got localhost
+/// expect: got null fallback
+
+type Config = { host: string, port: int }
+type App = { config: Config }
+
+fn get_host(app: App?) -> string {
+    if app != null {
+        return app!.config.host
+    }
+    "null fallback"
+}
+
+fn main() {
+    let a = App { config: Config { host: "localhost", port: 8080 } }
+    println("got " + get_host(a))
+    println("got " + get_host(null))
+}

@@ -1,0 +1,14 @@
+/// expect: hello world
+/// expect: 2 + 3 = 5
+/// expect: nested: [1, 2, 3]
+
+fn main() {
+    let name = "world"
+    println(`hello ${name}`)
+    
+    let a = 2
+    let b = 3
+    println(`${string(a)} + ${string(b)} = ${string(a + b)}`)
+    
+    println("nested: [1, 2, 3]")
+}
