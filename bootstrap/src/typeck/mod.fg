@@ -166,7 +166,7 @@ fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
 // Trait registry: maps trait name to its required method names.
 enum TraitMethodList {
     End
-    Node(name: string, next: TraitMethodList)
+    Node(name: string, param_count: int, ret_ty: string, next: TraitMethodList)
 }
 
 // Associated types declared on a trait (e.g. `type Item`).
