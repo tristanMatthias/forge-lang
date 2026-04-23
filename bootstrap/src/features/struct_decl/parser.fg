@@ -50,7 +50,7 @@ impl Parser {
                         if !self.consume(Tk.LeftBrace, "expected `{` after type operator") { return null }
                         let op_fields = self.parse_ident_list()
                         if !self.consume(Tk.RightBrace, "expected `}` after type operator fields") { return null }
-                        let derived = FieldList.Node("__base", rendered, ValueType.Unknown, FieldList.Node("__op", op, ValueType.Unknown, op_fields))
+                        let derived = FieldList.Node("__base", rendered, type_expr_to_vtype(type_expr), FieldList.Node("__op", op, ValueType.Str, op_fields))
                         return Stmt.TypeDecl(name, tp, derived)
                     }
                 }

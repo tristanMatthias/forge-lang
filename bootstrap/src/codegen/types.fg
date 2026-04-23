@@ -561,9 +561,6 @@ export fn resolve_type(regs: TypeRegs, ty: string) -> ValueType {
     let nt = cg_newtype_lookup(regs.newtypes, ty)
     if nt != "" { return ValueType.Newtype(ty, resolve_type(regs, nt)) }
     // Fall through to full string-based type parsing for complex types
-    // (fn(A,B)->Ret, List<T>, T?, generic mangling). This is the last
-    // remaining string-based type path — only reached when the parser
-    // produces Unknown and the type string has complex syntax.
     translate_param_type(regs.structs, regs.enums, ty)
 }
 
@@ -1183,7 +1180,9 @@ impl Ctx {
 
     fn resolve_param_vt(self, ty: string, pv: ValueType) -> ValueType {
         if vtype_is_unknown(pv) {
-            return self.resolve_codegen_vtype(vtype_from_name(ty))
+            // Strip nullable suffix (vtype_from_name also strips, but seed may not have that yet)
+            let clean_ty = if ty.ends_with("?") && ty.length > 1 { ty.substring(0, ty.length - 1) } else { ty }
+            return self.resolve_codegen_vtype(vtype_from_name(clean_ty))
         }
         self.resolve_codegen_vtype(pv)
     }
@@ -1224,7 +1223,8 @@ impl Ctx {
         // Fallback: field ValueType is Unknown (unresolved at setup time).
         // Use the string type name to construct a ValueType and resolve it.
         let ty_str = field_type_of(fields, name)
-        self.resolve_codegen_vtype(vtype_from_name(ty_str))
+        let clean_ty = if ty_str.ends_with("?") && ty_str.length > 1 { ty_str.substring(0, ty_str.length - 1) } else { ty_str }
+        self.resolve_codegen_vtype(vtype_from_name(clean_ty))
     }
 
     // ── Registry lookups ──

@@ -205,6 +205,10 @@ fn render_tel(list: TypeExprList) -> string {
 // named types become Struct(name) for later registry resolution.
 // Used by type_expr_to_vtype and the monomorphizer's substitute_vtype.
 export fn vtype_from_name(name: string) -> ValueType {
+    // Strip nullable suffix: "T?" → "T"
+    if name.ends_with("?") && name.length > 1 {
+        return vtype_from_name(name.substring(0, name.length - 1))
+    }
     match name {
         "int" -> ValueType.Int
         "i64" -> ValueType.Int
@@ -218,6 +222,7 @@ export fn vtype_from_name(name: string) -> ValueType {
         "List" -> ValueType.List(ValueType.Unknown)
         "void" -> ValueType.Void
         "fn" -> ValueType.Fn(ValueType.Unknown)
+        "" -> ValueType.Unknown
         _ -> ValueType.Struct(name)
     }
 }
