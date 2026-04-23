@@ -697,6 +697,8 @@ fn tc_check_implicit_return(tc: TC, fn_name: string, declared: ValueType, stmts:
     match body_ty {
         .Void or .Unknown -> tc
         _ -> {
+            // Allow concrete types to satisfy trait return types (auto-boxing at codegen)
+            if declared is .Trait { return tc }
             if !vtype_eq(declared, body_ty) && !vtype_assignable(body_ty, declared) {
                 let msg = "function `${fn_name}` returns `${vtype_display(declared)}`, but body produces `${vtype_display(body_ty)}`"
                 let cause = "declared return type is `${vtype_display(declared)}`"

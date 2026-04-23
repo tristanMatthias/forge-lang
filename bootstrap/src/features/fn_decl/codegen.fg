@@ -8,6 +8,7 @@ use codegen.types.{Ctx, EmitValue, ParamTypeList, ok_emit, ok_emit_str, ok_emit_
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
 use features.defer_stmt.codegen.{emit_defers}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
+use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
 use codegen.types.{ReleasableSet}
 use codegen.escape.{analyze_releasable}
@@ -71,7 +72,15 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
             let wrapped = emit_union_wrap(body_cg, br.value, br.ty, ret_ty)?
             ctx.ret(wrapped.value, ret_ty)
         } else {
-            ctx.ret(br.value, ret_ty)
+            // Trait boxing: if function returns a trait, box the concrete value
+            let trait_ret = vtype_trait_name(ret_ty)
+            let concrete_ret = resolve_concrete_type_name(br.ty)
+            if trait_ret != "" && concrete_ret != "" && !trait_decl_has(br.ctx.trait_decls, concrete_ret) {
+                let boxed = box_for_trait(br.ctx, br.value, trait_ret, concrete_ret)
+                ctx.ret(boxed, ret_ty)
+            } else {
+                ctx.ret(br.value, ret_ty)
+            }
         }
     }
     ctx.verify_fn(fn_val)
