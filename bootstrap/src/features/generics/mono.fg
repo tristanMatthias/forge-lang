@@ -328,11 +328,34 @@ fn is_builtin_type(name: string) -> bool {
 }
 
 fn check_one_bound(concrete: string, trait_name: string, fn_name: string, param_name: string, line: int, col: int, bag: DiagnosticBag, ti: TraitImplReg) -> DiagnosticBag {
-    // Built-in types are assumed to satisfy all bounds (no explicit impl blocks)
-    if is_builtin_type(concrete) { return bag }
+    // Built-in types have implicit trait implementations (no explicit impl blocks).
+    // Check against known built-in trait impls rather than blanket-accepting all.
+    if is_builtin_type(concrete) {
+        if builtin_implements(concrete, trait_name) { return bag }
+        return bag_report(bag, diag_error(DiagCode.TypeMismatch, "built-in type `${concrete}` does not implement trait `${trait_name}` (required by `${param_name}` in `${fn_name}`)", span_new(0, 0, line, col)))
+    }
     if !type_implements_trait(ti, concrete, trait_name) {
         bag_report(bag, diag_error(DiagCode.TypeMismatch, "type `${concrete}` does not implement trait `${trait_name}` (required by `${param_name}` in `${fn_name}`)", span_new(0, 0, line, col)))
     } else { bag }
+}
+
+// Check if a built-in type has an implicit implementation of a trait.
+fn builtin_implements(ty: string, trait_name: string) -> bool {
+    // All built-in types implement these universal traits
+    if trait_name == "Display" { return true }
+    if trait_name == "Debug" { return true }
+    if trait_name == "Clone" { return true }
+    if trait_name == "Copy" { return true }
+    if trait_name == "Sized" { return true }
+    // Numeric types implement Eq, Ord, Hash
+    if ty == "int" || ty == "i64" || ty == "float" || ty == "f64" || ty == "bool" {
+        if trait_name == "Eq" || trait_name == "Ord" || trait_name == "Hash" { return true }
+    }
+    // String implements Eq, Hash
+    if ty == "string" || ty == "str" {
+        if trait_name == "Eq" || trait_name == "Hash" { return true }
+    }
+    false
 }
 
 fn all_resolved(tp: TypeParamList, ta: TypeArgList) -> bool {
