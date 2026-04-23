@@ -589,9 +589,10 @@ fn check_stmts(tc: TC, stmts: StmtList) -> TC {
     }
 }
 
-fn check_binding(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr, is_const: bool) -> TC {
+fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: bool) -> TC {
+    let has_annotation = !vtype_is_unknown(ty_vt)
     let r = check_expr(tc, init)
-    let declared_ty = if ty_str.length > 0 { resolve_vtype(r.tc, ty_vt) } else { r.ty }
+    let declared_ty = if has_annotation { resolve_vtype(r.tc, ty_vt) } else { r.ty }
     if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Unknown) {
         let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
@@ -601,17 +602,17 @@ fn check_binding(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: E
         return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
     }
     // Shape subtyping: if declared type is a shape, check init value has required fields
-    let after_shape = if ty_str.length > 0 {
-        tc_check_shape_compat(r.tc, ty_str, r.ty)
+    let after_shape = if has_annotation {
+        tc_check_shape_compat(r.tc, vtype_struct_name(ty_vt), r.ty)
     } else { r.tc }
     tc_bind(after_shape, name, declared_ty)
 }
 
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Let(name, ty_str, ty_vt, init) -> check_binding(tc, name, ty_str, ty_vt, init, false)
-        .Mut(name, ty_str, ty_vt, init) -> check_binding(tc, name, ty_str, ty_vt, init, false)
-        .Const(name, ty_str, ty_vt, init) -> check_binding(tc, name, ty_str, ty_vt, init, true)
+        .Let(name, _, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
+        .Mut(name, _, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
+        .Const(name, _, ty_vt, init) -> check_binding(tc, name, ty_vt, init, true)
         .Expr(e) -> {
             let r = check_expr(tc, e)
             r.tc
@@ -1172,10 +1173,9 @@ fn annotate_enter_fn(tc: TC, params: ParamList) -> TC {
     tc_bind_params(tc_enter(tc), params)
 }
 
-fn annotate_bind(tc: TC, name: string, ty_str: string, ty_vt: ValueType, init: Expr) -> TC {
+fn annotate_bind(tc: TC, name: string, ty_vt: ValueType, init: Expr) -> TC {
     let r = check_expr(tc, init)
-    let resolved = resolve_vtype(tc, ty_vt)
-    let declared_ty = if ty_str.length > 0 { resolved } else { r.ty }
+    let declared_ty = if !vtype_is_unknown(ty_vt) { resolve_vtype(tc, ty_vt) } else { r.ty }
     tc_bind(tc, name, declared_ty)
 }
 
@@ -1185,9 +1185,9 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
         .Node(ss, next) -> {
             let new_stmt = annotate_stmt(tc, ss.node)
             let updated_tc = match ss.node {
-                .Let(name, ty_str, ty_vt, init) -> annotate_bind(tc, name, ty_str, ty_vt, init)
-                .Mut(name, ty_str, ty_vt, init) -> annotate_bind(tc, name, ty_str, ty_vt, init)
-                .Const(name, ty_str, ty_vt, init) -> annotate_bind(tc, name, ty_str, ty_vt, init)
+                .Let(name, _, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+                .Mut(name, _, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+                .Const(name, _, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
                 _ -> tc
             }
             StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(updated_tc, next))

@@ -462,8 +462,8 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
     }
 }
 
-fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty: string, ty_vt: ValueType, reg: TopLevelVars) -> TopLevelVars {
-    let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else if ty == "" { ValueType.Int } else { vtype_from_name(ty) }
+fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, reg: TopLevelVars) -> TopLevelVars {
+    let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { ValueType.Int }
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
     let g = forge_llvm_add_global(m, llvm_ty, name)
     forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
@@ -476,9 +476,9 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Let(name, ty, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, ty_vt, reg)
-                .Mut(name, ty, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, ty_vt, reg)
-                .Const(name, ty, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, ty_vt, reg)
+                .Let(name, _, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
+                .Mut(name, _, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
+                .Const(name, _, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
                 .Module(_, body) -> declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }
