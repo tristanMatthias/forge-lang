@@ -975,18 +975,27 @@ fn mangle_union(types: TypeList) -> string {
 }
 
 fn decl_fn_ret_type_vt(regs: TypeRegs, traits: TraitDeclReg, ret_ty: string, rvt: ValueType, body: StmtList) -> ValueType {
-    let base = setup_resolve_type(regs, ret_ty)
-    // If still Unknown, check if the name is a trait
-    let resolved = if vtype_is_unknown(base) && trait_decl_has(traits, ret_ty) {
-        ValueType.Trait(ret_ty)
-    } else { base }
+    // Prefer parser/monomorphizer ValueType over string resolution
+    mut base = resolve_ret_vtype(regs, ret_ty, rvt)
+    // Check if it's a trait name
+    let sn = match base { .Struct(n) -> n, _ -> "" }
+    if sn != "" && trait_decl_has(traits, sn) { base = ValueType.Trait(sn) }
+    if vtype_is_unknown(base) && trait_decl_has(traits, ret_ty) { base = ValueType.Trait(ret_ty) }
     let last = stmts_last_expr(body)
     match last {
-        .Lambda(_, _) -> {
-            let inner_ret = vtype_fn_ret(resolved)
-            ValueType.Closure(-1, inner_ret)
+        .Lambda(_, _) -> ValueType.Closure(-1, vtype_fn_ret(base))
+        _ -> base
+    }
+}
+
+fn resolve_ret_vtype(regs: TypeRegs, ret_ty: string, rvt: ValueType) -> ValueType {
+    if vtype_is_unknown(rvt) { return setup_resolve_type(regs, ret_ty) }
+    match rvt {
+        .Enum(name, _) -> {
+            let found = enum_reg_lookup(regs.enums, name)
+            if found.found { ValueType.Enum(name, TypeList.End) } else { setup_resolve_vtype(regs, rvt) }
         }
-        _ -> resolved
+        _ -> setup_resolve_vtype(regs, rvt)
     }
 }
 
