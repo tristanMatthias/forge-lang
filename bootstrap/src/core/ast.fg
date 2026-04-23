@@ -20,9 +20,7 @@ export enum ExprList {
 
 export enum ParamList {
     End
-    // `ty` is the textual type annotation as written in source.
-    // `resolved` is the parsed ValueType (populated during declaration passes).
-    Node(name: string, ty: string, resolved: ValueType, next: ParamList)
+    Node(name: string, resolved: ValueType, next: ParamList)
 }
 
 // Struct field declaration list — used in `type Foo = { f1: i64, f2: str }`.
@@ -762,7 +760,7 @@ export fn fn_env_extend(env: FnEnv, name: string, fn_val: ptr, arity: int) -> Fn
 export fn param_list_length(params: ParamList) -> int {
     match params {
         .End -> 0
-        .Node(_, _, _, next) -> 1 + param_list_length(next)
+        .Node(_, _, next) -> 1 + param_list_length(next)
     }
 }
 
@@ -1012,7 +1010,7 @@ fn render_expr_list_tail(exprs: ExprList) -> string {
 export fn render_param_list(params: ParamList) -> string {
     match params {
         .End -> "()"
-        .Node(name, _, _, next) -> {
+        .Node(name, _, next) -> {
             let tail = render_param_list_tail(next)
             "(${name}${tail})"
         }
@@ -1022,7 +1020,7 @@ export fn render_param_list(params: ParamList) -> string {
 fn render_param_list_tail(params: ParamList) -> string {
     match params {
         .End -> ""
-        .Node(name, _, _, next) -> ", ${name}${render_param_list_tail(next)}"
+        .Node(name, _, next) -> ", ${name}${render_param_list_tail(next)}"
     }
 }
 

@@ -30,7 +30,7 @@ mod codegen
 mod desugar
 
 use parse.{parse_expression_source, parse_program_source}
-use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str}
+use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display}
 use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
@@ -227,7 +227,7 @@ fn fmt_expr_list_comma_tail(exprs: ExprList) -> string {
 fn fmt_param_list_comma(params: ParamList) -> string {
     match params {
         .End -> ""
-        .Node(name, _, _, next) -> {
+        .Node(name, _, next) -> {
             let tail = fmt_param_list_comma_tail(next)
             "${name}${tail}"
         }
@@ -237,15 +237,16 @@ fn fmt_param_list_comma(params: ParamList) -> string {
 fn fmt_param_list_comma_tail(params: ParamList) -> string {
     match params {
         .End -> ""
-        .Node(name, _, _, next) -> ", ${name}${fmt_param_list_comma_tail(next)}"
+        .Node(name, _, next) -> ", ${name}${fmt_param_list_comma_tail(next)}"
     }
 }
 
 fn fmt_param_list_typed(params: ParamList) -> string {
     match params {
         .End -> ""
-        .Node(name, ty, _, next) -> {
-            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+        .Node(name, resolved, next) -> {
+            let ty = vtype_display(resolved)
+            let ty_part = if ty == "unknown" || ty == "" { "" } else { ": ${ty}" }
             let tail = fmt_param_list_typed_tail(next)
             "${name}${ty_part}${tail}"
         }
@@ -255,8 +256,9 @@ fn fmt_param_list_typed(params: ParamList) -> string {
 fn fmt_param_list_typed_tail(params: ParamList) -> string {
     match params {
         .End -> ""
-        .Node(name, ty, _, next) -> {
-            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+        .Node(name, resolved, next) -> {
+            let ty = vtype_display(resolved)
+            let ty_part = if ty == "unknown" || ty == "" { "" } else { ": ${ty}" }
             ", ${name}${ty_part}${fmt_param_list_typed_tail(next)}"
         }
     }

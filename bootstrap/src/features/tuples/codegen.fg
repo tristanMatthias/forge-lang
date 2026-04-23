@@ -61,7 +61,7 @@ export fn emit_let_destructure(ctx: Ctx, env: VarEnv, names: ParamList, initiali
 fn destructure_names(ctx: Ctx, env: VarEnv, names: ParamList, base: ptr, tuple_ty: ValueType, idx: int) -> Result<VarEnv, string> {
     match names {
         .End -> ok_stmt(env)
-        .Node(name, _, _, next) -> {
+        .Node(name, _, next) -> {
             let loaded = tuple_load(ctx, base, idx, name)
             let alloca = ctx.alloca_i64(name)
             ctx.store(loaded, alloca)

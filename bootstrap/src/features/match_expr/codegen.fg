@@ -128,7 +128,7 @@ fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, subj_val: pt
                 }
                 // Treat .Variant(name, bindings) as a type pattern on unions
                 .Variant(vname, bindings) -> {
-                    let binding = match bindings { .Node(n, _, _, _) -> n, .End -> "_" }
+                    let binding = match bindings { .Node(n, _, _) -> n, .End -> "_" }
                     let arm_bb = ctx.bb("union_arm")
                     let next_bb = ctx.bb("union_next")
                     let expected_tag = ctx.i64(forge_variant_hash(vname))
@@ -403,9 +403,9 @@ fn bind_pattern_payload(ctx: Ctx, env: VarEnv, pattern: Pattern, st_ty: ptr, sub
 fn bind_pattern_payload_loop(ctx: Ctx, env: VarEnv, st_ty: ptr, subj_ptr: ptr, bindings: ParamList, fields: FieldList, idx: int) -> VarEnv {
     match bindings {
         .End -> env
-        .Node(name, _, _, next_b) if name == "_" ->
+        .Node(name, _, next_b) if name == "_" ->
             bind_pattern_payload_loop(ctx, env, st_ty, subj_ptr, next_b, advance_field_list(fields), idx + 1)
-        .Node(name, _, _, next_b) -> {
+        .Node(name, _, next_b) -> {
             let field_ty = field_resolved_at(fields, 0)
             let loaded = load_payload_field(ctx, st_ty, subj_ptr, idx, field_ty, name)
             let extended = ctx.bind(env, name, loaded, field_ty)
@@ -467,8 +467,8 @@ fn bind_single_sub_pattern(ctx: Ctx, env: VarEnv, pat: Pattern, value: ptr, ty: 
 fn bind_first_param(ctx: Ctx, env: VarEnv, bindings: ParamList, value: ptr, ty: ValueType) -> VarEnv {
     match bindings {
         .End -> env
-        .Node(name, _, _, _) if name == "_" -> env
-        .Node(name, _, _, _) -> ctx.bind(env, name, value, ty)
+        .Node(name, _, _) if name == "_" -> env
+        .Node(name, _, _) -> ctx.bind(env, name, value, ty)
     }
 }
 

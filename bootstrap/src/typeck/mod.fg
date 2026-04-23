@@ -503,7 +503,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                 }
                 .NewtypeDecl(name, inner_ty_str, inner_vt) -> {
                     let inner_ty = resolve_vtype(tc, inner_vt)
-                    let ctor_params = ParamList.Node("value", inner_ty_str, inner_ty, ParamList.End)
+                    let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
                     tc with {
                         newtypes: NewtypeReg.Node(name, inner_ty_str, inner_vt, tc.newtypes),
                         fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty), tc.fns),
@@ -798,7 +798,7 @@ fn tc_check_stmt_returns(tc: TC, fn_name: string, declared: ValueType, stmt: Stm
 export fn tc_bind_params(tc: TC, params: ParamList) -> TC {
     match params {
         .End -> tc
-        .Node(name, ty_str, resolved, next) -> {
+        .Node(name, resolved, next) -> {
             let ty = resolve_vtype(tc, resolved)
             tc_bind_params(tc_bind(tc, name, ty), next)
         }
@@ -880,11 +880,11 @@ export fn check_expr(tc: TC, expr: Expr) -> ExprResult {
 fn tc_check_shape_args(tc: TC, params: ParamList, args: ExprList) -> TC {
     match params {
         .End -> tc
-        .Node(_, param_ty_str, _, next_params) -> match args {
+        .Node(_, param_vt, next_params) -> match args {
             .End -> tc
             .Node(arg_se, next_args) -> {
                 let arg_ty = check_expr(tc, arg_se.node).ty
-                let checked = tc_check_shape_compat(tc, param_ty_str, arg_ty)
+                let checked = tc_check_shape_compat(tc, vtype_display(param_vt), arg_ty)
                 tc_check_shape_args(checked, next_params, next_args)
             }
         }
@@ -895,7 +895,7 @@ fn tc_check_shape_args(tc: TC, params: ParamList, args: ExprList) -> TC {
 fn tc_check_newtype_args(tc: TC, fn_name: string, params: ParamList, args: ExprList) -> TC {
     match params {
         .End -> tc
-        .Node(param_name, _, param_vt, next_params) -> match args {
+        .Node(param_name, param_vt, next_params) -> match args {
             .End -> tc
             .Node(arg_se, next_args) -> {
                 let param_ty = resolve_vtype(tc, param_vt)

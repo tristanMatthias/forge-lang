@@ -12,7 +12,7 @@
 // For non-capturing lambdas (the common case), the closure value
 // is just the function pointer with a null environment.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, SExpr, SStmt}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, VarEnv, env_lookup, param_list_length, expr_list_length, ValueType, TypeList, vtype_closure_captures, vtype_is_closure, vtype_fn_ret, vtype_eq, vtype_is_unknown, SExpr, SStmt}
 use codegen.types.{Ctx, EmitValue, err_emit, null_ptr_val, ok_emit, ok_emit_typed}
 use codegen.{emit_expr}
 use codegen.escape.{analyze_releasable, analyze_releasable_expr}
@@ -34,8 +34,8 @@ fn capture_list_len(list: CaptureList) -> int {
 fn is_param(params: ParamList, name: string) -> bool {
     match params {
         .End -> false
-        .Node(pname, _, _, _) if pname == name -> true
-        .Node(_, _, _, next) -> is_param(next, name)
+        .Node(pname, _, _) if pname == name -> true
+        .Node(_, _, next) -> is_param(next, name)
     }
 }
 
@@ -221,11 +221,11 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
             // If this statement binds a local name, add it to params so subsequent
             // uses of the name won't be treated as captures from the outer scope.
             let updated_params = match ss.node {
-                .Let(name, _, _, _) -> ParamList.Node(name, "", ValueType.Unknown, params)
-                .Mut(name, _, _, _) -> ParamList.Node(name, "", ValueType.Unknown, params)
-                .Const(name, _, _, _) -> ParamList.Node(name, "", ValueType.Unknown, params)
-                .For(vname, _, _, _) -> ParamList.Node(vname, "", ValueType.Unknown, params)
-                .ForIn(vname, _, _) -> ParamList.Node(vname, "", ValueType.Unknown, params)
+                .Let(name, _, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
+                .Mut(name, _, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
+                .Const(name, _, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
+                .For(vname, _, _, _) -> ParamList.Node(vname, ValueType.Unknown, params)
+                .ForIn(vname, _, _) -> ParamList.Node(vname, ValueType.Unknown, params)
                 _ -> params
             }
             find_captures_stmts(next, updated_params, env, c1)
@@ -346,9 +346,9 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
 fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captures: CaptureList) -> TypeList {
     match params {
         .End -> TypeList.End
-        .Node(name, type_ann, raw_vt, next) -> {
+        .Node(name, raw_vt, next) -> {
             // Priority: explicit annotation > float inference > default Unknown
-            let ty = if type_ann != "" && type_ann != "i64" {
+            let ty = if !vtype_is_unknown(raw_vt) && !(raw_vt is .Int) {
                 ctx.resolve_codegen_vtype(raw_vt)
             } else if param_used_with_float(name, body, ctx, env, captures, params) {
                 ValueType.Float
@@ -635,13 +635,13 @@ fn fill_lambda_args(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList, idx: int) -
 fn bind_lambda_params_typed(ctx: Ctx, env: VarEnv, params: ParamList, fn_val: ptr, idx: int, types: TypeList) -> VarEnv {
     match params {
         .End -> env
-        .Node(name, type_ann, raw_vt, next) -> {
+        .Node(name, raw_vt, next) -> {
             let param_val = ctx.get_param(fn_val, idx)
             // Priority: external TypeList > param annotation > resolved
             let ty = match types {
                 .Node(t, _) -> t
                 .End -> {
-                    if type_ann != "" && type_ann != "i64" {
+                    if !vtype_is_unknown(raw_vt) && !(raw_vt is .Int) {
                         ctx.resolve_codegen_vtype(raw_vt)
                     } else {
                         ValueType.Unknown

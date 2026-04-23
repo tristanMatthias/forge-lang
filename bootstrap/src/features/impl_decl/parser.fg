@@ -122,9 +122,9 @@ impl Parser {
             if self.check(Tk.Comma) {
                 self.advance()
                 let rest = self.parse_param_list()?
-                return ParamList.Node("self", type_name, vtype_from_name(type_name), rest)
+                return ParamList.Node("self", vtype_from_name(type_name), rest)
             }
-            return ParamList.Node("self", type_name, vtype_from_name(type_name), ParamList.End)
+            return ParamList.Node("self", vtype_from_name(type_name), ParamList.End)
         }
         self.parse_param_list()
     }

@@ -955,8 +955,8 @@ impl Ctx {
     fn resolve_params(self, params: ParamList) -> ParamList {
         match params {
             .End -> .End
-            .Node(name, ty, pv, next) ->
-                .Node(name, ty, self.resolve_param_vt(ty, pv), self.resolve_params(next))
+            .Node(name, pv, next) ->
+                .Node(name, self.resolve_param_vt("", pv), self.resolve_params(next))
         }
     }
 

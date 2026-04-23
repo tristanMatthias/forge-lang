@@ -212,7 +212,7 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
 fn collect_reexport_items(names: ParamList, source_mod: string, rest: ModuleItem) -> ModuleItem {
     match names {
         .End -> rest
-        .Node(name, _, _, next) -> {
+        .Node(name, _, next) -> {
             let canonical = "${source_mod}::${name}"
             ModuleItem.Node(name, canonical, true, collect_reexport_items(next, source_mod, rest))
         }
@@ -277,11 +277,10 @@ type UseResult = {
 fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, result: UseResult, sp: Span) -> UseResult {
     match names {
         .End -> result
-        .Node(name, col_str, _, next) -> {
-            // Build a span pointing at this specific import name.
-            // start/end encode the highlight length; line/col encode position.
-            let name_col = int(col_str)
-            let name_sp = if name_col > 0 { span_new(0, name.length, sp.line, name_col) } else { sp }
+        .Node(name, _, next) -> {
+            // Use the overall use-statement span (per-name column was stored in the
+            // removed ty field; fall back to the statement span for diagnostics).
+            let name_sp = sp
             let mod_node = module_find(tree, mod_path)
             let found_info = match mod_node {
                 .End -> {
@@ -374,7 +373,7 @@ fn ctx_with_module(ctx: NameCtx, current_module: string, aliases: AliasEntry) ->
 fn bind_params_ctx(ctx: NameCtx, params: ParamList) -> NameCtx {
     match params {
         .End -> ctx
-        .Node(name, _, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, false, true, 0, ctx.locals)), next)
+        .Node(name, _, next) -> bind_params_ctx(ctx_with_locals(ctx, LocalScope.Node(name, false, true, 0, ctx.locals)), next)
     }
 }
 

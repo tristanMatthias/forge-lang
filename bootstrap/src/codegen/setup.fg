@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_from_name, vtype_is_closure, vtype_is_unknown, vtype_enum_name, env_extend}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_display, vtype_eq, vtype_fn_ret, vtype_from_name, vtype_is_closure, vtype_is_unknown, vtype_enum_name, env_extend}
 use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
@@ -372,8 +372,8 @@ fn resolve_field_list(fields: FieldList, regs: TypeRegs) -> FieldList {
 fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
     match params {
         .End -> .End
-        .Node(name, ty, pv, next) ->
-            .Node(name, ty, resolve_field_vt(regs, ty, pv), resolve_param_list(next, regs))
+        .Node(name, pv, next) ->
+            .Node(name, resolve_setup_vt(regs, pv), resolve_param_list(next, regs))
     }
 }
 
@@ -899,7 +899,7 @@ fn fill_i64_param_array_offset(arr: ptr, i64t: ptr, base: int, count: int) {
 fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, params: ParamList, idx: int) {
     match params {
         .End -> {}
-        .Node(_, _, resolved, next) -> {
+        .Node(_, resolved, next) -> {
             forge_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, resolved))
             fill_typed_param_array(arr, i64t, i1t, dt, pt, next, idx + 1)
         }
@@ -986,7 +986,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
 fn params_to_type_list(params: ParamList) -> ParamTypeList {
     match params {
         .End -> .End
-        .Node(_, ty, resolved, next) -> .Node(ty, resolved, params_to_type_list(next))
+        .Node(_, resolved, next) -> .Node(vtype_display(resolved), resolved, params_to_type_list(next))
     }
 }
 

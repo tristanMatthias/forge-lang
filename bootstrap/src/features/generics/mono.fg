@@ -265,7 +265,7 @@ fn infer_from_fields(tp: TypeParamList, fields: FieldList, args: ExprList, acc: 
 fn infer_from_params(tp: TypeParamList, params: ParamList, args: ExprList, acc: TypeArgList) -> TypeArgList {
     match params {
         .End -> acc
-        .Node(_, _, resolved, rest) -> match args {
+        .Node(_, resolved, rest) -> match args {
             .End -> acc
             .Node(arg, rest_args) -> {
                 let ty_name = vtype_display(resolved)
@@ -465,13 +465,13 @@ fn top_level_split_idx(s: string) -> int {
 fn rewrite_param_types(params: ParamList, regs: GenRegs, insts: InstList) -> ParamList {
     match params {
         .End -> .End
-        .Node(name, _, resolved, next) -> {
+        .Node(name, resolved, next) -> {
             let vt = if vtype_is_unknown(resolved) { resolved } else {
                 let ty_name = vtype_display(resolved)
                 let rewritten = rewrite_type_name(ty_name, regs, insts)
                 if rewritten != ty_name { vtype_from_type_string(rewritten) } else { resolved }
             }
-            ParamList.Node(name, vtype_display(resolved), vt, rewrite_param_types(next, regs, insts))
+            ParamList.Node(name, vt, rewrite_param_types(next, regs, insts))
         }
     }
 }
@@ -725,9 +725,9 @@ fn substitute_vtype_list(types: TypeList, ta: TypeArgList) -> TypeList {
 }
 
 fn substitute_params(params: ParamList, ta: TypeArgList) -> ParamList {
-    match params { .End -> .End, .Node(n, _, r, next) -> {
+    match params { .End -> .End, .Node(n, r, next) -> {
         let subst_r = substitute_vtype(r, ta)
-        ParamList.Node(n, vtype_display(subst_r), subst_r, substitute_params(next, ta))
+        ParamList.Node(n, subst_r, substitute_params(next, ta))
     }}
 }
 fn substitute_fields(fields: FieldList, ta: TypeArgList) -> FieldList {

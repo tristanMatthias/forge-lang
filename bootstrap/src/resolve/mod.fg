@@ -164,7 +164,7 @@ export fn define_name(r: Resolver, name: string) -> Resolver {
 export fn define_param_names(r: Resolver, params: ParamList) -> Resolver {
     match params {
         .End -> r
-        .Node(name, _, _, next) -> {
+        .Node(name, _, next) -> {
             let after = declare_name(r, name)
             let defined = define_name(after, name)
             define_param_names(defined, next)
@@ -277,7 +277,7 @@ export fn declare_params(r: Resolver, params: ParamList) -> Resolver {
     while true {
         match current {
             .End -> { return res }
-            .Node(name, _, _, next) -> {
+            .Node(name, _, next) -> {
                 let declared = declare_name(res, name)
                 res = define_name(declared, name)
                 current = next

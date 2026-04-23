@@ -90,7 +90,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
 fn bind_params_inline(ctx: Ctx, fn_val: ptr, params: ParamList, idx: int, env: VarEnv) -> VarEnv {
     match params {
         .End -> env
-        .Node(name, _, resolved, next) -> {
+        .Node(name, resolved, next) -> {
             let arg = ctx.get_param(fn_val, idx)
             bind_params_inline(ctx, fn_val, next, idx + 1, ctx.bind(env, name, arg, resolved))
         }
@@ -125,7 +125,7 @@ fn should_null_check_vt(vt: ValueType) -> bool {
 fn emit_null_checks(ctx: Ctx, fn_name: string, params: ParamList, env: VarEnv) {
     match params {
         .End -> {}
-        .Node(name, _, vt, next) -> {
+        .Node(name, vt, next) -> {
             if should_null_check_vt(vt) {
                 emit_one_null_check(ctx, fn_name, name, env)
             }
