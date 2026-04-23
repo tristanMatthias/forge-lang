@@ -1,0 +1,22 @@
+/// expect: a: 10
+/// expect: b: 20
+
+fn compute(n: int) -> int { n * 10 }
+
+fn main() {
+    // Spawn inside if — should still create task group
+    let flag = true
+    if flag {
+        let t = spawn { compute(1) }
+        println("a: " + string(t.await))
+    }
+    // Spawn inside match
+    let x = 2
+    match x {
+        2 -> {
+            let t2 = spawn { compute(2) }
+            println("b: " + string(t2.await))
+        }
+        _ -> {}
+    }
+}
