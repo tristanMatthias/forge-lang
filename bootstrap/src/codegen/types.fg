@@ -254,14 +254,6 @@ export fn field_resolved_at(fields: FieldList, idx: int) -> ValueType {
     }
 }
 
-export fn field_type_at(fields: FieldList, idx: int) -> string {
-    match fields {
-        .End -> "i64"
-        .Node(_, ty, _, _) if idx <= 0 -> ty
-        .Node(_, _, _, next) -> field_type_at(next, idx - 1)
-    }
-}
-
 // ── Type registries ──
 //
 // Linked-list registries for struct and enum declarations. Built
@@ -293,15 +285,6 @@ export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
         .End -> .End
         .Node(n, params, _) if n == name -> params
         .Node(_, _, next) -> fn_param_lookup(next, name)
-    }
-}
-
-// Get the Nth type string from a ParamTypeList (0-indexed).
-export fn param_type_at(list: ParamTypeList, idx: int) -> string {
-    match list {
-        .End -> ""
-        .Node(ty, _, _) if idx == 0 -> ty
-        .Node(_, _, next) -> param_type_at(next, idx - 1)
     }
 }
 
