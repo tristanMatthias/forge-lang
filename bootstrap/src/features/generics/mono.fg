@@ -842,13 +842,6 @@ fn vtype_from_type_string(ty: string) -> ValueType {
     if ty.ends_with("?") && ty.length > 1 {
         return vtype_from_type_string(ty.substring(0, ty.length - 1))
     }
-    // Handle union types "A | B"
-    let pipe = find_type_pipe(ty)
-    if pipe >= 0 {
-        let left = vtype_from_type_string(ty.substring(0, pipe).trim())
-        let right = vtype_from_type_string(ty.substring(pipe + 1, ty.length).trim())
-        return ValueType.Union(union_type_list_merge(left, right))
-    }
     // Handle generic type strings like "Result<int, string>"
     let angle = find_char(ty, "<")
     if angle >= 0 {
@@ -857,12 +850,20 @@ fn vtype_from_type_string(ty: string) -> ValueType {
         let args = parse_type_args_to_list(args_str)
         return ValueType.Enum(base, args)
     }
-    // Handle mangled names like "Result__int__string" — extract type args from __ separators
-    // Uses the full mangled name as enum name (codegen registers enums under mangled names)
+    // Handle mangled names like "Result__int__string" BEFORE union check —
+    // mangled names like "Result__X__A|B" contain | but are NOT unions.
     let dunder = find_dunder(ty)
     if dunder >= 0 {
         let args = parse_dunder_args(ty, dunder + 2)
         return ValueType.Enum(ty, args)
+    }
+    // Handle union types "A | B" — checked AFTER mangled names
+    // so "Result__X__A|B" is treated as a mangled name, not a union
+    let pipe = find_type_pipe(ty)
+    if pipe >= 0 {
+        let left = vtype_from_type_string(ty.substring(0, pipe).trim())
+        let right = vtype_from_type_string(ty.substring(pipe + 1, ty.length).trim())
+        return ValueType.Union(union_type_list_merge(left, right))
     }
     vtype_from_name(ty)
 }

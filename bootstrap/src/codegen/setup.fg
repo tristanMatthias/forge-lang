@@ -909,7 +909,13 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
 fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, ret_ty: string, rvt: ValueType, body: StmtList) -> ValueType {
     // Prefer parser/monomorphizer ValueType
     mut base = if vtype_is_unknown(rvt) {
-        if ret_ty == "" { ValueType.Void } else { resolve_setup_vt(regs, vtype_from_name(ret_ty)) }
+        if ret_ty == "" { ValueType.Void } else {
+            // Check enum registry first — mangled names like "Result__X__A|B" contain |
+            // but are NOT unions. Direct lookup prevents incorrect pipe splitting.
+            let direct_e = enum_reg_lookup(regs.enums, ret_ty)
+            if direct_e.found { ValueType.Enum(ret_ty, TypeList.End) }
+            else { resolve_setup_vt(regs, vtype_from_name(ret_ty)) }
+        }
     } else {
         let resolved = resolve_setup_vt(regs, rvt)
         // For monomorphized enums, check direct registry lookup
