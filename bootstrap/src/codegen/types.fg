@@ -695,24 +695,11 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     ValueType.Unknown
 }
 
-// translate_param_type with trait awareness — uses Ctx for trait registry.
+// DEAD CODE — no callers remain. Kept for seed compatibility during bootstrap.
+// Delete after next seed cycle.
 export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
-    // List<T> with trait-aware inner type resolution
-    let bname = base_type_name(ty)
-    if bname == "List" && bname != ty {
-        let inner_name = ty.substring(5, ty.length - 1)
-        let inner = translate_type_ctx(ctx, inner_name)
-        return ValueType.List(inner)
-    }
     let regs = TypeRegs { structs: ctx.structs, enums: ctx.enums, newtypes: ctx.newtypes, union_aliases: ctx.union_aliases }
-    let base = resolve_type(regs, ty)
-    // If resolved to a concrete type, return it. Otherwise check traits.
-    if !vtype_is_unknown(base) { return base }
-    if ty in ["", "int", "i64"] { return ValueType.Int }
-    if trait_decl_has(ctx.trait_decls, ty) {
-        return ValueType.Trait(ty)
-    }
-    base
+    resolve_type(regs, ty)
 }
 
 // ── LLVM type mapping ──
@@ -1234,12 +1221,8 @@ impl Ctx {
                 // Check newtype / union alias
                 let nt_vt = cg_newtype_vtype_lookup(self.newtypes, name)
                 if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, self.resolve_codegen_vtype(nt_vt)) }
-                let nt = cg_newtype_lookup(self.newtypes, name)
-                if nt != "" { return ValueType.Newtype(name, translate_type_ctx(self, nt)) }
                 let ua_vt = cg_union_alias_vtype_lookup(self.union_aliases, name)
                 if !vtype_is_unknown(ua_vt) { return self.resolve_codegen_vtype(ua_vt) }
-                let ua = cg_union_alias_lookup(self.union_aliases, name)
-                if ua != "" { return translate_type_ctx(self, ua) }
                 vt  // keep Struct(name) — might be from another module or generic
             }
             .Enum(name, args) -> ValueType.Enum(name, self.resolve_codegen_vtype_list(args))
@@ -1254,12 +1237,6 @@ impl Ctx {
         match types { .End -> .End, .Node(ty, next) -> TypeList.Node(self.resolve_codegen_vtype(ty), self.resolve_codegen_vtype_list(next)) }
     }
 
-    // Translate a type annotation string to ValueType.
-    fn translate_type(self, ty: string) -> ValueType {
-        translate_type_ctx(self, ty)
-    }
-
-    // Resolve a struct field's type from its parsed ValueType.
     fn resolve_field_type(self, fields: FieldList, name: string) -> ValueType {
         let vt = field_vtype_of(fields, name)
         if !vtype_is_unknown(vt) {
