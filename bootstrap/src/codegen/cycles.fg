@@ -43,7 +43,7 @@ fn visited_has(vs: CycleVisited, name: string) -> bool {
 fn fields_reach_target(fields: FieldList, target: string, visited: CycleVisited, structs: StructReg, enums: EnumReg) -> bool {
     match fields {
         .End -> false
-        .Node(_, _, resolved, next) -> {
+        .Node(_, resolved, next) -> {
             if type_reaches_target(resolved, target, visited, structs, enums) {
                 true
             } else {

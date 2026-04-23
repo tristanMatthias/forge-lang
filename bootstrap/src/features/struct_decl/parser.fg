@@ -50,7 +50,7 @@ impl Parser {
                         if !self.consume(Tk.LeftBrace, "expected `{` after type operator") { return null }
                         let op_fields = self.parse_ident_list()
                         if !self.consume(Tk.RightBrace, "expected `}` after type operator fields") { return null }
-                        let derived = FieldList.Node("__base", rendered, type_expr_to_vtype(type_expr), FieldList.Node("__op", op, ValueType.Str, op_fields))
+                        let derived = FieldList.Node("__base", type_expr_to_vtype(type_expr), FieldList.Node("__" + op, ValueType.Str, op_fields))
                         return Stmt.TypeDecl(name, tp, derived)
                     }
                 }
@@ -86,7 +86,7 @@ impl Parser {
         let id = self.current_lexeme
         self.advance()
         if self.check(Tk.Comma) { self.advance() }
-        FieldList.Node(id, "", ValueType.Unknown, self.parse_ident_list())
+        FieldList.Node(id, ValueType.Unknown, self.parse_ident_list())
     }
 
     fn parse_field_list(self) -> FieldList? {
@@ -102,14 +102,13 @@ impl Parser {
             return null
         }
         let te = self.parse_type_expr("expected field type")?
-        let ty = render_type_expr(te)
         let resolved = type_expr_to_vtype(te)
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_field_list()?
-            return FieldList.Node(name, ty, resolved, rest)
+            return FieldList.Node(name, resolved, rest)
         }
-        FieldList.Node(name, ty, resolved, FieldList.End)
+        FieldList.Node(name, resolved, FieldList.End)
     }
 
     fn parse_field_init_list(self) -> FieldInitList? {

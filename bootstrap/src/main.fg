@@ -307,8 +307,8 @@ fn fmt_field_decl_list(fields: FieldList, depth: int) -> string {
     let ind = fmt_indent(depth)
     match fields {
         .End -> ""
-        .Node(name, ty, _, next) -> {
-            let head = "${ind}${name}: ${ty}"
+        .Node(name, vt, next) -> {
+            let head = "${ind}${name}: ${vtype_display(vt)}"
             let tail = fmt_field_decl_list(next, depth)
             if tail == "" { head } else { "${head}\n${tail}" }
         }
@@ -331,8 +331,8 @@ fn fmt_variant_list(variants: VariantList, depth: int) -> string {
 fn fmt_variant_fields(fields: FieldList) -> string {
     match fields {
         .End -> ""
-        .Node(name, ty, _, next) -> {
-            let head = "${name}: ${ty}"
+        .Node(name, vt, next) -> {
+            let head = "${name}: ${vtype_display(vt)}"
             let tail = fmt_variant_fields_tail(next)
             "(${head}${tail})"
         }
@@ -342,7 +342,7 @@ fn fmt_variant_fields(fields: FieldList) -> string {
 fn fmt_variant_fields_tail(fields: FieldList) -> string {
     match fields {
         .End -> ""
-        .Node(name, ty, _, next) -> ", ${name}: ${ty}${fmt_variant_fields_tail(next)}"
+        .Node(name, vt, next) -> ", ${name}: ${vtype_display(vt)}${fmt_variant_fields_tail(next)}"
     }
 }
 

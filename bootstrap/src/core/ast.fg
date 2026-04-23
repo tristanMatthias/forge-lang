@@ -24,10 +24,9 @@ export enum ParamList {
 }
 
 // Struct field declaration list — used in `type Foo = { f1: i64, f2: str }`.
-// `ty` is the textual type name. `resolved` is the parsed ValueType.
 export enum FieldList {
     End
-    Node(name: string, ty: string, resolved: ValueType, next: FieldList)
+    Node(name: string, resolved: ValueType, next: FieldList)
 }
 
 // Field initializer list — used in `Foo { f1: 1, f2: "hi" }`.
@@ -774,31 +773,31 @@ export fn expr_list_length(exprs: ExprList) -> int {
 export fn field_list_length(fields: FieldList) -> int {
     match fields {
         .End -> 0
-        .Node(_, _, _, next) -> 1 + field_list_length(next)
+        .Node(_, _, next) -> 1 + field_list_length(next)
     }
 }
 
 export fn field_list_has(list: FieldList, target: string) -> bool {
     match list {
         .End -> false
-        .Node(n, _, _, _) if n == target -> true
-        .Node(_, _, _, next) -> field_list_has(next, target)
+        .Node(n, _, _) if n == target -> true
+        .Node(_, _, next) -> field_list_has(next, target)
     }
 }
 
 export fn filter_fields_without(base: FieldList, excluded: FieldList) -> FieldList {
     match base {
         .End -> FieldList.End
-        .Node(name, _, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
-        .Node(name, ty, r, next) -> FieldList.Node(name, ty, r, filter_fields_without(next, excluded))
+        .Node(name, _, next) if field_list_has(excluded, name) -> filter_fields_without(next, excluded)
+        .Node(name, r, next) -> FieldList.Node(name, r, filter_fields_without(next, excluded))
     }
 }
 
 export fn filter_fields_only(base: FieldList, included: FieldList) -> FieldList {
     match base {
         .End -> FieldList.End
-        .Node(name, ty, r, next) if field_list_has(included, name) -> FieldList.Node(name, ty, r, filter_fields_only(next, included))
-        .Node(_, _, _, next) -> filter_fields_only(next, included)
+        .Node(name, r, next) if field_list_has(included, name) -> FieldList.Node(name, r, filter_fields_only(next, included))
+        .Node(_, _, next) -> filter_fields_only(next, included)
     }
 }
 
@@ -817,8 +816,8 @@ export fn field_index_of(fields: FieldList, name: string) -> int {
 fn field_index_of_loop(fields: FieldList, name: string, idx: int) -> int {
     match fields {
         .End -> -1
-        .Node(n, _, _, _) if n == name -> idx
-        .Node(_, _, _, next) -> field_index_of_loop(next, name, idx + 1)
+        .Node(n, _, _) if n == name -> idx
+        .Node(_, _, next) -> field_index_of_loop(next, name, idx + 1)
     }
 }
 
@@ -868,25 +867,12 @@ export fn variant_max_payload(variants: VariantList) -> int {
     }
 }
 
-// Returns the textual type ("i64"/"str") for field `name`, or "i64".
-export fn field_type_of(fields: FieldList, name: string) -> string {
-    match fields {
-        .End -> "i64"
-        .Node(n, ty, _, next) -> {
-            if n == name {
-                return ty
-            }
-            field_type_of(next, name)
-        }
-    }
-}
-
 // Returns the resolved ValueType for field `name`.
 export fn field_vtype_of(fields: FieldList, name: string) -> ValueType {
     match fields {
         .End -> .Unknown
-        .Node(n, _, vt, _) if n == name -> vt
-        .Node(_, _, _, next) -> field_vtype_of(next, name)
+        .Node(n, vt, _) if n == name -> vt
+        .Node(_, _, next) -> field_vtype_of(next, name)
     }
 }
 
@@ -964,8 +950,8 @@ fn render_field_init_tail(inits: FieldInitList) -> string {
 export fn render_field_list(fields: FieldList) -> string {
     match fields {
         .End -> "()"
-        .Node(name, ty, _, next) -> {
-            let head = "${name}:${ty}"
+        .Node(name, vt, next) -> {
+            let head = "${name}:${vtype_display(vt)}"
             let tail = render_field_list_tail(next)
             "(${head}${tail})"
         }
@@ -975,7 +961,7 @@ export fn render_field_list(fields: FieldList) -> string {
 fn render_field_list_tail(fields: FieldList) -> string {
     match fields {
         .End -> ""
-        .Node(name, ty, _, next) -> ", ${name}:${ty}${render_field_list_tail(next)}"
+        .Node(name, vt, next) -> ", ${name}:${vtype_display(vt)}${render_field_list_tail(next)}"
     }
 }
 

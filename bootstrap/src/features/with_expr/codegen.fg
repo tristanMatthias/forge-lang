@@ -44,7 +44,7 @@ export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) 
 fn copy_struct_fields(ctx: Ctx, src: ptr, dst: ptr, struct_name: string, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
-        .Node(_, _, resolved, next) -> {
+        .Node(_, resolved, next) -> {
             let st_ty = ctx.get_type(struct_name)
             let src_gep = ctx.gep(st_ty, src, idx, "with_cp_src")
             let val = ctx.load_typed(resolved, src_gep, "with_cp_val")

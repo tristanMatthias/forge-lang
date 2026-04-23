@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
+use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -475,12 +475,13 @@ export fn typecheck_program(stmts: StmtList) -> TypeCheckResult {
 // Resolve type operator fields (without/only) against the struct registry.
 fn tc_resolve_type_operator(fields: FieldList, reg: StructTypeReg) -> FieldList {
     match fields {
-        .Node(marker, base_name, _, rest) if marker == "__base" -> {
+        .Node(marker, base_vt, rest) if marker == "__base" -> {
+            let base_name = vtype_struct_name(base_vt)
             match rest {
-                .Node(_, op, _, excluded) -> {
+                .Node(op_marker, _, excluded) -> {
                     let base_fields = struct_type_lookup(reg, base_name)
-                    if op == "without" { return filter_fields_without(base_fields, excluded) }
-                    if op == "only" { return filter_fields_only(base_fields, excluded) }
+                    if op_marker == "__without" { return filter_fields_without(base_fields, excluded) }
+                    if op_marker == "__only" { return filter_fields_only(base_fields, excluded) }
                     base_fields
                 }
                 _ -> fields
@@ -955,7 +956,7 @@ fn tc_check_shape_compat(tc: TC, param_ty_str: string, arg_ty: ValueType) -> TC 
 fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, required: FieldList, available: FieldList) -> TC {
     match required {
         .End -> tc
-        .Node(field_name, field_ty, req_vt, next) -> {
+        .Node(field_name, req_vt, next) -> {
             if !field_list_has(available, field_name) {
                 let msg = "type `${arg_name}` does not satisfy shape `${shape_name}` — missing field `${field_name}`"
                 tc_check_fields_present(tc_report(tc, DiagCode.TypeMismatch, msg), shape_name, arg_name, next, available)

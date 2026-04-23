@@ -68,11 +68,11 @@ fn fill_enum_payload(ctx: Ctx, env: VarEnv, payload_ptr: ptr, fields: FieldList,
         .Node(se, next) -> {
             let r = ctx.emit(env, se.node)?
             let fld_ty = match fields {
-                .Node(_, _, resolved, _) -> resolved
+                .Node(_, resolved, _) -> resolved
                 _ -> ValueType.Unknown
             }
             ctx.store_slot(payload_ptr, idx, r.value, fld_ty)
-            let next_fields = match fields { .Node(_, _, _, rest) -> rest, _ -> FieldList.End }
+            let next_fields = match fields { .Node(_, _, rest) -> rest, _ -> FieldList.End }
             fill_enum_payload(ctx, env, payload_ptr, next_fields, next, idx + 1)
         }
     }
@@ -86,11 +86,11 @@ fn fill_enum_payload_typed(ctx: Ctx, env: VarEnv, pay_ty: ptr, payload_ptr: ptr,
             let r = ctx.emit(env, se.node)?
             let fld_gep = ctx.gep(pay_ty, payload_ptr, idx, "pay_fld")
             let fld_ty = match fields {
-                .Node(_, _, resolved, _) -> resolved
+                .Node(_, resolved, _) -> resolved
                 _ -> ValueType.Unknown
             }
             ctx.store_field(r.value, fld_gep, fld_ty)
-            let next_fields = match fields { .Node(_, _, _, rest) -> rest, _ -> FieldList.End }
+            let next_fields = match fields { .Node(_, _, rest) -> rest, _ -> FieldList.End }
             fill_enum_payload_typed(ctx, env, pay_ty, payload_ptr, next_fields, next, idx + 1)
         }
     }

@@ -20244,8 +20244,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn, i64 %tag, ptr @mu_file, i64 89)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_type_param_list"(ptr %0) {
@@ -20311,8 +20311,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.29, i64 %tag, ptr @mu_file.30, i64 97)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -20657,8 +20657,8 @@ march_arm73:                                      ; preds = %march_next54
   br label %match_end
 
 march_next74:                                     ; preds = %march_next54
-  call void @forge_match_unreachable(ptr @.match_fn.38, i64 %tag, ptr @mu_file.39, i64 163)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_fn_te"(ptr %0, ptr %1) {
@@ -20863,8 +20863,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.54, i64 %tag, ptr @mu_file.55, i64 184)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm19, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -20911,8 +20911,8 @@ march_arm19:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next20:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.52, i64 %tag12, ptr @mu_file.53, i64 189)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::vtype_from_name"(ptr %0) {
@@ -21271,8 +21271,7 @@ parm_body134:                                     ; preds = %parm_next121
   br label %pmatch_end
 
 parm_next135:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.68, i64 -1, ptr @mu_file.69, i64 219)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"core::ast::type_expr_to_vtype"(ptr %0) {
@@ -21491,8 +21490,8 @@ march_arm66:                                      ; preds = %march_next54
   br i1 %str_eq, label %parm_body, label %parm_next
 
 march_next67:                                     ; preds = %march_next54
-  call void @forge_match_unreachable(ptr @.match_fn.75, i64 %tag, ptr @mu_file.76, i64 239)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 pmatch_end:                                       ; preds = %parm_body104, %match_end80
   %pmatch_val = load i64, ptr %pmatch_result, align 8
@@ -21558,8 +21557,8 @@ march_arm89:                                      ; preds = %march_next82
   br label %match_end80
 
 march_next90:                                     ; preds = %march_next82
-  call void @forge_match_unreachable(ptr @.match_fn.71, i64 %tag78, ptr @mu_file.72, i64 256)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 parm_body104:                                     ; preds = %parm_next
   %21 = call ptr @forge_rc_alloc(i64 16)
@@ -21584,8 +21583,8 @@ parm_body104:                                     ; preds = %parm_next
   br label %pmatch_end
 
 parm_next105:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.73, i64 -1, ptr @mu_file.74, i64 253)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::tel_to_type_list"(ptr %0) {
@@ -21659,8 +21658,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.77, i64 %tag, ptr @mu_file.78, i64 269)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::type_expr_list_append"(ptr %0, ptr %1) {
@@ -21753,8 +21752,8 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.79, i64 %tag, ptr @mu_file.80, i64 276)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"core::ast::vtype_eq"(ptr %0, ptr %1) {
@@ -21939,8 +21938,8 @@ march_arm70:                                      ; preds = %march_next63
   br label %match_end61
 
 march_next71:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.81, i64 %tag59, ptr @mu_file.82, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm72:                                      ; preds = %march_next54
   %pay_slot75 = getelementptr inbounds nuw %ValueType, ptr %a1, i32 0, i32 1
@@ -21991,8 +21990,8 @@ march_arm102:                                     ; preds = %march_next88
   br label %match_end86
 
 march_next103:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.83, i64 %tag84, ptr @mu_file.84, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm105:                                     ; preds = %march_next73
   %b108 = load ptr, ptr %b, align 8
@@ -22057,8 +22056,8 @@ march_arm135:                                     ; preds = %march_next133
   br label %match_end128
 
 march_next136:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.85, i64 %tag126, ptr @mu_file.86, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm138:                                     ; preds = %march_next122
   %pay_slot141 = getelementptr inbounds nuw %ValueType, ptr %a1, i32 0, i32 1
@@ -22109,8 +22108,8 @@ march_arm168:                                     ; preds = %march_next154
   br label %match_end152
 
 march_next169:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.87, i64 %tag150, ptr @mu_file.88, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm171:                                     ; preds = %march_next139
   %b174 = load ptr, ptr %b, align 8
@@ -22141,8 +22140,8 @@ march_arm182:                                     ; preds = %march_next180
   br label %match_end178
 
 march_next183:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.89, i64 %tag176, ptr @mu_file.90, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm185:                                     ; preds = %march_next172
   %b188 = load ptr, ptr %b, align 8
@@ -22173,8 +22172,8 @@ march_arm196:                                     ; preds = %march_next194
   br label %match_end192
 
 march_next197:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.91, i64 %tag190, ptr @mu_file.92, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm199:                                     ; preds = %march_next186
   %pay_slot202 = getelementptr inbounds nuw %ValueType, ptr %a1, i32 0, i32 1
@@ -22223,8 +22222,8 @@ march_arm219:                                     ; preds = %march_next211
   br label %match_end209
 
 march_next220:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.93, i64 %tag207, ptr @mu_file.94, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm222:                                     ; preds = %march_next200
   %pay_slot225 = getelementptr inbounds nuw %ValueType, ptr %a1, i32 0, i32 1
@@ -22275,8 +22274,8 @@ march_arm252:                                     ; preds = %march_next238
   br label %match_end236
 
 march_next253:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.95, i64 %tag234, ptr @mu_file.96, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm255:                                     ; preds = %march_next223
   %pay_slot258 = getelementptr inbounds nuw %ValueType, ptr %a1, i32 0, i32 1
@@ -22357,8 +22356,8 @@ march_arm288:                                     ; preds = %march_next270
   br label %match_end268
 
 march_next289:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.97, i64 %tag266, ptr @mu_file.98, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm291:                                     ; preds = %march_next256
   %b294 = load ptr, ptr %b, align 8
@@ -22390,8 +22389,8 @@ march_arm307:                                     ; preds = %march_next300
   br label %match_end
 
 march_next308:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.99, i64 %tag, ptr @mu_file.100, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"core::ast::type_lists_eq"(ptr %0, ptr %1) {
@@ -22454,8 +22453,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.103, i64 %tag, ptr @mu_file.104, i64 312)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %sc_merge, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -22493,8 +22492,8 @@ march_arm20:                                      ; preds = %march_next18
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next21:                                     ; preds = %march_next18
-  call void @forge_match_unreachable(ptr @.match_fn.101, i64 %tag14, ptr @mu_file.102, i64 312)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm20
   %next_a31 = load ptr, ptr %next_a11, align 8
@@ -22582,8 +22581,8 @@ march_arm15:                                      ; preds = %march_next
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.105, i64 %tag, ptr @mu_file.106, i64 328)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"core::ast::narrowed_assignable_to"(ptr %0, ptr %1) {
@@ -22740,8 +22739,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.110, i64 %tag, ptr @mu_file.111, i64 350)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"core::ast::vtype_is_map"(ptr %0) {
@@ -22802,8 +22801,8 @@ march_arm8:                                       ; preds = %march_next6
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.112, i64 %tag, ptr @mu_file.113, i64 356)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::vtype_fn_ret"(ptr %0) {
@@ -22887,8 +22886,8 @@ march_arm28:                                      ; preds = %march_next17
   br label %match_end
 
 march_next29:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.114, i64 %tag, ptr @mu_file.115, i64 360)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::vtype_fn_params"(ptr %0) {
@@ -22936,8 +22935,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.116, i64 %tag, ptr @mu_file.117, i64 364)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"core::ast::vtype_closure_captures"(ptr %0) {
@@ -22977,8 +22976,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.118, i64 %tag, ptr @mu_file.119, i64 368)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"core::ast::vtype_is_closure"(ptr %0) {
@@ -23033,8 +23032,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.121, i64 %tag, ptr @mu_file.122, i64 374)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::vtype_enum_name"(ptr %0) {
@@ -23094,8 +23093,8 @@ march_arm16:                                      ; preds = %march_next5
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.124, i64 %tag, ptr @mu_file.125, i64 378)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::vtype_narrowed_variant"(ptr %0) {
@@ -23137,8 +23136,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.127, i64 %tag, ptr @mu_file.128, i64 382)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::vtype_display"(ptr %0) {
@@ -23501,8 +23500,8 @@ march_arm134:                                     ; preds = %march_next132
   br label %match_end
 
 march_next135:                                    ; preds = %march_next132
-  call void @forge_match_unreachable(ptr @.match_fn.146, i64 %tag, ptr @mu_file.147, i64 386)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_union_display"(ptr %0) {
@@ -23562,8 +23561,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.151, i64 %tag, ptr @mu_file.152, i64 410)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty11 = load ptr, ptr %ty5, align 8
@@ -23647,8 +23646,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.154, i64 %tag, ptr @mu_file.155, i64 425)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"core::ast::vtype_is_union"(ptr %0) {
@@ -23722,8 +23721,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.156, i64 %tag, ptr @mu_file.157, i64 433)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::vtype_newtype_name"(ptr %0) {
@@ -23765,8 +23764,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.159, i64 %tag, ptr @mu_file.160, i64 437)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::vtype_union_types"(ptr %0) {
@@ -23814,8 +23813,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.161, i64 %tag, ptr @mu_file.162, i64 441)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"core::ast::union_contains"(ptr %0, ptr %1) {
@@ -23871,8 +23870,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.163, i64 %tag, ptr @mu_file.164, i64 446)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -23966,8 +23965,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.165, i64 %tag, ptr @mu_file.166, i64 454)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end21:                                      ; preds = %march_arm34, %march_arm22
   %match_val50 = load i64, ptr %match_result20, align 8
@@ -24022,8 +24021,8 @@ march_arm34:                                      ; preds = %march_next23
   br label %match_end21
 
 march_next35:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.167, i64 %tag19, ptr @mu_file.168, i64 458)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::type_list_concat"(ptr %0, ptr %1) {
@@ -24095,8 +24094,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.169, i64 %tag, ptr @mu_file.170, i64 466)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"core::ast::type_list_len"(ptr %0) {
@@ -24139,8 +24138,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.171, i64 %tag, ptr @mu_file.172, i64 473)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::type_list_at"(ptr %0, i64 %1) {
@@ -24201,8 +24200,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.173, i64 %tag, ptr @mu_file.174, i64 480)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -24453,8 +24452,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.185, i64 %tag, ptr @mu_file.186, i64 506)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty11 = load ptr, ptr %ty5, align 8
@@ -24548,8 +24547,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.187, i64 %tag, ptr @mu_file.188, i64 521)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::typelist_at"(ptr %0, i64 %1) {
@@ -24628,8 +24627,8 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.189, i64 %tag, ptr @mu_file.190, i64 528)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::binop_str"(ptr %0) {
@@ -24774,8 +24773,8 @@ march_arm44:                                      ; preds = %march_next42
   br label %match_end
 
 march_next45:                                     ; preds = %march_next42
-  call void @forge_match_unreachable(ptr @.match_fn.207, i64 %tag, ptr @mu_file.208, i64 552)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::unop_str"(ptr %0) {
@@ -24816,8 +24815,8 @@ march_arm5:                                       ; preds = %march_next3
   br label %match_end
 
 march_next6:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.212, i64 %tag, ptr @mu_file.213, i64 573)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::logicop_str"(ptr %0) {
@@ -24850,8 +24849,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.216, i64 %tag, ptr @mu_file.217, i64 581)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::stmt_unwrap"(ptr %0) {
@@ -24895,8 +24894,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.218, i64 %tag, ptr @mu_file.219, i64 695)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::env_lookup"(ptr %0, ptr %1) {
@@ -25013,8 +25012,8 @@ march_arm27:                                      ; preds = %march_next9
   br label %match_end
 
 march_next28:                                     ; preds = %march_next9
-  call void @forge_match_unreachable(ptr @.match_fn.220, i64 %tag, ptr @mu_file.221, i64 726)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::env_extend"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -25165,8 +25164,8 @@ march_arm24:                                      ; preds = %march_next6
   br label %match_end
 
 march_next25:                                     ; preds = %march_next6
-  call void @forge_match_unreachable(ptr @.match_fn.222, i64 %tag, ptr @mu_file.223, i64 754)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::fn_env_extend"(ptr %0, ptr %1, ptr %2, i64 %3) {
@@ -25250,8 +25249,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.224, i64 %tag, ptr @mu_file.225, i64 770)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"core::ast::expr_list_length"(ptr %0) {
@@ -25294,8 +25293,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.226, i64 %tag, ptr @mu_file.227, i64 777)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"core::ast::field_list_length"(ptr %0) {
@@ -25338,8 +25337,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.228, i64 %tag, ptr @mu_file.229, i64 784)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"core::ast::field_list_has"(ptr %0, ptr %1) {
@@ -25412,8 +25411,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.230, i64 %tag, ptr @mu_file.231, i64 791)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::filter_fields_without"(ptr %0, ptr %1) {
@@ -25551,8 +25550,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.232, i64 %tag, ptr @mu_file.233, i64 799)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::filter_fields_only"(ptr %0, ptr %1) {
@@ -25682,8 +25681,8 @@ march_arm35:                                      ; preds = %march_next4
   br label %match_end
 
 march_next36:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.234, i64 %tag, ptr @mu_file.235, i64 807)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"core::ast::field_init_length"(ptr %0) {
@@ -25726,8 +25725,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.236, i64 %tag, ptr @mu_file.237, i64 815)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"core::ast::field_index_of"(ptr %0, ptr %1) {
@@ -25815,8 +25814,8 @@ march_arm9:                                       ; preds = %march_next3
   br label %match_end
 
 march_next10:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.238, i64 %tag, ptr @mu_file.239, i64 827)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"core::ast::variant_list_length"(ptr %0) {
@@ -25859,8 +25858,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.240, i64 %tag, ptr @mu_file.241, i64 835)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare i64 @forge_variant_hash(ptr)
@@ -25981,8 +25980,8 @@ march_arm22:                                      ; preds = %march_next8
   br label %match_end
 
 march_next23:                                     ; preds = %march_next8
-  call void @forge_match_unreachable(ptr @.match_fn.242, i64 %tag, ptr @mu_file.243, i64 856)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"core::ast::variant_max_payload"(ptr %0) {
@@ -26044,8 +26043,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.244, i64 %tag, ptr @mu_file.245, i64 866)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %here13 = load i64, ptr %here, align 8
@@ -26125,8 +26124,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.247, i64 %tag, ptr @mu_file.248, i64 883)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %next15 = load ptr, ptr %next11, align 8
@@ -26230,8 +26229,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.249, i64 %tag, ptr @mu_file.250, i64 897)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_expr"(ptr %0) {
@@ -28651,8 +28650,8 @@ march_arm1291:                                    ; preds = %march_next1232
   br label %match_end
 
 march_next1292:                                   ; preds = %march_next1232
-  call void @forge_match_unreachable(ptr @.match_fn.346, i64 %tag, ptr @mu_file.347, i64 905)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_when_arm_list"(ptr %0) {
@@ -28714,8 +28713,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.355, i64 %tag, ptr @mu_file.356, i64 948)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -28925,8 +28924,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.364, i64 %tag, ptr @mu_file.365, i64 959)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_field_init_tail"(ptr %0) {
@@ -29039,8 +29038,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.372, i64 %tag, ptr @mu_file.373, i64 971)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_field_list"(ptr %0) {
@@ -29163,8 +29162,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.378, i64 %tag, ptr @mu_file.379, i64 978)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_field_list_tail"(ptr %0) {
@@ -29270,8 +29269,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.383, i64 %tag, ptr @mu_file.384, i64 990)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_type_name_list"(ptr %0) {
@@ -29331,8 +29330,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.388, i64 %tag, ptr @mu_file.389, i64 997)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %name11 = load ptr, ptr %name5, align 8
@@ -29471,8 +29470,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.396, i64 %tag, ptr @mu_file.397, i64 1008)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_expr_list_tail"(ptr %0) {
@@ -29554,8 +29553,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.403, i64 %tag, ptr @mu_file.404, i64 1020)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_param_list"(ptr %0) {
@@ -29644,8 +29643,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.408, i64 %tag, ptr @mu_file.409, i64 1027)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_param_list_tail"(ptr %0) {
@@ -29720,8 +29719,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.412, i64 %tag, ptr @mu_file.413, i64 1038)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_stmt"(ptr %0) {
@@ -32247,8 +32246,8 @@ march_arm1359:                                    ; preds = %march_next1320
   br i1 %ife_cond1382, label %ife_then1383, label %ife_else1384
 
 march_next1360:                                   ; preds = %march_next1320
-  call void @forge_match_unreachable(ptr @.match_fn.529, i64 %tag, ptr @mu_file.530, i64 1045)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end1381:                                      ; preds = %ife_else1384, %ife_then1383
   %ife_val1426 = load i64, ptr %ife_result1380, align 8
@@ -32418,8 +32417,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.534, i64 %tag, ptr @mu_file.535, i64 1109)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_variant_list"(ptr %0) {
@@ -32532,8 +32531,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.539, i64 %tag, ptr @mu_file.540, i64 1116)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_variant_tail"(ptr %0) {
@@ -32629,8 +32628,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.543, i64 %tag, ptr @mu_file.544, i64 1128)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_pattern"(ptr %0) {
@@ -32823,8 +32822,8 @@ march_arm73:                                      ; preds = %march_next44
   br label %match_end
 
 march_next74:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.551, i64 %tag, ptr @mu_file.552, i64 1135)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"core::ast::render_match_arm_list"(ptr %0) {
@@ -32896,8 +32895,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.565, i64 %tag, ptr @mu_file.566, i64 1145)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -33086,8 +33085,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.578, i64 %tag, ptr @mu_file.579, i64 1158)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -33261,8 +33260,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.586, i64 %tag, ptr @mu_file.587, i64 1169)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %head12 = load ptr, ptr %head, align 8
@@ -33654,8 +33653,8 @@ march_arm122:                                     ; preds = %march_next120
   br label %match_end
 
 march_next123:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.630, i64 %tag, ptr @mu_file.631, i64 1290)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare ptr @forge_llvm_context_create()
@@ -35236,8 +35235,8 @@ march_arm13:                                      ; preds = %march_next9
   br label %match_end
 
 march_next14:                                     ; preds = %march_next9
-  call void @forge_match_unreachable(ptr @.match_fn.804, i64 %tag, ptr @mu_file.805, i64 19)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"diagnostics::render::severity_symbol"(ptr %0) {
@@ -35294,8 +35293,8 @@ march_arm10:                                      ; preds = %march_next7
   br label %match_end
 
 march_next11:                                     ; preds = %march_next7
-  call void @forge_match_unreachable(ptr @.match_fn.810, i64 %tag, ptr @mu_file.811, i64 28)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"diagnostics::render::chr_vbar"() {
@@ -36972,8 +36971,7 @@ march_arm667:                                     ; preds = %march_next
   br label %match_end
 
 march_next668:                                    ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.947, i64 %tag, ptr @mu_file.948, i64 176)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"diagnostics::render::render_bag"(ptr %0, ptr %1, ptr %2) {
@@ -37308,8 +37306,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.992, i64 %tag, ptr @mu_file.993, i64 209)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"diagnostics::render::render_list"(ptr %0, ptr %1, ptr %2) {
@@ -37413,8 +37411,7 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.997, i64 %tag, ptr @mu_file.998, i64 217)
-  unreachable
+  ret i64 0
 
 while.cond20:                                     ; preds = %match_end32, %while.exit
   %cur23 = load ptr, ptr %cur, align 8
@@ -37512,8 +37509,7 @@ march_arm73:                                      ; preds = %march_next35
   br label %match_end32
 
 march_next74:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1002, i64 %tag31, ptr @mu_file.1003, i64 230)
-  unreachable
+  ret i64 0
 }
 
 define ptr @"diagnostics::render::json_escape"(ptr %0) {
@@ -38022,8 +38018,7 @@ march_arm12:                                      ; preds = %march_next
   br label %match_end
 
 march_next13:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1052, i64 %tag, ptr @mu_file.1053, i64 280)
-  unreachable
+  ret i64 0
 }
 
 declare i64 @forge_selfhost_levenshtein(ptr, ptr, i64, i64)
@@ -38121,8 +38116,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.1055, i64 %tag, ptr @mu_file.1056, i64 26)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %name14 = load ptr, ptr %name, align 8
@@ -38240,8 +38235,8 @@ march_arm8:                                       ; preds = %march_next6
   br label %match_end
 
 march_next9:                                      ; preds = %march_next6
-  call void @forge_match_unreachable(ptr @.match_fn.1061, i64 %tag, ptr @mu_file.1062, i64 41)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"diagnostics::error_def"(ptr %0) {
@@ -38720,8 +38715,8 @@ march_arm189:                                     ; preds = %march_next184
   br label %match_end
 
 march_next190:                                    ; preds = %march_next184
-  call void @forge_match_unreachable(ptr @.match_fn.1129, i64 %tag, ptr @mu_file.1130, i64 120)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"diagnostics::diag_code_str"(ptr %0) {
@@ -38792,8 +38787,8 @@ march_arm5:                                       ; preds = %march_next3
   br label %match_end
 
 march_next6:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.1140, i64 %tag, ptr @mu_file.1141, i64 175)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"diagnostics::diag_error"(ptr %0, ptr %1, ptr %2) {
@@ -39196,8 +39191,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1151, i64 %tag, ptr @mu_file.1152, i64 247)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end23:                                      ; preds = %march_arm32, %march_arm24
   %match_val40 = load i64, ptr %match_result22, align 8
@@ -39266,8 +39261,8 @@ march_arm32:                                      ; preds = %march_next25
   br label %match_end23
 
 march_next33:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1162, i64 %tag21, ptr @mu_file.1163, i64 251)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"diagnostics::bag_has_errors"(ptr %0) {
@@ -39474,8 +39469,8 @@ march_arm19:                                      ; preds = %march_next
   br label %match_end
 
 march_next20:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.1191, i64 %tag, ptr @mu_file.1192, i64 276)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"parse::lexer::p_is_digit"(ptr %0) {
@@ -41107,8 +41102,7 @@ parm_body732:                                     ; preds = %parm_next725
   br label %pmatch_end
 
 parm_next733:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1540, i64 -1, ptr @mu_file.1541, i64 48)
-  unreachable
+  ret i64 0
 
 ifcont737:                                        ; preds = %if_else740
   %ch745 = load ptr, ptr %ch, align 8
@@ -41768,8 +41762,7 @@ parm_body207:                                     ; preds = %parm_next137
   br label %pmatch_end
 
 parm_next208:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1689, i64 -1, ptr @mu_file.1690, i64 207)
-  unreachable
+  ret i64 0
 
 while.cond210:                                    ; preds = %while.body211, %ifcont
   %self213 = load ptr, ptr %self, align 8
@@ -42822,8 +42815,7 @@ parm_body81:                                      ; preds = %parm_next78
   ret i64 0
 
 parm_next82:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.1915, i64 -1, ptr @mu_file.1916, i64 317)
-  unreachable
+  ret i64 0
 
 sc_rhs:                                           ; preds = %ifcont22
   %self112 = load ptr, ptr %self, align 8
@@ -44402,8 +44394,7 @@ parm_body354:                                     ; preds = %parm_next333
   br label %pmatch_end
 
 parm_next355:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2201, i64 -1, ptr @mu_file.2202, i64 488)
-  unreachable
+  ret i64 0
 
 ifcont388:                                        ; preds = %if_else391
   %self406 = load ptr, ptr %self, align 8
@@ -45466,8 +45457,7 @@ parm_body448:                                     ; preds = %parm_next427
   br label %pmatch_end
 
 parm_next449:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2369, i64 -1, ptr @mu_file.2370, i64 596)
-  unreachable
+  ret i64 0
 }
 
 define i64 @Parser__scan_raw_string(ptr %0) {
@@ -46896,8 +46886,7 @@ parm_body79:                                      ; preds = %parm_next73
   br label %pmatch_end
 
 parm_next80:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2531, i64 -1, ptr @mu_file.2532, i64 758)
-  unreachable
+  ret i64 0
 }
 
 define i64 @"parse::lexer::parse_hex"(ptr %0) {
@@ -47178,8 +47167,7 @@ parm_body38:                                      ; preds = %parm_next35
   br label %pmatch_end
 
 parm_next39:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2544, i64 -1, ptr @mu_file.2545, i64 815)
-  unreachable
+  ret i64 0
 }
 
 define ptr @"parse::parse_expression_source"(ptr %0) {
@@ -47303,8 +47291,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.2552, i64 %tag, ptr @mu_file.2553, i64 93)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"parse::table_zip_entries"(ptr %0, ptr %1) {
@@ -47368,8 +47356,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.2556, i64 %tag, ptr @mu_file.2557, i64 102)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm21, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -47445,8 +47433,8 @@ march_arm21:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next22:                                     ; preds = %march_next16
-  call void @forge_match_unreachable(ptr @.match_fn.2554, i64 %tag12, ptr @mu_file.2555, i64 106)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"parse::expr_is_ident"(ptr %0) {
@@ -47486,8 +47474,8 @@ march_arm5:                                       ; preds = %march_next3
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2558, i64 %tag, ptr @mu_file.2559, i64 118)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"parse::expr_is_upper_ident"(ptr %0) {
@@ -47549,8 +47537,8 @@ march_arm16:                                      ; preds = %march_next5
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2560, i64 %tag, ptr @mu_file.2561, i64 126)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"parse::exprs_to_params"(ptr %0) {
@@ -47619,8 +47607,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.2568, i64 %tag, ptr @mu_file.2569, i64 137)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm36, %march_arm24, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -47696,8 +47684,8 @@ march_arm36:                                      ; preds = %march_next25
   br label %match_end15
 
 march_next37:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2566, i64 %tag13, ptr @mu_file.2567, i64 141)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"parse::is_callable"(ptr %0) {
@@ -47745,8 +47733,8 @@ march_arm8:                                       ; preds = %march_next6
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2570, i64 %tag, ptr @mu_file.2571, i64 152)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"parse::p_starts_with_upper"(ptr %0) {
@@ -49124,8 +49112,7 @@ parm_body366:                                     ; preds = %parm_next360
   br label %pmatch_end
 
 parm_next367:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.2650, i64 -1, ptr @mu_file.2651, i64 229)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"parse::parser_new"(ptr %0) {
@@ -51684,8 +51671,8 @@ march_arm55:                                      ; preds = %march_next32
   br label %match_end
 
 march_next56:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.3008, i64 %tag, ptr @mu_file.3009, i64 601)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_pipe(ptr %0) {
@@ -51943,8 +51930,8 @@ march_arm76:                                      ; preds = %march_next
   br label %match_end
 
 march_next77:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.3031, i64 %tag, ptr @mu_file.3032, i64 626)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"parse::pipe_args_has_placeholder"(ptr %0) {
@@ -52005,8 +51992,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.3039, i64 %tag, ptr @mu_file.3040, i64 645)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm21, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -52040,8 +52027,8 @@ march_arm21:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next22:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.3037, i64 %tag11, ptr @mu_file.3038, i64 645)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"parse::pipe_replace_placeholder"(ptr %0, ptr %1) {
@@ -52110,8 +52097,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.3047, i64 %tag, ptr @mu_file.3048, i64 655)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm32, %guard_pass
   %match_val = load i64, ptr %match_result14, align 8
@@ -52184,8 +52171,8 @@ march_arm32:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next33:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.3045, i64 %tag13, ptr @mu_file.3046, i64 655)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_null_coalesce(ptr %0) {
@@ -55794,8 +55781,8 @@ march_arm592:                                     ; preds = %march_next
   br label %match_end
 
 march_next593:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.3503, i64 %tag, ptr @mu_file.3504, i64 991)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs598:                                        ; preds = %match_end
   %saved_it600 = load i64, ptr %saved_it, align 8
@@ -55984,8 +55971,8 @@ march_arm700:                                     ; preds = %march_next693
   br label %match_end691
 
 march_next701:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.3530, i64 %tag689, ptr @mu_file.3531, i64 1017)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs707:                                        ; preds = %match_end691
   %self709 = load ptr, ptr %self, align 8
@@ -56265,8 +56252,8 @@ march_arm20:                                      ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next21:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.3561, i64 %tag, ptr @mu_file.3562, i64 1067)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm20
   %raw_expr24 = load ptr, ptr %raw_expr, align 8
@@ -63036,8 +63023,8 @@ march_arm120:                                     ; preds = %march_next
   br label %match_end
 
 march_next121:                                    ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.4507, i64 %tag, ptr @mu_file.4508, i64 67)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_match_table_rows(ptr %0, ptr %1, i64 %2) {
@@ -65780,8 +65767,8 @@ march_arm7:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next8:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.4950, i64 %tag, ptr @mu_file.4951, i64 26)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %r18 = load ptr, ptr %r12, align 8
@@ -66284,8 +66271,8 @@ march_arm8:                                       ; preds = %march_next
   br i1 %tag_eq28, label %march_arm26, label %march_next27
 
 march_next9:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5104, i64 %tag, ptr @mu_file.5105, i64 80)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end25:                                      ; preds = %march_arm398, %match_end343, %match_end204, %match_end146
   %match_val401 = load i64, ptr %match_result24, align 8
@@ -66503,8 +66490,8 @@ march_arm105:                                     ; preds = %march_next99
   br label %match_end97
 
 march_next106:                                    ; preds = %march_next99
-  call void @forge_match_unreachable(ptr @.match_fn.5026, i64 %tag96, ptr @mu_file.5027, i64 104)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end146:                                     ; preds = %try_ok, %march_arm147
   %match_val = load i64, ptr %match_result145, align 8
@@ -66569,8 +66556,8 @@ march_arm159:                                     ; preds = %march_next148
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next160:                                    ; preds = %march_next148
-  call void @forge_match_unreachable(ptr @.match_fn.5040, i64 %tag144, ptr @mu_file.5041, i64 115)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm159
   %try_pay_slot = getelementptr inbounds nuw %Result__ValueType__string, ptr %34, i32 0, i32 1
@@ -66661,8 +66648,8 @@ march_arm217:                                     ; preds = %march_next206
   br label %match_end204
 
 march_next218:                                    ; preds = %march_next206
-  call void @forge_match_unreachable(ptr @.match_fn.5051, i64 %tag202, ptr @mu_file.5052, i64 130)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm237:                                     ; preds = %march_next188
   %pay_slot240 = getelementptr inbounds nuw %Pattern, ptr %pattern21, i32 0, i32 1
@@ -66785,8 +66772,8 @@ march_arm259:                                     ; preds = %march_next252
   br label %match_end250
 
 march_next260:                                    ; preds = %march_next252
-  call void @forge_match_unreachable(ptr @.match_fn.5054, i64 %tag248, ptr @mu_file.5055, i64 142)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -66902,8 +66889,8 @@ march_arm356:                                     ; preds = %march_next345
   br i1 %try_is_ok388, label %try_ok389, label %try_err390
 
 march_next357:                                    ; preds = %march_next345
-  call void @forge_match_unreachable(ptr @.match_fn.5099, i64 %tag341, ptr @mu_file.5100, i64 152)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok389:                                        ; preds = %march_arm356
   %try_pay_slot391 = getelementptr inbounds nuw %Result__ValueType__string, ptr %60, i32 0, i32 1
@@ -66927,8 +66914,8 @@ march_arm398:                                     ; preds = %march_next238
   br label %match_end25
 
 march_next399:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5102, i64 %tag23, ptr @mu_file.5103, i64 88)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::match_expr::codegen::arms_have_type_pattern"(ptr %0) {
@@ -66982,8 +66969,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5108, i64 %tag, ptr @mu_file.5109, i64 170)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm17, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -67005,8 +66992,8 @@ march_arm17:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next18:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5106, i64 %tag11, ptr @mu_file.5107, i64 174)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::infer_enum_from_arms"(ptr %0, ptr %1) {
@@ -67066,8 +67053,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5119, i64 %tag, ptr @mu_file.5120, i64 184)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm33, %march_arm21, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -67119,8 +67106,8 @@ march_arm33:                                      ; preds = %march_next22
   br label %match_end13
 
 march_next34:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5112, i64 %tag11, ptr @mu_file.5113, i64 188)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont44
   %ctx49 = load ptr, ptr %ctx, align 8
@@ -67316,8 +67303,8 @@ march_arm8:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next9:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5171, i64 %tag, ptr @mu_file.5172, i64 203)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %match_end64
   %ctx99 = load ptr, ptr %ctx, align 8
@@ -67426,8 +67413,8 @@ march_arm72:                                      ; preds = %march_next66
   br label %match_end64
 
 march_next73:                                     ; preds = %march_next66
-  call void @forge_match_unreachable(ptr @.match_fn.5155, i64 %tag63, ptr @mu_file.5156, i64 220)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end113:                                     ; preds = %ifcont162, %march_arm114
   %match_val = load i64, ptr %match_result112, align 8
@@ -67493,8 +67480,8 @@ march_arm126:                                     ; preds = %march_next115
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next127:                                    ; preds = %march_next115
-  call void @forge_match_unreachable(ptr @.match_fn.5169, i64 %tag111, ptr @mu_file.5170, i64 231)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm126
   %try_pay_slot = getelementptr inbounds nuw %Result__ValueType__string, ptr %30, i32 0, i32 1
@@ -67626,8 +67613,8 @@ march_arm7:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next8:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5207, i64 %tag, ptr @mu_file.5208, i64 252)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %r21 = load ptr, ptr %r12, align 8
@@ -67961,8 +67948,8 @@ march_arm16:                                      ; preds = %march_next5
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5214, i64 %tag, ptr @mu_file.5215, i64 294)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::emit_pattern_tag_branch"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -68061,8 +68048,8 @@ march_arm25:                                      ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next26:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5246, i64 %tag, ptr @mu_file.5247, i64 302)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %variants35 = load ptr, ptr %variants, align 8
@@ -68246,8 +68233,8 @@ march_arm24:                                      ; preds = %march_next
   br label %match_end
 
 march_next25:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5257, i64 %tag, ptr @mu_file.5258, i64 332)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::match_expr::codegen::emit_nested_tag_check_list"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, i64 %5, ptr %6) {
@@ -68345,8 +68332,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq15, label %march_arm13, label %march_next14
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5359, i64 %tag, ptr @mu_file.5360, i64 345)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end12:                                      ; preds = %march_arm238, %sif_end131, %sif_end
   %ctx241 = load ptr, ptr %ctx, align 8
@@ -68734,8 +68721,8 @@ march_arm238:                                     ; preds = %march_next111
   br label %match_end12
 
 march_next239:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5357, i64 %tag11, ptr @mu_file.5358, i64 349)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::load_payload_field"(ptr %0, ptr %1, ptr %2, i64 %3, ptr %4, ptr %5) {
@@ -68988,8 +68975,8 @@ march_arm83:                                      ; preds = %march_next79
   br label %match_end
 
 march_next84:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5393, i64 %tag, ptr @mu_file.5394, i64 411)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::bind_pattern_payload_loop"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, i64 %6) {
@@ -69132,8 +69119,8 @@ march_arm19:                                      ; preds = %march_next4
   br label %match_end
 
 march_next20:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.5399, i64 %tag, ptr @mu_file.5400, i64 433)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::bind_nested_patterns"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, i64 %6) {
@@ -69227,8 +69214,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5402, i64 %tag, ptr @mu_file.5403, i64 450)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::bind_single_sub_pattern"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -69549,8 +69536,8 @@ march_arm155:                                     ; preds = %march_next68
   br label %match_end
 
 march_next156:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5450, i64 %tag, ptr @mu_file.5451, i64 464)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::bind_first_param"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -69639,8 +69626,8 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.5456, i64 %tag, ptr @mu_file.5457, i64 503)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::emit_primitive_match_expr"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -70039,8 +70026,8 @@ march_arm146:                                     ; preds = %march_next125
   br label %match_end
 
 march_next147:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5550, i64 %tag, ptr @mu_file.5551, i64 526)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::match_expr::codegen::is_literal_pattern"(ptr %0) {
@@ -70115,8 +70102,8 @@ march_arm16:                                      ; preds = %march_next12
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5552, i64 %tag, ptr @mu_file.5553, i64 581)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::codegen::emit_primitive_arms_expr"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -70253,8 +70240,8 @@ march_arm16:                                      ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next17:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5634, i64 %tag, ptr @mu_file.5635, i64 592)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %ifcont109, %ifcont42
   %ctx167 = load ptr, ptr %ctx, align 8
@@ -70410,8 +70397,8 @@ march_arm81:                                      ; preds = %march_next75
   br label %match_end73
 
 march_next82:                                     ; preds = %march_next75
-  call void @forge_match_unreachable(ptr @.match_fn.5594, i64 %tag72, ptr @mu_file.5595, i64 612)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont109:                                        ; preds = %if_else112, %match_end126
   br label %ifcont
@@ -70495,8 +70482,8 @@ march_arm139:                                     ; preds = %march_next129
   br label %match_end126
 
 march_next140:                                    ; preds = %march_next129
-  call void @forge_match_unreachable(ptr @.match_fn.5612, i64 %tag125, ptr @mu_file.5613, i64 625)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end186:                                     ; preds = %ifcont233, %march_arm187
   %match_val = load i64, ptr %match_result185, align 8
@@ -70559,8 +70546,8 @@ march_arm199:                                     ; preds = %march_next188
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next200:                                    ; preds = %march_next188
-  call void @forge_match_unreachable(ptr @.match_fn.5632, i64 %tag184, ptr @mu_file.5633, i64 639)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm199
   %try_pay_slot = getelementptr inbounds nuw %Result__ValueType__string, ptr %36, i32 0, i32 1
@@ -70834,8 +70821,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5716, i64 %tag, ptr @mu_file.5717, i64 681)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm5
   %ctx16 = load ptr, ptr %ctx, align 8
@@ -71173,8 +71160,7 @@ march_arm7:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next8:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5727, i64 %tag, ptr @mu_file.5728, i64 11)
-  unreachable
+  ret ptr null
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -71317,8 +71303,8 @@ march_arm29:                                      ; preds = %march_next20
   br label %match_end
 
 march_next30:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5729, i64 %tag, ptr @mu_file.5730, i64 28)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::resolver::declare_pattern_list"(ptr %0, ptr %1) {
@@ -71377,8 +71363,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5731, i64 %tag, ptr @mu_file.5732, i64 38)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::resolver::resolve_when_arms"(ptr %0, ptr %1) {
@@ -71473,8 +71459,7 @@ march_arm7:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next8:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5742, i64 %tag, ptr @mu_file.5743, i64 49)
-  unreachable
+  ret ptr null
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -71568,8 +71553,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5749, i64 %tag, ptr @mu_file.5750, i64 15)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm18, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -71601,8 +71586,8 @@ march_arm18:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next19:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5747, i64 %tag11, ptr @mu_file.5748, i64 19)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::match_expr::typeck::stmt_diverges"(ptr %0) {
@@ -71749,8 +71734,8 @@ march_arm38:                                      ; preds = %march_next25
   br label %match_end
 
 march_next39:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5751, i64 %tag, ptr @mu_file.5752, i64 28)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::match_expr::typeck::expr_diverges"(ptr %0) {
@@ -71793,8 +71778,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5753, i64 %tag, ptr @mu_file.5754, i64 45)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::match_expr::typeck::arm_type_skip"(ptr %0, ptr %1) {
@@ -71908,8 +71893,8 @@ march_arm34:                                      ; preds = %march_next21
   br label %match_end
 
 march_next35:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5757, i64 %tag, ptr @mu_file.5758, i64 62)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::typeck::enum_type_variants"(ptr %0, ptr %1) {
@@ -71998,8 +71983,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.5759, i64 %tag, ptr @mu_file.5760, i64 72)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::match_expr::typeck::arms_has_wildcard"(ptr %0) {
@@ -72053,8 +72038,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5763, i64 %tag, ptr @mu_file.5764, i64 80)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm17, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -72076,8 +72061,8 @@ march_arm17:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next18:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5761, i64 %tag11, ptr @mu_file.5762, i64 84)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::typeck::arms_matched_variants"(ptr %0) {
@@ -72140,8 +72125,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5769, i64 %tag, ptr @mu_file.5770, i64 93)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %rest13 = load ptr, ptr %rest, align 8
@@ -72377,8 +72362,8 @@ march_arm61:                                      ; preds = %march_next25
   br label %match_end
 
 march_next62:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5775, i64 %tag, ptr @mu_file.5776, i64 107)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::match_expr::typeck::variant_in_matched"(ptr %0, ptr %1) {
@@ -72605,8 +72590,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5785, i64 %tag, ptr @mu_file.5786, i64 132)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %rest13 = load ptr, ptr %rest, align 8
@@ -72781,8 +72766,7 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5791, i64 %tag, ptr @mu_file.5792, i64 154)
-  unreachable
+  ret ptr null
 
 ifcont27:                                         ; preds = %if_else30
   %tc32 = load ptr, ptr %tc, align 8
@@ -73116,8 +73100,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5812, i64 %tag, ptr @mu_file.5813, i64 176)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %next11 = load ptr, ptr %next8, align 8
@@ -73525,8 +73509,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5836, i64 %tag, ptr @mu_file.5837, i64 214)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %rest14 = load ptr, ptr %rest, align 8
@@ -73647,8 +73631,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5838, i64 %tag, ptr @mu_file.5839, i64 230)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %next12 = load ptr, ptr %next8, align 8
@@ -73778,8 +73762,8 @@ march_arm33:                                      ; preds = %march_next20
   br label %match_end
 
 march_next34:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5840, i64 %tag, ptr @mu_file.5841, i64 247)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::typeck::tc_enter_pattern_scope"(ptr %0, ptr %1) {
@@ -73851,8 +73835,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5842, i64 %tag, ptr @mu_file.5843, i64 261)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::typeck::tc_bind_pattern_params"(ptr %0, ptr %1) {
@@ -73910,8 +73894,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5845, i64 %tag, ptr @mu_file.5846, i64 268)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %tc13 = load ptr, ptr %tc, align 8
@@ -74019,8 +74003,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5859, i64 %tag, ptr @mu_file.5860, i64 281)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -74167,8 +74151,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next5:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5891, i64 %tag, ptr @mu_file.5892, i64 300)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -74464,8 +74448,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next7:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5914, i64 %tag, ptr @mu_file.5915, i64 324)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -74629,8 +74613,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5921, i64 %tag, ptr @mu_file.5922, i64 347)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm27, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -74672,8 +74656,8 @@ march_arm27:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next28:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5919, i64 %tag13, ptr @mu_file.5920, i64 351)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::typeck::check_when_expr"(ptr %0, ptr %1) {
@@ -74748,8 +74732,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next7:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5938, i64 %tag, ptr @mu_file.5939, i64 364)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -74883,8 +74867,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next5:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.5976, i64 %tag, ptr @mu_file.5977, i64 376)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -75464,8 +75448,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6005, i64 %tag, ptr @mu_file.6006, i64 72)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::match_emit_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -75525,8 +75509,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6008, i64 %tag, ptr @mu_file.6009, i64 79)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::when_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -75577,8 +75561,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6011, i64 %tag, ptr @mu_file.6012, i64 86)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::match_check_stmt"(ptr %0, ptr %1) {
@@ -75657,8 +75641,8 @@ march_arm18:                                      ; preds = %march_next
   br label %match_end
 
 march_next19:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6019, i64 %tag, ptr @mu_file.6020, i64 93)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::match_expr::match_check_expr"(ptr %0, ptr %1) {
@@ -75745,8 +75729,8 @@ march_arm18:                                      ; preds = %march_next
   br label %match_end
 
 march_next19:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6027, i64 %tag, ptr @mu_file.6028, i64 105)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_return_statement(ptr %0) {
@@ -76517,16 +76501,16 @@ march_arm15:                                      ; preds = %march_next9
   br label %match_end7
 
 march_next16:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6116, i64 %tag5, ptr @mu_file.6117, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm17:                                      ; preds = %march_next
   store i64 ptrtoint (ptr @.str.6118 to i64), ptr %match_result, align 8
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6119, i64 %tag, ptr @mu_file.6120, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::if_stmt::codegen::is_check_variant_name"(ptr %0) {
@@ -76568,8 +76552,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6122, i64 %tag, ptr @mu_file.6123, i64 22)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::if_stmt::codegen::narrow_env_for_is"(ptr %0, ptr %1, ptr %2) {
@@ -77000,8 +76984,8 @@ march_arm20:                                      ; preds = %march_next18
   br label %match_end
 
 march_next21:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6172, i64 %tag, ptr @mu_file.6173, i64 81)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::if_stmt::codegen::emit_if_expr"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -77701,8 +77685,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6271, i64 %tag, ptr @mu_file.6272, i64 43)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::if_stmt::if_emit_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -77771,8 +77755,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6274, i64 %tag, ptr @mu_file.6275, i64 50)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::if_stmt::if_resolve_stmt"(ptr %0, ptr %1) {
@@ -77860,8 +77844,8 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6276, i64 %tag, ptr @mu_file.6277, i64 57)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::if_stmt::if_check_stmt"(ptr %0, ptr %1) {
@@ -78087,8 +78071,8 @@ march_arm82:                                      ; preds = %march_next
   br label %match_end
 
 march_next83:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6298, i64 %tag, ptr @mu_file.6299, i64 72)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::if_stmt::if_check_expr"(ptr %0, ptr %1) {
@@ -78533,8 +78517,8 @@ march_arm227:                                     ; preds = %march_next
   br label %match_end
 
 march_next228:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6356, i64 %tag, ptr @mu_file.6357, i64 90)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::if_stmt::if_eval_stmt"(ptr %0, ptr %1) {
@@ -78653,8 +78637,8 @@ march_arm28:                                      ; preds = %march_next
   br label %match_end
 
 march_next29:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6359, i64 %tag, ptr @mu_file.6360, i64 111)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_while_statement(ptr %0) {
@@ -79145,8 +79129,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6434, i64 %tag, ptr @mu_file.6435, i64 37)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::while_stmt::while_check_stmt"(ptr %0, ptr %1) {
@@ -79345,8 +79329,8 @@ march_arm75:                                      ; preds = %march_next
   br label %match_end
 
 march_next76:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6456, i64 %tag, ptr @mu_file.6457, i64 44)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_for_statement(ptr %0) {
@@ -81067,8 +81051,8 @@ march_arm18:                                      ; preds = %march_next
   br label %match_end
 
 march_next19:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6729, i64 %tag, ptr @mu_file.6730, i64 37)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::for_stmt::for_in_emit_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -81137,8 +81121,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6732, i64 %tag, ptr @mu_file.6733, i64 44)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::for_stmt::for_resolve_stmt"(ptr %0, ptr %1) {
@@ -81238,8 +81222,8 @@ march_arm24:                                      ; preds = %march_next
   br label %match_end
 
 march_next25:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6734, i64 %tag, ptr @mu_file.6735, i64 51)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::for_stmt::for_in_resolve_stmt"(ptr %0, ptr %1) {
@@ -81326,8 +81310,8 @@ march_arm19:                                      ; preds = %march_next
   br label %match_end
 
 march_next20:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6736, i64 %tag, ptr @mu_file.6737, i64 67)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::for_stmt::for_check_stmt"(ptr %0, ptr %1) {
@@ -81441,8 +81425,8 @@ march_arm32:                                      ; preds = %march_next
   br label %match_end
 
 march_next33:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6744, i64 %tag, ptr @mu_file.6745, i64 82)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::for_stmt::for_in_check_stmt"(ptr %0, ptr %1) {
@@ -81541,8 +81525,8 @@ march_arm24:                                      ; preds = %march_next
   br label %match_end
 
 march_next25:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6752, i64 %tag, ptr @mu_file.6753, i64 97)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_extern_declaration(ptr %0) {
@@ -83199,8 +83183,7 @@ march_arm198:                                     ; preds = %march_next
   br label %match_end
 
 march_next199:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6958, i64 %tag, ptr @mu_file.6959, i64 44)
-  unreachable
+  ret ptr null
 
 ifcont224:                                        ; preds = %if_else227
   %copy_target264 = load ptr, ptr %copy_target, align 8
@@ -83481,8 +83464,8 @@ march_arm46:                                      ; preds = %march_next15
   br label %match_end
 
 march_next47:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6999, i64 %tag, ptr @mu_file.7000, i64 80)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::let_stmt::codegen::try_copy_for_struct"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -83823,8 +83806,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7044, i64 %tag, ptr @mu_file.7045, i64 134)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -83987,8 +83970,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7046, i64 %tag, ptr @mu_file.7047, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::let_stmt::typeck::is_const_expr"(ptr %0) {
@@ -84138,8 +84121,8 @@ march_arm47:                                      ; preds = %march_next45
   br label %match_end
 
 march_next48:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7048, i64 %tag, ptr @mu_file.7049, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::let_stmt::kw_parse_let"(ptr %0) {
@@ -84592,8 +84575,8 @@ march_arm13:                                      ; preds = %march_next
   br label %match_end
 
 march_next14:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7081, i64 %tag, ptr @mu_file.7082, i64 64)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::fn_decl::parser::merge_type_param_bound"(ptr %0, ptr %1, ptr %2) {
@@ -84820,8 +84803,8 @@ march_arm60:                                      ; preds = %march_next16
   br label %match_end
 
 march_next61:                                     ; preds = %march_next16
-  call void @forge_match_unreachable(ptr @.match_fn.7085, i64 %tag, ptr @mu_file.7086, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_function_declaration(ptr %0) {
@@ -85795,8 +85778,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq20, label %march_arm18, label %march_next19
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7248, i64 %tag, ptr @mu_file.7249, i64 18)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end17:                                      ; preds = %march_arm57, %march_arm44, %march_arm35, %march_arm18
   %match_val = load i64, ptr %match_result16, align 8
@@ -85894,8 +85877,8 @@ march_arm57:                                      ; preds = %march_next45
   br label %match_end17
 
 march_next58:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7246, i64 %tag15, ptr @mu_file.7247, i64 22)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %match_end17
   %try_pay_slot = getelementptr inbounds nuw %Result__VarEnv__string, ptr %inner65, i32 0, i32 1
@@ -86462,8 +86445,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7350, i64 %tag, ptr @mu_file.7351, i64 92)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::fn_decl::codegen::should_null_check_vt"(ptr %0) {
@@ -86586,8 +86569,8 @@ march_arm34:                                      ; preds = %march_next32
   br label %match_end
 
 march_next35:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7352, i64 %tag, ptr @mu_file.7353, i64 111)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::fn_decl::codegen::emit_null_checks"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -86654,8 +86637,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7354, i64 %tag, ptr @mu_file.7355, i64 128)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx17 = load ptr, ptr %ctx, align 8
@@ -86964,8 +86947,8 @@ march_arm33:                                      ; preds = %march_next19
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next34:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7416, i64 %tag, ptr @mu_file.7417, i64 170)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm33
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -87486,8 +87469,7 @@ parm_body195:                                     ; preds = %parm_next171
   br label %pmatch_end
 
 parm_next196:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7511, i64 -1, ptr @mu_file.7512, i64 199)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"features::fn_decl::codegen::emit_method_call"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -87755,8 +87737,7 @@ march_arm102:                                     ; preds = %march_next
   br label %match_end
 
 march_next103:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7554, i64 %tag, ptr @mu_file.7555, i64 249)
-  unreachable
+  ret ptr null
 
 ifcont115:                                        ; preds = %if_else118
   %r130 = load ptr, ptr %r, align 8
@@ -88300,8 +88281,7 @@ march_arm405:                                     ; preds = %march_next402
   ret ptr %127
 
 march_next406:                                    ; preds = %march_next402
-  call void @forge_match_unreachable(ptr @.match_fn.7651, i64 %tag398, ptr @mu_file.7652, i64 312)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"features::fn_decl::codegen::emit_first_arg"(ptr %0, ptr %1, ptr %2) {
@@ -88363,8 +88343,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7669, i64 %tag, ptr @mu_file.7670, i64 327)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::fn_decl::codegen::emit_call_named"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -88519,8 +88499,7 @@ parm_body54:                                      ; preds = %parm_next48
   br label %pmatch_end
 
 parm_next55:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7679, i64 -1, ptr @mu_file.7680, i64 335)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else
   %ctx64 = load ptr, ptr %ctx, align 8
@@ -88785,8 +88764,7 @@ march_arm165:                                     ; preds = %march_next
   ret ptr %52
 
 march_next166:                                    ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7722, i64 %tag, ptr @mu_file.7723, i64 367)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"features::fn_decl::codegen::emit_int_to_string"(ptr %0, ptr %1, ptr %2) {
@@ -88854,8 +88832,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7793, i64 %tag, ptr @mu_file.7794, i64 383)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -89231,8 +89209,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7847, i64 %tag, ptr @mu_file.7848, i64 430)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %try_ok46, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -89277,8 +89255,8 @@ march_arm18:                                      ; preds = %march_next15
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next19:                                     ; preds = %march_next15
-  call void @forge_match_unreachable(ptr @.match_fn.7845, i64 %tag11, ptr @mu_file.7846, i64 430)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm18
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %5, i32 0, i32 1
@@ -89420,8 +89398,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7879, i64 %tag, ptr @mu_file.7880, i64 448)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %try_ok46, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -89466,8 +89444,8 @@ march_arm18:                                      ; preds = %march_next15
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next19:                                     ; preds = %march_next15
-  call void @forge_match_unreachable(ptr @.match_fn.7877, i64 %tag11, ptr @mu_file.7878, i64 448)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm18
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %5, i32 0, i32 1
@@ -89610,8 +89588,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7925, i64 %tag, ptr @mu_file.7926, i64 466)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -89806,8 +89784,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.7967, i64 %tag, ptr @mu_file.7968, i64 488)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -90027,8 +90005,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.8005, i64 %tag, ptr @mu_file.8006, i64 508)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -90195,8 +90173,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.8023, i64 %tag, ptr @mu_file.8024, i64 528)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm5
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %10, i32 0, i32 1
@@ -90722,8 +90700,7 @@ march_arm147:                                     ; preds = %march_next
   br label %match_end
 
 march_next148:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8073, i64 %tag, ptr @mu_file.8074, i64 38)
-  unreachable
+  ret ptr null
 
 ifcont160:                                        ; preds = %if_else163, %ifcont175
   %35 = call ptr @forge_rc_alloc(i64 16)
@@ -92025,8 +92002,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.8281, i64 %tag, ptr @mu_file.8282, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %ctx24 = load ptr, ptr %ctx, align 8
@@ -92704,8 +92681,8 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8365, i64 %tag, ptr @mu_file.8366, i64 82)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %match_end
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -92807,8 +92784,8 @@ march_arm51:                                      ; preds = %march_next44
   br label %match_end42
 
 march_next52:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8381, i64 %tag41, ptr @mu_file.8382, i64 98)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %ifcont
   %field66 = load ptr, ptr %field, align 8
@@ -93808,8 +93785,8 @@ march_arm56:                                      ; preds = %march_next
   br label %match_end
 
 march_next57:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8559, i64 %tag, ptr @mu_file.8560, i64 20)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont60:                                         ; preds = %if_else63
   %o150 = load ptr, ptr %o, align 8
@@ -94060,8 +94037,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.8591, i64 %tag, ptr @mu_file.8592, i64 40)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::struct_decl::typeck::tc_field_exists"(ptr %0, ptr %1) {
@@ -94134,8 +94111,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.8593, i64 %tag, ptr @mu_file.8594, i64 51)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::struct_decl::typeck::field_type_in"(ptr %0, ptr %1, ptr %2) {
@@ -94229,8 +94206,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.8595, i64 %tag, ptr @mu_file.8596, i64 59)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::struct_decl::init_struct_decl"(ptr %0) {
@@ -94934,8 +94911,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8647, i64 %tag, ptr @mu_file.8648, i64 96)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::struct_decl::field_access_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -94995,8 +94972,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8650, i64 %tag, ptr @mu_file.8651, i64 103)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::struct_decl::enum_ctor_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -95065,8 +95042,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8653, i64 %tag, ptr @mu_file.8654, i64 110)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::struct_decl::field_assign_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -95135,8 +95112,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8656, i64 %tag, ptr @mu_file.8657, i64 117)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::struct_decl::field_access_resolve_expr"(ptr %0, ptr %1) {
@@ -95225,8 +95202,8 @@ march_arm18:                                      ; preds = %march_next9
   br label %match_end7
 
 march_next19:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8658, i64 %tag5, ptr @mu_file.8659, i64 127)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm23:                                      ; preds = %march_next
   %r25 = load ptr, ptr %r, align 8
@@ -95235,8 +95212,8 @@ march_arm23:                                      ; preds = %march_next
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8660, i64 %tag, ptr @mu_file.8661, i64 124)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::struct_decl::field_assign_check_expr"(ptr %0, ptr %1) {
@@ -95328,8 +95305,8 @@ march_arm22:                                      ; preds = %march_next
   br label %match_end
 
 march_next23:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8671, i64 %tag, ptr @mu_file.8672, i64 143)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_enum_declaration(ptr %0) {
@@ -96663,8 +96640,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.8874, i64 %tag, ptr @mu_file.8875, i64 66)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -96736,8 +96713,8 @@ march_arm30:                                      ; preds = %march_next23
   br label %match_end21
 
 march_next31:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8864, i64 %tag19, ptr @mu_file.8865, i64 71)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end50:                                      ; preds = %march_arm59, %march_arm51
   %match_val64 = load i64, ptr %match_result49, align 8
@@ -96782,8 +96759,8 @@ march_arm59:                                      ; preds = %march_next52
   br label %match_end50
 
 march_next60:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8872, i64 %tag48, ptr @mu_file.8873, i64 76)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::enum_decl::codegen::fill_enum_payload_typed"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, i64 %6) {
@@ -96871,8 +96848,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.8896, i64 %tag, ptr @mu_file.8897, i64 84)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %9, i32 0, i32 1
@@ -96953,8 +96930,8 @@ march_arm37:                                      ; preds = %march_next30
   br label %match_end28
 
 march_next38:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8886, i64 %tag26, ptr @mu_file.8887, i64 90)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end56:                                      ; preds = %march_arm65, %march_arm57
   %match_val70 = load i64, ptr %match_result55, align 8
@@ -97000,8 +96977,8 @@ march_arm65:                                      ; preds = %march_next58
   br label %match_end56
 
 march_next66:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8894, i64 %tag54, ptr @mu_file.8895, i64 95)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::enum_decl::codegen::emit_enum_tag_cmp"(ptr %0, ptr %1, ptr %2, ptr %3, i64 %4) {
@@ -99224,8 +99201,8 @@ march_arm11:                                      ; preds = %march_next4
   br label %match_end
 
 march_next12:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.9239, i64 %tag, ptr @mu_file.9240, i64 25)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::generic_enum_lookup"(ptr %0, ptr %1) {
@@ -99306,8 +99283,8 @@ march_arm11:                                      ; preds = %march_next4
   br label %match_end
 
 march_next12:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.9241, i64 %tag, ptr @mu_file.9242, i64 28)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::generic_struct_lookup"(ptr %0, ptr %1) {
@@ -99388,8 +99365,8 @@ march_arm11:                                      ; preds = %march_next4
   br label %match_end
 
 march_next12:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.9243, i64 %tag, ptr @mu_file.9244, i64 31)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::type_arg_lookup"(ptr %0, ptr %1) {
@@ -99474,8 +99451,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.9245, i64 %tag, ptr @mu_file.9246, i64 39)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::generics::mono::inst_has"(ptr %0, ptr %1) {
@@ -99548,8 +99525,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.9247, i64 %tag, ptr @mu_file.9248, i64 45)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::append_insts"(ptr %0, ptr %1) {
@@ -99624,8 +99601,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9250, i64 %tag, ptr @mu_file.9251, i64 49)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm3
   %rest17 = load ptr, ptr %rest, align 8
@@ -99729,8 +99706,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9252, i64 %tag, ptr @mu_file.9253, i64 63)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::inst_mangled"(ptr %0, ptr %1) {
@@ -99815,8 +99792,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.9254, i64 %tag, ptr @mu_file.9255, i64 67)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::merge_partial"(ptr %0, ptr %1, ptr %2) {
@@ -99950,8 +99927,8 @@ march_arm14:                                      ; preds = %march_next3
   br label %match_end
 
 march_next15:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.9256, i64 %tag, ptr @mu_file.9257, i64 90)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::merge_into_all"(ptr %0, ptr %1, ptr %2) {
@@ -100168,8 +100145,8 @@ march_arm49:                                      ; preds = %march_next4
   br label %match_end
 
 march_next50:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.9259, i64 %tag, ptr @mu_file.9260, i64 98)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::append_inst"(ptr %0, ptr %1, ptr %2) {
@@ -100300,8 +100277,8 @@ march_arm18:                                      ; preds = %march_next
   br label %match_end
 
 march_next19:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9262, i64 %tag, ptr @mu_file.9263, i64 110)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::generics::mono::adds_new_info"(ptr %0, ptr %1) {
@@ -100360,8 +100337,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9264, i64 %tag, ptr @mu_file.9265, i64 118)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %existing12 = load ptr, ptr %existing, align 8
@@ -100445,8 +100422,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9266, i64 %tag, ptr @mu_file.9267, i64 129)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %a_ty16 = load ptr, ptr %a_ty, align 8
@@ -100547,8 +100524,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9268, i64 %tag, ptr @mu_file.9269, i64 141)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -100660,8 +100637,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9270, i64 %tag, ptr @mu_file.9271, i64 158)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::finalize_insts"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -100825,8 +100802,8 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9278, i64 %tag, ptr @mu_file.9279, i64 166)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::lookup_type_params"(ptr %0, ptr %1) {
@@ -100892,8 +100869,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9283, i64 %tag, ptr @mu_file.9284, i64 180)
-  unreachable
+  ret ptr null
 
 match_end16:                                      ; preds = %march_arm29
   %regs33 = load ptr, ptr %regs, align 8
@@ -100932,8 +100908,7 @@ march_arm29:                                      ; preds = %march_next19
   br label %match_end16
 
 march_next30:                                     ; preds = %march_next19
-  call void @forge_match_unreachable(ptr @.match_fn.9288, i64 %tag15, ptr @mu_file.9289, i64 184)
-  unreachable
+  ret ptr null
 
 match_end40:                                      ; preds = %march_arm53
   %7 = call ptr @forge_rc_alloc(i64 16)
@@ -100967,8 +100942,7 @@ march_arm53:                                      ; preds = %march_next43
   br label %match_end40
 
 march_next54:                                     ; preds = %march_next43
-  call void @forge_match_unreachable(ptr @.match_fn.9293, i64 %tag39, ptr @mu_file.9294, i64 188)
-  unreachable
+  ret ptr null
 }
 
 define i1 @"features::generics::mono::is_generic_decl"(ptr %0) {
@@ -101086,8 +101060,8 @@ march_arm47:                                      ; preds = %march_next41
   br label %match_end
 
 march_next48:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9295, i64 %tag, ptr @mu_file.9296, i64 198)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::mangle_name_ordered"(ptr %0, ptr %1, ptr %2) {
@@ -101192,8 +101166,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9301, i64 %tag, ptr @mu_file.9302, i64 212)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty14 = load ptr, ptr %ty, align 8
@@ -101462,8 +101436,8 @@ march_arm96:                                      ; preds = %march_next85
   br label %match_end
 
 march_next97:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9316, i64 %tag, ptr @mu_file.9317, i64 226)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::render_union_mangled"(ptr %0) {
@@ -101523,8 +101497,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9321, i64 %tag, ptr @mu_file.9322, i64 250)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ty11 = load ptr, ptr %ty5, align 8
@@ -101632,8 +101606,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9328, i64 %tag, ptr @mu_file.9329, i64 261)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %ife_end, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -101673,8 +101647,8 @@ march_arm20:                                      ; preds = %march_next16
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next21:                                     ; preds = %march_next16
-  call void @forge_match_unreachable(ptr @.match_fn.9326, i64 %tag12, ptr @mu_file.9327, i64 261)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -101793,8 +101767,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9335, i64 %tag, ptr @mu_file.9336, i64 275)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %ife_end, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -101837,8 +101811,8 @@ march_arm20:                                      ; preds = %march_next16
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next21:                                     ; preds = %march_next16
-  call void @forge_match_unreachable(ptr @.match_fn.9333, i64 %tag12, ptr @mu_file.9334, i64 275)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -101966,8 +101940,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9340, i64 %tag, ptr @mu_file.9341, i64 290)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -102102,8 +102076,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.9343, i64 %tag, ptr @mu_file.9344, i64 304)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::check_resolved"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4, ptr %5, ptr %6) {
@@ -102188,8 +102162,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9349, i64 %tag, ptr @mu_file.9350, i64 309)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_end51, %ife_then
   %ife_val66 = load i64, ptr %ife_result, align 8
@@ -103137,8 +103111,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9387, i64 %tag, ptr @mu_file.9388, i64 375)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %next12 = load ptr, ptr %next8, align 8
@@ -103216,8 +103190,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9391, i64 %tag, ptr @mu_file.9392, i64 388)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm21, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -103281,8 +103255,8 @@ march_arm21:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next22:                                     ; preds = %march_next16
-  call void @forge_match_unreachable(ptr @.match_fn.9389, i64 %tag12, ptr @mu_file.9390, i64 388)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::resolve_enum_type_args"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -103387,8 +103361,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9404, i64 %tag, ptr @mu_file.9405, i64 404)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm21
   %match_val = load i64, ptr %match_result, align 8
@@ -103412,8 +103386,8 @@ march_arm21:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next22:                                     ; preds = %march_next17
-  call void @forge_match_unreachable(ptr @.match_fn.9402, i64 %tag14, ptr @mu_file.9403, i64 404)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %match_end42
   %ty109 = load ptr, ptr %ty, align 8
@@ -103507,8 +103481,8 @@ march_arm63:                                      ; preds = %march_next45
   br i1 %tag_eq79, label %march_arm77, label %march_next78
 
 march_next64:                                     ; preds = %march_next45
-  call void @forge_match_unreachable(ptr @.match_fn.9415, i64 %tag41, ptr @mu_file.9416, i64 416)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end76:                                      ; preds = %march_arm104
   %match_val108 = load i64, ptr %match_result75, align 8
@@ -103558,8 +103532,8 @@ march_arm104:                                     ; preds = %march_next78
   br label %match_end76
 
 march_next105:                                    ; preds = %march_next78
-  call void @forge_match_unreachable(ptr @.match_fn.9413, i64 %tag74, ptr @mu_file.9414, i64 416)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::mangle_annotation"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -103658,8 +103632,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9418, i64 %tag, ptr @mu_file.9419, i64 437)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %args_str12 = load ptr, ptr %args_str, align 8
@@ -104040,8 +104014,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9425, i64 %tag, ptr @mu_file.9426, i64 480)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %sif_end, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -104181,8 +104155,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9430, i64 %tag, ptr @mu_file.9431, i64 497)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::collect_generic_stmt"(ptr %0, ptr %1) {
@@ -104549,8 +104523,8 @@ march_arm193:                                     ; preds = %march_next185
   br label %match_end
 
 march_next194:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9441, i64 %tag, ptr @mu_file.9442, i64 504)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::generics::mono::has_generics"(ptr %0) {
@@ -104723,8 +104697,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9461, i64 %tag, ptr @mu_file.9462, i64 526)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::collect_inst_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -105310,8 +105284,8 @@ march_arm291:                                     ; preds = %march_next282
   br label %match_end
 
 march_next292:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9493, i64 %tag, ptr @mu_file.9494, i64 533)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::collect_inst_expr"(ptr %0, ptr %1, ptr %2) {
@@ -105497,8 +105471,8 @@ march_arm41:                                      ; preds = %march_next27
   br label %match_end25
 
 march_next42:                                     ; preds = %march_next27
-  call void @forge_match_unreachable(ptr @.match_fn.9498, i64 %tag23, ptr @mu_file.9499, i64 573)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm46:                                      ; preds = %march_next15
   %callee48 = load ptr, ptr %callee2, align 8
@@ -105510,8 +105484,8 @@ march_arm46:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next47:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9500, i64 %tag11, ptr @mu_file.9501, i64 573)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm53:                                      ; preds = %march_next
   %pay_slot56 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
@@ -105617,8 +105591,8 @@ march_arm119:                                     ; preds = %march_next104
   br label %match_end102
 
 march_next120:                                    ; preds = %march_next104
-  call void @forge_match_unreachable(ptr @.match_fn.9505, i64 %tag100, ptr @mu_file.9506, i64 585)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm125:                                     ; preds = %march_next83
   %callee127 = load ptr, ptr %callee62, align 8
@@ -105630,8 +105604,8 @@ march_arm125:                                     ; preds = %march_next83
   br label %match_end81
 
 march_next126:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9507, i64 %tag79, ptr @mu_file.9508, i64 585)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm132:                                     ; preds = %march_next54
   %pay_slot135 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
@@ -105824,8 +105798,8 @@ march_arm230:                                     ; preds = %march_next206
   br label %match_end204
 
 march_next231:                                    ; preds = %march_next206
-  call void @forge_match_unreachable(ptr @.match_fn.9515, i64 %tag202, ptr @mu_file.9516, i64 569)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm238:                                     ; preds = %march_next191
   %obj240 = load ptr, ptr %obj181, align 8
@@ -105837,8 +105811,8 @@ march_arm238:                                     ; preds = %march_next191
   br label %match_end189
 
 march_next239:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9517, i64 %tag187, ptr @mu_file.9518, i64 569)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm245:                                     ; preds = %march_next177
   %pay_slot248 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
@@ -106359,8 +106333,8 @@ march_arm555:                                     ; preds = %march_next537
   br label %match_end
 
 march_next556:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9519, i64 %tag, ptr @mu_file.9520, i64 569)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::collect_inst_exprs"(ptr %0, ptr %1, ptr %2) {
@@ -106470,8 +106444,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9530, i64 %tag, ptr @mu_file.9531, i64 639)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::collect_inst_arms"(ptr %0, ptr %1, ptr %2) {
@@ -106539,8 +106513,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9538, i64 %tag, ptr @mu_file.9539, i64 643)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -106651,8 +106625,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9543, i64 %tag, ptr @mu_file.9544, i64 654)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::add_resolved_inst"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -106978,8 +106952,8 @@ march_arm30:                                      ; preds = %march_next
   br label %match_end
 
 march_next31:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9572, i64 %tag, ptr @mu_file.9573, i64 674)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::try_add_struct_inst"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -107060,8 +107034,8 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9577, i64 %tag, ptr @mu_file.9578, i64 682)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::specialize_fn"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -107312,8 +107286,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq27, label %march_arm25, label %march_next26
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9594, i64 %tag, ptr @mu_file.9595, i64 702)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end24:                                      ; preds = %match_end60, %march_arm25
   %match_val117 = load i64, ptr %match_result23, align 8
@@ -107389,8 +107363,8 @@ march_arm49:                                      ; preds = %march_next26
   br i1 %tag_eq63, label %march_arm61, label %march_next62
 
 march_next50:                                     ; preds = %march_next26
-  call void @forge_match_unreachable(ptr @.match_fn.9592, i64 %tag22, ptr @mu_file.9593, i64 707)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end60:                                      ; preds = %match_end91, %march_arm61
   %match_val116 = load i64, ptr %match_result59, align 8
@@ -107450,8 +107424,8 @@ march_arm80:                                      ; preds = %march_next62
   br i1 %tag_eq94, label %march_arm92, label %march_next93
 
 march_next81:                                     ; preds = %march_next62
-  call void @forge_match_unreachable(ptr @.match_fn.9590, i64 %tag58, ptr @mu_file.9591, i64 707)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end91:                                      ; preds = %march_arm111, %march_arm92
   %match_val = load i64, ptr %match_result90, align 8
@@ -107501,8 +107475,8 @@ march_arm111:                                     ; preds = %march_next93
   br label %match_end91
 
 march_next112:                                    ; preds = %march_next93
-  call void @forge_match_unreachable(ptr @.match_fn.9588, i64 %tag89, ptr @mu_file.9589, i64 707)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_vtype"(ptr %0, ptr %1) {
@@ -107871,8 +107845,8 @@ march_arm163:                                     ; preds = %march_next139
   br label %match_end
 
 march_next164:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9596, i64 %tag, ptr @mu_file.9597, i64 728)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_vtype_list"(ptr %0, ptr %1) {
@@ -107950,8 +107924,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9598, i64 %tag, ptr @mu_file.9599, i64 747)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_params"(ptr %0, ptr %1) {
@@ -108045,8 +108019,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9600, i64 %tag, ptr @mu_file.9601, i64 751)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_fields"(ptr %0, ptr %1) {
@@ -108152,8 +108126,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9602, i64 %tag, ptr @mu_file.9603, i64 758)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_variants"(ptr %0, ptr %1) {
@@ -108244,8 +108218,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9604, i64 %tag, ptr @mu_file.9605, i64 761)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_stmts"(ptr %0, ptr %1) {
@@ -108344,8 +108318,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9615, i64 %tag, ptr @mu_file.9616, i64 764)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_expr_list"(ptr %0, ptr %1) {
@@ -108444,8 +108418,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9626, i64 %tag, ptr @mu_file.9627, i64 767)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_stmt"(ptr %0, ptr %1) {
@@ -109073,8 +109047,8 @@ march_arm328:                                     ; preds = %march_next311
   br label %match_end
 
 march_next329:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9628, i64 %tag, ptr @mu_file.9629, i64 771)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_expr"(ptr %0, ptr %1) {
@@ -110176,8 +110150,8 @@ march_arm597:                                     ; preds = %march_next551
   br label %match_end
 
 march_next598:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9630, i64 %tag, ptr @mu_file.9631, i64 793)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::substitute_match_arms"(ptr %0, ptr %1) {
@@ -110256,8 +110230,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9650, i64 %tag, ptr @mu_file.9651, i64 828)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -110520,8 +110494,8 @@ march_arm26:                                      ; preds = %march_next
   br i1 %tag_eq40, label %march_arm38, label %march_next39
 
 march_next27:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9661, i64 %tag, ptr @mu_file.9662, i64 850)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end37:                                      ; preds = %march_arm38
   %match_val = load i64, ptr %match_result36, align 8
@@ -110550,8 +110524,8 @@ march_arm50:                                      ; preds = %march_next39
   ret ptr %insts53
 
 march_next51:                                     ; preds = %march_next39
-  call void @forge_match_unreachable(ptr @.match_fn.9659, i64 %tag35, ptr @mu_file.9660, i64 850)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::remove_insts_for"(ptr %0, ptr %1) {
@@ -110691,8 +110665,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.9663, i64 %tag, ptr @mu_file.9664, i64 864)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::vtype_from_type_string"(ptr %0) {
@@ -111412,8 +111386,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9681, i64 %tag, ptr @mu_file.9682, i64 949)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %5 = call ptr @forge_rc_alloc(i64 16)
@@ -112445,8 +112419,8 @@ march_arm472:                                     ; preds = %march_next454
   br label %match_end
 
 march_next473:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9683, i64 %tag, ptr @mu_file.9684, i64 970)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::rewrite_expr"(ptr %0, ptr %1, ptr %2) {
@@ -112691,8 +112665,8 @@ march_arm57:                                      ; preds = %march_next27
   br label %match_end25
 
 march_next58:                                     ; preds = %march_next27
-  call void @forge_match_unreachable(ptr @.match_fn.9688, i64 %tag23, ptr @mu_file.9689, i64 1003)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm71:                                      ; preds = %march_next15
   %14 = call ptr @forge_rc_alloc(i64 16)
@@ -112719,8 +112693,8 @@ march_arm71:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next72:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9690, i64 %tag11, ptr @mu_file.9691, i64 1003)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm87:                                      ; preds = %march_next
   %pay_slot90 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
@@ -112867,8 +112841,8 @@ march_arm168:                                     ; preds = %march_next138
   br label %match_end136
 
 march_next169:                                    ; preds = %march_next138
-  call void @forge_match_unreachable(ptr @.match_fn.9695, i64 %tag134, ptr @mu_file.9696, i64 1017)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm183:                                     ; preds = %march_next117
   %27 = call ptr @forge_rc_alloc(i64 16)
@@ -112895,8 +112869,8 @@ march_arm183:                                     ; preds = %march_next117
   br label %match_end115
 
 march_next184:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9697, i64 %tag113, ptr @mu_file.9698, i64 1017)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm199:                                     ; preds = %march_next88
   %pay_slot202 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
@@ -113088,8 +113062,8 @@ march_arm290:                                     ; preds = %march_next269
   br label %match_end267
 
 march_next291:                                    ; preds = %march_next269
-  call void @forge_match_unreachable(ptr @.match_fn.9702, i64 %tag265, ptr @mu_file.9703, i64 999)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm307:                                     ; preds = %march_next254
   %41 = call ptr @forge_rc_alloc(i64 16)
@@ -113116,8 +113090,8 @@ march_arm307:                                     ; preds = %march_next254
   br label %match_end252
 
 march_next308:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9704, i64 %tag250, ptr @mu_file.9705, i64 999)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm323:                                     ; preds = %march_next240
   %pay_slot326 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
@@ -114041,8 +114015,8 @@ march_arm887:                                     ; preds = %march_next839
   br label %match_end
 
 march_next888:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.9706, i64 %tag, ptr @mu_file.9707, i64 999)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::rewrite_expr_list"(ptr %0, ptr %1, ptr %2) {
@@ -114145,8 +114119,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9717, i64 %tag, ptr @mu_file.9718, i64 1066)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::rewrite_arms"(ptr %0, ptr %1, ptr %2) {
@@ -114227,8 +114201,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9737, i64 %tag, ptr @mu_file.9738, i64 1070)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -114441,8 +114415,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9748, i64 %tag, ptr @mu_file.9749, i64 1084)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::mangle_enum_at_site"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -114621,8 +114595,8 @@ march_arm26:                                      ; preds = %march_next
   br label %match_end
 
 march_next27:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9753, i64 %tag, ptr @mu_file.9754, i64 1098)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::inst_mangled_compatible"(ptr %0, ptr %1, ptr %2) {
@@ -114732,8 +114706,8 @@ march_arm20:                                      ; preds = %march_next4
   br label %match_end
 
 march_next21:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.9755, i64 %tag, ptr @mu_file.9756, i64 1107)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::rewrite_struct_lit"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -114849,8 +114823,8 @@ march_arm25:                                      ; preds = %march_next
   br label %match_end
 
 march_next26:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9760, i64 %tag, ptr @mu_file.9761, i64 1116)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::generics::mono::monomorphize"(ptr %0, ptr %1) {
@@ -115365,8 +115339,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.9822, i64 %tag, ptr @mu_file.9823, i64 1173)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::null_safety::codegen::emit_null_coalesce"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -117987,8 +117961,8 @@ march_arm105:                                     ; preds = %march_next
   br label %match_end
 
 march_next106:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10574, i64 %tag, ptr @mu_file.10575, i64 8)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::null_safety::typeck::check_try"(ptr %0, ptr %1) {
@@ -118077,8 +118051,8 @@ march_arm18:                                      ; preds = %march_next11
   br label %match_end9
 
 march_next19:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10580, i64 %tag7, ptr @mu_file.10581, i64 37)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont29
   %r40 = load ptr, ptr %r, align 8
@@ -118153,8 +118127,8 @@ march_arm53:                                      ; preds = %march_next
   br label %match_end
 
 march_next54:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10595, i64 %tag, ptr @mu_file.10596, i64 29)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::null_safety::typeck::check_null_coalesce"(ptr %0, ptr %1) {
@@ -118318,8 +118292,8 @@ march_arm68:                                      ; preds = %march_next
   br label %match_end
 
 march_next69:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10624, i64 %tag, ptr @mu_file.10625, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::null_safety::init_null_safety"(ptr %0) {
@@ -118885,8 +118859,8 @@ march_arm14:                                      ; preds = %march_next
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10659, i64 %tag, ptr @mu_file.10660, i64 85)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::null_safety::null_coalesce_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -118946,8 +118920,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10662, i64 %tag, ptr @mu_file.10663, i64 92)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::null_safety::optional_chain_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -119007,8 +118981,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10665, i64 %tag, ptr @mu_file.10666, i64 99)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::null_safety::try_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -119059,8 +119033,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10668, i64 %tag, ptr @mu_file.10669, i64 106)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_trait_declaration(ptr %0) {
@@ -120092,8 +120066,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10797, i64 %tag, ptr @mu_file.10798, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %tc12 = load ptr, ptr %tc, align 8
@@ -120263,8 +120237,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10805, i64 %tag, ptr @mu_file.10806, i64 50)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm29, %guard_pass
   %match_val = load i64, ptr %match_result12, align 8
@@ -120326,8 +120300,8 @@ march_arm29:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next30:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10803, i64 %tag11, ptr @mu_file.10804, i64 54)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::trait_decl::typeck::check_required_methods"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -120440,8 +120414,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10819, i64 %tag, ptr @mu_file.10820, i64 63)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %tc28 = load ptr, ptr %tc, align 8
@@ -120768,8 +120742,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10826, i64 %tag, ptr @mu_file.10827, i64 84)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm26, %guard_pass
   %match_val = load i64, ptr %match_result12, align 8
@@ -120817,8 +120791,8 @@ march_arm26:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next27:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10824, i64 %tag11, ptr @mu_file.10825, i64 88)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::trait_decl::typeck::impl_has_method"(ptr %0, ptr %1) {
@@ -120881,8 +120855,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10833, i64 %tag, ptr @mu_file.10834, i64 97)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm22, %guard_pass
   %match_val = load i64, ptr %match_result12, align 8
@@ -120922,8 +120896,8 @@ march_arm22:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next23:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10831, i64 %tag11, ptr @mu_file.10832, i64 101)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::trait_decl::typeck::collect_method_names_from_stmts"(ptr %0) {
@@ -120992,8 +120966,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10840, i64 %tag, ptr @mu_file.10841, i64 110)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm44, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -121065,8 +121039,8 @@ march_arm44:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next45:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10838, i64 %tag13, ptr @mu_file.10839, i64 114)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::trait_decl::typeck::collect_assoc_types_from_stmts"(ptr %0) {
@@ -121133,8 +121107,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10847, i64 %tag, ptr @mu_file.10848, i64 123)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm30, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -121181,8 +121155,8 @@ march_arm30:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next31:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10845, i64 %tag13, ptr @mu_file.10846, i64 127)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::trait_decl::typeck::method_list_has"(ptr %0, ptr %1) {
@@ -121255,8 +121229,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.10849, i64 %tag, ptr @mu_file.10850, i64 136)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::trait_decl::codegen::trait_method_idx"(ptr %0, ptr %1, i64 %2) {
@@ -121332,8 +121306,8 @@ march_arm9:                                       ; preds = %march_next3
   br label %match_end
 
 march_next10:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.10851, i64 %tag, ptr @mu_file.10852, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::trait_decl::codegen::trait_method_ret_ty"(ptr %0, ptr %1) {
@@ -121416,8 +121390,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.10854, i64 %tag, ptr @mu_file.10855, i64 18)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::trait_decl::codegen::trait_method_ret_vt"(ptr %0, ptr %1) {
@@ -121506,8 +121480,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.10856, i64 %tag, ptr @mu_file.10857, i64 26)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::trait_decl::codegen::emit_trait_dispatch"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -122200,8 +122174,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.10959, i64 %tag, ptr @mu_file.10960, i64 80)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %ctx10 = load ptr, ptr %ctx, align 8
@@ -122703,8 +122677,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq41, label %march_arm39, label %march_next40
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11041, i64 %tag, ptr @mu_file.11042, i64 151)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end38:                                      ; preds = %march_arm47, %march_arm39
   %match_val = load i64, ptr %match_result37, align 8
@@ -122768,8 +122742,8 @@ march_arm47:                                      ; preds = %march_next40
   br label %match_end38
 
 march_next48:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11025, i64 %tag36, ptr @mu_file.11026, i64 160)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::trait_decl::init_trait_decl"(ptr %0) {
@@ -123057,8 +123031,8 @@ march_arm14:                                      ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next15:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11076, i64 %tag, ptr @mu_file.11077, i64 26)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm14
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %12, i32 0, i32 1
@@ -123189,8 +123163,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11078, i64 %tag, ptr @mu_file.11079, i64 43)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::tuples::codegen::emit_tuple_index"(ptr %0, ptr %1, ptr %2, i64 %3) {
@@ -123431,8 +123405,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11113, i64 %tag, ptr @mu_file.11114, i64 64)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::tuples::init_tuples"(ptr %0) {
@@ -123720,8 +123694,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11146, i64 %tag, ptr @mu_file.11147, i64 51)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::tuples::tuple_index_emit_expr"(ptr %0, ptr %1, ptr %2) {
@@ -123781,8 +123755,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11149, i64 %tag, ptr @mu_file.11150, i64 58)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::with_expr::codegen::emit_with"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -124169,8 +124143,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11224, i64 %tag, ptr @mu_file.11225, i64 45)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::with_expr::codegen::apply_overrides"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -124261,8 +124235,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11263, i64 %tag, ptr @mu_file.11264, i64 60)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont47
   %ctx94 = load ptr, ptr %ctx, align 8
@@ -124605,8 +124579,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11273, i64 %tag, ptr @mu_file.11274, i64 32)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::with_expr::with_check_expr"(ptr %0, ptr %1) {
@@ -124692,8 +124666,8 @@ march_arm17:                                      ; preds = %march_next
   br label %match_end
 
 march_next18:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11281, i64 %tag, ptr @mu_file.11282, i64 39)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::list_lit::codegen::emit_list_lit"(ptr %0, ptr %1, ptr %2) {
@@ -124793,8 +124767,8 @@ march_arm12:                                      ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next13:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11301, i64 %tag, ptr @mu_file.11302, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm12
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -124923,8 +124897,8 @@ march_arm7:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next8:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11315, i64 %tag, ptr @mu_file.11316, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm7
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -125241,8 +125215,8 @@ march_arm91:                                      ; preds = %march_next44
   br i1 %try_is_ok106, label %try_ok107, label %try_err108
 
 march_next92:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11338, i64 %tag41, ptr @mu_file.11339, i64 44)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok107:                                        ; preds = %march_arm91
   %try_pay_slot109 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %18, i32 0, i32 1
@@ -125263,8 +125237,8 @@ march_arm133:                                     ; preds = %march_next12
   br label %match_end10
 
 march_next134:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11351, i64 %tag8, ptr @mu_file.11352, i64 38)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm136:                                     ; preds = %march_next
   %20 = call ptr @"codegen::types::err_emit"(ptr @.str.11353)
@@ -125273,8 +125247,8 @@ march_arm136:                                     ; preds = %march_next
   br label %match_end
 
 march_next137:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11354, i64 %tag, ptr @mu_file.11355, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::list_lit::codegen::emit_list_method_call"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -125963,8 +125937,7 @@ parm_body362:                                     ; preds = %parm_next324
   br label %pmatch_end
 
 parm_next363:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11448, i64 -1, ptr @mu_file.11449, i64 65)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"features::list_lit::codegen::emit_list_slice"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -126136,8 +126109,8 @@ march_arm64:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next65:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11473, i64 %tag8, ptr @mu_file.11474, i64 135)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm67:                                      ; preds = %march_next
   %11 = call ptr @"codegen::types::err_emit"(ptr @.str.11475)
@@ -126146,8 +126119,8 @@ march_arm67:                                      ; preds = %march_next
   br label %match_end
 
 march_next68:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11476, i64 %tag, ptr @mu_file.11477, i64 132)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::list_lit::codegen::emit_list_set"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -126317,8 +126290,8 @@ march_arm64:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next65:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11501, i64 %tag8, ptr @mu_file.11502, i64 153)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm67:                                      ; preds = %march_next
   %10 = call ptr @"codegen::types::err_emit"(ptr @.str.11503)
@@ -126327,8 +126300,8 @@ march_arm67:                                      ; preds = %march_next
   br label %match_end
 
 march_next68:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11504, i64 %tag, ptr @mu_file.11505, i64 150)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_list_elements(ptr %0) {
@@ -126845,8 +126818,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11580, i64 %tag, ptr @mu_file.11581, i64 7)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::list_lit::typeck::check_list_method"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -127025,8 +126998,7 @@ parm_body67:                                      ; preds = %parm_next52
   br label %pmatch_end
 
 parm_next68:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11591, i64 -1, ptr @mu_file.11592, i64 19)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"features::list_lit::typeck::tc_infer_lambda_ret"(ptr %0, ptr %1, ptr %2) {
@@ -127095,8 +127067,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq15, label %march_arm13, label %march_next14
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11606, i64 %tag, ptr @mu_file.11607, i64 31)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end12:                                      ; preds = %march_arm56, %match_end27
   %match_val61 = load i64, ptr %match_result11, align 8
@@ -127185,8 +127157,8 @@ march_arm33:                                      ; preds = %march_next29
   br label %match_end27
 
 march_next34:                                     ; preds = %march_next29
-  call void @forge_match_unreachable(ptr @.match_fn.11596, i64 %tag25, ptr @mu_file.11597, i64 39)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm56:                                      ; preds = %march_next14
   %8 = call ptr @forge_rc_alloc(i64 16)
@@ -127199,8 +127171,8 @@ march_arm56:                                      ; preds = %march_next14
   br label %match_end12
 
 march_next57:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11604, i64 %tag10, ptr @mu_file.11605, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::list_lit::init_list_lit"(ptr %0) {
@@ -127371,8 +127343,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11618, i64 %tag, ptr @mu_file.11619, i64 30)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::closures::codegen::capture_list_len"(ptr %0) {
@@ -127415,8 +127387,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11620, i64 %tag, ptr @mu_file.11621, i64 28)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::closures::codegen::is_param"(ptr %0, ptr %1) {
@@ -127489,8 +127461,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.11622, i64 %tag, ptr @mu_file.11623, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::closures::codegen::is_captured"(ptr %0, ptr %1) {
@@ -127563,8 +127535,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.11624, i64 %tag, ptr @mu_file.11625, i64 43)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::find_captures"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -128604,8 +128576,8 @@ march_arm567:                                     ; preds = %march_next541
   br label %match_end
 
 march_next568:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11635, i64 %tag, ptr @mu_file.11636, i64 51)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::find_captures_arms"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -128676,8 +128648,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11643, i64 %tag, ptr @mu_file.11644, i64 149)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -128800,8 +128772,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11648, i64 %tag, ptr @mu_file.11649, i64 161)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::find_captures_when_arms"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -128872,8 +128844,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11656, i64 %tag, ptr @mu_file.11657, i64 172)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -128996,8 +128968,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11661, i64 %tag, ptr @mu_file.11662, i64 184)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::find_captures_stmt_body"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -129506,8 +129478,8 @@ march_arm269:                                     ; preds = %march_next255
   br label %match_end
 
 march_next270:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11663, i64 %tag, ptr @mu_file.11664, i64 195)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::find_captures_stmts"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -129594,8 +129566,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq27, label %march_arm25, label %march_next26
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11673, i64 %tag, ptr @mu_file.11674, i64 239)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end24:                                      ; preds = %march_arm153, %march_arm125, %march_arm101, %march_arm73, %march_arm45, %march_arm25
   %match_val = load i64, ptr %match_result23, align 8
@@ -129831,8 +129803,8 @@ march_arm153:                                     ; preds = %march_next126
   br label %match_end24
 
 march_next154:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11671, i64 %tag22, ptr @mu_file.11672, i64 248)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::env_type_of"(ptr %0, ptr %1, ptr %2) {
@@ -130001,8 +129973,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.11690, i64 %tag, ptr @mu_file.11691, i64 279)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::closures::codegen::has_float_ident"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -130564,8 +130536,8 @@ march_arm302:                                     ; preds = %march_next287
   br label %match_end
 
 march_next303:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11692, i64 %tag, ptr @mu_file.11693, i64 288)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::closures::codegen::has_float_ident_list"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -130635,8 +130607,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11697, i64 %tag, ptr @mu_file.11698, i64 318)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next14 = load ptr, ptr %next8, align 8
@@ -130761,8 +130733,8 @@ march_arm19:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next20:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11699, i64 %tag8, ptr @mu_file.11700, i64 329)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end25:                                      ; preds = %march_arm41, %march_arm26
   %match_val43 = load i64, ptr %match_result24, align 8
@@ -130796,8 +130768,8 @@ march_arm41:                                      ; preds = %march_next27
   br label %match_end25
 
 march_next42:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11701, i64 %tag23, ptr @mu_file.11702, i64 330)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %match_end25
   %right46 = load ptr, ptr %right5, align 8
@@ -131073,8 +131045,8 @@ march_arm204:                                     ; preds = %march_next160
   br label %match_end
 
 march_next205:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11703, i64 %tag, ptr @mu_file.11704, i64 326)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::closures::codegen::param_used_with_float_list"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5) {
@@ -131147,8 +131119,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11708, i64 %tag, ptr @mu_file.11709, i64 351)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %param_name15 = load ptr, ptr %param_name, align 8
@@ -131241,8 +131213,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11715, i64 %tag, ptr @mu_file.11716, i64 361)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm73, %march_arm56, %march_arm43, %march_arm26, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -131347,8 +131319,8 @@ march_arm73:                                      ; preds = %march_next57
   br label %match_end13
 
 march_next74:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11713, i64 %tag11, ptr @mu_file.11714, i64 365)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %param_name77 = load ptr, ptr %param_name, align 8
@@ -131445,8 +131417,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11720, i64 %tag, ptr @mu_file.11721, i64 379)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm3
   %raw_vt14 = load ptr, ptr %raw_vt9, align 8
@@ -131812,8 +131784,8 @@ march_arm23:                                      ; preds = %march_next
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11727, i64 %tag, ptr @mu_file.11728, i64 423)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end106:                                     ; preds = %march_arm107
   %ctx125 = load ptr, ptr %ctx, align 8
@@ -131868,8 +131840,8 @@ march_arm113:                                     ; preds = %march_next108
   ret ptr %37
 
 march_next114:                                    ; preds = %march_next108
-  call void @forge_match_unreachable(ptr @.match_fn.11763, i64 %tag105, ptr @mu_file.11764, i64 446)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx143 = load ptr, ptr %ctx, align 8
@@ -132069,8 +132041,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11800, i64 %tag, ptr @mu_file.11801, i64 478)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::closures::codegen::push_captured_values"(ptr %0, ptr %1, ptr %2) {
@@ -132145,8 +132117,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11809, i64 %tag, ptr @mu_file.11810, i64 489)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::emit_typed_lambda_arg"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -132208,8 +132180,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq14, label %march_arm12, label %march_next13
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11823, i64 %tag, ptr @mu_file.11824, i64 505)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end11:                                      ; preds = %march_arm27, %march_arm12
   %match_val = load i64, ptr %match_result10, align 8
@@ -132264,8 +132236,8 @@ march_arm27:                                      ; preds = %march_next13
   br label %match_end11
 
 march_next28:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11821, i64 %tag9, ptr @mu_file.11822, i64 509)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::emit_indirect_call"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -132605,8 +132577,7 @@ march_arm50:                                      ; preds = %march_next
   ret ptr %21
 
 march_next51:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11872, i64 %tag, ptr @mu_file.11873, i64 567)
-  unreachable
+  ret ptr null
 }
 
 define i64 @"features::closures::codegen::fill_closure_captures"(ptr %0, ptr %1, ptr %2, i64 %3, i64 %4, i64 %5) {
@@ -132918,8 +132889,8 @@ march_arm36:                                      ; preds = %march_next
   ret ptr %12
 
 march_next37:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11914, i64 %tag, ptr @mu_file.11915, i64 616)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont41:                                         ; preds = %if_else44, %match_end48
   %user_arg_count134 = load i64, ptr %user_arg_count, align 8
@@ -133074,16 +133045,16 @@ march_arm130:                                     ; preds = %march_next85
   ret ptr %18
 
 march_next131:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11939, i64 %tag82, ptr @mu_file.11940, i64 630)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm132:                                     ; preds = %march_next51
   %19 = call ptr @"codegen::types::err_emit"(ptr @.str.11941)
   ret ptr %19
 
 march_next133:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11942, i64 %tag47, ptr @mu_file.11943, i64 626)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont137:                                        ; preds = %if_else140, %match_end144
   %user_arg_count285 = load i64, ptr %user_arg_count, align 8
@@ -133328,24 +133299,24 @@ march_arm277:                                     ; preds = %march_next225
   ret ptr %39
 
 march_next278:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11976, i64 %tag221, ptr @mu_file.11977, i64 651)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm280:                                     ; preds = %march_next186
   %40 = call ptr @"codegen::types::err_emit"(ptr @.str.11978)
   ret ptr %40
 
 march_next281:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11979, i64 %tag182, ptr @mu_file.11980, i64 647)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm283:                                     ; preds = %march_next147
   %41 = call ptr @"codegen::types::err_emit"(ptr @.str.11981)
   ret ptr %41
 
 march_next284:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11982, i64 %tag143, ptr @mu_file.11983, i64 643)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::closures::codegen::fill_lambda_args"(ptr %0, ptr %1, ptr %2, ptr %3, i64 %4) {
@@ -133422,8 +133393,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.11999, i64 %tag, ptr @mu_file.12000, i64 670)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -133548,8 +133519,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq24, label %march_arm22, label %march_next23
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12014, i64 %tag, ptr @mu_file.12015, i64 682)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end21:                                      ; preds = %sif_end, %march_arm22
   %match_val = load i64, ptr %match_result20, align 8
@@ -133589,8 +133560,8 @@ march_arm30:                                      ; preds = %march_next23
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next31:                                     ; preds = %march_next23
-  call void @forge_match_unreachable(ptr @.match_fn.12007, i64 %tag19, ptr @mu_file.12008, i64 688)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm30
   %raw_vt34 = load ptr, ptr %raw_vt9, align 8
@@ -133690,8 +133661,8 @@ march_arm61:                                      ; preds = %march_next54
   br label %match_end52
 
 march_next62:                                     ; preds = %march_next54
-  call void @forge_match_unreachable(ptr @.match_fn.12009, i64 %tag50, ptr @mu_file.12010, i64 699)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::closures::parser::expr_contains_it"(ptr %0) {
@@ -134385,8 +134356,8 @@ march_arm359:                                     ; preds = %march_next337
   br label %match_end
 
 march_next360:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12017, i64 %tag, ptr @mu_file.12018, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::closures::parser::expr_list_contains_it"(ptr %0) {
@@ -134444,8 +134415,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12022, i64 %tag, ptr @mu_file.12023, i64 41)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next10 = load ptr, ptr %next8, align 8
@@ -134523,8 +134494,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12029, i64 %tag, ptr @mu_file.12030, i64 48)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm49, %march_arm41, %march_arm29, %march_arm21, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -134609,8 +134580,8 @@ march_arm49:                                      ; preds = %march_next42
   br label %match_end13
 
 march_next50:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12027, i64 %tag11, ptr @mu_file.12028, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %match_end13
   %next53 = load ptr, ptr %next8, align 8
@@ -134915,8 +134886,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12057, i64 %tag, ptr @mu_file.12058, i64 44)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::map_lit::codegen::emit_map_lit"(ptr %0, ptr %1, ptr %2) {
@@ -135027,8 +134998,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next7:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12092, i64 %tag, ptr @mu_file.12093, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm6
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %6, i32 0, i32 1
@@ -135096,8 +135067,8 @@ march_arm30:                                      ; preds = %march_next27
   br i1 %try_is_ok52, label %try_ok53, label %try_err54
 
 march_next31:                                     ; preds = %march_next27
-  call void @forge_match_unreachable(ptr @.match_fn.12090, i64 %tag23, ptr @mu_file.12091, i64 19)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok53:                                         ; preds = %march_arm30
   %try_pay_slot55 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %8, i32 0, i32 1
@@ -135482,8 +135453,7 @@ parm_body143:                                     ; preds = %parm_next110
   br label %pmatch_end
 
 parm_next144:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12149, i64 -1, ptr @mu_file.12150, i64 33)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"features::map_lit::codegen::emit_map_set"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -135662,8 +135632,8 @@ march_arm69:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next70:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12178, i64 %tag8, ptr @mu_file.12179, i64 61)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm72:                                      ; preds = %march_next
   %11 = call ptr @"codegen::types::err_emit"(ptr @.str.12180)
@@ -135672,8 +135642,8 @@ march_arm72:                                      ; preds = %march_next
   br label %match_end
 
 march_next73:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12181, i64 %tag, ptr @mu_file.12182, i64 58)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @Parser__is_map_literal(ptr %0) {
@@ -136415,8 +136385,7 @@ parm_body51:                                      ; preds = %parm_next40
   br label %pmatch_end
 
 parm_next52:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12290, i64 -1, ptr @mu_file.12291, i64 7)
-  unreachable
+  ret ptr null
 }
 
 define i64 @"features::map_lit::init_map_lit"(ptr %0) {
@@ -136587,8 +136556,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12302, i64 %tag, ptr @mu_file.12303, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_defer_statement(ptr %0) {
@@ -136908,8 +136877,8 @@ march_arm53:                                      ; preds = %march_next21
   br label %match_end
 
 march_next54:                                     ; preds = %march_next21
-  call void @forge_match_unreachable(ptr @.match_fn.12338, i64 %tag, ptr @mu_file.12339, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::defer_stmt::init_defer_stmt"(ptr %0) {
@@ -137360,8 +137329,8 @@ march_arm103:                                     ; preds = %march_next
   br label %match_end
 
 march_next104:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12374, i64 %tag, ptr @mu_file.12375, i64 57)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::defer_stmt::defer_emit_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -137563,8 +137532,8 @@ march_arm103:                                     ; preds = %march_next
   br label %match_end
 
 march_next104:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12380, i64 %tag, ptr @mu_file.12381, i64 68)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::is_keyword::codegen::emit_is_check"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -138013,8 +137982,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12441, i64 %tag, ptr @mu_file.12442, i64 31)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::in_operator::codegen::emit_in_check"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -138117,8 +138086,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12459, i64 %tag, ptr @mu_file.12460, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -138362,8 +138331,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12474, i64 %tag, ptr @mu_file.12475, i64 39)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_spec_block(ptr %0) {
@@ -139091,8 +139060,8 @@ march_arm50:                                      ; preds = %march_next33
   br label %match_end
 
 march_next51:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12576, i64 %tag, ptr @mu_file.12577, i64 8)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::spec_test::codegen::emit_spec_block"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -139352,8 +139321,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12619, i64 %tag, ptr @mu_file.12620, i64 39)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm3
   %try_pay_slot = getelementptr inbounds nuw %Result__VarEnv__string, ptr %4, i32 0, i32 1
@@ -139603,8 +139572,8 @@ march_arm86:                                      ; preds = %march_next53
   br i1 %try_is_ok112, label %try_ok113, label %try_err114
 
 march_next87:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12633, i64 %tag, ptr @mu_file.12634, i64 50)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok113:                                        ; preds = %march_arm86
   %try_pay_slot115 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %15, i32 0, i32 1
@@ -140016,8 +139985,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12661, i64 %tag, ptr @mu_file.12662, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::select_stmt::codegen::emit_select"(ptr %0, ptr %1, ptr %2) {
@@ -140186,8 +140155,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12694, i64 %tag, ptr @mu_file.12695, i64 28)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -140392,8 +140361,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12739, i64 %tag, ptr @mu_file.12740, i64 40)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %18, i32 0, i32 1
@@ -140985,8 +140954,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12797, i64 %tag, ptr @mu_file.12798, i64 7)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::select_stmt::init_select_stmt"(ptr %0) {
@@ -141159,8 +141128,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12811, i64 %tag, ptr @mu_file.12812, i64 6)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::parallel_stmt::codegen::emit_parallel"(ptr %0, ptr %1, ptr %2) {
@@ -141282,8 +141251,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12834, i64 %tag, ptr @mu_file.12835, i64 20)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm43, %try_ok
   %match_val = load i64, ptr %match_result14, align 8
@@ -141357,8 +141326,8 @@ march_arm43:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next44:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12832, i64 %tag13, ptr @mu_file.12833, i64 24)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Parser__parse_parallel_statement(ptr %0) {
@@ -141624,8 +141593,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12862, i64 %tag, ptr @mu_file.12863, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::spawn_expr::codegen::emit_spawn"(ptr %0, ptr %1, ptr %2) {
@@ -141801,8 +141770,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12887, i64 %tag, ptr @mu_file.12888, i64 40)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next10 = load ptr, ptr %next8, align 8
@@ -142270,8 +142239,8 @@ march_arm208:                                     ; preds = %march_next197
   br label %match_end
 
 march_next209:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12889, i64 %tag, ptr @mu_file.12890, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::spawn_expr::codegen::arms_have_spawn"(ptr %0) {
@@ -142323,8 +142292,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12891, i64 %tag, ptr @mu_file.12892, i64 72)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next10 = load ptr, ptr %next8, align 8
@@ -142607,8 +142576,8 @@ march_arm104:                                     ; preds = %march_next97
   br label %match_end
 
 march_next105:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12893, i64 %tag, ptr @mu_file.12894, i64 79)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::spawn_expr::codegen::exprs_have_spawn"(ptr %0) {
@@ -142666,8 +142635,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12898, i64 %tag, ptr @mu_file.12899, i64 93)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %next10 = load ptr, ptr %next8, align 8
@@ -143412,8 +143381,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.12982, i64 %tag, ptr @mu_file.12983, i64 30)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"features::modules::resolver::stack_has"(ptr %0, ptr %1) {
@@ -143486,8 +143455,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.12984, i64 %tag, ptr @mu_file.12985, i64 59)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::modules::resolver::render_cycle"(ptr %0, ptr %1) {
@@ -143586,8 +143555,7 @@ march_arm5:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.12987, i64 %tag, ptr @mu_file.12988, i64 71)
-  unreachable
+  ret ptr null
 
 sif_then:                                         ; preds = %march_arm5
   %parts24 = load ptr, ptr %parts, align 8
@@ -143715,8 +143683,8 @@ march_arm9:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next10:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13021, i64 %tag, ptr @mu_file.13022, i64 90)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %next44 = load ptr, ptr %next15, align 8
@@ -144507,8 +144475,8 @@ march_arm317:                                     ; preds = %march_next278
   br label %match_end
 
 march_next318:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13072, i64 %tag, ptr @mu_file.13073, i64 110)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare i64 @forge_selfhost_file_exists.19(ptr)
@@ -145009,8 +144977,7 @@ parm_body24:                                      ; preds = %parm_next17
   br label %pmatch_end
 
 parm_next25:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13135, i64 -1, ptr @mu_file.13136, i64 92)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"features::eval::ok_result"(ptr %0, ptr %1) {
@@ -145141,8 +145108,7 @@ parm_body10:                                      ; preds = %parm_next7
   br label %pmatch_end
 
 parm_next11:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13150, i64 -1, ptr @mu_file.13151, i64 130)
-  unreachable
+  ret i1 0
 }
 
 define ptr @"features::eval::eval_expression_source"(ptr %0) {
@@ -145754,8 +145720,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13207, i64 %tag, ptr @mu_file.13208, i64 242)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::eval::define_binding"(ptr %0, ptr %1, i64 %2, ptr %3) {
@@ -145929,8 +145895,8 @@ march_arm16:                                      ; preds = %march_next4
   br label %match_end
 
 march_next17:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13215, i64 %tag, ptr @mu_file.13216, i64 266)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::eval::lookup_function"(ptr %0, ptr %1) {
@@ -146051,8 +146017,8 @@ march_arm29:                                      ; preds = %march_next12
   br label %match_end
 
 march_next30:                                     ; preds = %march_next12
-  call void @forge_match_unreachable(ptr @.match_fn.13217, i64 %tag, ptr @mu_file.13218, i64 274)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::eval::define_function"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -146221,8 +146187,8 @@ march_arm9:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next10:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13240, i64 %tag, ptr @mu_file.13241, i64 286)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %next75 = load ptr, ptr %next24, align 8
@@ -146519,8 +146485,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13256, i64 %tag, ptr @mu_file.13257, i64 346)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm3
   %current17 = load ptr, ptr %current, align 8
@@ -146583,8 +146549,8 @@ march_arm32:                                      ; preds = %march_next28
   br label %match_end26
 
 march_next33:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13254, i64 %tag24, ptr @mu_file.13255, i64 355)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::eval::execute_stmt"(ptr %0, ptr %1) {
@@ -147087,8 +147053,8 @@ march_arm237:                                     ; preds = %march_next229
   br i1 %if_cond251, label %if_then252, label %if_else253
 
 march_next238:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13308, i64 %tag, ptr @mu_file.13309, i64 364)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont250:                                        ; preds = %if_else253
   %runtime255 = load ptr, ptr %runtime, align 8
@@ -147953,8 +147919,8 @@ march_arm369:                                     ; preds = %march_next329
   br i1 %if_cond384, label %if_then385, label %if_else386
 
 march_next370:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13401, i64 %tag, ptr @mu_file.13402, i64 460)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont383:                                        ; preds = %if_else386
   %runtime388 = load ptr, ptr %runtime, align 8
@@ -148057,8 +148023,8 @@ march_arm9:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next10:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13432, i64 %tag, ptr @mu_file.13433, i64 545)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %result42 = load ptr, ptr %result, align 8
@@ -148240,8 +148206,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13436, i64 %tag, ptr @mu_file.13437, i64 564)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm20, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -148287,8 +148253,8 @@ march_arm20:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next21:                                     ; preds = %march_next16
-  call void @forge_match_unreachable(ptr @.match_fn.13434, i64 %tag12, ptr @mu_file.13435, i64 568)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::eval::count_params"(ptr %0) {
@@ -148331,8 +148297,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13438, i64 %tag, ptr @mu_file.13439, i64 581)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::eval::count_values"(ptr %0) {
@@ -148375,8 +148341,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13440, i64 %tag, ptr @mu_file.13441, i64 588)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::eval::eval_call"(ptr %0, ptr %1, ptr %2) {
@@ -148906,8 +148872,7 @@ march_arm5:                                       ; preds = %march_next
   ret ptr %11
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13541, i64 %tag, ptr @mu_file.13542, i64 666)
-  unreachable
+  ret ptr null
 
 ifcont16:                                         ; preds = %if_else19, %match_end23
   %runtime40 = load ptr, ptr %runtime, align 8
@@ -148974,8 +148939,7 @@ march_arm37:                                      ; preds = %march_next26
   ret ptr %26
 
 march_next38:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13545, i64 %tag22, ptr @mu_file.13546, i64 681)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"features::eval::eval_unary"(ptr %0, ptr %1, ptr %2) {
@@ -149119,8 +149083,8 @@ march_arm44:                                      ; preds = %march_next34
   br label %match_end
 
 march_next45:                                     ; preds = %march_next34
-  call void @forge_match_unreachable(ptr @.match_fn.13569, i64 %tag, ptr @mu_file.13570, i64 700)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::eval::eval_binary"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -149269,8 +149233,8 @@ march_arm47:                                      ; preds = %march_next40
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next48:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13588, i64 %tag, ptr @mu_file.13589, i64 723)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %right_value52 = load ptr, ptr %right_value, align 8
@@ -149441,8 +149405,8 @@ march_arm122:                                     ; preds = %march_next116
   br label %match_end69
 
 march_next123:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13586, i64 %tag67, ptr @mu_file.13587, i64 739)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"features::eval::eval_logical"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -149531,8 +149495,8 @@ march_arm15:                                      ; preds = %march_next
   br i1 %if_cond, label %if_then20, label %if_else21
 
 march_next16:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13599, i64 %tag, ptr @mu_file.13600, i64 757)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont19:                                         ; preds = %if_else21
   %left_result23 = load ptr, ptr %left_result, align 8
@@ -149884,8 +149848,7 @@ parm_body58:                                      ; preds = %parm_next45
   br label %pmatch_end
 
 parm_next59:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13648, i64 -1, ptr @mu_file.13649, i64 811)
-  unreachable
+  ret i1 0
 }
 
 define ptr @"features::eval::unquote_string"(ptr %0) {
@@ -150231,8 +150194,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13726, i64 %tag, ptr @mu_file.13727, i64 55)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"features::init_features"(ptr %0) {
@@ -150380,8 +150343,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13728, i64 %tag, ptr @mu_file.13729, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::type_bind"(ptr %0, ptr %1, ptr %2, i64 %3) {
@@ -150500,8 +150463,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13730, i64 %tag, ptr @mu_file.13731, i64 35)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::fn_type_lookup"(ptr %0, ptr %1) {
@@ -150590,8 +150553,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13732, i64 %tag, ptr @mu_file.13733, i64 50)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"typeck::fn_type_has"(ptr %0, ptr %1) {
@@ -150664,8 +150627,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13734, i64 %tag, ptr @mu_file.13735, i64 58)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"typeck::tc_fn_arity"(ptr %0, ptr %1) {
@@ -150746,8 +150709,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13736, i64 %tag, ptr @mu_file.13737, i64 66)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_fn_params"(ptr %0, ptr %1) {
@@ -150836,8 +150799,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13738, i64 %tag, ptr @mu_file.13739, i64 74)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"typeck::tc_count_args"(ptr %0) {
@@ -150880,8 +150843,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13740, i64 %tag, ptr @mu_file.13741, i64 83)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_catch_ok_type"(ptr %0, ptr %1) {
@@ -150987,8 +150950,8 @@ march_arm23:                                      ; preds = %march_next16
   br label %match_end7
 
 march_next24:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13743, i64 %tag5, ptr @mu_file.13744, i64 98)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm25:                                      ; preds = %march_next
   %pay_slot28 = getelementptr inbounds nuw %Expr, ptr %inner1, i32 0, i32 1
@@ -151051,16 +151014,16 @@ march_arm64:                                      ; preds = %march_next53
   br label %match_end39
 
 march_next65:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13746, i64 %tag37, ptr @mu_file.13747, i64 98)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm67:                                      ; preds = %march_next26
   store i64 ptrtoint (ptr @.str.13748 to i64), ptr %match_result, align 8
   br label %match_end
 
 march_next68:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13749, i64 %tag, ptr @mu_file.13750, i64 98)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %tc72 = load ptr, ptr %tc, align 8
@@ -151172,16 +151135,16 @@ march_arm115:                                     ; preds = %march_next108
   br label %match_end106
 
 march_next116:                                    ; preds = %march_next108
-  call void @forge_match_unreachable(ptr @.match_fn.13757, i64 %tag104, ptr @mu_file.13758, i64 120)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm119:                                     ; preds = %march_next81
   store i64 0, ptr %match_result78, align 8
   br label %match_end79
 
 march_next120:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13759, i64 %tag77, ptr @mu_file.13760, i64 115)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::struct_type_lookup"(ptr %0, ptr %1) {
@@ -151270,8 +151233,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13761, i64 %tag, ptr @mu_file.13762, i64 137)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"typeck::struct_type_has"(ptr %0, ptr %1) {
@@ -151344,8 +151307,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13763, i64 %tag, ptr @mu_file.13764, i64 145)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"typeck::enum_type_has"(ptr %0, ptr %1) {
@@ -151418,8 +151381,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13765, i64 %tag, ptr @mu_file.13766, i64 158)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_enum_find_by_variant"(ptr %0, ptr %1) {
@@ -151484,8 +151447,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13768, i64 %tag, ptr @mu_file.13769, i64 166)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %name14 = load ptr, ptr %name5, align 8
@@ -151577,8 +151540,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13770, i64 %tag, ptr @mu_file.13771, i64 176)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::trait_lookup"(ptr %0, ptr %1) {
@@ -151667,8 +151630,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13772, i64 %tag, ptr @mu_file.13773, i64 203)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"typeck::trait_has"(ptr %0, ptr %1) {
@@ -151741,8 +151704,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13774, i64 %tag, ptr @mu_file.13775, i64 211)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::trait_assoc_types"(ptr %0, ptr %1) {
@@ -151831,8 +151794,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13776, i64 %tag, ptr @mu_file.13777, i64 219)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"typeck::tc_owns_type"(ptr %0, ptr %1) {
@@ -151994,8 +151957,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13789, i64 %tag, ptr @mu_file.13790, i64 242)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::newtype_lookup"(ptr %0, ptr %1) {
@@ -152078,8 +152041,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13792, i64 %tag, ptr @mu_file.13793, i64 256)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::newtype_vtype_lookup"(ptr %0, ptr %1) {
@@ -152168,8 +152131,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.13794, i64 %tag, ptr @mu_file.13795, i64 264)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::union_alias_lookup"(ptr %0, ptr %1) {
@@ -152252,8 +152215,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13797, i64 %tag, ptr @mu_file.13798, i64 278)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::assoc_type_lookup"(ptr %0, ptr %1) {
@@ -152336,8 +152299,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13800, i64 %tag, ptr @mu_file.13801, i64 293)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"typeck::type_implements_trait"(ptr %0, ptr %1, ptr %2) {
@@ -152437,8 +152400,8 @@ march_arm16:                                      ; preds = %march_next3
   br label %match_end
 
 march_next17:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.13802, i64 %tag, ptr @mu_file.13803, i64 327)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_new"() {
@@ -153901,8 +153864,8 @@ march_arm233:                                     ; preds = %march_next212
   br label %match_end
 
 march_next234:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13887, i64 %tag, ptr @mu_file.13888, i64 406)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::resolve_vtype_list"(ptr %0, ptr %1) {
@@ -153980,8 +153943,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13889, i64 %tag, ptr @mu_file.13890, i64 448)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::typecheck_program"(ptr %0) {
@@ -154191,8 +154154,8 @@ march_arm43:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next44:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13903, i64 %tag12, ptr @mu_file.13904, i64 487)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm47:                                      ; preds = %march_next
   %fields49 = load ptr, ptr %fields, align 8
@@ -154201,8 +154164,8 @@ march_arm47:                                      ; preds = %march_next
   br label %match_end
 
 march_next48:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13905, i64 %tag, ptr @mu_file.13906, i64 484)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::collect_decls"(ptr %0, ptr %1) {
@@ -154305,8 +154268,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13952, i64 %tag, ptr @mu_file.13953, i64 505)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm960, %march_arm870, %march_arm861, %ife_end759, %ife_end659, %ife_end, %march_arm421, %march_arm318, %march_arm236, %march_arm93, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -155757,8 +155720,8 @@ march_arm960:                                     ; preds = %march_next871
   br label %match_end15
 
 march_next961:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13950, i64 %tag13, ptr @mu_file.13951, i64 509)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::collect_impl_assoc_types"(ptr %0, ptr %1, ptr %2) {
@@ -155831,8 +155794,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13968, i64 %tag, ptr @mu_file.13969, i64 577)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm178, %sif_end
   %match_val = load i64, ptr %match_result14, align 8
@@ -156129,8 +156092,8 @@ march_arm178:                                     ; preds = %march_next17
   br label %match_end15
 
 march_next179:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13966, i64 %tag13, ptr @mu_file.13967, i64 581)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::check_stmts"(ptr %0, ptr %1) {
@@ -156286,8 +156249,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.13979, i64 %tag, ptr @mu_file.13980, i64 601)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::check_binding"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, i1 %5) {
@@ -157472,8 +157435,8 @@ march_arm469:                                     ; preds = %march_next450
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next470:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14055, i64 %tag, ptr @mu_file.14056, i64 631)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %tc485 = load ptr, ptr %tc, align 8
@@ -157628,8 +157591,8 @@ march_arm8:                                       ; preds = %march_next
   br i1 %if_cond14, label %if_then15, label %if_else16
 
 march_next9:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14063, i64 %tag, ptr @mu_file.14064, i64 746)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont13:                                         ; preds = %if_else16
   %declared18 = load ptr, ptr %declared, align 8
@@ -157847,8 +157810,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14075, i64 %tag, ptr @mu_file.14076, i64 766)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm54, %match_end23
   %match_val59 = load i64, ptr %match_result13, align 8
@@ -157942,8 +157905,8 @@ march_arm49:                                      ; preds = %march_next44
   br label %match_end23
 
 march_next50:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14071, i64 %tag21, ptr @mu_file.14072, i64 773)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm54:                                      ; preds = %march_next16
   %tc56 = load ptr, ptr %tc, align 8
@@ -157954,8 +157917,8 @@ march_arm54:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next55:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14073, i64 %tag12, ptr @mu_file.14074, i64 770)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_check_explicit_returns"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -158031,8 +157994,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14080, i64 %tag, ptr @mu_file.14081, i64 795)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_check_stmt_returns"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -158533,8 +158496,8 @@ march_arm248:                                     ; preds = %march_next234
   br label %match_end
 
 march_next249:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14109, i64 %tag, ptr @mu_file.14110, i64 806)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_bind_params"(ptr %0, ptr %1) {
@@ -158607,8 +158570,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14111, i64 %tag, ptr @mu_file.14112, i64 839)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::check_expr"(ptr %0, ptr %1) {
@@ -159347,8 +159310,8 @@ march_arm374:                                     ; preds = %march_next359
   br i1 %if_cond388, label %if_then389, label %if_else390
 
 march_next375:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14185, i64 %tag, ptr @mu_file.14186, i64 852)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont387:                                        ; preds = %if_else390
   %tc392 = load ptr, ptr %tc, align 8
@@ -159433,8 +159396,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14195, i64 %tag, ptr @mu_file.14196, i64 931)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm20, %march_arm15
   %match_val = load i64, ptr %match_result13, align 8
@@ -159497,8 +159460,8 @@ march_arm20:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next21:                                     ; preds = %march_next16
-  call void @forge_match_unreachable(ptr @.match_fn.14193, i64 %tag12, ptr @mu_file.14194, i64 931)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_check_newtype_args"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -159573,8 +159536,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq20, label %march_arm18, label %march_next19
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14210, i64 %tag, ptr @mu_file.14211, i64 947)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end17:                                      ; preds = %ifcont, %march_arm18
   %match_val = load i64, ptr %match_result16, align 8
@@ -159635,8 +159598,8 @@ march_arm23:                                      ; preds = %march_next19
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next24:                                     ; preds = %march_next19
-  call void @forge_match_unreachable(ptr @.match_fn.14208, i64 %tag15, ptr @mu_file.14209, i64 947)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont63
   %tc123 = load ptr, ptr %tc, align 8
@@ -159875,8 +159838,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14218, i64 %tag, ptr @mu_file.14219, i64 971)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_check_newtype_ctor"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -160073,8 +160036,8 @@ march_arm73:                                      ; preds = %march_next
   br label %match_end
 
 march_next74:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14224, i64 %tag, ptr @mu_file.14225, i64 979)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_check_shape_compat"(ptr %0, ptr %1, ptr %2) {
@@ -160163,8 +160126,8 @@ march_arm13:                                      ; preds = %march_next
   br label %match_end
 
 march_next14:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14233, i64 %tag, ptr @mu_file.14234, i64 998)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont18:                                         ; preds = %if_else21
   %tc23 = load ptr, ptr %tc, align 8
@@ -160279,8 +160242,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14249, i64 %tag, ptr @mu_file.14250, i64 1009)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %arg_name18 = load ptr, ptr %arg_name, align 8
@@ -160677,8 +160640,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.14252, i64 %tag, ptr @mu_file.14253, i64 1030)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::check_binary_type"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -160994,8 +160957,8 @@ march_arm122:                                     ; preds = %march_next114
   br label %match_end
 
 march_next123:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14254, i64 %tag, ptr @mu_file.14255, i64 1042)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::tc_check_fn_call"(ptr %0, ptr %1, ptr %2) {
@@ -161359,8 +161322,8 @@ parm_body35:                                      ; preds = %parm_next19
   br label %pmatch_end
 
 parm_next36:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14285, i64 -1, ptr @mu_file.14286, i64 1088)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %checked45 = load ptr, ptr %checked, align 8
@@ -161523,8 +161486,8 @@ march_arm108:                                     ; preds = %march_next95
   br label %match_end
 
 march_next109:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14302, i64 %tag, ptr @mu_file.14303, i64 1083)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::check_method_call"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -161736,8 +161699,8 @@ parm_body79:                                      ; preds = %parm_next67
   br label %pmatch_end
 
 parm_next80:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14324, i64 -1, ptr @mu_file.14325, i64 1133)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont89:                                         ; preds = %if_else92
   %o102 = load ptr, ptr %o, align 8
@@ -161883,8 +161846,8 @@ march_arm166:                                     ; preds = %march_next155
   br label %match_end
 
 march_next167:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14339, i64 %tag126, ptr @mu_file.14340, i64 1155)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont170:                                        ; preds = %if_else173, %ifcont190
   %checked_args202 = load ptr, ptr %checked_args, align 8
@@ -162065,8 +162028,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %tag_eq20, label %march_arm18, label %march_next19
 
 march_next7:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14367, i64 %tag, ptr @mu_file.14368, i64 1184)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end17:                                      ; preds = %march_arm51, %match_end26
   %match_val64 = load i64, ptr %match_result16, align 8
@@ -162138,8 +162101,8 @@ march_arm36:                                      ; preds = %march_next28
   br label %match_end26
 
 march_next37:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14360, i64 %tag24, ptr @mu_file.14361, i64 1193)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm51:                                      ; preds = %march_next19
   %tc53 = load ptr, ptr %tc, align 8
@@ -162160,8 +162123,8 @@ march_arm51:                                      ; preds = %march_next19
   br label %match_end17
 
 march_next52:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14365, i64 %tag15, ptr @mu_file.14366, i64 1188)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::check_expr_list"(ptr %0, ptr %1) {
@@ -162235,8 +162198,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14375, i64 %tag, ptr @mu_file.14376, i64 1215)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::check_expr_list_types"(ptr %0, ptr %1) {
@@ -162366,8 +162329,8 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14392, i64 %tag, ptr @mu_file.14393, i64 1231)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::annotate_enter_fn"(ptr %0, ptr %1) {
@@ -162532,8 +162495,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq25, label %march_arm23, label %march_next24
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14411, i64 %tag, ptr @mu_file.14412, i64 1258)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end22:                                      ; preds = %march_arm118, %march_arm81, %march_arm44, %march_arm23
   %match_val = load i64, ptr %match_result21, align 8
@@ -162711,8 +162674,8 @@ march_arm118:                                     ; preds = %march_next82
   br label %match_end22
 
 march_next119:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14403, i64 %tag20, ptr @mu_file.14404, i64 1263)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::annotate_stmt"(ptr %0, ptr %1) {
@@ -163733,8 +163696,8 @@ march_arm571:                                     ; preds = %march_next554
   br label %match_end
 
 march_next572:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14413, i64 %tag, ptr @mu_file.14414, i64 1275)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::annotate_expr"(ptr %0, ptr %1) {
@@ -165229,8 +165192,8 @@ march_arm833:                                     ; preds = %march_next816
   br label %match_end
 
 march_next834:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14415, i64 %tag, ptr @mu_file.14416, i64 1309)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::annotate_sexpr"(ptr %0, ptr %1) {
@@ -165573,8 +165536,8 @@ march_arm134:                                     ; preds = %march_next119
   br label %match_end117
 
 march_next135:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14432, i64 %tag115, ptr @mu_file.14433, i64 1357)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm147:                                     ; preds = %march_next108
   %pay_slot150 = getelementptr inbounds nuw %Expr, ptr %annotated_node3, i32 0, i32 1
@@ -165788,8 +165751,8 @@ march_arm244:                                     ; preds = %march_next232
   br label %match_end
 
 march_next245:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14447, i64 %tag, ptr @mu_file.14448, i64 1357)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::annotate_expr_list"(ptr %0, ptr %1) {
@@ -165867,8 +165830,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14455, i64 %tag, ptr @mu_file.14456, i64 1391)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::annotate_match_arms"(ptr %0, ptr %1) {
@@ -165946,8 +165909,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14457, i64 %tag, ptr @mu_file.14458, i64 1398)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -166088,8 +166051,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14459, i64 %tag, ptr @mu_file.14460, i64 1409)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::annotate_when_arms"(ptr %0, ptr %1) {
@@ -166159,8 +166122,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14461, i64 %tag, ptr @mu_file.14462, i64 1416)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -166859,8 +166822,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14482, i64 %tag, ptr @mu_file.14483, i64 1486)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"typeck::check_naming_stmt"(ptr %0, ptr %1) {
@@ -167535,8 +167498,8 @@ march_arm329:                                     ; preds = %march_next321
   br label %match_end
 
 march_next330:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14499, i64 %tag, ptr @mu_file.14500, i64 1497)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::alias_lookup"(ptr %0, ptr %1) {
@@ -167619,8 +167582,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.14502, i64 %tag, ptr @mu_file.14503, i64 46)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::item_lookup"(ptr %0, ptr %1) {
@@ -167703,8 +167666,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.14505, i64 %tag, ptr @mu_file.14506, i64 56)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"resolve::names::item_is_exported"(ptr %0, ptr %1) {
@@ -167786,8 +167749,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.14507, i64 %tag, ptr @mu_file.14508, i64 64)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::build_global_index"(ptr %0, ptr %1) {
@@ -167862,8 +167825,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14509, i64 %tag, ptr @mu_file.14510, i64 75)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::append_items"(ptr %0, ptr %1) {
@@ -167963,8 +167926,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14511, i64 %tag, ptr @mu_file.14512, i64 87)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::module_find"(ptr %0, ptr %1) {
@@ -168059,8 +168022,8 @@ march_arm11:                                      ; preds = %march_next4
   br i1 %tag_eq29, label %march_arm27, label %march_next28
 
 march_next12:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.14515, i64 %tag, ptr @mu_file.14516, i64 98)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end26:                                      ; preds = %march_arm33, %march_arm27
   %match_val = load i64, ptr %match_result25, align 8
@@ -168085,8 +168048,8 @@ march_arm33:                                      ; preds = %march_next28
   br label %match_end26
 
 march_next34:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14513, i64 %tag24, ptr @mu_file.14514, i64 104)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::build_module_tree"(ptr %0, ptr %1, ptr %2) {
@@ -168158,8 +168121,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14520, i64 %tag, ptr @mu_file.14521, i64 118)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::build_tree_from_stmt"(ptr %0, ptr %1, ptr %2) {
@@ -168332,8 +168295,8 @@ march_arm57:                                      ; preds = %march_next48
   br label %match_end
 
 march_next58:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14524, i64 %tag, ptr @mu_file.14525, i64 129)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_module_items"(ptr %0, ptr %1) {
@@ -168406,8 +168369,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14529, i64 %tag, ptr @mu_file.14530, i64 147)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_item_from_stmt"(ptr %0, ptr %1, i64 %2, ptr %3) {
@@ -169119,8 +169082,8 @@ march_arm378:                                     ; preds = %march_next346
   br label %match_end344
 
 march_next379:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14540, i64 %tag343, ptr @mu_file.14541, i64 209)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm387:                                     ; preds = %march_next330
   %rest389 = load ptr, ptr %rest, align 8
@@ -169129,8 +169092,8 @@ march_arm387:                                     ; preds = %march_next330
   br label %match_end
 
 march_next388:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14542, i64 %tag, ptr @mu_file.14543, i64 158)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_reexport_items"(ptr %0, ptr %1, ptr %2) {
@@ -169240,8 +169203,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14545, i64 %tag, ptr @mu_file.14546, i64 233)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_impl_items"(ptr %0, ptr %1, ptr %2) {
@@ -169310,8 +169273,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14552, i64 %tag, ptr @mu_file.14553, i64 244)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm36, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -169372,8 +169335,8 @@ march_arm36:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next37:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14550, i64 %tag13, ptr @mu_file.14551, i64 248)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"resolve::names::annotation_has_export"(ptr %0) {
@@ -169427,8 +169390,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14555, i64 %tag, ptr @mu_file.14556, i64 265)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %next10 = load ptr, ptr %next8, align 8
@@ -169526,8 +169489,8 @@ march_arm6:                                       ; preds = %march_next
   br i1 %tag_eq23, label %march_arm21, label %march_next22
 
 march_next7:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14568, i64 %tag, ptr @mu_file.14569, i64 281)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end20:                                      ; preds = %march_arm45, %march_arm21
   %match_val = load i64, ptr %match_result19, align 8
@@ -169588,8 +169551,8 @@ march_arm45:                                      ; preds = %march_next22
   br label %match_end20
 
 march_next46:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14566, i64 %tag18, ptr @mu_file.14567, i64 286)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::resolve_use_names"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -170003,8 +169966,8 @@ march_arm181:                                     ; preds = %march_next44
   br label %match_end17
 
 march_next182:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14603, i64 %tag15, ptr @mu_file.14604, i64 316)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm192:                                     ; preds = %march_next4
   %result194 = load ptr, ptr %result, align 8
@@ -170013,8 +169976,8 @@ march_arm192:                                     ; preds = %march_next4
   br label %match_end
 
 march_next193:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14605, i64 %tag, ptr @mu_file.14606, i64 306)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::dots_to_colons"(ptr %0) {
@@ -170177,8 +170140,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.14610, i64 %tag, ptr @mu_file.14611, i64 375)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"resolve::names::is_builtin_name"(ptr %0) {
@@ -170417,8 +170380,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14625, i64 %tag, ptr @mu_file.14626, i64 409)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::bind_pattern_ctx"(ptr %0, ptr %1) {
@@ -170551,8 +170514,8 @@ march_arm45:                                      ; preds = %march_next20
   br label %match_end
 
 march_next46:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14630, i64 %tag, ptr @mu_file.14631, i64 416)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::bind_pattern_list"(ptr %0, ptr %1) {
@@ -170611,8 +170574,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14632, i64 %tag, ptr @mu_file.14633, i64 426)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::merge_aliases"(ptr %0, ptr %1) {
@@ -170699,8 +170662,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14634, i64 %tag, ptr @mu_file.14635, i64 433)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::resolve_names"(ptr %0) {
@@ -170997,8 +170960,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14670, i64 %tag, ptr @mu_file.14671, i64 480)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::rewrite_stmt"(ptr %0, ptr %1) {
@@ -172038,8 +172001,8 @@ march_arm553:                                     ; preds = %march_next529
   br label %match_end
 
 march_next554:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14699, i64 %tag, ptr @mu_file.14700, i64 487)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::rewrite_expr"(ptr %0, ptr %1) {
@@ -172550,8 +172513,8 @@ march_arm258:                                     ; preds = %march_next245
   br label %match_end
 
 march_next259:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14701, i64 %tag, ptr @mu_file.14702, i64 526)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::rewrite_expr_compound"(ptr %0, ptr %1) {
@@ -173393,8 +173356,8 @@ march_arm433:                                     ; preds = %march_next416
   br label %match_end
 
 march_next434:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14703, i64 %tag, ptr @mu_file.14704, i64 544)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::rewrite_ident"(ptr %0, ptr %1, ptr %2) {
@@ -173629,8 +173592,8 @@ march_arm77:                                      ; preds = %march_next
   br label %match_end
 
 march_next78:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14725, i64 %tag, ptr @mu_file.14726, i64 580)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont89:                                         ; preds = %if_else92
   br label %ifcont61
@@ -173751,8 +173714,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14737, i64 %tag, ptr @mu_file.14738, i64 592)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::rewrite_field_inits"(ptr %0, ptr %1) {
@@ -173864,8 +173827,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14748, i64 %tag, ptr @mu_file.14749, i64 599)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::rewrite_match_arms"(ptr %0, ptr %1) {
@@ -173948,8 +173911,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14768, i64 %tag, ptr @mu_file.14769, i64 606)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -174111,8 +174074,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14788, i64 %tag, ptr @mu_file.14789, i64 618)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -174272,8 +174235,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.14790, i64 %tag, ptr @mu_file.14791, i64 639)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_used_paths_stmts"(ptr %0, ptr %1) {
@@ -174341,8 +174304,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14795, i64 %tag, ptr @mu_file.14796, i64 648)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_used_paths_stmt"(ptr %0, ptr %1) {
@@ -174812,8 +174775,8 @@ march_arm230:                                     ; preds = %march_next218
   br label %match_end
 
 march_next231:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14797, i64 %tag, ptr @mu_file.14798, i64 659)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_used_paths_expr"(ptr %0, ptr %1) {
@@ -175748,8 +175711,8 @@ march_arm486:                                     ; preds = %march_next440
   br label %match_end
 
 march_next487:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14801, i64 %tag, ptr @mu_file.14802, i64 693)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_used_paths_expr_list"(ptr %0, ptr %1) {
@@ -175814,8 +175777,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14806, i64 %tag, ptr @mu_file.14807, i64 739)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_used_paths_field_inits"(ptr %0, ptr %1) {
@@ -175880,8 +175843,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14811, i64 %tag, ptr @mu_file.14812, i64 746)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::names::collect_used_paths_match_arms"(ptr %0, ptr %1) {
@@ -175948,8 +175911,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14819, i64 %tag, ptr @mu_file.14820, i64 753)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -176075,8 +176038,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14823, i64 %tag, ptr @mu_file.14824, i64 772)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm3
   %used15 = load ptr, ptr %used, align 8
@@ -176323,8 +176286,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14851, i64 %tag, ptr @mu_file.14852, i64 68)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm56, %march_arm47, %march_arm38, %march_arm25, %march_arm16
   %match_val = load i64, ptr %match_result, align 8
@@ -176418,8 +176381,8 @@ march_arm56:                                      ; preds = %march_next48
   br label %match_end15
 
 march_next57:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14849, i64 %tag14, ptr @mu_file.14850, i64 72)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::collect_method_names"(ptr %0, ptr %1) {
@@ -176496,8 +176459,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14858, i64 %tag, ptr @mu_file.14859, i64 90)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm25, %march_arm16
   %match_val = load i64, ptr %match_result, align 8
@@ -176534,8 +176497,8 @@ march_arm25:                                      ; preds = %march_next17
   br label %match_end15
 
 march_next26:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14856, i64 %tag14, ptr @mu_file.14857, i64 94)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::resolver_new"() {
@@ -177093,8 +177056,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.14899, i64 %tag, ptr @mu_file.14900, i64 143)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::declare_name"(ptr %0, ptr %1) {
@@ -177348,8 +177311,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14913, i64 %tag, ptr @mu_file.14914, i64 167)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::define_type_params"(ptr %0, ptr %1) {
@@ -177416,8 +177379,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14915, i64 %tag, ptr @mu_file.14916, i64 182)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::mark_defined"(ptr %0, ptr %1, i64 %2) {
@@ -177630,8 +177593,8 @@ march_arm39:                                      ; preds = %march_next4
   br label %match_end
 
 march_next40:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.14917, i64 %tag, ptr @mu_file.14918, i64 194)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::declare_function"(ptr %0, ptr %1) {
@@ -177812,8 +177775,8 @@ march_arm22:                                      ; preds = %march_next5
   br label %match_end
 
 march_next23:                                     ; preds = %march_next5
-  call void @forge_match_unreachable(ptr @.match_fn.14922, i64 %tag, ptr @mu_file.14923, i64 214)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"resolve::lookup_fn"(ptr %0, ptr %1) {
@@ -177886,8 +177849,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.14924, i64 %tag, ptr @mu_file.14925, i64 222)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::resolve_stmt_list"(ptr %0, ptr %1) {
@@ -178021,8 +177984,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14935, i64 %tag, ptr @mu_file.14936, i64 233)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"resolve::resolve_stmt"(ptr %0, ptr %1) {
@@ -178411,8 +178373,8 @@ march_arm175:                                     ; preds = %march_next167
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next176:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14940, i64 %tag, ptr @mu_file.14941, i64 246)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else
   %r187 = load ptr, ptr %r, align 8
@@ -178501,8 +178463,7 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.14942, i64 %tag, ptr @mu_file.14943, i64 286)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"resolve::fa_root"(ptr %0) {
@@ -178563,8 +178524,8 @@ march_arm12:                                      ; preds = %march_next5
   br label %match_end
 
 march_next13:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14945, i64 %tag, ptr @mu_file.14946, i64 300)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"resolve::check_immutable_root"(ptr %0, ptr %1, ptr %2) {
@@ -179435,8 +179396,8 @@ march_arm280:                                     ; preds = %march_next247
   br label %match_end245
 
 march_next281:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.14998, i64 %tag244, ptr @mu_file.14999, i64 390)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm285:                                     ; preds = %march_next230
   %pay_slot288 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
@@ -179647,8 +179608,8 @@ march_arm392:                                     ; preds = %march_next343
   br i1 %if_cond409, label %if_then410, label %if_else411
 
 march_next393:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15005, i64 %tag, ptr @mu_file.15006, i64 331)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont408:                                        ; preds = %if_else411
   %r413 = load ptr, ptr %r, align 8
@@ -179810,8 +179771,7 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15015, i64 %tag, ptr @mu_file.15016, i64 451)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"resolve::resolve_expr_list"(ptr %0, ptr %1) {
@@ -179906,8 +179866,7 @@ march_arm7:                                       ; preds = %march_next
   br label %match_end
 
 march_next8:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15023, i64 %tag, ptr @mu_file.15024, i64 468)
-  unreachable
+  ret ptr null
 }
 
 define ptr @"codegen::types::cg_newtype_lookup"(ptr %0, ptr %1) {
@@ -179990,8 +179949,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.15026, i64 %tag, ptr @mu_file.15027, i64 93)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::cg_newtype_vtype_lookup"(ptr %0, ptr %1) {
@@ -180080,8 +180039,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.15028, i64 %tag, ptr @mu_file.15029, i64 101)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::cg_union_alias_lookup"(ptr %0, ptr %1) {
@@ -180164,8 +180123,8 @@ march_arm12:                                      ; preds = %march_next3
   br label %match_end
 
 march_next13:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.15031, i64 %tag, ptr @mu_file.15032, i64 115)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::cg_union_alias_vtype_lookup"(ptr %0, ptr %1) {
@@ -180254,8 +180213,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.15033, i64 %tag, ptr @mu_file.15034, i64 123)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::param_type_vt_at"(ptr %0, i64 %1) {
@@ -180334,8 +180293,8 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.15035, i64 %tag, ptr @mu_file.15036, i64 132)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::trait_decl_lookup"(ptr %0, ptr %1) {
@@ -180424,8 +180383,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.15037, i64 %tag, ptr @mu_file.15038, i64 151)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::types::trait_decl_has"(ptr %0, ptr %1) {
@@ -180498,8 +180457,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.15039, i64 %tag, ptr @mu_file.15040, i64 159)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::null_ptr_val"() {
@@ -180790,8 +180749,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15048, i64 %tag, ptr @mu_file.15049, i64 242)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::field_resolved_at"(ptr %0, i64 %1) {
@@ -180870,8 +180829,8 @@ march_arm10:                                      ; preds = %march_next4
   br label %match_end
 
 march_next11:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.15050, i64 %tag, ptr @mu_file.15051, i64 250)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::fn_param_lookup"(ptr %0, ptr %1) {
@@ -180960,8 +180919,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.15052, i64 %tag, ptr @mu_file.15053, i64 284)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::types::copy_set_has"(ptr %0, ptr %1) {
@@ -181034,8 +180993,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.15054, i64 %tag, ptr @mu_file.15055, i64 333)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::types::vtype_is_copy"(ptr %0, ptr %1) {
@@ -181153,8 +181112,8 @@ march_arm39:                                      ; preds = %march_next31
   br label %match_end
 
 march_next40:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15056, i64 %tag, ptr @mu_file.15057, i64 345)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::types::releasable_has"(ptr %0, ptr %1) {
@@ -181227,8 +181186,8 @@ march_arm8:                                       ; preds = %march_next3
   br label %match_end
 
 march_next9:                                      ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.15058, i64 %tag, ptr @mu_file.15059, i64 358)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::struct_reg_lookup"(ptr %0, ptr %1) {
@@ -181329,8 +181288,8 @@ march_arm19:                                      ; preds = %march_next7
   br label %match_end
 
 march_next20:                                     ; preds = %march_next7
-  call void @forge_match_unreachable(ptr @.match_fn.15060, i64 %tag, ptr @mu_file.15061, i64 376)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::enum_reg_lookup"(ptr %0, ptr %1) {
@@ -181431,8 +181390,8 @@ march_arm19:                                      ; preds = %march_next7
   br label %match_end
 
 march_next20:                                     ; preds = %march_next7
-  call void @forge_match_unreachable(ptr @.match_fn.15062, i64 %tag, ptr @mu_file.15063, i64 394)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::enum_reg_find_by_variant"(ptr %0, ptr %1) {
@@ -181518,8 +181477,8 @@ march_arm13:                                      ; preds = %march_next3
   br label %match_end
 
 march_next14:                                     ; preds = %march_next3
-  call void @forge_match_unreachable(ptr @.match_fn.15068, i64 %tag, ptr @mu_file.15069, i64 404)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::enum_reg_find_by_variant_arity"(ptr %0, ptr %1, i64 %2) {
@@ -181593,8 +181552,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_rhs, label %sc_merge
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15077, i64 %tag, ptr @mu_file.15078, i64 414)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %v15 = load ptr, ptr %v, align 8
@@ -181725,8 +181684,8 @@ march_arm14:                                      ; preds = %march_next4
   br label %match_end
 
 march_next15:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.15079, i64 %tag, ptr @mu_file.15080, i64 433)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::toplevel_lookup"(ptr %0, ptr %1) {
@@ -181843,8 +181802,8 @@ march_arm27:                                      ; preds = %march_next9
   br label %match_end
 
 march_next28:                                     ; preds = %march_next9
-  call void @forge_match_unreachable(ptr @.match_fn.15081, i64 %tag, ptr @mu_file.15082, i64 447)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::loops_top"(ptr %0) {
@@ -181915,8 +181874,8 @@ march_arm6:                                       ; preds = %march_next
   br label %match_end
 
 march_next7:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15083, i64 %tag, ptr @mu_file.15084, i64 465)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::types::llvm_type_for_full"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -182154,8 +182113,8 @@ march_arm98:                                      ; preds = %march_next94
   br label %match_end
 
 march_next99:                                     ; preds = %march_next94
-  call void @forge_match_unreachable(ptr @.match_fn.15085, i64 %tag, ptr @mu_file.15086, i64 484)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::types::vtype_is_ptr_type"(ptr %0) {
@@ -182219,8 +182178,8 @@ march_arm14:                                      ; preds = %march_next12
   br label %match_end
 
 march_next15:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15087, i64 %tag, ptr @mu_file.15088, i64 510)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Ctx__bb(ptr %0, ptr %1) {
@@ -182740,8 +182699,8 @@ march_arm20:                                      ; preds = %march_next
   br label %match_end
 
 march_next21:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15163, i64 %tag, ptr @mu_file.15164, i64 577)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end38:                                      ; preds = %march_arm47, %march_arm39
   %match_val52 = load i64, ptr %match_result37, align 8
@@ -182788,8 +182747,8 @@ march_arm47:                                      ; preds = %march_next40
   br label %match_end38
 
 march_next48:                                     ; preds = %march_next40
-  call void @forge_match_unreachable(ptr @.match_fn.15165, i64 %tag36, ptr @mu_file.15166, i64 582)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Ctx__fn_type(ptr %0, ptr %1, ptr %2, i64 %3) {
@@ -186341,8 +186300,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15808, i64 %tag, ptr @mu_file.15809, i64 959)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Ctx__resolve_fields(ptr %0, ptr %1) {
@@ -186455,8 +186414,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15816, i64 %tag, ptr @mu_file.15817, i64 968)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Ctx__resolve_param_vt(ptr %0, ptr %1, ptr %2) {
@@ -186969,8 +186928,8 @@ march_arm197:                                     ; preds = %march_next170
   br label %match_end
 
 march_next198:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.15867, i64 %tag, ptr @mu_file.15868, i64 986)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Ctx__resolve_codegen_vtype_list(ptr %0, ptr %1) {
@@ -187056,8 +187015,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.15875, i64 %tag, ptr @mu_file.15876, i64 1010)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @Ctx__resolve_field_type(ptr %0, ptr %1, ptr %2) {
@@ -190116,8 +190075,7 @@ march_arm930:                                     ; preds = %march_next
   ret ptr %cast942
 
 march_next931:                                    ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16154, i64 %tag, ptr @mu_file.16155, i64 314)
-  unreachable
+  ret ptr null
 
 match_end959:                                     ; preds = %march_arm961
   %ctx987 = load ptr, ptr %ctx, align 8
@@ -190172,8 +190130,7 @@ march_arm965:                                     ; preds = %march_next962
   ret ptr %cast986
 
 march_next966:                                    ; preds = %march_next962
-  call void @forge_match_unreachable(ptr @.match_fn.16162, i64 %tag958, ptr @mu_file.16163, i64 329)
-  unreachable
+  ret ptr null
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx1011 = load ptr, ptr %ctx, align 8
@@ -190375,8 +190332,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16191, i64 %tag, ptr @mu_file.16192, i64 359)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::resolve_field_list"(ptr %0, ptr %1) {
@@ -190481,8 +190438,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16193, i64 %tag, ptr @mu_file.16194, i64 367)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::resolve_param_list"(ptr %0, ptr %1) {
@@ -190573,8 +190530,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16195, i64 %tag, ptr @mu_file.16196, i64 375)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::resolve_field_vt"(ptr %0, ptr %1, ptr %2) {
@@ -190956,8 +190913,8 @@ march_arm121:                                     ; preds = %march_next100
   br label %match_end
 
 march_next122:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16210, i64 %tag, ptr @mu_file.16211, i64 400)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::resolve_setup_vt_list"(ptr %0, ptr %1) {
@@ -191035,8 +190992,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16212, i64 %tag, ptr @mu_file.16213, i64 419)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"codegen::setup::fill_struct_field_types"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, i64 %6) {
@@ -191116,8 +191073,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16214, i64 %tag, ptr @mu_file.16215, i64 427)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::declare_structs"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8) {
@@ -191216,8 +191173,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16221, i64 %tag, ptr @mu_file.16222, i64 438)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm159, %march_arm143, %march_arm138, %march_arm133, %march_arm67, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -191479,8 +191436,8 @@ march_arm159:                                     ; preds = %march_next144
   br label %match_end16
 
 march_next160:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16219, i64 %tag14, ptr @mu_file.16220, i64 443)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::declare_one_global"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8, ptr %9, ptr %10) {
@@ -191700,8 +191657,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16229, i64 %tag, ptr @mu_file.16230, i64 488)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm130, %march_arm113, %march_arm77, %march_arm41, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -191881,8 +191838,8 @@ march_arm130:                                     ; preds = %march_next114
   br label %match_end16
 
 march_next131:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16227, i64 %tag14, ptr @mu_file.16228, i64 493)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"codegen::setup::declare_variant_payloads"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8, ptr %9, ptr %10) {
@@ -191972,8 +191929,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16232, i64 %tag, ptr @mu_file.16233, i64 507)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %lc48 = load ptr, ptr %lc, align 8
@@ -192152,8 +192109,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16239, i64 %tag, ptr @mu_file.16240, i64 528)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm85, %march_arm68, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -192301,8 +192258,8 @@ march_arm85:                                      ; preds = %march_next69
   br label %match_end16
 
 march_next86:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16237, i64 %tag14, ptr @mu_file.16238, i64 533)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::setup::fields_have_rc"(ptr %0) {
@@ -192356,8 +192313,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16241, i64 %tag, ptr @mu_file.16242, i64 566)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -192427,8 +192384,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16243, i64 %tag, ptr @mu_file.16244, i64 578)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -192530,8 +192487,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16247, i64 %tag, ptr @mu_file.16248, i64 592)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %has_drop18 = load i1, ptr %has_drop, align 8
@@ -192642,8 +192599,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16250, i64 %tag, ptr @mu_file.16251, i64 608)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %m20 = load ptr, ptr %m, align 8
@@ -192891,8 +192848,8 @@ march_arm77:                                      ; preds = %march_next30
   br label %match_end
 
 march_next78:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16280, i64 %tag, ptr @mu_file.16281, i64 624)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"codegen::setup::emit_struct_field_releases"(ptr %0, ptr %1, ptr %2, ptr %3, i64 %4) {
@@ -192967,8 +192924,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16332, i64 %tag, ptr @mu_file.16333, i64 649)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx151 = load ptr, ptr %ctx, align 8
@@ -193791,8 +193748,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16526, i64 %tag, ptr @mu_file.16527, i64 724)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %ifcont28
   %ctx171 = load ptr, ptr %ctx, align 8
@@ -194148,8 +194105,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16561, i64 %tag, ptr @mu_file.16562, i64 751)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx96 = load ptr, ptr %ctx, align 8
@@ -194691,8 +194648,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16670, i64 %tag, ptr @mu_file.16671, i64 795)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %has_drop19 = load i1, ptr %has_drop, align 8
@@ -194793,8 +194750,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16672, i64 %tag, ptr @mu_file.16673, i64 813)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx21 = load ptr, ptr %ctx, align 8
@@ -194975,8 +194932,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16709, i64 %tag, ptr @mu_file.16710, i64 837)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm45, %march_arm36, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -195059,8 +195016,8 @@ march_arm45:                                      ; preds = %march_next37
   br label %match_end15
 
 march_next46:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16707, i64 %tag13, ptr @mu_file.16708, i64 841)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::collect_trait_fn_names"(ptr %0) {
@@ -195133,8 +195090,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16716, i64 %tag, ptr @mu_file.16717, i64 852)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm87, %march_arm44, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -195262,8 +195219,8 @@ march_arm87:                                      ; preds = %march_next45
   br label %match_end15
 
 march_next88:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16714, i64 %tag13, ptr @mu_file.16715, i64 856)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::collect_newtypes"(ptr %0, ptr %1) {
@@ -195333,8 +195290,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16723, i64 %tag, ptr @mu_file.16724, i64 866)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm52, %march_arm43, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -195428,8 +195385,8 @@ march_arm52:                                      ; preds = %march_next44
   br label %match_end15
 
 march_next53:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16721, i64 %tag13, ptr @mu_file.16722, i64 870)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::collect_union_aliases"(ptr %0, ptr %1) {
@@ -195499,8 +195456,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq18, label %march_arm16, label %march_next17
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16730, i64 %tag, ptr @mu_file.16731, i64 881)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end15:                                      ; preds = %march_arm52, %march_arm43, %march_arm16
   %match_val = load i64, ptr %match_result14, align 8
@@ -195594,8 +195551,8 @@ march_arm52:                                      ; preds = %march_next44
   br label %match_end15
 
 march_next53:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16728, i64 %tag13, ptr @mu_file.16729, i64 885)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::resolve_type_operator"(ptr %0, ptr %1) {
@@ -195792,8 +195749,8 @@ march_arm69:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next70:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16747, i64 %tag12, ptr @mu_file.16748, i64 899)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm73:                                      ; preds = %march_next
   %fields75 = load ptr, ptr %fields, align 8
@@ -195802,8 +195759,8 @@ march_arm73:                                      ; preds = %march_next
   br label %match_end
 
 march_next74:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16749, i64 %tag, ptr @mu_file.16750, i64 896)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"codegen::setup::fill_i64_param_array_offset"(ptr %0, ptr %1, i64 %2, i64 %3) {
@@ -195920,8 +195877,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16751, i64 %tag, ptr @mu_file.16752, i64 931)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::resolve_fn_ret"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -196150,8 +196107,8 @@ march_arm72:                                      ; preds = %march_next
   br label %match_end
 
 march_next73:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16766, i64 %tag, ptr @mu_file.16767, i64 954)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end81:                                      ; preds = %march_arm90, %march_arm82
   %match_val92 = load i64, ptr %match_result80, align 8
@@ -196186,8 +196143,8 @@ march_arm90:                                      ; preds = %march_next83
   br label %match_end81
 
 march_next91:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16769, i64 %tag79, ptr @mu_file.16770, i64 964)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %match_end81
   %traits98 = load ptr, ptr %traits, align 8
@@ -196311,8 +196268,8 @@ march_arm151:                                     ; preds = %march_next139
   br label %match_end137
 
 march_next152:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16772, i64 %tag135, ptr @mu_file.16773, i64 969)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::declare_functions"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4, ptr %5, ptr %6, ptr %7, ptr %8, ptr %9) {
@@ -196421,8 +196378,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16781, i64 %tag, ptr @mu_file.16782, i64 976)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm201, %march_arm180, %march_arm163, %march_arm85, %ifcont
   %match_val = load i64, ptr %match_result15, align 8
@@ -196757,8 +196714,8 @@ march_arm201:                                     ; preds = %march_next181
   br label %match_end16
 
 march_next202:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16779, i64 %tag14, ptr @mu_file.16780, i64 981)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::params_to_type_list"(ptr %0) {
@@ -196837,8 +196794,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16783, i64 %tag, ptr @mu_file.16784, i64 1024)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::collect_fn_params"(ptr %0, ptr %1) {
@@ -196911,8 +196868,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq19, label %march_arm17, label %march_next18
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16790, i64 %tag, ptr @mu_file.16791, i64 1031)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end16:                                      ; preds = %march_arm55, %march_arm46, %march_arm37, %march_arm17
   %match_val = load i64, ptr %match_result15, align 8
@@ -197014,8 +196971,8 @@ march_arm55:                                      ; preds = %march_next47
   br label %match_end16
 
 march_next56:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16788, i64 %tag14, ptr @mu_file.16789, i64 1036)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::setup::emit_top_level"(ptr %0, ptr %1, ptr %2) {
@@ -197233,8 +197190,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq113, label %march_arm111, label %march_next112
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.16824, i64 %tag, ptr @mu_file.16825, i64 1051)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end110:                                     ; preds = %try_ok264, %try_ok235, %try_ok190, %try_ok148, %try_ok, %march_arm111
   %match_val = load i64, ptr %match_result109, align 8
@@ -197476,8 +197433,8 @@ march_arm256:                                     ; preds = %march_next212
   br i1 %try_is_ok263, label %try_ok264, label %try_err265
 
 march_next257:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.16822, i64 %tag108, ptr @mu_file.16823, i64 1057)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok264:                                        ; preds = %march_arm256
   %try_pay_slot266 = getelementptr inbounds nuw %Result__StmtResult__string, ptr %15, i32 0, i32 1
@@ -197993,8 +197950,8 @@ march_arm76:                                      ; preds = %march_next55
   br label %match_end
 
 march_next77:                                     ; preds = %march_next55
-  call void @forge_match_unreachable(ptr @.match_fn.16929, i64 %tag, ptr @mu_file.16930, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::operators::emit_binary"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -198965,8 +198922,8 @@ march_arm533:                                     ; preds = %march_next517
   br i1 %is_str536, label %if_then538, label %if_else539
 
 march_next534:                                    ; preds = %march_next517
-  call void @forge_match_unreachable(ptr @.match_fn.17105, i64 %tag, ptr @mu_file.17106, i64 55)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont537:                                        ; preds = %if_else539
   %ctx543 = load ptr, ptr %ctx, align 8
@@ -199382,8 +199339,8 @@ march_arm171:                                     ; preds = %march_next162
   br label %match_end
 
 march_next172:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17178, i64 %tag, ptr @mu_file.17179, i64 137)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::operators::emit_logical"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -199525,8 +199482,8 @@ march_arm33:                                      ; preds = %march_next
   br label %match_end
 
 march_next34:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17207, i64 %tag, ptr @mu_file.17208, i64 163)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok57:                                         ; preds = %match_end
   %try_pay_slot59 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %11, i32 0, i32 1
@@ -199659,8 +199616,8 @@ march_arm103:                                     ; preds = %march_next96
   br label %match_end94
 
 march_next104:                                    ; preds = %march_next96
-  call void @forge_match_unreachable(ptr @.match_fn.17241, i64 %tag93, ptr @mu_file.17242, i64 176)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::strings::emit_concat"(ptr %0, ptr %1, ptr %2) {
@@ -200017,8 +199974,8 @@ march_arm79:                                      ; preds = %march_next12
   br label %match_end10
 
 march_next80:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17348, i64 %tag8, ptr @mu_file.17349, i64 31)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm82:                                      ; preds = %march_next
   %13 = call ptr @"codegen::types::err_emit"(ptr @.str.17350)
@@ -200027,8 +199984,8 @@ march_arm82:                                      ; preds = %march_next
   br label %match_end
 
 march_next83:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17351, i64 %tag, ptr @mu_file.17352, i64 28)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::strings::emit_substring"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -200091,8 +200048,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17363, i64 %tag, ptr @mu_file.17364, i64 53)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %march_arm18, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -200140,8 +200097,8 @@ march_arm18:                                      ; preds = %march_next15
   br label %match_end13
 
 march_next19:                                     ; preds = %march_next15
-  call void @forge_match_unreachable(ptr @.match_fn.17361, i64 %tag11, ptr @mu_file.17362, i64 57)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::strings::emit_substring_inner"(ptr %0, ptr %1, ptr %2, ptr %3, ptr %4) {
@@ -200624,8 +200581,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17550, i64 %tag, ptr @mu_file.17551, i64 9)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %4, i32 0, i32 1
@@ -200934,8 +200891,8 @@ march_arm21:                                      ; preds = %march_next9
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next22:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17586, i64 %tag5, ptr @mu_file.17587, i64 45)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm21
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %9, i32 0, i32 1
@@ -201037,8 +200994,8 @@ march_arm71:                                      ; preds = %march_next
   ret ptr %16
 
 march_next72:                                     ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17589, i64 %tag, ptr @mu_file.17590, i64 42)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 declare ptr @forge_tag_as_result.23(ptr)
@@ -201287,8 +201244,8 @@ march_arm49:                                      ; preds = %march_next32
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next50:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17604, i64 %tag, ptr @mu_file.17605, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm49
   %try_pay_slot = getelementptr inbounds nuw %Result__StmtResult__string, ptr %9, i32 0, i32 1
@@ -201601,8 +201558,8 @@ march_arm139:                                     ; preds = %march_next99
   br i1 %try_is_ok146, label %try_ok147, label %try_err148
 
 march_next140:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17642, i64 %tag, ptr @mu_file.17643, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok147:                                        ; preds = %march_arm139
   %try_pay_slot149 = getelementptr inbounds nuw %Result__StmtResult__string, ptr %15, i32 0, i32 1
@@ -202071,8 +202028,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %tag_eq110, label %march_arm108, label %march_next109
 
 march_next5:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17718, i64 %tag, ptr @mu_file.17719, i64 106)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end107:                                     ; preds = %try_ok, %march_arm108
   %match_val = load i64, ptr %match_result106, align 8
@@ -202116,8 +202073,8 @@ march_arm120:                                     ; preds = %march_next109
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next121:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17716, i64 %tag105, ptr @mu_file.17717, i64 111)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm120
   %try_pay_slot = getelementptr inbounds nuw %Result__StmtResult__string, ptr %8, i32 0, i32 1
@@ -202351,8 +202308,8 @@ march_arm5:                                       ; preds = %march_next
   br i1 %tag_eq111, label %march_arm109, label %march_next110
 
 march_next6:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17737, i64 %tag, ptr @mu_file.17738, i64 126)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end108:                                     ; preds = %try_ok, %march_arm109
   %match_val = load i64, ptr %match_result107, align 8
@@ -202396,8 +202353,8 @@ march_arm121:                                     ; preds = %march_next110
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next122:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17735, i64 %tag106, ptr @mu_file.17736, i64 131)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm121
   %try_pay_slot = getelementptr inbounds nuw %Result__StmtResult__string, ptr %8, i32 0, i32 1
@@ -203036,8 +202993,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17890, i64 %tag, ptr @mu_file.17891, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::helpers::strip_quotes"(ptr %0) {
@@ -203153,8 +203110,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17904, i64 %tag, ptr @mu_file.17905, i64 26)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm2
   %try_pay_slot = getelementptr inbounds nuw %Result__EmitValue__string, ptr %7, i32 0, i32 1
@@ -203297,8 +203254,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq26, label %march_arm24, label %march_next25
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17958, i64 %tag, ptr @mu_file.17959, i64 38)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end23:                                      ; preds = %try_ok62, %try_ok
   %ptypes68 = load ptr, ptr %ptypes, align 8
@@ -203399,8 +203356,8 @@ march_arm46:                                      ; preds = %march_next25
   br i1 %try_is_ok61, label %try_ok62, label %try_err63
 
 march_next47:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17921, i64 %tag22, ptr @mu_file.17922, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok62:                                         ; preds = %march_arm46
   %try_pay_slot64 = getelementptr inbounds nuw %Result__EmitValue__string, ptr %19, i32 0, i32 1
@@ -203680,8 +203637,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %tag_eq17, label %march_arm15, label %march_next16
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17967, i64 %tag, ptr @mu_file.17968, i64 92)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end14:                                      ; preds = %march_arm50, %match_end24
   %match_val54 = load i64, ptr %match_result13, align 8
@@ -203757,8 +203714,8 @@ march_arm45:                                      ; preds = %march_next34
   br label %match_end24
 
 march_next46:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17963, i64 %tag22, ptr @mu_file.17964, i64 100)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm50:                                      ; preds = %march_next16
   %next52 = load ptr, ptr %next9, align 8
@@ -203768,8 +203725,8 @@ march_arm50:                                      ; preds = %march_next16
   br label %match_end14
 
 march_next51:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17965, i64 %tag12, ptr @mu_file.17966, i64 96)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::releasable_add"(ptr %0, ptr %1) {
@@ -203931,8 +203888,8 @@ march_arm15:                                      ; preds = %march_next4
   br label %match_end
 
 march_next16:                                     ; preds = %march_next4
-  call void @forge_match_unreachable(ptr @.match_fn.17969, i64 %tag, ptr @mu_file.17970, i64 17)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::analyze_releasable"(ptr %0) {
@@ -203997,8 +203954,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17971, i64 %tag, ptr @mu_file.17972, i64 37)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::single_pass_escape"(ptr %0, ptr %1) {
@@ -204066,8 +204023,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17976, i64 %tag, ptr @mu_file.17977, i64 46)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::analyze_binding"(ptr %0, ptr %1, ptr %2) {
@@ -204759,8 +204716,8 @@ march_arm326:                                     ; preds = %march_next322
   br label %match_end
 
 march_next327:                                    ; preds = %march_next322
-  call void @forge_match_unreachable(ptr @.match_fn.17978, i64 %tag, ptr @mu_file.17979, i64 63)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::escape::is_allocating_expr"(ptr %0) {
@@ -204816,8 +204773,8 @@ march_arm11:                                      ; preds = %march_next9
   br label %match_end
 
 march_next12:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17980, i64 %tag, ptr @mu_file.17981, i64 120)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::remove_escaped_expr"(ptr %0, ptr %1) {
@@ -204934,8 +204891,8 @@ march_arm12:                                      ; preds = %march_next9
   br label %match_end7
 
 march_next13:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.17982, i64 %tag5, ptr @mu_file.17983, i64 132)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm17:                                      ; preds = %march_next
   %pay_slot20 = getelementptr inbounds nuw %Expr, ptr %expr1, i32 0, i32 1
@@ -205745,8 +205702,8 @@ march_arm486:                                     ; preds = %march_next482
   br label %match_end
 
 march_next487:                                    ; preds = %march_next482
-  call void @forge_match_unreachable(ptr @.match_fn.17984, i64 %tag, ptr @mu_file.17985, i64 132)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::remove_escaped_args"(ptr %0, ptr %1) {
@@ -205811,8 +205768,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17989, i64 %tag, ptr @mu_file.17990, i64 195)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::remove_escaped_field_inits"(ptr %0, ptr %1) {
@@ -205877,8 +205834,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17994, i64 %tag, ptr @mu_file.17995, i64 202)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::escape::releasable_any"(ptr %0) {
@@ -205911,8 +205868,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.17996, i64 %tag, ptr @mu_file.17997, i64 217)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"codegen::escape::count_allocating_in_stmts"(ptr %0) {
@@ -205971,8 +205928,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18001, i64 %tag, ptr @mu_file.18002, i64 224)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"codegen::escape::count_allocating_in_stmt_single"(ptr %0) {
@@ -206402,8 +206359,8 @@ march_arm156:                                     ; preds = %march_next154
   br label %match_end
 
 march_next157:                                    ; preds = %march_next154
-  call void @forge_match_unreachable(ptr @.match_fn.18003, i64 %tag, ptr @mu_file.18004, i64 231)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::escape::is_arena_eligible"(ptr %0) {
@@ -206784,8 +206741,8 @@ march_arm135:                                     ; preds = %march_next133
   br label %match_end
 
 march_next136:                                    ; preds = %march_next133
-  call void @forge_match_unreachable(ptr @.match_fn.18005, i64 %tag, ptr @mu_file.18006, i64 276)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::analyze_copy_types"(ptr %0, ptr %1) {
@@ -206885,8 +206842,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18007, i64 %tag, ptr @mu_file.18008, i64 344)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::seed_enum_candidates"(ptr %0, ptr %1) {
@@ -206960,8 +206917,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18009, i64 %tag, ptr @mu_file.18010, i64 351)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::escape::fixpoint_copy"(ptr %0, ptr %1, ptr %2) {
@@ -207078,8 +207035,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18011, i64 %tag, ptr @mu_file.18012, i64 364)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %6 = call ptr @forge_rc_alloc(i64 16)
@@ -207249,8 +207206,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18025, i64 %tag, ptr @mu_file.18026, i64 389)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 0, ptr %sif_result, align 8
@@ -207326,8 +207283,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18027, i64 %tag, ptr @mu_file.18028, i64 400)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 0, ptr %sif_result, align 8
@@ -207432,8 +207389,7 @@ parm_body26:                                      ; preds = %parm_next23
   br i1 %if_cond, label %if_then, label %if_else
 
 parm_next27:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18040, i64 -1, ptr @mu_file.18041, i64 413)
-  unreachable
+  ret i1 0
 
 ifcont:                                           ; preds = %if_else
   %ty29 = load ptr, ptr %ty, align 8
@@ -207544,8 +207500,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18042, i64 %tag, ptr @mu_file.18043, i64 436)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i1 @"codegen::escape::copy_set_subset"(ptr %0, ptr %1) {
@@ -207604,8 +207560,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18044, i64 %tag, ptr @mu_file.18045, i64 443)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 0, ptr %sif_result, align 8
@@ -207680,8 +207636,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18046, i64 %tag, ptr @mu_file.18047, i64 19)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -207756,8 +207712,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18048, i64 %tag, ptr @mu_file.18049, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -207840,8 +207796,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18050, i64 %tag, ptr @mu_file.18051, i64 44)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -207927,8 +207883,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18052, i64 %tag, ptr @mu_file.18053, i64 58)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   store i64 1, ptr %sif_result, align 8
@@ -208238,8 +208194,8 @@ march_arm118:                                     ; preds = %march_next107
   br label %match_end
 
 march_next119:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18066, i64 %tag, ptr @mu_file.18067, i64 72)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"codegen::cycles::analyze_structs"(ptr %0, ptr %1, ptr %2, ptr %3) {
@@ -208342,8 +208298,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %is_cyclic30, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18068, i64 %tag, ptr @mu_file.18069, i64 110)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -208486,8 +208442,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %is_cyclic30, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18070, i64 %tag, ptr @mu_file.18071, i64 127)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -208824,8 +208780,8 @@ march_arm4:                                       ; preds = %march_next
   br i1 %try_is_ok, label %try_ok, label %try_err
 
 march_next5:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18084, i64 %tag, ptr @mu_file.18085, i64 71)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 try_ok:                                           ; preds = %march_arm4
   %try_pay_slot = getelementptr inbounds nuw %Result__StmtResult__string, ptr %5, i32 0, i32 1
@@ -208953,8 +208909,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18096, i64 %tag, ptr @mu_file.18097, i64 89)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"codegen::emit_rc_release_typed"(ptr %0, ptr %1, ptr %2) {
@@ -209521,8 +209477,8 @@ march_arm282:                                     ; preds = %march_next232
   br label %match_end
 
 march_next283:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18166, i64 %tag, ptr @mu_file.18167, i64 105)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @"codegen::emit_rc_release_tuple"(ptr %0, ptr %1, ptr %2) {
@@ -209684,8 +209640,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %if_cond, label %if_then, label %if_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18243, i64 %tag, ptr @mu_file.18244, i64 195)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont:                                           ; preds = %if_else, %if_then
   %ctx100 = load ptr, ptr %ctx, align 8
@@ -210062,8 +210018,8 @@ march_arm54:                                      ; preds = %march_next52
   br label %match_end43
 
 march_next55:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18256, i64 %tag41, ptr @mu_file.18257, i64 231)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont58:                                         ; preds = %if_else60, %if_then59
   %ctx65 = load ptr, ptr %ctx, align 8
@@ -210663,8 +210619,8 @@ march_arm422:                                     ; preds = %march_next390
   br i1 %if_cond434, label %if_then435, label %if_else436
 
 march_next423:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18336, i64 %tag, ptr @mu_file.18337, i64 217)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont433:                                        ; preds = %if_else436
   %tag447 = load i64, ptr %tag426, align 8
@@ -211636,8 +211592,8 @@ march_arm510:                                     ; preds = %march_next489
   br i1 %if_cond522, label %if_then523, label %if_else524
 
 march_next511:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18478, i64 %tag, ptr @mu_file.18479, i64 318)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ifcont521:                                        ; preds = %if_else524
   %tag535 = load i64, ptr %tag514, align 8
@@ -212087,8 +212043,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18546, i64 %tag, ptr @mu_file.18547, i64 25)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_stmt"(ptr %0) {
@@ -212854,8 +212810,8 @@ march_arm403:                                     ; preds = %march_next384
   br label %match_end
 
 march_next404:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18548, i64 %tag, ptr @mu_file.18549, i64 36)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_expr"(ptr %0) {
@@ -212943,8 +212899,8 @@ march_arm18:                                      ; preds = %march_next10
   br label %match_end
 
 march_next19:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18550, i64 %tag, ptr @mu_file.18551, i64 78)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::rewrite_list_lit"(ptr %0, ptr %1) {
@@ -213345,8 +213301,8 @@ march_arm192:                                     ; preds = %march_next9
   br label %match_end7
 
 march_next193:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18560, i64 %tag5, ptr @mu_file.18561, i64 92)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm196:                                     ; preds = %march_next
   %original198 = load ptr, ptr %original, align 8
@@ -213355,8 +213311,8 @@ march_arm196:                                     ; preds = %march_next
   br label %match_end
 
 march_next197:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18562, i64 %tag, ptr @mu_file.18563, i64 89)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::rewrite_call"(ptr %0, ptr %1, ptr %2) {
@@ -213410,8 +213366,8 @@ march_arm4:                                       ; preds = %march_next
   br label %match_end
 
 march_next5:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18565, i64 %tag, ptr @mu_file.18566, i64 123)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 pmatch_end:                                       ; preds = %parm_body40, %parm_body34, %parm_body28, %parm_body22, %parm_body16, %parm_body10, %parm_body
   %pmatch_val = load i64, ptr %pmatch_result, align 8
@@ -213500,8 +213456,8 @@ parm_body40:                                      ; preds = %parm_next35
   br label %pmatch_end
 
 parm_next41:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18573, i64 -1, ptr @mu_file.18574, i64 124)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_assert"(ptr %0) {
@@ -213708,8 +213664,8 @@ march_arm25:                                      ; preds = %march_next13
   br label %match_end11
 
 march_next26:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18582, i64 %tag9, ptr @mu_file.18583, i64 141)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm93:                                      ; preds = %march_next
   %17 = call ptr @forge_rc_alloc(i64 16)
@@ -213779,8 +213735,8 @@ march_arm93:                                      ; preds = %march_next
   br label %match_end
 
 march_next94:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18587, i64 %tag, ptr @mu_file.18588, i64 137)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_dbg"(ptr %0) {
@@ -214187,8 +214143,8 @@ march_arm176:                                     ; preds = %march_next
   br label %match_end
 
 march_next177:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18601, i64 %tag, ptr @mu_file.18602, i64 160)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_todo"(ptr %0) {
@@ -214339,8 +214295,8 @@ march_arm23:                                      ; preds = %march_next
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18608, i64 %tag, ptr @mu_file.18609, i64 196)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_unreachable"(ptr %0) {
@@ -214491,8 +214447,8 @@ march_arm23:                                      ; preds = %march_next
   br label %match_end
 
 march_next24:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18616, i64 %tag, ptr @mu_file.18617, i64 204)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_min_max"(ptr %0, i64 %1) {
@@ -214906,8 +214862,8 @@ march_arm170:                                     ; preds = %march_next12
   br label %match_end10
 
 march_next171:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18635, i64 %tag8, ptr @mu_file.18636, i64 218)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 march_arm209:                                     ; preds = %march_next
   %46 = call ptr @forge_rc_alloc(i64 16)
@@ -214977,8 +214933,8 @@ march_arm209:                                     ; preds = %march_next
   br label %match_end
 
 march_next210:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18639, i64 %tag, ptr @mu_file.18640, i64 215)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::walk_expr"(ptr %0) {
@@ -216041,8 +215997,8 @@ march_arm570:                                     ; preds = %march_next547
   br label %match_end
 
 march_next571:                                    ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.18641, i64 %tag, ptr @mu_file.18642, i64 252)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_expr_list"(ptr %0) {
@@ -216137,8 +216093,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18652, i64 %tag, ptr @mu_file.18653, i64 283)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @"desugar::desugar_match_arms"(ptr %0) {
@@ -216214,8 +216170,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18672, i64 %tag, ptr @mu_file.18673, i64 290)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -216372,8 +216328,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18692, i64 %tag, ptr @mu_file.18693, i64 301)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -216544,8 +216500,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18694, i64 %tag, ptr @mu_file.18695, i64 312)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @print_usage() {
@@ -218658,8 +218614,8 @@ march_arm1088:                                    ; preds = %march_next1035
   br label %match_end
 
 march_next1089:                                   ; preds = %march_next1035
-  call void @forge_match_unreachable(ptr @.match_fn.18768, i64 %tag, ptr @mu_file.18769, i64 75)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_stmt(ptr %0, i64 %1) {
@@ -222117,8 +222073,8 @@ march_arm1912:                                    ; preds = %march_next1866
   br i1 %ife_cond1935, label %ife_then1936, label %ife_else1937
 
 march_next1913:                                   ; preds = %march_next1866
-  call void @forge_match_unreachable(ptr @.match_fn.18898, i64 %tag, ptr @mu_file.18899, i64 119)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end1934:                                      ; preds = %ife_else1937, %ife_then1936
   %ife_val1981 = load i64, ptr %ife_result1933, align 8
@@ -222278,8 +222234,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18906, i64 %tag, ptr @mu_file.18907, i64 207)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %head14 = load ptr, ptr %head, align 8
@@ -222396,8 +222352,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18912, i64 %tag, ptr @mu_file.18913, i64 219)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_expr_list_comma_tail(ptr %0) {
@@ -222479,8 +222435,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18919, i64 %tag, ptr @mu_file.18920, i64 231)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_param_list_comma(ptr %0) {
@@ -222547,8 +222503,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18922, i64 %tag, ptr @mu_file.18923, i64 238)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_param_list_comma_tail(ptr %0) {
@@ -222623,8 +222579,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18926, i64 %tag, ptr @mu_file.18927, i64 249)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_param_list_typed(ptr %0) {
@@ -222693,8 +222649,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18933, i64 %tag, ptr @mu_file.18934, i64 256)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %ty14 = load ptr, ptr %ty, align 8
@@ -222834,8 +222790,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %l_bool, label %sc_merge, label %sc_rhs
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18941, i64 %tag, ptr @mu_file.18942, i64 269)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sc_rhs:                                           ; preds = %march_arm2
   %ty14 = load ptr, ptr %ty, align 8
@@ -222982,8 +222938,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18949, i64 %tag, ptr @mu_file.18950, i64 281)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -223144,8 +223100,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18954, i64 %tag, ptr @mu_file.18955, i64 293)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm2
   %name11 = load ptr, ptr %name5, align 8
@@ -223293,8 +223249,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18961, i64 %tag, ptr @mu_file.18962, i64 304)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_field_init_list_tail(ptr %0) {
@@ -223407,8 +223363,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18969, i64 %tag, ptr @mu_file.18970, i64 316)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_field_decl_list(ptr %0, i64 %1) {
@@ -223521,8 +223477,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18975, i64 %tag, ptr @mu_file.18976, i64 324)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %head32 = load ptr, ptr %head, align 8
@@ -223668,8 +223624,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18980, i64 %tag, ptr @mu_file.18981, i64 337)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm3
   %head27 = load ptr, ptr %head, align 8
@@ -223832,8 +223788,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18986, i64 %tag, ptr @mu_file.18987, i64 350)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_variant_fields_tail(ptr %0) {
@@ -223939,8 +223895,8 @@ march_arm2:                                       ; preds = %march_next
   br label %match_end
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.18991, i64 %tag, ptr @mu_file.18992, i64 362)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_pattern(ptr %0) {
@@ -224191,8 +224147,8 @@ march_arm95:                                      ; preds = %march_next66
   br label %match_end
 
 march_next96:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.19003, i64 %tag, ptr @mu_file.19004, i64 369)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_match_arms(ptr %0, i64 %1) {
@@ -224271,8 +224227,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.19017, i64 %tag, ptr @mu_file.19018, i64 384)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -224485,8 +224441,8 @@ march_arm3:                                       ; preds = %march_next
   br i1 %ife_cond, label %ife_then, label %ife_else
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.19030, i64 %tag, ptr @mu_file.19031, i64 398)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 ife_end:                                          ; preds = %ife_else, %ife_then
   %ife_val = load i64, ptr %ife_result, align 8
@@ -224709,8 +224665,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.19035, i64 %tag, ptr @mu_file.19036, i64 412)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define ptr @fmt_map_entries(ptr %0) {
@@ -224769,8 +224725,8 @@ march_arm2:                                       ; preds = %march_next
   br i1 %tag_eq16, label %march_arm14, label %march_next15
 
 march_next3:                                      ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.19052, i64 %tag, ptr @mu_file.19053, i64 419)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 match_end13:                                      ; preds = %sif_end, %march_arm14
   %match_val = load i64, ptr %match_result12, align 8
@@ -224861,8 +224817,8 @@ march_arm19:                                      ; preds = %march_next15
   br i1 %sif_cond, label %sif_then, label %sif_else
 
 march_next20:                                     ; preds = %march_next15
-  call void @forge_match_unreachable(ptr @.match_fn.19050, i64 %tag11, ptr @mu_file.19051, i64 423)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 
 sif_then:                                         ; preds = %march_arm19
   %head50 = load ptr, ptr %head, align 8
@@ -226632,8 +226588,7 @@ march_arm926:                                     ; preds = %march_next
   br label %match_end
 
 march_next927:                                    ; preds = %march_next
-  call void @forge_match_unreachable(ptr @.match_fn.19328, i64 %tag, ptr @mu_file.19329, i64 628)
-  unreachable
+  ret i64 0
 
 parm_body943:                                     ; preds = %parm_next676
   %160 = call ptr @forge_map_new_cstr()
@@ -226642,8 +226597,7 @@ parm_body943:                                     ; preds = %parm_next676
   br label %pmatch_end
 
 parm_next944:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.19330, i64 -1, ptr @mu_file.19331, i64 462)
-  unreachable
+  ret i64 0
 
 ifcont950:                                        ; preds = %if_else953
   %161 = call i64 @print_usage()
@@ -227460,8 +227414,7 @@ march_arm1415:                                    ; preds = %march_next1412
   br i1 %json_output1433, label %if_then1435, label %if_else1436
 
 march_next1416:                                   ; preds = %march_next1412
-  call void @forge_match_unreachable(ptr @.match_fn.19449, i64 %tag1408, ptr @mu_file.19450, i64 745)
-  unreachable
+  ret i64 0
 
 ifcont1434:                                       ; preds = %if_else1436, %if_then1435
   %e1442 = load ptr, ptr %e1424, align 8
@@ -234797,8 +234750,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5979, i64 %tag, ptr @mu_file.5980, i64 16)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_1(ptr %0, ptr %1) {
@@ -234858,8 +234811,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5981, i64 %tag, ptr @mu_file.5982, i64 16)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_2(ptr %0, ptr %1) {
@@ -234898,8 +234851,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5985, i64 %tag, ptr @mu_file.5986, i64 16)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_3(ptr %0, ptr %1) {
@@ -234938,8 +234891,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5989, i64 %tag, ptr @mu_file.5990, i64 16)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_4(ptr %0) {
@@ -235000,8 +234953,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5996, i64 %tag, ptr @mu_file.5997, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_6(ptr %0, ptr %1) {
@@ -235056,8 +235009,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.5998, i64 %tag, ptr @mu_file.5999, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_7(ptr %0, ptr %1) {
@@ -235096,8 +235049,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6002, i64 %tag, ptr @mu_file.6003, i64 52)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_8(ptr %0) {
@@ -235184,8 +235137,8 @@ march_arm15:                                      ; preds = %march_next
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6260, i64 %tag, ptr @mu_file.6261, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_10(ptr %0, ptr %1) {
@@ -235224,8 +235177,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6264, i64 %tag, ptr @mu_file.6265, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_11(ptr %0) {
@@ -235299,8 +235252,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6424, i64 %tag, ptr @mu_file.6425, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_13(ptr %0, ptr %1) {
@@ -235357,8 +235310,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6427, i64 %tag, ptr @mu_file.6428, i64 14)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_14(ptr %0) {
@@ -235425,8 +235378,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.6726, i64 %tag, ptr @mu_file.6727, i64 23)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_17(ptr %0) {
@@ -235500,8 +235453,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7054, i64 %tag, ptr @mu_file.7055, i64 18)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_19(ptr %0, ptr %1) {
@@ -235574,8 +235527,8 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7062, i64 %tag, ptr @mu_file.7063, i64 18)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_20(ptr %0, ptr %1) {
@@ -235614,8 +235567,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.7066, i64 %tag, ptr @mu_file.7067, i64 18)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_21(ptr %0) {
@@ -235704,8 +235657,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8599, i64 %tag, ptr @mu_file.8600, i64 15)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_25(ptr %0, ptr %1) {
@@ -235785,8 +235738,8 @@ march_arm13:                                      ; preds = %march_next
   br label %match_end
 
 march_next14:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8601, i64 %tag, ptr @mu_file.8602, i64 15)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_26(ptr %0, ptr %1) {
@@ -235825,8 +235778,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8605, i64 %tag, ptr @mu_file.8606, i64 15)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_27(ptr %0, ptr %1) {
@@ -235890,8 +235843,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8609, i64 %tag, ptr @mu_file.8610, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_28(ptr %0, ptr %1) {
@@ -235930,8 +235883,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8613, i64 %tag, ptr @mu_file.8614, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_29(ptr %0, ptr %1) {
@@ -235978,8 +235931,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8618, i64 %tag, ptr @mu_file.8619, i64 49)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_30(ptr %0, ptr %1) {
@@ -236112,8 +236065,8 @@ march_arm31:                                      ; preds = %march_next
   br label %match_end
 
 march_next32:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8624, i64 %tag, ptr @mu_file.8625, i64 49)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_31(ptr %0, ptr %1) {
@@ -236152,8 +236105,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8628, i64 %tag, ptr @mu_file.8629, i64 49)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_32(ptr %0, ptr %1) {
@@ -236203,8 +236156,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.8634, i64 %tag, ptr @mu_file.8635, i64 69)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_34(ptr %0) {
@@ -236320,8 +236273,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10627, i64 %tag, ptr @mu_file.10628, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_39(ptr %0, ptr %1) {
@@ -236360,8 +236313,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10631, i64 %tag, ptr @mu_file.10632, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_40(ptr %0, ptr %1) {
@@ -236408,8 +236361,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10635, i64 %tag, ptr @mu_file.10636, i64 32)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_41(ptr %0, ptr %1) {
@@ -236473,8 +236426,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10637, i64 %tag, ptr @mu_file.10638, i64 32)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_42(ptr %0, ptr %1) {
@@ -236513,8 +236466,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10641, i64 %tag, ptr @mu_file.10642, i64 32)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_43(ptr %0, ptr %1) {
@@ -236561,8 +236514,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10644, i64 %tag, ptr @mu_file.10645, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_44(ptr %0, ptr %1) {
@@ -236614,8 +236567,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10648, i64 %tag, ptr @mu_file.10649, i64 47)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_46(ptr %0, ptr %1) {
@@ -236741,8 +236694,8 @@ march_arm28:                                      ; preds = %march_next
   br label %match_end
 
 march_next29:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10652, i64 %tag, ptr @mu_file.10653, i64 59)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_47(ptr %0, ptr %1) {
@@ -236781,8 +236734,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.10656, i64 %tag, ptr @mu_file.10657, i64 59)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_48(ptr %0) {
@@ -236843,8 +236796,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11116, i64 %tag, ptr @mu_file.11117, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_50(ptr %0, ptr %1) {
@@ -236928,8 +236881,8 @@ march_arm15:                                      ; preds = %march_next
   br label %match_end
 
 march_next16:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11124, i64 %tag, ptr @mu_file.11125, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_51(ptr %0, ptr %1) {
@@ -236968,8 +236921,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11128, i64 %tag, ptr @mu_file.11129, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_52(ptr %0, ptr %1) {
@@ -237016,8 +236969,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11131, i64 %tag, ptr @mu_file.11132, i64 30)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_53(ptr %0, ptr %1) {
@@ -237099,8 +237052,8 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11139, i64 %tag, ptr @mu_file.11140, i64 30)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_54(ptr %0, ptr %1) {
@@ -237139,8 +237092,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11143, i64 %tag, ptr @mu_file.11144, i64 30)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_55(ptr %0, ptr %1) {
@@ -237200,8 +237153,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11266, i64 %tag, ptr @mu_file.11267, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_56(ptr %0, ptr %1) {
@@ -237240,8 +237193,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11270, i64 %tag, ptr @mu_file.11271, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_57(ptr %0, ptr %1) {
@@ -237288,8 +237241,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11609, i64 %tag, ptr @mu_file.11610, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_58(ptr %0, ptr %1) {
@@ -237344,8 +237297,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11611, i64 %tag, ptr @mu_file.11612, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_59(ptr %0, ptr %1) {
@@ -237384,8 +237337,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.11615, i64 %tag, ptr @mu_file.11616, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_60(ptr %0, ptr %1) {
@@ -237453,8 +237406,8 @@ march_arm12:                                      ; preds = %march_next
   br label %match_end
 
 march_next13:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12042, i64 %tag, ptr @mu_file.12043, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_61(ptr %0, ptr %1) {
@@ -237559,8 +237512,8 @@ march_arm22:                                      ; preds = %march_next
   br label %match_end
 
 march_next23:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12050, i64 %tag, ptr @mu_file.12051, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_62(ptr %0, ptr %1) {
@@ -237599,8 +237552,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12054, i64 %tag, ptr @mu_file.12055, i64 11)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_63(ptr %0, ptr %1) {
@@ -237647,8 +237600,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12293, i64 %tag, ptr @mu_file.12294, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_64(ptr %0, ptr %1) {
@@ -237714,8 +237667,8 @@ march_arm9:                                       ; preds = %march_next
   br label %match_end
 
 march_next10:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12295, i64 %tag, ptr @mu_file.12296, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_65(ptr %0, ptr %1) {
@@ -237754,8 +237707,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12299, i64 %tag, ptr @mu_file.12300, i64 12)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_66(ptr %0, ptr %1) {
@@ -237802,8 +237755,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12341, i64 %tag, ptr @mu_file.12342, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_67(ptr %0, ptr %1) {
@@ -237859,8 +237812,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12346, i64 %tag, ptr @mu_file.12347, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_68(ptr %0, ptr %1) {
@@ -237900,8 +237853,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12349, i64 %tag, ptr @mu_file.12350, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_69(ptr %0) {
@@ -237962,8 +237915,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12356, i64 %tag, ptr @mu_file.12357, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_71(ptr %0, ptr %1) {
@@ -238019,8 +237972,8 @@ march_arm8:                                       ; preds = %march_next
   br label %match_end
 
 march_next9:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12361, i64 %tag, ptr @mu_file.12362, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_72(ptr %0, ptr %1) {
@@ -238060,8 +238013,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12364, i64 %tag, ptr @mu_file.12365, i64 34)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_73(ptr %0) {
@@ -238122,8 +238075,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12429, i64 %tag, ptr @mu_file.12430, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_75(ptr %0, ptr %1) {
@@ -238195,8 +238148,8 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12434, i64 %tag, ptr @mu_file.12435, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_76(ptr %0, ptr %1) {
@@ -238235,8 +238188,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12438, i64 %tag, ptr @mu_file.12439, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_77(ptr %0, ptr %1) {
@@ -238296,8 +238249,8 @@ march_arm10:                                      ; preds = %march_next
   br label %match_end
 
 march_next11:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12462, i64 %tag, ptr @mu_file.12463, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_78(ptr %0, ptr %1) {
@@ -238382,8 +238335,8 @@ march_arm16:                                      ; preds = %march_next
   br label %match_end
 
 march_next17:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12467, i64 %tag, ptr @mu_file.12468, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_79(ptr %0, ptr %1) {
@@ -238422,8 +238375,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12471, i64 %tag, ptr @mu_file.12472, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_80(ptr %0, ptr %1) {
@@ -238470,8 +238423,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12637, i64 %tag, ptr @mu_file.12638, i64 9)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_81(ptr %0, ptr %1) {
@@ -238511,8 +238464,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12640, i64 %tag, ptr @mu_file.12641, i64 9)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_82(ptr %0) {
@@ -238573,8 +238526,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12648, i64 %tag, ptr @mu_file.12649, i64 22)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_84(ptr %0, ptr %1) {
@@ -238614,8 +238567,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12651, i64 %tag, ptr @mu_file.12652, i64 22)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_85(ptr %0, ptr %1) {
@@ -238662,8 +238615,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12655, i64 %tag, ptr @mu_file.12656, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_86(ptr %0, ptr %1) {
@@ -238703,8 +238656,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12658, i64 %tag, ptr @mu_file.12659, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_87(ptr %0, ptr %1) {
@@ -238751,8 +238704,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12800, i64 %tag, ptr @mu_file.12801, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_88(ptr %0, ptr %1) {
@@ -238791,8 +238744,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12804, i64 %tag, ptr @mu_file.12805, i64 10)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_89(ptr %0) {
@@ -238853,8 +238806,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12851, i64 %tag, ptr @mu_file.12852, i64 9)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_91(ptr %0, ptr %1) {
@@ -238893,8 +238846,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12855, i64 %tag, ptr @mu_file.12856, i64 9)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_92(ptr %0) {
@@ -238955,8 +238908,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12914, i64 %tag, ptr @mu_file.12915, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_94(ptr %0, ptr %1) {
@@ -239028,8 +238981,8 @@ march_arm11:                                      ; preds = %march_next
   br label %match_end
 
 march_next12:                                     ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12919, i64 %tag, ptr @mu_file.12920, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_95(ptr %0, ptr %1) {
@@ -239068,8 +239021,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.12923, i64 %tag, ptr @mu_file.12924, i64 13)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_96(ptr %0, ptr %1) {
@@ -239116,8 +239069,8 @@ march_arm5:                                       ; preds = %march_next
   br label %match_end
 
 march_next6:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13084, i64 %tag, ptr @mu_file.13085, i64 21)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_97(ptr %0, ptr %1) {
@@ -239157,8 +239110,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13087, i64 %tag, ptr @mu_file.13088, i64 21)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_98(ptr %0) {
@@ -239212,8 +239165,8 @@ march_arm3:                                       ; preds = %march_next
   br label %match_end
 
 march_next4:                                      ; No predecessors!
-  call void @forge_match_unreachable(ptr @.match_fn.13096, i64 %tag, ptr @mu_file.13097, i64 33)
-  unreachable
+  store i64 0, ptr %match_result, align 8
+  br label %match_end
 }
 
 define i64 @__lambda_100(ptr %0) {

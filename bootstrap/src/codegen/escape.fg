@@ -379,8 +379,8 @@ fn is_name_copy(name: string, candidates: CopySet, structs: StructReg, enums: En
 fn fields_all_copy(fields: FieldList, candidates: CopySet) -> bool {
     match fields {
         .End -> true
-        .Node(_, ty, _, next) -> {
-            if !field_type_is_copy(ty, candidates) { false }
+        .Node(_, vt, next) -> {
+            if !vtype_is_copy(vt, candidates) { false }
             else { fields_all_copy(next, candidates) }
         }
     }
@@ -396,22 +396,25 @@ fn variants_all_copy(variants: VariantList, candidates: CopySet) -> bool {
     }
 }
 
-// Check if a type annotation string represents a Copy type.
-// Uses the candidate set for struct/enum names.
-fn field_type_is_copy(ty: string, candidates: CopySet) -> bool {
-    match ty {
-        "int" or "i64" -> true
-        "float" or "f64" -> true
-        "bool" -> true
-        "string" or "str" -> false
-        "ptr" -> false
-        _ -> {
-            // Check if it's a known Copy candidate (struct or enum name)
-            if ty.starts_with("List(") { return false }
-            if ty.starts_with("Map") { return false }
-            if ty.starts_with("fn") { return false }
-            copy_set_has(candidates, ty)
-        }
+fn vtype_is_copy(vt: ValueType, candidates: CopySet) -> bool {
+    match vt {
+        .Int -> true
+        .Float -> true
+        .Bool -> true
+        .Str -> false
+        .Ptr -> false
+        .List(_) -> false
+        .Map -> false
+        .Fn(_) -> false
+        .FnTyped(_, _) -> false
+        .Closure(_, _) -> false
+        .Struct(name) -> copy_set_has(candidates, name)
+        .Enum(name, _) -> copy_set_has(candidates, name)
+        .Newtype(name, _) -> copy_set_has(candidates, name)
+        .Trait(_) -> false
+        .Union(_) -> false
+        .Tuple(_) -> false
+        _ -> false
     }
 }
 

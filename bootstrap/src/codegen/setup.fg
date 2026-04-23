@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_display, vtype_eq, vtype_fn_ret, vtype_from_name, vtype_is_closure, vtype_is_unknown, vtype_enum_name, env_extend}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_display, vtype_eq, vtype_fn_ret, vtype_from_name, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
 use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
@@ -364,8 +364,8 @@ fn resolve_variant_fields(variants: VariantList, regs: TypeRegs) -> VariantList 
 fn resolve_field_list(fields: FieldList, regs: TypeRegs) -> FieldList {
     match fields {
         .End -> .End
-        .Node(name, ty, pv, next) ->
-            .Node(name, ty, resolve_field_vt(regs, pv), resolve_field_list(next, regs))
+        .Node(name, pv, next) ->
+            .Node(name, resolve_field_vt(regs, pv), resolve_field_list(next, regs))
     }
 }
 
@@ -416,7 +416,7 @@ fn resolve_setup_vt_list(regs: TypeRegs, types: TypeList) -> TypeList {
 fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
-        .Node(_, _, resolved, next) -> {
+        .Node(_, resolved, next) -> {
             forge_llvm_type_array_set(arr, idx, llvm_type_for_full(i64t, i1t, dt, pt, resolved))
             fill_struct_field_types(arr, i64t, i1t, dt, pt, next, idx + 1)
         }
@@ -546,7 +546,7 @@ fn declare_enums(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtLis
 fn fields_have_rc(fields: FieldList) -> bool {
     match fields {
         .End -> false
-        .Node(_, _, resolved, next) -> {
+        .Node(_, resolved, next) -> {
             if vtype_is_ptr_type(resolved) { true }
             else { fields_have_rc(next) }
         }
@@ -622,7 +622,7 @@ fn emit_field_release(ctx: Ctx, val: ptr, ty: ValueType) {
 fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
-        .Node(fname, _, resolved, next) -> {
+        .Node(fname, resolved, next) -> {
             if vtype_is_ptr_type(resolved) {
                 let st_ty = forge_llvm_get_type_by_name(ctx.lc, type_name)
                 let fld_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj, idx, "rel_${fname}_ptr")
@@ -696,7 +696,7 @@ fn emit_release_body_struct(ctx: Ctx, name: string, fields: FieldList, is_cyclic
 fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, variant_name: string, fields: FieldList, idx: int) {
     match fields {
         .End -> {}
-        .Node(fname, _, resolved, next) -> {
+        .Node(fname, resolved, next) -> {
             if vtype_is_ptr_type(resolved) {
                 let payload_type_name = "${enum_name}__${variant_name}"
                 let pay_ty = forge_llvm_get_type_by_name(ctx.lc, payload_type_name)
@@ -858,15 +858,16 @@ fn collect_union_aliases(stmts: StmtList, reg: CgUnionAliasReg) -> CgUnionAliasR
 
 fn resolve_type_operator(fields: FieldList, reg: StructReg) -> FieldList {
     match fields {
-        .Node(name, base_name, _, rest) if name == "__base" -> {
+        .Node(marker, base_vt, rest) if marker == "__base" -> {
+            let base_name = vtype_struct_name(base_vt)
             match rest {
-                .Node(op_name, op, _, excluded_fields) -> {
+                .Node(op_marker, _, excluded_fields) -> {
                     let base_lookup = struct_reg_lookup(reg, base_name)
                     if !base_lookup.found { return FieldList.End }
-                    if op == "without" {
+                    if op_marker == "__without" {
                         return filter_fields_without(base_lookup.fields, excluded_fields)
                     }
-                    if op == "only" {
+                    if op_marker == "__only" {
                         return filter_fields_only(base_lookup.fields, excluded_fields)
                     }
                     base_lookup.fields

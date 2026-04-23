@@ -1,7 +1,7 @@
 // WHY: parses `enum Foo { ... }` declarations and the variant
 // list syntax (with optional payload fields).
 
-use core.ast.{Stmt, FieldList, VariantList, TypeParamList, ValueType, render_type_expr, type_expr_to_vtype}
+use core.ast.{Stmt, FieldList, VariantList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -73,13 +73,12 @@ impl Parser {
             return null
         }
         let te = self.parse_type_expr("expected field type")?
-        let ty = render_type_expr(te)
         let resolved = type_expr_to_vtype(te)
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_field_list_until_paren()?
-            return FieldList.Node(name, ty, resolved, rest)
+            return FieldList.Node(name, resolved, rest)
         }
-        FieldList.Node(name, ty, resolved, FieldList.End)
+        FieldList.Node(name, resolved, FieldList.End)
     }
 }

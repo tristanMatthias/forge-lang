@@ -241,7 +241,7 @@ fn closure_marker() -> int { -559038737 }
 export fn advance_field_list(fields: FieldList) -> FieldList {
     match fields {
         .End -> .End
-        .Node(_, _, _, next) -> next
+        .Node(_, _, next) -> next
     }
 }
 
@@ -249,8 +249,8 @@ export fn advance_field_list(fields: FieldList) -> FieldList {
 export fn field_resolved_at(fields: FieldList, idx: int) -> ValueType {
     match fields {
         .End -> .Unknown
-        .Node(_, _, vt, _) if idx <= 0 -> vt
-        .Node(_, _, _, next) -> field_resolved_at(next, idx - 1)
+        .Node(_, vt, _) if idx <= 0 -> vt
+        .Node(_, _, next) -> field_resolved_at(next, idx - 1)
     }
 }
 
@@ -964,8 +964,8 @@ impl Ctx {
     fn resolve_fields(self, fields: FieldList) -> FieldList {
         match fields {
             .End -> .End
-            .Node(name, ty, pv, next) ->
-                .Node(name, ty, self.resolve_param_vt(pv), self.resolve_fields(next))
+            .Node(name, pv, next) ->
+                .Node(name, self.resolve_param_vt(pv), self.resolve_fields(next))
         }
     }
 
