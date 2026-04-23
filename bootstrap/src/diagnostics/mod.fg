@@ -70,45 +70,40 @@ export enum LabelList {
 // to add a new error, one line per variant.
 
 export enum DiagCode {
-    // Syntax / Lexer (F0001-F0999)
-    SyntaxError
-    BadNumber
-    ExpectedBlock
-    MismatchedParen
-    MismatchedBracket
-    MismatchedBrace
-    ExpectedArrow
-    UnterminatedString
-    UnterminatedTemplate
-    ExpectedForVar
-    ExpectedIn
-    ExpectedExpression
-    UnexpectedSemicolon
-    // Type checking (F1000-1999 per spec Axis 20)
-    TypeMismatch
-    WrongArgCount
-    CannotInferTypeParam
-    // Name resolution (F3000-3999 per spec Axis 20)
-    UndefinedVariable
-    ImmutableAssign
-    // Module system (F3100-3199)
-    ModuleNotFound
-    ImportNotFound
-    ImportPrivate
-    CircularImport
-    OrphanImpl
-    // Warnings (F9000-9998 per spec Axis 20)
-    NonExhaustiveMatch
-    UnusedImport
-    UnusedImport2
-    NamingConvention
-    // Spec testing (F9100)
-    SpecTestFailure
-    // Internal (F9900)
-    InternalError
-    // ICE (F9999) — Internal Compiler Error
-    ICE
-    // Runtime errors (F5000-5999 — not in spec ranges, compiler-internal)
+    // Syntax / Lexer (F0001-F0999) — ACTIVE
+    SyntaxError         // F0001 — general parse error
+    BadNumber           // F0006 — reserved: malformed number literal
+    ExpectedBlock       // F0001 — expected { block
+    MismatchedParen     // F0001 — reserved: unmatched (
+    MismatchedBracket   // F0001 — reserved: unmatched [
+    MismatchedBrace     // F0001 — unmatched {
+    ExpectedArrow       // F0001 — reserved: expected ->
+    UnterminatedString  // F0002 — unterminated string
+    UnterminatedTemplate // F0003 — unterminated template
+    ExpectedForVar      // F0001 — reserved: expected for variable
+    ExpectedIn          // F0001 — reserved: expected `in`
+    ExpectedExpression  // F0001 — expected expression
+    UnexpectedSemicolon // F0001 — stray ;
+    // Type checking (F1000-1999 per spec Axis 20) — ACTIVE
+    TypeMismatch        // F1000 — type mismatch
+    WrongArgCount       // F1001 — wrong argument count
+    CannotInferTypeParam // F1002 — generic type param unresolvable
+    // Name resolution (F3000-3999 per spec Axis 20) — ACTIVE
+    UndefinedVariable   // F3000 — undefined variable
+    ImmutableAssign     // F3001 — assign to let binding
+    // Module system (F3100-3199) — ACTIVE
+    ModuleNotFound      // F3100 — module file not found
+    ImportNotFound      // F3101 — imported name not found
+    ImportPrivate       // F3102 — imported name not exported
+    CircularImport      // F3103 — reserved: circular module dependency
+    OrphanImpl          // F3104 — impl for type not in scope
+    // Warnings (F9000-9998 per spec Axis 20) — ACTIVE
+    NonExhaustiveMatch  // F9001 — wildcard hides variants
+    UnusedImport        // F9002 — imported name never used
+    NamingConvention    // F9003 — naming convention violation
+    // Internal (F9900+) — ACTIVE
+    ICE                 // F9999 — internal compiler error
+    // Runtime errors (F5000-5999) — reserved for future runtime diagnostics
     RuntimeNullDeref
     RuntimeDivByZero
     RuntimeIndexOOB
@@ -148,10 +143,7 @@ export fn error_def(d: DiagCode) -> ErrorDef {
         .OrphanImpl          -> ErrorDef { code: "F3104", help: "move the `impl` to the module that defines either the trait or the type" }
         .NonExhaustiveMatch  -> ErrorDef { code: "F9001", help: "add missing match arms or use a wildcard `_` pattern" }
         .UnusedImport        -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
-        .UnusedImport2       -> ErrorDef { code: "F9002", help: "remove unused imports to keep code clean" }
         .NamingConvention    -> ErrorDef { code: "F9003", help: "use PascalCase for types, snake_case for functions/variables, SCREAMING_SNAKE for constants" }
-        .SpecTestFailure     -> ErrorDef { code: "F9100", help: "check the spec/given/then test — expected result did not match" }
-        .InternalError       -> ErrorDef { code: "F9900", help: "" }
         .ICE                 -> ErrorDef { code: "F9999", help: "this is a compiler bug — please report it at https://github.com/avra-lang/avra/issues" }
         .RuntimeNullDeref    -> ErrorDef { code: "F5000", help: "" }
         .RuntimeDivByZero    -> ErrorDef { code: "F5001", help: "" }
