@@ -705,7 +705,7 @@ fn substitute_vtype(vt: ValueType, ta: TypeArgList) -> ValueType {
     match vt {
         .Struct(name) -> {
             let concrete = type_arg_lookup(ta, name)
-            if concrete != name { vtype_from_type_string(concrete) } else { vt }
+            if concrete != name { vtype_from_name(concrete) } else { vt }
         }
         .List(elem) -> ValueType.List(substitute_vtype(elem, ta))
         .Union(types) -> ValueType.Union(substitute_vtype_list(types, ta))
