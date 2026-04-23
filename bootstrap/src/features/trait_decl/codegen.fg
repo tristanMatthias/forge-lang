@@ -14,14 +14,6 @@ export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) ->
     }
 }
 
-export fn trait_method_ret_ty(methods: TraitMethodNames, name: string) -> string {
-    match methods {
-        .End -> ""
-        .Node(n, ret, _, _) if n == name -> ret
-        .Node(_, _, _, next) -> trait_method_ret_ty(next, name)
-    }
-}
-
 fn trait_method_ret_vt(methods: TraitMethodNames, name: string) -> ValueType {
     match methods {
         .End -> ValueType.Unknown

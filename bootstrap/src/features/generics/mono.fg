@@ -667,9 +667,10 @@ fn try_add_struct_inst(name: string, inits: FieldInitList, regs: GenRegs, st: Co
 
 // ── Pass 3: Generate concrete specializations ──
 
-fn specialize_fn(mangled: string, params: ParamList, ret_ty: string, body: StmtList, ta: TypeArgList) -> Stmt {
+fn specialize_fn(mangled: string, params: ParamList, ret_ty: string, ret_vt: ValueType, body: StmtList, ta: TypeArgList) -> Stmt {
     let concrete_ret = type_arg_lookup(ta, ret_ty)
-    Stmt.Function(mangled, TypeParamList.End, substitute_params(params, ta), concrete_ret, vtype_from_type_string(concrete_ret), substitute_stmts(body, ta))
+    let concrete_vt = substitute_vtype(ret_vt, ta)
+    Stmt.Function(mangled, TypeParamList.End, substitute_params(params, ta), concrete_ret, concrete_vt, substitute_stmts(body, ta))
 }
 fn specialize_enum(mangled: string, variants: VariantList, ta: TypeArgList) -> Stmt {
     Stmt.EnumDecl(mangled, TypeParamList.End, substitute_variants(variants, ta))
@@ -685,7 +686,7 @@ fn generate_specializations(insts: InstList, regs: GenRegs) -> StmtList {
             let rest = generate_specializations(next, regs)
             match generic_fn_lookup(regs.fns, name) {
                 .Node(_, _, params, ret_ty, body, _) ->
-                    StmtList.Node(sstmt(specialize_fn(mangled, params, ret_ty, body, ta), 0, 0), rest)
+                    StmtList.Node(sstmt(specialize_fn(mangled, params, ret_ty, vtype_from_type_string(ret_ty), body, ta), 0, 0), rest)
                 .End -> match generic_enum_lookup(regs.enums, name) {
                     .Node(_, _, variants, _) ->
                         StmtList.Node(sstmt(specialize_enum(mangled, variants, ta), 0, 0), rest)
