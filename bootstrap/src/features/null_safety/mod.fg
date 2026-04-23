@@ -5,7 +5,7 @@ use features.eval.{error_result}
 use core.registry.{feature_new, register}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.null_safety.codegen.{emit_null_coalesce, emit_optional_chain, emit_try, emit_catch}
-use features.null_safety.typeck.{check_catch, check_null_coalesce}
+use features.null_safety.typeck.{check_catch, check_null_coalesce, check_try}
 use features.struct_decl.typeck.{check_field_access}
 use typeck.{check_expr, tc_er}
 
@@ -47,7 +47,7 @@ export fn init_null_safety(reg: Registry) {
         expr_tag: Expr.Try(Expr.Null),
         emit_expr: try_emit_expr,
         resolve_expr: (r: Resolver, expr: Expr) -> match expr { .Try(inner) -> resolve_expr(r, inner), _ -> r },
-        check_expr: (tc: TC, expr: Expr) -> match expr { .Try(inner) -> check_expr(tc, inner), _ -> tc_er(tc, .Unknown) },
+        check_expr: (tc: TC, expr: Expr) -> check_try(tc, expr),
         eval_expr: (rt: Runtime, expr: Expr) -> match expr {
             .Try(_) -> error_result(rt, "try operator is not supported by the tree-walk evaluator")
             _ -> error_result(rt, "expected Try")
