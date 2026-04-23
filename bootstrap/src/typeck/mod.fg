@@ -972,14 +972,6 @@ fn tc_check_fields_present(tc: TC, shape_name: string, arg_name: string, require
     }
 }
 
-fn field_type_lookup(fields: FieldList, name: string) -> string {
-    match fields {
-        .End -> ""
-        .Node(n, ty, _, _) if n == name -> ty
-        .Node(_, _, _, next) -> field_type_lookup(next, name)
-    }
-}
-
 // ── Binary operator type rules ──
 
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {

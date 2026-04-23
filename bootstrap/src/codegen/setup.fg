@@ -365,7 +365,7 @@ fn resolve_field_list(fields: FieldList, regs: TypeRegs) -> FieldList {
     match fields {
         .End -> .End
         .Node(name, ty, pv, next) ->
-            .Node(name, ty, resolve_field_vt(regs, ty, pv), resolve_field_list(next, regs))
+            .Node(name, ty, resolve_field_vt(regs, pv), resolve_field_list(next, regs))
     }
 }
 
@@ -377,19 +377,12 @@ fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
     }
 }
 
-fn resolve_field_vt(regs: TypeRegs, ty: string, pv: ValueType) -> ValueType {
-    // Always try resolving from the string first — it handles union pipes,
-    // generic mangling, and other complex patterns that ValueType doesn't carry
-    if ty != "" {
-        let from_str = resolve_setup_vt(regs, vtype_from_name(ty))
-        if !vtype_is_unknown(from_str) { return from_str }
-    }
-    // Fall back to parser ValueType
+fn resolve_field_vt(regs: TypeRegs, pv: ValueType) -> ValueType {
     if !vtype_is_unknown(pv) {
         let resolved = resolve_setup_vt(regs, pv)
         if !vtype_is_unknown(resolved) { return resolved }
     }
-    ValueType.Unknown
+    pv
 }
 
 // Resolve a parser-produced ValueType using setup registries.

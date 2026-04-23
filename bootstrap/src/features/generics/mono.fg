@@ -731,7 +731,10 @@ fn substitute_params(params: ParamList, ta: TypeArgList) -> ParamList {
     }}
 }
 fn substitute_fields(fields: FieldList, ta: TypeArgList) -> FieldList {
-    match fields { .End -> .End, .Node(n, ty, r, next) -> FieldList.Node(n, type_arg_lookup(ta, ty), substitute_vtype(r, ta), substitute_fields(next, ta)) }
+    match fields { .End -> .End, .Node(n, _, r, next) -> {
+        let subst_r = substitute_vtype(r, ta)
+        FieldList.Node(n, vtype_display(subst_r), subst_r, substitute_fields(next, ta))
+    }}
 }
 fn substitute_variants(variants: VariantList, ta: TypeArgList) -> VariantList {
     match variants { .End -> .End, .Node(n, fields, next) -> VariantList.Node(n, substitute_fields(fields, ta), substitute_variants(next, ta)) }

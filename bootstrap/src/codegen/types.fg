@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, vtype_from_name, variant_lookup, vtype_eq, field_list_length, field_type_of, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
@@ -956,7 +956,7 @@ impl Ctx {
         match params {
             .End -> .End
             .Node(name, pv, next) ->
-                .Node(name, self.resolve_param_vt("", pv), self.resolve_params(next))
+                .Node(name, self.resolve_param_vt(pv), self.resolve_params(next))
         }
     }
 
@@ -965,16 +965,11 @@ impl Ctx {
         match fields {
             .End -> .End
             .Node(name, ty, pv, next) ->
-                .Node(name, ty, self.resolve_param_vt(ty, pv), self.resolve_fields(next))
+                .Node(name, ty, self.resolve_param_vt(pv), self.resolve_fields(next))
         }
     }
 
-    fn resolve_param_vt(self, ty: string, pv: ValueType) -> ValueType {
-        if vtype_is_unknown(pv) {
-            // Strip nullable suffix (vtype_from_name also strips, but seed may not have that yet)
-            let clean_ty = if ty.ends_with("?") && ty.length > 1 { ty.substring(0, ty.length - 1) } else { ty }
-            return self.resolve_codegen_vtype(vtype_from_name(clean_ty))
-        }
+    fn resolve_param_vt(self, pv: ValueType) -> ValueType {
         self.resolve_codegen_vtype(pv)
     }
 
@@ -1008,14 +1003,7 @@ impl Ctx {
 
     fn resolve_field_type(self, fields: FieldList, name: string) -> ValueType {
         let vt = field_vtype_of(fields, name)
-        if !vtype_is_unknown(vt) {
-            return self.resolve_codegen_vtype(vt)
-        }
-        // Fallback: field ValueType is Unknown (unresolved at setup time).
-        // Use the string type name to construct a ValueType and resolve it.
-        let ty_str = field_type_of(fields, name)
-        let clean_ty = if ty_str.ends_with("?") && ty_str.length > 1 { ty_str.substring(0, ty_str.length - 1) } else { ty_str }
-        self.resolve_codegen_vtype(vtype_from_name(clean_ty))
+        self.resolve_codegen_vtype(vt)
     }
 
     // ── Registry lookups ──
