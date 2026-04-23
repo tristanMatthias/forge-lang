@@ -51,6 +51,11 @@ export fn check_null_coalesce(tc: TC, expr: Expr) -> ExprResult {
         .NullCoalesce(left, right) -> {
             let l = check_expr(tc, left)
             let r = check_expr(l.tc, right)
+            // `left ?? right` — result type is the right side (fallback value).
+            // If both sides have known non-Unknown types, prefer the more specific one.
+            if l.ty is .Unknown { return tc_er(r.tc, r.ty) }
+            if r.ty is .Unknown { return tc_er(r.tc, l.ty) }
+            // Both known — use right side (the guaranteed non-null fallback)
             tc_er(r.tc, r.ty)
         }
         _ -> tc_er(tc, .Unknown)
