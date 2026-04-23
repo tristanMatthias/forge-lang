@@ -2088,6 +2088,17 @@ int64_t forge_task_await(int64_t handle) {
     return task->result;
 }
 
+// Cancel a spawned task. Sends SIGCANCEL (pthread_cancel) then joins.
+// Returns 0 on success, -1 if already joined.
+int64_t forge_task_cancel(int64_t handle) {
+    ForgeTask* task = (ForgeTask*)(uintptr_t)handle;
+    if (task->joined) return -1;
+    pthread_cancel(task->thread);
+    pthread_join(task->thread, NULL);
+    task->joined = 1;
+    return 0;
+}
+
 // Legacy join — kept for backward compat with existing tests.
 // Does NOT free the task — the task group handles cleanup.
 void forge_thread_join(int64_t handle) {

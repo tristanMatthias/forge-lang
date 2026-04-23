@@ -5,6 +5,7 @@
 
 use codegen.{emit_expr}
 use codegen.types.{ok_emit, ok_emit_typed, err_emit, EmitValue}
+use core.ast.{vtype_fn_ret}
 use features.closures.codegen.{emit_lambda}
 
 export fn spawn_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
@@ -27,7 +28,9 @@ fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
         ctx.call("forge_task_group_add", [ctx.task_group, handle])
     }
 
-    ok_emit_typed(handle, .Task(.Unknown))
+    // Infer result type from the closure's return type
+    let result_ty = vtype_fn_ret(closure.ty)
+    ok_emit_typed(handle, .Task(result_ty))
 }
 
 // ── AST scan: does a statement list contain any Spawn expressions? ──

@@ -234,6 +234,16 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         let map_ptr = ctx.to_ptr(r.value, "map_ptr")
         return emit_map_method_call(ctx, env, map_ptr, method, args)
     }
+    // Task methods: .cancel()
+    match r.ty {
+        .Task(_) -> {
+            if method == "cancel" {
+                return ok_emit(ctx.call("forge_task_cancel", [r.value]))
+            }
+            return err_emit("Task has no method `${method}` (available: .await, .cancel())")
+        }
+        _ -> {}
+    }
     // Trait dispatch
     let tn = vtype_trait_name(r.ty)
     if tn != "" {
