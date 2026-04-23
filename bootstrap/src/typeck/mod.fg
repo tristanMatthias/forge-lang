@@ -520,18 +520,16 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                 .EnumDecl(name, _, variants) -> tc with {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
                 }
-                .Function(name, _, params, ret_ty, ret_vt, _) -> {
-                    let final_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
+                .Function(name, _, params, _, ret_vt, _) -> {
+                    let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
                     tc with {
                         fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
-
                     }
                 }
-                .ExternFn(name, params, ret_ty, ret_vt) -> {
-                    let final_ret = if vtype_eq(ret_vt, .Void) && ret_ty == "" { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
+                .ExternFn(name, params, _, ret_vt) -> {
+                    let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
                     tc with {
                         fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
-
                     }
                 }
                 .Impl(impl_name, methods) -> {
@@ -628,10 +626,10 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let checked = check_stmts(inner, body)
             tc_exit(checked)
         }
-        .Function(name, _, params, ret_ty, ret_vt, body) -> {
+        .Function(name, _, params, _, ret_vt, body) -> {
             let inner = tc_enter(tc) with { current_fn: name }
             let with_params = tc_bind_params(inner, params)
-            let checked = tc_check_fn_body(with_params, name, ret_ty, ret_vt, body)
+            let checked = tc_check_fn_body(with_params, name, ret_vt, body)
             tc_exit(checked)
         }
         .Impl(impl_name, methods) -> {
@@ -689,10 +687,10 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
 }
 
 // Check that `impl Trait for Type` provides all required methods.
-fn tc_check_fn_body(tc: TC, name: string, ret_ty_str: string, ret_vt: ValueType, body: StmtList) -> TC {
+fn tc_check_fn_body(tc: TC, name: string, ret_vt: ValueType, body: StmtList) -> TC {
     let checked = check_stmts(tc, body)
     // Skip return type checking for functions without a declared return type.
-    if ret_ty_str.length == 0 && vtype_eq(ret_vt, .Void) {
+    if vtype_eq(ret_vt, .Void) {
         return checked
     }
     let declared_ret = resolve_vtype(checked, ret_vt)

@@ -30,7 +30,7 @@ mod codegen
 mod desugar
 
 use parse.{parse_expression_source, parse_program_source}
-use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display}
+use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_eq, ValueType}
 use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
@@ -142,10 +142,10 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .While(condition, body) -> "${ind}while ${fmt_expr(condition)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
         .For(variable, start, end, body) -> "${ind}for ${variable} in ${fmt_expr(start)}..${fmt_expr(end)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
         .ForIn(variable, collection, body) -> "${ind}for ${variable} in ${fmt_expr(collection)} {\n${fmt_stmt(body, depth + 1)}\n${ind}}"
-        .Function(name, tp, params, ret_ty, _, body) -> {
+        .Function(name, tp, params, _, rvt, body) -> {
             let tp_str = fmt_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            let ret_part = if ret_ty == "" { "" } else { " -> ${ret_ty}" }
+            let ret_part = if vtype_eq(rvt, .Void) { "" } else { " -> ${vtype_display(rvt)}" }
             "${ind}fn ${name}${tp_part}(${fmt_param_list_typed(params)})${ret_part} {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
         }
         .Return(value) -> "${ind}return ${fmt_expr(value)}"
@@ -176,7 +176,7 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
             "${ind}${impl_header} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"
         }
         .NoOp -> ""
-        .ExternFn(name, params, ret_ty, _) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${ret_ty}"
+        .ExternFn(name, params, _, rvt) -> "${ind}extern fn ${name}(${fmt_param_list_typed(params)}) -> ${vtype_display(rvt)}"
         .Break -> "${ind}break"
         .Continue -> "${ind}continue"
         .TraitDecl(name, methods) -> "${ind}trait ${name} {\n${fmt_stmt_list(methods, depth + 1)}\n${ind}}"

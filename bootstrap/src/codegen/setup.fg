@@ -820,8 +820,8 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
         .End -> .End
         .Node(ss, next) -> {
             match stmt_unwrap(ss.node) {
-                .ExternFn(name, _, ret_ty, ret_vt) -> .Node(name, ret_ty, ret_vt, collect_trait_fn_names(next))
-                .Function(name, _, _, ret_ty, ret_vt, _) -> .Node(name, ret_ty, ret_vt, collect_trait_fn_names(next))
+                .ExternFn(name, _, _, ret_vt) -> .Node(name, "", ret_vt, collect_trait_fn_names(next))
+                .Function(name, _, _, _, ret_vt, _) -> .Node(name, "", ret_vt, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
         }
@@ -900,19 +900,11 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
     }
 }
 
-fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, ret_ty: string, rvt: ValueType, body: StmtList) -> ValueType {
-    // Prefer parser/monomorphizer ValueType
+fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, rvt: ValueType, body: StmtList) -> ValueType {
     mut base = if vtype_is_unknown(rvt) {
-        if ret_ty == "" { ValueType.Void } else {
-            // Check enum registry first — mangled names like "Result__X__A|B" contain |
-            // but are NOT unions. Direct lookup prevents incorrect pipe splitting.
-            let direct_e = enum_reg_lookup(regs.enums, ret_ty)
-            if direct_e.found { ValueType.Enum(ret_ty, TypeList.End) }
-            else { resolve_setup_vt(regs, vtype_from_name(ret_ty)) }
-        }
+        ValueType.Void
     } else {
         let resolved = resolve_setup_vt(regs, rvt)
-        // For monomorphized enums, check direct registry lookup
         match resolved {
             .Enum(name, _) -> {
                 let found = enum_reg_lookup(regs.enums, name)
@@ -921,11 +913,9 @@ fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, ret_ty: string, rvt: Val
             _ -> resolved
         }
     }
-    // Check if it's a trait name
-    let sn = match base { .Struct(n) -> n, _ -> "" }
+    // Check if it's a trait name (use original rvt in case resolution lost the name)
+    let sn = match base { .Struct(n) -> n, _ -> match rvt { .Struct(n) -> n, _ -> "" } }
     if sn != "" && trait_decl_has(traits, sn) { base = ValueType.Trait(sn) }
-    // If still Unknown after ValueType resolution, try string as trait name
-    if vtype_is_unknown(base) && trait_decl_has(traits, ret_ty) { base = ValueType.Trait(ret_ty) }
     let last = stmts_last_expr(body)
     match last {
         .Lambda(_, _) -> ValueType.Closure(-1, vtype_fn_ret(base))
@@ -939,8 +929,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Function(name, _, params, ret_ty, rvt, body) -> {
-                    // Names are already qualified by the name resolution pass
+                .Function(name, _, params, _, rvt, body) -> {
                     let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
                     let existing = forge_llvm_get_named_function(m, name)
@@ -949,19 +938,19 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
                     }
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
-                    let ret_vt = resolve_fn_ret(regs, traits, ret_ty, rvt, body)
+                    let ret_vt = resolve_fn_ret(regs, traits, rvt, body)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
-                .ExternFn(name, params, ret_ty, ext_rvt) -> {
+                .ExternFn(name, params, _, ext_rvt) -> {
                     let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
-                    let ret_vt = resolve_fn_ret(regs, traits, ret_ty, ext_rvt, StmtList.End)
+                    let ret_vt = resolve_fn_ret(regs, traits, ext_rvt, StmtList.End)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)

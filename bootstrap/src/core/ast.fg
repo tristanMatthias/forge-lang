@@ -1028,10 +1028,10 @@ export fn render_stmt(stmt: Stmt) -> string {
         .While(condition, body) -> "(while ${render_expr(condition)} ${render_stmt(body)})"
         .For(variable, start, end, body) -> "(for ${variable} ${render_expr(start)}..${render_expr(end)} ${render_stmt(body)})"
         .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr(collection)} ${render_stmt(body)})"
-        .Function(name, tp, params, ret_ty, _, body) -> {
+        .Function(name, tp, params, _, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
-            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${ret_ty} ${render_stmt_list(body)})"
+            "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_display(rvt)} ${render_stmt_list(body)})"
         }
         .Return(value) -> "(return ${render_expr(value)})"
         .ReturnEmpty -> "(return)"
@@ -1051,7 +1051,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Match(subject, arms) -> "(match ${render_expr(subject)} ${render_match_arm_list(arms)})"
         .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(methods)})"
         .NoOp -> "(noop)"
-        .ExternFn(name, params, ret_ty, _) -> "(extern ${name} ${render_param_list(params)} -> ${ret_ty})"
+        .ExternFn(name, params, _, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_display(rvt)})"
         .Break -> "(break)"
         .Continue -> "(continue)"
         .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(methods)})"

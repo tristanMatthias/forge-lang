@@ -106,7 +106,7 @@ export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
         .End -> TraitMethodList.End
         .Node(ss, next) -> {
             match ss.node {
-                .ExternFn(name, params, ret_ty, _) -> TraitMethodList.Node(name, param_list_length(params), ret_ty, collect_method_names_from_stmts(next))
+                .ExternFn(name, params, _, _) -> TraitMethodList.Node(name, param_list_length(params), "", collect_method_names_from_stmts(next))
                 _ -> collect_method_names_from_stmts(next)
             }
         }
