@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
 use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, env_extend}
-use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
 use core.registry.{build_registry}
@@ -244,7 +244,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     let trait_decls = collect_trait_decls(stmts, TraitDeclReg.End)
     let top_level_vars = declare_globals(m, lc, i64t, i1t, dt, pt, structs, enums, stmts, TopLevelVars.End)
     let type_regs = TypeRegs { structs, enums, newtypes: cg_newtypes, union_aliases: cg_union_aliases }
-    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, type_regs, stmts, FnRetTypes.End)
+    let fn_rets = declare_functions(m, lc, i64t, i1t, dt, pt, type_regs, trait_decls, stmts, FnRetTypes.End)
     let fn_params = collect_fn_params(stmts, FnParamTypes.End)
 
     // Synthesize a wrapper function for the top-level non-function
@@ -864,19 +864,23 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
     }
 }
 
-fn decl_fn_ret_type(regs: TypeRegs, ret_ty: string, body: StmtList) -> ValueType {
+fn decl_fn_ret_type(regs: TypeRegs, traits: TraitDeclReg, ret_ty: string, body: StmtList) -> ValueType {
     let base = resolve_type(regs, ret_ty)
+    // If resolve_type returned Unknown, check if the name is a trait
+    let resolved = if vtype_is_unknown(base) && trait_decl_has(traits, ret_ty) {
+        ValueType.Trait(ret_ty)
+    } else { base }
     let last = stmts_last_expr(body)
     match last {
         .Lambda(_, _) -> {
-            let inner_ret = vtype_fn_ret(base)
+            let inner_ret = vtype_fn_ret(resolved)
             ValueType.Closure(-1, inner_ret)
         }
-        _ -> base
+        _ -> resolved
     }
 }
 
-fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, regs: TypeRegs, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
+fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, regs: TypeRegs, traits: TraitDeclReg, stmts: StmtList, reg: FnRetTypes) -> FnRetTypes {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
@@ -892,7 +896,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
                     }
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
-                    let ret_vt = decl_fn_ret_type(regs, ret_ty, body)
+                    let ret_vt = decl_fn_ret_type(regs, traits, ret_ty, body)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
@@ -911,11 +915,11 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
                     forge_llvm_add_function(m, name, fn_type)
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
-                .Impl(_, methods) -> declare_functions(m, ctx, i64t, i1t, dt, pt, regs, methods, reg)
-                .Module(_, body) -> declare_functions(m, ctx, i64t, i1t, dt, pt, regs, body, reg)
+                .Impl(_, methods) -> declare_functions(m, ctx, i64t, i1t, dt, pt, regs, traits, methods, reg)
+                .Module(_, body) -> declare_functions(m, ctx, i64t, i1t, dt, pt, regs, traits, body, reg)
                 _ -> reg
             }
-            declare_functions(m, ctx, i64t, i1t, dt, pt, regs, next, updated)
+            declare_functions(m, ctx, i64t, i1t, dt, pt, regs, traits, next, updated)
         }
     }
 }
