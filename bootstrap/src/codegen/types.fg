@@ -1215,13 +1215,11 @@ impl Ctx {
         }
     }
 
-    // Resolve a param/field ValueType: prefer the parsed ValueType
-    // when available, fall back to string-based translate_type_ctx when Unknown.
     fn resolve_param_vt(self, ty: string, pv: ValueType) -> ValueType {
-        if !vtype_is_unknown(pv) {
-            return self.resolve_codegen_vtype(pv)
+        if vtype_is_unknown(pv) {
+            return translate_type_ctx(self, ty)
         }
-        translate_type_ctx(self, ty)
+        self.resolve_codegen_vtype(pv)
     }
 
     // Upgrade a parser-resolved ValueType using codegen registries.

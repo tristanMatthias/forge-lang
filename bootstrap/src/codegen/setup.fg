@@ -1,6 +1,6 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_enum_name, env_extend}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, env_extend}
 use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
@@ -352,7 +352,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     Result.Ok(0)
 }
 
-// Rebuild a FieldList with `resolved` populated from `translate_param_type`.
+// Rebuild a FieldList with `resolved` populated from `resolve_type`.
 fn resolve_variant_fields(variants: VariantList, regs: TypeRegs) -> VariantList {
     match variants {
         .End -> .End
@@ -427,8 +427,8 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
     }
 }
 
-fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty: string, reg: TopLevelVars) -> TopLevelVars {
-    let vt = translate_param_type(structs, enums, ty)
+fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty: string, ty_vt: ValueType, reg: TopLevelVars) -> TopLevelVars {
+    let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { translate_param_type(structs, enums, ty) }
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
     let g = forge_llvm_add_global(m, llvm_ty, name)
     forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
@@ -441,9 +441,9 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Let(name, ty, _, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
-                .Mut(name, ty, _, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
-                .Const(name, ty, _, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, reg)
+                .Let(name, ty, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, ty_vt, reg)
+                .Mut(name, ty, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, ty_vt, reg)
+                .Const(name, ty, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty, ty_vt, reg)
                 .Module(_, body) -> declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }

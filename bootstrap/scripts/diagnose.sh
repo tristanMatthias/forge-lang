@@ -388,6 +388,9 @@ mode_build_bs2() {
   # The seed may be stale (missing new functions/types). We can
   # fix this automatically by updating the seed from bs2's output
   # (which the seed DID compile successfully) and rebuilding.
+  if [ "${NO_AUTOCYCLE:-0}" = "1" ]; then
+    die "bs2 self-compile failed (auto-cycle disabled by NO_AUTOCYCLE=1)"
+  fi
   warn "bs2 self-compile failed — attempting auto-cycle to update seed"
   warn "(the seed may be stale — this is normal when adding new code)"
 

@@ -1,7 +1,7 @@
 // WHY: shared codegen utilities used across features.
 
-use core.ast.{Expr, ExprList, StmtList, ParamList, VarEnv, ValueType, TypeList, SStmt, stmt_unwrap}
-use codegen.types.{Ctx, EmitValue, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_at, param_type_vt_at, trait_decl_has, parse_type_list_str}
+use core.ast.{Expr, ExprList, StmtList, ParamList, VarEnv, ValueType, TypeList, SStmt, stmt_unwrap, vtype_fn_params, vtype_trait_name}
+use codegen.types.{Ctx, EmitValue, ParamTypeList, err_emit, null_ptr_val, ok_emit, param_type_vt_at, trait_decl_has}
 use core.ast.{vtype_is_unknown}
 use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
 use features.closures.codegen.{emit_lambda_typed}
@@ -42,24 +42,23 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
             mut r = EmitValue { value: ctx.i64(0), ty: .Int }
             match se.node {
                 .Lambda(params, body) -> {
-                    let fn_type_str = param_type_at(ptypes, idx)
-                    let lambda_types = parse_fn_param_types(ctx, fn_type_str)
+                    let fn_vt = ctx.resolve_codegen_vtype(param_type_vt_at(ptypes, idx))
+                    let lambda_types = vtype_fn_params(fn_vt)
                     r = emit_lambda_typed(ctx, env, params, body, lambda_types)?
                 }
                 _ -> {
                     r = ctx.emit(env, se.node)?
                 }
             }
-            let ptype_str = param_type_at(ptypes, idx)
             // Check if the parameter type is a trait and the argument is concrete
-            mut value = if ptype_str != "" && trait_decl_has(ctx.trait_decls, ptype_str) {
+            let param_vt_raw = param_type_vt_at(ptypes, idx)
+            let param_vt_resolved = ctx.resolve_codegen_vtype(param_vt_raw)
+            let trait_name = vtype_trait_name(param_vt_resolved)
+            mut value = if trait_name != "" {
                 let concrete_name = resolve_concrete_type_name(r.ty)
                 if concrete_name != "" && !trait_decl_has(ctx.trait_decls, concrete_name) {
-                    // The argument is a concrete type but the parameter expects a trait.
-                    // Box the value into a trait object.
-                    box_for_trait(ctx, r.value, ptype_str, concrete_name)
+                    box_for_trait(ctx, r.value, trait_name, concrete_name)
                 } else {
-                    // Already a trait object or same trait — pass through.
                     r.value
                 }
             } else {
@@ -80,17 +79,6 @@ export fn fill_arg_array_boxing(ctx: Ctx, env: VarEnv, arr: ptr, args: ExprList,
     }
 }
 
-// Extract param types from a function type string like "fn(Box)->int" → [Enum("Box")].
-fn parse_fn_param_types(ctx: Ctx, fn_type_str: string) -> TypeList {
-    if !fn_type_str.starts_with("fn(") { return TypeList.End }
-    // Find the closing paren
-    let after_fn = fn_type_str.substring(3, fn_type_str.length)
-    let close = after_fn.index_of(")")
-    if close < 0 { return TypeList.End }
-    let params_str = after_fn.substring(0, close)
-    if params_str == "" { return TypeList.End }
-    parse_type_list_str(ctx.structs, ctx.enums, params_str)
-}
 
 export fn is_null_literal(e: Expr) -> bool { e is .Null }
 
