@@ -126,7 +126,29 @@ fn emit_union_match_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, subj_val: pt
                         }
                     }
                 }
-                _ -> err_match_ty("union match requires type patterns like `int(n)` or `string(s)`, or `_` wildcard")
+                // Treat .Variant(name, bindings) as a type pattern on unions
+                .Variant(vname, bindings) -> {
+                    let binding = match bindings { .Node(n, _, _, _) -> n, .End -> "_" }
+                    let arm_bb = ctx.bb("union_arm")
+                    let next_bb = ctx.bb("union_next")
+                    let expected_tag = ctx.i64(forge_variant_hash(vname))
+                    let cmp = ctx.eq(tag_val, expected_tag, "union_tag_eq")
+                    ctx.cond_br(cmp, arm_bb, next_bb)
+                    ctx.position(arm_bb)
+                    let member_ty = ctx.resolve_codegen_vtype(vtype_from_name(vname))
+                    let extracted = emit_union_extract(ctx, subj_val, member_ty)
+                    let arm_env = if binding != "_" { ctx.bind(env, binding, extracted.value, member_ty) } else { env }
+                    match ctx.emit(arm_env, body.node) {
+                        .Err(msg) -> err_match_ty(msg)
+                        .Ok(body_result) -> {
+                            ctx.store_br_if_open(emit_value_ptr(body_result), result_slot, merge_bb)
+                            ctx.position(next_bb)
+                            let rest_ty = emit_union_match_arms(ctx, env, next, subj_val, tag_val, union_types, merge_bb, result_slot)?
+                            ok_match_ty(emit_value_ty(body_result))
+                        }
+                    }
+                }
+                _ -> err_match_ty("union match requires type patterns like `int(n)` or `.Variant(binding)`, or `_` wildcard")
             }
         }
     }
