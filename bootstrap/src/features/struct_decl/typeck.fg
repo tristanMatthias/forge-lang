@@ -3,7 +3,7 @@
 // Shared by struct_decl, with_expr, and null_safety features.
 
 use core.ast.{Expr, ExprList, FieldList, FieldInitList, ValueType, SExpr, vtype_eq, vtype_is_list}
-use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, struct_type_has, resolve_vtype}
+use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, StructTypeReg, struct_type_lookup, resolve_vtype}
 use diagnostics.{DiagCode}
 
 export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
@@ -23,6 +23,8 @@ export fn check_field_access(tc: TC, obj: Expr, field: string) -> ExprResult {
     }
     if struct_name.length > 0 {
         let fields = struct_type_lookup(o.tc.structs, struct_name)
+        // Skip field check for generic type parameters (not in struct registry)
+        if fields is .End { return tc_er(o.tc, .Unknown) }
         if !tc_field_exists(fields, field) {
             let msg = "no field `${field}` on type `${struct_name}`"
             return tc_er(tc_report(o.tc, DiagCode.TypeMismatch, msg), .Unknown)

@@ -1,0 +1,11 @@
+/// expect: hello
+
+type Box = { value: string }
+
+fn unwrap<T>(b: T) -> T { b }
+
+fn main() {
+    let b = Box { value: "hello" }
+    let result = unwrap(b)
+    println(result.value)
+}
