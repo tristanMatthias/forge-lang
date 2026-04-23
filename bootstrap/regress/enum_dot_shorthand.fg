@@ -1,0 +1,22 @@
+/// expect: ok: 42
+/// expect: err: nope
+
+enum Result {
+    Ok(value: int)
+    Err(msg: string)
+}
+
+fn success() -> Result { .Ok(42) }
+fn failure() -> Result { .Err("nope") }
+
+fn show(r: Result) {
+    match r {
+        .Ok(v) -> println("ok: " + string(v))
+        .Err(msg) -> println("err: " + msg)
+    }
+}
+
+fn main() {
+    show(success())
+    show(failure())
+}

@@ -8,6 +8,7 @@ use resolve.{resolve_expr, resolve_expr_list, resolve_field_init_list, starts_wi
 use features.enum_decl.codegen.{emit_enum_ctor}
 use features.struct_decl.codegen.{emit_field_access, emit_field_assign, emit_struct_lit}
 use features.struct_decl.typeck.{check_field_access, check_field_inits}
+use typeck.{tc_enum_find_by_variant}
 use typeck.{check_expr, check_expr_list, tc_er}
 
 export fn init_struct_decl(reg: Registry) {
@@ -49,9 +50,10 @@ export fn init_struct_decl(reg: Registry) {
         emit_expr: enum_ctor_emit_expr,
         resolve_expr: (r: Resolver, expr: Expr) -> match expr { .EnumCtor(_, _, args) -> resolve_expr_list(r, args), _ -> r },
         check_expr: (tc: TC, expr: Expr) -> match expr {
-            .EnumCtor(type_name, _, args) -> {
+            .EnumCtor(type_name, variant, args) -> {
                 let checked = check_expr_list(tc, args)
-                tc_er(checked, .Enum(type_name, TypeList.End))
+                let resolved_name = if type_name == "" { tc_enum_find_by_variant(tc.enums, variant) } else { type_name }
+                tc_er(checked, .Enum(resolved_name, TypeList.End))
             }
             _ -> tc_er(tc, .Unknown)
         },

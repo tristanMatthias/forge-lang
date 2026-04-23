@@ -161,6 +161,23 @@ fn enum_type_has(reg: EnumTypeReg, name: string) -> bool {
     }
 }
 
+export fn tc_enum_find_by_variant(reg: EnumTypeReg, variant: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(name, variants, next) -> {
+            if variant_has(variants, variant) { name } else { tc_enum_find_by_variant(next, variant) }
+        }
+    }
+}
+
+fn variant_has(variants: VariantList, name: string) -> bool {
+    match variants {
+        .End -> false
+        .Node(vn, _, _) if vn == name -> true
+        .Node(_, _, next) -> variant_has(next, name)
+    }
+}
+
 // ── Checker state ──
 
 // Trait registry: maps trait name to its required method names.
