@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.fg)
 //                                 or the dispatchers (codegen.fg)
 
-use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_type_of, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
+use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, vtype_from_name, variant_lookup, vtype_eq, field_list_length, field_type_of, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
@@ -695,13 +695,6 @@ export fn translate_param_type(structs: StructReg, enums: EnumReg, ty: string) -
     ValueType.Unknown
 }
 
-// DEAD CODE — no callers remain. Kept for seed compatibility during bootstrap.
-// Delete after next seed cycle.
-export fn translate_type_ctx(ctx: Ctx, ty: string) -> ValueType {
-    let regs = TypeRegs { structs: ctx.structs, enums: ctx.enums, newtypes: ctx.newtypes, union_aliases: ctx.union_aliases }
-    resolve_type(regs, ty)
-}
-
 // ── LLVM type mapping ──
 //
 // Maps Forge's ValueType to the correct LLVM type.
@@ -1204,7 +1197,7 @@ impl Ctx {
 
     fn resolve_param_vt(self, ty: string, pv: ValueType) -> ValueType {
         if vtype_is_unknown(pv) {
-            return translate_type_ctx(self, ty)
+            return self.resolve_codegen_vtype(vtype_from_name(ty))
         }
         self.resolve_codegen_vtype(pv)
     }
@@ -1242,7 +1235,10 @@ impl Ctx {
         if !vtype_is_unknown(vt) {
             return self.resolve_codegen_vtype(vt)
         }
-        translate_type_ctx(self, field_type_of(fields, name))
+        // Fallback: field ValueType is Unknown (unresolved at setup time).
+        // Use the string type name to construct a ValueType and resolve it.
+        let ty_str = field_type_of(fields, name)
+        self.resolve_codegen_vtype(vtype_from_name(ty_str))
     }
 
     // ── Registry lookups ──
