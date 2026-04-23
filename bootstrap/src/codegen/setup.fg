@@ -1,7 +1,7 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, env_extend}
-use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, resolve_type, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, translate_param_type, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use core.ast.{Expr, ExprList, FieldList, ParamList, Stmt, StmtList, ValueType, VarEnv, VariantList, SStmt, field_list_has, field_list_length, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_from_name, vtype_is_closure, vtype_is_unknown, vtype_enum_name, env_extend}
+use codegen.types.{Ctx, CgNewtypeReg, CgUnionAliasReg, CopySet, TypeRegs, DeferStack, RcCleanupStack, ReleasableSet, EmitValue, EnumReg, EnumLookup, FnParamTypes, FnRetTypes, LoopStack, ParamTypeList, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVars, TraitDeclReg, TraitMethodNames, err_emit, err_stmt, llvm_type_for_full, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
 use codegen.escape.{analyze_releasable, analyze_copy_types}
 use codegen.cycles.{CycleSet, analyze_cycles, cycle_set_has}
 use core.registry.{build_registry}
@@ -378,11 +378,14 @@ fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
 }
 
 fn resolve_field_vt(regs: TypeRegs, ty: string, pv: ValueType) -> ValueType {
-    if vtype_is_unknown(pv) { return resolve_type(regs, ty) }
+    if vtype_is_unknown(pv) {
+        if ty == "" { return ValueType.Unknown }
+        return resolve_setup_vt(regs, vtype_from_name(ty))
+    }
     let resolved = resolve_setup_vt(regs, pv)
     // If setup resolution produced Unknown (type not in registries yet),
-    // fall back to string resolution which has more parsing logic
-    if vtype_is_unknown(resolved) { resolve_type(regs, ty) } else { resolved }
+    // fall back to vtype_from_name for simple names
+    if vtype_is_unknown(resolved) && ty != "" { resolve_setup_vt(regs, vtype_from_name(ty)) } else { resolved }
 }
 
 // Resolve a parser-produced ValueType using setup registries.
@@ -463,7 +466,7 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
 }
 
 fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty: string, ty_vt: ValueType, reg: TopLevelVars) -> TopLevelVars {
-    let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { translate_param_type(structs, enums, ty) }
+    let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else if ty == "" { ValueType.Int } else { vtype_from_name(ty) }
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
     let g = forge_llvm_add_global(m, llvm_ty, name)
     forge_llvm_set_initializer(g, forge_llvm_const_null(llvm_ty))
@@ -899,19 +902,30 @@ fn fill_typed_param_array(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, param
     }
 }
 
-fn decl_fn_ret_type(regs: TypeRegs, traits: TraitDeclReg, ret_ty: string, body: StmtList) -> ValueType {
-    let base = resolve_type(regs, ret_ty)
-    // If resolve_type returned Unknown, check if the name is a trait
-    let resolved = if vtype_is_unknown(base) && trait_decl_has(traits, ret_ty) {
-        ValueType.Trait(ret_ty)
-    } else { base }
+fn resolve_fn_ret(regs: TypeRegs, traits: TraitDeclReg, ret_ty: string, rvt: ValueType, body: StmtList) -> ValueType {
+    // Prefer parser/monomorphizer ValueType
+    mut base = if vtype_is_unknown(rvt) {
+        if ret_ty == "" { ValueType.Void } else { resolve_setup_vt(regs, vtype_from_name(ret_ty)) }
+    } else {
+        let resolved = resolve_setup_vt(regs, rvt)
+        // For monomorphized enums, check direct registry lookup
+        match resolved {
+            .Enum(name, _) -> {
+                let found = enum_reg_lookup(regs.enums, name)
+                if found.found { ValueType.Enum(name, TypeList.End) } else { resolved }
+            }
+            _ -> resolved
+        }
+    }
+    // Check if it's a trait name
+    let sn = match base { .Struct(n) -> n, _ -> "" }
+    if sn != "" && trait_decl_has(traits, sn) { base = ValueType.Trait(sn) }
+    // If still Unknown after ValueType resolution, try string as trait name
+    if vtype_is_unknown(base) && trait_decl_has(traits, ret_ty) { base = ValueType.Trait(ret_ty) }
     let last = stmts_last_expr(body)
     match last {
-        .Lambda(_, _) -> {
-            let inner_ret = vtype_fn_ret(resolved)
-            ValueType.Closure(-1, inner_ret)
-        }
-        _ -> resolved
+        .Lambda(_, _) -> ValueType.Closure(-1, vtype_fn_ret(base))
+        _ -> base
     }
 }
 
@@ -921,7 +935,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Function(name, _, params, ret_ty, _, body) -> {
+                .Function(name, _, params, ret_ty, rvt, body) -> {
                     // Names are already qualified by the name resolution pass
                     let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
@@ -931,19 +945,19 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
                     }
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
-                    let ret_vt = decl_fn_ret_type(regs, traits, ret_ty, body)
+                    let ret_vt = resolve_fn_ret(regs, traits, ret_ty, rvt, body)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
                     forge_llvm_add_function(m, name, fn_type)
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
-                .ExternFn(name, params, ret_ty, _) -> {
+                .ExternFn(name, params, ret_ty, ext_rvt) -> {
                     let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
                     let param_arr = forge_llvm_type_array_new(arity)
                     fill_typed_param_array(param_arr, i64t, i1t, dt, pt, resolved_params, 0)
-                    let ret_vt = resolve_type(regs, ret_ty)
+                    let ret_vt = resolve_fn_ret(regs, traits, ret_ty, ext_rvt, StmtList.End)
                     let ret_llvm = llvm_type_for_full(i64t, i1t, dt, pt, ret_vt)
                     let fn_type = forge_llvm_function_type(ret_llvm, param_arr, arity, 0)
                     forge_llvm_type_array_free(param_arr)
