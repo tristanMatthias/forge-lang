@@ -89,7 +89,7 @@ export enum CgNewtypeReg {
     Node(name: string, inner_ty: string, inner_vt: ValueType, next: CgNewtypeReg)
 }
 
-export fn cg_newtype_lookup(reg: CgNewtypeReg, name: string) -> string {
+fn cg_newtype_lookup(reg: CgNewtypeReg, name: string) -> string {
     match reg {
         .End -> ""
         .Node(n, inner, _, _) if n == name -> inner
@@ -111,7 +111,7 @@ export enum CgUnionAliasReg {
     Node(name: string, type_str: string, type_vt: ValueType, next: CgUnionAliasReg)
 }
 
-export fn cg_union_alias_lookup(reg: CgUnionAliasReg, name: string) -> string {
+fn cg_union_alias_lookup(reg: CgUnionAliasReg, name: string) -> string {
     match reg {
         .End -> ""
         .Node(n, ts, _, _) if n == name -> ts
@@ -119,7 +119,7 @@ export fn cg_union_alias_lookup(reg: CgUnionAliasReg, name: string) -> string {
     }
 }
 
-export fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType {
+fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
         .Node(n, _, vt, _) if n == name -> vt
@@ -228,7 +228,7 @@ export fn err_stmt(message: string) -> Result<VarEnv, string> {
 
 // 0xDEADBEEF as signed i64 — sentinel tag in closure arrays to
 // distinguish closure values from plain function pointers.
-export fn closure_marker() -> int { -559038737 }
+fn closure_marker() -> int { -559038737 }
 
 // ── Pure leaf helpers ──
 //
@@ -564,7 +564,7 @@ export fn resolve_type(regs: TypeRegs, ty: string) -> ValueType {
     translate_param_type(regs.structs, regs.enums, ty)
 }
 
-export fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> TypeList {
+fn parse_type_list_str(structs: StructReg, enums: EnumReg, s: string) -> TypeList {
     if s == "" { return TypeList.End }
     // Find next comma at depth 0
     mut depth_paren = 0
