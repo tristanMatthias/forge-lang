@@ -1,0 +1,23 @@
+/// expect: got value: 42
+/// expect: not a number
+/// expect: fallback: 0
+
+enum Result {
+    Ok(value: int)
+    Err(msg: string)
+}
+
+fn parse(s: string) -> Result {
+    if s == "42" { return Result.Ok(42) }
+    Result.Err("not a number")
+}
+
+fn main() {
+    let v = parse("42") catch { 0 }
+    println("got value: " + string(v))
+    let v2 = parse("bad") catch (e) {
+        println(e)
+        0
+    }
+    println("fallback: " + string(v2))
+}

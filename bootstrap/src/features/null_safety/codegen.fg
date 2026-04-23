@@ -9,8 +9,8 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.ast.{Expr, VarEnv, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name}
-use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val}
+use core.ast.{Expr, VarEnv, FieldList, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, variant_lookup}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val, field_resolved_at}
 use features.defer_stmt.codegen.{emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
@@ -234,11 +234,14 @@ export fn emit_catch(ctx: Ctx, env: VarEnv, inner: Expr, binding: string, body: 
         // Err path: evaluate catch body, optionally binding the error
         ctx.position(err_bb)
         let err_env = if binding.length > 0 {
-            // Extract error payload and bind it
+            // Extract error payload and bind it with the Err variant's type
             let err_pay_gep = ctx.gep(enum_ty, enum_ptr, 1, "catch_err_pay_slot")
             let err_pay_ptr = ctx.load(ctx.ptr_type, err_pay_gep, "catch_err_payload")
             let err_val = ctx.load_i64(err_pay_ptr, "catch_err_val")
-            ctx.bind(env, binding, err_val, .Unknown)
+            let lookup = ctx.lookup_enum(enum_name)
+            let err_fields = if lookup.found { variant_lookup(lookup.variants, "Err").fields } else { FieldList.End }
+            let err_ty = field_resolved_at(err_fields, 0)
+            ctx.bind(env, binding, err_val, err_ty)
         } else { env }
         let catch_r = ctx.emit(err_env, body)?
         ctx.store(ctx.to_i64(catch_r.value, "catch_body_val"), result_slot)

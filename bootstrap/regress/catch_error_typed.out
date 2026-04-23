@@ -1,0 +1,3 @@
+got value: 42
+not a number
+fallback: 0
