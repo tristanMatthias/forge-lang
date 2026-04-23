@@ -209,13 +209,6 @@ export fn vtype_from_name(name: string) -> ValueType {
     if name.ends_with("?") && name.length > 1 {
         return vtype_from_name(name.substring(0, name.length - 1))
     }
-    // Handle union types: "A|B" → Union(A, B)
-    let pipe = find_type_pipe(name)
-    if pipe >= 0 {
-        let left = vtype_from_name(name.substring(0, pipe))
-        let right = vtype_from_name(name.substring(pipe + 1, name.length))
-        return ValueType.Union(union_type_list_merge(left, right))
-    }
     match name {
         "int" -> ValueType.Int
         "i64" -> ValueType.Int
