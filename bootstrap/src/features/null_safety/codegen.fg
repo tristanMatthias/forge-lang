@@ -10,7 +10,7 @@
 // operators compile to i64 null-check or enum-tag-check branches.
 
 use core.ast.{Expr, VarEnv, FieldList, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, variant_lookup}
-use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val, field_resolved_at}
+use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.codegen.{emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
@@ -152,6 +152,13 @@ export fn emit_try(ctx: Ctx, env: VarEnv, inner: Expr) -> Result<EmitValue, stri
         let ok_val = ctx.load_i64(pay_ptr, "try_ok_val")
         // Resolve the Ok variant's payload type from the enum registry.
         let ok_ty = ctx.resolve_ok_type(enum_name)
+        // Retain the extracted Ok value so it survives Result wrapper release.
+        // The release function recursively releases inner fields; without
+        // this retain, ptr-type Ok payloads are freed while still in use.
+        if vtype_is_ptr_type(ok_ty) {
+            let ok_ptr = ctx.int_to_ptr(ok_val, "try_ok_ptr")
+            ctx.rc_retain(ok_ptr)
+        }
         return ok_emit_typed(ok_val, ok_ty)
     }
 
