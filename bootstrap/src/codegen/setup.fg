@@ -364,16 +364,51 @@ fn resolve_variant_fields(variants: VariantList, regs: TypeRegs) -> VariantList 
 fn resolve_field_list(fields: FieldList, regs: TypeRegs) -> FieldList {
     match fields {
         .End -> .End
-        .Node(name, ty, _, next) ->
-            .Node(name, ty, resolve_type(regs, ty), resolve_field_list(next, regs))
+        .Node(name, ty, pv, next) ->
+            .Node(name, ty, resolve_field_vt(regs, ty, pv), resolve_field_list(next, regs))
     }
 }
 
 fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
     match params {
         .End -> .End
-        .Node(name, ty, _, next) ->
-            .Node(name, ty, resolve_type(regs, ty), resolve_param_list(next, regs))
+        .Node(name, ty, pv, next) ->
+            .Node(name, ty, resolve_field_vt(regs, ty, pv), resolve_param_list(next, regs))
+    }
+}
+
+fn resolve_field_vt(regs: TypeRegs, ty: string, pv: ValueType) -> ValueType {
+    if vtype_is_unknown(pv) { return resolve_type(regs, ty) }
+    let resolved = resolve_setup_vt(regs, pv)
+    // If setup resolution produced Unknown (type not in registries yet),
+    // fall back to string resolution which has more parsing logic
+    if vtype_is_unknown(resolved) { resolve_type(regs, ty) } else { resolved }
+}
+
+// Resolve a parser-produced ValueType using setup registries.
+// Ensures Struct("EnumName") → Enum("EnumName", ...) consistency.
+fn resolve_setup_vt(regs: TypeRegs, vt: ValueType) -> ValueType {
+    match vt {
+        .Struct(name) -> {
+            let e = enum_reg_lookup(regs.enums, name)
+            if e.found { return ValueType.Enum(name, TypeList.End) }
+            let s = struct_reg_lookup(regs.structs, name)
+            if s.found { return ValueType.Struct(name) }
+            // Not in any registry — return Unknown (consistent with resolve_type)
+            ValueType.Unknown
+        }
+        .List(elem) -> ValueType.List(resolve_setup_vt(regs, elem))
+        .Union(types) -> ValueType.Union(resolve_setup_vt_list(regs, types))
+        .Enum(name, args) -> ValueType.Enum(name, resolve_setup_vt_list(regs, args))
+        .FnTyped(params, ret) -> ValueType.FnTyped(resolve_setup_vt_list(regs, params), resolve_setup_vt(regs, ret))
+        _ -> vt
+    }
+}
+
+fn resolve_setup_vt_list(regs: TypeRegs, types: TypeList) -> TypeList {
+    match types {
+        .End -> .End
+        .Node(ty, next) -> TypeList.Node(resolve_setup_vt(regs, ty), resolve_setup_vt_list(regs, next))
     }
 }
 
