@@ -560,7 +560,10 @@ export fn resolve_type(regs: TypeRegs, ty: string) -> ValueType {
     // Newtype: type UserId = string
     let nt = cg_newtype_lookup(regs.newtypes, ty)
     if nt != "" { return ValueType.Newtype(ty, resolve_type(regs, nt)) }
-    // Fall through to base type resolution
+    // Fall through to full string-based type parsing for complex types
+    // (fn(A,B)->Ret, List<T>, T?, generic mangling). This is the last
+    // remaining string-based type path — only reached when the parser
+    // produces Unknown and the type string has complex syntax.
     translate_param_type(regs.structs, regs.enums, ty)
 }
 
