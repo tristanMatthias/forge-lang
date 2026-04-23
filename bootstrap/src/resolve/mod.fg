@@ -226,7 +226,6 @@ export fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
     mut current = stmts
     mut res = r
     while true {
-        if res.had_error { return res }
         match current {
             .End -> { return res }
             .Node(ss, next) -> {
@@ -239,9 +238,6 @@ export fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
 }
 
 export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    if r.had_error {
-        return r
-    }
     match stmt {
         .Let(name, _, _, init) -> resolve_binding(r, name, init, false)
         .Mut(name, _, _, init) -> resolve_binding(r, name, init, true)
@@ -323,9 +319,6 @@ fn is_mutating_method(name: string) -> bool {
 }
 
 export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    if r.had_error {
-        return r
-    }
     match expr {
         .Number(_) -> r
         .FloatLit(_) -> r
