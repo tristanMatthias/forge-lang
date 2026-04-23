@@ -384,7 +384,7 @@ fn emit_name_lookup(ctx: Ctx, env: VarEnv, name: string, label: string) -> Resul
         let ret_ty = ctx.fn_ret(name)
         return ok_emit_typed(closure_i64, .Closure(0, ret_ty))
     }
-    err_emit("undefined ${label} `${name}`")
+    err_emit("undefined ${label} `${name}` in function `${ctx.current_fn_name}`")
 }
 
 // ── Ctx emit methods ──

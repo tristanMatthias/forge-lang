@@ -1,7 +1,7 @@
 // WHY: emits LLVM IR for `match` as both a statement and an expression.
 
 use core.ast.{Expr, Pattern, PatternList, MatchArmList, WhenArmList, ParamList, FieldList, TypeList, VariantList, VarEnv, variant_lookup, ValueType, vtype_enum_name, vtype_display, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_is_union, vtype_union_types}
-use codegen.types.{Ctx, EmitValue, StmtResult,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty}
+use codegen.types.{Ctx, EmitValue, StmtResult,  ok_stmt, err_stmt, err_emit, ok_emit, ok_emit_typed, ok_emit_str, null_ptr_val, field_type_at, field_resolved_at, advance_field_list, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant}
 use core.ast.{vtype_from_name}
 use codegen.{ok_sr, err_sr}
 use features.union_type.codegen.{emit_union_tag, emit_union_extract}
@@ -30,13 +30,18 @@ export fn emit_match_expr(ctx: Ctx, env: VarEnv, subject: Expr, arms: MatchArmLi
             if vtype_is_union(emit_value_ty(r)) {
                 return emit_union_match_expr(ctx, env, r, arms)
             }
-            let enum_name = vtype_enum_name(emit_value_ty(r))
+            mut enum_name = vtype_enum_name(emit_value_ty(r))
+            // When subject type is Unknown, try to infer enum type from pattern variant names.
+            // This handles cases where type resolution returns Unknown for generic params
+            // or unresolved types — the pattern variants unambiguously identify the enum.
             if enum_name == "" {
-                // Check for type patterns on non-union types — these are invalid
+                let inferred = infer_enum_from_arms(ctx, arms)
+                if inferred != "" { enum_name = inferred }
+            }
+            if enum_name == "" {
                 if arms_have_type_pattern(arms) {
                     return forward_emit_err("type patterns like `int(n)` are only valid on union types, but subject has type `${vtype_display(emit_value_ty(r))}`")
                 }
-                // Non-enum match: treat as guard-based if-else chain.
                 return emit_primitive_match_expr(ctx, env, r, arms)
             }
             let lookup = ctx.lookup_enum(enum_name)
@@ -135,6 +140,25 @@ fn arms_have_type_pattern(arms: MatchArmList) -> bool {
                 .TypePattern(_, _) -> true
                 _ -> arms_have_type_pattern(next)
             }
+        }
+    }
+}
+
+// Infer the enum type from match arm patterns by looking up variant names in the enum registry.
+fn infer_enum_from_arms(ctx: Ctx, arms: MatchArmList) -> string {
+    match arms {
+        .End -> ""
+        .Node(pattern, _, _, next) -> {
+            let vname = match pattern {
+                .Variant(name, _) -> name
+                .NestedVariant(name, _) -> name
+                _ -> ""
+            }
+            if vname != "" {
+                let found = enum_reg_find_by_variant(ctx.enums, vname)
+                if found != "" { return found }
+            }
+            infer_enum_from_arms(ctx, next)
         }
     }
 }
