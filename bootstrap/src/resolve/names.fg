@@ -278,8 +278,6 @@ fn resolve_use_names(mod_path: string, names: ParamList, tree: ModuleNode, resul
     match names {
         .End -> result
         .Node(name, _, next) -> {
-            // Use the overall use-statement span (per-name column was stored in the
-            // removed ty field; fall back to the statement span for diagnostics).
             let name_sp = sp
             let mod_node = module_find(tree, mod_path)
             let found_info = match mod_node {

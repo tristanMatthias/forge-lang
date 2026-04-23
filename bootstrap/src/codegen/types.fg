@@ -951,26 +951,20 @@ impl Ctx {
     // ── Type resolution ──
 
     // Resolve all type annotations in a ParamList from strings to ValueType.
-    // Uses parser-resolved type when available, falls back to string translation.
     fn resolve_params(self, params: ParamList) -> ParamList {
         match params {
             .End -> .End
             .Node(name, pv, next) ->
-                .Node(name, self.resolve_param_vt(pv), self.resolve_params(next))
+                .Node(name, self.resolve_codegen_vtype(pv), self.resolve_params(next))
         }
     }
 
-    // Resolve all type annotations in a FieldList from strings to ValueType.
     fn resolve_fields(self, fields: FieldList) -> FieldList {
         match fields {
             .End -> .End
             .Node(name, pv, next) ->
-                .Node(name, self.resolve_param_vt(pv), self.resolve_fields(next))
+                .Node(name, self.resolve_codegen_vtype(pv), self.resolve_fields(next))
         }
-    }
-
-    fn resolve_param_vt(self, pv: ValueType) -> ValueType {
-        self.resolve_codegen_vtype(pv)
     }
 
     // Upgrade a parser-resolved ValueType using codegen registries.
