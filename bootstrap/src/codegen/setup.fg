@@ -378,14 +378,18 @@ fn resolve_param_list(params: ParamList, regs: TypeRegs) -> ParamList {
 }
 
 fn resolve_field_vt(regs: TypeRegs, ty: string, pv: ValueType) -> ValueType {
-    if vtype_is_unknown(pv) {
-        if ty == "" { return ValueType.Unknown }
-        return resolve_setup_vt(regs, vtype_from_name(ty))
+    // Always try resolving from the string first — it handles union pipes,
+    // generic mangling, and other complex patterns that ValueType doesn't carry
+    if ty != "" {
+        let from_str = resolve_setup_vt(regs, vtype_from_name(ty))
+        if !vtype_is_unknown(from_str) { return from_str }
     }
-    let resolved = resolve_setup_vt(regs, pv)
-    // If setup resolution produced Unknown (type not in registries yet),
-    // fall back to vtype_from_name for simple names
-    if vtype_is_unknown(resolved) && ty != "" { resolve_setup_vt(regs, vtype_from_name(ty)) } else { resolved }
+    // Fall back to parser ValueType
+    if !vtype_is_unknown(pv) {
+        let resolved = resolve_setup_vt(regs, pv)
+        if !vtype_is_unknown(resolved) { return resolved }
+    }
+    ValueType.Unknown
 }
 
 // Resolve a parser-produced ValueType using setup registries.
