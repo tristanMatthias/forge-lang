@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_from_name, find_type_pipe, union_type_list_merge}
+use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_from_name, vtype_is_unknown, find_type_pipe, union_type_list_merge}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 
@@ -265,10 +265,11 @@ fn infer_from_fields(tp: TypeParamList, fields: FieldList, args: ExprList, acc: 
 fn infer_from_params(tp: TypeParamList, params: ParamList, args: ExprList, acc: TypeArgList) -> TypeArgList {
     match params {
         .End -> acc
-        .Node(_, ty_str, _, rest) -> match args {
+        .Node(_, _, resolved, rest) -> match args {
             .End -> acc
             .Node(arg, rest_args) -> {
-                let new_acc = if type_param_has(tp, ty_str) { TypeArgList.Node(ty_str, vtype_to_string(arg.ty), acc) } else { acc }
+                let ty_name = vtype_display(resolved)
+                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, vtype_to_string(arg.ty), acc) } else { acc }
                 infer_from_params(tp, rest, rest_args, new_acc)
             }
         }
@@ -464,15 +465,15 @@ fn top_level_split_idx(s: string) -> int {
 fn rewrite_param_types(params: ParamList, regs: GenRegs, insts: InstList) -> ParamList {
     match params {
         .End -> .End
-        .Node(name, ty, resolved, next) ->
-            rewrite_one_param(name, ty, resolved, regs, insts, rewrite_param_types(next, regs, insts))
+        .Node(name, _, resolved, next) -> {
+            let vt = if vtype_is_unknown(resolved) { resolved } else {
+                let ty_name = vtype_display(resolved)
+                let rewritten = rewrite_type_name(ty_name, regs, insts)
+                if rewritten != ty_name { vtype_from_type_string(rewritten) } else { resolved }
+            }
+            ParamList.Node(name, vtype_display(resolved), vt, rewrite_param_types(next, regs, insts))
+        }
     }
-}
-
-fn rewrite_one_param(name: string, ty: string, resolved: ValueType, regs: GenRegs, insts: InstList, rest: ParamList) -> ParamList {
-    let rewritten = rewrite_type_name(ty, regs, insts)
-    let vt = if rewritten != ty { vtype_from_type_string(rewritten) } else { resolved }
-    ParamList.Node(name, rewritten, vt, rest)
 }
 
 // ── Pass 1: Collect generic declarations ──
@@ -724,7 +725,10 @@ fn substitute_vtype_list(types: TypeList, ta: TypeArgList) -> TypeList {
 }
 
 fn substitute_params(params: ParamList, ta: TypeArgList) -> ParamList {
-    match params { .End -> .End, .Node(n, ty, r, next) -> ParamList.Node(n, type_arg_lookup(ta, ty), substitute_vtype(r, ta), substitute_params(next, ta)) }
+    match params { .End -> .End, .Node(n, _, r, next) -> {
+        let subst_r = substitute_vtype(r, ta)
+        ParamList.Node(n, vtype_display(subst_r), subst_r, substitute_params(next, ta))
+    }}
 }
 fn substitute_fields(fields: FieldList, ta: TypeArgList) -> FieldList {
     match fields { .End -> .End, .Node(n, ty, r, next) -> FieldList.Node(n, type_arg_lookup(ta, ty), substitute_vtype(r, ta), substitute_fields(next, ta)) }

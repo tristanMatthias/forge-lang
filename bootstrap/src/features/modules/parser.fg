@@ -47,6 +47,6 @@ impl Parser {
             self.advance()
         }
         let rest = self.parse_use_name_list()?
-        ParamList.Node(name, col, ValueType.Unknown, rest)
+        ParamList.Node(name, "", ValueType.Unknown, rest)
     }
 }
