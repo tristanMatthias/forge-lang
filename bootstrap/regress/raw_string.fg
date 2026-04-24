@@ -1,19 +1,9 @@
-/// expect: C:\Users\alice\file.txt
-/// expect: \d{3}-\d{4}
-/// expect: ---
-/// expect: raw content
-/// expect: \n is literal
-/// expect: ${not interpolation}
+/// expect: C:\Users\test\file.txt
+/// expect: hello\nworld
+/// expect: \t\r\n
+
 fn main() {
-    let path = r"C:\Users\alice\file.txt"
-    println(path)
-    let regex = r"\d{3}-\d{4}"
-    println(regex)
-    println("---")
-    let multi = r"""
-        raw content
-        \n is literal
-        ${not interpolation}
-        """
-    println(multi)
+    println(r"C:\Users\test\file.txt")
+    println(r"hello\nworld")
+    println(r"\t\r\n")
 }

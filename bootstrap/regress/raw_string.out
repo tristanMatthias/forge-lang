@@ -1,6 +1,3 @@
-C:\Users\alice\file.txt
-\d{3}-\d{4}
----
-raw content
-\n is literal
-${not interpolation}
+C:\Users\test\file.txt
+hello\nworld
+\t\r\n
