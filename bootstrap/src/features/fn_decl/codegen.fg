@@ -6,7 +6,8 @@ use codegen.types.{cg_newtype_vtype_lookup}
 use core.ast.{vtype_is_unknown}
 use codegen.types.{Ctx, EmitValue, ParamTypeList, ok_emit, ok_emit_str, ok_emit_typed, ok_stmt, err_emit, err_stmt, trait_decl_has, null_ptr_val}
 use features.closures.codegen.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value}
-use features.defer_stmt.codegen.{emit_defers}
+use features.defer_stmt.codegen.{emit_defers, emit_defers_on_error}
+use core.ast.{forge_variant_hash}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use features.trait_decl.codegen.{box_for_trait, resolve_concrete_type_name}
 use codegen.{emit_rc_cleanup}
@@ -65,8 +66,31 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
         if body_cg.task_group != null {
             br.ctx.call("forge_task_group_await_all", [body_cg.task_group])
         }
-        // Unified cleanup: defers + RC release in LIFO declaration order
-        emit_defers(br.ctx, env)
+        // Unified cleanup: defers + RC release in LIFO declaration order.
+        // For functions returning Result, check the tag at runtime to decide
+        // whether to run errdefer (Err path) or regular defer (Ok path).
+        let ret_enum = vtype_enum_name(ret_ty)
+        if ret_enum.starts_with("Result") {
+            let ret_ptr = br.ctx.to_ptr(br.value, "ret_enum_ptr")
+            let ret_st = br.ctx.get_type(ret_enum)
+            let tag_gep = br.ctx.gep(ret_st, ret_ptr, 0, "ret_tag_ptr")
+            let tag_val = br.ctx.load_i64(tag_gep, "ret_tag")
+            let err_tag = br.ctx.i64(forge_variant_hash("Err"))
+            let is_err = br.ctx.eq(tag_val, err_tag, "is_err_ret")
+            let err_bb = br.ctx.bb("errdefer_path")
+            let ok_bb = br.ctx.bb("defer_path")
+            let merge_bb = br.ctx.bb("defer_done")
+            br.ctx.cond_br(is_err, err_bb, ok_bb)
+            br.ctx.position(err_bb)
+            emit_defers_on_error(br.ctx, env)
+            br.ctx.br(merge_bb)
+            br.ctx.position(ok_bb)
+            emit_defers(br.ctx, env)
+            br.ctx.br(merge_bb)
+            br.ctx.position(merge_bb)
+        } else {
+            emit_defers(br.ctx, env)
+        }
         // Union wrapping: if function returns a union, wrap the implicit return value
         if needs_union_wrap(br.ty, ret_ty) {
             let wrapped = emit_union_wrap(body_cg, br.value, br.ty, ret_ty)?
