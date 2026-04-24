@@ -109,6 +109,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_str_to_upper", pt, [pt])
     decl(m, "forge_str_to_lower", pt, [pt])
     decl(m, "forge_str_join", pt, [pt, pt])
+    decl(m, "forge_str_char_at", pt, [pt, i64t])
 
     // ── maps ──
     decl(m, "forge_map_new_cstr", pt, [])

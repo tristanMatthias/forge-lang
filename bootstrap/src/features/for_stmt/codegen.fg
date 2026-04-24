@@ -3,7 +3,7 @@
 // Arena-eligible loops (non-escaping allocations only) use per-scope
 // bump arenas for O(1) allocation and O(1) bulk free (spec Axis 9.6).
 
-use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem}
+use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem, vtype_is_str}
 use codegen.types.{Ctx, LoopStack, StmtResult,  ok_stmt, emit_value_ptr, emit_value_ty}
 use codegen.{emit_expr, emit_stmt, ok_sr}
 use codegen.escape.{is_arena_eligible}
@@ -83,9 +83,15 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
 //   }
 export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr, body: Stmt) -> Result<StmtResult, string> {
     let coll_r = ctx.emit(env, collection)?
+    let coll_ty = emit_value_ty(coll_r)
+    let is_string = vtype_is_str(coll_ty)
 
-    // Get length
-    let len_val = ctx.array_len(emit_value_ptr(coll_r))
+    // Get length — strings use strlen, lists use array_len
+    let len_val = if is_string {
+        ctx.call("strlen", [emit_value_ptr(coll_r)])
+    } else {
+        ctx.array_len(emit_value_ptr(coll_r))
+    }
     let len_alloca = ctx.alloca_i64("forin_len")
     ctx.store(len_val, len_alloca)
 
@@ -93,9 +99,10 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
     let counter = ctx.alloca_i64("forin_i")
     ctx.store(ctx.i64(0), counter)
 
-    // Element alloca — bind with the list's element type
+    // Element alloca — strings yield Str elements, lists yield elem type
     let elem_alloca = ctx.alloca_i64(variable)
-    let body_env = env_extend(env, variable, elem_alloca, vtype_list_elem(emit_value_ty(coll_r)))
+    let elem_ty = if is_string { ValueType.Str } else { vtype_list_elem(coll_ty) }
+    let body_env = env_extend(env, variable, elem_alloca, elem_ty)
 
     // Arena detection (spec Axis 9.6)
     let use_arena = is_arena_eligible(body)
@@ -122,7 +129,11 @@ export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr,
 
     // Body: load element, then execute body
     ctx.position(body_bb)
-    let elem = ctx.array_get(emit_value_ptr(coll_r), cur)
+    let elem = if is_string {
+        ctx.call("forge_str_char_at", [emit_value_ptr(coll_r), cur])
+    } else {
+        ctx.array_get(emit_value_ptr(coll_r), cur)
+    }
     ctx.store(elem, elem_alloca)
 
     let body_ctx_base = ctx.with_loops(.Frame(incr_bb, exit_bb, ctx.loops))

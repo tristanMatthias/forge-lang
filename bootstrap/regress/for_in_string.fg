@@ -1,0 +1,11 @@
+/// expect: h
+/// expect: e
+/// expect: l
+/// expect: l
+/// expect: o
+
+fn main() {
+    for ch in "hello" {
+        println(ch)
+    }
+}

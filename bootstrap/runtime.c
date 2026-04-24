@@ -1095,6 +1095,16 @@ const char* forge_str_from_char_code(int64_t code) {
     return r;
 }
 
+// Return a single-character string at index idx.
+const char* forge_str_char_at(const char* s, int64_t idx) {
+    size_t len = strlen(s);
+    if (idx < 0 || (size_t)idx >= len) return "";
+    char* r = (char*)forge_rc_alloc(2);
+    r[0] = s[idx];
+    r[1] = '\0';
+    return r;
+}
+
 // Split string by separator, returns a ForgeArray of string pointers.
 void* forge_str_split(const char* s, const char* sep) {
     void* arr = forge_array_new();
