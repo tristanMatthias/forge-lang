@@ -82,7 +82,7 @@ fn impl_method_param_count(methods: StmtList, name: string) -> int {
         .End -> -1
         .Node(ss, next) -> {
             match ss.node {
-                .Function(fn_name, _, params, _, _, _) if fn_name == name -> param_list_length(params)
+                .Function(fn_name, _, params, _, _) if fn_name == name -> param_list_length(params)
                 _ -> impl_method_param_count(next, name)
             }
         }
@@ -94,7 +94,7 @@ fn impl_has_method(methods: StmtList, name: string) -> bool {
         .End -> false
         .Node(ss, next) -> {
             match ss.node {
-                .Function(fn_name, _, _, _, _, _) if fn_name == name -> true
+                .Function(fn_name, _, _, _, _) if fn_name == name -> true
                 _ -> impl_has_method(next, name)
             }
         }
@@ -106,7 +106,7 @@ export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
         .End -> TraitMethodList.End
         .Node(ss, next) -> {
             match ss.node {
-                .ExternFn(name, params, _, _) -> TraitMethodList.Node(name, param_list_length(params), "", collect_method_names_from_stmts(next))
+                .ExternFn(name, params, _) -> TraitMethodList.Node(name, param_list_length(params), "", collect_method_names_from_stmts(next))
                 _ -> collect_method_names_from_stmts(next)
             }
         }

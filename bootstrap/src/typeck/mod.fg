@@ -520,13 +520,13 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                 .EnumDecl(name, _, variants) -> tc with {
                     enums: EnumTypeReg.Node(name, variants, tc.enums)
                 }
-                .Function(name, _, params, _, ret_vt, _) -> {
+                .Function(name, _, params, ret_vt, _) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
                     tc with {
                         fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
                     }
                 }
-                .ExternFn(name, params, _, ret_vt) -> {
+                .ExternFn(name, params, ret_vt) -> {
                     let final_ret = if vtype_eq(ret_vt, .Void) { ValueType.Void } else { resolve_vtype(tc, ret_vt) }
                     tc with {
                         fns: FnTypeEntry.Node(name, params, final_ret, tc.fns),
@@ -627,7 +627,7 @@ export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
             let checked = check_stmts(inner, body)
             tc_exit(checked)
         }
-        .Function(name, _, params, _, ret_vt, body) -> {
+        .Function(name, _, params, ret_vt, body) -> {
             let inner = tc_enter(tc) with { current_fn: name }
             let with_params = tc_bind_params(inner, params)
             let checked = tc_check_fn_body(with_params, name, ret_vt, body)
@@ -1212,8 +1212,8 @@ fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
         .While(cond, body) -> .While(annotate_expr(tc, cond), annotate_stmt(tc, body))
         .For(v, start, end, body) -> .For(v, annotate_expr(tc, start), annotate_expr(tc, end), annotate_stmt(tc, body))
         .ForIn(v, coll, body) -> .ForIn(v, annotate_expr(tc, coll), annotate_stmt(tc, body))
-        .Function(name, tp, params, ret_ty, rvt, body) ->
-            .Function(name, tp, params, ret_ty, rvt, annotate_stmts(annotate_enter_fn(tc, params), body))
+        .Function(name, tp, params, rvt, body) ->
+            .Function(name, tp, params, rvt, annotate_stmts(annotate_enter_fn(tc, params), body))
         .Match(subj, arms) -> .Match(annotate_expr(tc, subj), annotate_match_arms(tc, arms))
         .Module(name, body) -> .Module(name, annotate_stmts(tc, body))
         .Annotated(annots, inner) -> .Annotated(annots, annotate_stmt(tc, inner))
@@ -1413,7 +1413,7 @@ fn check_naming_conventions(tc: TC, stmts: StmtList) -> TC {
 fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Annotated(_, inner) -> check_naming_stmt(tc, inner)
-        .Function(name, _, _, _, _, body) -> {
+        .Function(name, _, _, _, body) -> {
             // Strip impl prefix (TypeName__method → check method part only)
             let check_name = if name.index_of("__") > 0 {
                 name.substring(name.index_of("__") + 2, name.length)

@@ -87,12 +87,10 @@ impl Parser {
         if !self.consume(Tk.RightParen, "expected `)` after parameters") {
             return null
         }
-        mut ret_ty = ""
         mut ret_vtype = ValueType.Void
         if self.check(Tk.Arrow) {
             self.advance()
             let te = self.parse_type_expr("expected return type after `->`")?
-            ret_ty = render_type_expr(te)
             ret_vtype = type_expr_to_vtype(te)
         }
         if !self.consume(Tk.LeftBrace, "expected `{` after method parameters") {
@@ -103,7 +101,7 @@ impl Parser {
             return null
         }
         let mangled = "${type_name}__${name}"
-        Stmt.Function(mangled, TypeParamList.End, params, ret_ty, ret_vtype, body)
+        Stmt.Function(mangled, TypeParamList.End, params, ret_vtype, body)
     }
 
     fn parse_method_param_list(self, type_name: string) -> ParamList? {

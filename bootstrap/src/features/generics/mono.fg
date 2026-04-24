@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_from_name, vtype_is_unknown, find_type_pipe, union_type_list_merge}
+use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, find_type_pipe, union_type_list_merge}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 
@@ -190,7 +190,7 @@ fn lookup_type_params(name: string, regs: GenRegs) -> TypeParamList {
 
 fn is_generic_decl(stmt: Stmt) -> bool {
     match stmt {
-        .Function(_, tp, _, _, _, _) if tp is .Node -> true
+        .Function(_, tp, _, _, _) if tp is .Node -> true
         .EnumDecl(_, tp, _) if tp is .Node -> true
         .TypeDecl(_, tp, _) if tp is .Node -> true
         .Annotated(_, inner) -> is_generic_decl(inner)
@@ -488,8 +488,8 @@ fn collect_generics(stmts: StmtList, regs: GenRegs) -> GenRegs {
 
 fn collect_generic_stmt(stmt: Stmt, regs: GenRegs) -> GenRegs {
     match stmt {
-        .Function(name, tp, params, ret_ty, _, body) if tp is .Node ->
-            regs with { fns: GenericFnReg.Node(name, tp, params, ret_ty, body, regs.fns) }
+        .Function(name, tp, params, ret_vt, body) if tp is .Node ->
+            regs with { fns: GenericFnReg.Node(name, tp, params, vtype_render_full(ret_vt), body, regs.fns) }
         .EnumDecl(name, tp, variants) if tp is .Node ->
             regs with { enums: GenericEnumReg.Node(name, tp, variants, regs.enums) }
         .TypeDecl(name, tp, fields) if tp is .Node ->
@@ -524,7 +524,7 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
         .Defer(body) -> collect_inst_expr(body, regs, st)
         .Block(body) -> collect_inst_stmts(body, regs, st)
         .Module(_, body) -> collect_inst_stmts(body, regs, st)
-        .Function(_, tp, _, ret_ty, _, body) -> {
+        .Function(_, tp, _, ret_vt, body) -> {
             if tp is .Node { return st }
             // Scope merging to this function: collect body's instantiations
             // independently so enum ctors merge within the function, not globally.
@@ -532,7 +532,7 @@ fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectStat
             // Also collect instantiation from the return type annotation.
             // This handles functions that return Result<T, E> but only construct
             // one variant (e.g., only Err paths — T is inferred from annotation).
-            let with_ret = scope_insts_for_ret(ret_ty, regs, fn_state.insts)
+            let with_ret = scope_insts_for_ret(vtype_render_full(ret_vt), regs, fn_state.insts)
             CollectState { insts: append_insts(with_ret, st.insts), bag: fn_state.bag, line: st.line, col: st.col, trait_impls: st.trait_impls }
         }
         .If(cond, then_b, else_b) -> {
@@ -667,10 +667,9 @@ fn try_add_struct_inst(name: string, inits: FieldInitList, regs: GenRegs, st: Co
 
 // ── Pass 3: Generate concrete specializations ──
 
-fn specialize_fn(mangled: string, params: ParamList, ret_ty: string, ret_vt: ValueType, body: StmtList, ta: TypeArgList) -> Stmt {
+fn specialize_fn(mangled: string, params: ParamList, ret_ty: string, body: StmtList, ta: TypeArgList) -> Stmt {
     let concrete_ret = type_arg_lookup(ta, ret_ty)
-    let concrete_vt = substitute_vtype(ret_vt, ta)
-    Stmt.Function(mangled, TypeParamList.End, substitute_params(params, ta), concrete_ret, concrete_vt, substitute_stmts(body, ta))
+    Stmt.Function(mangled, TypeParamList.End, substitute_params(params, ta), vtype_from_type_string(concrete_ret), substitute_stmts(body, ta))
 }
 fn specialize_enum(mangled: string, variants: VariantList, ta: TypeArgList) -> Stmt {
     Stmt.EnumDecl(mangled, TypeParamList.End, substitute_variants(variants, ta))
@@ -686,7 +685,7 @@ fn generate_specializations(insts: InstList, regs: GenRegs) -> StmtList {
             let rest = generate_specializations(next, regs)
             match generic_fn_lookup(regs.fns, name) {
                 .Node(_, _, params, ret_ty, body, _) ->
-                    StmtList.Node(sstmt(specialize_fn(mangled, params, ret_ty, vtype_from_type_string(ret_ty), body, ta), 0, 0), rest)
+                    StmtList.Node(sstmt(specialize_fn(mangled, params, ret_ty, body, ta), 0, 0), rest)
                 .End -> match generic_enum_lookup(regs.enums, name) {
                     .Node(_, _, variants, _) ->
                         StmtList.Node(sstmt(specialize_enum(mangled, variants, ta), 0, 0), rest)
@@ -918,7 +917,7 @@ fn rewrite_fn_ret(ret_ty: string, regs: GenRegs, insts: InstList) -> ValueType {
 
 fn rewrite_function(name: string, tp: TypeParamList, params: ParamList, ret_ty: string, body: StmtList, regs: GenRegs, insts: InstList) -> Stmt {
     let scoped = scope_insts_for_ret(ret_ty, regs, insts)
-    Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_type_name(ret_ty, regs, insts), rewrite_fn_ret(ret_ty, regs, insts), rewrite_stmts(body, regs, scoped))
+    Stmt.Function(name, tp, rewrite_param_types(params, regs, scoped), rewrite_fn_ret(ret_ty, regs, insts), rewrite_stmts(body, regs, scoped))
 }
 
 // ── Pass 4: Rewrite call sites and remove generic declarations ──
@@ -957,10 +956,9 @@ fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: InstList) -> Stmt {
         .While(cond, body) -> .While(rewrite_expr(cond, regs, insts), rewrite_stmt(body, regs, insts))
         .For(v, s, e, body) -> .For(v, rewrite_expr(s, regs, insts), rewrite_expr(e, regs, insts), rewrite_stmt(body, regs, insts))
         .ForIn(v, coll, body) -> .ForIn(v, rewrite_expr(coll, regs, insts), rewrite_stmt(body, regs, insts))
-        .Function(name, tp, params, ret_ty, _, body) -> rewrite_function(name, tp, params, ret_ty, body, regs, insts)
-        .ExternFn(name, params, ret_ty, _) -> {
-            .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_type_name(ret_ty, regs, insts), rewrite_fn_ret(ret_ty, regs, insts))
-        }
+        .Function(name, tp, params, ret_vt, body) -> rewrite_function(name, tp, params, vtype_render_full(ret_vt), body, regs, insts)
+        .ExternFn(name, params, ret_vt) ->
+            .ExternFn(name, rewrite_param_types(params, regs, insts), rewrite_fn_ret(vtype_render_full(ret_vt), regs, insts))
         .Match(subj, arms) -> .Match(rewrite_expr(subj, regs, insts), rewrite_arms(arms, regs, insts))
         .Module(name, body) -> .Module(name, rewrite_stmts(body, regs, insts))
         .Annotated(annots, inner) -> .Annotated(annots, rewrite_stmt(inner, regs, insts))

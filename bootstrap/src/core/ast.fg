@@ -414,6 +414,64 @@ fn render_union_display(tl: TypeList) -> string {
     }
 }
 
+// Renders a ValueType as a full type string suitable for mono.fg.
+// Unlike vtype_display which returns just the base name for enums,
+// this includes generic type arguments: Result<int, string>.
+export fn vtype_render_full(t: ValueType) -> string {
+    match t {
+        .Int -> "int"
+        .Str -> "string"
+        .Bool -> "bool"
+        .Ptr -> "ptr"
+        .Struct(n) -> n
+        .Enum(n, args) -> {
+            let args_str = render_type_list_full(args)
+            if args_str == "" { n } else { "${n}<${args_str}>" }
+        }
+        .Tuple(types) -> "(${render_type_list(types)})"
+        .List(elem) -> "List<${vtype_render_full(elem)}>"
+        .Map -> "Map"
+        .Fn(_) or .Closure(_, _) -> "fn"
+        .Void -> "void"
+        .Float -> "float"
+        .FnTyped(params, ret) -> "fn(${render_type_list_full(params)}) -> ${vtype_render_full(ret)}"
+        .Trait(n) -> "dyn ${n}"
+        .Union(types) -> render_union_full(types)
+        .Newtype(name, _) -> name
+        .NarrowedEnum(en, vn) -> "${en}.${vn}"
+        .Unknown -> ""
+        .Task(r) -> "Task<${vtype_render_full(r)}>"
+    }
+}
+
+fn render_type_list_full(tl: TypeList) -> string {
+    match tl {
+        .End -> ""
+        .Node(ty, next) -> {
+            let rest = render_type_list_full(next)
+            if rest == "" {
+                vtype_render_full(ty)
+            } else {
+                "${vtype_render_full(ty)}, ${rest}"
+            }
+        }
+    }
+}
+
+fn render_union_full(tl: TypeList) -> string {
+    match tl {
+        .End -> ""
+        .Node(ty, next) -> {
+            let rest = render_union_full(next)
+            if rest == "" {
+                vtype_render_full(ty)
+            } else {
+                vtype_render_full(ty) + "|" + rest
+            }
+        }
+    }
+}
+
 export fn vtype_trait_name(t: ValueType) -> string {
     match t { .Trait(n) -> n, _ -> "" }
 }
@@ -633,7 +691,7 @@ export enum Stmt {
     // (e.g. "i64", "str", "Stmt", "i64?"). Codegen translates this
     // into its internal value-type tag and uses it to set the
     // result type of `call(fn)` so chained calls preserve typing.
-    Function(name: string, type_params: TypeParamList, params: ParamList, ret_ty: string, ret_vtype: ValueType, body: StmtList)
+    Function(name: string, type_params: TypeParamList, params: ParamList, ret_vtype: ValueType, body: StmtList)
     Return(value: Expr)
     ReturnEmpty
     TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
@@ -644,7 +702,7 @@ export enum Stmt {
     Match(subject: Expr, arms: MatchArmList)
     Impl(type_name: string, methods: StmtList)
     NoOp
-    ExternFn(name: string, params: ParamList, ret_ty: string, ret_vtype: ValueType)
+    ExternFn(name: string, params: ParamList, ret_vtype: ValueType)
     Break
     Continue
     TraitDecl(name: string, methods: StmtList)
@@ -1028,7 +1086,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .While(condition, body) -> "(while ${render_expr(condition)} ${render_stmt(body)})"
         .For(variable, start, end, body) -> "(for ${variable} ${render_expr(start)}..${render_expr(end)} ${render_stmt(body)})"
         .ForIn(variable, collection, body) -> "(for-in ${variable} ${render_expr(collection)} ${render_stmt(body)})"
-        .Function(name, tp, params, _, rvt, body) -> {
+        .Function(name, tp, params, rvt, body) -> {
             let tp_str = render_type_param_list(tp)
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "(fn ${name}${tp_part} ${render_param_list(params)} -> ${vtype_display(rvt)} ${render_stmt_list(body)})"
@@ -1051,7 +1109,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Match(subject, arms) -> "(match ${render_expr(subject)} ${render_match_arm_list(arms)})"
         .Impl(name, methods) -> "(impl ${name} ${render_stmt_list(methods)})"
         .NoOp -> "(noop)"
-        .ExternFn(name, params, _, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_display(rvt)})"
+        .ExternFn(name, params, rvt) -> "(extern ${name} ${render_param_list(params)} -> ${vtype_display(rvt)})"
         .Break -> "(break)"
         .Continue -> "(continue)"
         .TraitDecl(name, methods) -> "(trait ${name} ${render_stmt_list(methods)})"

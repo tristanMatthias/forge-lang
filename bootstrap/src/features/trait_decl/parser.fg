@@ -3,7 +3,7 @@
 // The trait declaration itself is a no-op at codegen — the methods
 // are implemented by `impl Trait for Type { ... }` blocks.
 
-use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, render_type_expr, type_expr_to_vtype}
+use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -62,12 +62,10 @@ impl Parser {
         if !self.consume(Tk.RightParen, "expected `)` after parameters") {
             return null
         }
-        mut ret_ty = ""
         mut ret_vtype = ValueType.Void
         if self.check(Tk.Arrow) {
             self.advance()
             let te = self.parse_type_expr("expected return type after `->`")?
-            ret_ty = render_type_expr(te)
             ret_vtype = type_expr_to_vtype(te)
         }
         // Default method: if there's a body `{ ... }`, parse it as a Function.
@@ -78,8 +76,8 @@ impl Parser {
             if !self.consume(Tk.RightBrace, "expected `}` after default method body") {
                 return null
             }
-            return Stmt.Function(name, TypeParamList.End, params, ret_ty, ret_vtype, body)
+            return Stmt.Function(name, TypeParamList.End, params, ret_vtype, body)
         }
-        Stmt.ExternFn(name, params, ret_ty, ret_vtype)
+        Stmt.ExternFn(name, params, ret_vtype)
     }
 }

@@ -19,7 +19,7 @@ export fn emit_function_bodies(ctx: Ctx, stmts: StmtList) -> Result<VarEnv, stri
         .End -> ok_stmt(VarEnv.End)
         .Node(ss, next) -> {
             let inner = match stmt_unwrap(ss.node) {
-                .Function(name, _, params, _, _, body) -> emit_function_body(ctx, name, params, body)
+                .Function(name, _, params, _, body) -> emit_function_body(ctx, name, params, body)
                 .Impl(_, methods) -> emit_function_bodies(ctx, methods)
                 .Module(_, body) -> emit_function_bodies(ctx, body)
                 _ -> ok_stmt(VarEnv.End)

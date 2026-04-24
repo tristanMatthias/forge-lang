@@ -398,7 +398,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
 
             ok_result(exited, body_result.value)
         }
-        .Function(name, _, params, _, _, body) -> {
+        .Function(name, _, params, _, body) -> {
             let next_runtime = define_function(runtime, name, params, body)
             ok_result(next_runtime, value_null())
         }
@@ -415,7 +415,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
         // These declarations are erased at the eval layer — the tree-walk runtime
         // is value-untyped, so types/enums/traits/impls have no runtime existence.
         .TypeDecl(_, _, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .NoOp
-        or .ExternFn(_, _, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
+        or .ExternFn(_, _, _) or .TraitDecl(_, _) -> ok_result(runtime, value_null())
         .Break -> error_result(runtime, "break is not supported by the tree-walk evaluator")
         .Continue -> error_result(runtime, "continue is not supported by the tree-walk evaluator")
         .Annotated(_, inner) -> execute_stmt(runtime, inner)

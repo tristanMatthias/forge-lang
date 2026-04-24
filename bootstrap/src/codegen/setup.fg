@@ -820,8 +820,8 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
         .End -> .End
         .Node(ss, next) -> {
             match stmt_unwrap(ss.node) {
-                .ExternFn(name, _, _, ret_vt) -> .Node(name, "", ret_vt, collect_trait_fn_names(next))
-                .Function(name, _, _, _, ret_vt, _) -> .Node(name, "", ret_vt, collect_trait_fn_names(next))
+                .ExternFn(name, _, ret_vt) -> .Node(name, "", ret_vt, collect_trait_fn_names(next))
+                .Function(name, _, _, ret_vt, _) -> .Node(name, "", ret_vt, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
         }
@@ -929,7 +929,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Function(name, _, params, _, rvt, body) -> {
+                .Function(name, _, params, rvt, body) -> {
                     let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
                     let existing = forge_llvm_get_named_function(m, name)
@@ -945,7 +945,7 @@ fn declare_functions(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, re
                     forge_llvm_add_function(m, name, fn_type)
                     FnRetTypes.Node(name, ret_vt, reg)
                 }
-                .ExternFn(name, params, _, ext_rvt) -> {
+                .ExternFn(name, params, ext_rvt) -> {
                     let resolved_params = resolve_param_list(params, regs)
                     let arity = param_list_length(resolved_params)
                     let param_arr = forge_llvm_type_array_new(arity)
@@ -979,7 +979,7 @@ fn collect_fn_params(stmts: StmtList, reg: FnParamTypes) -> FnParamTypes {
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Function(name, _, params, _, _, _) -> {
+                .Function(name, _, params, _, _) -> {
                     .Node(name, params_to_type_list(params), reg)
                 }
                 .Impl(_, methods) -> collect_fn_params(methods, reg)
@@ -998,7 +998,7 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
             let tl_ctx = ctx with { source_line: ss.line }
             let stmt = stmt_unwrap(ss.node)
             match stmt {
-                .Function(_, _, _, _, _, _) -> emit_top_level(ctx, env, next)
+                .Function(_, _, _, _, _) -> emit_top_level(ctx, env, next)
                 .Module(_, body) -> {
                     let new_env = emit_top_level(tl_ctx, env, body)?
                     emit_top_level(ctx, new_env, next)

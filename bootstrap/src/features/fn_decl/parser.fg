@@ -1,7 +1,7 @@
 // WHY: parses top-level `fn` declarations and the parameter list
 // they introduce.
 
-use core.ast.{Stmt, ParamList, TypeParamList, ValueType, render_type_expr, type_expr_to_vtype}
+use core.ast.{Stmt, ParamList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -39,15 +39,11 @@ impl Parser {
             return null
         }
 
-        // Optional return type annotation: `-> Type`. Stored as a
-        // textual tag and registered in the function-return-type
-        // registry so chained calls preserve typing.
-        mut ret_ty = ""
+        // Optional return type annotation: `-> Type`.
         mut ret_vtype = ValueType.Void
         if self.check(Tk.Arrow) {
             self.advance()
             let te = self.parse_type_expr("expected return type after `->`")?
-            ret_ty = render_type_expr(te)
             ret_vtype = type_expr_to_vtype(te)
         }
 
@@ -66,7 +62,7 @@ impl Parser {
             return null
         }
 
-        Stmt.Function(name, tp, params, ret_ty, ret_vtype, body)
+        Stmt.Function(name, tp, params, ret_vtype, body)
     }
 
     fn parse_param_list(self) -> ParamList? {

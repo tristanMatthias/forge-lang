@@ -69,8 +69,8 @@ fn collect_function_names(r: Resolver, stmts: StmtList) -> Resolver {
             .End -> { return res }
             .Node(ss, next) -> {
                 res = match stmt_unwrap(ss.node) {
-                    .Function(name, _, _, _, _, _) -> declare_function(res, name)
-                    .ExternFn(name, _, _, _) -> declare_function(res, name)
+                    .Function(name, _, _, _, _) -> declare_function(res, name)
+                    .ExternFn(name, _, _) -> declare_function(res, name)
                     .Impl(_, methods) -> collect_method_names(res, methods)
                     .Module(_, body) -> collect_function_names(res, body)
                     _ -> res
@@ -90,7 +90,7 @@ fn collect_method_names(r: Resolver, methods: StmtList) -> Resolver {
             .End -> { return res }
             .Node(ss, next) -> {
                 res = match stmt_unwrap(ss.node) {
-                    .Function(name, _, _, _, _, _) -> declare_function(res, name)
+                    .Function(name, _, _, _, _) -> declare_function(res, name)
                     _ -> res
                 }
                 current = next
@@ -248,7 +248,7 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
             let after = resolve_stmt_list(entered, body)
             exit_resolve_scope(after)
         }
-        .Function(name, tp, params, _, _, body) -> {
+        .Function(name, tp, params, _, body) -> {
             let with_fn = declare_function(r, name)
             let entered = enter_resolve_scope(with_fn)
             let with_tp = define_type_params(entered, tp)
@@ -260,7 +260,7 @@ export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
         .ReturnEmpty or .NoOp or .Break or .Continue -> r
         .TypeDecl(_, _, _) or .NewtypeDecl(_, _, _) or .UnionAliasDecl(_, _, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .TraitDecl(_, _) or .Use(_, _) or .AssocType(_, _, _) -> r
         .Impl(_, methods) -> resolve_stmt_list(r, methods)
-        .ExternFn(name, _, _, _) -> declare_function(r, name)
+        .ExternFn(name, _, _) -> declare_function(r, name)
         .Annotated(_, inner) -> resolve_stmt(r, inner)
         _ -> {
             let tag = forge_stmt_tag(stmt)
