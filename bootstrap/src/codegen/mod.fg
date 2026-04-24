@@ -206,6 +206,8 @@ fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: TypeList, idx: int) {
 }
 
 export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+    // Coverage: instrument each statement with its source line as region ID
+    ctx.cov_hit(ctx.source_line)
     match stmt {
         .Expr(expr) -> {
             emit_expr(ctx, env, expr)?

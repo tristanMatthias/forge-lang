@@ -600,6 +600,8 @@ LLVMValueRef forge_llvm_build_call_coerce(LLVMBuilderRef b,
 // intrinsic calls into __profc_* counter arrays and __profd_* data records.
 
 static LLVMValueRef coverage_intrinsic = NULL;
+static int32_t coverage_region_counter = 0;
+static int32_t coverage_fn_region_count = 0;
 
 // Declare @llvm.instrprof.increment(ptr, i64, i32, i32) in the module.
 // Idempotent — safe to call multiple times.
@@ -636,9 +638,13 @@ LLVMValueRef forge_coverage_name_global(LLVMModuleRef m, const char* fn_name) {
 }
 
 // Emit: call void @llvm.instrprof.increment(ptr @__profn_<name>, i64 <hash>, i32 <num_counters>, i32 <idx>)
+// num_counters must be consistent across all calls for the same function.
+// We use 65536 as a safe upper bound for line-based counter indices.
+// LLVM allocates the counter array based on this value.
 void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
                               const char* fn_name, int64_t fn_hash,
-                              int32_t num_counters, int32_t counter_idx) {
+                              int32_t num_counters_unused, int32_t counter_idx) {
+    int32_t num_counters = 1024;
     if (!coverage_intrinsic) return;
     LLVMContextRef ctx = LLVMGetModuleContext(m);
     LLVMValueRef name_global = forge_coverage_name_global(m, fn_name);
