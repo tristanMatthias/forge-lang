@@ -67,8 +67,8 @@ impl Parser {
         if self.check(Tk.Comma) {
             self.advance()
             let rest = self.parse_destructure_names()?
-            return ParamList.Node(name, ValueType.Int, rest)
+            return ParamList.Node(name, ValueType.Unknown, rest)
         }
-        ParamList.Node(name, ValueType.Int, ParamList.End)
+        ParamList.Node(name, ValueType.Unknown, ParamList.End)
     }
 }
