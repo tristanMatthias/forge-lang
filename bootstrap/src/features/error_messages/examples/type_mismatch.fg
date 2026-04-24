@@ -1,5 +1,4 @@
 /// expect-error: type mismatch: expected `int`, got `string`
-
 fn main() {
     let x: int = "hello"
 }
