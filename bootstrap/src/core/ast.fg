@@ -687,10 +687,6 @@ export enum Stmt {
     While(condition: Expr, body: Stmt)
     For(variable: string, start: Expr, end: Expr, body: Stmt)
     ForIn(variable: string, collection: Expr, body: Stmt)
-    // `ret_ty` is the textual return type as written in source
-    // (e.g. "i64", "str", "Stmt", "i64?"). Codegen translates this
-    // into its internal value-type tag and uses it to set the
-    // result type of `call(fn)` so chained calls preserve typing.
     Function(name: string, type_params: TypeParamList, params: ParamList, ret_vtype: ValueType, body: StmtList)
     Return(value: Expr)
     ReturnEmpty
