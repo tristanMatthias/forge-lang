@@ -3,7 +3,7 @@
 // checking and before codegen. After this pass, the AST contains no
 // generic declarations — codegen sees only concrete code.
 
-use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, find_type_pipe, union_type_list_merge}
+use core.ast.{Expr, ExprList, sexpr, sstmt, Stmt, StmtList, ParamList, FieldList, FieldInitList, TypeList, VariantList, MatchArmList, TypeParamList, TypeNameList, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_is_unknown, vtype_eq, find_type_pipe, union_type_list_merge}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplReg, type_implements_trait}
 
@@ -33,10 +33,10 @@ fn generic_struct_lookup(reg: GenericStructReg, name: string) -> GenericStructRe
 
 // ── Type arguments ──
 
-enum TypeArgList { End, Node(param_name: string, concrete_ty: string, next: TypeArgList) }
+enum TypeArgList { End, Node(param_name: string, concrete_vt: ValueType, next: TypeArgList) }
 
-fn type_arg_lookup(args: TypeArgList, name: string) -> string {
-    match args { .End -> name, .Node(pn, ct, _) if pn == name -> ct, .Node(_, _, next) -> type_arg_lookup(next, name) }
+fn type_arg_lookup(args: TypeArgList, name: string) -> ValueType {
+    match args { .End -> ValueType.Struct(name), .Node(pn, ct, _) if pn == name -> ct, .Node(_, _, next) -> type_arg_lookup(next, name) }
 }
 
 enum InstList { End, Node(orig_name: string, mangled: string, type_args: TypeArgList, next: InstList) }
@@ -116,7 +116,7 @@ fn adds_new_info(existing: TypeArgList, partial: TypeArgList) -> bool {
     match partial {
         .End -> false
         .Node(name, _, next) -> {
-            if type_arg_lookup(existing, name) == name { return true }
+            if vtype_eq(type_arg_lookup(existing, name), ValueType.Struct(name)) { return true }
             adds_new_info(existing, next)
         }
     }
@@ -127,7 +127,7 @@ fn type_args_compatible(a: TypeArgList, b: TypeArgList) -> bool {
         .End -> true
         .Node(name, ty, next) -> {
             let a_ty = type_arg_lookup(a, name)
-            if a_ty != name && a_ty != ty { return false }
+            if !vtype_eq(a_ty, ValueType.Struct(name)) && !vtype_eq(a_ty, ty) { return false }
             type_args_compatible(a, next)
         }
     }
@@ -137,7 +137,7 @@ fn merge_type_args(a: TypeArgList, b: TypeArgList) -> TypeArgList {
     match b {
         .End -> a
         .Node(name, ty, next) -> {
-            let merged = if type_arg_lookup(a, name) == name {
+            let merged = if vtype_eq(type_arg_lookup(a, name), ValueType.Struct(name)) {
                 TypeArgList.Node(name, ty, a)
             } else { a }
             merge_type_args(merged, next)
@@ -206,7 +206,7 @@ fn mangle_ordered(tp: TypeParamList, ta: TypeArgList) -> string {
     match tp {
         .End -> ""
         .Node(name, _, next) -> {
-            let ty = type_arg_lookup(ta, name)
+            let ty = vtype_render_full(type_arg_lookup(ta, name))
             let rest = mangle_ordered(next, ta)
             if rest == "" { ty } else { "${ty}__${rest}" }
         }
@@ -215,40 +215,6 @@ fn mangle_ordered(tp: TypeParamList, ta: TypeArgList) -> string {
 
 // ── Type reading (from typeck-annotated SExpr.ty) ──
 
-fn vtype_to_string(ty: ValueType) -> string {
-    match ty {
-        .Int -> "int"
-        .Str -> "string"
-        .Bool -> "bool"
-        .Float -> "float"
-        .Ptr -> "ptr"
-        .Void -> "void"
-        .Struct(n) -> n
-        .Enum(n, _) -> n
-        .List(_) -> "List"
-        .Map -> "Map"
-        .Fn(_) -> "fn"
-        .Closure(_, _) -> "fn"
-        .FnTyped(_, _) -> "fn"
-        .Tuple(_) -> "tuple"
-        .Trait(n) -> n
-        .Union(types) -> render_union_mangled(types)
-        .Newtype(n, _) -> n
-        .NarrowedEnum(n, _) -> n
-        _ -> "unknown"
-    }
-}
-
-fn render_union_mangled(tl: TypeList) -> string {
-    match tl {
-        .End -> ""
-        .Node(ty, next) -> {
-            let rest = render_union_mangled(next)
-            if rest == "" { vtype_to_string(ty) } else { vtype_to_string(ty) + "|" + rest }
-        }
-    }
-}
-
 fn infer_from_fields(tp: TypeParamList, fields: FieldList, args: ExprList, acc: TypeArgList) -> TypeArgList {
     match fields {
         .End -> acc
@@ -256,7 +222,7 @@ fn infer_from_fields(tp: TypeParamList, fields: FieldList, args: ExprList, acc: 
             .End -> acc
             .Node(arg, rest_args) -> {
                 let ty_name = vtype_display(resolved)
-                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, vtype_to_string(arg.ty), acc) } else { acc }
+                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, arg.ty, acc) } else { acc }
                 infer_from_fields(tp, rest, rest_args, new_acc)
             }
         }
@@ -270,7 +236,7 @@ fn infer_from_params(tp: TypeParamList, params: ParamList, args: ExprList, acc: 
             .End -> acc
             .Node(arg, rest_args) -> {
                 let ty_name = vtype_display(resolved)
-                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, vtype_to_string(arg.ty), acc) } else { acc }
+                let new_acc = if type_param_has(tp, ty_name) { TypeArgList.Node(ty_name, arg.ty, acc) } else { acc }
                 infer_from_params(tp, rest, rest_args, new_acc)
             }
         }
@@ -283,7 +249,7 @@ fn infer_from_field_inits(tp: TypeParamList, fields: FieldList, inits: FieldInit
         .Node(name, val, next) -> {
             let field_ty = field_type_for(fields, name)
             let new_acc = if type_param_has(tp, field_ty) {
-                TypeArgList.Node(field_ty, vtype_to_string(val.ty), acc)
+                TypeArgList.Node(field_ty, val.ty, acc)
             } else { acc }
             infer_from_field_inits(tp, fields, next, new_acc)
         }
@@ -300,11 +266,12 @@ fn check_resolved(tp: TypeParamList, ta: TypeArgList, name: string, line: int, c
         .End -> bag
         .Node(pname, bounds, next) -> {
             let concrete = type_arg_lookup(ta, pname)
-            let updated = if concrete == pname {
+            let concrete_str = vtype_render_full(concrete)
+            let updated = if vtype_eq(concrete, ValueType.Struct(pname)) {
                 bag_report(bag, diag_error(DiagCode.CannotInferTypeParam, "cannot infer type parameter `${pname}` in `${name}<...>`", span_new(0, 0, line, col)))
             } else if bounds != "" {
                 // Check trait bounds: "T: Display + Debug" → check each bound
-                check_type_bounds(concrete, bounds, name, pname, line, col, bag, ti)
+                check_type_bounds(concrete_str, bounds, name, pname, line, col, bag, ti)
             } else { bag }
             check_resolved(next, ta, name, line, col, updated, ti)
         }
@@ -364,7 +331,7 @@ fn all_resolved(tp: TypeParamList, ta: TypeArgList) -> bool {
     match tp {
         .End -> true
         .Node(pname, _, next) -> {
-            if type_arg_lookup(ta, pname) == pname { return false }
+            if vtype_eq(type_arg_lookup(ta, pname), ValueType.Struct(pname)) { return false }
             all_resolved(next, ta)
         }
     }
@@ -377,7 +344,7 @@ fn explicit_to_type_args(tp: TypeParamList, names: TypeNameList) -> TypeArgList 
         .End -> TypeArgList.End
         .Node(param_name, _, tp_next) -> match names {
             .End -> TypeArgList.End
-            .Node(concrete, names_next) -> TypeArgList.Node(param_name, concrete, explicit_to_type_args(tp_next, names_next))
+            .Node(concrete, names_next) -> TypeArgList.Node(param_name, vtype_from_type_string(concrete), explicit_to_type_args(tp_next, names_next))
         }
     }
 }
@@ -429,11 +396,11 @@ fn split_annotation_args(tp: TypeParamList, args_str: string, regs: GenRegs, ins
             if split < 0 {
                 // Last or only arg
                 let arg = args_str.trim()
-                TypeArgList.Node(param_name, rewrite_type_name(arg, regs, insts), split_annotation_args(next_tp, "", regs, insts))
+                TypeArgList.Node(param_name, vtype_from_type_string(rewrite_type_name(arg, regs, insts)), split_annotation_args(next_tp, "", regs, insts))
             } else {
                 let head = args_str.substring(0, split).trim()
                 let tail = args_str.substring(split + 1, args_str.length)
-                TypeArgList.Node(param_name, rewrite_type_name(head, regs, insts), split_annotation_args(next_tp, tail, regs, insts))
+                TypeArgList.Node(param_name, vtype_from_type_string(rewrite_type_name(head, regs, insts)), split_annotation_args(next_tp, tail, regs, insts))
             }
         }
     }
@@ -707,7 +674,7 @@ fn substitute_vtype(vt: ValueType, ta: TypeArgList) -> ValueType {
     match vt {
         .Struct(name) -> {
             let concrete = type_arg_lookup(ta, name)
-            if concrete != name { vtype_from_name(concrete) } else { vt }
+            if !vtype_eq(concrete, vt) { concrete } else { vt }
         }
         .List(elem) -> ValueType.List(substitute_vtype(elem, ta))
         .Union(types) -> ValueType.Union(substitute_vtype_list(types, ta))
