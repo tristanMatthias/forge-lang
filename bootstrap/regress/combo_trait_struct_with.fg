@@ -1,0 +1,50 @@
+/// expect: Dog: Rex (age 5)
+/// expect: Cat: Whiskers (age 3)
+/// expect: updated: Rex (age 6)
+/// expect: builder: Point(10, 20)
+/// expect: defer order: inner then outer
+
+trait Describe {
+    fn describe(self) -> string
+}
+
+type Dog = { name: string, age: int }
+type Cat = { name: string, age: int }
+
+impl Describe for Dog {
+    fn describe(self) -> string { "Dog: ${self.name} (age ${string(self.age)})" }
+}
+impl Describe for Cat {
+    fn describe(self) -> string { "Cat: ${self.name} (age ${string(self.age)})" }
+}
+
+// Trait + with expression
+fn birthday(d: Dog) -> Dog {
+    d with { age: d.age + 1 }
+}
+
+// Struct + method chaining via with
+type Point = { x: int, y: int }
+
+fn set_x(p: Point, x: int) -> Point { p with { x } }
+fn set_y(p: Point, y: int) -> Point { p with { y } }
+
+fn main() {
+    // Trait dispatch
+    let d = Dog { name: "Rex", age: 5 }
+    let c = Cat { name: "Whiskers", age: 3 }
+    println(d.describe())
+    println(c.describe())
+
+    // with expression + trait
+    let older = birthday(d)
+    println("updated: ${older.name} (age ${string(older.age)})")
+
+    // Chained with
+    let p = Point { x: 0, y: 0 }
+    let p2 = set_y(set_x(p, 10), 20)
+    println("builder: Point(${string(p2.x)}, ${string(p2.y)})")
+
+    // Nested defers (LIFO order)
+    defer println("defer order: inner then outer")
+}

@@ -572,6 +572,21 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     let has_annotation = !vtype_is_unknown(ty_vt)
     let r = check_expr(tc, init)
     let declared_ty = if has_annotation { resolve_vtype(r.tc, ty_vt) } else { r.ty }
+    // Type annotation mismatch: flag clear mismatches between primitive types.
+    // Skip when RHS is Void (null), Int (unresolved inference), or Unknown.
+    if has_annotation && !vtype_is_unknown(r.ty) && !vtype_is_unknown(declared_ty) && !(r.ty is .Void) && !(r.ty is .Int) {
+        let mismatch = match declared_ty {
+            .Int -> r.ty is .Str || r.ty is .Bool || r.ty is .Float
+            .Str -> r.ty is .Int || r.ty is .Bool || r.ty is .Float
+            .Bool -> r.ty is .Str || r.ty is .Float
+            .Float -> r.ty is .Str || r.ty is .Bool
+            _ -> false
+        }
+        if mismatch {
+            let msg = "type mismatch: expected `${vtype_display(declared_ty)}`, got `${vtype_display(r.ty)}`"
+            return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)
+        }
+    }
     if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Unknown) {
         let msg = "cannot assign `${vtype_display(r.ty)}` to `${vtype_display(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return tc_bind(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty)

@@ -1,0 +1,74 @@
+/// expect: empty list len: 0
+/// expect: nested match: deep
+/// expect: string ops: HELLO_world
+/// expect: nullable chain: fallback
+/// expect: recursive: 120
+/// expect: enum in enum: inner: 42
+
+// Edge: empty list operations
+fn empty_test() -> string {
+    let empty: List<int> = []
+    "empty list len: ${string(empty.length)}"
+}
+
+// Edge: deeply nested match
+enum Depth { Shallow, Medium, Deep(inner: Depth) }
+
+fn depth_name(d: Depth) -> string {
+    match d {
+        .Shallow -> "shallow"
+        .Medium -> "medium"
+        .Deep(inner) -> match inner {
+            .Shallow -> "deep-shallow"
+            .Medium -> "deep-medium"
+            .Deep(_) -> "deep"
+        }
+    }
+}
+
+// Edge: string method chaining
+fn transform(s: string) -> string {
+    let upper = s.to_upper()
+    let combined = upper + "_world"
+    combined
+}
+
+// Edge: nullable with fallback chains
+fn maybe_val(x: int) -> int? {
+    if x > 0 { x } else { null }
+}
+
+fn chain_nullable(x: int) -> string {
+    let a = maybe_val(x) ?? maybe_val(x + 10) ?? -1
+    if a > 0 { "got: ${string(a)}" } else { "fallback" }
+}
+
+// Edge: recursive function
+fn factorial(n: int) -> int {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
+}
+
+// Edge: enum containing enum
+enum Wrapper { Empty, Holds(value: Depth) }
+
+fn unwrap_depth(w: Wrapper) -> string {
+    match w {
+        .Empty -> "empty"
+        .Holds(d) -> match d {
+            .Deep(inner) -> match inner {
+                .Shallow -> "inner: 42"
+                _ -> "other"
+            }
+            _ -> "not deep"
+        }
+    }
+}
+
+fn main() {
+    println(empty_test())
+    println("nested match: ${depth_name(Depth.Deep(Depth.Deep(Depth.Shallow)))}")
+    println("string ops: ${transform("hello")}")
+    println("nullable chain: ${chain_nullable(-5)}")
+    println("recursive: ${string(factorial(5))}")
+    println("enum in enum: ${unwrap_depth(Wrapper.Holds(Depth.Deep(Depth.Shallow)))}")
+}

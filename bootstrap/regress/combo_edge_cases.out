@@ -1,0 +1,6 @@
+empty list len: 0
+nested match: deep
+string ops: HELLO_world
+nullable chain: got: 5
+recursive: 120
+enum in enum: inner: 42
