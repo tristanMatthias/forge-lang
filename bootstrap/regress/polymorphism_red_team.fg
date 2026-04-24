@@ -1,0 +1,26 @@
+/// expect: Dog says: woof
+/// expect: Cat says: meow
+/// expect: sum: 6
+/// expect: pair: (1, hello)
+
+trait Speak { fn say(self) -> string }
+type Dog = { name: string }
+type Cat = { name: string }
+impl Speak for Dog { fn say(self) -> string { "woof" } }
+impl Speak for Cat { fn say(self) -> string { "meow" } }
+
+type Pair<A, B> = { first: A, second: B }
+
+fn main() {
+    let d: Speak = Dog { name: "Rex" }
+    let c: Speak = Cat { name: "Whiskers" }
+    println("Dog says: ${d.say()}")
+    println("Cat says: ${c.say()}")
+
+    let nums = [1, 2, 3]
+    let total = nums.reduce(0, (acc, x) -> acc + x)
+    println("sum: ${string(total)}")
+
+    let p = Pair { first: 1, second: "hello" }
+    println("pair: (${string(p.first)}, ${p.second})")
+}
