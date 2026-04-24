@@ -5,8 +5,8 @@
 // Implementation: malloc new struct, copy all fields from original,
 // then overwrite the specified fields with new values.
 
-use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, vtype_struct_name, vtype_display, SExpr}
-use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit}
+use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list_length, vtype_struct_name, vtype_display}
+use codegen.types.{Ctx, EmitValue, ok_emit_typed, err_emit}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
 export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> Result<EmitValue, string> {

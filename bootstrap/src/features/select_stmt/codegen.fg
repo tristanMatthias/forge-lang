@@ -3,7 +3,7 @@
 // until one has data, then dispatches to the matching arm.
 
 use features.error_propagation.{Result}
-use codegen.types.{err_stmt, ok_stmt, StmtResult}
+use codegen.types.{StmtResult}
 use codegen.blocks.{emit_block_loop}
 use codegen.{ok_sr, err_sr}
 export fn select_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {

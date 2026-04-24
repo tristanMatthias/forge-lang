@@ -9,8 +9,8 @@
 // In the bootstrap's everything-is-i64 model, null == 0. These
 // operators compile to i64 null-check or enum-tag-check branches.
 
-use core.ast.{Expr, VarEnv, FieldList, env_lookup, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, variant_lookup}
-use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, err_emit, null_ptr_val, field_resolved_at, vtype_is_ptr_type}
+use core.ast.{Expr, VarEnv, FieldList, field_index_of, ValueType, vtype_eq, vtype_is_unknown, vtype_is_str, vtype_struct_name, vtype_enum_name, variant_lookup}
+use codegen.types.{Ctx, EmitValue, ok_emit_typed, err_emit, field_resolved_at, vtype_is_ptr_type}
 use features.defer_stmt.codegen.{emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 

@@ -3,8 +3,8 @@
 // `x is .Variant`, the then-branch sees `x` as NarrowedEnum.
 
 use core.ast.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
-use codegen.types.{Ctx, EmitValue, StmtResult, ok_stmt, ok_emit_typed, emit_value_ptr, emit_value_ty}
-use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
+use codegen.types.{Ctx, EmitValue, StmtResult, ok_emit_typed, emit_value_ptr, emit_value_ty}
+use codegen.{emit_stmt, ok_sr}
 use features.union_type.codegen.{emit_union_wrap}
 
 // Extract narrowing info from an IsCheck condition.
