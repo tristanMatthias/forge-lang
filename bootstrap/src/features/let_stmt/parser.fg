@@ -52,17 +52,6 @@ impl Parser {
         Stmt.Const(name, ty_vt, initializer)
     }
 
-    // Shared: parse optional `: Type` annotation after a binding name.
-    // Still used by let-destructure which doesn't need ValueType yet.
-    fn parse_optional_type_annotation(self) -> string? {
-        if self.check(Tk.Colon) {
-            self.advance()
-            self.consume_type("expected type after `:`")
-        } else {
-            ""
-        }
-    }
-
     fn parse_let_destructure(self) -> Stmt? {
         self.advance()
         let names = self.parse_destructure_names()?

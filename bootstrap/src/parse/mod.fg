@@ -10,7 +10,7 @@
 // dispatch, and token consumption helpers.
 
 mod lexer
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, render_type_expr, type_expr_list_append, type_expr_list_length}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, type_expr_list_append, type_expr_list_length}
 use parse.lexer.{p_is_alpha, p_is_alpha_numeric, p_is_digit}
 use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.parser.{expr_contains_it, wrap_in_it_lambda}
@@ -1595,12 +1595,6 @@ impl Parser {
         }
         if self.check(Tk.Greater) { self.advance() }
         args
-    }
-
-    // Bridge: consume_type returns string for backward compat.
-    fn consume_type(self, message: string) -> string? {
-        let te = self.parse_type_expr(message)?
-        render_type_expr(te)
     }
 
     // ── Speculative parsing (backtracking) ──
