@@ -1,0 +1,71 @@
+/// expect: 42
+/// expect: hello
+/// expect: true
+/// expect: 3.14
+/// expect: custom: Bob
+/// expect: 99
+/// expect: 10
+/// expect: fallback
+/// expect: 15
+
+// Edge case 1: shape with width subtyping
+shape HasName = { name: string }
+
+type Person = { name: string, age: int }
+
+fn greet(x: HasName) -> string {
+    "custom: ${x.name}"
+}
+
+// Edge case 2: newtype wrapper — distinct from underlying type
+type UserId = int
+
+// Edge case 3: closure passed as higher-order function arg
+fn apply(f: fn(int) -> int, x: int) -> int {
+    f(x)
+}
+
+// Edge case 4: deeply nested recursive enum
+enum Tree { Leaf(v: int), Branch(left: Tree, right: Tree) }
+
+fn sum_tree(t: Tree) -> int {
+    match t {
+        .Leaf(v) -> v
+        .Branch(left, right) -> sum_tree(left) + sum_tree(right)
+    }
+}
+
+fn main() {
+    // Basic types
+    println(string(42))
+    println("hello")
+    println(string(true))
+    println(string(3.14))
+
+    // Shape subtyping — Person satisfies HasName
+    let p = Person { name: "Bob", age: 25 }
+    println(greet(p))
+
+    // Newtype construction
+    let uid = UserId(99)
+    println(string(uid))
+
+    // Higher-order function with closure
+    println(string(apply((x) -> x * 2, 5)))
+
+    // when expression as value
+    let x = 0
+    let label = when {
+        x > 0 -> "positive"
+        x < 0 -> "negative"
+        _ -> "fallback"
+    }
+    println(label)
+
+    // Recursive enum
+    let tree = Tree.Branch(
+        Tree.Branch(Tree.Leaf(1), Tree.Leaf(2)),
+        Tree.Branch(Tree.Leaf(5), Tree.Leaf(7))
+    )
+    println(string(sum_tree(tree)))
+}
