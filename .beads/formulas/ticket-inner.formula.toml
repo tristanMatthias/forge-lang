@@ -1,6 +1,6 @@
-name = "ticket-inner"
+formula = "ticket-inner"
 description = "Inner loop: work a single ticket/bug to completion with aggressive cleanup and testing"
-type = "molecule"
+type = "workflow"
 
 [variables.epic_id]
 description = "Parent epic bead ID"

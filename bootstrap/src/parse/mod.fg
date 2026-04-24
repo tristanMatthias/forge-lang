@@ -10,7 +10,7 @@
 // dispatch, and token consumption helpers.
 
 mod lexer
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, type_expr_list_append, type_expr_list_length}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, WhenArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, type_expr_list_append, type_expr_list_length}
 use parse.lexer.{p_is_alpha, p_is_alpha_numeric, p_is_digit}
 use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.parser.{expr_contains_it, wrap_in_it_lambda}
@@ -257,6 +257,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "dyn"      -> Tk.KwDyn
         "trait"    -> Tk.KwTrait
         "with"     -> Tk.KwWith
+        "when"     -> Tk.KwWhen
         "is"       -> Tk.KwIs
         "spec"     -> Tk.KwSpec
         "given"    -> Tk.KwGiven
@@ -1252,6 +1253,10 @@ impl Parser {
             return self.parse_spawn_expression()
         }
 
+        if self.check(Tk.KwWhen) {
+            return self.parse_when_expression()
+        }
+
         if self.check(Tk.LeftBrace) {
             // Map literal: { "key": value, ... }
             // Disambiguate from block: if first token after { is a string,
@@ -1595,6 +1600,36 @@ impl Parser {
         }
         if self.check(Tk.Greater) { self.advance() }
         args
+    }
+
+    // Parse `when { cond -> body, ... }` — subjectless match expression.
+    fn parse_when_expression(self) -> Expr? {
+        self.advance()  // consume `when`
+        if !self.consume(Tk.LeftBrace, "expected `{` after `when`") { return null }
+        let arms = self.parse_when_arms()?
+        if !self.consume(Tk.RightBrace, "expected `}` after when arms") { return null }
+        Expr.When(arms)
+    }
+
+    fn parse_when_arms(self) -> WhenArmList? {
+        if self.check(Tk.RightBrace) { return WhenArmList.End }
+        // `_ -> body` or `else -> body` is the default arm (null condition)
+        let line = self.current_line
+        let col = self.current_column
+        let cond = if (self.check(Tk.Identifier) && self.current_lexeme == "_") || self.check(Tk.KwElse) {
+            self.advance()
+            null
+        } else {
+            let c = self.parse_expression()?
+            sexpr(c, line, col)
+        }
+        if !self.consume(Tk.Arrow, "expected `->` after when condition") { return null }
+        let body_line = self.current_line
+        let body_col = self.current_column
+        let body = self.parse_expression()?
+        let body_se = sexpr(body, body_line, body_col)
+        let next = self.parse_when_arms()?
+        WhenArmList.Node(cond, body_se, next)
     }
 
     // ── Speculative parsing (backtracking) ──

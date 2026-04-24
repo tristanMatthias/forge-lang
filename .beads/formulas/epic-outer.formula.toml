@@ -1,6 +1,6 @@
-name = "epic-outer"
+formula = "epic-outer"
 description = "Outer loop: work through every ticket in an epic using the inner process"
-type = "molecule"
+type = "workflow"
 
 [variables.epic_id]
 description = "Epic bead ID to work through"
