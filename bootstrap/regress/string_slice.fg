@@ -1,0 +1,10 @@
+/// expect: hello
+/// expect: world
+/// expect: llo w
+
+fn main() {
+    let s = "hello world"
+    println(s[0..5])
+    println(s[6..11])
+    println(s[2..7])
+}

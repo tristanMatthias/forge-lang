@@ -44,6 +44,10 @@ export fn emit_slice(ctx: Ctx, env: VarEnv, obj: Expr, start: Expr, end: Expr) -
     let obj_r = ctx.emit(env, obj)?
     let start_r = ctx.emit(env, start)?
     let end_r = ctx.emit(env, end)?
+    if vtype_is_str(obj_r.ty) {
+        let result = ctx.call("forge_str_substring", [obj_r.value, start_r.value, end_r.value])
+        return ok_emit_typed(result, ValueType.Str)
+    }
     let result = ctx.call("forge_array_slice", [obj_r.value, start_r.value, end_r.value])
     ok_emit_typed(result, obj_r.ty)
 }

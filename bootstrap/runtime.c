@@ -1105,6 +1105,19 @@ const char* forge_str_char_at(const char* s, int64_t idx) {
     return r;
 }
 
+// Return a substring from index start (inclusive) to end (exclusive).
+const char* forge_str_substring(const char* s, int64_t start, int64_t end) {
+    size_t len = strlen(s);
+    if (start < 0) start = 0;
+    if (end < start) end = start;
+    if ((size_t)end > len) end = (int64_t)len;
+    int64_t sub_len = end - start;
+    char* r = (char*)forge_rc_alloc(sub_len + 1);
+    memcpy(r, s + start, sub_len);
+    r[sub_len] = '\0';
+    return r;
+}
+
 // Split string by separator, returns a ForgeArray of string pointers.
 void* forge_str_split(const char* s, const char* sep) {
     void* arr = forge_array_new();
