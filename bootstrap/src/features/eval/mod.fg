@@ -359,7 +359,7 @@ fn execute_stmt_list(runtime: Runtime, stmts: StmtList) -> StepResult {
 
 export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
-        .Let(name, _, _, initializer) -> {
+        .Let(name, _, initializer) -> {
             let init = eval_expr(runtime, initializer)
             if init.had_error {
                 return init
@@ -368,7 +368,7 @@ export fn execute_stmt(runtime: Runtime, stmt: Stmt) -> StepResult {
             let next_runtime = define_binding(init.runtime, name, false, init.value)
             ok_result(next_runtime, value_null())
         }
-        .Mut(name, _, _, initializer) -> {
+        .Mut(name, _, initializer) -> {
             let init = eval_expr(runtime, initializer)
             if init.had_error {
                 return init

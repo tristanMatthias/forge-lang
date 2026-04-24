@@ -476,9 +476,9 @@ fn declare_globals(m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stru
         .Node(ss, next) -> {
             let stmt = stmt_unwrap(ss.node)
             let updated = match stmt {
-                .Let(name, _, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
-                .Mut(name, _, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
-                .Const(name, _, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
+                .Let(name, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
+                .Mut(name, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
+                .Const(name, ty_vt, _) -> declare_one_global(m, i64t, i1t, dt, pt, structs, enums, name, ty_vt, reg)
                 .Module(_, body) -> declare_globals(m, ctx, i64t, i1t, dt, pt, structs, enums, body, reg)
                 _ -> reg
             }
@@ -1003,15 +1003,15 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     let new_env = emit_top_level(tl_ctx, env, body)?
                     emit_top_level(ctx, new_env, next)
                 }
-                .Let(name, _, _, init) -> {
+                .Let(name, _, init) -> {
                     let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }
-                .Mut(name, _, _, init) -> {
+                .Mut(name, _, init) -> {
                     let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }
-                .Const(name, _, _, init) -> {
+                .Const(name, _, init) -> {
                     let result = emit_top_level_init(tl_ctx, env, name, init)?
                     emit_top_level(result.ctx, result.env, next)
                 }

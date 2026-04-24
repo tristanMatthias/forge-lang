@@ -248,16 +248,16 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
             ctx.ret_void(fn_ret)
             ok_sr(ctx, env)
         }
-        .Let(name, ty, vt, initializer) -> {
-            let new_env = emit_var_decl(ctx, env, name, ty, vt, initializer)?
+        .Let(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
             ok_sr(ctx, new_env)
         }
-        .Mut(name, ty, vt, initializer) -> {
-            let new_env = emit_var_decl(ctx, env, name, ty, vt, initializer)?
+        .Mut(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
             ok_sr(ctx, new_env)
         }
-        .Const(name, ty, vt, initializer) -> {
-            let new_env = emit_var_decl(ctx, env, name, ty, vt, initializer)?
+        .Const(name, vt, initializer) -> {
+            let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
             ok_sr(ctx, new_env)
         }
         .Block(body) -> {

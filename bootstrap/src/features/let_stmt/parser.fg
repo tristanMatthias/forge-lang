@@ -1,6 +1,6 @@
 // WHY: parses `let`, `mut`, and `const` variable bindings.
 
-use core.ast.{Stmt, ParamList, ValueType, render_type_expr, type_expr_to_vtype}
+use core.ast.{Stmt, ParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -13,49 +13,43 @@ impl Parser {
             return self.parse_let_destructure()
         }
         let name = self.consume_identifier("expected variable name")?
-        mut ty = ""
         mut ty_vt = ValueType.Unknown
         if self.check(Tk.Colon) {
             self.advance()
             let te = self.parse_type_expr("expected type after `:`")?
-            ty = render_type_expr(te)
             ty_vt = type_expr_to_vtype(te)
         }
         if !self.consume(Tk.Equal, "expected `=` after variable name") { return null }
         let initializer = self.parse_expression()?
-        if is_mut { Stmt.Mut(name, ty, ty_vt, initializer) } else { Stmt.Let(name, ty, ty_vt, initializer) }
+        if is_mut { Stmt.Mut(name, ty_vt, initializer) } else { Stmt.Let(name, ty_vt, initializer) }
     }
 
     fn parse_mut_statement(self) -> Stmt? {
         self.advance()
         let name = self.consume_identifier("expected variable name")?
-        mut ty = ""
         mut ty_vt = ValueType.Unknown
         if self.check(Tk.Colon) {
             self.advance()
             let te = self.parse_type_expr("expected type after `:`")?
-            ty = render_type_expr(te)
             ty_vt = type_expr_to_vtype(te)
         }
         if !self.consume(Tk.Equal, "expected `=` after variable name") { return null }
         let initializer = self.parse_expression()?
-        Stmt.Mut(name, ty, ty_vt, initializer)
+        Stmt.Mut(name, ty_vt, initializer)
     }
 
     fn parse_const_statement(self) -> Stmt? {
         self.advance()
         let name = self.consume_identifier("expected constant name")?
-        mut ty = ""
         mut ty_vt = ValueType.Unknown
         if self.check(Tk.Colon) {
             self.advance()
             let te = self.parse_type_expr("expected type after `:`")?
-            ty = render_type_expr(te)
             ty_vt = type_expr_to_vtype(te)
         }
         if !self.consume(Tk.Equal, "expected `=` after constant name") { return null }
         let initializer = self.parse_expression()?
-        Stmt.Const(name, ty, ty_vt, initializer)
+        Stmt.Const(name, ty_vt, initializer)
     }
 
     // Shared: parse optional `: Type` annotation after a binding name.

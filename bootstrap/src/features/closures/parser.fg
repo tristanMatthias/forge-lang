@@ -50,8 +50,8 @@ export fn stmt_list_contains_it(list: StmtList) -> bool {
         .Node(ss, next) -> {
             let has = match ss.node {
                 .Expr(e) -> expr_contains_it(e)
-                .Let(_, _, _, init) -> expr_contains_it(init)
-                .Mut(_, _, _, init) -> expr_contains_it(init)
+                .Let(_, _, init) -> expr_contains_it(init)
+                .Mut(_, _, init) -> expr_contains_it(init)
                 .Return(val) -> expr_contains_it(val)
                 _ -> false
             }

@@ -239,9 +239,9 @@ export fn resolve_stmt_list(r: Resolver, stmts: StmtList) -> Resolver {
 
 export fn resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
-        .Let(name, _, _, init) -> resolve_binding(r, name, init, false)
-        .Mut(name, _, _, init) -> resolve_binding(r, name, init, true)
-        .Const(name, _, _, init) -> resolve_binding(r, name, init, false)
+        .Let(name, _, init) -> resolve_binding(r, name, init, false)
+        .Mut(name, _, init) -> resolve_binding(r, name, init, true)
+        .Const(name, _, init) -> resolve_binding(r, name, init, false)
         .Expr(expr) -> resolve_expr(r, expr)
         .Block(body) -> {
             let entered = enter_resolve_scope(r)

@@ -178,8 +178,8 @@ fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures:
         .Block(stmts) -> find_captures_stmts(stmts, params, env, captures)
         .Expr(e) -> find_captures(e, params, env, captures)
         .Return(e) -> find_captures(e, params, env, captures)
-        .Let(_, _, _, init) -> find_captures(init, params, env, captures)
-        .Mut(_, _, _, init) -> find_captures(init, params, env, captures)
+        .Let(_, _, init) -> find_captures(init, params, env, captures)
+        .Mut(_, _, init) -> find_captures(init, params, env, captures)
         .If(cond, then_b, else_b) -> {
             let c1 = find_captures(cond, params, env, captures)
             let c2 = find_captures_stmt_body(then_b, params, env, c1)
@@ -204,7 +204,7 @@ fn find_captures_stmt_body(stmt: Stmt, params: ParamList, env: VarEnv, captures:
         }
         .Defer(body) -> find_captures(body, params, env, captures)
         .Errdefer(body) -> find_captures(body, params, env, captures)
-        .Const(_, _, _, init) -> find_captures(init, params, env, captures)
+        .Const(_, _, init) -> find_captures(init, params, env, captures)
         .LetDestructure(_, init) -> find_captures(init, params, env, captures)
         .Annotated(_, inner) -> find_captures_stmt_body(inner, params, env, captures)
         .Parallel(body) -> find_captures_stmts(body, params, env, captures)
@@ -221,9 +221,9 @@ fn find_captures_stmts(stmts: StmtList, params: ParamList, env: VarEnv, captures
             // If this statement binds a local name, add it to params so subsequent
             // uses of the name won't be treated as captures from the outer scope.
             let updated_params = match ss.node {
-                .Let(name, _, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
-                .Mut(name, _, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
-                .Const(name, _, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
+                .Let(name, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
+                .Mut(name, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
+                .Const(name, _, _) -> ParamList.Node(name, ValueType.Unknown, params)
                 .For(vname, _, _, _) -> ParamList.Node(vname, ValueType.Unknown, params)
                 .ForIn(vname, _, _) -> ParamList.Node(vname, ValueType.Unknown, params)
                 _ -> params
@@ -333,8 +333,8 @@ fn param_used_with_float_stmts(param_name: string, stmts: StmtList, ctx: Ctx, en
             let found = match ss.node {
                 .Expr(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
                 .Return(e) -> param_used_with_float(param_name, e, ctx, env, captures, params)
-                .Let(_, _, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
-                .Mut(_, _, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
+                .Let(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
+                .Mut(_, _, init) -> param_used_with_float(param_name, init, ctx, env, captures, params)
                 _ -> false
             }
             if found { return true }

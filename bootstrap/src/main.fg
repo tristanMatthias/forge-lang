@@ -117,16 +117,16 @@ fn fmt_expr(se: Expr) -> string {
 fn fmt_stmt(ss: Stmt, depth: int) -> string {
     let ind = fmt_indent(depth)
     match ss {
-        .Let(name, ty, _, init) -> {
-            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+        .Let(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
             "${ind}let ${name}${ty_part} = ${fmt_expr(init)}"
         }
-        .Mut(name, ty, _, init) -> {
-            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+        .Mut(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
             "${ind}mut ${name}${ty_part} = ${fmt_expr(init)}"
         }
-        .Const(name, ty, _, init) -> {
-            let ty_part = if ty == "" { "" } else { ": ${ty}" }
+        .Const(name, vt, init) -> {
+            let ty_part = if vtype_display(vt) == "" { "" } else { ": ${vtype_display(vt)}" }
             "${ind}const ${name}${ty_part} = ${fmt_expr(init)}"
         }
         .Expr(se) -> "${ind}${fmt_expr(se)}"

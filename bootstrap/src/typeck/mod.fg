@@ -610,9 +610,9 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
 
 export fn check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Let(name, _, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
-        .Mut(name, _, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
-        .Const(name, _, ty_vt, init) -> check_binding(tc, name, ty_vt, init, true)
+        .Let(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
+        .Mut(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, false)
+        .Const(name, ty_vt, init) -> check_binding(tc, name, ty_vt, init, true)
         .Expr(e) -> {
             let r = check_expr(tc, e)
             r.tc
@@ -1184,9 +1184,9 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
         .Node(ss, next) -> {
             let new_stmt = annotate_stmt(tc, ss.node)
             let updated_tc = match ss.node {
-                .Let(name, _, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
-                .Mut(name, _, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
-                .Const(name, _, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+                .Let(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+                .Mut(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
+                .Const(name, ty_vt, init) -> annotate_bind(tc, name, ty_vt, init)
                 _ -> tc
             }
             StmtList.Node(sstmt(new_stmt, ss.line, ss.col), annotate_stmts(updated_tc, next))
@@ -1196,9 +1196,9 @@ fn annotate_stmts(tc: TC, stmts: StmtList) -> StmtList {
 
 fn annotate_stmt(tc: TC, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, ty, vt, init) -> .Let(name, ty, vt, annotate_expr(tc, init))
-        .Mut(name, ty, vt, init) -> .Mut(name, ty, vt, annotate_expr(tc, init))
-        .Const(name, ty, vt, init) -> .Const(name, ty, vt, annotate_expr(tc, init))
+        .Let(name, vt, init) -> .Let(name, vt, annotate_expr(tc, init))
+        .Mut(name, vt, init) -> .Mut(name, vt, annotate_expr(tc, init))
+        .Const(name, vt, init) -> .Const(name, vt, annotate_expr(tc, init))
         .Expr(e) -> .Expr(annotate_expr(tc, e))
         .Return(val) -> .Return(annotate_expr(tc, val))
         .Block(body) -> .Block(annotate_stmts(tc, body))
@@ -1439,21 +1439,21 @@ fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
                 tc
             }
         }
-        .Const(name, _, _, _) -> {
+        .Const(name, _, _) -> {
             if !is_screaming_snake(name) {
                 naming_warn(tc, "constant `${name}` should be SCREAMING_SNAKE_CASE")
             } else {
                 tc
             }
         }
-        .Let(name, _, _, _) -> {
+        .Let(name, _, _) -> {
             if !is_snake_case(name) {
                 naming_warn(tc, "variable `${name}` should be snake_case")
             } else {
                 tc
             }
         }
-        .Mut(name, _, _, _) -> {
+        .Mut(name, _, _) -> {
             if !is_snake_case(name) {
                 naming_warn(tc, "variable `${name}` should be snake_case")
             } else {

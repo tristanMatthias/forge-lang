@@ -517,8 +517,8 @@ fn collect_inst_stmts(stmts: StmtList, regs: GenRegs, st: CollectState) -> Colle
 
 fn collect_inst_stmt(stmt: Stmt, regs: GenRegs, st: CollectState) -> CollectState {
     match stmt {
-        .Let(_, _, _, init) -> collect_inst_expr(init, regs, st)
-        .Mut(_, _, _, init) -> collect_inst_expr(init, regs, st)
+        .Let(_, _, init) -> collect_inst_expr(init, regs, st)
+        .Mut(_, _, init) -> collect_inst_expr(init, regs, st)
         .Expr(e) -> collect_inst_expr(e, regs, st)
         .Return(val) -> collect_inst_expr(val, regs, st)
         .Defer(body) -> collect_inst_expr(body, regs, st)
@@ -749,8 +749,8 @@ fn substitute_expr_list(exprs: ExprList, ta: TypeArgList) -> ExprList {
 
 fn substitute_stmt(stmt: Stmt, ta: TypeArgList) -> Stmt {
     match stmt {
-        .Let(name, ty, vt, init) -> .Let(name, type_arg_lookup(ta, ty), substitute_vtype(vt, ta), substitute_expr(init, ta))
-        .Mut(name, ty, vt, init) -> .Mut(name, type_arg_lookup(ta, ty), substitute_vtype(vt, ta), substitute_expr(init, ta))
+        .Let(name, vt, init) -> .Let(name, substitute_vtype(vt, ta), substitute_expr(init, ta))
+        .Mut(name, vt, init) -> .Mut(name, substitute_vtype(vt, ta), substitute_expr(init, ta))
         .Expr(e) -> .Expr(substitute_expr(e, ta))
         .Return(val) -> .Return(substitute_expr(val, ta))
         .ReturnEmpty -> stmt
@@ -932,20 +932,21 @@ fn rewrite_stmts(stmts: StmtList, regs: GenRegs, insts: InstList) -> StmtList {
     }
 }
 
-fn rewrite_let_binding(name: string, ty: string, vt: ValueType, init: Expr, regs: GenRegs, insts: InstList, is_mut: bool) -> Stmt {
-    let rewritten = rewrite_type_name(ty, regs, insts)
-    let new_vt = if rewritten != ty { vtype_from_type_string(rewritten) } else { vt }
+fn rewrite_let_binding(name: string, vt: ValueType, init: Expr, regs: GenRegs, insts: InstList, is_mut: bool) -> Stmt {
+    let rendered = vtype_render_full(vt)
+    let rewritten = rewrite_type_name(rendered, regs, insts)
+    let new_vt = if rewritten != rendered { vtype_from_type_string(rewritten) } else { vt }
     if is_mut {
-        Stmt.Mut(name, rewritten, new_vt, rewrite_expr(init, regs, insts))
+        Stmt.Mut(name, new_vt, rewrite_expr(init, regs, insts))
     } else {
-        Stmt.Let(name, rewritten, new_vt, rewrite_expr(init, regs, insts))
+        Stmt.Let(name, new_vt, rewrite_expr(init, regs, insts))
     }
 }
 
 fn rewrite_stmt(stmt: Stmt, regs: GenRegs, insts: InstList) -> Stmt {
     match stmt {
-        .Let(name, ty, vt, init) -> rewrite_let_binding(name, ty, vt, init, regs, insts, false)
-        .Mut(name, ty, vt, init) -> rewrite_let_binding(name, ty, vt, init, regs, insts, true)
+        .Let(name, vt, init) -> rewrite_let_binding(name, vt, init, regs, insts, false)
+        .Mut(name, vt, init) -> rewrite_let_binding(name, vt, init, regs, insts, true)
         .Expr(e) -> .Expr(rewrite_expr(e, regs, insts))
         .Return(val) -> .Return(rewrite_expr(val, regs, insts))
         .Block(body) -> .Block(rewrite_stmts(body, regs, insts))

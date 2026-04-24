@@ -448,8 +448,8 @@ fn rewrite_stmt_list(ctx: NameCtx, stmts: StmtList) -> StmtList {
 
 fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, ty, vt, init) -> .Let(name, ty, vt, rewrite_expr(ctx, init))
-        .Mut(name, ty, vt, init) -> .Mut(name, ty, vt, rewrite_expr(ctx, init))
+        .Let(name, vt, init) -> .Let(name, vt, rewrite_expr(ctx, init))
+        .Mut(name, vt, init) -> .Mut(name, vt, rewrite_expr(ctx, init))
         .Expr(e) -> .Expr(rewrite_expr(ctx, e))
         .Return(e) -> .Return(rewrite_expr(ctx, e))
         .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
@@ -615,9 +615,9 @@ fn collect_used_paths_stmts(stmts: StmtList, acc: UsedPathSet) -> UsedPathSet {
 fn collect_used_paths_stmt(stmt: Stmt, acc: UsedPathSet) -> UsedPathSet {
     match stmt {
         .Expr(e) -> collect_used_paths_expr(e, acc)
-        .Let(_, _, _, init) -> collect_used_paths_expr(init, acc)
-        .Mut(_, _, _, init) -> collect_used_paths_expr(init, acc)
-        .Const(_, _, _, init) -> collect_used_paths_expr(init, acc)
+        .Let(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Mut(_, _, init) -> collect_used_paths_expr(init, acc)
+        .Const(_, _, init) -> collect_used_paths_expr(init, acc)
         .Return(e) -> collect_used_paths_expr(e, acc)
         .Block(body) -> collect_used_paths_stmts(body, acc)
         .Function(_, _, _, _, body) -> collect_used_paths_stmts(body, acc)
