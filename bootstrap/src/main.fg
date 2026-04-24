@@ -584,7 +584,7 @@ fn main() {
                 fail("monomorphization failed")
             }
             let output = "${path}.ll"
-            match compile_program(mono.stmts, output, false, path) {
+            match compile_program(mono.stmts, output, false, false, path) {
                 .Ok(_) -> {}
                 .Err(e) -> {
                     let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
@@ -603,6 +603,7 @@ fn main() {
         // that appear before the file path (always the last argument).
         mut stop_after = ""
         mut debug_null = false
+        mut enable_coverage = false
         mut json_output = false
         let argc = forge_selfhost_argc()
         // The file path is always the last argument.
@@ -615,6 +616,9 @@ fn main() {
             }
             if arg == "--debug-null" {
                 debug_null = true
+            }
+            if arg == "--coverage" {
+                enable_coverage = true
             }
             if arg == "--json" {
                 json_output = true
@@ -700,7 +704,7 @@ fn main() {
         }
         let output = "${cpath}.ll"
         // Ticket t2w: ICE handler — wrap codegen errors in F9999.
-        match compile_program(mono.stmts, output, debug_null, cpath) {
+        match compile_program(mono.stmts, output, debug_null, enable_coverage, cpath) {
             .Ok(_) -> {}
             .Err(e) -> {
                 let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))

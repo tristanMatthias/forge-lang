@@ -54,6 +54,10 @@ export type Ctx = {
     union_aliases: CgUnionAliasReg,
     copy_types: CopySet,
     debug_null_checks: int,
+    // LLVM source-based coverage (--coverage flag). When true, codegen emits
+    // llvm.instrprof.increment calls at each coverage region. Zero overhead
+    // when false — no instrumentation in IR.
+    coverage: bool,
     source_file: string,
     source_line: int,
     // Per-scope arena (spec Axis 9.6). When non-null, this is an LLVM
