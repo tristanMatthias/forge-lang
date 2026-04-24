@@ -424,10 +424,6 @@ export fn enum_reg_find_by_variant_arity(reg: EnumReg, variant: string, arity: i
     }
 }
 
-// translate_param_type: converts Forge type names to the internal
-// string tag used by EmitResult.ty. Uses the registries from the
-// Codegen struct.
-
 export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
     match reg {
         .End -> .Unknown

@@ -1099,8 +1099,7 @@ fn check_method_call(tc: TC, obj: Expr, method: string, args: ExprList) -> ExprR
         }
     }
 
-    // Fallback — return Unknown for unknown methods (translate_type
-    // fallback; cannot give a better type without full trait resolution)
+    // Fallback — return Unknown for unknown methods
     tc_er(checked_args, .Unknown)
 }
 
