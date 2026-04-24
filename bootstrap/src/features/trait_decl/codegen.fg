@@ -9,16 +9,16 @@ use features.fn_decl.codegen.{emit_first_arg}
 export fn trait_method_idx(methods: TraitMethodNames, name: string, idx: int) -> int {
     match methods {
         .End -> 0 - 1
-        .Node(n, _, _, _) if n == name -> idx
-        .Node(_, _, _, next) -> trait_method_idx(next, name, idx + 1)
+        .Node(n, _, _) if n == name -> idx
+        .Node(_, _, next) -> trait_method_idx(next, name, idx + 1)
     }
 }
 
 fn trait_method_ret_vt(methods: TraitMethodNames, name: string) -> ValueType {
     match methods {
         .End -> ValueType.Unknown
-        .Node(n, _, vt, _) if n == name -> vt
-        .Node(_, _, _, next) -> trait_method_ret_vt(next, name)
+        .Node(n, vt, _) if n == name -> vt
+        .Node(_, _, next) -> trait_method_ret_vt(next, name)
     }
 }
 
@@ -141,7 +141,7 @@ fn build_float_vtable_wrapper(ctx: Ctx, mangled: string, real_fn: ptr, arity: in
 export fn push_vtable_entries_call(ctx: Ctx, vtable: ptr, methods: TraitMethodNames, concrete_name: string) {
     match methods {
         .End -> {}
-        .Node(method_name, ret_ty_str, method_ret_vt, next) -> {
+        .Node(method_name, method_ret_vt, next) -> {
             let mangled = "${concrete_name}__${method_name}"
             let fn_val = ctx.get_fn(mangled)
             // For float-returning methods, use a wrapper to avoid ABI mismatch

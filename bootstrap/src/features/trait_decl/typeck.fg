@@ -1,6 +1,6 @@
 // WHY: trait conformance checking — verifies impl blocks provide all required methods.
 
-use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length}
+use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unknown}
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, trait_assoc_types, tc_owns_type}
 
@@ -50,7 +50,7 @@ fn impl_has_assoc_type(stmts: StmtList, name: string) -> bool {
         .End -> false
         .Node(ss, next) -> {
             match ss.node {
-                .AssocType(n, ty, _) if n == name && ty != "" -> true
+                .AssocType(n, ty_vt) if n == name && !vtype_is_unknown(ty_vt) -> true
                 _ -> impl_has_assoc_type(next, name)
             }
         }
@@ -60,7 +60,7 @@ fn impl_has_assoc_type(stmts: StmtList, name: string) -> bool {
 fn check_required_methods(tc: TC, trait_name: string, type_name: string, required: TraitMethodList, impl_methods: StmtList) -> TC {
     match required {
         .End -> tc
-        .Node(name, expected_params, expected_ret, next) -> {
+        .Node(name, expected_params, next) -> {
             let mangled = "${type_name}__${name}"
             if !impl_has_method(impl_methods, mangled) {
                 let after = tc_report(tc, DiagCode.TypeMismatch, "trait `${trait_name}` requires method `${name}` but `${type_name}` does not implement it")
@@ -106,7 +106,7 @@ export fn collect_method_names_from_stmts(stmts: StmtList) -> TraitMethodList {
         .End -> TraitMethodList.End
         .Node(ss, next) -> {
             match ss.node {
-                .ExternFn(name, params, _) -> TraitMethodList.Node(name, param_list_length(params), "", collect_method_names_from_stmts(next))
+                .ExternFn(name, params, _) -> TraitMethodList.Node(name, param_list_length(params), collect_method_names_from_stmts(next))
                 _ -> collect_method_names_from_stmts(next)
             }
         }
@@ -118,7 +118,7 @@ export fn collect_assoc_types_from_stmts(stmts: StmtList) -> TraitAssocTypes {
         .End -> TraitAssocTypes.End
         .Node(ss, next) -> {
             match ss.node {
-                .AssocType(name, _, _) -> TraitAssocTypes.Node(name, collect_assoc_types_from_stmts(next))
+                .AssocType(name, _) -> TraitAssocTypes.Node(name, collect_assoc_types_from_stmts(next))
                 _ -> collect_assoc_types_from_stmts(next)
             }
         }
@@ -128,7 +128,7 @@ export fn collect_assoc_types_from_stmts(stmts: StmtList) -> TraitAssocTypes {
 fn method_list_has(list: TraitMethodList, name: string) -> bool {
     match list {
         .End -> false
-        .Node(n, _, _, _) if n == name -> true
-        .Node(_, _, _, next) -> method_list_has(next, name)
+        .Node(n, _, _) if n == name -> true
+        .Node(_, _, next) -> method_list_has(next, name)
     }
 }

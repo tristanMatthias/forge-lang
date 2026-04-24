@@ -452,8 +452,8 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
                     forge_llvm_type_array_free(field_arr)
                     StructReg.Node(name, resolved_fields, reg)
                 }
-                .UnionAliasDecl(_, _, _) -> reg
-                .NewtypeDecl(_, _, _) -> reg
+                .UnionAliasDecl(_, _) -> reg
+                .NewtypeDecl(_, _) -> reg
                 .Module(_, body) -> declare_structs(ctx, i64t, i1t, dt, pt, body, nts, uas, reg)
                 _ -> reg
             }
@@ -820,8 +820,8 @@ fn collect_trait_fn_names(stmts: StmtList) -> TraitMethodNames {
         .End -> .End
         .Node(ss, next) -> {
             match stmt_unwrap(ss.node) {
-                .ExternFn(name, _, ret_vt) -> .Node(name, "", ret_vt, collect_trait_fn_names(next))
-                .Function(name, _, _, ret_vt, _) -> .Node(name, "", ret_vt, collect_trait_fn_names(next))
+                .ExternFn(name, _, ret_vt) -> .Node(name, ret_vt, collect_trait_fn_names(next))
+                .Function(name, _, _, ret_vt, _) -> .Node(name, ret_vt, collect_trait_fn_names(next))
                 _ -> collect_trait_fn_names(next)
             }
         }
@@ -833,7 +833,7 @@ fn collect_newtypes(stmts: StmtList, reg: CgNewtypeReg) -> CgNewtypeReg {
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .NewtypeDecl(name, inner_ty, inner_vt) -> CgNewtypeReg.Node(name, inner_ty, inner_vt, reg)
+                .NewtypeDecl(name, inner_vt) -> CgNewtypeReg.Node(name, inner_vt, reg)
                 .Module(_, body) -> collect_newtypes(body, reg)
                 _ -> reg
             }
@@ -847,7 +847,7 @@ fn collect_union_aliases(stmts: StmtList, reg: CgUnionAliasReg) -> CgUnionAliasR
         .End -> reg
         .Node(ss, next) -> {
             let updated = match stmt_unwrap(ss.node) {
-                .UnionAliasDecl(name, type_str, type_vt) -> CgUnionAliasReg.Node(name, type_str, type_vt, reg)
+                .UnionAliasDecl(name, type_vt) -> CgUnionAliasReg.Node(name, type_vt, reg)
                 .Module(_, body) -> collect_union_aliases(body, reg)
                 _ -> reg
             }

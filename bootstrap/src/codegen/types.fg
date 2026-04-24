@@ -83,47 +83,31 @@ export type TypeRegs = {
     union_aliases: CgUnionAliasReg,
 }
 
-// Newtype registry — maps name to inner type string
+// Newtype registry — maps name to inner ValueType
 export enum CgNewtypeReg {
     End
-    Node(name: string, inner_ty: string, inner_vt: ValueType, next: CgNewtypeReg)
-}
-
-fn cg_newtype_lookup(reg: CgNewtypeReg, name: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(n, inner, _, _) if n == name -> inner
-        .Node(_, _, _, next) -> cg_newtype_lookup(next, name)
-    }
+    Node(name: string, inner_vt: ValueType, next: CgNewtypeReg)
 }
 
 export fn cg_newtype_vtype_lookup(reg: CgNewtypeReg, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
-        .Node(n, _, vt, _) if n == name -> vt
-        .Node(_, _, _, next) -> cg_newtype_vtype_lookup(next, name)
+        .Node(n, vt, _) if n == name -> vt
+        .Node(_, _, next) -> cg_newtype_vtype_lookup(next, name)
     }
 }
 
-// Union alias registry — maps name to type string
+// Union alias registry — maps name to ValueType
 export enum CgUnionAliasReg {
     End
-    Node(name: string, type_str: string, type_vt: ValueType, next: CgUnionAliasReg)
-}
-
-fn cg_union_alias_lookup(reg: CgUnionAliasReg, name: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(n, ts, _, _) if n == name -> ts
-        .Node(_, _, _, next) -> cg_union_alias_lookup(next, name)
-    }
+    Node(name: string, type_vt: ValueType, next: CgUnionAliasReg)
 }
 
 fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
-        .Node(n, _, vt, _) if n == name -> vt
-        .Node(_, _, _, next) -> cg_union_alias_vtype_lookup(next, name)
+        .Node(n, vt, _) if n == name -> vt
+        .Node(_, _, next) -> cg_union_alias_vtype_lookup(next, name)
     }
 }
 
@@ -136,10 +120,10 @@ export fn param_type_vt_at(list: ParamTypeList, idx: int) -> ValueType {
     }
 }
 
-// Trait declaration registry — maps trait name to method names + return types.
+// Trait declaration registry — maps trait name to method names + return vtypes.
 export enum TraitMethodNames {
     End
-    Node(name: string, ret_ty: string, ret_vt: ValueType, next: TraitMethodNames)
+    Node(name: string, ret_vt: ValueType, next: TraitMethodNames)
 }
 
 export enum TraitDeclReg {

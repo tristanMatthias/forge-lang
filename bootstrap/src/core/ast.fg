@@ -691,8 +691,8 @@ export enum Stmt {
     Return(value: Expr)
     ReturnEmpty
     TypeDecl(name: string, type_params: TypeParamList, fields: FieldList)
-    NewtypeDecl(name: string, inner_ty: string, inner_vt: ValueType)
-    UnionAliasDecl(name: string, type_str: string, type_vt: ValueType)
+    NewtypeDecl(name: string, inner_vt: ValueType)
+    UnionAliasDecl(name: string, type_vt: ValueType)
     ShapeDecl(name: string, fields: FieldList)
     EnumDecl(name: string, type_params: TypeParamList, variants: VariantList)
     Match(subject: Expr, arms: MatchArmList)
@@ -713,7 +713,7 @@ export enum Stmt {
     Parallel(body: StmtList)
     Module(name: string, body: StmtList)
     Use(module_path: string, names: ParamList)
-    AssocType(name: string, ty: string, ty_vt: ValueType)
+    AssocType(name: string, ty_vt: ValueType)
 }
 
 // When arms: `cond -> body` or `else -> body` (cond is null for else)
@@ -1094,8 +1094,8 @@ export fn render_stmt(stmt: Stmt) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "(type ${name}${tp_part} ${render_field_list(fields)})"
         }
-        .NewtypeDecl(name, inner_ty, _) -> "(newtype ${name} = ${inner_ty})"
-        .UnionAliasDecl(name, type_str, _) -> "(union-alias ${name} = ${type_str})"
+        .NewtypeDecl(name, inner_vt) -> "(newtype ${name} = ${vtype_render_full(inner_vt)})"
+        .UnionAliasDecl(name, type_vt) -> "(union-alias ${name} = ${vtype_render_full(type_vt)})"
         .ShapeDecl(name, fields) -> "(shape ${name} ${render_field_list(fields)})"
         .EnumDecl(name, tp, variants) -> {
             let tp_str = render_type_param_list(tp)
@@ -1120,7 +1120,7 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Parallel(_) -> "(parallel ...)"
         .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
-        .AssocType(name, ty, _) -> if ty == "" { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${ty})" }
+        .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
     }
 }
 

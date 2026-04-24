@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at, union_type_list_merge, find_type_pipe, vtype_from_name}
+use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, ParamList, Pattern, PatternList, SExpr, SStmt, Stmt, StmtList, TypeList, ValueType, VariantList, WhenArmList, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, param_list_length, stmt_unwrap, sexpr_typed, sstmt, vtype_display, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_is_unknown, vtype_list_elem, vtype_struct_name, vtype_tuple_at}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns, tc_check_exhaustive}
@@ -183,7 +183,7 @@ fn variant_has(variants: VariantList, name: string) -> bool {
 // Trait registry: maps trait name to its required method names.
 enum TraitMethodList {
     End
-    Node(name: string, param_count: int, ret_ty: string, next: TraitMethodList)
+    Node(name: string, param_count: int, next: TraitMethodList)
 }
 
 // Associated types declared on a trait (e.g. `type Item`).
@@ -244,54 +244,46 @@ fn is_shape(set: ShapeSet, name: string) -> bool {
     }
 }
 
-// Newtype registry: maps name to inner type string
+// Newtype registry: maps name to inner ValueType
 enum NewtypeReg {
     End
-    Node(name: string, inner_ty: string, inner_vt: ValueType, next: NewtypeReg)
-}
-
-fn newtype_lookup(reg: NewtypeReg, name: string) -> string {
-    match reg {
-        .End -> ""
-        .Node(n, inner, _, _) if n == name -> inner
-        .Node(_, _, _, next) -> newtype_lookup(next, name)
-    }
+    Node(name: string, inner_vt: ValueType, next: NewtypeReg)
 }
 
 fn newtype_vtype_lookup(reg: NewtypeReg, name: string) -> ValueType {
     match reg {
         .End -> ValueType.Unknown
-        .Node(n, _, vt, _) if n == name -> vt
-        .Node(_, _, _, next) -> newtype_vtype_lookup(next, name)
+        .Node(n, vt, _) if n == name -> vt
+        .Node(_, _, next) -> newtype_vtype_lookup(next, name)
     }
 }
 
-// Union alias registry: maps name to type string
+// Union alias registry: maps name to ValueType
 enum UnionAliasReg {
     End
-    Node(name: string, type_str: string, next: UnionAliasReg)
+    Node(name: string, type_vt: ValueType, next: UnionAliasReg)
 }
 
-fn union_alias_lookup(reg: UnionAliasReg, name: string) -> string {
+fn union_alias_vtype_lookup(reg: UnionAliasReg, name: string) -> ValueType {
     match reg {
-        .End -> ""
-        .Node(n, ts, _) if n == name -> ts
-        .Node(_, _, next) -> union_alias_lookup(next, name)
+        .End -> ValueType.Unknown
+        .Node(n, vt, _) if n == name -> vt
+        .Node(_, _, next) -> union_alias_vtype_lookup(next, name)
     }
 }
 
 // Associated type definitions from `impl Trait for Type { type Item = ConcreteType }`.
-// Key: "TypeName.AssocName" (e.g. "Circle.Item"), Value: concrete type string.
+// Key: "TypeName.AssocName" (e.g. "Circle.Item"), Value: concrete ValueType.
 enum AssocTypeDefs {
     End
-    Node(key: string, concrete_ty: string, next: AssocTypeDefs)
+    Node(key: string, concrete_vt: ValueType, next: AssocTypeDefs)
 }
 
-fn assoc_type_lookup(reg: AssocTypeDefs, key: string) -> string {
+fn assoc_type_vt_lookup(reg: AssocTypeDefs, key: string) -> ValueType {
     match reg {
-        .End -> ""
-        .Node(k, ty, _) if k == key -> ty
-        .Node(_, _, next) -> assoc_type_lookup(next, key)
+        .End -> ValueType.Unknown
+        .Node(k, vt, _) if k == key -> vt
+        .Node(_, _, next) -> assoc_type_vt_lookup(next, key)
     }
 }
 
@@ -387,19 +379,6 @@ export fn tc_report_with_cause(tc: TC, code: DiagCode, msg: string, cause_msg: s
 export fn tc_er(tc: TC, ty: ValueType) -> ExprResult { ExprResult { tc, ty } }
 
 // Parse a union alias string "A | B | C" into ValueType.Union.
-fn resolve_union_alias_str(tc: TC, ua: string) -> ValueType {
-    let pipe = find_type_pipe(ua)
-    if pipe >= 0 {
-        let left_str = ua.substring(0, pipe).trim()
-        let right_str = ua.substring(pipe + 1, ua.length).trim()
-        let left = resolve_vtype(tc, vtype_from_name(left_str))
-        let right = resolve_union_alias_str(tc, right_str)
-        ValueType.Union(union_type_list_merge(left, right))
-    } else {
-        resolve_vtype(tc, vtype_from_name(ua.trim()))
-    }
-}
-
 export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
     match vt {
         .Struct(name) -> {
@@ -407,14 +386,14 @@ export fn resolve_vtype(tc: TC, vt: ValueType) -> ValueType {
             let dot = name.index_of(".")
             if dot >= 0 {
                 let assoc_key = name
-                let concrete = assoc_type_lookup(tc.assoc_type_defs, assoc_key)
-                if concrete != "" {
-                    return resolve_vtype(tc, vtype_from_name(concrete))
+                let concrete_vt = assoc_type_vt_lookup(tc.assoc_type_defs, assoc_key)
+                if !vtype_is_unknown(concrete_vt) {
+                    return resolve_vtype(tc, concrete_vt)
                 }
             }
             if enum_type_has(tc.enums, name) { return ValueType.Enum(name, TypeList.End) }
-            let ua = union_alias_lookup(tc.union_aliases, name)
-            if ua != "" { return resolve_union_alias_str(tc, ua) }
+            let ua_vt = union_alias_vtype_lookup(tc.union_aliases, name)
+            if !vtype_is_unknown(ua_vt) { return resolve_vtype(tc, ua_vt) }
             let nt_vt = newtype_vtype_lookup(tc.newtypes, name)
             if !vtype_is_unknown(nt_vt) { return ValueType.Newtype(name, resolve_vtype(tc, nt_vt)) }
             if struct_type_has(tc.structs, name) { return ValueType.Struct(name) }
@@ -502,16 +481,16 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     let resolved = tc_resolve_type_operator(fields, tc.structs)
                     tc with { structs: StructTypeReg.Node(name, resolved, tc.structs) }
                 }
-                .NewtypeDecl(name, inner_ty_str, inner_vt) -> {
+                .NewtypeDecl(name, inner_vt) -> {
                     let inner_ty = resolve_vtype(tc, inner_vt)
                     let ctor_params = ParamList.Node("value", inner_ty, ParamList.End)
                     tc with {
-                        newtypes: NewtypeReg.Node(name, inner_ty_str, inner_vt, tc.newtypes),
+                        newtypes: NewtypeReg.Node(name, inner_vt, tc.newtypes),
                         fns: FnTypeEntry.Node(name, ctor_params, ValueType.Newtype(name, inner_ty), tc.fns),
                     }
                 }
-                .UnionAliasDecl(name, type_str, _) -> {
-                    tc with { union_aliases: UnionAliasReg.Node(name, type_str, tc.union_aliases) }
+                .UnionAliasDecl(name, type_vt) -> {
+                    tc with { union_aliases: UnionAliasReg.Node(name, type_vt, tc.union_aliases) }
                 }
                 .ShapeDecl(name, fields) -> tc with {
                     structs: StructTypeReg.Node(name, fields, tc.structs),
@@ -555,18 +534,18 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
 }
 
 // Collect associated type definitions from an impl block.
-// `type Item = ConcreteType` → store "TypeName.Item" → "ConcreteType" in assoc_type_defs.
+// `type Item = ConcreteType` → store "TypeName.Item" → ConcreteType vtype in assoc_type_defs.
 fn collect_impl_assoc_types(tc: TC, type_name: string, stmts: StmtList) -> TC {
     match stmts {
         .End -> tc
         .Node(ss, next) -> {
             let updated = match ss.node {
-                .AssocType(name, ty, _) -> {
-                    if ty != "" {
+                .AssocType(name, ty_vt) -> {
+                    if !vtype_is_unknown(ty_vt) {
                         let key = "${type_name}.${name}"
                         let self_key = "Self.${name}"
-                        let with_type = tc with { assoc_type_defs: AssocTypeDefs.Node(key, ty, tc.assoc_type_defs) }
-                        with_type with { assoc_type_defs: AssocTypeDefs.Node(self_key, ty, with_type.assoc_type_defs) }
+                        let with_type = tc with { assoc_type_defs: AssocTypeDefs.Node(key, ty_vt, tc.assoc_type_defs) }
+                        with_type with { assoc_type_defs: AssocTypeDefs.Node(self_key, ty_vt, with_type.assoc_type_defs) }
                     } else { tc }
                 }
                 _ -> tc

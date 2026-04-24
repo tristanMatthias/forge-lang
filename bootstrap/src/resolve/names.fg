@@ -163,11 +163,11 @@ fn collect_item_from_stmt(stmt: Stmt, mod_path: string, exported: int, rest: Mod
             let canonical = "${mod_path}::${name}"
             ModuleItem.Node(name, canonical, exported, rest)
         }
-        .NewtypeDecl(name, _, _) -> {
+        .NewtypeDecl(name, _) -> {
             let canonical = "${mod_path}::${name}"
             ModuleItem.Node(name, canonical, exported, rest)
         }
-        .UnionAliasDecl(name, _, _) -> {
+        .UnionAliasDecl(name, _) -> {
             let canonical = "${mod_path}::${name}"
             ModuleItem.Node(name, canonical, exported, rest)
         }

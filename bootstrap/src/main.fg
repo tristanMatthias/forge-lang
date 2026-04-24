@@ -30,7 +30,7 @@ mod codegen
 mod desugar
 
 use parse.{parse_expression_source, parse_program_source}
-use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_eq, ValueType}
+use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType}
 use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
@@ -155,8 +155,8 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
             let tp_part = if tp_str == "" { "" } else { "<${tp_str}>" }
             "${ind}type ${name}${tp_part} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
         }
-        .NewtypeDecl(name, inner_ty, _) -> "${ind}type ${name} = ${inner_ty}"
-        .UnionAliasDecl(name, type_str, _) -> "${ind}type ${name} = ${type_str}"
+        .NewtypeDecl(name, inner_vt) -> "${ind}type ${name} = ${vtype_render_full(inner_vt)}"
+        .UnionAliasDecl(name, type_vt) -> "${ind}type ${name} = ${vtype_render_full(type_vt)}"
         .ShapeDecl(name, fields) -> "${ind}shape ${name} = {\n${fmt_field_decl_list(fields, depth + 1)}\n${ind}}"
         .EnumDecl(name, tp, variants) -> {
             let tp_str = fmt_type_param_list(tp)
@@ -191,7 +191,7 @@ fn fmt_stmt(ss: Stmt, depth: int) -> string {
         .Parallel(body) -> "${ind}parallel {\n${fmt_stmt_list(body, depth + 1)}\n${ind}}"
         .Module(name, body) -> "${ind}mod ${name}\n${fmt_stmt_list(body, depth)}"
         .Use(path, names) -> "${ind}use ${path}.{${fmt_param_list_comma(names)}}"
-        .AssocType(name, ty, _) -> if ty == "" { "${ind}type ${name}" } else { "${ind}type ${name} = ${ty}" }
+        .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "${ind}type ${name}" } else { "${ind}type ${name} = ${vtype_render_full(ty_vt)}" }
     }
 }
 

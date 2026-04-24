@@ -1,7 +1,7 @@
 // WHY: parses `type Foo = { ... }` and `shape Foo = { ... }` declarations
 // and the supporting field grammars (declaration + literal init).
 
-use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList, TypeExpr, ValueType, render_type_expr, type_expr_to_vtype}
+use core.ast.{Stmt, Expr, FieldList, FieldInitList, SExpr, sexpr, TypeParamList, TypeExpr, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -37,11 +37,10 @@ impl Parser {
                 // Match on the TypeExpr structure, not string content
                 match type_expr {
                     .Union(_, _) -> {
-                        return Stmt.UnionAliasDecl(name, render_type_expr(type_expr), type_expr_to_vtype(type_expr))
+                        return Stmt.UnionAliasDecl(name, type_expr_to_vtype(type_expr))
                     }
                     _ -> {}
                 }
-                let rendered = render_type_expr(type_expr)
                 // Type operators: type X = Base without { fields }
                 if self.check(Tk.Identifier) {
                     let op = self.current_lexeme
@@ -55,7 +54,7 @@ impl Parser {
                     }
                 }
                 // Newtype wrapper: type UserId = string — nominal distinction
-                return Stmt.NewtypeDecl(name, rendered, type_expr_to_vtype(type_expr))
+                return Stmt.NewtypeDecl(name, type_expr_to_vtype(type_expr))
             }
         }
         Stmt.TypeDecl(name, tp, FieldList.End)

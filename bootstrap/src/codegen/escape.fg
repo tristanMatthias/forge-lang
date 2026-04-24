@@ -88,8 +88,8 @@ fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
         .Function(_, _, _, _, _) -> set
         .ReturnEmpty -> set
         .TypeDecl(_, _, _) -> set
-        .NewtypeDecl(_, _, _) -> set
-        .UnionAliasDecl(_, _, _) -> set
+        .NewtypeDecl(_, _) -> set
+        .UnionAliasDecl(_, _) -> set
         .ShapeDecl(_, _) -> set
         .EnumDecl(_, _, _) -> set
         .ExternFn(_, _, _) -> set
@@ -105,7 +105,7 @@ fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
         .Parallel(_) -> set
         .Module(_, _) -> set
         .Use(_, _) -> set
-        .AssocType(_, _, _) -> set
+        .AssocType(_, _) -> set
     }
 }
 
@@ -236,8 +236,8 @@ fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
         .ReturnEmpty -> 0
         .Function(_, _, _, _, _) -> 0
         .TypeDecl(_, _, _) -> 0
-        .NewtypeDecl(_, _, _) -> 0
-        .UnionAliasDecl(_, _, _) -> 0
+        .NewtypeDecl(_, _) -> 0
+        .UnionAliasDecl(_, _) -> 0
         .ShapeDecl(_, _) -> 0
         .EnumDecl(_, _, _) -> 0
         .Match(_, _) -> 0
@@ -258,7 +258,7 @@ fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
         .Parallel(_) -> 0
         .Module(_, _) -> 0
         .Use(_, _) -> 0
-        .AssocType(_, _, _) -> 0
+        .AssocType(_, _) -> 0
     }
 }
 
@@ -284,8 +284,8 @@ export fn is_arena_eligible(body: Stmt) -> bool {
         .ReturnEmpty -> false
         .Function(_, _, _, _, _) -> false
         .TypeDecl(_, _, _) -> false
-        .NewtypeDecl(_, _, _) -> false
-        .UnionAliasDecl(_, _, _) -> false
+        .NewtypeDecl(_, _) -> false
+        .UnionAliasDecl(_, _) -> false
         .ShapeDecl(_, _) -> false
         .EnumDecl(_, _, _) -> false
         .Match(_, _) -> false
@@ -306,7 +306,7 @@ export fn is_arena_eligible(body: Stmt) -> bool {
         .Parallel(_) -> false
         .Module(_, _) -> false
         .Use(_, _) -> false
-        .AssocType(_, _, _) -> false
+        .AssocType(_, _) -> false
         .If(_, _, _) -> false
         .While(_, _) -> false
         .For(_, _, _, _) -> false

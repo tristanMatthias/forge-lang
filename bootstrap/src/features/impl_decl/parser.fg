@@ -1,7 +1,7 @@
 // WHY: parses `impl Type { fn method(self) { ... } }` blocks. Each
 // method is desugared to a free function named `Type__method`.
 
-use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, render_type_expr, type_expr_to_vtype, vtype_from_name}
+use core.ast.{Stmt, StmtList, ParamList, TypeParamList, SStmt, sstmt, ValueType, type_expr_to_vtype, vtype_from_name}
 use parse.{Parser}
 use core.ast.{Tk}
 
@@ -60,10 +60,9 @@ impl Parser {
                 return null
             }
             let te = self.parse_type_expr("expected type after `=`")?
-            let ty = render_type_expr(te)
             let ty_vt = type_expr_to_vtype(te)
             let rest = self.parse_impl_methods(type_name)?
-            return StmtList.Node(sstmt(Stmt.AssocType(name, ty, ty_vt), line, col), rest)
+            return StmtList.Node(sstmt(Stmt.AssocType(name, ty_vt), line, col), rest)
         }
         if !self.check(Tk.KwFn) {
             self.set_error("expected `fn` or `type` inside impl block")
