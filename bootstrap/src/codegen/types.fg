@@ -1067,4 +1067,4 @@ impl Ctx {
     }
 }
 export type StmtResult = { ctx: Ctx, env: VarEnv }
-export type BlockResult = { value: ptr, ty: ValueType, ctx: Ctx }
+export type BlockResult = { value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv }

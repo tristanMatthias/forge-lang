@@ -1,0 +1,30 @@
+/// expect: cleanup
+/// expect: released 42
+/// expect: err: failed
+/// expect: ---
+/// expect: cleanup
+/// expect: ok: success
+
+enum Result<T, E> { Ok(value: T), Err(error: E) }
+fn release(r: int) { println("released ${string(r)}") }
+fn cleanup() { println("cleanup") }
+
+fn do_work(fail: bool) -> Result<string, string> {
+    let resource = 42
+    errdefer release(resource)
+    defer cleanup()
+    if fail { return Result.Err("failed") }
+    Result.Ok("success")
+}
+
+fn main() {
+    match do_work(true) {
+        .Ok(v) -> println("ok: ${v}")
+        .Err(e) -> println("err: ${e}")
+    }
+    println("---")
+    match do_work(false) {
+        .Ok(v) -> println("ok: ${v}")
+        .Err(e) -> println("err: ${e}")
+    }
+}

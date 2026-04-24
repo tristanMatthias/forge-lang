@@ -82,14 +82,14 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
             let merge_bb = br.ctx.bb("defer_done")
             br.ctx.cond_br(is_err, err_bb, ok_bb)
             br.ctx.position(err_bb)
-            emit_defers_on_error(br.ctx, env)
+            emit_defers_on_error(br.ctx, br.env)
             br.ctx.br(merge_bb)
             br.ctx.position(ok_bb)
-            emit_defers(br.ctx, env)
+            emit_defers(br.ctx, br.env)
             br.ctx.br(merge_bb)
             br.ctx.position(merge_bb)
         } else {
-            emit_defers(br.ctx, env)
+            emit_defers(br.ctx, br.env)
         }
         // Union wrapping: if function returns a union, wrap the implicit return value
         if needs_union_wrap(br.ty, ret_ty) {

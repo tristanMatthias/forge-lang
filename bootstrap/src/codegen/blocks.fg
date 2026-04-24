@@ -9,8 +9,8 @@ use features.error_propagation.{Result}
 
 extern fn forge_tag_as_result(ptr: ptr) -> ptr
 
-fn ok_br(value: ptr, ty: ValueType, ctx: Ctx) -> Result<BlockResult, string> {
-    let r = Result.Ok(BlockResult { value, ty, ctx })
+fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv) -> Result<BlockResult, string> {
+    let r = Result.Ok(BlockResult { value, ty, ctx, env })
     forge_tag_as_result(r)
     r
 }
@@ -46,23 +46,23 @@ fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last
     match stmt {
         .Expr(e) -> {
             let r = ctx.emit(env, e)?
-            ok_br(r.value, r.ty, ctx)
+            ok_br(r.value, r.ty, ctx, env)
         }
         .Block(body) -> {
             let r = emit_block_loop_ctx(ctx, env, body, ctx.i64(0), .Unknown)?
-            ok_br(r.value, r.ty, r.ctx)
+            ok_br(r.value, r.ty, r.ctx, r.env)
         }
         .Match(subject, arms) -> {
             let r = emit_match_expr(ctx, env, subject, arms)?
-            ok_br(r.value, r.ty, ctx)
+            ok_br(r.value, r.ty, ctx, env)
         }
         .If(condition, then_branch, else_branch) -> {
             let r = emit_stmt_if_as_value(ctx, env, condition, then_branch, else_branch)?
-            ok_br(r.value, r.ty, ctx)
+            ok_br(r.value, r.ty, ctx, env)
         }
         _ -> {
             let sr = emit_stmt(ctx, env, stmt)?
-            ok_br(last_val, last_ty, sr.ctx)
+            ok_br(last_val, last_ty, sr.ctx, sr.env)
         }
     }
 }
@@ -116,7 +116,7 @@ export fn emit_block_loop(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr,
 // so the caller can access accumulated defers.
 export fn emit_block_loop_ctx(ctx: Ctx, env: VarEnv, stmts: StmtList, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
     match stmts {
-        .End -> ok_br(last_val, last_ty, ctx)
+        .End -> ok_br(last_val, last_ty, ctx, VarEnv.End)
         .Node(ss, next) -> {
             let line_ctx = ctx with { source_line: ss.line }
             match next {
