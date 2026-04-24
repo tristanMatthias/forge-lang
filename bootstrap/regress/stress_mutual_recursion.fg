@@ -1,0 +1,26 @@
+/// expect: even: 1
+/// expect: odd: 0
+/// expect: collatz(27): 111
+
+fn is_even(n: int) -> bool {
+    if n == 0 { return true }
+    is_odd(n - 1)
+}
+
+fn is_odd(n: int) -> bool {
+    if n == 0 { return false }
+    is_even(n - 1)
+}
+
+// Collatz sequence length
+fn collatz_len(n: int) -> int {
+    if n <= 1 { return 0 }
+    if n % 2 == 0 { 1 + collatz_len(n / 2) }
+    else { 1 + collatz_len(3 * n + 1) }
+}
+
+fn main() {
+    println("even: ${string(is_even(100))}")
+    println("odd: ${string(is_odd(100))}")
+    println("collatz(27): ${string(collatz_len(27))}")
+}

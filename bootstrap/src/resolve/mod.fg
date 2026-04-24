@@ -315,7 +315,7 @@ fn resolve_binding(r: Resolver, name: string, init: Expr, is_mutable: bool) -> R
 
 // Built-in methods that mutate their receiver (spec Axis 11.5).
 fn is_mutating_method(name: string) -> bool {
-    name in ["push", "pop", "insert", "remove", "clear", "sort", "reverse", "set"]
+    name in ["push", "pop", "insert", "remove", "clear", "sort", "set"]
 }
 
 export fn resolve_expr(r: Resolver, expr: Expr) -> Resolver {

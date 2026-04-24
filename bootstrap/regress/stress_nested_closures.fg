@@ -1,0 +1,15 @@
+/// expect: result: 60
+
+fn make_adder(base: int) -> fn(int) -> fn(int) -> int {
+    (x) -> {
+        let sum = base + x
+        (y) -> sum + y
+    }
+}
+
+fn main() {
+    let add10 = make_adder(10)
+    let add10_20 = add10(20)
+    let result = add10_20(30)
+    println("result: ${string(result)}")
+}

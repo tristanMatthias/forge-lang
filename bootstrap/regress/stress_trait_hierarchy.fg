@@ -1,0 +1,34 @@
+/// expect: json: {"name":"Alice","age":30}
+/// expect: csv: Alice,30
+/// expect: display: User(Alice, 30)
+
+trait ToJson { fn to_json(self) -> string }
+trait ToCsv { fn to_csv(self) -> string }
+trait Display { fn display(self) -> string }
+
+type User = { name: string, age: int }
+
+impl ToJson for User {
+    fn to_json(self) -> string {
+        "{\"name\":\"${self.name}\",\"age\":${string(self.age)}}"
+    }
+}
+
+impl ToCsv for User {
+    fn to_csv(self) -> string { "${self.name},${string(self.age)}" }
+}
+
+impl Display for User {
+    fn display(self) -> string { "User(${self.name}, ${string(self.age)})" }
+}
+
+fn show_json(item: ToJson) { println("json: ${item.to_json()}") }
+fn show_csv(item: ToCsv) { println("csv: ${item.to_csv()}") }
+fn show_display(item: Display) { println("display: ${item.display()}") }
+
+fn main() {
+    let u = User { name: "Alice", age: 30 }
+    show_json(u)
+    show_csv(u)
+    show_display(u)
+}
