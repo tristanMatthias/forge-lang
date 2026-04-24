@@ -113,7 +113,7 @@ impl Parser {
             // Optional `: Type` after self — consumed but not used (self type is inferred from impl block).
             if self.check(Tk.Colon) {
                 self.advance()
-                let _ty = self.consume_type("expected type after `:`")?
+                self.parse_type_expr("expected type after `:`")?
             }
             // self is followed by either `,` (more params) or `)`.
             if self.check(Tk.Comma) {
