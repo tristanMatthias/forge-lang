@@ -1095,6 +1095,30 @@ const char* forge_str_from_char_code(int64_t code) {
     return r;
 }
 
+// Reverse a string.
+const char* forge_str_reverse(const char* s) {
+    size_t len = strlen(s);
+    char* r = (char*)forge_rc_alloc(len + 1);
+    for (size_t i = 0; i < len; i++) {
+        r[i] = s[len - 1 - i];
+    }
+    r[len] = '\0';
+    return r;
+}
+
+// Repeat a string n times.
+const char* forge_str_repeat(const char* s, int64_t n) {
+    if (n <= 0) return "";
+    size_t len = strlen(s);
+    size_t total = len * (size_t)n;
+    char* r = (char*)forge_rc_alloc(total + 1);
+    for (int64_t i = 0; i < n; i++) {
+        memcpy(r + i * len, s, len);
+    }
+    r[total] = '\0';
+    return r;
+}
+
 // Return a single-character string at index idx.
 const char* forge_str_char_at(const char* s, int64_t idx) {
     size_t len = strlen(s);

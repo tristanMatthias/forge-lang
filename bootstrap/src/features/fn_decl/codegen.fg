@@ -240,6 +240,11 @@ fn emit_string_method(ctx: Ctx, env: VarEnv, str_val: ptr, method: string, args:
             let byte_val = ctx.load_i8(str_ptr, "char_byte")
             ok_emit(ctx.zext(byte_val, ctx.i64_type, "char_code"))
         }
+        "repeat" -> {
+            let arg_r = emit_single_arg(ctx, env, args)?
+            ok_emit_str(ctx.call("forge_str_repeat", [ctx.to_ptr(str_val, "str_self"), arg_r.value]))
+        }
+        "reverse" -> ok_emit_str(ctx.call("forge_str_reverse", [ctx.to_ptr(str_val, "str_self")]))
         _ -> err_emit("string method `${method}` not implemented")
     }
 }
