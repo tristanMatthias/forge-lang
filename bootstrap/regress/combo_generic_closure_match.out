@@ -1,0 +1,4 @@
+doubled: [2, 4, 6]
+error propagated
+filtered: [2, 4]
+chained: 24
