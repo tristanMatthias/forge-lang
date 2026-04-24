@@ -1,0 +1,89 @@
+/// expect: circle area: 78.5
+/// expect: rect area: 12
+/// expect: found: banana at 1
+/// expect: not found
+/// expect: sum: 15
+/// expect: Ok: hello
+/// expect: Err: oops
+/// expect: narrowed: Red
+
+// Red team: enums with complex payloads
+enum Shape {
+    Circle(radius: float)
+    Rect(w: float, h: float)
+}
+
+fn area(s: Shape) -> float {
+    match s {
+        .Circle(r) -> 3.14 * r * r
+        .Rect(w, h) -> w * h
+    }
+}
+
+// Red team: generic enum
+enum Option<T> { Some(value: T), None }
+
+fn find_index(items: List<string>, target: string) -> Option<int> {
+    let idx = items.index_of(target)
+    if idx >= 0 { Option.Some(idx) } else { Option.None }
+}
+
+// Red team: recursive enum with deep nesting
+enum IntList { Nil, Cons(head: int, tail: IntList) }
+
+fn sum_list(l: IntList) -> int {
+    match l {
+        .Nil -> 0
+        .Cons(h, t) -> h + sum_list(t)
+    }
+}
+
+// Red team: Result with ? propagation
+enum Result<T, E> { Ok(value: T), Err(error: E) }
+
+fn maybe_hello(fail: bool) -> Result<string, string> {
+    if fail { return Result.Err("oops") }
+    Result.Ok("hello")
+}
+
+fn try_it(fail: bool) -> Result<string, string> {
+    let val = maybe_hello(fail)?
+    Result.Ok(val)
+}
+
+// Red team: is operator for type narrowing
+enum Color { Red, Green, Blue }
+
+fn main() {
+    // Enum with payloads
+    println("circle area: ${string(area(Shape.Circle(5.0)))}")
+    println("rect area: ${string(area(Shape.Rect(3.0, 4.0)))}")
+
+    // Generic enum
+    match find_index(["apple", "banana", "cherry"], "banana") {
+        .Some(idx) -> println("found: banana at ${string(idx)}")
+        .None -> println("not found")
+    }
+    match find_index(["apple", "banana"], "grape") {
+        .Some(idx) -> println("found: grape at ${string(idx)}")
+        .None -> println("not found")
+    }
+
+    // Recursive enum
+    let list = IntList.Cons(1, IntList.Cons(2, IntList.Cons(3, IntList.Cons(4, IntList.Cons(5, IntList.Nil)))))
+    println("sum: ${string(sum_list(list))}")
+
+    // Result with ?
+    match try_it(false) {
+        .Ok(v) -> println("Ok: ${v}")
+        .Err(e) -> println("Err: ${e}")
+    }
+    match try_it(true) {
+        .Ok(v) -> println("Ok: ${v}")
+        .Err(e) -> println("Err: ${e}")
+    }
+
+    // is operator
+    let c = Color.Red
+    if c is .Red { println("narrowed: Red") }
+}

@@ -1,0 +1,15 @@
+/// expect: task result: 100
+/// expect: multi: 500
+
+fn compute(n: int) -> int { n * n }
+
+fn main() {
+    let t = spawn { compute(10) }
+    println("task result: ${string(t.await)}")
+
+    // Multiple tasks
+    let t1 = spawn { 100 }
+    let t2 = spawn { 200 }
+    let t3 = spawn { 200 }
+    println("multi: ${string(t1.await + t2.await + t3.await)}")
+}
