@@ -12,7 +12,7 @@ use typeck.{TraitImplReg, type_implements_trait}
 type GenRegs = { fns: GenericFnReg, enums: GenericEnumReg, structs: GenericStructReg }
 
 enum GenericFnReg {
-    End, Node(name: string, tp: TypeParamList, params: ParamList, ret_ty: string, body: StmtList, next: GenericFnReg)
+    End, Node(name: string, tp: TypeParamList, params: ParamList, ret_vt: ValueType, body: StmtList, next: GenericFnReg)
 }
 enum GenericEnumReg {
     End, Node(name: string, tp: TypeParamList, variants: VariantList, next: GenericEnumReg)
@@ -489,7 +489,7 @@ fn collect_generics(stmts: StmtList, regs: GenRegs) -> GenRegs {
 fn collect_generic_stmt(stmt: Stmt, regs: GenRegs) -> GenRegs {
     match stmt {
         .Function(name, tp, params, ret_vt, body) if tp is .Node ->
-            regs with { fns: GenericFnReg.Node(name, tp, params, vtype_render_full(ret_vt), body, regs.fns) }
+            regs with { fns: GenericFnReg.Node(name, tp, params, ret_vt, body, regs.fns) }
         .EnumDecl(name, tp, variants) if tp is .Node ->
             regs with { enums: GenericEnumReg.Node(name, tp, variants, regs.enums) }
         .TypeDecl(name, tp, fields) if tp is .Node ->
@@ -667,9 +667,9 @@ fn try_add_struct_inst(name: string, inits: FieldInitList, regs: GenRegs, st: Co
 
 // ── Pass 3: Generate concrete specializations ──
 
-fn specialize_fn(mangled: string, params: ParamList, ret_ty: string, body: StmtList, ta: TypeArgList) -> Stmt {
-    let concrete_ret = type_arg_lookup(ta, ret_ty)
-    Stmt.Function(mangled, TypeParamList.End, substitute_params(params, ta), vtype_from_type_string(concrete_ret), substitute_stmts(body, ta))
+fn specialize_fn(mangled: string, params: ParamList, ret_vt: ValueType, body: StmtList, ta: TypeArgList) -> Stmt {
+    let concrete_ret_vt = substitute_vtype(ret_vt, ta)
+    Stmt.Function(mangled, TypeParamList.End, substitute_params(params, ta), concrete_ret_vt, substitute_stmts(body, ta))
 }
 fn specialize_enum(mangled: string, variants: VariantList, ta: TypeArgList) -> Stmt {
     Stmt.EnumDecl(mangled, TypeParamList.End, substitute_variants(variants, ta))
@@ -684,8 +684,8 @@ fn generate_specializations(insts: InstList, regs: GenRegs) -> StmtList {
         .Node(name, mangled, ta, next) -> {
             let rest = generate_specializations(next, regs)
             match generic_fn_lookup(regs.fns, name) {
-                .Node(_, _, params, ret_ty, body, _) ->
-                    StmtList.Node(sstmt(specialize_fn(mangled, params, ret_ty, body, ta), 0, 0), rest)
+                .Node(_, _, params, ret_vt, body, _) ->
+                    StmtList.Node(sstmt(specialize_fn(mangled, params, ret_vt, body, ta), 0, 0), rest)
                 .End -> match generic_enum_lookup(regs.enums, name) {
                     .Node(_, _, variants, _) ->
                         StmtList.Node(sstmt(specialize_enum(mangled, variants, ta), 0, 0), rest)

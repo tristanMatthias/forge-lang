@@ -115,8 +115,8 @@ fn cg_union_alias_vtype_lookup(reg: CgUnionAliasReg, name: string) -> ValueType 
 export fn param_type_vt_at(list: ParamTypeList, idx: int) -> ValueType {
     match list {
         .End -> ValueType.Unknown
-        .Node(_, vt, _) if idx == 0 -> vt
-        .Node(_, _, next) -> param_type_vt_at(next, idx - 1)
+        .Node(vt, _) if idx == 0 -> vt
+        .Node(_, next) -> param_type_vt_at(next, idx - 1)
     }
 }
 
@@ -255,7 +255,7 @@ export enum FnRetTypes {
 // Per-parameter type string list — one entry per parameter of a function.
 export enum ParamTypeList {
     End
-    Node(ty: string, ty_vt: ValueType, next: ParamTypeList)
+    Node(ty_vt: ValueType, next: ParamTypeList)
 }
 
 // Maps function name → parameter type list (type annotation strings).
