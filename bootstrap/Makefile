@@ -98,6 +98,14 @@ ifndef FILE
 endif
 	@$(DIAG) --run $(FILE)
 
+# Compile and run with coverage instrumentation. Produces .profraw + .profdata.
+run-coverage:
+ifndef FILE
+	@echo "usage: make run-coverage FILE=path/to/program.fg" >&2
+	@exit 1
+endif
+	@$(DIAG) --run-coverage $(FILE)
+
 # Update the seed IR from the current self-hosted compiler.
 # Run this after dogfooding new syntax into bootstrap source.
 # The auto-cycle in --build-bs2 handles most seed updates automatically,

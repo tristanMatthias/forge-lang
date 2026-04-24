@@ -237,12 +237,27 @@ ensure_seed() {
 
 # Link an LLVM IR file into an executable.
 link_ll() {
-  local ll="$1" out="$2" logfile="$3"
-  "$LLC" -O2 -filetype=obj "$ll" -o "${out}.o" \
+  local ll="$1" out="$2" logfile="$3" coverage="${4:-}"
+  local obj_ll="$ll"
+  # Coverage: lower instrprof intrinsics before llc
+  if [ "$coverage" = "coverage" ]; then
+    local lowered="${ll%.ll}.cov.ll"
+    "$LLVM_PREFIX/bin/opt" -passes=instrprof -o "$lowered" -S "$ll" \
+      --mtriple=arm64-apple-macosx \
+      || die "opt instrprof lowering failed for $ll"
+    obj_ll="$lowered"
+  fi
+  "$LLC" -O2 -filetype=obj "$obj_ll" -o "${out}.o" \
     || die "llc failed for $ll"
+  local extra_libs=""
+  if [ "$coverage" = "coverage" ]; then
+    # Link against LLVM's profiling runtime for .profraw output
+    local clang_rt_dir="$LLVM_PREFIX/lib/clang/$(ls "$LLVM_PREFIX/lib/clang/" | head -1)/lib/darwin"
+    extra_libs="-L$clang_rt_dir -lclang_rt.profile_osx"
+  fi
   cc -o "$out" "${out}.o" "$RUNTIME_O" "$LLVM_WRAPPER_O" \
     -Wl,-stack_size,0x2000000 \
-    -L"$LLVM_PREFIX/lib" -lLLVM -lc++ 2>"$logfile" \
+    -L"$LLVM_PREFIX/lib" -lLLVM -lc++ $extra_libs 2>"$logfile" \
     || { cat "$logfile" >&2; die "link failed for $out"; }
 }
 
@@ -599,6 +614,29 @@ run_fg() {
 }
 
 mode_run() { run_fg "$1"; }
+
+# Run with coverage instrumentation — produces .profraw
+run_fg_coverage() {
+  local fg="$1"
+  [ -f "$fg" ] || die "no such file: $fg"
+  ensure_bs2
+  local ll bin profraw profdata
+  ll="$fg.ll"
+  bin="${fg%.fg}.bin"
+  profraw="${fg%.fg}.profraw"
+  profdata="${fg%.fg}.profdata"
+  if ! "$BS2" compile --coverage "$fg" >"$BUILD_DIR/last_run.log" 2>&1; then
+    cat "$BUILD_DIR/last_run.log" >&2
+    die "bs2 codegen failed"
+  fi
+  link_ll "$ll" "$bin" "$BUILD_DIR/last_link.log" coverage
+  LLVM_PROFILE_FILE="$profraw" "$bin"
+  "$LLVM_PREFIX/bin/llvm-profdata" merge -sparse "$profraw" -o "$profdata"
+  log "coverage data: $profdata"
+  "$LLVM_PREFIX/bin/llvm-profdata" show "$profdata"
+}
+
+mode_run_coverage() { run_fg_coverage "$1"; }
 
 mode_check() {
   local fg="$1"; [ -f "$fg" ] || die "no such file: $fg"
@@ -1072,6 +1110,7 @@ main() {
     --build-bs3)          mode_build_bs3 "$@" ;;
     --check-fixedpoint)   mode_check_fixedpoint "$@" ;;
     --run)                mode_run "$@" ;;
+    --run-coverage)       mode_run_coverage "$@" ;;
     --check)              mode_check "$@" ;;
     --ll)                 mode_ll "$@" ;;
     --diff)               mode_diff "$@" ;;
