@@ -10,7 +10,7 @@
 // dispatch, and token consumption helpers.
 
 mod lexer
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, render_type_expr, type_expr_list_append}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldList, FieldInitList, VariantList, Pattern, MatchArmList, BinOp, UnOp, LogicOp, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, AnnotationList, Tk, tk_keyword_str, TypeExpr, TypeExprList, render_type_expr, type_expr_list_append, type_expr_list_length}
 use parse.lexer.{p_is_alpha, p_is_alpha_numeric, p_is_digit}
 use core.registry.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser}
 use features.closures.parser.{expr_contains_it, wrap_in_it_lambda}
@@ -1518,6 +1518,19 @@ impl Parser {
                 self.parse_type_expr("expected return type after `->`")?
             } else { TypeExpr.Infer }
             return TypeExpr.FnType(params, ret)
+        }
+        // (T, U) → Tuple type
+        if self.check(Tk.LeftParen) {
+            self.advance()
+            let types = self.parse_type_expr_list()?
+            if !self.consume(Tk.RightParen, "expected `)` after tuple type") { return null }
+            // Build a Generic("__tuple", [T, U, ...]) that type_expr_to_vtype converts to Tuple
+            let count = type_expr_list_length(types)
+            if count == 1 {
+                // Single-element parens: treat as grouping, not a 1-tuple
+                match types { .Node(te, _) -> return te, _ -> {} }
+            }
+            return TypeExpr.Generic("__tuple", types)
         }
         // [T] → List type
         if self.check(Tk.LeftBracket) {

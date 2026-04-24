@@ -250,9 +250,7 @@ export fn type_expr_to_vtype(te: TypeExpr) -> ValueType {
                     let elem = match args { .Node(t, _) -> type_expr_to_vtype(t), .End -> ValueType.Unknown }
                     ValueType.List(elem)
                 }
-                // For named generics (Result<T,E>, etc.), produce Enum with type args.
-                // resolve_vtype will verify this is actually an enum via registry.
-                // If it's a struct, the Enum tag is wrong but name is preserved.
+                "__tuple" -> ValueType.Tuple(tel_to_type_list(args))
                 _ -> ValueType.Enum(base, tel_to_type_list(args))
             }
         }
@@ -264,6 +262,10 @@ fn tel_to_type_list(tel: TypeExprList) -> TypeList {
         .End -> TypeList.End
         .Node(te, next) -> TypeList.Node(type_expr_to_vtype(te), tel_to_type_list(next))
     }
+}
+
+export fn type_expr_list_length(tel: TypeExprList) -> int {
+    match tel { .End -> 0, .Node(_, next) -> 1 + type_expr_list_length(next) }
 }
 
 export fn type_expr_list_append(list: TypeExprList, ty: TypeExpr) -> TypeExprList {
