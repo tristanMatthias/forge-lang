@@ -127,3 +127,7 @@ extern fn forge_llvm_build_call_coerce(b: ptr, fn_type: ptr, fn_val: ptr, args: 
 extern fn forge_llvm_print_module_to_file(m: ptr, path: string) -> int
 extern fn forge_llvm_verify_module_print(m: ptr) -> int
 extern fn forge_llvm_verify_function(fn_val: ptr) -> int
+
+// ── Coverage instrumentation ──
+extern fn forge_coverage_declare(m: ptr)
+extern fn forge_coverage_emit_hit(builder: ptr, m: ptr, fn_name: string, fn_hash: int, num_counters: int, counter_idx: int)

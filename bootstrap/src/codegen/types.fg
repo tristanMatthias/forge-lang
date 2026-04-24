@@ -14,6 +14,7 @@
 
 use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
+use core.llvm.{forge_coverage_emit_hit}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
 
@@ -1068,6 +1069,13 @@ impl Ctx {
 
     fn with_defers(self, defers: DeferStack) -> Ctx {
         self with { defers }
+    }
+
+    // Emit a coverage region hit. No-op when coverage is disabled.
+    fn cov_hit(self, counter_idx: int) {
+        if self.coverage {
+            forge_coverage_emit_hit(self.builder, self.module, self.current_fn_name, 0, 0, counter_idx)
+        }
     }
 }
 export type StmtResult = { ctx: Ctx, env: VarEnv }

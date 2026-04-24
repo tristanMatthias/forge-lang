@@ -593,3 +593,67 @@ LLVMValueRef forge_llvm_build_call_coerce(LLVMBuilderRef b,
     }
     return result;
 }
+
+// ── Coverage instrumentation ──
+// Declares @llvm.instrprof.increment and provides helpers for emitting
+// coverage region counters. The LLVM InstrProfiling pass lowers these
+// intrinsic calls into __profc_* counter arrays and __profd_* data records.
+
+static LLVMValueRef coverage_intrinsic = NULL;
+
+// Declare @llvm.instrprof.increment(ptr, i64, i32, i32) in the module.
+// Idempotent — safe to call multiple times.
+void forge_coverage_declare(LLVMModuleRef m) {
+    if (coverage_intrinsic) return;
+    LLVMContextRef ctx = LLVMGetModuleContext(m);
+    LLVMTypeRef param_types[] = {
+        LLVMPointerType(LLVMInt8TypeInContext(ctx), 0),
+        LLVMInt64TypeInContext(ctx),
+        LLVMInt32TypeInContext(ctx),
+        LLVMInt32TypeInContext(ctx)
+    };
+    LLVMTypeRef fn_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx), param_types, 4, 0);
+    coverage_intrinsic = LLVMAddFunction(m, "llvm.instrprof.increment", fn_type);
+}
+
+// Create @__profn_<name> = private constant [N x i8] c"<name>"
+// Returns the global value for use in instrprof.increment calls.
+LLVMValueRef forge_coverage_name_global(LLVMModuleRef m, const char* fn_name) {
+    // Check if already created
+    char buf[512];
+    snprintf(buf, sizeof(buf), "__profn_%s", fn_name);
+    LLVMValueRef existing = LLVMGetNamedGlobal(m, buf);
+    if (existing) return existing;
+
+    LLVMContextRef ctx = LLVMGetModuleContext(m);
+    size_t len = strlen(fn_name);
+    LLVMValueRef str = LLVMConstStringInContext(ctx, fn_name, (unsigned)len, 1);
+    LLVMValueRef global = LLVMAddGlobal(m, LLVMTypeOf(str), buf);
+    LLVMSetInitializer(global, str);
+    LLVMSetLinkage(global, LLVMPrivateLinkage);
+    LLVMSetGlobalConstant(global, 1);
+    return global;
+}
+
+// Emit: call void @llvm.instrprof.increment(ptr @__profn_<name>, i64 <hash>, i32 <num_counters>, i32 <idx>)
+void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
+                              const char* fn_name, int64_t fn_hash,
+                              int32_t num_counters, int32_t counter_idx) {
+    if (!coverage_intrinsic) return;
+    LLVMContextRef ctx = LLVMGetModuleContext(m);
+    LLVMValueRef name_global = forge_coverage_name_global(m, fn_name);
+    LLVMValueRef args[] = {
+        name_global,
+        LLVMConstInt(LLVMInt64TypeInContext(ctx), (uint64_t)fn_hash, 0),
+        LLVMConstInt(LLVMInt32TypeInContext(ctx), (uint32_t)num_counters, 0),
+        LLVMConstInt(LLVMInt32TypeInContext(ctx), (uint32_t)counter_idx, 0)
+    };
+    LLVMTypeRef param_types[] = {
+        LLVMPointerType(LLVMInt8TypeInContext(ctx), 0),
+        LLVMInt64TypeInContext(ctx),
+        LLVMInt32TypeInContext(ctx),
+        LLVMInt32TypeInContext(ctx)
+    };
+    LLVMTypeRef fn_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx), param_types, 4, 0);
+    LLVMBuildCall2(builder, fn_type, coverage_intrinsic, args, 4, "");
+}

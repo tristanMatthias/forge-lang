@@ -10,6 +10,7 @@ use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use codegen.helpers.{stmts_last_expr}
 use diagnostics.{bag_new}
 use features.fn_decl.codegen.{emit_function_bodies}
+use core.llvm.{forge_coverage_declare}
 
 // Declare an extern function from a list of parameter types.
 fn decl(m: ptr, name: string, ret: ptr, params: [ptr]) {
@@ -38,6 +39,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     let lc = forge_llvm_context_create()
     let m = forge_llvm_module_create("bootstrap", lc)
     let builder = forge_llvm_create_builder(lc)
+    // Declare coverage intrinsic when instrumentation is enabled
+    if coverage { forge_coverage_declare(m) }
 
     let i64t = forge_llvm_int64_type(lc)
     let i1t = forge_llvm_int1_type(lc)
