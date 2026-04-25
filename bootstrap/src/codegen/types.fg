@@ -1114,6 +1114,22 @@ impl Ctx {
         if id >= 0 { self.cov_hit(id) }
         id
     }
+
+    // MC/DC condition coverage: track each sub-condition's true/false outcome.
+    // decision_id groups conditions within a compound logical expression.
+    fn cov_condition_true(self, decision_id: int) -> int {
+        if !self.coverage { return -1 }
+        let id = forge_covmap_alloc("condition_true", self.current_fn_name, self.source_line, 0, decision_id)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
+
+    fn cov_condition_false(self, decision_id: int) -> int {
+        if !self.coverage { return -1 }
+        let id = forge_covmap_alloc("condition_false", self.current_fn_name, self.source_line, 0, decision_id)
+        if id >= 0 { self.cov_hit(id) }
+        id
+    }
 }
 export type StmtResult = { ctx: Ctx, env: VarEnv }
 export type BlockResult = { value: ptr, ty: ValueType, ctx: Ctx, env: VarEnv }

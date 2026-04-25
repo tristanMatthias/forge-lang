@@ -38,6 +38,7 @@ for line in result.stdout.split('\n'):
 line_hits = {}
 fn_entries = {}
 branches = {}
+conditions = {}
 
 if covmap:
     for counter in covmap['counters']:
@@ -65,6 +66,16 @@ if covmap:
             if key not in branches:
                 branches[key] = {"then": 0, "else": 0}
             branches[key]["else"] = count
+        elif ctype == 'condition_true':
+            key = (cline, branch_id)  # branch_id = decision_id
+            if key not in conditions:
+                conditions[key] = []
+            conditions[key].append(("true", count))
+        elif ctype == 'condition_false':
+            key = (cline, branch_id)
+            if key not in conditions:
+                conditions[key] = []
+            conditions[key].append(("false", count))
         elif ctype == 'match_arm':
             line_hits[cline] = line_hits.get(cline, 0) + count
 else:
@@ -105,6 +116,25 @@ if total_branches > 0:
     print(f"Branch coverage:   {taken_branches}/{total_branches} ({bpct}%)")
 if fn_total > 0:
     print(f"Function coverage: {fn_hit}/{fn_total} ({fn_hit * 100 // fn_total}%)")
+
+# MC/DC condition coverage
+if conditions:
+    # Each decision has a list of (direction, count) pairs.
+    # For MC/DC: each sub-condition must have both true and false exercised.
+    # A condition pair is: one condition_true + one condition_false for the same decision.
+    # MC/DC is satisfied when each condition independently affects the decision.
+    total_conditions = 0
+    covered_conditions = 0
+    for (cline, decision_id), entries in sorted(conditions.items()):
+        # Pair up: entries come in order [left_sc, left_eval, right_true, right_false]
+        true_count = sum(c for d, c in entries if d == "true")
+        false_count = sum(c for d, c in entries if d == "false")
+        total_conditions += 1
+        # A condition is MC/DC-covered if both true and false outcomes were observed
+        if true_count > 0 and false_count > 0:
+            covered_conditions += 1
+    cpct = (covered_conditions * 100 // total_conditions) if total_conditions > 0 else 0
+    print(f"MC/DC coverage:    {covered_conditions}/{total_conditions} conditions ({cpct}%)")
 
 # LCOV output
 if lcov_out:

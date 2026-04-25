@@ -2,6 +2,7 @@
 
 use core.ast.{Expr, ExprList, VarEnv, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str}
 use codegen.types.{Ctx, EmitValue, ok_emit, ok_emit_typed, ok_emit_str, err_emit}
+use core.llvm.{forge_covmap_next_decision_id}
 use codegen.strings.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.helpers.{is_null_literal}
 use features.enum_decl.codegen.{emit_enum_tag_cmp}
@@ -141,22 +142,53 @@ export fn emit_float_binary(ctx: Ctx, lhs: ptr, rhs: ptr, op: BinOp, lty: ValueT
 }
 
 export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Expr) -> Result<EmitValue, string> {
+    let decision_id = forge_covmap_next_decision_id()
     let left_result = ctx.emit(env, left)?
 
     let l_bool = ctx.truthy(left_result.value, "l_bool")
     let left_bb = ctx.current_bb()
 
     let rhs_bb = ctx.bb("sc_rhs")
+    let sc_bb = ctx.bb("sc_short")
     let merge_bb = ctx.bb("sc_merge")
 
     match op {
-        .And -> ctx.cond_br(l_bool, rhs_bb, merge_bb)
-        .Or -> ctx.cond_br(l_bool, merge_bb, rhs_bb)
+        .And -> ctx.cond_br(l_bool, rhs_bb, sc_bb)
+        .Or -> ctx.cond_br(l_bool, sc_bb, rhs_bb)
     }
 
+    // Short-circuit path: left condition determined the outcome
+    ctx.position(sc_bb)
+    match op {
+        .And -> ctx.cov_condition_false(decision_id)
+        .Or -> ctx.cov_condition_true(decision_id)
+    }
+    ctx.br(merge_bb)
+
+    // Right-hand side: left was true (&&) or false (||), evaluate right
     ctx.position(rhs_bb)
+    match op {
+        .And -> ctx.cov_condition_true(decision_id)
+        .Or -> ctx.cov_condition_false(decision_id)
+    }
     let right_result = ctx.emit(env, right)?
     let r_bool = ctx.truthy(right_result.value, "r_bool")
+
+    // Right condition true/false counters
+    let r_true_bb = ctx.bb("sc_r_true")
+    let r_false_bb = ctx.bb("sc_r_false")
+    let r_merge_bb = ctx.bb("sc_r_merge")
+    ctx.cond_br(r_bool, r_true_bb, r_false_bb)
+
+    ctx.position(r_true_bb)
+    ctx.cov_condition_true(decision_id)
+    ctx.br(r_merge_bb)
+
+    ctx.position(r_false_bb)
+    ctx.cov_condition_false(decision_id)
+    ctx.br(r_merge_bb)
+
+    ctx.position(r_merge_bb)
     let rhs_end_bb = ctx.current_bb()
     ctx.br(merge_bb)
 
@@ -166,7 +198,7 @@ export fn emit_logical(ctx: Ctx, env: VarEnv, left: Expr, op: LogicOp, right: Ex
         .And -> ctx.const_i1(0)
         .Or -> ctx.const_i1(1)
     }
-    ctx.add_incoming(phi, sc_val, left_bb)
+    ctx.add_incoming(phi, sc_val, sc_bb)
     ctx.add_incoming(phi, r_bool, rhs_end_bb)
 
     ok_emit_typed(ctx.zext(phi, ctx.i64_type, "sc_ext"), .Bool)

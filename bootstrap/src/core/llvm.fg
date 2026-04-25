@@ -135,4 +135,5 @@ extern fn forge_covmap_begin(source_file: string, covmap_path: string)
 extern fn forge_covmap_alloc(cov_type: string, fn_name: string, line: int, col: int, branch_id: int) -> int
 extern fn forge_covmap_reset_fn()
 extern fn forge_covmap_next_branch_id() -> int
+extern fn forge_covmap_next_decision_id() -> int
 extern fn forge_covmap_end()

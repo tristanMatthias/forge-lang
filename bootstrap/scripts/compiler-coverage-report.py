@@ -34,14 +34,19 @@ for line in lines:
 fn_stats = defaultdict(lambda: {
     "total_lines": set(), "hit_lines": set(),
     "fn_entry_count": 0,
-    "total_branches": 0, "hit_branches": 0
+    "total_branches": 0, "hit_branches": 0,
+    "total_conditions": 0, "hit_conditions": 0
 })
+
+# Track condition pairs per decision for MC/DC
+decision_conditions = defaultdict(lambda: {"true": 0, "false": 0})
 
 for counter in covmap['counters']:
     cid = counter['id']
     fname = counter['fn']
     ctype = counter['type']
     cline = counter['line']
+    decision_id = counter['branch']
     count = 0
     if fname in fn_counters and cid < len(fn_counters[fname]):
         count = fn_counters[fname][cid]
@@ -55,6 +60,18 @@ for counter in covmap['counters']:
         fn_stats[fname]["total_branches"] += 1
         if count > 0:
             fn_stats[fname]["hit_branches"] += 1
+    elif ctype == 'condition_true':
+        key = (fname, cline, decision_id)
+        decision_conditions[key]["true"] += count
+    elif ctype == 'condition_false':
+        key = (fname, cline, decision_id)
+        decision_conditions[key]["false"] += count
+
+# Aggregate MC/DC stats per function
+for (fname, cline, did), counts in decision_conditions.items():
+    fn_stats[fname]["total_conditions"] += 1
+    if counts["true"] > 0 and counts["false"] > 0:
+        fn_stats[fname]["hit_conditions"] += 1
 
 # Collect results
 results = []
@@ -73,6 +90,9 @@ tb = sum(r[4] for r in results)
 hb = sum(r[5] for r in results)
 bpct = int(hb * 100 / tb) if tb > 0 else 0
 entered = sum(1 for r in results if r[3] > 0)
+tc = sum(s["total_conditions"] for s in fn_stats.values())
+hc = sum(s["hit_conditions"] for s in fn_stats.values())
+cpct = int(hc * 100 / tc) if tc > 0 else 0
 
 # Module grouping
 mod_stats = defaultdict(lambda: {"total": 0, "hit": 0, "fns": 0, "entered": 0, "bt": 0, "bh": 0})
@@ -100,6 +120,8 @@ print("=" * W)
 print(f"Functions: {len(results)} total, {entered} entered")
 print(f"Line coverage:   {hl_all}/{tl_all} ({opct}%)")
 print(f"Branch coverage: {hb}/{tb} ({bpct}%)")
+if tc > 0:
+    print(f"MC/DC coverage:  {hc}/{tc} ({cpct}%)")
 print()
 
 # Color helpers
