@@ -584,7 +584,7 @@ fn main() {
                 fail("monomorphization failed")
             }
             let output = "${path}.ll"
-            match compile_program(mono.stmts, output, false, false, path) {
+            match compile_program(mono.stmts, output, false, 0, path) {
                 .Ok(_) -> {}
                 .Err(e) -> {
                     let ice_bag = bag_report(bag_new(), diag_ice("internal compiler error during codegen: ${e}"))
@@ -603,7 +603,7 @@ fn main() {
         // that appear before the file path (always the last argument).
         mut stop_after = ""
         mut debug_null = false
-        mut enable_coverage = false
+        mut enable_coverage = 0
         mut json_output = false
         let argc = forge_selfhost_argc()
         // The file path is always the last argument.
@@ -618,7 +618,7 @@ fn main() {
                 debug_null = true
             }
             if arg == "--coverage" {
-                enable_coverage = true
+                enable_coverage = 1
             }
             if arg == "--json" {
                 json_output = true

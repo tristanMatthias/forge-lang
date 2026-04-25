@@ -5,6 +5,7 @@ use codegen.types.{BlockResult, Ctx, EmitValue, StmtResult,  err_emit, ok_emit_t
 use codegen.{emit_expr, emit_stmt, emit_stmt_list}
 use features.match_expr.codegen.{emit_match_expr}
 use features.if_stmt.codegen.{narrow_env_for_is}
+use core.llvm.{forge_covmap_next_branch_id}
 use features.error_propagation.{Result}
 
 extern fn forge_tag_as_result(ptr: ptr) -> ptr
@@ -69,6 +70,7 @@ fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last
 }
 
 export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<EmitValue, string> {
+    let branch_id = forge_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?
     let cond_i1 = ctx.truthy(emit_value_ptr(cond), "sif_cond")
     let then_bb = ctx.bb("sif_then")
@@ -79,12 +81,14 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: VarEnv, condition: Expr, then_bra
     ctx.cond_br(cond_i1, then_bb, else_bb)
 
     ctx.position(then_bb)
+    ctx.cov_branch_then(branch_id)
     let zero = ctx.i64(0)
     let then_env = narrow_env_for_is(ctx, env, condition)
     let t = emit_stmt_as_value(ctx, then_env, then_branch, zero, .Unknown)?
     ctx.store_br_if_open(emit_value_ptr(t), result_slot, merge_bb)
 
     ctx.position(else_bb)
+    ctx.cov_branch_else(branch_id)
     if else_branch != null {
         let e = emit_stmt_as_value(ctx, env, else_branch!, zero, .Unknown)?
         ctx.store_br_if_open(emit_value_ptr(e), result_slot, merge_bb)

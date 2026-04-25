@@ -22,6 +22,7 @@ use features.defer_stmt.codegen.{emit_defers, emit_defers_on_error}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 use features.fn_decl.codegen.{emit_function_bodies}
 use features.let_stmt.codegen.{emit_var_decl}
+use features.if_stmt.codegen.{emit_if}
 use features.list_lit.codegen.{emit_list_reduce_typed, emit_list_method_call}
 use features.map_lit.codegen.{emit_map_method_call}
 use features.match_expr.codegen.{emit_match_expr}
@@ -262,6 +263,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
             let new_env = emit_var_decl(ctx, env, name, vt, initializer)?
             ok_sr(ctx, new_env)
         }
+        .If(condition, then_branch, else_branch) -> emit_if(ctx, env, condition, then_branch, else_branch)
         .Block(body) -> {
             let sr = emit_stmt_list(ctx, env, body)?
             ok_sr(sr.ctx, env)

@@ -35,7 +35,7 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
     forge_llvm_add_function(m, name, fn_type)
 }
 
-export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string) -> Result<int, string> {
+export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: int, source_file: string) -> Result<int, string> {
     let lc = forge_llvm_context_create()
     let m = forge_llvm_module_create("bootstrap", lc)
     let builder = forge_llvm_create_builder(lc)
