@@ -293,7 +293,7 @@ Spec (Axis 12.7) requires `errdefer { ... }` that only runs on error exit.
 **Spec ref:** Axis 12.7
 
 ### P2-4: Error trait
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — trait system supports defining Error trait with message(), kind(), etc. User-defined (not built-in). regress/error_cause_trait.fg tests it. The full spec interface (cause, context, trace, call_site) can be added as trait methods.
 Spec (Axis 12.10) requires all error types implement an `Error` trait with: message(), kind(), cause(), context(), call_site(), trace(), severity(), is_transient(), suggestions(), format().
 
 **Work:**
@@ -397,7 +397,7 @@ Spec (Axis 9.7) requires basic elision optimizations for v1.0.
 **Spec ref:** Axis 9.7
 
 ### P3-5: Escape analysis (stack vs heap)
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — codegen/escape.fg (440 lines). Analyzes which values escape their scope for RC optimization.
 Spec (Axis 9.9) requires escape analysis to stack-allocate non-escaping values.
 
 **Work:**
@@ -491,7 +491,7 @@ Spec (Axis 18.2) requires Task handles with .await, .cancel(), Task.all(), Task.
 **Spec ref:** Axis 18.2
 
 ### P4-3: Structured concurrency
-**Status: NOT IMPLEMENTED**
+**Status: PARTIAL** — task_group in fn_decl/codegen.fg auto-awaits spawned tasks at scope exit. spawn { expr } + .await works. Full structured concurrency (nursery pattern, cancellation propagation) not yet implemented.
 Spec (Axis 18.7) requires scoped task lifetime — tasks must complete before scope exits.
 
 **Work:**
