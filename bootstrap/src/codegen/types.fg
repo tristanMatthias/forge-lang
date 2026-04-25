@@ -55,11 +55,10 @@ export type Ctx = {
     union_aliases: CgUnionAliasReg,
     copy_types: CopySet,
     debug_null_checks: int,
-    // LLVM source-based coverage (--coverage flag). When non-zero, codegen
-    // emits llvm.instrprof.increment calls at each coverage region. Zero
-    // overhead when 0 — no instrumentation in IR. Uses int instead of bool
-    // to avoid i1 struct alignment issues in closure dispatch.
-    coverage: int,
+    // LLVM source-based coverage (--coverage flag). When true, codegen
+    // emits llvm.instrprof.increment calls at each coverage region.
+    // Zero overhead when false — no instrumentation in IR.
+    coverage: bool,
     source_file: string,
     source_line: int,
     // Per-scope arena (spec Axis 9.6). When non-null, this is an LLVM
@@ -1081,35 +1080,35 @@ impl Ctx {
 
     // Allocate a coverage counter and emit a hit. Returns the counter ID.
     fn cov_line(self) -> int {
-        if self.coverage == 0 { return -1 }
+        if !self.coverage { return -1 }
         let id = forge_covmap_alloc("line", self.current_fn_name, self.source_line, 0, 0)
         if id >= 0 { self.cov_hit(id) }
         id
     }
 
     fn cov_fn_entry(self) -> int {
-        if self.coverage == 0 { return -1 }
+        if !self.coverage { return -1 }
         let id = forge_covmap_alloc("fn_entry", self.current_fn_name, self.source_line, 0, 0)
         if id >= 0 { self.cov_hit(id) }
         id
     }
 
     fn cov_branch_then(self, branch_id: int) -> int {
-        if self.coverage == 0 { return -1 }
+        if !self.coverage { return -1 }
         let id = forge_covmap_alloc("branch_then", self.current_fn_name, self.source_line, 0, branch_id)
         if id >= 0 { self.cov_hit(id) }
         id
     }
 
     fn cov_branch_else(self, branch_id: int) -> int {
-        if self.coverage == 0 { return -1 }
+        if !self.coverage { return -1 }
         let id = forge_covmap_alloc("branch_else", self.current_fn_name, self.source_line, 0, branch_id)
         if id >= 0 { self.cov_hit(id) }
         id
     }
 
     fn cov_match_arm(self, arm_idx: int) -> int {
-        if self.coverage == 0 { return -1 }
+        if !self.coverage { return -1 }
         let id = forge_covmap_alloc("match_arm", self.current_fn_name, self.source_line, 0, arm_idx)
         if id >= 0 { self.cov_hit(id) }
         id
