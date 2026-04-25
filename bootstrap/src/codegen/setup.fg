@@ -214,6 +214,8 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     decl(m, "forge_test_start_given", i32t, [pt])
     decl(m, "forge_test_end_given", i32t, [pt])
     decl(m, "forge_test_run_then", i64t, [pt, i64t])
+    decl(m, "forge_test_skip", i32t, [pt])
+    decl(m, "forge_test_todo", i32t, [pt])
     decl(m, "forge_test_summary", i32t, [])
 
     // ── arenas (spec Axis 9.6) ──
@@ -239,6 +241,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     // These are threaded through Ctx as immutable data — no
     // mutable globals.
     let dt = forge_llvm_double_type(lc)
+    decl(m, "forge_test_roughly", i64t, [dt, dt, dt])
     // Collect newtype/union alias registries first — needed for field type resolution
     let cg_newtypes = collect_newtypes(stmts, CgNewtypeReg.End)
     let cg_union_aliases = collect_union_aliases(stmts, CgUnionAliasReg.End)

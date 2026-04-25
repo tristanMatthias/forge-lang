@@ -2086,6 +2086,20 @@ void forge_test_run_then(const char* name, int64_t result) {
     }
 }
 
+void forge_test_skip(const char* name) {
+    printf("    then %s: SKIP\n", name);
+}
+
+void forge_test_todo(const char* name) {
+    printf("    then %s: TODO\n", name);
+}
+
+int64_t forge_test_roughly(double actual, double expected, double tolerance) {
+    double diff = actual - expected;
+    if (diff < 0) diff = -diff;
+    return diff <= tolerance ? 1 : 0;
+}
+
 void forge_test_summary(void) {
     int64_t total = forge_test_pass_count + forge_test_fail_count;
     if (total == 0) return;  // no tests were run — skip summary
