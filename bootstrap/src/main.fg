@@ -247,8 +247,7 @@ fn fmt_param_list_typed(params: ParamList) -> string {
     match params {
         .End -> ""
         .Node(name, resolved, next) -> {
-            let ty = vtype_display(resolved)
-            let ty_part = if ty == "unknown" || ty == "" { "" } else { ": ${ty}" }
+            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
             let tail = fmt_param_list_typed_tail(next)
             "${name}${ty_part}${tail}"
         }
@@ -259,8 +258,7 @@ fn fmt_param_list_typed_tail(params: ParamList) -> string {
     match params {
         .End -> ""
         .Node(name, resolved, next) -> {
-            let ty = vtype_display(resolved)
-            let ty_part = if ty == "unknown" || ty == "" { "" } else { ": ${ty}" }
+            let ty_part = if vtype_is_unknown(resolved) { "" } else { ": ${vtype_display(resolved)}" }
             ", ${name}${ty_part}${fmt_param_list_typed_tail(next)}"
         }
     }
