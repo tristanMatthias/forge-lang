@@ -773,7 +773,7 @@ Spec (Axis 20.3) requires high/medium/low confidence grading on suggestions.
 **Spec ref:** Axis 20.3
 
 ### P7-4: Autofix (`avra fix`)
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — `forge fix <file>` applies high-confidence auto-fixes. Outputs "no auto-fixes available" when none needed.
 Spec (Axis 20.4) requires CLI autofix for high-confidence suggestions.
 
 **Work:**
@@ -815,7 +815,7 @@ Spec (Axis 20.6) requires all internal compiler errors wrapped in F9999 with bug
 > Goal: Developer tooling for v1.0.
 
 ### P8-1: Formatter
-**Status: NOT IMPLEMENTED** (no `avra fmt` command found)
+**Status: IMPLEMENTED** — `forge fmt <file>` parses and pretty-prints. fmt_stmt/fmt_expr/fmt_stmt_list in main.fg handle all AST nodes. (no `avra fmt` command found)
 Spec (Axis 27.1) requires canonical formatter.
 
 **Work:**
