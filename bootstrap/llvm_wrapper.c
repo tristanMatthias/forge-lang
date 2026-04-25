@@ -663,3 +663,62 @@ void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
     LLVMTypeRef fn_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx), param_types, 4, 0);
     LLVMBuildCall2(builder, fn_type, coverage_intrinsic, args, 4, "");
 }
+
+// ── Coverage mapping (counter allocation + JSON covmap) ──
+
+#include <stdio.h>
+
+#define COV_MAX_COUNTERS 65536
+
+typedef struct {
+    const char* type;       // "line", "branch_then", "branch_else", "fn_entry", "match_arm"
+    const char* fn_name;
+    int32_t line;
+    int32_t col;
+    int32_t branch_id;      // for grouping then/else pairs
+} CovCounterInfo;
+
+static CovCounterInfo cov_counters[COV_MAX_COUNTERS];
+static int32_t cov_next_id = 0;
+static int32_t cov_branch_id = 0;
+static const char* cov_source_file = NULL;
+static FILE* cov_map_file = NULL;
+
+void forge_covmap_begin(const char* source_file, const char* covmap_path) {
+    cov_next_id = 0;
+    cov_branch_id = 0;
+    cov_source_file = source_file;
+    cov_map_file = fopen(covmap_path, "w");
+    if (cov_map_file) {
+        fprintf(cov_map_file, "{\"file\":\"%s\",\"counters\":[\n", source_file);
+    }
+}
+
+int32_t forge_covmap_alloc(const char* type, const char* fn_name, int32_t line, int32_t col, int32_t branch_id) {
+    if (cov_next_id >= COV_MAX_COUNTERS) return -1;
+    int32_t id = cov_next_id++;
+    cov_counters[id].type = type;
+    cov_counters[id].fn_name = fn_name;
+    cov_counters[id].line = line;
+    cov_counters[id].col = col;
+    cov_counters[id].branch_id = branch_id;
+    
+    if (cov_map_file) {
+        if (id > 0) fprintf(cov_map_file, ",\n");
+        fprintf(cov_map_file, "  {\"id\":%d,\"type\":\"%s\",\"fn\":\"%s\",\"line\":%d,\"col\":%d,\"branch\":%d}",
+                id, type, fn_name, line, col, branch_id);
+    }
+    return id;
+}
+
+int32_t forge_covmap_next_branch_id(void) {
+    return cov_branch_id++;
+}
+
+void forge_covmap_end(void) {
+    if (cov_map_file) {
+        fprintf(cov_map_file, "\n]}\n");
+        fclose(cov_map_file);
+        cov_map_file = NULL;
+    }
+}

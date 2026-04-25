@@ -39,6 +39,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
     ctx.position(entry)
 
     mut body_cg = ctx.with_fn(fn_val, name)
+    body_cg.cov_fn_entry()
     body_cg.rc_releasable = analyze_releasable(body)
 
     // Structured concurrency (spec Axis 18.7): if the function body

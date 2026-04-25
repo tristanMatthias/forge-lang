@@ -5,6 +5,7 @@
 use core.ast.{Expr, Stmt, TypeList, ValueType, VarEnv, vtype_eq, env_lookup, env_extend, vtype_enum_name}
 use codegen.types.{Ctx, EmitValue, StmtResult, ok_emit_typed, emit_value_ptr, emit_value_ty}
 use codegen.{emit_stmt, ok_sr}
+use core.llvm.{forge_covmap_next_branch_id}
 use features.union_type.codegen.{emit_union_wrap}
 
 // Extract narrowing info from an IsCheck condition.
@@ -53,18 +54,19 @@ export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
 }
 
 export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<StmtResult, string> {
-    ctx.cov_hit(ctx.source_line)
+    ctx.cov_line()
+    let branch_id = forge_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?
     let merge_bb = ctx.bb("ifcont")
     let else_bb = ctx.if_true(emit_value_ptr(cond), "if")
 
-    // Flow-sensitive narrowing: if condition is `x is .Variant`,
-    // narrow x's type in the then-branch.
+    ctx.cov_branch_then(branch_id)
     let then_env = narrow_env_for_is(ctx, env, condition)
     let then_sr = emit_stmt(ctx, then_env, then_branch)?
     ctx.br_if_open(merge_bb)
 
     ctx.position(else_bb)
+    ctx.cov_branch_else(branch_id)
     if else_branch != null {
         let else_sr = emit_stmt(ctx, env, else_branch!)?
     }
@@ -92,21 +94,23 @@ fn is_union_safe_type(ty: ValueType) -> bool {
 }
 
 export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> Result<EmitValue, string> {
-    ctx.cov_hit(ctx.source_line)
+    ctx.cov_line()
+    let branch_id = forge_covmap_next_branch_id()
     let cond = ctx.emit(env, condition)?
     let result_slot = ctx.alloca_i64("ife_result")
     let merge_bb = ctx.bb("ife_end")
     let else_bb = ctx.if_true(emit_value_ptr(cond), "ife")
 
-    // ── Then branch (with narrowing) ──
+    ctx.cov_branch_then(branch_id)
     let then_env = narrow_env_for_is(ctx, env, condition)
     let t = ctx.emit(then_env, then_branch)?
     let t_ty = emit_value_ty(t)
     ctx.store(emit_value_ptr(t), result_slot)
     ctx.br_if_open(merge_bb)
 
-    // ── Else branch ──
+    // ── Else branch (with coverage) ──
     ctx.position(else_bb)
+    ctx.cov_branch_else(branch_id)
     let e = ctx.emit(env, else_branch)?
     let e_ty = emit_value_ty(e)
     ctx.store(emit_value_ptr(e), result_slot)

@@ -131,3 +131,7 @@ extern fn forge_llvm_verify_function(fn_val: ptr) -> int
 // ── Coverage instrumentation ──
 extern fn forge_coverage_declare(m: ptr)
 extern fn forge_coverage_emit_hit(builder: ptr, m: ptr, fn_name: string, fn_hash: int, num_counters: int, counter_idx: int)
+extern fn forge_covmap_begin(source_file: string, covmap_path: string)
+extern fn forge_covmap_alloc(cov_type: string, fn_name: string, line: int, col: int, branch_id: int) -> int
+extern fn forge_covmap_next_branch_id() -> int
+extern fn forge_covmap_end()

@@ -207,7 +207,7 @@ fn emit_tuple_elem_releases(ctx: Ctx, buf: ptr, elements: TypeList, idx: int) {
 
 export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     // Coverage: instrument each statement with its source line as region ID
-    ctx.cov_hit(ctx.source_line)
+    ctx.cov_line()
     match stmt {
         .Expr(expr) -> {
             emit_expr(ctx, env, expr)?
@@ -298,7 +298,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
 // ── Expression emission ──
 
 export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
-    ctx.cov_hit(ctx.source_line)
+    ctx.cov_line()
     match expr {
         .Number(text) -> {
             let value = parse_int_literal(text)

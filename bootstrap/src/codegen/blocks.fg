@@ -43,7 +43,7 @@ export fn emit_stmt_as_value(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, l
 }
 
 fn emit_stmt_as_value_ctx(ctx: Ctx, env: VarEnv, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
-    ctx.cov_hit(ctx.source_line)
+    ctx.cov_line()
     match stmt {
         .Expr(e) -> {
             let r = ctx.emit(env, e)?

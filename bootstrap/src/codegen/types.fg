@@ -14,7 +14,7 @@
 
 use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
-use core.llvm.{forge_coverage_emit_hit}
+use core.llvm.{forge_coverage_emit_hit, forge_covmap_alloc}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
 
@@ -1071,11 +1071,47 @@ impl Ctx {
         self with { defers }
     }
 
-    // Emit a coverage region hit. No-op when coverage is disabled.
+    // Emit a coverage counter hit. No-op when coverage is disabled.
     fn cov_hit(self, counter_idx: int) {
         if self.coverage {
-            forge_coverage_emit_hit(self.builder, self.module, self.current_fn_name, 0, 0, counter_idx)
+            forge_coverage_emit_hit(self.builder, self.module, self.current_fn_name, 0, 1024, counter_idx)
         }
+    }
+
+    // Allocate a coverage counter and emit a hit. Returns the counter ID.
+    fn cov_line(self) -> int {
+        if !self.coverage { return -1 }
+        let id = forge_covmap_alloc("line", self.current_fn_name, self.source_line, 0, 0)
+        self.cov_hit(id)
+        id
+    }
+
+    fn cov_fn_entry(self) -> int {
+        if !self.coverage { return -1 }
+        let id = forge_covmap_alloc("fn_entry", self.current_fn_name, self.source_line, 0, 0)
+        self.cov_hit(id)
+        id
+    }
+
+    fn cov_branch_then(self, branch_id: int) -> int {
+        if !self.coverage { return -1 }
+        let id = forge_covmap_alloc("branch_then", self.current_fn_name, self.source_line, 0, branch_id)
+        self.cov_hit(id)
+        id
+    }
+
+    fn cov_branch_else(self, branch_id: int) -> int {
+        if !self.coverage { return -1 }
+        let id = forge_covmap_alloc("branch_else", self.current_fn_name, self.source_line, 0, branch_id)
+        self.cov_hit(id)
+        id
+    }
+
+    fn cov_match_arm(self, arm_idx: int) -> int {
+        if !self.coverage { return -1 }
+        let id = forge_covmap_alloc("match_arm", self.current_fn_name, self.source_line, 0, arm_idx)
+        self.cov_hit(id)
+        id
     }
 }
 export type StmtResult = { ctx: Ctx, env: VarEnv }
