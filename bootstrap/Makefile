@@ -105,6 +105,7 @@ ifndef FILE
 	@exit 1
 endif
 	@$(DIAG) --run-coverage $(FILE)
+	@bash scripts/coverage-report.sh $(FILE) $${FILE%.fg}.profdata --lcov $${FILE%.fg}.lcov
 
 # Update the seed IR from the current self-hosted compiler.
 # Run this after dogfooding new syntax into bootstrap source.
