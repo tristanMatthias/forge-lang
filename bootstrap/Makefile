@@ -16,7 +16,7 @@
 #   make help         show this list
 
 .DEFAULT_GOAL := build
-.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs next work epic
+.PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs next work epic coverage
 
 DIAG := NO_AUTOCYCLE=1 bash scripts/diagnose.sh
 
@@ -33,6 +33,7 @@ help:
 	@echo "  make seed-patch    Incremental seed update with per-function diff report."
 	@echo "  make verify-seed   Verify bootstrap chain (no auto-cycle on failure)."
 	@echo "  make seed-sigs     Compare function signatures between seed and source."
+	@echo "  make coverage      Run compiler self-coverage (line + branch report)."
 	@echo "  make clean         Remove all build artifacts."
 	@echo "  make install-hooks Install the pre-commit hook."
 	@echo ""
@@ -106,6 +107,14 @@ ifndef FILE
 endif
 	@$(DIAG) --run-coverage $(FILE)
 	@bash scripts/coverage-report.sh $(FILE) $${FILE%.fg}.profdata --lcov $${FILE%.fg}.lcov
+
+# Compiler self-coverage: instruments bs2, runs all tests, reports per-module coverage.
+coverage:
+	@bash scripts/compiler-coverage.sh
+
+# Compiler self-coverage with LCOV export.
+coverage-lcov:
+	@bash scripts/compiler-coverage.sh --lcov build/coverage/compiler.lcov
 
 # Update the seed IR from the current self-hosted compiler.
 # Run this after dogfooding new syntax into bootstrap source.
