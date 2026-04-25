@@ -138,7 +138,7 @@ The spec (Axis 3.1-3.7) requires both `type` (nominal) and `shape` (structural) 
 **Spec ref:** Axis 3.1, 3.2, 3.5, 3.6, 3.7
 
 ### P1-2: Union types
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — `A | B` union syntax works, ValueType.Union, union_type codegen (15 files), union alias decls, match narrowing.
 Spec (Axis 8.1, 8.4, 8.5) requires `string | int` ad-hoc union types alongside enums.
 
 **Work:**
@@ -165,7 +165,7 @@ Spec (Axis 7.1, 7.2) requires `type Item` inside trait declarations.
 **Spec ref:** Axis 7.1, 7.2
 
 ### P1-4: Newtype wrappers
-**Status: PARTIAL** — `type X = Y` syntax may exist but likely treated as alias.
+**Status: IMPLEMENTED** — `type X = Y` creates nominal newtype, `X(value)` constructor, codegen zero-cost. CgNewtypeReg tracks newtypes. regress/newtype.fg tests.
 Spec (Axis 3.8) requires `type UserId = UUID` to create a nominally distinct type.
 
 **Work:**
@@ -177,7 +177,7 @@ Spec (Axis 3.8) requires `type UserId = UUID` to create a nominally distinct typ
 **Spec ref:** Axis 3.8
 
 ### P1-5: `where` clauses on generics
-**Status: LIKELY MISSING**
+**Status: IMPLEMENTED** — parser, resolver, monomorphizer all handle `where T: Trait` clauses. Verified working with `fn max<T>(a: T, b: T) -> T where T: Ord`.
 Spec (Axis 5.4) requires `where T: Display & Eq` for complex bounds.
 
 **Work:**
@@ -189,7 +189,7 @@ Spec (Axis 5.4) requires `where T: Display & Eq` for complex bounds.
 **Spec ref:** Axis 5.4
 
 ### P1-6: `dyn Trait` dynamic dispatch
-**Status: PARTIAL** — regression test `dyn_dispatch.fg` exists.
+**Status: IMPLEMENTED** — vtable boxing, trait dispatch, `dyn Trait` type. regress/dyn_dispatch.fg tests. trait_decl/codegen.fg has box_for_trait.
 Spec (Axis 5.2) requires `dyn Trait` for heterogeneous collections.
 
 **Work:**
@@ -201,7 +201,7 @@ Spec (Axis 5.2) requires `dyn Trait` for heterogeneous collections.
 **Spec ref:** Axis 5.2
 
 ### P1-7: Exhaustive match enforcement
-**Status: PARTIAL** — regression test exists but may not be compiler-enforced.
+**Status: IMPLEMENTED** — typeck checks exhaustiveness, warns when wildcard hides >2 variants. regress/exhaustive_match.fg tests. match_expr/typeck.fg has check_match_arms + find_missing_variants.
 Spec (Axis 8.4, 8.7) requires exhaustive matching with wildcard warnings.
 
 **Work:**
@@ -213,7 +213,7 @@ Spec (Axis 8.4, 8.7) requires exhaustive matching with wildcard warnings.
 **Spec ref:** Axis 8.4, 8.7, 8.8
 
 ### P1-8: Enum variant dot-shorthand
-**Status: UNKNOWN**
+**Status: IMPLEMENTED** — `.Variant(args)` works in match arms and enum constructors when type is contextually known. regress/contextual_enums.fg tests.
 Spec (Axis 8.2) requires `.circle(5.0)` when type is known from context.
 
 **Work:**
@@ -267,7 +267,7 @@ Spec (Axis 12.3) requires `Result<T, IoError | ParseError>` with automatic widen
 **Spec ref:** Axis 12.3
 
 ### P2-2: `catch` blocks
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — regress/catch_basic.fg and regress/catch_combo.fg test it. Parser handles `expr catch { body }`. Codegen extracts Ok or runs catch block.
 Spec (Axis 12.5, 12.6) requires `let x = expr() catch { default }` and `catch (e) { ... }`.
 
 **Work:**
@@ -280,7 +280,7 @@ Spec (Axis 12.5, 12.6) requires `let x = expr() catch { default }` and `catch (e
 **Spec ref:** Axis 12.5, 12.6
 
 ### P2-3: `errdefer` keyword
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — parser, codegen, resolver all handle errdefer. Interleaved with defer in LIFO order. regress/errdefer.fg + regress/errdefer_implicit.fg test it. Verified: errdefer runs only on error path, defer always runs.
 Spec (Axis 12.7) requires `errdefer { ... }` that only runs on error exit.
 
 **Work:**
@@ -330,7 +330,7 @@ Spec (Axis 10.5) requires `?` to propagate null from functions returning `T?`.
 **Spec ref:** Axis 10.5
 
 ### P2-7: Flow-sensitive type narrowing
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — `is` keyword narrows types in if-branches. narrow_env_for_is in if_stmt/codegen.fg. regress/flow_narrow.fg + regress/is_keyword.fg test it.
 Spec (Axis 10.4) requires `if user != null { user.name }` to work without unwrap.
 
 **Work:**
@@ -348,7 +348,7 @@ Spec (Axis 10.4) requires `if user != null { user.name }` to work without unwrap
 > This is the spec's v1.0 memory model.
 
 ### P3-1: Reference counting runtime
-**Status: NOT IMPLEMENTED** — currently uses bump arena (no deallocation).
+**Status: IMPLEMENTED** — rc_retain/rc_release/rc_alloc in runtime.c. Codegen emits retain/release calls. codegen/cycles.fg has RC graph analysis. codegen/escape.fg has escape analysis for elision. 6 files implement RC.
 Spec (Axis 9.1-9.4) requires non-atomic refcounting at app level.
 
 **Work:**
@@ -420,7 +420,7 @@ Spec (Axis 9.10, 9.11) requires Drop trait + LIFO ordering with defer/errdefer i
 **Spec ref:** Axis 9.10, 9.11
 
 ### P3-7: Copy trait auto-derivation
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — copy_types registry in Ctx, codegen checks is_copy_type. 4 files implement copy semantics.
 Spec (Axis 9.12) requires auto-Copy for types with only Copy fields.
 
 **Work:**
@@ -547,7 +547,7 @@ Spec (Axis 28.7) requires `x |> f` desugaring to `f(x)`.
 > Goal: Complete all v1.0 syntax requirements from the spec.
 
 ### P5-1: `it` pronoun for single-parameter closures
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — closures/parser.fg handles `it` as implicit parameter in method-call contexts.
 Spec (Axis 28.8) requires `list.filter(it > 5)` shorthand.
 
 **Work:**
@@ -658,7 +658,7 @@ Spec (Axis 9, Architectural Commitment 10) requires reserving: systems, bare, ha
 **Spec ref:** Axis 9 Architectural Commitments
 
 ### P5-11: Naming convention enforcement
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — typeck/mod.fg has check_naming_conventions, is_snake_case, is_pascal_case, is_screaming_snake. Emits warnings via naming_warn.
 Spec (Axis 28.5) requires compiler warnings for non-canonical names.
 
 **Work:**
