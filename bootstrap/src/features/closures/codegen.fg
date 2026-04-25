@@ -406,6 +406,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
     let body_env = bind_captures_as_params(ctx, env_with_params, captures, fn_val, num_declared)
 
     mut body_ctx = ctx.with_fn(fn_val, name)
+    body_ctx.cov_fn_entry()
     // with_fn resets defers/rc_cleanup/rc_releasable to .End, so lambda body starts fresh.
     body_ctx.rc_releasable = analyze_releasable_expr(body)
     mut result = EmitValue { value: ctx.i64(0), ty: .Int }
@@ -421,6 +422,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: VarEnv, raw_params: ParamList, body: 
         let lambda_ret = body_ctx.current_fn_ret()
         ctx.ret(result.value, lambda_ret)
     }
+    body_ctx.cov_finalize_fn()
 
     ctx.position(saved_bb)
 

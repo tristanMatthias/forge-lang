@@ -352,6 +352,7 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
         ctx.ret(ctx.i64(0), .Int)
     }
 
+    ctx.cov_finalize_fn()
     ctx.verify_module()
     if coverage { forge_covmap_end() }
     let write_result = ctx.write_ir(output_path)

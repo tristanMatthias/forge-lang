@@ -638,13 +638,11 @@ LLVMValueRef forge_coverage_name_global(LLVMModuleRef m, const char* fn_name) {
 }
 
 // Emit: call void @llvm.instrprof.increment(ptr @__profn_<name>, i64 <hash>, i32 <num_counters>, i32 <idx>)
-// num_counters must be consistent across all calls for the same function.
-// We use 65536 as a safe upper bound for line-based counter indices.
-// LLVM allocates the counter array based on this value.
+// num_counters is set to a placeholder (0) during codegen, then patched to
+// the actual count by forge_coverage_finalize_fn at function end.
 void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
                               const char* fn_name, int64_t fn_hash_unused,
                               int32_t num_counters_unused, int32_t counter_idx) {
-    int32_t num_counters = 1024;
     if (!coverage_intrinsic) return;
     // Compute unique hash from function name (djb2)
     uint64_t hash = 5381;
@@ -652,10 +650,11 @@ void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
         hash = ((hash << 5) + hash) + (uint64_t)*p;
     LLVMContextRef ctx = LLVMGetModuleContext(m);
     LLVMValueRef name_global = forge_coverage_name_global(m, fn_name);
+    // Use 0 as placeholder for num_counters — patched by finalize_fn
     LLVMValueRef args[] = {
         name_global,
         LLVMConstInt(LLVMInt64TypeInContext(ctx), hash, 0),
-        LLVMConstInt(LLVMInt32TypeInContext(ctx), (uint32_t)num_counters, 0),
+        LLVMConstInt(LLVMInt32TypeInContext(ctx), 0, 0),
         LLVMConstInt(LLVMInt32TypeInContext(ctx), (uint32_t)counter_idx, 0)
     };
     LLVMTypeRef param_types[] = {
@@ -666,6 +665,32 @@ void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
     };
     LLVMTypeRef fn_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx), param_types, 4, 0);
     LLVMBuildCall2(builder, fn_type, coverage_intrinsic, args, 4, "");
+}
+
+// Patch all llvm.instrprof.increment calls in fn_val to use actual_count
+// as the num_counters argument (arg index 2).
+void forge_coverage_finalize_fn(LLVMValueRef fn_val, int32_t actual_count) {
+    if (!coverage_intrinsic || actual_count <= 0) return;
+    LLVMContextRef ctx = LLVMGetGlobalParent(fn_val) ?
+        LLVMGetModuleContext(LLVMGetGlobalParent(fn_val)) : NULL;
+    if (!ctx) return;
+    LLVMValueRef count_val = LLVMConstInt(LLVMInt32TypeInContext(ctx),
+                                           (uint32_t)actual_count, 0);
+    LLVMBasicBlockRef bb = LLVMGetFirstBasicBlock(fn_val);
+    while (bb) {
+        LLVMValueRef inst = LLVMGetFirstInstruction(bb);
+        while (inst) {
+            if (LLVMIsACallInst(inst)) {
+                LLVMValueRef callee = LLVMGetCalledValue(inst);
+                if (callee == coverage_intrinsic) {
+                    // Replace arg 2 (num_counters) with actual count
+                    LLVMSetOperand(inst, 2, count_val);
+                }
+            }
+            inst = LLVMGetNextInstruction(inst);
+        }
+        bb = LLVMGetNextBasicBlock(bb);
+    }
 }
 
 // ── Coverage mapping (counter allocation + JSON covmap) ──
@@ -722,6 +747,11 @@ int32_t forge_covmap_alloc(const char* type, const char* fn_name, int32_t line, 
 
 void forge_covmap_reset_fn(void) {
     cov_next_id = 0;
+}
+
+// Returns the number of counters allocated for the current function.
+int32_t forge_covmap_counter_count(void) {
+    return cov_next_id;
 }
 
 int32_t forge_covmap_next_branch_id(void) {

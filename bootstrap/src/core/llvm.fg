@@ -136,4 +136,6 @@ extern fn forge_covmap_alloc(cov_type: string, fn_name: string, line: int, col: 
 extern fn forge_covmap_reset_fn()
 extern fn forge_covmap_next_branch_id() -> int
 extern fn forge_covmap_next_decision_id() -> int
+extern fn forge_coverage_finalize_fn(fn_val: ptr, actual_count: int)
 extern fn forge_covmap_end()
+extern fn forge_covmap_counter_count() -> int

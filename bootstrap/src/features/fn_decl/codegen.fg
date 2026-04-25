@@ -107,6 +107,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: ParamList, body: St
             }
         }
     }
+    body_cg.cov_finalize_fn()
     ctx.verify_fn(fn_val)
     ok_stmt(VarEnv.End)
 }

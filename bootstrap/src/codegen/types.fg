@@ -14,7 +14,7 @@
 
 use core.ast.{Expr, SExpr, VarEnv, FieldList, VariantList, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_list_length, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe}
 use core.registry.{Registry}
-use core.llvm.{forge_coverage_emit_hit, forge_covmap_alloc}
+use core.llvm.{forge_coverage_emit_hit, forge_covmap_alloc, forge_covmap_counter_count, forge_coverage_finalize_fn}
 use features.error_propagation.{Result}
 use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
 
@@ -1129,6 +1129,16 @@ impl Ctx {
         let id = forge_covmap_alloc("condition_false", self.current_fn_name, self.source_line, 0, decision_id)
         if id >= 0 { self.cov_hit(id) }
         id
+    }
+
+    // Finalize coverage for current function: patch all instrprof.increment
+    // calls to use the actual counter count instead of placeholder 0.
+    fn cov_finalize_fn(self) {
+        if !self.coverage { return }
+        let count = forge_covmap_counter_count()
+        if count > 0 {
+            forge_coverage_finalize_fn(self.current_fn, count)
+        }
     }
 }
 export type StmtResult = { ctx: Ctx, env: VarEnv }
