@@ -28,6 +28,8 @@ mod typeck
 mod resolve
 mod codegen
 mod desugar
+mod cli
+use cli.{cli_new, cli_add_command, cli_command_add_flag, cli_command_add_option, cli_command_add_arg, cli_parse, result_has_flag, result_get_option, result_get_arg}
 
 use parse.{parse_expression_source, parse_program_source}
 use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType}
@@ -410,11 +412,47 @@ fn fmt_map_entries(entries: ExprList) -> string {
 }
 
 fn main() {
+    // Build CLI definition using @std/cli
+    mut app = cli_new("forge-bootstrap", "Forge bootstrap compiler", "0.1.0")
+    app = cli_add_command(app, "compile", "Compile a Forge file to LLVM IR")
+    app = cli_command_add_flag(app, "compile", "--coverage", "-c", "Enable coverage instrumentation")
+    app = cli_command_add_flag(app, "compile", "--debug-null", "", "Enable null argument checks")
+    app = cli_command_add_flag(app, "compile", "--json", "", "Output diagnostics as JSON")
+    app = cli_command_add_option(app, "compile", "--stop-after", "", "Stop after phase (parse|resolve|names|check)", "")
+    app = cli_command_add_arg(app, "compile", "file", "Source file", true)
+
+    app = cli_add_command(app, "check", "Type-check a Forge file")
+    app = cli_command_add_flag(app, "check", "--json", "", "Output diagnostics as JSON")
+    app = cli_command_add_arg(app, "check", "file", "Source file", true)
+
+    app = cli_add_command(app, "run", "Compile and run a Forge file")
+    app = cli_command_add_arg(app, "run", "file", "Source file", true)
+
+    app = cli_add_command(app, "test", "Run spec tests in a Forge file")
+    app = cli_command_add_arg(app, "test", "file", "Source file", true)
+
+    app = cli_add_command(app, "expr", "Parse and display an expression")
+    app = cli_command_add_arg(app, "expr", "file", "Source file", true)
+
+    app = cli_add_command(app, "program", "Parse and display a program")
+    app = cli_command_add_arg(app, "program", "file", "Source file", true)
+
+    app = cli_add_command(app, "eval", "Evaluate a Forge expression")
+    app = cli_command_add_arg(app, "eval", "file", "Source file", true)
+
+    app = cli_add_command(app, "fix", "Apply auto-fixes to a Forge file")
+    app = cli_command_add_arg(app, "fix", "file", "Source file", true)
+
+    app = cli_add_command(app, "fmt", "Format a Forge source file")
+    app = cli_command_add_arg(app, "fmt", "file", "Source file", true)
+
+    app = cli_add_command(app, "lsp", "Start language server")
+    app = cli_add_command(app, "features", "List registered features")
+
     // Handle subcommands that don't require a file argument.
     if forge_selfhost_argc() >= 2 {
         let cmd0 = forge_selfhost_get_arg_cstr(1)
         if cmd0 == "lsp" {
-            // Ticket bwb: LSP server stub (spec Axis 27.2).
             println("LSP server not yet available — use `avra check` for diagnostics")
             return
         }
@@ -427,8 +465,6 @@ fn main() {
 
     let command = forge_selfhost_get_arg_cstr(1)
     let path = forge_selfhost_get_arg_cstr(2)
-    // Skip file existence check when arg 2 is a flag (e.g. --stop-after=X).
-    // The compile command handles its own path validation in that case.
     let is_flag = path.starts_with("--")
     if !is_flag && !file_exists(path) {
         fail("error: file not found: ${path}")
@@ -461,16 +497,11 @@ fn main() {
             return
         }
         "check" -> {
-            // Parse --json flag if present
-            mut check_json = false
-            mut check_path = path
+            // Parse --json flag using @std/cli
+            let check_parsed = cli_parse(app)
+            let check_json = result_has_flag(check_parsed, "json")
             let check_argc = forge_selfhost_argc()
-            if check_argc > 3 {
-                check_path = forge_selfhost_get_arg_cstr(check_argc - 1)
-                for fi in 2..(check_argc - 1) {
-                    if forge_selfhost_get_arg_cstr(fi) == "--json" { check_json = true }
-                }
-            }
+            let check_path = if check_argc > 3 { forge_selfhost_get_arg_cstr(check_argc - 1) } else { path }
             let check_source = if check_path != path { read_file(check_path) } else { source }
 
             let parsed = parse_program_source(check_source)
@@ -599,35 +630,16 @@ fn main() {
     }
 
     if command == "compile" {
-        // Parse compile flags. Flags are any args starting with "--"
-        // that appear before the file path (always the last argument).
-        mut stop_after = ""
-        mut debug_null = false
-        mut enable_coverage = false
-        mut json_output = false
+        // Parse compile flags using @std/cli
+        let parsed = cli_parse(app)
+        let stop_after = result_get_option(parsed, "stop-after")
+        let debug_null = result_has_flag(parsed, "debug-null")
+        let enable_coverage = result_has_flag(parsed, "coverage")
+        let json_output = result_has_flag(parsed, "json")
+        // File path: last positional arg
         let argc = forge_selfhost_argc()
-        // The file path is always the last argument.
-        let cpath_idx = argc - 1
-        // Scan args 2..last for flags.
-        for flag_idx in 2..cpath_idx {
-            let arg = forge_selfhost_get_arg_cstr(flag_idx)
-            if arg.starts_with("--stop-after=") {
-                stop_after = arg.substring(13, arg.length)
-            }
-            if arg == "--debug-null" {
-                debug_null = true
-            }
-            if arg == "--coverage" {
-                enable_coverage = true
-            }
-            if arg == "--json" {
-                json_output = true
-            }
-        }
-        let has_flags = cpath_idx > 2
-        let cpath = forge_selfhost_get_arg_cstr(cpath_idx)
-        // If no flags were present and arg 2 looks like a flag, it's an error.
-        if !has_flags && is_flag {
+        let cpath = forge_selfhost_get_arg_cstr(argc - 1)
+        if cpath.starts_with("-") {
             fail("error: compile requires a file path argument")
         }
         if !file_exists(cpath) {
