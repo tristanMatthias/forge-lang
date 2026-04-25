@@ -53,6 +53,7 @@ export fn narrow_env_for_is(ctx: Ctx, env: VarEnv, condition: Expr) -> VarEnv {
 }
 
 export fn emit_if(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Stmt, else_branch: Stmt?) -> Result<StmtResult, string> {
+    ctx.cov_hit(ctx.source_line)
     let cond = ctx.emit(env, condition)?
     let merge_bb = ctx.bb("ifcont")
     let else_bb = ctx.if_true(emit_value_ptr(cond), "if")
@@ -91,6 +92,7 @@ fn is_union_safe_type(ty: ValueType) -> bool {
 }
 
 export fn emit_if_expr(ctx: Ctx, env: VarEnv, condition: Expr, then_branch: Expr, else_branch: Expr) -> Result<EmitValue, string> {
+    ctx.cov_hit(ctx.source_line)
     let cond = ctx.emit(env, condition)?
     let result_slot = ctx.alloca_i64("ife_result")
     let merge_bb = ctx.bb("ife_end")

@@ -6,6 +6,7 @@ use codegen.types.{Ctx, LoopStack, StmtResult,  ok_stmt, emit_value_ptr}
 use codegen.{emit_expr, emit_stmt, ok_sr}
 
 export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Result<StmtResult, string> {
+    ctx.cov_hit(ctx.source_line)
     let cond_bb = ctx.bb("while.cond")
     let body_bb = ctx.bb("while.body")
     let exit_bb = ctx.bb("while.exit")

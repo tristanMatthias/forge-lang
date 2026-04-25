@@ -298,6 +298,7 @@ export fn emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, str
 // ── Expression emission ──
 
 export fn emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    ctx.cov_hit(ctx.source_line)
     match expr {
         .Number(text) -> {
             let value = parse_int_literal(text)

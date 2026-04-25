@@ -211,6 +211,7 @@ fn emit_match_expr_arms(ctx: Ctx, env: VarEnv, arms: MatchArmList, st_ty: ptr, s
                     }
                 }
             }
+            ctx.cov_hit(body.line)
             match ctx.emit(arm_env, body.node) {
                 .Err(msg) -> err_match_ty(msg)
                 .Ok(body_result) -> {
@@ -636,6 +637,7 @@ fn emit_when_arms(ctx: Ctx, env: VarEnv, arms: WhenArmList, merge_bb: ptr, resul
     match arms {
         .End -> ok_match_ty(.Unknown)
         .Node(cond, body, next) -> {
+            ctx.cov_hit(body.line)
             if cond == null {
                 // Else arm — emit body directly, store, branch to merge
                 let r = ctx.emit(env, body.node)?
