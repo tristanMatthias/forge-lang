@@ -256,7 +256,11 @@ fn resolve_use_aliases(stmts: StmtList, tree: ModuleNode) -> UseResult {
         .End -> UseResult { aliases: AliasEntry.End, bag: bag_new() }
         .Node(ss, next) -> {
             let rest = resolve_use_aliases(next, tree)
-            match ss.node {
+            let unwrapped = match ss.node {
+                .Annotated(_, inner) -> inner
+                _ -> ss.node
+            }
+            match unwrapped {
                 .Use(mod_path, names) -> {
                     let canonical_path = dots_to_colons(mod_path)
                     let sp = span_new(0, 0, ss.line, ss.col)

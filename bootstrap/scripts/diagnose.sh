@@ -57,7 +57,7 @@ source_newer_than() {
   local target="$1"
   [ ! -x "$target" ] && return 0
   # Find any .fg file newer than target — exits as soon as one is found.
-  [ -n "$(find "$BOOTSTRAP_DIR/src" -name '*.fg' -newer "$target" -print -quit 2>/dev/null)" ]
+  [ -n "$(find "$SRC_DIR" -name '*.fg' -newer "$target" -print -quit 2>/dev/null)" ]
 }
 
 print_help() {
@@ -1147,7 +1147,7 @@ mode_update_seed() {
   local commit timestamp src_hash
   commit=$(git -C "$BOOTSTRAP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  src_hash=$(find "$BOOTSTRAP_DIR/src" -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
+  src_hash=$(find "$SRC_DIR" -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
 
   {
     printf '; seed built from commit %s at %s\n' "$commit" "$timestamp"
@@ -1424,7 +1424,7 @@ print(f'TOTAL:{total_changed}/{total_new}')
   local commit timestamp src_hash
   commit=$(git -C "$BOOTSTRAP_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  src_hash=$(find "$BOOTSTRAP_DIR/src" -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
+  src_hash=$(find "$SRC_DIR" -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1)
 
   {
     printf '; seed built from commit %s at %s\n' "$commit" "$timestamp"
@@ -1472,7 +1472,7 @@ mode_seed_sigs() {
   # Extract source function signatures from .fg files.
   # Matches: fn name(...) and export fn name(...)
   # Counts parameters by counting commas + 1 (if non-empty param list).
-  find "$BOOTSTRAP_DIR/src" -name '*.fg' -print0 | xargs -0 grep -h '^\(export \)\{0,1\}fn ' | \
+  find "$SRC_DIR" -name '*.fg' -print0 | xargs -0 grep -h '^\(export \)\{0,1\}fn ' | \
     sed 's/^export //' | while IFS= read -r line; do
     # Extract function name
     local name

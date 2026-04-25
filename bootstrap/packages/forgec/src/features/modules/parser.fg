@@ -16,9 +16,22 @@ impl Parser {
     }
 
     // Parse `use path.{name1, name2, ...}` — an import declaration.
+    // Supports package imports: `use @std.cli.{name1, name2}`
     fn parse_use_declaration(self) -> Stmt? {
         self.advance()  // consume `use`
-        mut path = self.consume_identifier("expected module path after `use`")?
+        mut path = ""
+        if self.check(Tk.At) {
+            self.advance()  // consume `@`
+            let pkg_scope = self.consume_identifier("expected package scope after `@`")?
+            path = "@${pkg_scope}"
+            if !self.consume(Tk.Dot, "expected `.` after package scope") {
+                return null
+            }
+            let pkg_name = self.consume_identifier("expected package name")?
+            path = "${path}.${pkg_name}"
+        } else {
+            path = self.consume_identifier("expected module path after `use`")?
+        }
         while self.check(Tk.Dot) {
             self.advance()
             if self.check(Tk.LeftBrace) { break }

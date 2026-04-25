@@ -663,6 +663,10 @@ const char* forge_selfhost_get_arg_cstr(int64_t idx) {
     return _argv[idx];
 }
 
+void forge_process_exit(int64_t code) {
+    exit((int)code);
+}
+
 void forge_selfhost_trace(const char* s) {
     fprintf(stderr, "[trace] %s\n", s);
 }
