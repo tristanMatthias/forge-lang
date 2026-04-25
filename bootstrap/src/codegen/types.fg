@@ -1074,7 +1074,7 @@ impl Ctx {
     // Emit a coverage counter hit. No-op when coverage is disabled.
     fn cov_hit(self, counter_idx: int) {
         if self.coverage {
-            forge_coverage_emit_hit(self.builder, self.module, self.current_fn_name, 0, 1024, counter_idx)
+            forge_coverage_emit_hit(self.builder, self.module, self.current_fn_name, 0, 0, counter_idx)
         }
     }
 
