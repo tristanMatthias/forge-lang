@@ -681,12 +681,14 @@ typedef struct {
 static CovCounterInfo cov_counters[COV_MAX_COUNTERS];
 static int32_t cov_next_id = 0;
 static int32_t cov_branch_id = 0;
+static int32_t cov_total_entries = 0;
 static const char* cov_source_file = NULL;
 static FILE* cov_map_file = NULL;
 
 void forge_covmap_begin(const char* source_file, const char* covmap_path) {
     cov_next_id = 0;
     cov_branch_id = 0;
+    cov_total_entries = 0;
     cov_source_file = source_file;
     cov_map_file = fopen(covmap_path, "w");
     if (cov_map_file) {
@@ -704,11 +706,16 @@ int32_t forge_covmap_alloc(const char* type, const char* fn_name, int32_t line, 
     cov_counters[id].branch_id = branch_id;
     
     if (cov_map_file) {
-        if (id > 0) fprintf(cov_map_file, ",\n");
+        if (cov_total_entries > 0) fprintf(cov_map_file, ",\n");
+        cov_total_entries++;
         fprintf(cov_map_file, "  {\"id\":%d,\"type\":\"%s\",\"fn\":\"%s\",\"line\":%d,\"col\":%d,\"branch\":%d}",
                 id, type, fn_name, line, col, branch_id);
     }
     return id;
+}
+
+void forge_covmap_reset_fn(void) {
+    cov_next_id = 0;
 }
 
 int32_t forge_covmap_next_branch_id(void) {

@@ -1088,6 +1088,7 @@ impl Ctx {
 
     fn cov_fn_entry(self) -> int {
         if !self.coverage { return -1 }
+        forge_covmap_reset_fn()
         let id = forge_covmap_alloc("fn_entry", self.current_fn_name, self.source_line, 0, 0)
         if id >= 0 { self.cov_hit(id) }
         id
