@@ -122,7 +122,7 @@ let, mut, const, fn, return, if, else, match, for, in, while, loop, break, conti
 > This is the highest priority — type system is the foundation everything else builds on.
 
 ### P1-1: `shape` keyword for structural types
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — Tk.KwShape, Stmt.ShapeDecl, parser, codegen (same as struct layout), typeck (ShapeSet + tc_check_shape_compat for width subtyping). regress/shape_basic.fg + regress/shape_subtyping.fg test it.
 The spec (Axis 3.1-3.7) requires both `type` (nominal) and `shape` (structural) keywords. Currently only `type`/`struct` exist.
 
 **Work:**
@@ -152,7 +152,7 @@ Spec (Axis 8.1, 8.4, 8.5) requires `string | int` ad-hoc union types alongside e
 **Spec ref:** Axis 8.1, 8.4, 8.5
 
 ### P1-3: Associated types on traits
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — Stmt.AssocType, TraitAssocTypes registry, Self.Item syntax, trait conformance checking. regress/assoc_types.fg tests Container trait with type Item.
 Spec (Axis 7.1, 7.2) requires `type Item` inside trait declarations.
 
 **Work:**
@@ -255,7 +255,7 @@ Spec (Axis 11.2) requires `const X: T = expr` with compile-time evaluation.
 > Critical for correctness and developer experience.
 
 ### P2-1: Union error types with automatic widening
-**Status: NOT IMPLEMENTED**
+**Status: IMPLEMENTED** — auto-widening at ? sites in null_safety/codegen.fg. Result<T, IoError> ? in fn returning Result<T, IoError|ParseError> correctly widens the error type.
 Spec (Axis 12.3) requires `Result<T, IoError | ParseError>` with automatic widening at `?` sites.
 
 **Work:**
