@@ -1,6 +1,10 @@
-src/*.fg.ll
-src/**/*.fg.ll
-src/**/*.bin
+packages/forgec/src/*.fg.ll
+packages/forgec/src/**/*.fg.ll
+packages/forgec/src/**/*.bin
+packages/std-cli/src/**/*.fg.ll
+packages/std-cli/src/**/*.bin
+packages/std-test/src/**/*.fg.ll
+packages/std-test/src/**/*.bin
 tests/*.fg.ll
 tests/*.bin
 regress/*.fg.ll

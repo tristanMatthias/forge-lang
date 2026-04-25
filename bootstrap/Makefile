@@ -4,8 +4,8 @@
 # It builds from a checked-in LLVM IR seed (seed/seed.ll).
 #
 # Pipeline:
-#   seed/seed.ll → llc + cc → seed binary → compiles src/ → bs2
-#   bs2 → compiles src/ → bs3 (must match bs2 = fixed point)
+#   seed/seed.ll → llc + cc → seed binary → compiles packages/forgec/src/ → bs2
+#   bs2 → compiles packages/forgec/src/ → bs3 (must match bs2 = fixed point)
 #
 # Quick reference:
 #   make              build the bootstrap compiler
@@ -18,6 +18,7 @@
 .DEFAULT_GOAL := build
 .PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs next work epic coverage
 
+SRC_DIR := packages/forgec/src
 DIAG := NO_AUTOCYCLE=1 bash scripts/diagnose.sh
 
 help:
@@ -50,7 +51,7 @@ lint:
 	@# Check for ValueType.Int in Stmt constructors outside parsers.
 	@# This catches the bug where pipeline stages (desugar, resolver, mono)
 	@# discard parser-resolved ValueType fields by writing ValueType.Int.
-	@HITS=$$(grep -rn 'ValueType\.Int' src/ --include='*.fg' \
+	@HITS=$$(grep -rn 'ValueType\.Int' $(SRC_DIR)/ --include='*.fg' \
 		| grep -E '\.(Let|Mut|Const|Function|ExternFn)\(' \
 		| grep -v 'parser\.' | grep -v '// '); \
 	if [ -n "$$HITS" ]; then \
@@ -123,11 +124,11 @@ coverage-lcov:
 update-seed:
 	@$(DIAG) --build-bs2
 	@$(DIAG) --check-fixedpoint
-	@cp src/main.fg.ll seed/seed.ll
+	@cp $(SRC_DIR)/main.fg.ll seed/seed.ll
 	@# Prepend provenance comment (commit hash, timestamp, source hash)
 	@COMMIT=$$(git rev-parse --short HEAD); \
 	 TIMESTAMP=$$(date -u +%Y-%m-%dT%H:%M:%SZ); \
-	 SRC_HASH=$$(find src/ -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
+	 SRC_HASH=$$(find $(SRC_DIR)/ -name '*.fg' -exec shasum -a 256 {} + | shasum -a 256 | cut -d' ' -f1); \
 	 { printf '; seed built from commit %s at %s\n; source hash: %s\n' "$$COMMIT" "$$TIMESTAMP" "$$SRC_HASH"; cat seed/seed.ll; } > seed/seed.ll.tmp && \
 	 mv seed/seed.ll.tmp seed/seed.ll
 	@rm -f build/seed build/seed.o
@@ -169,16 +170,16 @@ install-hooks:
 # Remove all build artifacts. Source and seed are preserved.
 clean:
 	@rm -rf build
-	@rm -f src/*.fg.ll
-	@echo "cleaned: build/ and src/*.fg.ll"
+	@rm -f $(SRC_DIR)/*.fg.ll
+	@echo "cleaned: build/ and $(SRC_DIR)/*.fg.ll"
 
 # Assemble the canonical grammar from feature fragments.
 grammar:
 	@echo "# Forge Bootstrap Grammar" > GRAMMAR.md
 	@echo "" >> GRAMMAR.md
-	@echo "Assembled from \`src/features/*/grammar.md\`." >> GRAMMAR.md
+	@echo "Assembled from \`$(SRC_DIR)/features/*/grammar.md\`." >> GRAMMAR.md
 	@echo "" >> GRAMMAR.md
-	@for f in src/features/*/grammar.md; do echo "---" >> GRAMMAR.md; echo "" >> GRAMMAR.md; cat "$$f" >> GRAMMAR.md; echo "" >> GRAMMAR.md; done
+	@for f in $(SRC_DIR)/features/*/grammar.md; do echo "---" >> GRAMMAR.md; echo "" >> GRAMMAR.md; cat "$$f" >> GRAMMAR.md; echo "" >> GRAMMAR.md; done
 	@echo "assembled GRAMMAR.md ($$(wc -l < GRAMMAR.md | tr -d ' ') lines)"
 
 # ── Workflow commands ──

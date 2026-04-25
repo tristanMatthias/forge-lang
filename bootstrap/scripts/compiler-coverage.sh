@@ -14,7 +14,8 @@ CLANG_RT_DIR="$LLVM_PREFIX/lib/clang/$(ls "$LLVM_PREFIX/lib/clang/" | head -1)/l
 BS2=build/bs2
 COV_DIR=build/coverage
 COV_BS2="$COV_DIR/bs2_cov"
-COVMAP=src/main.fg.covmap.json
+SRC_DIR=packages/forgec/src
+COVMAP=$SRC_DIR/main.fg.covmap.json
 
 LCOV_OUT=""
 if [ "${1:-}" = "--lcov" ] && [ -n "${2:-}" ]; then
@@ -31,13 +32,13 @@ die() { printf '\033[0;31m[err]\033[0m %s\n' "$1" >&2; exit 1; }
 mkdir -p "$COV_DIR/profiles"
 
 # Step 2: Compile the compiler with --coverage
-log "compiling src/main.fg with --coverage"
-"$BS2" compile --coverage src/main.fg >"$COV_DIR/codegen.log" 2>&1 \
+log "compiling $SRC_DIR/main.fg with --coverage"
+"$BS2" compile --coverage "$SRC_DIR/main.fg" >"$COV_DIR/codegen.log" 2>&1 \
     || die "bs2 compile --coverage failed (see $COV_DIR/codegen.log)"
 
 # Step 3: Lower instrprof intrinsics
 log "lowering instrprof intrinsics"
-"$OPT" -passes=instrprof -o "$COV_DIR/main.cov.ll" -S src/main.fg.ll \
+"$OPT" -passes=instrprof -o "$COV_DIR/main.cov.ll" -S "$SRC_DIR/main.fg.ll" \
     --mtriple=arm64-apple-macosx \
     || die "opt instrprof lowering failed"
 
@@ -57,7 +58,7 @@ ok "instrumented compiler at $COV_BS2"
 log "running test suite through instrumented compiler"
 rm -f "$COV_DIR/profiles/"*.profraw
 passed=0; failed=0; total=0
-for fg in $(find regress -name '*.fg' | sort; find src/features -name 'example*.fg' | sort); do
+for fg in $(find regress -name '*.fg' | sort; find "$SRC_DIR/features" -name 'example*.fg' | sort); do
     total=$((total + 1))
     name=$(echo "$fg" | tr '/.' '_')
     prf="$COV_DIR/profiles/${name}.profraw"
