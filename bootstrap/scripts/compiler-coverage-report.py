@@ -18,6 +18,7 @@ with open(covmap_path) as f:
 lines = open(profdata_path).readlines()
 fn = None
 fn_counters = {}
+fn_count = 0
 for line in lines:
     line = line.strip()
     if (line.endswith(':') and not line.startswith('Counters')
@@ -25,9 +26,12 @@ for line in lines:
             and not line.startswith('Total')
             and not line.startswith('Maximum')):
         fn = line[:-1]
+    elif line.startswith('Function count:') and fn:
+        fn_count = int(line.split(':')[1].strip())
     elif line.startswith('Block counts:') and fn:
         counts_str = line.split('[')[1].split(']')[0]
-        fn_counters[fn] = [int(x.strip()) for x in counts_str.split(',')]
+        # Prepend Function count (counter[0]) to Block counts (counter[1..N])
+        fn_counters[fn] = [fn_count] + [int(x.strip()) for x in counts_str.split(',')]
         fn = None
 
 # Build per-function stats

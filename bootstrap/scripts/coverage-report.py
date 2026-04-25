@@ -25,13 +25,17 @@ result = subprocess.run(
 
 fn_counters = {}
 current_fn = None
+current_fn_count = 0
 for line in result.stdout.split('\n'):
     line = line.strip()
     if line.endswith(':') and not line.startswith('Counters') and not line.startswith('Instrumentation') and not line.startswith('Total') and not line.startswith('Maximum'):
         current_fn = line[:-1]
+    elif line.startswith('Function count:') and current_fn:
+        current_fn_count = int(line.split(':')[1].strip())
     elif line.startswith('Block counts:') and current_fn:
         counts_str = line.split('[')[1].split(']')[0]
-        fn_counters[current_fn] = [int(x.strip()) for x in counts_str.split(',')]
+        # Prepend Function count (counter[0]) to Block counts (counter[1..N])
+        fn_counters[current_fn] = [current_fn_count] + [int(x.strip()) for x in counts_str.split(',')]
         current_fn = None
 
 # Build coverage data from covmap

@@ -83,9 +83,10 @@ for f in "$COV_DIR/profiles/"*.profraw; do
     fi
 done
 [ "$valid_count" -gt 0 ] || die "no valid profiles collected"
+log "$valid_count valid profiles found"
 # shellcheck disable=SC2086
-"$PROFDATA" merge -sparse $valid_files -o "$COV_DIR/merged.profdata" 2>/dev/null \
-    || die "profdata merge failed"
+"$PROFDATA" merge -sparse $valid_files -o "$COV_DIR/merged.profdata" \
+    || die "profdata merge failed (try: rm -rf build/coverage/profiles && make coverage)"
 "$PROFDATA" show --all-functions --counts "$COV_DIR/merged.profdata" \
     >"$COV_DIR/profdata_dump.txt" 2>/dev/null
 ok "$valid_count valid profiles merged"

@@ -642,15 +642,19 @@ LLVMValueRef forge_coverage_name_global(LLVMModuleRef m, const char* fn_name) {
 // We use 65536 as a safe upper bound for line-based counter indices.
 // LLVM allocates the counter array based on this value.
 void forge_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
-                              const char* fn_name, int64_t fn_hash,
+                              const char* fn_name, int64_t fn_hash_unused,
                               int32_t num_counters_unused, int32_t counter_idx) {
     int32_t num_counters = 1024;
     if (!coverage_intrinsic) return;
+    // Compute unique hash from function name (djb2)
+    uint64_t hash = 5381;
+    for (const char* p = fn_name; *p; p++)
+        hash = ((hash << 5) + hash) + (uint64_t)*p;
     LLVMContextRef ctx = LLVMGetModuleContext(m);
     LLVMValueRef name_global = forge_coverage_name_global(m, fn_name);
     LLVMValueRef args[] = {
         name_global,
-        LLVMConstInt(LLVMInt64TypeInContext(ctx), (uint64_t)fn_hash, 0),
+        LLVMConstInt(LLVMInt64TypeInContext(ctx), hash, 0),
         LLVMConstInt(LLVMInt32TypeInContext(ctx), (uint32_t)num_counters, 0),
         LLVMConstInt(LLVMInt32TypeInContext(ctx), (uint32_t)counter_idx, 0)
     };
