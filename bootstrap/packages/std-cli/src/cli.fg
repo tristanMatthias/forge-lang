@@ -257,15 +257,7 @@ fn parse_args(cmd_name: string, flags: FlagList, options: OptionList, args: ArgL
                     error = "unknown option: ${key}"
                 }
             }
-            // Check if it's an option (next arg is value)
-            else if is_option_match(options, arg) && i + 1 < argc {
-                let val = forge_selfhost_get_arg_cstr(i + 1)
-                parsed_options = set_option(parsed_options, strip_dashes(arg), val)
-                // Skip the value arg (handled by for loop incrementing i)
-                // NOTE: we can't skip manually in a for loop, so the next arg
-                // will be treated as positional. This is a known limitation.
-                // For now, only --key=value syntax is fully supported for options.
-            }
+            // Options use --key=value syntax only (for-loop can't skip ahead)
             else {
                 error = "unknown flag: ${arg}"
             }
