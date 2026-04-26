@@ -57,9 +57,12 @@ fn collect_component_defs(stmts: StmtList) -> CompDefRegistry {
                     CompDefRegistry.Entry(name, params, config, body, collect_component_defs(next))
                 }
                 .Module(_, mod_body) -> {
-                    // Also collect from modules
                     let mod_defs = collect_component_defs(mod_body)
                     merge_registries(mod_defs, collect_component_defs(next))
+                }
+                .Function(_, _, _, _, fn_body) -> {
+                    let fn_defs = collect_component_defs(fn_body)
+                    merge_registries(fn_defs, collect_component_defs(next))
                 }
                 _ -> collect_component_defs(next)
             }

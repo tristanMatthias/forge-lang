@@ -167,36 +167,83 @@ impl Parser {
 
     // ── Component Block Body ──
 
-    // Parse config pairs: `key value` where value is a literal
+    // Parse config pairs: `key value` where value is a literal.
+    // Uses character-level peek to decide without consuming tokens.
     fn parse_comp_config_pairs(self) -> CompConfigPairList? {
         if self.check(Tk.RightBrace) { return CompConfigPairList.End }
-        // Stop if we see a keyword or non-config pattern
         if self.check(Tk.KwFn) || self.check(Tk.KwComponent) || self.check(Tk.KwLet) {
             return CompConfigPairList.End
         }
         if !self.check(Tk.Identifier) { return CompConfigPairList.End }
-
-        // Config pair: `identifier` followed by a literal value.
-        // Use peek to check if next char after ident is a literal-start.
-        // If the identifier is followed by `{` or another ident, it's a nested block.
         let key = self.current_lexeme
-        if self.peek_after_ident_is_brace() || self.peek_after_ident_is_ident() {
-            return CompConfigPairList.End
-        }
-        // Check: "on" keyword signals event handler, not config
         if key == "on" { return CompConfigPairList.End }
-        self.advance()  // consume key
-        // Parse value expression (literal: string, number, bool)
-        if self.check(Tk.String) || self.check(Tk.Number) || self.check(Tk.Float) || self.check(Tk.KwTrue) || self.check(Tk.KwFalse) {
+        // Peek at what follows the identifier (without consuming)
+        if self.peek_after_ident_is_brace() {
+            return CompConfigPairList.End  // nested block
+        }
+        // Check if next char is a quote (string literal) or digit (number)
+        if self.peek_after_ident_is_string() || self.peek_after_ident_is_number() {
+            self.advance()  // consume key
             let value = self.parse_expression()?
-            // Skip optional comma between config pairs
             if self.check(Tk.Comma) { self.advance() }
             let rest = self.parse_comp_config_pairs()?
             return CompConfigPairList.Node(key, value, rest)
         }
-        // Not a literal — error
-        self.set_error("expected literal value for config key `${key}`")
-        null
+        // Check for `true` or `false` keywords after ident
+        if self.peek_after_ident_is_keyword("true") || self.peek_after_ident_is_keyword("false") {
+            self.advance()  // consume key
+            let value = self.parse_expression()?
+            if self.check(Tk.Comma) { self.advance() }
+            let rest = self.parse_comp_config_pairs()?
+            return CompConfigPairList.Node(key, value, rest)
+        }
+        // Anything else (identifier, etc.) → end of config pairs
+        CompConfigPairList.End
+    }
+
+    fn peek_after_ident_is_string(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch == "\""
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    fn peek_after_ident_is_number(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                return ch >= "0" && ch <= "9"
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Check if the text after whitespace matches a specific keyword
+    fn peek_after_ident_is_keyword(self, keyword: string) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        // Skip whitespace
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                // Check if the text starting here matches the keyword
+                if i + keyword.length <= self.source.length {
+                    return self.source.substring(i, i + keyword.length) == keyword
+                }
+                return false
+            }
+            i = i + 1
+        }
+        false
     }
 
     // Peek: is the next non-whitespace char after current token a `{`?

@@ -411,41 +411,70 @@ fn fmt_map_entries(entries: ExprList) -> string {
     }
 }
 
-fn main() {
-    // Build CLI definition using @std/cli
-    mut app = cli_new("forge-bootstrap", "Forge bootstrap compiler", "0.1.0")
-    app = cli_add_command(app, "compile", "Compile a Forge file to LLVM IR")
-    app = cli_command_add_flag(app, "compile", "--coverage", "-c", "Enable coverage instrumentation")
-    app = cli_command_add_flag(app, "compile", "--debug-null", "", "Enable null argument checks")
-    app = cli_command_add_flag(app, "compile", "--json", "", "Output diagnostics as JSON")
-    app = cli_command_add_option(app, "compile", "--stop-after", "", "Stop after phase (parse|resolve|names|check)", "")
-    app = cli_command_add_arg(app, "compile", "file", "Source file", true)
+// ── CLI component definitions ──
+// Match the Rust std-cli component pattern.
+component cli_app(name: string) {
+    config {
+        description: string = ""
+        version: string = "0.1.0"
+    }
+}
+component cli_cmd(name: string) {
+    config { description: string = "" }
+}
+component cli_flag(name: string) {
+    config { short: string = "", description: string = "" }
+}
+component cli_opt(name: string) {
+    config { short: string = "", description: string = "", default_val: string = "" }
+}
+component cli_arg(name: string) {
+    config { description: string = "", required: bool = false }
+}
 
-    app = cli_add_command(app, "check", "Type-check a Forge file")
+fn main() {
+    // ── CLI definition using component blocks ──
+    component cli_app cli_def {
+        description "Forge bootstrap compiler"
+        version "0.1.0"
+    }
+    mut app = cli_new(cli_def.name, cli_def.description, cli_def.version)
+
+    // Compile command
+    component cli_cmd compile_cmd { description "Compile a Forge file to LLVM IR" }
+    app = cli_add_command(app, compile_cmd.name, compile_cmd.description)
+    component cli_flag cov_flag { short "-c", description "Enable coverage instrumentation" }
+    app = cli_command_add_flag(app, "compile", "--coverage", cov_flag.short, cov_flag.description)
+    component cli_flag null_flag { description "Enable null argument checks" }
+    app = cli_command_add_flag(app, "compile", "--debug-null", "", null_flag.description)
+    component cli_flag json_flag { description "Output diagnostics as JSON" }
+    app = cli_command_add_flag(app, "compile", "--json", "", json_flag.description)
+    component cli_opt sa_opt { description "Stop after phase (parse|resolve|names|check)" }
+    app = cli_command_add_option(app, "compile", "--stop-after", "", sa_opt.description, sa_opt.default_val)
+    component cli_arg file_arg { description "Source file", required true }
+    app = cli_command_add_arg(app, "compile", "file", file_arg.description, file_arg.required)
+
+    // Check command
+    component cli_cmd check_cmd { description "Type-check a Forge file" }
+    app = cli_add_command(app, check_cmd.name, check_cmd.description)
     app = cli_command_add_flag(app, "check", "--json", "", "Output diagnostics as JSON")
     app = cli_command_add_arg(app, "check", "file", "Source file", true)
 
+    // Simple commands
     app = cli_add_command(app, "run", "Compile and run a Forge file")
     app = cli_command_add_arg(app, "run", "file", "Source file", true)
-
     app = cli_add_command(app, "test", "Run spec tests in a Forge file")
     app = cli_command_add_arg(app, "test", "file", "Source file", true)
-
     app = cli_add_command(app, "expr", "Parse and display an expression")
     app = cli_command_add_arg(app, "expr", "file", "Source file", true)
-
     app = cli_add_command(app, "program", "Parse and display a program")
     app = cli_command_add_arg(app, "program", "file", "Source file", true)
-
     app = cli_add_command(app, "eval", "Evaluate a Forge expression")
     app = cli_command_add_arg(app, "eval", "file", "Source file", true)
-
     app = cli_add_command(app, "fix", "Apply auto-fixes to a Forge file")
     app = cli_command_add_arg(app, "fix", "file", "Source file", true)
-
     app = cli_add_command(app, "fmt", "Format a Forge source file")
     app = cli_command_add_arg(app, "fmt", "file", "Source file", true)
-
     app = cli_add_command(app, "lsp", "Start language server")
     app = cli_add_command(app, "features", "List registered features")
 
