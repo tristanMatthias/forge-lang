@@ -213,15 +213,29 @@ impl Parser {
         false
     }
 
-    // Peek: is the next non-whitespace char after current token an identifier start?
+    // Peek: is the next non-whitespace token an identifier (not a keyword like true/false)?
     fn peek_after_ident_is_ident(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
+        // Skip whitespace
         while i < self.source.length {
             let ch = self.source.substring(i, i + 1)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                // Check if it's a letter or underscore (identifier start)
-                return (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+                // Must be a letter or underscore (identifier start)
+                let is_alpha = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+                if !is_alpha { return false }
+                // Extract the full word to check against keywords
+                mut j = i
+                while j < self.source.length {
+                    let wc = self.source.substring(j, j + 1)
+                    let is_alnum = (wc >= "a" && wc <= "z") || (wc >= "A" && wc <= "Z") || (wc >= "0" && wc <= "9") || wc == "_"
+                    if !is_alnum { break }
+                    j = j + 1
+                }
+                let word = self.source.substring(i, j)
+                // Exclude literal keywords — these are config values, not nested block names
+                if word == "true" || word == "false" || word == "null" { return false }
+                return true
             }
             i = i + 1
         }
