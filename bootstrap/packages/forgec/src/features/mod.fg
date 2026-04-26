@@ -37,7 +37,7 @@ mod eval
 mod union_type
 mod component_decl
 use features.closures.{init_closures}
-use features.defer_stmt.{defer_emit_stmt, defer_resolve_stmt, defer_check_stmt, defer_eval_stmt, errdefer_emit_stmt, errdefer_resolve_stmt, errdefer_check_stmt, errdefer_eval_stmt}
+use features.defer_stmt.{init_defer_stmt}
 use features.enum_decl.{init_enum_decl}
 use features.extern_decl.{init_extern_decl}
 use features.fn_decl.{init_fn_decl}
@@ -129,32 +129,7 @@ component feature {
 }
 
 export fn init_features(reg: Registry) {
-    // ── Component-based features ──
-    feature_set all {
-        registry = reg
-
-        feature defer_stmt {
-            stmt_tag = Stmt.Defer(Expr.Null)
-            stmt_keyword = "kw_defer"
-            parse_stmt = (p: Parser) -> p.parse_defer_statement()
-            emit_stmt = defer_emit_stmt
-            resolve_stmt = defer_resolve_stmt
-            check_stmt = defer_check_stmt
-            eval_stmt = defer_eval_stmt
-        }
-
-        feature errdefer_stmt {
-            stmt_tag = Stmt.Errdefer(Expr.Null)
-            stmt_keyword = "kw_errdefer"
-            parse_stmt = (p: Parser) -> p.parse_errdefer_statement()
-            emit_stmt = errdefer_emit_stmt
-            resolve_stmt = errdefer_resolve_stmt
-            check_stmt = errdefer_check_stmt
-            eval_stmt = errdefer_eval_stmt
-        }
-    }
-
-    // ── Legacy init-function features ──
+    init_defer_stmt(reg)
     init_if_stmt(reg)
     init_match_expr(reg)
     init_struct_decl(reg)

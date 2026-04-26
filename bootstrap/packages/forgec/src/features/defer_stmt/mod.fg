@@ -4,13 +4,14 @@ use core.ast.{sexpr_dummy}
 use codegen.types.{err_stmt, ok_stmt, StmtResult}
 use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, value_null}
+use core.registry.{feature_new, register}
 use resolve.{resolve_expr}
 use codegen.types.{DeferStack}
 use typeck.{check_expr}
 
-// ── Defer handlers (exported for feature component registration) ──
+// All handlers are private — only the registration function is exported.
 
-export fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn defer_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Defer(body) -> {
             let updated = ctx with { defers: DeferStack.Frame(sexpr_dummy(body), ctx.defers) }
@@ -20,11 +21,11 @@ export fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResul
     }
 }
 
-export fn defer_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+fn defer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .Defer(body) -> resolve_expr(r, body), _ -> r }
 }
 
-export fn defer_check_stmt(tc: TC, stmt: Stmt) -> TC {
+fn defer_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Defer(body) -> {
             let r = check_expr(tc, body)
@@ -34,16 +35,14 @@ export fn defer_check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
-export fn defer_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+fn defer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Defer(_) -> ok_result(rt, value_null())
         _ -> error_result(rt, "expected Defer")
     }
 }
 
-// ── Errdefer handlers ──
-
-export fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn errdefer_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
             let updated = ctx with { defers: DeferStack.ErrFrame(sexpr_dummy(body), ctx.defers) }
@@ -53,11 +52,11 @@ export fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtRe
     }
 }
 
-export fn errdefer_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+fn errdefer_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .Errdefer(body) -> resolve_expr(r, body), _ -> r }
 }
 
-export fn errdefer_check_stmt(tc: TC, stmt: Stmt) -> TC {
+fn errdefer_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .Errdefer(body) -> {
             let r = check_expr(tc, body)
@@ -67,9 +66,33 @@ export fn errdefer_check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
-export fn errdefer_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+fn errdefer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     match stmt {
         .Errdefer(_) -> ok_result(rt, value_null())
         _ -> error_result(rt, "expected Errdefer")
     }
+}
+
+// ── Single export: register all features from this module ──
+
+export fn init_defer_stmt(reg: Registry) {
+    register(reg, feature_new("defer") with {
+        stmt_tag: Stmt.Defer(Expr.Null),
+        stmt_keyword: "kw_defer",
+        parse_stmt: (p: Parser) -> p.parse_defer_statement(),
+        emit_stmt: defer_emit,
+        resolve_stmt: defer_resolve,
+        check_stmt: defer_check,
+        eval_stmt: defer_eval,
+    })
+
+    register(reg, feature_new("errdefer") with {
+        stmt_tag: Stmt.Errdefer(Expr.Null),
+        stmt_keyword: "kw_errdefer",
+        parse_stmt: (p: Parser) -> p.parse_errdefer_statement(),
+        emit_stmt: errdefer_emit,
+        resolve_stmt: errdefer_resolve,
+        check_stmt: errdefer_check,
+        eval_stmt: errdefer_eval,
+    })
 }
