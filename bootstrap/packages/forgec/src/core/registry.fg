@@ -200,6 +200,12 @@ export fn lookup_stmt_parser(reg: Registry, keyword: string) -> int? {
     forge_map_get_cstr(reg.stmt_parsers, keyword)
 }
 
+// Register a component name for keyword-free instantiation.
+// After this, `name instance { ... }` at statement level is parsed as a ComponentBlock.
+export fn register_component_name(reg: Registry, name: string, handler: fn(Parser) -> Stmt?) {
+    forge_map_set_cstr(reg.stmt_parsers, name, handler)
+}
+
 // ── Build the registry ──
 
 export fn build_registry() -> Registry {

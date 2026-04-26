@@ -1,698 +1,65 @@
-// WHY: AST-to-AST rewrite pass that runs BETWEEN parsing and resolving.
+// WHY: AST-to-AST rewrite pass that runs BETWEEN component expansion and resolving.
 //
-// The desugar pass lets you define new language features as REWRITES to
-// existing features. The resolver, typechecker, and codegen never see
-// the sugared form — they only see the desugared AST.
+// The desugar pass rewrites expression-level sugar (assert, dbg, min, max, etc.)
+// into simpler AST forms. The resolver, typechecker, and codegen never see
+// the sugared forms.
 //
-// To add a new desugar-only feature:
-//   1. Add a new AST variant (or reuse Call/Ident patterns)
-//   2. Add parsing for the new syntax
-//   3. Add ONE match arm in desugar_expr or desugar_stmt
-//   4. Add tests
-//   NO codegen, NO resolver, NO typechecker, NO eval, NO feature registration.
+// Component expansion is a SEPARATE pass that runs before desugar.
+// See features/component_decl/expand.fg.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldList, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, CompConfigList, CompConfigPairList, TypeParamList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldList, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType}
 
 // ── Public API ──
 
 export fn desugar_program(stmts: StmtList) -> StmtList {
-    // Pass 1: collect component definitions into a registry
-    let reg = collect_component_defs(stmts)
-    // Pass 2: expand all components using the registry
-    desugar_stmt_list(stmts, reg)
-}
-
-// ── Component definition registry ──
-// Stores parsed component definitions so ComponentBlocks can look up
-// the init/drop/after_children/methods for their component type.
-
-enum CompDefRegistry {
-    End
-    Entry(name: string, params: ParamList, config: CompConfigList, body: StmtList, next: CompDefRegistry)
-}
-
-type CompDefLookup = {
-    found: bool,
-    params: ParamList,
-    config: CompConfigList,
-    body: StmtList,
-}
-
-fn comp_reg_lookup(reg: CompDefRegistry, name: string) -> CompDefLookup {
-    match reg {
-        .End -> CompDefLookup { found: false, params: ParamList.End, config: CompConfigList.End, body: StmtList.End }
-        .Entry(n, params, config, body, _) if n == name -> CompDefLookup { found: true, params, config, body }
-        .Entry(_, _, _, _, next) -> comp_reg_lookup(next, name)
-    }
-}
-
-// Collect all ComponentDef nodes from the statement list (including through Annotated wrappers)
-fn collect_component_defs(stmts: StmtList) -> CompDefRegistry {
-    match stmts {
-        .End -> CompDefRegistry.End
-        .Node(ss, next) -> {
-            let inner = stmt_unwrap_deep(ss.node)
-            match inner {
-                .ComponentDef(name, params, config, body) -> {
-                    CompDefRegistry.Entry(name, params, config, body, collect_component_defs(next))
-                }
-                .Module(_, mod_body) -> {
-                    let mod_defs = collect_component_defs(mod_body)
-                    merge_registries(mod_defs, collect_component_defs(next))
-                }
-                .Function(_, _, _, _, fn_body) -> {
-                    let fn_defs = collect_component_defs(fn_body)
-                    merge_registries(fn_defs, collect_component_defs(next))
-                }
-                _ -> collect_component_defs(next)
-            }
-        }
-    }
-}
-
-fn merge_registries(a: CompDefRegistry, b: CompDefRegistry) -> CompDefRegistry {
-    match a {
-        .End -> b
-        .Entry(name, params, config, body, next) -> CompDefRegistry.Entry(name, params, config, body, merge_registries(next, b))
-    }
+    desugar_stmt_list(stmts)
 }
 
 // ── Statement desugaring ──
 
-fn stmt_unwrap_deep(s: Stmt) -> Stmt {
-    match s {
-        .Annotated(_, inner) -> stmt_unwrap_deep(inner)
-        _ -> s
+fn desugar_stmt_list(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            let new_stmt = desugar_stmt(ss.node)
+            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), desugar_stmt_list(next))
+        }
     }
 }
 
-fn desugar_stmt_list(stmts: StmtList, reg: CompDefRegistry) -> StmtList {
-    desugar_stmt_list_ctx(stmts, reg, CompNestCtx { parent_var: "", parent_name: "" })
-}
-
-fn desugar_stmt(stmt: Stmt, reg: CompDefRegistry) -> Stmt {
+fn desugar_stmt(stmt: Stmt) -> Stmt {
     match stmt {
         .Expr(e) -> .Expr(desugar_expr(e))
         .Let(name, vt, init) -> .Let(name, vt, desugar_expr(init))
         .Mut(name, vt, init) -> .Mut(name, vt, desugar_expr(init))
         .Return(e) -> .Return(desugar_expr(e))
-        .Block(body) -> .Block(desugar_stmt_list(body, reg))
+        .Block(body) -> .Block(desugar_stmt_list(body))
         .If(cond, then_b, else_b) -> {
             if else_b != null {
-                .If(desugar_expr(cond), desugar_stmt(then_b, reg), desugar_stmt(else_b!, reg))
+                .If(desugar_expr(cond), desugar_stmt(then_b), desugar_stmt(else_b!))
             } else {
-                .If(desugar_expr(cond), desugar_stmt(then_b, reg), null)
+                .If(desugar_expr(cond), desugar_stmt(then_b), null)
             }
         }
-        .While(cond, body) -> .While(desugar_expr(cond), desugar_stmt(body, reg))
-        .For(v, start, end, body) -> .For(v, desugar_expr(start), desugar_expr(end), desugar_stmt(body, reg))
-        .ForIn(v, coll, body) -> .ForIn(v, desugar_expr(coll), desugar_stmt(body, reg))
+        .While(cond, body) -> .While(desugar_expr(cond), desugar_stmt(body))
+        .For(v, start, end, body) -> .For(v, desugar_expr(start), desugar_expr(end), desugar_stmt(body))
+        .ForIn(v, coll, body) -> .ForIn(v, desugar_expr(coll), desugar_stmt(body))
         .Match(subj, arms) -> .Match(desugar_expr(subj), desugar_match_arms(arms))
-        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, desugar_stmt_list(body, reg))
+        .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, desugar_stmt_list(body))
         .Defer(body) -> .Defer(desugar_expr(body))
-        .Module(name, body) -> .Module(name, desugar_stmt_list(body, reg))
-        .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner, reg))
-        // Handled via splice in desugar_stmt_list
-        .ComponentDef(_, _, _, _) -> stmt
-        .ComponentBlock(_, _, _, _) -> stmt
+        .Module(name, body) -> .Module(name, desugar_stmt_list(body))
+        .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner))
         _ -> stmt
-    }
-}
-
-// ── Component expansion ──
-
-fn capitalize(s: string) -> string {
-    if s.length == 0 { return "" }
-    let first = s.substring(0, 1)
-    let rest = s.substring(1, s.length)
-    let upper = match first {
-        "a" -> "A"  "b" -> "B"  "c" -> "C"  "d" -> "D"
-        "e" -> "E"  "f" -> "F"  "g" -> "G"  "h" -> "H"
-        "i" -> "I"  "j" -> "J"  "k" -> "K"  "l" -> "L"
-        "m" -> "M"  "n" -> "N"  "o" -> "O"  "p" -> "P"
-        "q" -> "Q"  "r" -> "R"  "s" -> "S"  "t" -> "T"
-        "u" -> "U"  "v" -> "V"  "w" -> "W"  "x" -> "X"
-        "y" -> "Y"  "z" -> "Z"  _ -> first
-    }
-    "${upper}${rest}"
-}
-
-fn config_to_fields(config: CompConfigList) -> FieldList {
-    match config {
-        .End -> FieldList.End
-        .Node(key, vt, _, next) -> FieldList.Node(key, vt, config_to_fields(next))
-    }
-}
-
-fn params_to_fields(params: ParamList) -> FieldList {
-    match params {
-        .End -> FieldList.End
-        .Node(name, vt, next) -> FieldList.Node(name, vt, params_to_fields(next))
-    }
-}
-
-fn merge_field_lists(a: FieldList, b: FieldList) -> FieldList {
-    match a {
-        .End -> b
-        .Node(name, vt, next) -> FieldList.Node(name, vt, merge_field_lists(next, b))
-    }
-}
-
-fn build_factory_inits(params: ParamList, config: CompConfigList) -> FieldInitList {
-    let param_part = params_to_factory_inits(params)
-    let config_part = config_to_factory_inits(config)
-    merge_field_init_lists(param_part, config_part)
-}
-
-fn params_to_factory_inits(params: ParamList) -> FieldInitList {
-    match params {
-        .End -> FieldInitList.End
-        .Node(name, _, next) -> {
-            FieldInitList.Node(name, sexpr(Expr.Ident(name), 0, 0), params_to_factory_inits(next))
-        }
-    }
-}
-
-fn config_to_factory_inits(config: CompConfigList) -> FieldInitList {
-    match config {
-        .End -> FieldInitList.End
-        .Node(key, _, default_val, next) -> {
-            let val = if default_val != null { default_val! } else { Expr.Null }
-            FieldInitList.Node(key, sexpr(val, 0, 0), config_to_factory_inits(next))
-        }
-    }
-}
-
-fn merge_field_init_lists(a: FieldInitList, b: FieldInitList) -> FieldInitList {
-    match a {
-        .End -> b
-        .Node(name, val, next) -> FieldInitList.Node(name, val, merge_field_init_lists(next, b))
-    }
-}
-
-// Extract regular method fns from component body (skip init, drop, __on_, __event_)
-fn extract_methods(body: StmtList, comp_name: string, reg: CompDefRegistry) -> StmtList {
-    match body {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            match ss.node {
-                .Function(fn_name, tp, params, rvt, fn_body) -> {
-                    if fn_name == "init" || fn_name == "drop" || fn_name.starts_with("__on_") || fn_name.starts_with("__event_") {
-                        extract_methods(next, comp_name, reg)
-                    } else {
-                        let new_name = "${comp_name}_${fn_name}"
-                        let new_fn = Stmt.Function(new_name, tp, params, rvt, desugar_stmt_list(fn_body, reg))
-                        StmtList.Node(sstmt(new_fn, ss.line, ss.col), extract_methods(next, comp_name, reg))
-                    }
-                }
-                _ -> extract_methods(next, comp_name, reg)
-            }
-        }
-    }
-}
-
-// Find a named function in a component body and return its body
-fn find_fn_body(stmts: StmtList, fn_name: string) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            match ss.node {
-                .Function(name, _, _, _, fn_body) -> {
-                    if name == fn_name { fn_body }
-                    else { find_fn_body(next, fn_name) }
-                }
-                _ -> find_fn_body(next, fn_name)
-            }
-        }
-    }
-}
-
-fn has_fn(stmts: StmtList, fn_name: string) -> bool {
-    match stmts {
-        .End -> false
-        .Node(ss, next) -> {
-            match ss.node {
-                .Function(name, _, _, _, _) -> {
-                    if name == fn_name { true }
-                    else { has_fn(next, fn_name) }
-                }
-                _ -> has_fn(next, fn_name)
-            }
-        }
-    }
-}
-
-// ── Self-rewriting context ──
-// When inlining component init/drop/after_children bodies:
-//   self.name → instance name string
-//   self.config.field → resolved config value
-//   self.__parent → parent accumulator variable
-//   self.__parent_name → parent instance name string
-
-type RewriteCtx = {
-    inst: string,          // this instance's variable name
-    parent_var: string,    // parent accumulator variable ("" if root)
-    parent_name: string,   // parent instance name ("" if root)
-}
-
-fn rewrite_self(stmts: StmtList, ctx: RewriteCtx) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let new_stmt = rewrite_self_in_stmt(ss.node, ctx)
-            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), rewrite_self(next, ctx))
-        }
-    }
-}
-
-fn rewrite_self_in_stmt(stmt: Stmt, ctx: RewriteCtx) -> Stmt {
-    match stmt {
-        .Expr(e) -> .Expr(rewrite_self_in_expr(e, ctx))
-        .Let(name, vt, init) -> .Let(name, vt, rewrite_self_in_expr(init, ctx))
-        .Mut(name, vt, init) -> .Mut(name, vt, rewrite_self_in_expr(init, ctx))
-        .Return(e) -> .Return(rewrite_self_in_expr(e, ctx))
-        .If(cond, then_b, else_b) -> {
-            if else_b != null {
-                .If(rewrite_self_in_expr(cond, ctx), rewrite_self_in_stmt(then_b, ctx), rewrite_self_in_stmt(else_b!, ctx))
-            } else {
-                .If(rewrite_self_in_expr(cond, ctx), rewrite_self_in_stmt(then_b, ctx), null)
-            }
-        }
-        .Block(body) -> .Block(rewrite_self(body, ctx))
-        .While(cond, body) -> .While(rewrite_self_in_expr(cond, ctx), rewrite_self_in_stmt(body, ctx))
-        _ -> stmt
-    }
-}
-
-fn rewrite_self_in_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
-    match expr {
-        .FieldAccess(obj, field) -> {
-            match obj {
-                .Ident(name) -> {
-                    if name == "self" {
-                        // self.__parent → parent accumulator variable
-                        if field == "__parent" {
-                            return Expr.Ident(ctx.parent_var)
-                        }
-                        // self.__parent_name → parent instance name string
-                        if field == "__parent_name" {
-                            return Expr.String("\"${ctx.parent_name}\"")
-                        }
-                        Expr.FieldAccess(Expr.Ident(ctx.inst), field)
-                    } else { Expr.FieldAccess(rewrite_self_in_expr(obj, ctx), field) }
-                }
-                // self.config.field → inst.field (flatten config access)
-                .FieldAccess(inner_obj, inner_field) -> {
-                    match inner_obj {
-                        .Ident(name) -> {
-                            if name == "self" && inner_field == "config" {
-                                Expr.FieldAccess(Expr.Ident(ctx.inst), field)
-                            } else { Expr.FieldAccess(rewrite_self_in_expr(obj, ctx), field) }
-                        }
-                        _ -> Expr.FieldAccess(rewrite_self_in_expr(obj, ctx), field)
-                    }
-                }
-                _ -> Expr.FieldAccess(rewrite_self_in_expr(obj, ctx), field)
-            }
-        }
-        // self.__parent = expr → parent_var = expr (assignment to parent)
-        .Assign(name, val) -> {
-            // Handles init body assignments like: self.__parent = some_fn(...)
-            // After FieldAccess rewriting, self.__parent becomes __parent ident
-            Expr.Assign(name, rewrite_self_in_expr(val, ctx))
-        }
-        .FieldAssign(obj, field, val) -> {
-            match obj {
-                .Ident(name) -> {
-                    if name == "self" && field == "__parent" {
-                        // self.__parent = expr → parent_var = expr
-                        Expr.Assign(ctx.parent_var, rewrite_self_in_expr(val, ctx))
-                    } else { Expr.FieldAssign(rewrite_self_in_expr(obj, ctx), field, rewrite_self_in_expr(val, ctx)) }
-                }
-                _ -> Expr.FieldAssign(rewrite_self_in_expr(obj, ctx), field, rewrite_self_in_expr(val, ctx))
-            }
-        }
-        .Ident(name) -> if name == "self" { Expr.Ident(ctx.inst) } else { expr }
-        .Call(callee, args) -> Expr.Call(rewrite_self_in_expr(callee, ctx), rewrite_self_in_expr_list(args, ctx))
-        .Binary(l, op, r) -> Expr.Binary(rewrite_self_in_expr(l, ctx), op, rewrite_self_in_expr(r, ctx))
-        .Unary(op, r) -> Expr.Unary(op, rewrite_self_in_expr(r, ctx))
-        .Logical(l, op, r) -> Expr.Logical(rewrite_self_in_expr(l, ctx), op, rewrite_self_in_expr(r, ctx))
-        .IfExpr(c, t, e) -> Expr.IfExpr(rewrite_self_in_expr(c, ctx), rewrite_self_in_expr(t, ctx), rewrite_self_in_expr(e, ctx))
-        .Block(body) -> Expr.Block(rewrite_self(body, ctx))
-        _ -> expr
-    }
-}
-
-fn rewrite_self_in_expr_list(list: ExprList, ctx: RewriteCtx) -> ExprList {
-    match list {
-        .End -> ExprList.End
-        .Node(se, next) -> ExprList.Node(sexpr(rewrite_self_in_expr(se.node, ctx), se.line, se.col), rewrite_self_in_expr_list(next, ctx))
-    }
-}
-
-// ── ComponentDef splice ──
-// Generates: type decl + factory fn + init fn + drop fn + after_children fn + methods
-
-fn splice_component_def(name: string, params: ParamList, config: CompConfigList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry) -> StmtList {
-    // Components with init hooks are templates — their init body handles
-    // construction. Don't generate a type/factory (would shadow existing types).
-    let has_init = has_fn(body, "init")
-    if has_init {
-        // Template component: only generate regular methods (if any)
-        let methods = extract_methods(body, name, reg)
-        return append_stmt_lists(methods, rest)
-    }
-
-    // Data component: generate type + factory + methods
-    let type_name = capitalize(name)
-    let param_fields = params_to_fields(params)
-    let config_fields = config_to_fields(config)
-    let all_fields = merge_field_lists(param_fields, config_fields)
-
-    let type_decl = Stmt.TypeDecl(type_name, TypeParamList.End, all_fields)
-
-    let init_list = build_factory_inits(params, config)
-    let struct_lit = Expr.StructLit(type_name, init_list)
-    let factory_body = StmtList.Node(sstmt(Stmt.Return(struct_lit), 0, 0), StmtList.End)
-    let factory = Stmt.Function("${name}_new", TypeParamList.End, params, ValueType.Struct(type_name), factory_body)
-
-    let methods = extract_methods(body, name, reg)
-
-    StmtList.Node(
-        sstmt(type_decl, line, col),
-        StmtList.Node(
-            sstmt(factory, line, col),
-            append_stmt_lists(methods, rest)
-        )
-    )
-}
-
-// ── ComponentBlock splice ──
-// Generates: let binding + init call + expanded children + after_children call + defer drop
-// For nested CLI components, threads parent context (mutable CLI variable + command name).
-
-// Nesting context for component expansion
-type CompNestCtx = {
-    parent_var: string,    // parent accumulator variable ("" = root/no parent)
-    parent_name: string,   // parent instance name ("" = root)
-}
-
-fn splice_component_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry) -> StmtList {
-    splice_component_block_ctx(comp, inst, config, body, line, col, rest, reg, CompNestCtx { parent_var: "", parent_name: "" })
-}
-
-fn splice_component_block_ctx(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
-    let def = comp_reg_lookup(reg, comp)
-    let has_init = def.found && has_fn(def.body, "init")
-
-    // Template components (with init hooks) don't create struct instances.
-    // Their init body runs inline, mutating the parent variable.
-    if has_init {
-        return splice_template_block(comp, inst, config, body, line, col, rest, reg, nest, def)
-    }
-
-    // Data components: create struct instance + lifecycle hooks
-    splice_data_block(comp, inst, config, body, line, col, rest, reg, nest, def)
-}
-
-// Template component expansion: init body runs inline, modifies parent.
-// No struct creation — self.name → instance name, self.config.field → value,
-// self.__parent → parent accumulator, self.__parent_name → parent name.
-//
-// Generic: works for ANY component type (CLI, server, model, etc.).
-// Root detection: if no parent exists (nest.parent_var == ""), the component
-// is a root — a mutable accumulator is created for it.
-fn splice_template_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
-    let is_root = nest.parent_var == ""
-
-    // Root: this instance IS the accumulator. Non-root: use parent's accumulator.
-    let accum_var = if is_root { inst } else { nest.parent_var }
-
-    let rw_ctx = RewriteCtx { inst, parent_var: accum_var, parent_name: nest.parent_name }
-
-    mut stmts = StmtList.End
-
-    // Defer drop
-    if has_fn(def.body, "drop") {
-        let drop_body = find_fn_body(def.body, "drop")
-        let rewritten_drop = rewrite_template_self(drop_body, inst, config, def.config, rw_ctx)
-        stmts = prepend_stmt(Stmt.Defer(Expr.Block(rewritten_drop)), line, col, stmts)
-    }
-
-    // After-children
-    if has_fn(def.body, "__on_after_children") {
-        let ac_body = find_fn_body(def.body, "__on_after_children")
-        let rewritten_ac = rewrite_template_self(ac_body, inst, config, def.config, rw_ctx)
-        stmts = prepend_stmts(rewritten_ac, stmts)
-    }
-
-    // Children: pass this instance as their parent context
-    let child_nest = CompNestCtx { parent_var: accum_var, parent_name: inst }
-    let expanded_body = desugar_stmt_list_ctx(body, reg, child_nest)
-    stmts = prepend_stmts(expanded_body, stmts)
-
-    // Init
-    if has_fn(def.body, "init") {
-        let init_body = find_fn_body(def.body, "init")
-        let rewritten_init = rewrite_template_self(init_body, inst, config, def.config, rw_ctx)
-        stmts = prepend_stmts(rewritten_init, stmts)
-    }
-
-    // Root: declare mutable accumulator before init assigns to it
-    if is_root {
-        let mut_stmt = Stmt.Mut(inst, ValueType.Unknown, Expr.Number("0"))
-        stmts = prepend_stmt(mut_stmt, line, col, stmts)
-    }
-
-    append_stmt_lists(stmts, rest)
-}
-
-// Rewrite template component self references by inlining values:
-// self.name → "inst" (string literal)
-// self.config.field → config value or default from schema
-// self.__parent → parent variable name
-// self.__parent_name → parent instance name string
-fn rewrite_template_self(stmts: StmtList, inst: string, user_config: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let new_stmt = rewrite_template_stmt(ss.node, inst, user_config, schema, ctx)
-            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), rewrite_template_self(next, inst, user_config, schema, ctx))
-        }
-    }
-}
-
-fn rewrite_template_stmt(stmt: Stmt, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> Stmt {
-    match stmt {
-        .Expr(e) -> .Expr(rewrite_template_expr(e, inst, uc, schema, ctx))
-        .Let(name, vt, init) -> .Let(name, vt, rewrite_template_expr(init, inst, uc, schema, ctx))
-        .Mut(name, vt, init) -> .Mut(name, vt, rewrite_template_expr(init, inst, uc, schema, ctx))
-        .Return(e) -> .Return(rewrite_template_expr(e, inst, uc, schema, ctx))
-        .Block(body) -> .Block(rewrite_template_self(body, inst, uc, schema, ctx))
-        .If(cond, then_b, else_b) -> {
-            if else_b != null {
-                .If(rewrite_template_expr(cond, inst, uc, schema, ctx), rewrite_template_stmt(then_b, inst, uc, schema, ctx), rewrite_template_stmt(else_b!, inst, uc, schema, ctx))
-            } else {
-                .If(rewrite_template_expr(cond, inst, uc, schema, ctx), rewrite_template_stmt(then_b, inst, uc, schema, ctx), null)
-            }
-        }
-        _ -> stmt
-    }
-}
-
-fn rewrite_template_expr(expr: Expr, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> Expr {
-    match expr {
-        .FieldAccess(obj, field) -> {
-            match obj {
-                .Ident(name) -> {
-                    if name == "self" {
-                        if field == "name" { return Expr.String("\"${inst}\"") }
-                        if field == "__parent" { return Expr.Ident(ctx.parent_var) }
-                        if field == "__parent_name" { return Expr.String("\"${ctx.parent_name}\"") }
-                        // self.field → look up in config
-                        let val = resolve_config_value(field, uc, schema)
-                        return val
-                    }
-                    Expr.FieldAccess(rewrite_template_expr(obj, inst, uc, schema, ctx), field)
-                }
-                .FieldAccess(inner_obj, inner_field) -> {
-                    match inner_obj {
-                        .Ident(name) -> {
-                            if name == "self" && inner_field == "config" {
-                                // self.config.field → resolved config value
-                                let val = resolve_config_value(field, uc, schema)
-                                return val
-                            }
-                        }
-                        _ -> {}
-                    }
-                    Expr.FieldAccess(rewrite_template_expr(obj, inst, uc, schema, ctx), field)
-                }
-                _ -> Expr.FieldAccess(rewrite_template_expr(obj, inst, uc, schema, ctx), field)
-            }
-        }
-        .FieldAssign(obj, field, val) -> {
-            match obj {
-                .Ident(name) -> {
-                    if name == "self" && field == "__parent" {
-                        // self.__parent = expr → parent_var = expr
-                        return Expr.Assign(ctx.parent_var, rewrite_template_expr(val, inst, uc, schema, ctx))
-                    }
-                }
-                _ -> {}
-            }
-            Expr.FieldAssign(rewrite_template_expr(obj, inst, uc, schema, ctx), field, rewrite_template_expr(val, inst, uc, schema, ctx))
-        }
-        .Call(callee, args) -> Expr.Call(rewrite_template_expr(callee, inst, uc, schema, ctx), rewrite_template_expr_list(args, inst, uc, schema, ctx))
-        .Binary(l, op, r) -> Expr.Binary(rewrite_template_expr(l, inst, uc, schema, ctx), op, rewrite_template_expr(r, inst, uc, schema, ctx))
-        .Ident(name) -> if name == "self" { Expr.String("\"${inst}\"") } else { expr }
-        _ -> expr
-    }
-}
-
-fn rewrite_template_expr_list(list: ExprList, inst: string, uc: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> ExprList {
-    match list {
-        .End -> ExprList.End
-        .Node(se, next) -> ExprList.Node(sexpr(rewrite_template_expr(se.node, inst, uc, schema, ctx), se.line, se.col), rewrite_template_expr_list(next, inst, uc, schema, ctx))
-    }
-}
-
-// Resolve a config field: first check user pairs, then schema defaults
-fn resolve_config_value(field: string, user_config: CompConfigPairList, schema: CompConfigList) -> Expr {
-    // Check user-provided config pairs first
-    match user_config {
-        .End -> {}
-        .Node(key, value, next) -> {
-            if key == field { return value }
-            return resolve_config_value(field, next, schema)
-        }
-    }
-    // Fall back to schema defaults
-    match schema {
-        .End -> Expr.String("\"\"")  // no default, use empty string
-        .Node(key, _, default_val, next) -> {
-            if key == field {
-                if default_val != null { return default_val! }
-                return Expr.String("\"\"")
-            }
-            resolve_config_value(field, CompConfigPairList.End, next)
-        }
-    }
-}
-
-// Data component: struct instance + lifecycle
-fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
-    let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, parent_name: nest.parent_name }
-
-    let call_expr = Expr.Call(
-        Expr.Ident("${comp}_new"),
-        ExprList.Node(sexpr(Expr.String("\"${inst}\""), 0, 0), ExprList.End)
-    )
-    let init_expr = apply_config_pairs(call_expr, config)
-
-    mut stmts = StmtList.End
-
-    if def.found && has_fn(def.body, "drop") {
-        let drop_body = find_fn_body(def.body, "drop")
-        let rewritten_drop = rewrite_self(drop_body, rw_ctx)
-        stmts = prepend_stmt(Stmt.Defer(Expr.Block(rewritten_drop)), line, col, stmts)
-    }
-
-    if def.found && has_fn(def.body, "__on_after_children") {
-        let ac_body = find_fn_body(def.body, "__on_after_children")
-        let rewritten_ac = rewrite_self(ac_body, rw_ctx)
-        stmts = prepend_stmts(rewritten_ac, stmts)
-    }
-
-    let child_nest = CompNestCtx { parent_var: nest.parent_var, parent_name: nest.parent_name }
-    let expanded_body = desugar_stmt_list_ctx(body, reg, child_nest)
-    stmts = prepend_stmts(expanded_body, stmts)
-
-    if def.found && has_fn(def.body, "init") {
-        let init_body = find_fn_body(def.body, "init")
-        let rewritten_init = rewrite_self(init_body, rw_ctx)
-        stmts = prepend_stmts(rewritten_init, stmts)
-    }
-
-    let binding = Stmt.Let(inst, ValueType.Unknown, init_expr)
-    StmtList.Node(
-        sstmt(binding, line, col),
-        append_stmt_lists(stmts, rest)
-    )
-}
-
-// Desugar with nesting context for CLI component expansion
-fn desugar_stmt_list_ctx(stmts: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
-    match stmts {
-        .End -> StmtList.End
-        .Node(ss, next) -> {
-            let desugared_next = desugar_stmt_list_ctx(next, reg, nest)
-            let inner = stmt_unwrap_deep(ss.node)
-            match inner {
-                .ComponentDef(name, params, config, body) -> {
-                    splice_component_def(name, params, config, body, ss.line, ss.col, desugared_next, reg)
-                }
-                .ComponentBlock(comp, inst, config, body) -> {
-                    splice_component_block_ctx(comp, inst, config, body, ss.line, ss.col, desugared_next, reg, nest)
-                }
-                _ -> {
-                    let new_stmt = desugar_stmt(ss.node, reg)
-                    StmtList.Node(sstmt(new_stmt, ss.line, ss.col), desugared_next)
-                }
-            }
-        }
-    }
-}
-
-fn prepend_stmt(stmt: Stmt, line: int, col: int, rest: StmtList) -> StmtList {
-    StmtList.Node(sstmt(stmt, line, col), rest)
-}
-
-fn prepend_stmts(stmts: StmtList, rest: StmtList) -> StmtList {
-    append_stmt_lists(stmts, rest)
-}
-
-fn append_stmt_lists(a: StmtList, b: StmtList) -> StmtList {
-    match a {
-        .End -> b
-        .Node(ss, next) -> StmtList.Node(ss, append_stmt_lists(next, b))
-    }
-}
-
-fn apply_config_pairs(base: Expr, config: CompConfigPairList) -> Expr {
-    match config {
-        .End -> base
-        _ -> {
-            let overrides = config_pairs_to_field_inits(config)
-            Expr.With(base, overrides)
-        }
-    }
-}
-
-fn config_pairs_to_field_inits(pairs: CompConfigPairList) -> FieldInitList {
-    match pairs {
-        .End -> FieldInitList.End
-        .Node(key, value, next) -> {
-            FieldInitList.Node(key, sexpr(value, 0, 0), config_pairs_to_field_inits(next))
-        }
     }
 }
 
 // ── Expression desugaring ──
-// This is where the MAGIC happens. Each match arm can rewrite
-// one expression form into another. The result is recursively
-// desugared, so rewrites can compose.
 
 fn desugar_expr(expr: Expr) -> Expr {
-    // First: apply rewrite rules to this node
     let rewritten = rewrite_expr(expr)
-    // Then: recursively desugar sub-expressions
     walk_expr(rewritten)
 }
 
-// REWRITE RULES — add new desugaring here.
-// Each rule matches a specific Expr pattern and returns
-// a simpler equivalent. Return the original expr if no rule matches.
 fn rewrite_expr(expr: Expr) -> Expr {
     match expr {
         .Call(callee, args) -> rewrite_call(expr, callee, args)
@@ -701,9 +68,6 @@ fn rewrite_expr(expr: Expr) -> Expr {
     }
 }
 
-// Check if a ListLit contains a ListComp element and desugar it.
-// [x * 2 for x in nums] → { let __lc = []; for x in nums { __lc.push(x * 2) }; __lc }
-// [x for x in nums if x > 0] → { let __lc = []; for x in nums { if x > 0 { __lc.push(x) } }; __lc }
 fn rewrite_list_lit(original: Expr, elems: ExprList) -> Expr {
     match elems {
         .Node(se, _) -> {
@@ -749,7 +113,6 @@ fn rewrite_call(original: Expr, callee: Expr, args: ExprList) -> Expr {
     }
 }
 
-// ── Assert desugaring ──
 fn desugar_assert(args: ExprList) -> Expr {
     match args {
         .Node(cond_se, rest) -> {
@@ -768,7 +131,6 @@ fn desugar_assert(args: ExprList) -> Expr {
     }
 }
 
-// ── dbg() desugaring ──
 fn desugar_dbg(args: ExprList) -> Expr {
     match args {
         .Node(val_se, _) -> {
@@ -844,7 +206,6 @@ fn desugar_min_max(args: ExprList, is_min: int) -> Expr {
     }
 }
 
-
 // ── Generic expression walker ──
 
 fn walk_expr(expr: Expr) -> Expr {
@@ -859,7 +220,7 @@ fn walk_expr(expr: Expr) -> Expr {
         .FieldAccess(obj, field) -> .FieldAccess(desugar_expr(obj), field)
         .FieldAssign(obj, field, val) -> .FieldAssign(desugar_expr(obj), field, desugar_expr(val))
         .IfExpr(c, t, e) -> .IfExpr(desugar_expr(c), desugar_expr(t), desugar_expr(e))
-        .Block(body) -> .Block(desugar_stmt_list(body, CompDefRegistry.End))
+        .Block(body) -> .Block(desugar_stmt_list(body))
         .NullCoalesce(l, r) -> .NullCoalesce(desugar_expr(l), desugar_expr(r))
         .OptionalChain(obj, field) -> .OptionalChain(desugar_expr(obj), field)
         .Try(inner) -> .Try(desugar_expr(inner))

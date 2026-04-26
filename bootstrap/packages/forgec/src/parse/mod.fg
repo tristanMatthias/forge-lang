@@ -469,6 +469,16 @@ impl Parser {
             return handler(self)
         }
 
+        // Component block instantiation: `comp_name instance_name { ... }`
+        // Recognized when current identifier is a registered component name.
+        if self.check(Tk.Identifier) {
+            let comp_raw = lookup_stmt_parser(self.features, self.current_lexeme)
+            if comp_raw != null {
+                let handler: fn(Parser) -> Stmt? = comp_raw!
+                return handler(self)
+            }
+        }
+
         self.parse_statement()
     }
 

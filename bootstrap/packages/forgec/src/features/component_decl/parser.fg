@@ -1,65 +1,78 @@
 // WHY: parses component definitions and component block instantiations.
 //
-// Definition syntax:
-//   component name(params) { config { ... } fn init() { ... } ... }
+// Definition: `component name { config { ... } fn init() { ... } ... }`
+// Instantiation (keyword-free): `name instance { config_key value ... }`
 //
-// Block instantiation syntax:
-//   component comp_name instance_name { key value ... }
-//   component comp_name { key value ... }  (anonymous)
+// When a definition is parsed, the component name is dynamically registered
+// in the parser's feature registry. Subsequent code can use `name instance { ... }`
+// without the `component` keyword — single-pass, no ambiguity.
 
 use core.ast.{Stmt, Expr, ExprList, SExpr, sexpr_dummy, StmtList, SStmt, sstmt, CompConfigList, CompConfigPairList, ParamList, FieldList, TypeParamList, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.ast.{Tk}
+use core.registry.{register_component_name}
 
 impl Parser {
+    // `component name { ... }` — always a definition (no parens)
     fn parse_component_decl(self) -> Stmt? {
         self.advance()  // consume `component`
         let name = self.consume_identifier("expected component name")?
 
-        // Definition: `component name(` ...
-        if self.check(Tk.LeftParen) {
+        // Definition: `component name {` ...
+        if self.check(Tk.LeftBrace) {
             return self.parse_component_def(name)
         }
 
-        // Block with instance name: `component comp instance {` ...
+        // Legacy: `component name(params) {` — still supported for backward compat
+        if self.check(Tk.LeftParen) {
+            self.advance()
+            let params = self.parse_param_list()?
+            if !self.consume(Tk.RightParen, "expected `)` after component params") { return null }
+            if !self.consume(Tk.LeftBrace, "expected `{` after component header") { return null }
+            let config = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
+                self.advance()
+                if !self.consume(Tk.LeftBrace, "expected `{` after `config`") { return null }
+                let c = self.parse_comp_config_schema()?
+                if !self.consume(Tk.RightBrace, "expected `}` after config entries") { return null }
+                c
+            } else { CompConfigList.End }
+            let body = self.parse_comp_def_body()?
+            if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return null }
+            return Stmt.ComponentDef(name, params, config, body)
+        }
+
+        // Legacy: `component comp instance {` — block with keyword prefix
         if self.check(Tk.Identifier) {
             let instance = self.current_lexeme
             self.advance()
-            if !self.consume(Tk.LeftBrace, "expected `{` after component instance name") {
-                return null
-            }
+            if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return null }
             let config = self.parse_comp_config_pairs()?
             let body = self.parse_comp_block_body()?
-            if !self.consume(Tk.RightBrace, "expected `}` at end of component block") {
-                return null
-            }
+            if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return null }
             return Stmt.ComponentBlock(name, instance, config, body)
         }
 
-        // Anonymous block: `component comp {` ...
-        if self.check(Tk.LeftBrace) {
-            self.advance()
-            let config = self.parse_comp_config_pairs()?
-            let body = self.parse_comp_block_body()?
-            if !self.consume(Tk.RightBrace, "expected `}` at end of component block") {
-                return null
-            }
-            return Stmt.ComponentBlock(name, name, config, body)
-        }
-
-        self.set_error("expected `(` (definition) or `{` (block) after component name")
+        self.set_error("expected `{` after component name")
         null
+    }
+
+    // Keyword-free instantiation: `comp_name inst_name { ... }`
+    // Called from parse_declaration when a registered component name is detected.
+    fn parse_component_block_bare(self) -> Stmt? {
+        let name = self.consume_identifier("expected component name")?
+        let instance = self.consume_identifier("expected instance name")?
+        if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return null }
+        let config = self.parse_comp_config_pairs()?
+        let body = self.parse_comp_block_body()?
+        if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return null }
+        Stmt.ComponentBlock(name, instance, config, body)
     }
 
     // ── Component Definition ──
 
     fn parse_component_def(self, name: string) -> Stmt? {
-        self.advance()  // consume `(`
-        let params = self.parse_param_list()?
-        if !self.consume(Tk.RightParen, "expected `)` after component params") {
-            return null
-        }
-        if !self.consume(Tk.LeftBrace, "expected `{` after component header") {
+        // `component name {` — no parens, self.name is implicit
+        if !self.consume(Tk.LeftBrace, "expected `{` after component name") {
             return null
         }
         let config = if self.check(Tk.Identifier) && self.current_lexeme == "config" {
@@ -79,7 +92,9 @@ impl Parser {
         if !self.consume(Tk.RightBrace, "expected `}` at end of component") {
             return null
         }
-        Stmt.ComponentDef(name, params, config, body)
+        // Register this component name for keyword-free instantiation
+        register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
+        Stmt.ComponentDef(name, ParamList.End, config, body)
     }
 
     // ── Config Schema (definition) ──

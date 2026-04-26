@@ -1,4 +1,5 @@
 mod parser
+mod expand
 use core.registry.{feature_new, register}
 
 export fn init_component_decl(reg: Registry) {

@@ -36,6 +36,7 @@ use core.ast.{render_expr, render_stmt_list, binop_str, unop_str, logicop_str, v
 use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
+use features.component_decl.expand.{expand_components}
 use resolve.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use features.modules.package.{load_package_config}
@@ -587,7 +588,8 @@ fn main() {
             if check_pkg.found && !check_json {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
-            let desugared = desugar_program(parsed.stmts!)
+            let expanded = expand_components(parsed.stmts!)
+            let desugared = desugar_program(expanded)
             let entry_dir = modules_dirname(check_path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
             if mod_resolved.had_error {
@@ -663,7 +665,8 @@ fn main() {
                 }
                 fail(parsed.error_message)
             }
-            let desugared = desugar_program(parsed.stmts!)
+            let expanded = expand_components(parsed.stmts!)
+            let desugared = desugar_program(expanded)
             let entry_dir = modules_dirname(path)
             let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
             if mod_resolved.had_error {
@@ -742,7 +745,8 @@ fn main() {
         // Runs BEFORE resolving so resolver/typechecker/codegen never
         // see the sugared forms. New desugar-only features need NO
         // codegen, resolver, typechecker, or eval changes.
-        let desugared = desugar_program(parsed.stmts!)
+        let expanded = expand_components(parsed.stmts!)
+        let desugared = desugar_program(expanded)
         // Resolve module files: walk the AST, find `mod` stubs, read
         // and parse the referenced files, attach parsed bodies.
         let entry_dir = modules_dirname(cpath)
