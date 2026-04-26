@@ -1,0 +1,24 @@
+/// expect: 10
+/// expect: 20
+
+// Test: component methods are extracted and prefixed with component name
+
+component math_box {
+    config {
+        multiplier: int = 1
+    }
+
+    fn double(x: int) -> int {
+        x * 2
+    }
+
+    fn triple(x: int) -> int {
+        x * 3
+    }
+}
+
+fn main() {
+    // Methods become math_box_double, math_box_triple
+    println(string(math_box_double(5)))
+    println(string(math_box_triple(5) + math_box_double(5) - 5))
+}

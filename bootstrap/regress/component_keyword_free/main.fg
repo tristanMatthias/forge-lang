@@ -1,0 +1,39 @@
+/// expect: app
+/// expect: v1.0
+/// expect: build
+/// expect: test
+
+// Test: keyword-free component instantiation
+// Definitions use `component` keyword, instantiation uses just the name.
+
+component app_comp {
+    config {
+        version: string = "0.0.0"
+    }
+}
+
+component sub_comp {
+    config {
+        description: string = ""
+    }
+}
+
+fn main() {
+    // Keyword-free instantiation
+    app_comp app {
+        version "v1.0"
+    }
+    println(app.name)
+    println(app.version)
+
+    // Multiple keyword-free instances
+    sub_comp build {
+        description "Build it"
+    }
+    println(build.name)
+
+    sub_comp test_cmd {
+        description "Test it"
+    }
+    println(test_cmd.name)
+}

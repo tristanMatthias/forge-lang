@@ -1,0 +1,48 @@
+/// expect: root: main_app
+/// expect: child: sub1 parent=main_app
+/// expect: child: sub2 parent=main_app
+/// expect: done
+
+// Test: __parent threading for nested component expansion
+
+extern fn forge_process_exit(code: int)
+
+mut log_output = ""
+
+fn log(msg: string) {
+    println(msg)
+}
+
+component root_comp {
+    config {
+        label: string = ""
+    }
+    fn init() {
+        log("root: ${self.name}")
+    }
+}
+
+component child_comp {
+    config {
+        tag: string = ""
+    }
+    fn init() {
+        log("child: ${self.name} parent=${self.__parent_name}")
+    }
+}
+
+fn main() {
+    component root_comp main_app {
+        label "test"
+
+        component child_comp sub1 {
+            tag "first"
+        }
+
+        component child_comp sub2 {
+            tag "second"
+        }
+    }
+
+    println("done")
+}

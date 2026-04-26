@@ -1,0 +1,39 @@
+/// expect: c1
+/// expect: 0
+/// expect: c2
+/// expect: 42
+/// expect: g1
+/// expect: hello
+
+// Test: component config with defaults and overrides
+
+component counter {
+    config {
+        start: int = 0
+    }
+}
+
+component greeter {
+    config {
+        greeting: string = "hello"
+    }
+}
+
+fn main() {
+    // Default config value
+    component counter c1 {}
+    println(c1.name)
+    println(string(c1.start))
+
+    // Config override
+    component counter c2 {
+        start 42
+    }
+    println(c2.name)
+    println(string(c2.start))
+
+    // String config
+    component greeter g1 {}
+    println(g1.name)
+    println(g1.greeting)
+}
