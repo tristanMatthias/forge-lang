@@ -221,6 +221,15 @@ impl Parser {
             let rest = self.parse_comp_config_pairs()?
             return CompConfigPairList.Node(key, value, rest)
         }
+        // `key = expression` — unambiguous config pair with arbitrary expression value
+        if self.peek_after_ident_is_eq() {
+            self.advance()  // consume key
+            self.advance()  // consume =
+            let value = self.parse_expression()?
+            if self.check(Tk.Comma) { self.advance() }
+            let rest = self.parse_comp_config_pairs()?
+            return CompConfigPairList.Node(key, value, rest)
+        }
         // Anything else (identifier, etc.) → end of config pairs
         CompConfigPairList.End
     }
@@ -264,6 +273,24 @@ impl Parser {
                     return self.source.substring(i, i + keyword.length) == keyword
                 }
                 return false
+            }
+            i = i + 1
+        }
+        false
+    }
+
+    // Peek: is the next non-whitespace char after current token `=` (but not `==`)?
+    fn peek_after_ident_is_eq(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
+                if ch != "=" { return false }
+                if i + 1 < self.source.length {
+                    return self.source.substring(i + 1, i + 2) != "="
+                }
+                return true
             }
             i = i + 1
         }
