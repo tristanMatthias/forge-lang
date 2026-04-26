@@ -11,7 +11,7 @@
 //   4. Add tests
 //   NO codegen, NO resolver, NO typechecker, NO eval, NO feature registration.
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType}
+use core.ast.{Expr, ExprList, Stmt, StmtList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, FieldList, FieldInitList, MatchArmList, WhenArmList, PatternList, ParamList, Pattern, BinOp, UnOp, ValueType, CompConfigList, CompConfigPairList, TypeParamList}
 
 // ── Public API ──
 
@@ -21,12 +21,33 @@ export fn desugar_program(stmts: StmtList) -> StmtList {
 
 // ── Statement desugaring ──
 
+// Unwrap Annotated wrappers to find the inner statement
+fn stmt_unwrap_deep(s: Stmt) -> Stmt {
+    match s {
+        .Annotated(_, inner) -> stmt_unwrap_deep(inner)
+        _ -> s
+    }
+}
+
 fn desugar_stmt_list(stmts: StmtList) -> StmtList {
     match stmts {
         .End -> StmtList.End
         .Node(ss, next) -> {
-            let new_stmt = desugar_stmt(ss.node)
-            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), desugar_stmt_list(next))
+            let desugared_next = desugar_stmt_list(next)
+            // Component expansion splices — check inner stmt through Annotated wrappers
+            let inner = stmt_unwrap_deep(ss.node)
+            match inner {
+                .ComponentDef(name, params, config, body) -> {
+                    splice_component_def(name, params, config, body, ss.line, ss.col, desugared_next)
+                }
+                .ComponentBlock(comp, inst, config, body) -> {
+                    splice_component_block(comp, inst, config, body, ss.line, ss.col, desugared_next)
+                }
+                _ -> {
+                    let new_stmt = desugar_stmt(ss.node)
+                    StmtList.Node(sstmt(new_stmt, ss.line, ss.col), desugared_next)
+                }
+            }
         }
     }
 }
@@ -53,11 +74,229 @@ fn desugar_stmt(stmt: Stmt) -> Stmt {
         .Defer(body) -> .Defer(desugar_expr(body))
         .Module(name, body) -> .Module(name, desugar_stmt_list(body))
         .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner))
-        .ComponentDef(name, params, config, body) -> .ComponentDef(name, params, config, desugar_stmt_list(body))
-        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, desugar_stmt_list(body))
+        // Handled via splice in desugar_stmt_list
+        .ComponentDef(_, _, _, _) -> stmt
+        .ComponentBlock(_, _, _, _) -> stmt
         _ -> stmt
     }
 }
+
+// ── Component expansion ──
+// ComponentDef → struct type + factory fn + method fns
+// ComponentBlock → let binding + init call + nested blocks
+
+fn capitalize(s: string) -> string {
+    if s.length == 0 { return "" }
+    let first = s.substring(0, 1)
+    let rest = s.substring(1, s.length)
+    let upper = match first {
+        "a" -> "A"  "b" -> "B"  "c" -> "C"  "d" -> "D"
+        "e" -> "E"  "f" -> "F"  "g" -> "G"  "h" -> "H"
+        "i" -> "I"  "j" -> "J"  "k" -> "K"  "l" -> "L"
+        "m" -> "M"  "n" -> "N"  "o" -> "O"  "p" -> "P"
+        "q" -> "Q"  "r" -> "R"  "s" -> "S"  "t" -> "T"
+        "u" -> "U"  "v" -> "V"  "w" -> "W"  "x" -> "X"
+        "y" -> "Y"  "z" -> "Z"  _ -> first
+    }
+    "${upper}${rest}"
+}
+
+// Build struct fields from config schema + component params
+fn config_to_fields(config: CompConfigList) -> FieldList {
+    match config {
+        .End -> FieldList.End
+        .Node(key, vt, _, next) -> FieldList.Node(key, vt, config_to_fields(next))
+    }
+}
+
+fn params_to_fields(params: ParamList) -> FieldList {
+    match params {
+        .End -> FieldList.End
+        .Node(name, vt, next) -> FieldList.Node(name, vt, params_to_fields(next))
+    }
+}
+
+fn merge_field_lists(a: FieldList, b: FieldList) -> FieldList {
+    match a {
+        .End -> b
+        .Node(name, vt, next) -> FieldList.Node(name, vt, merge_field_lists(next, b))
+    }
+}
+
+// Build FieldInitList for the factory function:
+// params become { name: name } (forwarded), config gets defaults
+fn build_factory_inits(params: ParamList, config: CompConfigList) -> FieldInitList {
+    let param_part = params_to_factory_inits(params)
+    let config_part = config_to_factory_inits(config)
+    merge_field_init_lists(param_part, config_part)
+}
+
+fn params_to_factory_inits(params: ParamList) -> FieldInitList {
+    match params {
+        .End -> FieldInitList.End
+        .Node(name, _, next) -> {
+            let se = SExpr { node: Expr.Ident(name), line: 0, col: 0, ty: ValueType.Unknown }
+            FieldInitList.Node(name, se, params_to_factory_inits(next))
+        }
+    }
+}
+
+fn config_to_factory_inits(config: CompConfigList) -> FieldInitList {
+    match config {
+        .End -> FieldInitList.End
+        .Node(key, _, default_val, next) -> {
+            let val = if default_val != null { default_val! } else { Expr.Null }
+            let se = SExpr { node: val, line: 0, col: 0, ty: ValueType.Unknown }
+            FieldInitList.Node(key, se, config_to_factory_inits(next))
+        }
+    }
+}
+
+fn merge_field_init_lists(a: FieldInitList, b: FieldInitList) -> FieldInitList {
+    match a {
+        .End -> b
+        .Node(name, val, next) -> FieldInitList.Node(name, val, merge_field_init_lists(next, b))
+    }
+}
+
+// Extract method fns from component body — prefix with comp_name
+fn extract_methods(body: StmtList, comp_name: string) -> StmtList {
+    match body {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .Function(fn_name, tp, params, rvt, fn_body) -> {
+                    // Skip __event_ and __on_ prefixed functions (handled separately)
+                    if fn_name.starts_with("__event_") || fn_name.starts_with("__on_") {
+                        extract_methods(next, comp_name)
+                    } else {
+                        // Rename: init → {comp}_init, method → {comp}_method
+                        let new_name = "${comp_name}_${fn_name}"
+                        let new_fn = Stmt.Function(new_name, tp, params, rvt, desugar_stmt_list(fn_body))
+                        StmtList.Node(sstmt(new_fn, ss.line, ss.col), extract_methods(next, comp_name))
+                    }
+                }
+                _ -> extract_methods(next, comp_name)
+            }
+        }
+    }
+}
+
+// Extract the __on_after_children body from component body
+fn find_after_children(body: StmtList) -> StmtList {
+    match body {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .Function(fn_name, _, _, _, fn_body) -> {
+                    if fn_name == "__on_after_children" { fn_body }
+                    else { find_after_children(next) }
+                }
+                _ -> find_after_children(next)
+            }
+        }
+    }
+}
+
+// Extract init body
+fn find_init_body(body: StmtList) -> StmtList {
+    match body {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .Function(fn_name, _, _, _, fn_body) -> {
+                    if fn_name == "init" { fn_body }
+                    else { find_init_body(next) }
+                }
+                _ -> find_init_body(next)
+            }
+        }
+    }
+}
+
+// Extract drop body
+fn find_drop_body(body: StmtList) -> StmtList {
+    match body {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .Function(fn_name, _, _, _, fn_body) -> {
+                    if fn_name == "drop" { fn_body }
+                    else { find_drop_body(next) }
+                }
+                _ -> find_drop_body(next)
+            }
+        }
+    }
+}
+
+// Splice ComponentDef into parent stmt list: type + factory + methods + rest
+fn splice_component_def(name: string, params: ParamList, config: CompConfigList, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
+    let type_name = capitalize(name)
+    let param_fields = params_to_fields(params)
+    let config_fields = config_to_fields(config)
+    let all_fields = merge_field_lists(param_fields, config_fields)
+
+    let type_decl = Stmt.TypeDecl(type_name, TypeParamList.End, all_fields)
+
+    let init_list = build_factory_inits(params, config)
+    let struct_lit = Expr.StructLit(type_name, init_list)
+    let factory_body = StmtList.Node(sstmt(Stmt.Return(struct_lit), 0, 0), StmtList.End)
+    let factory = Stmt.Function("${name}_new", TypeParamList.End, params, ValueType.Struct(type_name), factory_body)
+
+    let methods = extract_methods(body, name)
+
+    StmtList.Node(
+        sstmt(type_decl, line, col),
+        StmtList.Node(
+            sstmt(factory, line, col),
+            append_stmt_lists(methods, rest)
+        )
+    )
+}
+
+// Splice ComponentBlock into parent stmt list: let binding + nested body + rest
+fn splice_component_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList) -> StmtList {
+    let call_expr = Expr.Call(
+        Expr.Ident("${comp}_new"),
+        ExprList.Node(sexpr(Expr.String("\"${inst}\""), 0, 0), ExprList.End)
+    )
+    let init_expr = apply_config_pairs(call_expr, config)
+    let let_stmt = Stmt.Let(inst, ValueType.Unknown, init_expr)
+    let expanded_body = desugar_stmt_list(body)
+
+    StmtList.Node(
+        sstmt(let_stmt, line, col),
+        append_stmt_lists(expanded_body, rest)
+    )
+}
+
+fn append_stmt_lists(a: StmtList, b: StmtList) -> StmtList {
+    match a {
+        .End -> b
+        .Node(ss, next) -> StmtList.Node(ss, append_stmt_lists(next, b))
+    }
+}
+
+fn apply_config_pairs(base: Expr, config: CompConfigPairList) -> Expr {
+    match config {
+        .End -> base
+        _ -> {
+            let overrides = config_pairs_to_field_inits(config)
+            Expr.With(base, overrides)
+        }
+    }
+}
+
+fn config_pairs_to_field_inits(pairs: CompConfigPairList) -> FieldInitList {
+    match pairs {
+        .End -> FieldInitList.End
+        .Node(key, value, next) -> {
+            FieldInitList.Node(key, sexpr(value, 0, 0), config_pairs_to_field_inits(next))
+        }
+    }
+}
+
 
 // ── Expression desugaring ──
 // This is where the MAGIC happens. Each match arm can rewrite
@@ -303,6 +542,9 @@ fn desugar_when_arms(arms: WhenArmList) -> WhenArmList {
 fn desugar_field_inits(inits: FieldInitList) -> FieldInitList {
     match inits {
         .End -> FieldInitList.End
-        .Node(name, val, next) -> FieldInitList.Node(name, desugar_expr(val), desugar_field_inits(next))
+        .Node(name, sv, next) -> {
+            let new_val = desugar_expr(sv.node)
+            FieldInitList.Node(name, sexpr(new_val, sv.line, sv.col), desugar_field_inits(next))
+        }
     }
 }

@@ -516,8 +516,9 @@ fn main() {
             if check_pkg.found && !check_json {
                 eprintln("[pkg] ${check_pkg.name} v${check_pkg.version}")
             }
+            let desugared = desugar_program(parsed.stmts!)
             let entry_dir = modules_dirname(check_path)
-            let mod_resolved = resolve_module_files(parsed.stmts!, entry_dir, LoadedPaths.End)
+            let mod_resolved = resolve_module_files(desugared, entry_dir, LoadedPaths.End)
             if mod_resolved.had_error {
                 let mod_bag = bag_report(bag_new(), diag_error(DiagCode.ModuleNotFound, mod_resolved.error_message, span_dummy()))
                 if check_json { render_bag_json(check_path, mod_bag) } else { render_bag(check_source, check_path, mod_bag) }
