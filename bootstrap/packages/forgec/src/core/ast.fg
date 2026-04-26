@@ -683,6 +683,9 @@ export enum Stmt {
     Module(name: string, body: StmtList)
     Use(module_path: string, names: ParamList)
     AssocType(name: string, ty_vt: ValueType)
+    // Component system: definitions and instantiation blocks
+    ComponentDef(name: string, params: ParamList, config: CompConfigList, body: StmtList)
+    ComponentBlock(comp_name: string, instance: string, config: CompConfigPairList, body: StmtList)
 }
 
 // When arms: `cond -> body` or `else -> body` (cond is null for else)
@@ -702,6 +705,19 @@ export enum SelectArmList {
 export enum AnnotationList {
     End
     Node(name: string, args: ExprList, next: AnnotationList)
+}
+
+// Component config schema entries: key, type, optional default value.
+// Used in ComponentDef to declare config fields.
+export enum CompConfigList {
+    End
+    Node(key: string, ty_vt: ValueType, default_val: Expr?, next: CompConfigList)
+}
+
+// Component config pairs: user-supplied key=value in a ComponentBlock.
+export enum CompConfigPairList {
+    End
+    Node(key: string, value: Expr, next: CompConfigPairList)
 }
 
 // Unwrap Annotated wrapper, returning the inner statement.
@@ -1090,6 +1106,8 @@ export fn render_stmt(stmt: Stmt) -> string {
         .Module(name, body) -> "(module ${name} ${render_stmt_list(body)})"
         .Use(path, names) -> "(use ${path} ${render_param_list(names)})"
         .AssocType(name, ty_vt) -> if vtype_is_unknown(ty_vt) { "(assoc-type ${name})" } else { "(assoc-type ${name} = ${vtype_render_full(ty_vt)})" }
+        .ComponentDef(name, params, _, body) -> "(component-def ${name} ${render_param_list(params)} ${render_stmt_list(body)})"
+        .ComponentBlock(comp, inst, _, body) -> "(component-block ${comp} ${inst} ${render_stmt_list(body)})"
     }
 }
 
@@ -1257,6 +1275,7 @@ export enum Tk {
     KwWhere
     KwWhile
     KwWith
+    KwComponent
     KwDyn
     KwWhen
     // Reserved future keywords (parse as errors)
@@ -1313,6 +1332,7 @@ export fn tk_keyword_str(tk: Tk) -> string {
         .KwWhere -> "kw_where"
         .KwWhile -> "kw_while"
         .KwWith -> "kw_with"
+        .KwComponent -> "kw_component"
         .KwDyn -> "kw_dyn"
         .KwWhen -> "kw_when"
         _ -> ""

@@ -106,6 +106,8 @@ fn single_pass_stmt(stmt: Stmt, set: ReleasableSet) -> ReleasableSet {
         .Module(_, _) -> set
         .Use(_, _) -> set
         .AssocType(_, _) -> set
+        .ComponentDef(_, _, _, _) -> set
+        .ComponentBlock(_, _, _, _) -> set
     }
 }
 
@@ -259,6 +261,8 @@ fn count_allocating_in_stmt_single(stmt: Stmt) -> int {
         .Module(_, _) -> 0
         .Use(_, _) -> 0
         .AssocType(_, _) -> 0
+        .ComponentDef(_, _, _, _) -> 0
+        .ComponentBlock(_, _, _, _) -> 0
     }
 }
 
@@ -311,6 +315,8 @@ export fn is_arena_eligible(body: Stmt) -> bool {
         .While(_, _) -> false
         .For(_, _, _, _) -> false
         .ForIn(_, _, _) -> false
+        .ComponentDef(_, _, _, _) -> false
+        .ComponentBlock(_, _, _, _) -> false
     }
 }
 

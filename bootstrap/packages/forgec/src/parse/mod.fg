@@ -264,6 +264,7 @@ export fn p_keyword_kind(text: string) -> Tk {
         "then"     -> Tk.KwThen
         "select"   -> Tk.KwSelect
         "shape"    -> Tk.KwShape
+        "component" -> Tk.KwComponent
         "parallel" -> Tk.KwParallel
         "spawn"    -> Tk.KwSpawn
         // Reserved future keywords

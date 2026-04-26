@@ -53,6 +53,8 @@ fn desugar_stmt(stmt: Stmt) -> Stmt {
         .Defer(body) -> .Defer(desugar_expr(body))
         .Module(name, body) -> .Module(name, desugar_stmt_list(body))
         .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner))
+        .ComponentDef(name, params, config, body) -> .ComponentDef(name, params, config, desugar_stmt_list(body))
+        .ComponentBlock(comp, inst, config, body) -> .ComponentBlock(comp, inst, config, desugar_stmt_list(body))
         _ -> stmt
     }
 }
