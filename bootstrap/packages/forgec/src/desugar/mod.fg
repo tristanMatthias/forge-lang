@@ -87,7 +87,7 @@ fn stmt_unwrap_deep(s: Stmt) -> Stmt {
 }
 
 fn desugar_stmt_list(stmts: StmtList, reg: CompDefRegistry) -> StmtList {
-    desugar_stmt_list_ctx(stmts, reg, CompNestCtx { parent_var: "", cmd_name: "" })
+    desugar_stmt_list_ctx(stmts, reg, CompNestCtx { parent_var: "", parent_name: "" })
 }
 
 fn desugar_stmt(stmt: Stmt, reg: CompDefRegistry) -> Stmt {
@@ -243,14 +243,16 @@ fn has_fn(stmts: StmtList, fn_name: string) -> bool {
 }
 
 // ── Self-rewriting context ──
-// When inlining component init/drop/after_children bodies,
-// self.field → inst.field, self.config.field → inst.field,
-// self.__parent → parent variable, self.__cmd → command name string.
+// When inlining component init/drop/after_children bodies:
+//   self.name → instance name string
+//   self.config.field → resolved config value
+//   self.__parent → parent accumulator variable
+//   self.__parent_name → parent instance name string
 
 type RewriteCtx = {
-    inst: string,          // instance variable name
-    parent_var: string,    // parent mutable CLI accumulator variable ("" if none)
-    cmd_name: string,      // current command name for flag/option/arg nesting ("" if none)
+    inst: string,          // this instance's variable name
+    parent_var: string,    // parent accumulator variable ("" if root)
+    parent_name: string,   // parent instance name ("" if root)
 }
 
 fn rewrite_self(stmts: StmtList, ctx: RewriteCtx) -> StmtList {
@@ -288,13 +290,13 @@ fn rewrite_self_in_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
             match obj {
                 .Ident(name) -> {
                     if name == "self" {
-                        // self.__parent → parent variable
+                        // self.__parent → parent accumulator variable
                         if field == "__parent" {
                             return Expr.Ident(ctx.parent_var)
                         }
-                        // self.__cmd → command name string literal
-                        if field == "__cmd" {
-                            return Expr.String("\"${ctx.cmd_name}\"")
+                        // self.__parent_name → parent instance name string
+                        if field == "__parent_name" {
+                            return Expr.String("\"${ctx.parent_name}\"")
                         }
                         Expr.FieldAccess(Expr.Ident(ctx.inst), field)
                     } else { Expr.FieldAccess(rewrite_self_in_expr(obj, ctx), field) }
@@ -315,7 +317,7 @@ fn rewrite_self_in_expr(expr: Expr, ctx: RewriteCtx) -> Expr {
         }
         // self.__parent = expr → parent_var = expr (assignment to parent)
         .Assign(name, val) -> {
-            // This handles the case where init body has: self.__parent = cli_new(...)
+            // Handles init body assignments like: self.__parent = some_fn(...)
             // After FieldAccess rewriting, self.__parent becomes __parent ident
             Expr.Assign(name, rewrite_self_in_expr(val, ctx))
         }
@@ -389,14 +391,14 @@ fn splice_component_def(name: string, params: ParamList, config: CompConfigList,
 // Generates: let binding + init call + expanded children + after_children call + defer drop
 // For nested CLI components, threads parent context (mutable CLI variable + command name).
 
-// Nesting context for CLI component expansion
+// Nesting context for component expansion
 type CompNestCtx = {
-    parent_var: string,    // mutable CLI accumulator variable ("" = top level)
-    cmd_name: string,      // current command name for flag/option/arg nesting
+    parent_var: string,    // parent accumulator variable ("" = root/no parent)
+    parent_name: string,   // parent instance name ("" = root)
 }
 
 fn splice_component_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry) -> StmtList {
-    splice_component_block_ctx(comp, inst, config, body, line, col, rest, reg, CompNestCtx { parent_var: "", cmd_name: "" })
+    splice_component_block_ctx(comp, inst, config, body, line, col, rest, reg, CompNestCtx { parent_var: "", parent_name: "" })
 }
 
 fn splice_component_block_ctx(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx) -> StmtList {
@@ -414,45 +416,50 @@ fn splice_component_block_ctx(comp: string, inst: string, config: CompConfigPair
 }
 
 // Template component expansion: init body runs inline, modifies parent.
-// No struct creation — self.name resolves to the instance name string,
-// self.config.field resolves to the config value or default.
+// No struct creation — self.name → instance name, self.config.field → value,
+// self.__parent → parent accumulator, self.__parent_name → parent name.
+//
+// Generic: works for ANY component type (CLI, server, model, etc.).
+// Root detection: if no parent exists (nest.parent_var == ""), the component
+// is a root — a mutable accumulator is created for it.
 fn splice_template_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
-    let is_cli_root = comp == "cli" || comp == "clidef"
+    let is_root = nest.parent_var == ""
 
-    let cli_var = if is_cli_root { inst } else { nest.parent_var }
-    let cmd_ctx = if comp == "command" { inst } else { nest.cmd_name }
+    // Root: this instance IS the accumulator. Non-root: use parent's accumulator.
+    let accum_var = if is_root { inst } else { nest.parent_var }
 
-    // For template components, self.name → "inst" (string literal),
-    // self.config.field → resolved value. We use a special rewrite
-    // that inlines values instead of struct field access.
-    let rw_ctx = RewriteCtx { inst, parent_var: cli_var, cmd_name: cmd_ctx }
+    let rw_ctx = RewriteCtx { inst, parent_var: accum_var, parent_name: nest.parent_name }
 
     mut stmts = StmtList.End
 
+    // Defer drop
     if has_fn(def.body, "drop") {
         let drop_body = find_fn_body(def.body, "drop")
         let rewritten_drop = rewrite_template_self(drop_body, inst, config, def.config, rw_ctx)
         stmts = prepend_stmt(Stmt.Defer(Expr.Block(rewritten_drop)), line, col, stmts)
     }
 
+    // After-children
     if has_fn(def.body, "__on_after_children") {
         let ac_body = find_fn_body(def.body, "__on_after_children")
         let rewritten_ac = rewrite_template_self(ac_body, inst, config, def.config, rw_ctx)
         stmts = prepend_stmts(rewritten_ac, stmts)
     }
 
-    let child_nest = CompNestCtx { parent_var: cli_var, cmd_name: cmd_ctx }
+    // Children: pass this instance as their parent context
+    let child_nest = CompNestCtx { parent_var: accum_var, parent_name: inst }
     let expanded_body = desugar_stmt_list_ctx(body, reg, child_nest)
     stmts = prepend_stmts(expanded_body, stmts)
 
+    // Init
     if has_fn(def.body, "init") {
         let init_body = find_fn_body(def.body, "init")
         let rewritten_init = rewrite_template_self(init_body, inst, config, def.config, rw_ctx)
         stmts = prepend_stmts(rewritten_init, stmts)
     }
 
-    // For CLI root: declare mutable accumulator before init assigns to it
-    if is_cli_root {
+    // Root: declare mutable accumulator before init assigns to it
+    if is_root {
         let mut_stmt = Stmt.Mut(inst, ValueType.Unknown, Expr.Number("0"))
         stmts = prepend_stmt(mut_stmt, line, col, stmts)
     }
@@ -464,7 +471,7 @@ fn splice_template_block(comp: string, inst: string, config: CompConfigPairList,
 // self.name → "inst" (string literal)
 // self.config.field → config value or default from schema
 // self.__parent → parent variable name
-// self.__cmd → command name string
+// self.__parent_name → parent instance name string
 fn rewrite_template_self(stmts: StmtList, inst: string, user_config: CompConfigPairList, schema: CompConfigList, ctx: RewriteCtx) -> StmtList {
     match stmts {
         .End -> StmtList.End
@@ -501,7 +508,7 @@ fn rewrite_template_expr(expr: Expr, inst: string, uc: CompConfigPairList, schem
                     if name == "self" {
                         if field == "name" { return Expr.String("\"${inst}\"") }
                         if field == "__parent" { return Expr.Ident(ctx.parent_var) }
-                        if field == "__cmd" { return Expr.String("\"${ctx.cmd_name}\"") }
+                        if field == "__parent_name" { return Expr.String("\"${ctx.parent_name}\"") }
                         // self.field → look up in config
                         let val = resolve_config_value(field, uc, schema)
                         return val
@@ -575,7 +582,7 @@ fn resolve_config_value(field: string, user_config: CompConfigPairList, schema: 
 
 // Data component: struct instance + lifecycle
 fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, body: StmtList, line: int, col: int, rest: StmtList, reg: CompDefRegistry, nest: CompNestCtx, def: CompDefLookup) -> StmtList {
-    let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, cmd_name: nest.cmd_name }
+    let rw_ctx = RewriteCtx { inst, parent_var: nest.parent_var, parent_name: nest.parent_name }
 
     let call_expr = Expr.Call(
         Expr.Ident("${comp}_new"),
@@ -597,7 +604,7 @@ fn splice_data_block(comp: string, inst: string, config: CompConfigPairList, bod
         stmts = prepend_stmts(rewritten_ac, stmts)
     }
 
-    let child_nest = CompNestCtx { parent_var: nest.parent_var, cmd_name: nest.cmd_name }
+    let child_nest = CompNestCtx { parent_var: nest.parent_var, parent_name: nest.parent_name }
     let expanded_body = desugar_stmt_list_ctx(body, reg, child_nest)
     stmts = prepend_stmts(expanded_body, stmts)
 

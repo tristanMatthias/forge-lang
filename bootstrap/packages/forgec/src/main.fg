@@ -435,21 +435,21 @@ component command(name: string) {
 component flag(name: string) {
     config { short: string = "", description: string = "" }
     fn init() {
-        self.__parent = cli_command_add_flag(self.__parent, self.__cmd, "--${self.name}", self.config.short, self.config.description)
+        self.__parent = cli_command_add_flag(self.__parent, self.__parent_name, "--${self.name}", self.config.short, self.config.description)
     }
 }
 
 component option(name: string) {
     config { short: string = "", description: string = "", default_val: string = "" }
     fn init() {
-        self.__parent = cli_command_add_option(self.__parent, self.__cmd, "--${self.name}", self.config.short, self.config.description, self.config.default_val)
+        self.__parent = cli_command_add_option(self.__parent, self.__parent_name, "--${self.name}", self.config.short, self.config.description, self.config.default_val)
     }
 }
 
 component arg(name: string) {
     config { description: string = "", required: bool = false }
     fn init() {
-        self.__parent = cli_command_add_arg(self.__parent, self.__cmd, self.name, self.config.description, self.config.required)
+        self.__parent = cli_command_add_arg(self.__parent, self.__parent_name, self.name, self.config.description, self.config.required)
     }
 }
 
