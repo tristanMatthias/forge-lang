@@ -58,6 +58,7 @@ impl Parser {
             } else { CompConfigList.End }
             let body = self.parse_comp_def_body()?
             if !self.consume(Tk.RightBrace, "expected `}` at end of component") { return null }
+            register_component_name(self.features, name, (p: Parser) -> p.parse_component_block_bare())
             return Stmt.ComponentDef(name, params, config, body)
         }
 
