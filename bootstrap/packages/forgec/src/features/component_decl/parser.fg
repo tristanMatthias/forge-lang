@@ -13,6 +13,26 @@ use core.ast.{Tk}
 use core.registry.{register_component_name}
 
 impl Parser {
+    // Keyword-free instantiation: `comp_name inst_name { ... }`
+    // Only called when the NEXT token after the component name is an identifier
+    // (the instance name). If next is `{`, `(`, `=`, etc., we don't match.
+    fn parse_component_block_bare(self) -> Stmt? {
+        let name = self.consume_identifier("expected component name")?
+        // Require instance name (identifier) — this prevents false positives
+        // like `command {` inside match expressions.
+        if !self.check(Tk.Identifier) {
+            // Not a component block — restore by treating as expression start.
+            // But we already consumed the name. Use it as an Ident expression.
+            return self.parse_statement()
+        }
+        let instance = self.consume_identifier("expected instance name")?
+        if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return null }
+        let config = self.parse_comp_config_pairs()?
+        let body = self.parse_comp_block_body()?
+        if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return null }
+        Stmt.ComponentBlock(name, instance, config, body)
+    }
+
     // `component name { ... }` — always a definition (no parens)
     fn parse_component_decl(self) -> Stmt? {
         self.advance()  // consume `component`
@@ -54,18 +74,6 @@ impl Parser {
 
         self.set_error("expected `{` after component name")
         null
-    }
-
-    // Keyword-free instantiation: `comp_name inst_name { ... }`
-    // Called from parse_declaration when a registered component name is detected.
-    fn parse_component_block_bare(self) -> Stmt? {
-        let name = self.consume_identifier("expected component name")?
-        let instance = self.consume_identifier("expected instance name")?
-        if !self.consume(Tk.LeftBrace, "expected `{` after instance name") { return null }
-        let config = self.parse_comp_config_pairs()?
-        let body = self.parse_comp_block_body()?
-        if !self.consume(Tk.RightBrace, "expected `}` at end of component block") { return null }
-        Stmt.ComponentBlock(name, instance, config, body)
     }
 
     // ── Component Definition ──

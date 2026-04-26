@@ -455,9 +455,8 @@ component arg(name: string) {
 }
 
 fn main() {
-    // ── Fully declarative CLI definition ──
-    // Nested component blocks, zero manual builder calls.
-    // Matches the Rust std-cli pattern exactly.
+    // ── Fully declarative CLI ──
+    // Matches the Rust std-cli pattern: nested component blocks, zero builder calls.
     component cli app {
         description "Forge bootstrap compiler"
         version "0.1.0"

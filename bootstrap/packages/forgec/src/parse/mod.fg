@@ -470,8 +470,10 @@ impl Parser {
         }
 
         // Component block instantiation: `comp_name instance_name { ... }`
-        // Recognized when current identifier is a registered component name.
-        if self.check(Tk.Identifier) {
+        // Recognized when current identifier is a registered component name
+        // AND the next non-whitespace char is an identifier start (instance name).
+        // This prevents false positives like `command {` in match expressions.
+        if self.check(Tk.Identifier) && self.peek_after_ident_is_ident_not_keyword() {
             let comp_raw = lookup_stmt_parser(self.features, self.current_lexeme)
             if comp_raw != null {
                 let handler: fn(Parser) -> Stmt? = comp_raw!
@@ -1452,6 +1454,51 @@ impl Parser {
                 return ch == "("
             }
             i = i + 1
+        }
+        false
+    }
+
+    // Peek: is the next token after current ident another identifier (not a keyword)?
+    // Returns false for `{`, `(`, `=`, operators, and keyword starts like "true"/"false".
+    // Used to detect `comp_name instance_name {` pattern without consuming tokens.
+    fn peek_after_ident_is_ident_not_keyword(self) -> bool {
+        let end = self.current_start + self.current_lexeme.length
+        mut i = end
+        // Skip whitespace
+        while i < self.source.length {
+            let ch = self.source.substring(i, i + 1)
+            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" { break }
+            i = i + 1
+        }
+        if i >= self.source.length { return false }
+        let ch = self.source.substring(i, i + 1)
+        // Must start with letter or underscore
+        let is_alpha = (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || ch == "_"
+        if !is_alpha { return false }
+        // Extract the full word
+        mut j = i
+        while j < self.source.length {
+            let wc = self.source.substring(j, j + 1)
+            let is_alnum = (wc >= "a" && wc <= "z") || (wc >= "A" && wc <= "Z") || (wc >= "0" && wc <= "9") || wc == "_"
+            if !is_alnum { break }
+            j = j + 1
+        }
+        let word = self.source.substring(i, j)
+        // Exclude keywords that appear after identifiers in non-component contexts
+        if word == "true" || word == "false" || word == "null" { return false }
+        if word == "in" || word == "is" || word == "and" || word == "or" || word == "not" { return false }
+        if word == "with" || word == "match" || word == "if" || word == "else" { return false }
+        if word == "while" || word == "for" || word == "fn" || word == "let" || word == "mut" { return false }
+        if word == "return" || word == "type" || word == "enum" || word == "trait" || word == "impl" { return false }
+        // Check that the word is followed by `{` (to confirm it's instance_name + block)
+        mut k = j
+        while k < self.source.length {
+            let sc = self.source.substring(k, k + 1)
+            if sc != " " && sc != "\t" && sc != "\n" && sc != "\r" { break }
+            k = k + 1
+        }
+        if k < self.source.length {
+            return self.source.substring(k, k + 1) == "{"
         }
         false
     }
