@@ -4,54 +4,46 @@ use core.ast.{sexpr_dummy}
 use codegen.types.{err_stmt, ok_stmt, StmtResult}
 use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, value_null}
-use core.registry.{feature_new, register}
 use resolve.{resolve_expr}
 use codegen.types.{DeferStack}
 use typeck.{check_expr}
 
-export fn init_defer_stmt(reg: Registry) {
-    let f = feature_new("defer") with {
-        stmt_tag: .Defer(.Null),
-        emit_stmt: defer_emit_stmt,
-        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .Defer(body) -> resolve_expr(r, body), _ -> r },
-        check_stmt: (tc: TC, stmt: Stmt) -> match stmt {
-            .Defer(body) -> {
-                let r = check_expr(tc, body)
-                r.tc
-            }
-            _ -> tc
-        },
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .Defer(_) -> ok_result(rt, value_null())
-            _ -> error_result(rt, "expected Defer")
-        },
-        stmt_keyword: "kw_defer",
-        parse_stmt: (p: Parser) -> p.parse_defer_statement(),
-    }
-    register(reg, f)
+// ── Defer handlers (exported for feature component registration) ──
 
-    let f2 = feature_new("errdefer") with {
-        stmt_tag: .Errdefer(.Null),
-        emit_stmt: errdefer_emit_stmt,
-        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .Errdefer(body) -> resolve_expr(r, body), _ -> r },
-        check_stmt: (tc: TC, stmt: Stmt) -> match stmt {
-            .Errdefer(body) -> {
-                let r = check_expr(tc, body)
-                r.tc
-            }
-            _ -> tc
-        },
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .Errdefer(_) -> ok_result(rt, value_null())
-            _ -> error_result(rt, "expected Errdefer")
-        },
-        stmt_keyword: "kw_errdefer",
-        parse_stmt: (p: Parser) -> p.parse_errdefer_statement(),
+export fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+    match stmt {
+        .Defer(body) -> {
+            let updated = ctx with { defers: DeferStack.Frame(sexpr_dummy(body), ctx.defers) }
+            ok_sr(updated, env)
+        }
+        _ -> err_sr("expected Defer")
     }
-    register(reg, f2)
 }
 
-fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+export fn defer_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Defer(body) -> resolve_expr(r, body), _ -> r }
+}
+
+export fn defer_check_stmt(tc: TC, stmt: Stmt) -> TC {
+    match stmt {
+        .Defer(body) -> {
+            let r = check_expr(tc, body)
+            r.tc
+        }
+        _ -> tc
+    }
+}
+
+export fn defer_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Defer(_) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected Defer")
+    }
+}
+
+// ── Errdefer handlers ──
+
+export fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .Errdefer(body) -> {
             let updated = ctx with { defers: DeferStack.ErrFrame(sexpr_dummy(body), ctx.defers) }
@@ -61,12 +53,23 @@ fn errdefer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, s
     }
 }
 
-fn defer_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+export fn errdefer_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Errdefer(body) -> resolve_expr(r, body), _ -> r }
+}
+
+export fn errdefer_check_stmt(tc: TC, stmt: Stmt) -> TC {
     match stmt {
-        .Defer(body) -> {
-            let updated = ctx with { defers: DeferStack.Frame(sexpr_dummy(body), ctx.defers) }
-            ok_sr(updated, env)
+        .Errdefer(body) -> {
+            let r = check_expr(tc, body)
+            r.tc
         }
-        _ -> err_sr("expected Defer")
+        _ -> tc
+    }
+}
+
+export fn errdefer_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Errdefer(_) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected Errdefer")
     }
 }
