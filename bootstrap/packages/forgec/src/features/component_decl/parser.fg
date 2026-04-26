@@ -189,6 +189,8 @@ impl Parser {
         // Parse value expression (literal: string, number, bool)
         if self.check(Tk.String) || self.check(Tk.Number) || self.check(Tk.Float) || self.check(Tk.KwTrue) || self.check(Tk.KwFalse) {
             let value = self.parse_expression()?
+            // Skip optional comma between config pairs
+            if self.check(Tk.Comma) { self.advance() }
             let rest = self.parse_comp_config_pairs()?
             return CompConfigPairList.Node(key, value, rest)
         }
