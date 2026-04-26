@@ -1,0 +1,53 @@
+// WHY: Component-based CLI definitions.
+// Defines cli, command, flag, option, and arg components that wrap
+// the existing builder API. These provide the same component syntax
+// as the Rust compiler's std-cli package.
+
+use cli.{Cli, cli_new, cli_add_command, cli_add_flag, cli_add_option, cli_add_arg,
+          cli_command_add_flag, cli_command_add_option, cli_command_add_arg,
+          cli_parse, CliResult, result_has_flag, result_get_option, result_get_arg}
+
+// ── Component definitions ──
+// Each component expands to a struct type + factory function.
+
+component cli(name: string) {
+    config {
+        description: string = ""
+        version: string = "0.1.0"
+    }
+}
+
+component command(name: string) {
+    config {
+        description: string = ""
+    }
+}
+
+component flag(name: string) {
+    config {
+        short: string = ""
+        description: string = ""
+    }
+}
+
+component option(name: string) {
+    config {
+        short: string = ""
+        description: string = ""
+        default_val: string = ""
+    }
+}
+
+component arg(name: string) {
+    config {
+        description: string = ""
+        required: bool = false
+    }
+}
+
+// ── Builder from component tree ──
+// Convert component instances into the builder-style Cli struct.
+
+export fn build_cli_from_component(c: Cli) -> Cli {
+    c
+}

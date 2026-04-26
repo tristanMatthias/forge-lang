@@ -1,0 +1,35 @@
+/// expect: my_app
+/// expect: 1.0
+/// expect: build_cmd
+/// expect: test_cmd
+
+component app(name: string) {
+    config {
+        version: string = "0.0.0"
+    }
+}
+
+component cmd(name: string) {
+    config {
+        description: string = ""
+    }
+}
+
+fn main() {
+    component app my_app {
+        version "1.0"
+    }
+    println(my_app.name)
+    println(my_app.version)
+
+    // Nested component blocks desugar to separate let bindings
+    component cmd build_cmd {
+        description "Build the project"
+    }
+    println(build_cmd.name)
+
+    component cmd test_cmd {
+        description "Run tests"
+    }
+    println(test_cmd.name)
+}

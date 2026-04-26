@@ -1,0 +1,25 @@
+/// expect: c1
+/// expect: 0
+/// expect: c2
+/// expect: 42
+
+// Component definition with params and config
+component counter(name: string) {
+    config {
+        start: int = 0
+    }
+}
+
+fn main() {
+    // Instantiate with default config
+    component counter c1 {}
+    println(c1.name)
+    println(string(c1.start))
+
+    // Instantiate with config override
+    component counter c2 {
+        start 42
+    }
+    println(c2.name)
+    println(string(c2.start))
+}
