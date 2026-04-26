@@ -63,8 +63,73 @@ use features.tuples.{init_tuples}
 use features.while_stmt.{init_while_stmt}
 use features.with_expr.{init_with_expr}
 use features.component_decl.{init_component_decl}
+use core.registry.{feature_new, register, noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt, noop_parse}
+
+// ── Feature registration components ──
+// Declarative way to define and register language features.
+//
+// Usage in init_features:
+//   feature_set all {
+//       registry = reg
+//       feature defer {
+//           stmt_tag = Stmt.Defer(Expr.Null)
+//           stmt_keyword = "kw_defer"
+//           parse_stmt = (p: Parser) -> p.parse_defer_statement()
+//           emit_stmt = defer_emit_stmt
+//           resolve_stmt = my_resolve_fn
+//           check_stmt = my_check_fn
+//       }
+//   }
+
+component feature_set {
+    config {
+        registry: int = 0
+    }
+    fn init() {
+        self.__parent = self.config.registry
+    }
+}
+
+component feature {
+    config {
+        stmt_tag: Stmt? = null
+        expr_tag: Expr? = null
+        stmt_keyword: string = ""
+        decl_keyword: string = ""
+        parse_stmt: int = noop_parse
+        parse_decl: int = noop_parse
+        emit_expr: int = noop_emit_expr
+        emit_stmt: int = noop_emit_stmt
+        resolve_expr: int = noop_resolve_expr
+        resolve_stmt: int = noop_resolve_stmt
+        check_expr: int = noop_check_expr
+        check_stmt: int = noop_check_stmt
+        eval_expr: int = noop_eval_expr
+        eval_stmt: int = noop_eval_stmt
+    }
+    fn init() {
+        let f = feature_new(self.name) with {
+            stmt_tag: self.config.stmt_tag,
+            expr_tag: self.config.expr_tag,
+            stmt_keyword: self.config.stmt_keyword,
+            decl_keyword: self.config.decl_keyword,
+            parse_stmt: self.config.parse_stmt,
+            parse_decl: self.config.parse_decl,
+            emit_expr: self.config.emit_expr,
+            emit_stmt: self.config.emit_stmt,
+            resolve_expr: self.config.resolve_expr,
+            resolve_stmt: self.config.resolve_stmt,
+            check_expr: self.config.check_expr,
+            check_stmt: self.config.check_stmt,
+            eval_expr: self.config.eval_expr,
+            eval_stmt: self.config.eval_stmt,
+        }
+        register(self.__parent, f)
+    }
+}
 
 export fn init_features(reg: Registry) {
+    init_defer_stmt(reg)
     init_if_stmt(reg)
     init_match_expr(reg)
     init_struct_decl(reg)
@@ -79,7 +144,6 @@ export fn init_features(reg: Registry) {
     init_while_stmt(reg)
     init_for_stmt(reg)
     init_let_stmt(reg)
-    init_defer_stmt(reg)
     init_spec_test(reg)
     init_select_stmt(reg)
     init_parallel_stmt(reg)
