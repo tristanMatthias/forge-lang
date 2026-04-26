@@ -37,7 +37,7 @@ mod eval
 mod union_type
 mod component_decl
 use features.closures.{init_closures}
-use features.defer_stmt.{init_defer_stmt}
+use features.defer_stmt.{defer_feature, errdefer_feature}
 use features.enum_decl.{init_enum_decl}
 use features.extern_decl.{init_extern_decl}
 use features.fn_decl.{init_fn_decl}
@@ -129,7 +129,8 @@ component feature {
 }
 
 export fn init_features(reg: Registry) {
-    init_defer_stmt(reg)
+    register(reg, defer_feature())
+    register(reg, errdefer_feature())
     init_if_stmt(reg)
     init_match_expr(reg)
     init_struct_decl(reg)

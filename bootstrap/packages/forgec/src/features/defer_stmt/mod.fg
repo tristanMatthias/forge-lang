@@ -1,15 +1,15 @@
 mod parser
 mod codegen
 use core.ast.{sexpr_dummy}
-use codegen.types.{err_stmt, ok_stmt, StmtResult}
+use codegen.types.{StmtResult}
 use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, value_null}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr}
 use codegen.types.{DeferStack}
 use typeck.{check_expr}
 
-// All handlers are private — only the registration function is exported.
+// All handlers are private.
 
 fn defer_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
@@ -73,10 +73,10 @@ fn errdefer_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
-// ── Single export: register all features from this module ──
+// ── Exported features ──
 
-export fn init_defer_stmt(reg: Registry) {
-    register(reg, feature_new("defer") with {
+export fn defer_feature() -> Feature {
+    feature_new("defer") with {
         stmt_tag: Stmt.Defer(Expr.Null),
         stmt_keyword: "kw_defer",
         parse_stmt: (p: Parser) -> p.parse_defer_statement(),
@@ -84,9 +84,11 @@ export fn init_defer_stmt(reg: Registry) {
         resolve_stmt: defer_resolve,
         check_stmt: defer_check,
         eval_stmt: defer_eval,
-    })
+    }
+}
 
-    register(reg, feature_new("errdefer") with {
+export fn errdefer_feature() -> Feature {
+    feature_new("errdefer") with {
         stmt_tag: Stmt.Errdefer(Expr.Null),
         stmt_keyword: "kw_errdefer",
         parse_stmt: (p: Parser) -> p.parse_errdefer_statement(),
@@ -94,5 +96,5 @@ export fn init_defer_stmt(reg: Registry) {
         resolve_stmt: errdefer_resolve,
         check_stmt: errdefer_check,
         eval_stmt: errdefer_eval,
-    })
+    }
 }
