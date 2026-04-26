@@ -35,6 +35,7 @@ mod spawn_expr
 mod modules
 mod eval
 mod union_type
+mod component_decl
 use features.closures.{init_closures}
 use features.defer_stmt.{init_defer_stmt}
 use features.enum_decl.{init_enum_decl}
@@ -61,6 +62,7 @@ use features.trait_decl.{init_trait_decl}
 use features.tuples.{init_tuples}
 use features.while_stmt.{init_while_stmt}
 use features.with_expr.{init_with_expr}
+use features.component_decl.{init_component_decl}
 
 export fn init_features(reg: Registry) {
     init_if_stmt(reg)
@@ -89,4 +91,5 @@ export fn init_features(reg: Registry) {
     init_trait_decl(reg)
     init_return_stmt(reg)
     init_modules(reg)
+    init_component_decl(reg)
 }

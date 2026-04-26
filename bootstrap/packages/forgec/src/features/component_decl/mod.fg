@@ -1,0 +1,10 @@
+mod parser
+use core.registry.{feature_new, register}
+
+export fn init_component_decl(reg: Registry) {
+    let f = feature_new("component_decl") with {
+        decl_keyword: "kw_component",
+        parse_decl: (p: Parser) -> p.parse_component_decl(),
+    }
+    register(reg, f)
+}
