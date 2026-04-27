@@ -1,0 +1,26 @@
+type RcbPoint = { x: int, y: int }
+enum RcbColor { Red, Blue(name: string) }
+
+fn rcb_make_point(x: int, y: int) -> RcbPoint {
+    RcbPoint { x, y }
+}
+
+spec "rc basic" {
+    then "struct allocation" {
+        let p = rcb_make_point(10, 20)
+        p.x == 10 && p.y == 20
+    }
+    then "enum allocation" {
+        let c = RcbColor.Blue("red")
+        (match c { .Red -> "red-variant", .Blue(n) -> n }) == "red"
+    }
+    then "with expression" {
+        let p = rcb_make_point(10, 20)
+        let p2 = p with { x: 30, y: 40 }
+        p2.x == 30 && p2.y == 40
+    }
+    then "tuple allocation" {
+        let t = (1, 2)
+        t.0 == 1 && t.1 == 2
+    }
+}

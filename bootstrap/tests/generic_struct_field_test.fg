@@ -1,0 +1,9 @@
+type GsfBox = { value: string }
+
+fn gsf_unwrap(b: GsfBox) -> GsfBox { b }
+
+spec "generic struct field" {
+    then "unwrap preserves field" {
+        gsf_unwrap(GsfBox { value: "hello" }).value == "hello"
+    }
+}

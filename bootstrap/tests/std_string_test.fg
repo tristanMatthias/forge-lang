@@ -1,0 +1,63 @@
+spec "std string" {
+    then "length" {
+        "Hello, World!".length == 13
+    }
+    then "contains true" {
+        "Hello, World!".contains("World") == true
+    }
+    then "contains false" {
+        "Hello, World!".contains("xyz") == false
+    }
+    then "starts_with true" {
+        "Hello, World!".starts_with("Hello") == true
+    }
+    then "starts_with false" {
+        "Hello, World!".starts_with("World") == false
+    }
+    then "ends_with true" {
+        "Hello, World!".ends_with("!") == true
+    }
+    then "ends_with false" {
+        "Hello, World!".ends_with("Hello") == false
+    }
+    then "index_of found" {
+        "Hello, World!".index_of("World") == 7
+    }
+    then "index_of not found" {
+        "Hello, World!".index_of("xyz") == -1
+    }
+    then "replace" {
+        "Hello, World!".replace("World", "Forge") == "Hello, Forge!"
+    }
+    then "trim" {
+        "  spaced  ".trim() == "spaced"
+    }
+    then "upper" {
+        "Hello".upper() == "HELLO"
+    }
+    then "lower" {
+        "Hello".lower() == "hello"
+    }
+    then "split length" {
+        "a,b,c,d".split(",").length == 4
+    }
+    then "split elements" {
+        let parts = "a,b,c,d".split(",")
+        parts[0] == "a" && parts[1] == "b" && parts[2] == "c" && parts[3] == "d"
+    }
+    then "join" {
+        "a,b,c,d".split(",").join(" - ") == "a - b - c - d"
+    }
+    then "substring" {
+        "Hello, World!".substring(0, 5) == "Hello"
+    }
+    then "char_code" {
+        "A".char_code() == 65
+    }
+    then "empty length" {
+        "".length == 0
+    }
+    then "empty contains" {
+        "".contains("x") == false
+    }
+}

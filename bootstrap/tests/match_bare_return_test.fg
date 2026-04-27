@@ -1,0 +1,36 @@
+fn mbr_classify(n: int) -> string {
+    match n {
+        0 -> return "zero"
+        1 -> return "one"
+        _ -> return "other"
+    }
+}
+
+fn mbr_describe(s: string) -> string {
+    match s {
+        "a" -> return "first letter"
+        "z" -> return "last letter"
+        _ -> return "something else"
+    }
+}
+
+spec "match bare return" {
+    then "classify zero" {
+        mbr_classify(0) == "zero"
+    }
+    then "classify one" {
+        mbr_classify(1) == "one"
+    }
+    then "classify other" {
+        mbr_classify(42) == "other"
+    }
+    then "describe a" {
+        mbr_describe("a") == "first letter"
+    }
+    then "describe z" {
+        mbr_describe("z") == "last letter"
+    }
+    then "describe other" {
+        mbr_describe("m") == "something else"
+    }
+}

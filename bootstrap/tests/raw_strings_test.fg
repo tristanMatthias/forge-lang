@@ -1,0 +1,8 @@
+spec "raw strings" {
+    then "no newline escape" {
+        r"hello\nworld" == "hello\\nworld"
+    }
+    then "path preserved" {
+        r"path: C:\Users\test" == "path: C:\\Users\\test"
+    }
+}

@@ -1,0 +1,20 @@
+fn ps_task_a() {}
+fn ps_task_b() {}
+fn ps_task_c() {}
+
+fn ps_run_parallel() -> string {
+    forge_test_capture_start()
+    parallel {
+        ps_task_a
+        ps_task_b
+        ps_task_c
+    }
+    println("3 tasks done")
+    forge_test_capture_stop()
+}
+
+spec "parallel stmt" {
+    then "all tasks complete" {
+        ps_run_parallel() == "3 tasks done"
+    }
+}

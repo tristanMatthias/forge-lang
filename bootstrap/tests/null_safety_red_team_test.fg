@@ -1,0 +1,40 @@
+fn nsrt_find_val(items: List<int>, target: int) -> int? {
+    for i in 0..items.length {
+        if items.get(i) == target { return items.get(i) }
+    }
+    null
+}
+
+type NsrtConfig = { port: int }
+
+fn nsrt_get_config(valid: bool) -> NsrtConfig? {
+    if valid { NsrtConfig { port: 8080 } } else { null }
+}
+
+fn nsrt_try_port(valid: bool) -> int? {
+    let cfg = nsrt_get_config(valid)?
+    cfg.port
+}
+
+spec "null safety red team" {
+    then "find existing value" {
+        let r = nsrt_find_val([10, 20, 30], 20)
+        r != null && r! == 20
+    }
+    then "null coalesce missing" {
+        let r2 = nsrt_find_val([10, 20, 30], 99)
+        (r2 ?? -1) == -1
+    }
+    then "config exists" {
+        nsrt_get_config(true) != null
+    }
+    then "config null" {
+        nsrt_get_config(false) == null
+    }
+    then "propagated port" {
+        (nsrt_try_port(true) ?? 0) == 8080
+    }
+    then "propagated null" {
+        (nsrt_try_port(false) ?? -1) == -1
+    }
+}

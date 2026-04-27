@@ -1,0 +1,24 @@
+type RcdNode = {
+    name: string,
+    next: RcdNode?
+}
+
+fn rcd_test_no_cycle() -> string {
+    let a = RcdNode { name: "solo", next: null }
+    a.name
+}
+
+fn rcd_test_chain() -> string {
+    let b = RcdNode { name: "second", next: null }
+    let a = RcdNode { name: "first", next: b }
+    a.name
+}
+
+spec "rc cycle detect" {
+    then "no cycle" {
+        rcd_test_no_cycle() == "solo"
+    }
+    then "chain" {
+        rcd_test_chain() == "first"
+    }
+}

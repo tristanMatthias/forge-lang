@@ -1,0 +1,21 @@
+shape SstHasName = { name: string }
+
+type SstPerson = { name: string, age: int }
+type SstCompany = { name: string, id: int }
+
+fn sst_greet(h: SstHasName) -> string {
+    "Hello, " + h.name
+}
+
+spec "shape subtyping" {
+    then "person satisfies shape" {
+        sst_greet(SstPerson { name: "Alice", age: 30 }) == "Hello, Alice"
+    }
+    then "company satisfies shape" {
+        sst_greet(SstCompany { name: "Acme", id: 42 }) == "Hello, Acme"
+    }
+    then "shape as let binding" {
+        let x: SstHasName = SstPerson { name: "Bob", age: 25 }
+        x.name == "Bob"
+    }
+}

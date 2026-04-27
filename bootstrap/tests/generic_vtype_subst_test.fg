@@ -1,0 +1,20 @@
+enum GvsBox {
+    Val(inner: int)
+    Empty
+}
+
+fn gvs_unwrap_or(b: GvsBox, default: int) -> int {
+    match b {
+        .Val(v) -> v
+        .Empty -> default
+    }
+}
+
+spec "generic vtype subst" {
+    then "unwrap Val returns inner" {
+        gvs_unwrap_or(GvsBox.Val(42), 0) == 42
+    }
+    then "unwrap Empty returns default" {
+        gvs_unwrap_or(GvsBox.Empty, 99) == 99
+    }
+}

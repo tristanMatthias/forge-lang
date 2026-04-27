@@ -1,0 +1,22 @@
+type NtUserId = string
+type NtMeters = int
+
+fn nt_greet(uid: NtUserId) -> string {
+    "Hello user " + uid.raw()
+}
+
+spec "newtype basic" {
+    then "greet with newtype" {
+        nt_greet(NtUserId("alice")) == "Hello user alice"
+    }
+    then "raw access string" {
+        NtUserId("alice").raw() == "alice"
+    }
+    then "raw access int" {
+        NtMeters(42).raw() == 42
+    }
+    then "inner value preserved" {
+        let m = NtMeters(42)
+        "inner int: " + string(m.raw()) == "inner int: 42"
+    }
+}

@@ -1,0 +1,28 @@
+spec "std stream" {
+    then "filter evens" {
+        let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        let evens = nums.filter((x) -> x % 2 == 0)
+        evens.length == 5 && evens[0] == 2 && evens[1] == 4
+    }
+    then "map then reduce" {
+        let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        let doubled = nums.map((x) -> x * 2)
+        let sum = doubled.reduce(0, (acc, x) -> acc + x)
+        sum == 110
+    }
+    then "filter then map" {
+        let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        let big_doubled = nums.filter((x) -> x > 5).map((x) -> x * 10)
+        big_doubled.length == 5 && big_doubled[0] == 60 && big_doubled[4] == 100
+    }
+    then "reduce max" {
+        let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        let mx = nums.reduce(0, (best, x) -> if x > best { x } else { best })
+        mx == 10
+    }
+    then "string pipeline" {
+        let words = "the quick brown fox".split(" ")
+        let uppers = words.map((w) -> w.upper())
+        uppers.join(" ") == "THE QUICK BROWN FOX"
+    }
+}
