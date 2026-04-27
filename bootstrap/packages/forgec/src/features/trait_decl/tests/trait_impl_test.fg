@@ -1,0 +1,30 @@
+trait TraitPrintable {
+    fn display(self) -> string
+}
+
+type TraitDog = { name: string }
+
+impl TraitPrintable for TraitDog {
+    fn display(self) -> string {
+        self.name
+    }
+}
+
+type TraitCat = { name: string }
+
+impl TraitPrintable for TraitCat {
+    fn display(self) -> string {
+        "meow from " + self.name
+    }
+}
+
+spec "trait impl" {
+    then "dog display" {
+        let d = TraitDog { name: "Rex" }
+        d.display() == "Rex"
+    }
+    then "cat display" {
+        let c = TraitCat { name: "Whiskers" }
+        c.display() == "meow from Whiskers"
+    }
+}

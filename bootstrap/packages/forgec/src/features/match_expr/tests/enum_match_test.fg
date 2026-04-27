@@ -1,0 +1,20 @@
+enum MatchColor {
+    Red
+    Green
+    Blue(shade: int)
+}
+
+fn match_describe(c: MatchColor) -> string {
+    match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue(s) -> "blue"
+        _ -> "unknown"
+    }
+}
+
+spec "enum match" {
+    then "red" { match_describe(MatchColor.Red) == "red" }
+    then "green" { match_describe(MatchColor.Green) == "green" }
+    then "blue with payload" { match_describe(MatchColor.Blue(42)) == "blue" }
+}

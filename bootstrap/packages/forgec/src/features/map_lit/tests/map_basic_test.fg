@@ -1,0 +1,28 @@
+spec "map basic" {
+    then "get values" {
+        let m = {"name": "Alice", "age": "30"}
+        m.get("name") == "Alice" && m.get("age") == "30"
+    }
+    then "has key" {
+        let m = {"name": "Alice", "age": "30"}
+        m.has("name") && !m.has("missing")
+    }
+    then "length" {
+        let m = {"name": "Alice", "age": "30"}
+        m.length == 2
+    }
+    then "set adds entry" {
+        mut m = {"name": "Alice", "age": "30"}
+        m.set("email", "alice@test.com")
+        m.get("email") == "alice@test.com" && m.length == 3
+    }
+    then "keys returns list" {
+        let m = {"name": "Alice", "age": "30"}
+        let keys = m.keys()
+        keys.length == 2
+    }
+    then "empty map" {
+        let empty = {}
+        empty.length == 0
+    }
+}

@@ -1,0 +1,20 @@
+fn nstl_maybe(n: int) -> int? {
+    if n == 3 { return null }
+    n * 10
+}
+
+fn nstl_sum_safe() -> int? {
+    mut total = 0
+    for i in 0..5 {
+        let v = nstl_maybe(i)?
+        total = total + v
+    }
+    total
+}
+
+spec "try in loop" {
+    then "fails when element is null" {
+        let r = nstl_sum_safe()
+        r ?? -1 == -1
+    }
+}

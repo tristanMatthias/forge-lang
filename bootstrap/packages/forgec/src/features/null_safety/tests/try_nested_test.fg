@@ -1,0 +1,10 @@
+fn nstn_inner() -> int? { null }
+fn nstn_middle() -> int? { nstn_inner()? }
+fn nstn_outer() -> int? { nstn_middle()? }
+
+spec "try nested" {
+    then "null propagates through chain" {
+        let r = nstn_outer()
+        r ?? -1 == -1
+    }
+}

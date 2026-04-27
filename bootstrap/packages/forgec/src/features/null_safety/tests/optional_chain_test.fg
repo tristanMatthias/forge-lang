@@ -1,0 +1,14 @@
+type NsocPoint = { x: int, y: int }
+
+spec "optional chain" {
+    then "non-null field access" {
+        let p = NsocPoint { x: 10, y: 20 }
+        let px = p?.x
+        px == 10
+    }
+    then "null field access returns zero" {
+        let n: ptr = null
+        let nx = n?.x
+        nx == 0
+    }
+}

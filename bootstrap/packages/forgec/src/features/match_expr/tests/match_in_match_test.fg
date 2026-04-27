@@ -1,0 +1,26 @@
+enum NestOuter { A(x: int), B }
+enum NestInner { X, Y(v: int) }
+
+fn nest_classify(o: NestOuter, i: NestInner) -> int {
+    match o {
+        .A(x) -> {
+            match i {
+                .X -> x
+                .Y(v) -> x + v
+            }
+        }
+        .B -> {
+            match i {
+                .X -> -1
+                .Y(v) -> v * 10
+            }
+        }
+    }
+}
+
+spec "match in match" {
+    then "A + X" { nest_classify(NestOuter.A(5), NestInner.X) == 5 }
+    then "A + Y" { nest_classify(NestOuter.A(5), NestInner.Y(3)) == 8 }
+    then "B + X" { nest_classify(NestOuter.B, NestInner.X) == -1 }
+    then "B + Y" { nest_classify(NestOuter.B, NestInner.Y(7)) == 70 }
+}

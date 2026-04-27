@@ -1,0 +1,35 @@
+enum TmResult {
+    Ok(value: int),
+    Err(code: int),
+}
+
+fn tm_divide(a: int, b: int) -> TmResult {
+    if b == 0 { return TmResult.Err(0) }
+    TmResult.Ok(a / b)
+}
+
+fn tm_unwrap_or(r: TmResult, fallback: int) -> int {
+    match r {
+        .Ok(v) -> v
+        .Err(_) -> fallback
+    }
+}
+
+spec "tuple match" {
+    then "ok result from tuple index" {
+        let results = (tm_divide(10, 2), tm_divide(10, 0))
+        tm_unwrap_or(results.0, -1) == 5
+    }
+    then "err result from tuple index" {
+        let results = (tm_divide(10, 2), tm_divide(10, 0))
+        tm_unwrap_or(results.1, -1) == -1
+    }
+    then "ok result from destructure" {
+        let (r1, r2) = (tm_divide(20, 4), tm_divide(20, 0))
+        tm_unwrap_or(r1, -1) == 5
+    }
+    then "err result from destructure" {
+        let (r1, r2) = (tm_divide(20, 4), tm_divide(20, 0))
+        tm_unwrap_or(r2, -1) == -1
+    }
+}

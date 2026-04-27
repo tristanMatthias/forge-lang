@@ -1,0 +1,41 @@
+fn strmatch_classify(s: string) -> string {
+    match s {
+        "hello" -> "greeting"
+        "bye"   -> "farewell"
+        "yes"   -> "affirmative"
+        "no"    -> "negative"
+        _       -> "unknown"
+    }
+}
+
+fn strmatch_announce(cmd: string) -> string {
+    match cmd {
+        "start" -> "starting..."
+        "stop"  -> "stopping..."
+        _       -> "unknown command"
+    }
+}
+
+fn strmatch_grade(s: string) -> string {
+    match s {
+        "A" -> "excellent"
+        "B" -> "good"
+        "C" -> "average"
+        _   -> "other"
+    }
+}
+
+spec "string match" {
+    then "hello" { strmatch_classify("hello") == "greeting" }
+    then "bye" { strmatch_classify("bye") == "farewell" }
+    then "yes" { strmatch_classify("yes") == "affirmative" }
+    then "no" { strmatch_classify("no") == "negative" }
+    then "maybe" { strmatch_classify("maybe") == "unknown" }
+    then "start" { strmatch_announce("start") == "starting..." }
+    then "stop" { strmatch_announce("stop") == "stopping..." }
+    then "pause" { strmatch_announce("pause") == "unknown command" }
+    then "grade A" { strmatch_grade("A") == "excellent" }
+    then "grade B" { strmatch_grade("B") == "good" }
+    then "grade C" { strmatch_grade("C") == "average" }
+    then "grade D" { strmatch_grade("D") == "other" }
+}

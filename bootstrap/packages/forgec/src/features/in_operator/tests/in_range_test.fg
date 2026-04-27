@@ -1,0 +1,29 @@
+fn inrange_classify(ch: string) -> string {
+    match {
+        ch in "0".."9" -> "digit"
+        ch in "a".."z" -> "lower"
+        ch in "A".."Z" -> "upper"
+        _ -> "other"
+    }
+}
+
+spec "in range" {
+    then "digit" { inrange_classify("5") == "digit" }
+    then "lower" { inrange_classify("m") == "lower" }
+    then "upper" { inrange_classify("G") == "upper" }
+    then "other" { inrange_classify("!") == "other" }
+    then "int in range" { 42 in 1..100 }
+    then "int not in range" { !(42 in 200..300) }
+    then "boundary low inclusive" { 0 in 0..10 }
+    then "boundary high inclusive" { 10 in 0..10 }
+    then "match with range condition" {
+        let grade = 85
+        let label = match {
+            grade in 90..100 -> "A"
+            grade in 80..89  -> "B"
+            grade in 70..79  -> "C"
+            _ -> "F"
+        }
+        label == "B"
+    }
+}

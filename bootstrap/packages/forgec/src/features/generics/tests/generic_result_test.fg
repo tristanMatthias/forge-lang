@@ -1,0 +1,25 @@
+enum GenResult<T, E> {
+    Ok(value: T),
+    Err(error: E),
+}
+
+fn gen_divide(a: int, b: int) -> GenResult {
+    if b == 0 { return GenResult.Err("division by zero") }
+    GenResult.Ok(a / b)
+}
+
+fn gen_result_describe(r: GenResult) -> string {
+    match r {
+        .Ok(v) -> string(v)
+        .Err(e) -> "propagated: ${e}"
+    }
+}
+
+spec "generic result" {
+    then "ok result" {
+        gen_result_describe(gen_divide(84, 2)) == "42"
+    }
+    then "err result" {
+        gen_result_describe(gen_divide(10, 0)) == "propagated: division by zero"
+    }
+}

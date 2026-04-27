@@ -1,0 +1,10 @@
+spec "tuple for" {
+    then "sum of squares via tuple" {
+        mut sum = 0
+        for i in 0..5 {
+            let pair = (i, i * i)
+            sum = sum + pair.1
+        }
+        sum == 30
+    }
+}

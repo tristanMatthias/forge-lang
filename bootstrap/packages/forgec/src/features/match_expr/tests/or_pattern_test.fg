@@ -1,0 +1,57 @@
+enum OrDirection { North, South, East, West }
+
+fn or_is_horizontal(d: OrDirection) -> bool {
+    match d {
+        .East or .West -> true
+        _              -> false
+    }
+}
+
+fn or_describe_dir(d: OrDirection) -> string {
+    match d {
+        .North or .South or .East -> "not west"
+        .West                     -> "west"
+    }
+}
+
+fn or_parity(n: int) -> string {
+    match n {
+        0 or 2 or 4 or 6 or 8 -> "even single digit"
+        1 or 3 or 5 or 7 or 9 -> "odd single digit"
+        _                      -> "multi-digit or negative"
+    }
+}
+
+fn or_is_vowel_word(s: string) -> bool {
+    match s {
+        "a" or "e" or "i" or "o" or "u" -> true
+        _                                -> false
+    }
+}
+
+fn or_describe_small(n: int) -> string {
+    match n {
+        1 or 2 if n > 0 -> "small positive"
+        _               -> "other"
+    }
+}
+
+spec "or pattern" {
+    then "east is horizontal" { or_is_horizontal(OrDirection.East) }
+    then "west is horizontal" { or_is_horizontal(OrDirection.West) }
+    then "north is not horizontal" { !or_is_horizontal(OrDirection.North) }
+    then "three-way or north" { or_describe_dir(OrDirection.North) == "not west" }
+    then "three-way or south" { or_describe_dir(OrDirection.South) == "not west" }
+    then "three-way or east" { or_describe_dir(OrDirection.East) == "not west" }
+    then "three-way or west" { or_describe_dir(OrDirection.West) == "west" }
+    then "even single digit" { or_parity(0) == "even single digit" }
+    then "odd single digit 3" { or_parity(3) == "odd single digit" }
+    then "odd single digit 7" { or_parity(7) == "odd single digit" }
+    then "multi-digit" { or_parity(42) == "multi-digit or negative" }
+    then "vowel a" { or_is_vowel_word("a") }
+    then "vowel e" { or_is_vowel_word("e") }
+    then "not vowel b" { !or_is_vowel_word("b") }
+    then "or with guard 1" { or_describe_small(1) == "small positive" }
+    then "or with guard 2" { or_describe_small(2) == "small positive" }
+    then "or with guard 5" { or_describe_small(5) == "other" }
+}
