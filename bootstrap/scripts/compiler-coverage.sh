@@ -58,7 +58,7 @@ ok "instrumented compiler at $COV_BS2"
 log "running test suite through instrumented compiler"
 rm -f "$COV_DIR/profiles/"*.profraw
 passed=0; failed=0; total=0
-for fg in $(find regress -name '*.fg' | sort; find "$SRC_DIR/features" -name 'example*.fg' | sort); do
+for fg in $(find tests -name '*.fg' | sort; find "$SRC_DIR/features" -path '*/tests/*.fg' | sort; find "$SRC_DIR/features" -name 'example*.fg' | sort); do
     total=$((total + 1))
     name=$(echo "$fg" | tr '/.' '_')
     prf="$COV_DIR/profiles/${name}.profraw"
