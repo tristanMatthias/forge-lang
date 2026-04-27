@@ -493,6 +493,9 @@ fn prepend_test_externs(stmts: StmtList) -> StmtList {
 type SplitResult = { fns: StmtList, rest: StmtList }
 
 fn split_decls_and_body(stmts: StmtList) -> SplitResult {
+    // Functions/types/enums → top level (resolver needs them globally)
+    // Spec blocks + other statements → init body
+    // Functions MUST have unique names across all test files (use prefixes).
     mut fns = StmtList.End
     mut rest = StmtList.End
     mut current = stmts
@@ -502,7 +505,7 @@ fn split_decls_and_body(stmts: StmtList) -> SplitResult {
             .Node(ss, next) -> {
                 match ss.node {
                     .Function(_, _, _, _, _) -> { fns = StmtList.Node(ss, fns) }
-                    .ExternFn(_, _, _) -> {} // stripped
+                    .ExternFn(_, _, _) -> {} // stripped — provided by harness
                     .TypeDecl(_, _, _) -> { fns = StmtList.Node(ss, fns) }
                     .EnumDecl(_, _, _) -> { fns = StmtList.Node(ss, fns) }
                     .TraitDecl(_, _) -> { fns = StmtList.Node(ss, fns) }
