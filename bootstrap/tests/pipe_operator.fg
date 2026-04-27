@@ -1,13 +1,15 @@
-fn double(x: int) -> int {
-    x * 2
+/// expect: 10
+/// expect: 42
+
+fn double(x: int) -> int { x * 2 }
+fn add(x: int, y: int) -> int { x + y }
+
+fn main() {
+    // Basic pipe
+    let r = 5 |> double
+    println(string(r))
+    
+    // Pipe with additional args
+    let n = 40 |> add(2)
+    println(string(n))
 }
-
-fn add(x: int, y: int) -> int {
-    x + y
-}
-
-let result = 5 |> double
-println(string(result))
-
-let result2 = 3 |> add(7)
-println(string(result2))

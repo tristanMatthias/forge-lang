@@ -16,7 +16,7 @@ BOOTSTRAP_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_DIR=$(CDPATH= cd -- "$BOOTSTRAP_DIR/.." && pwd)
 FORGE_DIR="$REPO_DIR/forge"
 BUILD_DIR="$BOOTSTRAP_DIR/build"
-REGRESS_DIR="$BOOTSTRAP_DIR/regress"
+REGRESS_DIR="$BOOTSTRAP_DIR/tests"
 SEED_LL="$BOOTSTRAP_DIR/seed/seed.ll"
 SEED_BIN="$BUILD_DIR/seed"
 RUNTIME_C="$BOOTSTRAP_DIR/runtime.c"
@@ -855,9 +855,6 @@ mode_regress() {
   done
   for fg in "$SRC_DIR"/features/*/example.fg; do
     [ -f "$(dirname "$fg")/expected.out" ] && test_specs+=("$fg")
-  done
-  for fg in "$BOOTSTRAP_DIR"/tests/*.fg; do
-    test_specs+=("$fg")
   done
   for fg in "$REGRESS_DIR"/*.fg; do
     test_specs+=("$fg")
