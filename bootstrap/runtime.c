@@ -2707,16 +2707,20 @@ int64_t forge_test_summary(void) {
 }
 
 // ── Stdout capture (for testing output-producing code) ──
-// forge_test_capture_start: redirect stdout to an internal buffer
-// forge_test_capture_stop: return captured output and restore stdout
+// Thread-safe: uses a mutex so only one thread can capture at a time.
+// This is inherently serial (dup2 is process-wide) but prevents corruption.
 
 static char* _capture_buf = NULL;
 static size_t _capture_len = 0;
 static size_t _capture_cap = 0;
 static int _capture_fd_backup = -1;
 static int _capture_pipe[2] = {-1, -1};
+static pthread_mutex_t _capture_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void forge_test_capture_start(void) {
+    pthread_mutex_lock(&_capture_mutex);
+    // Also flush the test output buffer first so captured output is clean
+    forge_test_flush();
     fflush(stdout);
     _capture_fd_backup = dup(STDOUT_FILENO);
     pipe(_capture_pipe);
@@ -2751,6 +2755,7 @@ const char* forge_test_capture_stop(void) {
     if (_capture_len > 0 && _capture_buf[_capture_len - 1] == '\n') {
         _capture_buf[_capture_len - 1] = '\0';
     }
+    pthread_mutex_unlock(&_capture_mutex);
     return _capture_buf;
 }
 
