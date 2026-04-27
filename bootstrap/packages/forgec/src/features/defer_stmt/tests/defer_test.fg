@@ -1,6 +1,3 @@
-extern fn forge_test_capture_start()
-extern fn forge_test_capture_stop() -> string
-
 fn defer_basic() {
     defer println("cleanup!")
     println("working...")
