@@ -487,6 +487,47 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     }
 }
 
+fn rewrite_impl_block(ctx: NameCtx, type_name: string, methods: StmtList) -> Stmt {
+    // Resolve the type name to its canonical form using the module tree.
+    // e.g., in module "test_a", "Point" → "test_a::Point"
+    // but in module "codegen", "Ctx" (defined in "codegen::types") → "codegen::types::Ctx"
+    let resolved = resolve_type_in_ctx(ctx, type_name)
+    Stmt.Impl(resolved, rewrite_impl_methods(ctx, resolved, methods))
+}
+
+fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
+    // First check global index for canonical name
+    let canonical = item_lookup(ctx.global_index, type_name)
+    if canonical != "" { return canonical }
+    // Fallback: qualify with current module
+    if ctx.current_module != "" {
+        return "${ctx.current_module}::${type_name}"
+    }
+    type_name
+}
+
+// Rewrite impl method names to use the module-qualified type name.
+// e.g., in module "test_a", impl Point { fn greet(self) } →
+//   method name "Point__greet" → "test_a::Point__greet"
+fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            let new_stmt = match ss.node {
+                .Function(name, tp, params, rvt, body) -> {
+                    // Method names are Type__method — re-mangle with qualified type
+                    let parts = name.split("__")
+                    let method_name = if parts.length > 1 { parts[1] } else { name }
+                    let qualified_name = "${qualified_type}__${method_name}"
+                    Stmt.Function(qualified_name, tp, params, rvt, rewrite_stmt_list(bind_params_ctx(ctx, params), body))
+                }
+                _ -> rewrite_stmt(ctx, ss.node)
+            }
+            StmtList.Node(sstmt(new_stmt, ss.line, ss.col), rewrite_impl_methods(ctx, qualified_type, next))
+        }
+    }
+}
+
 // ── Expression rewriting ──
 
 fn rewrite_expr(ctx: NameCtx, expr: Expr) -> Expr {
