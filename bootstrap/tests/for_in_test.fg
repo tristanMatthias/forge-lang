@@ -1,0 +1,26 @@
+fn fi_run() -> string {
+    forge_test_capture_start()
+    let items = [1, 2, 3]
+    for x in items {
+        println(string(x))
+    }
+    mut total = 0
+    for i in 1..6 {
+        total = total + i
+    }
+    println("sum=" + string(total))
+    forge_test_capture_stop()
+}
+
+spec "for in" {
+    then "iterate list" {
+        fi_run() == "1\n2\n3\nsum=15"
+    }
+    then "range sum" {
+        mut total = 0
+        for i in 1..6 {
+            total = total + i
+        }
+        total == 15
+    }
+}

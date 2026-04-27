@@ -1,0 +1,17 @@
+fn hpcl_make_transform(multiplier: int) -> fn(int) -> int {
+    (x) -> x * multiplier
+}
+
+spec "hunt pipe closure" {
+    then "pipe into closure from function" {
+        let times3 = hpcl_make_transform(3)
+        let result = 5 |> times3
+        result == 15
+    }
+    then "chain pipes with closures" {
+        let inc = (x) -> x + 1
+        let dbl = (x) -> x * 2
+        let val = 5 |> inc |> dbl |> inc
+        val == 13
+    }
+}

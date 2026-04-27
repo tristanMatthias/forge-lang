@@ -1,0 +1,27 @@
+fn emf_classify(x: int) -> string {
+    match x {
+        _ if x > 100 -> "huge"
+        _ if x > 50 -> "big"
+        _ if x > 0 -> "positive"
+        _ if x == 0 -> "zero"
+        _ -> "negative"
+    }
+}
+
+spec "edge match fallthrough" {
+    then "huge" {
+        emf_classify(200) == "huge"
+    }
+    then "big" {
+        emf_classify(75) == "big"
+    }
+    then "positive" {
+        emf_classify(25) == "positive"
+    }
+    then "zero" {
+        emf_classify(0) == "zero"
+    }
+    then "negative" {
+        emf_classify(-10) == "negative"
+    }
+}

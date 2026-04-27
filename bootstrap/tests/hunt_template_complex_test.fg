@@ -1,0 +1,20 @@
+type HtcPoint = { x: int, y: int }
+
+fn htc_greet(name: string) -> string { `hello ${name}!` }
+
+spec "hunt template complex" {
+    then "template with struct fields" {
+        let p = HtcPoint { x: 10, y: 20 }
+        `point(${string(p.x)}, ${string(p.y)})` == "point(10, 20)"
+    }
+    then "template with function call" {
+        htc_greet("world") == "hello world!"
+    }
+    then "nested template" {
+        `result: ${htc_greet("forge")}` == "result: hello forge!"
+    }
+    then "template with if-expression" {
+        let x = 5
+        `sign: ${if x > 0 { "positive" } else { "negative" }}` == "sign: positive"
+    }
+}

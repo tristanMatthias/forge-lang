@@ -1,0 +1,11 @@
+fn hl_run() -> string {
+    forge_test_capture_start()
+    println("hello from bs2")
+    forge_test_capture_stop()
+}
+
+spec "hello" {
+    then "prints hello" {
+        hl_run() == "hello from bs2"
+    }
+}

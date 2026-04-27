@@ -1,0 +1,41 @@
+fn hmm_parse_cmd(cmd: string, verbose: bool) -> string {
+    match cmd {
+        "help" -> "showing help"
+        "run" if verbose -> "running (verbose mode)"
+        "run" -> "running"
+        _ -> "unknown: " + cmd
+    }
+}
+
+fn hmm_status_emoji(code: int) -> string {
+    match code {
+        200 -> "ok"
+        404 -> "fail"
+        500 -> "bang"
+        _ -> "?"
+    }
+}
+
+spec "hunt mixed match" {
+    then "help command" {
+        hmm_parse_cmd("help", false) == "showing help"
+    }
+    then "run verbose" {
+        hmm_parse_cmd("run", true) == "running (verbose mode)"
+    }
+    then "run normal" {
+        hmm_parse_cmd("run", false) == "running"
+    }
+    then "unknown command" {
+        hmm_parse_cmd("xyz", false) == "unknown: xyz"
+    }
+    then "status 200" {
+        hmm_status_emoji(200) == "ok"
+    }
+    then "status 404" {
+        hmm_status_emoji(404) == "fail"
+    }
+    then "status unknown" {
+        hmm_status_emoji(999) == "?"
+    }
+}

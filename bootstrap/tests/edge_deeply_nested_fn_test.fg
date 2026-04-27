@@ -1,0 +1,11 @@
+fn ednf_a(x: int) -> int { ednf_b(x + 1) }
+fn ednf_b(x: int) -> int { ednf_c(x + 1) }
+fn ednf_c(x: int) -> int { ednf_d(x + 1) }
+fn ednf_d(x: int) -> int { ednf_e(x + 1) }
+fn ednf_e(x: int) -> int { x + 1 }
+
+spec "edge deeply nested fn" {
+    then "deep call chain" {
+        ednf_a(0) == 5
+    }
+}

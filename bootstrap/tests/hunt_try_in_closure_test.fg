@@ -1,0 +1,24 @@
+fn htic_safe_parse(s: string) -> int? {
+    if s == "" { return null }
+    int(s)
+}
+
+fn htic_process_all(items: List) -> int? {
+    mut total = 0
+    for item in items {
+        let val = htic_safe_parse(item)?
+        total = total + val
+    }
+    total
+}
+
+spec "hunt try in closure" {
+    then "all valid" {
+        let r1 = htic_process_all(["10", "20", "30"])
+        r1 ?? -1 == 60
+    }
+    then "with empty string" {
+        let r2 = htic_process_all(["10", "", "30"])
+        r2 ?? -1 == -1
+    }
+}

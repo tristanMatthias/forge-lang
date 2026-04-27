@@ -1,15 +1,15 @@
 enum EdsOutcome {
-    Good(value: int)
-    Bad(msg: string)
+    EdsGood(value: int)
+    EdsBad(msg: string)
 }
 
-fn eds_success() -> EdsOutcome { .Good(42) }
-fn eds_failure() -> EdsOutcome { .Bad("nope") }
+fn eds_success() -> EdsOutcome { .EdsGood(42) }
+fn eds_failure() -> EdsOutcome { .EdsBad("nope") }
 
 fn eds_show(r: EdsOutcome) -> string {
     match r {
-        .Good(v) -> "ok: " + string(v)
-        .Bad(msg) -> "err: " + msg
+        .EdsGood(v) -> "ok: " + string(v)
+        .EdsBad(msg) -> "err: " + msg
     }
 }
 

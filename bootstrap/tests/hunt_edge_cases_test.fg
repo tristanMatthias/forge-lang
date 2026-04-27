@@ -1,0 +1,42 @@
+type HecInner = { value: int }
+type HecMiddle = { inner: HecInner }
+type HecOuter = { middle: HecMiddle }
+
+fn hec_abs(n: int) -> int {
+    if n < 0 { return -n }
+    n
+}
+
+spec "hunt edge cases" {
+    then "empty list" {
+        let empty: List = []
+        empty.length == 0
+    }
+    then "single element list" {
+        let single = [42]
+        single[0] == 42 and single.length == 1
+    }
+    then "deeply nested struct access" {
+        let o = HecOuter { middle: HecMiddle { inner: HecInner { value: 99 } } }
+        o.middle.inner.value == 99
+    }
+    then "match with only wildcard" {
+        let x = 5
+        let r = match x {
+            _ -> "catch all"
+        }
+        r == "catch all"
+    }
+    then "abs negative" {
+        hec_abs(-7) == 7
+    }
+    then "abs positive" {
+        hec_abs(3) == 3
+    }
+    then "string comparison true" {
+        "abc" == "abc"
+    }
+    then "string comparison false" {
+        "abc" != "def"
+    }
+}

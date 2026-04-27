@@ -1,0 +1,26 @@
+spec "division" {
+    then "integer division" {
+        100 / 3 == 33
+    }
+    then "even division" {
+        10 / 2 == 5
+    }
+    then "negative division" {
+        -15 / 4 == -3
+    }
+    then "divide by 1" {
+        7 / 1 == 7
+    }
+    then "operator precedence" {
+        2 + 3 * 4 == 14
+    }
+    then "parenthesized precedence" {
+        (2 + 3) * 4 == 20
+    }
+    then "left-to-right subtraction" {
+        100 - 50 - 25 == 25
+    }
+    then "nested parenthesized subtraction" {
+        100 - (50 - 25) == 75
+    }
+}

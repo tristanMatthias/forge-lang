@@ -1,0 +1,19 @@
+spec "hunt list map combo" {
+    then "list of maps" {
+        let users = [
+            { "name": "Alice", "age": "30" },
+            { "name": "Bob", "age": "25" }
+        ]
+        users[0].get("name") == "Alice" and users[1].get("age") == "25"
+    }
+    then "map get" {
+        let data = { "numbers": "1,2,3", "label": "test" }
+        data.get("label") == "test"
+    }
+    then "nested list operations" {
+        let nums = [1, 2, 3, 4, 5]
+        let doubled = nums.map((x) -> { x * 2 })
+        let big = doubled.filter((x) -> { x > 4 })
+        big[0] == 6 and big[1] == 8 and big[2] == 10
+    }
+}

@@ -1,0 +1,24 @@
+fn hpc_double(x: int) -> int { x * 2 }
+fn hpc_add_one(x: int) -> int { x + 1 }
+fn hpc_to_str(x: int) -> string { string(x) }
+fn hpc_greet(name: string) -> string { "Hello " + name }
+fn hpc_exclaim(s: string) -> string { s + "!" }
+
+spec "hunt pipe chain" {
+    then "pipe chain int" {
+        let result = 5 |> hpc_double |> hpc_add_one |> hpc_to_str
+        result == "11"
+    }
+    then "list method chain" {
+        let nums = [1, 2, 3, 4, 5]
+        let sum = nums
+            .map((x) -> { x * x })
+            .filter((x) -> { x > 5 })
+            .reduce(0, (acc, x) -> { acc + x })
+        sum == 50
+    }
+    then "pipe with string operations" {
+        let msg = "World" |> hpc_greet |> hpc_exclaim
+        msg == "Hello World!"
+    }
+}

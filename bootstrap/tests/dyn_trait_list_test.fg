@@ -1,0 +1,30 @@
+trait DtlDescribable {
+    fn describe(self) -> string
+}
+
+type DtlCircle = { r: int }
+type DtlRect = { w: int, h: int }
+
+impl DtlDescribable for DtlCircle {
+    fn describe(self) -> string { "circle r=" + string(self.r) }
+}
+
+impl DtlDescribable for DtlRect {
+    fn describe(self) -> string { "rect " + string(self.w) + "x" + string(self.h) }
+}
+
+fn dtl_run() -> string {
+    forge_test_capture_start()
+    let shapes: List<DtlDescribable> = [DtlCircle { r: 5 }, DtlRect { w: 3, h: 4 }]
+    shapes.foreach((s) -> println(s.describe()))
+    println("shapes: " + string(shapes.length))
+    let first: DtlDescribable = shapes.get(0)
+    println("first: " + first.describe())
+    forge_test_capture_stop()
+}
+
+spec "dyn trait list" {
+    then "full output" {
+        dtl_run() == "circle r=5\nrect 3x4\nshapes: 2\nfirst: circle r=5"
+    }
+}

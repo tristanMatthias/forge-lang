@@ -1,0 +1,43 @@
+fn itp_run() -> string {
+    forge_test_capture_start()
+    let nums = [1, 2, 3, 4, 5]
+    let doubled = nums.map(it * 2)
+    println(string(doubled[0]))
+    println(string(doubled[2]))
+    println(string(doubled[4]))
+    let big = nums.filter(it > 3)
+    println(string(big.length))
+    println(string(big[0]))
+    println(string(big[1]))
+    let scores = [10, 20, 30]
+    let adjusted = scores.map(it * 2 + 1)
+    println(string(adjusted[0]))
+    println(string(adjusted[2]))
+    let total = nums.reduce(0, (acc, x) -> { acc + x })
+    println(string(total))
+    let tripled = nums.map((x) -> { x * 3 })
+    println(string(tripled[0]))
+    println(string(tripled[2]))
+    forge_test_capture_stop()
+}
+
+spec "it parameter" {
+    then "map with it" {
+        let nums = [1, 2, 3, 4, 5]
+        let doubled = nums.map(it * 2)
+        doubled[0] == 2 and doubled[2] == 6 and doubled[4] == 10
+    }
+    then "filter with it" {
+        let nums = [1, 2, 3, 4, 5]
+        let big = nums.filter(it > 3)
+        big.length == 2 and big[0] == 4 and big[1] == 5
+    }
+    then "complex expression with it" {
+        let scores = [10, 20, 30]
+        let adjusted = scores.map(it * 2 + 1)
+        adjusted[0] == 21 and adjusted[2] == 61
+    }
+    then "full output" {
+        itp_run() == "2\n6\n10\n2\n4\n5\n21\n61\n15\n3\n9"
+    }
+}

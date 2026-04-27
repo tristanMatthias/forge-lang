@@ -1,0 +1,11 @@
+spec "hex literals" {
+    then "hex 0xFF" {
+        0xFF == 255
+    }
+    then "binary 0b1010" {
+        0b1010 == 10
+    }
+    then "octal 0o17" {
+        0o17 == 15
+    }
+}

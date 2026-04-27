@@ -1,0 +1,35 @@
+type HmsPoint = { x: int, y: int }
+
+enum HmsShape {
+    Circle(radius: int)
+    Rect(w: int, h: int)
+}
+
+fn hms_describe(s: HmsShape) -> string {
+    match s {
+        .Circle(r) -> `circle r=${string(r)}`
+        .Rect(w, h) -> `rect ${string(w)}x${string(h)}`
+    }
+}
+
+fn hms_area(s: HmsShape) -> int {
+    match s {
+        .Circle(r) -> r * r * 3
+        .Rect(w, h) -> w * h
+    }
+}
+
+spec "hunt match struct" {
+    then "describe circle" {
+        hms_describe(HmsShape.Circle(5)) == "circle r=5"
+    }
+    then "describe rect" {
+        hms_describe(HmsShape.Rect(3, 4)) == "rect 3x4"
+    }
+    then "area circle" {
+        hms_area(HmsShape.Circle(5)) == 75
+    }
+    then "area rect" {
+        hms_area(HmsShape.Rect(3, 4)) == 12
+    }
+}

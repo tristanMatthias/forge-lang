@@ -1,0 +1,38 @@
+fn hnc_find_user(id: int) -> string? {
+    if id == 1 { return "Alice" }
+    if id == 2 { return "Bob" }
+    null
+}
+
+fn hnc_get_greeting(id: int) -> string {
+    let name = hnc_find_user(id) ?? "stranger"
+    `hello ${name}`
+}
+
+spec "hunt nullable chain" {
+    then "find user 1" {
+        hnc_find_user(1) ?? "unknown" == "Alice"
+    }
+    then "find user 2" {
+        hnc_find_user(2) ?? "unknown" == "Bob"
+    }
+    then "find user missing" {
+        hnc_find_user(99) ?? "unknown" == "unknown"
+    }
+    then "greeting found" {
+        hnc_get_greeting(1) == "hello Alice"
+    }
+    then "greeting missing" {
+        hnc_get_greeting(99) == "hello stranger"
+    }
+    then "nullable value present" {
+        let val: int? = 42
+        let result = if val != null { string(val!) } else { "null" }
+        result == "42"
+    }
+    then "nullable value null" {
+        let empty: int? = null
+        let result2 = if empty != null { string(empty!) } else { "null" }
+        result2 == "null"
+    }
+}

@@ -1,0 +1,20 @@
+enum HeilColor { Red, Green, Blue(shade: int) }
+
+fn heil_run() -> string {
+    forge_test_capture_start()
+    let colors = [HeilColor.Red, HeilColor.Green, HeilColor.Blue(42)]
+    for c in colors {
+        match c {
+            .Red -> println("red")
+            .Green -> println("green")
+            .Blue(s) -> println(`blue(${string(s)})`)
+        }
+    }
+    forge_test_capture_stop()
+}
+
+spec "hunt enum in list" {
+    then "full output" {
+        heil_run() == "red\ngreen\nblue(42)"
+    }
+}

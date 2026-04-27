@@ -1,0 +1,34 @@
+enum HdnmOuter { A(inner: HdnmInner) }
+enum HdnmInner { X(value: int), Y }
+
+fn hdnm_deep(o: HdnmOuter) -> string {
+    match o {
+        .A(inner) -> {
+            match inner {
+                .X(v) -> {
+                    match v {
+                        _ if v > 10 -> "big"
+                        _ if v > 0 -> "small"
+                        _ -> "zero or negative"
+                    }
+                }
+                .Y -> "Y"
+            }
+        }
+    }
+}
+
+spec "hunt deeply nested match" {
+    then "big" {
+        hdnm_deep(HdnmOuter.A(HdnmInner.X(42))) == "big"
+    }
+    then "small" {
+        hdnm_deep(HdnmOuter.A(HdnmInner.X(3))) == "small"
+    }
+    then "zero or negative" {
+        hdnm_deep(HdnmOuter.A(HdnmInner.X(0))) == "zero or negative"
+    }
+    then "Y variant" {
+        hdnm_deep(HdnmOuter.A(HdnmInner.Y)) == "Y"
+    }
+}

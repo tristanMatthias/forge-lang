@@ -1,0 +1,16 @@
+type EsiePoint = { x: int, y: int }
+enum EsieShape {
+    Circle(center: EsiePoint, radius: int),
+    Line(start: EsiePoint, end_pt: EsiePoint),
+}
+
+spec "edge struct in enum" {
+    then "match circle with struct" {
+        let c = EsieShape.Circle(EsiePoint { x: 10, y: 20 }, 5)
+        let result = match c {
+            .Circle(center, r) -> `circle r=${string(r)}`
+            .Line(s, e) -> "line"
+        }
+        result == "circle r=5"
+    }
+}

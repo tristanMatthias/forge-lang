@@ -1,0 +1,30 @@
+fn hiec_classify(n: int) -> string {
+    if n > 0 { "positive" } else if n < 0 { "negative" } else { "zero" }
+}
+
+fn hiec_shout(s: string) -> string { s + "!" }
+
+spec "hunt if expr chain" {
+    then "chained if-else" {
+        let x = 10
+        let label = if x > 100 { "big" } else if x > 50 { "medium" } else if x > 0 { "small" } else { "zero" }
+        label == "small"
+    }
+    then "classify positive" {
+        hiec_classify(5) == "positive"
+    }
+    then "classify negative" {
+        hiec_classify(-3) == "negative"
+    }
+    then "classify zero" {
+        hiec_classify(0) == "zero"
+    }
+    then "if-expression in binary" {
+        let x = 10
+        let msg = "value is " + if x > 5 { "high" } else { "low" }
+        msg == "value is high"
+    }
+    then "if-expression as function argument" {
+        hiec_shout(if true { "yes" } else { "no" }) == "yes!"
+    }
+}

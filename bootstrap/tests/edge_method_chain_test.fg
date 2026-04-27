@@ -1,0 +1,30 @@
+spec "edge method chain" {
+    then "string method chain" {
+        let result = "  Hello, World!  ".trim().replace("World", "Forge").upper()
+        result == "HELLO, FORGE!"
+    }
+    then "chain length" {
+        let result = "  Hello, World!  ".trim().replace("World", "Forge").upper()
+        result.length == 13
+    }
+    then "chain contains" {
+        let result = "  Hello, World!  ".trim().replace("World", "Forge").upper()
+        result.contains("FORGE") == true
+    }
+    then "chain starts_with" {
+        let result = "  Hello, World!  ".trim().replace("World", "Forge").upper()
+        result.starts_with("HELLO") == true
+    }
+    then "chain ends_with" {
+        let result = "  Hello, World!  ".trim().replace("World", "Forge").upper()
+        result.ends_with("!") == true
+    }
+    then "list method chain" {
+        let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        let result2 = nums
+            .filter((x) -> x % 2 == 0)
+            .map((x) -> x * x)
+            .reduce(0, (a, b) -> a + b)
+        result2 == 220
+    }
+}

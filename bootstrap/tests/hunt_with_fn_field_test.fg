@@ -1,0 +1,18 @@
+type HwffHandler = { name: string, action: fn(int) -> int }
+
+spec "hunt with fn field" {
+    then "original handler" {
+        let h1 = HwffHandler { name: "double", action: (x) -> x * 2 }
+        h1.action(5) == 10
+    }
+    then "with expression on fn field" {
+        let h1 = HwffHandler { name: "double", action: (x) -> x * 2 }
+        let h2 = h1 with { name: "triple", action: (x) -> x * 3 }
+        h2.action(5) == 15
+    }
+    then "original name unchanged" {
+        let h1 = HwffHandler { name: "double", action: (x) -> x * 2 }
+        let h2 = h1 with { name: "triple", action: (x) -> x * 3 }
+        h1.name == "double" and h2.name == "triple"
+    }
+}

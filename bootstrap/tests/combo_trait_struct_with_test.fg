@@ -1,0 +1,56 @@
+trait CtswDescribe {
+    fn describe(self) -> string
+}
+
+type CtswDog = { name: string, age: int }
+type CtswCat = { name: string, age: int }
+
+impl CtswDescribe for CtswDog {
+    fn describe(self) -> string { "Dog: ${self.name} (age ${string(self.age)})" }
+}
+impl CtswDescribe for CtswCat {
+    fn describe(self) -> string { "Cat: ${self.name} (age ${string(self.age)})" }
+}
+
+fn ctsw_birthday(d: CtswDog) -> CtswDog {
+    d with { age: d.age + 1 }
+}
+
+type CtswPoint = { x: int, y: int }
+
+fn ctsw_set_x(p: CtswPoint, x: int) -> CtswPoint { p with { x } }
+fn ctsw_set_y(p: CtswPoint, y: int) -> CtswPoint { p with { y } }
+
+fn ctsw_run() -> string {
+    forge_test_capture_start()
+    let d = CtswDog { name: "Rex", age: 5 }
+    let c = CtswCat { name: "Whiskers", age: 3 }
+    println(d.describe())
+    println(c.describe())
+    let older = ctsw_birthday(d)
+    println("updated: ${older.name} (age ${string(older.age)})")
+    let p = CtswPoint { x: 0, y: 0 }
+    let p2 = ctsw_set_y(ctsw_set_x(p, 10), 20)
+    println("builder: Point(${string(p2.x)}, ${string(p2.y)})")
+    forge_test_capture_stop()
+}
+
+spec "combo trait struct with" {
+    then "trait dispatch" {
+        let d = CtswDog { name: "Rex", age: 5 }
+        d.describe() == "Dog: Rex (age 5)"
+    }
+    then "with expression + trait" {
+        let d = CtswDog { name: "Rex", age: 5 }
+        let older = ctsw_birthday(d)
+        older.age == 6
+    }
+    then "chained with" {
+        let p = CtswPoint { x: 0, y: 0 }
+        let p2 = ctsw_set_y(ctsw_set_x(p, 10), 20)
+        p2.x == 10 and p2.y == 20
+    }
+    then "full output" {
+        ctsw_run() == "Dog: Rex (age 5)\nCat: Whiskers (age 3)\nupdated: Rex (age 6)\nbuilder: Point(10, 20)"
+    }
+}
