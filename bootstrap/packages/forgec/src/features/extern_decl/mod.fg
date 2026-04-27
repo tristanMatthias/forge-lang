@@ -1,10 +1,9 @@
 mod parser
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 
-export fn init_extern_decl(reg: Registry) {
-    let f = feature_new("extern_decl") with {
+export fn extern_decl_feature() -> Feature {
+    feature_new("extern_decl") with {
         decl_keyword: "kw_extern",
         parse_decl: (p: Parser) -> p.parse_extern_declaration(),
     }
-    register(reg, f)
 }

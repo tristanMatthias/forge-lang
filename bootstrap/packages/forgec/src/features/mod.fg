@@ -1,9 +1,8 @@
 // WHY: aggregator for all language features. Each subdirectory is
 // one feature with its own parser.fg, codegen.fg, example.fg.
 //
-// Features whose name collides with a reserved keyword (return, if,
-// while, let, mut, fn, struct, enum, impl, extern, break, continue)
-// use a `_stmt` or `_decl` suffix in the directory name.
+// Each feature module exports Feature values via factory functions.
+// This file just imports and registers them all.
 
 mod match_expr
 mod return_stmt
@@ -36,125 +35,85 @@ mod modules
 mod eval
 mod union_type
 mod component_decl
-use features.closures.{init_closures}
+use features.closures.{closures_feature}
 use features.defer_stmt.{defer_feature, errdefer_feature}
-use features.enum_decl.{init_enum_decl}
-use features.extern_decl.{init_extern_decl}
-use features.fn_decl.{init_fn_decl}
-use features.for_stmt.{init_for_stmt}
-use features.if_stmt.{init_if_stmt}
-use features.impl_decl.{init_impl_decl}
-use features.is_keyword.{init_is_keyword}
-use features.in_operator.{init_in_operator}
-use features.let_stmt.{init_let_stmt}
-use features.list_lit.{init_list_lit}
-use features.map_lit.{init_map_lit}
-use features.match_expr.{init_match_expr}
+use features.enum_decl.{enum_decl_feature}
+use features.extern_decl.{extern_decl_feature}
+use features.fn_decl.{fn_decl_feature}
+use features.for_stmt.{for_feature, for_in_feature}
+use features.if_stmt.{if_stmt_feature}
+use features.impl_decl.{impl_decl_feature}
+use features.is_keyword.{is_keyword_feature}
+use features.in_operator.{in_operator_feature}
+use features.let_stmt.{let_destructure_feature, let_keyword_feature, const_keyword_feature, mut_keyword_feature}
+use features.list_lit.{list_lit_feature}
+use features.map_lit.{map_lit_feature}
+use features.match_expr.{match_feature, when_feature}
 use features.modules.{init_modules}
-use features.null_safety.{init_null_safety}
-use features.parallel_stmt.{init_parallel_stmt}
-use features.spawn_expr.{init_spawn_expr}
-use features.return_stmt.{init_return_stmt}
-use features.select_stmt.{init_select_stmt}
-use features.spec_test.{init_spec_test}
-use features.struct_decl.{init_struct_decl}
-use features.trait_decl.{init_trait_decl}
-use features.tuples.{init_tuples}
-use features.while_stmt.{init_while_stmt}
-use features.with_expr.{init_with_expr}
+use features.null_safety.{null_coalesce_feature, optional_chain_feature, try_feature, catch_feature}
+use features.parallel_stmt.{parallel_feature}
+use features.spawn_expr.{spawn_expr_feature}
+use features.return_stmt.{return_stmt_feature}
+use features.select_stmt.{select_feature}
+use features.spec_test.{spec_feature, given_feature, then_feature}
+use features.struct_decl.{struct_lit_feature, field_access_feature, enum_ctor_feature, field_assign_feature, type_decl_feature, shape_decl_feature}
+use features.trait_decl.{trait_decl_feature}
+use features.tuples.{tuple_feature, tuple_index_feature}
+use features.while_stmt.{while_feature}
+use features.with_expr.{with_expr_feature}
 use features.component_decl.{init_component_decl}
-use core.registry.{feature_new, register, noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt, noop_parse}
-
-// ── Feature registration components ──
-// Declarative way to define and register language features.
-//
-// Usage in init_features:
-//   feature_set all {
-//       registry = reg
-//       feature defer {
-//           stmt_tag = Stmt.Defer(Expr.Null)
-//           stmt_keyword = "kw_defer"
-//           parse_stmt = (p: Parser) -> p.parse_defer_statement()
-//           emit_stmt = defer_emit_stmt
-//           resolve_stmt = my_resolve_fn
-//           check_stmt = my_check_fn
-//       }
-//   }
-
-component feature_set {
-    config {
-        registry: int = 0
-    }
-    fn init() {
-        self.__parent = self.config.registry
-    }
-}
-
-component feature {
-    config {
-        stmt_tag: Stmt? = null
-        expr_tag: Expr? = null
-        stmt_keyword: string = ""
-        decl_keyword: string = ""
-        parse_stmt: int = noop_parse
-        parse_decl: int = noop_parse
-        emit_expr: int = noop_emit_expr
-        emit_stmt: int = noop_emit_stmt
-        resolve_expr: int = noop_resolve_expr
-        resolve_stmt: int = noop_resolve_stmt
-        check_expr: int = noop_check_expr
-        check_stmt: int = noop_check_stmt
-        eval_expr: int = noop_eval_expr
-        eval_stmt: int = noop_eval_stmt
-    }
-    fn init() {
-        let f = feature_new(self.name) with {
-            stmt_tag: self.config.stmt_tag,
-            expr_tag: self.config.expr_tag,
-            stmt_keyword: self.config.stmt_keyword,
-            decl_keyword: self.config.decl_keyword,
-            parse_stmt: self.config.parse_stmt,
-            parse_decl: self.config.parse_decl,
-            emit_expr: self.config.emit_expr,
-            emit_stmt: self.config.emit_stmt,
-            resolve_expr: self.config.resolve_expr,
-            resolve_stmt: self.config.resolve_stmt,
-            check_expr: self.config.check_expr,
-            check_stmt: self.config.check_stmt,
-            eval_expr: self.config.eval_expr,
-            eval_stmt: self.config.eval_stmt,
-        }
-        register(self.__parent, f)
-    }
-}
+use core.registry.{register}
 
 export fn init_features(reg: Registry) {
+    // ── Statements ──
     register(reg, defer_feature())
     register(reg, errdefer_feature())
-    init_if_stmt(reg)
-    init_match_expr(reg)
-    init_struct_decl(reg)
-    init_null_safety(reg)
-    init_tuples(reg)
-    init_with_expr(reg)
-    init_list_lit(reg)
-    init_closures(reg)
-    init_map_lit(reg)
-    init_is_keyword(reg)
-    init_in_operator(reg)
-    init_while_stmt(reg)
-    init_for_stmt(reg)
-    init_let_stmt(reg)
-    init_spec_test(reg)
-    init_select_stmt(reg)
-    init_parallel_stmt(reg)
-    init_spawn_expr(reg)
-    init_fn_decl(reg)
-    init_enum_decl(reg)
-    init_impl_decl(reg)
-    init_extern_decl(reg)
-    init_trait_decl(reg)
-    init_return_stmt(reg)
+    register(reg, if_stmt_feature())
+    register(reg, while_feature())
+    register(reg, for_feature())
+    register(reg, for_in_feature())
+    register(reg, let_destructure_feature())
+    register(reg, select_feature())
+    register(reg, parallel_feature())
+
+    // ── Expressions ──
+    register(reg, match_feature())
+    register(reg, when_feature())
+    register(reg, closures_feature())
+    register(reg, is_keyword_feature())
+    register(reg, in_operator_feature())
+    register(reg, spawn_expr_feature())
+    register(reg, with_expr_feature())
+    register(reg, tuple_feature())
+    register(reg, tuple_index_feature())
+    register(reg, list_lit_feature())
+    register(reg, map_lit_feature())
+    register(reg, null_coalesce_feature())
+    register(reg, optional_chain_feature())
+    register(reg, try_feature())
+    register(reg, catch_feature())
+    register(reg, struct_lit_feature())
+    register(reg, field_access_feature())
+    register(reg, enum_ctor_feature())
+    register(reg, field_assign_feature())
+
+    // ── Declarations (parse-only) ──
+    register(reg, fn_decl_feature())
+    register(reg, enum_decl_feature())
+    register(reg, impl_decl_feature())
+    register(reg, extern_decl_feature())
+    register(reg, trait_decl_feature())
+    register(reg, type_decl_feature())
+    register(reg, shape_decl_feature())
+    register(reg, return_stmt_feature())
+    register(reg, let_keyword_feature())
+    register(reg, const_keyword_feature())
+    register(reg, mut_keyword_feature())
+    register(reg, spec_feature())
+    register(reg, given_feature())
+    register(reg, then_feature())
+
+    // ── Infrastructure (not yet converted) ──
     init_modules(reg)
     init_component_decl(reg)
 }

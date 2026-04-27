@@ -1,41 +1,52 @@
 mod codegen
 use codegen.types.{err_emit}
 use features.eval.{error_result}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list}
 use features.in_operator.codegen.{emit_in_check}
 use typeck.{check_expr, check_expr_list, tc_er}
 
-export fn init_in_operator(reg: Registry) {
-    let f = feature_new("in") with {
+export fn in_operator_feature() -> Feature {
+    feature_new("in") with {
         expr_tag: Expr.InCheck(Expr.Null, ExprList.End),
-        emit_expr: in_emit_expr,
-        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
-            .InCheck(needle, items) -> {
-                let r2 = resolve_expr(r, needle)
-                resolve_expr_list(r2, items)
-            }
-            _ -> r
-        },
-        check_expr: (tc: TC, expr: Expr) -> match expr {
-            .InCheck(needle, items) -> {
-                let s = check_expr(tc, needle)
-                let s2 = check_expr_list(s.tc, items)
-                tc_er(s2, .Bool)
-            }
-            _ -> tc_er(tc, .Unknown)
-        },
-        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
-            .InCheck(_, _) -> error_result(rt, "in-check is not supported by the tree-walk evaluator")
-            _ -> error_result(rt, "expected InCheck")
-        },
+        emit_expr: in_emit,
+        resolve_expr: in_resolve,
+        check_expr: in_check,
+        eval_expr: in_eval,
     }
-    register(reg, f)
 }
 
-fn in_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn in_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .InCheck(needle, items) -> emit_in_check(ctx, env, needle, items)
         _ -> err_emit("expected InCheck")
+    }
+}
+
+fn in_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .InCheck(needle, items) -> {
+            let r2 = resolve_expr(r, needle)
+            resolve_expr_list(r2, items)
+        }
+        _ -> r
+    }
+}
+
+fn in_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .InCheck(needle, items) -> {
+            let s = check_expr(tc, needle)
+            let s2 = check_expr_list(s.tc, items)
+            tc_er(s2, .Bool)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+fn in_eval(rt: Runtime, expr: Expr) -> EvalResult {
+    match expr {
+        .InCheck(_, _) -> error_result(rt, "in-check is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected InCheck")
     }
 }

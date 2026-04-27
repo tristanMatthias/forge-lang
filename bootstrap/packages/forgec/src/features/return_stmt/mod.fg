@@ -1,14 +1,9 @@
-// WHY: aggregator for the return statement feature.
-// Named `return_stmt` instead of `return` because `return` is a
-// reserved keyword that can't appear in `mod` declarations.
-
 mod parser
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 
-export fn init_return_stmt(reg: Registry) {
-    let f = feature_new("return_stmt") with {
+export fn return_stmt_feature() -> Feature {
+    feature_new("return_stmt") with {
         stmt_keyword: "kw_return",
         parse_stmt: (p: Parser) -> p.parse_return_statement(),
     }
-    register(reg, f)
 }

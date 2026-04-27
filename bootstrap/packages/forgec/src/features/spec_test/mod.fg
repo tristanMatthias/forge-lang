@@ -1,43 +1,77 @@
 mod parser
 mod codegen
 use features.eval.{error_result, ok_result, value_null}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt_list}
 use features.spec_test.codegen.{spec_emit_stmt}
 
-export fn init_spec_test(reg: Registry) {
-    let f1 = feature_new("spec") with {
+export fn spec_feature() -> Feature {
+    feature_new("spec") with {
         stmt_tag: Stmt.SpecBlock("", StmtList.End),
         emit_stmt: spec_emit_stmt,
-        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .SpecBlock(_, body) -> resolve_stmt_list(r, body), _ -> r },
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .SpecBlock(_, _) -> ok_result(rt, value_null())
-            _ -> error_result(rt, "expected SpecBlock")
-        },
+        resolve_stmt: spec_resolve_stmt,
+        eval_stmt: spec_eval_stmt,
         decl_keyword: "kw_spec",
         parse_decl: (p: Parser) -> p.parse_spec_block(),
     }
-    register(reg, f1)
+}
 
-    let f2 = feature_new("given") with {
+export fn given_feature() -> Feature {
+    feature_new("given") with {
         stmt_tag: Stmt.GivenBlock("", StmtList.End),
         emit_stmt: spec_emit_stmt,
-        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .GivenBlock(_, body) -> resolve_stmt_list(r, body), _ -> r },
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .GivenBlock(_, _) -> ok_result(rt, value_null())
-            _ -> error_result(rt, "expected GivenBlock")
-        },
+        resolve_stmt: given_resolve_stmt,
+        eval_stmt: given_eval_stmt,
     }
-    register(reg, f2)
+}
 
-    let f3 = feature_new("then") with {
+export fn then_feature() -> Feature {
+    feature_new("then") with {
         stmt_tag: Stmt.ThenBlock("", Expr.Null),
         emit_stmt: spec_emit_stmt,
-        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .ThenBlock(_, cond) -> resolve_expr(r, cond), _ -> r },
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .ThenBlock(_, _) -> ok_result(rt, value_null())
-            _ -> error_result(rt, "expected ThenBlock")
-        },
+        resolve_stmt: then_resolve_stmt,
+        eval_stmt: then_eval_stmt,
     }
-    register(reg, f3)
+}
+
+fn spec_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .SpecBlock(_, body) -> resolve_stmt_list(r, body)
+        _ -> r
+    }
+}
+
+fn spec_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .SpecBlock(_, _) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected SpecBlock")
+    }
+}
+
+fn given_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .GivenBlock(_, body) -> resolve_stmt_list(r, body)
+        _ -> r
+    }
+}
+
+fn given_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .GivenBlock(_, _) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected GivenBlock")
+    }
+}
+
+fn then_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .ThenBlock(_, cond) -> resolve_expr(r, cond)
+        _ -> r
+    }
+}
+
+fn then_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .ThenBlock(_, _) -> ok_result(rt, value_null())
+        _ -> error_result(rt, "expected ThenBlock")
+    }
 }

@@ -1,34 +1,48 @@
 mod codegen
 use codegen.types.{err_emit}
 use features.eval.{error_result}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}
 use typeck.{check_expr, tc_er}
 
-export fn init_is_keyword(reg: Registry) {
-    let f = feature_new("is") with {
+export fn is_keyword_feature() -> Feature {
+    feature_new("is") with {
         expr_tag: Expr.IsCheck(Expr.Null, ""),
-        emit_expr: is_emit_expr,
-        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .IsCheck(subject, _) -> resolve_expr(r, subject), _ -> r },
-        check_expr: (tc: TC, expr: Expr) -> match expr {
-            .IsCheck(subject, _) -> {
-                let s = check_expr(tc, subject)
-                tc_er(s.tc, .Bool)
-            }
-            _ -> tc_er(tc, .Unknown)
-        },
-        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
-            .IsCheck(_, _) -> error_result(rt, "is-check is not supported by the tree-walk evaluator")
-            _ -> error_result(rt, "expected IsCheck")
-        },
+        emit_expr: is_emit,
+        resolve_expr: is_resolve,
+        check_expr: is_check,
+        eval_expr: is_eval,
     }
-    register(reg, f)
 }
 
-fn is_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn is_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .IsCheck(subject, variant_name) -> emit_is_check(ctx, env, subject, variant_name)
         _ -> err_emit("expected IsCheck")
+    }
+}
+
+fn is_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .IsCheck(subject, _) -> resolve_expr(r, subject)
+        _ -> r
+    }
+}
+
+fn is_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .IsCheck(subject, _) -> {
+            let s = check_expr(tc, subject)
+            tc_er(s.tc, .Bool)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+fn is_eval(rt: Runtime, expr: Expr) -> EvalResult {
+    match expr {
+        .IsCheck(_, _) -> error_result(rt, "is-check is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected IsCheck")
     }
 }

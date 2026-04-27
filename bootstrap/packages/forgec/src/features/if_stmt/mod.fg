@@ -5,37 +5,44 @@ use codegen.types.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
 use features.eval.{eval_expr, execute_stmt}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
 use features.if_stmt.codegen.{emit_if, emit_if_expr}
 use typeck.{check_expr, check_stmt, tc_er, tc_report}
 
-export fn init_if_stmt(reg: Registry) {
-    let f = feature_new("if") with {
+export fn if_stmt_feature() -> Feature {
+    feature_new("if") with {
         expr_tag: Expr.IfExpr(Expr.Null, Expr.Null, Expr.Null),
         stmt_tag: Stmt.If(Expr.Null, Stmt.NoOp, null),
         emit_expr: if_emit_expr,
         emit_stmt: if_emit_stmt,
         resolve_stmt: if_resolve_stmt,
-        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
-            .IfExpr(c, t, e) -> {
-                let after_c = resolve_expr(r, c)
-                let after_t = resolve_expr(after_c, t)
-                resolve_expr(after_t, e)
-            }
-            _ -> r
-        },
+        resolve_expr: if_resolve_expr,
         check_stmt: if_check_stmt,
         check_expr: if_check_expr,
         eval_stmt: if_eval_stmt,
-        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
-            .IfExpr(_, _, _) -> error_result(rt, "if expressions are not supported by the tree-walk evaluator")
-            _ -> error_result(rt, "expected IfExpr")
-        },
+        eval_expr: if_eval_expr,
         stmt_keyword: "kw_if",
         parse_stmt: (p: Parser) -> p.parse_if_statement(),
     }
-    register(reg, f)
+}
+
+fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .IfExpr(c, t, e) -> {
+            let after_c = resolve_expr(r, c)
+            let after_t = resolve_expr(after_c, t)
+            resolve_expr(after_t, e)
+        }
+        _ -> r
+    }
+}
+
+fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .IfExpr(_, _, _) -> error_result(rt, "if expressions are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected IfExpr")
+    }
 }
 
 fn if_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {

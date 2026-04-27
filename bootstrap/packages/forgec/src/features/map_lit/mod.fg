@@ -3,29 +3,43 @@ mod parser
 mod typeck
 use codegen.types.{err_emit}
 use features.eval.{error_result}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr_list}
 use features.map_lit.codegen.{emit_map_lit}
 use typeck.{check_expr_list, tc_er}
 
-export fn init_map_lit(reg: Registry) {
-    let f = feature_new("map_lit") with {
+export fn map_lit_feature() -> Feature {
+    feature_new("map_lit") with {
         expr_tag: Expr.MapLit(ExprList.End),
         emit_expr: map_lit_emit_expr,
-        resolve_expr: (r: Resolver, expr: Expr) -> match expr { .MapLit(entries) -> resolve_expr_list(r, entries), _ -> r },
-        check_expr: (tc: TC, expr: Expr) -> match expr {
-            .MapLit(entries) -> {
-                let checked = check_expr_list(tc, entries)
-                tc_er(checked, .Map)
-            }
-            _ -> tc_er(tc, .Unknown)
-        },
-        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
-            .MapLit(_) -> error_result(rt, "map literals are not supported by the tree-walk evaluator")
-            _ -> error_result(rt, "expected MapLit")
-        },
+        resolve_expr: map_lit_resolve_expr,
+        check_expr: map_lit_check_expr,
+        eval_expr: map_lit_eval_expr,
     }
-    register(reg, f)
+}
+
+fn map_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .MapLit(entries) -> resolve_expr_list(r, entries)
+        _ -> r
+    }
+}
+
+fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .MapLit(entries) -> {
+            let checked = check_expr_list(tc, entries)
+            tc_er(checked, .Map)
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+fn map_lit_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .MapLit(_) -> error_result(rt, "map literals are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected MapLit")
+    }
 }
 
 fn map_lit_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {

@@ -1,45 +1,33 @@
 mod parser
 mod codegen
 use core.ast.{vtype_display, vtype_eq, vtype_is_unknown}
-use codegen.types.{err_stmt, StmtResult}
+use codegen.types.{StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result}
 use features.eval.{execute_while}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
 use features.while_stmt.codegen.{emit_while}
 use typeck.{check_expr, check_stmt, tc_report}
 
-export fn init_while_stmt(reg: Registry) {
-    let f = feature_new("while") with {
-        stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
-        emit_stmt: while_emit_stmt,
-        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt {
-            .While(condition, body) -> {
-                let after_cond = resolve_expr(r, condition)
-                resolve_stmt(after_cond, body)
-            }
-            _ -> r
-        },
-        check_stmt: while_check_stmt,
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .While(condition, body) -> execute_while(rt, condition, body)
-            _ -> error_result(rt, "expected While")
-        },
-        stmt_keyword: "kw_while",
-        parse_stmt: (p: Parser) -> p.parse_while_statement(),
-    }
-    register(reg, f)
-}
-
-fn while_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn while_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .While(condition, body) -> emit_while(ctx, env, condition, body)
         _ -> err_sr("expected While")
     }
 }
 
-fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {
+fn while_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .While(condition, body) -> {
+            let after_cond = resolve_expr(r, condition)
+            resolve_stmt(after_cond, body)
+        }
+        _ -> r
+    }
+}
+
+fn while_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .While(cond, body) -> {
             let c = check_expr(tc, cond)
@@ -49,5 +37,24 @@ fn while_check_stmt(tc: TC, stmt: Stmt) -> TC {
             check_stmt(after_cond, body)
         }
         _ -> tc
+    }
+}
+
+fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .While(condition, body) -> execute_while(rt, condition, body)
+        _ -> error_result(rt, "expected While")
+    }
+}
+
+export fn while_feature() -> Feature {
+    feature_new("while") with {
+        stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
+        stmt_keyword: "kw_while",
+        parse_stmt: (p: Parser) -> p.parse_while_statement(),
+        emit_stmt: while_emit,
+        resolve_stmt: while_resolve,
+        check_stmt: while_check,
+        eval_stmt: while_eval,
     }
 }

@@ -1,17 +1,13 @@
 // WHY: trait declarations — `trait Name { fn method(self) -> Type }`.
-// In the bootstrap, traits are parsed and stored but don't affect
-// codegen. Method dispatch uses name-mangling (Type__method) via
-// the existing impl block mechanism.
 
 mod parser
 mod typeck
 mod codegen
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 
-export fn init_trait_decl(reg: Registry) {
-    let f = feature_new("trait_decl") with {
+export fn trait_decl_feature() -> Feature {
+    feature_new("trait_decl") with {
         decl_keyword: "kw_trait",
         parse_decl: (p: Parser) -> p.parse_trait_declaration(),
     }
-    register(reg, f)
 }

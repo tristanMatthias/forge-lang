@@ -1,53 +1,29 @@
 mod parser
 mod codegen
 use core.ast.{vtype_list_elem}
-use codegen.types.{err_stmt, StmtResult}
+use codegen.types.{StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
 use features.for_stmt.codegen.{emit_for, emit_for_in}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
 
-export fn init_for_stmt(reg: Registry) {
-    let f1 = feature_new("for") with {
-        stmt_tag: Stmt.For("", Expr.Null, Expr.Null, Stmt.NoOp),
-        emit_stmt: for_emit_stmt,
-        resolve_stmt: for_resolve_stmt,
-        check_stmt: for_check_stmt,
-        stmt_keyword: "kw_for",
-        parse_stmt: (p: Parser) -> p.parse_for_statement(),
-    }
-    register(reg, f1)
-
-    let f2 = feature_new("for_in") with {
-        stmt_tag: Stmt.ForIn("", Expr.Null, Stmt.NoOp),
-        emit_stmt: for_in_emit_stmt,
-        resolve_stmt: for_in_resolve_stmt,
-        check_stmt: for_in_check_stmt,
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .ForIn(_, _, _) -> error_result(rt, "for-in is not supported by the tree-walk evaluator")
-            _ -> error_result(rt, "expected ForIn")
-        },
-    }
-    register(reg, f2)
-}
-
-fn for_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn for_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .For(variable, start, end, body) -> emit_for(ctx, env, variable, start, end, body)
         _ -> err_sr("expected For")
     }
 }
 
-fn for_in_emit_stmt(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+fn for_in_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
     match stmt {
         .ForIn(variable, collection, body) -> emit_for_in(ctx, env, variable, collection, body)
         _ -> err_sr("expected ForIn")
     }
 }
 
-fn for_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+fn for_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .For(variable, start, end, body) -> {
             let after_start = resolve_expr(r, start)
@@ -62,7 +38,7 @@ fn for_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
-fn for_in_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+fn for_in_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
         .ForIn(variable, collection, body) -> {
             let after_coll = resolve_expr(r, collection)
@@ -76,7 +52,7 @@ fn for_in_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
     }
 }
 
-fn for_check_stmt(tc: TC, stmt: Stmt) -> TC {
+fn for_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .For(variable, start, end, body) -> {
             let s = check_expr(tc, start)
@@ -90,11 +66,10 @@ fn for_check_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
-fn for_in_check_stmt(tc: TC, stmt: Stmt) -> TC {
+fn for_in_check(tc: TC, stmt: Stmt) -> TC {
     match stmt {
         .ForIn(variable, collection, body) -> {
             let c = check_expr(tc, collection)
-            // vtype_list_elem returns Unknown for non-list types
             let elem_ty = vtype_list_elem(c.ty)
             let inner = tc_enter(c.tc)
             let bound = tc_bind(inner, variable, elem_ty)
@@ -102,5 +77,26 @@ fn for_in_check_stmt(tc: TC, stmt: Stmt) -> TC {
             tc_exit(after)
         }
         _ -> tc
+    }
+}
+
+export fn for_feature() -> Feature {
+    feature_new("for") with {
+        stmt_tag: Stmt.For("", Expr.Null, Expr.Null, Stmt.NoOp),
+        stmt_keyword: "kw_for",
+        parse_stmt: (p: Parser) -> p.parse_for_statement(),
+        emit_stmt: for_emit,
+        resolve_stmt: for_resolve,
+        check_stmt: for_check,
+    }
+}
+
+export fn for_in_feature() -> Feature {
+    feature_new("for_in") with {
+        stmt_tag: Stmt.ForIn("", Expr.Null, Stmt.NoOp),
+        emit_stmt: for_in_emit,
+        resolve_stmt: for_in_resolve,
+        check_stmt: for_in_check,
+        eval_stmt: (rt: Runtime, stmt: Stmt) -> error_result(rt, "for-in not supported by tree-walk evaluator"),
     }
 }

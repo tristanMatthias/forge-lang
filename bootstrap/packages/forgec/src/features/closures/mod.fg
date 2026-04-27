@@ -2,45 +2,56 @@ mod codegen
 mod parser
 use codegen.types.{err_emit}
 use features.eval.{error_result}
-use core.registry.{feature_new, register}
+use core.registry.{feature_new, Feature}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use features.closures.codegen.{emit_lambda}
 use typeck.{check_expr, tc_bind_params, tc_enter, tc_er, tc_exit}
 
-export fn init_closures(reg: Registry) {
-    let f = feature_new("lambda") with {
+export fn closures_feature() -> Feature {
+    feature_new("lambda") with {
         expr_tag: Expr.Lambda(ParamList.End, Expr.Null),
-        emit_expr: lambda_emit_expr,
-        resolve_expr: (r: Resolver, expr: Expr) -> match expr {
-            .Lambda(params, body) -> {
-                let entered = enter_resolve_scope(r)
-                let with_params = declare_params(entered, params)
-                let after_body = resolve_expr(with_params, body)
-                exit_resolve_scope(after_body)
-            }
-            _ -> r
-        },
-        check_expr: (tc: TC, expr: Expr) -> match expr {
-            .Lambda(params, body) -> {
-                let inner = tc_enter(tc)
-                let with_params = tc_bind_params(inner, params)
-                let b = check_expr(with_params, body)
-                let after = tc_exit(b.tc)
-                tc_er(after, ValueType.Fn(b.ty))
-            }
-            _ -> tc_er(tc, .Unknown)
-        },
-        eval_expr: (rt: Runtime, expr: Expr) -> match expr {
-            .Lambda(_, _) -> error_result(rt, "lambdas are not supported by the tree-walk evaluator")
-            _ -> error_result(rt, "expected Lambda")
-        },
+        emit_expr: closure_emit,
+        resolve_expr: closure_resolve,
+        check_expr: closure_check,
+        eval_expr: closure_eval,
     }
-    register(reg, f)
 }
 
-fn lambda_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+fn closure_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
         .Lambda(params, body) -> emit_lambda(ctx, env, params, body)
         _ -> err_emit("expected Lambda")
+    }
+}
+
+fn closure_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Lambda(params, body) -> {
+            let entered = enter_resolve_scope(r)
+            let with_params = declare_params(entered, params)
+            let after_body = resolve_expr(with_params, body)
+            exit_resolve_scope(after_body)
+        }
+        _ -> r
+    }
+}
+
+fn closure_check(tc: TC, expr: Expr) -> ExprResult {
+    match expr {
+        .Lambda(params, body) -> {
+            let inner = tc_enter(tc)
+            let with_params = tc_bind_params(inner, params)
+            let b = check_expr(with_params, body)
+            let after = tc_exit(b.tc)
+            tc_er(after, ValueType.Fn(b.ty))
+        }
+        _ -> tc_er(tc, .Unknown)
+    }
+}
+
+fn closure_eval(rt: Runtime, expr: Expr) -> EvalResult {
+    match expr {
+        .Lambda(_, _) -> error_result(rt, "lambdas are not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected Lambda")
     }
 }
