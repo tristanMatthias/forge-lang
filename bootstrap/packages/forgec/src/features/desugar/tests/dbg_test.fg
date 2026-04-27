@@ -1,0 +1,15 @@
+fn add(a: int, b: int) -> int {
+    a + b
+}
+
+spec "dbg" {
+    then "dbg returns value" {
+        let x = dbg(add(2, 3))
+        x == 5
+    }
+    then "dbg in chain" {
+        let x = dbg(5)
+        let y = dbg(x) + dbg(x)
+        y == 10
+    }
+}

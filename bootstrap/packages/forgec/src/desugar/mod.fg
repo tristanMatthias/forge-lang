@@ -49,6 +49,9 @@ fn desugar_stmt(stmt: Stmt) -> Stmt {
         .Defer(body) -> .Defer(desugar_expr(body))
         .Module(name, body) -> .Module(name, desugar_stmt_list(body))
         .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner))
+        .SpecBlock(name, body) -> .SpecBlock(name, desugar_stmt_list(body))
+        .GivenBlock(name, body) -> .GivenBlock(name, desugar_stmt_list(body))
+        .ThenBlock(name, cond) -> .ThenBlock(name, desugar_expr(cond))
         _ -> stmt
     }
 }

@@ -1,0 +1,27 @@
+fn check(x: int) -> bool {
+    assert(x > 0, "x must be positive")
+    true
+}
+
+spec "assert" {
+    then "basic true assertion" {
+        assert(true)
+        true
+    }
+    then "expression assertion" {
+        assert(1 + 1 == 2)
+        true
+    }
+    then "custom message not triggered" {
+        assert(10 > 5, "ten should be greater than five")
+        true
+    }
+    then "variable assertion" {
+        let x = 42
+        assert(x > 0)
+        true
+    }
+    then "assert inside a function" {
+        check(10)
+    }
+}

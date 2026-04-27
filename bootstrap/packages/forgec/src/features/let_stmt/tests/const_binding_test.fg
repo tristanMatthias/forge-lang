@@ -1,0 +1,10 @@
+spec "const binding" {
+    then "const int" {
+        const x = 42
+        x == 42
+    }
+    then "const string" {
+        const name = "forge"
+        name == "forge"
+    }
+}
