@@ -349,12 +349,32 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
         }
     }
 
-    // Emit test summary if any spec blocks were compiled, then
-    // run cycle collector before exit.
+    // Finalize __bs_top_level / main wrapper.
+    // Only add test summary + rc_collect if this IS main (no user-defined main).
+    // When user has main(), they control when summary is called.
     if !ctx.has_terminator() {
-        ctx.call("forge_test_summary", [])
+        if user_main == null {
+            ctx.call("forge_test_summary", [])
+        }
         ctx.call("forge_rc_collect", [])
         ctx.ret(ctx.i64(0), .Int)
+    }
+
+    // If the user defined main(), patch it to call __bs_top_level() first.
+    // This ensures module-level code (spec blocks, etc.) runs before main's body.
+    if user_main != null {
+        let top_fn = forge_llvm_get_named_function(m, "__bs_top_level")
+        if top_fn != null {
+            // Insert call at the very start of user's main
+            let user_entry = forge_llvm_get_entry_basic_block(user_main)
+            let first_instr = forge_llvm_get_first_instruction(user_entry)
+            if first_instr != null {
+                forge_llvm_position_before(builder, first_instr)
+            } else {
+                forge_llvm_position_at_end(builder, user_entry)
+            }
+            forge_llvm_build_call_void(builder, m, "__bs_top_level", forge_llvm_value_array_new(0), 0)
+        }
     }
 
     ctx.cov_finalize_fn()
@@ -387,6 +407,21 @@ export fn compile_and_jit(stmts: StmtList) -> Result<int, string> {
             // JIT engine takes ownership of the module — don't dispose ctx
             let exit_code = forge_llvm_jit_run(ctx.module)
             Result.Ok(exit_code)
+        }
+        .Err(e) -> Result.Err(e)
+    }
+}
+
+// Compile and emit a native object file. No llc needed.
+export fn codegen_and_emit_object(stmts: StmtList, output_path: string) -> Result<int, string> {
+    match codegen_program(stmts, false, false, "") {
+        .Ok(ctx) -> {
+            let result = forge_llvm_emit_object(ctx.module, output_path)
+            ctx.dispose()
+            if result != 0 {
+                return Result.Err("failed to emit object file")
+            }
+            Result.Ok(0)
         }
         .Err(e) -> Result.Err(e)
     }

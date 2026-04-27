@@ -19,26 +19,24 @@ fn defer_early(x: int) -> string {
     "non-positive"
 }
 
-export fn test_defer() {
-    spec "defer" {
-        then "basic cleanup" {
-            forge_test_capture_start()
-            defer_basic()
-            let out = forge_test_capture_stop()
-            out == "working...\ncleanup!"
-        }
-        then "LIFO order" {
-            forge_test_capture_start()
-            defer_lifo()
-            let out = forge_test_capture_stop()
-            out == "body\nfirst (last deferred)\nsecond\nthird (first deferred)"
-        }
-        then "runs with early return" {
-            forge_test_capture_start()
-            println(defer_early(5))
-            println(defer_early(-1))
-            let out = forge_test_capture_stop()
-            out == "always runs\npositive\nalways runs\nnon-positive"
-        }
+spec "defer" {
+    then "basic cleanup" {
+        forge_test_capture_start()
+        defer_basic()
+        let out = forge_test_capture_stop()
+        out == "working...\ncleanup!"
+    }
+    then "LIFO order" {
+        forge_test_capture_start()
+        defer_lifo()
+        let out = forge_test_capture_stop()
+        out == "body\nfirst (last deferred)\nsecond\nthird (first deferred)"
+    }
+    then "runs with early return" {
+        forge_test_capture_start()
+        println(defer_early(5))
+        println(defer_early(-1))
+        let out = forge_test_capture_stop()
+        out == "always runs\npositive\nalways runs\nnon-positive"
     }
 }

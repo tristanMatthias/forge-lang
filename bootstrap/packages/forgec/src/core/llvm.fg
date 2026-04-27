@@ -140,5 +140,14 @@ extern fn forge_coverage_finalize_fn(fn_val: ptr, actual_count: int)
 extern fn forge_covmap_end()
 extern fn forge_covmap_counter_count() -> int
 
+// ── Basic block / instruction helpers ──
+extern fn forge_llvm_get_entry_basic_block(fn_val: ptr) -> ptr
+extern fn forge_llvm_get_first_instruction(bb: ptr) -> ptr
+extern fn forge_llvm_position_before(builder: ptr, instr: ptr)
+extern fn forge_llvm_build_call_void(builder: ptr, module: ptr, fn_name: string, args: ptr, arg_count: int)
+
+// ── Object emission ──
+extern fn forge_llvm_emit_object(module: ptr, output_path: string) -> int
+
 // ── JIT execution ──
 extern fn forge_llvm_jit_run(module: ptr) -> int

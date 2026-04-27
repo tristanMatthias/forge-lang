@@ -773,6 +773,27 @@ void forge_covmap_end(void) {
     }
 }
 
+// ── Basic block / instruction helpers ──
+
+LLVMBasicBlockRef forge_llvm_get_entry_basic_block(LLVMValueRef fn) {
+    return LLVMGetEntryBasicBlock(fn);
+}
+
+LLVMValueRef forge_llvm_get_first_instruction(LLVMBasicBlockRef bb) {
+    return LLVMGetFirstInstruction(bb);
+}
+
+void forge_llvm_position_before(LLVMBuilderRef builder, LLVMValueRef instr) {
+    LLVMPositionBuilderBefore(builder, instr);
+}
+
+void forge_llvm_build_call_void(LLVMBuilderRef builder, LLVMModuleRef mod, const char* fn_name, LLVMValueRef* args, int arg_count) {
+    LLVMValueRef fn = LLVMGetNamedFunction(mod, fn_name);
+    if (!fn) return;
+    LLVMTypeRef fn_ty = LLVMGlobalGetValueType(fn);
+    LLVMBuildCall2(builder, fn_ty, fn, args, arg_count, "");
+}
+
 // ── JIT Execution ──
 // Execute an LLVM module's main() function in-process via MCJIT.
 // Returns the exit code from main(), or -1 on error.
