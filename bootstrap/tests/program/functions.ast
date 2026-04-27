@@ -1,3 +1,0 @@
-(fn add (a, b) -> i64 (return (+ a b)))
-(fn greet () -> i64 (expr (call println ("hello"))))
-(expr (call add (1, 2)))

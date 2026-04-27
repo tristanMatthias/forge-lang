@@ -1,3 +1,0 @@
-let name = "world"
-println("hello, " + name + "!")
-return 0

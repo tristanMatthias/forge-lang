@@ -1,0 +1,440 @@
+// WHY: @std/test — Forge test runner.
+// Discovers, compiles, links, runs, and reports test results for any Forge project.
+//
+// Usage:
+//   use @std.test.{run_tests, discover_tests, TestConfig}
+//
+// The compiler's `forge test` command delegates to this library.
+
+extern fn forge_shell_exec(cmd: string) -> string
+extern fn forge_shell_exec_status(cmd: string) -> int
+extern fn forge_selfhost_file_exists(path: string) -> int
+extern fn forge_selfhost_read_file(path: string) -> string
+extern fn forge_process_exit(code: int)
+
+// ── Types ──
+
+export type TestConfig = {
+    project_dir: string,
+    build_dir: string,
+    compiler: string,
+    llc: string,
+    llvm_lib: string,
+    runtime_o: string,
+    llvm_wrapper_o: string,
+    filter: string,
+}
+
+type TestCase = {
+    name: string,
+    path: string,
+    expected: string,
+    is_error_test: bool,
+    error_code: string,
+}
+
+type TestResult = {
+    name: string,
+    passed: bool,
+    reason: string,
+}
+
+enum TestList {
+    End
+    Node(test: TestCase, next: TestList)
+}
+
+enum ResultList {
+    End
+    Node(result: TestResult, next: ResultList)
+}
+
+// ── Colors ──
+
+fn green(s: string) -> string { "\x1b[0;32m${s}\x1b[0m" }
+fn red(s: string) -> string { "\x1b[0;31m${s}\x1b[0m" }
+fn dim(s: string) -> string { "\x1b[2m${s}\x1b[0m" }
+fn bold(s: string) -> string { "\x1b[1m${s}\x1b[0m" }
+
+// ── Expect Comment Extraction ──
+
+fn extract_expects(source: string) -> string {
+    mut result = ""
+    for line in source.split("\n") {
+        let trimmed = line.trim()
+        if trimmed.starts_with("/// expect: ") {
+            let value = trimmed.substring(12, trimmed.length)
+            result = if result == "" { value } else { "${result}\n${value}" }
+        } else if trimmed.starts_with("/// expect:") && trimmed.length == 11 {
+            // Empty expect line — adds a blank line
+            result = if result == "" { "" } else { "${result}\n" }
+        }
+    }
+    result
+}
+
+fn extract_expect_error(source: string) -> string {
+    for line in source.split("\n") {
+        let trimmed = line.trim()
+        if trimmed.starts_with("/// expect-error: ") {
+            return trimmed.substring(18, trimmed.length).trim()
+        }
+    }
+    ""
+}
+
+// ── Test Discovery ──
+
+fn file_exists(path: string) -> bool {
+    forge_selfhost_file_exists(path) != 0
+}
+
+fn read_file(path: string) -> string {
+    forge_selfhost_read_file(path)
+}
+
+fn slugify(path: string) -> string {
+    mut result = ""
+    for ch in path {
+        if ch == "/" || ch == "." || ch == "-" || ch == " " {
+            result = "${result}_"
+        } else {
+            result = "${result}${ch}"
+        }
+    }
+    result
+}
+
+fn derive_test_name(path: string, project_dir: string) -> string {
+    // Strip project_dir prefix to get relative name
+    mut rel = path
+    if path.starts_with(project_dir) {
+        rel = path.substring(project_dir.length, path.length)
+        if rel.starts_with("/") {
+            rel = rel.substring(1, rel.length)
+        }
+    }
+    // Strip .fg extension
+    if rel.ends_with(".fg") {
+        rel = rel.substring(0, rel.length - 3)
+    }
+    // Strip /main suffix for directory-based tests
+    if rel.ends_with("/main") {
+        rel = rel.substring(0, rel.length - 5)
+    }
+    // Strip leading tests/ or packages/.../tests/
+    if rel.starts_with("tests/") {
+        rel = rel.substring(6, rel.length)
+    }
+    rel
+}
+
+fn build_test_case(path: string, project_dir: string) -> TestCase? {
+    let name = derive_test_name(path, project_dir)
+    let dir = forge_shell_exec("dirname ${path}")
+    let base = forge_shell_exec("basename ${path} .fg")
+
+    // Check for sibling .out file
+    let out_path = "${dir}/${base}.out"
+    if file_exists(out_path) {
+        let expected = read_file(out_path)
+        return TestCase { name, path, expected, is_error_test: false, error_code: "" }
+    }
+
+    // Check for expected.out (directory-based tests)
+    let expected_out = "${dir}/expected.out"
+    if file_exists(expected_out) {
+        let expected = read_file(expected_out)
+        return TestCase { name, path, expected, is_error_test: false, error_code: "" }
+    }
+
+    // Check for .err file (error tests)
+    let err_path = "${dir}/${base}.err"
+    if file_exists(err_path) {
+        let error_code = read_file(err_path).trim()
+        return TestCase { name, path, expected: "", is_error_test: true, error_code }
+    }
+
+    // Check for expected.err (directory-based error tests)
+    let expected_err = "${dir}/expected.err"
+    if file_exists(expected_err) {
+        let error_code = read_file(expected_err).trim()
+        return TestCase { name, path, expected: "", is_error_test: true, error_code }
+    }
+
+    // Check for /// expect: comments in source
+    let source = read_file(path)
+    let expect_error = extract_expect_error(source)
+    if expect_error != "" {
+        return TestCase { name, path, expected: "", is_error_test: true, error_code: expect_error }
+    }
+
+    let expects = extract_expects(source)
+    if expects != "" {
+        return TestCase { name, path, expected: expects, is_error_test: false, error_code: "" }
+    }
+
+    // No expected output — skip this file
+    null
+}
+
+fn is_test_entry(path: string) -> bool {
+    // Directory-based tests: only main.fg is the entry point
+    let basename = forge_shell_exec("basename ${path}")
+    let dirname = forge_shell_exec("basename $(dirname ${path})")
+
+    // In a test subdirectory (tests/foo/), only main.fg is a test
+    if dirname != "tests" && basename != "main.fg" && !basename.ends_with("_test.fg") {
+        // Check if there's a main.fg sibling — if so, this is a helper file
+        let dir = forge_shell_exec("dirname ${path}")
+        let main_path = "${dir}/main.fg"
+        if forge_selfhost_file_exists(main_path) != 0 {
+            return false
+        }
+    }
+
+    true
+}
+
+export fn discover_tests(config: TestConfig) -> TestList {
+    // Find test files: tests/ dir + *_test.fg anywhere
+    let find_cmd = "find ${config.project_dir}/tests -name '*.fg' -type f 2>/dev/null; find ${config.project_dir}/packages/forgec/src/features -name '*.fg' -path '*/tests/*' -type f 2>/dev/null; find ${config.project_dir}/packages/forgec/src/features -name 'example.fg' -type f 2>/dev/null"
+    let output = forge_shell_exec(find_cmd)
+    if output == "" { return TestList.End }
+
+    mut list = TestList.End
+    for path in output.split("\n") {
+        if path == "" { continue }
+        // Skip build artifacts
+        if path.contains("/build/") { continue }
+        if path.contains("/seed/") { continue }
+
+        // Skip helper files in directory-based tests
+        if !is_test_entry(path) { continue }
+
+        let test_opt = build_test_case(path, config.project_dir)
+        if test_opt != null {
+            let test = test_opt!
+            // Apply filter
+            if config.filter == "" || test.name.contains(config.filter) {
+                list = TestList.Node(test, list)
+            }
+        }
+    }
+    // Reverse to maintain sorted order
+    reverse_list(list)
+}
+
+fn reverse_list(list: TestList) -> TestList {
+    mut result = TestList.End
+    mut current = list
+    while true {
+        match current {
+            .End -> { return result }
+            .Node(test, next) -> {
+                result = TestList.Node(test, result)
+                current = next
+            }
+        }
+    }
+    result
+}
+
+fn count_tests(list: TestList) -> int {
+    match list {
+        .End -> 0
+        .Node(_, next) -> 1 + count_tests(next)
+    }
+}
+
+// ── Test Execution ──
+
+fn run_test(config: TestConfig, test: TestCase) -> TestResult {
+    let slug = slugify(test.path)
+    let ll = "${test.path}.ll"
+    let obj = "${config.build_dir}/${slug}.o"
+    let bin = "${config.build_dir}/${slug}.bin"
+
+    // Step 1: compile + link (one command, fail-fast with &&)
+    let build_cmd = "${config.compiler} compile ${test.path} >/dev/null 2>&1 && ${config.llc} -O2 -filetype=obj ${ll} -o ${obj} 2>/dev/null && cc -o ${bin} ${obj} ${config.runtime_o} ${config.llvm_wrapper_o} -Wl,-stack_size,0x2000000 -L${config.llvm_lib} -lLLVM -lc++ 2>/dev/null"
+    let build_status = forge_shell_exec_status(build_cmd)
+
+    if test.is_error_test {
+        if build_status == 0 {
+            return TestResult { name: test.name, passed: false, reason: "expected compilation error but succeeded" }
+        }
+        let log = forge_shell_exec("${config.compiler} compile ${test.path} 2>&1")
+        if log.contains(test.error_code) {
+            return TestResult { name: test.name, passed: true, reason: "" }
+        }
+        return TestResult { name: test.name, passed: false, reason: "expected error ${test.error_code} not found in output" }
+    }
+
+    if build_status != 0 {
+        let log = forge_shell_exec("${config.compiler} compile ${test.path} 2>&1")
+        return TestResult { name: test.name, passed: false, reason: "build failed:\n${log}" }
+    }
+
+    // Step 2: run + capture (one command)
+    let actual = forge_shell_exec("${bin} 2>&1")
+
+    // Step 3: compare
+    let expected_trimmed = test.expected.trim()
+    let actual_trimmed = actual.trim()
+
+    if actual_trimmed == expected_trimmed {
+        TestResult { name: test.name, passed: true, reason: "" }
+    } else {
+        let diff = diff_output(expected_trimmed, actual_trimmed)
+        TestResult { name: test.name, passed: false, reason: diff }
+    }
+}
+
+// ── Line-Level Diff ──
+
+fn diff_output(expected: string, actual: string) -> string {
+    let exp_lines = expected.split("\n")
+    let act_lines = actual.split("\n")
+    mut exp_idx = 0
+    mut act_idx = 0
+    mut first_diff_line = -1
+    mut result = ""
+
+    // Find first diverging line
+    for exp_line in exp_lines {
+        let act_line = if act_idx < act_lines.length { act_lines[act_idx] } else { "<missing>" }
+        if first_diff_line < 0 && exp_line != act_line {
+            first_diff_line = exp_idx
+        }
+        exp_idx = exp_idx + 1
+        act_idx = act_idx + 1
+    }
+    // If actual has extra lines
+    if first_diff_line < 0 && act_lines.length > exp_lines.length {
+        first_diff_line = exp_lines.length
+    }
+
+    if first_diff_line < 0 {
+        return "output mismatch (whitespace difference)"
+    }
+
+    result = "output mismatch at line ${string(first_diff_line + 1)}:\n"
+
+    // Show context: 2 lines before, the diff line, 2 lines after
+    let start = if first_diff_line > 2 { first_diff_line - 2 } else { 0 }
+    let max_lines = if exp_lines.length > act_lines.length { exp_lines.length } else { act_lines.length }
+    let end = if first_diff_line + 3 < max_lines { first_diff_line + 3 } else { max_lines }
+
+    mut i = start
+    while i < end {
+        let line_num = string(i + 1)
+        let pad = if i + 1 < 10 { "  " } else if i + 1 < 100 { " " } else { "" }
+        let exp_line = if i < exp_lines.length { exp_lines[i] } else { "" }
+        let act_line = if i < act_lines.length { act_lines[i] } else { "" }
+
+        if i == first_diff_line {
+            result = "${result}    ${red("> ${pad}${line_num} | ${exp_line}")}\n"
+            result = "${result}    ${red("! ${pad}${line_num} | ${act_line}")}\n"
+        } else {
+            result = "${result}    ${dim("  ${pad}${line_num} | ${exp_line}")}\n"
+        }
+        i = i + 1
+    }
+
+    result = "${result}    ${dim("expected (>) vs actual (!)")}"
+    result
+}
+
+// ── Reporting ──
+
+fn report_result(result: TestResult) {
+    if result.passed {
+        println("${green("[ok]")}   ${result.name}")
+    } else {
+        println("${red("[FAIL]")} ${result.name}")
+    }
+}
+
+fn report_failures(results: ResultList) {
+    println("")
+    println("${bold("FAILURES:")}")
+    match results {
+        .End -> {}
+        .Node(r, next) -> {
+            if !r.passed {
+                println("")
+                println("  ${bold(r.name)}")
+                println("${r.reason}")
+            }
+            report_failures(next)
+        }
+    }
+}
+
+fn report_summary(passed: int, failed: int) {
+    println("")
+    if failed == 0 {
+        println("test: ${green("${string(passed)} passed")}, ${string(failed)} failed")
+    } else {
+        println("test: ${green("${string(passed)} passed")}, ${red("${string(failed)} failed")}")
+    }
+}
+
+// ── Public API ──
+
+export fn run_tests(config: TestConfig) -> int {
+    let tests = discover_tests(config)
+    let total = count_tests(tests)
+
+    if total == 0 {
+        println("No tests found.")
+        return 0
+    }
+
+    mut passed = 0
+    mut failed = 0
+    mut results = ResultList.End
+    mut current = tests
+
+    while true {
+        match current {
+            .End -> { break }
+            .Node(test, next) -> {
+                let result = run_test(config, test)
+                report_result(result)
+                if result.passed {
+                    passed = passed + 1
+                } else {
+                    failed = failed + 1
+                }
+                results = ResultList.Node(result, results)
+                current = next
+            }
+        }
+    }
+
+    if failed > 0 {
+        report_failures(results)
+    }
+    report_summary(passed, failed)
+
+    if failed > 0 { 1 } else { 0 }
+}
+
+export fn run_single_test(config: TestConfig, path: string) -> int {
+    let test_opt = build_test_case(path, config.project_dir)
+    if test_opt == null {
+        println("${red("error")}: no expected output for ${path}")
+        return 1
+    }
+    let test = test_opt!
+    let result = run_test(config, test)
+    report_result(result)
+    if !result.passed {
+        println("")
+        println("  ${bold(result.name)}")
+        println("${result.reason}")
+        return 1
+    }
+    0
+}

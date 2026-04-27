@@ -13,6 +13,9 @@ extern fn forge_char_from_hex(hi: string, lo: string) -> string
 extern fn forge_selfhost_file_exists(path: string) -> int
 extern fn forge_selfhost_read_file(path: string) -> string
 extern fn forge_selfhost_write_file(path: string, content: string) -> int
+extern fn forge_shell_exec(cmd: string) -> string
+extern fn forge_shell_exec_status(cmd: string) -> int
+extern fn forge_process_exit(code: int)
 
 // Convenience aliases so the rest of the bootstrap source can keep
 // using the short names.
@@ -37,6 +40,7 @@ use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
 use features.component_decl.expand.{expand_components}
+use @std.test.{run_tests, run_single_test, TestConfig}
 use resolve.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use features.modules.package.{load_package_config}
@@ -482,8 +486,9 @@ fn main() {
         }
 
         command test {
-            description "Run spec tests in a Forge file"
-            arg file { description "Source file", required true }
+            description "Run tests"
+            option filter { short "-f", description "Filter tests by name" }
+            arg file { description "Test file (optional)" }
         }
 
         command expr {
@@ -525,6 +530,51 @@ fn main() {
         let cmd0 = forge_selfhost_get_arg_cstr(1)
         if cmd0 == "lsp" {
             println("LSP server not yet available — use `avra check` for diagnostics")
+            return
+        }
+        if cmd0 == "test" {
+            let project_dir = forge_shell_exec("pwd")
+            let bs2_path = forge_selfhost_get_arg_cstr(0)
+            let llc_prefix = forge_shell_exec("printenv LLC_PREFIX 2>/dev/null || echo /opt/homebrew/Cellar/llvm/20.1.5")
+            let llc = "${llc_prefix}/bin/llc"
+            let llvm_prefix = forge_shell_exec("printenv LLVM_PREFIX 2>/dev/null || echo /opt/homebrew/opt/llvm")
+            let llvm_lib = "${llvm_prefix}/lib"
+            // Parse optional args: forge test [file] [-f filter]
+            mut file_arg = ""
+            mut filter_arg = ""
+            mut i = 2
+            while i < forge_selfhost_argc() {
+                let arg = forge_selfhost_get_arg_cstr(i)
+                if arg == "-f" || arg == "--filter" {
+                    if i + 1 < forge_selfhost_argc() {
+                        filter_arg = forge_selfhost_get_arg_cstr(i + 1)
+                        i = i + 2
+                        continue
+                    }
+                } else {
+                    file_arg = arg
+                }
+                i = i + 1
+            }
+
+            let config = TestConfig {
+                project_dir,
+                build_dir: "${project_dir}/build",
+                compiler: bs2_path,
+                llc,
+                llvm_lib,
+                runtime_o: "${project_dir}/build/runtime.o",
+                llvm_wrapper_o: "${project_dir}/build/llvm_wrapper.o",
+                filter: filter_arg,
+            }
+
+            if file_arg != "" {
+                let code = run_single_test(config, file_arg)
+                forge_process_exit(code)
+            } else {
+                let code = run_tests(config)
+                forge_process_exit(code)
+            }
             return
         }
     }

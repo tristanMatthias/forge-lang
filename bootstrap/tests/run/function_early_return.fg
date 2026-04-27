@@ -1,7 +1,0 @@
-fn check(x) {
-    if x > 10 {
-        return "big"
-    }
-    return "small"
-}
-check(5)

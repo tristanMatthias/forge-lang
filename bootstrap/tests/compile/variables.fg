@@ -1,3 +1,0 @@
-mut x = 10
-mut y = 32
-return x + y
