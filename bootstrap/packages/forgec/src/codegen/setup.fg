@@ -499,7 +499,38 @@ fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fiel
     }
 }
 
+// Two-pass struct declaration:
+// Pass 1: create opaque LLVM types + collect names and raw fields into registry
+// Pass 2: resolve fields and set LLVM struct bodies
+// This handles forward references between module-qualified types.
+
+// Two-pass struct declaration for forward reference support:
+// Pass 1: create opaque LLVM struct types for ALL types
+// Pass 2: resolve fields, set LLVM bodies, build registry with resolved fields
+
 fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
+    // Pass 1: forward-declare all struct types as opaque
+    forward_declare_all_structs(ctx, stmts)
+    // Pass 2: resolve fields, fill bodies, build registry
+    fill_and_register_structs(ctx, i64t, i1t, dt, pt, stmts, nts, uas, reg)
+}
+
+fn forward_declare_all_structs(ctx: ptr, stmts: StmtList) {
+    match stmts {
+        .End -> {}
+        .Node(ss, next) -> {
+            match stmt_unwrap(ss.node) {
+                .TypeDecl(name, _, _) -> { forge_llvm_struct_create_named(ctx, name) }
+                .ShapeDecl(name, _) -> { forge_llvm_struct_create_named(ctx, name) }
+                .Module(_, body) -> forward_declare_all_structs(ctx, body)
+                _ -> {}
+            }
+            forward_declare_all_structs(ctx, next)
+        }
+    }
+}
+
+fn fill_and_register_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtList, nts: CgNewtypeReg, uas: CgUnionAliasReg, reg: StructReg) -> StructReg {
     match stmts {
         .End -> reg
         .Node(ss, next) -> {
@@ -512,8 +543,13 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
                     let count = field_list_length(resolved_fields)
                     let field_arr = forge_llvm_type_array_new(count)
                     fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, 0)
-                    let st = forge_llvm_struct_create_named(ctx, name)
-                    forge_llvm_struct_set_body(st, field_arr, count, 0)
+                    let st = forge_llvm_get_type_by_name(ctx, name)
+                    if st == null {
+                        eprintln("[CRASH] fill_and_register: LLVM type '${name}' not found after forward declare")
+                    }
+                    if st != null {
+                        forge_llvm_struct_set_body(st, field_arr, count, 0)
+                    }
                     forge_llvm_type_array_free(field_arr)
                     StructReg.Node(name, resolved_fields, reg)
                 }
@@ -523,17 +559,17 @@ fn declare_structs(ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, stmts: StmtL
                     let count = field_list_length(resolved_fields)
                     let field_arr = forge_llvm_type_array_new(count)
                     fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields, 0)
-                    let st = forge_llvm_struct_create_named(ctx, name)
+                    let st = forge_llvm_get_type_by_name(ctx, name)
                     forge_llvm_struct_set_body(st, field_arr, count, 0)
                     forge_llvm_type_array_free(field_arr)
                     StructReg.Node(name, resolved_fields, reg)
                 }
                 .UnionAliasDecl(_, _) -> reg
                 .NewtypeDecl(_, _) -> reg
-                .Module(_, body) -> declare_structs(ctx, i64t, i1t, dt, pt, body, nts, uas, reg)
+                .Module(_, body) -> fill_and_register_structs(ctx, i64t, i1t, dt, pt, body, nts, uas, reg)
                 _ -> reg
             }
-            declare_structs(ctx, i64t, i1t, dt, pt, next, nts, uas, updated)
+            fill_and_register_structs(ctx, i64t, i1t, dt, pt, next, nts, uas, updated)
         }
     }
 }
@@ -700,7 +736,7 @@ fn emit_struct_field_releases(ctx: Ctx, obj: ptr, type_name: string, fields: Fie
         .End -> {}
         .Node(fname, resolved, next) -> {
             if vtype_is_ptr_type(resolved) {
-                let st_ty = forge_llvm_get_type_by_name(ctx.lc, type_name)
+                let st_ty = ctx.get_type(type_name)
                 let fld_gep = forge_llvm_build_struct_gep2(ctx.builder, st_ty, obj, idx, "rel_${fname}_ptr")
                 let fld_val = forge_llvm_build_load(ctx.builder, ctx.ptr_type, fld_gep, "rel_${fname}")
                 // Null check: field may be uninitialized or nullable
@@ -775,7 +811,7 @@ fn emit_variant_field_releases(ctx: Ctx, payload: ptr, enum_name: string, varian
         .Node(fname, resolved, next) -> {
             if vtype_is_ptr_type(resolved) {
                 let payload_type_name = "${enum_name}__${variant_name}"
-                let pay_ty = forge_llvm_get_type_by_name(ctx.lc, payload_type_name)
+                let pay_ty = ctx.get_type(payload_type_name)
                 if pay_ty != null {
                     let fld_gep = forge_llvm_build_struct_gep2(ctx.builder, pay_ty, payload, idx, "vrel_${fname}_ptr")
                     let fld_val = forge_llvm_build_load(ctx.builder, ctx.ptr_type, fld_gep, "vrel_${fname}")
@@ -823,7 +859,7 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: VariantList, is_cycl
     let s = sc!
     let fn_val = ctx.get_fn("__release_${name}")
     forge_llvm_position_at_end(s.fctx.builder, s.free_bb)
-    let enum_ty = forge_llvm_get_type_by_name(s.fctx.lc, name)
+    let enum_ty = s.fctx.get_type(name)
     let tag_gep = forge_llvm_build_struct_gep2(s.fctx.builder, enum_ty, s.obj, 0, "tag_ptr")
     let tag_val = forge_llvm_build_load(s.fctx.builder, s.fctx.i64_type, tag_gep, "tag")
     let pay_gep = forge_llvm_build_struct_gep2(s.fctx.builder, enum_ty, s.obj, 1, "pay_ptr")

@@ -71,6 +71,10 @@ LLVMTypeRef forge_llvm_pointer_type(LLVMContextRef ctx) {
 }
 
 LLVMValueRef forge_llvm_const_null(LLVMTypeRef ty) {
+    if (!ty) {
+        fprintf(stderr, "[CRASH] forge_llvm_const_null: ty is NULL\n");
+        abort();
+    }
     return LLVMConstNull(ty);
 }
 
@@ -83,6 +87,17 @@ LLVMTypeRef forge_llvm_struct_create_named(LLVMContextRef ctx, const char* name)
 }
 
 LLVMTypeRef forge_llvm_struct_set_body(LLVMTypeRef st, LLVMTypeRef* elems, int count, int packed) {
+    if (!st) {
+        fprintf(stderr, "[CRASH] forge_llvm_struct_set_body: st is NULL\n");
+        abort();
+    }
+    for (int i = 0; i < count; i++) {
+        if (!elems[i]) {
+            fprintf(stderr, "[CRASH] forge_llvm_struct_set_body: elems[%d] is NULL (struct=%s)\n",
+                    i, LLVMGetStructName(st));
+            abort();
+        }
+    }
     LLVMStructSetBody(st, elems, (unsigned)count, packed);
     return st;
 }
@@ -122,6 +137,10 @@ void forge_llvm_value_array_free(LLVMValueRef* arr) {
 // ── Constants ──
 
 LLVMValueRef forge_llvm_const_int(LLVMTypeRef ty, int64_t value, int sign_extend) {
+    if (!ty) {
+        fprintf(stderr, "[CRASH] forge_llvm_const_int: ty is NULL (value=%lld)\n", value);
+        abort();
+    }
     // Safety: the bootstrap sometimes passes null or non-integer types.
     // Default to i64 (matching the everything-is-i64 model).
     if (!ty || LLVMGetTypeKind(ty) != LLVMIntegerTypeKind) {
@@ -136,6 +155,10 @@ LLVMValueRef forge_llvm_const_int(LLVMTypeRef ty, int64_t value, int sign_extend
 // ── Functions ──
 
 LLVMValueRef forge_llvm_add_function(LLVMModuleRef m, const char* name, LLVMTypeRef fn_type) {
+    if (!fn_type) {
+        fprintf(stderr, "[CRASH] forge_llvm_add_function: fn_type is NULL (name=%s)\n", name);
+        abort();
+    }
     return LLVMAddFunction(m, name, fn_type);
 }
 
@@ -311,6 +334,10 @@ LLVMValueRef forge_llvm_build_bitcast(LLVMBuilderRef b, LLVMValueRef val, LLVMTy
 // ── Memory ──
 
 LLVMValueRef forge_llvm_build_alloca(LLVMBuilderRef b, LLVMTypeRef ty, const char* name) {
+    if (!ty) {
+        fprintf(stderr, "[CRASH] forge_llvm_build_alloca: ty is NULL (name=%s)\n", name);
+        abort();
+    }
     // Always place allocas in the entry block for correctness.
     LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(b);
     LLVMValueRef fn = LLVMGetBasicBlockParent(current_bb);
@@ -329,6 +356,10 @@ LLVMValueRef forge_llvm_build_alloca(LLVMBuilderRef b, LLVMTypeRef ty, const cha
 }
 
 LLVMValueRef forge_llvm_build_load(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRef ptr_val, const char* name) {
+    if (!ty) {
+        fprintf(stderr, "[CRASH] forge_llvm_build_load: ty is NULL (name=%s)\n", name);
+        abort();
+    }
     LLVMValueRef load = LLVMBuildLoad2(b, ty, ptr_val, name);
     // Force align 8 for i64 loads to avoid optimizer miscompiles.
     LLVMSetAlignment(load, 8);
@@ -384,6 +415,10 @@ LLVMValueRef forge_llvm_build_store(LLVMBuilderRef b, LLVMValueRef val, LLVMValu
 }
 
 LLVMValueRef forge_llvm_build_struct_gep2(LLVMBuilderRef b, LLVMTypeRef ty, LLVMValueRef ptr_val, int idx, const char* name) {
+    if (!ty) {
+        fprintf(stderr, "[CRASH] forge_llvm_build_struct_gep2: ty is NULL (idx=%d, name=%s)\n", idx, name);
+        abort();
+    }
     return LLVMBuildStructGEP2(b, ty, ptr_val, (unsigned)idx, name);
 }
 
@@ -394,6 +429,10 @@ LLVMValueRef forge_llvm_build_global_string_ptr(LLVMBuilderRef b, const char* s,
 // ── Calls ──
 
 LLVMValueRef forge_llvm_build_call(LLVMBuilderRef b, LLVMTypeRef fn_type, LLVMValueRef fn_val, LLVMValueRef* args, int count, const char* name) {
+    if (!fn_type) {
+        fprintf(stderr, "[CRASH] forge_llvm_build_call: fn_type is NULL (name=%s)\n", name ? name : "(null)");
+        abort();
+    }
     LLVMTypeRef ret_type = LLVMGetReturnType(fn_type);
     int is_void = (LLVMGetTypeKind(ret_type) == LLVMVoidTypeKind);
     const char* call_name = is_void ? "" : (name ? name : "");
@@ -426,6 +465,10 @@ LLVMValueRef forge_llvm_build_unreachable(LLVMBuilderRef b) {
 // ── PHI nodes ──
 
 LLVMValueRef forge_llvm_build_phi(LLVMBuilderRef b, LLVMTypeRef ty, const char* name) {
+    if (!ty) {
+        fprintf(stderr, "[CRASH] forge_llvm_build_phi: ty is NULL (name=%s)\n", name);
+        abort();
+    }
     return LLVMBuildPhi(b, ty, name);
 }
 
@@ -562,6 +605,10 @@ int64_t forge_llvm_int_type_width(LLVMTypeRef ty) {
 LLVMValueRef forge_llvm_build_call_coerce(LLVMBuilderRef b,
     LLVMTypeRef fn_type, LLVMValueRef fn_val,
     LLVMValueRef* args, int64_t count, const char* name) {
+    if (!fn_type) {
+        fprintf(stderr, "[CRASH] forge_llvm_build_call_coerce: fn_type is NULL (name=%s)\n", name ? name : "(null)");
+        abort();
+    }
     unsigned param_count = LLVMCountParamTypes(fn_type);
     LLVMTypeRef* param_types = NULL;
     if (param_count > 0) {

@@ -475,6 +475,13 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             let mod_uses = resolve_use_aliases(body, ctx.tree)
             Stmt.Module(name, rewrite_stmt_list(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
         }
+        // NOTE: TypeDecl/EnumDecl qualification is deferred until the seed
+        // has typeck + monomorphizer canonical lookup support.
+        // .TypeDecl(name, tp, fields) -> .TypeDecl(resolve_type_in_ctx(ctx, name), tp, fields)
+        // .EnumDecl(name, tp, variants) -> .EnumDecl(resolve_type_in_ctx(ctx, name), tp, variants)
+        // .TraitDecl(name, body) -> .TraitDecl(resolve_type_in_ctx(ctx, name), body)
+        // .ShapeDecl(name, fields) -> .ShapeDecl(resolve_type_in_ctx(ctx, name), fields)
+        // .NewtypeDecl(name, inner) -> .NewtypeDecl(resolve_type_in_ctx(ctx, name), inner)
         .Impl(type_name, methods) -> .Impl(type_name, rewrite_stmt_list(ctx, methods))
         .Annotated(annotations, inner) -> .Annotated(annotations, rewrite_stmt(ctx, inner))
         .Defer(body) -> .Defer(rewrite_expr(ctx, body))
@@ -487,39 +494,47 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     }
 }
 
-fn rewrite_impl_block(ctx: NameCtx, type_name: string, methods: StmtList) -> Stmt {
-    // Resolve the type name to its canonical form using the module tree.
-    // e.g., in module "test_a", "Point" → "test_a::Point"
-    // but in module "codegen", "Ctx" (defined in "codegen::types") → "codegen::types::Ctx"
-    let resolved = resolve_type_in_ctx(ctx, type_name)
-    Stmt.Impl(resolved, rewrite_impl_methods(ctx, resolved, methods))
+fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: StmtList) -> Stmt {
+    let rt = resolve_type_in_ctx(ctx, type_name)
+    Stmt.Impl(rt, rewrite_impl_methods(ctx, rt, methods))
 }
 
 fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
-    // First check global index for canonical name
+    if type_name.contains("::") { return type_name }
     let canonical = item_lookup(ctx.global_index, type_name)
     if canonical != "" { return canonical }
-    // Fallback: qualify with current module
+    let alias = alias_lookup(ctx.aliases, type_name)
+    if alias != "" { return alias }
     if ctx.current_module != "" {
         return "${ctx.current_module}::${type_name}"
     }
     type_name
 }
 
-// Rewrite impl method names to use the module-qualified type name.
-// e.g., in module "test_a", impl Point { fn greet(self) } →
-//   method name "Point__greet" → "test_a::Point__greet"
+fn qualify_self_param(params: ParamList, qualified_type: string) -> ParamList {
+    match params {
+        .End -> .End
+        .Node(name, vt, next) -> {
+            if name == "self" {
+                ParamList.Node("self", ValueType.Struct(qualified_type), next)
+            } else {
+                ParamList.Node(name, vt, qualify_self_param(next, qualified_type))
+            }
+        }
+    }
+}
+
 fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: StmtList) -> StmtList {
     match stmts {
         .End -> StmtList.End
         .Node(ss, next) -> {
             let new_stmt = match ss.node {
                 .Function(name, tp, params, rvt, body) -> {
-                    // Method names are Type__method — re-mangle with qualified type
                     let parts = name.split("__")
                     let method_name = if parts.length > 1 { parts[1] } else { name }
                     let qualified_name = "${qualified_type}__${method_name}"
-                    Stmt.Function(qualified_name, tp, params, rvt, rewrite_stmt_list(bind_params_ctx(ctx, params), body))
+                    let qualified_params = qualify_self_param(params, qualified_type)
+                    Stmt.Function(qualified_name, tp, qualified_params, rvt, rewrite_stmt_list(bind_params_ctx(ctx, qualified_params), body))
                 }
                 _ -> rewrite_stmt(ctx, ss.node)
             }

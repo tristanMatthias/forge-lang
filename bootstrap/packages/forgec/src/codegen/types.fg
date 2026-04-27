@@ -365,7 +365,21 @@ export fn struct_reg_lookup(reg: StructReg, name: string) -> StructLookup {
     match reg {
         .End -> StructLookup { found: false, fields: .End }
         .Node(n, fields, _) if n == name -> StructLookup { found: true, fields }
-        .Node(_, _, next) -> struct_reg_lookup(next, name)
+        .Node(n, fields, next) -> {
+            if n.ends_with("::${name}") { return StructLookup { found: true, fields } }
+            struct_reg_lookup(next, name)
+        }
+    }
+}
+
+export fn struct_reg_canonical(reg: StructReg, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, _, _) if n == name -> n
+        .Node(n, _, next) -> {
+            if n.ends_with("::${name}") { return n }
+            struct_reg_canonical(next, name)
+        }
     }
 }
 
@@ -383,7 +397,21 @@ export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
     match reg {
         .End -> EnumLookup { found: false, variants: .End }
         .Node(n, variants, _) if n == name -> EnumLookup { found: true, variants }
-        .Node(_, _, next) -> enum_reg_lookup(next, name)
+        .Node(n, variants, next) -> {
+            if n.ends_with("::${name}") { return EnumLookup { found: true, variants } }
+            enum_reg_lookup(next, name)
+        }
+    }
+}
+
+export fn enum_reg_canonical(reg: EnumReg, name: string) -> string {
+    match reg {
+        .End -> ""
+        .Node(n, _, _) if n == name -> n
+        .Node(n, _, next) -> {
+            if n.ends_with("::${name}") { return n }
+            enum_reg_canonical(next, name)
+        }
     }
 }
 
@@ -745,7 +773,21 @@ impl Ctx {
     fn const_i1(self, val: int) -> ptr { forge_llvm_const_int(self.i1_type, val, 0) }
 
     // ── Lookups ──
-    fn get_type(self, name: string) -> ptr { forge_llvm_get_type_by_name(self.lc, name) }
+    fn get_type(self, name: string) -> ptr {
+        let t = forge_llvm_get_type_by_name(self.lc, name)
+        if t != null { return t }
+        let sc = struct_reg_canonical(self.structs, name)
+        if sc != "" {
+            let t2 = forge_llvm_get_type_by_name(self.lc, sc)
+            if t2 != null { return t2 }
+        }
+        let ec = enum_reg_canonical(self.enums, name)
+        if ec != "" {
+            let t3 = forge_llvm_get_type_by_name(self.lc, ec)
+            if t3 != null { return t3 }
+        }
+        null
+    }
     fn int_to_ptr(self, val: ptr, name: string) -> ptr { forge_llvm_build_int_to_ptr(self.builder, val, self.ptr_type, name) }
     fn ptr_to_int(self, val: ptr, name: string) -> ptr { forge_llvm_build_ptr_to_int(self.builder, val, self.i64_type, name) }
 
@@ -879,7 +921,7 @@ impl Ctx {
     // Load the tag (i64 hash) from an enum value
     fn enum_tag(self, val: ptr, type_name: string) -> ptr {
         let obj = self.to_ptr(val, "tag_obj")
-        let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
+        let st_ty = self.get_type(type_name)
         let tag_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, 0, "tag_ptr")
         forge_llvm_build_load(self.builder, self.i64_type, tag_gep, "tag")
     }
@@ -887,7 +929,7 @@ impl Ctx {
     // Load the payload pointer from an enum value
     fn enum_payload(self, val: ptr, type_name: string) -> ptr {
         let obj = self.to_ptr(val, "pay_obj")
-        let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
+        let st_ty = self.get_type(type_name)
         let pay_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, 1, "pay_ptr")
         forge_llvm_build_load(self.builder, self.ptr_type, pay_gep, "payload")
     }
@@ -895,7 +937,7 @@ impl Ctx {
     // Load a struct field by index
     fn field(self, val: ptr, type_name: string, idx: int, name: string) -> ptr {
         let obj = self.to_ptr(val, "fld_obj")
-        let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
+        let st_ty = self.get_type(type_name)
         let fld_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "${name}_ptr")
         forge_llvm_build_load(self.builder, self.i64_type, fld_gep, name)
     }
@@ -903,14 +945,14 @@ impl Ctx {
     // Load a typed struct field by index — returns value with correct LLVM type.
     fn field_typed(self, val: ptr, type_name: string, idx: int, ty: ValueType, name: string) -> ptr {
         let obj = self.to_ptr(val, "fld_obj")
-        let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
+        let st_ty = self.get_type(type_name)
         let fld_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "${name}_ptr")
         forge_llvm_build_load(self.builder, self.type_for(ty), fld_gep, name)
     }
 
     // Store into a struct field by index with type-safe casting.
     fn set_field(self, obj: ptr, type_name: string, idx: int, val: ptr, field_ty: ValueType) {
-        let st_ty = forge_llvm_get_type_by_name(self.lc, type_name)
+        let st_ty = self.get_type(type_name)
         let fld_gep = forge_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "fld_ptr")
         forge_llvm_build_store(self.builder, self.cast_to(val, field_ty), fld_gep)
     }

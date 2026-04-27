@@ -22,13 +22,34 @@ enum GenericStructReg {
 }
 
 fn generic_fn_lookup(reg: GenericFnReg, name: string) -> GenericFnReg {
-    match reg { .End -> .End, .Node(n, _, _, _, _, _) if n == name -> reg, .Node(_, _, _, _, _, next) -> generic_fn_lookup(next, name) }
+    match reg {
+        .End -> .End
+        .Node(n, _, _, _, _, _) if n == name -> reg
+        .Node(n, _, _, _, _, next) -> {
+            if n.ends_with("::${name}") { return reg }
+            generic_fn_lookup(next, name)
+        }
+    }
 }
 fn generic_enum_lookup(reg: GenericEnumReg, name: string) -> GenericEnumReg {
-    match reg { .End -> .End, .Node(n, _, _, _) if n == name -> reg, .Node(_, _, _, next) -> generic_enum_lookup(next, name) }
+    match reg {
+        .End -> .End
+        .Node(n, _, _, _) if n == name -> reg
+        .Node(n, _, _, next) -> {
+            if n.ends_with("::${name}") { return reg }
+            generic_enum_lookup(next, name)
+        }
+    }
 }
 fn generic_struct_lookup(reg: GenericStructReg, name: string) -> GenericStructReg {
-    match reg { .End -> .End, .Node(n, _, _, _) if n == name -> reg, .Node(_, _, _, next) -> generic_struct_lookup(next, name) }
+    match reg {
+        .End -> .End
+        .Node(n, _, _, _) if n == name -> reg
+        .Node(n, _, _, next) -> {
+            if n.ends_with("::${name}") { return reg }
+            generic_struct_lookup(next, name)
+        }
+    }
 }
 
 // ── Type arguments ──
