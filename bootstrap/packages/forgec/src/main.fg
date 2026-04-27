@@ -49,6 +49,7 @@ use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_err
 use diagnostics.render.{render_bag, render_bag_json}
 use codegen.setup.{compile_program, compile_and_jit, codegen_and_emit_object}
 use core.ast.{sstmt_dummy, TypeParamList, ExprList}
+extern fn forge_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 use features.generics.mono.{monomorphize}
 
 fn print_usage() {
@@ -459,6 +460,19 @@ component arg(name: string) {
     }
 }
 
+// Strip extern fn declarations from an AST (test harness provides them)
+fn strip_externs(stmts: StmtList) -> StmtList {
+    match stmts {
+        .End -> StmtList.End
+        .Node(ss, next) -> {
+            match ss.node {
+                .ExternFn(_, _, _) -> strip_externs(next)
+                _ -> StmtList.Node(ss, strip_externs(next))
+            }
+        }
+    }
+}
+
 fn main() {
     // ── Fully declarative CLI ──
     // Matches the Rust std-cli pattern: nested component blocks, zero builder calls.
@@ -537,6 +551,21 @@ fn main() {
         if cmd0 == "test" {
             let project_dir = forge_shell_exec("pwd")
 
+            // Parse -f filter flag
+            mut filter_arg = ""
+            mut i = 2
+            while i < forge_selfhost_argc() {
+                let arg = forge_selfhost_get_arg_cstr(i)
+                if arg == "-f" || arg == "--filter" {
+                    if i + 1 < forge_selfhost_argc() {
+                        filter_arg = forge_selfhost_get_arg_cstr(i + 1)
+                    }
+                    i = i + 2
+                    continue
+                }
+                i = i + 1
+            }
+
             // Step 1: Discover _test.fg files
             let test_files = forge_shell_exec("find ${project_dir} -name '*_test.fg' -type f -not -path '*/build/*' 2>/dev/null | sort")
             if test_files == "" {
@@ -544,7 +573,7 @@ fn main() {
                 return
             }
 
-            // Step 2: Parse each test file independently into AST modules
+            // Step 2: Parse each test file into an AST module
             mut module_stmts = StmtList.End
             mut count = 0
             for path in test_files.split("\n") {
@@ -552,6 +581,19 @@ fn main() {
                 let content = read_file(path)
                 if !content.contains("spec ") { continue }
                 if content.contains("fn main()") { continue }
+
+                // Derive module name: /path/to/defer_test.fg → defer_test
+                mut last_slash = 0
+                mut si = 0
+                for ch in path {
+                    if ch == "/" { last_slash = si + 1 }
+                    si = si + 1
+                }
+                let basename = path.substring(last_slash, path.length)
+                let mod_name = basename.substring(0, basename.length - 3)
+
+                // Apply filter
+                if filter_arg != "" && !mod_name.contains(filter_arg) { continue }
 
                 let parsed = parse_program_source(content)
                 if parsed.had_error || parsed.stmts == null {
@@ -562,13 +604,11 @@ fn main() {
                     continue
                 }
 
-                // Derive module name from file path
-                mut mod_name = forge_shell_exec("basename ${path} .fg")
-                mod_name = mod_name.trim()
+                // Strip extern fn declarations (provided by test harness)
+                let cleaned = strip_externs(parsed.stmts!)
 
-                // Wrap as Module(name, body)
                 module_stmts = StmtList.Node(
-                    sstmt_dummy(Stmt.Module(mod_name, parsed.stmts!)),
+                    sstmt_dummy(Stmt.Module(mod_name, cleaned)),
                     module_stmts
                 )
                 count = count + 1
@@ -579,29 +619,24 @@ fn main() {
                 return
             }
 
-            // Step 3: Add extern declarations + main() that calls forge_test_summary()
-            // Externs needed by the test runtime
-            module_stmts = StmtList.Node(
-                sstmt_dummy(Stmt.ExternFn("forge_test_summary", ParamList.End, ValueType.Void)),
-                module_stmts
-            )
-            module_stmts = StmtList.Node(
-                sstmt_dummy(Stmt.ExternFn("forge_test_capture_start", ParamList.End, ValueType.Void)),
-                module_stmts
-            )
-            module_stmts = StmtList.Node(
-                sstmt_dummy(Stmt.ExternFn("forge_test_capture_stop", ParamList.End, ValueType.Str)),
-                module_stmts
-            )
+            // Step 3: Add runtime externs + main
+            module_stmts = StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_summary", ParamList.End, ValueType.Void)), module_stmts)
+            module_stmts = StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_capture_start", ParamList.End, ValueType.Void)), module_stmts)
+            module_stmts = StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_capture_stop", ParamList.End, ValueType.Str)), module_stmts)
 
             let main_body = StmtList.Node(
                 sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("forge_test_summary"), ExprList.End))),
-                StmtList.End
+                StmtList.Node(
+                    sstmt_dummy(Stmt.Expr(Expr.Number("0"))),
+                    StmtList.End
+                )
             )
-            let main_fn = Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Void, main_body)
-            module_stmts = StmtList.Node(sstmt_dummy(main_fn), module_stmts)
+            module_stmts = StmtList.Node(
+                sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Void, main_body)),
+                module_stmts
+            )
 
-            // Step 4: Run full pipeline on combined AST
+            // Step 4: Full pipeline
             let desugared = desugar_program(module_stmts)
             let expanded = expand_components(desugared)
             let named = resolve_names(expanded)
@@ -629,12 +664,10 @@ fn main() {
 
             let llvm_lib = forge_shell_exec("printenv LLVM_PREFIX 2>/dev/null || echo /opt/homebrew/opt/llvm") + "/lib"
             let link_status = forge_shell_exec_status("cc -o ${bin_path} ${obj_path} ${build_dir}/runtime.o ${build_dir}/llvm_wrapper.o -Wl,-stack_size,0x2000000 -L${llvm_lib} -lLLVM -lc++ 2>&1")
-            if link_status != 0 {
-                fail("link failed")
-            }
+            if link_status != 0 { fail("link failed") }
 
-            // Step 6: Run the test binary
-            let exit_code = forge_shell_exec_status(bin_path)
+            // Step 6: Run via proper fork+exec (no shell)
+            let exit_code = forge_process_forward(bin_path, "[]", "")
             forge_process_exit(exit_code)
             return
         }

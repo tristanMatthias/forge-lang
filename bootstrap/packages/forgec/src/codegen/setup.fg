@@ -1074,9 +1074,38 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
             let stmt = stmt_unwrap(ss.node)
             match stmt {
                 .Function(_, _, _, _, _) -> emit_top_level(ctx, env, next)
-                .Module(_, body) -> {
-                    let new_env = emit_top_level(tl_ctx, env, body)?
-                    emit_top_level(ctx, new_env, next)
+                .Module(name, body) -> {
+                    // Create a per-module init function: __init_<name>()
+                    let init_name = "__init_${name}"
+                    let init_params = forge_llvm_type_array_new(0)
+                    let init_type = forge_llvm_function_type(ctx.i64_type, init_params, 0, 0)
+                    forge_llvm_type_array_free(init_params)
+                    let init_fn = forge_llvm_add_function(ctx.module, init_name, init_type)
+                    let init_entry = forge_llvm_append_basic_block(ctx.lc, init_fn, "entry")
+
+                    // Save caller's current basic block
+                    let saved_bb = forge_llvm_get_insert_block(ctx.builder)
+                    let saved_fn = ctx.current_fn
+                    let saved_fn_name = ctx.current_fn_name
+
+                    // Switch to init function and emit module body
+                    forge_llvm_position_at_end(ctx.builder, init_entry)
+                    let init_ctx = ctx with { current_fn: init_fn, current_fn_name: init_name }
+                    let new_env = emit_top_level(init_ctx, env, body)?
+
+                    // Terminate init function (position at wherever the builder ended up)
+                    let final_bb = forge_llvm_get_insert_block(ctx.builder)
+                    if final_bb != null {
+                        forge_llvm_position_at_end(ctx.builder, final_bb)
+                    }
+                    init_ctx.ret(init_ctx.i64(0), .Int)
+
+                    // Restore caller's position and emit call to __init_<name>()
+                    forge_llvm_position_at_end(ctx.builder, saved_bb)
+                    let restored_ctx = ctx with { current_fn: saved_fn, current_fn_name: saved_fn_name }
+                    restored_ctx.call(init_name, [])
+
+                    emit_top_level(restored_ctx, new_env, next)
                 }
                 .Let(name, _, init) -> {
                     let result = emit_top_level_init(tl_ctx, env, name, init)?
