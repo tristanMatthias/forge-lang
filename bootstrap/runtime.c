@@ -2659,6 +2659,54 @@ void forge_test_summary(void) {
     printf("\n");
 }
 
+// ── Stdout capture (for testing output-producing code) ──
+// forge_test_capture_start: redirect stdout to an internal buffer
+// forge_test_capture_stop: return captured output and restore stdout
+
+static char* _capture_buf = NULL;
+static size_t _capture_len = 0;
+static size_t _capture_cap = 0;
+static int _capture_fd_backup = -1;
+static int _capture_pipe[2] = {-1, -1};
+
+void forge_test_capture_start(void) {
+    fflush(stdout);
+    _capture_fd_backup = dup(STDOUT_FILENO);
+    pipe(_capture_pipe);
+    dup2(_capture_pipe[1], STDOUT_FILENO);
+    close(_capture_pipe[1]);
+    _capture_cap = 4096;
+    _capture_buf = (char*)malloc(_capture_cap);
+    _capture_len = 0;
+}
+
+const char* forge_test_capture_stop(void) {
+    fflush(stdout);
+    dup2(_capture_fd_backup, STDOUT_FILENO);
+    close(_capture_fd_backup);
+    _capture_fd_backup = -1;
+
+    // Read everything from the pipe
+    while (1) {
+        if (_capture_len >= _capture_cap - 1) {
+            _capture_cap *= 2;
+            _capture_buf = (char*)realloc(_capture_buf, _capture_cap);
+        }
+        struct pollfd pfd = {_capture_pipe[0], POLLIN, 0};
+        if (poll(&pfd, 1, 0) <= 0) break;
+        ssize_t n = read(_capture_pipe[0], _capture_buf + _capture_len, _capture_cap - _capture_len - 1);
+        if (n <= 0) break;
+        _capture_len += n;
+    }
+    close(_capture_pipe[0]);
+    _capture_buf[_capture_len] = '\0';
+    // Strip trailing newline (puts adds one)
+    if (_capture_len > 0 && _capture_buf[_capture_len - 1] == '\n') {
+        _capture_buf[_capture_len - 1] = '\0';
+    }
+    return _capture_buf;
+}
+
 // ── Concurrency ──
 // Thread spawning via pthreads. spawn takes a closure (ForgeArray)
 // and runs it in a new thread. Returns a task handle for .await.

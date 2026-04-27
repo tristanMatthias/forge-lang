@@ -12,3 +12,14 @@ extern fn forge_test_skip(name: string)
 extern fn forge_test_todo(name: string)
 extern fn forge_test_summary() -> int
 extern fn forge_test_roughly(actual: float, expected: float, tolerance: float) -> int
+extern fn forge_test_capture_start()
+extern fn forge_test_capture_stop() -> string
+
+// Capture stdout from a block of code. Returns the captured output.
+// Usage: let output = capture { println("hello") }
+// For now, use start/stop directly:
+//   forge_test_capture_start()
+//   ... code that prints ...
+//   let output = forge_test_capture_stop()
+export fn capture_start() { forge_test_capture_start() }
+export fn capture_stop() -> string { forge_test_capture_stop() }
