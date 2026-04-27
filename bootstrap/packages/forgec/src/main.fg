@@ -460,7 +460,26 @@ component arg(name: string) {
     }
 }
 
-// Strip extern fn declarations from an AST (test harness provides them)
+// ── Test runner helpers ──
+
+extern fn forge_process_run(cmd: string, args_json: string, opts_json: string) -> string
+extern fn forge_process_env_get(key: string) -> string
+
+fn path_basename_no_ext(path: string) -> string {
+    mut last_slash = 0
+    mut si = 0
+    for ch in path {
+        if ch == "/" { last_slash = si + 1 }
+        si = si + 1
+    }
+    let basename = path.substring(last_slash, path.length)
+    if basename.ends_with(".fg") {
+        basename.substring(0, basename.length - 3)
+    } else {
+        basename
+    }
+}
+
 fn strip_externs(stmts: StmtList) -> StmtList {
     match stmts {
         .End -> StmtList.End
@@ -472,6 +491,45 @@ fn strip_externs(stmts: StmtList) -> StmtList {
         }
     }
 }
+
+fn prepend_test_externs(stmts: StmtList) -> StmtList {
+    // Externs needed by the test runtime — provided once at top level
+    let s3 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_capture_stop", ParamList.End, ValueType.Str)), stmts)
+    let s2 = StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_capture_start", ParamList.End, ValueType.Void)), s3)
+    StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_summary", ParamList.End, ValueType.Int)), s2)
+}
+
+// Minimal JSON field extraction (no full parser — matches {"field":"value"})
+fn forge_parse_json_field(json: string, field: string) -> string {
+    let key = "\"${field}\":\""
+    let start = json.index_of(key)
+    if start < 0 { return "" }
+    let val_start = start + key.length
+    mut val_end = val_start
+    while val_end < json.length {
+        let ch = json[val_end]
+        if ch == "\\" { val_end = val_end + 2 }
+        else if ch == "\"" { break }
+        else { val_end = val_end + 1 }
+    }
+    json.substring(val_start, val_end)
+}
+
+fn forge_parse_json_int(json: string, field: string) -> int {
+    let key = "\"${field}\":"
+    let start = json.index_of(key)
+    if start < 0 { return -1 }
+    let val_start = start + key.length
+    mut val_end = val_start
+    while val_end < json.length {
+        let ch = json[val_end]
+        if ch == "}" || ch == "," { break }
+        val_end = val_end + 1
+    }
+    forge_parse_int(json.substring(val_start, val_end))
+}
+
+extern fn forge_parse_int(s: string) -> int
 
 fn main() {
     // ── Fully declarative CLI ──
@@ -549,9 +607,9 @@ fn main() {
             return
         }
         if cmd0 == "test" {
-            let project_dir = forge_shell_exec("pwd")
+            let project_dir = forge_process_env_get("PWD")
 
-            // Parse -f filter flag
+            // Parse args
             mut filter_arg = ""
             mut i = 2
             while i < forge_selfhost_argc() {
@@ -567,6 +625,7 @@ fn main() {
             }
 
             // Step 1: Discover _test.fg files
+            // TODO(bead wcrm): replace with proper FS walk
             let test_files = forge_shell_exec("find ${project_dir} -name '*_test.fg' -type f -not -path '*/build/*' 2>/dev/null | sort")
             if test_files == "" {
                 println("No test files found.")
@@ -582,17 +641,8 @@ fn main() {
                 if !content.contains("spec ") { continue }
                 if content.contains("fn main()") { continue }
 
-                // Derive module name: /path/to/defer_test.fg → defer_test
-                mut last_slash = 0
-                mut si = 0
-                for ch in path {
-                    if ch == "/" { last_slash = si + 1 }
-                    si = si + 1
-                }
-                let basename = path.substring(last_slash, path.length)
-                let mod_name = basename.substring(0, basename.length - 3)
+                let mod_name = path_basename_no_ext(path)
 
-                // Apply filter
                 if filter_arg != "" && !mod_name.contains(filter_arg) { continue }
 
                 let parsed = parse_program_source(content)
@@ -604,11 +654,8 @@ fn main() {
                     continue
                 }
 
-                // Strip extern fn declarations (provided by test harness)
-                let cleaned = strip_externs(parsed.stmts!)
-
                 module_stmts = StmtList.Node(
-                    sstmt_dummy(Stmt.Module(mod_name, cleaned)),
+                    sstmt_dummy(Stmt.Module(mod_name, strip_externs(parsed.stmts!))),
                     module_stmts
                 )
                 count = count + 1
@@ -620,19 +667,14 @@ fn main() {
             }
 
             // Step 3: Add runtime externs + main
-            module_stmts = StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_summary", ParamList.End, ValueType.Void)), module_stmts)
-            module_stmts = StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_capture_start", ParamList.End, ValueType.Void)), module_stmts)
-            module_stmts = StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_capture_stop", ParamList.End, ValueType.Str)), module_stmts)
+            module_stmts = prepend_test_externs(module_stmts)
 
             let main_body = StmtList.Node(
                 sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("forge_test_summary"), ExprList.End))),
-                StmtList.Node(
-                    sstmt_dummy(Stmt.Expr(Expr.Number("0"))),
-                    StmtList.End
-                )
+                StmtList.End
             )
             module_stmts = StmtList.Node(
-                sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Void, main_body)),
+                sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),
                 module_stmts
             )
 
@@ -662,11 +704,15 @@ fn main() {
                 .Err(e) -> { fail(e) }
             }
 
-            let llvm_lib = forge_shell_exec("printenv LLVM_PREFIX 2>/dev/null || echo /opt/homebrew/opt/llvm") + "/lib"
-            let link_status = forge_shell_exec_status("cc -o ${bin_path} ${obj_path} ${build_dir}/runtime.o ${build_dir}/llvm_wrapper.o -Wl,-stack_size,0x2000000 -L${llvm_lib} -lLLVM -lc++ 2>&1")
-            if link_status != 0 { fail("link failed") }
+            let llvm_env = forge_process_env_get("LLVM_PREFIX")
+            let llvm_lib = if llvm_env == "" { "/opt/homebrew/opt/llvm/lib" } else { "${llvm_env}/lib" }
+            let link_args = "[\"${obj_path}\", \"${build_dir}/runtime.o\", \"${build_dir}/llvm_wrapper.o\", \"-o\", \"${bin_path}\", \"-Wl,-stack_size,0x2000000\", \"-L${llvm_lib}\", \"-lLLVM\", \"-lc++\"]"
+            let link_code = forge_process_forward("cc", link_args, "")
+            if link_code != 0 {
+                fail("link failed")
+            }
 
-            // Step 6: Run via proper fork+exec (no shell)
+            // Step 6: Run the test binary (proper fork+exec, no shell)
             let exit_code = forge_process_forward(bin_path, "[]", "")
             forge_process_exit(exit_code)
             return

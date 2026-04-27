@@ -2096,7 +2096,7 @@ static char** parse_args_json(const char* json, int* out_count) {
     // Count strings
     int count = 0;
     for (const char* p = json; *p; p++) { if (*p == '"') { count++; p++; while (*p && *p != '"') { if (*p == '\\') p++; p++; } } }
-    count /= 2; // each string has open+close quote
+    // count already holds number of strings (one per opening quote)
     if (count == 0) return NULL;
     char** args = (char**)malloc((count + 1) * sizeof(char*));
     int idx = 0;
@@ -2649,14 +2649,15 @@ int64_t forge_test_roughly(double actual, double expected, double tolerance) {
     return diff <= tolerance ? 1 : 0;
 }
 
-void forge_test_summary(void) {
+int64_t forge_test_summary(void) {
     int64_t total = forge_test_pass_count + forge_test_fail_count;
-    if (total == 0) return;  // no tests were run — skip summary
+    if (total == 0) return 0;
     printf("\n%lld/%lld tests passed", forge_test_pass_count, total);
     if (forge_test_fail_count > 0) {
         printf(" (%lld failed)", forge_test_fail_count);
     }
     printf("\n");
+    return forge_test_fail_count > 0 ? 1 : 0;
 }
 
 // ── Stdout capture (for testing output-producing code) ──
