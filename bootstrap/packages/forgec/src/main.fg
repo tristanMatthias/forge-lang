@@ -1,21 +1,15 @@
-// C externs for process helpers and file I/O.
-// These are provided by bootstrap/runtime.c.
+// Runtime externs (bootstrap/runtime.c)
 extern fn forge_selfhost_argc() -> int
 extern fn forge_selfhost_get_arg_cstr(idx: int) -> string
-extern fn exit(code: int)
-extern fn forge_char_from_hex(hi: string, lo: string) -> string
-
-// File-system builtins. The bootstrap codegen passes strings as a
-// single i64 (the C-string pointer) rather than the host's
-// ForgeString {ptr, len} struct, so we link against the
-// forge_selfhost_* C-wrappers in stdlib/runtime.c that take plain
-// `const char*` arguments.
 extern fn forge_selfhost_file_exists(path: string) -> int
 extern fn forge_selfhost_read_file(path: string) -> string
 extern fn forge_selfhost_write_file(path: string, content: string) -> int
 extern fn forge_shell_exec(cmd: string) -> string
-extern fn forge_shell_exec_status(cmd: string) -> int
 extern fn forge_process_exit(code: int)
+extern fn forge_process_forward(cmd: string, args_json: string, opts_json: string) -> int
+extern fn forge_process_env_get(key: string) -> string
+extern fn exit(code: int)
+extern fn forge_char_from_hex(hi: string, lo: string) -> string
 
 // Convenience aliases so the rest of the bootstrap source can keep
 // using the short names.
@@ -40,16 +34,14 @@ use features.eval.{render_value}
 use features.eval.{eval_expression_source, execute_program_source}
 use desugar.{desugar_program}
 use features.component_decl.expand.{expand_components}
-use @std.test.{run_tests, run_single_test, TestConfig}
 use resolve.names.{resolve_names}
 use features.modules.resolver.{resolve_module_files, modules_dirname, LoadedPaths}
 use features.modules.package.{load_package_config}
 use typeck.{typecheck_program}
 use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy}
 use diagnostics.render.{render_bag, render_bag_json}
-use codegen.setup.{compile_program, compile_and_jit, codegen_and_emit_object}
+use codegen.setup.{compile_program, codegen_and_emit_object}
 use core.ast.{sstmt_dummy, TypeParamList, ExprList}
-extern fn forge_process_forward(cmd: string, args_json: string, opts_json: string) -> int
 use features.generics.mono.{monomorphize}
 
 fn print_usage() {
@@ -462,9 +454,6 @@ component arg(name: string) {
 
 // ── Test runner helpers ──
 
-extern fn forge_process_run(cmd: string, args_json: string, opts_json: string) -> string
-extern fn forge_process_env_get(key: string) -> string
-
 fn path_basename_no_ext(path: string) -> string {
     mut last_slash = 0
     mut si = 0
@@ -535,37 +524,6 @@ fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
     }
 }
 
-// Minimal JSON field extraction (no full parser — matches {"field":"value"})
-fn forge_parse_json_field(json: string, field: string) -> string {
-    let key = "\"${field}\":\""
-    let start = json.index_of(key)
-    if start < 0 { return "" }
-    let val_start = start + key.length
-    mut val_end = val_start
-    while val_end < json.length {
-        let ch = json[val_end]
-        if ch == "\\" { val_end = val_end + 2 }
-        else if ch == "\"" { break }
-        else { val_end = val_end + 1 }
-    }
-    json.substring(val_start, val_end)
-}
-
-fn forge_parse_json_int(json: string, field: string) -> int {
-    let key = "\"${field}\":"
-    let start = json.index_of(key)
-    if start < 0 { return -1 }
-    let val_start = start + key.length
-    mut val_end = val_start
-    while val_end < json.length {
-        let ch = json[val_end]
-        if ch == "}" || ch == "," { break }
-        val_end = val_end + 1
-    }
-    forge_parse_int(json.substring(val_start, val_end))
-}
-
-extern fn forge_parse_int(s: string) -> int
 
 fn main() {
     // ── Fully declarative CLI ──

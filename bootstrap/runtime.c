@@ -2601,6 +2601,10 @@ const char* forge_format_location(const char* file, int64_t line) {
     return result;
 }
 
+// Forward declare capture state (used by test flush + capture)
+static pthread_mutex_t _capture_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int _capture_fd_backup = -1;
+
 // ── Spec test runtime (thread-safe) ──
 // Atomic counters for parallel test execution.
 // Per-thread output buffering prevents interleaved spec results.
@@ -2643,12 +2647,16 @@ static void test_printf(const char* fmt, ...) {
     }
 }
 
-// Flush buffered output atomically (called at end of each module's init)
+// Flush buffered output atomically (called at end of each module's init).
+// Uses stderr if stdout is currently captured (avoids writing into the capture pipe).
 void forge_test_flush(void) {
     if (_test_buf && _test_buf_len > 0) {
         pthread_mutex_lock(&_test_output_mutex);
-        fwrite(_test_buf, 1, _test_buf_len, stdout);
-        fflush(stdout);
+        // If another thread is capturing stdout, write to stderr instead
+        // so our output doesn't contaminate the capture buffer.
+        FILE* out = (_capture_fd_backup >= 0) ? stderr : stdout;
+        fwrite(_test_buf, 1, _test_buf_len, out);
+        fflush(out);
         pthread_mutex_unlock(&_test_output_mutex);
         _test_buf_len = 0;
     }
@@ -2713,14 +2721,13 @@ int64_t forge_test_summary(void) {
 static char* _capture_buf = NULL;
 static size_t _capture_len = 0;
 static size_t _capture_cap = 0;
-static int _capture_fd_backup = -1;
+// _capture_fd_backup declared earlier (forward declaration)
 static int _capture_pipe[2] = {-1, -1};
-static pthread_mutex_t _capture_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void forge_test_capture_start(void) {
-    pthread_mutex_lock(&_capture_mutex);
-    // Also flush the test output buffer first so captured output is clean
+    // Flush our own output buffer before capturing
     forge_test_flush();
+    pthread_mutex_lock(&_capture_mutex);
     fflush(stdout);
     _capture_fd_backup = dup(STDOUT_FILENO);
     pipe(_capture_pipe);
