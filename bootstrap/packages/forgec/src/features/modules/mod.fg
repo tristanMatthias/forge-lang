@@ -1,43 +1,46 @@
 // WHY: module system feature — mod declarations, use imports, export
 // visibility.
-//
-// Two passes:
-//   1. resolver.fg — reads module files from disk, attaches parsed
-//      bodies to Stmt.Module AST nodes
-//   2. resolve/names.fg — builds module tree, resolves use aliases,
-//      rewrites Expr.Ident → Expr.QualifiedIdent (lives in resolve/)
-//
-// The parser (parser.fg) produces Stmt.Module and Stmt.Use nodes.
-// Export is handled in parse/mod.fg since it applies to all declarations.
 
 mod parser
 mod resolver
 mod package
-use features.eval.{error_result, ok_result, value_null}
-use core.registry.{feature_new, register}
+use features.eval.{ok_result, value_null}
+use core.registry.{feature_new, Feature}
 use resolve.{resolve_stmt_list}
 
-export fn init_modules(reg: Registry) {
-    let f1 = feature_new("mod") with {
+fn mod_resolve(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r }
+}
+
+fn mod_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Module(_, _) -> ok_result(rt, value_null())
+        _ -> ok_result(rt, value_null())
+    }
+}
+
+fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Use(_, _) -> ok_result(rt, value_null())
+        _ -> ok_result(rt, value_null())
+    }
+}
+
+export fn mod_feature() -> Feature {
+    feature_new("mod") with {
         stmt_tag: Stmt.Module("", StmtList.End),
-        resolve_stmt: (r: Resolver, stmt: Stmt) -> match stmt { .Module(_, body) -> resolve_stmt_list(r, body), _ -> r },
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .Module(_, _) -> ok_result(rt, value_null())
-            _ -> error_result(rt, "expected Module")
-        },
         decl_keyword: "kw_mod",
         parse_decl: (p: Parser) -> p.parse_module_declaration(),
+        resolve_stmt: mod_resolve,
+        eval_stmt: mod_eval,
     }
-    register(reg, f1)
+}
 
-    let f2 = feature_new("use") with {
+export fn use_feature() -> Feature {
+    feature_new("use") with {
         stmt_tag: Stmt.Use("", ParamList.End),
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> match stmt {
-            .Use(_, _) -> ok_result(rt, value_null())
-            _ -> error_result(rt, "expected Use")
-        },
         decl_keyword: "kw_use",
         parse_decl: (p: Parser) -> p.parse_use_declaration(),
+        eval_stmt: use_eval,
     }
-    register(reg, f2)
 }
