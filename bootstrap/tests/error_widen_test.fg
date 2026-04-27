@@ -1,0 +1,33 @@
+// Test: union error type auto-widening at ? sites (spec Axis 12.3).
+
+enum EwResult { Ok(value: string), Err(error: string) }
+enum EwIntResult { Ok(value: int), Err(error: string) }
+
+type EwIoError = { message: string }
+type EwParseError = { message: string }
+
+fn ew_read_file(path: string) -> EwResult {
+    if path == "missing.txt" {
+        return EwResult.Err("file not found")
+    }
+    if path == "bad.json" {
+        return EwResult.Ok("bad")
+    }
+    EwResult.Ok("hello world")
+}
+
+fn ew_show_config(path: string) -> string {
+    match ew_read_file(path) {
+        .Ok(v) -> "ok: ${v}"
+        .Err(e) -> "error: ${e}"
+    }
+}
+
+spec "error widen" {
+    then "ok path returns content" {
+        ew_show_config("ok.txt") == "ok: hello world"
+    }
+    then "missing file returns error" {
+        ew_show_config("missing.txt") == "error: file not found"
+    }
+}

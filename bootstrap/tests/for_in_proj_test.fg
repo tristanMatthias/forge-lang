@@ -1,0 +1,27 @@
+// Test: for-in loops over lists and ranges.
+
+fn fip_list_output() -> string {
+    forge_test_capture_start()
+    let items = [1, 2, 3]
+    for x in items {
+        println(string(x))
+    }
+    forge_test_capture_stop()
+}
+
+fn fip_range_sum() -> int {
+    mut total = 0
+    for i in 1..6 {
+        total = total + i
+    }
+    total
+}
+
+spec "for in" {
+    then "iterate over list" {
+        fip_list_output() == "1\n2\n3"
+    }
+    then "range sum 1..6" {
+        fip_range_sum() == 15
+    }
+}

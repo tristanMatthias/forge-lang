@@ -1,0 +1,41 @@
+// Test: exhaustive match — all variants covered.
+
+enum EmColor { Red, Green, Blue }
+
+fn em_describe(c: EmColor) -> string {
+    match c {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue -> "blue"
+    }
+}
+
+enum EmAB { A, B, C }
+
+fn em_wildcard(x: EmAB) -> string {
+    match x {
+        .A -> "matched A"
+        _ -> "matched other"
+    }
+}
+
+enum EmMaybe { None, Some(value: int) }
+
+fn em_expr(m: EmMaybe) -> string {
+    match m {
+        .Some(v) -> "got value"
+        _ -> "nothing"
+    }
+}
+
+spec "exhaustive match" {
+    then "all variants covered" {
+        em_describe(EmColor.Red) == "red" && em_describe(EmColor.Green) == "green" && em_describe(EmColor.Blue) == "blue"
+    }
+    then "wildcard matches non-A" {
+        em_wildcard(EmAB.A) == "matched A" && em_wildcard(EmAB.B) == "matched other"
+    }
+    then "match expression with wildcard" {
+        em_expr(EmMaybe.Some(42)) == "got value"
+    }
+}

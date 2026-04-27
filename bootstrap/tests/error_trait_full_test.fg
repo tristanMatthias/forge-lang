@@ -1,0 +1,47 @@
+// Test: full Error trait with severity and transient.
+
+enum EtfSeverity { Debug, Info, Warning, Error, Fatal }
+
+fn etf_severity_str(s: EtfSeverity) -> string {
+    match s {
+        .Debug -> "debug"
+        .Info -> "info"
+        .Warning -> "warning"
+        .Error -> "error"
+        .Fatal -> "fatal"
+    }
+}
+
+trait EtfError {
+    fn message(self) -> string
+    fn kind(self) -> string
+    fn severity(self) -> EtfSeverity
+    fn is_transient(self) -> bool
+}
+
+type EtfIoError = { msg: string, path: string, cause_msg: string }
+
+impl EtfError for EtfIoError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "io.not_found" }
+    fn severity(self) -> EtfSeverity { EtfSeverity.Error }
+    fn is_transient(self) -> bool { false }
+}
+
+fn etf_describe(e: EtfError) -> string {
+    e.kind() + ": " + e.message() + "\nseverity: " + etf_severity_str(e.severity())
+}
+
+spec "error trait full" {
+    given "io error" {
+        then "kind and message" {
+            etf_describe(EtfIoError { msg: "file not found", path: "/tmp/x", cause_msg: "disk failure" }) == "io.not_found: file not found\nseverity: error"
+        }
+        then "is not transient" {
+            EtfIoError { msg: "file not found", path: "/tmp/x", cause_msg: "disk failure" }.is_transient() == false
+        }
+        then "cause message accessible" {
+            EtfIoError { msg: "file not found", path: "/tmp/x", cause_msg: "disk failure" }.cause_msg == "disk failure"
+        }
+    }
+}

@@ -1,0 +1,22 @@
+type DtResource = { id: int }
+
+impl DtResource {
+    fn drop(self) {
+        println("dropping Resource " + string(self.id))
+    }
+}
+
+fn dt_run() {
+    let r1 = DtResource { id: 1 }
+    println("creating r1")
+    let r2 = DtResource { id: 2 }
+    println("creating r2")
+}
+
+spec "drop trait" {
+    then "destructors run in LIFO order" {
+        forge_test_capture_start()
+        dt_run()
+        forge_test_capture_stop() == "creating r1\ncreating r2\ndropping Resource 2\ndropping Resource 1"
+    }
+}

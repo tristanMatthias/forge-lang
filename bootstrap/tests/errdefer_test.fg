@@ -1,0 +1,45 @@
+// Test: errdefer — error-only cleanup with LIFO interleaving.
+
+fn ed_maybe_null(name: string) -> string? {
+    if name == "bad" { return null }
+    name
+}
+
+fn ed_test_success() -> string? {
+    defer { println("A") }
+    errdefer { println("B") }
+    defer { println("C") }
+    let x = ed_maybe_null("good")?
+    x
+}
+
+fn ed_test_error() -> string? {
+    defer { println("A") }
+    errdefer { println("B") }
+    defer { println("C") }
+    let x = ed_maybe_null("bad")?
+    x
+}
+
+fn ed_run_success() -> string {
+    forge_test_capture_start()
+    let r1 = ed_test_success()
+    if r1 != null { println(r1!) }
+    forge_test_capture_stop()
+}
+
+fn ed_run_error() -> string {
+    forge_test_capture_start()
+    let r2 = ed_test_error()
+    if r2 == null { println("null") }
+    forge_test_capture_stop()
+}
+
+spec "errdefer" {
+    then "success skips errdefer" {
+        ed_run_success() == "C\nA\ngood"
+    }
+    then "error runs errdefer in LIFO order" {
+        ed_run_error() == "C\nB\nA\nnull"
+    }
+}

@@ -1,0 +1,37 @@
+// Test: error cause chain via trait.
+
+trait EccError {
+    fn message(self) -> string
+    fn kind(self) -> string
+    fn cause_msg(self) -> string
+}
+
+type EccIoError = { msg: string }
+type EccAppError = { msg: string, inner: EccIoError }
+
+impl EccError for EccIoError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "io" }
+    fn cause_msg(self) -> string { "" }
+}
+
+impl EccError for EccAppError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "app" }
+    fn cause_msg(self) -> string { self.inner.msg }
+}
+
+fn ecc_show(e: EccError) -> string {
+    let base = e.kind() + ": " + e.message()
+    let c = e.cause_msg()
+    if c != "" { base + "\n  caused by: " + c } else { base }
+}
+
+spec "error cause chain" {
+    then "app error shows cause" {
+        ecc_show(EccAppError { msg: "service unavailable", inner: EccIoError { msg: "connection refused" } }) == "app: service unavailable\n  caused by: connection refused"
+    }
+    then "io error has no cause" {
+        ecc_show(EccIoError { msg: "connection refused" }) == "io: connection refused"
+    }
+}

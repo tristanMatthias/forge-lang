@@ -1,0 +1,32 @@
+// Test: Error trait with message() and kind().
+
+trait EtError {
+    fn message(self) -> string
+    fn kind(self) -> string
+}
+
+type EtIoError = { msg: string, path: string }
+type EtParseError = { msg: string, line: int }
+
+impl EtError for EtIoError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "io" }
+}
+
+impl EtError for EtParseError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "parse" }
+}
+
+fn et_describe(e: EtError) -> string {
+    "error: " + e.message() + "\nkind: " + e.kind()
+}
+
+spec "error trait" {
+    then "io error described correctly" {
+        et_describe(EtIoError { msg: "file not found", path: "/tmp/x" }) == "error: file not found\nkind: io"
+    }
+    then "parse error described correctly" {
+        et_describe(EtParseError { msg: "invalid input", line: 42 }) == "error: invalid input\nkind: parse"
+    }
+}

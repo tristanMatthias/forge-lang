@@ -1,0 +1,29 @@
+// Test: enum equality comparison.
+
+enum EcColor { Red, Green, Blue }
+
+type EcBox = {
+    color: EcColor,
+}
+
+fn ec_check(c: EcColor, expected: EcColor) -> bool {
+    c == expected
+}
+
+spec "enum compare" {
+    then "direct same variant is equal" {
+        EcColor.Red == EcColor.Red
+    }
+    then "direct different variant is not equal" {
+        EcColor.Red != EcColor.Green
+    }
+    then "struct field matches variant" {
+        ec_check(EcBox { color: EcColor.Green }.color, EcColor.Green)
+    }
+    then "struct field does not match other variant" {
+        ec_check(EcBox { color: EcColor.Green }.color, EcColor.Red) == false
+    }
+    then "function param direct comparison" {
+        ec_check(EcColor.Red, EcColor.Red)
+    }
+}

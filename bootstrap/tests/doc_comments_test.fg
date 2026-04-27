@@ -1,0 +1,11 @@
+// Test: doc comments don't affect execution.
+
+fn dc_greet(name: string) -> string {
+    "hello " + name
+}
+
+spec "doc comments" {
+    then "doc-commented function works" {
+        dc_greet("world") == "hello world"
+    }
+}

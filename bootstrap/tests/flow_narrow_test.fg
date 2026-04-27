@@ -1,0 +1,37 @@
+// Test: flow-sensitive type narrowing after `is` check.
+
+enum FnAnimal {
+    Dog(name: string, age: int)
+    Cat(name: string)
+    Fish
+}
+
+fn fn_describe(a: FnAnimal) -> string {
+    if a is .Dog {
+        "Dog: " + a.name + " age " + string(a.age)
+    } else if a is .Cat {
+        "Cat: " + a.name
+    } else {
+        "other"
+    }
+}
+
+fn fn_top_level_narrow() -> string {
+    let x = FnAnimal.Dog("Rex", 5)
+    if x is .Dog { x.name } else { "none" }
+}
+
+spec "flow narrow" {
+    then "top level narrowing" {
+        fn_top_level_narrow() == "Rex"
+    }
+    then "dog narrowing" {
+        fn_describe(FnAnimal.Dog("Rex", 3)) == "Dog: Rex age 3"
+    }
+    then "cat narrowing" {
+        fn_describe(FnAnimal.Cat("Whiskers")) == "Cat: Whiskers"
+    }
+    then "fish fallback" {
+        fn_describe(FnAnimal.Fish) == "other"
+    }
+}

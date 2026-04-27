@@ -1,0 +1,9 @@
+fn ann_greet(name: string) -> string {
+    "hello " + name
+}
+
+spec "annotations" {
+    then "function works" {
+        ann_greet("world") == "hello world"
+    }
+}
