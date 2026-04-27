@@ -4,6 +4,9 @@
 
 #include <llvm-c/Core.h>
 #include <llvm-c/Analysis.h>
+#include <llvm-c/ExecutionEngine.h>
+#include <llvm-c/Target.h>
+#include <llvm-c/TargetMachine.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -768,4 +771,78 @@ void forge_covmap_end(void) {
         fclose(cov_map_file);
         cov_map_file = NULL;
     }
+}
+
+// ── JIT Execution ──
+// Execute an LLVM module's main() function in-process via MCJIT.
+// Returns the exit code from main(), or -1 on error.
+
+int64_t forge_llvm_jit_run(LLVMModuleRef module) {
+    // Initialize native target for JIT
+    LLVMLinkInMCJIT();
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+    LLVMInitializeNativeAsmParser();
+
+    char* error = NULL;
+    LLVMExecutionEngineRef engine;
+    struct LLVMMCJITCompilerOptions options;
+    LLVMInitializeMCJITCompilerOptions(&options, sizeof(options));
+    options.OptLevel = 2;
+
+    if (LLVMCreateMCJITCompilerForModule(&engine, module, &options, sizeof(options), &error)) {
+        fprintf(stderr, "JIT error: %s\n", error);
+        LLVMDisposeMessage(error);
+        return -1;
+    }
+
+    // Look up main
+    uint64_t main_addr = LLVMGetFunctionAddress(engine, "main");
+    if (!main_addr) {
+        fprintf(stderr, "JIT error: main() not found\n");
+        LLVMDisposeExecutionEngine(engine);
+        return -1;
+    }
+
+    // Call main() — it takes no args and returns void in our convention
+    typedef void (*MainFn)(void);
+    MainFn main_fn = (MainFn)main_addr;
+    main_fn();
+
+    LLVMDisposeExecutionEngine(engine);
+    return 0;
+}
+
+// ── Object File Emission ──
+// Emit an LLVM module as an object file. Returns 0 on success, -1 on error.
+
+int64_t forge_llvm_emit_object(LLVMModuleRef module, const char* output_path) {
+    LLVMInitializeNativeTarget();
+    LLVMInitializeNativeAsmPrinter();
+
+    char* triple = LLVMGetDefaultTargetTriple();
+    LLVMTargetRef target;
+    char* error = NULL;
+
+    if (LLVMGetTargetFromTriple(triple, &target, &error)) {
+        fprintf(stderr, "target error: %s\n", error);
+        LLVMDisposeMessage(error);
+        LLVMDisposeMessage(triple);
+        return -1;
+    }
+
+    LLVMTargetMachineRef tm = LLVMCreateTargetMachine(
+        target, triple, "generic", "",
+        LLVMCodeGenLevelDefault, LLVMRelocDefault, LLVMCodeModelDefault);
+    LLVMDisposeMessage(triple);
+
+    if (LLVMTargetMachineEmitToFile(tm, module, (char*)output_path, LLVMObjectFile, &error)) {
+        fprintf(stderr, "emit error: %s\n", error);
+        LLVMDisposeMessage(error);
+        LLVMDisposeTargetMachine(tm);
+        return -1;
+    }
+
+    LLVMDisposeTargetMachine(tm);
+    return 0;
 }

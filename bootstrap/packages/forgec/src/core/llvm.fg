@@ -139,3 +139,6 @@ extern fn forge_covmap_next_decision_id() -> int
 extern fn forge_coverage_finalize_fn(fn_val: ptr, actual_count: int)
 extern fn forge_covmap_end()
 extern fn forge_covmap_counter_count() -> int
+
+// ── JIT execution ──
+extern fn forge_llvm_jit_run(module: ptr) -> int

@@ -35,7 +35,9 @@ fn decl_va(m: ptr, name: string, ret: ptr, params: [ptr]) {
     forge_llvm_add_function(m, name, fn_type)
 }
 
-export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string) -> Result<int, string> {
+// Core codegen: produces an LLVM module from an AST. Returns the Ctx.
+// Callers decide what to do with it (write IR, JIT, emit object).
+fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, source_file: string) -> Result<Ctx, string> {
     let lc = forge_llvm_context_create()
     let m = forge_llvm_module_create("bootstrap", lc)
     let builder = forge_llvm_create_builder(lc)
@@ -358,14 +360,36 @@ export fn compile_program(stmts: StmtList, output_path: string, debug_null_check
     ctx.cov_finalize_fn()
     ctx.verify_module()
     if coverage { forge_covmap_end() }
-    let write_result = ctx.write_ir(output_path)
-    ctx.dispose()
 
-    if write_result != 0 {
-        return Result.Err("codegen error: failed to write IR to ${output_path}")
+    // Return the Ctx with the compiled module
+    Result.Ok(ctx)
+}
+
+// Compile a program to LLVM IR and write to a file.
+export fn compile_program(stmts: StmtList, output_path: string, debug_null_checks: bool, coverage: bool, source_file: string) -> Result<int, string> {
+    match codegen_program(stmts, debug_null_checks, coverage, source_file) {
+        .Ok(ctx) -> {
+            let write_result = ctx.write_ir(output_path)
+            ctx.dispose()
+            if write_result != 0 {
+                return Result.Err("codegen error: failed to write IR to ${output_path}")
+            }
+            Result.Ok(0)
+        }
+        .Err(e) -> Result.Err(e)
     }
+}
 
-    Result.Ok(0)
+// Compile and JIT-execute a program in-process. No files, no external processes.
+export fn compile_and_jit(stmts: StmtList) -> Result<int, string> {
+    match codegen_program(stmts, false, false, "") {
+        .Ok(ctx) -> {
+            // JIT engine takes ownership of the module — don't dispose ctx
+            let exit_code = forge_llvm_jit_run(ctx.module)
+            Result.Ok(exit_code)
+        }
+        .Err(e) -> Result.Err(e)
+    }
 }
 
 // Rebuild a FieldList with `resolved` populated from `resolve_type`.

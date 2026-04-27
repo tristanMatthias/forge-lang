@@ -47,7 +47,7 @@ use features.modules.package.{load_package_config}
 use typeck.{typecheck_program}
 use diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy}
 use diagnostics.render.{render_bag, render_bag_json}
-use codegen.setup.{compile_program}
+use codegen.setup.{compile_program, compile_and_jit}
 use features.generics.mono.{monomorphize}
 
 fn print_usage() {
@@ -535,51 +535,80 @@ fn main() {
         }
         if cmd0 == "test" {
             let project_dir = forge_shell_exec("pwd")
-            let bs2_path = forge_selfhost_get_arg_cstr(0)
-            let llc_prefix = forge_shell_exec("printenv LLC_PREFIX 2>/dev/null || echo /opt/homebrew/Cellar/llvm/20.1.5")
-            let llc = "${llc_prefix}/bin/llc"
-            let llvm_prefix = forge_shell_exec("printenv LLVM_PREFIX 2>/dev/null || echo /opt/homebrew/opt/llvm")
-            let llvm_lib = "${llvm_prefix}/lib"
-            // Parse optional args: forge test [file] [-f filter] [--coverage]
-            mut file_arg = ""
-            mut filter_arg = ""
-            mut coverage = false
-            mut i = 2
-            while i < forge_selfhost_argc() {
-                let arg = forge_selfhost_get_arg_cstr(i)
-                if arg == "-f" || arg == "--filter" {
-                    if i + 1 < forge_selfhost_argc() {
-                        filter_arg = forge_selfhost_get_arg_cstr(i + 1)
-                        i = i + 2
-                        continue
+            // Discover _test.fg files
+            let test_files = forge_shell_exec("find ${project_dir} -name '*_test.fg' -type f -not -path '*/build/*' 2>/dev/null | sort")
+            if test_files == "" {
+                println("No test files found.")
+                return
+            }
+
+            // Read and combine all test sources
+            mut source = "extern fn forge_test_summary()\nextern fn forge_test_capture_start()\nextern fn forge_test_capture_stop() -> string\n\n"
+            mut specs = ""
+            mut count = 0
+
+            for path in test_files.split("\n") {
+                if path == "" { continue }
+                let content = read_file(path)
+                if !content.contains("spec ") { continue }
+                if content.contains("fn main()") { continue }
+                count = count + 1
+                // Separate functions (top-level) from spec blocks (go in main)
+                mut in_spec = false
+                mut brace_depth = 0
+                for line in content.split("\n") {
+                    let trimmed = line.trim()
+                    if trimmed.starts_with("extern fn") { continue }
+                    if trimmed.starts_with("spec ") {
+                        in_spec = true
+                        brace_depth = 0
                     }
-                } else if arg == "--coverage" || arg == "-c" {
-                    coverage = true
-                } else {
-                    file_arg = arg
+                    if in_spec {
+                        specs = "${specs}    ${line}\n"
+                        for ch in line {
+                            if ch == "{" { brace_depth = brace_depth + 1 }
+                            if ch == "}" { brace_depth = brace_depth - 1 }
+                        }
+                        if brace_depth <= 0 && trimmed == "}" {
+                            in_spec = false
+                            specs = "${specs}\n"
+                        }
+                    } else {
+                        source = "${source}${line}\n"
+                    }
                 }
-                i = i + 1
             }
 
-            let config = TestConfig {
-                project_dir,
-                build_dir: "${project_dir}/build",
-                compiler: bs2_path,
-                llc,
-                llvm_prefix,
-                llvm_lib,
-                runtime_o: "${project_dir}/build/runtime.o",
-                llvm_wrapper_o: "${project_dir}/build/llvm_wrapper.o",
-                filter: filter_arg,
-                coverage,
-            }
+            source = "${source}\nfn main() {\n${specs}    forge_test_summary()\n}\n"
 
-            if file_arg != "" {
-                let code = run_single_test(config, file_arg)
-                forge_process_exit(code)
-            } else {
-                let code = run_tests(config)
-                forge_process_exit(code)
+            // Compile + JIT in-process
+            let parsed = parse_program_source(source)
+            if parsed.had_error || parsed.stmts == null {
+                if bag_has_errors(parsed.bag) {
+                    render_bag(source, "<test>", parsed.bag)
+                }
+                fail(parsed.error_message)
+            }
+            let desugared = desugar_program(parsed.stmts!)
+            let mod_resolved = resolve_module_files(desugared, project_dir, LoadedPaths.End)
+            if mod_resolved.had_error { fail(mod_resolved.error_message) }
+            let expanded = expand_components(mod_resolved.stmts)
+            let named = resolve_names(expanded)
+            if bag_has_errors(named.bag) {
+                render_bag(source, "<test>", named.bag)
+                fail(named.error_message)
+            }
+            let tc_result = typecheck_program(named.stmts)
+            if bag_has_errors(tc_result.bag) {
+                render_bag(source, "<test>", tc_result.bag)
+                fail("type check failed")
+            }
+            let mono = monomorphize(tc_result.stmts, tc_result.trait_impls)
+            if bag_has_errors(mono.bag) { fail("monomorphization failed") }
+
+            match compile_and_jit(mono.stmts) {
+                .Ok(code) -> { forge_process_exit(code) }
+                .Err(e) -> { fail(e) }
             }
             return
         }
