@@ -251,38 +251,18 @@ fn count_tests(list: TestList) -> int {
 
 // ── Test Execution ──
 
-fn build_compile_cmd(config: TestConfig, test: TestCase, slug: string) -> string {
+fn run_test(config: TestConfig, test: TestCase) -> TestResult {
+    let slug = slugify(test.path)
     let ll = "${test.path}.ll"
     let obj = "${config.build_dir}/${slug}.o"
     let bin = "${config.build_dir}/${slug}.bin"
 
-    if config.coverage {
-        // Coverage: compile with --coverage, lower instrprof, link with profiling runtime
-        let cov_ll = "${test.path}.cov.ll"
-        let clang_rt_dir = forge_shell_exec("ls -d ${config.llvm_prefix}/lib/clang/*/lib/darwin 2>/dev/null | head -1")
-        "${config.compiler} compile --coverage ${test.path} >/dev/null 2>&1 && ${config.llvm_prefix}/bin/opt -passes=instrprof -o ${cov_ll} -S ${ll} --mtriple=arm64-apple-macosx 2>/dev/null && ${config.llc} -O2 -filetype=obj ${cov_ll} -o ${obj} 2>/dev/null && cc -o ${bin} ${obj} ${config.runtime_o} ${config.llvm_wrapper_o} -Wl,-stack_size,0x2000000 -L${config.llvm_lib} -lLLVM -lc++ -L${clang_rt_dir} -lclang_rt.profile_osx 2>/dev/null"
-    } else {
-        "${config.compiler} compile ${test.path} >/dev/null 2>&1 && ${config.llc} -O2 -filetype=obj ${ll} -o ${obj} 2>/dev/null && cc -o ${bin} ${obj} ${config.runtime_o} ${config.llvm_wrapper_o} -Wl,-stack_size,0x2000000 -L${config.llvm_lib} -lLLVM -lc++ 2>/dev/null"
-    }
-}
-
-fn build_run_cmd(config: TestConfig, test: TestCase, slug: string) -> string {
-    let bin = "${config.build_dir}/${slug}.bin"
-    if config.coverage {
-        let profraw = "${config.build_dir}/${slug}.profraw"
-        "LLVM_PROFILE_FILE=${profraw} ${bin} 2>&1"
-    } else {
-        "${bin} 2>&1"
-    }
-}
-
-fn run_test(config: TestConfig, test: TestCase) -> TestResult {
-    let slug = slugify(test.path)
-    let build_cmd = build_compile_cmd(config, test, slug)
-    let build_status = forge_shell_exec_status(build_cmd)
+    // Step 1: compile (with --coverage if enabled)
+    let cov_flag = if config.coverage { " --coverage" } else { "" }
+    let compile_status = forge_shell_exec_status("${config.compiler} compile${cov_flag} ${test.path} >/dev/null 2>&1")
 
     if test.is_error_test {
-        if build_status == 0 {
+        if compile_status == 0 {
             return TestResult { name: test.name, passed: false, reason: "expected compilation error but succeeded" }
         }
         let log = forge_shell_exec("${config.compiler} compile ${test.path} 2>&1")
@@ -292,13 +272,33 @@ fn run_test(config: TestConfig, test: TestCase) -> TestResult {
         return TestResult { name: test.name, passed: false, reason: "expected error ${test.error_code} not found in output" }
     }
 
-    if build_status != 0 {
+    if compile_status != 0 {
         let log = forge_shell_exec("${config.compiler} compile ${test.path} 2>&1")
         return TestResult { name: test.name, passed: false, reason: "build failed:\n${log}" }
     }
 
-    // Step 2: run + capture (one command)
-    let run_cmd = build_run_cmd(config, test, slug)
+    // Step 2: link
+    // Coverage: lower instrprof intrinsics + link with profiling runtime
+    let link_cmd = if config.coverage {
+        let cov_ll = "${ll}.cov.ll"
+        let clang_rt = forge_shell_exec("ls -d ${config.llvm_prefix}/lib/clang/*/lib/darwin 2>/dev/null | head -1")
+        "${config.llvm_prefix}/bin/opt -passes=instrprof -o ${cov_ll} -S ${ll} --mtriple=arm64-apple-macosx 2>/dev/null && ${config.llc} -O2 -filetype=obj ${cov_ll} -o ${obj} 2>/dev/null && cc -o ${bin} ${obj} ${config.runtime_o} ${config.llvm_wrapper_o} -Wl,-stack_size,0x2000000 -L${config.llvm_lib} -lLLVM -lc++ -L${clang_rt} -lclang_rt.profile_osx 2>/dev/null"
+    } else {
+        "${config.llc} -O2 -filetype=obj ${ll} -o ${obj} 2>/dev/null && cc -o ${bin} ${obj} ${config.runtime_o} ${config.llvm_wrapper_o} -Wl,-stack_size,0x2000000 -L${config.llvm_lib} -lLLVM -lc++ 2>/dev/null"
+    }
+    let link_status = forge_shell_exec_status(link_cmd)
+    if link_status != 0 {
+        return TestResult { name: test.name, passed: false, reason: "link failed" }
+    }
+
+    // Step 3: run + capture (with profraw output if coverage)
+    let run_cmd = if config.coverage {
+        let cov_dir = "${config.build_dir}/cov"
+        forge_shell_exec_status("mkdir -p ${cov_dir}")
+        "LLVM_PROFILE_FILE=${cov_dir}/${slug}.profraw ${bin} 2>&1"
+    } else {
+        "${bin} 2>&1"
+    }
     let actual = forge_shell_exec(run_cmd)
 
     // Step 3: compare
@@ -404,44 +404,37 @@ fn report_summary(passed: int, failed: int) {
 }
 
 // ── Coverage ──
+// Compiles tests with --coverage, runs them, merges profdata.
+// Produces build/cov/coverage.profdata (and .lcov if source mapping available).
+// All artifacts in build/cov/ — .profraw files cleaned after merge.
 
-fn merge_coverage(config: TestConfig, tests: TestList) {
-    // Collect all .profraw files
-    mut profraw_files = ""
-    mut current = tests
-    while true {
-        match current {
-            .End -> { break }
-            .Node(test, next) -> {
-                let slug = slugify(test.path)
-                let profraw = "${config.build_dir}/${slug}.profraw"
-                if forge_selfhost_file_exists(profraw) != 0 {
-                    profraw_files = if profraw_files == "" { profraw } else { "${profraw_files} ${profraw}" }
-                }
-                current = next
-            }
-        }
-    }
+fn merge_coverage(config: TestConfig) {
+    let dir = "${config.build_dir}/cov"
+    let profdata = "${dir}/coverage.profdata"
 
-    if profraw_files == "" {
-        println("${dim("no coverage data collected")}")
+    // Merge all .profraw → single .profdata
+    let profraw_files = forge_shell_exec("find ${dir} -name '*.profraw' 2>/dev/null | tr '\\n' ' '")
+    if profraw_files.trim() == "" {
+        println("${red("no coverage data collected")}")
         return
     }
 
-    // Merge all .profraw into one .profdata
-    let profdata = "${config.build_dir}/tests.profdata"
-    let merge_cmd = "${config.llvm_prefix}/bin/llvm-profdata merge -sparse ${profraw_files} -o ${profdata} 2>&1"
-    let merge_status = forge_shell_exec_status(merge_cmd)
-    if merge_status != 0 {
-        println("${red("coverage merge failed")}")
+    let ms = forge_shell_exec_status("${config.llvm_prefix}/bin/llvm-profdata merge -sparse ${profraw_files} -o ${profdata} 2>&1")
+    if ms != 0 {
+        println("${red("coverage: profdata merge failed")}")
         return
     }
 
-    // Show coverage summary
+    // Clean .profraw files
+    forge_shell_exec_status("rm -f ${dir}/*.profraw")
+
+    // Summary
     println("")
-    println("${bold("coverage:")} ${profdata}")
-    let summary = forge_shell_exec("${config.llvm_prefix}/bin/llvm-profdata show ${profdata} 2>&1")
-    println("${dim(summary)}")
+    let stats = forge_shell_exec("${config.llvm_prefix}/bin/llvm-profdata show ${profdata} 2>&1")
+    let fn_count = forge_shell_exec("echo '${stats}' | grep 'Total functions' | head -1")
+    let block_count = forge_shell_exec("echo '${stats}' | grep 'Total number of blocks' | head -1")
+    println("${bold("coverage:")} ${fn_count.trim()}, ${block_count.trim()}")
+    println("${dim("profdata: ${profdata}")}")
 }
 
 // ── Public API ──
@@ -483,7 +476,7 @@ export fn run_tests(config: TestConfig) -> int {
     report_summary(passed, failed)
 
     if config.coverage {
-        merge_coverage(config, tests)
+        merge_coverage(config)
     }
 
     if failed > 0 { 1 } else { 0 }
