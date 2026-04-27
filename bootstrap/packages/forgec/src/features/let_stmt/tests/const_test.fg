@@ -1,23 +1,25 @@
-spec "const bindings" {
-    then "int constant" {
-        const MAX: int = 1000
-        MAX == 1000
-    }
-    then "float constant" {
-        const PI: float = 3.14
-        PI == 3.14
-    }
-    then "string constant" {
-        const NAME = "avra"
-        NAME == "avra"
-    }
-    then "derived constant" {
-        const MAX: int = 1000
-        const HALF = MAX / 2
-        HALF == 500
-    }
-    then "bool constant" {
-        const FLAG = true
-        FLAG
+export fn test_const() {
+    spec "const bindings" {
+        then "int constant" {
+            const MAX: int = 1000
+            MAX == 1000
+        }
+        then "float constant" {
+            const PI: float = 3.14
+            PI == 3.14
+        }
+        then "string constant" {
+            const NAME = "avra"
+            NAME == "avra"
+        }
+        then "derived constant" {
+            const MAX: int = 1000
+            const HALF = MAX / 2
+            HALF == 500
+        }
+        then "bool constant" {
+            const FLAG = true
+            FLAG
+        }
     }
 }

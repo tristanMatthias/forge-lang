@@ -78,44 +78,28 @@ fn path_to_module(path: string, project_dir: string) -> string {
     rel
 }
 
-// Generate a single source file that concatenates all test files.
-// Functions go at the top level, spec blocks go inside main().
+// Generate an entry point that imports all test modules and calls their exported test functions.
+// Convention: each *_test.fg exports a function named test_<basename> (e.g., defer_test.fg exports test_defer).
 fn generate_entry_point(test_files: string, config: TestConfig) -> string {
-    mut preamble = "extern fn forge_test_summary()\nextern fn forge_test_capture_start()\nextern fn forge_test_capture_stop() -> string\n\n"
-    mut specs = ""
+    mut mods = ""
+    mut uses = ""
+    mut calls = ""
 
     for path in test_files.split("\n") {
         if path == "" { continue }
-        let content = forge_selfhost_read_file(path)
-        // Separate: functions/types go to preamble, spec blocks go to main body
-        mut in_spec = false
-        mut brace_depth = 0
-        for line in content.split("\n") {
-            let trimmed = line.trim()
-            // Skip extern declarations (provided by preamble)
-            if trimmed.starts_with("extern fn") { continue }
-            // Track spec blocks
-            if trimmed.starts_with("spec ") {
-                in_spec = true
-                brace_depth = 0
-            }
-            if in_spec {
-                specs = "${specs}    ${line}\n"
-                for ch in line {
-                    if ch == "{" { brace_depth = brace_depth + 1 }
-                    if ch == "}" { brace_depth = brace_depth - 1 }
-                }
-                if brace_depth <= 0 && trimmed == "}" {
-                    in_spec = false
-                    specs = "${specs}\n"
-                }
-            } else {
-                preamble = "${preamble}${line}\n"
-            }
-        }
+        let rel = path_to_module(path, config.project_dir)
+        let mod_name = forge_shell_exec("echo '${rel}' | tr '/-' '__'")
+        // Derive the exported function name from the file basename
+        // e.g., defer_test.fg → test_defer, const_test.fg → test_const
+        let basename = forge_shell_exec("basename ${path} .fg")
+        let fn_name = forge_shell_exec("echo '${basename}' | sed 's/_test$//'")
+        let export_fn = "test_${fn_name}"
+        mods = "${mods}mod ${mod_name}\n"
+        uses = "${uses}use ${mod_name}.{${export_fn}}\n"
+        calls = "${calls}    ${export_fn}()\n"
     }
 
-    "${preamble}\nfn main() {\n${specs}    forge_test_summary()\n}\n"
+    "extern fn forge_test_summary()\n${mods}${uses}\nfn main() {\n${calls}    forge_test_summary()\n}\n"
 }
 
 // ── Compilation ──
@@ -124,7 +108,15 @@ fn compile_and_run(config: TestConfig, test_files: string) -> int {
     let entry_dir = "${config.build_dir}/_test"
     forge_shell_exec_status("mkdir -p ${entry_dir}")
 
-    // Generate single concatenated source file
+    // Create symlinks so module resolver finds test files
+    for path in test_files.split("\n") {
+        if path == "" { continue }
+        let rel = path_to_module(path, config.project_dir)
+        let mod_name = forge_shell_exec("echo '${rel}' | tr '/-' '__'")
+        forge_shell_exec_status("ln -sf ${path} ${entry_dir}/${mod_name}.fg")
+    }
+
+    // Generate entry point
     let entry_source = generate_entry_point(test_files, config)
     forge_selfhost_write_file("${entry_dir}/main.fg", entry_source)
 

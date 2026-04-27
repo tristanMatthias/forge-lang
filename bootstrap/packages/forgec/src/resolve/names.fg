@@ -479,6 +479,9 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .Annotated(annotations, inner) -> .Annotated(annotations, rewrite_stmt(ctx, inner))
         .Defer(body) -> .Defer(rewrite_expr(ctx, body))
         .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(ctx, init))
+        .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_list(ctx, body))
+        .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_list(ctx, body))
+        .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(ctx, cond))
         _ -> stmt
     }
 }
