@@ -25,6 +25,7 @@
 #include <ucontext.h>
 #undef _XOPEN_SOURCE
 #include <mach/mach.h>
+#include <mach-o/dyld.h>
 #endif
 
 // ─── Forward declarations for error reporting ────────────────────
@@ -1990,6 +1991,10 @@ int64_t forge_validate_not_empty(const char* s, const char* name) {
     return (int64_t)(uintptr_t)s;
 }
 
+int64_t forge_parse_int(const char* s) {
+    return (int64_t)atoll(s);
+}
+
 // ── Shell execution ──
 const char* forge_shell_exec(const char* cmd) {
     FILE* fp = popen(cmd, "r");
@@ -2016,6 +2021,546 @@ const char* forge_shell_exec(const char* cmd) {
 int64_t forge_shell_exec_status(const char* cmd) {
     int status = system(cmd);
     return (int64_t)((status >> 8) & 0xff);
+}
+
+// ── Process management (@std/process port) ──
+// Full port of the Rust std-process package. Provides:
+// - forge_process_run: synchronous exec with stdout/stderr capture + timeout
+// - forge_process_spawn/wait/kill: async process management
+// - forge_process_read_line: line-by-line stdout streaming
+// - forge_process_forward: passthrough (inherited stdio)
+// - forge_process_pipe: stdin piping
+// - forge_process_env_get/args/self_dir: environment utilities
+
+#include <spawn.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <poll.h>
+
+// Simple JSON escaping for result strings
+static char* escape_json_str(const char* s) {
+    size_t cap = strlen(s) * 2 + 1;
+    char* out = (char*)malloc(cap);
+    size_t j = 0;
+    for (size_t i = 0; s[i]; i++) {
+        if (j + 6 >= cap) { cap *= 2; out = (char*)realloc(out, cap); }
+        switch (s[i]) {
+            case '"':  out[j++] = '\\'; out[j++] = '"'; break;
+            case '\\': out[j++] = '\\'; out[j++] = '\\'; break;
+            case '\n': out[j++] = '\\'; out[j++] = 'n'; break;
+            case '\r': out[j++] = '\\'; out[j++] = 'r'; break;
+            case '\t': out[j++] = '\\'; out[j++] = 't'; break;
+            default:
+                if ((unsigned char)s[i] < 0x20) {
+                    j += snprintf(out + j, cap - j, "\\u%04x", (unsigned char)s[i]);
+                } else {
+                    out[j++] = s[i];
+                }
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
+static const char* make_result_json(const char* stdout_str, const char* stderr_str, int code) {
+    char* esc_out = escape_json_str(stdout_str);
+    char* esc_err = escape_json_str(stderr_str);
+    size_t len = strlen(esc_out) + strlen(esc_err) + 64;
+    char* buf = (char*)malloc(len);
+    snprintf(buf, len, "{\"stdout\":\"%s\",\"stderr\":\"%s\",\"code\":%d}", esc_out, esc_err, code);
+    free(esc_out);
+    free(esc_err);
+    return buf;
+}
+
+// Read all data from a file descriptor into a malloc'd string
+static char* read_fd_all(int fd) {
+    size_t cap = 4096;
+    char* buf = (char*)malloc(cap);
+    size_t total = 0;
+    while (1) {
+        ssize_t n = read(fd, buf + total, cap - total - 1);
+        if (n <= 0) break;
+        total += n;
+        if (total >= cap - 1) { cap *= 2; buf = (char*)realloc(buf, cap); }
+    }
+    buf[total] = '\0';
+    return buf;
+}
+
+// Parse a simple JSON string array: ["arg1","arg2"] → NULL-terminated argv
+// Minimal parser — handles quoted strings, no nested objects
+static char** parse_args_json(const char* json, int* out_count) {
+    *out_count = 0;
+    if (!json || !json[0] || json[0] != '[') return NULL;
+    // Count strings
+    int count = 0;
+    for (const char* p = json; *p; p++) { if (*p == '"') { count++; p++; while (*p && *p != '"') { if (*p == '\\') p++; p++; } } }
+    count /= 2; // each string has open+close quote
+    if (count == 0) return NULL;
+    char** args = (char**)malloc((count + 1) * sizeof(char*));
+    int idx = 0;
+    const char* p = json + 1; // skip '['
+    while (*p && idx < count) {
+        while (*p && *p != '"') p++;
+        if (!*p) break;
+        p++; // skip opening quote
+        const char* start = p;
+        size_t len = 0;
+        while (*p && *p != '"') {
+            if (*p == '\\') { p++; len++; }
+            p++; len++;
+        }
+        char* arg = (char*)malloc(len + 1);
+        size_t j = 0;
+        const char* s = start;
+        while (s < p) {
+            if (*s == '\\') { s++; }
+            arg[j++] = *s++;
+        }
+        arg[j] = '\0';
+        args[idx++] = arg;
+        if (*p) p++; // skip closing quote
+    }
+    args[idx] = NULL;
+    *out_count = idx;
+    return args;
+}
+
+// Parse "cwd" from opts JSON (minimal: looks for "cwd":"value")
+static const char* parse_opt_cwd(const char* opts) {
+    if (!opts || !opts[0]) return NULL;
+    const char* p = strstr(opts, "\"cwd\"");
+    if (!p) return NULL;
+    p += 5;
+    while (*p && (*p == ':' || *p == ' ')) p++;
+    if (*p != '"') return NULL;
+    p++;
+    const char* start = p;
+    while (*p && *p != '"') p++;
+    size_t len = p - start;
+    char* cwd = (char*)malloc(len + 1);
+    memcpy(cwd, start, len);
+    cwd[len] = '\0';
+    return cwd;
+}
+
+// Parse "env" from opts JSON (minimal: looks for "env":{...})
+// Returns array of "KEY=VALUE" strings, NULL-terminated
+static char** parse_opt_env(const char* opts, int* count) {
+    *count = 0;
+    if (!opts || !opts[0]) return NULL;
+    const char* p = strstr(opts, "\"env\"");
+    if (!p) return NULL;
+    p = strchr(p, '{');
+    if (!p) return NULL;
+    p++; // skip {
+    // Count pairs
+    int n = 0;
+    for (const char* q = p; *q && *q != '}'; q++) { if (*q == ':') n++; }
+    if (n == 0) return NULL;
+    char** envs = (char**)malloc((n + 1) * sizeof(char*));
+    int idx = 0;
+    while (*p && *p != '}' && idx < n) {
+        while (*p && *p != '"') p++;
+        if (!*p) break;
+        p++;
+        const char* key_start = p;
+        while (*p && *p != '"') p++;
+        size_t key_len = p - key_start;
+        if (*p) p++; // close quote
+        while (*p && *p != '"') p++;
+        if (!*p) break;
+        p++;
+        const char* val_start = p;
+        while (*p && *p != '"') p++;
+        size_t val_len = p - val_start;
+        if (*p) p++;
+        char* entry = (char*)malloc(key_len + val_len + 2);
+        memcpy(entry, key_start, key_len);
+        entry[key_len] = '=';
+        memcpy(entry + key_len + 1, val_start, val_len);
+        entry[key_len + 1 + val_len] = '\0';
+        envs[idx++] = entry;
+    }
+    envs[idx] = NULL;
+    *count = idx;
+    return envs;
+}
+
+// Parse "timeout_ms" from opts JSON
+static int64_t parse_opt_timeout(const char* opts) {
+    if (!opts || !opts[0]) return 0;
+    const char* p = strstr(opts, "\"timeout_ms\"");
+    if (!p) return 0;
+    p += 12;
+    while (*p && (*p == ':' || *p == ' ')) p++;
+    return atoll(p);
+}
+
+// Process registry for spawn/wait/kill
+typedef struct ProcessEntry {
+    pid_t pid;
+    int stdout_fd;
+    int stderr_fd;
+    int alive;
+} ProcessEntry;
+
+#define MAX_PROCESSES 256
+static ProcessEntry process_registry[MAX_PROCESSES];
+static int64_t next_process_id = 1;
+
+static int64_t registry_add(pid_t pid, int stdout_fd, int stderr_fd) {
+    int64_t id = next_process_id++;
+    int slot = (int)(id % MAX_PROCESSES);
+    process_registry[slot].pid = pid;
+    process_registry[slot].stdout_fd = stdout_fd;
+    process_registry[slot].stderr_fd = stderr_fd;
+    process_registry[slot].alive = 1;
+    return id;
+}
+
+static ProcessEntry* registry_get(int64_t id) {
+    int slot = (int)(id % MAX_PROCESSES);
+    if (process_registry[slot].pid != 0) return &process_registry[slot];
+    return NULL;
+}
+
+static void registry_remove(int64_t id) {
+    int slot = (int)(id % MAX_PROCESSES);
+    process_registry[slot].pid = 0;
+    process_registry[slot].alive = 0;
+}
+
+// Core: fork + exec with pipes. Returns pid, sets stdout_fd/stderr_fd.
+static pid_t spawn_process(const char* cmd, char** argv, const char* cwd, char** extra_env, int extra_env_count,
+                           int* out_stdout_fd, int* out_stderr_fd, int pipe_stdin, int* out_stdin_fd) {
+    int stdout_pipe[2], stderr_pipe[2], stdin_pipe[2];
+    if (pipe(stdout_pipe) < 0) return -1;
+    if (pipe(stderr_pipe) < 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); return -1; }
+    if (pipe_stdin) {
+        if (pipe(stdin_pipe) < 0) { close(stdout_pipe[0]); close(stdout_pipe[1]); close(stderr_pipe[0]); close(stderr_pipe[1]); return -1; }
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(stdout_pipe[0]); close(stdout_pipe[1]);
+        close(stderr_pipe[0]); close(stderr_pipe[1]);
+        if (pipe_stdin) { close(stdin_pipe[0]); close(stdin_pipe[1]); }
+        return -1;
+    }
+
+    if (pid == 0) {
+        // Child
+        close(stdout_pipe[0]);
+        close(stderr_pipe[0]);
+        dup2(stdout_pipe[1], STDOUT_FILENO);
+        dup2(stderr_pipe[1], STDERR_FILENO);
+        close(stdout_pipe[1]);
+        close(stderr_pipe[1]);
+        if (pipe_stdin) {
+            close(stdin_pipe[1]);
+            dup2(stdin_pipe[0], STDIN_FILENO);
+            close(stdin_pipe[0]);
+        }
+        if (cwd) chdir(cwd);
+        // Set extra env vars
+        for (int i = 0; i < extra_env_count; i++) {
+            putenv(extra_env[i]);
+        }
+        execvp(cmd, argv);
+        _exit(127); // exec failed
+    }
+
+    // Parent
+    close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
+    *out_stdout_fd = stdout_pipe[0];
+    *out_stderr_fd = stderr_pipe[0];
+    if (pipe_stdin) {
+        close(stdin_pipe[0]);
+        if (out_stdin_fd) *out_stdin_fd = stdin_pipe[1];
+    }
+    return pid;
+}
+
+// Build argv from cmd + args_json
+static char** build_argv(const char* cmd, const char* args_json, int* total) {
+    int arg_count = 0;
+    char** parsed = parse_args_json(args_json, &arg_count);
+    *total = arg_count + 2;
+    char** argv = (char**)malloc((*total) * sizeof(char*));
+    argv[0] = (char*)cmd;
+    for (int i = 0; i < arg_count; i++) argv[i + 1] = parsed[i];
+    argv[arg_count + 1] = NULL;
+    if (parsed) free(parsed);
+    return argv;
+}
+
+/// Run a process synchronously. Returns JSON: {"stdout":"...","stderr":"...","code":N}
+const char* forge_process_run(const char* cmd, const char* args_json, const char* opts_json) {
+    int argc;
+    char** argv = build_argv(cmd, args_json, &argc);
+    const char* cwd = parse_opt_cwd(opts_json);
+    int env_count;
+    char** extra_env = parse_opt_env(opts_json, &env_count);
+    int64_t timeout_ms = parse_opt_timeout(opts_json);
+
+    int stdout_fd, stderr_fd;
+    pid_t pid = spawn_process(cmd, argv, cwd, extra_env, env_count, &stdout_fd, &stderr_fd, 0, NULL);
+    if (pid < 0) {
+        free(argv);
+        return make_result_json("", "spawn error", -1);
+    }
+
+    if (timeout_ms > 0) {
+        // Poll with timeout
+        struct pollfd fds[2] = {{stdout_fd, POLLIN, 0}, {stderr_fd, POLLIN, 0}};
+        char* out_buf = (char*)calloc(1, 4096); size_t out_cap = 4096, out_len = 0;
+        char* err_buf = (char*)calloc(1, 4096); size_t err_cap = 4096, err_len = 0;
+        int64_t remaining = timeout_ms;
+        int open_fds = 2;
+
+        while (open_fds > 0 && remaining > 0) {
+            struct timespec start;
+            clock_gettime(CLOCK_MONOTONIC, &start);
+            int ret = poll(fds, 2, (int)(remaining > INT32_MAX ? INT32_MAX : remaining));
+            struct timespec end;
+            clock_gettime(CLOCK_MONOTONIC, &end);
+            int64_t elapsed = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
+            remaining -= elapsed;
+
+            if (ret == 0) break; // timeout
+            for (int i = 0; i < 2; i++) {
+                if (fds[i].revents & (POLLIN | POLLHUP)) {
+                    char** buf = (i == 0) ? &out_buf : &err_buf;
+                    size_t* cap = (i == 0) ? &out_cap : &err_cap;
+                    size_t* len = (i == 0) ? &out_len : &err_len;
+                    ssize_t n = read(fds[i].fd, *buf + *len, *cap - *len - 1);
+                    if (n <= 0) { fds[i].fd = -1; open_fds--; }
+                    else { *len += n; if (*len >= *cap - 1) { *cap *= 2; *buf = (char*)realloc(*buf, *cap); } }
+                }
+            }
+        }
+        out_buf[out_len] = '\0';
+        err_buf[err_len] = '\0';
+
+        if (remaining <= 0) {
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
+            close(stdout_fd); close(stderr_fd);
+            char msg[64]; snprintf(msg, sizeof(msg), "process timed out after %lldms", (long long)timeout_ms);
+            const char* result = make_result_json(out_buf, msg, -1);
+            free(out_buf); free(err_buf); free(argv);
+            return result;
+        }
+
+        close(stdout_fd); close(stderr_fd);
+        int status;
+        waitpid(pid, &status, 0);
+        int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        const char* result = make_result_json(out_buf, err_buf, code);
+        free(out_buf); free(err_buf); free(argv);
+        return result;
+    }
+
+    // No timeout: read all then wait
+    char* out_str = read_fd_all(stdout_fd);
+    char* err_str = read_fd_all(stderr_fd);
+    close(stdout_fd); close(stderr_fd);
+    int status;
+    waitpid(pid, &status, 0);
+    int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    const char* result = make_result_json(out_str, err_str, code);
+    free(out_str); free(err_str); free(argv);
+    return result;
+}
+
+/// Spawn a background process. Returns handle ID or -1.
+int64_t forge_process_spawn_bg(const char* cmd, const char* args_json, const char* opts_json) {
+    int argc;
+    char** argv = build_argv(cmd, args_json, &argc);
+    const char* cwd = parse_opt_cwd(opts_json);
+    int env_count;
+    char** extra_env = parse_opt_env(opts_json, &env_count);
+    int stdout_fd, stderr_fd;
+    pid_t pid = spawn_process(cmd, argv, cwd, extra_env, env_count, &stdout_fd, &stderr_fd, 0, NULL);
+    free(argv);
+    if (pid < 0) return -1;
+    return registry_add(pid, stdout_fd, stderr_fd);
+}
+
+/// Kill a spawned process. Returns 1 on success, 0 on failure.
+int64_t forge_process_kill(int64_t handle) {
+    ProcessEntry* e = registry_get(handle);
+    if (!e || !e->alive) return 0;
+    kill(e->pid, SIGKILL);
+    waitpid(e->pid, NULL, 0);
+    close(e->stdout_fd);
+    close(e->stderr_fd);
+    e->alive = 0;
+    registry_remove(handle);
+    return 1;
+}
+
+/// Wait for a spawned process. Returns JSON result.
+const char* forge_process_wait(int64_t handle) {
+    ProcessEntry* e = registry_get(handle);
+    if (!e) return make_result_json("", "process not found", -1);
+    char* out_str = read_fd_all(e->stdout_fd);
+    char* err_str = read_fd_all(e->stderr_fd);
+    close(e->stdout_fd);
+    close(e->stderr_fd);
+    int status;
+    waitpid(e->pid, &status, 0);
+    int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    registry_remove(handle);
+    const char* result = make_result_json(out_str, err_str, code);
+    free(out_str); free(err_str);
+    return result;
+}
+
+/// Read a line from a spawned process's stdout. Returns "\0EOF" at end.
+const char* forge_process_read_line(int64_t handle) {
+    ProcessEntry* e = registry_get(handle);
+    if (!e) return "\0EOF";
+    char buf[4096];
+    size_t pos = 0;
+    while (pos < sizeof(buf) - 1) {
+        ssize_t n = read(e->stdout_fd, &buf[pos], 1);
+        if (n <= 0) { if (pos == 0) return "\0EOF"; break; }
+        if (buf[pos] == '\n') break;
+        pos++;
+    }
+    buf[pos] = '\0';
+    // Trim \r
+    if (pos > 0 && buf[pos - 1] == '\r') buf[pos - 1] = '\0';
+    char* result = (char*)malloc(pos + 1);
+    memcpy(result, buf, pos + 1);
+    return result;
+}
+
+/// Wait for a pattern in stdout. Returns 1 if found, 0 if timeout.
+int64_t forge_process_wait_for_output(int64_t handle, const char* pattern, int64_t timeout_ms) {
+    ProcessEntry* e = registry_get(handle);
+    if (!e) return 0;
+    struct timespec deadline;
+    clock_gettime(CLOCK_MONOTONIC, &deadline);
+    deadline.tv_sec += timeout_ms / 1000;
+    deadline.tv_nsec += (timeout_ms % 1000) * 1000000;
+    if (deadline.tv_nsec >= 1000000000) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000; }
+
+    char line[4096];
+    size_t pos = 0;
+    while (1) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        if (now.tv_sec > deadline.tv_sec || (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) return 0;
+
+        struct pollfd pfd = {e->stdout_fd, POLLIN, 0};
+        int64_t remaining = (deadline.tv_sec - now.tv_sec) * 1000 + (deadline.tv_nsec - now.tv_nsec) / 1000000;
+        if (remaining <= 0) return 0;
+        int ret = poll(&pfd, 1, (int)(remaining > 1000 ? 1000 : remaining));
+        if (ret <= 0) continue;
+
+        ssize_t n = read(e->stdout_fd, &line[pos], 1);
+        if (n <= 0) return 0;
+        if (line[pos] == '\n') {
+            line[pos] = '\0';
+            if (strstr(line, pattern)) return 1;
+            pos = 0;
+        } else {
+            pos++;
+            if (pos >= sizeof(line) - 1) pos = 0;
+        }
+    }
+}
+
+/// Check if process is alive. Returns 1 if running, 0 if exited.
+int64_t forge_process_is_alive(int64_t handle) {
+    ProcessEntry* e = registry_get(handle);
+    if (!e || !e->alive) return 0;
+    int status;
+    pid_t result = waitpid(e->pid, &status, WNOHANG);
+    if (result == 0) return 1; // still running
+    e->alive = 0;
+    return 0;
+}
+
+/// Execute with inherited stdio (passthrough). Returns exit code.
+int64_t forge_process_forward(const char* cmd, const char* args_json, const char* opts_json) {
+    int argc;
+    char** argv = build_argv(cmd, args_json, &argc);
+    const char* cwd = parse_opt_cwd(opts_json);
+    int env_count;
+    char** extra_env = parse_opt_env(opts_json, &env_count);
+
+    pid_t pid = fork();
+    if (pid < 0) { free(argv); return -1; }
+    if (pid == 0) {
+        if (cwd) chdir(cwd);
+        for (int i = 0; i < env_count; i++) putenv(extra_env[i]);
+        execvp(cmd, argv);
+        _exit(127);
+    }
+    free(argv);
+    int status;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+/// Run with stdin piped from input string. Returns JSON result.
+const char* forge_process_pipe(const char* input, const char* cmd, const char* args_json) {
+    int argc;
+    char** argv = build_argv(cmd, args_json, &argc);
+    int stdout_fd, stderr_fd, stdin_fd;
+    pid_t pid = spawn_process(cmd, argv, NULL, NULL, 0, &stdout_fd, &stderr_fd, 1, &stdin_fd);
+    free(argv);
+    if (pid < 0) return make_result_json("", "spawn error", -1);
+
+    // Write input then close stdin
+    if (input && input[0]) {
+        write(stdin_fd, input, strlen(input));
+    }
+    close(stdin_fd);
+
+    char* out_str = read_fd_all(stdout_fd);
+    char* err_str = read_fd_all(stderr_fd);
+    close(stdout_fd); close(stderr_fd);
+    int status;
+    waitpid(pid, &status, 0);
+    int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    const char* result = make_result_json(out_str, err_str, code);
+    free(out_str); free(err_str);
+    return result;
+}
+
+/// Get environment variable. Returns "\0NULL" if not set.
+const char* forge_process_env_get(const char* key) {
+    const char* val = getenv(key);
+    if (!val) return "\0NULL";
+    // Return a copy
+    size_t len = strlen(val);
+    char* copy = (char*)malloc(len + 1);
+    memcpy(copy, val, len + 1);
+    return copy;
+}
+
+/// Get the directory containing the current executable.
+const char* forge_process_self_dir(void) {
+    char path[4096];
+    uint32_t size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size) == 0) {
+        // Find last /
+        char* last_slash = strrchr(path, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+            char* result = (char*)malloc(strlen(path) + 1);
+            strcpy(result, path);
+            return result;
+        }
+    }
+    return ".";
 }
 
 // ── Trait objects (dynamic dispatch) ──
