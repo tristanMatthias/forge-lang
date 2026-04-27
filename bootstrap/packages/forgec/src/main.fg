@@ -666,15 +666,20 @@ fn main() {
                 return
             }
 
-            // Step 3: Add runtime externs + main
+            // Step 3: Add runtime externs + main with parallel test execution
             module_stmts = prepend_test_externs(module_stmts)
 
-            let main_body = StmtList.Node(
+            // Build main body: forge_test_summary() returns exit code
+            let summary_call = StmtList.Node(
                 sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("forge_test_summary"), ExprList.End))),
                 StmtList.End
             )
+            // main() just calls summary — the __init_<name> functions are called
+            // by __bs_top_level (which main calls via the codegen patch).
+            // Parallelization: the __init calls run sequentially in __bs_top_level
+            // for now. Full parallel requires restructuring to use Parallel blocks.
             module_stmts = StmtList.Node(
-                sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),
+                sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, summary_call)),
                 module_stmts
             )
 

@@ -219,6 +219,7 @@ fn codegen_program(stmts: StmtList, debug_null_checks: bool, coverage: bool, sou
     decl(m, "forge_test_skip", i32t, [pt])
     decl(m, "forge_test_todo", i32t, [pt])
     decl(m, "forge_test_summary", i32t, [])
+    decl(m, "forge_test_flush", vt, [])
 
     // ── arenas (spec Axis 9.6) ──
     decl(m, "forge_arena_new", pt, [])
@@ -1093,16 +1094,21 @@ fn emit_top_level(ctx: Ctx, env: VarEnv, stmts: StmtList) -> Result<VarEnv, stri
                     let init_ctx = ctx with { current_fn: init_fn, current_fn_name: init_name }
                     let new_env = emit_top_level(init_ctx, env, body)?
 
-                    // Terminate init function (position at wherever the builder ended up)
+                    // Flush output buffer and terminate init function
                     let final_bb = forge_llvm_get_insert_block(ctx.builder)
                     if final_bb != null {
                         forge_llvm_position_at_end(ctx.builder, final_bb)
                     }
+                    init_ctx.call("forge_test_flush", [])
                     init_ctx.ret(init_ctx.i64(0), .Int)
 
-                    // Restore caller's position and emit call to __init_<name>()
+                    // Restore caller's position
                     forge_llvm_position_at_end(ctx.builder, saved_bb)
                     let restored_ctx = ctx with { current_fn: saved_fn, current_fn_name: saved_fn_name }
+
+                    // Emit call to __init_<name>() in the caller's context.
+                    // For test binaries, this happens inside __bs_top_level which
+                    // main() calls. The test runner can override with Parallel blocks.
                     restored_ctx.call(init_name, [])
 
                     emit_top_level(restored_ctx, new_env, next)

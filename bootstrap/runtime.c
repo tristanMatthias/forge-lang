@@ -2601,46 +2601,90 @@ const char* forge_format_location(const char* file, int64_t line) {
     return result;
 }
 
-// ── Spec test runtime ──
-// Tracks test results for the spec/given/then testing framework.
-static int64_t forge_test_pass_count = 0;
-static int64_t forge_test_fail_count = 0;
-static int64_t forge_test_depth = 0;
+// ── Spec test runtime (thread-safe) ──
+// Atomic counters for parallel test execution.
+// Per-thread output buffering prevents interleaved spec results.
+
+#include <stdatomic.h>
+
+static _Atomic int64_t forge_test_pass_count = 0;
+static _Atomic int64_t forge_test_fail_count = 0;
+
+// Per-thread output buffer — each thread accumulates output here,
+// then flushes atomically when the module completes.
+static __thread char* _test_buf = NULL;
+static __thread size_t _test_buf_len = 0;
+static __thread size_t _test_buf_cap = 0;
+static pthread_mutex_t _test_output_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void test_buf_ensure(size_t needed) {
+    if (!_test_buf) {
+        _test_buf_cap = 4096;
+        _test_buf = (char*)malloc(_test_buf_cap);
+        _test_buf_len = 0;
+    }
+    while (_test_buf_len + needed >= _test_buf_cap) {
+        _test_buf_cap *= 2;
+        _test_buf = (char*)realloc(_test_buf, _test_buf_cap);
+    }
+}
+
+static void test_printf(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    char tmp[1024];
+    int n = vsnprintf(tmp, sizeof(tmp), fmt, args);
+    va_end(args);
+    if (n > 0) {
+        test_buf_ensure(n + 1);
+        memcpy(_test_buf + _test_buf_len, tmp, n);
+        _test_buf_len += n;
+        _test_buf[_test_buf_len] = '\0';
+    }
+}
+
+// Flush buffered output atomically (called at end of each module's init)
+void forge_test_flush(void) {
+    if (_test_buf && _test_buf_len > 0) {
+        pthread_mutex_lock(&_test_output_mutex);
+        fwrite(_test_buf, 1, _test_buf_len, stdout);
+        fflush(stdout);
+        pthread_mutex_unlock(&_test_output_mutex);
+        _test_buf_len = 0;
+    }
+}
 
 void forge_test_start_spec(const char* name) {
-    printf("spec %s\n", name);
-    forge_test_depth = 1;
+    test_printf("spec %s\n", name);
 }
 
 void forge_test_end_spec(void) {
-    forge_test_depth = 0;
+    forge_test_flush();
 }
 
 void forge_test_start_given(const char* name) {
-    printf("  given %s\n", name);
-    forge_test_depth = 2;
+    test_printf("  given %s\n", name);
 }
 
 void forge_test_end_given(void) {
-    forge_test_depth = 1;
 }
 
 void forge_test_run_then(const char* name, int64_t result) {
     if (result) {
-        printf("    then %s: PASS\n", name);
-        forge_test_pass_count++;
+        test_printf("    then %s: PASS\n", name);
+        atomic_fetch_add(&forge_test_pass_count, 1);
     } else {
-        printf("    then %s: FAIL\n", name);
-        forge_test_fail_count++;
+        test_printf("    then %s: FAIL\n", name);
+        atomic_fetch_add(&forge_test_fail_count, 1);
     }
 }
 
 void forge_test_skip(const char* name) {
-    printf("    then %s: SKIP\n", name);
+    test_printf("    then %s: SKIP\n", name);
 }
 
 void forge_test_todo(const char* name) {
-    printf("    then %s: TODO\n", name);
+    test_printf("    then %s: TODO\n", name);
 }
 
 int64_t forge_test_roughly(double actual, double expected, double tolerance) {
@@ -2650,14 +2694,16 @@ int64_t forge_test_roughly(double actual, double expected, double tolerance) {
 }
 
 int64_t forge_test_summary(void) {
-    int64_t total = forge_test_pass_count + forge_test_fail_count;
+    int64_t pass = atomic_load(&forge_test_pass_count);
+    int64_t fail = atomic_load(&forge_test_fail_count);
+    int64_t total = pass + fail;
     if (total == 0) return 0;
-    printf("\n%lld/%lld tests passed", forge_test_pass_count, total);
-    if (forge_test_fail_count > 0) {
-        printf(" (%lld failed)", forge_test_fail_count);
+    printf("\n%lld/%lld tests passed", pass, total);
+    if (fail > 0) {
+        printf(" (%lld failed)", fail);
     }
     printf("\n");
-    return forge_test_fail_count > 0 ? 1 : 0;
+    return fail > 0 ? 1 : 0;
 }
 
 // ── Stdout capture (for testing output-producing code) ──
