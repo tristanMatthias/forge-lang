@@ -1,0 +1,62 @@
+fn ur_make(flag: bool) -> int | string {
+    if flag {
+        return 42
+    }
+    return "hello"
+}
+
+fn ur_implicit_return() -> int | string {
+    "world"
+}
+
+type UrWrapper = {
+    val: int | string,
+}
+
+fn ur_match(v: int | string) -> string {
+    match v {
+        int(n) -> string(n)
+        string(s) -> s
+    }
+}
+
+fn ur_run() -> string {
+    forge_test_capture_start()
+    match ur_make(true) {
+        int(n) -> println(string(n))
+        string(s) -> println(s)
+    }
+    match ur_make(false) {
+        int(n) -> println(string(n))
+        string(s) -> println(s)
+    }
+
+    match ur_implicit_return() {
+        int(n) -> println("implicit: " + string(n))
+        string(s) -> println("implicit: " + s)
+    }
+
+    mut u: int | string = 10
+    match u {
+        int(n) -> println("mut int: " + string(n))
+        string(s) -> println("mut string: " + s)
+    }
+    u = "reassigned"
+    match u {
+        int(n) -> println("mut int: " + string(n))
+        string(s) -> println("mut string: " + s)
+    }
+
+    let w = UrWrapper { val: 99 }
+    match w.val {
+        int(n) -> println("struct field: " + string(n))
+        string(s) -> println("struct field: " + s)
+    }
+    forge_test_capture_stop()
+}
+
+spec "union return" {
+    then "union return output" {
+        ur_run() == "42\nhello\nimplicit: world\nmut int: 10\nmut string: reassigned\nstruct field: 99"
+    }
+}

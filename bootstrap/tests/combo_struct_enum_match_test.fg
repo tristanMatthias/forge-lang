@@ -7,13 +7,13 @@ enum CsemRole {
 }
 
 impl CsemUser {
-    fn greet(self) -> string {
+    fn csem_greet(self) -> string {
         `${self.name} (age ${string(self.age)})`
     }
 }
 
 fn csem_describe_role(user: CsemUser, role: CsemRole) -> string {
-    let base = user.greet()
+    let base = user.csem_greet()
     let role_str = match role {
         .Admin -> "admin"
         .Editor(lvl) -> `editor level ${string(lvl)}`

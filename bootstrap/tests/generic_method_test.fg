@@ -1,6 +1,6 @@
 type GmWidget = { name: string }
 impl GmWidget {
-    fn greet(self) -> string { "hello " + self.name }
+    fn gm_greet(self) -> string { "hello " + self.name }
 }
 
 type GmPoint = { x: int, y: int }
@@ -9,7 +9,7 @@ impl GmPoint {
 }
 
 fn gm_call_method(x: GmWidget) -> string {
-    x.greet()
+    x.gm_greet()
 }
 
 fn gm_show_it(x: GmPoint) -> string {

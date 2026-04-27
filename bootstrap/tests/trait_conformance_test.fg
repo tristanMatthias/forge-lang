@@ -1,0 +1,57 @@
+trait TcfAnimal {
+    fn name(self) -> string
+    fn sound(self) -> string
+}
+
+type TcfDog = { breed: string }
+type TcfCat = { color: string }
+
+impl TcfAnimal for TcfDog {
+    fn name(self) -> string { "dog (" + self.breed + ")" }
+    fn sound(self) -> string { "woof" }
+}
+
+impl TcfAnimal for TcfCat {
+    fn name(self) -> string { "cat (" + self.color + ")" }
+    fn sound(self) -> string { "meow" }
+}
+
+trait TcfSized {
+    fn size(self) -> int
+}
+
+impl TcfSized for TcfDog {
+    fn size(self) -> int { 30 }
+}
+
+impl TcfSized for TcfCat {
+    fn size(self) -> int { 10 }
+}
+
+fn tcf_describe(d: TcfDog) -> string {
+    d.name() + " says " + d.sound() + " (size " + string(d.size()) + ")"
+}
+
+spec "trait conformance" {
+    then "dog name" {
+        TcfDog { breed: "labrador" }.name() == "dog (labrador)"
+    }
+    then "dog sound" {
+        TcfDog { breed: "labrador" }.sound() == "woof"
+    }
+    then "cat name" {
+        TcfCat { color: "black" }.name() == "cat (black)"
+    }
+    then "cat sound" {
+        TcfCat { color: "black" }.sound() == "meow"
+    }
+    then "dog size" {
+        TcfDog { breed: "labrador" }.size() == 30
+    }
+    then "cat size" {
+        TcfCat { color: "black" }.size() == 10
+    }
+    then "describe" {
+        tcf_describe(TcfDog { breed: "labrador" }) == "dog (labrador) says woof (size 30)"
+    }
+}

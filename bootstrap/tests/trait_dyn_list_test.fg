@@ -1,0 +1,38 @@
+trait TdlShape {
+    fn name(self) -> string
+}
+
+type TdlCircle = { radius: float }
+type TdlRect = { width: float, height: float }
+type TdlTriangle = { base: float }
+
+impl TdlShape for TdlCircle {
+    fn name(self) -> string { "circle" }
+}
+
+impl TdlShape for TdlRect {
+    fn name(self) -> string { "rect" }
+}
+
+impl TdlShape for TdlTriangle {
+    fn name(self) -> string { "triangle" }
+}
+
+fn tdl_run() -> string {
+    let shapes: List<TdlShape> = [
+        TdlCircle { radius: 1.0 },
+        TdlRect { width: 2.0, height: 3.0 },
+        TdlTriangle { base: 4.0 }
+    ]
+    forge_test_capture_start()
+    for s in shapes {
+        println(s.name())
+    }
+    forge_test_capture_stop()
+}
+
+spec "trait dyn list" {
+    then "heterogeneous list" {
+        tdl_run() == "circle\nrect\ntriangle"
+    }
+}

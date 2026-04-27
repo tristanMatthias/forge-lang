@@ -1,0 +1,18 @@
+fn tta_swap(a: int, b: int) -> (int, int) {
+    (b, a)
+}
+
+spec "tuple type annotation" {
+    then "tuple access" {
+        let t: (int, string) = (42, "hello")
+        t.0 == 42
+    }
+    then "tuple string" {
+        let t: (int, string) = (42, "hello")
+        t.1 == "hello"
+    }
+    then "swap" {
+        let s = tta_swap(1, 2)
+        s.0 == 2
+    }
+}

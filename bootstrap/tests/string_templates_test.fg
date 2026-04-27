@@ -1,0 +1,28 @@
+fn stpl_run() -> string {
+    let name = "world"
+    let greeting = `hello ${name}`
+    let x = string(42)
+    let msg = `the answer is ${x}`
+    let a = string(3)
+    let b = string(4)
+    let sum = string(3 + 4)
+    let empty = ``
+    let plain = `just text`
+    let p1 = "ab"
+    let p2 = "cd"
+
+    forge_test_capture_start()
+    println(greeting)
+    println(msg)
+    println(`${a} + ${b} = ${sum}`)
+    println("[" + empty + "]")
+    println(plain)
+    println(`${p1}${p2}`)
+    forge_test_capture_stop()
+}
+
+spec "string templates" {
+    then "template output" {
+        stpl_run() == "hello world\nthe answer is 42\n3 + 4 = 7\n[]\njust text\nabcd"
+    }
+}

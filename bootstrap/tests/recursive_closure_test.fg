@@ -1,0 +1,19 @@
+fn rc_make_power(exp: int) -> fn(int) -> int {
+    if exp == 0 {
+        return (x) -> 1
+    }
+    if exp == 1 {
+        return (x) -> x
+    }
+    let sub = rc_make_power(exp - 1)
+    (x) -> x * sub(x)
+}
+
+spec "recursive closure" {
+    then "square" {
+        rc_make_power(2)(5) == 25
+    }
+    then "cube" {
+        rc_make_power(3)(3) == 27
+    }
+}

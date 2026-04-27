@@ -1,0 +1,19 @@
+trait TmaMath {
+    fn add(self, x: int, y: int) -> int
+}
+
+type TmaCalculator = { base: int }
+
+impl TmaMath for TmaCalculator {
+    fn add(self, x: int, y: int) -> int { self.base + x + y }
+}
+
+fn tma_compute(m: TmaMath, a: int, b: int) -> int {
+    m.add(a, b)
+}
+
+spec "trait multi arg" {
+    then "multi arg dispatch" {
+        tma_compute(TmaCalculator { base: 100 }, 3, 4) == 107
+    }
+}

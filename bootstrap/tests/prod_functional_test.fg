@@ -1,0 +1,35 @@
+fn pf_compose(f: fn(int) -> int, g: fn(int) -> int) -> fn(int) -> int {
+    (x) -> f(g(x))
+}
+
+fn pf_run() -> string {
+    let inc = (x) -> x + 1
+    let dbl = (x) -> x * 2
+
+    let inc_then_dbl = pf_compose(dbl, inc)
+    let dbl_then_sqr = pf_compose((x) -> x * x, dbl)
+
+    forge_test_capture_start()
+    println(string(inc_then_dbl(5)))
+    println(string(dbl_then_sqr(3)))
+
+    let nums = [1, 2, 3, 4, 5]
+    let results = nums.map(pf_compose(dbl, inc))
+    for r in results {
+        println(string(r))
+    }
+
+    let words = ["hello", "world", "from", "forge"]
+    let sentence = words.reduce("", (acc, w) -> {
+        if acc == "" { return w }
+        acc + " " + w
+    })
+    println(sentence)
+    forge_test_capture_stop()
+}
+
+spec "prod functional" {
+    then "compose and pipeline output" {
+        pf_run() == "12\n36\n4\n6\n8\n10\n12\nhello world from forge"
+    }
+}

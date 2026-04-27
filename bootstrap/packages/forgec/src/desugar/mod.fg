@@ -47,6 +47,7 @@ fn desugar_stmt(stmt: Stmt) -> Stmt {
         .Match(subj, arms) -> .Match(desugar_expr(subj), desugar_match_arms(arms))
         .Function(name, tp, params, rvt, body) -> .Function(name, tp, params, rvt, desugar_stmt_list(body))
         .Defer(body) -> .Defer(desugar_expr(body))
+        .Errdefer(body) -> .Errdefer(desugar_expr(body))
         .Module(name, body) -> .Module(name, desugar_stmt_list(body))
         .Annotated(annots, inner) -> .Annotated(annots, desugar_stmt(inner))
         .SpecBlock(name, body) -> .SpecBlock(name, desugar_stmt_list(body))

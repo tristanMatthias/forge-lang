@@ -1,0 +1,29 @@
+fn srt_double(x: int) -> int { x * 2 }
+fn srt_inc(x: int) -> int { x + 1 }
+
+fn srt_run() -> string {
+    forge_test_capture_start()
+    let r = 5 |> srt_double |> srt_inc
+    println("pipe: ${string(r)}")
+
+    let name = "Alice"
+    let age = 30
+    println("interp: ${name} is ${string(age)}")
+
+    let x = 50
+    let label = when {
+        x < 10 -> "small"
+        x < 100 -> "medium"
+        _ -> "large"
+    }
+    println("when: ${label}")
+
+    println("slice: ${"hello"[0..3]}")
+    forge_test_capture_stop()
+}
+
+spec "syntax red team" {
+    then "syntax output" {
+        srt_run() == "pipe: 11\ninterp: Alice is 30\nwhen: medium\nslice: hel"
+    }
+}

@@ -1,0 +1,36 @@
+fn ssm_fizzbuzz(n: int) -> string {
+    mut result = ""
+    for i in 1..n + 1 {
+        let s = when {
+            i % 15 == 0 -> "fizzbuzz"
+            i % 3 == 0 -> "fizz"
+            i % 5 == 0 -> "buzz"
+            _ -> string(i)
+        }
+        if result == "" { result = s } else { result = result + " " + s }
+    }
+    result
+}
+
+fn ssm_is_palindrome(s: string) -> bool {
+    s == s.reverse()
+}
+
+fn ssm_count_words(s: string) -> int {
+    s.split(" ").length
+}
+
+spec "stress string manipulation" {
+    then "fizzbuzz" {
+        ssm_fizzbuzz(15) == "1 2 fizz 4 buzz fizz 7 8 fizz buzz 11 fizz 13 14 fizzbuzz"
+    }
+    then "reverse" {
+        "Hello, world!".reverse() == "!dlrow ,olleH"
+    }
+    then "count words" {
+        ssm_count_words("one two three") == 3
+    }
+    then "palindrome" {
+        ssm_is_palindrome("racecar") == true
+    }
+}

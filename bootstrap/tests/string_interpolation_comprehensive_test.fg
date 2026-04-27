@@ -1,0 +1,20 @@
+fn sic_run() -> string {
+    forge_test_capture_start()
+    let name = "world"
+    println("hello ${name}!")
+    println("2+3=${string(2 + 3)}")
+    println("result: ${if true { "yes" } else { "no" }}")
+    let x = 42
+    println("count: ${string(x)}")
+    println("nested: ${if 1 > 0 { "inner" } else { "outer" }}")
+    let a = "a"
+    let b = "b"
+    println("multi: ${a} and ${b}")
+    forge_test_capture_stop()
+}
+
+spec "string interpolation comprehensive" {
+    then "interpolation output" {
+        sic_run() == "hello world!\n2+3=5\nresult: yes\ncount: 42\nnested: inner\nmulti: a and b"
+    }
+}

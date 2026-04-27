@@ -1,0 +1,54 @@
+fn sns_step1(x: int) -> int? {
+    if x < 0 { return null }
+    x * 2
+}
+
+fn sns_step2(x: int) -> int? {
+    if x > 100 { return null }
+    x + 10
+}
+
+fn sns_step3(x: int) -> int? {
+    if x == 42 { return null }
+    x
+}
+
+fn sns_pipeline(x: int) -> int? {
+    let a = sns_step1(x)?
+    let b = sns_step2(a)?
+    let c = sns_step3(b)?
+    c
+}
+
+type SnsUser = { name: string, age: int }
+
+spec "stress nullsafety" {
+    then "pipeline positive" {
+        (sns_pipeline(5) ?? -1) == 20
+    }
+    then "pipeline negative" {
+        (sns_pipeline(-1) ?? -1) == -1
+    }
+    then "pipeline overflow" {
+        (sns_pipeline(60) ?? -1) == -1
+    }
+    then "pipeline 42 trap" {
+        (sns_pipeline(16) ?? -1) == -1
+    }
+    then "null coalesce expr" {
+        (null ?? (10 + 20)) == 30
+    }
+    then "chained null coalesce" {
+        let a: ptr = null
+        let b: ptr = null
+        (a ?? b ?? 99) == 99
+    }
+    then "optional chain on struct" {
+        let u = SnsUser { name: "Alice", age: 30 }
+        (u?.age) == 30
+    }
+    then "optional chain on null" {
+        let n: ptr = null
+        (n?.age ?? 0) == 0
+    }
+}

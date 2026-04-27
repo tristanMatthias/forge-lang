@@ -488,45 +488,6 @@ fn prepend_test_externs(stmts: StmtList) -> StmtList {
     StmtList.Node(sstmt_dummy(Stmt.ExternFn("forge_test_summary", ParamList.End, ValueType.Int)), s2)
 }
 
-// Split a statement list into (functions+types, everything else).
-// Returns the functions prepended to `fns_acc` and non-functions prepended to `rest_acc`.
-type SplitResult = { fns: StmtList, rest: StmtList }
-
-fn split_decls_and_body(stmts: StmtList) -> SplitResult {
-    // Functions/types/enums → top level (resolver needs them globally)
-    // Spec blocks + other statements → init body
-    // Functions MUST have unique names across all test files (use prefixes).
-    mut fns = StmtList.End
-    mut rest = StmtList.End
-    mut current = stmts
-    while true {
-        match current {
-            .End -> { break }
-            .Node(ss, next) -> {
-                match ss.node {
-                    .Function(_, _, _, _, _) -> { fns = StmtList.Node(ss, fns) }
-                    .ExternFn(_, _, _) -> {} // stripped — provided by harness
-                    .TypeDecl(_, _, _) -> { fns = StmtList.Node(ss, fns) }
-                    .EnumDecl(_, _, _) -> { fns = StmtList.Node(ss, fns) }
-                    .TraitDecl(_, _) -> { fns = StmtList.Node(ss, fns) }
-                    .Impl(_, _) -> { fns = StmtList.Node(ss, fns) }
-                    .NewtypeDecl(_, _) -> { fns = StmtList.Node(ss, fns) }
-                    .ShapeDecl(_, _) -> { fns = StmtList.Node(ss, fns) }
-                    _ -> { rest = StmtList.Node(ss, rest) }
-                }
-                current = next
-            }
-        }
-    }
-    SplitResult { fns, rest }
-}
-
-fn append_stmts(a: StmtList, b: StmtList) -> StmtList {
-    match a {
-        .End -> b
-        .Node(ss, next) -> StmtList.Node(ss, append_stmts(next, b))
-    }
-}
 
 
 fn main() {
@@ -630,13 +591,10 @@ fn main() {
                 return
             }
 
-            // Step 2: Parse each test file, split into declarations + init functions
-            // For each _test.fg:
-            //   - Functions/types → top-level declarations
-            //   - Spec blocks → wrapped in __init_<name>() function
-            //   - __init_<name> added to parallel call list
-            mut top_level = StmtList.End
-            mut init_calls = StmtList.End
+            // Step 2: Parse each test file as a Module
+            // Each file becomes Stmt.Module(name, body) — proper namespacing.
+            // Module-level code (spec blocks) executes via __bs_top_level patching.
+            mut modules = StmtList.End
             mut count = 0
             for path in test_files.split("\n") {
                 if path == "" { continue }
@@ -656,31 +614,10 @@ fn main() {
                     continue
                 }
 
-                // Split: functions/types go top-level, spec blocks go into __init_<name>
-                let split = split_decls_and_body(parsed.stmts!)
-                top_level = append_stmts(split.fns, top_level)
-
-                // Create __init_<name>() containing the spec blocks + flush
-                let init_name = "__init_${mod_name}"
-                let init_body = StmtList.Node(
-                    sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("forge_test_flush"), ExprList.End))),
-                    StmtList.End
-                )
-                let full_init_body = append_stmts(split.rest, init_body)
-                top_level = StmtList.Node(
-                    sstmt_dummy(Stmt.Function(init_name, TypeParamList.End, ParamList.End, ValueType.Void, full_init_body)),
-                    top_level
-                )
-
-                // Add closure wrapping the init call for the parallel block
-                // parallel expects closures: () -> __init_<name>()
-                let init_closure = Expr.Lambda(
-                    ParamList.End,
-                    Expr.Call(Expr.Ident(init_name), ExprList.End)
-                )
-                init_calls = StmtList.Node(
-                    sstmt_dummy(Stmt.Expr(init_closure)),
-                    init_calls
+                // Wrap as Module — gives each test its own namespace
+                modules = StmtList.Node(
+                    sstmt_dummy(Stmt.Module(mod_name, strip_externs(parsed.stmts!))),
+                    modules
                 )
                 count = count + 1
             }
@@ -690,17 +627,14 @@ fn main() {
                 return
             }
 
-            // Step 3: Build the program AST
-            // Externs + declarations + main with parallel { init calls } + summary
-            mut program = prepend_test_externs(top_level)
+            // Step 3: Build program — externs + modules + main
+            mut program = prepend_test_externs(modules)
 
-            // main() { parallel { init calls }; forge_test_summary() }
+            // main() just calls forge_test_summary().
+            // Module-level spec blocks run via __bs_top_level (codegen patches main to call it).
             let main_body = StmtList.Node(
-                sstmt_dummy(Stmt.Parallel(init_calls)),
-                StmtList.Node(
-                    sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("forge_test_summary"), ExprList.End))),
-                    StmtList.End
-                )
+                sstmt_dummy(Stmt.Expr(Expr.Call(Expr.Ident("forge_test_summary"), ExprList.End))),
+                StmtList.End
             )
             program = StmtList.Node(
                 sstmt_dummy(Stmt.Function("main", TypeParamList.End, ParamList.End, ValueType.Int, main_body)),

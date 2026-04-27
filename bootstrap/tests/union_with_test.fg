@@ -1,0 +1,38 @@
+type UwBox = { val: int | string, label: string }
+type UwMulti = { a: int | string, b: int | bool }
+
+fn uw_run() -> string {
+    forge_test_capture_start()
+    let c1 = UwBox { val: 42, label: "first" }
+    let c2 = c1 with { val: "updated" }
+    match c2.val {
+        int(n) -> println(string(n))
+        string(s) -> println(s)
+    }
+    println(c2.label)
+
+    let b1 = UwBox { val: "hello", label: "first" }
+    let b2 = b1 with { label: "second" }
+    match b2.val {
+        int(n) -> println("int:" + string(n))
+        string(s) -> println("str:" + s)
+    }
+    println(b2.label)
+
+    let m = UwMulti { a: "hello", b: true }
+    match m.a {
+        int(n) -> println("a int")
+        string(s) -> println("a str: " + s)
+    }
+    match m.b {
+        int(n) -> println("b int")
+        bool(v) -> println("b bool: " + string(v))
+    }
+    forge_test_capture_stop()
+}
+
+spec "union with" {
+    then "union with output" {
+        uw_run() == "updated\nfirst\nstr:hello\nsecond\na str: hello\nb bool: 1"
+    }
+}

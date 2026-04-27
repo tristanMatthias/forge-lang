@@ -1,0 +1,11 @@
+spec "string slice" {
+    then "first word" {
+        "hello world"[0..5] == "hello"
+    }
+    then "second word" {
+        "hello world"[6..11] == "world"
+    }
+    then "middle" {
+        "hello world"[2..7] == "llo w"
+    }
+}

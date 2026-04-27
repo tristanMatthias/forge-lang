@@ -1,0 +1,19 @@
+fn tt_upper(s: string) -> string { s.upper() }
+fn tt_shout(s: string) -> string { s.upper() + "!!!" }
+fn tt_wrap(s: string) -> string { "[" + s + "]" }
+
+fn tt_run() -> string {
+    let name = "world"
+    forge_test_capture_start()
+    println(tt_upper`hello ${name}`)
+    println(tt_shout`hi ${name}`)
+    println(tt_wrap`value: ${string(42)}`)
+    println(tt_upper`static text`)
+    forge_test_capture_stop()
+}
+
+spec "tagged template" {
+    then "tagged template output" {
+        tt_run() == "HELLO WORLD\nHI WORLD!!!\n[value: 42]\nSTATIC TEXT"
+    }
+}

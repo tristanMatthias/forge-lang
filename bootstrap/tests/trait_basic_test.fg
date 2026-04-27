@@ -1,0 +1,36 @@
+trait TbDescribable {
+    fn describe(self) -> string
+}
+
+type TbCircle = { radius: int }
+type TbSquare = { side: int }
+
+impl TbDescribable for TbCircle {
+    fn describe(self) -> string {
+        "circle r=" + string(self.radius)
+    }
+}
+
+impl TbDescribable for TbSquare {
+    fn describe(self) -> string {
+        "square s=" + string(self.side)
+    }
+}
+
+impl TbCircle {
+    fn area(self) -> int {
+        self.radius * self.radius * 3
+    }
+}
+
+spec "trait basic" {
+    then "circle describe" {
+        TbCircle { radius: 5 }.describe() == "circle r=5"
+    }
+    then "square describe" {
+        TbSquare { side: 3 }.describe() == "square s=3"
+    }
+    then "circle area" {
+        TbCircle { radius: 5 }.area() == 75
+    }
+}

@@ -1,0 +1,39 @@
+enum PiExpr {
+    Num(n: int),
+    Add(a: PiExpr, b: PiExpr),
+    Mul(a: PiExpr, b: PiExpr),
+    Neg(e: PiExpr),
+}
+
+fn pi_eval(e: PiExpr) -> int {
+    match e {
+        .Num(n) -> n
+        .Add(a, b) -> pi_eval(a) + pi_eval(b)
+        .Mul(a, b) -> pi_eval(a) * pi_eval(b)
+        .Neg(inner) -> -pi_eval(inner)
+    }
+}
+
+fn pi_to_string(e: PiExpr) -> string {
+    match e {
+        .Num(n) -> string(n)
+        .Add(a, b) -> `(${pi_to_string(a)} + ${pi_to_string(b)})`
+        .Mul(a, b) -> `(${pi_to_string(a)} * ${pi_to_string(b)})`
+        .Neg(inner) -> `(-${pi_to_string(inner)})`
+    }
+}
+
+spec "prod interpreter" {
+    then "to_string" {
+        pi_to_string(PiExpr.Mul(
+            PiExpr.Add(PiExpr.Num(2), PiExpr.Num(3)),
+            PiExpr.Neg(PiExpr.Num(4))
+        )) == "((2 + 3) * (-4))"
+    }
+    then "eval" {
+        pi_eval(PiExpr.Mul(
+            PiExpr.Add(PiExpr.Num(2), PiExpr.Num(3)),
+            PiExpr.Neg(PiExpr.Num(4))
+        )) == -20
+    }
+}

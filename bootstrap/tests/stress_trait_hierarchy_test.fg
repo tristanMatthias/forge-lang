@@ -1,0 +1,38 @@
+trait SthToJson { fn to_json(self) -> string }
+trait SthToCsv { fn to_csv(self) -> string }
+trait SthDisplay { fn display(self) -> string }
+
+type SthUser = { name: string, age: int }
+
+impl SthToJson for SthUser {
+    fn to_json(self) -> string {
+        "{\"name\":\"${self.name}\",\"age\":${string(self.age)}}"
+    }
+}
+
+impl SthToCsv for SthUser {
+    fn to_csv(self) -> string { "${self.name},${string(self.age)}" }
+}
+
+impl SthDisplay for SthUser {
+    fn display(self) -> string { "User(${self.name}, ${string(self.age)})" }
+}
+
+fn sth_show_json(item: SthToJson) -> string { item.to_json() }
+fn sth_show_csv(item: SthToCsv) -> string { item.to_csv() }
+fn sth_show_display(item: SthDisplay) -> string { item.display() }
+
+spec "stress trait hierarchy" {
+    then "json" {
+        let u = SthUser { name: "Alice", age: 30 }
+        sth_show_json(u) == "{\"name\":\"Alice\",\"age\":30}"
+    }
+    then "csv" {
+        let u = SthUser { name: "Alice", age: 30 }
+        sth_show_csv(u) == "Alice,30"
+    }
+    then "display" {
+        let u = SthUser { name: "Alice", age: 30 }
+        sth_show_display(u) == "User(Alice, 30)"
+    }
+}

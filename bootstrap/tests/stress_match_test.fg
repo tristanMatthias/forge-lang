@@ -1,0 +1,42 @@
+enum SmExpr {
+    Num(n: int),
+    Add(left: SmExpr, right: SmExpr),
+    Mul(left: SmExpr, right: SmExpr),
+}
+
+fn sm_eval(e: SmExpr) -> int {
+    match e {
+        .Num(n) -> n
+        .Add(l, r) -> sm_eval(l) + sm_eval(r)
+        .Mul(l, r) -> sm_eval(l) * sm_eval(r)
+    }
+}
+
+fn sm_label(e: SmExpr) -> string {
+    match e {
+        .Num(_) -> "number"
+        .Add(_, _) -> "addition"
+        .Mul(_, _) -> "multiplication"
+    }
+}
+
+spec "stress match" {
+    then "eval mul-add" {
+        sm_eval(SmExpr.Mul(
+            SmExpr.Add(SmExpr.Num(2), SmExpr.Num(3)),
+            SmExpr.Num(4)
+        )) == 20
+    }
+    then "eval deep" {
+        sm_eval(SmExpr.Add(
+            SmExpr.Mul(SmExpr.Num(10), SmExpr.Num(20)),
+            SmExpr.Add(SmExpr.Num(3), SmExpr.Num(4))
+        )) == 207
+    }
+    then "label match" {
+        sm_label(SmExpr.Mul(
+            SmExpr.Add(SmExpr.Num(2), SmExpr.Num(3)),
+            SmExpr.Num(4)
+        )) == "multiplication"
+    }
+}

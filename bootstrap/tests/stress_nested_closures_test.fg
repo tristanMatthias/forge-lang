@@ -1,0 +1,12 @@
+fn snc_make_adder(base: int) -> fn(int) -> fn(int) -> int {
+    (x) -> {
+        let sum = base + x
+        (y) -> sum + y
+    }
+}
+
+spec "stress nested closures" {
+    then "nested closure result" {
+        snc_make_adder(10)(20)(30) == 60
+    }
+}

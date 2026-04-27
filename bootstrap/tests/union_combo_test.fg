@@ -1,0 +1,84 @@
+type UcPerson = {
+    name: string,
+    age: int,
+}
+
+fn uc_show_multi(val: int | string | bool | float) -> string {
+    match val {
+        bool(b) -> "bool: " + string(b)
+        float(f) -> "float: " + string(f)
+        int(n) -> "int: " + string(n)
+        string(s) -> "string: " + s
+    }
+}
+
+fn uc_show_struct(val: int | UcPerson) -> string {
+    match val {
+        int(n) -> "int: " + string(n)
+        UcPerson(p) -> "struct: " + p.name
+    }
+}
+
+fn uc_passthrough(val: int | string) -> int | string {
+    val
+}
+
+fn uc_make_union(use_int: bool) -> int | string {
+    if use_int {
+        let x: int | string = 42
+        x
+    } else {
+        let x: int | string = "hello from union"
+        x
+    }
+}
+
+fn uc_nested_match(outer: int | string) -> string {
+    match outer {
+        int(n) -> {
+            let inner: int | string = n + 1
+            match inner {
+                int(m) -> "nested: got " + string(m)
+                _ -> "unexpected"
+            }
+        }
+        _ -> "not int"
+    }
+}
+
+fn uc_match_result(v: int | string) -> string {
+    match v {
+        int(n) -> "passed int: " + string(n)
+        string(s) -> "passed string: " + s
+    }
+}
+
+fn uc_match_return(r: int | string) -> string {
+    match r {
+        int(n) -> "returned: " + string(n)
+        string(s) -> "returned: " + s
+    }
+}
+
+spec "union combo" {
+    then "multi bool" {
+        uc_show_multi(true) == "bool: 1"
+    }
+    then "multi float" {
+        uc_show_multi(3.14) == "float: 3.14"
+    }
+    then "struct in union" {
+        uc_show_struct(UcPerson { name: "Alice", age: 30 }) == "struct: Alice"
+    }
+    then "passthrough" {
+        let v: int | string = 42
+        uc_match_result(uc_passthrough(v)) == "passed int: 42"
+    }
+    then "make union string" {
+        uc_match_return(uc_make_union(false)) == "returned: hello from union"
+    }
+    then "nested match" {
+        let x: int | string = 6
+        uc_nested_match(x) == "nested: got 7"
+    }
+}
