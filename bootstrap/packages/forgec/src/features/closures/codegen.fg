@@ -366,8 +366,11 @@ fn infer_param_types(params: ParamList, body: Expr, ctx: Ctx, env: VarEnv, captu
 extern fn forge_next_lambda_id() -> int
 
 // Compile a lambda with default parameter types (all Int).
-export fn emit_lambda(ctx: Ctx, env: VarEnv, params: ParamList, body: Expr) -> Result<EmitValue, string> {
-    emit_lambda_typed(ctx, env, params, body, TypeList.End)
+export fn emit_lambda(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Lambda(params, body) -> emit_lambda_typed(ctx, env, params, body, TypeList.End)
+        _ -> err_emit("expected Lambda")
+    }
 }
 
 // Compile a lambda with explicit parameter types.

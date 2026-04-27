@@ -16,7 +16,7 @@ export fn spawn_emit_expr(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue
 
 fn emit_spawn(ctx: Ctx, env: VarEnv, body: Expr) -> Result<EmitValue, string> {
     // Wrap body in a zero-arg lambda: () -> { body }
-    let closure = emit_lambda(ctx, env, ParamList.End, body)?
+    let closure = emit_lambda(ctx, env, Expr.Lambda(ParamList.End, body))?
 
     // Call forge_spawn(closure_ptr) which returns a thread handle
     let handle = ctx.call("forge_spawn", [closure.value])

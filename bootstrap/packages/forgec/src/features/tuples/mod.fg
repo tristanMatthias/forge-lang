@@ -1,6 +1,5 @@
 mod codegen
 use core.ast.{vtype_tuple_at}
-use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list}
 use features.tuples.codegen.{emit_tuple, emit_tuple_index}
@@ -9,7 +8,7 @@ use typeck.{check_expr, check_expr_list_types, tc_er}
 export fn tuple_feature() -> Feature {
     feature_new("tuple") with {
         expr_tag: Expr.Tuple(ExprList.End),
-        emit_expr: tuple_emit,
+        emit_expr: emit_tuple,
         resolve_expr: tuple_resolve,
         check_expr: tuple_check,
     }
@@ -18,16 +17,9 @@ export fn tuple_feature() -> Feature {
 export fn tuple_index_feature() -> Feature {
     feature_new("tuple_index") with {
         expr_tag: Expr.TupleIndex(Expr.Null, 0),
-        emit_expr: tuple_index_emit,
+        emit_expr: emit_tuple_index,
         resolve_expr: tuple_index_resolve,
         check_expr: tuple_index_check,
-    }
-}
-
-fn tuple_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
-    match expr {
-        .Tuple(elements) -> emit_tuple(ctx, env, elements)
-        _ -> err_emit("expected Tuple")
     }
 }
 
@@ -48,13 +40,6 @@ fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
-
-fn tuple_index_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
-    match expr {
-        .TupleIndex(obj, idx) -> emit_tuple_index(ctx, env, obj, idx)
-        _ -> err_emit("expected TupleIndex")
-    }
-}
 
 fn tuple_index_resolve(r: Resolver, expr: Expr) -> Resolver {
     match expr {

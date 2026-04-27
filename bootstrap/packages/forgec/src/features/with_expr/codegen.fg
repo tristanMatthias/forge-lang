@@ -9,7 +9,14 @@ use core.ast.{Expr, FieldList, FieldInitList, VarEnv, field_index_of, field_list
 use codegen.types.{Ctx, EmitValue, ok_emit_typed, err_emit}
 use features.union_type.codegen.{emit_union_wrap, needs_union_wrap}
 
-export fn emit_with(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> Result<EmitValue, string> {
+export fn emit_with(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .With(obj, overrides) -> emit_with_inner(ctx, env, obj, overrides)
+        _ -> err_emit("expected With")
+    }
+}
+
+fn emit_with_inner(ctx: Ctx, env: VarEnv, obj: Expr, overrides: FieldInitList) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
 
     let struct_name = vtype_struct_name(r.ty)

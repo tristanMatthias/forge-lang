@@ -5,10 +5,17 @@
 
 use core.ast.{Expr, Stmt, VarEnv, env_extend, ValueType, vtype_list_elem, vtype_is_str}
 use codegen.types.{Ctx, StmtResult, emit_value_ptr, emit_value_ty}
-use codegen.{emit_stmt, ok_sr}
+use codegen.{emit_stmt, ok_sr, err_sr}
 use codegen.escape.{is_arena_eligible}
 
-export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> Result<StmtResult, string> {
+export fn emit_for(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+    match stmt {
+        .For(variable, start, end, body) -> emit_for_inner(ctx, env, variable, start, end, body)
+        _ -> err_sr("expected For")
+    }
+}
+
+fn emit_for_inner(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let start_r = ctx.emit(env, start)?
 
@@ -81,7 +88,14 @@ export fn emit_for(ctx: Ctx, env: VarEnv, variable: string, start: Expr, end: Ex
 //       let x = forge_array_get(collection, __i)
 //       body
 //   }
-export fn emit_for_in(ctx: Ctx, env: VarEnv, variable: string, collection: Expr, body: Stmt) -> Result<StmtResult, string> {
+export fn emit_for_in(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+    match stmt {
+        .ForIn(variable, collection, body) -> emit_for_in_inner(ctx, env, variable, collection, body)
+        _ -> err_sr("expected ForIn")
+    }
+}
+
+fn emit_for_in_inner(ctx: Ctx, env: VarEnv, variable: string, collection: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let coll_r = ctx.emit(env, collection)?
     let coll_ty = emit_value_ty(coll_r)

@@ -1,5 +1,4 @@
 mod codegen
-use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}
@@ -8,16 +7,9 @@ use typeck.{check_expr, tc_er}
 export fn is_keyword_feature() -> Feature {
     feature_new("is") with {
         expr_tag: Expr.IsCheck(Expr.Null, ""),
-        emit_expr: is_emit,
+        emit_expr: emit_is_check,
         resolve_expr: is_resolve,
         check_expr: is_check,
-    }
-}
-
-fn is_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
-    match expr {
-        .IsCheck(subject, variant_name) -> emit_is_check(ctx, env, subject, variant_name)
-        _ -> err_emit("expected IsCheck")
     }
 }
 

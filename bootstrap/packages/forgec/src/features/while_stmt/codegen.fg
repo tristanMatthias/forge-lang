@@ -3,9 +3,16 @@
 
 use core.ast.{Expr, Stmt, VarEnv}
 use codegen.types.{Ctx, LoopStack, StmtResult,  ok_stmt, emit_value_ptr}
-use codegen.{emit_expr, emit_stmt, ok_sr}
+use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
 
-export fn emit_while(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Result<StmtResult, string> {
+export fn emit_while(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
+    match stmt {
+        .While(condition, body) -> emit_while_inner(ctx, env, condition, body)
+        _ -> err_sr("expected While")
+    }
+}
+
+fn emit_while_inner(ctx: Ctx, env: VarEnv, condition: Expr, body: Stmt) -> Result<StmtResult, string> {
     ctx.cov_line()
     let cond_bb = ctx.bb("while.cond")
     let body_bb = ctx.bb("while.body")

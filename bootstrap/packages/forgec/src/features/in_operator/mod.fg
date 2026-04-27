@@ -1,5 +1,4 @@
 mod codegen
-use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list}
 use features.in_operator.codegen.{emit_in_check}
@@ -8,16 +7,9 @@ use typeck.{check_expr, check_expr_list, tc_er}
 export fn in_operator_feature() -> Feature {
     feature_new("in") with {
         expr_tag: Expr.InCheck(Expr.Null, ExprList.End),
-        emit_expr: in_emit,
+        emit_expr: emit_in_check,
         resolve_expr: in_resolve,
         check_expr: in_check,
-    }
-}
-
-fn in_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
-    match expr {
-        .InCheck(needle, items) -> emit_in_check(ctx, env, needle, items)
-        _ -> err_emit("expected InCheck")
     }
 }
 

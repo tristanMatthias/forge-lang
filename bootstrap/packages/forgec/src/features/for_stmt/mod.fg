@@ -1,26 +1,10 @@
 mod parser
 mod codegen
 use core.ast.{vtype_list_elem}
-use codegen.types.{StmtResult}
-use codegen.{err_sr}
 use core.registry.{feature_new, Feature}
 use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
 use features.for_stmt.codegen.{emit_for, emit_for_in}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
-
-fn for_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
-    match stmt {
-        .For(variable, start, end, body) -> emit_for(ctx, env, variable, start, end, body)
-        _ -> err_sr("expected For")
-    }
-}
-
-fn for_in_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
-    match stmt {
-        .ForIn(variable, collection, body) -> emit_for_in(ctx, env, variable, collection, body)
-        _ -> err_sr("expected ForIn")
-    }
-}
 
 fn for_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
@@ -84,7 +68,7 @@ export fn for_feature() -> Feature {
         stmt_tag: Stmt.For("", Expr.Null, Expr.Null, Stmt.NoOp),
         stmt_keyword: "kw_for",
         parse_stmt: (p: Parser) -> p.parse_for_statement(),
-        emit_stmt: for_emit,
+        emit_stmt: emit_for,
         resolve_stmt: for_resolve,
         check_stmt: for_check,
     }
@@ -93,7 +77,7 @@ export fn for_feature() -> Feature {
 export fn for_in_feature() -> Feature {
     feature_new("for_in") with {
         stmt_tag: Stmt.ForIn("", Expr.Null, Stmt.NoOp),
-        emit_stmt: for_in_emit,
+        emit_stmt: emit_for_in,
         resolve_stmt: for_in_resolve,
         check_stmt: for_in_check,
     }

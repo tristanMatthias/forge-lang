@@ -1,21 +1,12 @@
 mod parser
 mod codegen
 use core.ast.{vtype_display, vtype_eq, vtype_is_unknown}
-use codegen.types.{StmtResult}
-use codegen.{err_sr}
 use features.eval.{error_result}
 use features.eval.{execute_while}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
 use features.while_stmt.codegen.{emit_while}
 use typeck.{check_expr, check_stmt, tc_report}
-
-fn while_emit(ctx: Ctx, env: VarEnv, stmt: Stmt) -> Result<StmtResult, string> {
-    match stmt {
-        .While(condition, body) -> emit_while(ctx, env, condition, body)
-        _ -> err_sr("expected While")
-    }
-}
 
 fn while_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt {
@@ -52,7 +43,7 @@ export fn while_feature() -> Feature {
         stmt_tag: Stmt.While(Expr.Null, Stmt.NoOp),
         stmt_keyword: "kw_while",
         parse_stmt: (p: Parser) -> p.parse_while_statement(),
-        emit_stmt: while_emit,
+        emit_stmt: emit_while,
         resolve_stmt: while_resolve,
         check_stmt: while_check,
         eval_stmt: while_eval,

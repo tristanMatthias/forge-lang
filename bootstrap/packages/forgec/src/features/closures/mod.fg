@@ -1,6 +1,5 @@
 mod codegen
 mod parser
-use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use features.closures.codegen.{emit_lambda}
@@ -9,16 +8,9 @@ use typeck.{check_expr, tc_bind_params, tc_enter, tc_er, tc_exit}
 export fn closures_feature() -> Feature {
     feature_new("lambda") with {
         expr_tag: Expr.Lambda(ParamList.End, Expr.Null),
-        emit_expr: closure_emit,
+        emit_expr: emit_lambda,
         resolve_expr: closure_resolve,
         check_expr: closure_check,
-    }
-}
-
-fn closure_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
-    match expr {
-        .Lambda(params, body) -> emit_lambda(ctx, env, params, body)
-        _ -> err_emit("expected Lambda")
     }
 }
 

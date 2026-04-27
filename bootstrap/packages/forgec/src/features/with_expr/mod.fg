@@ -1,5 +1,4 @@
 mod codegen
-use codegen.types.{err_emit}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_field_init_list}
 use features.struct_decl.typeck.{check_field_inits}
@@ -9,16 +8,9 @@ use typeck.{check_expr, tc_er}
 export fn with_expr_feature() -> Feature {
     feature_new("with") with {
         expr_tag: Expr.With(Expr.Null, FieldInitList.End),
-        emit_expr: with_emit,
+        emit_expr: emit_with,
         resolve_expr: with_resolve,
         check_expr: with_check,
-    }
-}
-
-fn with_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
-    match expr {
-        .With(obj, overrides) -> emit_with(ctx, env, obj, overrides)
-        _ -> err_emit("expected With")
     }
 }
 

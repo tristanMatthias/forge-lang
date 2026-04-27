@@ -16,7 +16,14 @@ fn tuple_store(ctx: Ctx, base: ptr, idx: int, value: ptr) { ctx.store_slot(base,
 
 // ── Emit functions ──
 
-export fn emit_tuple(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<EmitValue, string> {
+export fn emit_tuple(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .Tuple(elements) -> emit_tuple_inner(ctx, env, elements)
+        _ -> err_emit("expected Tuple")
+    }
+}
+
+fn emit_tuple_inner(ctx: Ctx, env: VarEnv, elements: ExprList) -> Result<EmitValue, string> {
     let count = expr_list_length(elements)
     let buf = ctx.arena_alloc(ctx.i64(count * 8))
     store_tuple_elements(ctx, env, elements, buf, 0, .End)
@@ -44,7 +51,14 @@ fn reverse_type_list(list: TypeList, acc: TypeList) -> TypeList {
     }
 }
 
-export fn emit_tuple_index(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> Result<EmitValue, string> {
+export fn emit_tuple_index(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
+    match expr {
+        .TupleIndex(obj, idx) -> emit_tuple_index_inner(ctx, env, obj, idx)
+        _ -> err_emit("expected TupleIndex")
+    }
+}
+
+fn emit_tuple_index_inner(ctx: Ctx, env: VarEnv, obj: Expr, idx: int) -> Result<EmitValue, string> {
     let r = ctx.emit(env, obj)?
     let ptr = ctx.to_ptr(r.value, "tup_ptr")
     let loaded = tuple_load(ctx, ptr, idx, "tup_val")
