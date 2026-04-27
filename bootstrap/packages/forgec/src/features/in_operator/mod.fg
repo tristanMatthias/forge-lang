@@ -1,6 +1,5 @@
 mod codegen
 use codegen.types.{err_emit}
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list}
 use features.in_operator.codegen.{emit_in_check}
@@ -12,7 +11,6 @@ export fn in_operator_feature() -> Feature {
         emit_expr: in_emit,
         resolve_expr: in_resolve,
         check_expr: in_check,
-        eval_expr: in_eval,
     }
 }
 
@@ -41,12 +39,5 @@ fn in_check(tc: TC, expr: Expr) -> ExprResult {
             tc_er(s2, .Bool)
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-fn in_eval(rt: Runtime, expr: Expr) -> EvalResult {
-    match expr {
-        .InCheck(_, _) -> error_result(rt, "in-check is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected InCheck")
     }
 }

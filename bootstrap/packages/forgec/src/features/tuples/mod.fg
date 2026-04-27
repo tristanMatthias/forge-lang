@@ -1,7 +1,6 @@
 mod codegen
 use core.ast.{vtype_tuple_at}
 use codegen.types.{err_emit}
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_expr_list}
 use features.tuples.codegen.{emit_tuple, emit_tuple_index}
@@ -13,7 +12,6 @@ export fn tuple_feature() -> Feature {
         emit_expr: tuple_emit,
         resolve_expr: tuple_resolve,
         check_expr: tuple_check,
-        eval_expr: tuple_eval,
     }
 }
 
@@ -23,7 +21,6 @@ export fn tuple_index_feature() -> Feature {
         emit_expr: tuple_index_emit,
         resolve_expr: tuple_index_resolve,
         check_expr: tuple_index_check,
-        eval_expr: tuple_index_eval,
     }
 }
 
@@ -51,12 +48,6 @@ fn tuple_check(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
-fn tuple_eval(rt: Runtime, expr: Expr) -> EvalResult {
-    match expr {
-        .Tuple(_) -> error_result(rt, "tuples are not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Tuple")
-    }
-}
 
 fn tuple_index_emit(ctx: Ctx, env: VarEnv, expr: Expr) -> Result<EmitValue, string> {
     match expr {
@@ -79,12 +70,5 @@ fn tuple_index_check(tc: TC, expr: Expr) -> ExprResult {
             tc_er(o.tc, vtype_tuple_at(o.ty, idx))
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-fn tuple_index_eval(rt: Runtime, expr: Expr) -> EvalResult {
-    match expr {
-        .TupleIndex(_, _) -> error_result(rt, "tuple indexing is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected TupleIndex")
     }
 }

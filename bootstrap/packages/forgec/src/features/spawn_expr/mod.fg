@@ -3,7 +3,6 @@
 
 mod codegen
 mod parser
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr}
 use features.spawn_expr.codegen.{spawn_emit_expr}
@@ -15,7 +14,6 @@ export fn spawn_expr_feature() -> Feature {
         emit_expr: spawn_emit_expr,
         resolve_expr: spawn_resolve,
         check_expr: spawn_check,
-        eval_expr: spawn_eval,
     }
 }
 
@@ -34,12 +32,5 @@ fn spawn_check(tc: TC, expr: Expr) -> ExprResult {
             tc_er(b.tc, .Int)
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-fn spawn_eval(rt: Runtime, expr: Expr) -> EvalResult {
-    match expr {
-        .Spawn(_) -> error_result(rt, "spawn is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Spawn")
     }
 }

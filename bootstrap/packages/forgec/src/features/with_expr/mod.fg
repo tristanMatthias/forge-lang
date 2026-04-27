@@ -1,6 +1,5 @@
 mod codegen
 use codegen.types.{err_emit}
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_field_init_list}
 use features.struct_decl.typeck.{check_field_inits}
@@ -13,7 +12,6 @@ export fn with_expr_feature() -> Feature {
         emit_expr: with_emit,
         resolve_expr: with_resolve,
         check_expr: with_check,
-        eval_expr: with_eval,
     }
 }
 
@@ -42,12 +40,5 @@ fn with_check(tc: TC, expr: Expr) -> ExprResult {
             tc_er(checked, o.ty)
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-fn with_eval(rt: Runtime, expr: Expr) -> EvalResult {
-    match expr {
-        .With(_, _) -> error_result(rt, "with expression is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected With")
     }
 }

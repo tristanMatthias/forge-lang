@@ -1,7 +1,6 @@
 mod codegen
 mod parser
 use codegen.types.{err_emit}
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use features.closures.codegen.{emit_lambda}
@@ -13,7 +12,6 @@ export fn closures_feature() -> Feature {
         emit_expr: closure_emit,
         resolve_expr: closure_resolve,
         check_expr: closure_check,
-        eval_expr: closure_eval,
     }
 }
 
@@ -46,12 +44,5 @@ fn closure_check(tc: TC, expr: Expr) -> ExprResult {
             tc_er(after, ValueType.Fn(b.ty))
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-fn closure_eval(rt: Runtime, expr: Expr) -> EvalResult {
-    match expr {
-        .Lambda(_, _) -> error_result(rt, "lambdas are not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Lambda")
     }
 }

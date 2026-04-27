@@ -1,7 +1,6 @@
 mod codegen
 mod typeck
 use codegen.types.{err_emit}
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.null_safety.codegen.{emit_null_coalesce, emit_optional_chain, emit_try, emit_catch}
@@ -15,7 +14,6 @@ export fn null_coalesce_feature() -> Feature {
         emit_expr: null_coalesce_emit_expr,
         resolve_expr: null_coalesce_resolve_expr,
         check_expr: check_null_coalesce,
-        eval_expr: null_coalesce_eval_expr,
     }
 }
 
@@ -25,7 +23,6 @@ export fn optional_chain_feature() -> Feature {
         emit_expr: optional_chain_emit_expr,
         resolve_expr: optional_chain_resolve_expr,
         check_expr: optional_chain_check_expr,
-        eval_expr: optional_chain_eval_expr,
     }
 }
 
@@ -35,7 +32,6 @@ export fn try_feature() -> Feature {
         emit_expr: try_emit_expr,
         resolve_expr: try_resolve_expr,
         check_expr: (tc: TC, expr: Expr) -> check_try(tc, expr),
-        eval_expr: try_eval_expr,
     }
 }
 
@@ -45,7 +41,6 @@ export fn catch_feature() -> Feature {
         emit_expr: catch_emit_expr,
         resolve_expr: catch_resolve_expr,
         check_expr: check_catch,
-        eval_expr: catch_eval_expr,
     }
 }
 
@@ -56,13 +51,6 @@ fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             resolve_expr(after_left, right)
         }
         _ -> r
-    }
-}
-
-fn null_coalesce_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .NullCoalesce(_, _) -> error_result(rt, "null coalesce is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected NullCoalesce")
     }
 }
 
@@ -80,24 +68,10 @@ fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
     }
 }
 
-fn optional_chain_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .OptionalChain(_, _) -> error_result(rt, "optional chain is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected OptionalChain")
-    }
-}
-
 fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
     match expr {
         .Try(inner) -> resolve_expr(r, inner)
         _ -> r
-    }
-}
-
-fn try_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .Try(_) -> error_result(rt, "try operator is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Try")
     }
 }
 
@@ -113,13 +87,6 @@ fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
             if binding.length > 0 { exit_resolve_scope(rb) } else { rb }
         }
         _ -> r
-    }
-}
-
-fn catch_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .Catch(_, _, _, _, _) -> error_result(rt, "catch is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected Catch")
     }
 }
 

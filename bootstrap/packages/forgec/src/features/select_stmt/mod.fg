@@ -1,7 +1,6 @@
 mod codegen
 mod parser
 mod resolver
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use features.select_stmt.codegen.{select_emit_stmt}
 use features.select_stmt.resolver.{resolve_select_arms}
@@ -10,12 +9,6 @@ fn select_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r }
 }
 
-fn select_eval(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .Select(_) -> error_result(rt, "select not supported by tree-walk evaluator")
-        _ -> error_result(rt, "expected Select")
-    }
-}
 
 export fn select_feature() -> Feature {
     feature_new("select") with {
@@ -24,6 +17,5 @@ export fn select_feature() -> Feature {
         parse_decl: (p: Parser) -> p.parse_select_statement(),
         emit_stmt: select_emit_stmt,
         resolve_stmt: select_resolve,
-        eval_stmt: select_eval,
     }
 }

@@ -1,6 +1,5 @@
 mod codegen
 use codegen.types.{err_emit}
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr}
 use features.is_keyword.codegen.{emit_is_check}
@@ -12,7 +11,6 @@ export fn is_keyword_feature() -> Feature {
         emit_expr: is_emit,
         resolve_expr: is_resolve,
         check_expr: is_check,
-        eval_expr: is_eval,
     }
 }
 
@@ -37,12 +35,5 @@ fn is_check(tc: TC, expr: Expr) -> ExprResult {
             tc_er(s.tc, .Bool)
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-fn is_eval(rt: Runtime, expr: Expr) -> EvalResult {
-    match expr {
-        .IsCheck(_, _) -> error_result(rt, "is-check is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected IsCheck")
     }
 }

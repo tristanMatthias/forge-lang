@@ -3,7 +3,6 @@ mod codegen
 use core.ast.{vtype_list_elem}
 use codegen.types.{StmtResult}
 use codegen.{err_sr}
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
 use features.for_stmt.codegen.{emit_for, emit_for_in}
@@ -97,6 +96,5 @@ export fn for_in_feature() -> Feature {
         emit_stmt: for_in_emit,
         resolve_stmt: for_in_resolve,
         check_stmt: for_in_check,
-        eval_stmt: (rt: Runtime, stmt: Stmt) -> error_result(rt, "for-in not supported by tree-walk evaluator"),
     }
 }

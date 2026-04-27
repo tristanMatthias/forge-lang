@@ -2,7 +2,6 @@ mod codegen
 mod parser
 mod typeck
 use codegen.types.{err_emit}
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_expr_list}
 use features.map_lit.codegen.{emit_map_lit}
@@ -14,7 +13,6 @@ export fn map_lit_feature() -> Feature {
         emit_expr: map_lit_emit_expr,
         resolve_expr: map_lit_resolve_expr,
         check_expr: map_lit_check_expr,
-        eval_expr: map_lit_eval_expr,
     }
 }
 
@@ -32,13 +30,6 @@ fn map_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(checked, .Map)
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-fn map_lit_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .MapLit(_) -> error_result(rt, "map literals are not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected MapLit")
     }
 }
 

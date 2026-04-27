@@ -1,6 +1,5 @@
 mod codegen
 mod parser
-use features.eval.{error_result}
 use core.registry.{feature_new, Feature}
 use resolve.{resolve_stmt_list}
 use features.parallel_stmt.codegen.{parallel_emit_stmt}
@@ -9,12 +8,6 @@ fn parallel_resolve(r: Resolver, stmt: Stmt) -> Resolver {
     match stmt { .Parallel(body) -> resolve_stmt_list(r, body), _ -> r }
 }
 
-fn parallel_eval(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .Parallel(_) -> error_result(rt, "parallel not supported by tree-walk evaluator")
-        _ -> error_result(rt, "expected Parallel")
-    }
-}
 
 export fn parallel_feature() -> Feature {
     feature_new("parallel") with {
@@ -23,6 +16,5 @@ export fn parallel_feature() -> Feature {
         parse_decl: (p: Parser) -> p.parse_parallel_statement(),
         emit_stmt: parallel_emit_stmt,
         resolve_stmt: parallel_resolve,
-        eval_stmt: parallel_eval,
     }
 }
