@@ -7,7 +7,7 @@ use core.ast.{BinOp, Expr, ExprList, FieldInitList, FieldList, MatchArmList, Par
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, bag_has_errors, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, span_dummy, span_new}
 use core.registry.{Registry, build_registry, dispatch_stmt_check, dispatch_expr_check, forge_stmt_tag, forge_expr_tag}
 use features.match_expr.typeck.{tc_check_match_arm_returns, tc_check_exhaustive}
-use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts}
+use features.trait_decl.typeck.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
 use features.list_lit.typeck.{check_list_method}
 use features.map_lit.typeck.{check_map_method}
 use features.let_stmt.typeck.{is_const_expr}
@@ -218,7 +218,10 @@ export fn trait_lookup(reg: TraitRegistry, name: string) -> TraitMethodList {
     match reg {
         .End -> TraitMethodList.End
         .Node(n, methods, _, _) if n == name -> methods
-        .Node(_, _, _, next) -> trait_lookup(next, name)
+        .Node(n, methods, _, next) -> {
+            if n.ends_with("::${name}") { return methods }
+            trait_lookup(next, name)
+        }
     }
 }
 
@@ -226,7 +229,10 @@ export fn trait_has(reg: TraitRegistry, name: string) -> bool {
     match reg {
         .End -> false
         .Node(n, _, _, _) if n == name -> true
-        .Node(_, _, _, next) -> trait_has(next, name)
+        .Node(n, _, _, next) -> {
+            if n.ends_with("::${name}") { return true }
+            trait_has(next, name)
+        }
     }
 }
 
@@ -234,7 +240,10 @@ export fn trait_assoc_types(reg: TraitRegistry, name: string) -> TraitAssocTypes
     match reg {
         .End -> TraitAssocTypes.End
         .Node(n, _, at, _) if n == name -> at
-        .Node(_, _, _, next) -> trait_assoc_types(next, name)
+        .Node(n, _, at, next) -> {
+            if n.ends_with("::${name}") { return at }
+            trait_assoc_types(next, name)
+        }
     }
 }
 
@@ -532,7 +541,7 @@ fn collect_decls(tc: TC, stmts: StmtList) -> TC {
                     }
                 }
                 .Impl(impl_name, methods) -> {
-                    let colon_idx = impl_name.index_of(":")
+                    let colon_idx = find_trait_separator(impl_name)
                     let with_impl = if colon_idx >= 0 {
                         let trait_name = impl_name.substring(0, colon_idx)
                         let type_name = impl_name.substring(colon_idx + 1, impl_name.length)

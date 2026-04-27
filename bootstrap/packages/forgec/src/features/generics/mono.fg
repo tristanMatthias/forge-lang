@@ -220,18 +220,26 @@ fn is_generic_decl(stmt: Stmt) -> bool {
 }
 
 fn mangle_name_ordered(base: string, tp: TypeParamList, ta: TypeArgList) -> string {
-    "${base}__${mangle_ordered(tp, ta)}"
+    "${strip_module_prefix(base)}__${mangle_ordered(tp, ta)}"
 }
 
 fn mangle_ordered(tp: TypeParamList, ta: TypeArgList) -> string {
     match tp {
         .End -> ""
         .Node(name, _, next) -> {
-            let ty = vtype_render_full(type_arg_lookup(ta, name))
+            let ty = strip_module_prefix(vtype_render_full(type_arg_lookup(ta, name)))
             let rest = mangle_ordered(next, ta)
             if rest == "" { ty } else { "${ty}__${rest}" }
         }
     }
+}
+
+// Strip module prefix from a type name for mangling.
+// "codegen::types::EmitValue" → "EmitValue"
+fn strip_module_prefix(name: string) -> string {
+    if !name.contains("::") { return name }
+    let parts = name.split("::")
+    parts[parts.length - 1]
 }
 
 // ── Type reading (from typeck-annotated SExpr.ty) ──

@@ -273,7 +273,10 @@ export fn fn_param_lookup(reg: FnParamTypes, name: string) -> ParamTypeList {
     match reg {
         .End -> .End
         .Node(n, params, _) if n == name -> params
-        .Node(_, _, next) -> fn_param_lookup(next, name)
+        .Node(n, params, next) -> {
+            if n.ends_with("::${name}") { return params }
+            fn_param_lookup(next, name)
+        }
     }
 }
 
@@ -445,7 +448,10 @@ export fn fn_ret_lookup(reg: FnRetTypes, name: string) -> ValueType {
     match reg {
         .End -> .Unknown
         .Node(n, ty, _) if n == name -> ty
-        .Node(_, _, next) -> fn_ret_lookup(next, name)
+        .Node(n, ty, next) -> {
+            if n.ends_with("::${name}") { return ty }
+            fn_ret_lookup(next, name)
+        }
     }
 }
 

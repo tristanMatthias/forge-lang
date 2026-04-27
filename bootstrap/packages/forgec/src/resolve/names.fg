@@ -12,7 +12,7 @@
 //   do NOT read this file when:   the issue is variable scoping or
 //                                  type checking
 
-use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList}
+use core.ast.{Expr, ExprList, Stmt, StmtList, ParamList, FieldInitList, MatchArmList, WhenArmList, Pattern, PatternList, SExpr, SStmt, sexpr, sexpr_dummy, sstmt, stmt_unwrap, AnnotationList, ValueType, TypeList}
 use diagnostics.{Confidence, DiagCode, Span, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_dummy}
 use resolve.{resolve_program}
 
@@ -452,8 +452,8 @@ fn rewrite_stmt_list(ctx: NameCtx, stmts: StmtList) -> StmtList {
 
 fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
     match stmt {
-        .Let(name, vt, init) -> .Let(name, vt, rewrite_expr(ctx, init))
-        .Mut(name, vt, init) -> .Mut(name, vt, rewrite_expr(ctx, init))
+        .Let(name, vt, init) -> .Let(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
+        .Mut(name, vt, init) -> .Mut(name, rewrite_vtype(ctx, vt), rewrite_expr(ctx, init))
         .Expr(e) -> .Expr(rewrite_expr(ctx, e))
         .Return(e) -> .Return(rewrite_expr(ctx, e))
         .Block(body) -> .Block(rewrite_stmt_list(ctx, body))
@@ -467,7 +467,8 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
         .Function(name, tp, params, rvt, body) -> {
             let is_impl_method = name.contains("__")
             let qualified = if ctx.current_module != "" && name != "main" && !is_impl_method { "${ctx.current_module}::${name}" } else { name }
-            Stmt.Function(qualified, tp, params, rvt, rewrite_stmt_list(bind_params_ctx(ctx, params), body))
+            let rp = rewrite_param_types(ctx, params)
+            Stmt.Function(qualified, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
         }
         .Match(subject, arms) -> .Match(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Module(name, body) -> {
@@ -475,18 +476,17 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
             let mod_uses = resolve_use_aliases(body, ctx.tree)
             Stmt.Module(name, rewrite_stmt_list(ctx_with_module(ctx, mod_path, merge_aliases(ctx.aliases, mod_uses.aliases)), body))
         }
-        // NOTE: TypeDecl/EnumDecl qualification is deferred until the seed
-        // has typeck + monomorphizer canonical lookup support.
-        // .TypeDecl(name, tp, fields) -> .TypeDecl(resolve_type_in_ctx(ctx, name), tp, fields)
-        // .EnumDecl(name, tp, variants) -> .EnumDecl(resolve_type_in_ctx(ctx, name), tp, variants)
-        // .TraitDecl(name, body) -> .TraitDecl(resolve_type_in_ctx(ctx, name), body)
-        // .ShapeDecl(name, fields) -> .ShapeDecl(resolve_type_in_ctx(ctx, name), fields)
-        // .NewtypeDecl(name, inner) -> .NewtypeDecl(resolve_type_in_ctx(ctx, name), inner)
-        .Impl(type_name, methods) -> .Impl(type_name, rewrite_stmt_list(ctx, methods))
+        .TypeDecl(name, tp, fields) -> .TypeDecl(resolve_type_in_ctx(ctx, name), tp, fields)
+        .EnumDecl(name, tp, variants) -> .EnumDecl(resolve_type_in_ctx(ctx, name), tp, variants)
+        .TraitDecl(name, body) -> .TraitDecl(resolve_type_in_ctx(ctx, name), body)
+        .ShapeDecl(name, fields) -> .ShapeDecl(resolve_type_in_ctx(ctx, name), fields)
+        .NewtypeDecl(name, inner) -> .NewtypeDecl(resolve_type_in_ctx(ctx, name), inner)
+        .Impl(type_name, methods) -> rewrite_impl_stmt(ctx, type_name, methods)
         .Annotated(annotations, inner) -> .Annotated(annotations, rewrite_stmt(ctx, inner))
         .Defer(body) -> .Defer(rewrite_expr(ctx, body))
         .Errdefer(body) -> .Errdefer(rewrite_expr(ctx, body))
         .LetDestructure(names, init) -> .LetDestructure(names, rewrite_expr(ctx, init))
+        .ExternFn(name, params, rvt) -> .ExternFn(name, rewrite_param_types(ctx, params), rewrite_vtype(ctx, rvt))
         .SpecBlock(name, body) -> .SpecBlock(name, rewrite_stmt_list(ctx, body))
         .GivenBlock(name, body) -> .GivenBlock(name, rewrite_stmt_list(ctx, body))
         .ThenBlock(name, cond) -> .ThenBlock(name, rewrite_expr(ctx, cond))
@@ -495,8 +495,34 @@ fn rewrite_stmt(ctx: NameCtx, stmt: Stmt) -> Stmt {
 }
 
 fn rewrite_impl_stmt(ctx: NameCtx, type_name: string, methods: StmtList) -> Stmt {
-    let rt = resolve_type_in_ctx(ctx, type_name)
-    Stmt.Impl(rt, rewrite_impl_methods(ctx, rt, methods))
+    // Trait impl: "TraitName:TypeName" — qualify both parts separately
+    let sep = find_single_colon(type_name)
+    if sep >= 0 {
+        let trait_part = type_name.substring(0, sep)
+        let type_part = type_name.substring(sep + 1, type_name.length)
+        let rt = resolve_type_in_ctx(ctx, trait_part)
+        let tt = resolve_type_in_ctx(ctx, type_part)
+        Stmt.Impl("${rt}:${tt}", rewrite_impl_methods(ctx, tt, methods))
+    } else {
+        let rt = resolve_type_in_ctx(ctx, type_name)
+        Stmt.Impl(rt, rewrite_impl_methods(ctx, rt, methods))
+    }
+}
+
+// Find single colon (trait:type separator) that isn't part of ::
+fn find_single_colon(s: string) -> int {
+    mut i = 0
+    while i < s.length {
+        if s[i] == ":" {
+            if i + 1 < s.length && s[i + 1] == ":" {
+                i = i + 2
+                continue
+            }
+            return i
+        }
+        i = i + 1
+    }
+    -1
 }
 
 fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
@@ -509,6 +535,41 @@ fn resolve_type_in_ctx(ctx: NameCtx, type_name: string) -> string {
         return "${ctx.current_module}::${type_name}"
     }
     type_name
+}
+
+// ── ValueType + param rewriting ──
+// Qualify all type names inside ValueType, ParamList, and TypeList.
+// After this pass, every Struct/Enum/Trait/Newtype name is fully qualified.
+
+fn rewrite_vtype(ctx: NameCtx, vt: ValueType) -> ValueType {
+    match vt {
+        .Struct(name) if name != "" -> .Struct(resolve_type_in_ctx(ctx, name))
+        .Enum(name, args) if name != "" -> .Enum(resolve_type_in_ctx(ctx, name), rewrite_vtype_list(ctx, args))
+        .Trait(name) if name != "" -> .Trait(resolve_type_in_ctx(ctx, name))
+        .Newtype(name, inner) if name != "" -> .Newtype(resolve_type_in_ctx(ctx, name), rewrite_vtype(ctx, inner))
+        .NarrowedEnum(en, v) if en != "" -> .NarrowedEnum(resolve_type_in_ctx(ctx, en), v)
+        .List(elem) -> .List(rewrite_vtype(ctx, elem))
+        .Fn(ret) -> .Fn(rewrite_vtype(ctx, ret))
+        .FnTyped(params, ret) -> .FnTyped(rewrite_vtype_list(ctx, params), rewrite_vtype(ctx, ret))
+        .Closure(n, ret) -> .Closure(n, rewrite_vtype(ctx, ret))
+        .Union(types) -> .Union(rewrite_vtype_list(ctx, types))
+        .Task(rt) -> .Task(rewrite_vtype(ctx, rt))
+        _ -> vt
+    }
+}
+
+fn rewrite_vtype_list(ctx: NameCtx, tl: TypeList) -> TypeList {
+    match tl {
+        .End -> .End
+        .Node(vt, next) -> .Node(rewrite_vtype(ctx, vt), rewrite_vtype_list(ctx, next))
+    }
+}
+
+fn rewrite_param_types(ctx: NameCtx, params: ParamList) -> ParamList {
+    match params {
+        .End -> .End
+        .Node(name, vt, next) -> .Node(name, rewrite_vtype(ctx, vt), rewrite_param_types(ctx, next))
+    }
 }
 
 fn qualify_self_param(params: ParamList, qualified_type: string) -> ParamList {
@@ -533,8 +594,8 @@ fn rewrite_impl_methods(ctx: NameCtx, qualified_type: string, stmts: StmtList) -
                     let parts = name.split("__")
                     let method_name = if parts.length > 1 { parts[1] } else { name }
                     let qualified_name = "${qualified_type}__${method_name}"
-                    let qualified_params = qualify_self_param(params, qualified_type)
-                    Stmt.Function(qualified_name, tp, qualified_params, rvt, rewrite_stmt_list(bind_params_ctx(ctx, qualified_params), body))
+                    let rp = rewrite_param_types(ctx, qualify_self_param(params, qualified_type))
+                    Stmt.Function(qualified_name, tp, rp, rewrite_vtype(ctx, rvt), rewrite_stmt_list(bind_params_ctx(ctx, rp), body))
                 }
                 _ -> rewrite_stmt(ctx, ss.node)
             }
@@ -577,8 +638,14 @@ fn rewrite_expr_compound(ctx: NameCtx, expr: Expr) -> Expr {
         .MapLit(entries) -> .MapLit(rewrite_expr_list(ctx, entries))
         .Slice(obj, s, e) -> .Slice(rewrite_expr(ctx, obj), rewrite_expr(ctx, s), rewrite_expr(ctx, e))
         .With(obj, overrides) -> .With(rewrite_expr(ctx, obj), rewrite_field_inits(ctx, overrides))
-        .StructLit(name, inits) -> .StructLit(name, rewrite_field_inits(ctx, inits))
-        .EnumCtor(type_name, variant, args) -> .EnumCtor(type_name, variant, rewrite_expr_list(ctx, args))
+        .StructLit(name, inits) -> {
+            let qn = if name != "" { resolve_type_in_ctx(ctx, name) } else { name }
+            Expr.StructLit(qn, rewrite_field_inits(ctx, inits))
+        }
+        .EnumCtor(type_name, variant, args) -> {
+            let qt = if type_name != "" { resolve_type_in_ctx(ctx, type_name) } else { type_name }
+            Expr.EnumCtor(qt, variant, rewrite_expr_list(ctx, args))
+        }
         .MatchExpr(subject, arms) -> .MatchExpr(rewrite_expr(ctx, subject), rewrite_match_arms(ctx, arms))
         .Lambda(params, body) -> .Lambda(params, rewrite_expr(bind_params_ctx(ctx, params), body))
         .IsCheck(subject, variant) -> .IsCheck(rewrite_expr(ctx, subject), variant)

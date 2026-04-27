@@ -300,7 +300,14 @@ export fn emit_method_call(ctx: Ctx, env: VarEnv, obj: Expr, method: string, arg
         return err_emit("method call on non-struct/enum value (ty=${vtype_display(r.ty)})")
     }
     let mangled = "${owner}__${method}"
-    let fn_val = ctx.get_fn(mangled)
+    mut fn_val = ctx.get_fn(mangled)
+    // Canonical fallback: try module-qualified type name from registries
+    if fn_val == null {
+        let canonical = if type_name != "" { struct_reg_canonical(ctx.structs, type_name) } else { enum_reg_canonical(ctx.enums, owner) }
+        if canonical != "" {
+            fn_val = ctx.get_fn("${canonical}__${method}")
+        }
+    }
     if fn_val == null {
         // Not a method — check if it's a struct field with fn type.
         // e.g. handler.action(25) where action: fn(int) -> int

@@ -120,6 +120,11 @@ fn variant_in_matched(name: string, matched: string) -> bool {
         if matched.substring(0, name.length + 1) == "${name}|" { return true }
         if matched.substring(matched.length - name.length - 1, matched.length) == "|${name}" { return true }
     }
+    // Module-qualified name: check short form
+    if name.contains("::") {
+        let parts = name.split("::")
+        return variant_in_matched(parts[parts.length - 1], matched)
+    }
     false
 }
 

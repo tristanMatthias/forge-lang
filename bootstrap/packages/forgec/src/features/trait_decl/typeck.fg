@@ -4,7 +4,7 @@ use core.ast.{Stmt, StmtList, SStmt, ParamList, param_list_length, vtype_is_unkn
 use diagnostics.{DiagCode}
 use typeck.{TC, tc_report, TraitRegistry, TraitMethodList, TraitAssocTypes, trait_lookup, trait_has, trait_assoc_types, tc_owns_type}
 
-fn find_trait_separator(name: string) -> int {
+export fn find_trait_separator(name: string) -> int {
     mut i = 0
     while i < name.length {
         if name[i] == ":" {
