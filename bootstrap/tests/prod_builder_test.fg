@@ -1,0 +1,45 @@
+// Builder pattern: with expression + struct + pipe
+
+type PbConfig = {
+    host: string,
+    port: int,
+    workers: int,
+    debug: int,
+    timeout: int,
+}
+
+fn pb_default_config() -> PbConfig {
+    PbConfig { host: "localhost", port: 8080, workers: 4, debug: 0, timeout: 30 }
+}
+
+fn pb_with_host(cfg: PbConfig, host: string) -> PbConfig { cfg with { host } }
+fn pb_with_port(cfg: PbConfig, port: int) -> PbConfig { cfg with { port } }
+fn pb_with_debug(cfg: PbConfig) -> PbConfig { cfg with { debug: 1 } }
+
+fn pb_make_prod() -> PbConfig {
+    pb_default_config()
+        |> pb_with_host("prod.example.com")
+        |> pb_with_port(443)
+}
+
+fn pb_make_dev() -> PbConfig {
+    pb_default_config() |> pb_with_debug
+}
+
+spec "prod builder" {
+    then "prod host" {
+        pb_make_prod().host == "prod.example.com"
+    }
+    then "prod port" {
+        pb_make_prod().port == 443
+    }
+    then "prod debug off" {
+        pb_make_prod().debug == 0
+    }
+    then "dev debug on" {
+        pb_make_dev().debug == 1
+    }
+    then "dev host default" {
+        pb_make_dev().host == "localhost"
+    }
+}

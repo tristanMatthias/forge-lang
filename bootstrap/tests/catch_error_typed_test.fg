@@ -1,0 +1,34 @@
+// catch blocks with typed errors
+
+enum CetResult { CetOk(value: int), CetErr(msg: string) }
+
+fn cet_parse(s: string) -> CetResult {
+    if s == "42" { return CetResult.CetOk(42) }
+    CetResult.CetErr("not a number")
+}
+
+fn cet_unwrap_or(r: CetResult, default_val: int) -> int {
+    match r {
+        .CetOk(v) -> v
+        .CetErr(_) -> default_val
+    }
+}
+
+fn cet_error_msg(r: CetResult) -> string {
+    match r {
+        .CetOk(_) -> ""
+        .CetErr(msg) -> msg
+    }
+}
+
+spec "catch error typed" {
+    then "success returns value" {
+        cet_unwrap_or(cet_parse("42"), 0) == 42
+    }
+    then "failure returns fallback" {
+        cet_unwrap_or(cet_parse("bad"), 0) == 0
+    }
+    then "error message preserved" {
+        cet_error_msg(cet_parse("bad")) == "not a number"
+    }
+}

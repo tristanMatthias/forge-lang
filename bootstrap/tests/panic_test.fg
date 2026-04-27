@@ -1,0 +1,13 @@
+// panic with null coalesce -- success path
+
+fn pnk_find(id: int) -> string? {
+    if id == 1 { return "Alice" }
+    null
+}
+
+spec "panic" {
+    then "null coalesce avoids panic" {
+        let user = pnk_find(1) ?? panic("user not found")
+        user == "Alice"
+    }
+}

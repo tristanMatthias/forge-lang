@@ -1,0 +1,68 @@
+// Collections stress: typed operations
+
+type PcolPoint = { x: int, y: int }
+
+fn pcol_find_max(scores: List<int>) -> int {
+    mut max_val = scores[0]
+    for s in scores {
+        if s > max_val { max_val = s }
+    }
+    max_val
+}
+
+fn pcol_flatten_sum() -> int {
+    let matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    mut flat = []
+    for row in matrix {
+        for val in row {
+            flat.push(val)
+        }
+    }
+    flat.reduce(0, (a, b) -> a + b)
+}
+
+spec "prod collections" {
+    then "find max" {
+        pcol_find_max([42, 17, 93, 65, 28, 81, 54]) == 93
+    }
+    then "map has key" {
+        mut counts = {}
+        counts.set("a", string(1))
+        counts.has("a") == 1
+    }
+    then "map missing key" {
+        mut counts2 = {}
+        counts2.set("a", string(1))
+        counts2.has("d") == 0
+    }
+    then "map length" {
+        mut counts3 = {}
+        counts3.set("a", string(1))
+        counts3.set("b", string(2))
+        counts3.set("c", string(3))
+        counts3.length == 3
+    }
+    then "flatten and sum matrix" {
+        pcol_flatten_sum() == 45
+    }
+    then "slice mid value" {
+        let nums1 = [10, 20, 30, 40, 50]
+        let mid1 = nums1[1..4]
+        mid1[0] == 20
+    }
+    then "slice mid length" {
+        let nums2 = [10, 20, 30, 40, 50]
+        let mid2 = nums2[1..4]
+        mid2.length == 3
+    }
+    then "struct list map" {
+        let points = [PcolPoint { x: 1, y: 2 }, PcolPoint { x: 3, y: 4 }]
+        let dists = points.map((p) -> p.x * p.x + p.y * p.y)
+        dists.get(0) == 5
+    }
+    then "filter reduce evens" {
+        let evens = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter((x) -> x % 2 == 0)
+        let even_sum = evens.reduce(0, (a, b) -> a + b)
+        even_sum == 30
+    }
+}

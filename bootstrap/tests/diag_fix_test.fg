@@ -1,0 +1,11 @@
+// diag fix: basic valid code compiles and runs
+
+fn df_greet() -> string {
+    "fix test"
+}
+
+spec "diag fix" {
+    then "valid code works" {
+        df_greet() == "fix test"
+    }
+}

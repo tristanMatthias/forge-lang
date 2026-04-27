@@ -1,0 +1,67 @@
+// Error handling: Result enum + ?? + match + nullable chains
+
+enum PehParseResult {
+    PehOk(value: int),
+    PehErr(msg: string),
+}
+
+fn peh_parse_int(s: string) -> PehParseResult {
+    if s == "" { return PehParseResult.PehErr("empty string") }
+    PehParseResult.PehOk(int(s))
+}
+
+fn peh_safe_divide(a: int, b: int) -> int? {
+    if b == 0 { return null }
+    a / b
+}
+
+fn peh_process(input: string) -> string {
+    let parsed = peh_parse_int(input)
+    match parsed {
+        .PehOk(v) -> {
+            let half = peh_safe_divide(v, 2) ?? -1
+            input + " -> " + string(v) + " / 2 = " + string(half)
+        }
+        .PehErr(msg) -> "error: " + msg
+    }
+}
+
+fn peh_step1(x: int) -> int? {
+    if x > 0 { return x * 2 }
+    null
+}
+
+fn peh_step2(x: int) -> int? {
+    if x < 100 { return x + 1 }
+    null
+}
+
+fn peh_pipeline(x: int) -> int? {
+    let a = peh_step1(x)?
+    let b = peh_step2(a)?
+    b
+}
+
+spec "prod error handling" {
+    then "parse 42" {
+        peh_process("42") == "42 -> 42 / 2 = 21"
+    }
+    then "parse 100" {
+        peh_process("100") == "100 -> 100 / 2 = 50"
+    }
+    then "parse empty" {
+        peh_process("") == "error: empty string"
+    }
+    then "parse 7" {
+        peh_process("7") == "7 -> 7 / 2 = 3"
+    }
+    then "nullable pipeline success" {
+        (peh_pipeline(5) ?? -1) == 11
+    }
+    then "nullable pipeline fail step1" {
+        (peh_pipeline(-1) ?? -1) == -1
+    }
+    then "nullable pipeline fail step2" {
+        (peh_pipeline(60) ?? -1) == -1
+    }
+}

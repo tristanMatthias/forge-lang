@@ -1,0 +1,75 @@
+// State machine: enums + match guards
+
+enum PsmState {
+    PsmIdle,
+    PsmRunning(progress: int),
+    PsmPaused(at: int),
+    PsmDone(result: int),
+    PsmError(msg: string),
+}
+
+fn psm_transition(state: PsmState, action: string) -> PsmState {
+    match state {
+        .PsmIdle -> {
+            match action {
+                _ if action == "start" -> PsmState.PsmRunning(0)
+                _ -> PsmState.PsmError("invalid action for idle")
+            }
+        }
+        .PsmRunning(p) -> {
+            match action {
+                _ if action == "progress" -> {
+                    if p >= 100 {
+                        return PsmState.PsmDone(p)
+                    }
+                    PsmState.PsmRunning(p + 25)
+                }
+                _ if action == "pause" -> PsmState.PsmPaused(p)
+                _ -> PsmState.PsmError("invalid action for running")
+            }
+        }
+        .PsmPaused(at) -> {
+            match action {
+                _ if action == "resume" -> PsmState.PsmRunning(at)
+                _ -> PsmState.PsmError("invalid action for paused")
+            }
+        }
+        _ -> state
+    }
+}
+
+fn psm_label(s: PsmState) -> string {
+    match s {
+        .PsmIdle -> "idle"
+        .PsmRunning(p) -> "running(" + string(p) + ")"
+        .PsmPaused(at) -> "paused(" + string(at) + ")"
+        .PsmDone(r) -> "done(" + string(r) + ")"
+        .PsmError(msg) -> "error: " + msg
+    }
+}
+
+fn psm_run_actions(actions: List<string>) -> string {
+    mut state = PsmState.PsmIdle
+    mut last = ""
+    for action in actions {
+        state = psm_transition(state, action)
+        last = psm_label(state)
+    }
+    last
+}
+
+spec "prod state machine" {
+    then "start from idle" {
+        psm_label(psm_transition(PsmState.PsmIdle, "start")) == "running(0)"
+    }
+    then "progress step" {
+        psm_label(psm_transition(PsmState.PsmRunning(0), "progress")) == "running(25)"
+    }
+    then "pause and resume" {
+        let paused = psm_transition(PsmState.PsmRunning(50), "pause")
+        psm_label(psm_transition(paused, "resume")) == "running(50)"
+    }
+    then "full run to done" {
+        psm_run_actions(["start", "progress", "progress", "progress", "progress", "progress"]) == "done(100)"
+    }
+}

@@ -1,0 +1,15 @@
+// Memory red team: defer, struct copy
+
+type MrtPoint = { x: int, y: int }
+
+fn mrt_copy_x(p: MrtPoint) -> int {
+    let q = p
+    q.x
+}
+
+spec "memory red team" {
+    then "copy works" {
+        let p = MrtPoint { x: 10, y: 20 }
+        mrt_copy_x(p) == 10
+    }
+}

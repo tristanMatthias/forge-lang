@@ -1,0 +1,79 @@
+// Float combined with every major feature
+
+type FcPoint = { x: float, y: float }
+
+fn fc_dist_sq(p: FcPoint) -> float {
+    p.x * p.x + p.y * p.y
+}
+
+enum FcValue {
+    FcInt(n: int)
+    FcFloat(f: float)
+    FcStr(s: string)
+}
+
+fn fc_value_to_string(v: FcValue) -> string {
+    match v {
+        .FcInt(n) -> string(n)
+        .FcFloat(f) -> string(f)
+        .FcStr(s) -> s
+    }
+}
+
+fn fc_classify(x: float) -> string {
+    match x {
+        0.0 -> "zero"
+        1.0 -> "one"
+        _ -> "other"
+    }
+}
+
+fn fc_abs(x: float) -> float {
+    if x > 0.0 { x } else { 0.0 - x }
+}
+
+fn fc_safe_div(a: float, b: float) -> float? {
+    if b == 0.0 { return null }
+    a / b
+}
+
+fn fc_double_f(x: float) -> float { x * 2.0 }
+
+spec "float combo" {
+    then "struct distance squared" {
+        let p = FcPoint { x: 3.0, y: 4.0 }
+        fc_dist_sq(p) == 25.0
+    }
+    then "enum float variant" {
+        fc_value_to_string(FcValue.FcFloat(3.14)) == "3.14"
+    }
+    then "enum int variant" {
+        fc_value_to_string(FcValue.FcInt(42)) == "42"
+    }
+    then "match zero" {
+        fc_classify(0.0) == "zero"
+    }
+    then "match one" {
+        fc_classify(1.0) == "one"
+    }
+    then "match other" {
+        fc_classify(99.0) == "other"
+    }
+    then "abs negative" {
+        fc_abs(0.0 - 5.5) == 5.5
+    }
+    then "safe div success" {
+        let r = fc_safe_div(10.0, 2.0)
+        r != null
+    }
+    then "safe div by zero" {
+        let bad = fc_safe_div(1.0, 0.0)
+        bad == null
+    }
+    then "pipe double" {
+        (1.5 |> fc_double_f) == 3.0
+    }
+    then "negation" {
+        (0.0 - 1.0) == -1.0
+    }
+}

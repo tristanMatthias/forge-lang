@@ -1,0 +1,38 @@
+// Match tables: match expr table { pattern | col; ... }
+
+enum MtStatus { MtActive, MtPending, MtDone }
+
+fn mt_get_label(s: MtStatus) -> string {
+    let r = match s table {
+        pattern    | label      | code
+        .MtActive  | "active"   | "A"
+        .MtPending | "pending"  | "P"
+        .MtDone    | "complete" | "D"
+    }
+    r.get("label")
+}
+
+fn mt_get_code(s: MtStatus) -> string {
+    let r = match s table {
+        pattern    | label      | code
+        .MtActive  | "active"   | "A"
+        .MtPending | "pending"  | "P"
+        .MtDone    | "complete" | "D"
+    }
+    r.get("code")
+}
+
+spec "match table" {
+    then "active label" {
+        mt_get_label(MtStatus.MtActive) == "active"
+    }
+    then "active code" {
+        mt_get_code(MtStatus.MtActive) == "A"
+    }
+    then "done label" {
+        mt_get_label(MtStatus.MtDone) == "complete"
+    }
+    then "done code" {
+        mt_get_code(MtStatus.MtDone) == "D"
+    }
+}

@@ -1,0 +1,54 @@
+// Error handling red team: catch, Error trait, errdefer
+
+enum EhrtResult { EhrtOk(value: string), EhrtErr(error: string) }
+
+fn ehrt_might_fail(x: int) -> EhrtResult {
+    if x < 0 { EhrtResult.EhrtErr("negative") }
+    else { EhrtResult.EhrtOk("positive") }
+}
+
+trait EhrtError {
+    fn message(self) -> string
+    fn kind(self) -> string
+}
+
+type EhrtIoError = { msg: string }
+impl EhrtError for EhrtIoError {
+    fn message(self) -> string { self.msg }
+    fn kind(self) -> string { "io" }
+}
+
+type EhrtParseError = { msg: string, file: string }
+impl EhrtError for EhrtParseError {
+    fn message(self) -> string { self.msg + " in " + self.file }
+    fn kind(self) -> string { "parse" }
+}
+
+fn ehrt_show_error(e: EhrtError) -> string {
+    "chained: " + e.kind() + " error " + e.message()
+}
+
+fn ehrt_unwrap_or(r: EhrtResult, default_val: string) -> string {
+    match r {
+        .EhrtOk(v) -> v
+        .EhrtErr(_) -> default_val
+    }
+}
+
+spec "error handling red team" {
+    then "error returns default" {
+        ehrt_unwrap_or(ehrt_might_fail(-1), "default value") == "default value"
+    }
+    then "error trait kind" {
+        let e = EhrtIoError { msg: "disk full" }
+        e.kind() == "io"
+    }
+    then "error trait message" {
+        let e2 = EhrtIoError { msg: "disk full" }
+        e2.message() == "disk full"
+    }
+    then "error context chaining" {
+        let pe = EhrtParseError { msg: "parse error", file: "config.json" }
+        ehrt_show_error(pe) == "chained: parse error parse error in config.json"
+    }
+}

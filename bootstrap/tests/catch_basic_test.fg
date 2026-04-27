@@ -1,0 +1,24 @@
+// catch blocks: inline error handling
+
+enum CbResult { CbOk(value: int), CbErr(error: string) }
+
+fn cb_parse_int(s: string) -> CbResult {
+    if s == "42" { return CbResult.CbOk(42) }
+    CbResult.CbErr("not a number")
+}
+
+fn cb_unwrap_or(r: CbResult, default_val: int) -> int {
+    match r {
+        .CbOk(v) -> v
+        .CbErr(_) -> default_val
+    }
+}
+
+spec "catch basic" {
+    then "error returns default" {
+        cb_unwrap_or(cb_parse_int("bad"), 8080) == 8080
+    }
+    then "success returns value" {
+        cb_unwrap_or(cb_parse_int("42"), 9999) == 42
+    }
+}

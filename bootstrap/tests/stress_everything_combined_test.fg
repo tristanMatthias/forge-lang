@@ -1,0 +1,69 @@
+// Stress: everything combined - pipeline, tree, error chain
+
+enum SecResult { SecOk(value: string), SecErr(error: string) }
+enum SecTree { SecLeaf(v: int), SecNode(left: SecTree, right: SecTree) }
+
+fn sec_sum_tree(t: SecTree) -> int {
+    match t {
+        .SecLeaf(v) -> v
+        .SecNode(l, r) -> sec_sum_tree(l) + sec_sum_tree(r)
+    }
+}
+
+fn sec_safe_div(a: int, b: int) -> SecResult {
+    if b == 0 { SecResult.SecErr("divide error") }
+    else { SecResult.SecOk(string(a / b)) }
+}
+
+fn sec_chain_ops(x: int) -> SecResult {
+    let a = sec_safe_div(100, x)
+    match a {
+        .SecOk(v) -> SecResult.SecOk("result: " + v)
+        .SecErr(e) -> SecResult.SecErr(e)
+    }
+}
+
+fn sec_describe_result(r: SecResult) -> string {
+    match r {
+        .SecOk(v) -> "ok: " + v
+        .SecErr(e) -> "caught: " + e
+    }
+}
+
+fn sec_pipeline_total() -> int {
+    let data1 = [5, 10, 15, 20, 25]
+    let processed1 = data1
+        .map((x) -> x * 2)
+        .filter((x) -> x > 10)
+    processed1.reduce(0, (acc, x) -> acc + x)
+}
+
+fn sec_pipeline_count() -> int {
+    let data2 = [5, 10, 15, 20, 25]
+    let processed2 = data2
+        .map((x) -> x * 2)
+        .filter((x) -> x > 10)
+    processed2.length
+}
+
+spec "stress everything combined" {
+    then "pipeline filter reduce" {
+        sec_pipeline_total() == 140
+    }
+    then "pipeline count" {
+        sec_pipeline_count() == 4
+    }
+    then "tree sum" {
+        let tree = SecTree.SecNode(
+            SecTree.SecNode(SecTree.SecLeaf(1), SecTree.SecLeaf(2)),
+            SecTree.SecNode(
+                SecTree.SecLeaf(3),
+                SecTree.SecNode(SecTree.SecLeaf(6), SecTree.SecLeaf(9))
+            )
+        )
+        sec_sum_tree(tree) == 21
+    }
+    then "error chain div by zero" {
+        sec_describe_result(sec_chain_ops(0)) == "caught: divide error"
+    }
+}
