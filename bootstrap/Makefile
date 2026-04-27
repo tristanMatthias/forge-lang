@@ -19,6 +19,7 @@
 .PHONY: build build-O0 build-debug test run selfhost clean help install-hooks regress score update-seed seed-patch verify-seed seed-sigs next work epic coverage
 
 SRC_DIR := packages/forgec/src
+BS2 := build/bs2
 DIAG := NO_AUTOCYCLE=1 bash scripts/diagnose.sh
 
 help:
@@ -79,14 +80,14 @@ build-O0:
 build-debug:
 	@$(DIAG) --build-debug
 
-# Full safety net: regression suite + fixed-point invariant.
+# Full safety net: test suite + fixed-point invariant.
 test:
-	@$(DIAG) --regress
+	@$(BS2) test
 	@$(DIAG) --check-fixedpoint
 
-# Just the regression suite — faster, useful while iterating.
+# Just the test suite — faster, useful while iterating.
 regress:
-	@$(DIAG) --regress
+	@$(BS2) test
 
 # Just the fixed-point check.
 selfhost:

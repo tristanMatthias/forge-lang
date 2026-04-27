@@ -488,6 +488,7 @@ fn main() {
         command test {
             description "Run tests"
             option filter { short "-f", description "Filter tests by name" }
+            flag coverage { short "-c", description "Enable coverage instrumentation" }
             arg file { description "Test file (optional)" }
         }
 
@@ -539,9 +540,10 @@ fn main() {
             let llc = "${llc_prefix}/bin/llc"
             let llvm_prefix = forge_shell_exec("printenv LLVM_PREFIX 2>/dev/null || echo /opt/homebrew/opt/llvm")
             let llvm_lib = "${llvm_prefix}/lib"
-            // Parse optional args: forge test [file] [-f filter]
+            // Parse optional args: forge test [file] [-f filter] [--coverage]
             mut file_arg = ""
             mut filter_arg = ""
+            mut coverage = false
             mut i = 2
             while i < forge_selfhost_argc() {
                 let arg = forge_selfhost_get_arg_cstr(i)
@@ -551,6 +553,8 @@ fn main() {
                         i = i + 2
                         continue
                     }
+                } else if arg == "--coverage" || arg == "-c" {
+                    coverage = true
                 } else {
                     file_arg = arg
                 }
@@ -562,10 +566,12 @@ fn main() {
                 build_dir: "${project_dir}/build",
                 compiler: bs2_path,
                 llc,
+                llvm_prefix,
                 llvm_lib,
                 runtime_o: "${project_dir}/build/runtime.o",
                 llvm_wrapper_o: "${project_dir}/build/llvm_wrapper.o",
                 filter: filter_arg,
+                coverage,
             }
 
             if file_arg != "" {
