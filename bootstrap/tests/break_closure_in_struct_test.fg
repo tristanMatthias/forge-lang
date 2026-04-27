@@ -1,0 +1,21 @@
+type BcisCallback = { handler: fn(int) -> int }
+
+fn bcis_run_handler() -> int {
+    let cb = BcisCallback { handler: (x) -> x * 10 }
+    cb.handler(5)
+}
+
+fn bcis_run_with() -> int {
+    let cb = BcisCallback { handler: (x) -> x * 10 }
+    let cb2 = cb with { handler: (x) -> x + 100 }
+    cb2.handler(5)
+}
+
+spec "break closure in struct" {
+    then "closure in struct field works" {
+        bcis_run_handler() == 50
+    }
+    then "with expression on fn field works" {
+        bcis_run_with() == 105
+    }
+}

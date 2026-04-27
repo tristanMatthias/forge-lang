@@ -1,0 +1,12 @@
+fn bcp_make_adder(n: int) -> fn(int) -> int { (x) -> x + n }
+
+fn bcp_run() -> int {
+    let add5 = bcp_make_adder(5)
+    10 |> add5
+}
+
+spec "break closure pipe" {
+    then "closure with pipe works" {
+        bcp_run() == 15
+    }
+}

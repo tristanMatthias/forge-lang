@@ -1,0 +1,22 @@
+fn bcim_make_scaler(factor: int) -> fn(int) -> int {
+    (x) -> x * factor
+}
+
+fn bcim_run() -> string {
+    let double = bcim_make_scaler(2)
+    let triple = bcim_make_scaler(3)
+    let nums = [1, 2, 3, 4, 5]
+    let doubled = nums.map(double)
+    let tripled = nums.map(triple)
+    forge_test_capture_start()
+    for d in doubled { println(string(d)) }
+    println("---")
+    for t in tripled { println(string(t)) }
+    forge_test_capture_stop()
+}
+
+spec "break closure in map" {
+    then "scaled lists are correct" {
+        bcim_run() == "2\n4\n6\n8\n10\n---\n3\n6\n9\n12\n15"
+    }
+}

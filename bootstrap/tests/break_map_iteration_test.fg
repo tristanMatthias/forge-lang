@@ -1,0 +1,15 @@
+fn bmi_run() -> int {
+    let m = {"a": "1", "b": "2", "c": "3"}
+    let keys = m.keys()
+    mut count = 0
+    for k in keys {
+        count = count + int(m.get(k))
+    }
+    count
+}
+
+spec "break map iteration" {
+    then "map iteration sums values correctly" {
+        bmi_run() == 6
+    }
+}

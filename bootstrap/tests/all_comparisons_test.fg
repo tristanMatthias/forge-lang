@@ -1,0 +1,48 @@
+fn ac_int_eq(a: int, b: int) -> int { if a == b { 1 } else { 0 } }
+fn ac_int_neq(a: int, b: int) -> int { if a != b { 1 } else { 0 } }
+fn ac_int_lt(a: int, b: int) -> int { if a < b { 1 } else { 0 } }
+fn ac_int_le(a: int, b: int) -> int { if a <= b { 1 } else { 0 } }
+fn ac_int_gt(a: int, b: int) -> int { if a > b { 1 } else { 0 } }
+fn ac_int_ge(a: int, b: int) -> int { if a >= b { 1 } else { 0 } }
+fn ac_str_eq(a: string, b: string) -> int { if a == b { 1 } else { 0 } }
+fn ac_str_neq(a: string, b: string) -> int { if a != b { 1 } else { 0 } }
+fn ac_str_lt(a: string, b: string) -> int { if a < b { 1 } else { 0 } }
+
+spec "all comparisons" {
+    then "== on ints" {
+        ac_int_eq(10, 20) == 0
+    }
+    then "!= on ints" {
+        ac_int_neq(10, 20) == 1
+    }
+    then "== same value" {
+        ac_int_eq(10, 10) == 1
+    }
+    then "< on ints" {
+        ac_int_lt(10, 20) == 1
+    }
+    then "<= on ints" {
+        ac_int_le(10, 20) == 1
+    }
+    then "> on ints" {
+        ac_int_gt(10, 20) == 0
+    }
+    then ">= on ints" {
+        ac_int_ge(10, 20) == 0
+    }
+    then "<= equal values" {
+        ac_int_le(10, 10) == 1
+    }
+    then ">= equal values" {
+        ac_int_ge(10, 10) == 1
+    }
+    then "string == same" {
+        ac_str_eq("abc", "abc") == 1
+    }
+    then "string != different" {
+        ac_str_neq("abc", "def") == 1
+    }
+    then "string < lexicographic" {
+        ac_str_lt("abc", "def") == 1
+    }
+}

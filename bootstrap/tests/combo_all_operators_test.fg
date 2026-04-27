@@ -1,0 +1,25 @@
+fn cao_clamp(val: int, lo: int, hi: int) -> int {
+    if val < lo { return lo }
+    if val > hi { return hi }
+    val
+}
+
+fn cao_maybe_double(n: int) -> int {
+    if n > 10 { n * 2 } else { 0 }
+}
+
+spec "combo all operators" {
+    then "clamp arithmetic" {
+        cao_clamp(15 * 2 - 5, 0, 50) == 25
+    }
+    then "logical with comparison" {
+        let x = 15
+        (x >= 10 && x <= 20) == true
+    }
+    then "pipe with null coalesce fallback" {
+        (5 |> cao_maybe_double) ?? 99 == 99
+    }
+    then "pipe with non-zero result" {
+        (15 |> cao_maybe_double) == 30
+    }
+}

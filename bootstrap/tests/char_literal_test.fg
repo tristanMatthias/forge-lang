@@ -1,0 +1,17 @@
+spec "char literal" {
+    then "A is 65" {
+        'A' == 65
+    }
+    then "z is 122" {
+        'z' == 122
+    }
+    then "newline is 10" {
+        '\n' == 10
+    }
+    then "tab is 9" {
+        '\t' == 9
+    }
+    then "zero is 48" {
+        '0' == 48
+    }
+}

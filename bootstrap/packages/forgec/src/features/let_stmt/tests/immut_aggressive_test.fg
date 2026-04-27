@@ -1,5 +1,5 @@
 type Counter = { value: int }
-type Point = { x: int, y: int }
+type IaPoint = { x: int, y: int }
 
 enum Action { Inc(n: int), Dec(n: int), Reset }
 
@@ -44,12 +44,12 @@ spec "immutability aggressive" {
     // TODO: closure mutation capture not yet supported
     // then "mut with closures" { ... }
     then "with expression preserves original" {
-        let p = Point { x: 1, y: 2 }
+        let p = IaPoint { x: 1, y: 2 }
         let p2 = p with { x: 99 }
         p.x == 1
     }
     then "with expression creates new value" {
-        let p = Point { x: 1, y: 2 }
+        let p = IaPoint { x: 1, y: 2 }
         let p2 = p with { x: 99 }
         p2.x == 99
     }

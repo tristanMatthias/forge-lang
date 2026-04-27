@@ -1,0 +1,68 @@
+enum CeDepth { Shallow, Medium, Deep(inner: CeDepth) }
+
+fn ce_depth_name(d: CeDepth) -> string {
+    match d {
+        .Shallow -> "shallow"
+        .Medium -> "medium"
+        .Deep(inner) -> (match inner {
+            .Shallow -> "deep-shallow"
+            .Medium -> "deep-medium"
+            .Deep(_) -> "deep"
+        })
+    }
+}
+
+fn ce_transform(s: string) -> string {
+    let upper = s.to_upper()
+    upper + "_world"
+}
+
+fn ce_maybe_val(x: int) -> int? {
+    if x > 0 { x } else { null }
+}
+
+fn ce_chain_nullable(x: int) -> string {
+    let a = ce_maybe_val(x) ?? ce_maybe_val(x + 10) ?? -1
+    if a > 0 { "got: ${string(a)}" } else { "fallback" }
+}
+
+fn ce_factorial(n: int) -> int {
+    if n <= 1 { 1 } else { n * ce_factorial(n - 1) }
+}
+
+enum CeWrapper { Empty, Holds(value: CeDepth) }
+
+fn ce_unwrap_depth(w: CeWrapper) -> string {
+    match w {
+        .Empty -> "empty"
+        .Holds(d) -> (match d {
+            .Deep(inner) -> (match inner {
+                .Shallow -> "inner: 42"
+                _ -> "other"
+            })
+            _ -> "not deep"
+        })
+    }
+}
+
+spec "combo edge cases" {
+    then "empty list length" {
+        let empty = []
+        empty.length == 0
+    }
+    then "nested match" {
+        ce_depth_name(CeDepth.Deep(CeDepth.Deep(CeDepth.Shallow))) == "deep"
+    }
+    then "string ops" {
+        ce_transform("hello") == "HELLO_world"
+    }
+    then "nullable chain" {
+        ce_chain_nullable(-5) == "got: 5"
+    }
+    then "recursive factorial" {
+        ce_factorial(5) == 120
+    }
+    then "enum in enum" {
+        ce_unwrap_depth(CeWrapper.Holds(CeDepth.Deep(CeDepth.Shallow))) == "inner: 42"
+    }
+}

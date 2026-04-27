@@ -1,0 +1,19 @@
+type CnoConfig = { host: string, port: int }
+type CnoApp = { config: CnoConfig, name: string }
+
+spec "combo nested optional" {
+    then "null coalesce with fallback" {
+        null ?? "default" == "default"
+    }
+    then "non-null passes through" {
+        "original" ?? "fallback" == "original"
+    }
+    then "if-expr struct access" {
+        let app = CnoApp { config: CnoConfig { host: "localhost", port: 8080 }, name: "myapp" }
+        (if true { app.config.port } else { 0 }) == 8080
+    }
+    then "template with null coalesce" {
+        let name = null ?? "anonymous"
+        `user: ${name}` == "user: anonymous"
+    }
+}

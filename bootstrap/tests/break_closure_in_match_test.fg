@@ -1,0 +1,26 @@
+fn bcimatch_make_checker(threshold: int) -> fn(int) -> int {
+    (x) -> {
+        if x > threshold { return 1 }
+        0
+    }
+}
+
+fn bcimatch_run() -> string {
+    let is_big = bcimatch_make_checker(100)
+    let nums = [50, 150, 75, 200]
+    forge_test_capture_start()
+    for n in nums {
+        let label = match n {
+            _ if is_big(n) == 1 -> "BIG"
+            _ -> "small"
+        }
+        println(`${string(n)}: ${label}`)
+    }
+    forge_test_capture_stop()
+}
+
+spec "break closure in match" {
+    then "closure guard in match works" {
+        bcimatch_run() == "50: small\n150: BIG\n75: small\n200: BIG"
+    }
+}

@@ -1,0 +1,13 @@
+fn bnc_maybe_transform(use_double: int) -> fn(int) -> int {
+    if use_double == 1 { return (x) -> x * 2 }
+    (x) -> x
+}
+
+spec "break null closure" {
+    then "double transform works" {
+        bnc_maybe_transform(1)(5) == 10
+    }
+    then "identity transform works" {
+        bnc_maybe_transform(0)(5) == 5
+    }
+}

@@ -1,0 +1,30 @@
+enum BtimColor { Red, Green, Blue(shade: int) }
+
+fn btim_first() -> string {
+    let pair = (BtimColor.Red, BtimColor.Blue(42))
+    let first = pair.0
+    match first {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue(s) -> string(s)
+    }
+}
+
+fn btim_second() -> string {
+    let pair = (BtimColor.Red, BtimColor.Blue(42))
+    let second = pair.1
+    match second {
+        .Red -> "red"
+        .Green -> "green"
+        .Blue(s) -> `blue ${string(s)}`
+    }
+}
+
+spec "break tuple in match" {
+    then "first tuple element matches" {
+        btim_first() == "red"
+    }
+    then "second tuple element matches" {
+        btim_second() == "blue 42"
+    }
+}

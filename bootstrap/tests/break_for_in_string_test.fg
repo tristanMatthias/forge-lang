@@ -1,0 +1,16 @@
+fn bfis_run() -> string {
+    let csv = "alice,bob,carol"
+    let names = csv.split(",")
+    forge_test_capture_start()
+    for name in names {
+        println(name.upper())
+        println(string(name.length))
+    }
+    forge_test_capture_stop()
+}
+
+spec "break for in string" {
+    then "for-in on split results works" {
+        bfis_run() == "ALICE\n5\nBOB\n3\nCAROL\n5"
+    }
+}

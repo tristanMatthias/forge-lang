@@ -1,0 +1,14 @@
+fn bcil_run() -> int {
+    let transforms: fn(int) -> int = (x) -> x + 1
+    let t2: fn(int) -> int = (x) -> x * 2
+    mut val = 5
+    val = transforms(val)
+    val = t2(val)
+    val
+}
+
+spec "break closure in list" {
+    then "closure chain produces correct result" {
+        bcil_run() == 12
+    }
+}

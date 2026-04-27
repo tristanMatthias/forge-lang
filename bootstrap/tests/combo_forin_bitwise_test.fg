@@ -1,0 +1,42 @@
+fn cfb_or_all_flags() -> int {
+    let flags = [0x01, 0x02, 0x04, 0x08]
+    mut combined = 0
+    for f in flags {
+        combined = combined | f
+    }
+    combined
+}
+
+fn cfb_set_flags_count() -> int {
+    let flags = [0x01, 0x02, 0x04, 0x08]
+    let test_val = 0x05
+    let set_flags = flags.filter((f) -> (test_val & f) != 0)
+    set_flags.length
+}
+
+fn cfb_set_flags_values() -> string {
+    let flags = [0x01, 0x02, 0x04, 0x08]
+    let test_val = 0x05
+    let set_flags = flags.filter((f) -> (test_val & f) != 0)
+    `${string(set_flags[0])},${string(set_flags[1])}`
+}
+
+fn cfb_big_sum() -> int {
+    let big_nums = [1_000, 2_000, 3_000]
+    big_nums.reduce(0, (acc, x) -> acc + x)
+}
+
+spec "combo forin bitwise" {
+    then "OR all flags" {
+        cfb_or_all_flags() == 15
+    }
+    then "set flags count" {
+        cfb_set_flags_count() == 2
+    }
+    then "set flags values" {
+        cfb_set_flags_values() == "1,4"
+    }
+    then "numeric underscore sum" {
+        cfb_big_sum() == 6000
+    }
+}

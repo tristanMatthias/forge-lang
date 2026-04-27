@@ -1,0 +1,15 @@
+type BwnInner = { value: int }
+type BwnOuter = { inner: BwnInner, label: string }
+
+spec "break with nested" {
+    then "with on inner struct updates value" {
+        let o = BwnOuter { inner: BwnInner { value: 10 }, label: "test" }
+        let new_inner = o.inner with { value: 99 }
+        new_inner.value == 99
+    }
+    then "original inner unchanged" {
+        let o = BwnOuter { inner: BwnInner { value: 10 }, label: "test" }
+        let new_inner = o.inner with { value: 99 }
+        o.inner.value == 10
+    }
+}

@@ -1,0 +1,35 @@
+fn bsc_chain() -> string {
+    "  Hello, World!  "
+        .trim()
+        .replace("World", "Forge")
+        .upper()
+}
+
+fn bsc_join() -> string {
+    let parts = "a:b:c:d".split(":")
+    parts.reduce("", (acc, x) -> {
+        if acc == "" { return x }
+        acc + "-" + x
+    })
+}
+
+spec "break string chain" {
+    then "chained string methods" {
+        bsc_chain() == "HELLO, FORGE!"
+    }
+    then "chain length" {
+        bsc_chain().length == 13
+    }
+    then "contains check" {
+        bsc_chain().contains("FORGE") == true
+    }
+    then "starts_with check" {
+        bsc_chain().starts_with("HELLO") == true
+    }
+    then "index_of check" {
+        bsc_chain().index_of("FORGE") == 7
+    }
+    then "split and rejoin" {
+        bsc_join() == "a-b-c-d"
+    }
+}

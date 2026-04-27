@@ -1,0 +1,12 @@
+fn crt_make_adder(n: int) -> fn(int) -> int {
+    (x) -> x + n
+}
+
+spec "closure return type" {
+    then "returned closure preserves type" {
+        crt_make_adder(5)(10) == 15
+    }
+    then "different closure instance works" {
+        crt_make_adder(100)(42) == 142
+    }
+}
